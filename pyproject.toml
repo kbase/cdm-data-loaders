@@ -29,7 +29,6 @@ uniref_pipeline = "cdm_data_loaders.pipelines.uniref_pipeline:cli"
 [dependency-groups]
 dev = [
     "berdl-notebook-utils",
-    "biopython>=1.86",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
@@ -52,9 +51,7 @@ minio = [
     "tqdm>=4.67.3",
 ]
 
-biopython = [
-    "biopython>=1.86",
-]
+biopython = []
 
 [tool.ruff]
 line-length = 120
