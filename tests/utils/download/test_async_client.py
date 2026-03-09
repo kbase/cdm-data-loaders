@@ -7,7 +7,7 @@ from typing import NoReturn, Self
 import httpx
 import pytest
 
-from cdm_data_loader_utils.utils.download.async_client import AsyncFileDownloader
+from cdm_data_loaders.utils.download.async_client import AsyncFileDownloader
 
 DOWNLOAD_URL = "https://example.com/file.txt"
 

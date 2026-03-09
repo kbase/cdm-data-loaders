@@ -1,6 +1,6 @@
 import pytest
 
-from cdm_data_loader_utils.parsers.refseq_importer.core.extractors import (
+from cdm_data_loaders.parsers.refseq_importer.core.extractors import (
     PAT_BIOSAMPLE,
     _coalesce,
     _deep_collect_regex,

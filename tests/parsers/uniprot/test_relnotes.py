@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from cdm_data_loader_utils.parsers.uniprot.relnotes import parse, parse_relnotes
+from cdm_data_loaders.parsers.uniprot.relnotes import parse, parse_relnotes
 
 
 def test_parse_relnotes(test_data_dir: Path) -> None:

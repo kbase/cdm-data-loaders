@@ -10,8 +10,8 @@ import pytest
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import StringType, StructField, StructType
 
-from cdm_data_loader_utils.audit.rejects import write_rejects
-from cdm_data_loader_utils.audit.schema import (
+from cdm_data_loaders.audit.rejects import write_rejects
+from cdm_data_loaders.audit.schema import (
     PARSED_ROW,
     PIPELINE,
     RAW_ROW,
@@ -21,8 +21,8 @@ from cdm_data_loader_utils.audit.schema import (
     SOURCE,
     TIMESTAMP,
 )
-from cdm_data_loader_utils.core.constants import INVALID_DATA_FIELD_NAME
-from cdm_data_loader_utils.core.pipeline_run import PipelineRun
+from cdm_data_loaders.core.constants import INVALID_DATA_FIELD_NAME
+from cdm_data_loaders.core.pipeline_run import PipelineRun
 from tests.audit.conftest import create_table
 
 n_rows_per_file = 4

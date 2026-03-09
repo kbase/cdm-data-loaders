@@ -5,7 +5,7 @@ from typing import Any
 
 from pyspark.sql import SparkSession
 
-from cdm_data_loader_utils.audit.schema import (
+from cdm_data_loaders.audit.schema import (
     AUDIT_SCHEMA,
     CHECKPOINT,
     END_TIME,

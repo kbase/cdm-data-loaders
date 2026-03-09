@@ -14,7 +14,7 @@ on:
       - ready_for_review
 
 jobs:
-  code_format:
+  code_format_and_lint:
     name: Check code formatting
     runs-on: ubuntu-latest
     steps:
@@ -33,29 +33,13 @@ jobs:
         shell: bash
         run: uv run ruff format --check
 
-  code_linting:
-    name: Run code lint checks
-    runs-on: ubuntu-latest
-    needs: code_format
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7.1.2
-        with:
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync
-
       - name: Run code linting checks
         continue-on-error: true
         run: uv run ruff check --output-format=github .
 
   spark_tests:
     name: Run container tests
-    needs: code_format
+    needs: code_format_and_lint
     runs-on: ubuntu-latest
 
     steps:
@@ -83,7 +67,7 @@ jobs:
   tests:
     name: Run local tests (${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: code_format
+    needs: code_format_and_lint
     strategy:
       fail-fast: false
       matrix:

@@ -413,7 +413,7 @@ crt = [
 ]
 
 [[package]]
-name = "cdm-data-loader-utils"
+name = "cdm-data-loaders"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
