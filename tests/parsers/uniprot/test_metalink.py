@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from cdm_data_loader_utils.parsers.uniprot.metalink import generate_data_source_table, get_files
+from cdm_data_loaders.parsers.uniprot.metalink import generate_data_source_table, get_files
 
 
 def test_generate_data_source_table(test_data_dir: Path) -> None:

@@ -1,5 +1,5 @@
 [project]
-name = "cdm-data-loader-utils"
+name = "cdm-data-loaders"
 version = "0.1.0"
 description = "Data loaders and wranglers for the CDM."
 requires-python = ">= 3.13"
@@ -22,9 +22,9 @@ dependencies = [
 ]
 
 [project.scripts]
-idmapping = "cdm_data_loader_utils.parsers.uniprot.idmapping:cli"
-uniprot_pipeline = "cdm_data_loader_utils.pipelines.uniprot_kb_pipeline:cli"
-uniref_pipeline = "cdm_data_loader_utils.pipelines.uniref_pipeline:cli"
+idmapping = "cdm_data_loaders.parsers.uniprot.idmapping:cli"
+uniprot_pipeline = "cdm_data_loaders.pipelines.uniprot_kb_pipeline:cli"
+uniref_pipeline = "cdm_data_loaders.pipelines.uniref_pipeline:cli"
 
 [dependency-groups]
 dev = [

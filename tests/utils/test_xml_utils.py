@@ -1,6 +1,6 @@
 import xml.etree.ElementTree as ET
 
-from cdm_data_loader_utils.utils.xml_utils import (
+from cdm_data_loaders.utils.xml_utils import (
     clean_dict,
     get_attr,
     get_text,
