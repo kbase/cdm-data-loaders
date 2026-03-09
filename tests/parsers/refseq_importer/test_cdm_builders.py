@@ -18,9 +18,7 @@ from cdm_data_loaders.parsers.refseq_importer.core.cdm_builders import (
 @pytest.fixture(scope="session")
 def spark():
     spark = (
-        SparkSession.builder.master("local[1]")
-        .appName("cdm_data_loaders.parsers.refseq_importer_tests")
-        .getOrCreate()
+        SparkSession.builder.master("local[1]").appName("cdm_data_loaders.parsers.refseq_importer_tests").getOrCreate()
     )
     yield spark
     spark.stop()
