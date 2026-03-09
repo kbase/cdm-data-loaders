@@ -8,8 +8,8 @@ import pytest
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import StructType
 
-from cdm_data_loader_utils.audit.metrics import write_metrics
-from cdm_data_loader_utils.audit.schema import (
+from cdm_data_loaders.audit.metrics import write_metrics
+from cdm_data_loaders.audit.schema import (
     METRICS,
     N_INVALID,
     N_READ,
@@ -19,7 +19,7 @@ from cdm_data_loader_utils.audit.schema import (
     SOURCE,
     VALIDATION_ERRORS,
 )
-from cdm_data_loader_utils.core.pipeline_run import PipelineRun
+from cdm_data_loaders.core.pipeline_run import PipelineRun
 from tests.audit.conftest import (
     DEFAULT_DATA,
     INIT_TIMESTAMP_FIELDS,

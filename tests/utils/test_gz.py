@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from cdm_data_loader_utils.utils.gz import compress_file, compress_files, main
+from cdm_data_loaders.utils.gz import compress_file, compress_files, main
 
 
 @pytest.fixture

@@ -11,7 +11,7 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import IntegerType, StringType, StructField, StructType
 from pyspark.testing import assertSchemaEqual
 
-from cdm_data_loader_utils.readers.dsv import read, read_csv, read_tsv
+from cdm_data_loaders.readers.dsv import read, read_csv, read_tsv
 from tests.conftest import ALL_LINES, MISSING_REQUIRED, TOO_FEW_COLS, TOO_MANY_COLS, TYPE_MISMATCH, VALID
 from tests.helpers import assertDataFrameEqual
 

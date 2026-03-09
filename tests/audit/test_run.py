@@ -6,8 +6,8 @@ import logging
 import pytest
 from pyspark.sql import SparkSession
 
-from cdm_data_loader_utils.audit.run import complete_run, fail_run, start_run
-from cdm_data_loader_utils.audit.schema import (
+from cdm_data_loaders.audit.run import complete_run, fail_run, start_run
+from cdm_data_loaders.audit.schema import (
     END_TIME,
     ERROR,
     PIPELINE,
@@ -20,7 +20,7 @@ from cdm_data_loader_utils.audit.schema import (
     STATUS_ERROR,
     STATUS_SUCCESS,
 )
-from cdm_data_loader_utils.core.pipeline_run import PipelineRun
+from cdm_data_loaders.core.pipeline_run import PipelineRun
 from tests.audit.conftest import DEFAULT_DATA, check_saved_data, create_table
 from tests.conftest import PIPELINE_RUN, TEST_NS
 
