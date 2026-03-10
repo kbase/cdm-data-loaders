@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 from pyspark.sql import DataFrame, DataFrameWriter, Row, SparkSession
 
-from cdm_data_loader_utils.utils import spark_delta
-from cdm_data_loader_utils.utils.spark_delta import (
+from cdm_data_loaders.utils import spark_delta
+from cdm_data_loaders.utils.spark_delta import (
     APPEND,
     DEFAULT_APP_NAME,
     DEFAULT_NAMESPACE,
@@ -70,7 +70,7 @@ def spark_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[tuple
     """Provide a Spark session with a per-test warehouse dir and patched workspace setup."""
     # patch the create_namespace_if_not_exists function
     monkeypatch.setattr(
-        "cdm_data_loader_utils.utils.spark_delta.create_namespace_if_not_exists",
+        "cdm_data_loaders.utils.spark_delta.create_namespace_if_not_exists",
         fake_create_namespace_if_not_exists,
     )
 
@@ -99,7 +99,7 @@ def test_get_spark(app_name: str | None, monkeypatch: pytest.MonkeyPatch) -> Non
         return "fake spark session"
 
     monkeypatch.setattr(
-        "cdm_data_loader_utils.utils.spark_delta.get_spark_session",
+        "cdm_data_loaders.utils.spark_delta.get_spark_session",
         fake_get_spark_session,
     )
 
@@ -147,12 +147,12 @@ def test_set_up_workspace_defaults(
         return "delta namespace"
 
     monkeypatch.setattr(
-        "cdm_data_loader_utils.utils.spark_delta.get_spark_session",
+        "cdm_data_loaders.utils.spark_delta.get_spark_session",
         fake_get_spark_session,
     )
 
     monkeypatch.setattr(
-        "cdm_data_loader_utils.utils.spark_delta.create_namespace_if_not_exists",
+        "cdm_data_loaders.utils.spark_delta.create_namespace_if_not_exists",
         fake_create_ns,
     )
 
@@ -212,7 +212,7 @@ def test_set_up_workspace_creates_database(
 
     # patch the create_namespace_if_not_exists function
     monkeypatch.setattr(
-        "cdm_data_loader_utils.utils.spark_delta.create_namespace_if_not_exists",
+        "cdm_data_loaders.utils.spark_delta.create_namespace_if_not_exists",
         fake_create_namespace_if_not_exists,
     )
 

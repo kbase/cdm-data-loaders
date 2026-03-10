@@ -4,10 +4,10 @@ import pytest
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructField, StructType
 
-from cdm_data_loader_utils.audit.schema import ROW_ERRORS
-from cdm_data_loader_utils.core.constants import INVALID_DATA_FIELD_NAME
-from cdm_data_loader_utils.readers.dsv import INVALID_DATA_FIELD
-from cdm_data_loader_utils.validation.df_nullable_fields import validate
+from cdm_data_loaders.audit.schema import ROW_ERRORS
+from cdm_data_loaders.core.constants import INVALID_DATA_FIELD_NAME
+from cdm_data_loaders.readers.dsv import INVALID_DATA_FIELD
+from cdm_data_loaders.validation.df_nullable_fields import validate
 from tests.conftest import ALL_LINES, MISSING_REQUIRED, TOO_FEW_COLS, TOO_MANY_COLS, TYPE_MISMATCH, VALID
 
 

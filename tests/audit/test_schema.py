@@ -2,8 +2,8 @@
 
 import pytest
 
-from cdm_data_loader_utils.audit.schema import PIPELINE, RUN_ID, SOURCE, current_run_expr, match_run
-from cdm_data_loader_utils.core.pipeline_run import PipelineRun
+from cdm_data_loaders.audit.schema import PIPELINE, RUN_ID, SOURCE, current_run_expr, match_run
+from cdm_data_loaders.core.pipeline_run import PipelineRun
 from tests.audit.conftest import PIPELINE_RUN
 
 

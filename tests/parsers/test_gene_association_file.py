@@ -14,7 +14,7 @@ from delta import configure_spark_with_delta_pip
 from pyspark.sql import Row, SparkSession
 from pyspark.sql.functions import col
 
-from cdm_data_loader_utils.parsers.gene_association_file import (
+from cdm_data_loaders.parsers.gene_association_file import (
     AGGREGATOR,
     ANNOTATION_DATE,
     DB,

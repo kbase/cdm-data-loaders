@@ -1,10 +1,11 @@
-# cdm-data-loader-utils
+# cdm-data-loaders
 
 Repo for CDM input data loading and wrangling
 
-- [cdm-data-loader-utils](#cdm-data-loader-utils)
+- [cdm-data-loaders](#cdm-data-loaders)
   - [Environment and python management](#environment-and-python-management)
   - [Installation](#installation)
+  - [Running import pipelines](#running-import-pipelines)
   - [Development](#development)
     - [Spark and other non-python dependencies](#spark-and-other-non-python-dependencies)
     - [Tests](#tests)
@@ -20,9 +21,17 @@ The data loader utils package uses [uv](https://docs.astral.sh/uv/) for python e
 
 ## Installation
 
-The data loader utils run on python 3.13 and above.
+The CDM data loaders run on python 3.13 and above.
 
-To install dependencies (including python), run
+Most python code can be run using the command
+
+```sh
+> uv run <path_to_file.py>
+```
+
+This will automatically launch a virtual environment and install all required dependencies.
+
+To manually set up the virtual environment and install dependencies (including python), run
 
 ```sh
 > uv sync
@@ -37,6 +46,17 @@ To activate a virtual environment with these dependencies installed, run
 ```
 
 If you are using IDEs like VSCode, they should pick up the creation of the new environment and offer it for executing python code.
+
+
+## Running import pipelines
+
+The repo provides a Docker container that can be used to run several import pipelines or to run unit tests for the repo. The [entrypoint script](scripts/entrypoint.sh) parses the container `run` arguments and launches the appropriate functions.
+
+Current endpoints include:
+
+- `test`: run the unit tests that do _not_ require external dependencies like Spark
+- `uniprot`: run the UniProtKB (UniProt protein database) import pipeline; see [the UniProtKB pipeline](src/cdm_data_loaders/pipelines/uniprot_kb_pipeline.py) for arguments
+- `uniref`: run the UniRef import pipeline; the [the UniRef pipeline](src/cdm_data_loaders/pipelines/uniref_pipeline.py) for arguments
 
 
 ## Development
@@ -64,7 +84,7 @@ Run the container interactively as the user `runner`; current directory is mount
 > docker run --rm -e NB_USER=runner -it -v .:/tmp/cdm ghcr.io/berdatalakehouse/spark_notebook:main
 ```
 
-This will launch a bash shell; the contents of the `cdm-data-loader-utils` directory are mounted at `/tmp/cdm`.
+This will launch a bash shell; the contents of the `cdm-data-loaders` directory are mounted at `/tmp/cdm`.
 
 
 Run the container and sleep:
@@ -81,16 +101,23 @@ See the [BERDataLakehouse/spark_notebook](https://github.com/BERDataLakehouse/sp
 
 ### Tests
 
-To run the tests, execute the command:
+Tests are categorised using pytest markers to allow developers to execute some or all the tests. See [pyproject.toml](pyproject.toml) for the markers used.
+
+To run all tests (requires a running Spark instance), execute the command:
 
 ```sh
 > uv run pytest
 ```
 
-To generate coverage for the tests, run
+To run only tests that do not require Spark, run
 
 ```sh
-> uv run pytest --cov=src --cov-report=xml tests/
+> uv run pytest -m "not requires_spark"
+```
+
+To generate coverage for the tests, run
+```sh
+> uv run pytest --cov=src --cov-report=xml
 ```
 
 The standard python `coverage` package is used and coverage can be generated as html or other formats by changing the parameters.
@@ -98,7 +125,7 @@ The standard python `coverage` package is used and coverage can be generated as 
 
 ## Loading genomes, contigs, and features
 
-The [genome loader](src/cdm_data_loader_utils/parsers/genome_loader.py) can be used to load and integrate data from related GFF and FASTA files. Currently, the loader requires a GFF file and two FASTA files (one for amino acid seqs, one for nucleic acid seqs) for each genome. The list of files to be processed should be specified in the genome paths file, which has the following format:
+The [genome loader](src/cdm_data_loaders/parsers/genome_loader.py) can be used to load and integrate data from related GFF and FASTA files. Currently, the loader requires a GFF file and two FASTA files (one for amino acid seqs, one for nucleic acid seqs) for each genome. The list of files to be processed should be specified in the genome paths file, which has the following format:
 
 ```json
 {

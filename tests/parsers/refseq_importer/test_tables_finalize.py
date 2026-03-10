@@ -2,7 +2,7 @@ import pytest
 from pyspark.sql import Row, SparkSession
 from pyspark.sql.types import StringType, StructField, StructType
 
-from cdm_data_loader_utils.parsers.refseq_importer.core.tables_finalize import finalize_tables, list_of_dicts_to_spark
+from cdm_data_loaders.parsers.refseq_importer.core.tables_finalize import finalize_tables, list_of_dicts_to_spark
 
 
 # -------------------------------------------------------------------

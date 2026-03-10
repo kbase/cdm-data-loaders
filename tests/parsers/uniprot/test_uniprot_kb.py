@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from lxml.etree import XMLParser, fromstring
 
-from cdm_data_loader_utils.parsers.uniprot.uniprot_kb import (
+from cdm_data_loaders.parsers.uniprot.uniprot_kb import (
     CONTENT,
     DB,
     DESCRIPTION,
