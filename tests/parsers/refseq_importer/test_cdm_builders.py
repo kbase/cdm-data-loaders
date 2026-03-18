@@ -1,7 +1,7 @@
 import pytest
 from pyspark.sql import SparkSession
 
-from cdm_data_loader_utils.parsers.refseq_importer.core.cdm_builders import (
+from cdm_data_loaders.parsers.refseq_importer.core.cdm_builders import (
     build_cdm_contig_collection,
     build_cdm_entity,
     build_cdm_identifier_rows,
@@ -9,7 +9,7 @@ from cdm_data_loader_utils.parsers.refseq_importer.core.cdm_builders import (
     build_entity_id,
 )
 
-### pytest cdm_data_loader_utils.parsers.refseq_importer/tests/test_cdm_builders.py ###
+### pytest cdm_data_loaders.parsers.refseq_importer/tests/test_cdm_builders.py ###
 
 
 # -------------------------------------------------------------
@@ -18,9 +18,7 @@ from cdm_data_loader_utils.parsers.refseq_importer.core.cdm_builders import (
 @pytest.fixture(scope="session")
 def spark():
     spark = (
-        SparkSession.builder.master("local[1]")
-        .appName("cdm_data_loader_utils.parsers.refseq_importer_tests")
-        .getOrCreate()
+        SparkSession.builder.master("local[1]").appName("cdm_data_loaders.parsers.refseq_importer_tests").getOrCreate()
     )
     yield spark
     spark.stop()

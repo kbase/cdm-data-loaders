@@ -22,16 +22,16 @@ from pyspark.sql.types import (
     StructType,
 )
 
-from cdm_data_loader_utils.audit.schema import (
+from cdm_data_loaders.audit.schema import (
     NAMESPACE,
     PIPELINE,
     ROW_ERRORS,
     RUN_ID,
     SOURCE,
 )
-from cdm_data_loader_utils.core.pipeline_run import PipelineRun
-from cdm_data_loader_utils.readers.dsv import INVALID_DATA_FIELD
-from cdm_data_loader_utils.utils.cdm_logger import get_cdm_logger
+from cdm_data_loaders.core.pipeline_run import PipelineRun
+from cdm_data_loaders.readers.dsv import INVALID_DATA_FIELD
+from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
 SAVE_DIR = "spark.sql.warehouse.dir"
 

@@ -6,8 +6,8 @@ import logging
 import pytest
 from pyspark.sql import SparkSession
 
-from cdm_data_loader_utils.audit.checkpoint import load_checkpoint, update_checkpoint_status, upsert_checkpoint
-from cdm_data_loader_utils.audit.schema import (
+from cdm_data_loaders.audit.checkpoint import load_checkpoint, update_checkpoint_status, upsert_checkpoint
+from cdm_data_loaders.audit.schema import (
     CHECKPOINT,
     LAST_ENTRY_ID,
     PIPELINE,
@@ -19,7 +19,7 @@ from cdm_data_loader_utils.audit.schema import (
     STATUS_RUNNING,
     UPDATED,
 )
-from cdm_data_loader_utils.core.pipeline_run import PipelineRun
+from cdm_data_loaders.core.pipeline_run import PipelineRun
 from tests.audit.conftest import DEFAULT_DATA, check_saved_data, create_table
 from tests.conftest import PIPELINE_RUN, TEST_NS
 

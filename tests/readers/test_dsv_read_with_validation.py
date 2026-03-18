@@ -6,7 +6,7 @@ import pytest
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import StringType, StructField
 
-from cdm_data_loader_utils.audit.schema import (
+from cdm_data_loaders.audit.schema import (
     AUDIT_SCHEMA,
     METRICS,
     N_INVALID,
@@ -14,11 +14,11 @@ from cdm_data_loader_utils.audit.schema import (
     N_VALID,
     VALIDATION_ERRORS,
 )
-from cdm_data_loader_utils.core.constants import INVALID_DATA_FIELD_NAME
-from cdm_data_loader_utils.core.pipeline_run import PipelineRun
-from cdm_data_loader_utils.readers.dsv import read
-from cdm_data_loader_utils.validation.dataframe_validator import DataFrameValidator, Validator
-from cdm_data_loader_utils.validation.df_nullable_fields import validate as nullable_fields
+from cdm_data_loaders.core.constants import INVALID_DATA_FIELD_NAME
+from cdm_data_loaders.core.pipeline_run import PipelineRun
+from cdm_data_loaders.readers.dsv import read
+from cdm_data_loaders.validation.dataframe_validator import DataFrameValidator, Validator
+from cdm_data_loaders.validation.df_nullable_fields import validate as nullable_fields
 from tests.conftest import ALL_LINES, MISSING_REQUIRED, TEST_NS, TOO_FEW_COLS, TOO_MANY_COLS, TYPE_MISMATCH, VALID
 from tests.helpers import create_empty_delta_table
 

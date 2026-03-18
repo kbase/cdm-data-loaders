@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from lxml.etree import fromstring
 
-from cdm_data_loader_utils.parsers.uniprot.uniref import (
+from cdm_data_loaders.parsers.uniprot.uniref import (
     UNIREF_URL,
     extract_cluster,
     extract_cross_refs,

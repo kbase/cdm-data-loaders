@@ -7,7 +7,7 @@ import pytest
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as sf
 
-from cdm_data_loader_utils.audit.schema import (
+from cdm_data_loaders.audit.schema import (
     AUDIT_SCHEMA,
     METRICS,
     N_INVALID,
@@ -19,9 +19,9 @@ from cdm_data_loader_utils.audit.schema import (
     SOURCE,
     VALIDATION_ERRORS,
 )
-from cdm_data_loader_utils.core.pipeline_run import PipelineRun
-from cdm_data_loader_utils.parsers.uniprot.idmapping import ingest
-from cdm_data_loader_utils.utils.spark_delta import write_delta
+from cdm_data_loaders.core.pipeline_run import PipelineRun
+from cdm_data_loaders.parsers.uniprot.idmapping import ingest
+from cdm_data_loaders.utils.spark_delta import write_delta
 from tests.audit.conftest import (
     INIT_TIMESTAMP_FIELDS,
 )
