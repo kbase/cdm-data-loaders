@@ -11,6 +11,10 @@ Repo for CDM input data loading and wrangling
     - [Tests](#tests)
   - [Loading genomes, contigs, and features](#loading-genomes-contigs-and-features)
   - [Running bbmap stats and checkm2 on genome or contigset files](#running-bbmap-stats-and-checkm2-on-genome-or-contigset-files)
+  - [Changelog](#changelog)
+    - [v0.1.2](#v012)
+    - [v0.1.1](#v011)
+    - [v0.1.0](#v010)
 
 
 
@@ -159,3 +163,18 @@ Run the stats and checkm2 tools with the following command:
 bash scripts/run_tools.sh path/to/genome_paths_file.json output_dir
 ```
 where `path/to/genome_paths_file.json` specifies the path to the genome paths file (format specified above) and `output_dir` is the directory for the results.
+
+
+## Changelog
+
+### v0.1.2
+
+- Update XML File Splitter to use the latest version, which includes the `gzip` parameter.
+
+### v0.1.1
+
+- Add [XML File Splitter](https://github.com/ialarmedalien/xml_file_splitter) to the container.
+
+### v0.1.0
+
+- Initial release.
