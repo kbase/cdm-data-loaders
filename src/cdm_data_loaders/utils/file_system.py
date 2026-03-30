@@ -2,7 +2,6 @@
 
 import re
 from pathlib import Path
-from re import Pattern
 
 # Matches files like: name_00001.ext or name_00001.ext.gz
 FILE_NAME_REGEX = re.compile(r"^\w+_(\d+)(\.\w+)+$")
@@ -42,7 +41,7 @@ class BatchCursor:
         self.batch_size: int = batch_size
         self.start_at: int = start_at
         self.end_at: int | None = end_at if end_at > 0 else None
-        self.file_regex: Pattern[str] = FILE_NAME_REGEX
+        self.file_regex: re.Pattern[str] = FILE_NAME_REGEX
 
     def _get_sequence_number(self, path: Path) -> int:
         match = self.file_regex.match(path.name)
