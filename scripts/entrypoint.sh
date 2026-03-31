@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Ensure at least one argument is provided
 if [ "$#" -eq 0 ]; then
-  echo "Usage: $0 {uniref|uniprot|test|xml_split} [args...]"
+  echo "Usage: $0 {uniref|uniprot|ncbi_api|test|xml_split} [args...]"
   exit 1
 fi
 
@@ -16,12 +16,16 @@ case "$cmd" in
     exec /usr/bin/tini -- xml_file_splitter "$@"
     ;;
   uniref)
-    # Run the uniref pipeline with any additional arguments via tini
-    exec /usr/bin/tini -- uv run --no-sync uniref_pipeline "$@"
+    # Run the uniref pipeline with any additional arguments
+    exec /usr/bin/tini -- uv run --no-sync uniref "$@"
     ;;
   uniprot)
-    # Run the uniprot pipeline with any additional arguments via tini
-    exec /usr/bin/tini -- uv run --no-sync uniprot_pipeline "$@"
+    # Run the uniprot pipeline with any additional arguments
+    exec /usr/bin/tini -- uv run --no-sync uniprot "$@"
+    ;;
+  ncbi_rest_api)
+    # Run the NCBI datasets API importer
+    exec /usr/bin/tini -- uv run --no-sync ncbi_rest_api "$@"
     ;;
   test)
     # run the tests
@@ -31,7 +35,7 @@ case "$cmd" in
     exec /usr/bin/tini -- /bin/bash
     ;;
   *)
-    echo "Error: unknown command '$cmd'; valid commands are 'uniref' or 'uniprot'." >&2
+    echo "Error: unknown command '$cmd'; valid commands are 'uniref', 'uniprot', 'ncbi_api', or 'xml_split'." >&2
     exit 1
     ;;
 esac
