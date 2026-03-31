@@ -59,8 +59,8 @@ The repo provides a Docker container that can be used to run several import pipe
 Current endpoints include:
 
 - `test`: run the unit tests that do _not_ require external dependencies like Spark
-- `uniprot`: run the UniProtKB (UniProt protein database) import pipeline; see [the UniProtKB pipeline](src/cdm_data_loaders/pipelines/uniprot_kb_pipeline.py) for arguments
-- `uniref`: run the UniRef import pipeline; the [the UniRef pipeline](src/cdm_data_loaders/pipelines/uniref_pipeline.py) for arguments
+- `uniprot`: run the UniProtKB (UniProt protein database) import pipeline; see [the UniProtKB pipeline](src/cdm_data_loaders/pipelines/uniprot_kb.py) for arguments
+- `uniref`: run the UniRef import pipeline; the [the UniRef pipeline](src/cdm_data_loaders/pipelines/uniref.py) for arguments
 
 
 ## Development

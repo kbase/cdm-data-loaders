@@ -11,18 +11,18 @@ from dlt.extract.items import DataItemWithMeta
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
-from cdm_data_loaders.parsers.uniprot.uniref import UNIREF_URL, UNIREF_VARIANTS, parse_uniref_entry
+from cdm_data_loaders.parsers.uniprot.uniprot_kb import ENTRY_XML_TAG, parse_uniprot_entry
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.xml_utils import stream_xml_file
 
 logger = get_cdm_logger()
 
-APP_NAME = "uniref_importer"
+APP_NAME = "uniprot_kb_importer"
 
 VALID_DESTINATIONS = ["local_fs", "minio"]
 
 DEFAULT_UNIPROT_DIR = "s3://cdm-lake/tenant-general-warehouse/kbase/datasets/uniprot/"
-UNIREF_DIR = Path("/global_share") / "uniprot" / "derived" / "2025_03" / "uniref"
+SOURCE_DIR = Path("/global_share") / "uniprot" / "derived" / "2025_03" / "uniprot_kb"
 
 
 class Settings(BaseSettings):
@@ -30,28 +30,25 @@ class Settings(BaseSettings):
 
     input_dir: Path = Field()
     destination: str = Field()
-    uniref_variant: int = Field()
     start_at: int = Field(0)
     timestamp: datetime.datetime = Field(datetime.datetime.now(tz=datetime.UTC))
 
 
-@dlt.resource(name="parse_uniref", parallelized=True)
-def parse_uniref(
-    file_path: str | Path, current_timestamp: datetime.datetime, uniref_value: int
-) -> Generator[DataItemWithMeta, Any]:
-    """Parse the information from a UniProt entry.
+@dlt.resource(name="parse_uniprot", parallelized=True)
+def parse_uniprot(file_path: str | Path, current_timestamp: datetime.datetime) -> Generator[DataItemWithMeta, Any]:
+    """Parse the information from a UniProt file.
 
-    :param entry: _description_
-    :type entry: Element
-    :return: _description_
-    :rtype: _type_
+    :param file_path: path to a uniprot XML file
+    :type file_path: str | Path
+    :return: parsed uniprot data sorted to the appropriate tables
+    :rtype: Generator[DataItemWithMeta, Any]
     """
-    for n, entry in enumerate(stream_xml_file(file_path, f"{{{UNIREF_URL}}}entry")):
-        parsed_entry = parse_uniref_entry(entry, current_timestamp, f"UniRef {uniref_value}", file_path)
+    for n, entry in enumerate(stream_xml_file(file_path, ENTRY_XML_TAG)):
+        parsed_entry = parse_uniprot_entry(entry, current_timestamp, file_path)
         for table, rows in parsed_entry.items():
             yield dlt.mark.with_table_name(rows, table)
-        if n + 1 % 10000 == 0:
-            print(f"Processed {n + 1} entries")
+        if n % 1000 == 0:
+            print(f"Processed {n} entries")
 
 
 def run_pipeline(config: Settings) -> None:
@@ -60,32 +57,27 @@ def run_pipeline(config: Settings) -> None:
     :param config: config for running the pipeline.
     :type config: Settings
     """
-    for uniref_file in sorted(config.input_dir.glob("*.xml.gz")):
+    for uniprot_file in sorted(config.input_dir.glob("*.xml*")):
         if config.start_at:
             # get the integer part of the file name
-            f_int = uniref_file.stem.replace("part_", "")
+            f_int = uniprot_file.stem.replace("parts_", "")
             if int(f_int) < config.start_at:
-                logger.info("Skipping %s", str(uniref_file))
+                logger.info("Skipping %s", str(uniprot_file))
                 continue
-        logger.info("Reading from %s", str(uniref_file))
+        logger.info("Reading from %s", str(uniprot_file))
         pipeline = dlt.pipeline(
-            pipeline_name=f"uniref_{config.uniref_variant}",
+            pipeline_name="uniprot_kb",
             destination=dlt.destination(config.destination, max_table_nesting=0),
             dataset_name="uniprot_kb",
         )
-        load_info = pipeline.run(
-            parse_uniref(uniref_file, config.timestamp, config.uniref_variant), table_format="delta"
-        )
-        logger.info("Work complete!")
+        load_info = pipeline.run(parse_uniprot(uniprot_file, config.timestamp), table_format="delta")
+        logger.info("Work complete: %s ingested!", str(uniprot_file))
         logger.info(load_info)
 
 
 @click.command()
-@click.option(
-    "-n", "--uniref", required=True, type=click.Choice(UNIREF_VARIANTS), help="Which UniRef variant to import"
-)
-@click.option("-s", "--start", type=int, default=0, help="File to start import at")
-@click.option("-i", "--input_dir", default=str(UNIREF_DIR), help="Location of UniRef XML files to import")
+@click.option("-s", "--start", type=str, default=0, help="UniProt file to start import at")
+@click.option("-i", "--input_dir", default=str(SOURCE_DIR), help="Location of UniProtKB XML files to import")
 @click.option(
     "-d",
     "--destination",
@@ -100,10 +92,10 @@ def run_pipeline(config: Settings) -> None:
     default="",
     help="Location to save imported data to, if different from the default supplied by the destination config",
 )
-def cli(input_dir: str, destination: str, output: str | None, start: int, uniref: int) -> None:
-    """CLI interface for the UniRef importer pipeline.
+def cli(input_dir: str, destination: str, output: str | None, start: int) -> None:
+    """CLI interface for the UniProt importer pipeline.
 
-    :param input_dir: Location of the directory containing the UniRef XML files
+    :param input_dir: Location of the directory containing the UniProt XML files
     :type input_dir: str
     :param destination: destination configuration to use
     :type destination: str | None
@@ -111,8 +103,6 @@ def cli(input_dir: str, destination: str, output: str | None, start: int, uniref
     :type output: str
     :param start: if provided, which file to start the import at
     :type start: int
-    :param uniref: which UniRef dataset to import (50 / 90 / 100)
-    :type uniref: int
     """
     # check whether there is a custom output location; if so, set it in the config
     if output:
@@ -121,7 +111,6 @@ def cli(input_dir: str, destination: str, output: str | None, start: int, uniref
     runtime_config = Settings(
         input_dir=Path(input_dir),
         destination=destination,
-        uniref_variant=uniref,
         start_at=start,
         timestamp=datetime.datetime.now(tz=datetime.UTC),
     )
