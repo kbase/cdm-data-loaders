@@ -1,7 +1,6 @@
 """Tests for the UniRef DLT pipeline."""
 
 import datetime
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,20 +11,18 @@ from pydantic_settings import CliApp
 from cdm_data_loaders.pipelines.cts_defaults import INPUT_MOUNT
 from cdm_data_loaders.pipelines.uniref import (
     DEFAULT_BATCH_SIZE,
+    UNIREF_URL,
+    UNIREF_VARIANTS,
     Settings,
     parse_uniref,
     run_pipeline,
-    UNIREF_URL,
-    UNIREF_VARIANTS,
 )
 
 VALID_DESTINATIONS = ["local_fs", "minio"]
 TEST_DEFAULT_UNIREF_VARIANT = "50"
 
 
-def make_settings(
-    extra_argv: list[str] | None = None, *, uniref_variant: str = TEST_DEFAULT_UNIREF_VARIANT, **kwargs
-) -> Settings:
+def make_settings(uniref_variant: str = TEST_DEFAULT_UNIREF_VARIANT, **kwargs: str | int) -> Settings:
     """Generate a validated Settings object."""
     data = {"uniref": uniref_variant, **kwargs}
     return Settings.model_validate(data)
