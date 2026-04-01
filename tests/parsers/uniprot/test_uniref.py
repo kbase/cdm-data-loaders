@@ -622,7 +622,7 @@ def test_extract_cross_refs_param(
 )
 def test_parse_whole_uniref_entry(entry: dict[str, Any]) -> None:
     """Ensure that parsing the whole entry results in the expected tables being yielded."""
-    parsed = parse_uniref_entry(fromstring(entry["xml"]), NOW, PROTOCOL, "/path/to/file")
+    parsed = parse_uniref_entry(fromstring(entry["xml"]), NOW, "/path/to/file", PROTOCOL)
     assert parsed["entity"] == entry["exp"]["entity"]
     assert parsed["cluster"] == entry["exp"]["cluster"]
     assert parsed["clustermember"] == entry["exp"]["clustermember"]

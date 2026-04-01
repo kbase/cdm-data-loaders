@@ -200,14 +200,14 @@ def test_get_batch_parametrized(
         assert cursor.start_at == CUTOFF_VALUE + 1
 
 
-def test_default_start_at_is_zero(file_dir: Path) -> None:
+def test_get_batch_default_start_at_is_zero(file_dir: Path) -> None:
     """Ensure that the default start_at is 0."""
     cursor_default = BatchCursor(file_dir, batch_size=3)
     cursor_explicit = BatchCursor(file_dir, batch_size=3, start_at=0)
     assert cursor_default.get_batch() == cursor_explicit.get_batch()
 
 
-def test_start_at_matches_sequence_number(file_dir: Path) -> None:
+def test_get_batch_start_at_matches_sequence_number(file_dir: Path) -> None:
     """Ensure start_at value matches sequence number."""
     cursor = BatchCursor(file_dir, batch_size=5, start_at=15)
     result = cursor.get_batch()
@@ -216,7 +216,7 @@ def test_start_at_matches_sequence_number(file_dir: Path) -> None:
 
 
 # advancing the cursor
-def test_start_at_advances_after_get_batch(file_dir: Path) -> None:
+def test_get_batch_start_at_advances_after_get_batch(file_dir: Path) -> None:
     """Ensure that the start_at value changes after each successful get_batch operation."""
     batch_size = 5
     cursor = BatchCursor(file_dir, batch_size=batch_size, start_at=0)
@@ -235,7 +235,7 @@ def test_start_at_advances_after_get_batch(file_dir: Path) -> None:
     assert all_files == [file_dir / f"report_{n:05}.csv" for n in range(1, MAX_RANGE_VALUE)]
 
 
-def test_cursor_does_not_advance_on_empty_result(file_dir: Path) -> None:
+def test_get_batch_cursor_does_not_advance_on_empty_result(file_dir: Path) -> None:
     """Ensure that the cursor does not advance if the batch is empty."""
     start_at = 999
     cursor = BatchCursor(file_dir, batch_size=5, start_at=start_at)
@@ -243,7 +243,7 @@ def test_cursor_does_not_advance_on_empty_result(file_dir: Path) -> None:
     assert cursor.start_at == start_at
 
 
-def test_partial_batch_advances_correctly(file_dir: Path) -> None:
+def test_get_batch_partial_batch_advances_correctly(file_dir: Path) -> None:
     """Ensure that the cursor only advances as far as the last file in the batch."""
     # Only 3 files remain from 13 onward
     cursor = BatchCursor(file_dir, batch_size=5, start_at=13)
@@ -252,7 +252,7 @@ def test_partial_batch_advances_correctly(file_dir: Path) -> None:
     assert cursor.start_at == 16  # noqa: PLR2004
 
 
-def test_cursor_can_be_reset(file_dir: Path) -> None:
+def test_get_batch_cursor_can_be_reset(file_dir: Path) -> None:
     """Ensure that the cursor can be reset."""
     batch_size = 5
     cursor = BatchCursor(file_dir, batch_size=batch_size)
@@ -267,19 +267,19 @@ def test_cursor_can_be_reset(file_dir: Path) -> None:
 
 
 # Edge cases -- boundaries
-def test_start_at_beyond_end_returns_empty_list(file_dir: Path) -> None:
+def test_get_batch_start_at_beyond_end_returns_empty_list(file_dir: Path) -> None:
     """Ensure that nothing is returned if start_at is too high."""
     cursor = BatchCursor(file_dir, batch_size=5, start_at=999)
     assert cursor.get_batch() == []
 
 
-def test_empty_directory_returns_empty_list(tmp_path: Path) -> None:
+def test_get_batch_empty_directory_returns_empty_list(tmp_path: Path) -> None:
     """Ensure that an empty dir returns nothing."""
     cursor = BatchCursor(tmp_path, batch_size=5)
     assert cursor.get_batch() == []
 
 
-def test_batch_size_larger_than_remaining_files(file_dir: Path) -> None:
+def test_get_batch_batch_size_larger_than_remaining_files(file_dir: Path) -> None:
     """Ensure that batches are sized correctly for partial batches."""
     cursor = BatchCursor(file_dir, batch_size=10, start_at=10)
     result = cursor.get_batch()
@@ -290,7 +290,7 @@ def test_batch_size_larger_than_remaining_files(file_dir: Path) -> None:
 
 
 # gaps in the sequence
-def test_start_at_skips_to_next_available_when_gap(tmp_path: Path) -> None:
+def test_get_batch_start_at_skips_to_next_available_when_gap(tmp_path: Path) -> None:
     """Ensure that gaps in the sequence are dealt with correctly."""
     # Files exist for 1,2,3 then jump to 10,11,12 — no 4-9
     make_sequence(tmp_path, "data", "csv.gz", [1, 2, 3, 10, 11, 12])
@@ -301,7 +301,7 @@ def test_start_at_skips_to_next_available_when_gap(tmp_path: Path) -> None:
     assert cursor.get_batch() == []
 
 
-def test_sequential_calls_across_gap(tmp_path: Path) -> None:
+def test__get_batchsequential_calls_across_gap(tmp_path: Path) -> None:
     """Ensure that files are correctly retrieved across gaps in the sequence."""
     make_sequence(tmp_path, "data", "csv.gz", [1, 2, 3, 10, 11, 12])
     cursor = BatchCursor(tmp_path, batch_size=2)
@@ -318,7 +318,7 @@ def test_sequential_calls_across_gap(tmp_path: Path) -> None:
     assert cursor.start_at == 13  # noqa: PLR2004
 
 
-def test_sequential_calls_across_gap_with_end_at(tmp_path: Path) -> None:
+def test_get_batch_sequential_calls_across_gap_with_end_at(tmp_path: Path) -> None:
     """Ensure that files are correctly retrieved across gaps in the sequence when end_at is specified."""
     make_sequence(tmp_path, "data", "csv.gz", [1, 2, 3, 5, 8, 11, 15])
     cursor = BatchCursor(tmp_path, batch_size=2, end_at=10)
@@ -361,7 +361,7 @@ def mixed_dir(tmp_path: Path) -> Path:
 
 
 # File-name pattern filtering
-def test_ignores_invalid_filenames(mixed_dir: Path) -> None:
+def test_get_batch_ignores_invalid_filenames(mixed_dir: Path) -> None:
     """Ensure that filenames are matched correctly."""
     cursor = BatchCursor(mixed_dir, batch_size=20)
     generated_file_names = [f"data_{n:05}.txt" for n in range(1, 6)]
@@ -379,7 +379,7 @@ def test_ignores_invalid_filenames(mixed_dir: Path) -> None:
     assert cursor.get_batch() == [mixed_dir / fn for fn in file_names]
 
 
-def test_mixed_extensions_sorted_correctly(tmp_path: Path) -> None:
+def test_get_batch_mixed_extensions_sorted_correctly(tmp_path: Path) -> None:
     """Ensure that files with a mix of extensions are sorted numerially."""
     names = ["data_00001.csv", "data_00001.tar.gz", "data_00002.tar.gz", "data_00003.txt"]
     make_files(tmp_path, names)
@@ -388,7 +388,7 @@ def test_mixed_extensions_sorted_correctly(tmp_path: Path) -> None:
 
 
 # Dynamic / live-directory behaviour
-def test_picks_up_newly_added_files(tmp_path: Path) -> None:
+def test_get_batch_picks_up_newly_added_files(tmp_path: Path) -> None:
     """Ensure that adding files to a dir during batching picks up new files correctly."""
     # dir contains log_00001.txt -> log_00003.txt
     make_sequence(tmp_path, "log", "txt", range(1, 4))
@@ -401,7 +401,7 @@ def test_picks_up_newly_added_files(tmp_path: Path) -> None:
     assert cursor.get_batch() == [tmp_path / f"log_{n:05}.txt" for n in [1, 2, 3, 4]]
 
 
-def test_new_files_within_current_window_are_included(tmp_path: Path) -> None:
+def test_get_batch_new_files_within_current_window_are_included(tmp_path: Path) -> None:
     """Ensure that all new files within the current batching params are included, regardless of sequence position."""
     # dir contains log_00001.txt -> log_00005.txt
     make_sequence(tmp_path, "log", "txt", range(1, 6))
