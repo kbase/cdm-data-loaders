@@ -8,12 +8,10 @@ from cdm_data_loaders.pipelines.cts_defaults import (
     INPUT_MOUNT,
     VALID_DESTINATIONS,
     BatchedFileInputSettings,
-    CtsDefaultSettings,
 )
 
-
-# def make_simpler_settings(**kwargs: str | int) -> CtsDefaultSettings:
-#     return CtsDefaultSettings.model_validate(kwargs)
+START_AT_VALUE = 50
+START_AT_STRING = "50"
 
 
 def make_settings(**kwargs: str | int) -> BatchedFileInputSettings:
@@ -35,12 +33,12 @@ def test_settings_all_params_set() -> None:
     s = make_settings(
         input_dir="/dir/path",
         destination=VALID_DESTINATIONS[0],
-        start_at="50",
+        start_at=START_AT_STRING,
         output="/some/dir",
     )
     assert s.input_dir == "/dir/path"
     assert s.destination == VALID_DESTINATIONS[0]
-    assert s.start_at == 50
+    assert s.start_at == START_AT_VALUE
     assert s.output == "/some/dir"
 
 
@@ -79,14 +77,14 @@ def test_cli_all_variants(input_dir: str, destination: str, start_at: str, outpu
             destination,
             VALID_DESTINATIONS[0],
             start_at,
-            "50",
+            START_AT_STRING,
             output,
             "/some/dir",
         ]
     )
     assert s.input_dir == "/dir/path"
     assert s.destination == VALID_DESTINATIONS[0]
-    assert s.start_at == int("50")
+    assert s.start_at == START_AT_VALUE
     assert s.output == "/some/dir"
 
 
