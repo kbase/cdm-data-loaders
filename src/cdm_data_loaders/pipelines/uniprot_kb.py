@@ -46,8 +46,11 @@ def run_uniprot_pipeline(config: Settings) -> None:
     run_pipeline(
         config=config,
         resource=parse_uniprot(config),
-        pipeline_name="uniprot_kb",
-        dataset_name="uniprot_kb",
+        pipeline_kwargs={
+            "pipeline_name": "uniprot_kb",
+            "dataset_name": "uniprot_kb",
+        },
+        pipeline_run_kwargs={"table_format": "delta"},
     )
 
 

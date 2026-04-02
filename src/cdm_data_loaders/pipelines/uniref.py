@@ -82,8 +82,11 @@ def run_uniref_pipeline(config: Settings) -> None:
     run_pipeline(
         config=config,
         resource=parse_uniref(config),
-        pipeline_name=f"uniref_{config.uniref_variant}",
-        dataset_name="uniprot_kb",
+        pipeline_kwargs={
+            "pipeline_name": f"uniref_{config.uniref_variant}",
+            "dataset_name": "uniprot_kb",
+        },
+        pipeline_run_kwargs={"table_format": "delta"},
     )
 
 

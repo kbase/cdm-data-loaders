@@ -1,7 +1,7 @@
 """Tests for the UniProtDLT pipeline."""
 
 from collections.abc import Callable
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -120,6 +120,22 @@ def test_cli_passes_settings_class_to_run_cli() -> None:
     assert mock_run_cli.call_args[0] == (Settings, run_uniprot_pipeline)
 
 
+def test_cli_calls_run_uniprot_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure that cli() calls run_uniprot_pipeline with the config."""
+    mock_settings_instance = MagicMock(spec=Settings)
+    mock_settings_cls = MagicMock(return_value=mock_settings_instance)
+    mock_run_uniprot_pipeline = MagicMock()
+
+    monkeypatch.setattr(uniprot_module, "Settings", mock_settings_cls)
+    monkeypatch.setattr(uniprot_module, "run_uniprot_pipeline", mock_run_uniprot_pipeline)
+
+    cli()
+
+    mock_settings_cls.assert_called_once_with()
+    mock_run_uniprot_pipeline.assert_called_once_with(mock_settings_instance)
+
+
+# Tests for running the pipeline itself
 def test_run_uniprot_pipeline_args_set_correctly(config: Settings) -> None:
     """Ensure that the pipeline arguments are set correctly, and each pipeline has a different name."""
     with patch.object(uniprot_module, "run_pipeline") as mock_run_pipeline:
@@ -127,21 +143,48 @@ def test_run_uniprot_pipeline_args_set_correctly(config: Settings) -> None:
 
     assert mock_run_pipeline.call_count == 1
     _, kwargs = mock_run_pipeline.call_args
-    assert kwargs.keys() == {"config", "resource", "pipeline_name", "dataset_name"}
-    assert kwargs["pipeline_name"] == "uniprot_kb"
-    assert kwargs["dataset_name"] == "uniprot_kb"
+    assert kwargs.keys() == {"config", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
+    assert kwargs["pipeline_kwargs"] == {"pipeline_name": "uniprot_kb", "dataset_name": "uniprot_kb"}
+    assert kwargs["pipeline_run_kwargs"] == {"table_format": "delta"}
     assert kwargs["config"] == config
     assert isinstance(kwargs["resource"], Callable)
 
 
+def test_run_uniprot_pipeline_sets_core_run_pipeline_args_correctly(
+    config: Settings, mock_dlt: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ensure that run_uniprot_pipeline calls core.run_pipeline with the correct args."""
+    mock_parse_uniprot = MagicMock()
+    monkeypatch.setattr(uniprot_module, "parse_uniprot", mock_parse_uniprot)
+
+    run_uniprot_pipeline(config)
+
+    # parse_uniprot was called once with the config to produce the resource
+    mock_parse_uniprot.assert_called_once_with(config)
+
+    # the return value of parse_uniprot(config) is what gets passed to pipeline.run
+    expected_resource = mock_parse_uniprot.return_value
+
+    mock_dlt.destination.assert_called_once_with(config.destination)
+    mock_dlt.pipeline.assert_called_once_with(
+        destination=mock_dlt.destination.return_value,
+        pipeline_name="uniprot_kb",
+        dataset_name="uniprot_kb",
+    )
+    mock_dlt.pipeline.return_value.run.assert_called_once_with(
+        expected_resource,
+        table_format="delta",
+    )
+
+
 def test_parse_uniprot_resource(config: Settings) -> None:
     """Ensure that parse_uniprot calls stream_xml_file_resource with the namespaced UniProt XML tag."""
-    with patch.object(uniprot_module, "stream_xml_file_resource") as mock_resource:
-        mock_resource.return_value = iter([])
+    with patch.object(uniprot_module, "stream_xml_file_resource") as mock_stream:
+        mock_stream.return_value = iter([])
         list(parse_uniprot(config))
 
-    assert mock_resource.call_count == 1
-    kwargs = mock_resource.call_args.kwargs
+    assert mock_stream.call_count == 1
+    kwargs = mock_stream.call_args.kwargs
     assert kwargs.keys() == {"config", "xml_tag", "parse_fn", "log_interval"}
     assert kwargs["xml_tag"] == ENTRY_XML_TAG
     assert kwargs["log_interval"] == UNIPROT_LOG_INTERVAL

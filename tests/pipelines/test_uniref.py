@@ -1,7 +1,7 @@
 """Tests for the uniref DLT pipeline."""
 
 from collections.abc import Callable
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -18,10 +18,18 @@ from cdm_data_loaders.pipelines.uniref import UNIREF_LOG_INTERVAL, Settings, cli
 START_AT_VALUE = 25
 START_AT_STRING = "25"
 
+TEST_DEFAULT_UNIREF_VARIANT = "50"
+
 
 def make_settings_with_variant(variant: str = "UniRef90", **kwargs: str | int) -> Settings:
     """Return a validated Settings object with sensible defaults."""
     return Settings.model_validate({"input_dir": "/fake/input", "uniref_variant": variant, **kwargs})
+
+
+def make_settings(uniref_variant: str = TEST_DEFAULT_UNIREF_VARIANT, **kwargs: str | int) -> Settings:
+    """Generate a validated Settings object."""
+    data = {"uniref": uniref_variant, **kwargs}
+    return Settings.model_validate(data)
 
 
 @pytest.fixture(params=UNIREF_VARIANTS)
@@ -34,15 +42,6 @@ def variant(request: pytest.FixtureRequest) -> str:
 def config(variant: str) -> Settings:
     """A valid Settings object for each uniref variant."""
     return make_settings_with_variant(variant=variant)
-
-
-TEST_DEFAULT_UNIREF_VARIANT = "50"
-
-
-def make_settings(uniref_variant: str = TEST_DEFAULT_UNIREF_VARIANT, **kwargs: str | int) -> Settings:
-    """Generate a validated Settings object."""
-    data = {"uniref": uniref_variant, **kwargs}
-    return Settings.model_validate(data)
 
 
 def test_settings_defaults() -> None:
@@ -172,6 +171,22 @@ def test_cli_passes_settings_class_to_run_cli() -> None:
     assert mock_run_cli.call_args[0] == (Settings, run_uniref_pipeline)
 
 
+def test_cli_calls_run_uniref_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure that cli() calls run_uniref_pipeline with the config."""
+    mock_settings_instance = MagicMock(spec=Settings)
+    mock_settings_cls = MagicMock(return_value=mock_settings_instance)
+    mock_run_uniref_pipeline = MagicMock()
+
+    monkeypatch.setattr(uniref_module, "Settings", mock_settings_cls)
+    monkeypatch.setattr(uniref_module, "run_uniref_pipeline", mock_run_uniref_pipeline)
+
+    cli()
+
+    mock_settings_cls.assert_called_once_with()
+    mock_run_uniref_pipeline.assert_called_once_with(mock_settings_instance)
+
+
+# Tests for running the pipeline itself
 def test_run_uniref_pipeline_args_set_correctly(config: Settings) -> None:
     """Ensure that the pipeline arguments are set correctly, and each pipeline has a different name."""
     with patch.object(uniref_module, "run_pipeline") as mock_run_pipeline:
@@ -179,21 +194,51 @@ def test_run_uniref_pipeline_args_set_correctly(config: Settings) -> None:
 
     assert mock_run_pipeline.call_count == 1
     _, kwargs = mock_run_pipeline.call_args
-    assert kwargs.keys() == {"config", "resource", "pipeline_name", "dataset_name"}
-    assert kwargs["pipeline_name"] == f"uniref_{config.uniref_variant}"
-    assert kwargs["dataset_name"] == "uniprot_kb"
+    assert kwargs.keys() == {"config", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
+    assert kwargs["pipeline_kwargs"] == {
+        "pipeline_name": f"uniref_{config.uniref_variant}",
+        "dataset_name": "uniprot_kb",
+    }
+    assert kwargs["pipeline_run_kwargs"] == {"table_format": "delta"}
     assert kwargs["config"] == config
     assert isinstance(kwargs["resource"], Callable)
 
 
+def test_run_uniref_pipeline_sets_core_run_pipeline_args_correctly(
+    config: Settings, mock_dlt: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ensure that run_uniref_pipeline calls core.run_pipeline with the correct args."""
+    mock_parse_uniref = MagicMock()
+    monkeypatch.setattr(uniref_module, "parse_uniref", mock_parse_uniref)
+
+    run_uniref_pipeline(config)
+
+    # parse_uniref was called once with the config to produce the resource
+    mock_parse_uniref.assert_called_once_with(config)
+
+    # the return value of parse_uniref(config) is what gets passed to pipeline.run
+    expected_resource = mock_parse_uniref.return_value
+
+    mock_dlt.destination.assert_called_once_with(config.destination)
+    mock_dlt.pipeline.assert_called_once_with(
+        destination=mock_dlt.destination.return_value,
+        pipeline_name=f"uniref_{config.uniref_variant}",
+        dataset_name="uniprot_kb",
+    )
+    mock_dlt.pipeline.return_value.run.assert_called_once_with(
+        expected_resource,
+        table_format="delta",
+    )
+
+
 def test_parse_uniref_resource(config: Settings) -> None:
     """Ensure that parse_uniref calls stream_xml_file_resource with the namespaced UniRef XML tag."""
-    with patch.object(uniref_module, "stream_xml_file_resource") as mock_resource:
-        mock_resource.return_value = iter([])
+    with patch.object(uniref_module, "stream_xml_file_resource") as mock_stream:
+        mock_stream.return_value = iter([])
         list(parse_uniref(config))
 
-    assert mock_resource.call_count == 1
-    kwargs = mock_resource.call_args.kwargs
+    assert mock_stream.call_count == 1
+    kwargs = mock_stream.call_args.kwargs
     assert kwargs.keys() == {"config", "xml_tag", "parse_fn", "log_interval"}
     assert kwargs["xml_tag"] == ENTRY_XML_TAG
     assert kwargs["log_interval"] == UNIREF_LOG_INTERVAL

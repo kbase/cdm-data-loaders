@@ -38,8 +38,9 @@ def run_cli(settings_cls: type[BaseSettings], pipeline_fn: Callable[[Any], None]
 def run_pipeline(
     config: CtsDefaultSettings,
     resource: Any,  # noqa: ANN401
-    pipeline_name: str,
-    dataset_name: str,
+    destination_kwargs: dict[str, Any] | None = None,
+    pipeline_kwargs: dict[str, Any] | None = None,
+    pipeline_run_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Execute a dlt pipeline.
 
@@ -47,20 +48,19 @@ def run_pipeline(
     :type config: BatchedFileInputSettings
     :param resource: dlt resource to run
     :type resource: Any
-    :param pipeline_name: name for the dlt pipeline
-    :type pipeline_name: str
-    :param dataset_name: dataset name for the destination
-    :type dataset_name: str
+    :param destination_kwargs: keyword arguments for the dlt destination
+    :type destination_kwargs: dict[str, Any] | None
+    :param pipeline_kwargs: keyword arguments for the dlt pipeline
+    :type pipeline_kwargs: dict[str, Any] | None
+    :param pipeline_run_kwargs: keyword arguments for the dlt pipeline run
+    :type pipeline_run_kwargs: dict[str, Any] | None
     """
     if config.output:
         dlt.config[f"destination.{config.destination}.bucket_url"] = config.output
 
-    pipeline = dlt.pipeline(
-        destination=dlt.destination(config.destination, max_table_nesting=0),
-        pipeline_name=pipeline_name,
-        dataset_name=dataset_name,
-    )
-    load_info = pipeline.run(resource, table_format="delta")
+    destination = dlt.destination(config.destination, **(destination_kwargs or {}))
+    pipeline = dlt.pipeline(destination=destination, **(pipeline_kwargs or {}))
+    load_info = pipeline.run(resource, **(pipeline_run_kwargs or {}))
     logger.info(load_info)
     logger.info("Work complete!")
 
