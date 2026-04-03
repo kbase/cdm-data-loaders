@@ -57,6 +57,8 @@ ID_WITH_500_ANNOTS = "GCF_000007725.1"
 VALID_IDS = [ID_WITH_500_ANNOTS, ID_WITH_2K_ANNOTS]
 INVALID_ID = "invalid_id"
 ALL_IDS = [*VALID_IDS, INVALID_ID]
+BATCH_SIZE = 500
+BATCH_SIZE_STRING = "500"
 
 
 @pytest.fixture(scope="module")
@@ -104,6 +106,7 @@ def test_settings_defaults() -> None:
     # FIXME: should be dlt.config["destination.local_fs.bucket_url"]
     assert s.output == OUTPUT_MOUNT
     assert s.use_output_dir_for_pipeline_metadata is False
+    assert s.batch_size == ncbi_module.MAX_RESULTS_PER_PAGE
 
 
 def test_settings_all_params_set() -> None:
@@ -114,6 +117,7 @@ def test_settings_all_params_set() -> None:
         input_dir="/dir/path",
         output="/some/dir",
         use_output_dir_for_pipeline_metadata=True,
+        batch_size=BATCH_SIZE,
     )
     assert s.destination == VALID_DESTINATIONS[0]
     assert s.dev_mode is True
@@ -121,6 +125,7 @@ def test_settings_all_params_set() -> None:
     assert s.pipeline_dir == Path("/some") / "dir" / ".dlt_conf"
     assert s.output == "/some/dir"
     assert s.use_output_dir_for_pipeline_metadata is True
+    assert s.batch_size == BATCH_SIZE
 
 
 @pytest.mark.parametrize("destination", VALID_DESTINATIONS)
@@ -142,8 +147,14 @@ def test_invalid_destination_raises(bad: str) -> None:
 @pytest.mark.parametrize("use_output_dir_for_pipeline_metadata", ["-p", "--pipeline-dir", "--pipeline_dir"])
 @pytest.mark.parametrize("output", ["-o", "--output"])
 @pytest.mark.parametrize("dev_mode_flag", ["--dev", "--dev-mode", "--dev_mode"])
+@pytest.mark.parametrize("batch_size", ["-b", "--batch-size", "--batch_size"])
 def test_cli_all_variants(
-    input_dir: str, destination: str, use_output_dir_for_pipeline_metadata: str, output: str, dev_mode_flag: str
+    input_dir: str,
+    destination: str,
+    use_output_dir_for_pipeline_metadata: str,
+    output: str,
+    dev_mode_flag: str,
+    batch_size: str,
 ) -> None:
     """Test all the variants of the Settings fields."""
     s = CliApp.run(
@@ -159,6 +170,8 @@ def test_cli_all_variants(
             "True",
             dev_mode_flag,
             "True",
+            batch_size,
+            BATCH_SIZE_STRING,
         ],
     )
     assert s.destination == VALID_DESTINATIONS[0]
@@ -167,6 +180,7 @@ def test_cli_all_variants(
     assert s.pipeline_dir == Path("/some") / "dir" / ".dlt_conf"
     assert s.output == "/some/dir"
     assert s.use_output_dir_for_pipeline_metadata is True
+    assert s.batch_size == BATCH_SIZE
 
 
 @pytest.mark.parametrize("bad", ["s3", "gcs", "filesystem", "", "LocalFs"])
@@ -174,6 +188,22 @@ def test_cli_invalid_destination_via_cli_raises(bad: str) -> None:
     """Ensure that an invalid destination passed via CLI raises an error."""
     with pytest.raises(ValidationError, match="Value error, destination must be one of"):
         CliApp.run(Settings, cli_args=["--destination", bad])
+
+
+@pytest.mark.parametrize(
+    ("bad_batch_size", "message"),
+    [
+        ("0", "Input should be greater than or equal to 1"),
+        ("-1", "Input should be greater than or equal to 1"),
+        ("1001", "Input should be less than or equal to 1000"),
+        ("notanint", "Input should be a valid integer"),
+        ("", "Input should be a valid integer"),
+    ],
+)
+def test_cli_invalid_batch_size_via_cli_raises(bad_batch_size: str, message: str) -> None:
+    """Ensure that an invalid batch size passed via CLI raises an error."""
+    with pytest.raises(ValidationError, match=message):
+        CliApp.run(Settings, cli_args=["--batch-size", bad_batch_size])
 
 
 @pytest.mark.parametrize(

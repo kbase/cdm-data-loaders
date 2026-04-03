@@ -35,8 +35,6 @@ NCBI_API_KEY = os.environ.get("NCBI_API_KEY") or "DEMO_KEY"
 
 # Max number of items to request per page from the NCBI REST API (max allowed is 1000).
 MAX_RESULTS_PER_PAGE = 1000
-# how many IDs to pull in from the input file at once to send to the API.
-BATCH_SIZE = MAX_RESULTS_PER_PAGE
 
 DATASET = "dataset"
 ANNOTATION = "annotation"
@@ -54,6 +52,14 @@ class Settings(BatchedFileInputSettings):
         cli_prog_name="ncbi_rest_api",
         cli_exit_on_error=False,
         cli_ignore_unknown_args=True,
+    )
+
+    batch_size: int = Field(
+        default=MAX_RESULTS_PER_PAGE,
+        description="Number of IDs to send in each request to the NCBI REST API.",
+        validation_alias=AliasChoices("b", "batch-size", "batch_size"),
+        ge=1,
+        le=MAX_RESULTS_PER_PAGE,
     )
 
     pipeline_dir: CliSuppress[Path | None] = Field(
@@ -205,7 +211,7 @@ def assembly_list(config: Settings) -> Generator[list[str], Any, Any]:
     while files := batcher.get_batch():
         for file_path in files:
             with file_path.open() as f:
-                while next_chunk := list(islice(f, BATCH_SIZE)):
+                while next_chunk := list(islice(f, config.batch_size)):
                     yield [line.strip() for line in next_chunk if line.strip()]
 
 
