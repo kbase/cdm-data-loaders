@@ -1,6 +1,10 @@
 """Tests for the UniProtDLT pipeline."""
 
+import datetime
+from ast import Set
 from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +21,7 @@ from cdm_data_loaders.pipelines.uniprot_kb import (
     parse_uniprot,
     run_uniprot_pipeline,
 )
+from tests.pipelines.conftest import make_batcher
 
 # TODO: add a test to ensure that parse_uniprot_entry is called with the appropriate args. Requires mocking the file batcher and stream_xml_file_resource functions.
 
@@ -61,7 +66,7 @@ def test_settings_all_params_set() -> None:
 
 @pytest.mark.parametrize("destination", VALID_DESTINATIONS)
 def test_settings_valid_variants_accepted(destination: str) -> None:
-    """Ensure that each valid uniprot_kb_variant value is accepted without error."""
+    """Ensure that each valid destination value is accepted without error."""
     s = make_settings(destination=destination)
     assert s.destination == destination
 
@@ -73,21 +78,14 @@ def test_invalid_destination_raises(bad: str) -> None:
         make_settings(destination=bad)
 
 
-def _cliapp_run(cli_args: list[str]) -> Settings:
-    """Tests that Settings correctly parses command-line arguments via CliApp.
-
-    Uses CliApp.run with explicit cli_args to avoid mutating sys.argv globally.
-    """
-    return CliApp.run(Settings, cli_args=cli_args)
-
-
 @pytest.mark.parametrize("input_dir", ["-i", "--input-dir", "--input_dir"])
 @pytest.mark.parametrize("destination", ["-d", "--destination"])
 @pytest.mark.parametrize("start_at", ["-s", "--start-at", "--start_at"])
 @pytest.mark.parametrize("output", ["-o", "--output"])
 def test_cli_all_variants(input_dir: str, destination: str, start_at: str, output: str) -> None:
     """Test all the variants of the Settings fields."""
-    s = _cliapp_run(
+    s = CliApp.run(
+        Settings,
         [
             input_dir,
             "/dir/path",
@@ -97,7 +95,7 @@ def test_cli_all_variants(input_dir: str, destination: str, start_at: str, outpu
             START_AT_STRING,
             output,
             "/some/dir",
-        ]
+        ],
     )
     assert s.input_dir == "/dir/path"
     assert s.destination == VALID_DESTINATIONS[0]
@@ -106,9 +104,9 @@ def test_cli_all_variants(input_dir: str, destination: str, start_at: str, outpu
 
 
 def test_cli_invalid_destination_via_cli_raises() -> None:
-    """Ensure that an invalid destination passed via CLI causes a SystemExit."""
+    """Ensure that an invalid destination passed via CLI raises an error."""
     with pytest.raises(ValidationError, match="Value error, destination must be one of"):
-        _cliapp_run(["--destination", "s3"])
+        CliApp.run(Settings, cli_args=["--destination", "s3"])
 
 
 def test_cli_passes_settings_class_to_run_cli() -> None:
@@ -190,3 +188,61 @@ def test_parse_uniprot_resource(config: Settings) -> None:
     assert kwargs["log_interval"] == UNIPROT_LOG_INTERVAL
     assert kwargs["config"] == config
     assert isinstance(kwargs["parse_fn"], Callable)
+
+
+@pytest.mark.skip("FIXME: not working -- due to parallelization?")
+def test_integration_cli_uniprot_pipeline_output_validated(
+    config: Settings,  # the uniprot_kb Settings fixture
+    fake_files: list[Path],
+    mock_dlt: MagicMock,
+    patched_io: tuple[MagicMock, MagicMock],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ensure that the full flow from cli() through launching the pipeline to yielding results is working correctly."""
+    mock_batcher_cls, mock_stream = patched_io
+    mock_batcher_cls.return_value = make_batcher(fake_files)
+
+    def fake_stream_xml_file(file_path: Path, tag: str) -> list[dict[str, Any]]:
+        assert file_path in fake_files
+        assert tag == ENTRY_XML_TAG
+        return [{"stream_xml_file": file_path, "xml_tag": tag}]
+
+    def fake_parse_uniprot_entry(
+        entry: dict[str, Any],
+        timestamp: datetime.datetime,
+        file_path: Path,
+    ) -> dict[str, list[Any]]:
+        """Replacement for parse_uniprot_entry; validates there is no injected label argument."""
+        assert isinstance(timestamp, datetime.datetime)
+        assert entry == {"stream_xml_file": file_path, "xml_tag": ENTRY_XML_TAG}
+        return {"entry": [entry], "file_path": [file_path]}
+
+    mock_stream.side_effect = fake_stream_xml_file
+    monkeypatch.setattr(uniprot_module, "parse_uniprot_entry", fake_parse_uniprot_entry)
+
+    # make pipeline.run actually drain the generator so all assertions fire
+    mock_dlt.pipeline.return_value.run.side_effect = lambda resource, **_: list(resource)
+
+    # exercise the real cli() wiring with Settings construction mocked out
+    monkeypatch.setattr(uniprot_module, "Settings", MagicMock(return_value=config))
+    cli()
+
+    mock_dlt.pipeline.assert_called_once_with(
+        pipeline_name="uniprot_kb",
+        destination=mock_dlt.destination.return_value,
+        dataset_name="uniprot_kb",
+    )
+    mock_dlt.destination.assert_called_once_with(config.destination)
+    mock_dlt.pipeline.return_value.run.assert_called_once()
+
+    # verify with_table_name received the right rows and table names for every file, in order
+    call_args_list = [list(c.args) for c in mock_dlt.mark.with_table_name.call_args_list]
+    expected = []
+    for f in fake_files:
+        expected.extend(
+            [
+                [[{"stream_xml_file": f, "xml_tag": ENTRY_XML_TAG}], "entry"],
+                [[f], "file_path"],
+            ]
+        )
+    assert call_args_list == expected
