@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-idmapping = "cdm_data_loaders.parsers.uniprot.idmapping:cli"
+# idmapping = "cdm_data_loaders.parsers.uniprot.idmapping:cli"
 uniprot = "cdm_data_loaders.pipelines.uniprot_kb:cli"
 uniref = "cdm_data_loaders.pipelines.uniref:cli"
 ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"

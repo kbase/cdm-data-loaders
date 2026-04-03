@@ -11,4 +11,4 @@ uv venv --system-site-packages
 source $(SCRIPT_DIR)/.venv/bin/activate
 
 # run the tests using the active venv and with the dev dependencies installed.
-uv run --active --frozen --group dev pytest --cov=src --cov-report=xml
+uv run --active --frozen --group dev pytest --cov=src --cov-report=xml --junitxml=junit.xml -o junit_family=legacy
