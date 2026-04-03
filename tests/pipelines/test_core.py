@@ -1,11 +1,9 @@
 """Tests for the shared core DLT pipeline functions."""
 
 import datetime
-from collections.abc import Generator
-from itertools import batched
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import MagicMock, call
 
 import pytest
 from pydantic import ValidationError
@@ -17,6 +15,7 @@ from cdm_data_loaders.pipelines.cts_defaults import (
     DEFAULT_BATCH_SIZE,
     BatchedFileInputSettings,
 )
+from tests.pipelines.conftest import make_batcher
 
 
 def make_settings(**kwargs: str | int) -> BatchedFileInputSettings:
@@ -50,51 +49,19 @@ def fake_files() -> list[Path]:
     return [Path(f"/fake/input/part_{n}.xml") for n in [1, 2, 3, 4, 5]]
 
 
-@pytest.fixture
-def mock_dlt(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    """Patch dlt in core, wiring pipeline.return_value to a fresh MagicMock."""
-    mock = MagicMock()
-    mock.pipeline.return_value = MagicMock()
-    monkeypatch.setattr(core, "dlt", mock)
-    return mock
-
-
-@pytest.fixture
-def patched_io() -> Generator[tuple[MagicMock | AsyncMock, MagicMock | AsyncMock], Any]:
-    """Patch BatchCursor and stream_xml_file in core, yielding (mock_batcher_cls, mock_stream)."""
-    with (
-        patch("cdm_data_loaders.pipelines.core.BatchCursor") as mock_batcher_cls,
-        patch("cdm_data_loaders.pipelines.core.stream_xml_file") as mock_stream,
-    ):
-        yield mock_batcher_cls, mock_stream
-
-
-def make_batcher(files: list[Path], batch_size: int = 5) -> MagicMock:
-    """Return a mock BatchCursor that yields ``files`` in batches then an empty list."""
-    batches = [list(b) for b in batched(files, batch_size, strict=False)]
-    mock_batcher = MagicMock()
-    mock_batcher.get_batch.side_effect = [*batches, []]
-    return mock_batcher
-
-
-def assert_pipeline_run_correctly(
+def assert_pipeline_run_correctly(  # noqa: PLR0913
     mock_dlt: MagicMock,
     fake_resource: MagicMock,
-    pipeline_name: str,
-    dataset_name: str,
     destination: str,
+    destination_kwargs: dict[str, Any],
+    pipeline_kwargs: dict[str, Any],
+    pipeline_run_kwargs: dict[str, Any],
 ) -> None:
     """Shared assertion block for run_pipeline tests."""
-    assert mock_dlt.destination.call_args_list == [call(destination, max_table_nesting=0)]
-    assert mock_dlt.pipeline.call_args_list == [
-        call(
-            pipeline_name=pipeline_name,
-            destination=mock_dlt.destination.return_value,
-            dataset_name=dataset_name,
-        )
-    ]
+    assert mock_dlt.destination.call_args_list == [call(destination, **destination_kwargs)]
+    assert mock_dlt.pipeline.call_args_list == [call(destination=mock_dlt.destination.return_value, **pipeline_kwargs)]
     mock_pipeline = mock_dlt.pipeline.return_value
-    assert mock_pipeline.run.call_args_list == [call(fake_resource, table_format="delta")]
+    assert mock_pipeline.run.call_args_list == [call(fake_resource, **pipeline_run_kwargs)]
 
 
 # run_cli tests
@@ -131,28 +98,38 @@ def test_run_cli_error(error: Exception) -> None:
 
 
 # run_pipeline tests
-def test_run_pipeline_no_output(default_config: BatchedFileInputSettings) -> None:
+def test_run_pipeline_no_output(default_config: BatchedFileInputSettings, mock_dlt: MagicMock) -> None:
     """Ensure pipeline.run is called with correct args and dlt.config is not touched."""
     fake_resource = MagicMock()
-    with patch("cdm_data_loaders.pipelines.core.dlt") as mock_dlt:
-        mock_dlt.pipeline.return_value = MagicMock()
-        run_pipeline(default_config, fake_resource, "pipeline_name", "dataset_name")
+
+    run_pipeline(default_config, fake_resource)
 
     mock_dlt.config.__setitem__.assert_not_called()
-    assert_pipeline_run_correctly(mock_dlt, fake_resource, "pipeline_name", "dataset_name", default_config.destination)
+    assert_pipeline_run_correctly(mock_dlt, fake_resource, default_config.destination, {}, {}, {})
 
 
-def test_run_pipeline_custom_output_sets_dlt_config() -> None:
+def test_run_pipeline_custom_output_sets_dlt_config(mock_dlt: MagicMock) -> None:
     """Ensure a non-empty output sets the correct dlt.config bucket_url key."""
     cfg = make_settings(output="/custom/output", destination="minio")
     fake_resource = MagicMock()
 
-    with patch("cdm_data_loaders.pipelines.core.dlt") as mock_dlt:
-        mock_dlt.pipeline.return_value = MagicMock()
-        run_pipeline(cfg, fake_resource, "some pipeline", "some dataset")
+    run_pipeline(
+        cfg,
+        fake_resource,
+        pipeline_kwargs={"pipeline_name": "some pipeline", "dataset_name": "some dataset"},
+        destination_kwargs={"max_table_nesting": 0},
+        pipeline_run_kwargs={"table_format": "delta"},
+    )
 
     mock_dlt.config.__setitem__.assert_called_once_with("destination.minio.bucket_url", "/custom/output")
-    assert_pipeline_run_correctly(mock_dlt, fake_resource, "some pipeline", "some dataset", "minio")
+    assert_pipeline_run_correctly(
+        mock_dlt,
+        fake_resource,
+        "minio",
+        {"max_table_nesting": 0},
+        {"pipeline_name": "some pipeline", "dataset_name": "some dataset"},
+        {"table_format": "delta"},
+    )
 
 
 # stream_xml_file_resource tests
@@ -182,23 +159,23 @@ def test_stream_xml_file_resource_empty_batch_yields_nothing(
 
 
 def test_stream_xml_file_resource_yields_items_for_each_table_in_parsed_entry(
-    default_config: BatchedFileInputSettings,
+    mock_dlt: MagicMock,
     patched_io: tuple[MagicMock, MagicMock],
+    default_config: BatchedFileInputSettings,
 ) -> None:
     """One item is yielded per table key returned by the parse function."""
-    mock_batcher_cls, mock_stream = patched_io
     fake_file = Path("/fake/input/part1.xml")
     fake_entry = MagicMock()
     parsed_entry = {
         "table_1": [{"id": "A"}, {"id": "B"}],
         "table_2": [{"some_field": "some_value"}],
     }
+    mock_batcher_cls, mock_stream = patched_io
     mock_batcher_cls.return_value = make_batcher([fake_file])
     mock_stream.return_value = [fake_entry]
 
-    with patch("cdm_data_loaders.pipelines.core.dlt") as mock_dlt:
-        mock_dlt.mark.with_table_name.return_value = object()
-        results = list(stream_xml_file_resource(default_config, "xml_tag", MagicMock(return_value=parsed_entry)))
+    mock_dlt.mark.with_table_name.return_value = object()
+    results = list(stream_xml_file_resource(default_config, "xml_tag", MagicMock(return_value=parsed_entry)))
 
     assert len(results) == len(parsed_entry)
     actual_calls = [list(c.args) for c in mock_dlt.mark.with_table_name.call_args_list]
@@ -207,21 +184,21 @@ def test_stream_xml_file_resource_yields_items_for_each_table_in_parsed_entry(
         assert [val, key] in actual_calls
 
 
+@pytest.mark.usefixtures("mock_dlt")
 def test_stream_xml_file_resource_parse_fn_correct_args(
-    default_config: BatchedFileInputSettings,
     patched_io: tuple[MagicMock, MagicMock],
+    default_config: BatchedFileInputSettings,
 ) -> None:
     """Ensure that parse_fn is called with (entry, timestamp, file_path) for every streamed XML entry."""
-    mock_batcher_cls, mock_stream = patched_io
     fake_file = Path("/fake/input/part1.xml")
     xml_tag = "whatever"
     mock_stream_return = ["one", "two", "three"]
-    mock_parse = MagicMock(return_value={})
+    mock_batcher_cls, mock_stream = patched_io
     mock_batcher_cls.return_value = make_batcher([fake_file])
     mock_stream.return_value = mock_stream_return
+    mock_parse = MagicMock(return_value={})
 
-    with patch("cdm_data_loaders.pipelines.core.dlt"):
-        list(stream_xml_file_resource(default_config, xml_tag, mock_parse))
+    list(stream_xml_file_resource(default_config, xml_tag, mock_parse))
 
     assert mock_parse.call_count == len(mock_stream_return)
     for i, c in enumerate(mock_parse.call_args_list):
@@ -230,12 +207,13 @@ def test_stream_xml_file_resource_parse_fn_correct_args(
         assert c.kwargs["file_path"] == fake_file
 
 
+@pytest.mark.usefixtures("mock_dlt")
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_stream_xml_file_resource_processes_all_files_across_batches(
+    patched_io: tuple[MagicMock, MagicMock],
     fake_files: list[Path],
     batch_size: int,
     default_config: BatchedFileInputSettings,
-    patched_io: tuple[MagicMock, MagicMock],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Ensure that stream_xml_file is called for every file regardless of batch size; file reads are logged."""
@@ -243,20 +221,24 @@ def test_stream_xml_file_resource_processes_all_files_across_batches(
     mock_batcher_cls.return_value = make_batcher(fake_files, batch_size)
     mock_stream.return_value = []
 
-    with patch("cdm_data_loaders.pipelines.core.dlt"):
-        list(stream_xml_file_resource(default_config, "some_tag", MagicMock()))
+    list(stream_xml_file_resource(default_config, "some_tag", MagicMock()))
 
     assert mock_stream.call_args_list == [call(f, "some_tag") for f in fake_files]
     assert caplog.messages == [f"Reading from {f!s}" for f in fake_files]
 
 
 def test_stream_xml_file_resource_multiple_batches_with_output(
+    mock_dlt: MagicMock,
+    patched_io: tuple[MagicMock, MagicMock],
     fake_files: list[Path],
     default_config: BatchedFileInputSettings,
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """End-to-end: generator processes all batches, parse output is passed to dlt.mark."""
+    mock_batcher_cls, _ = patched_io
+    mock_batcher_cls.return_value = make_batcher(fake_files, batch_size=2)
+    # with patch("cdm_data_loaders.pipelines.core.BatchCursor") as mock_batcher_cls:
     xml_tag = "some_tag"
     captured_output: dict[str, list[Any]] = {"entry": [], "file_path": []}
 
@@ -274,15 +256,9 @@ def test_stream_xml_file_resource_multiple_batches_with_output(
         captured_output[table].extend(rows)
 
     monkeypatch.setattr(core, "stream_xml_file", fake_stream_xml_file)
+    mock_dlt.mark.with_table_name.side_effect = store_table_output
 
-    with (
-        patch("cdm_data_loaders.pipelines.core.BatchCursor") as mock_batcher_cls,
-        patch("cdm_data_loaders.pipelines.core.dlt") as mock_dlt,
-    ):
-        mock_batcher_cls.return_value = make_batcher(fake_files, batch_size=2)
-        mock_dlt.mark.with_table_name.side_effect = store_table_output
-
-        output = list(stream_xml_file_resource(default_config, xml_tag, fake_parse))
+    output = list(stream_xml_file_resource(default_config, xml_tag, fake_parse))
 
     assert len(output) == len(fake_files) * 2
     assert caplog.messages == [f"Reading from {f!s}" for f in fake_files]
@@ -292,10 +268,10 @@ def test_stream_xml_file_resource_multiple_batches_with_output(
 
 # test stream_xml_file_resource + run_pipeline
 def test_integration_resource_and_pipeline_with_table_name_output_validated(
-    default_config: BatchedFileInputSettings,
-    fake_files: list[Path],
     mock_dlt: MagicMock,
     patched_io: tuple[MagicMock, MagicMock],
+    default_config: BatchedFileInputSettings,
+    fake_files: list[Path],
 ) -> None:
     """Run test_stream_xml_file_resource_multiple_batches_with_output within the run_pipeline method."""
     mock_batcher_cls, mock_stream = patched_io
@@ -319,7 +295,13 @@ def test_integration_resource_and_pipeline_with_table_name_output_validated(
     mock_dlt.pipeline.return_value.run.side_effect = lambda resource, **_: list(resource)
 
     resource = stream_xml_file_resource(default_config, "entry", fake_parse)
-    run_pipeline(default_config, resource, "test_pipeline", "test_dataset")
+    run_pipeline(
+        default_config,
+        resource,
+        destination_kwargs=None,
+        pipeline_kwargs={"pipeline_name": "test_pipeline_name", "dataset_name": "test_dataset_name"},
+        pipeline_run_kwargs={"table_format": "delta"},
+    )
 
     mock_dlt.pipeline.return_value.run.assert_called_once()
     assert mock_dlt.pipeline.return_value.run.call_args_list == [call(resource, table_format="delta")]
@@ -338,10 +320,10 @@ def test_integration_resource_and_pipeline_with_table_name_output_validated(
 
 # test run_cli + stream_xml_file_resource + run_pipeline
 def test_integration_cli_resource_and_pipeline_with_table_name_output_validated(
-    default_config: BatchedFileInputSettings,
-    fake_files: list[Path],
     mock_dlt: MagicMock,
     patched_io: tuple[MagicMock, MagicMock],
+    default_config: BatchedFileInputSettings,
+    fake_files: list[Path],
 ) -> None:
     """Run test_stream_xml_file_resource_multiple_batches_with_output within the run_pipeline method."""
     mock_batcher_cls, mock_stream = patched_io
@@ -367,7 +349,9 @@ def test_integration_cli_resource_and_pipeline_with_table_name_output_validated(
     def pipeline_fn(cfg: BatchedFileInputSettings) -> None:
         """Fake pipeline function."""
         resource = stream_xml_file_resource(cfg, xml_tag, fake_parse)
-        run_pipeline(cfg, resource, "test_pipeline_name", "test_dataset_name")
+        run_pipeline(
+            cfg, resource, pipeline_kwargs={"pipeline_name": "test_pipeline_name", "dataset_name": "test_dataset_name"}
+        )
 
     run_cli(MagicMock(return_value=default_config), pipeline_fn)  # type: ignore[reportArgumentType]
 
@@ -390,54 +374,52 @@ def test_integration_cli_resource_and_pipeline_with_table_name_output_validated(
     assert call_args_list == expected
 
 
+@pytest.mark.usefixtures("patched_io_empty_batcher")
 def test_integration_resource_and_pipeline_custom_output(
     mock_dlt: MagicMock,
-    patched_io: tuple[MagicMock, MagicMock],
 ) -> None:
     """Ensure that when output is set, dlt.config bucket_url is written and pipeline.run still executes."""
     cfg = make_settings(output="/custom/output", destination="minio")
-    mock_batcher_cls, _ = patched_io
-    mock_batcher_cls.return_value.get_batch.return_value = []
 
     resource = stream_xml_file_resource(cfg, "entry", MagicMock(return_value={}))
-    run_pipeline(cfg, resource, "p", "d")
+    run_pipeline(cfg, resource, pipeline_kwargs={"pipeline_name": "p", "dataset_name": "d"})
 
     mock_dlt.config.__setitem__.assert_called_once_with("destination.minio.bucket_url", "/custom/output")
     mock_dlt.pipeline.return_value.run.assert_called_once()
 
 
 def test_integration_empty_input_dir_pipeline_run_still_called(
-    default_config: BatchedFileInputSettings,
     mock_dlt: MagicMock,
-    patched_io: tuple[MagicMock, MagicMock],
+    patched_io_empty_batcher: tuple[MagicMock, MagicMock],
+    default_config: BatchedFileInputSettings,
 ) -> None:
     """Ensure that pipeline.run is called even when the resource generator yields nothing."""
-    mock_batcher_cls, mock_stream = patched_io
-    mock_batcher_cls.return_value.get_batch.return_value = []
+    _, mock_stream = patched_io_empty_batcher
 
     resource = stream_xml_file_resource(default_config, "entry", MagicMock(return_value={}))
-    run_pipeline(default_config, resource, "p", "d")
+    run_pipeline(default_config, resource, pipeline_kwargs={"pipeline_name": "p", "dataset_name": "d"})
 
     mock_stream.assert_not_called()
     mock_dlt.mark.with_table_name.assert_not_called()
     mock_dlt.pipeline.return_value.run.assert_called_once()
 
 
+@pytest.mark.usefixtures("patched_io_empty_batcher")
 def test_integration_full_pipeline_config_propagated(
-    config: BatchedFileInputSettings,
-    patched_io: tuple[MagicMock, MagicMock],
     mock_dlt: MagicMock,
+    config: BatchedFileInputSettings,
 ) -> None:
     """The exact config object from run_cli reaches stream_xml_file_resource unchanged."""
-    mock_batcher_cls, _ = patched_io
-    mock_batcher_cls.return_value.get_batch.return_value = []
-
     received: list[BatchedFileInputSettings] = []
 
     def pipeline_fn(inner_cfg: BatchedFileInputSettings) -> None:
         received.append(inner_cfg)
         resource = stream_xml_file_resource(inner_cfg, "entry", MagicMock(return_value={}))
-        run_pipeline(inner_cfg, resource, "p", "d")
+        run_pipeline(
+            inner_cfg,
+            resource,
+            pipeline_kwargs={"pipeline_name": "p", "dataset_name": "d"},
+        )
 
     run_cli(MagicMock(return_value=config), pipeline_fn)  # type: ignore[reportArgumentType]
 

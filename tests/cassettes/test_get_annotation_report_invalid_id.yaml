@@ -1,0 +1,54 @@
+interactions:
+- request:
+    body: null
+    headers:
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      User-Agent:
+      - dlt/1.22.2
+      accept:
+      - application/json
+    method: GET
+    uri: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/invalid_id/annotation_report?page_size=1000
+  response:
+    body:
+      string: '{}'
+    headers:
+      Access-Control-Expose-Headers:
+      - X-RateLimit-Limit,X-RateLimit-Remaining
+      Connection:
+      - Keep-Alive
+      Content-Security-Policy:
+      - upgrade-insecure-requests
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 26 Mar 2026 17:37:53 GMT
+      Grpc-Metadata-Via:
+      - h2 linkerd
+      Keep-Alive:
+      - timeout=4, max=40
+      Ncbi-Phid:
+      - 1D33FD47908478C5000051312EF9AD30.1.1
+      Server:
+      - Finatra
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      X-Datasets-Version:
+      - 18.22.0
+      X-RateLimit-Limit:
+      - '5'
+      X-RateLimit-Remaining:
+      - '4'
+      X-UA-Compatible:
+      - IE=Edge
+      X-XSS-Protection:
+      - 1; mode=block
+      content-length:
+      - '2'
+    status:
+      code: 200
+      message: OK
+version: 1
