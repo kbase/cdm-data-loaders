@@ -12,6 +12,7 @@ Repo for CDM input data loading and wrangling
   - [Loading genomes, contigs, and features](#loading-genomes-contigs-and-features)
   - [Running bbmap stats and checkm2 on genome or contigset files](#running-bbmap-stats-and-checkm2-on-genome-or-contigset-files)
   - [Changelog](#changelog)
+    - [v0.1.5](#v015)
     - [v0.1.4](#v014)
     - [v0.1.3](#v013)
     - [v0.1.2](#v012)
@@ -168,6 +169,11 @@ where `path/to/genome_paths_file.json` specifies the path to the genome paths fi
 
 
 ## Changelog
+
+### v0.1.5
+
+- Add batch size parameter to the NCBI REST API interface.
+
 
 ### v0.1.4
 
