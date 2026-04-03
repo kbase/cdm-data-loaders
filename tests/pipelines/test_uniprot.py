@@ -1,7 +1,6 @@
 """Tests for the UniProtDLT pipeline."""
 
 import datetime
-from ast import Set
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any

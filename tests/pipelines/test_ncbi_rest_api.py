@@ -1,12 +1,10 @@
 """Tests for the NCBI datasets API pipeline functions."""
 
 from pathlib import Path
-from re import M
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from dlt.extract.items import DataItemWithMeta
 from pydantic import ValidationError
 from pydantic_settings import CliApp
 
