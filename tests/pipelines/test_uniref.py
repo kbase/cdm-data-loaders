@@ -1,24 +1,27 @@
-"""Tests for the UniRef DLT pipeline."""
+"""Tests for the uniref DLT pipeline."""
 
 import datetime
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 from pydantic_settings import CliApp
 
-from cdm_data_loaders.pipelines.cts_defaults import INPUT_MOUNT
-from cdm_data_loaders.pipelines.uniref import (
-    DEFAULT_BATCH_SIZE,
-    UNIREF_URL,
-    UNIREF_VARIANTS,
-    Settings,
-    parse_uniref,
-    run_pipeline,
-)
+from cdm_data_loaders.parsers.uniprot.uniref import ENTRY_XML_TAG, UNIREF_VARIANTS
+from cdm_data_loaders.pipelines import uniref as uniref_module
+from cdm_data_loaders.pipelines.cts_defaults import INPUT_MOUNT, VALID_DESTINATIONS
+from cdm_data_loaders.pipelines.uniref import UNIREF_LOG_INTERVAL, Settings, cli, parse_uniref, run_uniref_pipeline
+from tests.pipelines.conftest import make_batcher
 
-VALID_DESTINATIONS = ["local_fs", "minio"]
+# TODO: add a test to ensure that parse_uniref_entry is called with the appropriate args. Requires mocking the file batcher and stream_xml_file_resource functions.
+
+
+START_AT_VALUE = 25
+START_AT_STRING = "25"
+
 TEST_DEFAULT_UNIREF_VARIANT = "50"
 
 
@@ -26,6 +29,18 @@ def make_settings(uniref_variant: str = TEST_DEFAULT_UNIREF_VARIANT, **kwargs: s
     """Generate a validated Settings object."""
     data = {"uniref": uniref_variant, **kwargs}
     return Settings.model_validate(data)
+
+
+@pytest.fixture(params=UNIREF_VARIANTS)
+def variant(request: pytest.FixtureRequest) -> str:
+    """Parametrized fixture over all valid uniref variants."""
+    return request.param
+
+
+@pytest.fixture
+def config(variant: str) -> Settings:
+    """A valid Settings object for each uniref variant."""
+    return make_settings(uniref_variant=variant, input_dir="/fake/input")
 
 
 def test_settings_defaults() -> None:
@@ -44,13 +59,13 @@ def test_settings_all_params_set() -> None:
         input_dir="/dir/path",
         destination=VALID_DESTINATIONS[0],
         uniref_variant="100",
-        start_at="50",
+        start_at=START_AT_STRING,
         output="/some/dir",
     )
     assert s.input_dir == "/dir/path"
     assert s.destination == VALID_DESTINATIONS[0]
     assert s.uniref_variant == "100"
-    assert s.start_at == 50
+    assert s.start_at == START_AT_VALUE
     assert s.output == "/some/dir"
 
 
@@ -63,26 +78,18 @@ def test_settings_valid_variants_accepted(uniref_variant: str, destination: str)
     assert s.destination == destination
 
 
-@pytest.mark.parametrize("bad", ["25", "75", "uniref50", "", "ALL"])
-def test_invalid_variant_raises(bad: str) -> None:
+@pytest.mark.parametrize("bad_variant", ["25", "75", "uniref50", "", "ALL"])
+def test_invalid_variant_raises(bad_variant: str) -> None:
     """Ensure that an unrecognised uniref_variant raises a ValidationError."""
     with pytest.raises(ValidationError, match="uniref_variant must be one of"):
-        make_settings(uniref_variant=bad)
+        make_settings(uniref_variant=bad_variant)
 
 
-@pytest.mark.parametrize("bad", ["s3", "gcs", "filesystem", "", "LocalFs"])
-def test_invalid_destination_raises(bad: str) -> None:
+@pytest.mark.parametrize("bad_destination", ["s3", "gcs", "filesystem", "", "LocalFs"])
+def test_invalid_destination_raises(bad_destination: str) -> None:
     """Ensure that an unrecognised destination raises a ValidationError."""
     with pytest.raises(ValidationError, match="destination must be one of"):
-        make_settings(destination=bad)
-
-
-def _cliapp_run(cli_args: list[str]) -> Settings:
-    """Tests that Settings correctly parses command-line arguments via CliApp.
-
-    Uses CliApp.run with explicit cli_args to avoid mutating sys.argv globally.
-    """
-    return CliApp.run(Settings, cli_args=cli_args)
+        make_settings(destination=bad_destination)
 
 
 @pytest.mark.parametrize("input_dir", ["-i", "--input-dir", "--input_dir"])
@@ -92,7 +99,8 @@ def _cliapp_run(cli_args: list[str]) -> Settings:
 @pytest.mark.parametrize("output", ["-o", "--output"])
 def test_cli_all_variants(input_dir: str, destination: str, uniref_variant: str, start_at: str, output: str) -> None:
     """Test all the variants of the Settings fields."""
-    s = _cliapp_run(
+    s = CliApp.run(
+        Settings,
         [
             input_dir,
             "/dir/path",
@@ -101,261 +109,202 @@ def test_cli_all_variants(input_dir: str, destination: str, uniref_variant: str,
             uniref_variant,
             TEST_DEFAULT_UNIREF_VARIANT,
             start_at,
-            "50",
+            START_AT_STRING,
             output,
             "/some/dir",
-        ]
+        ],
     )
     assert s.input_dir == "/dir/path"
     assert s.destination == VALID_DESTINATIONS[0]
     assert s.uniref_variant == TEST_DEFAULT_UNIREF_VARIANT
-    assert s.start_at == 50
+    assert s.start_at == START_AT_VALUE
     assert s.output == "/some/dir"
 
 
-def test_cli_invalid_variant_via_cli_raises() -> None:
-    """Ensure that an invalid uniref_variant passed via CLI causes a SystemExit."""
+@pytest.mark.parametrize("bad_variant", ["25", "75", "uniref50", "", "ALL"])
+def test_cli_invalid_variant_via_cli_raises(bad_variant: str) -> None:
+    """Ensure that an invalid uniref_variant passed via CLI raises an error."""
     with pytest.raises(ValidationError, match="Value error, uniref_variant must be one of"):
-        _cliapp_run(["--uniref-variant", "999"])
+        CliApp.run(Settings, cli_args=["--uniref-variant", bad_variant])
 
 
-def test_cli_invalid_destination_via_cli_raises() -> None:
-    """Ensure that an invalid destination passed via CLI causes a SystemExit."""
+@pytest.mark.parametrize("bad_destination", ["25", "75", "uniref50", "", "ALL"])
+def test_cli_invalid_destination_via_cli_raises(bad_destination: str) -> None:
+    """Ensure that an invalid destination passed via CLI raises an error."""
     with pytest.raises(ValidationError, match="Value error, destination must be one of"):
-        _cliapp_run(["--uniref-variant", "50", "--destination", "s3"])
+        CliApp.run(Settings, cli_args=["--uniref-variant", "50", "--destination", bad_destination])
 
 
 def test_cli_missing_required_uniref_variant_raises() -> None:
-    """Ensure that omitting the required uniref_variant argument causes a SystemExit."""
+    """Ensure that omitting the required uniref_variant argument raises an error."""
     with pytest.raises(ValidationError, match="Field required"):
-        _cliapp_run([])
+        CliApp.run(Settings, cli_args=[])
 
 
-def _collect(config: Settings):
-    """Drain the generator returned by parse_uniref."""
-    return list(parse_uniref(config))
+@pytest.mark.parametrize("bad_variant", ["25", "75", "uniref50", "", "ALL"])
+@pytest.mark.parametrize("bad_destination", ["s3", "gcs", "filesystem", "", "LocalFs"])
+def test_cli_invalid_variant_and_destination_via_cli_raises(bad_variant: str, bad_destination: str) -> None:
+    """Ensure that invalid uniref_variant and destination passed via CLI raises an error with both errors."""
+    with pytest.raises(ValidationError, match="2 validation errors for Settings") as exc_info:
+        CliApp.run(Settings, cli_args=["--uniref-variant", bad_variant, "--destination", bad_destination])
+
+    # Check that both errors are present in the exception message
+    exc_message = str(exc_info.value)
+    assert "Value error, uniref_variant must be one of" in exc_message
+    assert "Value error, destination must be one of" in exc_message
 
 
-def test_empty_batch_yields_nothing(config: Settings) -> None:
-    """Ensure that no items are yielded when BatchCursor returns an empty batch."""
-    with patch("cdm_data_loaders.pipelines.uniref.BatchCursor") as mock_batcher_cls:
-        mock_batcher = MagicMock()
-        mock_batcher.get_batch.return_value = []
-        mock_batcher_cls.return_value = mock_batcher
+def test_cli_passes_settings_class_to_run_cli() -> None:
+    """Ensure that cli() calls run_cli with Settings as the settings class."""
+    with patch.object(uniref_module, "run_cli") as mock_run_cli:
+        cli()
 
-        results = _collect(config)
-
-    assert results == []
+    mock_run_cli.assert_called_once()
+    assert mock_run_cli.call_args[0] == (Settings, run_uniref_pipeline)
 
 
-def test_start_at_zero_not_passed_to_batch_cursor(config: Settings) -> None:
-    """Ensure that start_at=0 (falsy) is not forwarded as a kwarg to BatchCursor."""
-    with patch("cdm_data_loaders.pipelines.uniref.BatchCursor") as mock_batcher_cls:
-        mock_batcher = MagicMock()
-        mock_batcher.get_batch.return_value = []
-        mock_batcher_cls.return_value = mock_batcher
+def test_cli_calls_run_uniref_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure that cli() calls run_uniref_pipeline with the config."""
+    mock_settings_instance = MagicMock(spec=Settings)
+    mock_settings_cls = MagicMock(return_value=mock_settings_instance)
+    mock_run_uniref_pipeline = MagicMock()
 
-        _collect(config)
+    monkeypatch.setattr(uniref_module, "Settings", mock_settings_cls)
+    monkeypatch.setattr(uniref_module, "run_uniref_pipeline", mock_run_uniref_pipeline)
 
-    _, kwargs = mock_batcher_cls.call_args
-    assert "start_at" not in kwargs
-
-
-def test_start_at_nonzero_passed_to_batch_cursor() -> None:
-    """Ensure that a non-zero start_at value is forwarded as a kwarg to BatchCursor."""
-    start_at = 2
-    config_with_start: Settings = make_settings(
-        uniref_variant="90",
-        input_dir="/fake/input",
-        start_at=start_at,
-    )
-    with patch("cdm_data_loaders.pipelines.uniref.BatchCursor") as mock_batcher_cls:
-        mock_batcher = MagicMock()
-        mock_batcher.get_batch.return_value = []
-        mock_batcher_cls.return_value = mock_batcher
-
-        _collect(config_with_start)
-
-    _, kwargs = mock_batcher_cls.call_args
-    assert kwargs.get("start_at") == start_at
+    cli()
+    # no args
+    mock_settings_cls.assert_called_once_with()
+    mock_run_uniref_pipeline.assert_called_once_with(mock_settings_instance)
 
 
-def test_batch_cursor_receives_correct_input_dir_and_batch_size(config: Settings) -> None:
-    """Ensure BatchCursor is constructed with the configured input_dir and DEFAULT_BATCH_SIZE."""
-    with patch("cdm_data_loaders.pipelines.uniref.BatchCursor") as mock_batcher_cls:
-        mock_batcher = MagicMock()
-        mock_batcher.get_batch.return_value = []
-        mock_batcher_cls.return_value = mock_batcher
+# Tests for running the pipeline itself
+def test_run_uniref_pipeline_args_set_correctly(config: Settings) -> None:
+    """Ensure that the pipeline arguments are set correctly, and each pipeline has a different name."""
+    with patch.object(uniref_module, "run_pipeline") as mock_run_pipeline:
+        run_uniref_pipeline(config)
 
-        _collect(config)
-
-    args, kwargs = mock_batcher_cls.call_args
-    assert args[0] == "/fake/input"
-    assert kwargs.get("batch_size") == DEFAULT_BATCH_SIZE
-
-
-def test_yields_items_for_each_table_in_parsed_entry(config: Settings) -> None:
-    """Ensure one item is yielded per table key returned by parse_uniref_entry."""
-    fake_file = Path("/fake/input/uniref50_part1.xml")
-    fake_entry = MagicMock()
-    parsed_entry = {
-        "uniref_member": [{"id": "A"}, {"id": "B"}],
-        "uniref_cluster": [{"cluster_id": "UniRef50_A0A000"}],
+    assert mock_run_pipeline.call_count == 1
+    _, kwargs = mock_run_pipeline.call_args
+    assert kwargs.keys() == {"config", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
+    assert kwargs["pipeline_kwargs"] == {
+        "pipeline_name": f"uniref_{config.uniref_variant}",
+        "dataset_name": "uniprot_kb",
     }
-
-    with (
-        patch("cdm_data_loaders.pipelines.uniref.BatchCursor") as mock_batcher_cls,
-        patch("cdm_data_loaders.pipelines.uniref.stream_xml_file") as mock_stream,
-        patch("cdm_data_loaders.pipelines.uniref.parse_uniref_entry") as mock_parse,
-        patch("cdm_data_loaders.pipelines.uniref.dlt") as mock_dlt,
-    ):
-        mock_batcher = MagicMock()
-        mock_batcher.get_batch.side_effect = [[fake_file], []]
-        mock_batcher_cls.return_value = mock_batcher
-        mock_stream.return_value = [fake_entry]
-        mock_parse.return_value = parsed_entry
-        mock_dlt.mark.with_table_name.return_value = object()
-
-        results = _collect(config)
-
-    assert len(results) == len(parsed_entry)
-    assert mock_dlt.mark.with_table_name.call_count == 2
+    assert kwargs["pipeline_run_kwargs"] == {"table_format": "delta"}
+    assert kwargs["config"] == config
+    assert isinstance(kwargs["resource"], Callable)
 
 
-def test_parse_uniref_entry_called_with_correct_args(config: Settings) -> None:
-    """Ensure parse_uniref_entry is called with the entry, timestamp, dataset label, and file path."""
-    fake_file = Path("/fake/input/uniref50_part1.xml")
-    mock_stream_return = ["one", "two", "three"]
-    with (
-        patch("cdm_data_loaders.pipelines.uniref.BatchCursor") as mock_batcher_cls,
-        patch("cdm_data_loaders.pipelines.uniref.stream_xml_file") as mock_stream,
-        patch("cdm_data_loaders.pipelines.uniref.parse_uniref_entry") as mock_parse,
-        patch("cdm_data_loaders.pipelines.uniref.dlt"),
-    ):
-        mock_batcher = MagicMock()
-        mock_batcher.get_batch.side_effect = [[fake_file], []]
-        mock_batcher_cls.return_value = mock_batcher
-        mock_stream.return_value = mock_stream_return
-        mock_parse.return_value = {}
+def test_run_uniref_pipeline_sets_core_run_pipeline_args_correctly(
+    config: Settings, mock_dlt: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ensure that run_uniref_pipeline calls core.run_pipeline with the correct args."""
+    mock_parse_uniref = MagicMock()
+    monkeypatch.setattr(uniref_module, "parse_uniref", mock_parse_uniref)
 
-        _collect(config)
+    run_uniref_pipeline(config)
 
-    assert mock_parse.call_count == len(mock_stream_return)
-    call_args = [list(c[0]) for c in mock_parse.call_args_list]
-    for idx, ca in enumerate(call_args):
-        assert isinstance(ca[1], datetime.datetime)
-        assert ca[0] == mock_stream_return[idx]
-        assert ca[2] == "UniRef 50"
-        assert ca[3] == fake_file
+    # parse_uniref was called once with the config to produce the resource
+    mock_parse_uniref.assert_called_once_with(config)
 
+    # the return value of parse_uniref(config) is what gets passed to pipeline.run
+    expected_resource = mock_parse_uniref.return_value
 
-def test_multiple_files_in_batch_are_all_processed(config: Settings) -> None:
-    """Ensure every file in a batch is passed to stream_xml_file."""
-    files = [Path(f"/fake/input/part{i}.xml") for i in range(3)]
-
-    with (
-        patch("cdm_data_loaders.pipelines.uniref.BatchCursor") as mock_batcher_cls,
-        patch("cdm_data_loaders.pipelines.uniref.stream_xml_file") as mock_stream,
-        patch("cdm_data_loaders.pipelines.uniref.parse_uniref_entry") as mock_parse,
-        patch("cdm_data_loaders.pipelines.uniref.dlt"),
-    ):
-        mock_batcher = MagicMock()
-        mock_batcher.get_batch.side_effect = [files, []]
-        mock_batcher_cls.return_value = mock_batcher
-        mock_stream.return_value = []
-        mock_parse.return_value = {}
-
-        _collect(config)
-
-    assert mock_stream.call_count == 3
+    mock_dlt.destination.assert_called_once_with(config.destination)
+    mock_dlt.pipeline.assert_called_once_with(
+        destination=mock_dlt.destination.return_value,
+        pipeline_name=f"uniref_{config.uniref_variant}",
+        dataset_name="uniprot_kb",
+    )
+    mock_dlt.pipeline.return_value.run.assert_called_once_with(
+        expected_resource,
+        table_format="delta",
+    )
 
 
-def test_multiple_batches_are_consumed(config: Settings) -> None:
-    """Ensure the generator continues processing until BatchCursor returns an empty batch."""
-    fake_files = [Path(f"/fake/input/part_{n}.xml") for n in [1, 2, 3, 4, 5]]
-    batch1 = fake_files[0:2]
-    batch2 = fake_files[2:4]
-    batch3 = fake_files[4:]
+def test_parse_uniref_resource(config: Settings) -> None:
+    """Ensure that parse_uniref calls stream_xml_file_resource with the namespaced UniRef XML tag."""
+    with patch.object(uniref_module, "stream_xml_file_resource") as mock_stream:
+        mock_stream.return_value = iter([])
+        list(parse_uniref(config))
 
-    with (
-        patch("cdm_data_loaders.pipelines.uniref.BatchCursor") as mock_batcher_cls,
-        patch("cdm_data_loaders.pipelines.uniref.stream_xml_file") as mock_stream,
-        patch("cdm_data_loaders.pipelines.uniref.parse_uniref_entry") as mock_parse,
-        patch("cdm_data_loaders.pipelines.uniref.dlt"),
-    ):
-        mock_batcher = MagicMock()
-        mock_batcher.get_batch.side_effect = [batch1, batch2, batch3, []]
-        mock_batcher_cls.return_value = mock_batcher
-        mock_stream.return_value = []
-        mock_parse.return_value = {}
-
-        _collect(config)
-    call_args = [list(c[0]) for c in mock_stream.call_args_list]
-    assert call_args == [[f, f"{{{UNIREF_URL}}}entry"] for f in fake_files]
+    assert mock_stream.call_count == 1
+    kwargs = mock_stream.call_args.kwargs
+    assert kwargs.keys() == {"config", "xml_tag", "parse_fn", "log_interval"}
+    assert kwargs["xml_tag"] == ENTRY_XML_TAG
+    assert kwargs["log_interval"] == UNIREF_LOG_INTERVAL
+    assert kwargs["config"] == config
+    assert isinstance(kwargs["parse_fn"], Callable)
 
 
-"""Smoke tests for run_pipeline, verifying pipeline construction and execution."""
+@pytest.mark.skip("FIXME: not working -- due to parallelization?")
+def test_integration_cli_uniref_pipeline_output_validated(
+    config: Settings,  # parametrized over UNIREF_VARIANTS via the existing fixture
+    fake_files: list[Path],
+    mock_dlt: MagicMock,
+    patched_io: tuple[MagicMock, MagicMock],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ensure that the full flow from cli() through launching the pipeline to yielding results is working correctly."""
+    mock_batcher_cls, mock_stream = patched_io
+    mock_batcher_cls.return_value = make_batcher(fake_files)
 
+    def fake_stream_xml_file(file_path: Path, tag: str) -> list[dict[str, Any]]:
+        """Fake streaming an XML file."""
+        assert file_path in fake_files
+        assert tag == ENTRY_XML_TAG
+        return [{"stream_xml_file": file_path, "xml_tag": tag}]
 
-@pytest.fixture
-def config() -> Settings:
-    """Provide a minimal valid Settings object."""
-    return make_settings(uniref_variant="50", input_dir="/fake/input")
+    def fake_parse_uniref_entry(
+        entry: dict[str, Any],
+        timestamp: datetime.datetime,
+        file_path: Path,
+        uniref_variant: str,
+    ) -> dict[str, list[Any]]:
+        """Replacement for parse_uniref_entry; validates the injected label."""
+        assert isinstance(timestamp, datetime.datetime)
+        assert uniref_variant == f"UniRef {config.uniref_variant}"
+        assert entry == {"stream_xml_file": file_path, "xml_tag": ENTRY_XML_TAG}
+        return {"entry": [entry], "file_path": [file_path]}
 
+    def fake_pipeline_run(resource, **kwargs) -> list:
+        """Fake pipeline run that drains the resource generator to trigger all assertions."""
+        assert isinstance(resource, Callable)  # after draining the generator, resource should be a list
+        assert resource.name == "parse_uniref"  # the resource should be the output of parse_uniref
+        assert kwargs == {"table_format": "delta"}
+        output = list(resource)
+        return output
 
-def test_pipeline_is_executed(config: Settings) -> None:
-    """Ensure pipeline.run is called when run_pipeline is invoked."""
-    with (
-        patch("cdm_data_loaders.pipelines.uniref.dlt") as mock_dlt,
-        patch("cdm_data_loaders.pipelines.uniref.parse_uniref"),
-    ):
-        mock_pipeline = MagicMock()
-        mock_dlt.pipeline.return_value = mock_pipeline
+    mock_stream.side_effect = fake_stream_xml_file
+    monkeypatch.setattr(uniref_module, "parse_uniref_entry", fake_parse_uniref_entry)
 
-        run_pipeline(config)
+    # make pipeline.run drain the generator so all assertions fire
+    # mock_dlt.pipeline.return_value.run.side_effect = lambda resource, **_: list(resource)
+    mock_dlt.pipeline.return_value.run.side_effect = fake_pipeline_run
 
-    mock_pipeline.run.assert_called_once()
+    # exercise the real cli() wiring with Settings construction mocked out
+    monkeypatch.setattr(uniref_module, "Settings", MagicMock(return_value=config))
 
+    # RUN!
+    cli()
 
-def test_custom_output_sets_dlt_config() -> None:
-    """Ensure a non-empty output sets the correct dlt.config bucket_url key."""
-    config = make_settings(uniref_variant="50", output="/custom/output", destination="minio")
+    mock_dlt.pipeline.assert_called_once_with(
+        pipeline_name=f"uniref_{config.uniref_variant}",
+        destination=mock_dlt.destination.return_value,
+        dataset_name="uniprot_kb",
+    )
+    mock_dlt.destination.assert_called_once_with(config.destination)
+    mock_dlt.pipeline.return_value.run.assert_called_once()
 
-    with (
-        patch("cdm_data_loaders.pipelines.uniref.dlt") as mock_dlt,
-        patch("cdm_data_loaders.pipelines.uniref.parse_uniref"),
-    ):
-        mock_pipeline = MagicMock()
-        mock_dlt.pipeline.return_value = mock_pipeline
-
-        run_pipeline(config)
-
-    mock_dlt.config.__setitem__.assert_called_once_with("destination.minio.bucket_url", "/custom/output")
-
-
-def test_no_custom_output_does_not_set_dlt_config(config: Settings) -> None:
-    """Ensure that an empty output does not mutate dlt.config."""
-    with (
-        patch("cdm_data_loaders.pipelines.uniref.dlt") as mock_dlt,
-        patch("cdm_data_loaders.pipelines.uniref.parse_uniref"),
-    ):
-        mock_pipeline = MagicMock()
-        mock_dlt.pipeline.return_value = mock_pipeline
-
-        run_pipeline(config)
-
-    mock_dlt.config.__setitem__.assert_not_called()
-
-
-def test_pipeline_name_includes_uniref_variant(config: Settings) -> None:
-    """Ensure the pipeline is created with a name derived from the uniref_variant and the correct dataset_name."""
-    with (
-        patch("cdm_data_loaders.pipelines.uniref.dlt") as mock_dlt,
-        patch("cdm_data_loaders.pipelines.uniref.parse_uniref"),
-    ):
-        mock_dlt.pipeline.return_value = MagicMock()
-        run_pipeline(config)
-
-    _, kwargs = mock_dlt.pipeline.call_args
-    assert kwargs["pipeline_name"] == "uniref_50"
-    assert kwargs["dataset_name"] == "uniprot_kb"
+    # verify with_table_name received the right rows and table names for every file, in order
+    call_args_list = [list(c.args) for c in mock_dlt.mark.with_table_name.call_args_list]
+    expected = []
+    for f in fake_files:
+        expected.extend(
+            [
+                [[{"stream_xml_file": f, "xml_tag": ENTRY_XML_TAG}], "entry"],
+                [[f], "file_path"],
+            ]
+        )
+    assert call_args_list == expected

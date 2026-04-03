@@ -21,7 +21,7 @@ from lxml.etree import Element, tounicode
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
 UNIREF_URL = "http://uniprot.org/uniref"
-UNIREF_URL_BRKT = f"{{{UNIREF_URL}}}"
+ENTRY_XML_TAG = f"{{{UNIREF_URL}}}entry"
 NS = "ns"
 UNIREF_NS = {NS: UNIREF_URL, "": UNIREF_URL}
 UNIREF = "UniRef"
@@ -126,7 +126,7 @@ def extract_cross_refs(
 
 
 def parse_uniref_entry(
-    entry: Element, timestamp: datetime.datetime, uniref_variant: str, file_path: str | Path
+    entry: Element, timestamp: datetime.datetime, file_path: str | Path, uniref_variant: str
 ) -> dict[str, list[dict[str, str]]]:
     """Parse a single UniRef <entry> element into CDM-friendly row tuples."""
     # Cluster basic info

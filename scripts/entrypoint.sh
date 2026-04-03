@@ -23,10 +23,10 @@ case "$cmd" in
     # Run the uniprot pipeline with any additional arguments
     exec /usr/bin/tini -- uv run --no-sync uniprot "$@"
     ;;
-  # ncbi_rest_api)
-  #   # Run the NCBI datasets API importer
-  #   exec /usr/bin/tini -- uv run --no-sync ncbi_rest_api "$@"
-  #   ;;
+  ncbi_rest_api)
+    # Run the NCBI datasets API importer
+    exec /usr/bin/tini -- uv run --no-sync ncbi_rest_api "$@"
+    ;;
   test)
     # run the tests
     exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark"

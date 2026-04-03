@@ -1,6 +1,6 @@
 [project]
 name = "cdm-data-loaders"
-version = "0.1.3"
+version = "0.1.4"
 description = "Data loaders and wranglers for the CDM."
 requires-python = ">= 3.13"
 readme = "README.md"
@@ -9,7 +9,7 @@ authors = [
 ]
 
 dependencies = [
-    "bioregistry>=0.13.20",
+    "bioregistry>=0.13.31",
     "boto3[crt]>=1.42.55",
     "click>=8.3.1",
     "defusedxml>=0.7.1",
@@ -18,11 +18,10 @@ dependencies = [
     "lxml>=6.0.2",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
-    "thefuzz>=0.22.1",
 ]
 
 [project.scripts]
-idmapping = "cdm_data_loaders.parsers.uniprot.idmapping:cli"
+# idmapping = "cdm_data_loaders.parsers.uniprot.idmapping:cli"
 uniprot = "cdm_data_loaders.pipelines.uniprot_kb:cli"
 uniref = "cdm_data_loaders.pipelines.uniref:cli"
 ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"
@@ -32,9 +31,10 @@ dev = [
     "berdl-notebook-utils",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
-    "pytest-cov>=7.0.0",
-    "pytest-env>=1.5.0",
-    "ruff>=0.15.0",
+    "pytest-cov>=7.1.0",
+    "pytest-env>=1.6.0",
+    "pytest-recording>=0.13.4",
+    "ruff>=0.15.4",
 ]
 models = [
     "genson>=1.3.0",
@@ -181,7 +181,7 @@ max-complexity = 15
 convention = "google"
 
 [build-system]
-requires = ["uv_build>=0.9.9,<0.11.0"]
+requires = ["uv_build>=0.9.9,<0.20.0"]
 build-backend = "uv_build"
 
 [tool.pytest]

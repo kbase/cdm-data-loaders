@@ -16,4 +16,12 @@ bucket_url = "/output_dir"
 
 [destination.minio]
 destination_type = "filesystem"
-bucket_url = "s3://cdm-lake/tenant-general-warehouse/kbase/datasets/uniprot/"
+bucket_url = "s3://cts/io/ialarmedalien/datasets/cts_output/bloooooop"
+
+[data_writer]
+# set buffer size for extract and normalize stages
+buffer_max_items = 100000
+# files will rotate after 100_000_000 items have been written
+file_max_items = 100000000
+# files will rotate when file size is greater than 1_000 MB
+file_max_bytes = 1000000000
