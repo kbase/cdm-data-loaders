@@ -114,14 +114,25 @@ def extract_records(study_id):
 
 
 def main():
-    spark = SparkSession.builder.appName("NMDC_Table3_Extraction").getOrCreate()
+    spark = SparkSession.builder.appName("NMDC_Table3_Extraction").config("spark.driver.memory", "4g").getOrCreate()
+
     logging.info(f"Starting Table 3 Extraction for {len(STUDIES)} studies")
 
     study_rdd = spark.sparkContext.parallelize(STUDIES, numSlices=2)
-    rows_rdd = study_rdd.flatMap(lambda sid: extract_records(sid))
+
+    def process_study(sid):
+        try:
+            logging.debug(f"Processing {sid}")
+            return extract_records(sid)
+        except Exception as e:
+            logging.error(f"Error processing {sid}: {e}")
+            return []
+
+    rows_rdd = study_rdd.flatMap(process_study)
 
     df = spark.createDataFrame(rows_rdd, schema=sample_data_schema)
-    df_final = df.dropDuplicates()
+
+    df_final = df.dropDuplicates().cache()
 
     logging.info("Calculating total entries:")
     total = df_final.count()
@@ -130,7 +141,6 @@ def main():
     # Debug
     df_final.show(10, truncate=True)
 
-    # Output
     df_final.write.mode("overwrite").parquet(OUTPUT_PATH)
     logging.info(f"Saved Table 3 to {OUTPUT_PATH}")
 
