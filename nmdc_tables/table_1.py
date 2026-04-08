@@ -1,12 +1,23 @@
-import requests
+"""NMDC Table 1 pipeline.
+
+Extracts study-person relationships from NMDC API
+and writes a normalized parquet table.
+"""
+
 import logging
 
+import requests
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType
 from pyspark.sql.functions import first
+from pyspark.sql.types import StructField, StructType, StringType
 
 
-spark = SparkSession.builder.appName("NMDC Study Pipeline").getOrCreate()
+# spark = SparkSession.builder.appName("NMDC Study Pipeline").getOrCreate()
+
+
+def get_spark():
+    return SparkSession.builder.appName("NMDC Study Pipeline").getOrCreate()
+
 
 BASE_URL = "https://api.microbiomedata.org"
 
@@ -31,6 +42,12 @@ logging.basicConfig(level=logging.INFO)
 
 ## helper functions to normalize role, person_id and email
 def normalize_role(role: str) -> str:
+    """
+    Normalize role string to a standardized format.
+
+    Converts role names to lowercase with underscores and maps
+    known roles using ROLE_MAP.
+    """
     if not role:
         return None
     role = role.strip()
@@ -38,28 +55,53 @@ def normalize_role(role: str) -> str:
 
 
 def normalize_person_id(person: dict) -> str:
+    """
+    Generate a normalized person identifier.
+
+    Uses ORCID if available, otherwise falls back to name.
+    """
     if not person:
         return None
 
     if person.get("orcid"):
         return f"orcid:{person['orcid']}"
-    elif person.get("name"):
+
+    if person.get("name"):
         return f"name:{person['name']}"
+
     return None
 
 
 def normalize_email(person: dict) -> str:
+    """
+    Normalize email address from person object.
+
+    Returns a lowercase, trimmed email string if present,
+    otherwise returns None.
+    """
     if not person:
         return None
+
     email = person.get("email")
     if email:
         return email.strip().lower()
+
     return None
 
 
 # Fetch API data for a single study
-def fetch_study(study_id):
+def fetch_study(study_id: str) -> dict | None:
+    """
+    Fetch study data from NMDC API.
+
+    Args:
+        study_id: NMDC study identifier.
+
+    Returns:
+        Parsed JSON response as a dictionary, or None if the request fails.
+    """
     url = f"{BASE_URL}/studies/{study_id}"
+
     try:
         res = requests.get(url, timeout=10)
         res.raise_for_status()
@@ -135,6 +177,8 @@ study_person_schema = StructType(
 
 def main():
     logging.info("starting NMDC Study Pipeline")
+
+    spark = get_spark()
 
     study_rdd = spark.sparkContext.parallelize(STUDIES)
 
