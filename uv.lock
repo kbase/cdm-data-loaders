@@ -448,7 +448,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "tqdm", marker = "extra == 's3'", specifier = ">=4.67.3" },
 ]
-provides-extras = ["s3", "biopython"]
+provides-extras = ["s3"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -54,8 +54,6 @@ s3 = [
     "tqdm>=4.67.3",
 ]
 
-biopython = []
-
 [tool.ruff]
 line-length = 120
 target-version = "py313"
@@ -193,7 +191,7 @@ log_cli = true
 log_cli_level = "INFO"
 log_level = "INFO"
 addopts = ["-v"]
-markers = ["requires_spark: must be run in an environment where spark is available", "slow_test: does what it says on the tin"]
+markers = ["requires_spark: must be run in an environment where spark is available", "s3: tests that mock s3 interactions", "slow_test: does what it says on the tin"]
 
 # environment settings for running tests
 [tool.pytest_env]
@@ -210,6 +208,11 @@ BERDL_HIVE_METASTORE_URI = "thrift://localhost:9083"
 SPARK_CLUSTER_MANAGER_API_URL = "http://localhost:8000"
 GOVERNANCE_API_URL = "http://localhost:8000"
 DATALAKE_MCP_SERVER_URL = "http://localhost:8080"
+AWS_ACCESS_KEY_ID = "whatever"
+AWS_SECRET_ACCESS_KEY = "whatever"
+AWS_SECURITY_TOKEN = "whatever"
+AWS_SESSION_TOKEN = "whatever"
+AWS_DEFAULT_REGION = "us-east-1"
 
 [tool.uv.sources]
 cdm-schema = { git = "https://github.com/kbase/cdm-schema.git" }

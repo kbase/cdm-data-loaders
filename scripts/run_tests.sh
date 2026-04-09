@@ -10,5 +10,8 @@ cd "$SCRIPT_DIR"
 uv venv --system-site-packages
 # source $(SCRIPT_DIR)/.venv/bin/activate
 
+# make some fake aws credentials
+mkdir ~/.aws && touch ~/.aws/credentials && echo -e "[default]\naws_access_key_id = test\naws_secret_access_key = test" > ~/.aws/credentials
+
 # run the tests using the active venv and with the dev dependencies installed.
 uv run --active --frozen --group dev pytest --cov=src --cov-report=xml
