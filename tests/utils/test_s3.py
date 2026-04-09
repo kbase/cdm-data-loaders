@@ -320,8 +320,6 @@ def test_list_matching_objects_returns_more_than_1000_entries(
     # this adds two extra dirs to CDM_LAKE_BUCKET with 1005 files in each
     populate_mock_s3(mock_s3_client, LOTS_OF_FILES)
 
-    all_cdm_lake_files = [*FILES_IN_BUCKETS[CDM_LAKE_BUCKET], *LOTS_OF_FILES[CDM_LAKE_BUCKET]]
-
     contents = list_matching_objects(f"{CDM_LAKE_BUCKET}/{dir_path}")
     keys = {obj["Key"] for obj in contents}
     assert keys == set(EXPECTED_FILE_LIST[dir_path])
