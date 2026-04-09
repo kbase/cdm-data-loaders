@@ -15,6 +15,7 @@ dependencies = [
     "defusedxml>=0.7.1",
     "delta-spark>=4.1.0",
     "dlt[deltalake,duckdb,filesystem,parquet]>=1.22.2",
+    "frictionless[aws]>=5.18.1",
     "lxml>=6.0.2",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
@@ -29,6 +30,7 @@ ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"
 [dependency-groups]
 dev = [
     "berdl-notebook-utils",
+    "moto[s3]>=5.1.22",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.1.0",
@@ -46,8 +48,8 @@ xml = [
 ]
 
 [project.optional-dependencies]
-# for minio interactions -- see utils/minio.py for more details
-minio = [
+# for s3 interactions -- see utils/s3.py for more details
+s3 = [
     "boto3[crt]>=1.42.0",
     "tqdm>=4.67.3",
 ]
@@ -170,7 +172,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = ["T201"] # ignore printing in notebooks
-"tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002"]  # use of assert
+"tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002"]  # use of assert, booleans
+"tests/utils/test_s3.py" = ["ANN401"]
 "**/__init__.py" = ["D104"]
 
 [tool.ruff.lint.mccabe]

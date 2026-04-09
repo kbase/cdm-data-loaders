@@ -70,7 +70,7 @@ def test_settings_valid_variants_accepted(destination: str) -> None:
     assert s.destination == destination
 
 
-@pytest.mark.parametrize("bad", ["s3", "gcs", "filesystem", "", "LocalFs"])
+@pytest.mark.parametrize("bad", ["gcs", "filesystem", "", "LocalFs"])
 def test_invalid_destination_raises(bad: str) -> None:
     """Ensure that an unrecognised destination raises a ValidationError."""
     with pytest.raises(ValidationError, match="destination must be one of"):

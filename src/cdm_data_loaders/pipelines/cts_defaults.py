@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 INPUT_MOUNT = "/input_dir"
 OUTPUT_MOUNT = "/output_dir"
 
-VALID_DESTINATIONS = ["local_fs", "minio"]
+VALID_DESTINATIONS = ["local_fs", "s3"]
 DEFAULT_BATCH_SIZE = 50
 
 
