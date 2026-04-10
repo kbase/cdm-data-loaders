@@ -6,6 +6,16 @@ http_show_error_body = "true"
 log_level = "INFO"
 log_format = "JSON"
 
+# REST Client retries
+# default: 60
+request_timeout = 60
+# default: 5
+request_max_attempts = 2
+# default: 1
+request_backoff_factor = 1.5
+# default: 300
+request_max_retry_delay = 600
+
 # do not raise an error if a job fails
 load.raise_on_failed_jobs = "false"
 

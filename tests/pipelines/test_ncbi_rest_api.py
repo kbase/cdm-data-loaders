@@ -2,11 +2,13 @@
 
 from pathlib import Path
 from typing import Any
+from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 from pydantic_settings import CliApp
+from requests import HTTPError
 
 from cdm_data_loaders.pipelines import ncbi_rest_api as ncbi_module
 from cdm_data_loaders.pipelines.cts_defaults import INPUT_MOUNT, OUTPUT_MOUNT, VALID_DESTINATIONS
@@ -14,6 +16,7 @@ from cdm_data_loaders.pipelines.ncbi_rest_api import (
     ANNOTATION,
     DATASET,
     DATASET_NAME,
+    ERROR,
     Settings,
     assembly_list,
     cli,
@@ -148,7 +151,7 @@ def test_invalid_destination_raises(bad: str) -> None:
 @pytest.mark.parametrize("output", ["-o", "--output"])
 @pytest.mark.parametrize("dev_mode_flag", ["--dev", "--dev-mode", "--dev_mode"])
 @pytest.mark.parametrize("batch_size", ["-b", "--batch-size", "--batch_size"])
-def test_cli_all_variants(
+def test_cli_all_variants(  # noqa: PLR0913
     input_dir: str,
     destination: str,
     use_output_dir_for_pipeline_metadata: str,
@@ -378,6 +381,14 @@ def test_get_annotation_report_multi_page() -> None:
     check_annotation_report(annotation_report, ID_WITH_2K_ANNOTS)
 
 
+@mock.patch("tenacity.nap.time.sleep", MagicMock())
+@pytest.mark.vcr
+def test_get_annotation_report_multi_page_err() -> None:
+    """An error in the middle of a multi-page retrieval should stop the whole retrieval process."""
+    with pytest.raises(HTTPError, match="500 Server Error: Internal Server Error for url"):
+        get_annotation_report(ID_WITH_2K_ANNOTS)
+
+
 @pytest.mark.default_cassette("test_get_assembly_reports.yaml")
 @pytest.mark.vcr
 def test_get_annotation_report_invalid_id() -> None:
@@ -394,13 +405,115 @@ def test_get_assembly_reports_empty_id_list() -> None:
 def test_get_assembly_reports() -> None:
     """Test the retrieval of annotation and dataset reports."""
     assembly_reports = get_assembly_reports(ALL_IDS)
-    assert set(assembly_reports) == {DATASET, ANNOTATION}
+    assert set(assembly_reports) == {DATASET, ANNOTATION, ERROR}
     for datatype in [DATASET, ANNOTATION]:
         assert set(assembly_reports[datatype]) == set(ALL_IDS)
         assert assembly_reports[datatype][INVALID_ID] is None
     for assembly_id in [ID_WITH_2K_ANNOTS, ID_WITH_500_ANNOTS]:
         check_annotation_report(assembly_reports[ANNOTATION][assembly_id], assembly_id)
         check_dataset_report(assembly_reports[DATASET][assembly_id], assembly_id)
+    assert assembly_reports[ERROR] == []
+
+
+@mock.patch("tenacity.nap.time.sleep", MagicMock())
+@pytest.mark.default_cassette("test_get_assembly_reports_annotation_report_errors.yaml")
+@pytest.mark.vcr
+def test_get_assembly_reports_annotation_report_errors() -> None:
+    """Test the retrieval of assembly data when errors occur fetching annotation reports."""
+    assembly_reports = get_assembly_reports(ALL_IDS)
+    assert set(assembly_reports) == {DATASET, ANNOTATION, ERROR}
+    for datatype in [DATASET, ANNOTATION]:
+        assert set(assembly_reports[datatype]) == set(ALL_IDS)
+        assert assembly_reports[datatype][INVALID_ID] is None
+    for assembly_id in [ID_WITH_2K_ANNOTS, ID_WITH_500_ANNOTS]:
+        check_dataset_report(assembly_reports[DATASET][assembly_id], assembly_id)
+    # ID_WITH_500 succeeds, ID_WITH_2K does not
+    check_annotation_report(assembly_reports[ANNOTATION][ID_WITH_500_ANNOTS], ID_WITH_500_ANNOTS)
+    assert assembly_reports[ANNOTATION][ID_WITH_2K_ANNOTS] is None
+
+    assert assembly_reports[ERROR] == [
+        {
+            "assembly_id": ID_WITH_2K_ANNOTS,
+            "assembly_id_list": None,
+            "error_class": "HTTPError",
+            "error_from": "annotation_report",
+            "message": '500 Server Error: Internal Server Error for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000003135.1/annotation_report?page_size=1000&page_token=eNrjYos2NDAwjAUABagBiw\nResponse: {"error":"Internal Server Error","code":500,"message":"Internal Server Error (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/) (1D3311AB4E92F955000055F41870A1E3.1.1)"}\n',
+            "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000003135.1/annotation_report?page_size=1000&page_token=eNrjYos2NDAwjAUABagBiw",
+            "status": 500,
+            "reason": "Internal Server Error",
+        }
+    ]
+
+
+@mock.patch("tenacity.nap.time.sleep", MagicMock())
+@pytest.mark.vcr
+def test_get_assembly_reports_dataset_report_errors() -> None:
+    """Test the retrieval of assembly data when an error occurs fetching dataset reports."""
+    assembly_reports = get_assembly_reports(ALL_IDS)
+    assert set(assembly_reports) == {DATASET, ANNOTATION, ERROR}
+    for datatype in [DATASET, ANNOTATION]:
+        assert set(assembly_reports[datatype]) == set(ALL_IDS)
+        assert assembly_reports[datatype][INVALID_ID] is None
+    for assembly_id in [ID_WITH_2K_ANNOTS, ID_WITH_500_ANNOTS]:
+        check_annotation_report(assembly_reports[ANNOTATION][assembly_id], assembly_id)
+        assert assembly_reports[DATASET][assembly_id] is None
+
+    assert assembly_reports[ERROR] == [
+        {
+            "assembly_id": None,
+            "assembly_id_list": ALL_IDS,
+            "error_class": "HTTPError",
+            "error_from": "dataset_report",
+            "message": '404 Client Error: Not Found for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1%2CGCF_000003135.1%2Cinvalid_id/dataset_report?page_size=1000\nResponse: {"error":"Not Found","code":404,"message":"Your request is invalid. (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)"}\n',
+            "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1%2CGCF_000003135.1%2Cinvalid_id/dataset_report?page_size=1000",
+            "status": 404,
+            "reason": "Not Found",
+        }
+    ]
+
+
+@mock.patch("tenacity.nap.time.sleep", MagicMock())
+@pytest.mark.vcr
+def test_get_assembly_reports_total_wipeout() -> None:
+    """Test the retrieval of assembly data when all queries fail."""
+    # TODO: another type of error?
+    output = get_assembly_reports(ALL_IDS)
+    assert output == {
+        DATASET: dict.fromkeys(ALL_IDS),
+        ANNOTATION: dict.fromkeys(ALL_IDS),
+        ERROR: [
+            {
+                "assembly_id": None,
+                "assembly_id_list": ALL_IDS,
+                "error_class": "HTTPError",
+                "error_from": "dataset_report",
+                "message": '404 Client Error: Not Found for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1%2CGCF_000003135.1%2Cinvalid_id/dataset_report?page_size=1000\nResponse: {"error":"Not Found","code":404,"message":"Your request is invalid. (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)"}\n',
+                "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1%2CGCF_000003135.1%2Cinvalid_id/dataset_report?page_size=1000",
+                "status": 404,
+                "reason": "Not Found",
+            },
+            {
+                "assembly_id": ID_WITH_500_ANNOTS,
+                "assembly_id_list": None,
+                "error_class": "HTTPError",
+                "error_from": "annotation_report",
+                "message": '404 Client Error: Not Found for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1/annotation_report?page_size=1000\nResponse: {"error":"Not Found","code":404,"message":"Your request is invalid. (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)"}\n',
+                "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1/annotation_report?page_size=1000",
+                "status": 404,
+                "reason": "Not Found",
+            },
+            {
+                "assembly_id": ID_WITH_2K_ANNOTS,
+                "assembly_id_list": None,
+                "error_class": "HTTPError",
+                "error_from": "annotation_report",
+                "message": '500 Server Error: Internal Server Error for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000003135.1/annotation_report?page_size=1000&page_token=eNrjYos2NDAwjAUABagBiw\nResponse: {"error":"Internal Server Error","code":500,"message":"Internal Server Error (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/) (1D32DF2AAA9FBB1500003B3C46C243D3.1.1)"}\n',
+                "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000003135.1/annotation_report?page_size=1000&page_token=eNrjYos2NDAwjAUABagBiw",
+                "status": 500,
+                "reason": "Internal Server Error",
+            },
+        ],
+    }
 
 
 @pytest.mark.skip("FIXME: not working, possibly due to parallelization?")

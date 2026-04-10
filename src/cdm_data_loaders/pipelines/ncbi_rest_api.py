@@ -19,6 +19,7 @@ from dlt.sources.helpers.rest_client.paginators import (
 )
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import CliSuppress, SettingsConfigDict
+from requests.exceptions import HTTPError
 
 from cdm_data_loaders.pipelines.core import (
     run_cli,
@@ -38,6 +39,7 @@ MAX_RESULTS_PER_PAGE = 1000
 
 DATASET = "dataset"
 ANNOTATION = "annotation"
+ERROR = "error"
 
 dlt_logger = logging.getLogger("dlt")
 
@@ -143,6 +145,49 @@ ncbi_genome_client = RESTClient(
 )
 
 
+def add_error(
+    error_list: list[dict[str, Any]],
+    error: Exception,
+    error_from: str,
+    assembly_id: str | None = None,
+    assembly_id_list: list[str] | None = None,
+) -> None:
+    """Add an error to the list of output errors.
+
+    :param error_list: running list of errors
+    :type error_list: list[dict[str, Any]]
+    :param error: the error object from the exception handler
+    :type error: Exception
+    :param error_from: what type of request was being made when the error occurred
+    :type error_from: str
+    :param assembly_id: ID of the assembly being fetched when the error occurred, defaults to None
+    :type assembly_id: str | None, optional
+    :param assembly_id_list: list of IDs being fetched when the error occurred, defaults to None
+    :type assembly_id_list: list[str] | None, optional
+    """
+    err_args = {
+        "assembly_id": assembly_id or None,
+        "assembly_id_list": assembly_id_list or None,
+        "error_class": type(error).__name__,
+        "error_from": error_from,
+        "message": str(error),
+        "request_url": None,
+        "status": None,
+        "reason": None,
+    }
+
+    if isinstance(error, HTTPError):
+        # save the URL, status code, and error message
+        err_args = {
+            **err_args,
+            "request_url": error.request.url,
+            "status": error.response.status_code,
+            "reason": error.response.reason,
+        }
+
+    error_list.append(err_args)
+
+
 def get_assembly_reports(assembly_id_list: list[str]) -> dict[str, Any]:
     """Retrieve dataset and annotation reports for a list of IDs from the NCBI datasets API.
 
@@ -154,14 +199,27 @@ def get_assembly_reports(assembly_id_list: list[str]) -> dict[str, Any]:
     if not assembly_id_list:
         return {}
 
+    errors = []
+
     # N.b. invalid IDs will not be present in dataset_reports
-    dataset_reports = get_dataset_reports(assembly_id_list)
-    annotation_reports = {assembly_id: get_annotation_report(assembly_id) for assembly_id in assembly_id_list}
+    dataset_reports = {}
+    try:
+        dataset_reports = get_dataset_reports(assembly_id_list)
+    except Exception as e:  # noqa: BLE001
+        add_error(errors, e, "dataset_report", assembly_id_list=assembly_id_list)
+
+    annotation_reports: dict[str, Any] = {}
+    for assembly_id in assembly_id_list:
+        try:
+            annotation_reports[assembly_id] = get_annotation_report(assembly_id)
+        except Exception as e:  # noqa: BLE001
+            add_error(errors, e, "annotation_report", assembly_id=assembly_id)
 
     # ensure every assembly_id in the list has either the downloaded dataset_report or None
     return {
         DATASET: {assembly_id: dataset_reports.get(assembly_id) for assembly_id in assembly_id_list},
         ANNOTATION: {assembly_id: annotation_reports.get(assembly_id) for assembly_id in assembly_id_list},
+        ERROR: errors,
     }
 
 
@@ -172,6 +230,7 @@ def get_dataset_reports(assembly_id_list: list[str]) -> dict[str, None | dict[st
 
     dlt_logger.info("fetching dataset reports for:\n%s", ", ".join(sorted(assembly_id_list)))
     assembly_dataset_reports = []
+
     for page in ncbi_genome_client.paginate(
         f"{'%2C'.join(assembly_id_list)}/dataset_report",
         params={
@@ -182,7 +241,7 @@ def get_dataset_reports(assembly_id_list: list[str]) -> dict[str, None | dict[st
         assembly_dataset_reports.extend(page)
 
     # return dataset reports, indexed by assembly_id
-    # invalid IDs are silently dropped by the API
+    # invalid IDs are silently dropped by the NCBI REST API
     datasets = {report.get("accession"): report for report in assembly_dataset_reports}
     # fill in the missing gaps in assembly_id_list with None
     return {assembly_id: datasets.get(assembly_id) for assembly_id in assembly_id_list}
@@ -192,6 +251,7 @@ def get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:
     """Fetch the annotation report for an assembly from the NCBI datasets REST API."""
     dlt_logger.info("fetching annotation report for %s", assembly_id)
     page_data = []
+
     for page in ncbi_genome_client.paginate(
         f"{assembly_id}/annotation_report",
         params={
@@ -200,6 +260,7 @@ def get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:
         hooks=REST_CLIENT_HOOKS,  # type: ignore[reportArgumentType]
     ):
         page_data.extend(page)
+
     # page_data is empty if the ID is invalid
     return page_data or None
 
@@ -239,6 +300,11 @@ def assembly_report_parser(
 
     dataset_reports: dict[str, dict[str, Any]] = assembly_reports.get(DATASET)  # type: ignore[reportAssignmentType]
     annotation_reports: dict[str, list[dict[str, Any]]] = assembly_reports.get(ANNOTATION)  # type: ignore[reportAssignmentType]
+    error_reports: list[dict[str, Any]] = assembly_reports.get(ERROR)  # type: ignore[reportAssignmentType]
+
+    if error_reports:
+        yield dlt.mark.with_table_name(error_reports, "ncbi_import_error")
+
     # yield the raw data to save as tables
     yield dlt.mark.with_table_name(
         [{"assembly_id": assembly_id, **(report or {})} for assembly_id, report in dataset_reports.items()],
