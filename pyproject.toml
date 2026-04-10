@@ -213,6 +213,8 @@ AWS_SECRET_ACCESS_KEY = "whatever"
 AWS_SECURITY_TOKEN = "whatever"
 AWS_SESSION_TOKEN = "whatever"
 AWS_DEFAULT_REGION = "us-east-1"
+AWS_ENDPOINT_URL = { unset = true }
+AWS_ENDPOINT_URL_S3 = { unset = true}
 
 [tool.uv.sources]
 cdm-schema = { git = "https://github.com/kbase/cdm-schema.git" }
