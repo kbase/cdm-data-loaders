@@ -1,6 +1,7 @@
 """Tests for the shared core DLT pipeline functions."""
 
 import datetime
+import logging
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, call
@@ -27,7 +28,7 @@ def make_settings(**kwargs: str | int) -> BatchedFileInputSettings:
     params=[
         pytest.param({"input_dir": "/fake/input"}, id="default"),
         pytest.param(
-            {"input_dir": "/path/to/dir", "destination": "minio", "start_at": 15, "output": "/some/dir"},
+            {"input_dir": "/path/to/dir", "destination": "s3", "start_at": 15, "output": "/some/dir"},
             id="alt",
         ),
     ]
@@ -47,6 +48,14 @@ def default_config() -> BatchedFileInputSettings:
 def fake_files() -> list[Path]:
     """List of five files, used for testing."""
     return [Path(f"/fake/input/part_{n}.xml") for n in [1, 2, 3, 4, 5]]
+
+
+@pytest.fixture(autouse=True)
+def mock_send_slack_message(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Patch send_slack_message in core to prevent undue slack notifications."""
+    slack_mock = MagicMock()
+    monkeypatch.setattr(core, "send_slack_message", slack_mock)
+    return slack_mock
 
 
 def assert_pipeline_run_correctly(  # noqa: PLR0913
@@ -110,7 +119,7 @@ def test_run_pipeline_no_output(default_config: BatchedFileInputSettings, mock_d
 
 def test_run_pipeline_custom_output_sets_dlt_config(mock_dlt: MagicMock) -> None:
     """Ensure a non-empty output sets the correct dlt.config bucket_url key."""
-    cfg = make_settings(output="/custom/output", destination="minio")
+    cfg = make_settings(output="/custom/output", destination="s3")
     fake_resource = MagicMock()
 
     run_pipeline(
@@ -121,15 +130,70 @@ def test_run_pipeline_custom_output_sets_dlt_config(mock_dlt: MagicMock) -> None
         pipeline_run_kwargs={"table_format": "delta"},
     )
 
-    mock_dlt.config.__setitem__.assert_called_once_with("destination.minio.bucket_url", "/custom/output")
+    mock_dlt.config.__setitem__.assert_called_once_with("destination.s3.bucket_url", "/custom/output")
     assert_pipeline_run_correctly(
         mock_dlt,
         fake_resource,
-        "minio",
+        "s3",
         {"max_table_nesting": 0},
         {"pipeline_name": "some pipeline", "dataset_name": "some dataset"},
         {"table_format": "delta"},
     )
+
+
+@pytest.mark.parametrize("slack_configured", [True, False])
+def test_run_pipeline_graceful_fail(
+    default_config: BatchedFileInputSettings,
+    mock_dlt: MagicMock,
+    mock_send_slack_message: MagicMock,
+    slack_configured: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Ensure that errors during pipeline runs are caught and do not cause the entire pipeline to go ka-boom."""
+    error = RuntimeError("Oh crap!!")
+    fake_resource = MagicMock()
+
+    if slack_configured:
+        slack_hook = "http://some.url.slack.com"
+        mock_dlt.pipeline.return_value.runtime_config.slack_incoming_hook = slack_hook  # = mock_slack_hook
+
+    mock_dlt.pipeline.return_value.run.side_effect = error
+
+    run_pipeline(default_config, fake_resource)
+
+    if slack_configured:
+        mock_send_slack_message.assert_called_once_with("http://some.url.slack.com", f"Pipeline failed: {error!s}")
+    else:
+        mock_send_slack_message.assert_not_called()
+
+    assert caplog.records[-1].levelno == logging.ERROR
+    assert caplog.records[-1].message.startswith("Pipeline failed: ")
+
+    for m in caplog.records:
+        assert not m.message.startswith("Work complete")
+
+
+@pytest.mark.parametrize("slack_configured", [True, False])
+def test_run_pipeline_slack_configured(
+    default_config: BatchedFileInputSettings,
+    mock_dlt: MagicMock,
+    mock_send_slack_message: MagicMock,
+    slack_configured: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that a slack message is sent if the slack_incoming_hook runtime config value is available."""
+    if slack_configured:
+        slack_hook = "http://some.url.slack.com"
+        mock_dlt.pipeline.return_value.runtime_config.slack_incoming_hook = slack_hook  # = mock_slack_hook
+
+    run_pipeline(default_config, MagicMock())
+
+    if slack_configured:
+        mock_send_slack_message.assert_called_once_with("http://some.url.slack.com", "Pipeline completed successfully!")
+        assert "Slack webhook not configured; no Slack alerts will be sent" not in caplog.messages
+    else:
+        mock_send_slack_message.assert_not_called()
+        assert "Slack webhook not configured; no Slack alerts will be sent." in caplog.messages
 
 
 # stream_xml_file_resource tests
@@ -227,7 +291,7 @@ def test_stream_xml_file_resource_processes_all_files_across_batches(
     assert caplog.messages == [f"Reading from {f!s}" for f in fake_files]
 
 
-def test_stream_xml_file_resource_multiple_batches_with_output(
+def test_stream_xml_file_resource_multiple_batches_with_output(  # noqa: PLR0913
     mock_dlt: MagicMock,
     patched_io: tuple[MagicMock, MagicMock],
     fake_files: list[Path],
@@ -379,12 +443,12 @@ def test_integration_resource_and_pipeline_custom_output(
     mock_dlt: MagicMock,
 ) -> None:
     """Ensure that when output is set, dlt.config bucket_url is written and pipeline.run still executes."""
-    cfg = make_settings(output="/custom/output", destination="minio")
+    cfg = make_settings(output="/custom/output", destination="s3")
 
     resource = stream_xml_file_resource(cfg, "entry", MagicMock(return_value={}))
     run_pipeline(cfg, resource, pipeline_kwargs={"pipeline_name": "p", "dataset_name": "d"})
 
-    mock_dlt.config.__setitem__.assert_called_once_with("destination.minio.bucket_url", "/custom/output")
+    mock_dlt.config.__setitem__.assert_called_once_with("destination.s3.bucket_url", "/custom/output")
     mock_dlt.pipeline.return_value.run.assert_called_once()
 
 

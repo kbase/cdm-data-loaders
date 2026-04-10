@@ -70,7 +70,7 @@ def test_settings_valid_variants_accepted(destination: str) -> None:
     assert s.destination == destination
 
 
-@pytest.mark.parametrize("bad", ["s3", "gcs", "filesystem", "", "LocalFs"])
+@pytest.mark.parametrize("bad", ["gcs", "filesystem", "", "LocalFs"])
 def test_invalid_destination_raises(bad: str) -> None:
     """Ensure that an unrecognised destination raises a ValidationError."""
     with pytest.raises(ValidationError, match="destination must be one of"):
@@ -102,10 +102,11 @@ def test_cli_all_variants(input_dir: str, destination: str, start_at: str, outpu
     assert s.output == "/some/dir"
 
 
-def test_cli_invalid_destination_via_cli_raises() -> None:
+@pytest.mark.parametrize("bad", ["gcs", "filesystem", "", "LocalFs"])
+def test_cli_invalid_destination_via_cli_raises(bad: str) -> None:
     """Ensure that an invalid destination passed via CLI raises an error."""
     with pytest.raises(ValidationError, match="Value error, destination must be one of"):
-        CliApp.run(Settings, cli_args=["--destination", "s3"])
+        CliApp.run(Settings, cli_args=["--destination", bad])
 
 
 def test_cli_passes_settings_class_to_run_cli() -> None:

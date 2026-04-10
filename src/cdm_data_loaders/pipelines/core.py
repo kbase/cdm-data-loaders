@@ -5,6 +5,7 @@ from collections.abc import Callable, Generator
 from typing import Any
 
 import dlt
+from dlt.common.runtime.slack import send_slack_message
 from dlt.extract.items import DataItemWithMeta
 from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsError
@@ -60,9 +61,25 @@ def run_pipeline(
 
     destination = dlt.destination(config.destination, **(destination_kwargs or {}))
     pipeline = dlt.pipeline(destination=destination, **(pipeline_kwargs or {}))
-    load_info = pipeline.run(resource, **(pipeline_run_kwargs or {}))
+
+    slack_hook: str | None = pipeline.runtime_config.slack_incoming_hook
+
+    if not slack_hook:
+        logger.info("Slack webhook not configured; no Slack alerts will be sent.")
+
+    try:
+        load_info = pipeline.run(resource, **(pipeline_run_kwargs or {}))
+    except Exception as e:
+        err_msg = f"Pipeline failed: {e!s}"
+        logger.exception(err_msg)
+        if slack_hook:
+            send_slack_message(slack_hook, err_msg)
+        return
+
     logger.info(load_info)
     logger.info("Work complete!")
+    if slack_hook:
+        send_slack_message(slack_hook, "Pipeline completed successfully!")
 
 
 def stream_xml_file_resource(
