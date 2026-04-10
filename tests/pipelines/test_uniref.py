@@ -85,7 +85,7 @@ def test_invalid_variant_raises(bad_variant: str) -> None:
         make_settings(uniref_variant=bad_variant)
 
 
-@pytest.mark.parametrize("bad_destination", ["s3", "gcs", "filesystem", "", "LocalFs"])
+@pytest.mark.parametrize("bad_destination", ["gcs", "filesystem", "", "LocalFs"])
 def test_invalid_destination_raises(bad_destination: str) -> None:
     """Ensure that an unrecognised destination raises a ValidationError."""
     with pytest.raises(ValidationError, match="destination must be one of"):
@@ -142,7 +142,7 @@ def test_cli_missing_required_uniref_variant_raises() -> None:
 
 
 @pytest.mark.parametrize("bad_variant", ["25", "75", "uniref50", "", "ALL"])
-@pytest.mark.parametrize("bad_destination", ["s3", "gcs", "filesystem", "", "LocalFs"])
+@pytest.mark.parametrize("bad_destination", ["gcs", "filesystem", "", "LocalFs"])
 def test_cli_invalid_variant_and_destination_via_cli_raises(bad_variant: str, bad_destination: str) -> None:
     """Ensure that invalid uniref_variant and destination passed via CLI raises an error with both errors."""
     with pytest.raises(ValidationError, match="2 validation errors for Settings") as exc_info:

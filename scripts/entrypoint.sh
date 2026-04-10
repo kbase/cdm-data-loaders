@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Ensure at least one argument is provided
 if [ "$#" -eq 0 ]; then
-  echo "Usage: $0 {uniref|uniprot|xml_split|test} [args...]"
+  echo "Usage: $0 {uniref|uniprot|ncbi_rest_api|xml_split|test} [args...]"
   exit 1
 fi
 
@@ -35,7 +35,7 @@ case "$cmd" in
     exec /usr/bin/tini -- /bin/bash
     ;;
   *)
-    echo "Error: unknown command '$cmd'; valid commands are 'uniref', 'uniprot', or 'xml_split'." >&2
+    echo "Error: unknown command '$cmd'; valid commands are 'uniref', 'uniprot', 'ncbi_rest_api', or 'xml_split'." >&2
     exit 1
     ;;
 esac

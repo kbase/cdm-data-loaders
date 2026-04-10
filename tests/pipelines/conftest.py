@@ -29,8 +29,11 @@ def fake_files() -> list[Path]:
 def mock_dlt(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Patch dlt in core, wiring pipeline.return_value to a fresh MagicMock."""
     dlt_mock = MagicMock()
-    dlt_mock.pipeline.return_value = MagicMock()
+    # patch the slack_incoming_hook config value so that tests do not send slack notifications
+    mock_slack_hook = MagicMock(slack_incoming_hook=None)
+    dlt_mock.pipeline.return_value = MagicMock(runtime_config=mock_slack_hook)
     monkeypatch.setattr(core, "dlt", dlt_mock)
+
     return dlt_mock
 
 

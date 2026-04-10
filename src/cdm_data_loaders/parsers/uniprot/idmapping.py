@@ -35,7 +35,7 @@ from cdm_data_loaders.core.constants import CDM_LAKE_S3, INVALID_DATA_FIELD_NAME
 from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.readers.dsv import read
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-from cdm_data_loaders.utils.minio import list_remote_dir_contents
+from cdm_data_loaders.utils.s3 import list_matching_objects
 from cdm_data_loaders.utils.spark_delta import APPEND, set_up_workspace, write_delta
 from cdm_data_loaders.validation.dataframe_validator import DataFrameValidator, Validator
 from cdm_data_loaders.validation.df_nullable_fields import validate as check_nullable_fields
@@ -117,7 +117,7 @@ def read_and_write(spark: SparkSession, pipeline_run: PipelineRun, id_mapping_ts
 @click.option(
     "--source",
     required=True,
-    help="Full path to the source directory containing ID mapping file(s). Files are assumed to be in the CDM s3 minio bucket, and the s3a://cdm-lake prefix may be omitted.",
+    help="Full path to the S3 source directory containing ID mapping file(s), including the bucket name but excluding the protocol (`s3a://` or `s3://`). For example: `cdm-lake/datasets/raw_data/idmapping/`.",
 )
 @click.option(
     "--namespace",
@@ -143,7 +143,7 @@ def cli(source: str, namespace: str, tenant_name: str | None) -> None:
     (spark, delta_ns) = set_up_workspace(APP_NAME, namespace, tenant_name)
 
     # TODO: other locations / local files?
-    bucket_list = list_remote_dir_contents(source.removeprefix("s3a://cdm-lake/"))
+    bucket_list = list_matching_objects(source)
     for file in bucket_list:
         # file names are in the 'Key' value
         # 'tenant-general-warehouse/kbase/datasets/uniprot/id_mapping/id_mapping_part_001.tsv.gz'
