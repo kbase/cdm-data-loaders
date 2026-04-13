@@ -265,6 +265,46 @@ def get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:
     return page_data or None
 
 
+def assemble_assembly_reports(
+    assembly_reports: dict[str, dict[str, Any]],
+) -> Generator[DataItemWithMeta, Any]:
+    """Parse and export assembly data from the REST API.
+
+    :param assembly_reports: output from the dataset_report and annotation_report API endpoint, indexed by assembly_id
+    :type assembly_reports: dict[str, dict[str, None | dict[str, Any]]]
+    :yield: table rows for assemblies
+    :rtype: Generator[DataItemWithMeta, Any]
+    """
+    if not assembly_reports:
+        return
+
+    dataset_reports: dict[str, dict[str, Any]] = assembly_reports.get(DATASET)  # type: ignore[reportAssignmentType]
+    annotation_reports: dict[str, list[dict[str, Any]]] = assembly_reports.get(ANNOTATION)  # type: ignore[reportAssignmentType]
+    error_reports: list[dict[str, Any]] = assembly_reports.get(ERROR)  # type: ignore[reportAssignmentType]
+
+    # yield the raw data to save as tables
+    # every assembly_id in dataset_reports should have a row in the dataset_report table
+    # even if the value is None due to an error or invalid ID
+    if dataset_reports:
+        yield dlt.mark.with_table_name(
+            [{"assembly_id": assembly_id, **(report or {})} for assembly_id, report in dataset_reports.items()],
+            f"{DATASET}_report",
+        )
+
+    # save the rows from the annotation reports
+    # only assemblies with annotation reports have rows in the annotation_report table
+    tr_annotation_rows = [
+        {"assembly_id": aid, **report}
+        for aid, report_list in annotation_reports.items()
+        for report in (report_list or [])
+    ]
+    if tr_annotation_rows:
+        yield dlt.mark.with_table_name(tr_annotation_rows, f"{ANNOTATION}_report")
+
+    if error_reports:
+        yield dlt.mark.with_table_name(error_reports, "ncbi_import_error")
+
+
 @dlt.resource(name="assembly_list")
 def assembly_list(config: Settings) -> Generator[list[str], Any, Any]:
     """List of assemblies to fetch."""
@@ -288,35 +328,8 @@ def assembly_reports(
 def assembly_report_parser(
     assembly_reports: dict[str, dict[str, Any]],
 ) -> Generator[DataItemWithMeta, Any]:
-    """Parse and export assembly data from the REST API.
-
-    :param assembly_reports: output from the dataset_report and annotation_report API endpoint, indexed by assembly_id
-    :type assembly_reports: dict[str, dict[str, None | dict[str, Any]]]
-    :yield: table rows for assemblies
-    :rtype: Generator[DataItemWithMeta, Any]
-    """
-    if not assembly_reports:
-        return
-
-    dataset_reports: dict[str, dict[str, Any]] = assembly_reports.get(DATASET)  # type: ignore[reportAssignmentType]
-    annotation_reports: dict[str, list[dict[str, Any]]] = assembly_reports.get(ANNOTATION)  # type: ignore[reportAssignmentType]
-    error_reports: list[dict[str, Any]] = assembly_reports.get(ERROR)  # type: ignore[reportAssignmentType]
-
-    if error_reports:
-        yield dlt.mark.with_table_name(error_reports, "ncbi_import_error")
-
-    # yield the raw data to save as tables
-    yield dlt.mark.with_table_name(
-        [{"assembly_id": assembly_id, **(report or {})} for assembly_id, report in dataset_reports.items()],
-        f"{DATASET}_report",
-    )
-    tr_annotation_rows = [
-        {"assembly_id": aid, **report}
-        for aid, report_list in annotation_reports.items()
-        for report in (report_list or [])
-    ]
-    # save the rows from the annotation reports
-    yield dlt.mark.with_table_name(tr_annotation_rows, f"{ANNOTATION}_report")
+    """Parse and export assembly data from the REST API."""
+    return assemble_assembly_reports(assembly_reports)
 
 
 def run_ncbi_pipeline(config: Settings) -> None:

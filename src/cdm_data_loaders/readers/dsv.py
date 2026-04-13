@@ -6,7 +6,7 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import StringType, StructField, StructType
 
 from cdm_data_loaders.core.constants import INVALID_DATA_FIELD_NAME
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger, log_and_die
+from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
 # mapping of delimiters to format names (for logging)
 # spark defaults to separating on commas if nothing is specified
@@ -57,7 +57,9 @@ def read(
     :rtype: DataFrame
     """
     if not isinstance(schema_fields, list) or not all(isinstance(field, StructField) for field in schema_fields):
-        log_and_die("schema_fields must be specified as a list of StructFields", TypeError)
+        err_msg = "schema_fields must be specified as a list of StructFields"
+        logger.error(err_msg)
+        raise TypeError(err_msg)
 
     if not options:
         options = {}
@@ -69,8 +71,9 @@ def read(
     }
 
     if dsv_options["mode"] != PERMISSIVE:
-        msg = "The only permitted read mode is PERMISSIVE."
-        log_and_die(msg, ValueError)
+        err_msg = "The only permitted read mode is PERMISSIVE."
+        logger.error(err_msg)
+        raise ValueError(err_msg)
 
     format_name = get_format_name(options.get("delimiter", options.get("sep")))
 

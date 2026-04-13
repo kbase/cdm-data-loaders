@@ -6,6 +6,7 @@ from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import pytest
+from dlt.extract.items import DataItemWithMeta
 from pydantic import ValidationError
 from pydantic_settings import CliApp
 from requests import HTTPError
@@ -18,6 +19,7 @@ from cdm_data_loaders.pipelines.ncbi_rest_api import (
     DATASET_NAME,
     ERROR,
     Settings,
+    assemble_assembly_reports,
     assembly_list,
     cli,
     get_annotation_report,
@@ -40,6 +42,14 @@ def patch_rest_client_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cdm_data_loaders.pipelines.ncbi_rest_api.REST_CLIENT_HOOKS", {})
 
 
+@pytest.fixture(autouse=True)
+def patch_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch environment variables related to runtime configs."""
+    env_vars = {"timeout": "5", "max_attempts": "1", "backoff_factor": "1", "max_retry_delay": "1"}
+    for v in env_vars:
+        monkeypatch.setenv(f"RUNTIME__REQUEST_{v.upper()}", "1")
+
+
 @pytest.fixture(scope="module")
 def vcr_config() -> dict[str, Any]:
     """VCR config for tests that make HTTP requests."""
@@ -52,11 +62,13 @@ def vcr_config() -> dict[str, Any]:
         "filter_query_parameters": ["api_key"],
         "filter_headers": ["api_key"],
         "decode_compressed_response": True,
+        "allow_playback_repeats": True,
     }
 
 
 ID_WITH_2K_ANNOTS = "GCF_000003135.1"
 ID_WITH_500_ANNOTS = "GCF_000007725.1"
+ID_TRIGGERS_500_ERR = "GCF_500_ERROR"
 VALID_IDS = [ID_WITH_500_ANNOTS, ID_WITH_2K_ANNOTS]
 INVALID_ID = "invalid_id"
 ALL_IDS = [*VALID_IDS, INVALID_ID]
@@ -386,7 +398,7 @@ def test_get_annotation_report_multi_page() -> None:
 def test_get_annotation_report_multi_page_err() -> None:
     """An error in the middle of a multi-page retrieval should stop the whole retrieval process."""
     with pytest.raises(HTTPError, match="500 Server Error: Internal Server Error for url"):
-        get_annotation_report(ID_WITH_2K_ANNOTS)
+        get_annotation_report(ID_TRIGGERS_500_ERR)
 
 
 @pytest.mark.default_cassette("test_get_assembly_reports.yaml")
@@ -415,12 +427,77 @@ def test_get_assembly_reports() -> None:
     assert assembly_reports[ERROR] == []
 
 
+RECORDED_ERRORS = {
+    "dataset_404": {
+        "assembly_id": None,
+        "assembly_id_list": ALL_IDS,
+        "error_class": "HTTPError",
+        "error_from": "dataset_report",
+        "message": '404 Client Error: Not Found for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1%2CGCF_000003135.1%2Cinvalid_id/dataset_report?page_size=1000\nResponse: {"error":"Not Found","code":404,"message":"Your request is invalid. (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)"}\n',
+        "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1%2CGCF_000003135.1%2Cinvalid_id/dataset_report?page_size=1000",
+        "status": 404,
+        "reason": "Not Found",
+    },
+    "annotation_report_500": {
+        "assembly_id": ID_WITH_2K_ANNOTS,
+        "assembly_id_list": None,
+        "error_class": "HTTPError",
+        "error_from": "annotation_report",
+        "message": '500 Server Error: Internal Server Error for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000003135.1/annotation_report?page_size=1000&page_token=eNrjYos2NDAwjAUABagBiw\nResponse: {"error":"Internal Server Error","code":500,"message":"Internal Server Error (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)"}\n',
+        "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000003135.1/annotation_report?page_size=1000&page_token=eNrjYos2NDAwjAUABagBiw",
+        "status": 500,
+        "reason": "Internal Server Error",
+    },
+    "annotation_report_404": {
+        "assembly_id": ID_WITH_500_ANNOTS,
+        "assembly_id_list": None,
+        "error_class": "HTTPError",
+        "error_from": "annotation_report",
+        "message": '404 Client Error: Not Found for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1/annotation_report?page_size=1000\nResponse: {"error":"Not Found","code":404,"message":"Your request is invalid. (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)"}\n',
+        "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1/annotation_report?page_size=1000",
+        "status": 404,
+        "reason": "Not Found",
+    },
+    "value_error": {
+        "assembly_id": INVALID_ID,
+        "assembly_id_list": None,
+        "error_class": "ValueError",
+        "error_from": "annotation_report",
+        "message": f"Some error message involving {INVALID_ID}.",
+        "request_url": None,
+        "status": None,
+        "reason": None,
+    },
+}
+
+
 @mock.patch("tenacity.nap.time.sleep", MagicMock())
 @pytest.mark.default_cassette("test_get_assembly_reports_annotation_report_errors.yaml")
 @pytest.mark.vcr
 def test_get_assembly_reports_annotation_report_errors() -> None:
     """Test the retrieval of assembly data when errors occur fetching annotation reports."""
-    assembly_reports = get_assembly_reports(ALL_IDS)
+    original_get_annotation_report = get_annotation_report
+
+    def patched_get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:
+        """Patched version of get_annotation_report that throws a value error with a certain input.
+
+        :param assembly_id: assembly ID
+        :type assembly_id: str
+        :raises ValueError: if the ID is INVALID_ID
+        :return: output from the real get_annotation_report
+        :rtype: list[dict[str, Any]] | None
+        """
+        if assembly_id == INVALID_ID:
+            err_msg = f"Some error message involving {INVALID_ID}."
+            raise ValueError(err_msg)
+        return original_get_annotation_report(assembly_id)
+
+    with mock.patch(
+        "cdm_data_loaders.pipelines.ncbi_rest_api.get_annotation_report",
+        side_effect=patched_get_annotation_report,
+    ):
+        assembly_reports = get_assembly_reports(ALL_IDS)
+
     assert set(assembly_reports) == {DATASET, ANNOTATION, ERROR}
     for datatype in [DATASET, ANNOTATION]:
         assert set(assembly_reports[datatype]) == set(ALL_IDS)
@@ -431,18 +508,7 @@ def test_get_assembly_reports_annotation_report_errors() -> None:
     check_annotation_report(assembly_reports[ANNOTATION][ID_WITH_500_ANNOTS], ID_WITH_500_ANNOTS)
     assert assembly_reports[ANNOTATION][ID_WITH_2K_ANNOTS] is None
 
-    assert assembly_reports[ERROR] == [
-        {
-            "assembly_id": ID_WITH_2K_ANNOTS,
-            "assembly_id_list": None,
-            "error_class": "HTTPError",
-            "error_from": "annotation_report",
-            "message": '500 Server Error: Internal Server Error for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000003135.1/annotation_report?page_size=1000&page_token=eNrjYos2NDAwjAUABagBiw\nResponse: {"error":"Internal Server Error","code":500,"message":"Internal Server Error (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/) (1D3311AB4E92F955000055F41870A1E3.1.1)"}\n',
-            "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000003135.1/annotation_report?page_size=1000&page_token=eNrjYos2NDAwjAUABagBiw",
-            "status": 500,
-            "reason": "Internal Server Error",
-        }
-    ]
+    assert assembly_reports[ERROR] == [RECORDED_ERRORS["annotation_report_500"], RECORDED_ERRORS["value_error"]]
 
 
 @mock.patch("tenacity.nap.time.sleep", MagicMock())
@@ -458,60 +524,43 @@ def test_get_assembly_reports_dataset_report_errors() -> None:
         check_annotation_report(assembly_reports[ANNOTATION][assembly_id], assembly_id)
         assert assembly_reports[DATASET][assembly_id] is None
 
-    assert assembly_reports[ERROR] == [
-        {
-            "assembly_id": None,
-            "assembly_id_list": ALL_IDS,
-            "error_class": "HTTPError",
-            "error_from": "dataset_report",
-            "message": '404 Client Error: Not Found for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1%2CGCF_000003135.1%2Cinvalid_id/dataset_report?page_size=1000\nResponse: {"error":"Not Found","code":404,"message":"Your request is invalid. (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)"}\n',
-            "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1%2CGCF_000003135.1%2Cinvalid_id/dataset_report?page_size=1000",
-            "status": 404,
-            "reason": "Not Found",
-        }
-    ]
+    assert assembly_reports[ERROR] == [RECORDED_ERRORS["dataset_404"]]
 
 
 @mock.patch("tenacity.nap.time.sleep", MagicMock())
 @pytest.mark.vcr
 def test_get_assembly_reports_total_wipeout() -> None:
     """Test the retrieval of assembly data when all queries fail."""
-    # TODO: another type of error?
-    output = get_assembly_reports(ALL_IDS)
+    original_get_annotation_report = get_annotation_report
+
+    def patched_get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:
+        """Patched version of get_annotation_report that throws a value error with a certain input.
+
+        :param assembly_id: assembly ID
+        :type assembly_id: str
+        :raises ValueError: if the ID is INVALID_ID
+        :return: output from the real get_annotation_report
+        :rtype: list[dict[str, Any]] | None
+        """
+        if assembly_id == INVALID_ID:
+            err_msg = f"Some error message involving {INVALID_ID}."
+            raise ValueError(err_msg)
+        return original_get_annotation_report(assembly_id)
+
+    with mock.patch(
+        "cdm_data_loaders.pipelines.ncbi_rest_api.get_annotation_report",
+        side_effect=patched_get_annotation_report,
+    ):
+        output = get_assembly_reports(ALL_IDS)
+
     assert output == {
         DATASET: dict.fromkeys(ALL_IDS),
         ANNOTATION: dict.fromkeys(ALL_IDS),
         ERROR: [
-            {
-                "assembly_id": None,
-                "assembly_id_list": ALL_IDS,
-                "error_class": "HTTPError",
-                "error_from": "dataset_report",
-                "message": '404 Client Error: Not Found for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1%2CGCF_000003135.1%2Cinvalid_id/dataset_report?page_size=1000\nResponse: {"error":"Not Found","code":404,"message":"Your request is invalid. (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)"}\n',
-                "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1%2CGCF_000003135.1%2Cinvalid_id/dataset_report?page_size=1000",
-                "status": 404,
-                "reason": "Not Found",
-            },
-            {
-                "assembly_id": ID_WITH_500_ANNOTS,
-                "assembly_id_list": None,
-                "error_class": "HTTPError",
-                "error_from": "annotation_report",
-                "message": '404 Client Error: Not Found for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1/annotation_report?page_size=1000\nResponse: {"error":"Not Found","code":404,"message":"Your request is invalid. (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)"}\n',
-                "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000007725.1/annotation_report?page_size=1000",
-                "status": 404,
-                "reason": "Not Found",
-            },
-            {
-                "assembly_id": ID_WITH_2K_ANNOTS,
-                "assembly_id_list": None,
-                "error_class": "HTTPError",
-                "error_from": "annotation_report",
-                "message": '500 Server Error: Internal Server Error for url: https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000003135.1/annotation_report?page_size=1000&page_token=eNrjYos2NDAwjAUABagBiw\nResponse: {"error":"Internal Server Error","code":500,"message":"Internal Server Error (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/) (1D32DF2AAA9FBB1500003B3C46C243D3.1.1)"}\n',
-                "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCF_000003135.1/annotation_report?page_size=1000&page_token=eNrjYos2NDAwjAUABagBiw",
-                "status": 500,
-                "reason": "Internal Server Error",
-            },
+            RECORDED_ERRORS["dataset_404"],
+            RECORDED_ERRORS["annotation_report_404"],
+            RECORDED_ERRORS["annotation_report_500"],
+            RECORDED_ERRORS["value_error"],
         ],
     }
 
@@ -522,3 +571,164 @@ def test_get_assembly_report_parser_with_cassette(assembly_ids: list[str], tmp_p
     with patch("dlt.mark") as mock_dlt_mark:
         config = Settings.model_validate({"input_dir": "tests/data/ncbi_rest_api/input", "output": str(tmp_path)})
         run_ncbi_pipeline(config)
+
+
+def collect_results(reports: dict) -> dict[str, list]:
+    """Drain the generator returned by assemble_assembly_reports into a dict keyed by table name."""
+    results: dict[str, list] = {}
+    for item in assemble_assembly_reports(reports):
+        assert isinstance(item, DataItemWithMeta), f"Expected DataItemWithMeta, got {type(item)}"
+        table_name = item.meta.table_name
+        results.setdefault(table_name, [])
+        results[table_name].extend(item.data)
+    return results
+
+
+# assemble_assembly_reports tests
+
+DATASET_REPORT_1 = {
+    "accession": ID_WITH_2K_ANNOTS,
+    "organism": {"tax_id": 9606, "organism_name": "Homo sapiens"},
+    "assembly_stats": {"total_sequence_length": 3099734149},
+}
+
+DATASET_REPORT_2 = {
+    "accession": ID_WITH_500_ANNOTS,
+    "organism": {"tax_id": 10090, "organism_name": "Mus musculus"},
+    "assembly_stats": {"total_sequence_length": 2728222451},
+}
+
+ANNOTATION_REPORT_1 = [
+    {"release_date": "2022-01-01", "annotation_name": "Annotation A"},
+    {"release_date": "2022-06-01", "annotation_name": "Annotation B"},
+]
+
+ANNOTATION_REPORT_2 = [
+    {"release_date": "2023-01-01", "annotation_name": "Annotation C"},
+]
+
+ERROR_REPORT = {
+    "assembly_id": INVALID_ID,
+    "assembly_id_list": None,
+    "error_class": "HTTPError",
+    "error_from": "dataset_report",
+    "message": "404 Not Found",
+    "request_url": "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/GCA_000001635.9/dataset_report",
+    "status": 404,
+    "reason": "Not Found",
+}
+
+
+@pytest.fixture
+def full_assembly_reports() -> dict[str, Any]:
+    """Assembly reports fixture with valid data for two assemblies and no errors."""
+    return {
+        DATASET: {
+            ID_WITH_2K_ANNOTS: DATASET_REPORT_1,
+            ID_WITH_500_ANNOTS: DATASET_REPORT_2,
+        },
+        ANNOTATION: {
+            ID_WITH_2K_ANNOTS: ANNOTATION_REPORT_1,
+            ID_WITH_500_ANNOTS: ANNOTATION_REPORT_2,
+        },
+        ERROR: [],
+    }
+
+
+@pytest.fixture
+def reports_with_errors() -> dict[str, Any]:
+    """Assembly reports fixture with one None dataset report, one None annotation report, and one error entry."""
+    return {
+        DATASET: {
+            ID_WITH_2K_ANNOTS: DATASET_REPORT_1,
+            ID_WITH_500_ANNOTS: DATASET_REPORT_2,
+            INVALID_ID: None,
+        },
+        ANNOTATION: {
+            ID_WITH_2K_ANNOTS: ANNOTATION_REPORT_1,
+            ID_WITH_500_ANNOTS: ANNOTATION_REPORT_2,
+            INVALID_ID: None,
+        },
+        ERROR: [ERROR_REPORT],
+    }
+
+
+EXPECTED_DB_TABLES = {
+    f"{DATASET}_report": [
+        {"assembly_id": ID_WITH_2K_ANNOTS, **DATASET_REPORT_1},
+        {
+            "assembly_id": ID_WITH_500_ANNOTS,
+            **DATASET_REPORT_2,
+        },
+    ],
+    f"{ANNOTATION}_report": [
+        {"assembly_id": ID_WITH_2K_ANNOTS, **ANNOTATION_REPORT_1[0]},
+        {"assembly_id": ID_WITH_2K_ANNOTS, **ANNOTATION_REPORT_1[1]},
+        {"assembly_id": ID_WITH_500_ANNOTS, **ANNOTATION_REPORT_2[0]},
+    ],
+}
+
+EXPECTED_DB_TABLES_WITH_ERROR = {
+    f"{DATASET}_report": [*EXPECTED_DB_TABLES[f"{DATASET}_report"], {"assembly_id": INVALID_ID}],
+    f"{ANNOTATION}_report": [*EXPECTED_DB_TABLES[f"{ANNOTATION}_report"]],
+    "ncbi_import_error": [ERROR_REPORT],
+}
+
+
+@pytest.mark.parametrize("reports", [{}, None])
+def test_assemble_assembly_reports_empty_dict_yields_nothing(reports: None | dict[str, Any]) -> None:
+    """Ensure that empty or None as input produces no output items."""
+    assert list(assemble_assembly_reports(reports)) == []  # type: ignore[reportArgumentType]
+
+
+def test_assemble_assembly_reports_yields_two_items_when_no_errors(full_assembly_reports: dict[str, Any]) -> None:
+    """When the error list is empty, the generator should yield only two DataItemWithMeta objects."""
+    assert len(list(assemble_assembly_reports(full_assembly_reports))) == 2
+
+
+def test_assemble_assembly_reports_all_items_are_data_item_with_meta(full_assembly_reports: dict[str, Any]) -> None:
+    """Every item yielded by the generator should be a DataItemWithMeta instance."""
+    for item in assemble_assembly_reports(full_assembly_reports):
+        assert isinstance(item, DataItemWithMeta)
+
+
+def test_assemble_assembly_reports_table_names_when_errors_present(reports_with_errors: dict[str, Any]) -> None:
+    """The output should contain dataset_report, annotation_report, and ncbi_import_error table names."""
+    results = collect_results(reports_with_errors)
+    assert set(results) == {"dataset_report", "annotation_report", "ncbi_import_error"}
+    assert results == EXPECTED_DB_TABLES_WITH_ERROR
+
+
+def test_assemble_assembly_reports_no_error_table_when_error_list_empty(full_assembly_reports: dict[str, Any]) -> None:
+    """When the error list is empty, no ncbi_import_error table should be present in the output."""
+    results = collect_results(full_assembly_reports)
+    assert set(results) == {"dataset_report", "annotation_report"}
+    assert results == EXPECTED_DB_TABLES
+
+
+def test_assemble_assembly_reports_dataset_report_none_report_emits_row_with_only_assembly_id() -> None:
+    """A None dataset report should still produce a row containing only the assembly_id key."""
+    reports = {
+        DATASET: {INVALID_ID: None},
+        ANNOTATION: {INVALID_ID: None},
+        ERROR: [],
+    }
+    results = collect_results(reports)
+    # no ncbi_import_error or annotation_report
+    assert results["dataset_report"] == [{"assembly_id": INVALID_ID}]
+
+
+def test_assemble_assembly_reports_multiple_errors_all_yielded() -> None:
+    """All entries in the error list should appear as individual rows in the ncbi_import_error table."""
+    errors = [
+        {"error_class": "HTTPError", "error_from": "dataset_report", "message": "err1"},
+        {"error_class": "ValueError", "error_from": "annotation_report", "message": "err2"},
+    ]
+    reports = {
+        DATASET: {},
+        ANNOTATION: {},
+        ERROR: errors,
+    }
+    results = collect_results(reports)
+    assert results["ncbi_import_error"] == errors
+    assert set(results) == {"ncbi_import_error"}
