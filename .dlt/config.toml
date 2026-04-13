@@ -10,7 +10,7 @@ log_format = "JSON"
 # default: 60
 request_timeout = 60
 # default: 5
-request_max_attempts = 2
+request_max_attempts = 10
 # default: 1
 request_backoff_factor = 1.5
 # default: 300

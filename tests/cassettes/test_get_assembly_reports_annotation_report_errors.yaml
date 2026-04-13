@@ -5556,8 +5556,7 @@ interactions:
   response:
     body:
       string: '{"error":"Internal Server Error","code":500,"message":"Internal Server
-        Error (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)
-        (1D34BDD0A3BF4F4500003FF792C5AF0A.1.1)"}
+        Error (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)"}
 
         '
     headers:
@@ -5608,8 +5607,7 @@ interactions:
   response:
     body:
       string: '{"error":"Internal Server Error","code":500,"message":"Internal Server
-        Error (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)
-        (1D3311AB4E92F955000055F41870A1E3.1.1)"}
+        Error (For more help, see the NCBI Datasets Documentation at https://www.ncbi.nlm.nih.gov/datasets/docs/)"}
 
         '
     headers:
