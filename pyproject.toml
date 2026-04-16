@@ -172,6 +172,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = ["T201"] # ignore printing in notebooks
 "tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002"]  # use of assert, booleans, unused mock args
+"tests/integration/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002", "ANN401"]
 "tests/utils/test_s3.py" = ["ANN401"]
 "**/__init__.py" = ["D104"]
 
@@ -192,7 +193,7 @@ log_cli = true
 log_cli_level = "INFO"
 log_level = "INFO"
 addopts = ["-v"]
-markers = ["requires_spark: must be run in an environment where spark is available", "s3: tests that mock s3 interactions", "slow_test: does what it says on the tin"]
+markers = ["requires_spark: must be run in an environment where spark is available", "s3: tests that mock s3 interactions", "slow_test: does what it says on the tin", "integration: end-to-end tests requiring a running MinIO instance and network access"]
 
 # environment settings for running tests
 [tool.pytest_env]

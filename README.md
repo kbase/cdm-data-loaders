@@ -131,6 +131,47 @@ To generate coverage for the tests, run
 The standard python `coverage` package is used and coverage can be generated as html or other formats by changing the parameters.
 
 
+#### Integration tests (MinIO + NCBI FTP)
+
+End-to-end integration tests for the NCBI assembly pipeline live in `tests/integration/`. They exercise the full flow — manifest diffing, FTP download, S3 promote/archive — against a locally running [MinIO](https://min.io/) container and the real NCBI FTP server.
+
+**Requirements:**
+- Docker (for MinIO)
+- Network access to `ftp.ncbi.nlm.nih.gov`
+
+**1. Start MinIO locally:**
+
+```sh
+docker run -d \
+  --name minio \
+  -p 9000:9000 \
+  -p 9001:9001 \
+  -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio server /data --console-address ":9001"
+```
+
+**2. Run the integration tests:**
+
+```sh
+> uv run pytest tests/integration/ -m integration -v
+```
+
+Tests are automatically skipped when MinIO is not reachable, so the default `uv run pytest` will never fail due to a missing MinIO instance.
+
+**3. Inspect results:**
+
+Buckets are **not** cleaned up after tests. Browse the MinIO console at [http://localhost:9001](http://localhost:9001) (login: `minioadmin` / `minioadmin`) to inspect the final state of each test bucket. Each test method creates its own bucket (e.g. `integ-test-promote-dry-run`).
+
+**4. Stop MinIO when done:**
+
+```sh
+docker stop minio && docker rm minio
+```
+
+> **Note:** These tests download real assemblies from NCBI FTP and are inherently slow (~30–60s per assembly). They are also marked `slow_test` so you can exclude them independently: `uv run pytest -m "not slow_test"`.
+
+
 ## Loading genomes, contigs, and features
 
 The [genome loader](src/cdm_data_loaders/parsers/genome_loader.py) can be used to load and integrate data from related GFF and FASTA files. Currently, the loader requires a GFF file and two FASTA files (one for amino acid seqs, one for nucleic acid seqs) for each genome. The list of files to be processed should be specified in the genome paths file, which has the following format:
