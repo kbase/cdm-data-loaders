@@ -26,6 +26,7 @@ dependencies = [
 uniprot = "cdm_data_loaders.pipelines.uniprot_kb:cli"
 uniref = "cdm_data_loaders.pipelines.uniref:cli"
 ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"
+ncbi_ftp_sync = "cdm_data_loaders.pipelines.ncbi_ftp_download:cli"
 
 [dependency-groups]
 dev = [
@@ -170,7 +171,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = ["T201"] # ignore printing in notebooks
-"tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002"]  # use of assert, booleans
+"tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002"]  # use of assert, booleans, unused mock args
 "tests/utils/test_s3.py" = ["ANN401"]
 "**/__init__.py" = ["D104"]
 

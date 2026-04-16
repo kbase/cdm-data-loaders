@@ -368,3 +368,117 @@ def delete_object(s3_path: str) -> dict[str, Any]:
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
     return s3.delete_object(Bucket=bucket, Key=key)
+
+
+def upload_file_with_metadata(
+    local_file_path: Path | str,
+    destination_dir: str,
+    metadata: dict[str, str],
+    object_name: str | None = None,
+) -> bool:
+    """Upload a file to S3 with user-defined metadata and CRC64NVME checksum.
+
+    Unlike :func:`upload_file`, this function always uploads (no existence check)
+    and attaches the supplied *metadata* dict as S3 user metadata.
+
+    :param local_file_path: file to upload
+    :type local_file_path: Path | str
+    :param destination_dir: path to the destination directory on s3, INCLUDING the bucket name
+    :type destination_dir: str
+    :param metadata: user metadata key/value pairs to attach to the object
+    :type metadata: dict[str, str]
+    :param object_name: S3 object name; defaults to the local filename
+    :type object_name: str | None
+    :return: True if the upload succeeded
+    :rtype: bool
+    """
+    if isinstance(local_file_path, str):
+        local_file_path = Path(local_file_path)
+
+    if not destination_dir:
+        msg = "No destination directory supplied for the file"
+        raise ValueError(msg)
+
+    if not object_name:
+        object_name = local_file_path.name
+
+    s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
+    s3 = get_s3_client()
+    (bucket, key) = split_s3_path(s3_path)
+
+    extra_args = {**DEFAULT_EXTRA_ARGS, "Metadata": metadata}
+
+    file_size = local_file_path.stat().st_size
+    with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
+        s3.upload_file(
+            Filename=str(local_file_path),
+            Bucket=bucket,
+            Key=key,
+            Callback=pbar.update,
+            ExtraArgs=extra_args,
+        )
+    return True
+
+
+def head_object(s3_path: str) -> dict[str, Any] | None:
+    """Return metadata for an S3 object, or None if it does not exist.
+
+    The returned dict contains:
+    - ``size``: content length in bytes
+    - ``metadata``: user metadata dict
+    - ``checksum_crc64nvme``: CRC64NVME checksum string (if available)
+
+    :param s3_path: path to the object on s3, INCLUDING the bucket name
+    :type s3_path: str
+    :return: dict with object info, or None if the object does not exist
+    :rtype: dict[str, Any] | None
+    """
+    s3 = get_s3_client()
+    (bucket, key) = split_s3_path(s3_path)
+    try:
+        resp = s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
+    except botocore.exceptions.ClientError as e:
+        if e.response["Error"]["Code"] == "404":
+            return None
+        raise
+    return {
+        "size": resp["ContentLength"],
+        "metadata": resp.get("Metadata", {}),
+        "checksum_crc64nvme": resp.get("ChecksumCRC64NVME"),
+    }
+
+
+def copy_object_with_metadata(
+    current_s3_path: str,
+    new_s3_path: str,
+    metadata: dict[str, str],
+) -> dict[str, Any]:
+    """Copy an S3 object to a new location, replacing its user metadata.
+
+    Uses ``MetadataDirective='REPLACE'`` so the destination object carries
+    exactly the supplied *metadata* rather than inheriting the source's metadata.
+
+    A successful copy returns a response where
+    ``resp["ResponseMetadata"]["HTTPStatusCode"] == 200``.
+
+    :param current_s3_path: source path on s3, INCLUDING the bucket name
+    :type current_s3_path: str
+    :param new_s3_path: destination path on s3, INCLUDING the bucket name
+    :type new_s3_path: str
+    :param metadata: user metadata to set on the destination object
+    :type metadata: dict[str, str]
+    :return: dictionary containing response
+    :rtype: dict[str, Any]
+    """
+    s3 = get_s3_client()
+    (current_bucket, current_key) = split_s3_path(current_s3_path)
+    (new_bucket, new_key) = split_s3_path(new_s3_path)
+
+    return s3.copy_object(
+        CopySource={"Bucket": current_bucket, "Key": current_key},
+        Bucket=new_bucket,
+        Key=new_key,
+        Metadata=metadata,
+        MetadataDirective="REPLACE",
+        **DEFAULT_EXTRA_ARGS,
+    )

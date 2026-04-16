@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Ensure at least one argument is provided
 if [ "$#" -eq 0 ]; then
-  echo "Usage: $0 {uniref|uniprot|ncbi_rest_api|xml_split|test} [args...]"
+  echo "Usage: $0 {uniref|uniprot|ncbi_rest_api|ncbi_ftp_sync|xml_split|test} [args...]"
   exit 1
 fi
 
@@ -27,6 +27,10 @@ case "$cmd" in
     # Run the NCBI datasets API importer
     exec /usr/bin/tini -- uv run --no-sync ncbi_rest_api "$@"
     ;;
+  ncbi_ftp_sync)
+    # Run the NCBI FTP assembly download pipeline (Phase 2)
+    exec /usr/bin/tini -- uv run --no-sync ncbi_ftp_sync "$@"
+    ;;
   test)
     # run the tests
     exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark"
@@ -35,7 +39,7 @@ case "$cmd" in
     exec /usr/bin/tini -- /bin/bash
     ;;
   *)
-    echo "Error: unknown command '$cmd'; valid commands are 'uniref', 'uniprot', 'ncbi_rest_api', or 'xml_split'." >&2
+    echo "Error: unknown command '$cmd'; valid commands are 'uniref', 'uniprot', 'ncbi_rest_api', 'ncbi_ftp_sync', or 'xml_split'." >&2
     exit 1
     ;;
 esac
