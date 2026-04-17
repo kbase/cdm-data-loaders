@@ -8,12 +8,11 @@ the final state of the object store via the MinIO console.
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import os
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from unittest.mock import patch
 
 import boto3
@@ -25,9 +24,6 @@ import cdm_data_loaders.ncbi_ftp.promote as promote_mod
 import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
 from cdm_data_loaders.utils.s3 import reset_s3_client
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 # ── MinIO connection defaults ───────────────────────────────────────────
 
@@ -72,20 +68,6 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_marker)
 
 
-# ── CRC64NVME workaround ───────────────────────────────────────────────
-
-
-def strip_checksum_algorithm(method: Callable) -> Callable:
-    """Wrap a boto3 S3 method to remove ``ChecksumAlgorithm`` if unsupported."""
-
-    @functools.wraps(method)
-    def wrapper(*args: object, **kwargs: object) -> object:
-        kwargs.pop("ChecksumAlgorithm", None)  # type: ignore[arg-type]
-        return method(*args, **kwargs)
-
-    return wrapper
-
-
 # ── Fixtures ────────────────────────────────────────────────────────────
 
 
@@ -102,10 +84,6 @@ def minio_s3_client() -> botocore.client.BaseClient:
         aws_access_key_id=MINIO_ACCESS_KEY,
         aws_secret_access_key=MINIO_SECRET_KEY,
     )
-
-    # MinIO may not support CRC64NVME — strip to be safe
-    client.upload_file = strip_checksum_algorithm(client.upload_file)  # type: ignore[method-assign]
-    client.copy_object = strip_checksum_algorithm(client.copy_object)  # type: ignore[method-assign]
 
     reset_s3_client()
     with (

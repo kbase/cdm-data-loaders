@@ -148,7 +148,7 @@ docker run -d \
   -p 9001:9001 \
   -e MINIO_ROOT_USER=minioadmin \
   -e MINIO_ROOT_PASSWORD=minioadmin \
-  minio/minio server /data --console-address ":9001"
+  minio/minio:RELEASE.2025-02-28T09-55-16Z server /data --console-address ":9001"
 ```
 
 **2. Run the integration tests:**
