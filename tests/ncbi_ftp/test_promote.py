@@ -42,9 +42,7 @@ class TestPromoteFromS3:
         assert report["dry_run"] is True
 
         # Final path should NOT exist
-        final_key = (
-            f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_genomic.fna.gz"
-        )
+        final_key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_genomic.fna.gz"
         resp = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=final_key)
         assert resp.get("KeyCount", 0) == 0
 
@@ -61,9 +59,7 @@ class TestPromoteFromS3:
         assert report["failed"] == 0
 
         # Check final object exists with metadata
-        final_key = (
-            f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_genomic.fna.gz"
-        )
+        final_key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_genomic.fna.gz"
         resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=final_key)
         assert resp["Metadata"].get("md5") == "md5hash123"
 

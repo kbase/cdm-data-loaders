@@ -559,7 +559,7 @@ def mocked_s3_client_no_checksum(mock_s3_client: Any) -> Generator[Any, Any]:
     allowing copy_object calls that include ChecksumAlgorithm to succeed.
     """
     mock_s3_client.copy_object = strip_checksum_algorithm(mock_s3_client.copy_object)
-    yield mock_s3_client
+    return mock_s3_client
 
 
 # copy_object
@@ -656,9 +656,7 @@ def test_upload_file_with_metadata_accepts_str_and_path(sample_file: Path, path_
 @pytest.mark.s3
 def test_head_object_returns_info(mock_s3_client: Any) -> None:
     """Verify that head_object returns size, metadata, and checksum fields."""
-    mock_s3_client.put_object(
-        Bucket=CDM_LAKE_BUCKET, Key="info/file.txt", Body=b"hello", Metadata={"md5": "abc123"}
-    )
+    mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key="info/file.txt", Body=b"hello", Metadata={"md5": "abc123"})
     result = head_object(f"{CDM_LAKE_BUCKET}/info/file.txt")
     assert result is not None
     assert result["size"] == 5
@@ -687,9 +685,7 @@ def test_head_object_with_protocols(mock_s3_client: Any, protocol: str) -> None:
 # copy_object_with_metadata
 @pytest.mark.parametrize("destination", BUCKETS)
 @pytest.mark.s3
-def test_copy_object_with_metadata_replaces_metadata(
-    mocked_s3_client_no_checksum: Any, destination: str
-) -> None:
+def test_copy_object_with_metadata_replaces_metadata(mocked_s3_client_no_checksum: Any, destination: str) -> None:
     """Verify that copy_object_with_metadata copies and replaces metadata."""
     mocked_s3_client_no_checksum.put_object(
         Bucket=CDM_LAKE_BUCKET, Key="src/file.txt", Body=b"archive me", Metadata={"old_key": "old_val"}

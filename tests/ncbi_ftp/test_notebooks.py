@@ -40,11 +40,7 @@ def _extract_code_cells(notebook_path: Path) -> list[str]:
     """
     with notebook_path.open() as f:
         nb = json.load(f)
-    return [
-        "".join(cell.get("source", []))
-        for cell in nb.get("cells", [])
-        if cell.get("cell_type") == "code"
-    ]
+    return ["".join(cell.get("source", [])) for cell in nb.get("cells", []) if cell.get("cell_type") == "code"]
 
 
 @pytest.mark.parametrize("notebook", NCBI_NOTEBOOKS)
