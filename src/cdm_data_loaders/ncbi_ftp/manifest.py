@@ -260,7 +260,7 @@ def _ftp_dir_from_url(ftp_url: str, ftp_host: str = FTP_HOST) -> str:
 # ── Checksum verification against S3 store ───────────────────────────────
 
 
-def verify_transfer_candidates(
+def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
     accessions: list[str],
     current_assemblies: dict[str, AssemblyRecord],
     bucket: str,

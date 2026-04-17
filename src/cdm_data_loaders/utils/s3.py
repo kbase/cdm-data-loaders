@@ -35,7 +35,7 @@ def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseCli
 
     if not args:
         try:
-            from berdl_notebook_utils.berdl_settings import get_settings
+            from berdl_notebook_utils.berdl_settings import get_settings  # noqa: PLC0415
 
             settings = get_settings()
             args = {
@@ -44,9 +44,7 @@ def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseCli
                 "aws_secret_access_key": settings.MINIO_SECRET_KEY,
             }
         except (ModuleNotFoundError, ImportError, NameError) as e:
-            print(e)
-            raise
-        except Exception:
+            print(e)  # noqa: T201
             raise
 
     required_args = ["endpoint_url", "aws_access_key_id", "aws_secret_access_key"]
@@ -139,10 +137,10 @@ def object_exists(s3_path: str) -> bool:
     (bucket, key) = split_s3_path(s3_path)
     try:
         s3.head_object(Bucket=bucket, Key=key)
-    except Exception as e:
+    except botocore.exceptions.ClientError as e:
         error_string = str(e)
         if not error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
-            print(f"Error performing head operation on s3 object: {e!s}")
+            print(f"Error performing head operation on s3 object: {e!s}")  # noqa: T201
         return False
     return True
 
@@ -175,7 +173,7 @@ def upload_file(
 
     s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
     if object_exists(s3_path):
-        print(f"File already present: {s3_path}")
+        print(f"File already present: {s3_path}")  # noqa: T201
         return True
 
     s3 = get_s3_client()
@@ -184,7 +182,7 @@ def upload_file(
     # Upload the file
     file_size = local_file_path.stat().st_size
     with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
-        print(f"uploading {local_file_path!s} to {s3_path}")
+        print(f"uploading {local_file_path!s} to {s3_path}")  # noqa: T201
         try:
             s3.upload_file(
                 Filename=str(local_file_path),
@@ -193,8 +191,8 @@ def upload_file(
                 Callback=pbar.update,
                 ExtraArgs=DEFAULT_EXTRA_ARGS,
             )
-        except Exception as e:
-            print(f"Error uploading to s3: {e!s}")
+        except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
+            print(f"Error uploading to s3: {e!s}")  # noqa: T201
             return False
         return True
 
@@ -219,8 +217,8 @@ def download_file(s3_path: str, local_file_path: str | Path, version_id: str | N
     if not parent_dir.is_dir():
         try:
             parent_dir.mkdir(parents=True, exist_ok=False)
-        except Exception as e:
-            print(f"Could not save s3 file to {local_file_path}: {e!s}")
+        except OSError as e:
+            print(f"Could not save s3 file to {local_file_path}: {e!s}")  # noqa: T201
             raise
 
     s3 = get_s3_client()
@@ -232,12 +230,12 @@ def download_file(s3_path: str, local_file_path: str | Path, version_id: str | N
     # Get the object size
     try:
         object_size = s3.head_object(**kwargs)["ContentLength"]
-    except Exception as e:
+    except botocore.exceptions.ClientError as e:
         error_string = str(e)
         if error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
-            print(f"File not found: {s3_path}")
+            print(f"File not found: {s3_path}")  # noqa: T201
         else:
-            print(f"Error downloading {s3_path}: {e!s}")
+            print(f"Error downloading {s3_path}: {e!s}")  # noqa: T201
         raise
 
     extra_args = {"VersionId": version_id} if version_id is not None else None
