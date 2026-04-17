@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import botocore.exceptions
+
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.s3 import (
     copy_object_with_metadata,
@@ -22,20 +24,20 @@ from cdm_data_loaders.utils.s3 import (
 
 logger = get_cdm_logger()
 
-DEFAULT_PATH_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
+DEFAULT_LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
 
 
 # ── Promote from S3 staging prefix ──────────────────────────────────────
 
 
 def promote_from_s3(  # noqa: PLR0913
-    staging_prefix: str,
+    staging_key_prefix: str,
     bucket: str,
-    removed_manifest: str | Path | None = None,
-    updated_manifest: str | Path | None = None,
+    removed_manifest_path: str | Path | None = None,
+    updated_manifest_path: str | Path | None = None,
     ncbi_release: str | None = None,
-    manifest_path: str | None = None,
-    path_prefix: str = DEFAULT_PATH_PREFIX,
+    manifest_s3_key: str | None = None,
+    lakehouse_key_prefix: str = DEFAULT_LAKEHOUSE_KEY_PREFIX,
     *,
     dry_run: bool = False,
 ) -> dict[str, Any]:
@@ -44,13 +46,13 @@ def promote_from_s3(  # noqa: PLR0913
     Downloads each file to a temp location and re-uploads to the final path
     with MD5 metadata from ``.md5`` sidecar files.
 
-    :param staging_prefix: S3 key prefix where CTS output was written
+    :param staging_key_prefix: S3 key prefix where CTS output was written
     :param bucket: S3 bucket name
-    :param removed_manifest: local path to the removed_manifest file
-    :param updated_manifest: local path to the updated_manifest file
+    :param removed_manifest_path: local path to the removed_manifest file
+    :param updated_manifest_path: local path to the updated_manifest file
     :param ncbi_release: NCBI release version tag for archiving
-    :param manifest_path: S3 path to transfer_manifest.txt for trimming
-    :param path_prefix: Lakehouse path prefix for final locations
+    :param manifest_s3_key: S3 object key for transfer_manifest.txt (for trimming)
+    :param lakehouse_key_prefix: S3 key prefix for final Lakehouse locations
     :param dry_run: if True, log actions without side effects
     :return: report dict with counts
     """
@@ -62,7 +64,7 @@ def promote_from_s3(  # noqa: PLR0913
 
     # Collect all objects under the staging prefix
     staged_objects: list[str] = []
-    for page in paginator.paginate(Bucket=bucket, Prefix=staging_prefix):
+    for page in paginator.paginate(Bucket=bucket, Prefix=staging_key_prefix):
         staged_objects.extend(obj["Key"] for obj in page.get("Contents", []))
 
     # Separate data files from sidecars
@@ -74,15 +76,15 @@ def promote_from_s3(  # noqa: PLR0913
     # Archive all affected assemblies BEFORE promoting or deleting
     archived = 0
     for manifest_file, reason, delete in [
-        (updated_manifest, "updated", False),
-        (removed_manifest, "replaced_or_suppressed", True),
+        (updated_manifest_path, "updated", False),
+        (removed_manifest_path, "replaced_or_suppressed", True),
     ]:
         if manifest_file and Path(str(manifest_file)).is_file():
             archived += _archive_assemblies(
                 str(manifest_file),
                 bucket=bucket,
                 ncbi_release=ncbi_release,
-                path_prefix=path_prefix,
+                lakehouse_key_prefix=lakehouse_key_prefix,
                 archive_reason=reason,
                 delete_source=delete,
                 dry_run=dry_run,
@@ -94,10 +96,10 @@ def promote_from_s3(  # noqa: PLR0913
         if staged_key.endswith("download_report.json"):
             continue
 
-        rel_path = staged_key[len(staging_prefix) :]
+        rel_path = staged_key[len(staging_key_prefix) :]
         if not rel_path.startswith("raw_data/"):
             continue
-        final_key = path_prefix + rel_path
+        final_key = lakehouse_key_prefix + rel_path
 
         if dry_run:
             logger.info("[dry-run] would promote: %s -> %s", staged_key, final_key)
@@ -137,8 +139,8 @@ def promote_from_s3(  # noqa: PLR0913
             failed += 1
 
     # Trim manifest for resumability
-    if manifest_path and promoted_accessions and not dry_run:
-        _trim_manifest(manifest_path, bucket, promoted_accessions)
+    if manifest_s3_key and promoted_accessions and not dry_run:
+        _trim_manifest(manifest_s3_key, bucket, promoted_accessions)
 
     report: dict[str, Any] = {
         "timestamp": datetime.now(UTC).isoformat(),
@@ -162,10 +164,10 @@ def promote_from_s3(  # noqa: PLR0913
 
 
 def _archive_assemblies(  # noqa: PLR0913
-    manifest_path: str,
+    manifest_local_path: str,
     bucket: str,
     ncbi_release: str | None = None,
-    path_prefix: str = DEFAULT_PATH_PREFIX,
+    lakehouse_key_prefix: str = DEFAULT_LAKEHOUSE_KEY_PREFIX,
     archive_reason: str = "unknown",
     *,
     delete_source: bool = False,
@@ -178,10 +180,10 @@ def _archive_assemblies(  # noqa: PLR0913
     objects are deleted after copying.  When False (updated), the
     originals remain in place to be overwritten by the promote step.
 
-    :param manifest_path: local path to a manifest file (one accession per line)
+    :param manifest_local_path: local path to a manifest file (one accession per line)
     :param bucket: S3 bucket name
     :param ncbi_release: release tag used in the archive path
-    :param path_prefix: Lakehouse path prefix
+    :param lakehouse_key_prefix: S3 key prefix for the Lakehouse dataset root
     :param archive_reason: metadata value describing why the object was archived
     :param delete_source: if True, delete the source object after copying
     :param dry_run: if True, log without making changes
@@ -192,7 +194,7 @@ def _archive_assemblies(  # noqa: PLR0913
     datestamp = datetime.now(UTC).strftime("%Y-%m-%d")
     archived = 0
 
-    with Path(manifest_path).open() as f:
+    with Path(manifest_local_path).open() as f:
         accessions = [line.strip() for line in f if line.strip()]
 
     for accession in accessions:
@@ -203,7 +205,7 @@ def _archive_assemblies(  # noqa: PLR0913
 
         db = m.group(1)
         p1, p2, p3 = m.group(2), m.group(3), m.group(4)
-        source_prefix = f"{path_prefix}raw_data/{db}/{p1}/{p2}/{p3}/"
+        source_prefix = f"{lakehouse_key_prefix}raw_data/{db}/{p1}/{p2}/{p3}/"
 
         paginator = s3.get_paginator("list_objects_v2")
         matching_keys: list[str] = []
@@ -215,8 +217,8 @@ def _archive_assemblies(  # noqa: PLR0913
             continue
 
         for source_key in matching_keys:
-            rel = source_key[len(path_prefix) :]
-            archive_key = f"{path_prefix}archive/{release_tag}/{rel}"
+            rel = source_key[len(lakehouse_key_prefix) :]
+            archive_key = f"{lakehouse_key_prefix}archive/{release_tag}/{rel}"
 
             if dry_run:
                 logger.info("[dry-run] would archive: %s -> %s", source_key, archive_key)
@@ -247,10 +249,10 @@ def _archive_assemblies(  # noqa: PLR0913
 # ── Manifest trimming ───────────────────────────────────────────────────
 
 
-def _trim_manifest(manifest_s3_path: str, bucket: str, promoted_accessions: set[str]) -> None:
+def _trim_manifest(manifest_s3_key: str, bucket: str, promoted_accessions: set[str]) -> None:
     """Remove promoted accessions from the transfer manifest in S3.
 
-    :param manifest_s3_path: S3 key of the transfer_manifest.txt
+    :param manifest_s3_key: S3 object key of the transfer_manifest.txt
     :param bucket: S3 bucket name
     :param promoted_accessions: set of accessions that were successfully promoted
     """
@@ -260,7 +262,16 @@ def _trim_manifest(manifest_s3_path: str, bucket: str, promoted_accessions: set[
         tmp_path = tmp.name
 
     try:
-        s3.download_file(Bucket=bucket, Key=manifest_s3_path, Filename=tmp_path)
+        try:
+            s3.download_file(Bucket=bucket, Key=manifest_s3_key, Filename=tmp_path)
+        except s3.exceptions.NoSuchKey:
+            logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", bucket, manifest_s3_key)
+            return
+        except botocore.exceptions.ClientError as e:
+            if e.response["Error"]["Code"] == "404":
+                logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", bucket, manifest_s3_key)
+                return
+            raise
 
         with Path(tmp_path).open() as f:
             lines = f.readlines()
@@ -270,7 +281,7 @@ def _trim_manifest(manifest_s3_path: str, bucket: str, promoted_accessions: set[
         with Path(tmp_path).open("w") as f:
             f.writelines(remaining)
 
-        s3.upload_file(Filename=tmp_path, Bucket=bucket, Key=manifest_s3_path)
+        s3.upload_file(Filename=tmp_path, Bucket=bucket, Key=manifest_s3_key)
         logger.info(
             "Trimmed manifest: %d -> %d entries (%d promoted)",
             len(lines),

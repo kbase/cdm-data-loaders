@@ -92,9 +92,9 @@ class TestDownloadSettingsAliases:
         s = make_settings(m="/data/m.txt")
         assert s.manifest == "/data/m.txt"
 
-    def test_output_dir_alias_o(self) -> None:
-        """Verify 'o' alias resolves to output_dir."""
-        s = make_settings(o="/data/o")
+    def test_output_dir_alias(self) -> None:
+        """Verify 'output_dir' / 'output-dir' alias resolves to output_dir."""
+        s = make_settings(output_dir="/data/o")
         assert s.output_dir == "/data/o"
 
     def test_threads_alias_t(self) -> None:

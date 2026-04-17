@@ -6,7 +6,7 @@ import botocore.client
 import pytest
 
 from cdm_data_loaders.ncbi_ftp.promote import (
-    DEFAULT_PATH_PREFIX,
+    DEFAULT_LAKEHOUSE_KEY_PREFIX,
     _archive_assemblies,
     _trim_manifest,
     promote_from_s3,
@@ -34,7 +34,7 @@ class TestPromoteFromS3:
         self._stage_files(mock_s3_client_no_checksum, prefix)
 
         report = promote_from_s3(
-            staging_prefix=prefix,
+            staging_key_prefix=prefix,
             bucket=TEST_BUCKET,
             dry_run=True,
         )
@@ -43,7 +43,7 @@ class TestPromoteFromS3:
 
         # Final path should NOT exist
         final_key = (
-            f"{DEFAULT_PATH_PREFIX}raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_genomic.fna.gz"
+            f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_genomic.fna.gz"
         )
         resp = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=final_key)
         assert resp.get("KeyCount", 0) == 0
@@ -54,7 +54,7 @@ class TestPromoteFromS3:
         self._stage_files(mock_s3_client_no_checksum, prefix)
 
         report = promote_from_s3(
-            staging_prefix=prefix,
+            staging_key_prefix=prefix,
             bucket=TEST_BUCKET,
         )
         assert report["promoted"] == 1
@@ -62,7 +62,7 @@ class TestPromoteFromS3:
 
         # Check final object exists with metadata
         final_key = (
-            f"{DEFAULT_PATH_PREFIX}raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_genomic.fna.gz"
+            f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_genomic.fna.gz"
         )
         resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=final_key)
         assert resp["Metadata"].get("md5") == "md5hash123"
@@ -72,7 +72,7 @@ class TestPromoteFromS3:
         prefix = "staging/run1/"
         self._stage_files(mock_s3_client_no_checksum, prefix)
 
-        report = promote_from_s3(staging_prefix=prefix, bucket=TEST_BUCKET)
+        report = promote_from_s3(staging_key_prefix=prefix, bucket=TEST_BUCKET)
         # Only the .fna.gz data file, not download_report.json
         assert report["promoted"] == 1
 
@@ -119,7 +119,7 @@ class TestArchiveAssemblies:
     ) -> None:
         """Verify removed accessions are archived and originals deleted."""
         accession = "GCF_000005845.2"
-        key = f"{DEFAULT_PATH_PREFIX}raw_data/GCF/000/005/845/{accession}_ASM584v2/{accession}_genomic.fna.gz"
+        key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/005/845/{accession}_ASM584v2/{accession}_genomic.fna.gz"
         mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=key, Body=b"data")
 
         manifest = tmp_path / "removed.txt"
@@ -140,7 +140,7 @@ class TestArchiveAssemblies:
 
         # Archived copy should exist
         archive_key = (
-            f"{DEFAULT_PATH_PREFIX}archive/2024-01/"
+            f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-01/"
             f"raw_data/GCF/000/005/845/{accession}_ASM584v2/{accession}_genomic.fna.gz"
         )
         resp = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=archive_key)
@@ -152,7 +152,7 @@ class TestArchiveAssemblies:
         """Verify updated accessions are archived but originals remain."""
         accession = "GCF_000001215.4"
         asm_dir = f"{accession}_Release_6"
-        key = f"{DEFAULT_PATH_PREFIX}raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
+        key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
         mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=key, Body=b"original-data")
 
         manifest = tmp_path / "updated.txt"
@@ -173,7 +173,7 @@ class TestArchiveAssemblies:
 
         # Archived copy exists with correct metadata
         archive_key = (
-            f"{DEFAULT_PATH_PREFIX}archive/2024-06/"
+            f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-06/"
             f"raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
         )
         resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=archive_key)
@@ -186,7 +186,7 @@ class TestArchiveAssemblies:
         """Verify archiving the same accession in different releases creates distinct folders."""
         accession = "GCF_000001215.4"
         asm_dir = f"{accession}_Release_6"
-        key = f"{DEFAULT_PATH_PREFIX}raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
+        key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
         mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=key, Body=b"v1-data")
 
         manifest = tmp_path / "updated.txt"
@@ -202,11 +202,11 @@ class TestArchiveAssemblies:
         _archive_assemblies(str(manifest), bucket=TEST_BUCKET, ncbi_release="2024-06", archive_reason="updated")
 
         archive_key_1 = (
-            f"{DEFAULT_PATH_PREFIX}archive/2024-01/"
+            f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-01/"
             f"raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
         )
         archive_key_2 = (
-            f"{DEFAULT_PATH_PREFIX}archive/2024-06/"
+            f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-06/"
             f"raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
         )
         resp1 = mock_s3_client_no_checksum.get_object(Bucket=TEST_BUCKET, Key=archive_key_1)
@@ -220,7 +220,7 @@ class TestArchiveAssemblies:
     ) -> None:
         """Verify dry_run does not copy or delete anything."""
         accession = "GCF_000005845.2"
-        key = f"{DEFAULT_PATH_PREFIX}raw_data/GCF/000/005/845/{accession}_ASM584v2/{accession}_genomic.fna.gz"
+        key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/005/845/{accession}_ASM584v2/{accession}_genomic.fna.gz"
         mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=key, Body=b"data")
 
         manifest = tmp_path / "removed.txt"
@@ -241,7 +241,7 @@ class TestArchiveAssemblies:
         assert resp.get("KeyCount", 0) == 1
 
         # No archive created
-        archive_prefix = f"{DEFAULT_PATH_PREFIX}archive/2024-01/"
+        archive_prefix = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-01/"
         resp = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=archive_prefix)
         assert resp.get("KeyCount", 0) == 0
 
@@ -261,7 +261,7 @@ class TestArchiveAssemblies:
         """Verify ncbi_release=None falls back to 'unknown'."""
         accession = "GCF_000001215.4"
         asm_dir = f"{accession}_Release_6"
-        key = f"{DEFAULT_PATH_PREFIX}raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
+        key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
         mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=key, Body=b"data")
 
         manifest = tmp_path / "updated.txt"
@@ -271,7 +271,7 @@ class TestArchiveAssemblies:
         assert count == 1
 
         archive_key = (
-            f"{DEFAULT_PATH_PREFIX}archive/unknown/"
+            f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/unknown/"
             f"raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
         )
         resp = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=archive_key)

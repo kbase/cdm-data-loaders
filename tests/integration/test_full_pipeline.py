@@ -26,14 +26,14 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     write_transfer_manifest,
     write_updated_manifest,
 )
-from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_PATH_PREFIX, promote_from_s3
+from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX, promote_from_s3
 from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch
 
 from .conftest import get_object_metadata, list_all_keys, stage_files_to_minio
 
 STABLE_PREFIX = "900"
 STAGING_PREFIX = "staging/run1/"
-PATH_PREFIX = DEFAULT_PATH_PREFIX
+PATH_PREFIX = DEFAULT_LAKEHOUSE_KEY_PREFIX
 
 
 @pytest.mark.integration
@@ -80,9 +80,9 @@ class TestFullPipelineSmallBatch:
 
         # ── Phase 3: Promote from staging to final path ─────────────────
         promote_report = promote_from_s3(
-            staging_prefix=STAGING_PREFIX,
+            staging_key_prefix=STAGING_PREFIX,
             bucket=test_bucket,
-            path_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=PATH_PREFIX,
         )
         assert promote_report["promoted"] >= 1
         assert promote_report["failed"] == 0
@@ -138,10 +138,10 @@ class TestFullPipelineIncrementalSync:
         s3.upload_file(Filename=str(manifest1), Bucket=test_bucket, Key=manifest_key)
 
         promote1 = promote_from_s3(
-            staging_prefix=STAGING_PREFIX,
+            staging_key_prefix=STAGING_PREFIX,
             bucket=test_bucket,
-            manifest_path=manifest_key,
-            path_prefix=PATH_PREFIX,
+            manifest_s3_key=manifest_key,
+            lakehouse_key_prefix=PATH_PREFIX,
         )
         assert promote1["promoted"] >= 1
 
@@ -195,11 +195,11 @@ class TestFullPipelineIncrementalSync:
 
         # Phase 3 — promote with archival
         promote2 = promote_from_s3(
-            staging_prefix=STAGING_PREFIX,
+            staging_key_prefix=STAGING_PREFIX,
             bucket=test_bucket,
-            updated_manifest=str(updated_manifest),
+            updated_manifest_path=str(updated_manifest),
             ncbi_release="test-incremental",
-            path_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=PATH_PREFIX,
         )
         assert promote2["failed"] == 0
 

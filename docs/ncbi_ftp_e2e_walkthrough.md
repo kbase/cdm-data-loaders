@@ -24,15 +24,54 @@ image for the Phase 2 download step.
 │   previous         │     │ ─ write .md5 sidecars │     │ ─ trim manifest      │
 │ ─ write manifests  │     └──────────┬────────────┘     └──────────────────────┘
 └────────────────────┘                │
-                              local volume
-                              mounted into
-                              the container
-                                    │
-                                    ▼
-                           ┌────────────────────┐
-                           │  MinIO (S3-compat) │
-                           │  localhost:9000    │
-                           └────────────────────┘
+                                 local volume
+                                 mounted into
+                                 the container
+```
+
+---
+
+## Path anatomy
+
+All S3 paths in this pipeline compose from a small set of variables.
+Understanding this decomposition is the key to configuring the notebooks.
+
+### Path formats used
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| **s3:// URI** | `s3://cdm-lake/staging/run1/` | Full URI with scheme + bucket + key |
+| **bucket name** | `cdm-lake` | Just the bucket, no scheme |
+| **S3 key prefix** | `tenant-general-warehouse/kbase/datasets/ncbi/` | Path within a bucket (no scheme, no bucket) |
+| **S3 object key** | `staging/transfer_manifest.txt` | Single object key within a bucket |
+| **local path** | `output/removed_manifest.txt` | Filesystem path on the host |
+
+### Lakehouse object (final location)
+
+```
+s3://{STORE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}raw_data/{GCF|GCA}/{nnn}/{nnn}/{nnn}/{assembly_dir}/{filename}
+     └── bucket ──┘ └── key prefix ──────┘└── build_accession_path() ────────────────────────┘
+```
+
+Example:
+```
+s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/raw_data/GCF/900/000/615/GCF_900000615.1_PRJEB7657_assembly/GCF_900000615.1_PRJEB7657_assembly_genomic.fna.gz
+```
+
+### Staging object (Phase 2 output)
+
+```
+s3://{STORE_BUCKET}/{STAGING_KEY_PREFIX}raw_data/{GCF|GCA}/{nnn}/{nnn}/{nnn}/{assembly_dir}/{filename}
+     └── bucket ──┘ └── key prefix ────┘└── build_accession_path() ────────────────────────┘
+```
+
+### Local output (Phase 1)
+
+```
+{OUTPUT_DIR}/transfer_manifest.txt
+{OUTPUT_DIR}/removed_manifest.txt
+{OUTPUT_DIR}/updated_manifest.txt
+{OUTPUT_DIR}/diff_summary.json
 ```
 
 ---
@@ -50,17 +89,12 @@ docker run -d \
 ```
 
 Create a test bucket via the [MinIO console](http://localhost:9001)
-(login: `minioadmin` / `minioadmin`), or from the command line:
+(login: `minioadmin` / `minioadmin`), or from the command line using the
+included `scripts/s3_local.py` helper (requires no extra installs — only
+`boto3` which is already a project dependency):
 
 ```sh
-# Using the AWS CLI (or `mc` if installed)
-aws --endpoint-url http://localhost:9000 \
-    s3 mb s3://cdm-lake \
-    --no-sign-request 2>/dev/null || true
-
-# Alternatively, using the MinIO client:
-# mc alias set local http://localhost:9000 minioadmin minioadmin
-# mc mb local/cdm-lake
+uv run python scripts/s3_local.py mb s3://cdm-lake
 ```
 
 ---
@@ -71,15 +105,40 @@ Open `notebooks/ncbi_ftp_manifest.ipynb` in JupyterLab or VS Code.
 
 ### Constants to change (Cell 3)
 
-| Constant              | Walkthrough value                | Why                                                     |
-|-----------------------|----------------------------------|---------------------------------------------------------|
-| `DATABASE`            | `"refseq"`                       | keep as-is                                              |
-| `PREFIX_FROM`         | `"900"`                          | high-numbered prefix → few assemblies, fast diffing     |
-| `PREFIX_TO`           | `"900"`                          | single prefix bucket                                    |
-| `LIMIT`               | `10`                             | cap to 10 assemblies                                    |
-| `PREVIOUS_SUMMARY_S3` | `None`                          | first run — everything is "new"                         |
-| `SNAPSHOT_UPLOAD_S3`  | `None`                           | skip S3 upload for local testing                        |
-| `OUTPUT_DIR`          | `Path("output")`                 | keep as-is (local directory)                            |
+| Constant              | Walkthrough value                | Format | Why                                                     |
+|-----------------------|----------------------------------|--------|---------------------------------------------------------|
+| `DATABASE`            | `"refseq"`                       | string | keep as-is                                              |
+| `PREFIX_FROM`         | `"900"`                          | string | high-numbered prefix → few assemblies, fast diffing     |
+| `PREFIX_TO`           | `"900"`                          | string | single prefix bucket                                    |
+| `LIMIT`               | `10`                             | int    | cap to 10 assemblies                                    |
+| `PREVIOUS_SUMMARY_URI` | `None`                          | s3:// URI | first run — everything is "new"                       |
+| `SNAPSHOT_UPLOAD_URI`  | `None`                          | s3:// URI | skip S3 upload for local testing                      |
+| `STORE_BUCKET`        | `"cdm-lake"` (or `None`)         | bucket name | set to prune assemblies already in the Lakehouse   |
+| `STORE_KEY_PREFIX`    | `"tenant-general-warehouse/kbase/datasets/ncbi/"` | S3 key prefix | default Lakehouse path prefix    |
+| `OUTPUT_DIR`          | `Path("output")`                 | local path | keep as-is (local directory)                        |
+
+### Initialise the S3 client for MinIO
+
+If you set `PREVIOUS_SUMMARY_URI`, `SNAPSHOT_UPLOAD_URI`, `STORE_BUCKET`,
+or `STAGING_URI` to point at your local MinIO, you must initialise
+the S3 client **before** running the cells that use them.  Insert a new cell
+after Cell 1 (Imports) with:
+
+```python
+from cdm_data_loaders.utils.s3 import get_s3_client, reset_s3_client
+
+reset_s3_client()
+get_s3_client({
+    "endpoint_url": "http://localhost:9000",
+    "aws_access_key_id": "minioadmin",
+    "aws_secret_access_key": "minioadmin",
+})
+```
+
+If all three S3 variables are `None` (purely local testing), this cell can
+be skipped — though on repeat runs you should set `STORE_BUCKET` so
+assemblies already promoted to the Lakehouse are pruned from the transfer
+manifest.
 
 ### Run the notebook
 
@@ -104,16 +163,16 @@ Inspect `transfer_manifest.txt` — each line is an FTP directory path like:
 
 Cell 7 optionally uploads the manifests to an S3 staging prefix so that CTS
 can stage them into the container.  For local testing, set
-`STAGING_S3_PREFIX = None` (the default) and copy the manifest manually in
+`STAGING_URI = None` (the default) and copy the manifest manually in
 Step 3b below.
 
 If you are testing against MinIO and want to exercise the S3 upload path:
 
 ```python
-STAGING_S3_PREFIX = "s3://cdm-lake/staging/run1/"
+STAGING_URI = "s3://cdm-lake/staging/run1/"
 ```
 
-> **Tip:** If you re-run later with `PREVIOUS_SUMMARY_S3` pointing at a
+> **Tip:** If you re-run later with `PREVIOUS_SUMMARY_URI` pointing at a
 > snapshot from a prior run you will see `updated`, `replaced`, and
 > `suppressed` entries in the diff.
 
@@ -144,22 +203,27 @@ docker build -t cdm-data-loaders .
 ### 3b. Prepare local directories
 
 ```sh
-mkdir -p staging
-cp output/transfer_manifest.txt staging/
+mkdir -p notebooks/staging
+cp notebooks/output/transfer_manifest.txt notebooks/staging/
 ```
 
 ### 3c. Run the download
 
 ```sh
 docker run --rm \
-  -v "$(pwd)/staging:/input:ro" \
-  -v "$(pwd)/staging:/output" \
+  --userns=keep-id \
+  -v "$(pwd)/notebooks/staging:/input:ro" \
+  -v "$(pwd)/notebooks/staging:/output" \
   cdm-data-loaders ncbi_ftp_sync \
     --manifest /input/transfer_manifest.txt \
     --output-dir /output \
     --threads 2 \
     --limit 10
 ```
+
+> **Note:** `--userns=keep-id` maps your host UID into the container so
+> bind-mount writes work with Podman's rootless mode.  If you use Docker
+> instead, replace it with `--user "$(id -u):$(id -g)"`.
 
 | Flag            | Purpose                                                   |
 |-----------------|-----------------------------------------------------------|
@@ -168,7 +232,7 @@ docker run --rm \
 | `--threads`     | Parallel FTP connections (2 is polite for testing)        |
 | `--limit`       | Redundant safety cap (already limited in Phase 1)         |
 
-After the container exits, `staging/` will contain:
+After the container exits, `notebooks/staging/` will contain:
 
 ```
 staging/
@@ -189,7 +253,7 @@ the FTP server's `md5checksums.txt`.
 >
 > ```sh
 > uv run ncbi_ftp_sync \
->   --manifest output/transfer_manifest.txt \
+>   --manifest notebooks/output/transfer_manifest.txt \
 >   --output-dir staging \
 >   --threads 2 --limit 10
 > ```
@@ -200,18 +264,13 @@ The download step writes to the local filesystem.  To feed Phase 3 we need
 to upload the staged files into MinIO under a staging prefix:
 
 ```sh
-aws --endpoint-url http://localhost:9000 \
-    s3 cp staging/raw_data/ s3://cdm-lake/staging/run1/raw_data/ \
-    --recursive \
-    --no-sign-request
+uv run python scripts/s3_local.py cp notebooks/staging/raw_data/ s3://cdm-lake/staging/run1/raw_data/
 ```
 
 Verify the upload:
 
 ```sh
-aws --endpoint-url http://localhost:9000 \
-    s3 ls s3://cdm-lake/staging/run1/ \
-    --recursive --no-sign-request | head -20
+uv run python scripts/s3_local.py ls s3://cdm-lake/staging/run1/
 ```
 
 ---
@@ -222,16 +281,16 @@ Open `notebooks/ncbi_ftp_promote.ipynb`.
 
 ### Constants to change (Cell 3)
 
-| Constant            | Walkthrough value                                    | Why                                         |
-|---------------------|------------------------------------------------------|---------------------------------------------|
-| `BUCKET`            | `"cdm-lake"`                                         | matches the bucket created in Step 1        |
-| `STAGING_PREFIX`    | `"staging/run1/"`                                    | matches the upload prefix from Step 3d      |
-| `REMOVED_MANIFEST`  | `None`                                               | nothing to remove on first run              |
-| `UPDATED_MANIFEST`  | `None`                                               | nothing to archive on first run             |
-| `NCBI_RELEASE`      | `None`                                               | no release tag needed for local testing     |
-| `MANIFEST_S3_KEY`   | `None`                                               | skip manifest trimming                      |
-| `PATH_PREFIX`       | `"tenant-general-warehouse/kbase/datasets/ncbi/"`    | keep default                                |
-| `DRY_RUN`           | `True`                                               | **start with dry-run!**                     |
+| Constant                | Walkthrough value                                    | Format | Why                                         |
+|-------------------------|------------------------------------------------------|--------|---------------------------------------------|
+| `STORE_BUCKET`          | `"cdm-lake"`                                         | bucket name | matches the bucket created in Step 1   |
+| `STAGING_KEY_PREFIX`    | `"staging/run1/"`                                    | S3 key prefix | matches the upload prefix from Step 3d |
+| `REMOVED_MANIFEST_PATH` | `None`                                              | local path | nothing to remove on first run            |
+| `UPDATED_MANIFEST_PATH` | `None`                                              | local path | nothing to archive on first run           |
+| `NCBI_RELEASE`          | `None`                                               | string | no release tag needed for local testing     |
+| `MANIFEST_S3_KEY`       | `None`                                               | S3 object key | skip manifest trimming               |
+| `LAKEHOUSE_KEY_PREFIX`  | `"tenant-general-warehouse/kbase/datasets/ncbi/"`    | S3 key prefix | keep default                         |
+| `DRY_RUN`               | `True`                                               | bool   | **start with dry-run!**                     |
 
 ### Initialise the S3 client for MinIO
 
@@ -257,7 +316,7 @@ get_s3_client({
    *would* do without moving any objects.
 2. Review the report in Cell 6.
 3. If the dry-run looks correct, set `DRY_RUN = False` in Cell 3 and re-run
-   from Cell 5.
+   from Cell 3.
 
 After promotion the final Lakehouse layout in MinIO will look like:
 
@@ -278,16 +337,12 @@ Browse the [MinIO console](http://localhost:9001) or use the CLI:
 
 ```sh
 # List final Lakehouse objects
-aws --endpoint-url http://localhost:9000 \
-    s3 ls s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/raw_data/ \
-    --recursive --no-sign-request | head -20
+uv run python scripts/s3_local.py ls \
+  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/raw_data/
 
 # Check user metadata (md5) on a specific object
-aws --endpoint-url http://localhost:9000 \
-    s3api head-object \
-    --bucket cdm-lake \
-    --key "tenant-general-warehouse/kbase/datasets/ncbi/raw_data/GCF/900/000/615/GCF_900000615.1_PRJEB7657_assembly/GCF_900000615.1_PRJEB7657_assembly_genomic.fna.gz" \
-    --no-sign-request | jq .Metadata
+uv run python scripts/s3_local.py head \
+  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/raw_data/GCF/900/000/615/GCF_900000615.1_PRJEB7657_assembly/GCF_900000615.1_PRJEB7657_assembly_genomic.fna.gz
 ```
 
 ---
@@ -297,13 +352,13 @@ aws --endpoint-url http://localhost:9000 \
 To exercise the diff/update/archive logic, repeat the pipeline with a
 previous snapshot:
 
-1. **Phase 1:** Set `PREVIOUS_SUMMARY_S3` to an S3 path where you upload the
+2. **Phase 1:** Set `PREVIOUS_SUMMARY_URI` to an S3 path where you upload the
    raw summary from the first run, or save the `raw_summary` string from Cell 4
    to a local file and pass it via `parse_assembly_summary(Path("prev.txt"))`.
 2. **Phase 1:** The diff will now show `updated`, `replaced`, and
    `suppressed` entries (if any changed between runs).
 3. **Phase 2:** Download the new manifest.
-4. **Phase 3:** Set `REMOVED_MANIFEST` and `UPDATED_MANIFEST` to the paths
+4. **Phase 3:** Set `REMOVED_MANIFEST_PATH` and `UPDATED_MANIFEST_PATH` to the paths
    from Phase 1.  Updated assemblies will be archived before overwrite;
    removed assemblies will be archived and deleted.
 
@@ -328,7 +383,7 @@ rm -rf staging/ output/
 | `berdl_notebook_utils` import error in notebook | Missing local MinIO client init | Add the `get_s3_client({...})` cell described in Step 4 |
 | `connect_ftp() timeout` | NCBI FTP may be slow or rate-limited | Retry; reduce `--threads` to 1 |
 | `CRC64NVME` errors uploading to MinIO | MinIO version too old (needs ≥ `2025-02-07`) | Pin to `minio/minio:RELEASE.2025-02-28T09-55-16Z` or newer |
-| Phase 3 shows 0 promoted | Staging prefix doesn't match or bucket is wrong | Verify `STAGING_PREFIX` matches the S3 upload path from Step 3d |
+| Phase 3 shows 0 promoted | Staging prefix doesn't match or bucket is wrong | Verify `STAGING_KEY_PREFIX` matches the S3 upload path from Step 3d |
 | Container can't reach FTP | Docker network isolation | Use `--network host` or ensure DNS resolution works inside the container |
 
 ---

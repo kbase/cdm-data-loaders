@@ -26,7 +26,7 @@ from cdm_data_loaders.ncbi_ftp.assembly import (
 )
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.ftp_client import connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
-from cdm_data_loaders.utils.s3 import head_object
+from cdm_data_loaders.utils.s3 import get_s3_client, head_object
 
 logger = get_cdm_logger()
 
@@ -264,7 +264,7 @@ def verify_transfer_candidates(
     accessions: list[str],
     current_assemblies: dict[str, AssemblyRecord],
     bucket: str,
-    path_prefix: str,
+    key_prefix: str,
     ftp_host: str = FTP_HOST,
 ) -> list[str]:
     """Verify which transfer candidates actually need downloading.
@@ -280,16 +280,18 @@ def verify_transfer_candidates(
     :param accessions: list of candidate accessions (new + updated from diff)
     :param current_assemblies: parsed current assembly summary
     :param bucket: S3 bucket name
-    :param path_prefix: Lakehouse path prefix (e.g. ``"tenant-general-warehouse/kbase/datasets/ncbi/"``)
+    :param key_prefix: S3 key prefix for the Lakehouse dataset root
     :param ftp_host: NCBI FTP hostname
     :return: filtered list of accessions that actually need downloading
     """
     if not accessions:
         return []
 
-    ftp = connect_ftp(ftp_host)
+    s3 = get_s3_client()
+    ftp: Any = None  # lazily connected only when needed
     confirmed: list[str] = []
     pruned = 0
+    skipped_missing = 0
     last_activity = time.monotonic()
 
     try:
@@ -299,10 +301,24 @@ def verify_transfer_candidates(
                 confirmed.append(acc)
                 continue
 
-            # Keep FTP alive between assemblies
+            # Build S3 prefix for this assembly
+            s3_rel = build_accession_path(rec.assembly_dir)
+            s3_prefix = f"{key_prefix}{s3_rel}"
+
+            # Quick check: does *anything* exist under this prefix?
+            resp = s3.list_objects_v2(Bucket=bucket, Prefix=s3_prefix, MaxKeys=1)
+            if resp.get("KeyCount", 0) == 0:
+                # Nothing in the store — definitely needs downloading
+                confirmed.append(acc)
+                skipped_missing += 1
+                continue
+
+            # Objects exist — need FTP md5 checksums to decide
+            if ftp is None:
+                ftp = connect_ftp(ftp_host)
+
             last_activity = ftp_noop_keepalive(ftp, last_activity)
 
-            # Download md5checksums.txt from FTP
             ftp_dir = _ftp_dir_from_url(rec.ftp_path, ftp_host)
             try:
                 md5_text = ftp_retrieve_text(ftp, ftp_dir.rstrip("/") + "/md5checksums.txt")
@@ -324,13 +340,10 @@ def verify_transfer_candidates(
                 confirmed.append(acc)
                 continue
 
-            # Build S3 prefix for this assembly
-            s3_rel = build_accession_path(rec.assembly_dir)
-
             # Short-circuit: if any file differs or is missing, keep the assembly
             needs_update = False
             for fname, expected_md5 in target_checksums.items():
-                s3_path = f"{bucket}/{path_prefix}{s3_rel}{fname}"
+                s3_path = f"{bucket}/{s3_prefix}{fname}"
                 obj_info = head_object(s3_path)
 
                 if obj_info is None:
@@ -349,12 +362,14 @@ def verify_transfer_candidates(
                 pruned += 1
                 logger.debug("Pruned %s — all files match S3 checksums", acc)
     finally:
-        with contextlib.suppress(Exception):
-            ftp.quit()
+        if ftp is not None:
+            with contextlib.suppress(Exception):
+                ftp.quit()
 
     logger.info(
-        "Checksum verification: %d confirmed, %d pruned (of %d candidates)",
+        "Checksum verification: %d confirmed (%d missing from store), %d pruned (of %d candidates)",
         len(confirmed),
+        skipped_missing,
         pruned,
         len(accessions),
     )

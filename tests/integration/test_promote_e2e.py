@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
-from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_PATH_PREFIX, promote_from_s3
+from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX, promote_from_s3
 
 from .conftest import get_object_metadata, list_all_keys, seed_lakehouse
 
@@ -32,7 +32,7 @@ ACCESSION_C = "GCF_900000003.1"
 ASSEMBLY_DIR_C = "GCF_900000003.1_FakeAssemblyC"
 
 STAGING_PREFIX = "staging/run1/"
-PATH_PREFIX = DEFAULT_PATH_PREFIX
+PATH_PREFIX = DEFAULT_LAKEHOUSE_KEY_PREFIX
 
 # Fake file contents for staging
 FAKE_GENOMIC = b">seq1\nATCGATCG\n"
@@ -86,9 +86,9 @@ class TestPromoteFromStaging:
         _stage_assembly(s3, test_bucket, ASSEMBLY_DIR_A)
 
         report = promote_from_s3(
-            staging_prefix=STAGING_PREFIX,
+            staging_key_prefix=STAGING_PREFIX,
             bucket=test_bucket,
-            path_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=PATH_PREFIX,
         )
 
         assert report["promoted"] >= 2  # noqa: PLR2004  # genomic + protein
@@ -116,16 +116,16 @@ class TestPromoteIdempotent:
         _stage_assembly(s3, test_bucket, ASSEMBLY_DIR_A)
 
         report1 = promote_from_s3(
-            staging_prefix=STAGING_PREFIX,
+            staging_key_prefix=STAGING_PREFIX,
             bucket=test_bucket,
-            path_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=PATH_PREFIX,
         )
         keys_after_first = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
 
         report2 = promote_from_s3(
-            staging_prefix=STAGING_PREFIX,
+            staging_key_prefix=STAGING_PREFIX,
             bucket=test_bucket,
-            path_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=PATH_PREFIX,
         )
         keys_after_second = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
 
@@ -157,11 +157,11 @@ class TestPromoteArchiveUpdated:
         updated_manifest = _write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
 
         report = promote_from_s3(
-            staging_prefix=STAGING_PREFIX,
+            staging_key_prefix=STAGING_PREFIX,
             bucket=test_bucket,
-            updated_manifest=str(updated_manifest),
+            updated_manifest_path=str(updated_manifest),
             ncbi_release="2024-01",
-            path_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=PATH_PREFIX,
         )
 
         assert report["archived"] >= 2  # noqa: PLR2004
@@ -198,11 +198,11 @@ class TestPromoteArchiveRemoved:
 
         # Stage something (even empty staging is fine — promote won't find data files for this accession)
         report = promote_from_s3(
-            staging_prefix=STAGING_PREFIX,
+            staging_key_prefix=STAGING_PREFIX,
             bucket=test_bucket,
-            removed_manifest=str(removed_manifest),
+            removed_manifest_path=str(removed_manifest),
             ncbi_release="2024-01",
-            path_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=PATH_PREFIX,
         )
 
         assert report["archived"] >= 1
@@ -234,9 +234,9 @@ class TestPromoteDryRun:
         _stage_assembly(s3, test_bucket, ASSEMBLY_DIR_A)
 
         report = promote_from_s3(
-            staging_prefix=STAGING_PREFIX,
+            staging_key_prefix=STAGING_PREFIX,
             bucket=test_bucket,
-            path_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=PATH_PREFIX,
             dry_run=True,
         )
 
@@ -271,10 +271,10 @@ class TestPromoteTrimsManifest:
         _stage_assembly(s3, test_bucket, ASSEMBLY_DIR_B)
 
         report = promote_from_s3(
-            staging_prefix=STAGING_PREFIX,
+            staging_key_prefix=STAGING_PREFIX,
             bucket=test_bucket,
-            manifest_path=manifest_key,
-            path_prefix=PATH_PREFIX,
+            manifest_s3_key=manifest_key,
+            lakehouse_key_prefix=PATH_PREFIX,
         )
 
         assert report["failed"] == 0
@@ -306,9 +306,9 @@ class TestPromoteIncompleteStaging:
         s3.put_object(Bucket=test_bucket, Key=md5_key, Body=_md5(FAKE_GENOMIC).encode())
 
         report = promote_from_s3(
-            staging_prefix=STAGING_PREFIX,
+            staging_key_prefix=STAGING_PREFIX,
             bucket=test_bucket,
-            path_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=PATH_PREFIX,
         )
 
         # .md5 files are sidecars and should not be promoted as data

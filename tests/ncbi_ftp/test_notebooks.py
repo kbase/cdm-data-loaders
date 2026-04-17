@@ -19,7 +19,7 @@ from cdm_data_loaders.ncbi_ftp.manifest import (  # noqa: F401
     write_updated_manifest,
 )
 from cdm_data_loaders.ncbi_ftp.promote import (
-    DEFAULT_PATH_PREFIX,
+    DEFAULT_LAKEHOUSE_KEY_PREFIX,
     promote_from_s3,
 )
 from cdm_data_loaders.utils.s3 import get_s3_client, split_s3_path  # noqa: F401
@@ -86,4 +86,4 @@ class TestPromoteNotebookImports:
     def test_imports_resolve(self) -> None:
         """All promote notebook imports are verified at module load time above."""
         assert callable(promote_from_s3)
-        assert isinstance(DEFAULT_PATH_PREFIX, str)
+        assert isinstance(DEFAULT_LAKEHOUSE_KEY_PREFIX, str)

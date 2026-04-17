@@ -40,7 +40,7 @@ class DownloadSettings(CtsDefaultSettings):
     output_dir: str = Field(
         default=OUTPUT_MOUNT,
         description="Output directory for downloaded assembly files",
-        validation_alias=AliasChoices("o", "output-dir", "output_dir"),
+        validation_alias=AliasChoices("output-dir", "output_dir"),
     )
     threads: int = Field(
         default=4,

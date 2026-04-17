@@ -24,7 +24,7 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     write_transfer_manifest,
     write_updated_manifest,
 )
-from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_PATH_PREFIX
+from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX
 from cdm_data_loaders.utils.ftp_client import connect_ftp, ftp_retrieve_text
 
 if TYPE_CHECKING:
@@ -184,7 +184,7 @@ class TestVerifyTransferCandidatesPrunes:
         # Seed MinIO with dummy files that have the right MD5 metadata
         rel = build_accession_path(rec.assembly_dir)
         s3 = minio_s3_client
-        path_prefix = DEFAULT_PATH_PREFIX
+        path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
         for fname, md5 in checksums.items():
             if any(fname.endswith(suffix) for suffix in FILE_FILTERS):
                 key = f"{path_prefix}{rel}{fname}"
@@ -201,7 +201,7 @@ class TestVerifyTransferCandidatesPrunes:
             candidates,
             filtered,
             bucket=test_bucket,
-            path_prefix=path_prefix,
+            key_prefix=path_prefix,
         )
 
         assert acc not in result, f"Expected {acc} to be pruned (MD5 matches)"
