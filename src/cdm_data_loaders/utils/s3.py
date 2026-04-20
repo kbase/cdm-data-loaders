@@ -387,7 +387,7 @@ def upload_file_with_metadata(
     :type metadata: dict[str, str]
     :param object_name: S3 object name; defaults to the local filename
     :type object_name: str | None
-    :return: True if the upload succeeded
+    :return: True if the upload succeeded, otherwise False
     :rtype: bool
     """
     if isinstance(local_file_path, str):
@@ -407,14 +407,17 @@ def upload_file_with_metadata(
     extra_args = {**DEFAULT_EXTRA_ARGS, "Metadata": metadata}
 
     file_size = local_file_path.stat().st_size
-    with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
-        s3.upload_file(
-            Filename=str(local_file_path),
-            Bucket=bucket,
-            Key=key,
-            Callback=pbar.update,
-            ExtraArgs=extra_args,
-        )
+    try:
+        with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
+            s3.upload_file(
+                Filename=str(local_file_path),
+                Bucket=bucket,
+                Key=key,
+                Callback=pbar.update,
+                ExtraArgs=extra_args,
+            )
+    except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError):
+        return False
     return True
 
 
