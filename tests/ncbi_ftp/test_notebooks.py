@@ -76,6 +76,7 @@ class TestManifestNotebookImports:
         assert FTP_HOST
         assert AssemblyRecord is not None
         assert callable(download_assembly_summary)
+        assert callable(compute_diff)
         assert callable(write_updated_manifest)
 
 
