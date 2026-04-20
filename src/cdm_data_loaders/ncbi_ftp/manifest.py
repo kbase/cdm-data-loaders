@@ -251,7 +251,7 @@ def compute_diff(  # noqa: PLR0912
 def _ftp_dir_from_url(ftp_url: str, ftp_host: str = FTP_HOST) -> str:
     """Convert an FTP URL from the assembly summary to an FTP directory path."""
     if ftp_url.startswith("https://"):
-        return ftp_url.replace("https://ftp.ncbi.nlm.nih.gov", "")
+        return ftp_url.replace(f"https://{ftp_host}", "")
     if ftp_url.startswith("ftp://"):
         return ftp_url.replace(f"ftp://{ftp_host}", "")
     return ftp_url
