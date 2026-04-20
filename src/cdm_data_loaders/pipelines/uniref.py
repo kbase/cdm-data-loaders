@@ -15,28 +15,28 @@ from cdm_data_loaders.pipelines.core import (
     stream_xml_file_resource,
 )
 from cdm_data_loaders.pipelines.cts_defaults import (
+    DEFAULT_SETTINGS_CONFIG_DICT,
     BatchedFileInputSettings,
 )
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-
-logger = get_cdm_logger()
 
 APP_NAME = "uniref_importer"
 UNIREF_LOG_INTERVAL = 10000
 
 
-class Settings(BatchedFileInputSettings):
+UNIREF_VARIANT_ALIASES = ["-u", "--uniref", "--uniref-variant", "--uniref_variant"]
+
+
+class UnirefSettings(BatchedFileInputSettings):
     """Configuration for running the UniRef import pipeline."""
 
     model_config = SettingsConfigDict(
-        cli_parse_args=True,
+        **DEFAULT_SETTINGS_CONFIG_DICT,
         cli_prog_name="uniref",
-        cli_exit_on_error=False,
-        cli_ignore_unknown_args=True,
     )
+
     uniref_variant: str = Field(
         description=f"Which UniRef variant to import. Choices: {UNIREF_VARIANTS}",
-        validation_alias=AliasChoices("u", "uniref", "uniref-variant", "uniref_variant"),
+        validation_alias=AliasChoices(*[alias.strip("-") for alias in UNIREF_VARIANT_ALIASES]),
     )
 
     @field_validator("uniref_variant")
@@ -57,33 +57,33 @@ class Settings(BatchedFileInputSettings):
 
 
 @dlt.resource(name="parse_uniref", parallelized=True)
-def parse_uniref(config: Settings) -> Generator[DataItemWithMeta, Any]:
+def parse_uniref(settings: UnirefSettings) -> Generator[DataItemWithMeta, Any]:
     """Parse the information from UniRef files, batch by batch.
 
-    :param config: config for running the pipeline.
-    :type config: Settings
+    :param settings: config for running the pipeline.
+    :type settings: UnirefSettings
     """
     yield from stream_xml_file_resource(
-        config=config,
+        settings=settings,
         xml_tag=ENTRY_XML_TAG,
         parse_fn=lambda entry, timestamp, file_path: parse_uniref_entry(
-            entry=entry, timestamp=timestamp, file_path=file_path, uniref_variant=f"UniRef {config.uniref_variant}"
+            entry=entry, timestamp=timestamp, file_path=file_path, uniref_variant=f"UniRef {settings.uniref_variant}"
         ),
         log_interval=UNIREF_LOG_INTERVAL,
     )
 
 
-def run_uniref_pipeline(config: Settings) -> None:
+def run_uniref_pipeline(settings: UnirefSettings) -> None:
     """Execute the Uniref pipeline.
 
-    :param config: config for running the pipeline.
-    :type config: Settings
+    :param settings: config for running the pipeline.
+    :type settings: UnirefSettings
     """
     run_pipeline(
-        config=config,
-        resource=parse_uniref(config),
+        settings=settings,
+        resource=parse_uniref(settings),
         pipeline_kwargs={
-            "pipeline_name": f"uniref_{config.uniref_variant}",
+            "pipeline_name": f"uniref_{settings.uniref_variant}",
             "dataset_name": "uniprot_kb",
         },
         pipeline_run_kwargs={"table_format": "delta"},
@@ -92,7 +92,7 @@ def run_uniref_pipeline(config: Settings) -> None:
 
 def cli() -> None:
     """CLI interface for the UniRef importer pipeline."""
-    run_cli(Settings, run_uniref_pipeline)
+    run_cli(UnirefSettings, run_uniref_pipeline)
 
 
 if __name__ == "__main__":

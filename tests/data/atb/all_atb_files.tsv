@@ -1,0 +1,69 @@
+project	project_id	filename	url	md5	size(MB)
+AllTheBacteria/AMR/AMRFinderPlus	7nwrx	v3.12.8/DB_v2024-01-31.1/0.2/AMRFP_results.tsv.gz	https://osf.io/download/zgexh/	0629c681b3068eec0fc6e9888e716f6a	519.83
+AllTheBacteria/AMR/AMRFinderPlus	7nwrx	v3.12.8/DB_v2024-01-31.1/0.2/AMRFP_status.tsv.gz	https://osf.io/download/br9fv/	f5e0317311c52723ed5024967e89f410	8.5
+AllTheBacteria/Annotation/Bakta	zt57s	File_Lists/atb.bakta.incr_release.202408.status.tsv.gz	https://osf.io/download/2skzy/	7da48fce8e310916a072786872f475b1	14.19
+AllTheBacteria/Annotation/Bakta	zt57s	File_Lists/atb.bakta.r0.2.status.tsv.gz	https://osf.io/download/rxfks/	b7255867206dc66f2c26db31921a67a6	53.87
+AllTheBacteria/Annotation/Bakta/Incr_release.202408_Set_1	kdnwp	atb.bakta.incr_release.202408.batch.1.tar.xz	https://osf.io/download/r84xg/	a3ba0148c435f31b4de3f0b72e01075d	1378.51
+AllTheBacteria/Annotation/Bakta/Incr_release.202408_Set_1	kdnwp	atb.bakta.incr_release.202408.batch.10.tar.xz	https://osf.io/download/qxye9/	e0724b0a605da7298b802f01145d8b49	388.76
+AllTheBacteria/Annotation/Bakta/Incr_release.202408_Set_2	p4kvy	atb.bakta.incr_release.202408.batch.49.tar.xz	https://osf.io/download/nyua7/	c8871eab5ee9071b101ba7bbafa7983b	2320.01
+AllTheBacteria/Annotation/Bakta/Incr_release.202408_Set_2	p4kvy	atb.bakta.incr_release.202408.batch.50.tar.xz	https://osf.io/download/tqrs2/	887db770a7e176e644a2b413de4b07e5	2169.25
+AllTheBacteria/Annotation/Bakta/Release_0.2_Set_1	tyw72	atb.bakta.r0.2.batch.1.tar.xz	https://osf.io/download/vpg3d/	5e6ccd68f5c6a69a14dafaf599f9377e	293.86
+AllTheBacteria/Annotation/Bakta/Release_0.2_Set_1	tyw72	atb.bakta.r0.2.batch.10.tar.xz	https://osf.io/download/gbzev/	8fab65bbeadc99201a1df83f32b8c779	132.76
+AllTheBacteria/Annotation/Bakta/Release_0.2_Set_9	evurw	atb.bakta.r0.2.batch.228.tar.xz	https://osf.io/download/679b9dd3bc1fdea8290eb046/	dc061bcc2e1bb9c30887a4dfefb1b6c2	3841.85
+AllTheBacteria/Annotation/Bakta/Release_0.2_Set_9	evurw	atb.bakta.r0.2.batch.229.tar.xz	https://osf.io/download/679ba14cae64ecefd50eaea0/	db0081059366d08e8c3cd8c19857ef42	3902.73
+AllTheBacteria/Archaea	nehtp	Assembly/atb.archaea.assembly.202407.tar.xz	https://osf.io/download/argkq/	46843eab50aa0d2f354c89bf695a2fef	146.48
+AllTheBacteria/Archaea	nehtp	Metadata/202407/assembly-stats.tsv.gz	https://osf.io/download/zgu2d/	b2e9de4072eb0076437093c1cc087be3	0.02
+AllTheBacteria/Assembly	zxfmy	File_Lists/file_list.all.20240805.tsv.gz	https://osf.io/download/dw3h7/	5fc5c88a0593785341e466143a97f126	17.04
+AllTheBacteria/Assembly	zxfmy	File_Lists/file_list.all.202505.tsv.gz	https://osf.io/download/69a03f582574717cb3643d62/	0a9ee0b1efaf42b3ea9e89ce91d2b9e1	22.13
+AllTheBacteria/Assembly/Incremental_release_2024-08	zy7er	atb.assembly.incr_release.202408.batch.1.tar.xz	https://osf.io/download/bfeqh/	2e5d42de7f7f047245b4c4b78e4dabaf	61.36
+AllTheBacteria/Assembly/Incremental_release_2024-08	zy7er	atb.assembly.incr_release.202408.batch.10.tar.xz	https://osf.io/download/66d9a2958e73e77956a3cc98/	b12558bfe26ceb27f24d7afbab84066a	43.54
+AllTheBacteria/Assembly/Incremental_release_2025-05	rzsby	atb.assembly.incr_release.202505.batch.1.tar.xz	https://osf.io/download/6852bf1bd63d81dd5ceb70f6/	aac4dbdfbe62a14eb49622124f507bcf	34.02
+AllTheBacteria/Assembly/Incremental_release_2025-05	rzsby	atb.assembly.incr_release.202505.batch.10.tar.xz	https://osf.io/download/6852bf3fe1cea8734945897b/	f471f71beb528e4f97c2433154437e23	17.57
+AllTheBacteria/Assembly/Release_0.2_Set_1	h28c3	atb.assembly.r0.2.batch.1.tar.xz	https://osf.io/download/27tz5/	65973bf642ddd13bfd4ffffc37b72efb	32.67
+AllTheBacteria/Assembly/Release_0.2_Set_1	h28c3	atb.assembly.r0.2.batch.10.tar.xz	https://osf.io/download/z3vq5/	01d5bd50ae5157bcc7b9d7be40bd66ec	16.0
+AllTheBacteria/Assembly/Release_0.2_Set_2	d9tzp	atb.assembly.r0.2.batch.300.tar.xz	https://osf.io/download/jubs7/	47fca962dc897290e10b8c7d097b56c4	17.62
+AllTheBacteria/Assembly/Release_0.2_Set_2	d9tzp	atb.assembly.r0.2.batch.301.tar.xz	https://osf.io/download/6673fe7b2026e9027723dac6/	76bf05d9b0b6b01a132e07b67db113b1	7.1
+AllTheBacteria/Assembly/Reproducibility	j72bc	Assembly_pipeline/GCA_009914755.split_ref.tar.xz	https://osf.io/download/96s2h/	61e0eb7b2edb534a0e347c92a160672f	724.81
+AllTheBacteria/Assembly/Reproducibility	j72bc	Assembly_pipeline/gtdb_r214.syldb.file2species.map	https://osf.io/download/3427r/	a0e52ffc0f6f484f927c2aba6100b1a7	17.51
+AllTheBacteria/Biosynthetic_Gene_Cluster	cufb2	GECCO_v0.9.8/AllTheBacteria_v0.2/AllTheBacteria_v0.2_bgcs_split1.gbk.xz	https://osf.io/download/8q4y5/	76de02352cdc1f3dbed9e52294f7deb7	3612.21
+AllTheBacteria/Biosynthetic_Gene_Cluster	cufb2	GECCO_v0.9.8/AllTheBacteria_v0.2/AllTheBacteria_v0.2_bgcs_split2.gbk.xz	https://osf.io/download/3rx5w/	e49fe2ba418fa70eb60a9f17fe70bea3	1734.19
+AllTheBacteria/DefenseFinder	hpgac	Aggregated/defense_finder_results_202408.tsv.xz	https://osf.io/download/bmdxg/	c9545ebf3af5f65cac085deed384e490	135.7
+AllTheBacteria/DefenseFinder	hpgac	Aggregated/defense_finder_status_202408.tsv.xz	https://osf.io/download/wvsnr/	a75c23e604fcf99f2de36889beff80b8	9.31
+AllTheBacteria/Hypothetical Protein Structures/FASTA	rq6kz	all_hypotheticals_under_3000AA_unfiltered.fasta.gz_partaa	https://osf.io/download/6996a253773e9b01047afee7/	e48e308f4dd642c1350164cf0e097c19	1024.0
+AllTheBacteria/Hypothetical Protein Structures/FASTA	rq6kz	all_hypotheticals_under_3000AA_unfiltered.fasta.gz_partab	https://osf.io/download/6996a27524cdbae3b37afff8/	0c75927a9434514c3554b6d9eb0afc8d	1024.0
+AllTheBacteria/Hypothetical Protein Structures/Foldcomp_Databases	wpyeh	foldcomp_db.tar.gz_partaa	https://osf.io/download/699683d1e7c282aa87655d47/	a013b69fed4d2116645022f544134929	1024.0
+AllTheBacteria/Hypothetical Protein Structures/Foldcomp_Databases	wpyeh	foldcomp_db.tar.gz_partab	https://osf.io/download/699683f15ea4de93a87afcb0/	e8afaacb6d129993cec98ffcb5599b3b	1024.0
+AllTheBacteria/Hypothetical Protein Structures/Foldcomp_Databases/Foldcomp_Databases_Part2	f3edq	foldcomp_db.tar.gz_partbv	https://osf.io/download/699cfaefbf4a163f18fef470/	d6981213bfbbf0ca836314d00c1b4cac	1024.0
+AllTheBacteria/Hypothetical Protein Structures/Foldcomp_Databases/Foldcomp_Databases_Part2	f3edq	foldcomp_db.tar.gz_partbw	https://osf.io/download/699cfb521b6d2a2430ee2c87/	1ded130146662a5676a88b6b4914ed59	1024.0
+AllTheBacteria/Hypothetical Protein Structures/Foldseek_Databases	fr37t	foldseek_db.tar.gz_partaa	https://osf.io/download/69965b2e805edf0ba87af9a9/	9ba9ae5d05935d82f5b95e47adf81b13	1024.0
+AllTheBacteria/Hypothetical Protein Structures/Foldseek_Databases	fr37t	foldseek_db.tar.gz_partab	https://osf.io/download/69965d6a870e55721a7afa72/	57a02d2d7620ed98e35b3176ddc9c3e6	1024.0
+AllTheBacteria/Hypothetical Protein Structures/Metadata	3qrey	ATB_AFDB_map_with_batches.tsv.gz	https://osf.io/download/kebs4/	beabc34b497ac5cc7a2d670791f225cf	129.95
+AllTheBacteria/Hypothetical Protein Structures/Metadata	3qrey	ATB_every_protein_with_species.tsv.gz_partaa	https://osf.io/download/4fwsm/	7237c1f91bac08245ac5445be046f4a2	1024.0
+AllTheBacteria/Hypothetical Protein Structures/Set1	sw6p8	batch001.tar.gz	https://osf.io/download/cu5v9/	e06bae944ad219bb3a34a1d0bd10f204	3042.14
+AllTheBacteria/Hypothetical Protein Structures/Set1	sw6p8	batch002.tar.gz	https://osf.io/download/69058c6973ae592cbcc184a8/	6543237399dcbdac0d376a57fc0f5cb3	3052.5
+AllTheBacteria/Hypothetical Protein Structures/Set2	jn4ah	batch017.tar.gz	https://osf.io/download/bngmy/	ea1c00456cb63b126cd822b6012c6e6d	3005.81
+AllTheBacteria/Hypothetical Protein Structures/Set2	jn4ah	batch018.tar.gz	https://osf.io/download/68feed6f982f1029c3f983ba/	ea03c4da38f98b8801ab7b1e882b1130	2991.36
+AllTheBacteria/Hypothetical Protein Structures/Set3	hxsyj	batch032.tar.gz	https://osf.io/download/68ff0f1199935977d0496ed8/	47dd670bfca3cd02fe83501bd7145d2d	3096.23
+AllTheBacteria/Indexes/Phylign/Release_0.2_Set_1	cke8n	atb.assembly.r0.2.batch.1.cobs_classic.xz	https://osf.io/download/yznvr/	530e397586f2a56eb3c4218e58bb1c08	110.66
+AllTheBacteria/Indexes/Phylign/Release_0.2_Set_1	cke8n	atb.assembly.r0.2.batch.10.cobs_classic.xz	https://osf.io/download/6666ff500f8c800ead3c979e/	20fc3eb6387e6c97661b2445bbe72ae6	68.48
+AllTheBacteria/Indexes/Phylign/Release_0.2_Set_2	5u46d	atb.assembly.r0.2.batch.132.cobs_classic.xz	https://osf.io/download/666866c10f8c8010163c9678/	abf517f35994b32918cca30e299ef0d4	933.54
+AllTheBacteria/Indexes/Phylign/Release_0.2_Set_2	5u46d	atb.assembly.r0.2.batch.133.cobs_classic.xz	https://osf.io/download/6668644e0f8c8010163c9470/	e92273e4c30db6785a7ec575d83379ec	1025.16
+AllTheBacteria/Indexes/Phylign/Release_0.2_Set_3	b96v2	atb.assembly.r0.2.batch.226.cobs_classic.xz	https://osf.io/download/dkf8t/	00115082c2b8d8700a10ef68bf8dbb61	503.91
+AllTheBacteria/Indexes/Phylign/Release_0.2_Set_3	b96v2	atb.assembly.r0.2.batch.227.cobs_classic.xz	https://osf.io/download/6668290077ff4c5699e0473a/	7259b805590c104a4f241fefd5fbbe99	604.7
+AllTheBacteria/Indexes/Phylign/Release_0.2_Set_4	mqduz	atb.assembly.r0.2.batch.419.cobs_classic.xz	https://osf.io/download/y9z8k/	6533ab3a19de76045442fa8650da9d74	290.42
+AllTheBacteria/Indexes/Phylign/Release_0.2_Set_4	mqduz	atb.assembly.r0.2.batch.420.cobs_classic.xz	https://osf.io/download/sx8gf/	5c94b3d1397df3efd48b474bd2fa94bb	302.37
+AllTheBacteria/Indexes/sketchlib	rceq5	0.2/atb_sketchlib_v020.skd	https://osf.io/download/usrcx/	6117b38379c853f8b11f430ce2da7f99	3303.15
+AllTheBacteria/Indexes/sketchlib	rceq5	0.2/atb_sketchlib_v020.skm	https://osf.io/download/etjyu/	422404b643d3ed7cf99b199371a410d7	96.53
+AllTheBacteria/MGE annotation	t753g	atb.assembly.incr_release.202408.batch.103.tar.gz	https://osf.io/download/69951ac4f271898ad8506110/	667b44afd96e6a40cc14dcaa903a089f	770.72
+AllTheBacteria/MGE annotation	t753g	atb.assembly.incr_release.202408.batch.104.tar.gz	https://osf.io/download/69951adf52855323c26caf88/	6783bdb1a3a79a279d3925bf1f68add9	832.44
+AllTheBacteria/MLST	23hx6	mlst_processed_all_samples.tsv.xz	https://osf.io/download/4bp2s/	a5586ea858ea7996c1263454fcf08ef1	11.69
+AllTheBacteria/MLST/ATB_Acinetobacter_baumannii_serotyping	vjma7	kaptive_Ab_serotypes.tsv.xz	https://osf.io/download/698d3d38ae62cb73c0e24e71/	48609fa0085497fe76da0d86d6ecd149	0.06
+AllTheBacteria/MLST/ATB_Clostridum;Sarcina_perfringens_toxinotyping	djhga	perfringotyper_Cperf_toxintypes.tsv.xz	https://osf.io/download/aq8z7/	db7f96b7e9a8785da66587a434b7878b	0.0
+AllTheBacteria/MLST/ATB_Listeria_monocytogens_LisSero_typing	9cbqg	lissero_Lm_serotypes.tsv.xz	https://osf.io/download/698d3adfae62cb73c0e24d39/	5a2ad6a0bd2f1f7919d4c751f8d28327	0.11
+AllTheBacteria/MLST/ATB_Shigella_sp_serotyping_and_species_ID	6a8mv	shigeifinder_shigella_typing.tsv.xz	https://osf.io/download/698d3e4a3d205a55cbc728c8/	8ddf12c26d3f37ecb2c80e959eae5080	0.01
+AllTheBacteria/MLST/ATB_Vibrio_parahaemolyticus_serotyping	xc26j	kaptive_Vp_serotypes.tsv.xz	https://osf.io/download/698d3c315679671ac7e24be4/	af00a3787f2ef545bb5f90a5158acca1	0.02
+AllTheBacteria/MLST/ATB_Virulence_Factors	gk7ec	vfdb_2024db_summary.tsv.xz	https://osf.io/download/8mg7w/	01158578be913513407498c39da5d8b8	44.37
+AllTheBacteria/Metadata	h7wzy	0.1/HQ_set_0.1/hq_dataset.accessions.txt.gz	https://osf.io/download/3znhb/	6f001b72101779b5ff6a556f46c9ddab	4.11
+AllTheBacteria/Metadata	h7wzy	0.1/HQ_set_0.1/hq_dataset.counts_bar_plot.pdf	https://osf.io/download/p5vkt/	a147e807f6a661b6f7f6dc856aa0465c	0.02
+AllTheBacteria/Species_Specific/Bacillus_cereus_group	8ua49	BTyper3_v3.4.0/0.2+inc-rel-2024-08/ATB_0.2+inc-rel-2024-08_Bacillus-cereus-group_BTyper3-v3.4.0_merged.tsv.gz	https://osf.io/download/uf7va/	4f02b2e8016360965b389f1bf5ca1948	0.17
+AllTheBacteria/Species_Specific/Bacillus_cereus_group	8ua49	BTyper3_v3.4.0/0.2+inc-rel-2024-08/ATB_0.2+inc-rel-2024-08_Bacillus-cereus-group_Status_File.tsv.gz	https://osf.io/download/yz8p4/	1c28768c74ea77f5617efab4a1bab09e	0.01
