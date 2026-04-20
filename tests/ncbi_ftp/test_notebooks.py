@@ -22,7 +22,7 @@ from cdm_data_loaders.ncbi_ftp.promote import (
     DEFAULT_LAKEHOUSE_KEY_PREFIX,
     promote_from_s3,
 )
-from cdm_data_loaders.utils.s3 import get_s3_client, split_s3_path  # noqa: F401
+from cdm_data_loaders.utils.s3 import split_s3_path  # noqa: F401
 
 NOTEBOOKS_DIR = Path(__file__).resolve().parents[2] / "notebooks"
 
