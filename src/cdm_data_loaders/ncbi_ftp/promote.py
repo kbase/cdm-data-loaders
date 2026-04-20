@@ -9,7 +9,7 @@ manifest so that a re-run of Phase 2 only downloads remaining entries.
 import re
 import tempfile
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import botocore.exceptions
@@ -120,11 +120,12 @@ def promote_from_s3(  # noqa: PLR0913
                     md5_obj = s3.get_object(Bucket=bucket, Key=md5_key)
                     metadata["md5"] = md5_obj["Body"].read().decode().strip()
 
+                final_key_path = PurePosixPath(final_key)
                 upload_file_with_metadata(
                     tmp_path,
-                    f"{bucket}/{Path(final_key).parent}",
+                    f"{bucket}/{final_key_path.parent}",
                     metadata=metadata,
-                    object_name=Path(final_key).name,
+                    object_name=final_key_path.name,
                 )
                 promoted += 1
 
