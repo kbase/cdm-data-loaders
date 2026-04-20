@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import boto3
 import botocore.client
+import botocore.config
 import pytest
 
 import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
@@ -48,6 +49,11 @@ def _minio_reachable() -> bool:
             endpoint_url=MINIO_ENDPOINT_URL,
             aws_access_key_id=MINIO_ACCESS_KEY,
             aws_secret_access_key=MINIO_SECRET_KEY,
+            config=botocore.config.Config(
+                connect_timeout=1,
+                read_timeout=1,
+                retries={"max_attempts": 1},
+            ),
         )
         client.list_buckets()
     except Exception:  # noqa: BLE001
