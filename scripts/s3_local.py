@@ -24,9 +24,10 @@ import sys
 from pathlib import Path
 
 import boto3
+from botocore.client import BaseClient
 
 
-def _client() -> boto3.client:
+def _client() -> BaseClient:
     return boto3.client(
         "s3",
         endpoint_url=os.environ.get("MINIO_ENDPOINT_URL", "http://localhost:9000"),
