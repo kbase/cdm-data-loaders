@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import AliasChoices, Field, field_validator
-from pydantic_settings import CliSuppress
 
 from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST, download_assembly_to_local
 from cdm_data_loaders.pipelines.core import run_cli
@@ -54,7 +53,7 @@ class DownloadSettings(CtsDefaultSettings):
         description="NCBI FTP hostname",
         validation_alias=AliasChoices("ftp-host", "ftp_host"),
     )
-    limit: CliSuppress[int | None] = Field(
+    limit: int | None = Field(
         default=None,
         ge=1,
         description="Limit to first N assemblies (for testing)",
