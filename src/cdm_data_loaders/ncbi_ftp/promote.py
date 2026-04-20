@@ -121,12 +121,17 @@ def promote_from_s3(  # noqa: PLR0913
                     metadata["md5"] = md5_obj["Body"].read().decode().strip()
 
                 final_key_path = PurePosixPath(final_key)
-                upload_file_with_metadata(
+                upload_succeeded = upload_file_with_metadata(
                     tmp_path,
                     f"{bucket}/{final_key_path.parent}",
                     metadata=metadata,
                     object_name=final_key_path.name,
                 )
+                if not upload_succeeded:
+                    logger.error("Failed to upload promoted file %s to %s", staged_key, final_key)
+                    failed += 1
+                    continue
+
                 promoted += 1
 
                 # Track promoted accession for manifest trimming
