@@ -91,7 +91,7 @@ def test_download_atv_index_tsv_error_missing_key(test_settings: AtbSettings) ->
 
 def test_download_atv_index_cannot_create_dir(dlt_config: dict[str, Any]) -> None:
     """Ensure that the output raw_data_dir directory can be saved to."""
-    with pytest.raises(OSError, match="Read-only file system"):
+    with pytest.raises(OSError, match=r"(Read-only file system|Permission denied)"):
         download_atb_index_tsv(AtbSettings(dlt_config=dlt_config, output="/path/to/file"))
 
 
