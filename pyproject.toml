@@ -16,6 +16,7 @@ dependencies = [
     "delta-spark>=4.1.0",
     "dlt[deltalake,duckdb,filesystem,parquet]>=1.22.2",
     "frictionless[aws]>=5.18.1",
+    "frozendict>=2.4.7",
     "lxml>=6.0.2",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",

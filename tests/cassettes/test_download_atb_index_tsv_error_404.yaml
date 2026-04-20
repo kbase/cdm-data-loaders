@@ -1,0 +1,47 @@
+interactions:
+- request:
+    body: null
+    headers:
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      User-Agent:
+      - dlt/1.22.2
+      accept:
+      - application/json
+    method: GET
+    uri: https://api.osf.io/v2/files/R6gcp/
+  response:
+    body:
+      string: '{"errors":[{"detail":"Not found."}],"meta":{"version":"2.0"}}'
+    headers:
+      Allow:
+      - GET, PUT, PATCH, HEAD, OPTIONS
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Content-Length:
+      - '61'
+      Content-Type:
+      - application/vnd.api+json; charset=utf-8
+      Cross-Origin-Opener-Policy:
+      - same-origin
+      Date:
+      - Tue, 14 Apr 2026 21:14:15 GMT
+      Referrer-Policy:
+      - same-origin
+      Server:
+      - nginx
+      Vary:
+      - Accept-Encoding
+      - Accept, Cookie, origin
+      Via:
+      - 1.1 google
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - DENY
+    status:
+      code: 404
+      message: Not Found
+version: 1
