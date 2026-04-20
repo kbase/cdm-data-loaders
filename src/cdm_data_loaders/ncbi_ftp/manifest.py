@@ -257,6 +257,112 @@ def _ftp_dir_from_url(ftp_url: str, ftp_host: str = FTP_HOST) -> str:
     return ftp_url
 
 
+# ── Synthetic summary from S3 store scan ────────────────────────────────
+
+
+def _extract_accession_from_s3_key(key: str) -> str | None:
+    """Extract the assembly accession from an S3 object key.
+
+    Looks for the pattern GCF_######.# or GCA_######.# in the key path.
+
+    :param key: S3 object key
+    :return: accession (e.g. "GCF_000001215.4") or None if not found
+    """
+    m = re.search(r"(GC[AF]_\d{3}\d{6}\.\d+)", key)
+    return m.group(1) if m else None
+
+
+def _extract_assembly_dir_from_s3_key(key: str) -> str | None:
+    """Extract the assembly directory name from an S3 object key.
+
+    The assembly directory is the path component that follows the accession
+    and contains assembly metadata (e.g. "GCF_000001215.4_Release_6_plus_ISO1_MT").
+
+    :param key: S3 object key
+    :return: assembly directory name or None if not found
+    """
+    # Match accession followed by underscore and then capture until next /
+    m = re.search(r"(GC[AF]_\d{3}\d{6}\.\d+[^/]*)/", key)
+    return m.group(1) if m else None
+
+
+def scan_store_to_synthetic_summary(
+    bucket: str,
+    key_prefix: str,
+    progress_callback: Callable[[int, str], None] | None = None,
+) -> dict[str, AssemblyRecord]:
+    """Scan S3 store and build a synthetic assembly summary from existing objects.
+
+    This function is useful when bootstrapping a diffs against an existing,
+    pre-populated S3 store that lacks a baseline assembly summary.
+
+    For each assembly found in the store:
+    - Extracts the accession and assembly directory name from S3 paths
+    - Uses the earliest ``LastModified`` timestamp across all files in that
+      assembly as the synthetic ``seq_rel_date`` (conservative estimate)
+    - Creates an ``AssemblyRecord`` with ``status="latest"``
+
+    The function paginates through S3 to handle large stores efficiently.
+
+    :param bucket: S3 bucket name
+    :param key_prefix: S3 key prefix (all objects under this prefix are scanned)
+    :param progress_callback: optional callable invoked after each accession is
+        processed with ``(count, accession)`` where count is the running total
+        of unique accessions found
+    :return: dict mapping accession to ``AssemblyRecord``
+    """
+    s3 = get_s3_client()
+    assemblies: dict[str, AssemblyRecord] = {}
+    processed_count = 0
+
+    try:
+        paginator = s3.get_paginator("list_objects_v2")
+        pages = paginator.paginate(Bucket=bucket, Prefix=key_prefix)
+
+        for page in pages:
+            for obj in page.get("Contents", []):
+                acc = _extract_accession_from_s3_key(obj["Key"])
+                assembly_dir = _extract_assembly_dir_from_s3_key(obj["Key"])
+
+                if not acc or not assembly_dir:
+                    continue
+
+                # Convert LastModified to NCBI date format (YYYY/MM/DD)
+                last_modified = obj["LastModified"]
+                # Handle both aware and naive datetimes
+                if last_modified.tzinfo is None:
+                    last_modified = last_modified.replace(tzinfo=UTC)
+                obj_date_str = last_modified.strftime("%Y/%m/%d")
+
+                if acc not in assemblies:
+                    # First object for this accession; store it
+                    assemblies[acc] = AssemblyRecord(
+                        accession=acc,
+                        status="latest",
+                        seq_rel_date=obj_date_str,
+                        ftp_path="",  # synthesized; empty as it's not from FTP
+                        assembly_dir=assembly_dir,
+                    )
+                    processed_count += 1
+                    if progress_callback is not None:
+                        progress_callback(processed_count, acc)
+                else:
+                    # Update to earliest timestamp (conservative)
+                    existing_record = assemblies[acc]
+                    existing_date = datetime.strptime(existing_record.seq_rel_date, "%Y/%m/%d").replace(
+                        tzinfo=UTC
+                    )
+                    if last_modified < existing_date:
+                        existing_record.seq_rel_date = obj_date_str
+
+    except Exception as e:  # noqa: BLE001
+        logger.error("Error scanning store: %s", e)
+        raise
+
+    logger.info("Scanned S3 store: found %d unique assemblies", len(assemblies))
+    return assemblies
+
+
 # ── Checksum verification against S3 store ───────────────────────────────
 
 

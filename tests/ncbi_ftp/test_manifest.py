@@ -6,12 +6,15 @@ from unittest.mock import MagicMock, patch
 
 from cdm_data_loaders.ncbi_ftp.manifest import (
     DiffResult,
+    _extract_accession_from_s3_key,
+    _extract_assembly_dir_from_s3_key,
     _ftp_dir_from_url,
     accession_prefix,
     compute_diff,
     filter_by_prefix_range,
     get_latest_assembly_paths,
     parse_assembly_summary,
+    scan_store_to_synthetic_summary,
     verify_transfer_candidates,
     write_diff_summary,
     write_removed_manifest,
@@ -559,3 +562,180 @@ class TestVerifyTransferCandidates:
         assert result == ["GCF_000001215.4"]
         # FTP should never have been connected (lazy init)
         mock_connect.assert_not_called()
+
+
+# ── Synthetic summary from S3 store scan ────────────────────────────────
+
+
+class TestExtractAccessionFromS3Key:
+    """Test accession extraction from S3 paths."""
+
+    @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
+    def test_extracts_accession_from_path(self, _mock_s3: MagicMock) -> None:
+        """Verify accession is extracted correctly from S3 keys."""
+        assert _extract_accession_from_s3_key(
+            "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz"
+        ) == "GCF_000001215.4"
+        assert _extract_accession_from_s3_key(
+            "some/path/GCA_999999999.1_whatever/data.txt"
+        ) == "GCA_999999999.1"
+
+    def test_returns_none_for_invalid_path(self) -> None:
+        """Verify None is returned when no accession is found."""
+        assert _extract_accession_from_s3_key("some/random/path") is None
+        assert _extract_accession_from_s3_key("") is None
+
+
+class TestExtractAssemblyDirFromS3Key:
+    """Test assembly directory extraction from S3 paths."""
+
+    def test_extracts_assembly_dir(self) -> None:
+        """Verify assembly directory is extracted correctly from S3 keys."""
+        assert _extract_assembly_dir_from_s3_key(
+            "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz"
+        ) == "GCF_000001215.4_Release_6_plus_ISO1_MT"
+        assert _extract_assembly_dir_from_s3_key(
+            "prefix/GCA_999999999.1_assembly_name/subdir/data.txt"
+        ) == "GCA_999999999.1_assembly_name"
+
+    def test_returns_none_for_invalid_path(self) -> None:
+        """Verify None is returned when no assembly directory is found."""
+        assert _extract_assembly_dir_from_s3_key("some/random/path") is None
+        assert _extract_assembly_dir_from_s3_key("") is None
+
+
+class TestScanStoreToSyntheticSummary:
+    """Test synthetic assembly summary generation from S3 store scan."""
+
+    def _mock_s3_with_objects(self) -> MagicMock:
+        """Return a mock S3 client with assembly objects."""
+        from datetime import datetime, timezone
+
+        mock = MagicMock()
+        mock_paginator = MagicMock()
+        mock.get_paginator.return_value = mock_paginator
+
+        # Mock objects from two assemblies
+        page_contents = [
+            {
+                "Key": "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6/file1.gz",
+                "LastModified": datetime(2024, 1, 15, tzinfo=timezone.utc),
+            },
+            {
+                "Key": "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6/file2.gz",
+                "LastModified": datetime(2024, 1, 16, tzinfo=timezone.utc),
+            },
+            {
+                "Key": "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000005845.2_Assembly/file.gz",
+                "LastModified": datetime(2024, 2, 20, tzinfo=timezone.utc),
+            },
+        ]
+        mock_paginator.paginate.return_value = [{"Contents": page_contents}]
+        return mock
+
+    @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
+    def test_builds_summary_from_store(self, mock_get_s3: MagicMock) -> None:
+        """Verify synthetic summary is built correctly from S3 objects."""
+        mock_get_s3.return_value = self._mock_s3_with_objects()
+
+        result = scan_store_to_synthetic_summary("test-bucket", "prefix/")
+
+        assert len(result) == 2
+        assert "GCF_000001215.4" in result
+        assert "GCF_000005845.2" in result
+
+        # Should use earliest date (2024-01-15)
+        rec1 = result["GCF_000001215.4"]
+        assert rec1.accession == "GCF_000001215.4"
+        assert rec1.status == "latest"
+        assert rec1.seq_rel_date == "2024/01/15"
+        assert rec1.assembly_dir == "GCF_000001215.4_Release_6"
+
+        # Other assembly uses its single date
+        rec2 = result["GCF_000005845.2"]
+        assert rec2.seq_rel_date == "2024/02/20"
+
+    @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
+    def test_uses_earliest_date_per_assembly(self, mock_get_s3: MagicMock) -> None:
+        """Verify earliest LastModified is used when assembly has multiple files."""
+        mock = MagicMock()
+        mock_paginator = MagicMock()
+        mock.get_paginator.return_value = mock_paginator
+
+        from datetime import datetime, timezone
+
+        # Files from same assembly with different dates
+        page_contents = [
+            {
+                "Key": "prefix/GCF_000001215.4_v1/file_newer.gz",
+                "LastModified": datetime(2024, 3, 20, tzinfo=timezone.utc),
+            },
+            {
+                "Key": "prefix/GCF_000001215.4_v1/file_older.gz",
+                "LastModified": datetime(2024, 1, 10, tzinfo=timezone.utc),
+            },
+        ]
+        mock_paginator.paginate.return_value = [{"Contents": page_contents}]
+        mock_get_s3.return_value = mock
+
+        result = scan_store_to_synthetic_summary("test-bucket", "prefix/")
+
+        # Should use the earliest date
+        assert result["GCF_000001215.4"].seq_rel_date == "2024/01/10"
+
+    @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
+    def test_invokes_progress_callback(self, mock_get_s3: MagicMock) -> None:
+        """Verify progress callback is called for each unique assembly."""
+        mock_get_s3.return_value = self._mock_s3_with_objects()
+        callback_calls = []
+
+        def track_progress(count: int, acc: str) -> None:
+            callback_calls.append((count, acc))
+
+        scan_store_to_synthetic_summary("test-bucket", "prefix/", progress_callback=track_progress)
+
+        # Should have 2 calls (one per assembly discovered)
+        assert len(callback_calls) == 2
+        assert callback_calls[0][0] == 1  # first assembly
+        assert callback_calls[1][0] == 2  # second assembly
+
+    @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
+    def test_handles_empty_store(self, mock_get_s3: MagicMock) -> None:
+        """Verify function handles empty store gracefully."""
+        mock = MagicMock()
+        mock_paginator = MagicMock()
+        mock.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.return_value = [{"Contents": []}]
+        mock_get_s3.return_value = mock
+
+        result = scan_store_to_synthetic_summary("test-bucket", "prefix/")
+
+        assert result == {}
+
+    @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
+    def test_skips_objects_without_accession(self, mock_get_s3: MagicMock) -> None:
+        """Verify objects without valid accessions are skipped."""
+        from datetime import datetime, timezone
+
+        mock = MagicMock()
+        mock_paginator = MagicMock()
+        mock.get_paginator.return_value = mock_paginator
+
+        page_contents = [
+            {
+                "Key": "prefix/some/random/file.txt",  # No accession
+                "LastModified": datetime(2024, 1, 1, tzinfo=timezone.utc),
+            },
+            {
+                "Key": "prefix/GCF_000001215.4_Assembly/valid_file.gz",
+                "LastModified": datetime(2024, 2, 1, tzinfo=timezone.utc),
+            },
+        ]
+        mock_paginator.paginate.return_value = [{"Contents": page_contents}]
+        mock_get_s3.return_value = mock
+
+        result = scan_store_to_synthetic_summary("test-bucket", "prefix/")
+
+        # Only one valid assembly should be found
+        assert len(result) == 1
+        assert "GCF_000001215.4" in result

@@ -140,6 +140,44 @@ be skipped — though on repeat runs you should set `STORE_BUCKET` so
 assemblies already promoted to the Lakehouse are pruned from the transfer
 manifest.
 
+### Optional: Bootstrap from existing store (Cell 5)
+
+If you have a pre-populated S3 store but lack a baseline assembly summary,
+you can scan the store to generate a synthetic baseline. This is especially
+useful for large stores (100K+ assemblies) where verifying against FTP
+checksums would take days.
+
+**When to use this:**
+- First run against an existing, pre-populated store
+- You want to start diffing without waiting for checksum verification
+- You don't have a previous assembly summary snapshot to compare against
+
+**How it works:**
+1. Set `SCAN_STORE = True` in Cell 5
+2. The notebook scans all objects under `s3://{STORE_BUCKET}/{STORE_KEY_PREFIX}`
+3. For each unique assembly found, it extracts the accession and uses the
+   earliest object `LastModified` as a conservative `seq_rel_date`
+4. It saves the synthetic summary to `LOCAL_SYNTHETIC_SUMMARY` (default:
+   `output/synthetic_summary_from_store.txt`)
+5. This becomes the baseline for diffing; subsequent runs can load this
+   file as `PREVIOUS_SUMMARY_URI`
+
+**Example (for a 500K-assembly store):**
+```python
+SCAN_STORE = True
+STORE_BUCKET = "cdm-lake"
+STORE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
+LOCAL_SYNTHETIC_SUMMARY = Path("output/synthetic_summary_from_store.txt")
+
+# After running Cell 5, upload the result to S3 for future runs:
+# s3 cp output/synthetic_summary_from_store.txt s3://cdm-lake/assembly_summaries/synthetic_base.txt
+# Then in future runs, set:
+# PREVIOUS_SUMMARY_URI = "s3://cdm-lake/assembly_summaries/synthetic_base.txt"
+```
+
+**Performance:** Scanning typically takes 5–10 minutes for 500K assemblies
+(vs. ~6 days of checksum verification).
+
 ### Run the notebook
 
 Execute all cells in order.  After Cell 7 finishes you should see files in

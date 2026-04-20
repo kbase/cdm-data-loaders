@@ -18,6 +18,7 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     download_assembly_summary,
     filter_by_prefix_range,
     parse_assembly_summary,
+    scan_store_to_synthetic_summary,
     verify_transfer_candidates,
     write_diff_summary,
     write_removed_manifest,
@@ -209,3 +210,89 @@ class TestVerifyTransferCandidatesPrunes:
         remaining_candidates = [c for c in candidates if c != acc]
         for c in remaining_candidates:
             assert c in result, f"Expected {c} to remain (not seeded)"
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestScanStoreToSyntheticSummary:
+    """Test synthetic assembly summary generation from MinIO store."""
+
+    def test_builds_summary_from_minio_store(
+        self,
+        minio_s3_client: object,
+        test_bucket: str,
+    ) -> None:
+        """Verify synthetic summary captures assemblies from MinIO."""
+        s3 = minio_s3_client
+        path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
+
+        # Seed MinIO with a couple of assemblies
+        assemblies = {
+            "GCF_000001215.4_v1": ["_genomic.fna.gz", "_protein.faa.gz"],
+            "GCF_000005845.2_v2": ["_genomic.fna.gz"],
+        }
+
+        for assembly_dir, files in assemblies.items():
+            for fname in files:
+                key = f"{path_prefix}refseq/{assembly_dir}/{assembly_dir}{fname}"
+                s3.put_object(
+                    Bucket=test_bucket,
+                    Key=key,
+                    Body=b"placeholder",
+                )
+
+        # Scan the store
+        result = scan_store_to_synthetic_summary(test_bucket, path_prefix)
+
+        # Should have found both assemblies
+        assert "GCF_000001215.4" in result
+        assert "GCF_000005845.2" in result
+
+        # Verify basic record structure
+        rec1 = result["GCF_000001215.4"]
+        assert rec1.accession == "GCF_000001215.4"
+        assert rec1.status == "latest"
+        assert rec1.assembly_dir == "GCF_000001215.4_v1"
+
+    def test_synthetic_summary_diff_against_current(
+        self,
+        minio_s3_client: object,
+        test_bucket: str,
+    ) -> None:
+        """Verify synthetic summary can be used as baseline for diffing."""
+        s3 = minio_s3_client
+        path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
+
+        # Seed MinIO with one assembly
+        key1 = f"{path_prefix}refseq/GCF_000001215.4_old/GCF_000001215.4_old_genomic.fna.gz"
+        s3.put_object(Bucket=test_bucket, Key=key1, Body=b"data")
+
+        # Build synthetic summary from store
+        synthetic = scan_store_to_synthetic_summary(test_bucket, path_prefix)
+        assert "GCF_000001215.4" in synthetic
+
+        # Simulate current NCBI summary with one new and one existing
+        current = {
+            "GCF_000001215.4": AssemblyRecord(
+                accession="GCF_000001215.4",
+                status="latest",
+                seq_rel_date=synthetic["GCF_000001215.4"].seq_rel_date,
+                ftp_path="",
+                assembly_dir="GCF_000001215.4_old",
+            ),
+            "GCF_000005845.2": AssemblyRecord(
+                accession="GCF_000005845.2",
+                status="latest",
+                seq_rel_date="2024/04/20",
+                ftp_path="",
+                assembly_dir="GCF_000005845.2_new",
+            ),
+        }
+
+        # Compute diff
+        diff = compute_diff(current, previous_assemblies=synthetic)
+
+        # Should find one new and zero updated
+        assert "GCF_000005845.2" in diff.new
+        assert "GCF_000001215.4" not in diff.new  # Already in store
+        assert len(diff.updated) == 0  # Same date, same dir
