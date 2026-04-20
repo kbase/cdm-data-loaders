@@ -87,3 +87,4 @@ class TestPromoteNotebookImports:
         """All promote notebook imports are verified at module load time above."""
         assert callable(promote_from_s3)
         assert isinstance(DEFAULT_LAKEHOUSE_KEY_PREFIX, str)
+        assert callable(split_s3_path)
