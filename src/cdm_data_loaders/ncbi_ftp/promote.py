@@ -58,13 +58,14 @@ def promote_from_s3(  # noqa: PLR0913
     """
     s3 = get_s3_client()
     paginator = s3.get_paginator("list_objects_v2")
+    normalized_staging_key_prefix = staging_key_prefix.rstrip("/") + "/"
 
     promoted = 0
     failed = 0
 
     # Collect all objects under the staging prefix
     staged_objects: list[str] = []
-    for page in paginator.paginate(Bucket=bucket, Prefix=staging_key_prefix):
+    for page in paginator.paginate(Bucket=bucket, Prefix=normalized_staging_key_prefix):
         staged_objects.extend(obj["Key"] for obj in page.get("Contents", []))
 
     # Separate data files from sidecars
@@ -96,7 +97,7 @@ def promote_from_s3(  # noqa: PLR0913
         if staged_key.endswith("download_report.json"):
             continue
 
-        rel_path = staged_key[len(staging_key_prefix) :]
+        rel_path = staged_key[len(normalized_staging_key_prefix) :]
         if not rel_path.startswith("raw_data/"):
             continue
         final_key = lakehouse_key_prefix + rel_path
