@@ -74,6 +74,7 @@ class TestManifestNotebookImports:
         """All manifest notebook imports are verified at module load time above."""
         assert isinstance(FTP_HOST, str)
         assert FTP_HOST
+        assert AssemblyRecord is not None
         assert callable(download_assembly_summary)
         assert callable(write_updated_manifest)
 

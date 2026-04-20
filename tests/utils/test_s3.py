@@ -558,8 +558,8 @@ def strip_checksum_algorithm(method: Callable[..., Any]) -> Callable[..., Any]:
 
 
 @pytest.fixture
-def mocked_s3_client_no_checksum(mock_s3_client: Any) -> Generator[Any, Any]:
-    """Yield the mocked S3 client with copy_object patched to strip ChecksumAlgorithm.
+def mocked_s3_client_no_checksum(mock_s3_client: Any) -> Any:
+    """Return the mocked S3 client with copy_object patched to strip ChecksumAlgorithm.
 
     This works around the moto limitation of not supporting CRC64NVME checksums,
     allowing copy_object calls that include ChecksumAlgorithm to succeed.
