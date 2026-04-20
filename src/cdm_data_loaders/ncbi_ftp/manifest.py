@@ -229,7 +229,7 @@ def compute_diff(  # noqa: PLR0912
             diff.new.append(acc)
         elif previous_assemblies is not None:
             prev = previous_assemblies.get(acc)
-            if prev and (rec.seq_rel_date != prev.seq_rel_date or rec.assembly_dir != prev.assembly_dir):
+            if prev and (rec.seq_rel_date > prev.seq_rel_date or rec.assembly_dir != prev.assembly_dir):
                 diff.updated.append(acc)
 
     # Accessions in previous but entirely absent from current (withdrawn)
@@ -335,12 +335,17 @@ def scan_store_to_synthetic_summary(
                 obj_date_str = last_modified.strftime("%Y/%m/%d")
 
                 if acc not in assemblies:
-                    # First object for this accession; store it
+                    # First object for this accession; store it.
+                    # Construct a fake FTP path that ends with assembly_dir so
+                    # that round-tripping through parse_assembly_summary (which
+                    # derives assembly_dir via ftp_path.rstrip("/").split("/")[-1])
+                    # yields the correct assembly_dir and therefore correct diffs.
+                    fake_ftp_path = f"https://ftp.ncbi.nlm.nih.gov/synthetic/{assembly_dir}"
                     assemblies[acc] = AssemblyRecord(
                         accession=acc,
                         status="latest",
                         seq_rel_date=obj_date_str,
-                        ftp_path="",  # synthesized; empty as it's not from FTP
+                        ftp_path=fake_ftp_path,
                         assembly_dir=assembly_dir,
                     )
                     processed_count += 1

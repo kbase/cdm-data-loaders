@@ -154,13 +154,21 @@ class TestComputeDiff:
         diff = compute_diff(current, previous_accessions=known)
         assert len(diff.new) == 0
 
-    def test_detects_updated_seq_rel_date(self) -> None:
-        """Verify assemblies with changed seq_rel_date are marked updated."""
+    def test_detects_updated_seq_rel_date_newer(self) -> None:
+        """Assemblies whose seq_rel_date moved forward are marked updated."""
         current = parse_assembly_summary(SAMPLE_SUMMARY)
         previous = parse_assembly_summary(SAMPLE_SUMMARY)
         previous["GCF_000001215.4"].seq_rel_date = "2010/01/01"
         diff = compute_diff(current, previous_assemblies=previous)
         assert "GCF_000001215.4" in diff.updated
+
+    def test_does_not_flag_updated_when_seq_rel_date_older(self) -> None:
+        """Assemblies whose seq_rel_date in current is older (e.g. synthetic baseline) are not flagged."""
+        current = parse_assembly_summary(SAMPLE_SUMMARY)
+        previous = parse_assembly_summary(SAMPLE_SUMMARY)
+        previous["GCF_000001215.4"].seq_rel_date = "2099/12/31"
+        diff = compute_diff(current, previous_assemblies=previous)
+        assert "GCF_000001215.4" not in diff.updated
 
     def test_detects_replaced(self) -> None:
         """Verify assemblies with status 'replaced' are detected."""
@@ -739,3 +747,48 @@ class TestScanStoreToSyntheticSummary:
         # Only one valid assembly should be found
         assert len(result) == 1
         assert "GCF_000001215.4" in result
+
+    @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
+    def test_assembly_dir_survives_file_round_trip(self, mock_get_s3: MagicMock, tmp_path: Path) -> None:
+        """Verify assembly_dir is preserved when saving to file and parsing back.
+
+        Regression test: previously ftp_path was written as "" which caused
+        parse_assembly_summary to recover assembly_dir="" for all records,
+        making compute_diff flag every assembly as updated.
+        """
+        from datetime import datetime, timezone
+
+        mock = MagicMock()
+        mock_paginator = MagicMock()
+        page_contents = [
+            {
+                "Key": "prefix/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz",
+                "LastModified": datetime(2024, 3, 10, tzinfo=timezone.utc),
+            },
+        ]
+        mock_paginator.paginate.return_value = [{"Contents": page_contents}]
+        mock.get_paginator.return_value = mock_paginator
+        mock_get_s3.return_value = mock
+
+        synthetic = scan_store_to_synthetic_summary("test-bucket", "prefix/")
+
+        # Simulate the notebook's save logic
+        out_file = tmp_path / "synthetic_summary.txt"
+        with out_file.open("w") as f:
+            for acc in sorted(synthetic.keys()):
+                rec = synthetic[acc]
+                f.write(
+                    f"{rec.accession}\t.\t.\t.\t.\t.\t.\t.\t.\t.\t{rec.status}\t.\t.\t.\t{rec.seq_rel_date}\t.\t.\t.\t.\t{rec.ftp_path}\t.\n"
+                )
+
+        # Parse the file back
+        reparsed = parse_assembly_summary(out_file)
+
+        assert "GCF_000001215.4" in reparsed
+        reparsed_rec = reparsed["GCF_000001215.4"]
+        original_rec = synthetic["GCF_000001215.4"]
+
+        # assembly_dir must survive the round-trip so diffs are accurate
+        assert reparsed_rec.assembly_dir == original_rec.assembly_dir
+        assert reparsed_rec.seq_rel_date == original_rec.seq_rel_date
+        assert reparsed_rec.status == original_rec.status
