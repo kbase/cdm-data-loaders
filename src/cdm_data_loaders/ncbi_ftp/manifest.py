@@ -12,7 +12,7 @@ import csv
 import json
 import re
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -266,6 +266,7 @@ def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
     bucket: str,
     key_prefix: str,
     ftp_host: str = FTP_HOST,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> list[str]:
     """Verify which transfer candidates actually need downloading.
 
@@ -282,6 +283,9 @@ def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
     :param bucket: S3 bucket name
     :param key_prefix: S3 key prefix for the Lakehouse dataset root
     :param ftp_host: NCBI FTP hostname
+    :param progress_callback: optional callable invoked after each accession is
+        processed with ``(done, total, accession)`` so callers can display a
+        progress bar.  ``done`` is the 1-based count of completed accessions.
     :return: filtered list of accessions that actually need downloading
     """
     if not accessions:
@@ -295,10 +299,12 @@ def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
     last_activity = time.monotonic()
 
     try:
-        for acc in accessions:
+        for done, acc in enumerate(accessions, start=1):
             rec = current_assemblies.get(acc)
             if not rec:
                 confirmed.append(acc)
+                if progress_callback is not None:
+                    progress_callback(done, len(accessions), acc)
                 continue
 
             # Build S3 prefix for this assembly
@@ -311,6 +317,8 @@ def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
                 # Nothing in the store — definitely needs downloading
                 confirmed.append(acc)
                 skipped_missing += 1
+                if progress_callback is not None:
+                    progress_callback(done, len(accessions), acc)
                 continue
 
             # Objects exist — need FTP md5 checksums to decide
@@ -327,6 +335,8 @@ def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
             except Exception:  # noqa: BLE001
                 logger.warning("Cannot fetch md5checksums.txt for %s, keeping in transfer list", acc)
                 confirmed.append(acc)
+                if progress_callback is not None:
+                    progress_callback(done, len(accessions), acc)
                 continue
 
             # Filter to files we'd actually download
@@ -338,6 +348,8 @@ def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
 
             if not target_checksums:
                 confirmed.append(acc)
+                if progress_callback is not None:
+                    progress_callback(done, len(accessions), acc)
                 continue
 
             # Short-circuit: if any file differs or is missing, keep the assembly
@@ -361,6 +373,9 @@ def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
             else:
                 pruned += 1
                 logger.debug("Pruned %s — all files match S3 checksums", acc)
+
+            if progress_callback is not None:
+                progress_callback(done, len(accessions), acc)
     finally:
         if ftp is not None:
             with contextlib.suppress(Exception):
