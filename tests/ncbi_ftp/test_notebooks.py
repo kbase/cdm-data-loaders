@@ -72,6 +72,8 @@ class TestManifestNotebookImports:
 
     def test_imports_resolve(self) -> None:
         """All manifest notebook imports are verified at module load time above."""
+        assert isinstance(FTP_HOST, str)
+        assert FTP_HOST
         assert callable(download_assembly_summary)
         assert callable(write_updated_manifest)
 
