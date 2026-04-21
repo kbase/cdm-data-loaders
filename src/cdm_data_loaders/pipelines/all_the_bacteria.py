@@ -41,7 +41,7 @@ ATB_VERSION = "2025-05"
 ARG_ALIASES = frozendict(
     {
         "version": ["-v", "--version"],
-        "pattern_file": ["-p", "--pattern-file", "--pattern_file"],
+        "pattern_file": ["-f", "--pattern-file", "--pattern_file"],
     },
 )
 
