@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger, log_and_die
+from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
 logger: logging.Logger = get_cdm_logger()
 
@@ -60,7 +60,9 @@ class DownloadCore:
 
         # shake hashing algorithms require a length for the hexdigest => too much faff, error out
         if checksum_fn not in hashlib.algorithms_available or checksum_fn.startswith("shake"):
-            log_and_die(f"Hashing algorithm {checksum_fn} not supported.", ValueError)
+            err_msg = f"Hashing algorithm {checksum_fn} not supported."
+            logger.error(err_msg)
+            raise ValueError(err_msg)
 
         destination = Path(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
