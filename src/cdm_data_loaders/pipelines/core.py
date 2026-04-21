@@ -35,6 +35,13 @@ def sync_configs(settings: CtsSettings, dlt_config: Any) -> None:
     dlt_config[f"destination.{settings.use_destination}.bucket_url"] = settings.output
 
 
+def dump_settings(settings: CtsSettings) -> None:
+    """Dump the pipeline settings to the logger."""
+    settings_minus_dlt_config = settings.model_dump(exclude={"dlt_config"})
+    logger.info("Pipeline settings:")
+    logger.info(settings_minus_dlt_config)
+
+
 def run_cli(settings_cls: type[CtsSettings], pipeline_fn: Callable[[Any], None]) -> None:
     """Generic CLI entry point for any pipeline.
 
@@ -55,6 +62,7 @@ def run_cli(settings_cls: type[CtsSettings], pipeline_fn: Callable[[Any], None])
         logger.exception("Unexpected error setting up config")
         raise
 
+    dump_settings(settings)
     pipeline_fn(settings)
 
 

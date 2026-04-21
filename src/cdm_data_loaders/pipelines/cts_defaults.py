@@ -5,7 +5,7 @@ from typing import Any, Self
 
 import dlt.common.configuration.accessors
 from frozendict import frozendict
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, CliSuppress, SettingsConfigDict
 
 INPUT_MOUNT = "/input_dir"
@@ -141,6 +141,7 @@ class CtsSettings(BaseSettings):
             return value
         return value.rstrip("/")
 
+    @computed_field
     @property
     def raw_data_dir(self) -> str:
         """Directory in which to save the raw data files that are downloaded.
@@ -149,6 +150,7 @@ class CtsSettings(BaseSettings):
         """
         return str(Path(self.output or "") / "raw_data")
 
+    @computed_field
     @property
     def pipeline_dir(self) -> str | None:
         """Custom directory to save pipeline metadata to.

@@ -393,7 +393,7 @@ crt = [
 
 [[package]]
 name = "cdm-data-loaders"
-version = "0.1.6"
+version = "0.1.7"
 source = { editable = "." }
 dependencies = [
     { name = "bioregistry" },
@@ -407,11 +407,6 @@ dependencies = [
     { name = "lxml" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-]
-
-[package.optional-dependencies]
-s3 = [
-    { name = "boto3", extra = ["crt"] },
     { name = "tqdm" },
 ]
 
@@ -439,7 +434,6 @@ xml = [
 requires-dist = [
     { name = "bioregistry", specifier = ">=0.13.31" },
     { name = "boto3", extras = ["crt"], specifier = ">=1.42.55" },
-    { name = "boto3", extras = ["crt"], marker = "extra == 's3'", specifier = ">=1.42.0" },
     { name = "click", specifier = ">=8.3.1" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "delta-spark", specifier = ">=4.1.0" },
@@ -449,9 +443,8 @@ requires-dist = [
     { name = "lxml", specifier = ">=6.0.2" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
-    { name = "tqdm", marker = "extra == 's3'", specifier = ">=4.67.3" },
+    { name = "tqdm", specifier = ">=4.67.3" },
 ]
-provides-extras = ["s3"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2317,7 +2310,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "(platform_python_implementation != 'PyPy' and sys_platform == 'win32') or (sys_platform != 'emscripten' and sys_platform != 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
