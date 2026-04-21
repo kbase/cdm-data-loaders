@@ -583,12 +583,13 @@ class TestExtractAccessionFromS3Key:
     @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
     def test_extracts_accession_from_path(self, _mock_s3: MagicMock) -> None:
         """Verify accession is extracted correctly from S3 keys."""
-        assert _extract_accession_from_s3_key(
-            "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz"
-        ) == "GCF_000001215.4"
-        assert _extract_accession_from_s3_key(
-            "some/path/GCA_999999999.1_whatever/data.txt"
-        ) == "GCA_999999999.1"
+        assert (
+            _extract_accession_from_s3_key(
+                "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz"
+            )
+            == "GCF_000001215.4"
+        )
+        assert _extract_accession_from_s3_key("some/path/GCA_999999999.1_whatever/data.txt") == "GCA_999999999.1"
 
     def test_returns_none_for_invalid_path(self) -> None:
         """Verify None is returned when no accession is found."""
@@ -601,12 +602,16 @@ class TestExtractAssemblyDirFromS3Key:
 
     def test_extracts_assembly_dir(self) -> None:
         """Verify assembly directory is extracted correctly from S3 keys."""
-        assert _extract_assembly_dir_from_s3_key(
-            "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz"
-        ) == "GCF_000001215.4_Release_6_plus_ISO1_MT"
-        assert _extract_assembly_dir_from_s3_key(
-            "prefix/GCA_999999999.1_assembly_name/subdir/data.txt"
-        ) == "GCA_999999999.1_assembly_name"
+        assert (
+            _extract_assembly_dir_from_s3_key(
+                "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz"
+            )
+            == "GCF_000001215.4_Release_6_plus_ISO1_MT"
+        )
+        assert (
+            _extract_assembly_dir_from_s3_key("prefix/GCA_999999999.1_assembly_name/subdir/data.txt")
+            == "GCA_999999999.1_assembly_name"
+        )
 
     def test_returns_none_for_invalid_path(self) -> None:
         """Verify None is returned when no assembly directory is found."""
