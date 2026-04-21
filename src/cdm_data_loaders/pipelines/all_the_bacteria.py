@@ -201,8 +201,9 @@ def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any
     successful_downloads = []
     for f in atb_file_list:
         try:
-            save_path = raw_data_dir / f["filename"]
-            client.download(f["url"], save_path, expected_checksum=f["md5"], checksum_fn="md5")
+            project_part = f["project"].removeprefix("AllTheBacteria").removeprefix("/")
+            save_path = raw_data_dir / project_part / f["filename"]
+            client.download(url=f["url"], destination=save_path, expected_checksum=f["md5"], checksum_fn="md5")
             f["path"] = str(save_path)
             successful_downloads.append(f)
         except Exception as e:

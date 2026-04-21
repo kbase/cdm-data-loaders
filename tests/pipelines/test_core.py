@@ -794,7 +794,7 @@ def test_integration_empty_input_pipeline_run_still_called(
 
 
 # test run_cli + stream_xml_file_resource + run_pipeline
-@pytest.mark.use_fixtures("patched_io_empty_batcher", "test_bfi_settings")
+@pytest.mark.usefixtures("patched_io_empty_batcher", "test_bfi_settings")
 def test_integration_run_cli_calls_pipeline_fn_with_config(mock_dlt: MagicMock) -> None:
     """The exact config produced by run_cli reaches stream_xml_file_resource unchanged."""
     received: list[CtsSettings] = []

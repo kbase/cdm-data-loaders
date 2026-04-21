@@ -1,5 +1,6 @@
 """Tests for the all_the_bacteria pipeline."""
 
+from copy import deepcopy
 import csv
 import logging
 import re
@@ -9,6 +10,7 @@ from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
+from frozendict import frozendict
 from requests.exceptions import HTTPError
 
 from cdm_data_loaders.pipelines import all_the_bacteria, core
@@ -278,125 +280,185 @@ def test_get_file_download_links_no_file(test_settings: AtbSettings) -> None:
         list(get_file_download_links(test_settings, file_path))
 
 
+FILE_DOWNLOADER_OUTPUT = [
+    frozendict(
+        {
+            "filename": "file1.txt",
+            "url": "https://osf.io/file1",
+            "md5": "md5sum1",
+            "project": "AllTheBacteria/Annotation/Project",
+            "path": "Annotation/Project/file1.txt",
+        }
+    ),
+    frozendict(
+        {
+            "filename": "file2.txt",
+            "url": "https://osf.io/file2",
+            "md5": "md5sum2",
+            "project": "AllTheBacteria/Side/Project",
+            "path": "Side/Project/file2.txt",
+        }
+    ),
+    frozendict(
+        {
+            "filename": "some/path/to/file3.txt",
+            "url": "https://osf.io/file3",
+            "md5": "md5sum3",
+            "project": "AllTheBacteria",
+            "path": "some/path/to/file3.txt",
+        }
+    ),
+    frozendict(
+        {
+            "filename": "not/least/file4.txt",
+            "url": "https://osf.io/file4",
+            "md5": "md5sum4",
+            "project": "AllTheBacteria/last/but",
+            "path": "last/but/not/least/file4.txt",
+        }
+    ),
+]
+
+
 # osf_file_downloader tests
 @pytest.mark.parametrize(
-    ("atb_file_list", "expected_calls", "expected_paths"),
+    "atb_input",
     [
-        (
-            [
-                {"filename": "file1.txt", "url": "https://osf.io/file1", "md5": "md5sum1"},
-                {"filename": "file2.txt", "url": "https://osf.io/file2", "md5": "md5sum2"},
-            ],
-            [
-                (
-                    "https://osf.io/file1",
-                    "file1.txt",
-                    "md5sum1",
-                ),
-                (
-                    "https://osf.io/file2",
-                    "file2.txt",
-                    "md5sum2",
-                ),
-            ],
-            ["file1.txt", "file2.txt"],
-        ),
+        # each of the files singly and then the whole lot as a batch
+        *[[f] for f in FILE_DOWNLOADER_OUTPUT],
+        FILE_DOWNLOADER_OUTPUT,
     ],
 )
 def test_osf_file_downloader_success(
     test_settings: AtbSettings,
-    atb_file_list: list[dict[str, Any]],
-    expected_calls: list[tuple[str, str, str]],
-    expected_paths: list[str],
+    atb_input: list[dict[str, Any]],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Ensure that the osf_file_downloader function correctly calls the download client for each file."""
+    raw_data_dir = Path(test_settings.raw_data_dir)
+    atb_file_list = [{k: v for k, v in f.items() if k != "path"} for f in atb_input]
+
+    # expected_output path needs the raw data dir adding to it
+    expected_output = [dict(f.items()) for f in atb_input]
+    for f in expected_output:
+        f["path"] = str(raw_data_dir / f["path"])
+
     mock_download_client = MagicMock()
-    mock_logger = MagicMock()
     with (
         patch("cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader", return_value=mock_download_client),
-        patch("cdm_data_loaders.pipelines.all_the_bacteria.logger", mock_logger),
     ):
+        # get the output from the generator
         output = list(osf_file_downloader(test_settings, atb_file_list))
 
-    for item, filename in zip(atb_file_list, expected_paths, strict=True):
-        assert item["path"] == str(Path(test_settings.raw_data_dir) / filename)
+    # should have a separate call for each file downloaded
+    assert mock_download_client.download.call_count == len(atb_file_list)
 
-    assert output[0].data == [
-        {**f, "path": str(Path(test_settings.raw_data_dir) / f["filename"])} for f in atb_file_list
+    call_list = [c.kwargs for c in mock_download_client.download.call_args_list]
+    expected_calls = [
+        {
+            "url": f["url"],
+            "destination": raw_data_dir / f["path"],
+            "expected_checksum": f["md5"],
+            "checksum_fn": "md5",
+        }
+        for f in atb_input
     ]
+    assert call_list == expected_calls
 
-    assert mock_download_client.download.call_count == len(expected_calls)
+    # output from dlt.mark.with_table_name
+    assert output[0].data == expected_output
+    # the input args are mutated in place
+    assert atb_file_list == expected_output
 
-    for url, filename, checksum in expected_calls:
-        mock_download_client.download.assert_any_call(
-            url,
-            Path(test_settings.raw_data_dir) / filename,
-            expected_checksum=checksum,
-            checksum_fn="md5",
-        )
-
-    mock_logger.assert_not_called()
     # no logs should be emitted for successful downloads
     assert caplog.records == []
 
 
 @pytest.mark.parametrize(
-    ("atb_file_list", "download_side_effect", "expected_exceptions", "expected_paths"),
+    ("atb_file_list", "expected_exceptions", "expected_paths"),
     [
         (
             [
-                {"filename": "good_file.txt", "url": "https://osf.io/good", "md5": "md5sum1"},
-                {"filename": "great_file.txt", "url": "https://osf.io/great", "md5": "md5sum2"},
-                {"filename": "bad_file.txt", "url": "https://osf.io/bad", "md5": "badmd5"},
+                {
+                    "project": "AllTheBacteria/One",
+                    "filename": "Two/good_file.txt",
+                    "url": "https://osf.io/good",
+                    "md5": "md5sum1",
+                },
+                {
+                    "project": "AllTheBacteria/One/Two",
+                    "filename": "great_file.txt",
+                    "url": "https://osf.io/great",
+                    "md5": "md5sum2",
+                },
+                {
+                    "project": "AllTheBacteria/One",
+                    "filename": "fail.txt",
+                    "url": "https://osf.io/fail",
+                    "md5": "badmd5",
+                },
             ],
-            lambda url, _save_path, **_kwargs: (
-                (_ for _ in ()).throw(RuntimeError("download failed")) if url == "https://osf.io/bad" else None
-            ),
-            ["Could not download file from https://osf.io/bad: download failed"],
-            {"good_file.txt": True, "great_file.txt": True, "bad_file.txt": False},
+            ["Could not download file from https://osf.io/fail: Loser!"],
+            {"Two/good_file.txt": True, "great_file.txt": True, "fail.txt": False},
         ),
         (
             [
-                {"filename": "bad_file.txt", "url": "https://osf.io/bad", "md5": "badmd5"},
-                {"filename": "even_worse.txt", "url": "https://osf.io/even_worse", "md5": "badmd5"},
+                {"project": "Dud", "filename": "bad_file.txt", "url": "https://osf.io/bad", "md5": "badmd5"},
+                {
+                    "project": "Dud",
+                    "filename": "also_very_bad.txt",
+                    "url": "https://osf.io/also_very_bad",
+                    "md5": "badmd5",
+                },
             ],
-            lambda _url, _save_path, **_kwargs: (_ for _ in ()).throw(Exception("Boom!")),
             [
-                "Could not download file from https://osf.io/bad: Boom!",
-                "Could not download file from https://osf.io/even_worse: Boom!",
+                "Could not download file from https://osf.io/bad: BOOM!",
+                "Could not download file from https://osf.io/also_very_bad: BOOM!",
             ],
-            {"bad_file.txt": False, "even_worse.txt": False},
+            {"bad_file.txt": False, "also_very_bad.txt": False},
         ),
     ],
 )
 def test_osf_file_downloader_error_handling(
     test_settings: AtbSettings,
     atb_file_list: list[dict[str, Any]],
-    download_side_effect: Callable,
     expected_exceptions: list[str],
     expected_paths: dict[str, bool],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Ensure that errors during file download are handled correctly."""
     mock_download_client = MagicMock()
-    mock_download_client.download.side_effect = download_side_effect
-    mock_logger = MagicMock()
+
+    def file_downloader_boom(**args) -> None:  # noqa: ANN003
+        if "url" in args:
+            if "bad" in args["url"]:
+                msg = "BOOM!"
+                raise ValueError(msg)
+            if "fail" in args["url"]:
+                msg_0 = "Loser!"
+                raise RuntimeError(msg_0)
+
+    mock_download_client.download.side_effect = file_downloader_boom
 
     with (
         patch("cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader", return_value=mock_download_client),
-        patch("cdm_data_loaders.pipelines.all_the_bacteria.logger", mock_logger),
     ):
         list(osf_file_downloader(test_settings, atb_file_list))
 
+    raw_data_dir = Path(test_settings.raw_data_dir)
+    expected_file_names = {
+        "Two/good_file.txt": str(raw_data_dir / "One/Two/good_file.txt"),
+        "great_file.txt": str(raw_data_dir / "One/Two/great_file.txt"),
+    }
+
     for item in atb_file_list:
         if item["filename"] in expected_paths and expected_paths[item["filename"]]:
-            assert item["path"] == str(Path(test_settings.raw_data_dir) / item["filename"])
+            assert item["path"] == expected_file_names[item["filename"]]
         else:
             assert "path" not in item
 
-    # FIXME: why is caplog not working here? Ideally this should use caplog instead of a mock logger.
-    exception_call_args = [call.args[0] for call in mock_logger.exception.call_args_list]
-    assert exception_call_args == expected_exceptions
+    log_messages = [r.message for r in caplog.records]
+    assert expected_exceptions == log_messages
 
 
 def test_run_atb_pipeline(
