@@ -19,7 +19,7 @@ import dlt
 from dlt.extract.items import DataItemWithMeta
 from dlt.sources.helpers.rest_client.client import RESTClient
 from frozendict import frozendict
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, computed_field
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.pipelines.core import (
@@ -34,13 +34,23 @@ logger = logging.getLogger("dlt")
 
 DATASET_NAME = "all_the_bacteria"
 ALL_FILES_TSV_FILE_ID = "R6gcp"
+ALL_ATB_FILE_NAME = "all_atb_files.tsv"
+REGEX_FILE = "filters.txt"
 ATB_VERSION = "2025-05"
 
 ARG_ALIASES = frozendict(
     {
         "version": ["-v", "--version"],
-    }
+        "pattern_file": ["-p", "--pattern-file", "--pattern_file"],
+    },
 )
+
+# project parts needed:
+PROJECT_PARTS = ["Annotation/Bakta", "Assembly", "Metadata"]
+PROJECT_PART_REGEX = re.compile(f"^AllTheBacteria/({'|'.join(PROJECT_PARTS)})")
+
+EXPECTED_ATB_FIELDNAMES = ["project", "project_id", "filename", "url", "md5", "size(MB)"]
+REQUIRED_ATB_FIELDNAMES = {"project", "filename", "url", "md5"}
 
 
 class AtbSettings(CtsSettings):
@@ -54,6 +64,13 @@ class AtbSettings(CtsSettings):
         validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES["version"]]),
     )
 
+    pattern_file: str | None = Field(
+        default=None,
+        description="Path, relative to the input dir, of a file containing patterns to match when downloading ATB files",
+        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES["pattern_file"]]),
+    )
+
+    @computed_field
     @property
     def raw_data_dir(self) -> str:
         """Directory in which to save the raw data files that are downloaded.
@@ -62,21 +79,50 @@ class AtbSettings(CtsSettings):
         """
         return str(Path(self.output) / "raw_data" / self.version)
 
+    @computed_field
+    @property
+    def pattern_matches(self) -> re.Pattern:
+        """The regular expression pattern to be used to select files for download.
 
-# project parts needed:
-PROJECT_PARTS = ["Annotation/Bakta", "Assembly", "Metadata"]
+        If a pattern_file is supplied, it will read in the file at {input_dir}/{pattern_file}
+        and convert the contents into a regular expression. If no file is supplied or the file is empty
+        or does not contain any content, the default PROJECT_PART_REGEX will be used instead.
+        """
+        if self.pattern_file:
+            pattern_file = Path(self.input_dir) / self.pattern_file
+            regex = load_patterns(pattern_file)
+            if regex is not None:
+                return regex
+        # return the default
+        return PROJECT_PART_REGEX
 
-PROJECT_PART_REGEX = re.compile(f"^AllTheBacteria/({'|'.join(PROJECT_PARTS)})")
 
-EXPECTED_ATB_FIELDNAMES = ["project", "project_id", "filename", "url", "md5", "size(MB)"]
-REQUIRED_ATB_FIELDNAMES = {"project", "filename", "url", "md5"}
+def load_patterns(pattern_file: Path) -> re.Pattern | None:
+    """Load the pattern file and convert it into a set of regexes."""
+    patterns = []
+    try:
+        for line in pattern_file.read_text(encoding="utf-8").splitlines():
+            trimmed_line = line.strip()
+            # skip blank lines
+            if not trimmed_line:
+                continue
+            patterns.append(
+                re.escape(trimmed_line[:-1]) + ".*" if trimmed_line.endswith("*") else re.escape(trimmed_line)
+            )
+
+        if patterns:
+            return re.compile("^(" + "|".join(patterns) + ")$")
+    except Exception:
+        logger.exception("Could not load patterns from %s", str(pattern_file))
+
+    return None
 
 
 def download_atb_index_tsv(settings: AtbSettings) -> Path:
     """Download the ATB file index TSV file from the OSF and save it to disk.
 
     :param settings: pipeline config
-    :type settings: Settings
+    :type settings: AtbSettings
     :raises RuntimeError: if the download URL cannot be found
     :return: path to the downloaded file
     :rtype: Path
@@ -108,14 +154,17 @@ def download_atb_index_tsv(settings: AtbSettings) -> Path:
     return atb_files_tsv
 
 
-def get_file_download_links(atb_files_tsv: Path) -> Generator[list[dict[str, Any]], Any]:
+def get_file_download_links(settings: AtbSettings, atb_files_tsv: Path) -> Generator[list[dict[str, Any]], Any]:
     """Parse the ATB file index TSV and to yield a list of files to download.
 
+    :param settings: pipeline config
+    :type settings: AtbSettings
     :param atb_files_tsv: path to the ATB file index TSV file
     :type atb_files_tsv: Path
     :yield: list of fields to download
     :rtype: Generator[list[dict[str, Any]], Any]
     """
+    pattern_to_match = settings.pattern_matches
     with atb_files_tsv.open() as index_file:
         reader = csv.DictReader(index_file, delimiter="\t")
         all_lines = list(reader)
@@ -134,7 +183,7 @@ def get_file_download_links(atb_files_tsv: Path) -> Generator[list[dict[str, Any
                 logger.error(err_msg)
                 raise RuntimeError(err_msg)
 
-        files_to_download = [row for row in all_lines if PROJECT_PART_REGEX.match(row["project"])]
+        files_to_download = [row for row in all_lines if pattern_to_match.match(row["project"])]
 
         yield files_to_download
 
@@ -169,7 +218,7 @@ def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any
 def atb_file_list(settings: AtbSettings) -> Generator[list[dict[str, Any]], Any, Any]:
     """Generate a list of files to download from the list of all ATB files."""
     atb_files_tsv = download_atb_index_tsv(settings)
-    return get_file_download_links(atb_files_tsv)
+    return get_file_download_links(settings, atb_files_tsv)
 
 
 @dlt.transformer(name="file_downloader", data_from=atb_file_list, parallelized=True)

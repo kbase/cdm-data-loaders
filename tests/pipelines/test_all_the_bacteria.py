@@ -2,6 +2,7 @@
 
 import csv
 import logging
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from cdm_data_loaders.pipelines.all_the_bacteria import (
     cli,
     download_atb_index_tsv,
     get_file_download_links,
+    load_patterns,
     osf_file_downloader,
     run_atb_pipeline,
 )
@@ -50,8 +52,19 @@ def test_settings(tmp_path: Path, dlt_config: dict[str, Any]) -> AtbSettings:
     return AtbSettings(dlt_config=dlt_config, output=str(tmp_path))
 
 
-def test_cli_calls_run_ncbi_pipeline(monkeypatch: pytest.MonkeyPatch, dlt_config: dict[str, Any]) -> None:
-    """Ensure that cli() calls run_ncbi_pipeline with the settings."""
+@pytest.fixture
+def pattern_file(tmp_path: Path) -> Path:
+    """Pattern file for testing load_patterns."""
+    p = tmp_path / "patterns.txt"
+    p.write_text(
+        "hello world\nfoo.bar\nstarts with*\n2+2=4\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def test_cli_calls_run_atb_pipeline(monkeypatch: pytest.MonkeyPatch, dlt_config: dict[str, Any]) -> None:
+    """Ensure that cli() calls run_atb_pipeline with the settings."""
     mock_settings_instance = MagicMock()
     mock_settings_cls = MagicMock(return_value=mock_settings_instance)
     mock_run_atb_pipeline = MagicMock()
@@ -63,6 +76,92 @@ def test_cli_calls_run_ncbi_pipeline(monkeypatch: pytest.MonkeyPatch, dlt_config
 
     mock_settings_cls.assert_called_once_with(dlt_config=dlt_config)
     mock_run_atb_pipeline.assert_called_once_with(mock_settings_instance)
+
+
+def test_load_patterns_returns_compiled_pattern(pattern_file: Path) -> None:
+    """load_patterns() should return a compiled re.Pattern object."""
+    assert isinstance(load_patterns(pattern_file), re.Pattern)
+
+
+def test_load_patterns_exact_match(pattern_file: Path) -> None:
+    """Plain text lines should match exactly against their literal content."""
+    pattern = load_patterns(pattern_file)
+    assert isinstance(pattern, re.Pattern)
+    assert pattern.match("hello world")
+    assert pattern.match("foo.bar")
+    assert pattern.match("2+2=4")
+
+    # patterns are anchored with ^ and $, so partial matches should not succeed
+    assert not pattern.match("hello world!!!")
+    assert not pattern.match("well, hello world")
+
+    # dot is literal, not a wildcard
+    assert not pattern.match("fooXbar")
+    # + is literal, not a quantifier
+    assert not pattern.match("22=4")
+
+    # line ending with * should match the prefix followed by any suffix
+    assert pattern.match("starts with")
+    assert pattern.match("starts with anything")
+    assert pattern.match("starts with 123!@#")
+
+    # line ending with * should not match strings with a different prefix
+    assert not pattern.match("ends with")
+
+
+def test_load_patterns_blank_lines_are_ignored(tmp_path: Path) -> None:
+    """Blank lines in the file should be silently skipped."""
+    p = tmp_path / "patterns.txt"
+    p.write_text("\nhello\n\nworld\n", encoding="utf-8")
+    pattern = load_patterns(p)
+    assert isinstance(pattern, re.Pattern)
+    assert pattern.match("hello")
+    assert pattern.match("world")
+    assert not pattern.match("")
+
+
+def test_load_patterns_only_wildcard_matches_anything(tmp_path: Path) -> None:
+    """A file containing only '*' should produce a pattern that matches any string."""
+    p = tmp_path / "patterns.txt"
+    p.write_text("*\n", encoding="utf-8")
+    pattern = load_patterns(p)
+    assert isinstance(pattern, re.Pattern)
+    assert pattern.match("")
+    assert pattern.match("anything at all")
+
+
+def test_load_patterns_alternation(tmp_path: Path) -> None:
+    """Each line in the file should become an alternative in the combined pattern."""
+    p = tmp_path / "patterns.txt"
+    p.write_text("cat\ndog\nbird\n", encoding="utf-8")
+    pattern = load_patterns(p)
+    assert isinstance(pattern, re.Pattern)
+    assert pattern.match("cat")
+    assert pattern.match("dog")
+    assert pattern.match("bird")
+    assert not pattern.match("fish")
+
+
+def test_load_patterns_no_file_returns_none(tmp_path: Path) -> None:
+    """Ensure that loading a non-existent file returns None."""
+    pattern = load_patterns(tmp_path / "some" / "path")
+    assert pattern is None
+
+
+def test_load_patterns_touched_file_returns_none(tmp_path: Path) -> None:
+    """Ensure that loading an empty file returns None."""
+    p = tmp_path / "patterns.txt"
+    p.touch()
+    pattern = load_patterns(p)
+    assert pattern is None
+
+
+def test_load_patterns_empty_file_returns_none(tmp_path: Path) -> None:
+    """Ensure that loading an empty file returns None."""
+    p = tmp_path / "patterns.txt"
+    p.write_text("\n\n   \t\n  \n   \n\t\t\n", encoding="utf-8")
+    pattern = load_patterns(p)
+    assert pattern is None
 
 
 @pytest.mark.vcr
@@ -102,10 +201,10 @@ def test_download_atv_index_tsv_error_cannot_download_tsv(test_settings: AtbSett
         download_atb_index_tsv(test_settings)
 
 
-def test_get_file_download_links() -> None:
-    """Ensure that the appropriate files are picked out of the ATB file index TSV file."""
+def test_get_file_download_links(test_settings: AtbSettings) -> None:
+    """Ensure that the appropriate files are picked out of the ATB file index TSV file using the default matcher."""
     file_path = Path("tests") / "data" / "atb" / "all_atb_files.tsv"
-    filtered_files = list(get_file_download_links(file_path))
+    filtered_files = list(get_file_download_links(test_settings, file_path))
     # load the expected results
     expected = Path("tests") / "data" / "atb" / "filtered_files.tsv"
     with expected.open() as fh:
@@ -115,11 +214,41 @@ def test_get_file_download_links() -> None:
     assert filtered_files[0] == expected_files
 
 
-def test_get_file_download_links_invalid_file(caplog: pytest.LogCaptureFixture) -> None:
+EXPECTED_LINES = {
+    "*": "all_atb_files.tsv",
+    "AllTheBacteria/Annotation/Bakta\nAllTheBacteria/Assembly\nAllTheBacteria/Metadata\n": "assembly_bakta_metadata_exact.tsv",
+    "AllTheBacteria/Annotation/Bakta*\nAllTheBacteria/Assembly\nAllTheBacteria/Metadata\n": "assembly_bakta_star_metadata.tsv",
+    "AllTheBacteria/Annotation/Bakta": "bakta_exact.tsv",
+    "AllTheBacteria/Annotation/Bakta*": "bakta_star.tsv",
+}
+
+
+@pytest.mark.parametrize("pattern_lines", EXPECTED_LINES)
+def test_get_file_download_links_use_pattern_file(
+    tmp_path: Path, dlt_config: dict[str, Any], pattern_lines: str
+) -> None:
+    """Generate a pattern file from EXPECTED_LINES and check that the output from get_file_download_links is correct."""
+    # create the pattern file
+    p = tmp_path / "patterns.txt"
+    p.write_text(f"{pattern_lines}\n", encoding="utf-8")
+
+    settings = AtbSettings(dlt_config=dlt_config, input_dir=str(tmp_path), pattern_file="patterns.txt")
+    file_path = Path("tests") / "data" / "atb" / "all_atb_files.tsv"
+    filtered_files = list(get_file_download_links(settings, file_path))
+    # load the expected results
+    expected = Path("tests") / "data" / "atb" / EXPECTED_LINES[pattern_lines]
+    with expected.open() as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        expected_files = list(reader)
+    assert len(filtered_files[0]) > 1
+    assert filtered_files[0] == expected_files
+
+
+def test_get_file_download_links_invalid_file(test_settings: AtbSettings, caplog: pytest.LogCaptureFixture) -> None:
     """Ensure that the correct fields are present in the ATB TSV file and throw an error if not."""
     file_path = Path("tests") / "data" / "atb" / "invalid_atb_files.tsv"
     with pytest.raises(RuntimeError, match="Missing required ATB file index TSV headers"):
-        list(get_file_download_links(file_path))
+        list(get_file_download_links(test_settings, file_path))
     records = caplog.records
     assert records[-1].levelno == logging.ERROR
     assert records[-1].message.startswith(
@@ -129,22 +258,24 @@ def test_get_file_download_links_invalid_file(caplog: pytest.LogCaptureFixture) 
     assert records[-2].message.startswith("ATB file index TSV headers have changed.")
 
 
-def test_get_file_download_links_empty_file(caplog: pytest.LogCaptureFixture, tmp_path: Path) -> None:
+def test_get_file_download_links_empty_file(
+    test_settings: AtbSettings, caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
     """Ensure that an empty file causes a runtime error."""
     file_path = tmp_path / "fake_file.tsv"
     file_path.touch()
     with pytest.raises(RuntimeError, match=f"No valid TSV data found in {file_path!s}"):
-        list(get_file_download_links(file_path))
+        list(get_file_download_links(test_settings, file_path))
     records = caplog.records
     assert records[-1].levelno == logging.ERROR
     assert records[-1].message == f"No valid TSV data found in {file_path!s}"
 
 
-def test_get_file_download_links_no_file() -> None:
+def test_get_file_download_links_no_file(test_settings: AtbSettings) -> None:
     """Ensure an error is thrown if the file cannot be found."""
     file_path = Path("/path") / "to" / "file"
     with pytest.raises(FileNotFoundError, match="No such file or directory"):
-        list(get_file_download_links(file_path))
+        list(get_file_download_links(test_settings, file_path))
 
 
 # osf_file_downloader tests
