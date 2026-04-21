@@ -15,10 +15,11 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import AliasChoices, Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST, download_assembly_to_local
 from cdm_data_loaders.pipelines.core import run_cli
-from cdm_data_loaders.pipelines.cts_defaults import INPUT_MOUNT, OUTPUT_MOUNT, CtsDefaultSettings
+from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, INPUT_MOUNT, OUTPUT_MOUNT
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.ftp_client import ThreadLocalFTP
 
@@ -28,8 +29,10 @@ logger = get_cdm_logger()
 # ── Settings ─────────────────────────────────────────────────────────────
 
 
-class DownloadSettings(CtsDefaultSettings):
+class DownloadSettings(BaseSettings):
     """Configuration for the NCBI FTP assembly download pipeline."""
+
+    model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT)
 
     manifest: str = Field(
         default=f"{INPUT_MOUNT}/transfer_manifest.txt",

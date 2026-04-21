@@ -13,21 +13,25 @@ cmd="$1"
 shift
 
 case "$cmd" in
-  xml_split)
-    # Run the xml_file_splitter app
-    exec /usr/bin/tini -- xml_file_splitter "$@"
+  all_the_bacteria)
+    # All the Bacteria file importer
+    exec /usr/bin/tini -- uv run --no-sync all_the_bacteria "$@"
     ;;
-  uniref)
-    # Run the uniref pipeline with any additional arguments
-    exec /usr/bin/tini -- uv run --no-sync uniref "$@"
+  ncbi_rest_api)
+    # Run the NCBI datasets API importer
+    exec /usr/bin/tini -- uv run --no-sync ncbi_rest_api "$@"
     ;;
   uniprot)
     # Run the uniprot pipeline with any additional arguments
     exec /usr/bin/tini -- uv run --no-sync uniprot "$@"
     ;;
-  ncbi_rest_api)
-    # Run the NCBI datasets API importer
-    exec /usr/bin/tini -- uv run --no-sync ncbi_rest_api "$@"
+  uniref)
+    # Run the uniref pipeline with any additional arguments
+    exec /usr/bin/tini -- uv run --no-sync uniref "$@"
+    ;;
+  xml_split)
+    # Run the xml_file_splitter app
+    exec /usr/bin/tini -- xml_file_splitter "$@"
     ;;
   ncbi_ftp_sync)
     # Run the NCBI FTP assembly download pipeline (Phase 2)

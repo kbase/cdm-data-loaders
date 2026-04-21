@@ -1,0 +1,100 @@
+interactions:
+- request:
+    body: null
+    headers:
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      User-Agent:
+      - dlt/1.22.2
+      accept:
+      - application/json
+    method: GET
+    uri: https://api.osf.io/v2/files/R6gcp/
+  response:
+    body:
+      string: '{"data":{"id":"r6gcp","type":"files","attributes":{"guid":"r6gcp","checkout":null,"name":"all_atb_files.tsv","kind":"file","path":"/66e2b226c0480bb8861d9a3c","size":540612,"provider":"osfstorage","materialized_path":"/all_atb_files.tsv","last_touched":null,"date_modified":"2026-02-26T12:54:31.867027","date_created":"2024-09-12T09:19:34.099468Z","extra":{"hashes":{"md5":"1b329313f751759bc888721ad4156bec","sha256":"b36aa796435185a8ea606e63ed5031f40b6e327853e3ef4aab8d07802fd26d3f"},"downloads":532},"tags":[],"current_user_can_comment":false,"current_version":7,"show_as_unviewed":false},"relationships":{"parent_folder":{"links":{"related":{"href":"https://api.osf.io/v2/files/6661b0b6c128ad0da95a554d/","meta":{}}},"data":{"id":"6661b0b6c128ad0da95a554d","type":"files"}},"versions":{"links":{"related":{"href":"https://api.osf.io/v2/files/66e2b226c0480bb8861d9a3c/versions/","meta":{}}}},"comments":{"links":{"related":{"href":"https://api.osf.io/v2/nodes/xv7q9/comments/?filter%5Btarget%5D=r6gcp","meta":{}}}},"node":{"links":{"related":{"href":"https://api.osf.io/v2/nodes/xv7q9/","meta":{}}},"data":{"id":"xv7q9","type":"nodes"}},"target":{"links":{"related":{"href":"https://api.osf.io/v2/nodes/xv7q9/","meta":{"type":"nodes"}}},"data":{"type":"nodes","id":"xv7q9"}},"cedar_metadata_records":{"links":{"related":{"href":"https://api.osf.io/v2/files/66e2b226c0480bb8861d9a3c/cedar_metadata_records/","meta":{}}}}},"links":{"info":"https://api.osf.io/v2/files/66e2b226c0480bb8861d9a3c/","move":"https://files.de-1.osf.io/v1/resources/xv7q9/providers/osfstorage/66e2b226c0480bb8861d9a3c","upload":"https://files.de-1.osf.io/v1/resources/xv7q9/providers/osfstorage/66e2b226c0480bb8861d9a3c","delete":"https://files.de-1.osf.io/v1/resources/xv7q9/providers/osfstorage/66e2b226c0480bb8861d9a3c","download":"https://osf.io/download/r6gcp/","render":"https://mfr.de-1.osf.io/render?url=https%3A%2F%2Fosf.io%2Fdownload%2Fr6gcp%2F%3Fdirect%26mode%3Drender","html":"https://osf.io/xv7q9/files/osfstorage/66e2b226c0480bb8861d9a3c","self":"https://api.osf.io/v2/files/R6gcp/","iri":"https://osf.io/r6gcp"}},"meta":{"version":"2.0"}}'
+    headers:
+      Allow:
+      - GET, PUT, PATCH, HEAD, OPTIONS
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Cache-Control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      Content-Type:
+      - application/vnd.api+json; charset=utf-8
+      Cross-Origin-Opener-Policy:
+      - same-origin
+      Date:
+      - Tue, 14 Apr 2026 21:26:33 GMT
+      Expires:
+      - '-1'
+      Pragma:
+      - no-cache
+      Referrer-Policy:
+      - same-origin
+      Server:
+      - nginx
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Accept-Encoding
+      - Accept, Cookie, origin
+      Via:
+      - 1.1 google
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - DENY
+      content-length:
+      - '2128'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: null
+    headers:
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      User-Agent:
+      - dlt/1.22.2
+      accept:
+      - application/json
+    method: GET
+    uri: https://osf.io/download/r6gcp/
+  response:
+    body:
+      string: '{"errors":[{"detail":"Not found."}],"meta":{"version":"2.0"}}'
+    headers:
+      Allow:
+      - GET, PUT, PATCH, HEAD, OPTIONS
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Content-Length:
+      - '61'
+      Content-Type:
+      - application/vnd.api+json; charset=utf-8
+      Cross-Origin-Opener-Policy:
+      - same-origin
+      Date:
+      - Tue, 14 Apr 2026 21:14:15 GMT
+      Referrer-Policy:
+      - same-origin
+      Server:
+      - nginx
+      Vary:
+      - Accept-Encoding
+      - Accept, Cookie, origin
+      Via:
+      - 1.1 google
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - DENY
+    status:
+      code: 404
+      message: Not Found
+version: 1
