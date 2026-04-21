@@ -76,7 +76,11 @@ s3://{STORE_BUCKET}/{STAGING_KEY_PREFIX}raw_data/{GCF|GCA}/{nnn}/{nnn}/{nnn}/{as
 
 ---
 
-## 1. Start MinIO
+## 1. Setup
+
+### Local testing
+
+### Start MinIO
 
 ```sh
 docker run -d \
@@ -96,6 +100,22 @@ included `scripts/s3_local.py` helper (requires no extra installs — only
 ```sh
 uv run python scripts/s3_local.py mb s3://cdm-lake
 ```
+
+### Lakehouse
+
+#### Build `cdm-data-loaders`
+
+First, clone the `cdm-data-loaders` repo in your Lakehouse user space. Then, build the package
+in a virtual environment and register it as a Jupyter kernel:
+```
+cd cdm-data-loaders
+uv sync
+source .venv/bin/activate
+uv pip install -e .
+uv pip install ipykernel
+uv run python -m ipykernel install --user --name cdm-data-loaders --display-name "cdm-data-loaders"
+```
+Then, when you open the manifest or promote notebooks, choose the `cdm-data-loaders` kernel.
 
 ---
 
