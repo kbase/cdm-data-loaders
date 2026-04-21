@@ -286,10 +286,17 @@ def _extract_assembly_dir_from_s3_key(key: str) -> str | None:
     return m.group(1) if m else None
 
 
+_DATABASE_ACC_PREFIX: dict[str, str] = {
+    "refseq": "GCF_",
+    "genbank": "GCA_",
+}
+
+
 def scan_store_to_synthetic_summary(
     bucket: str,
     key_prefix: str,
     release_date: str,
+    database: str = "refseq",
     progress_callback: Callable[[int, str], None] | None = None,
 ) -> dict[str, AssemblyRecord]:
     """Scan S3 store and build a synthetic assembly summary from existing objects.
@@ -302,6 +309,8 @@ def scan_store_to_synthetic_summary(
         - Applies the provided ``release_date`` as synthetic ``seq_rel_date`` for
             all assemblies
     - Creates an ``AssemblyRecord`` with ``status="latest"``
+    - Filters to accessions matching the expected prefix for ``database``
+      (``GCF_`` for ``"refseq"``, ``GCA_`` for ``"genbank"``)
 
     The function paginates through S3 to handle large stores efficiently.
 
@@ -309,6 +318,8 @@ def scan_store_to_synthetic_summary(
     :param key_prefix: S3 key prefix (all objects under this prefix are scanned)
     :param release_date: release date string in ``YYYY/MM/DD`` format used for
         all synthetic records
+    :param database: ``"refseq"`` or ``"genbank"`` — controls which accession
+        prefix is included (``GCF_`` or ``GCA_`` respectively)
     :param progress_callback: optional callable invoked after each accession is
         processed with ``(count, accession)`` where count is the running total
         of unique accessions found
@@ -319,6 +330,11 @@ def scan_store_to_synthetic_summary(
     except ValueError as exc:
         msg = f"Invalid release_date '{release_date}'. Expected format YYYY/MM/DD."
         raise ValueError(msg) from exc
+
+    acc_prefix = _DATABASE_ACC_PREFIX.get(database)
+    if acc_prefix is None:
+        msg = f"Unknown database: {database!r}. Expected 'refseq' or 'genbank'."
+        raise ValueError(msg)
 
     s3 = get_s3_client()
     assemblies: dict[str, AssemblyRecord] = {}
@@ -331,6 +347,8 @@ def scan_store_to_synthetic_summary(
         for page in pages:
             for obj in page.get("Contents", []):
                 acc = _extract_accession_from_s3_key(obj["Key"])
+                if not acc or not acc.startswith(acc_prefix):
+                    continue
                 assembly_dir = _extract_assembly_dir_from_s3_key(obj["Key"])
 
                 if not acc or not assembly_dir:
