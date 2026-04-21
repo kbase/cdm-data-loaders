@@ -242,7 +242,7 @@ class TestScanStoreToSyntheticSummary:
                 )
 
         # Scan the store
-        result = scan_store_to_synthetic_summary(test_bucket, path_prefix)
+        result = scan_store_to_synthetic_summary(test_bucket, path_prefix, "2024/04/01")
 
         # Should have found both assemblies
         assert "GCF_000001215.4" in result
@@ -268,7 +268,7 @@ class TestScanStoreToSyntheticSummary:
         s3.put_object(Bucket=test_bucket, Key=key1, Body=b"data")
 
         # Build synthetic summary from store
-        synthetic = scan_store_to_synthetic_summary(test_bucket, path_prefix)
+        synthetic = scan_store_to_synthetic_summary(test_bucket, path_prefix, "2024/04/20")
         assert "GCF_000001215.4" in synthetic
 
         # Simulate current NCBI summary with one new and one existing

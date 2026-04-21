@@ -289,6 +289,7 @@ def _extract_assembly_dir_from_s3_key(key: str) -> str | None:
 def scan_store_to_synthetic_summary(
     bucket: str,
     key_prefix: str,
+    release_date: str,
     progress_callback: Callable[[int, str], None] | None = None,
 ) -> dict[str, AssemblyRecord]:
     """Scan S3 store and build a synthetic assembly summary from existing objects.
@@ -296,21 +297,29 @@ def scan_store_to_synthetic_summary(
     This function is useful when bootstrapping a diffs against an existing,
     pre-populated S3 store that lacks a baseline assembly summary.
 
-    For each assembly found in the store:
+        For each assembly found in the store:
     - Extracts the accession and assembly directory name from S3 paths
-    - Uses the earliest ``LastModified`` timestamp across all files in that
-      assembly as the synthetic ``seq_rel_date`` (conservative estimate)
+        - Applies the provided ``release_date`` as synthetic ``seq_rel_date`` for
+            all assemblies
     - Creates an ``AssemblyRecord`` with ``status="latest"``
 
     The function paginates through S3 to handle large stores efficiently.
 
     :param bucket: S3 bucket name
     :param key_prefix: S3 key prefix (all objects under this prefix are scanned)
+    :param release_date: release date string in ``YYYY/MM/DD`` format used for
+        all synthetic records
     :param progress_callback: optional callable invoked after each accession is
         processed with ``(count, accession)`` where count is the running total
         of unique accessions found
     :return: dict mapping accession to ``AssemblyRecord``
     """
+    try:
+        datetime.strptime(release_date, "%Y/%m/%d")
+    except ValueError as exc:
+        msg = f"Invalid release_date '{release_date}'. Expected format YYYY/MM/DD."
+        raise ValueError(msg) from exc
+
     s3 = get_s3_client()
     assemblies: dict[str, AssemblyRecord] = {}
     processed_count = 0
@@ -327,13 +336,6 @@ def scan_store_to_synthetic_summary(
                 if not acc or not assembly_dir:
                     continue
 
-                # Convert LastModified to NCBI date format (YYYY/MM/DD)
-                last_modified = obj["LastModified"]
-                # Handle both aware and naive datetimes
-                if last_modified.tzinfo is None:
-                    last_modified = last_modified.replace(tzinfo=UTC)
-                obj_date_str = last_modified.strftime("%Y/%m/%d")
-
                 if acc not in assemblies:
                     # First object for this accession; store it.
                     # Construct a fake FTP path that ends with assembly_dir so
@@ -344,21 +346,13 @@ def scan_store_to_synthetic_summary(
                     assemblies[acc] = AssemblyRecord(
                         accession=acc,
                         status="latest",
-                        seq_rel_date=obj_date_str,
+                        seq_rel_date=release_date,
                         ftp_path=fake_ftp_path,
                         assembly_dir=assembly_dir,
                     )
                     processed_count += 1
                     if progress_callback is not None:
                         progress_callback(processed_count, acc)
-                else:
-                    # Update to earliest timestamp (conservative)
-                    existing_record = assemblies[acc]
-                    existing_date = datetime.strptime(existing_record.seq_rel_date, "%Y/%m/%d").replace(
-                        tzinfo=UTC
-                    )
-                    if last_modified < existing_date:
-                        existing_record.seq_rel_date = obj_date_str
 
     except Exception as e:  # noqa: BLE001
         logger.error("Error scanning store: %s", e)

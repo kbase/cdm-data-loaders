@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from cdm_data_loaders.ncbi_ftp.manifest import (
     DiffResult,
     _extract_accession_from_s3_key,
@@ -646,26 +648,26 @@ class TestScanStoreToSyntheticSummary:
         """Verify synthetic summary is built correctly from S3 objects."""
         mock_get_s3.return_value = self._mock_s3_with_objects()
 
-        result = scan_store_to_synthetic_summary("test-bucket", "prefix/")
+        result = scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024/01/31")
 
         assert len(result) == 2
         assert "GCF_000001215.4" in result
         assert "GCF_000005845.2" in result
 
-        # Should use earliest date (2024-01-15)
+        # Should use provided release date for all records
         rec1 = result["GCF_000001215.4"]
         assert rec1.accession == "GCF_000001215.4"
         assert rec1.status == "latest"
-        assert rec1.seq_rel_date == "2024/01/15"
+        assert rec1.seq_rel_date == "2024/01/31"
         assert rec1.assembly_dir == "GCF_000001215.4_Release_6"
 
-        # Other assembly uses its single date
+        # Other assembly uses the same provided date
         rec2 = result["GCF_000005845.2"]
-        assert rec2.seq_rel_date == "2024/02/20"
+        assert rec2.seq_rel_date == "2024/01/31"
 
     @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
-    def test_uses_earliest_date_per_assembly(self, mock_get_s3: MagicMock) -> None:
-        """Verify earliest LastModified is used when assembly has multiple files."""
+    def test_applies_release_date_to_all_assemblies(self, mock_get_s3: MagicMock) -> None:
+        """Verify provided release_date is used for all assemblies."""
         mock = MagicMock()
         mock_paginator = MagicMock()
         mock.get_paginator.return_value = mock_paginator
@@ -686,10 +688,17 @@ class TestScanStoreToSyntheticSummary:
         mock_paginator.paginate.return_value = [{"Contents": page_contents}]
         mock_get_s3.return_value = mock
 
-        result = scan_store_to_synthetic_summary("test-bucket", "prefix/")
+        result = scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024/03/31")
 
-        # Should use the earliest date
-        assert result["GCF_000001215.4"].seq_rel_date == "2024/01/10"
+        assert result["GCF_000001215.4"].seq_rel_date == "2024/03/31"
+
+    @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
+    def test_raises_for_invalid_release_date(self, mock_get_s3: MagicMock) -> None:
+        """Verify invalid release_date format is rejected."""
+        mock_get_s3.return_value = self._mock_s3_with_objects()
+
+        with pytest.raises(ValueError, match="Invalid release_date"):
+            scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024-03-31")
 
     @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
     def test_invokes_progress_callback(self, mock_get_s3: MagicMock) -> None:
@@ -700,7 +709,7 @@ class TestScanStoreToSyntheticSummary:
         def track_progress(count: int, acc: str) -> None:
             callback_calls.append((count, acc))
 
-        scan_store_to_synthetic_summary("test-bucket", "prefix/", progress_callback=track_progress)
+        scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024/01/31", progress_callback=track_progress)
 
         # Should have 2 calls (one per assembly discovered)
         assert len(callback_calls) == 2
@@ -716,7 +725,7 @@ class TestScanStoreToSyntheticSummary:
         mock_paginator.paginate.return_value = [{"Contents": []}]
         mock_get_s3.return_value = mock
 
-        result = scan_store_to_synthetic_summary("test-bucket", "prefix/")
+        result = scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024/01/31")
 
         assert result == {}
 
@@ -742,7 +751,7 @@ class TestScanStoreToSyntheticSummary:
         mock_paginator.paginate.return_value = [{"Contents": page_contents}]
         mock_get_s3.return_value = mock
 
-        result = scan_store_to_synthetic_summary("test-bucket", "prefix/")
+        result = scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024/01/31")
 
         # Only one valid assembly should be found
         assert len(result) == 1
@@ -770,7 +779,7 @@ class TestScanStoreToSyntheticSummary:
         mock.get_paginator.return_value = mock_paginator
         mock_get_s3.return_value = mock
 
-        synthetic = scan_store_to_synthetic_summary("test-bucket", "prefix/")
+        synthetic = scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024/03/10")
 
         # Simulate the notebook's save logic
         out_file = tmp_path / "synthetic_summary.txt"
