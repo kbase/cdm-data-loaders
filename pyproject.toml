@@ -1,6 +1,6 @@
 [project]
 name = "cdm-data-loaders"
-version = "0.1.6"
+version = "0.1.7"
 description = "Data loaders and wranglers for the CDM."
 requires-python = ">= 3.13"
 readme = "README.md"
@@ -20,13 +20,14 @@ dependencies = [
     "lxml>=6.0.2",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
+    "tqdm>=4.67.3",
 ]
 
 [project.scripts]
-# idmapping = "cdm_data_loaders.parsers.uniprot.idmapping:cli"
+all_the_bacteria = "cdm_data_loaders.pipelines.all_the_bacteria:cli"
+ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"
 uniprot = "cdm_data_loaders.pipelines.uniprot_kb:cli"
 uniref = "cdm_data_loaders.pipelines.uniref:cli"
-ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"
 
 [dependency-groups]
 dev = [
@@ -49,11 +50,6 @@ xml = [
 ]
 
 [project.optional-dependencies]
-# for s3 interactions -- see utils/s3.py for more details
-s3 = [
-    "boto3[crt]>=1.42.0",
-    "tqdm>=4.67.3",
-]
 
 [tool.ruff]
 line-length = 120

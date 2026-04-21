@@ -158,6 +158,8 @@ def check_settings(
 ) -> None:
     """Check that the settings object has the expected values."""
     assert settings_object.dlt_config is not None
+    assert settings_object.model_dump(exclude={"dlt_config"}) == expected
+
     # make sure we have both raw_data_dir and pipeline_dir
     assert "raw_data_dir" in expected
     assert "pipeline_dir" in expected
