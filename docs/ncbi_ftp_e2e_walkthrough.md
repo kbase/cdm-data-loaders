@@ -107,7 +107,7 @@ uv run python scripts/s3_local.py mb s3://cdm-lake
 
 First, clone the `cdm-data-loaders` repo in your Lakehouse user space. Then, build the package
 in a virtual environment and register it as a Jupyter kernel:
-```
+```bash
 cd cdm-data-loaders
 uv sync
 source .venv/bin/activate
@@ -116,6 +116,31 @@ uv pip install ipykernel
 uv run python -m ipykernel install --user --name cdm-data-loaders --display-name "cdm-data-loaders"
 ```
 Then, when you open the manifest or promote notebooks, choose the `cdm-data-loaders` kernel.
+
+#### Add the S3 Credentials to the Kernel
+
+Open a new Jupyter Notebook with the default kernel and run this in a new cell:
+```python
+import os
+for k, v in sorted(os.environ.items()):
+    if "AWS" in k or "S3" in k or "MINIO" in k:
+        print(f"{k}={v}")
+```
+Take the output and add the environment vars to the `kernel.json` for your new kernel (e.g., in `cdm-data-loaders/.venv/share/jupyter/kernels/python3/kernel.json`):
+```json
+{
+  "argv": ["..."],
+  "display_name": "cdm-data-loaders",
+  "language": "python",
+  "env": {
+    "AWS_ACCESS_KEY_ID": "...",
+    "AWS_SECRET_ACCESS_KEY": "...",
+    "AWS_DEFAULT_REGION": "...",
+    ...
+  }
+}
+```
+
 
 ---
 
