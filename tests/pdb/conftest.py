@@ -9,6 +9,7 @@ import botocore.client
 import pytest
 from moto import mock_aws
 
+import cdm_data_loaders.pdb.metadata as metadata_mod
 import cdm_data_loaders.pdb.promote as promote_mod
 import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.utils.s3 import CDM_LAKE_BUCKET, reset_s3_client
@@ -58,6 +59,7 @@ def mock_s3_client() -> Generator[botocore.client.BaseClient]:
         with (
             patch.object(s3_utils, "get_s3_client", return_value=client),
             patch.object(promote_mod, "get_s3_client", return_value=client),
+            patch.object(metadata_mod, "get_s3_client", return_value=client),
         ):
             # Workaround: moto does not support CRC64NVME; strip it from put_object calls
             client.put_object = strip_checksum_algorithm(client.put_object)  # type: ignore[method-assign]

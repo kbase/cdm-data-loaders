@@ -8,6 +8,7 @@ remaining entries.
 
 import re
 import tempfile
+from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -15,6 +16,12 @@ from typing import Any
 import botocore.exceptions
 
 from cdm_data_loaders.pdb.entry import DEFAULT_LAKEHOUSE_KEY_PREFIX, build_entry_path
+from cdm_data_loaders.pdb.metadata import (
+    DescriptorResource,
+    archive_descriptor,
+    create_descriptor,
+    upload_descriptor,
+)
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.s3 import (
     copy_object_with_metadata,
@@ -26,7 +33,7 @@ from cdm_data_loaders.utils.s3 import (
 logger = get_cdm_logger()
 
 # Pattern for matching PDB extended IDs in S3 object keys.
-_PDB_ID_RE = re.compile(r"pdb_[0-9a-f]{8}", re.IGNORECASE)
+_PDB_ID_RE = re.compile(r"pdb_[0-9a-z]{8}", re.IGNORECASE)
 
 
 # ── Promote from S3 staging prefix ──────────────────────────────────────
@@ -63,9 +70,6 @@ def promote_from_s3(  # noqa: PLR0913
     paginator = s3.get_paginator("list_objects_v2")
     normalized_staging_key_prefix = staging_key_prefix.rstrip("/") + "/"
 
-    promoted = 0
-    failed = 0
-
     # Collect all objects under the staging prefix
     staged_objects: list[str] = []
     for page in paginator.paginate(Bucket=bucket, Prefix=normalized_staging_key_prefix):
@@ -94,13 +98,77 @@ def promote_from_s3(  # noqa: PLR0913
                 dry_run=dry_run,
             )
 
+    promoted, failed, promoted_ids, entry_resources = _promote_data_files(
+        data_files,
+        normalized_staging_key_prefix,
+        lakehouse_key_prefix,
+        bucket,
+        dry_run=dry_run,
+    )
+
+    # Trim manifest for resumability
+    if manifest_s3_key and promoted_ids and not dry_run:
+        _trim_manifest(manifest_s3_key, bucket, promoted_ids)
+
+    # Upload frictionless descriptors for each promoted entry
+    descriptors_written = 0
+    for pdb_id, resources in entry_resources.items():
+        if not resources:
+            continue
+        try:
+            descriptor = create_descriptor(pdb_id, resources)
+            upload_descriptor(descriptor, pdb_id, bucket, lakehouse_key_prefix, dry_run=dry_run)
+            descriptors_written += 1
+        except Exception:
+            logger.exception("Failed to write descriptor for %s", pdb_id)
+
+    if descriptors_written:
+        logger.info("Wrote %d frictionless descriptor(s)", descriptors_written)
+
+    report: dict[str, Any] = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "promoted": promoted,
+        "archived": archived,
+        "failed": failed,
+        "dry_run": dry_run,
+    }
+
+    logger.info(
+        "PROMOTE SUMMARY: %d promoted, %d archived, %d failed%s",
+        promoted,
+        archived,
+        failed,
+        " (dry-run)" if dry_run else "",
+    )
+    return report
+
+
+# ── Promote data files (per-file loop) ──────────────────────────────────
+
+
+def _promote_data_files(
+    data_files: list[str],
+    normalized_staging_prefix: str,
+    lakehouse_key_prefix: str,
+    bucket: str,
+    *,
+    dry_run: bool,
+) -> tuple[int, int, set[str], defaultdict[str, list[DescriptorResource]]]:
+    """Promote each data file from staging to the final Lakehouse path.
+
+    :return: (promoted_count, failed_count, promoted_ids, entry_resources)
+    """
+    s3 = get_s3_client()
+    promoted = 0
+    failed = 0
     promoted_ids: set[str] = set()
+    entry_resources: defaultdict[str, list[DescriptorResource]] = defaultdict(list)
 
     for staged_key in data_files:
         if staged_key.endswith("download_report.json"):
             continue
 
-        rel_path = staged_key[len(normalized_staging_key_prefix):]
+        rel_path = staged_key[len(normalized_staging_prefix):]
         if not rel_path.startswith("raw_data/"):
             continue
         final_key = lakehouse_key_prefix + rel_path
@@ -130,10 +198,21 @@ def promote_from_s3(  # noqa: PLR0913
 
                 promoted += 1
 
-                # Track promoted entry for manifest trimming
+                # Track promoted entry for manifest trimming and descriptor
                 m = _PDB_ID_RE.search(staged_key)
                 if m:
-                    promoted_ids.add(m.group(0).lower())
+                    pdb_id = m.group(0).lower()
+                    promoted_ids.add(pdb_id)
+                    fname = final_key_path.name
+                    ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
+                    resource: DescriptorResource = {
+                        "name": fname.lower(),
+                        "path": final_key,
+                        "format": ext,
+                        "bytes": Path(tmp_path).stat().st_size,
+                        "hash": None,
+                    }
+                    entry_resources[pdb_id].append(resource)
 
             finally:
                 Path(tmp_path).unlink()
@@ -141,26 +220,7 @@ def promote_from_s3(  # noqa: PLR0913
             logger.exception("Failed to promote %s", staged_key)
             failed += 1
 
-    # Trim manifest for resumability
-    if manifest_s3_key and promoted_ids and not dry_run:
-        _trim_manifest(manifest_s3_key, bucket, promoted_ids)
-
-    report: dict[str, Any] = {
-        "timestamp": datetime.now(UTC).isoformat(),
-        "promoted": promoted,
-        "archived": archived,
-        "failed": failed,
-        "dry_run": dry_run,
-    }
-
-    logger.info(
-        "PROMOTE SUMMARY: %d promoted, %d archived, %d failed%s",
-        promoted,
-        archived,
-        failed,
-        " (dry-run)" if dry_run else "",
-    )
-    return report
+    return promoted, failed, promoted_ids, entry_resources
 
 
 # ── Archive entries ─────────────────────────────────────────────────────
@@ -242,6 +302,16 @@ def _archive_entries(  # noqa: PLR0913
                 logger.debug("  Archived: %s -> %s", source_key, archive_key)
             except Exception:
                 logger.exception("Failed to archive %s", source_key)
+
+        # Archive the frictionless descriptor for this entry
+        archive_descriptor(
+            pdb_id,
+            bucket,
+            lakehouse_key_prefix,
+            release_tag,
+            archive_reason=archive_reason,
+            dry_run=dry_run,
+        )
 
     logger.info("Archived %d objects for %d entries (%s)", archived, len(pdb_ids), archive_reason)
     return archived
