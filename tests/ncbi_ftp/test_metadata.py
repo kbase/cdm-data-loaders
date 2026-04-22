@@ -6,6 +6,7 @@ import json
 import time
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlparse
 
 import boto3
 import pytest
@@ -133,7 +134,8 @@ class TestCreateDescriptor:
         """URL points to the NCBI genome page for the accession."""
         d = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, _SAMPLE_RESOURCES, timestamp=_TIMESTAMP)
         assert _ACCESSION in d["url"]
-        assert "ncbi.nlm.nih.gov" in d["url"]
+        parsed = urlparse(d["url"])
+        assert parsed.hostname == "ncbi.nlm.nih.gov"
 
     def test_ncbi_contributor(self) -> None:
         """Contributor is NCBI with the correct ROR ID."""
