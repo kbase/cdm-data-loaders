@@ -8,12 +8,19 @@ manifest so that a re-run of Phase 2 only downloads remaining entries.
 
 import re
 import tempfile
+from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import botocore.exceptions
 
+from cdm_data_loaders.ncbi_ftp.metadata import (
+    DescriptorResource,
+    archive_descriptor,
+    create_descriptor,
+    upload_descriptor,
+)
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.s3 import (
     copy_object_with_metadata,
@@ -60,9 +67,6 @@ def promote_from_s3(  # noqa: PLR0913
     paginator = s3.get_paginator("list_objects_v2")
     normalized_staging_key_prefix = staging_key_prefix.rstrip("/") + "/"
 
-    promoted = 0
-    failed = 0
-
     # Collect all objects under the staging prefix
     staged_objects: list[str] = []
     for page in paginator.paginate(Bucket=bucket, Prefix=normalized_staging_key_prefix):
@@ -91,13 +95,79 @@ def promote_from_s3(  # noqa: PLR0913
                 dry_run=dry_run,
             )
 
+    promoted, failed, promoted_accessions, assembly_resources = _promote_data_files(
+        data_files,
+        sidecars,
+        normalized_staging_key_prefix,
+        lakehouse_key_prefix,
+        bucket,
+        dry_run=dry_run,
+    )
+
+    # Trim manifest for resumability
+    if manifest_s3_key and promoted_accessions and not dry_run:
+        _trim_manifest(manifest_s3_key, bucket, promoted_accessions)
+
+    # Upload frictionless descriptors for each promoted assembly
+    descriptors_written = 0
+    for (adir, acc), resources in assembly_resources.items():
+        if not resources:
+            continue
+        try:
+            descriptor = create_descriptor(adir, acc, resources)
+            upload_descriptor(descriptor, adir, bucket, lakehouse_key_prefix, dry_run=dry_run)
+            descriptors_written += 1
+        except Exception:
+            logger.exception("Failed to write descriptor for %s", adir)
+
+    if descriptors_written:
+        logger.info("Wrote %d frictionless descriptor(s)", descriptors_written)
+
+    report: dict[str, Any] = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "promoted": promoted,
+        "archived": archived,
+        "failed": failed,
+        "dry_run": dry_run,
+    }
+
+    logger.info(
+        "PROMOTE SUMMARY: %d promoted, %d archived, %d failed%s",
+        promoted,
+        archived,
+        failed,
+        " (dry-run)" if dry_run else "",
+    )
+    return report
+
+
+# ── Promote data files (per-file loop) ──────────────────────────────────
+
+
+def _promote_data_files(  # noqa: PLR0913, PLR0915
+    data_files: list[str],
+    sidecars: set[str],
+    normalized_staging_prefix: str,
+    lakehouse_key_prefix: str,
+    bucket: str,
+    *,
+    dry_run: bool,
+) -> tuple[int, int, set[str], defaultdict[tuple[str, str], list[DescriptorResource]]]:
+    """Promote each data file from staging to the final Lakehouse path.
+
+    :return: (promoted_count, failed_count, promoted_accessions, assembly_resources)
+    """
+    s3 = get_s3_client()
+    promoted = 0
+    failed = 0
     promoted_accessions: set[str] = set()
+    assembly_resources: defaultdict[tuple[str, str], list[DescriptorResource]] = defaultdict(list)
 
     for staged_key in data_files:
         if staged_key.endswith("download_report.json"):
             continue
 
-        rel_path = staged_key[len(normalized_staging_key_prefix) :]
+        rel_path = staged_key[len(normalized_staging_prefix) :]
         if not rel_path.startswith("raw_data/"):
             continue
         final_key = lakehouse_key_prefix + rel_path
@@ -139,32 +209,30 @@ def promote_from_s3(  # noqa: PLR0913
                 if acc_match:
                     promoted_accessions.add(acc_match.group(1))
 
+                # Track resources for frictionless descriptor creation
+                adir_match = re.search(r"raw_data/GC[AF]/\d+/\d+/\d+/([^/]+)/", final_key)
+                if adir_match and acc_match:
+                    adir = adir_match.group(1)
+                    acc = acc_match.group(1)
+                    fname = final_key_path.name
+                    ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
+                    md5_hash = metadata.get("md5")
+                    resource: DescriptorResource = {
+                        "name": fname.lower(),
+                        "path": final_key,
+                        "format": ext,
+                        "bytes": Path(tmp_path).stat().st_size,
+                        "hash": md5_hash,
+                    }
+                    assembly_resources[(adir, acc)].append(resource)
+
             finally:
                 Path(tmp_path).unlink()
         except Exception:
             logger.exception("Failed to promote %s", staged_key)
             failed += 1
 
-    # Trim manifest for resumability
-    if manifest_s3_key and promoted_accessions and not dry_run:
-        _trim_manifest(manifest_s3_key, bucket, promoted_accessions)
-
-    report: dict[str, Any] = {
-        "timestamp": datetime.now(UTC).isoformat(),
-        "promoted": promoted,
-        "archived": archived,
-        "failed": failed,
-        "dry_run": dry_run,
-    }
-
-    logger.info(
-        "PROMOTE SUMMARY: %d promoted, %d archived, %d failed%s",
-        promoted,
-        archived,
-        failed,
-        " (dry-run)" if dry_run else "",
-    )
-    return report
+    return promoted, failed, promoted_accessions, assembly_resources
 
 
 # ── Archive assemblies ──────────────────────────────────────────────────
@@ -223,6 +291,14 @@ def _archive_assemblies(  # noqa: PLR0913
             logger.debug("No objects found for %s, skipping archive", accession)
             continue
 
+        # Infer assembly_dir from key paths for descriptor archival
+        assembly_dir: str | None = None
+        for key in matching_keys:
+            adir_match = re.search(r"raw_data/GC[AF]/\d+/\d+/\d+/([^/]+)/", key)
+            if adir_match:
+                assembly_dir = adir_match.group(1)
+                break
+
         for source_key in matching_keys:
             rel = source_key[len(lakehouse_key_prefix) :]
             archive_key = f"{lakehouse_key_prefix}archive/{release_tag}/{rel}"
@@ -248,6 +324,20 @@ def _archive_assemblies(  # noqa: PLR0913
                 logger.debug("  Archived: %s -> %s", source_key, archive_key)
             except Exception:
                 logger.exception("Failed to archive %s", source_key)
+
+        # Archive the frictionless descriptor alongside raw data
+        if assembly_dir:
+            try:
+                archive_descriptor(
+                    assembly_dir,
+                    bucket,
+                    lakehouse_key_prefix,
+                    release_tag,
+                    archive_reason=archive_reason,
+                    dry_run=dry_run,
+                )
+            except Exception:
+                logger.exception("Failed to archive descriptor for %s", assembly_dir)
 
     logger.info("Archived %d objects for %d accessions (%s)", archived, len(accessions), archive_reason)
     return archived

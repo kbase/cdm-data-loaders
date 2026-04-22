@@ -11,11 +11,17 @@ unreachable.  Each test method gets its own bucket.
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import TYPE_CHECKING
 
 import pytest
 
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
+from cdm_data_loaders.ncbi_ftp.metadata import (
+    build_archive_descriptor_key,
+    build_descriptor_key,
+    create_descriptor,
+)
 from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX, promote_from_s3
 
 from .conftest import get_object_metadata, list_all_keys, seed_lakehouse
@@ -318,3 +324,170 @@ class TestPromoteIncompleteStaging:
         # No objects at final path
         final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
         assert len(final_keys) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPromoteCreatesDescriptor:
+    """Promote step writes a frictionless descriptor for each promoted assembly."""
+
+    def test_descriptor_created(self, minio_s3_client: object, test_bucket: str) -> None:
+        """After promote, a JSON descriptor exists under ``metadata/``."""
+        s3 = minio_s3_client
+        _stage_assembly(s3, test_bucket, ASSEMBLY_DIR_A)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, PATH_PREFIX)
+        obj = s3.get_object(Bucket=test_bucket, Key=descriptor_key)
+        body = json.loads(obj["Body"].read())
+
+        assert body["identifier"] == f"NCBI:{ACCESSION_A}"
+        assert body["resource_type"] == "dataset"
+
+    def test_descriptor_resources_include_promoted_files(self, minio_s3_client: object, test_bucket: str) -> None:
+        """Descriptor's ``resources`` list references the final Lakehouse key."""
+        s3 = minio_s3_client
+        _stage_assembly(s3, test_bucket, ASSEMBLY_DIR_A)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, PATH_PREFIX)
+        obj = s3.get_object(Bucket=test_bucket, Key=descriptor_key)
+        body = json.loads(obj["Body"].read())
+
+        resource_paths = [r["path"] for r in body["resources"]]
+        assert any(PATH_PREFIX + "raw_data/" in p for p in resource_paths)
+
+    def test_descriptor_resources_have_md5(self, minio_s3_client: object, test_bucket: str) -> None:
+        """Resources with .md5 sidecars include the hash value."""
+        s3 = minio_s3_client
+        _stage_assembly(s3, test_bucket, ASSEMBLY_DIR_A)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, PATH_PREFIX)
+        obj = s3.get_object(Bucket=test_bucket, Key=descriptor_key)
+        body = json.loads(obj["Body"].read())
+
+        # Both staged files have .md5 sidecars
+        for resource in body["resources"]:
+            assert "hash" in resource, f"Expected hash in resource: {resource}"
+
+    def test_multiple_assemblies_get_separate_descriptors(self, minio_s3_client: object, test_bucket: str) -> None:
+        """Each assembly gets its own descriptor file."""
+        s3 = minio_s3_client
+        _stage_assembly(s3, test_bucket, ASSEMBLY_DIR_A)
+        _stage_assembly(s3, test_bucket, ASSEMBLY_DIR_B)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        for assembly_dir, accession in [(ASSEMBLY_DIR_A, ACCESSION_A), (ASSEMBLY_DIR_B, ACCESSION_B)]:
+            key = build_descriptor_key(assembly_dir, PATH_PREFIX)
+            obj = s3.get_object(Bucket=test_bucket, Key=key)
+            body = json.loads(obj["Body"].read())
+            assert body["identifier"] == f"NCBI:{accession}"
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPromoteArchiveUpdatedIncludesDescriptor:
+    """Archiving updated assemblies also archives the descriptor."""
+
+    def test_archive_copies_descriptor(self, minio_s3_client: object, test_bucket: str, tmp_path: Path) -> None:
+        """After archiving an updated assembly, the descriptor appears under archive/."""
+        s3 = minio_s3_client
+
+        # Seed old version at Lakehouse path *including* a live descriptor
+        old_files = {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": "old content"}
+        seed_lakehouse(s3, test_bucket, ACCESSION_A, old_files, PATH_PREFIX, ASSEMBLY_DIR_A)
+        # Pre-upload a descriptor so archive_descriptor can find it
+        descriptor = create_descriptor(ASSEMBLY_DIR_A, ACCESSION_A, [])
+        # Upload directly to MinIO (not via promote)
+        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, PATH_PREFIX)
+        s3.put_object(Bucket=test_bucket, Key=descriptor_key, Body=json.dumps(descriptor).encode())
+
+        _stage_assembly(s3, test_bucket, ASSEMBLY_DIR_A)
+        updated_manifest = _write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            updated_manifest_path=str(updated_manifest),
+            ncbi_release="2024-01",
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        archive_key = build_archive_descriptor_key(ASSEMBLY_DIR_A, "2024-01", PATH_PREFIX)
+        # Confirm the archive descriptor object exists
+        resp = s3.head_object(Bucket=test_bucket, Key=archive_key)
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPromoteArchiveRemovedIncludesDescriptor:
+    """Archiving removed assemblies also archives the descriptor."""
+
+    def test_archive_removed_copies_descriptor(self, minio_s3_client: object, test_bucket: str, tmp_path: Path) -> None:
+        """After archiving a removed assembly, the descriptor is under archive/."""
+        s3 = minio_s3_client
+
+        # Seed the assembly at final Lakehouse path
+        files = {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": "content"}
+        seed_lakehouse(s3, test_bucket, ACCESSION_A, files, PATH_PREFIX, ASSEMBLY_DIR_A)
+        # Pre-upload a descriptor
+        descriptor = create_descriptor(ASSEMBLY_DIR_A, ACCESSION_A, [])
+        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, PATH_PREFIX)
+        s3.put_object(Bucket=test_bucket, Key=descriptor_key, Body=json.dumps(descriptor).encode())
+
+        removed_manifest = _write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            removed_manifest_path=str(removed_manifest),
+            ncbi_release="2024-01",
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        archive_key = build_archive_descriptor_key(ASSEMBLY_DIR_A, "2024-01", PATH_PREFIX)
+        resp = s3.head_object(Bucket=test_bucket, Key=archive_key)
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPromoteDryRunNoDescriptor:
+    """Dry-run must not write any descriptor files."""
+
+    def test_dry_run_no_descriptor(self, minio_s3_client: object, test_bucket: str) -> None:
+        """Dry-run does not upload a descriptor to the metadata/ prefix."""
+        s3 = minio_s3_client
+        _stage_assembly(s3, test_bucket, ASSEMBLY_DIR_A)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+            dry_run=True,
+        )
+
+        metadata_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "metadata/")
+        assert len(metadata_keys) == 0, f"Dry-run should not create descriptor files, found: {metadata_keys}"
