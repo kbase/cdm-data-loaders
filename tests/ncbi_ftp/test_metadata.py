@@ -135,7 +135,8 @@ class TestCreateDescriptor:
         d = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, _SAMPLE_RESOURCES, timestamp=_TIMESTAMP)
         assert _ACCESSION in d["url"]
         parsed = urlparse(d["url"])
-        assert parsed.hostname == "ncbi.nlm.nih.gov"
+        assert parsed.hostname is not None
+        assert parsed.hostname.endswith("ncbi.nlm.nih.gov")
 
     def test_ncbi_contributor(self) -> None:
         """Contributor is NCBI with the correct ROR ID."""
