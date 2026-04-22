@@ -428,6 +428,46 @@ uv run python scripts/s3_local.py head \
   s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/raw_data/GCF/900/000/615/GCF_900000615.1_PRJEB7657_assembly/GCF_900000615.1_PRJEB7657_assembly_genomic.fna.gz
 ```
 
+### Frictionless metadata descriptors
+
+Each promoted assembly gets a [frictionless](https://framework.frictionlessdata.io/) data package descriptor stored at:
+
+```
+s3://{STORE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}metadata/{assembly_dir}_datapackage.json
+```
+
+For example:
+
+```
+s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/metadata/GCF_900000615.1_PRJEB7657_assembly_datapackage.json
+```
+
+The descriptor follows the KBase credit metadata schema (v1.0) and records:
+
+- **identifier** — `NCBI:{accession}`, e.g. `NCBI:GCF_900000615.1`
+- **resource_type** — always `"dataset"`
+- **resources** — list of promoted files with their final S3 key, byte size,
+  file format, and MD5 hash (when available)
+- **contributors / publisher** — NCBI organizational metadata
+- **meta.saved_by** — `"cdm-data-loaders-ncbi-ftp"`
+
+When an assembly is archived (updated or removed), its live descriptor is
+copied to:
+
+```
+s3://{STORE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}archive/{release_tag}/metadata/{assembly_dir}_datapackage.json
+```
+
+Use the last cell of `notebooks/ncbi_ftp_promote.ipynb` to list and preview
+all descriptors written in a promote run.
+
+To inspect a descriptor directly:
+
+```sh
+uv run python scripts/s3_local.py cat \
+  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/metadata/GCF_900000615.1_PRJEB7657_assembly_datapackage.json
+```
+
 ---
 
 ## 6. Incremental run (second sync)
