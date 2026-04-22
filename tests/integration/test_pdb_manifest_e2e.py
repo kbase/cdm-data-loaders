@@ -64,7 +64,7 @@ def _make_holdings_data(
 ) -> dict:
     return {
         "current": current if current is not None else HOLDINGS_CURRENT,
-        "dates":   dates   if dates   is not None else HOLDINGS_DATES,
+        "dates": dates if dates is not None else HOLDINGS_DATES,
         "removed": removed if removed is not None else HOLDINGS_REMOVED,
     }
 
@@ -134,7 +134,9 @@ class TestPdbDiffWithPreviousSnapshot:
         assert "pdb_00002def" not in diff.updated
         assert diff.new == []
 
-    def test_pdb_removed_entry_from_removed_ids(self, minio_s3_client: object, test_bucket: str, tmp_path: Path) -> None:
+    def test_pdb_removed_entry_from_removed_ids(
+        self, minio_s3_client: object, test_bucket: str, tmp_path: Path
+    ) -> None:
         """Entries in the removed-IDs set that were previously known are marked removed."""
         previous = {
             "pdb_00009zzz": PDBRecord("pdb_00009zzz", last_modified="2023-01-01"),
@@ -281,14 +283,14 @@ class TestPdbManifestFiles:
         diff = compute_diff(records)  # all-new scenario
 
         transfer_path = tmp_path / "transfer_manifest.txt"
-        removed_path  = tmp_path / "removed_manifest.txt"
-        updated_path  = tmp_path / "updated_manifest.txt"
-        summary_path  = tmp_path / "diff_summary.json"
+        removed_path = tmp_path / "removed_manifest.txt"
+        updated_path = tmp_path / "updated_manifest.txt"
+        summary_path = tmp_path / "diff_summary.json"
 
-        written    = write_transfer_manifest(diff, transfer_path)
-        removed    = write_removed_manifest(diff, removed_path)
-        updated    = write_updated_manifest(diff, updated_path)
-        summary    = write_diff_summary(diff, summary_path)
+        written = write_transfer_manifest(diff, transfer_path)
+        removed = write_removed_manifest(diff, removed_path)
+        updated = write_updated_manifest(diff, updated_path)
+        summary = write_diff_summary(diff, summary_path)
 
         assert sorted(written) == sorted(records.keys())
         assert removed == []

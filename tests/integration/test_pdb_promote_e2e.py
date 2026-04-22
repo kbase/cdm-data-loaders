@@ -39,10 +39,10 @@ PATH_PREFIX = DEFAULT_LAKEHOUSE_KEY_PREFIX
 # Fake file contents staged per file-type subdirectory.
 # structures/ (coordinates) is the primary type; the others are included so
 # the promote logic sees a realistic entry layout.
-FAKE_CIF          = b"data_\n_entry.id pdb_00001abc\n"
-FAKE_SF           = b"data_r1abcsf\n_diffrn.id D1\n"
-FAKE_VALIDATION   = b"%PDF-1.4 fake validation report\n"
-FAKE_ASSEMBLY     = b"data_assembly1\n_pdbx_struct_assembly.id 1\n"
+FAKE_CIF = b"data_\n_entry.id pdb_00001abc\n"
+FAKE_SF = b"data_r1abcsf\n_diffrn.id D1\n"
+FAKE_VALIDATION = b"%PDF-1.4 fake validation report\n"
+FAKE_ASSEMBLY = b"data_assembly1\n_pdbx_struct_assembly.id 1\n"
 
 
 def _stage_entry(
@@ -61,10 +61,10 @@ def _stage_entry(
     base = f"{STAGING_PREFIX}{rel}"
 
     files: dict[str, bytes] = {
-        f"structures/{pdb_id}.cif.gz":                            FAKE_CIF,
-        f"experimental_data/{pdb_id}-sf.cif.gz":                 FAKE_SF,
-        f"validation_reports/{pdb_id}_validation.pdf.gz":         FAKE_VALIDATION,
-        f"assemblies/{pdb_id}-assembly1.cif.gz":                  FAKE_ASSEMBLY,
+        f"structures/{pdb_id}.cif.gz": FAKE_CIF,
+        f"experimental_data/{pdb_id}-sf.cif.gz": FAKE_SF,
+        f"validation_reports/{pdb_id}_validation.pdf.gz": FAKE_VALIDATION,
+        f"assemblies/{pdb_id}-assembly1.cif.gz": FAKE_ASSEMBLY,
         **(extra_files or {}),
     }
 
@@ -635,9 +635,7 @@ class TestPdbPromoteDryRunNoDescriptor:
         metadata_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "metadata/")
         assert len(metadata_keys) == 0, f"Dry-run should not create descriptor files, found: {metadata_keys}"
 
-    def test_dry_run_no_archive_descriptor(
-        self, minio_s3_client: object, test_bucket: str, tmp_path: Path
-    ) -> None:
+    def test_dry_run_no_archive_descriptor(self, minio_s3_client: object, test_bucket: str, tmp_path: Path) -> None:
         """Dry-run archive step does not copy a descriptor even when one exists."""
         s3 = minio_s3_client
 

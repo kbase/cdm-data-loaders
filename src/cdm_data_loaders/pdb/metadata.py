@@ -127,8 +127,7 @@ def create_descriptor(
         "descriptions": [
             {
                 "description_text": (
-                    f"Macromolecular structure data for PDB entry {pdb_id} "
-                    f"downloaded from the wwPDB Beta archive"
+                    f"Macromolecular structure data for PDB entry {pdb_id} downloaded from the wwPDB Beta archive"
                 )
             }
         ],

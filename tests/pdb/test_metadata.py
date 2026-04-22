@@ -38,8 +38,20 @@ _RELEASE_TAG = "2024-04-01"
 _TIMESTAMP = 1_700_000_000
 
 _SAMPLE_RESOURCES: list[DescriptorResource] = [
-    {"name": "pdb_00001abc.cif.gz", "path": f"{_KEY_PREFIX}raw_data/ab/pdb_00001abc/structures/pdb_00001abc.cif.gz", "format": "gz", "bytes": 2048, "hash": "abc123"},
-    {"name": "pdb_00001abc_validation.pdf.gz", "path": f"{_KEY_PREFIX}raw_data/ab/pdb_00001abc/validation_reports/pdb_00001abc_validation.pdf.gz", "format": "gz", "bytes": None, "hash": None},
+    {
+        "name": "pdb_00001abc.cif.gz",
+        "path": f"{_KEY_PREFIX}raw_data/ab/pdb_00001abc/structures/pdb_00001abc.cif.gz",
+        "format": "gz",
+        "bytes": 2048,
+        "hash": "abc123",
+    },
+    {
+        "name": "pdb_00001abc_validation.pdf.gz",
+        "path": f"{_KEY_PREFIX}raw_data/ab/pdb_00001abc/validation_reports/pdb_00001abc_validation.pdf.gz",
+        "format": "gz",
+        "bytes": None,
+        "hash": None,
+    },
 ]
 
 

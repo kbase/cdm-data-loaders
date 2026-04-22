@@ -129,10 +129,7 @@ class TestPdbDownloadAllFileTypes:
         assert len(structure_files) > 0, "No coordinate files downloaded"
 
         # All downloaded data files should have matching .crc64nvme sidecars
-        all_data = [
-            p for p in entry_dir.rglob("*")
-            if p.is_file() and not p.name.endswith(".crc64nvme")
-        ]
+        all_data = [p for p in entry_dir.rglob("*") if p.is_file() and not p.name.endswith(".crc64nvme")]
         all_sidecars = [p for p in entry_dir.rglob("*.crc64nvme")]
         assert len(all_sidecars) == len(all_data), (
             f"Sidecar count mismatch: {len(all_data)} data files, {len(all_sidecars)} sidecars"

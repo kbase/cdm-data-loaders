@@ -168,7 +168,7 @@ def _promote_data_files(
         if staged_key.endswith("download_report.json"):
             continue
 
-        rel_path = staged_key[len(normalized_staging_prefix):]
+        rel_path = staged_key[len(normalized_staging_prefix) :]
         if not rel_path.startswith("raw_data/"):
             continue
         final_key = lakehouse_key_prefix + rel_path
@@ -278,7 +278,7 @@ def _archive_entries(  # noqa: PLR0913
             continue
 
         for source_key in matching_keys:
-            rel = source_key[len(lakehouse_key_prefix):]
+            rel = source_key[len(lakehouse_key_prefix) :]
             archive_key = f"{lakehouse_key_prefix}archive/{release_tag}/{rel}"
 
             if dry_run:
@@ -347,10 +347,7 @@ def _trim_manifest(manifest_s3_key: str, bucket: str, promoted_ids: set[str]) ->
         with Path(tmp_path).open() as f:
             lines = f.readlines()
 
-        remaining = [
-            line for line in lines
-            if line.strip() and line.strip().lower() not in promoted_ids
-        ]
+        remaining = [line for line in lines if line.strip() and line.strip().lower() not in promoted_ids]
 
         with Path(tmp_path).open("w") as f:
             f.writelines(remaining)
