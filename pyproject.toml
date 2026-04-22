@@ -29,6 +29,7 @@ uniprot = "cdm_data_loaders.pipelines.uniprot_kb:cli"
 uniref = "cdm_data_loaders.pipelines.uniref:cli"
 ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"
 ncbi_ftp_sync = "cdm_data_loaders.pipelines.ncbi_ftp_download:cli"
+pdb_rsync_sync = "cdm_data_loaders.pipelines.pdb_rsync:cli"
 
 [dependency-groups]
 dev = [

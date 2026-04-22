@@ -22,6 +22,8 @@ import pytest
 
 import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
 import cdm_data_loaders.ncbi_ftp.promote as promote_mod
+import cdm_data_loaders.pdb.manifest as pdb_manifest_mod
+import cdm_data_loaders.pdb.promote as pdb_promote_mod
 import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
 from cdm_data_loaders.utils.s3 import reset_s3_client
@@ -95,6 +97,8 @@ def minio_s3_client() -> botocore.client.BaseClient:
     with (
         patch.object(s3_utils, "get_s3_client", return_value=client),
         patch.object(promote_mod, "get_s3_client", return_value=client),
+        patch.object(pdb_promote_mod, "get_s3_client", return_value=client),
+        patch.object(pdb_manifest_mod, "get_s3_client", return_value=client),
         patch.object(manifest_mod, "head_object", wraps=s3_utils.head_object),
         patch.object(s3_utils, "_s3_client", client),
     ):
@@ -204,6 +208,35 @@ def seed_lakehouse(  # noqa: PLR0913
         body = content.encode() if isinstance(content, str) else content
         md5 = hashlib.md5(body).hexdigest()  # noqa: S324
         s3.put_object(Bucket=bucket, Key=key, Body=body, Metadata={"md5": md5})
+        keys.append(key)
+    return keys
+
+
+def seed_pdb_entry(
+    s3: botocore.client.BaseClient,
+    bucket: str,
+    pdb_id: str,
+    files: dict[str, str | bytes],
+    path_prefix: str,
+) -> list[str]:
+    """Seed PDB entry files at the final Lakehouse path in MinIO.
+
+    :param s3: boto3 S3 client
+    :param bucket: target bucket
+    :param pdb_id: extended PDB ID (e.g. ``"pdb_00001abc"``)
+    :param files: mapping of relative filename → content (str or bytes);
+        the key is relative to the entry root, e.g. ``"structures/file.cif.gz"``
+    :param path_prefix: Lakehouse prefix (e.g. ``"tenant-general-warehouse/…/pdb/"``)
+    :return: list of S3 keys created
+    """
+    from cdm_data_loaders.pdb.entry import build_entry_path  # noqa: PLC0415
+
+    rel = build_entry_path(pdb_id)
+    keys: list[str] = []
+    for relname, content in files.items():
+        key = f"{path_prefix}{rel}{relname}"
+        body = content.encode() if isinstance(content, str) else content
+        s3.put_object(Bucket=bucket, Key=key, Body=body)
         keys.append(key)
     return keys
 
