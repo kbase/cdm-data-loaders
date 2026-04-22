@@ -3,8 +3,6 @@
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 import cdm_data_loaders.pdb.promote as promote_mod
 import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.pdb.promote import _archive_entries, _trim_manifest, promote_from_s3
@@ -33,16 +31,18 @@ class TestArchiveEntries:
         manifest_path = tmp_path / "removed.txt"
         manifest_path.write_text("pdb_00001abc\n")
 
-        with patch.object(promote_mod, "get_s3_client", return_value=client):
-            with patch.object(promote_mod, "copy_object_with_metadata") as mock_copy:
-                _archive_entries(
-                    str(manifest_path),
-                    bucket=TEST_BUCKET,
-                    pdb_release="2024-04-01",
-                    lakehouse_key_prefix=_LAKEHOUSE_PREFIX,
-                    archive_reason="obsoleted",
-                    delete_source=False,
-                )
+        with (
+            patch.object(promote_mod, "get_s3_client", return_value=client),
+            patch.object(promote_mod, "copy_object_with_metadata") as mock_copy,
+        ):
+            _archive_entries(
+                str(manifest_path),
+                bucket=TEST_BUCKET,
+                pdb_release="2024-04-01",
+                lakehouse_key_prefix=_LAKEHOUSE_PREFIX,
+                archive_reason="obsoleted",
+                delete_source=False,
+            )
         mock_copy.assert_called_once()
         _, dest = mock_copy.call_args[0]
         assert "archive/2024-04-01" in dest
@@ -56,9 +56,11 @@ class TestArchiveEntries:
         manifest_path = tmp_path / "removed.txt"
         manifest_path.write_text("pdb_00001abc\n")
 
-        with patch.object(promote_mod, "get_s3_client", return_value=client):
-            with patch.object(promote_mod, "copy_object_with_metadata") as mock_copy:
-                _archive_entries(str(manifest_path), bucket=TEST_BUCKET, dry_run=True)
+        with (
+            patch.object(promote_mod, "get_s3_client", return_value=client),
+            patch.object(promote_mod, "copy_object_with_metadata") as mock_copy,
+        ):
+            _archive_entries(str(manifest_path), bucket=TEST_BUCKET, dry_run=True)
         mock_copy.assert_not_called()
 
     def test_invalid_pdb_id_skipped(self, mock_s3_client: object, tmp_path: Path) -> None:

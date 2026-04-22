@@ -47,10 +47,8 @@ from typing import Any
 from urllib.request import urlopen
 
 from cdm_data_loaders.pdb.entry import (
-    ALL_FILE_TYPES,
     HOLDINGS_BASE_URL,
     PDBRecord,
-    build_entry_path,
     extract_pdb_id_from_s3_key,
     pdb_id_hash,
 )
@@ -105,7 +103,7 @@ def download_holdings(base_url: str = HOLDINGS_BASE_URL) -> dict[str, Any]:
 # ── Holdings parsing ─────────────────────────────────────────────────────
 
 
-def parse_current_holdings(data: Any) -> dict[str, PDBRecord]:
+def parse_current_holdings(data: object) -> dict[str, PDBRecord]:
     """Parse the ``current_file_holdings.json.gz`` payload into PDB records.
 
     Handles both dict-of-dicts and list-of-dicts top-level structures.
@@ -124,16 +122,13 @@ def parse_current_holdings(data: Any) -> dict[str, PDBRecord]:
         logger.warning("Unexpected top-level type in current holdings: %s", type(data).__name__)
         return records
 
-    for pdb_id, entry in items:
-        if not pdb_id:
+    for raw_id, entry in items:
+        if not raw_id:
             continue
-        pdb_id = pdb_id.lower()
+        pdb_id = raw_id.lower()
 
         # Accept both "content_type" and "content_types" keys
-        if isinstance(entry, dict):
-            file_types = entry.get("content_type") or entry.get("content_types") or []
-        else:
-            file_types = []
+        file_types = entry.get("content_type") or entry.get("content_types") or [] if isinstance(entry, dict) else []
 
         if not isinstance(file_types, list):
             file_types = list(file_types)
@@ -148,7 +143,7 @@ def parse_current_holdings(data: Any) -> dict[str, PDBRecord]:
     return records
 
 
-def parse_last_modified_dates(data: Any) -> dict[str, str]:
+def parse_last_modified_dates(data: object) -> dict[str, str]:
     """Parse the ``released_structures_last_modified_dates.json.gz`` payload.
 
     Handles both dict ``{pdb_id: date_str}`` and list
@@ -180,7 +175,7 @@ def parse_last_modified_dates(data: Any) -> dict[str, str]:
     return dates
 
 
-def parse_removed_entries(data: Any) -> set[str]:
+def parse_removed_entries(data: object) -> set[str]:
     """Parse the ``all_removed_entries.json.gz`` payload.
 
     Handles both dict ``{pdb_id: ...}`` and list ``[{"entry_id": ...}, ...]``

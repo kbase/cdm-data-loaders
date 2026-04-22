@@ -1,9 +1,8 @@
 """Tests for pdb.manifest module — holdings parsing, diff, scan, manifest writing."""
 
-import gzip
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -270,7 +269,6 @@ class TestScanStoreToPreviousIds:
     def test_returns_set_of_ids(self, mock_s3_client: object) -> None:
         """Verify IDs are extracted from S3 object keys."""
         import cdm_data_loaders.pdb.manifest as manifest_mod  # noqa: PLC0415
-
         from tests.pdb.conftest import TEST_BUCKET  # noqa: PLC0415
 
         client = mock_s3_client
@@ -286,7 +284,6 @@ class TestScanStoreToPreviousIds:
     def test_empty_store_returns_empty_set(self, mock_s3_client: object) -> None:
         """Verify empty S3 prefix returns empty set."""
         import cdm_data_loaders.pdb.manifest as manifest_mod  # noqa: PLC0415
-
         from tests.pdb.conftest import TEST_BUCKET  # noqa: PLC0415
 
         client = mock_s3_client

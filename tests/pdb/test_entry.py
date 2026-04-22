@@ -128,4 +128,5 @@ class TestFileTypeConstants:
     def test_dir_names_non_empty(self) -> None:
         """Verify all directory names are non-empty strings."""
         for name in FILE_TYPE_DIRS.values():
-            assert isinstance(name, str) and name
+            assert isinstance(name, str)
+            assert name
