@@ -23,6 +23,7 @@ import pytest
 import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
 import cdm_data_loaders.ncbi_ftp.promote as promote_mod
 import cdm_data_loaders.pdb.manifest as pdb_manifest_mod
+import cdm_data_loaders.pdb.metadata as pdb_metadata_mod
 import cdm_data_loaders.pdb.promote as pdb_promote_mod
 import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
@@ -98,6 +99,7 @@ def minio_s3_client() -> botocore.client.BaseClient:
         patch.object(s3_utils, "get_s3_client", return_value=client),
         patch.object(promote_mod, "get_s3_client", return_value=client),
         patch.object(pdb_promote_mod, "get_s3_client", return_value=client),
+        patch.object(pdb_metadata_mod, "get_s3_client", return_value=client),
         patch.object(pdb_manifest_mod, "get_s3_client", return_value=client),
         patch.object(manifest_mod, "head_object", wraps=s3_utils.head_object),
         patch.object(s3_utils, "_s3_client", client),

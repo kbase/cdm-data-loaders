@@ -10,11 +10,17 @@ unreachable.  Each test method gets its own bucket.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import pytest
 
 from cdm_data_loaders.pdb.entry import DEFAULT_LAKEHOUSE_KEY_PREFIX, build_entry_path
+from cdm_data_loaders.pdb.metadata import (
+    build_archive_descriptor_key,
+    build_descriptor_key,
+    create_descriptor,
+)
 from cdm_data_loaders.pdb.promote import promote_from_s3
 
 from .conftest import get_object_metadata, list_all_keys, seed_pdb_entry
@@ -323,8 +329,336 @@ class TestPdbPromoteMultipleEntries:
         )
 
         assert report["failed"] == 0
-        assert report["promoted"] >= 12  # noqa: PLR2004  # 4 files per entry × 3 entries
+        assert report["promoted"] >= 12  # noqa: PLR2004  # 4 files per entry x 3 entries
 
         final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
         for pdb_id in [PDB_ID_A, PDB_ID_B, PDB_ID_C]:
             assert any(pdb_id in k for k in final_keys), f"{pdb_id} missing from Lakehouse"
+
+
+# ── Descriptor integration tests ────────────────────────────────────────
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPdbPromoteCreatesDescriptor:
+    """Promote step writes a frictionless descriptor for each promoted PDB entry."""
+
+    def test_descriptor_created(self, minio_s3_client: object, test_bucket: str) -> None:
+        """After promote, a JSON descriptor exists under ``metadata/``."""
+        s3 = minio_s3_client
+        _stage_entry(s3, test_bucket, PDB_ID_A)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        descriptor_key = build_descriptor_key(PDB_ID_A, PATH_PREFIX)
+        obj = s3.get_object(Bucket=test_bucket, Key=descriptor_key)
+        body = json.loads(obj["Body"].read())
+
+        assert body["identifier"] == f"PDB:{PDB_ID_A}"
+        assert body["resource_type"] == "dataset"
+
+    def test_descriptor_at_correct_key(self, minio_s3_client: object, test_bucket: str) -> None:
+        """Descriptor is stored exactly at ``{prefix}metadata/{pdb_id}_datapackage.json``."""
+        s3 = minio_s3_client
+        _stage_entry(s3, test_bucket, PDB_ID_A)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        expected_key = build_descriptor_key(PDB_ID_A, PATH_PREFIX)
+        metadata_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "metadata/")
+        assert expected_key in metadata_keys, f"Expected {expected_key!r} in {metadata_keys}"
+
+    def test_descriptor_resources_reference_lakehouse_paths(self, minio_s3_client: object, test_bucket: str) -> None:
+        """Each resource ``path`` in the descriptor is a final Lakehouse key."""
+        s3 = minio_s3_client
+        _stage_entry(s3, test_bucket, PDB_ID_A)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        descriptor_key = build_descriptor_key(PDB_ID_A, PATH_PREFIX)
+        body = json.loads(s3.get_object(Bucket=test_bucket, Key=descriptor_key)["Body"].read())
+
+        resource_paths = [r["path"] for r in body["resources"]]
+        assert len(resource_paths) >= 4  # noqa: PLR2004  # one per file-type dir
+        for path in resource_paths:
+            assert path.startswith(PATH_PREFIX + "raw_data/"), (
+                f"Resource path {path!r} does not start with Lakehouse raw_data prefix"
+            )
+            assert PDB_ID_A in path
+
+    def test_multiple_entries_get_separate_descriptors(self, minio_s3_client: object, test_bucket: str) -> None:
+        """Each promoted entry gets its own descriptor file."""
+        s3 = minio_s3_client
+        _stage_entry(s3, test_bucket, PDB_ID_A)
+        _stage_entry(s3, test_bucket, PDB_ID_B)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        for pdb_id in [PDB_ID_A, PDB_ID_B]:
+            key = build_descriptor_key(pdb_id, PATH_PREFIX)
+            obj = s3.get_object(Bucket=test_bucket, Key=key)
+            body = json.loads(obj["Body"].read())
+            assert body["identifier"] == f"PDB:{pdb_id}"
+
+    def test_descriptor_is_valid_json(self, minio_s3_client: object, test_bucket: str) -> None:
+        """Descriptor is well-formed JSON with expected top-level fields."""
+        s3 = minio_s3_client
+        _stage_entry(s3, test_bucket, PDB_ID_A)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        descriptor_key = build_descriptor_key(PDB_ID_A, PATH_PREFIX)
+        body = json.loads(s3.get_object(Bucket=test_bucket, Key=descriptor_key)["Body"].read())
+
+        for field in ("identifier", "resource_type", "version", "titles", "resources", "meta"):
+            assert field in body, f"Expected field {field!r} missing from descriptor"
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPdbPromoteArchiveUpdatedIncludesDescriptor:
+    """Archiving updated entries also archives the existing descriptor."""
+
+    def test_archive_copies_descriptor(self, minio_s3_client: object, test_bucket: str, tmp_path: Path) -> None:
+        """After archiving an updated entry, the descriptor appears under archive/."""
+        s3 = minio_s3_client
+
+        # Seed an old version of the entry at the Lakehouse path
+        seed_pdb_entry(s3, test_bucket, PDB_ID_A, {"structures/old.cif.gz": b"old data"}, PATH_PREFIX)
+
+        # Pre-upload a live descriptor so archive_descriptor can find and copy it
+        descriptor = create_descriptor(PDB_ID_A, [])
+        descriptor_key = build_descriptor_key(PDB_ID_A, PATH_PREFIX)
+        s3.put_object(Bucket=test_bucket, Key=descriptor_key, Body=json.dumps(descriptor).encode())
+
+        # Stage a new version and promote with updated manifest
+        _stage_entry(s3, test_bucket, PDB_ID_A)
+        updated_manifest = _write_manifest(tmp_path, [PDB_ID_A], "updated_manifest.txt")
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            updated_manifest_path=str(updated_manifest),
+            pdb_release="2024-04-01",
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX)
+        resp = s3.head_object(Bucket=test_bucket, Key=archive_key)
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+
+    def test_archive_descriptor_metadata(self, minio_s3_client: object, test_bucket: str, tmp_path: Path) -> None:
+        """Archived descriptor carries the expected archive_reason metadata."""
+        s3 = minio_s3_client
+
+        seed_pdb_entry(s3, test_bucket, PDB_ID_A, {"structures/old.cif.gz": b"old data"}, PATH_PREFIX)
+        descriptor = create_descriptor(PDB_ID_A, [])
+        s3.put_object(
+            Bucket=test_bucket,
+            Key=build_descriptor_key(PDB_ID_A, PATH_PREFIX),
+            Body=json.dumps(descriptor).encode(),
+        )
+
+        _stage_entry(s3, test_bucket, PDB_ID_A)
+        updated_manifest = _write_manifest(tmp_path, [PDB_ID_A], "updated_manifest.txt")
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            updated_manifest_path=str(updated_manifest),
+            pdb_release="2024-04-01",
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX)
+        meta = get_object_metadata(s3, test_bucket, archive_key)
+        assert meta.get("archive_reason") == "updated"
+        assert meta.get("pdb_last_release") == "2024-04-01"
+
+    def test_promote_overwrites_descriptor_with_new_version(
+        self, minio_s3_client: object, test_bucket: str, tmp_path: Path
+    ) -> None:
+        """After archiving, the live descriptor is replaced with a new one for the promoted files."""
+        s3 = minio_s3_client
+
+        # Seed old version with a live descriptor
+        seed_pdb_entry(s3, test_bucket, PDB_ID_A, {"structures/old.cif.gz": b"old data"}, PATH_PREFIX)
+        old_descriptor = create_descriptor(PDB_ID_A, [])
+        s3.put_object(
+            Bucket=test_bucket,
+            Key=build_descriptor_key(PDB_ID_A, PATH_PREFIX),
+            Body=json.dumps(old_descriptor).encode(),
+        )
+
+        # Stage new version
+        _stage_entry(s3, test_bucket, PDB_ID_A)
+        updated_manifest = _write_manifest(tmp_path, [PDB_ID_A], "updated_manifest.txt")
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            updated_manifest_path=str(updated_manifest),
+            pdb_release="2024-04-01",
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        # Live descriptor is replaced with a new one listing the promoted resources
+        live_key = build_descriptor_key(PDB_ID_A, PATH_PREFIX)
+        body = json.loads(s3.get_object(Bucket=test_bucket, Key=live_key)["Body"].read())
+        assert len(body["resources"]) >= 4  # noqa: PLR2004  # new promote wrote real resources
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPdbPromoteArchiveRemovedIncludesDescriptor:
+    """Archiving obsoleted entries also archives the descriptor."""
+
+    def test_archive_copies_descriptor(self, minio_s3_client: object, test_bucket: str, tmp_path: Path) -> None:
+        """After obsoleting an entry, the descriptor appears under archive/."""
+        s3 = minio_s3_client
+
+        seed_pdb_entry(s3, test_bucket, PDB_ID_A, {"structures/old.cif.gz": b"old data"}, PATH_PREFIX)
+        descriptor = create_descriptor(PDB_ID_A, [])
+        s3.put_object(
+            Bucket=test_bucket,
+            Key=build_descriptor_key(PDB_ID_A, PATH_PREFIX),
+            Body=json.dumps(descriptor).encode(),
+        )
+
+        removed_manifest = _write_manifest(tmp_path, [PDB_ID_A], "removed_manifest.txt")
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            removed_manifest_path=str(removed_manifest),
+            pdb_release="2024-04-01",
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX)
+        resp = s3.head_object(Bucket=test_bucket, Key=archive_key)
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+
+    def test_archive_descriptor_has_obsoleted_reason(
+        self, minio_s3_client: object, test_bucket: str, tmp_path: Path
+    ) -> None:
+        """Archived descriptor for an obsoleted entry carries archive_reason=obsoleted."""
+        s3 = minio_s3_client
+
+        seed_pdb_entry(s3, test_bucket, PDB_ID_A, {"structures/old.cif.gz": b"old data"}, PATH_PREFIX)
+        descriptor = create_descriptor(PDB_ID_A, [])
+        s3.put_object(
+            Bucket=test_bucket,
+            Key=build_descriptor_key(PDB_ID_A, PATH_PREFIX),
+            Body=json.dumps(descriptor).encode(),
+        )
+
+        removed_manifest = _write_manifest(tmp_path, [PDB_ID_A], "removed_manifest.txt")
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            removed_manifest_path=str(removed_manifest),
+            pdb_release="2024-04-01",
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX)
+        meta = get_object_metadata(s3, test_bucket, archive_key)
+        assert meta.get("archive_reason") == "obsoleted"
+        assert meta.get("pdb_last_release") == "2024-04-01"
+
+    def test_no_descriptor_to_archive_is_handled_gracefully(
+        self, minio_s3_client: object, test_bucket: str, tmp_path: Path
+    ) -> None:
+        """Missing live descriptor does not cause the archive step to fail."""
+        s3 = minio_s3_client
+
+        # Seed raw files only — no descriptor
+        seed_pdb_entry(s3, test_bucket, PDB_ID_A, {"structures/old.cif.gz": b"old data"}, PATH_PREFIX)
+
+        removed_manifest = _write_manifest(tmp_path, [PDB_ID_A], "removed_manifest.txt")
+
+        report = promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            removed_manifest_path=str(removed_manifest),
+            pdb_release="2024-04-01",
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        assert report["failed"] == 0
+        # No descriptor archive key should exist (nothing to copy from)
+        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX)
+        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "archive/")
+        assert archive_key not in archive_keys
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPdbPromoteDryRunNoDescriptor:
+    """Dry-run must not write or archive any descriptor files."""
+
+    def test_dry_run_no_descriptor(self, minio_s3_client: object, test_bucket: str) -> None:
+        """Dry-run logs actions but does not upload a descriptor."""
+        s3 = minio_s3_client
+        _stage_entry(s3, test_bucket, PDB_ID_A)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+            dry_run=True,
+        )
+
+        metadata_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "metadata/")
+        assert len(metadata_keys) == 0, f"Dry-run should not create descriptor files, found: {metadata_keys}"
+
+    def test_dry_run_no_archive_descriptor(
+        self, minio_s3_client: object, test_bucket: str, tmp_path: Path
+    ) -> None:
+        """Dry-run archive step does not copy a descriptor even when one exists."""
+        s3 = minio_s3_client
+
+        seed_pdb_entry(s3, test_bucket, PDB_ID_A, {"structures/old.cif.gz": b"old data"}, PATH_PREFIX)
+        descriptor = create_descriptor(PDB_ID_A, [])
+        s3.put_object(
+            Bucket=test_bucket,
+            Key=build_descriptor_key(PDB_ID_A, PATH_PREFIX),
+            Body=json.dumps(descriptor).encode(),
+        )
+
+        updated_manifest = _write_manifest(tmp_path, [PDB_ID_A], "updated_manifest.txt")
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            bucket=test_bucket,
+            updated_manifest_path=str(updated_manifest),
+            pdb_release="2024-04-01",
+            lakehouse_key_prefix=PATH_PREFIX,
+            dry_run=True,
+        )
+
+        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "archive/")
+        assert len(archive_keys) == 0, f"Dry-run should not create archive objects, found: {archive_keys}"
