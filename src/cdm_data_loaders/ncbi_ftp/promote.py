@@ -23,7 +23,7 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
 )
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.s3 import (
-    copy_object_with_metadata,
+    copy_object,
     delete_object,
     get_s3_client,
     upload_file,
@@ -309,7 +309,7 @@ def _archive_assemblies(  # noqa: PLR0913
                 continue
 
             try:
-                copy_object_with_metadata(
+                copy_object(
                     f"{bucket}/{source_key}",
                     f"{bucket}/{archive_key}",
                     metadata={

@@ -19,7 +19,7 @@ from cdm_data_loaders.utils.s3 import (
     CDM_LAKE_BUCKET,
     DEFAULT_EXTRA_ARGS,
     copy_object,
-    copy_object_with_metadata,
+
     delete_object,
     download_file,
     get_s3_client,
@@ -862,16 +862,16 @@ def test_head_object_with_protocols(mock_s3_client: Any, protocol: str) -> None:
     assert result["size"] == SIZE_DATA
 
 
-# copy_object_with_metadata
+# copy_object with metadata
 @pytest.mark.parametrize("destination", BUCKETS)
 @pytest.mark.s3
 def test_copy_object_with_metadata_replaces_metadata(mocked_s3_client_no_checksum: Any, destination: str) -> None:
-    """Verify that copy_object_with_metadata copies and replaces metadata."""
+    """Verify that copy_object with metadata copies and replaces metadata."""
     mocked_s3_client_no_checksum.put_object(
         Bucket=CDM_LAKE_BUCKET, Key="src/file.txt", Body=b"archive me", Metadata={"old_key": "old_val"}
     )
     new_metadata = {"archive_reason": "replaced", "archive_date": "2026-04-16"}
-    response = copy_object_with_metadata(
+    response = copy_object(
         f"{CDM_LAKE_BUCKET}/src/file.txt",
         f"{destination}/archive/file.txt",
         metadata=new_metadata,
@@ -892,7 +892,7 @@ def test_copy_object_with_metadata_replaces_metadata(mocked_s3_client_no_checksu
 def test_copy_object_with_metadata_preserves_content(mocked_s3_client_no_checksum: Any) -> None:
     """Verify that the content of the copied object matches the original."""
     mocked_s3_client_no_checksum.put_object(Bucket=CDM_LAKE_BUCKET, Key="src/data.bin", Body=b"binary data")
-    copy_object_with_metadata(
+    copy_object(
         f"{CDM_LAKE_BUCKET}/src/data.bin",
         f"{CDM_LAKE_BUCKET}/dst/data.bin",
         metadata={"tag": "value"},

@@ -386,8 +386,16 @@ def upload_dir(
     return all_successful
 
 
-def copy_object(current_s3_path: str, new_s3_path: str) -> dict[str, Any]:
+def copy_object(
+    current_s3_path: str,
+    new_s3_path: str,
+    metadata: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Copy an object from one place to another, adding in a CRC64NVME checksum.
+
+    When *metadata* is supplied the destination object carries exactly those
+    key/value pairs (``MetadataDirective='REPLACE'``).  When *metadata* is
+    ``None`` (the default) the source metadata is inherited.
 
     A successful copy operation will return a response where
     resp["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -395,10 +403,12 @@ def copy_object(current_s3_path: str, new_s3_path: str) -> dict[str, Any]:
     Errors (e.g, buckets or keys not existing, wrong credentials, etc.) are passed
     directly to the user without being caught.
 
-    :param current_path: path to the file on s3, INCLUDING the bucket name
-    :type current_path: str
-    :param new_path: the desired new file path on s3, INCLUDING the bucket name
-    :type new_path: str
+    :param current_s3_path: path to the file on s3, INCLUDING the bucket name
+    :type current_s3_path: str
+    :param new_s3_path: the desired new file path on s3, INCLUDING the bucket name
+    :type new_s3_path: str
+    :param metadata: user metadata to set on the destination object; when provided the source metadata is replaced
+    :type metadata: dict[str, str] | None
     :return: dictionary containing response
     :rtype: dict[str, Any]
     """
@@ -406,10 +416,16 @@ def copy_object(current_s3_path: str, new_s3_path: str) -> dict[str, Any]:
     (current_s3_bucket, current_s3_key) = split_s3_path(current_s3_path)
     (new_s3_bucket, new_s3_key) = split_s3_path(new_s3_path)
 
+    extra: dict[str, Any] = {}
+    if metadata is not None:
+        extra["Metadata"] = metadata
+        extra["MetadataDirective"] = "REPLACE"
+
     return s3.copy_object(
         CopySource={"Bucket": current_s3_bucket, "Key": current_s3_key},
         Bucket=new_s3_bucket,
         Key=new_s3_key,
+        **extra,
         **DEFAULT_EXTRA_ARGS,
     )
 
@@ -461,37 +477,4 @@ def head_object(s3_path: str) -> dict[str, Any] | None:
     }
 
 
-def copy_object_with_metadata(
-    current_s3_path: str,
-    new_s3_path: str,
-    metadata: dict[str, str],
-) -> dict[str, Any]:
-    """Copy an S3 object to a new location, replacing its user metadata.
 
-    Uses ``MetadataDirective='REPLACE'`` so the destination object carries
-    exactly the supplied *metadata* rather than inheriting the source's metadata.
-
-    A successful copy returns a response where
-    ``resp["ResponseMetadata"]["HTTPStatusCode"] == 200``.
-
-    :param current_s3_path: source path on s3, INCLUDING the bucket name
-    :type current_s3_path: str
-    :param new_s3_path: destination path on s3, INCLUDING the bucket name
-    :type new_s3_path: str
-    :param metadata: user metadata to set on the destination object
-    :type metadata: dict[str, str]
-    :return: dictionary containing response
-    :rtype: dict[str, Any]
-    """
-    s3 = get_s3_client()
-    (current_bucket, current_key) = split_s3_path(current_s3_path)
-    (new_bucket, new_key) = split_s3_path(new_s3_path)
-
-    return s3.copy_object(
-        CopySource={"Bucket": current_bucket, "Key": current_key},
-        Bucket=new_bucket,
-        Key=new_key,
-        Metadata=metadata,
-        MetadataDirective="REPLACE",
-        **DEFAULT_EXTRA_ARGS,
-    )

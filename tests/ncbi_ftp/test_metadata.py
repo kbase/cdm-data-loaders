@@ -323,7 +323,7 @@ class TestArchiveDescriptor:
             with (
                 patch.object(s3_utils, "get_s3_client", return_value=client),
                 patch.object(metadata_mod, "get_s3_client", return_value=client),
-                patch.object(metadata_mod, "copy_object_with_metadata") as mock_copy,
+                patch.object(metadata_mod, "copy_object") as mock_copy,
             ):
                 yield client, mock_copy
             reset_s3_client()
@@ -339,7 +339,7 @@ class TestArchiveDescriptor:
     def test_calls_copy_with_correct_keys(
         self, mock_s3_with_descriptor: tuple[botocore.client.BaseClient, MagicMock]
     ) -> None:
-        """copy_object_with_metadata is called with the live and archive keys."""
+        """copy_object is called with the live and archive keys."""
         _, mock_copy = mock_s3_with_descriptor
         archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG)
         live_key = build_descriptor_key(_ASSEMBLY_DIR, _KEY_PREFIX)
@@ -352,7 +352,7 @@ class TestArchiveDescriptor:
     def test_dry_run_returns_true_without_copy(
         self, mock_s3_with_descriptor: tuple[botocore.client.BaseClient, MagicMock]
     ) -> None:
-        """Dry-run returns True but does not call copy_object_with_metadata."""
+        """Dry-run returns True but does not call copy_object."""
         _, mock_copy = mock_s3_with_descriptor
         result = archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG, dry_run=True)
         assert result is True
