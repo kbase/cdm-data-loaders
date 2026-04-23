@@ -1,10 +1,8 @@
 """Tests for the all_the_bacteria pipeline."""
 
-from copy import deepcopy
 import csv
 import logging
 import re
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, call, patch
@@ -15,6 +13,7 @@ from requests.exceptions import HTTPError
 
 from cdm_data_loaders.pipelines import all_the_bacteria, core
 from cdm_data_loaders.pipelines.all_the_bacteria import (
+    ALL_ATB_FILE_NAME,
     DATASET_NAME,
     AtbSettings,
     cli,
@@ -52,6 +51,12 @@ def vcr_config() -> dict[str, Any]:
 def test_settings(tmp_path: Path, dlt_config: dict[str, Any]) -> AtbSettings:
     """Generate a fake settings for testing."""
     return AtbSettings(dlt_config=dlt_config, output=str(tmp_path))
+
+
+@pytest.fixture
+def test_s3_settings(dlt_config: dict[str, Any]) -> AtbSettings:
+    """Generate fake settings that use s3."""
+    return AtbSettings(dlt_config=dlt_config, use_destination="s3")
 
 
 @pytest.fixture
@@ -176,11 +181,57 @@ def test_download_atb_index_tsv_vcr(test_settings: AtbSettings) -> None:
     assert output_file.parent == raw_data_dir
 
 
+@pytest.mark.default_cassette("test_download_atb_index_tsv_vcr.yaml")
+def test_download_atb_index_tsv_vcr_destination_s3(test_s3_settings: AtbSettings) -> None:
+    """Ensure that the download_atb_index function fetches the correct file."""
+    mock_download_client = MagicMock()
+    mock_stream_to_s3 = MagicMock()
+    mock_requests = MagicMock()
+    with (
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader", return_value=mock_download_client),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.stream_to_s3", mock_stream_to_s3),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.requests", mock_requests),
+    ):
+        output_file = download_atb_index_tsv(test_s3_settings)
+
+    download_url = "https://osf.io/download/r6gcp/"
+    mock_stream_to_s3.assert_called_once_with(
+        url=download_url, s3_path=f"{test_s3_settings.raw_data_dir}/{ALL_ATB_FILE_NAME}", requests=mock_requests
+    )
+    mock_download_client.download.assert_called_once_with(url=download_url, destination=Path(ALL_ATB_FILE_NAME))
+    assert output_file == Path(ALL_ATB_FILE_NAME)
+
+
 @pytest.mark.vcr
 def test_download_atb_index_tsv_error_404(test_settings: AtbSettings) -> None:
     """Ensure that a 404 response causes an error and the function to die."""
     with pytest.raises(HTTPError, match="404 Client Error"):
         download_atb_index_tsv(test_settings)
+
+
+@pytest.mark.default_cassette("test_download_atb_index_tsv_vcr.yaml")
+def test_download_atb_index_s3_error_boom(test_s3_settings: AtbSettings, caplog: pytest.LogCaptureFixture) -> None:
+    """Ensure that an error in the s3 upload causes things to die unpleasantly."""
+    mock_download_client = MagicMock()
+    mock_stream_to_s3 = MagicMock(side_effect=ValueError("ZOMG!"))
+    mock_requests = MagicMock()
+    with (
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader", return_value=mock_download_client),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.stream_to_s3", mock_stream_to_s3),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.requests", mock_requests),
+        pytest.raises(ValueError, match="ZOMG!"),
+    ):
+        download_atb_index_tsv(test_s3_settings)
+
+    download_url = "https://osf.io/download/r6gcp/"
+    mock_stream_to_s3.assert_called_once_with(
+        url=download_url, s3_path=f"{test_s3_settings.raw_data_dir}/{ALL_ATB_FILE_NAME}", requests=mock_requests
+    )
+    mock_download_client.assert_not_called()
+    mock_download_client.download.assert_not_called()
+    last_log_record = caplog.records.pop()
+    assert last_log_record.levelno == logging.ERROR
+    assert last_log_record.message == f"Could not transfer {ALL_ATB_FILE_NAME} to s3"
 
 
 @pytest.mark.vcr
@@ -295,7 +346,7 @@ FILE_DOWNLOADER_OUTPUT = [
             "filename": "file2.txt",
             "url": "https://osf.io/file2",
             "md5": "md5sum2",
-            "project": "AllTheBacteria/Side/Project",
+            "project": "AllTheBacteria/Side/Project/",
             "path": "Side/Project/file2.txt",
         }
     ),
@@ -329,41 +380,60 @@ FILE_DOWNLOADER_OUTPUT = [
         FILE_DOWNLOADER_OUTPUT,
     ],
 )
+@pytest.mark.parametrize("use_destination", VALID_DESTINATIONS)
 def test_osf_file_downloader_success(
-    test_settings: AtbSettings,
+    request: pytest.FixtureRequest,
     atb_input: list[dict[str, Any]],
+    use_destination: str,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Ensure that the osf_file_downloader function correctly calls the download client for each file."""
-    raw_data_dir = Path(test_settings.raw_data_dir)
+    settings = request.getfixturevalue("test_s3_settings" if use_destination == "s3" else "test_settings")
+
     atb_file_list = [{k: v for k, v in f.items() if k != "path"} for f in atb_input]
 
     # expected_output path needs the raw data dir adding to it
     expected_output = [dict(f.items()) for f in atb_input]
     for f in expected_output:
-        f["path"] = str(raw_data_dir / f["path"])
+        f["path"] = f"{settings.raw_data_dir}/{f['path']}"
 
     mock_download_client = MagicMock()
+    mock_stream_to_s3 = MagicMock()
+    mock_requests = MagicMock()
     with (
         patch("cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader", return_value=mock_download_client),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.stream_to_s3", mock_stream_to_s3),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.requests", mock_requests),
     ):
         # get the output from the generator
-        output = list(osf_file_downloader(test_settings, atb_file_list))
+        output = list(osf_file_downloader(settings, atb_file_list))
 
     # should have a separate call for each file downloaded
-    assert mock_download_client.download.call_count == len(atb_file_list)
+    if use_destination == "s3":
+        mock_download_client.download.assert_not_called()
+        call_args = [c.kwargs for c in mock_stream_to_s3.call_args_list]
+        assert call_args == [
+            {
+                "url": f["url"],
+                "s3_path": f["path"],
+                "requests": mock_requests,
+            }
+            for f in atb_file_list
+        ]
+    else:
+        assert mock_download_client.download.call_count == len(atb_file_list)
 
-    call_list = [c.kwargs for c in mock_download_client.download.call_args_list]
-    expected_calls = [
-        {
-            "url": f["url"],
-            "destination": raw_data_dir / f["path"],
-            "expected_checksum": f["md5"],
-            "checksum_fn": "md5",
-        }
-        for f in atb_input
-    ]
-    assert call_list == expected_calls
+        call_list = [c.kwargs for c in mock_download_client.download.call_args_list]
+        expected_calls = [
+            {
+                "url": f["url"],
+                "destination": Path(settings.raw_data_dir) / f["path"],
+                "expected_checksum": f["md5"],
+                "checksum_fn": "md5",
+            }
+            for f in atb_input
+        ]
+        assert call_list == expected_calls
 
     # output from dlt.mark.with_table_name
     assert output[0].data == expected_output
@@ -419,15 +489,17 @@ def test_osf_file_downloader_success(
         ),
     ],
 )
-def test_osf_file_downloader_error_handling(
-    test_settings: AtbSettings,
+@pytest.mark.parametrize("use_destination", VALID_DESTINATIONS)
+def test_osf_file_downloader_error_handling(  # noqa: PLR0913
     atb_file_list: list[dict[str, Any]],
     expected_exceptions: list[str],
     expected_paths: dict[str, bool],
+    use_destination: str,
     caplog: pytest.LogCaptureFixture,
+    request: pytest.FixtureRequest,
 ) -> None:
     """Ensure that errors during file download are handled correctly."""
-    mock_download_client = MagicMock()
+    settings = request.getfixturevalue("test_s3_settings" if use_destination == "s3" else "test_settings")
 
     def file_downloader_boom(**args) -> None:  # noqa: ANN003
         if "url" in args:
@@ -438,17 +510,35 @@ def test_osf_file_downloader_error_handling(
                 msg_0 = "Loser!"
                 raise RuntimeError(msg_0)
 
+    mock_requests = MagicMock()
+    mock_download_client = MagicMock()
     mock_download_client.download.side_effect = file_downloader_boom
+    mock_stream_to_s3 = MagicMock(side_effect=file_downloader_boom)
 
     with (
         patch("cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader", return_value=mock_download_client),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.stream_to_s3", mock_stream_to_s3),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.requests", mock_requests),
     ):
-        list(osf_file_downloader(test_settings, atb_file_list))
+        list(osf_file_downloader(settings, atb_file_list))
 
-    raw_data_dir = Path(test_settings.raw_data_dir)
+    if use_destination == "s3":
+        mock_download_client.download.assert_not_called()
+        call_args = [c.kwargs for c in mock_stream_to_s3.call_args_list]
+        assert call_args == [
+            {
+                "url": f["url"],
+                "s3_path": f"{settings.raw_data_dir}/{f['project'].replace('AllTheBacteria/', '')}/{f['filename']}",
+                "requests": mock_requests,
+            }
+            for f in atb_file_list
+        ]
+    else:
+        mock_stream_to_s3.assert_not_called()
+
     expected_file_names = {
-        "Two/good_file.txt": str(raw_data_dir / "One/Two/good_file.txt"),
-        "great_file.txt": str(raw_data_dir / "One/Two/great_file.txt"),
+        "Two/good_file.txt": f"{settings.raw_data_dir}/One/Two/good_file.txt",
+        "great_file.txt": f"{settings.raw_data_dir}/One/Two/great_file.txt",
     }
 
     for item in atb_file_list:

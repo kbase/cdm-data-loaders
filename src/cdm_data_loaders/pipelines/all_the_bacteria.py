@@ -17,6 +17,7 @@ from typing import Any
 
 import dlt
 from dlt.extract.items import DataItemWithMeta
+from dlt.sources.helpers import requests
 from dlt.sources.helpers.rest_client.client import RESTClient
 from frozendict import frozendict
 from pydantic import AliasChoices, Field, computed_field
@@ -28,6 +29,7 @@ from cdm_data_loaders.pipelines.core import (
 )
 from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.utils.download.sync_client import FileDownloader
+from cdm_data_loaders.utils.s3 import stream_to_s3
 
 logger = logging.getLogger("dlt")
 
@@ -77,7 +79,9 @@ class AtbSettings(CtsSettings):
 
         Set to the output directory / "raw_data" / version.
         """
-        return str(Path(self.output) / "raw_data" / self.version)
+        if self.use_destination == "local_fs":
+            return str(Path(self.output) / "raw_data" / self.version)
+        return f"{self.output}/raw_data/{self.version}"
 
     @computed_field
     @property
@@ -127,10 +131,6 @@ def download_atb_index_tsv(settings: AtbSettings) -> Path:
     :return: path to the downloaded file
     :rtype: Path
     """
-    # make sure that the directory structure to save the file in can be written to
-    raw_data_dir = Path(settings.raw_data_dir)
-    raw_data_dir.mkdir(parents=True, exist_ok=True)
-
     # get the all_atb_files.tsv file info from the OSF API and retrieve the download link
     osf_client = RESTClient(
         base_url="https://api.osf.io/v2/",
@@ -148,9 +148,25 @@ def download_atb_index_tsv(settings: AtbSettings) -> Path:
         err_msg = f"Could not find download URL in response from 'https://api.osf.io/v2/files/{ALL_FILES_TSV_FILE_ID}/'"
         raise RuntimeError(err_msg)
 
-    atb_files_tsv = raw_data_dir / "all_atb_files.tsv"
+    if settings.use_destination == "s3":
+        # download to a local temp file and also copy the file to s3
+        save_path = f"{settings.raw_data_dir}/{ALL_ATB_FILE_NAME}"
+        try:
+            stream_to_s3(url=all_files_tsv_download, s3_path=save_path, requests=requests)
+        except Exception:
+            logger.exception("Could not transfer %s to s3", ALL_ATB_FILE_NAME)
+            raise
+        # TODO: save as a temporary file, delete after pipeline has completed
+        # save a local copy of the file to current dir
+        atb_files_tsv = Path(ALL_ATB_FILE_NAME)
+    else:
+        # make sure that the directory structure to save the file in can be written to
+        raw_data_dir = Path(settings.raw_data_dir)
+        raw_data_dir.mkdir(parents=True, exist_ok=True)
+        atb_files_tsv = raw_data_dir / ALL_ATB_FILE_NAME
+
     # download the file listing and save it
-    FileDownloader().download(all_files_tsv_download, atb_files_tsv)
+    FileDownloader().download(url=all_files_tsv_download, destination=atb_files_tsv)
     return atb_files_tsv
 
 
@@ -193,17 +209,23 @@ def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any
 
     :param settings: pipeline config
     :type settings: Settings
-    :param atb_file_list: list of dictionaries
+    :param atb_file_list: info about files to transfer, as a list of dictionaries
     :type atb_file_list: list[dict[str, Any]]
     """
     client = FileDownloader()
-    raw_data_dir = Path(settings.raw_data_dir)
     successful_downloads = []
     for f in atb_file_list:
         try:
-            project_part = f["project"].removeprefix("AllTheBacteria").removeprefix("/")
-            save_path = raw_data_dir / project_part / f["filename"]
-            client.download(url=f["url"], destination=save_path, expected_checksum=f["md5"], checksum_fn="md5")
+            project_part = f["project"].removeprefix("AllTheBacteria").removeprefix("/").rstrip("/")
+            if settings.use_destination == "s3":
+                if project_part:
+                    project_part = f"{project_part}/"
+                save_path = f"{settings.raw_data_dir}/{project_part}{f['filename']}"
+                stream_to_s3(url=f["url"], s3_path=save_path, requests=requests)
+            else:
+                save_path = Path(settings.raw_data_dir) / project_part / f["filename"]
+                client.download(url=f["url"], destination=save_path, expected_checksum=f["md5"], checksum_fn="md5")
+
             f["path"] = str(save_path)
             successful_downloads.append(f)
         except Exception as e:

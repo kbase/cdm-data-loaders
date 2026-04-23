@@ -5,7 +5,7 @@ from typing import Any, Self
 
 import dlt.common.configuration.accessors
 from frozendict import frozendict
-from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
+from pydantic import AliasChoices, Field, ValidationError, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, CliSuppress, SettingsConfigDict
 
 INPUT_MOUNT = "/input_dir"
@@ -120,6 +120,20 @@ class CtsSettings(BaseSettings):
                 raise ValueError(err_msg)
 
             self.output = self.dlt_config[f"destination.{self.use_destination}.bucket_url"]
+            if self.output != "/":
+                self.output.rstrip("/")
+
+        if not self.output:
+            raise ValueError("No output specified")
+
+        # ensure that the use_destination value does not conflict with whether or not pipeline data should be saved
+        destination_is_s3 = False
+        if self.output.startswith("s3://") or self.output.startswith("s3a://"):
+            destination_is_s3 = True
+
+        if self.use_output_dir_for_pipeline_metadata and destination_is_s3:
+            err_msg = "It is not currently possible to have the pipeline directory on s3."
+            raise ValueError(err_msg)
 
         return self
 
@@ -148,7 +162,7 @@ class CtsSettings(BaseSettings):
 
         If not set, defaults to a 'raw_data' directory within the output directory after reconciling with dlt config.
         """
-        return str(Path(self.output or "") / "raw_data")
+        return f"{self.output}{'' if self.output in ('', '/') else '/'}raw_data"
 
     @computed_field
     @property
@@ -158,7 +172,7 @@ class CtsSettings(BaseSettings):
         If use_output_dir_for_pipeline_metadata is true, this defaults to a `.dlt_conf` directory within the output directory.
         """
         if self.use_output_dir_for_pipeline_metadata:
-            return str(Path(self.output or "") / ".dlt_conf")
+            return f"{self.output}{'' if self.output in ('', '/') else '/'}.dlt_conf"
         return None
 
 
