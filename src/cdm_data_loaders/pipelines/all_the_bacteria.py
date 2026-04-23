@@ -17,9 +17,10 @@ from typing import Any
 
 import dlt
 from dlt.extract.items import DataItemWithMeta
+from dlt.sources.helpers import requests
 from dlt.sources.helpers.rest_client.client import RESTClient
 from frozendict import frozendict
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, computed_field
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.pipelines.core import (
@@ -28,19 +29,30 @@ from cdm_data_loaders.pipelines.core import (
 )
 from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.utils.download.sync_client import FileDownloader
+from cdm_data_loaders.utils.s3 import stream_to_s3
 
 logger = logging.getLogger("dlt")
 
 
 DATASET_NAME = "all_the_bacteria"
 ALL_FILES_TSV_FILE_ID = "R6gcp"
+ALL_ATB_FILE_NAME = "all_atb_files.tsv"
+REGEX_FILE = "filters.txt"
 ATB_VERSION = "2025-05"
 
 ARG_ALIASES = frozendict(
     {
         "version": ["-v", "--version"],
-    }
+        "pattern_file": ["-f", "--pattern-file", "--pattern_file"],
+    },
 )
+
+# project parts needed:
+PROJECT_PARTS = ["Annotation/Bakta", "Assembly", "Metadata"]
+PROJECT_PART_REGEX = re.compile(f"^AllTheBacteria/({'|'.join(PROJECT_PARTS)})")
+
+EXPECTED_ATB_FIELDNAMES = ["project", "project_id", "filename", "url", "md5", "size(MB)"]
+REQUIRED_ATB_FIELDNAMES = {"project", "filename", "url", "md5"}
 
 
 class AtbSettings(CtsSettings):
@@ -54,37 +66,71 @@ class AtbSettings(CtsSettings):
         validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES["version"]]),
     )
 
+    pattern_file: str | None = Field(
+        default=None,
+        description="Path, relative to the input dir, of a file containing patterns to match when downloading ATB files",
+        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES["pattern_file"]]),
+    )
+
+    @computed_field
     @property
     def raw_data_dir(self) -> str:
         """Directory in which to save the raw data files that are downloaded.
 
         Set to the output directory / "raw_data" / version.
         """
-        return str(Path(self.output) / "raw_data" / self.version)
+        if self.use_destination == "local_fs":
+            return str(Path(self.output) / "raw_data" / self.version)
+        return f"{self.output}/raw_data/{self.version}"
+
+    @computed_field
+    @property
+    def pattern_matches(self) -> re.Pattern:
+        """The regular expression pattern to be used to select files for download.
+
+        If a pattern_file is supplied, it will read in the file at {input_dir}/{pattern_file}
+        and convert the contents into a regular expression. If no file is supplied or the file is empty
+        or does not contain any content, the default PROJECT_PART_REGEX will be used instead.
+        """
+        if self.pattern_file:
+            pattern_file = Path(self.input_dir) / self.pattern_file
+            regex = load_patterns(pattern_file)
+            if regex is not None:
+                return regex
+        # return the default
+        return PROJECT_PART_REGEX
 
 
-# project parts needed:
-PROJECT_PARTS = ["Annotation/Bakta", "Assembly", "Metadata"]
+def load_patterns(pattern_file: Path) -> re.Pattern | None:
+    """Load the pattern file and convert it into a set of regexes."""
+    patterns = []
+    try:
+        for line in pattern_file.read_text(encoding="utf-8").splitlines():
+            trimmed_line = line.strip()
+            # skip blank lines
+            if not trimmed_line:
+                continue
+            patterns.append(
+                re.escape(trimmed_line[:-1]) + ".*" if trimmed_line.endswith("*") else re.escape(trimmed_line)
+            )
 
-PROJECT_PART_REGEX = re.compile(f"^AllTheBacteria/({'|'.join(PROJECT_PARTS)})")
+        if patterns:
+            return re.compile("^(" + "|".join(patterns) + ")$")
+    except Exception:
+        logger.exception("Could not load patterns from %s", str(pattern_file))
 
-EXPECTED_ATB_FIELDNAMES = ["project", "project_id", "filename", "url", "md5", "size(MB)"]
-REQUIRED_ATB_FIELDNAMES = {"project", "filename", "url", "md5"}
+    return None
 
 
 def download_atb_index_tsv(settings: AtbSettings) -> Path:
     """Download the ATB file index TSV file from the OSF and save it to disk.
 
     :param settings: pipeline config
-    :type settings: Settings
+    :type settings: AtbSettings
     :raises RuntimeError: if the download URL cannot be found
     :return: path to the downloaded file
     :rtype: Path
     """
-    # make sure that the directory structure to save the file in can be written to
-    raw_data_dir = Path(settings.raw_data_dir)
-    raw_data_dir.mkdir(parents=True, exist_ok=True)
-
     # get the all_atb_files.tsv file info from the OSF API and retrieve the download link
     osf_client = RESTClient(
         base_url="https://api.osf.io/v2/",
@@ -102,20 +148,40 @@ def download_atb_index_tsv(settings: AtbSettings) -> Path:
         err_msg = f"Could not find download URL in response from 'https://api.osf.io/v2/files/{ALL_FILES_TSV_FILE_ID}/'"
         raise RuntimeError(err_msg)
 
-    atb_files_tsv = raw_data_dir / "all_atb_files.tsv"
+    if settings.use_destination == "s3":
+        # download to a local temp file and also copy the file to s3
+        save_path = f"{settings.raw_data_dir}/{ALL_ATB_FILE_NAME}"
+        try:
+            stream_to_s3(url=all_files_tsv_download, s3_path=save_path, requests=requests)
+        except Exception:
+            logger.exception("Could not transfer %s to s3", ALL_ATB_FILE_NAME)
+            raise
+        # TODO: save as a temporary file, delete after pipeline has completed
+        # save a local copy of the file to current dir
+        atb_files_tsv = Path(ALL_ATB_FILE_NAME)
+    else:
+        # make sure that the directory structure to save the file in can be written to
+        raw_data_dir = Path(settings.raw_data_dir)
+        raw_data_dir.mkdir(parents=True, exist_ok=True)
+        atb_files_tsv = raw_data_dir / ALL_ATB_FILE_NAME
+
     # download the file listing and save it
-    FileDownloader().download(all_files_tsv_download, atb_files_tsv)
+    FileDownloader().download(url=all_files_tsv_download, destination=atb_files_tsv)
+    logger.info("Downloaded TSV index file.")
     return atb_files_tsv
 
 
-def get_file_download_links(atb_files_tsv: Path) -> Generator[list[dict[str, Any]], Any]:
+def get_file_download_links(settings: AtbSettings, atb_files_tsv: Path) -> Generator[list[dict[str, Any]], Any]:
     """Parse the ATB file index TSV and to yield a list of files to download.
 
+    :param settings: pipeline config
+    :type settings: AtbSettings
     :param atb_files_tsv: path to the ATB file index TSV file
     :type atb_files_tsv: Path
     :yield: list of fields to download
     :rtype: Generator[list[dict[str, Any]], Any]
     """
+    pattern_to_match = settings.pattern_matches
     with atb_files_tsv.open() as index_file:
         reader = csv.DictReader(index_file, delimiter="\t")
         all_lines = list(reader)
@@ -134,7 +200,7 @@ def get_file_download_links(atb_files_tsv: Path) -> Generator[list[dict[str, Any
                 logger.error(err_msg)
                 raise RuntimeError(err_msg)
 
-        files_to_download = [row for row in all_lines if PROJECT_PART_REGEX.match(row["project"])]
+        files_to_download = [row for row in all_lines if pattern_to_match.match(row["project"])]
 
         yield files_to_download
 
@@ -144,16 +210,24 @@ def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any
 
     :param settings: pipeline config
     :type settings: Settings
-    :param atb_file_list: list of dictionaries
+    :param atb_file_list: info about files to transfer, as a list of dictionaries
     :type atb_file_list: list[dict[str, Any]]
     """
     client = FileDownloader()
-    raw_data_dir = Path(settings.raw_data_dir)
     successful_downloads = []
     for f in atb_file_list:
         try:
-            save_path = raw_data_dir / f["filename"]
-            client.download(f["url"], save_path, expected_checksum=f["md5"], checksum_fn="md5")
+            project_part = f["project"].removeprefix("AllTheBacteria").removeprefix("/").rstrip("/")
+            if settings.use_destination == "s3":
+                if project_part:
+                    project_part = f"{project_part}/"
+                save_path = f"{settings.raw_data_dir}/{project_part}{f['filename']}"
+                stream_to_s3(url=f["url"], s3_path=save_path, requests=requests)
+                logger.debug("Successfully transferred file from %s to %s", f["url"], save_path)
+            else:
+                save_path = Path(settings.raw_data_dir) / project_part / f["filename"]
+                client.download(url=f["url"], destination=save_path, expected_checksum=f["md5"], checksum_fn="md5")
+
             f["path"] = str(save_path)
             successful_downloads.append(f)
         except Exception as e:
@@ -169,7 +243,7 @@ def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any
 def atb_file_list(settings: AtbSettings) -> Generator[list[dict[str, Any]], Any, Any]:
     """Generate a list of files to download from the list of all ATB files."""
     atb_files_tsv = download_atb_index_tsv(settings)
-    return get_file_download_links(atb_files_tsv)
+    return get_file_download_links(settings, atb_files_tsv)
 
 
 @dlt.transformer(name="file_downloader", data_from=atb_file_list, parallelized=True)
