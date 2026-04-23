@@ -6,8 +6,6 @@ on re-run but **never deleted** after the test — this lets developers inspect
 the final state of the object store via the MinIO console.
 """
 
-from __future__ import annotations
-
 import hashlib
 import os
 import re

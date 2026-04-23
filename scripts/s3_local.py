@@ -16,8 +16,6 @@ Environment variables (with defaults for the walkthrough):
     MINIO_SECRET_KEY    minioadmin
 """
 
-from __future__ import annotations
-
 import json
 import os
 import sys

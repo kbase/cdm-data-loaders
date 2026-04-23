@@ -16,8 +16,6 @@ The descriptor ``resources`` list records the final Lakehouse S3 key, byte
 size, file format, and MD5 hash of each promoted data file.
 """
 
-from __future__ import annotations
-
 import json
 import tempfile
 from datetime import UTC, datetime

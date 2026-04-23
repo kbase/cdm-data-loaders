@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-supported_commands="xml_split|uniref|uniprot|ncbi_rest_api|ncbi_ftp_sync|test|bash"
+supported_commands="all_the_bacteria|xml_split|uniref|uniprot|ncbi_rest_api|ncbi_ftp_sync|test|bash"
 
 # Ensure at least one argument is provided
 if [ "$#" -eq 0 ]; then
