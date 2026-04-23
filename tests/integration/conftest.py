@@ -28,9 +28,9 @@ from cdm_data_loaders.utils.s3 import reset_s3_client
 
 # ── MinIO connection defaults ───────────────────────────────────────────
 
-MINIO_ENDPOINT_URL = os.environ.get("MINIO_ENDPOINT_URL", "http://localhost:9000")
-MINIO_ACCESS_KEY = os.environ.get("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "minioadmin")
+MINIO_ENDPOINT_URL = os.environ["MINIO_ENDPOINT_URL"]
+MINIO_ACCESS_KEY = os.environ["MINIO_ACCESS_KEY"]
+MINIO_SECRET_KEY = os.environ["MINIO_SECRET_KEY"]
 
 # Maximum length of a bucket name per S3/DNS spec
 _MAX_BUCKET_LEN = 63
