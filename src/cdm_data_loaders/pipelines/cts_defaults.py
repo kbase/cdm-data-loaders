@@ -1,11 +1,10 @@
 """Common defaults for running pipelines on the KBase CTS."""
 
-from pathlib import Path
 from typing import Any, Self
 
 import dlt.common.configuration.accessors
 from frozendict import frozendict
-from pydantic import AliasChoices, Field, ValidationError, computed_field, field_validator, model_validator
+from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, CliSuppress, SettingsConfigDict
 
 INPUT_MOUNT = "/input_dir"
@@ -123,8 +122,10 @@ class CtsSettings(BaseSettings):
             if self.output != "/":
                 self.output.rstrip("/")
 
+        # TODO: this should never happen
         if not self.output:
-            raise ValueError("No output specified")
+            err_msg = "No output specified!"
+            raise ValueError(err_msg)
 
         # ensure that the use_destination value does not conflict with whether or not pipeline data should be saved
         destination_is_s3 = False
