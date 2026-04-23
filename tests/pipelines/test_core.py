@@ -66,7 +66,7 @@ def test_cts_settings() -> CtsSettings:
     params=[
         pytest.param({"input_dir": "/fake/input"}, id="default"),
         pytest.param(
-            {"input_dir": "/path/to/dir", "use_destination": "s3", "start_at": 15, "output": "/some/dir"},
+            {"input_dir": "/path/to/dir", "use_destination": "local_fs", "start_at": 15, "output": "/some/dir"},
             id="alt",
         ),
     ]
@@ -372,9 +372,8 @@ def test_run_cli_no_slack_env_var_when_vars_missing(
 
 # dlt.config state after successful run
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize("use_destination", VALID_DESTINATIONS)
 @pytest.mark.parametrize("dev_mode", [True, False])
-@pytest.mark.parametrize("output", ["/some/path", "s3://bucket/whatever"])
+@pytest.mark.parametrize(("use_destination", "output"), [("local_fs", "/some/path"), ("s3", "s3://bucket/whatever")])
 def test_run_cli_dlt_config_updated_after_success(
     dlt_config: dict[str, Any], settings_cls: type[CtsSettings], dev_mode: bool, use_destination: str, output: str
 ) -> None:
@@ -413,7 +412,7 @@ def test_run_pipeline_destination_pipeline_pipeline_run_kwargs_set(
     pipeline_run_kwargs: dict[str, Any] | None,
 ) -> None:
     """Ensure a non-empty output sets the correct dlt.config bucket_url key."""
-    settings = make_batched_settings(input_dir="/i", output="/custom/output", use_destination="s3")
+    settings = make_batched_settings(input_dir="/i", output="/custom/output", use_destination="local_fs")
     fake_resource = MagicMock()
     run_pipeline(
         settings,
@@ -425,7 +424,7 @@ def test_run_pipeline_destination_pipeline_pipeline_run_kwargs_set(
     assert_pipeline_run_correctly(
         mock_dlt,
         fake_resource,
-        "s3",
+        "local_fs",
         destination_kwargs,
         pipeline_kwargs,
         pipeline_run_kwargs,
