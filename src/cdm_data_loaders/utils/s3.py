@@ -1,18 +1,26 @@
 """Utilities for s3 interaction."""
 
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import boto3
 import botocore
 import botocore.client
 import tqdm
+from botocore.config import Config
 
 CDM_LAKE_BUCKET = "cdm-lake"
 DEFAULT_EXTRA_ARGS = {"ChecksumAlgorithm": "CRC64NVME"}
 
 VALID_S3_PREFIXES = ["s3://", "s3a://"]
 VALID_BUCKETS = [CDM_LAKE_BUCKET, "cts"]
+
+# "legacy", "standard", "adaptive"
+AWS_CLIENT_RETRY_MODE = "adaptive"
+# how many times to retry, including the initial attempt
+AWS_CLIENT_TOTAL_MAX_ATTEMPTS = 10
+
 
 _s3_client: botocore.client.BaseClient | None = None
 
@@ -33,7 +41,17 @@ def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseCli
     if _s3_client is not None:
         return _s3_client
 
+    config = Config(retries={"total_max_attempts": AWS_CLIENT_TOTAL_MAX_ATTEMPTS, "mode": AWS_CLIENT_RETRY_MODE})
+
     if not args:
+        # try using env vars and skip manual configuration
+        client = boto3.client("s3", config=config)
+        # check for credentials and endpoint_url
+        credentials = client._request_signer._credentials  # noqa: SLF001
+        if credentials.access_key and credentials.secret_key and client.meta.endpoint_url:
+            _s3_client = client
+            return _s3_client
+
         try:
             from berdl_notebook_utils.berdl_settings import get_settings  # noqa: PLC0415
 
@@ -54,7 +72,7 @@ def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseCli
         msg = "Cannot initialise s3 client: missing arguments: " + ", ".join(missing)
         raise ValueError(msg)
 
-    _s3_client = boto3.client("s3", **keyword_args)
+    _s3_client = boto3.client("s3", config=config, **keyword_args)
     return _s3_client
 
 
@@ -197,6 +215,35 @@ def upload_file(
         return True
 
 
+def stream_to_s3(url: str, s3_path: str, requests: ModuleType) -> str:
+    """Stream directly from an HTTP download to s3.
+
+    :param url: address of the object to transfer to s3
+    :type url: str
+    :param s3_path: save path on s3
+    :type s3_path: str
+    :param requests: module implementing requests.get and returning a response
+    :type requests: ModuleType
+    :return: path of the file on s3, in the form bucket/key
+    :rtype: str
+    """
+    s3_client = get_s3_client()
+    (bucket, key) = split_s3_path(s3_path)
+    with requests.get(url, stream=True) as response:
+        response.raise_for_status()
+        s3_client.upload_fileobj(
+            # raw stream from urllib3
+            response.raw,
+            bucket,
+            key,
+            ExtraArgs={
+                **DEFAULT_EXTRA_ARGS,
+                "ContentType": response.headers.get("content-type", "application/octet-stream"),
+            },
+        )
+    return f"{bucket}/{key}"
+
+
 def download_file(s3_path: str, local_file_path: str | Path, version_id: str | None = None) -> None:
     """Download an object from s3.
 
@@ -333,6 +380,9 @@ def copy_object(current_s3_path: str, new_s3_path: str) -> dict[str, Any]:
     A successful copy operation will return a response where
     resp["ResponseMetadata"]["HTTPStatusCode"] == 200
 
+    Errors (e.g, buckets or keys not existing, wrong credentials, etc.) are passed
+    directly to the user without being caught.
+
     :param current_path: path to the file on s3, INCLUDING the bucket name
     :type current_path: str
     :param new_path: the desired new file path on s3, INCLUDING the bucket name
@@ -357,6 +407,9 @@ def delete_object(s3_path: str) -> dict[str, Any]:
 
     A successful deletion will return a response where
     resp["ResponseMetadata"]["HTTPStatusCode"] == 204.
+
+    Errors (e.g, buckets or keys not existing, wrong credentials, etc.) are passed
+    directly to the user without being caught.
 
     :param s3_path: path to the file on s3, INCLUDING the bucket name
     :type s3_path: str

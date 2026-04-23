@@ -29,18 +29,38 @@ CASSETTES_DIR = "tests/cassettes"
 START_AT_VALUE = 50
 START_AT_STRING = "50"
 
+CONFIG_BUCKET = {"local_fs": "/output_dir", "s3": "s3://some/s3/bucket"}
+
 TEST_DLT_CONFIG = frozendict(
     {
-        "destination.local_fs.bucket_url": "/output_dir",
+        "destination.local_fs.bucket_url": CONFIG_BUCKET["local_fs"],
         "destination.local_fs.destination_type": "filesystem",
-        "destination.s3.bucket_url": "s3://some/s3/bucket",
+        "destination.s3.bucket_url": CONFIG_BUCKET["s3"],
         "destination.s3.destination_type": "filesystem",
         "normalize.data_writer.disable_compression": False,
     }
 )
 
 
-DESTINATION_OUTPUT = TEST_DLT_CONFIG[f"destination.{DEFAULT_CTS_SETTINGS['use_destination']}.bucket_url"]
+def _generate_dlt_config() -> dict[str, Any]:
+    """Return a fresh DLT config dict (same shape as the conftest fixture)."""
+    return {
+        "destination": {
+            "local_fs": {"bucket_url": CONFIG_BUCKET["local_fs"]},
+            "s3": {"bucket_url": CONFIG_BUCKET["s3"]},
+        },
+        "destination.local_fs.bucket_url": CONFIG_BUCKET["local_fs"],
+        "destination.s3.bucket_url": CONFIG_BUCKET["s3"],
+        "normalize.data_writer.disable_compression": False,
+    }
+
+
+DESTINATION_TO_OUTPUT = {
+    "local_fs": TEST_DLT_CONFIG["destination.local_fs.bucket_url"],
+    "s3": TEST_DLT_CONFIG["destination.s3.bucket_url"],
+}
+
+DESTINATION_OUTPUT = DESTINATION_TO_OUTPUT[DEFAULT_CTS_SETTINGS["use_destination"]]
 
 DEFAULT_CTS_SETTINGS_RECONCILED = frozendict(
     {
@@ -58,21 +78,19 @@ TEST_CTS_SETTINGS = frozendict(
         "dev_mode": "false",
         "input_dir": "/dir/path",
         "output": "/some/dir",
-        "use_destination": VALID_DESTINATIONS[1],
+        "use_destination": "local_fs",
         "use_output_dir_for_pipeline_metadata": "true",
     }
 )
 
-TEST_CTS_SETTINGS_EXPECTED = frozendict(
+TEST_CTS_SETTINGS_RECONCILED = frozendict(
     {
         **TEST_CTS_SETTINGS,
         "dev_mode": False,
         "use_output_dir_for_pipeline_metadata": True,
+        "pipeline_dir": "/some/dir/.dlt_conf",
+        "raw_data_dir": "/some/dir/raw_data",
     }
-)
-
-TEST_CTS_SETTINGS_RECONCILED = frozendict(
-    {**TEST_CTS_SETTINGS_EXPECTED, "pipeline_dir": "/some/dir/.dlt_conf", "raw_data_dir": "/some/dir/raw_data"}
 )
 
 TEST_BATCH_FILE_SETTINGS = frozendict(
@@ -80,12 +98,13 @@ TEST_BATCH_FILE_SETTINGS = frozendict(
     start_at=START_AT_STRING,
 )
 
-TEST_BATCH_FILE_SETTINGS_EXPECTED = frozendict(
-    **TEST_CTS_SETTINGS_EXPECTED,
-    start_at=START_AT_VALUE,
-)
 TEST_BATCH_FILE_SETTINGS_RECONCILED = frozendict(
-    {**TEST_BATCH_FILE_SETTINGS_EXPECTED, "pipeline_dir": "/some/dir/.dlt_conf", "raw_data_dir": "/some/dir/raw_data"}
+    {
+        **TEST_CTS_SETTINGS_RECONCILED,
+        "start_at": START_AT_VALUE,
+        "pipeline_dir": "/some/dir/.dlt_conf",
+        "raw_data_dir": "/some/dir/raw_data",
+    }
 )
 
 
@@ -119,16 +138,6 @@ def make_batcher(files: list[Path], batch_size: int = 5) -> MagicMock:
     mock_batcher = MagicMock()
     mock_batcher.get_batch.side_effect = [*batches, []]
     return mock_batcher
-
-
-def _generate_dlt_config() -> dict[str, Any]:
-    """Return a fresh DLT config dict (same shape as the conftest fixture)."""
-    return {
-        "destination": {"local_fs": {"bucket_url": "/output_dir"}, "s3": {"bucket_url": "s3://my-bucket/output"}},
-        "destination.local_fs.bucket_url": "/output_dir",
-        "destination.s3.bucket_url": "s3://my-bucket/output",
-        "normalize.data_writer.disable_compression": False,
-    }
 
 
 def make_settings(
