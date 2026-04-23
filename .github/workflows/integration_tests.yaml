@@ -29,7 +29,7 @@ jobs:
               with:
                   context: .
                   load: true
-                  tags: cdm-data-loaders_integration-tests:latest
+                  tags: cdm-data-loaders-integration-tests:latest
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
 
