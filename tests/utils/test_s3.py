@@ -392,13 +392,13 @@ def test_upload_file_uses_custom_object_name(mock_s3_client: Any, sample_file: P
 
 @pytest.mark.s3
 def test_upload_file_skips_when_already_present(
-    mock_s3_client: Any, sample_file: Path, capsys: pytest.CaptureFixture
+    mock_s3_client: Any, sample_file: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Verify that uploading a file that already exists is skipped and returns True."""
     mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
     result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads")
     assert result is True
-    assert "File already present" in capsys.readouterr().out
+    assert "File already present" in caplog.text
 
 
 @pytest.mark.usefixtures("mock_s3_client")
@@ -622,7 +622,7 @@ def test_download_file_does_not_clobber_existing_file_to_mkdir(mock_s3_client: A
 
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
-def test_download_file_does_not_exist(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+def test_download_file_does_not_exist(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """Ensure that attempting to download a file that does not exist raises an error."""
     bucket = BUCKETS[0]
     key = "to/the/door.txt"
@@ -634,7 +634,7 @@ def test_download_file_does_not_exist(tmp_path: Path, capsys: pytest.CaptureFixt
     ):
         download_file(f"{bucket}/{key}", tmp_path / "file.txt")
 
-    assert "File not found" in capsys.readouterr().out
+    assert "File not found" in caplog.text
 
 
 # TODO: Missing tests

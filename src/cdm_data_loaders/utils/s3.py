@@ -10,6 +10,8 @@ import botocore.client
 import tqdm
 from botocore.config import Config
 
+from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
+
 CDM_LAKE_BUCKET = "cdm-lake"
 DEFAULT_EXTRA_ARGS = {"ChecksumAlgorithm": "CRC64NVME"}
 
@@ -20,6 +22,9 @@ VALID_BUCKETS = [CDM_LAKE_BUCKET, "cts"]
 AWS_CLIENT_RETRY_MODE = "adaptive"
 # how many times to retry, including the initial attempt
 AWS_CLIENT_TOTAL_MAX_ATTEMPTS = 10
+
+
+logger = get_cdm_logger()
 
 
 _s3_client: botocore.client.BaseClient | None = None
@@ -62,7 +67,7 @@ def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseCli
                 "aws_secret_access_key": settings.MINIO_SECRET_KEY,
             }
         except (ModuleNotFoundError, ImportError, NameError) as e:
-            print(e)  # noqa: T201
+            logger.exception("Failed to load berdl settings: %s", e)
             raise
 
     required_args = ["endpoint_url", "aws_access_key_id", "aws_secret_access_key"]
@@ -155,10 +160,10 @@ def object_exists(s3_path: str) -> bool:
     (bucket, key) = split_s3_path(s3_path)
     try:
         s3.head_object(Bucket=bucket, Key=key)
-    except botocore.exceptions.ClientError as e:
+    except Exception as e:  # noqa: BLE001
         error_string = str(e)
         if not error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
-            print(f"Error performing head operation on s3 object: {e!s}")  # noqa: T201
+            logger.error("Error performing head operation on s3 object: %s", e)
         return False
     return True
 
@@ -201,7 +206,7 @@ def upload_file(
 
     if metadata is None:
         if object_exists(s3_path):
-            print(f"File already present: {s3_path}")  # noqa: T201
+            logger.info("File already present: %s", s3_path)
             return True
 
     s3 = get_s3_client()
@@ -212,7 +217,7 @@ def upload_file(
     # Upload the file
     file_size = local_file_path.stat().st_size
     with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
-        print(f"uploading {local_file_path!s} to {s3_path}")  # noqa: T201
+        logger.info("uploading %s to %s", local_file_path, s3_path)
         try:
             s3.upload_file(
                 Filename=str(local_file_path),
@@ -221,8 +226,8 @@ def upload_file(
                 Callback=pbar.update,
                 ExtraArgs=extra_args,
             )
-        except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
-            print(f"Error uploading to s3: {e!s}")  # noqa: T201
+        except Exception as e:  # noqa: BLE001
+            logger.error("Error uploading to s3: %s", e)
             return False
         return True
 
@@ -277,7 +282,7 @@ def download_file(s3_path: str, local_file_path: str | Path, version_id: str | N
         try:
             parent_dir.mkdir(parents=True, exist_ok=False)
         except OSError as e:
-            print(f"Could not save s3 file to {local_file_path}: {e!s}")  # noqa: T201
+            logger.error("Could not save s3 file to %s: %s", local_file_path, e)
             raise
 
     s3 = get_s3_client()
@@ -289,12 +294,12 @@ def download_file(s3_path: str, local_file_path: str | Path, version_id: str | N
     # Get the object size
     try:
         object_size = s3.head_object(**kwargs)["ContentLength"]
-    except botocore.exceptions.ClientError as e:
+    except Exception as e:  # noqa: BLE001
         error_string = str(e)
         if error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
-            print(f"File not found: {s3_path}")  # noqa: T201
+            logger.error("File not found: %s", s3_path)
         else:
-            print(f"Error downloading {s3_path}: {e!s}")  # noqa: T201
+            logger.error("Error downloading %s: %s", s3_path, e)
         raise
 
     extra_args = {"VersionId": version_id} if version_id is not None else None
@@ -466,8 +471,8 @@ def head_object(s3_path: str) -> dict[str, Any] | None:
     (bucket, key) = split_s3_path(s3_path)
     try:
         resp = s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
-    except botocore.exceptions.ClientError as e:
-        if e.response["Error"]["Code"] == "404":
+    except Exception as e:  # noqa: BLE001
+        if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
             return None
         raise
     return {
