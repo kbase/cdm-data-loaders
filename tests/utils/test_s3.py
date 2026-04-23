@@ -31,7 +31,6 @@ from cdm_data_loaders.utils.s3 import (
     stream_to_s3,
     upload_dir,
     upload_file,
-
 )
 
 AWS_REGION = "us-east-1"
@@ -799,9 +798,7 @@ def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: Any, sample
 @pytest.mark.s3
 def test_upload_file_with_metadata_custom_object_name(mock_s3_client: Any, sample_file: Path) -> None:
     """Verify that the object_name parameter overrides the filename."""
-    result = upload_file(
-        sample_file, f"{CDM_LAKE_BUCKET}/uploads", metadata={"k": "v"}, object_name="renamed.txt"
-    )
+    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", metadata={"k": "v"}, object_name="renamed.txt")
     assert result is True
     obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key="uploads/renamed.txt")
     assert obj["Body"].read() == b"hello s3"
