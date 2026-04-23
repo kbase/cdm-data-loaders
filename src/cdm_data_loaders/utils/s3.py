@@ -167,8 +167,14 @@ def upload_file(
     local_file_path: Path | str,
     destination_dir: str,
     object_name: str | None = None,
+    metadata: dict[str, str] | None = None,
 ) -> bool:
     """Upload an object to an S3 bucket.
+
+    When *metadata* is supplied the file is always uploaded (no existence check)
+    and the dict is attached as S3 user metadata.  When *metadata* is ``None``
+    (the default) the existing behaviour is preserved: the upload is skipped if
+    the object is already present.
 
     :param local_file_path: File to upload
     :type local_file_path: Path | str
@@ -176,6 +182,8 @@ def upload_file(
     :type destination_dir: str
     :param object_name: S3 object name. If not specified, the name of the file from local_file_path is used.
     :type object_name: str | None
+    :param metadata: user metadata key/value pairs to attach to the object; when provided the upload always runs
+    :type metadata: dict[str, str] | None
     :return: True if file was uploaded, else False
     :rtype: bool
     """
@@ -190,12 +198,16 @@ def upload_file(
         object_name = local_file_path.name
 
     s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
-    if object_exists(s3_path):
-        print(f"File already present: {s3_path}")  # noqa: T201
-        return True
+
+    if metadata is None:
+        if object_exists(s3_path):
+            print(f"File already present: {s3_path}")  # noqa: T201
+            return True
 
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
+
+    extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": metadata}) if metadata is not None else {})}
 
     # Upload the file
     file_size = local_file_path.stat().st_size
@@ -207,7 +219,7 @@ def upload_file(
                 Bucket=bucket,
                 Key=key,
                 Callback=pbar.update,
-                ExtraArgs=DEFAULT_EXTRA_ARGS,
+                ExtraArgs=extra_args,
             )
         except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
             print(f"Error uploading to s3: {e!s}")  # noqa: T201
@@ -419,59 +431,6 @@ def delete_object(s3_path: str) -> dict[str, Any]:
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
     return s3.delete_object(Bucket=bucket, Key=key)
-
-
-def upload_file_with_metadata(
-    local_file_path: Path | str,
-    destination_dir: str,
-    metadata: dict[str, str],
-    object_name: str | None = None,
-) -> bool:
-    """Upload a file to S3 with user-defined metadata and CRC64NVME checksum.
-
-    Unlike :func:`upload_file`, this function always uploads (no existence check)
-    and attaches the supplied *metadata* dict as S3 user metadata.
-
-    :param local_file_path: file to upload
-    :type local_file_path: Path | str
-    :param destination_dir: path to the destination directory on s3, INCLUDING the bucket name
-    :type destination_dir: str
-    :param metadata: user metadata key/value pairs to attach to the object
-    :type metadata: dict[str, str]
-    :param object_name: S3 object name; defaults to the local filename
-    :type object_name: str | None
-    :return: True if the upload succeeded, otherwise False
-    :rtype: bool
-    """
-    if isinstance(local_file_path, str):
-        local_file_path = Path(local_file_path)
-
-    if not destination_dir:
-        msg = "No destination directory supplied for the file"
-        raise ValueError(msg)
-
-    if not object_name:
-        object_name = local_file_path.name
-
-    s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
-    s3 = get_s3_client()
-    (bucket, key) = split_s3_path(s3_path)
-
-    extra_args = {**DEFAULT_EXTRA_ARGS, "Metadata": metadata}
-
-    file_size = local_file_path.stat().st_size
-    try:
-        with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
-            s3.upload_file(
-                Filename=str(local_file_path),
-                Bucket=bucket,
-                Key=key,
-                Callback=pbar.update,
-                ExtraArgs=extra_args,
-            )
-    except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError):
-        return False
-    return True
 
 
 def head_object(s3_path: str) -> dict[str, Any] | None:

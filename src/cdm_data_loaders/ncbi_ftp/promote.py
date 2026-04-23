@@ -26,7 +26,7 @@ from cdm_data_loaders.utils.s3 import (
     copy_object_with_metadata,
     delete_object,
     get_s3_client,
-    upload_file_with_metadata,
+    upload_file,
 )
 
 logger = get_cdm_logger()
@@ -191,7 +191,7 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
                     metadata["md5"] = md5_obj["Body"].read().decode().strip()
 
                 final_key_path = PurePosixPath(final_key)
-                upload_succeeded = upload_file_with_metadata(
+                upload_succeeded = upload_file(
                     tmp_path,
                     f"{bucket}/{final_key_path.parent}",
                     metadata=metadata,
