@@ -9,6 +9,7 @@ Repo for CDM input data loading and wrangling
   - [Development](#development)
     - [Spark and other non-python dependencies](#spark-and-other-non-python-dependencies)
     - [Tests](#tests)
+      - [Integration tests (MinIO + NCBI FTP)](#integration-tests-minio--ncbi-ftp)
   - [Loading genomes, contigs, and features](#loading-genomes-contigs-and-features)
   - [Running bbmap stats and checkm2 on genome or contigset files](#running-bbmap-stats-and-checkm2-on-genome-or-contigset-files)
   - [Changelog](#changelog)
@@ -139,6 +140,24 @@ End-to-end integration tests for the NCBI assembly pipeline live in `tests/integ
 **Requirements:**
 - Docker (for MinIO)
 - Network access to `ftp.ncbi.nlm.nih.gov`
+
+**Running with Docker Compose (easiest)**
+
+The [docker-compose.yml](docker-compose.yml) at the repo root defines both a MinIO service and the integration test runner. To build the image, start MinIO, and run the integration tests in one command:
+
+```sh
+docker compose up --build --abort-on-container-exit
+```
+
+Compose will stream test output to the terminal and exit with the pytest exit code. To clean up afterwards:
+
+```sh
+docker compose down --volumes
+```
+
+**Running manually**
+
+If you prefer to run the tests directly against a local MinIO instance (e.g. for faster iteration during development), follow the steps below.
 
 **1. Start MinIO locally:**
 

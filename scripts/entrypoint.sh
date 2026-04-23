@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-supported_commands="all_the_bacteria|xml_split|uniref|uniprot|ncbi_rest_api|ncbi_ftp_sync|test|bash"
+supported_commands="all_the_bacteria|xml_split|uniref|uniprot|ncbi_rest_api|ncbi_ftp_sync|test|integration-test|bash"
 
 # Ensure at least one argument is provided
 if [ "$#" -eq 0 ]; then
@@ -40,6 +40,10 @@ case "$cmd" in
   test)
     # run the tests
     exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark"
+    ;;
+  integration-test)
+    # run the integration tests (requires a running MinIO instance)
+    exec /usr/bin/tini -- uv run --no-sync pytest -m "integration" -v "$@"
     ;;
   bash)
     exec /usr/bin/tini -- /bin/bash
