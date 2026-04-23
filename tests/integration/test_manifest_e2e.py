@@ -55,6 +55,7 @@ def _download_and_filter() -> tuple[dict[str, AssemblyRecord], dict[str, Assembl
 
 @pytest.mark.integration
 @pytest.mark.slow_test
+@pytest.mark.external_request
 class TestFreshSyncNoPrevious:
     """Phase 1 with no previous snapshot — everything is 'new'."""
 
@@ -92,6 +93,7 @@ class TestFreshSyncNoPrevious:
 
 @pytest.mark.integration
 @pytest.mark.slow_test
+@pytest.mark.external_request
 class TestIncrementalDiffSyntheticPrevious:
     """Phase 1 incremental diff with a manufactured 'previous' snapshot."""
 
@@ -154,6 +156,7 @@ class TestIncrementalDiffSyntheticPrevious:
 
 @pytest.mark.integration
 @pytest.mark.slow_test
+@pytest.mark.external_request
 class TestVerifyTransferCandidatesPrunes:
     """verify_transfer_candidates should prune assemblies already in the store."""
 

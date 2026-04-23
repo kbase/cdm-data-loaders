@@ -190,7 +190,7 @@ log_cli = true
 log_cli_level = "INFO"
 log_level = "INFO"
 addopts = ["-v"]
-markers = ["requires_spark: must be run in an environment where spark is available", "s3: tests that mock s3 interactions", "slow_test: does what it says on the tin", "integration: end-to-end tests requiring a running MinIO instance and network access"]
+markers = ["requires_spark: must be run in an environment where spark is available", "s3: tests that mock s3 interactions", "slow_test: does what it says on the tin", "integration: end-to-end tests requiring a running MinIO instance and network access", "external_request: tests that make real network requests to external services (e.g. NCBI FTP)"]
 
 # environment settings for running tests
 [tool.pytest_env]

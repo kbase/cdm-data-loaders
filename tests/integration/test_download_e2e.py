@@ -49,6 +49,7 @@ def _manifest_for_one_assembly(tmp_path: Path) -> tuple[Path, str]:
 
 @pytest.mark.integration
 @pytest.mark.slow_test
+@pytest.mark.external_request
 class TestDownloadSmallBatch:
     """Download a single assembly from NCBI FTP and verify local output."""
 
@@ -91,6 +92,7 @@ class TestDownloadSmallBatch:
 
 @pytest.mark.integration
 @pytest.mark.slow_test
+@pytest.mark.external_request
 class TestDownloadResumeIncomplete:
     """Verify download handles re-runs when some files are already present."""
 
