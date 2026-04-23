@@ -19,7 +19,6 @@ from cdm_data_loaders.utils.s3 import (
     CDM_LAKE_BUCKET,
     DEFAULT_EXTRA_ARGS,
     copy_object,
-
     delete_object,
     download_file,
     get_s3_client,

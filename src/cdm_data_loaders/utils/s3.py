@@ -475,6 +475,3 @@ def head_object(s3_path: str) -> dict[str, Any] | None:
         "metadata": resp.get("Metadata", {}),
         "checksum_crc64nvme": resp.get("ChecksumCRC64NVME"),
     }
-
-
-
