@@ -283,45 +283,6 @@ def test_settings_trailing_slash_stripped(
     assert getattr(s, field_name) == expected
 
 
-@pytest.mark.parametrize(
-    "output",
-    list(OUTPUT_PATHS),
-)
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize("use_destination", VALID_DESTINATIONS)
-def test_settings_pipeline_dir_local_only_output_dir_s3(
-    settings_cls: type[CtsSettings],
-    use_destination: str,
-    output: str,
-    dlt_config: dict[str, Any],
-) -> None:
-    """Ensure that the output_dir can only be used for pipeline metadata locally.
-
-    The output_dir parameter overrides what is specified in use_destination.
-    """
-    if OUTPUT_PATHS[output][S3] or (not output and use_destination == "s3"):
-        with pytest.raises(ValueError, match="It is not currently possible to have the pipeline directory on s3"):
-            make_settings(
-                settings_cls,
-                dlt_config=dlt_config,
-                use_destination=use_destination,
-                output=output,
-                use_output_dir_for_pipeline_metadata=True,
-            )
-    else:
-        # settings should be fine!
-        s = make_settings(
-            settings_cls,
-            dlt_config=dlt_config,
-            use_destination=use_destination,
-            output=output,
-            use_output_dir_for_pipeline_metadata=True,
-        )
-        assert s.pipeline_dir
-        assert not s.pipeline_dir.startswith("s3://")
-        assert not s.pipeline_dir.startswith("s3a://")
-
-
 # All arguments set, using CliApp.run
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize("dev_mode", ARG_ALIASES["dev_mode"])
@@ -409,7 +370,7 @@ def test_settings_reconcile_with_dlt_config_output_resolved_from_dlt_config_buck
     assert s.output == dlt_config[f"destination.{use_destination}.bucket_url"]
 
 
-# properties derived from self.output
+# properties derived from self.output: pipeline_dir and raw_data_dir
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(
     "output",
@@ -423,7 +384,12 @@ def test_settings_generate_pipeline_raw_data_dirs(
     use_output_dir_for_pipeline_metadata: bool,
     use_destination: str,
 ) -> None:
-    """Ensure that the correct paths are generated for pipeline and raw data directories."""
+    """Ensure that the correct paths are generated for pipeline and raw data directories.
+
+    Ensure that the destination set in `use_destination` concurs with any output path set.
+
+    Ensure that pipeline directories cannot be set if the output is set to s3.
+    """
     make_settings_args = {
         "output": output,
         "use_destination": use_destination,
@@ -439,6 +405,13 @@ def test_settings_generate_pipeline_raw_data_dirs(
     if settings_cls == BatchedFileInputSettings:
         expected["start_at"] = DEFAULT_START_AT
 
+    if (OUTPUT_PATHS[expected["output"]][S3] and use_destination == "local_fs") or (
+        OUTPUT_PATHS[expected["output"]][S3] is False and use_destination == "s3"
+    ):
+        with pytest.raises(ValueError, match="Mismatch between output location and use_destination"):
+            make_settings_autofill_config(settings_cls, **make_settings_args)
+        return
+
     if use_output_dir_for_pipeline_metadata and OUTPUT_PATHS[expected["output"]][S3] is True:
         # can't have pipeline dir on s3
         with pytest.raises(ValueError, match="It is not currently possible to have the pipeline directory on s3"):
@@ -449,5 +422,78 @@ def test_settings_generate_pipeline_raw_data_dirs(
 
     # get the pipeline and raw data dirs from OUTPUT_PATHS
     expected["raw_data_dir"] = OUTPUT_PATHS[expected["output"]][RAW]
+    # No pipeline_dir if use_output_dir_for_pipeline_metadata is not set
+    expected["pipeline_dir"] = OUTPUT_PATHS[expected["output"]][PIPE] if use_output_dir_for_pipeline_metadata else None
+    check_settings(s, expected)
+
+
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+@pytest.mark.parametrize(
+    "output",
+    list(OUTPUT_PATHS.keys()),
+)
+@pytest.mark.parametrize("use_output_dir_for_pipeline_metadata", [True, False])
+@pytest.mark.parametrize("use_destination", VALID_DESTINATIONS)
+def test_cli_app_run_generate_pipeline_raw_data_dirs(
+    settings_cls: type[CtsSettings],
+    output: str,
+    use_output_dir_for_pipeline_metadata: bool,
+    use_destination: str,
+    dlt_config: dict[str, Any],
+) -> None:
+    """Ensure that the correct paths are generated for pipeline and raw data directories.
+
+    Ensure that the destination set in `use_destination` concurs with any output path set.
+
+    Ensure that pipeline directories cannot be set if the output is set to s3.
+    """
+    make_settings_args = [
+        "--output",
+        output,
+        "--use_destination",
+        use_destination,
+        "--use_output_dir_for_pipeline_metadata",
+        str(use_output_dir_for_pipeline_metadata),
+    ]
+
+    expected = {
+        **DEFAULT_CTS_SETTINGS_RECONCILED,
+        "use_destination": use_destination,
+        "use_output_dir_for_pipeline_metadata": use_output_dir_for_pipeline_metadata,
+        "output": DESTINATION_TO_OUTPUT[use_destination] if output == "" else OUTPUT_PATHS[output][OUT],
+    }
+    if settings_cls == BatchedFileInputSettings:
+        expected["start_at"] = DEFAULT_START_AT
+
+    if (OUTPUT_PATHS[expected["output"]][S3] and use_destination == "local_fs") or (
+        OUTPUT_PATHS[expected["output"]][S3] is False and use_destination == "s3"
+    ):
+        with pytest.raises(ValueError, match="Mismatch between output location and use_destination"):
+            CliApp.run(
+                settings_cls,
+                dlt_config=dlt_config,
+                cli_args=make_settings_args,
+            )
+        return
+
+    if use_output_dir_for_pipeline_metadata and OUTPUT_PATHS[expected["output"]][S3] is True:
+        # can't have pipeline dir on s3
+        with pytest.raises(ValueError, match="It is not currently possible to have the pipeline directory on s3"):
+            CliApp.run(
+                settings_cls,
+                dlt_config=dlt_config,
+                cli_args=make_settings_args,
+            )
+        return
+
+    s = CliApp.run(
+        settings_cls,
+        dlt_config=dlt_config,
+        cli_args=make_settings_args,
+    )
+
+    # get the pipeline and raw data dirs from OUTPUT_PATHS
+    expected["raw_data_dir"] = OUTPUT_PATHS[expected["output"]][RAW]
+    # No pipeline_dir if use_output_dir_for_pipeline_metadata is not set
     expected["pipeline_dir"] = OUTPUT_PATHS[expected["output"]][PIPE] if use_output_dir_for_pipeline_metadata else None
     check_settings(s, expected)

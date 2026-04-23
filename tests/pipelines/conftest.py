@@ -78,7 +78,7 @@ TEST_CTS_SETTINGS = frozendict(
         "dev_mode": "false",
         "input_dir": "/dir/path",
         "output": "/some/dir",
-        "use_destination": VALID_DESTINATIONS[1],
+        "use_destination": "local_fs",
         "use_output_dir_for_pipeline_metadata": "true",
     }
 )

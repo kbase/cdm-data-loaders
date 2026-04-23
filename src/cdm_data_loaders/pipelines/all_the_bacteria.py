@@ -167,6 +167,7 @@ def download_atb_index_tsv(settings: AtbSettings) -> Path:
 
     # download the file listing and save it
     FileDownloader().download(url=all_files_tsv_download, destination=atb_files_tsv)
+    logger.info("Downloaded TSV index file.")
     return atb_files_tsv
 
 
@@ -222,6 +223,7 @@ def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any
                     project_part = f"{project_part}/"
                 save_path = f"{settings.raw_data_dir}/{project_part}{f['filename']}"
                 stream_to_s3(url=f["url"], s3_path=save_path, requests=requests)
+                logger.debug("Successfully transferred file from %s to %s", f["url"], save_path)
             else:
                 save_path = Path(settings.raw_data_dir) / project_part / f["filename"]
                 client.download(url=f["url"], destination=save_path, expected_checksum=f["md5"], checksum_fn="md5")

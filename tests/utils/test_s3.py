@@ -11,7 +11,8 @@ import boto3
 import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
-from requests.exceptions import ConnectionError as ConnError, HTTPError
+from requests.exceptions import ConnectionError as ConnError
+from requests.exceptions import HTTPError
 
 import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.utils.s3 import (

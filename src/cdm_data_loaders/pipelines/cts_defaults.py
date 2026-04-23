@@ -85,7 +85,7 @@ class CtsSettings(BaseSettings):
     )
     use_destination: str = Field(
         default=DEFAULT_CTS_SETTINGS["use_destination"],
-        description=f"DLT destination configuration to use for data output. Choices: {VALID_DESTINATIONS}",
+        description=f"DLT destination configuration to use for data output. Data to be saved to s3 should use the destination 's3'; to save data locally, use the destination 'local_fs'. The output directory can be specified using the 'output' field. Choices: {VALID_DESTINATIONS}",
         validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES["use_destination"]]),
     )
     use_output_dir_for_pipeline_metadata: bool = Field(
@@ -131,6 +131,11 @@ class CtsSettings(BaseSettings):
         destination_is_s3 = False
         if self.output.startswith("s3://") or self.output.startswith("s3a://"):
             destination_is_s3 = True
+
+        # self.use_destination should be "s3" if the output is an s3 url and vice versa
+        if bool(self.use_destination == "s3") != destination_is_s3:
+            err_msg = "Mismatch between output location and use_destination. To ensure internal settings functions work correctly, set use_destination to 's3' for writing files to s3, and 'local_fs' for writing files locally. The output directory can be configured using the 'output' parameter."
+            raise ValueError(err_msg)
 
         if self.use_output_dir_for_pipeline_metadata and destination_is_s3:
             err_msg = "It is not currently possible to have the pipeline directory on s3."
