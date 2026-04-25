@@ -16,7 +16,6 @@ from cdm_data_loaders.pipelines.all_the_bacteria import AtbSettings
 from cdm_data_loaders.pipelines.cts_defaults import (
     DEFAULT_CTS_SETTINGS,
     DEFAULT_START_AT,
-    VALID_DESTINATIONS,
     BatchedFileInputSettings,
     CtsSettings,
 )
