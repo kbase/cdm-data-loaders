@@ -44,12 +44,15 @@ ALT_PIPELINE_RUN = {RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL", SOURCE: "/
 
 @pytest.fixture(autouse=True)
 def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
-    """Ensure that the CDM logger propagates logs to the root logger, is set to INFO, and that any messages are cleared.
+    """Fiddle with the loggers used in the tests for a better experience.
 
     N.b. this is overwritten by the conftest in the pipelines directory, which uses the dlt logger.
     """
-    logger = logging.getLogger("cdm_data_loader")
-    logger.propagate = True
+    vcr_logger = logging.getLogger("vcr")
+    vcr_logger.setLevel("ERROR")
+    # turn on log propagation for the dlt logger
+    dlt_logger = logging.getLogger("dlt")
+    dlt_logger.propagate = True
     caplog.set_level(logging.INFO)
     caplog.clear()
 
