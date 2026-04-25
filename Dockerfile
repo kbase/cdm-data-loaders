@@ -54,7 +54,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
 
-COPY --chmod=+x ./scripts/entrypoint.sh /app/
+RUN chmod +x ./scripts/entrypoint.sh
 # Use the non-root user to run our application
 USER nonroot
-ENTRYPOINT ["./entrypoint.sh"]
+ENTRYPOINT ["./scripts/entrypoint.sh"]
