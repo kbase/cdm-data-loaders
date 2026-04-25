@@ -1,0 +1,7 @@
+project	project_id	filename	url	md5	size(MB)
+AllTheBacteria/Annotation/Bakta	zt57s	File_Lists/atb.bakta.incr_release.202408.status.tsv.gz	https://osf.io/download/2skzy/	7da48fce8e310916a072786872f475b1	14.19
+AllTheBacteria/Annotation/Bakta	zt57s	File_Lists/atb.bakta.r0.2.status.tsv.gz	https://osf.io/download/rxfks/	b7255867206dc66f2c26db31921a67a6	53.87
+AllTheBacteria/Assembly	zxfmy	File_Lists/file_list.all.20240805.tsv.gz	https://osf.io/download/dw3h7/	5fc5c88a0593785341e466143a97f126	17.04
+AllTheBacteria/Assembly	zxfmy	File_Lists/file_list.all.202505.tsv.gz	https://osf.io/download/69a03f582574717cb3643d62/	0a9ee0b1efaf42b3ea9e89ce91d2b9e1	22.13
+AllTheBacteria/Metadata	h7wzy	0.1/HQ_set_0.1/hq_dataset.accessions.txt.gz	https://osf.io/download/3znhb/	6f001b72101779b5ff6a556f46c9ddab	4.11
+AllTheBacteria/Metadata	h7wzy	0.1/HQ_set_0.1/hq_dataset.counts_bar_plot.pdf	https://osf.io/download/p5vkt/	a147e807f6a661b6f7f6dc856aa0465c	0.02
