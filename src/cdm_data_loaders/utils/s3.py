@@ -10,6 +10,8 @@ import botocore.client
 import tqdm
 from botocore.config import Config
 
+from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
+
 CDM_LAKE_BUCKET = "cdm-lake"
 DEFAULT_EXTRA_ARGS = {"ChecksumAlgorithm": "CRC64NVME"}
 
@@ -21,8 +23,11 @@ AWS_CLIENT_RETRY_MODE = "adaptive"
 # how many times to retry, including the initial attempt
 AWS_CLIENT_TOTAL_MAX_ATTEMPTS = 10
 
+SUCCESS_RESPONSE = 200
 
 _s3_client: botocore.client.BaseClient | None = None
+
+logger = get_cdm_logger()
 
 
 def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseClient:
@@ -61,8 +66,8 @@ def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseCli
                 "aws_access_key_id": settings.MINIO_ACCESS_KEY,
                 "aws_secret_access_key": settings.MINIO_SECRET_KEY,
             }
-        except (ModuleNotFoundError, ImportError, NameError) as e:
-            print(e)
+        except (ModuleNotFoundError, ImportError, NameError):
+            logger.exception("Error initialising boto3 client")
             raise
         except Exception:
             raise
@@ -170,7 +175,7 @@ def object_exists(s3_path: str) -> bool:
     except Exception as e:
         error_string = str(e)
         if not error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
-            print(f"Error performing head operation on s3 object: {e!s}")
+            logger.exception("Error performing head operation on s3 object")
         return False
     return True
 
@@ -203,7 +208,7 @@ def upload_file(
 
     s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
     if object_exists(s3_path):
-        print(f"File already present: {s3_path}")
+        logger.info("File already present: %s", s3_path)
         return True
 
     s3 = get_s3_client()
@@ -212,7 +217,7 @@ def upload_file(
     # Upload the file
     file_size = local_file_path.stat().st_size
     with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
-        print(f"uploading {local_file_path!s} to {s3_path}")
+        logger.info("uploading %s to %s", str(local_file_path), s3_path)
         try:
             s3.upload_file(
                 Filename=str(local_file_path),
@@ -221,8 +226,8 @@ def upload_file(
                 Callback=pbar.update,
                 ExtraArgs=DEFAULT_EXTRA_ARGS,
             )
-        except Exception as e:
-            print(f"Error uploading to s3: {e!s}")
+        except Exception:
+            logger.exception("Error uploading to s3")
             return False
         return True
 
@@ -276,8 +281,8 @@ def download_file(s3_path: str, local_file_path: str | Path, version_id: str | N
     if not parent_dir.is_dir():
         try:
             parent_dir.mkdir(parents=True, exist_ok=False)
-        except Exception as e:
-            print(f"Could not save s3 file to {local_file_path}: {e!s}")
+        except Exception:
+            logger.exception("Could not save s3 file to %s", local_file_path)
             raise
 
     s3 = get_s3_client()
@@ -292,9 +297,9 @@ def download_file(s3_path: str, local_file_path: str | Path, version_id: str | N
     except Exception as e:
         error_string = str(e)
         if error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
-            print(f"File not found: {s3_path}")
+            logger.exception("File not found: %s", s3_path)
         else:
-            print(f"Error downloading {s3_path}: {e!s}")
+            logger.exception("Error downloading %s", s3_path)
         raise
 
     extra_args = {"VersionId": version_id} if version_id is not None else None
@@ -412,6 +417,68 @@ def copy_object(current_s3_path: str, new_s3_path: str) -> dict[str, Any]:
         Key=new_s3_key,
         **DEFAULT_EXTRA_ARGS,
     )
+
+
+def copy_directory(current_s3_path: str, new_s3_path: str) -> tuple[dict[str, str], dict[str, Any]]:
+    """Copy all objects under a given S3 prefix to a new prefix.
+
+    Preserves the relative key structure under the source prefix. For example,
+    copying s3://my-bucket/foo/ to s3://my-bucket/bar/ will copy
+    s3://my-bucket/foo/a/b.txt -> s3://my-bucket/bar/a/b.txt
+
+    If the source bucket does not exist, a NoSuchBucket error will be thrown.
+
+    :param current_s3_path: path to the directory on s3, INCLUDING the bucket name
+    :type current_s3_path: str
+    :param new_s3_path: the desired new directory path on s3, INCLUDING the bucket name
+    :type new_s3_path: str
+    :return: a tuple of (successes, errors) where:
+             - successes maps "bucket/source_key" -> "bucket/dest_key" for each
+               successfully copied object
+             - errors maps "bucket/source_key" -> the exception or response object
+               for each failed copy
+    :rtype: tuple[dict[str, str], dict[str, Any]]
+    """
+    s3 = get_s3_client()
+    (current_s3_bucket, current_s3_prefix) = split_s3_path(current_s3_path)
+    (new_s3_bucket, new_s3_prefix) = split_s3_path(new_s3_path)
+
+    if current_s3_prefix and not current_s3_prefix.endswith("/"):
+        current_s3_prefix += "/"
+    if new_s3_prefix and not new_s3_prefix.endswith("/"):
+        new_s3_prefix += "/"
+
+    paginator = s3.get_paginator("list_objects_v2")
+    pages = paginator.paginate(Bucket=current_s3_bucket, Prefix=current_s3_prefix)
+
+    successes: dict[str, str] = {}
+    errors: dict[str, Any] = {}
+
+    for page in pages:
+        for obj in page.get("Contents", []):
+            current_key = obj["Key"]
+            relative_key = current_key[len(current_s3_prefix) :]
+            new_key = new_s3_prefix + relative_key
+
+            source_path = f"{current_s3_bucket}/{current_key}"
+            dest_path = f"{new_s3_bucket}/{new_key}"
+
+            try:
+                resp = s3.copy_object(
+                    CopySource={"Bucket": current_s3_bucket, "Key": current_key},
+                    Bucket=new_s3_bucket,
+                    Key=new_key,
+                    **DEFAULT_EXTRA_ARGS,
+                )
+                if resp["ResponseMetadata"]["HTTPStatusCode"] == SUCCESS_RESPONSE:
+                    successes[source_path] = dest_path
+                else:
+                    errors[source_path] = resp
+            except Exception as e:
+                logger.exception("Failed to copy %s to %s", source_path, dest_path)
+                errors[source_path] = e
+
+    return successes, errors
 
 
 def delete_object(s3_path: str) -> dict[str, Any]:
