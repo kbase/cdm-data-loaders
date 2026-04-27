@@ -1,7 +1,6 @@
 """Shared fixtures for ncbi_ftp tests."""
 
-import functools
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from unittest.mock import patch
 
 import boto3
@@ -11,6 +10,7 @@ from moto import mock_aws
 
 import cdm_data_loaders.ncbi_ftp.promote as promote_mod
 import cdm_data_loaders.utils.s3 as s3_utils
+from tests.s3_helpers import strip_checksum_algorithm
 from cdm_data_loaders.utils.s3 import CDM_LAKE_BUCKET, reset_s3_client
 
 AWS_REGION = "us-east-1"
@@ -43,17 +43,6 @@ SAMPLE_SUMMARY = (
     "Test organism 2\t\t\tlatest\tContig\tMajor\tFull\t2023/06/15\t"
     "ASM9999v1\t\t\t\tna\n"
 )
-
-
-def strip_checksum_algorithm(method: Callable) -> Callable:
-    """Wrap a boto3 S3 method to remove ChecksumAlgorithm (moto CRC64NVME workaround)."""
-
-    @functools.wraps(method)
-    def wrapper(*args: object, **kwargs: object) -> object:
-        kwargs.pop("ChecksumAlgorithm", None)  # type: ignore[arg-type]
-        return method(*args, **kwargs)
-
-    return wrapper
 
 
 @pytest.fixture

@@ -67,7 +67,7 @@ def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseCli
                 "aws_secret_access_key": settings.MINIO_SECRET_KEY,
             }
         except (ModuleNotFoundError, ImportError, NameError) as e:
-            logger.exception("Failed to load berdl settings: %s", e)
+            logger.exception("Failed to load berdl settings")
             raise
 
     required_args = ["endpoint_url", "aws_access_key_id", "aws_secret_access_key"]
@@ -147,6 +147,34 @@ def list_matching_objects(s3_path: str) -> list[dict[str, Any]]:
     return contents
 
 
+def head_object(s3_path: str) -> dict[str, Any] | None:
+    """Return metadata for an S3 object, or None if it does not exist.
+
+    The returned dict contains:
+    - ``size``: content length in bytes
+    - ``metadata``: user metadata dict
+    - ``checksum_crc64nvme``: CRC64NVME checksum string (if available)
+
+    :param s3_path: path to the object on s3, INCLUDING the bucket name
+    :type s3_path: str
+    :return: dict with object info, or None if the object does not exist
+    :rtype: dict[str, Any] | None
+    """
+    s3 = get_s3_client()
+    (bucket, key) = split_s3_path(s3_path)
+    try:
+        resp = s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
+    except Exception as e:  # noqa: BLE001
+        if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
+            return None
+        raise
+    return {
+        "size": resp["ContentLength"],
+        "metadata": resp.get("Metadata", {}),
+        "checksum_crc64nvme": resp.get("ChecksumCRC64NVME"),
+    }
+
+
 def object_exists(s3_path: str) -> bool:
     """Check whether an object exists on s3.
 
@@ -163,7 +191,7 @@ def object_exists(s3_path: str) -> bool:
     except Exception as e:  # noqa: BLE001
         error_string = str(e)
         if not error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
-            logger.error("Error performing head operation on s3 object: %s", e)
+            logger.exception("Error performing head operation on s3 object")
         return False
     return True
 
@@ -227,7 +255,7 @@ def upload_file(
                 ExtraArgs=extra_args,
             )
         except Exception as e:  # noqa: BLE001
-            logger.error("Error uploading to s3: %s", e)
+            logger.exception("Error uploading to s3")
             return False
         return True
 
@@ -282,7 +310,7 @@ def download_file(s3_path: str, local_file_path: str | Path, version_id: str | N
         try:
             parent_dir.mkdir(parents=True, exist_ok=False)
         except OSError as e:
-            logger.error("Could not save s3 file to %s: %s", local_file_path, e)
+            logger.exception("Could not save s3 file to %s", local_file_path)
             raise
 
     s3 = get_s3_client()
@@ -297,9 +325,9 @@ def download_file(s3_path: str, local_file_path: str | Path, version_id: str | N
     except Exception as e:  # noqa: BLE001
         error_string = str(e)
         if error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
-            logger.error("File not found: %s", s3_path)
+            logger.exception("File not found: %s", s3_path)
         else:
-            logger.error("Error downloading %s: %s", s3_path, e)
+            logger.exception("Error downloading %s", s3_path)
         raise
 
     extra_args = {"VersionId": version_id} if version_id is not None else None
@@ -452,31 +480,3 @@ def delete_object(s3_path: str) -> dict[str, Any]:
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
     return s3.delete_object(Bucket=bucket, Key=key)
-
-
-def head_object(s3_path: str) -> dict[str, Any] | None:
-    """Return metadata for an S3 object, or None if it does not exist.
-
-    The returned dict contains:
-    - ``size``: content length in bytes
-    - ``metadata``: user metadata dict
-    - ``checksum_crc64nvme``: CRC64NVME checksum string (if available)
-
-    :param s3_path: path to the object on s3, INCLUDING the bucket name
-    :type s3_path: str
-    :return: dict with object info, or None if the object does not exist
-    :rtype: dict[str, Any] | None
-    """
-    s3 = get_s3_client()
-    (bucket, key) = split_s3_path(s3_path)
-    try:
-        resp = s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
-    except Exception as e:  # noqa: BLE001
-        if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
-            return None
-        raise
-    return {
-        "size": resp["ContentLength"],
-        "metadata": resp.get("Metadata", {}),
-        "checksum_crc64nvme": resp.get("ChecksumCRC64NVME"),
-    }

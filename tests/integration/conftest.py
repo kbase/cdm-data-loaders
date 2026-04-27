@@ -75,7 +75,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 # ── Fixtures ────────────────────────────────────────────────────────────
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def minio_s3_client() -> botocore.client.BaseClient:
     """Session-scoped real boto3 S3 client pointed at the local MinIO instance.
 

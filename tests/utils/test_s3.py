@@ -1,8 +1,7 @@
 """Tests for s3_utils.py using moto to mock AWS S3."""
 
-import functools
 import io
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -15,6 +14,7 @@ from requests.exceptions import ConnectionError as ConnError
 from requests.exceptions import HTTPError
 
 import cdm_data_loaders.utils.s3 as s3_utils
+from tests.s3_helpers import strip_checksum_algorithm
 from cdm_data_loaders.utils.s3 import (
     CDM_LAKE_BUCKET,
     DEFAULT_EXTRA_ARGS,
@@ -681,24 +681,6 @@ def test_upload_dir_raises_on_empty_destination(sample_dir: Path) -> None:
     """Verify that upload_dir raises ValueError when no destination directory is provided."""
     with pytest.raises(ValueError, match="No destination directory"):
         upload_dir(sample_dir, "")
-
-
-# NOTE: Moto currently does not support CRC64NVME; remove this helper when it does.
-def strip_checksum_algorithm(method: Callable[..., Any]) -> Callable[..., Any]:
-    """Wrap a boto3 S3 method to remove the ChecksumAlgorithm argument before calling moto.
-
-    Moto does not implement CRC64NVME checksums, so any call that includes
-    ChecksumAlgorithm='CRC64NVME' would fail. This wrapper silently drops the
-    argument so the rest of the call proceeds normally against the moto backend.
-    """
-
-    @functools.wraps(method)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        """Remove the ChecksumAlgorithm argument from the call."""
-        kwargs.pop("ChecksumAlgorithm", None)
-        return method(*args, **kwargs)
-
-    return wrapper
 
 
 @pytest.fixture

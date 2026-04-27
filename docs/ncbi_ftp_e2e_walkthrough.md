@@ -92,6 +92,9 @@ docker run -d \
   minio/minio:RELEASE.2025-02-28T09-55-16Z server /data --console-address ":9001"
 ```
 
+(Note that a similar service is included in the `docker-compose` configuration file at the root of
+this repository that is used in CI test workflows.)
+
 Create a test bucket via the [MinIO console](http://localhost:9001)
 (login: `minioadmin` / `minioadmin`), or from the command line using the
 included `scripts/s3_local.py` helper (requires no extra installs — only

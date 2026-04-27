@@ -71,6 +71,35 @@ uv run python -m ipykernel install --user --name cdm-data-loaders --display-name
 
 The `cdm-data-loaders` kernel should now be available from the dropdown list of kernels in the Jupyter notebook interface.
 
+#### Jupyter Kernel Environment Variables
+
+Often you will need access to environment variables that are included in the default Lakehouse
+Jupyter environment, but will not be automatically included in your custom Jupyter kernel. To address
+this, first identify the needed variables and values, and add them to your new kernel configuration
+with the following steps:
+
+Open a new Jupyter Notebook __with the default kernel__ and run this in a new cell:
+```python
+import os
+for k, v in sorted(os.environ.items()):
+    if "AWS" in k or "S3" in k or "MINIO" in k: # replace with whatever keys you're interested in
+        print(f"{k}={v}")
+```
+Take the output and add the environment vars to the `kernel.json` for your new kernel (e.g., in `cdm-data-loaders/.venv/share/jupyter/kernels/python3/kernel.json`):
+```json
+{
+  "argv": ["..."],
+  "display_name": "cdm-data-loaders",
+  "language": "python",
+  "env": {
+    "AWS_ACCESS_KEY_ID": "...",
+    "AWS_SECRET_ACCESS_KEY": "...",
+    "AWS_DEFAULT_REGION": "...",
+    ...
+  }
+}
+```
+
 
 ## Running import pipelines
 

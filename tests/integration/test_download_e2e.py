@@ -5,15 +5,11 @@ Marked ``integration`` and ``slow_test``; auto-skipped when MinIO is
 unreachable.
 """
 
-from __future__ import annotations
-
 import json
-from typing import TYPE_CHECKING
 
 import pytest
 
-if TYPE_CHECKING:
-    from pathlib import Path
+from pathlib import Path
 
 from cdm_data_loaders.ncbi_ftp.manifest import (
     compute_diff,
