@@ -753,8 +753,6 @@ def test_copy_object_source_bucket_nonexistent() -> None:
 
 # copy_directory tests
 
-ALT_BUCKET = ALT_BUCKET
-
 
 def put_objects(mock_s3_client: Any, bucket: str, keys: list[str], body: bytes = b"data") -> None:
     """Helper to seed objects into a bucket."""
