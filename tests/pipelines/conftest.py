@@ -16,7 +16,6 @@ from cdm_data_loaders.pipelines.all_the_bacteria import AtbSettings
 from cdm_data_loaders.pipelines.cts_defaults import (
     DEFAULT_CTS_SETTINGS,
     DEFAULT_START_AT,
-    VALID_DESTINATIONS,
     BatchedFileInputSettings,
     CtsSettings,
 )
@@ -121,15 +120,6 @@ DEFAULT_VCR_CONFIG = frozendict(
         "allow_playback_repeats": True,
     }
 )
-
-
-@pytest.fixture(autouse=True)
-def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
-    """Ensure that the dlt logger propagates logs to the root logger, is set to INFO, and that any messages are cleared."""
-    logger = logging.getLogger("dlt")
-    logger.propagate = True
-    caplog.set_level(logging.INFO)
-    caplog.clear()
 
 
 def make_batcher(files: list[Path], batch_size: int = 5) -> MagicMock:

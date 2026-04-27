@@ -5,6 +5,7 @@ Repo for CDM input data loading and wrangling
 - [cdm-data-loaders](#cdm-data-loaders)
   - [Environment and python management](#environment-and-python-management)
   - [Installation](#installation)
+    - [Lakehouse and Use with Jupyter notebooks](#lakehouse-and-use-with-jupyter-notebooks)
   - [Running import pipelines](#running-import-pipelines)
   - [Development](#development)
     - [Spark and other non-python dependencies](#spark-and-other-non-python-dependencies)
@@ -12,15 +13,6 @@ Repo for CDM input data loading and wrangling
       - [Integration tests (MinIO + NCBI FTP)](#integration-tests-minio--ncbi-ftp)
   - [Loading genomes, contigs, and features](#loading-genomes-contigs-and-features)
   - [Running bbmap stats and checkm2 on genome or contigset files](#running-bbmap-stats-and-checkm2-on-genome-or-contigset-files)
-  - [Changelog](#changelog)
-    - [v0.1.7](#v017)
-    - [v0.1.6](#v016)
-    - [v0.1.5](#v015)
-    - [v0.1.4](#v014)
-    - [v0.1.3](#v013)
-    - [v0.1.2](#v012)
-    - [v0.1.1](#v011)
-    - [v0.1.0](#v010)
 
 
 
@@ -56,6 +48,28 @@ To activate a virtual environment with these dependencies installed, run
 ```
 
 If you are using IDEs like VSCode, they should pick up the creation of the new environment and offer it for executing python code.
+
+
+### Lakehouse and Use with Jupyter notebooks
+
+`cdm-data-loaders` can be installed on platforms like the KBase Lakehouse using the same installation steps:
+
+```sh
+cd cdm-data-loaders
+uv sync
+source .venv/bin/activate
+```
+
+To use the library in a Jupyter notebook, it must be registered as a Jupyter kernel. After performing the three steps above,
+run the following commands:
+
+```sh
+uv pip install -e .
+uv pip install ipykernel
+uv run python -m ipykernel install --user --name cdm-data-loaders --display-name "cdm-data-loaders"
+```
+
+The `cdm-data-loaders` kernel should now be available from the dropdown list of kernels in the Jupyter notebook interface.
 
 
 ## Running import pipelines
@@ -228,41 +242,3 @@ Run the stats and checkm2 tools with the following command:
 bash scripts/run_tools.sh path/to/genome_paths_file.json output_dir
 ```
 where `path/to/genome_paths_file.json` specifies the path to the genome paths file (format specified above) and `output_dir` is the directory for the results.
-
-
-## Changelog
-
-### v0.1.7
-
-- Add in AllTheBacteria file download client.
-
-### v0.1.6
-
-- Make NCBI REST API client more resilient to errors and ensure existing imports are not lost.
-
-### v0.1.5
-
-- Add batch size parameter to the NCBI REST API interface.
-
-
-### v0.1.4
-
-- Add in NCBI REST API interface.
-
-
-### v0.1.3
-
-- Add in file batcher for use with file-based importers.
-
-
-### v0.1.2
-
-- Update XML File Splitter to use the latest version, which includes the `gzip` parameter.
-
-### v0.1.1
-
-- Add [XML File Splitter](https://github.com/ialarmedalien/xml_file_splitter) to the container.
-
-### v0.1.0
-
-- Initial release.

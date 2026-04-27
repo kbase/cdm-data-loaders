@@ -1,6 +1,7 @@
 """Global configuration settings for tests."""
 
 import datetime
+import logging
 import shutil
 from collections.abc import Generator
 from copy import deepcopy
@@ -39,6 +40,21 @@ SAVE_DIR = "spark.sql.warehouse.dir"
 TEST_NS = "test_ns"
 PIPELINE_RUN = {RUN_ID: "1234-5678-90", PIPELINE: "KeystoneXL", SOURCE: "/path/to/file"}
 ALT_PIPELINE_RUN = {RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL", SOURCE: "/path/to/dir"}
+
+
+@pytest.fixture(autouse=True)
+def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
+    """Fiddle with the loggers used in the tests for a better experience.
+
+    N.b. this is overwritten by the conftest in the pipelines directory, which uses the dlt logger.
+    """
+    vcr_logger = logging.getLogger("vcr")
+    vcr_logger.setLevel("ERROR")
+    # turn on log propagation for the dlt logger
+    dlt_logger = logging.getLogger("dlt")
+    dlt_logger.propagate = True
+    caplog.set_level(logging.INFO)
+    caplog.clear()
 
 
 @pytest.fixture
