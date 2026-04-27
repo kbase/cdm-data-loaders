@@ -5,6 +5,7 @@ Repo for CDM input data loading and wrangling
 - [cdm-data-loaders](#cdm-data-loaders)
   - [Environment and python management](#environment-and-python-management)
   - [Installation](#installation)
+    - [Lakehouse and Use with Jupyter notebooks](#lakehouse-and-use-with-jupyter-notebooks)
   - [Running import pipelines](#running-import-pipelines)
   - [Development](#development)
     - [Spark and other non-python dependencies](#spark-and-other-non-python-dependencies)
@@ -46,6 +47,28 @@ To activate a virtual environment with these dependencies installed, run
 ```
 
 If you are using IDEs like VSCode, they should pick up the creation of the new environment and offer it for executing python code.
+
+
+### Lakehouse and Use with Jupyter notebooks
+
+`cdm-data-loaders` can be installed on platforms like the KBase Lakehouse using the same installation steps:
+
+```sh
+cd cdm-data-loaders
+uv sync
+source .venv/bin/activate
+```
+
+To use the library in a Jupyter notebook, it must be registered as a Jupyter kernel. After performing the three steps above,
+run the following commands:
+
+```sh
+uv pip install -e .
+uv pip install ipykernel
+uv run python -m ipykernel install --user --name cdm-data-loaders --display-name "cdm-data-loaders"
+```
+
+The `cdm-data-loaders` kernel should now be available from the dropdown list of kernels in the Jupyter notebook interface.
 
 
 ## Running import pipelines
