@@ -122,15 +122,6 @@ DEFAULT_VCR_CONFIG = frozendict(
 )
 
 
-@pytest.fixture(autouse=True)
-def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
-    """Ensure that the dlt logger propagates logs to the root logger, is set to INFO, and that any messages are cleared."""
-    logger = logging.getLogger("dlt")
-    logger.propagate = True
-    caplog.set_level(logging.INFO)
-    caplog.clear()
-
-
 def make_batcher(files: list[Path], batch_size: int = 5) -> MagicMock:
     """Return a mock BatchCursor that yields ``files`` in batches then an empty list."""
     batches = [list(b) for b in batched(files, batch_size, strict=False)]
