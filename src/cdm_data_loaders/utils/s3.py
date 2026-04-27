@@ -66,10 +66,8 @@ def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseCli
                 "aws_access_key_id": settings.MINIO_ACCESS_KEY,
                 "aws_secret_access_key": settings.MINIO_SECRET_KEY,
             }
-        except (ModuleNotFoundError, ImportError, NameError):
-            logger.exception("Error initialising boto3 client")
-            raise
-        except Exception:
+        except (ModuleNotFoundError, ImportError, NameError) as e:
+            logger.exception("Failed to load berdl settings")
             raise
 
     required_args = ["endpoint_url", "aws_access_key_id", "aws_secret_access_key"]
@@ -149,17 +147,32 @@ def list_matching_objects(s3_path: str) -> list[dict[str, Any]]:
     return contents
 
 
-def head_object(s3_path: str) -> dict[str, Any]:
-    """Check whether an object exists on s3.
+def head_object(s3_path: str) -> dict[str, Any] | None:
+    """Return metadata for an S3 object, or None if it does not exist.
+
+    The returned dict contains:
+    - ``size``: content length in bytes
+    - ``metadata``: user metadata dict
+    - ``checksum_crc64nvme``: CRC64NVME checksum string (if available)
 
     :param s3_path: path to the object on s3, INCLUDING the bucket name
     :type s3_path: str
-    :return: response from the head_object request
-    :rtype: dict[str, Any]
+    :return: dict with object info, or None if the object does not exist
+    :rtype: dict[str, Any] | None
     """
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
-    return s3.head_object(Bucket=bucket, Key=key)
+    try:
+        resp = s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
+    except Exception as e:  # noqa: BLE001
+        if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
+            return None
+        raise
+    return {
+        "size": resp["ContentLength"],
+        "metadata": resp.get("Metadata", {}),
+        "checksum_crc64nvme": resp.get("ChecksumCRC64NVME"),
+    }
 
 
 def object_exists(s3_path: str) -> bool:
@@ -170,9 +183,12 @@ def object_exists(s3_path: str) -> bool:
     :return: True if the object exists, False otherwise
     :rtype: bool
     """
+    s3 = get_s3_client()
+
+    (bucket, key) = split_s3_path(s3_path)
     try:
-        head_object(s3_path)
-    except Exception as e:
+        s3.head_object(Bucket=bucket, Key=key)
+    except Exception as e:  # noqa: BLE001
         error_string = str(e)
         if not error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
             logger.exception("Error performing head operation on s3 object")
@@ -184,8 +200,14 @@ def upload_file(
     local_file_path: Path | str,
     destination_dir: str,
     object_name: str | None = None,
+    metadata: dict[str, str] | None = None,
 ) -> bool:
     """Upload an object to an S3 bucket.
+
+    When *metadata* is supplied the file is always uploaded (no existence check)
+    and the dict is attached as S3 user metadata.  When *metadata* is ``None``
+    (the default) the existing behaviour is preserved: the upload is skipped if
+    the object is already present.
 
     :param local_file_path: File to upload
     :type local_file_path: Path | str
@@ -193,6 +215,8 @@ def upload_file(
     :type destination_dir: str
     :param object_name: S3 object name. If not specified, the name of the file from local_file_path is used.
     :type object_name: str | None
+    :param metadata: user metadata key/value pairs to attach to the object; when provided the upload always runs
+    :type metadata: dict[str, str] | None
     :return: True if file was uploaded, else False
     :rtype: bool
     """
@@ -207,12 +231,14 @@ def upload_file(
         object_name = local_file_path.name
 
     s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
-    if object_exists(s3_path):
+    if metadata is None and object_exists(s3_path):
         logger.info("File already present: %s", s3_path)
         return True
 
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
+
+    extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": metadata}) if metadata is not None else {})}
 
     # Upload the file
     file_size = local_file_path.stat().st_size
@@ -224,9 +250,9 @@ def upload_file(
                 Bucket=bucket,
                 Key=key,
                 Callback=pbar.update,
-                ExtraArgs=DEFAULT_EXTRA_ARGS,
+                ExtraArgs=extra_args,
             )
-        except Exception:
+        except Exception as e:  # noqa: BLE001
             logger.exception("Error uploading to s3")
             return False
         return True
@@ -294,7 +320,7 @@ def download_file(s3_path: str, local_file_path: str | Path, version_id: str | N
     # Get the object size
     try:
         object_size = s3.head_object(**kwargs)["ContentLength"]
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         error_string = str(e)
         if error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
             logger.exception("File not found: %s", s3_path)
@@ -391,8 +417,16 @@ def upload_dir(
     return all_successful
 
 
-def copy_object(current_s3_path: str, new_s3_path: str) -> dict[str, Any]:
+def copy_object(
+    current_s3_path: str,
+    new_s3_path: str,
+    metadata: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Copy an object from one place to another, adding in a CRC64NVME checksum.
+
+    When *metadata* is supplied the destination object carries exactly those
+    key/value pairs (``MetadataDirective='REPLACE'``).  When *metadata* is
+    ``None`` (the default) the source metadata is inherited.
 
     A successful copy operation will return a response where
     resp["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -400,10 +434,12 @@ def copy_object(current_s3_path: str, new_s3_path: str) -> dict[str, Any]:
     Errors (e.g, buckets or keys not existing, wrong credentials, etc.) are passed
     directly to the user without being caught.
 
-    :param current_path: path to the file on s3, INCLUDING the bucket name
-    :type current_path: str
-    :param new_path: the desired new file path on s3, INCLUDING the bucket name
-    :type new_path: str
+    :param current_s3_path: path to the file on s3, INCLUDING the bucket name
+    :type current_s3_path: str
+    :param new_s3_path: the desired new file path on s3, INCLUDING the bucket name
+    :type new_s3_path: str
+    :param metadata: user metadata to set on the destination object; when provided the source metadata is replaced
+    :type metadata: dict[str, str] | None
     :return: dictionary containing response
     :rtype: dict[str, Any]
     """
@@ -411,10 +447,16 @@ def copy_object(current_s3_path: str, new_s3_path: str) -> dict[str, Any]:
     (current_s3_bucket, current_s3_key) = split_s3_path(current_s3_path)
     (new_s3_bucket, new_s3_key) = split_s3_path(new_s3_path)
 
+    extra: dict[str, Any] = {}
+    if metadata is not None:
+        extra["Metadata"] = metadata
+        extra["MetadataDirective"] = "REPLACE"
+
     return s3.copy_object(
         CopySource={"Bucket": current_s3_bucket, "Key": current_s3_key},
         Bucket=new_s3_bucket,
         Key=new_s3_key,
+        **extra,
         **DEFAULT_EXTRA_ARGS,
     )
 

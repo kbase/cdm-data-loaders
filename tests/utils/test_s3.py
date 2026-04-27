@@ -1,9 +1,8 @@
 """Tests for s3_utils.py using moto to mock AWS S3."""
 
-import functools
 import io
 import logging
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -16,6 +15,7 @@ from requests.exceptions import ConnectionError as ConnError
 from requests.exceptions import HTTPError
 
 import cdm_data_loaders.utils.s3 as s3_utils
+from tests.s3_helpers import strip_checksum_algorithm
 from cdm_data_loaders.utils.s3 import (
     CDM_LAKE_BUCKET,
     DEFAULT_EXTRA_ARGS,
@@ -50,6 +50,11 @@ FILES_IN_BUCKETS = {
     ALT_BUCKET: ["dir_one/file1.txt"],
 }
 BUCKETS = [CDM_LAKE_BUCKET, ALT_BUCKET]
+
+HTTP_STATUS_OK = 200
+HTTP_STATUS_NO_CONTENT = 204
+SIZE_HELLO = 5
+SIZE_DATA = 4
 
 
 @pytest.fixture
@@ -318,7 +323,7 @@ EXPECTED_FILE_LIST = {
 }
 
 
-# TODO: use a single fixture for all these tests
+# NOTE: These tests currently compose multiple fixtures explicitly for readability.
 @pytest.mark.parametrize("dir_path", EXPECTED_FILE_LIST.keys())
 @pytest.mark.s3
 def test_list_matching_objects_returns_more_than_1000_entries(
@@ -344,13 +349,13 @@ def test_head_object_and_object_exists_true_and_false(mock_s3_client: Any, proto
     for bucket, file_list in FILES_IN_BUCKETS.items():
         for f in file_list:
             output = head_object(f"{protocol}{bucket}/{f}")
-            assert output.get("ResponseMetadata", {}).get("HTTPStatusCode") == 200
+            assert output is not None
+            assert isinstance(output["size"], int)
             assert object_exists(f"{protocol}{bucket}/{f}") is True
 
         nonexistent_file = f"{protocol}{bucket}/a-file-i-just-made-up.txt"
         assert object_exists(nonexistent_file) is False
-        with pytest.raises(ClientError, match=r"An error occurred \(404\) when calling the HeadObject operation"):
-            head_object(nonexistent_file)
+        assert head_object(nonexistent_file) is None
 
 
 @pytest.mark.parametrize("s3_path", ["absent", "dir_one", "dir_one/", "dir_one/file1.tnt"])
@@ -684,33 +689,15 @@ def test_upload_dir_raises_on_empty_destination(sample_dir: Path) -> None:
         upload_dir(sample_dir, "")
 
 
-# FIXME: once moto supports CRC64NVME, this can be removed
-def strip_checksum_algorithm(method: Callable):
-    """Wrap a boto3 S3 method to remove the ChecksumAlgorithm argument before calling moto.
-
-    Moto does not implement CRC64NVME checksums, so any call that includes
-    ChecksumAlgorithm='CRC64NVME' would fail. This wrapper silently drops the
-    argument so the rest of the call proceeds normally against the moto backend.
-    """
-
-    @functools.wraps(method)
-    def wrapper(*args, **kwargs):
-        """Remove the ChecksumAlgorithm argument from the call."""
-        kwargs.pop("ChecksumAlgorithm", None)
-        return method(*args, **kwargs)
-
-    return wrapper
-
-
 @pytest.fixture
-def mocked_s3_client_no_checksum(mock_s3_client: Any) -> Generator[Any, Any]:
-    """Yield the mocked S3 client with copy_object patched to strip ChecksumAlgorithm.
+def mocked_s3_client_no_checksum(mock_s3_client: Any) -> Any:
+    """Return the mocked S3 client with copy_object patched to strip ChecksumAlgorithm.
 
     This works around the moto limitation of not supporting CRC64NVME checksums,
     allowing copy_object calls that include ChecksumAlgorithm to succeed.
     """
     mock_s3_client.copy_object = strip_checksum_algorithm(mock_s3_client.copy_object)
-    yield mock_s3_client
+    return mock_s3_client
 
 
 # copy_object
@@ -728,7 +715,7 @@ def test_copy_object(mocked_s3_client_no_checksum: Any, destination: str) -> Non
 
     obj = mocked_s3_client_no_checksum.get_object(Bucket=destination, Key="dst/path/to/file.txt")
     assert obj["Body"].read() == b"copy me"
-    assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
+    assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_STATUS_OK
 
 
 @pytest.mark.s3
@@ -748,6 +735,16 @@ def test_copy_object_source_bucket_nonexistent() -> None:
     s3_path = "some-bucket/some/path/to/file"
     assert object_exists(s3_path) is False
     with pytest.raises(Exception, match="The specified bucket does not exist"):
+        copy_object(s3_path, f"{CDM_LAKE_BUCKET}/a/different/path/to/file")
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_copy_file_source_object_nonexistent() -> None:
+    """Ensure that the code throws an error if the source object does not exist."""
+    s3_path = f"{CDM_LAKE_BUCKET}/some/path/to/file"
+    assert object_exists(s3_path) is False
+    with pytest.raises(Exception, match="The specified key does not exist"):
         copy_object(s3_path, f"{CDM_LAKE_BUCKET}/a/different/path/to/file")
 
 
@@ -890,12 +887,132 @@ def test_delete_object_removes_object(mock_s3_client: Any, bucket: str, protocol
 
     resp = delete_object(s3_path)
     assert object_exists(s3_path) is False
-    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == 204
+    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_STATUS_NO_CONTENT
 
     # retry the deletion
     resp = delete_object(s3_path)
     assert object_exists(s3_path) is False
-    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == 204
+    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_STATUS_NO_CONTENT
+
+
+# upload_file with metadata
+@pytest.mark.parametrize("bucket", BUCKETS)
+@pytest.mark.s3
+def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: Any, sample_file: Path, bucket: str) -> None:
+    """Verify that upload_file with metadata stores user metadata on the uploaded object."""
+    metadata = {"md5": "abc123", "source": "ncbi"}
+    result = upload_file(sample_file, f"{bucket}/uploads", metadata=metadata)
+    assert result is True
+
+    resp = mock_s3_client.head_object(Bucket=bucket, Key=f"uploads/{sample_file.name}")
+    assert resp["Metadata"]["md5"] == "abc123"
+    assert resp["Metadata"]["source"] == "ncbi"
+
+
+@pytest.mark.s3
+def test_upload_file_with_metadata_custom_object_name(mock_s3_client: Any, sample_file: Path) -> None:
+    """Verify that the object_name parameter overrides the filename."""
+    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", metadata={"k": "v"}, object_name="renamed.txt")
+    assert result is True
+    obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key="uploads/renamed.txt")
+    assert obj["Body"].read() == b"hello s3"
+
+
+@pytest.mark.s3
+def test_upload_file_with_metadata_overwrites_existing(mock_s3_client: Any, sample_file: Path) -> None:
+    """Verify that upload_file with metadata uploads even when the object already exists."""
+    mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
+    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", metadata={"new": "true"})
+    assert result is True
+    obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}")
+    assert obj["Body"].read() == b"hello s3"
+
+
+@pytest.mark.usefixtures("mock_s3_client")
+@pytest.mark.s3
+def test_upload_file_with_metadata_raises_on_empty_destination(sample_file: Path) -> None:
+    """Verify ValueError when destination_dir is empty."""
+    with pytest.raises(ValueError, match="No destination directory"):
+        upload_file(sample_file, "", metadata={"k": "v"})
+
+
+@pytest.mark.usefixtures("mock_s3_client")
+@pytest.mark.parametrize("path_type", [str, Path])
+@pytest.mark.s3
+def test_upload_file_with_metadata_accepts_str_and_path(sample_file: Path, path_type: type[str] | type[Path]) -> None:
+    """Verify that upload_file with metadata accepts both str and Path."""
+    result = upload_file(path_type(sample_file), f"{CDM_LAKE_BUCKET}/uploads", metadata={})
+    assert result is True
+
+
+# head_object
+@pytest.mark.s3
+def test_head_object_returns_info(mock_s3_client: Any) -> None:
+    """Verify that head_object returns size, metadata, and checksum fields."""
+    mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key="info/file.txt", Body=b"hello", Metadata={"md5": "abc123"})
+    result = head_object(f"{CDM_LAKE_BUCKET}/info/file.txt")
+    assert result is not None
+    assert result["size"] == SIZE_HELLO
+    assert result["metadata"]["md5"] == "abc123"
+    # moto may not populate CRC64NVME, but the key should be present
+    assert "checksum_crc64nvme" in result
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_head_object_returns_none_for_missing() -> None:
+    """Verify that head_object returns None for a non-existent object."""
+    result = head_object(f"{CDM_LAKE_BUCKET}/does/not/exist.txt")
+    assert result is None
+
+
+@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
+@pytest.mark.s3
+def test_head_object_with_protocols(mock_s3_client: Any, protocol: str) -> None:
+    """Verify that head_object handles all valid protocol prefixes."""
+    mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key="proto/file.txt", Body=b"data")
+    result = head_object(f"{protocol}{CDM_LAKE_BUCKET}/proto/file.txt")
+    assert result is not None
+    assert result["size"] == SIZE_DATA
+
+
+# copy_object with metadata
+@pytest.mark.parametrize("destination", BUCKETS)
+@pytest.mark.s3
+def test_copy_object_with_metadata_replaces_metadata(mocked_s3_client_no_checksum: Any, destination: str) -> None:
+    """Verify that copy_object with metadata copies and replaces metadata."""
+    mocked_s3_client_no_checksum.put_object(
+        Bucket=CDM_LAKE_BUCKET, Key="src/file.txt", Body=b"archive me", Metadata={"old_key": "old_val"}
+    )
+    new_metadata = {"archive_reason": "replaced", "archive_date": "2026-04-16"}
+    response = copy_object(
+        f"{CDM_LAKE_BUCKET}/src/file.txt",
+        f"{destination}/archive/file.txt",
+        metadata=new_metadata,
+    )
+    assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_STATUS_OK
+
+    # verify the destination has the new metadata, not the old
+    resp = mocked_s3_client_no_checksum.head_object(Bucket=destination, Key="archive/file.txt")
+    assert resp["Metadata"]["archive_reason"] == "replaced"
+    assert resp["Metadata"]["archive_date"] == "2026-04-16"
+    assert "old_key" not in resp["Metadata"]
+
+    # verify source still exists
+    assert object_exists(f"{CDM_LAKE_BUCKET}/src/file.txt")
+
+
+@pytest.mark.s3
+def test_copy_object_with_metadata_preserves_content(mocked_s3_client_no_checksum: Any) -> None:
+    """Verify that the content of the copied object matches the original."""
+    mocked_s3_client_no_checksum.put_object(Bucket=CDM_LAKE_BUCKET, Key="src/data.bin", Body=b"binary data")
+    copy_object(
+        f"{CDM_LAKE_BUCKET}/src/data.bin",
+        f"{CDM_LAKE_BUCKET}/dst/data.bin",
+        metadata={"tag": "value"},
+    )
+    obj = mocked_s3_client_no_checksum.get_object(Bucket=CDM_LAKE_BUCKET, Key="dst/data.bin")
+    assert obj["Body"].read() == b"binary data"
 
 
 # delete_object - bucket does not exist

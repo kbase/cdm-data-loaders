@@ -25,6 +25,7 @@ dependencies = [
 
 [project.scripts]
 all_the_bacteria = "cdm_data_loaders.pipelines.all_the_bacteria:cli"
+ncbi_ftp_sync = "cdm_data_loaders.pipelines.ncbi_ftp_download:cli"
 ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"
 uniprot = "cdm_data_loaders.pipelines.uniprot_kb:cli"
 uniref = "cdm_data_loaders.pipelines.uniref:cli"
@@ -167,7 +168,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = ["T201"] # ignore printing in notebooks
-"tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002"]  # use of assert, booleans
+"tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002"]  # use of assert, booleans, unused mock args
+"tests/integration/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002", "ANN401"]
 "tests/utils/test_s3.py" = ["ANN401"]
 "**/__init__.py" = ["D104"]
 
@@ -188,16 +190,16 @@ log_cli = true
 log_cli_level = "INFO"
 log_level = "INFO"
 addopts = ["-v"]
-markers = ["requires_spark: must be run in an environment where spark is available", "s3: tests that mock s3 interactions", "slow_test: does what it says on the tin"]
+markers = ["requires_spark: must be run in an environment where spark is available", "s3: tests that mock s3 interactions", "slow_test: does what it says on the tin", "integration: end-to-end tests requiring a running MinIO instance and network access", "external_request: tests that make real network requests to external services (e.g. NCBI FTP)"]
 
 # environment settings for running tests
 [tool.pytest_env]
 USER = "fake_user"
 KBASE_AUTH_TOKEN = "test-token-123"
 CDM_TASK_SERVICE_URL = "http://localhost:8080"
-MINIO_ENDPOINT_URL = "http://localhost:9000"
-MINIO_ACCESS_KEY = "minioadmin"
-MINIO_SECRET_KEY = "minioadmin"
+MINIO_ENDPOINT_URL = { value = "http://localhost:9000", skip_if_set = true }
+MINIO_ACCESS_KEY = { value = "minioadmin", skip_if_set = true }
+MINIO_SECRET_KEY = { value = "minioadmin", skip_if_set = true }
 MINIO_SECURE_FLAG = "false"
 BERDL_POD_IP = "192.168.1.100"
 SPARK_MASTER_URL = "spark://localhost:7077"
