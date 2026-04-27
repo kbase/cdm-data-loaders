@@ -3,7 +3,6 @@
 import pytest
 
 from cdm_data_loaders.ncbi_ftp.assembly import (
-    FILE_FILTERS,
     build_accession_path,
     parse_assembly_path,
     parse_md5_checksums_file,
