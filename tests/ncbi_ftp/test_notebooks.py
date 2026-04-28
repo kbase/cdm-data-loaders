@@ -29,6 +29,7 @@ NOTEBOOKS_DIR = Path(__file__).resolve().parents[2] / "notebooks"
 NCBI_NOTEBOOKS = [
     "ncbi_ftp_manifest.ipynb",
     "ncbi_ftp_promote.ipynb",
+    "ncbi_ftp_download.ipynb",
 ]
 
 
@@ -72,3 +73,14 @@ def test_promote_notebook_imports() -> None:
     assert callable(promote_from_s3)
     assert isinstance(DEFAULT_LAKEHOUSE_KEY_PREFIX, str)
     assert callable(split_s3_path)
+
+
+def test_download_notebook_imports() -> None:
+    """All download notebook imports resolve without error."""
+    from cdm_data_loaders.pipelines.ncbi_ftp_download import (  # noqa: F401
+        DEFAULT_STAGING_KEY_PREFIX,
+        download_and_stage,
+    )
+
+    assert callable(download_and_stage)
+    assert isinstance(DEFAULT_STAGING_KEY_PREFIX, str)

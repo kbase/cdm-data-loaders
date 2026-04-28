@@ -2,14 +2,22 @@
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
+import boto3
 import pytest
+from moto import mock_aws
 from pydantic import ValidationError
 
 from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST
 from cdm_data_loaders.pipelines.cts_defaults import INPUT_MOUNT, OUTPUT_MOUNT
-from cdm_data_loaders.pipelines.ncbi_ftp_download import DownloadSettings, download_batch
+from cdm_data_loaders.pipelines.ncbi_ftp_download import (
+    DEFAULT_STAGING_KEY_PREFIX,
+    DownloadSettings,
+    download_and_stage,
+    download_batch,
+)
+from cdm_data_loaders.utils.s3 import reset_s3_client
 
 _DEFAULT_THREADS = 4
 _CUSTOM_THREADS = 8
@@ -228,3 +236,320 @@ class TestDownloadBatch:
 
         assert report["failed"] == 1
         assert report["succeeded"] == 0
+
+
+# ── Helpers shared by download_and_stage tests ───────────────────────────
+
+_MANIFEST_CONTENT = (
+    "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n"
+    "/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/\n"
+)
+_TEST_BUCKET = "test-bucket"
+_STAGING_PREFIX = "staging/run1/"
+
+_MOCK_REPORT = {
+    "timestamp": "2026-01-01T00:00:00+00:00",
+    "total_attempted": 2,
+    "succeeded": 2,
+    "failed": 0,
+    "failures": [],
+    "assembly_stats": [],
+}
+
+
+def _make_moto_s3():
+    """Return a moto-backed S3 client with the test bucket created."""
+    client = boto3.client("s3", region_name="us-east-1")
+    client.create_bucket(Bucket=_TEST_BUCKET)
+    return client
+
+
+# ── download_and_stage — manifest source ────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("manifest_s3_key", "use_local"),
+    [
+        pytest.param("staging/input/transfer_manifest.txt", False, id="s3_source"),
+        pytest.param(None, True, id="local_source"),
+    ],
+)
+@mock_aws
+def test_download_and_stage_manifest_source(
+    tmp_path: Path,
+    manifest_s3_key: str | None,
+    use_local: bool,
+) -> None:
+    """Manifest lines are passed to download_batch regardless of source (S3 or local)."""
+    reset_s3_client()
+    s3 = _make_moto_s3()
+
+    manifest_local: Path | None = None
+    if manifest_s3_key is not None:
+        s3.put_object(Bucket=_TEST_BUCKET, Key=manifest_s3_key, Body=_MANIFEST_CONTENT.encode())
+    else:
+        manifest_local = tmp_path / "manifest.txt"
+        manifest_local.write_text(_MANIFEST_CONTENT)
+
+    captured_content: list[str] = []
+
+    def _capturing_batch(manifest_path, output_dir, **kwargs):  # noqa: ARG001
+        captured_content.append(Path(manifest_path).read_text())
+        return _MOCK_REPORT
+
+    import cdm_data_loaders.utils.s3 as s3_mod
+
+    with (
+        patch.object(s3_mod, "get_s3_client", return_value=s3),
+        patch.object(s3_mod, "_s3_client", s3),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_batch", side_effect=_capturing_batch),
+    ):
+        download_and_stage(
+            bucket=_TEST_BUCKET,
+            staging_key_prefix=_STAGING_PREFIX,
+            manifest_s3_key=manifest_s3_key,
+            manifest_local_path=manifest_local,
+            dry_run=True,
+        )
+
+    assert captured_content == [_MANIFEST_CONTENT]
+
+    reset_s3_client()
+
+
+# ── download_and_stage — exactly one source required ────────────────────
+
+
+@pytest.mark.parametrize(
+    ("s3_key", "local_path", "should_raise"),
+    [
+        pytest.param("s3/key", "local/path", True, id="both_provided_raises"),
+        pytest.param(None, None, True, id="neither_provided_raises"),
+        pytest.param("s3/key", None, False, id="s3_only_ok"),
+        pytest.param(None, "local/path", False, id="local_only_ok"),
+    ],
+)
+@mock_aws
+def test_download_and_stage_exactly_one_source_required(
+    tmp_path: Path,
+    s3_key: str | None,
+    local_path: str | None,
+    should_raise: bool,
+) -> None:
+    """ValueError is raised when both or neither manifest sources are given."""
+    reset_s3_client()
+
+    if should_raise:
+        with pytest.raises(ValueError, match="manifest"):
+            download_and_stage(
+                bucket=_TEST_BUCKET,
+                staging_key_prefix=_STAGING_PREFIX,
+                manifest_s3_key=s3_key,
+                manifest_local_path=local_path,
+            )
+    else:
+        s3 = _make_moto_s3()
+        # For s3_only: seed the object; for local_only: create the file
+        if s3_key is not None:
+            s3.put_object(Bucket=_TEST_BUCKET, Key=s3_key, Body=_MANIFEST_CONTENT.encode())
+        if local_path is not None:
+            real_local = tmp_path / "manifest.txt"
+            real_local.write_text(_MANIFEST_CONTENT)
+            local_path = real_local
+
+        import cdm_data_loaders.utils.s3 as s3_mod
+
+        with (
+            patch.object(s3_mod, "get_s3_client", return_value=s3),
+            patch.object(s3_mod, "_s3_client", s3),
+            patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
+            patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_batch", return_value=_MOCK_REPORT),
+        ):
+            result = download_and_stage(
+                bucket=_TEST_BUCKET,
+                staging_key_prefix=_STAGING_PREFIX,
+                manifest_s3_key=s3_key,
+                manifest_local_path=local_path,
+                dry_run=True,
+            )
+        assert result["succeeded"] == _MOCK_REPORT["succeeded"]
+
+    reset_s3_client()
+
+
+# ── download_and_stage — uploads to staging ──────────────────────────────
+
+
+@mock_aws
+def test_download_and_stage_uploads_to_staging(tmp_path: Path) -> None:
+    """Files produced in raw_data/ and download_report.json are all uploaded to staging."""
+    reset_s3_client()
+    s3 = _make_moto_s3()
+
+    manifest_local = tmp_path / "manifest.txt"
+    manifest_local.write_text(_MANIFEST_CONTENT)
+
+    assembly_rel = "raw_data/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT"
+
+    def _fake_download_batch(manifest_path, output_dir, **kwargs):  # noqa: ARG001
+        out = Path(output_dir)
+        asm_dir = out / assembly_rel
+        asm_dir.mkdir(parents=True)
+        (asm_dir / "genomic.fna.gz").write_bytes(b"fasta_data")
+        (asm_dir / "genomic.fna.gz.md5").write_bytes(b"abc123")
+        report_path = out / "download_report.json"
+        report_path.write_text(json.dumps(_MOCK_REPORT))
+        return _MOCK_REPORT
+
+    import cdm_data_loaders.utils.s3 as s3_mod
+
+    with (
+        patch.object(s3_mod, "get_s3_client", return_value=s3),
+        patch.object(s3_mod, "_s3_client", s3),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_batch", side_effect=_fake_download_batch),
+    ):
+        report = download_and_stage(
+            bucket=_TEST_BUCKET,
+            staging_key_prefix=_STAGING_PREFIX,
+            manifest_local_path=manifest_local,
+            dry_run=False,
+            threads=1,
+        )
+
+    paginator = s3.get_paginator("list_objects_v2")
+    uploaded_keys = {
+        obj["Key"]
+        for page in paginator.paginate(Bucket=_TEST_BUCKET)
+        for obj in page.get("Contents", [])
+    }
+
+    expected_keys = {
+        f"{_STAGING_PREFIX}{assembly_rel}/genomic.fna.gz",
+        f"{_STAGING_PREFIX}{assembly_rel}/genomic.fna.gz.md5",
+        f"{_STAGING_PREFIX}download_report.json",
+    }
+    assert uploaded_keys == expected_keys
+    assert report["staged_objects"] == len(expected_keys)
+
+    reset_s3_client()
+
+
+# ── download_and_stage — dry_run skips upload ────────────────────────────
+
+
+@mock_aws
+def test_download_and_stage_dry_run_skips_upload(tmp_path: Path) -> None:
+    """dry_run=True leaves S3 empty and returns staged_objects=0."""
+    reset_s3_client()
+    s3 = _make_moto_s3()
+
+    manifest_local = tmp_path / "manifest.txt"
+    manifest_local.write_text(_MANIFEST_CONTENT)
+
+    def _fake_download_batch(manifest_path, output_dir, **kwargs):  # noqa: ARG001
+        asm_dir = Path(output_dir) / "raw_data/GCF/000/001/215/GCF_000001215.4"
+        asm_dir.mkdir(parents=True)
+        (asm_dir / "genomic.fna.gz").write_bytes(b"fasta")
+        return _MOCK_REPORT
+
+    import cdm_data_loaders.utils.s3 as s3_mod
+
+    with (
+        patch.object(s3_mod, "get_s3_client", return_value=s3),
+        patch.object(s3_mod, "_s3_client", s3),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_batch", side_effect=_fake_download_batch),
+    ):
+        report = download_and_stage(
+            bucket=_TEST_BUCKET,
+            staging_key_prefix=_STAGING_PREFIX,
+            manifest_local_path=manifest_local,
+            dry_run=True,
+            threads=1,
+        )
+
+    listed = s3.list_objects_v2(Bucket=_TEST_BUCKET)
+    assert listed.get("KeyCount", 0) == 0
+    assert report["staged_objects"] == 0
+    assert report["dry_run"] is True
+
+    reset_s3_client()
+
+
+# ── download_and_stage — limit forwarded ────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "limit",
+    [
+        pytest.param(1, id="limit_1"),
+        pytest.param(10, id="limit_10"),
+    ],
+)
+@mock_aws
+def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int) -> None:
+    """The limit parameter is forwarded verbatim to download_batch."""
+    reset_s3_client()
+    s3 = _make_moto_s3()
+
+    manifest_local = tmp_path / "manifest.txt"
+    manifest_local.write_text(_MANIFEST_CONTENT)
+
+    import cdm_data_loaders.utils.s3 as s3_mod
+
+    with (
+        patch.object(s3_mod, "get_s3_client", return_value=s3),
+        patch.object(s3_mod, "_s3_client", s3),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_batch", return_value=_MOCK_REPORT) as mock_batch,
+    ):
+        download_and_stage(
+            bucket=_TEST_BUCKET,
+            staging_key_prefix=_STAGING_PREFIX,
+            manifest_local_path=manifest_local,
+            limit=limit,
+            dry_run=True,
+        )
+
+    assert mock_batch.call_args.kwargs["limit"] == limit
+
+    reset_s3_client()
+
+
+# ── download_and_stage — report shape ───────────────────────────────────
+
+
+@mock_aws
+def test_download_and_stage_report_shape(tmp_path: Path) -> None:
+    """Return value includes all download_batch keys plus staged_objects, staging_key_prefix, dry_run."""
+    reset_s3_client()
+    s3 = _make_moto_s3()
+
+    manifest_local = tmp_path / "manifest.txt"
+    manifest_local.write_text(_MANIFEST_CONTENT)
+
+    import cdm_data_loaders.utils.s3 as s3_mod
+
+    with (
+        patch.object(s3_mod, "get_s3_client", return_value=s3),
+        patch.object(s3_mod, "_s3_client", s3),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_batch", return_value=_MOCK_REPORT),
+    ):
+        report = download_and_stage(
+            bucket=_TEST_BUCKET,
+            staging_key_prefix=_STAGING_PREFIX,
+            manifest_local_path=manifest_local,
+            dry_run=True,
+        )
+
+    assert report == {
+        **_MOCK_REPORT,
+        "staged_objects": 0,
+        "staging_key_prefix": _STAGING_PREFIX,
+        "dry_run": True,
+    }
+
+    reset_s3_client()
