@@ -192,7 +192,7 @@ def _promote_data_files(
                     object_name=final_key_path.name,
                 )
                 if not upload_succeeded:
-                    logger.error("Failed to upload promoted file %s to %s", staged_key, final_key)
+                    logger.exception("Failed to upload promoted file %s to %s", staged_key, final_key)
                     failed += 1
                     continue
 
