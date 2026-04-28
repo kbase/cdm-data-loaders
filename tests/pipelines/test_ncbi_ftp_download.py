@@ -12,7 +12,6 @@ from pydantic import ValidationError
 from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST
 from cdm_data_loaders.pipelines.cts_defaults import INPUT_MOUNT, OUTPUT_MOUNT
 from cdm_data_loaders.pipelines.ncbi_ftp_download import (
-    DEFAULT_STAGING_KEY_PREFIX,
     DownloadSettings,
     download_and_stage,
     download_batch,
