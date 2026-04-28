@@ -419,11 +419,7 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path) -> None:
         )
 
     paginator = s3.get_paginator("list_objects_v2")
-    uploaded_keys = {
-        obj["Key"]
-        for page in paginator.paginate(Bucket=_TEST_BUCKET)
-        for obj in page.get("Contents", [])
-    }
+    uploaded_keys = {obj["Key"] for page in paginator.paginate(Bucket=_TEST_BUCKET) for obj in page.get("Contents", [])}
 
     expected_keys = {
         f"{_STAGING_PREFIX}{assembly_rel}/genomic.fna.gz",

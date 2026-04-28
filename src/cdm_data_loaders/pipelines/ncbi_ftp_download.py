@@ -34,9 +34,6 @@ logger = get_cdm_logger()
 DEFAULT_STAGING_KEY_PREFIX = "staging/"
 
 
-
-
-
 class DownloadSettings(BaseSettings):
     """Configuration for the NCBI FTP assembly download pipeline."""
 
