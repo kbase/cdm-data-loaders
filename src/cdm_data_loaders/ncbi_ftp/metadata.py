@@ -16,8 +16,6 @@ The descriptor ``resources`` list records the final Lakehouse S3 key, byte
 size, file format, and MD5 hash of each promoted data file.
 """
 
-from __future__ import annotations
-
 import json
 import tempfile
 from datetime import UTC, datetime
@@ -27,7 +25,7 @@ from typing import Any, TypedDict
 from frictionless import Package
 
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-from cdm_data_loaders.utils.s3 import copy_object_with_metadata, get_s3_client
+from cdm_data_loaders.utils.s3 import copy_object, get_s3_client
 
 logger = get_cdm_logger()
 
@@ -246,7 +244,7 @@ def archive_descriptor(  # noqa: PLR0913
         raise
 
     datestamp = datetime.now(UTC).strftime("%Y-%m-%d")
-    copy_object_with_metadata(
+    copy_object(
         f"{bucket}/{source_key}",
         f"{bucket}/{archive_key}",
         metadata={

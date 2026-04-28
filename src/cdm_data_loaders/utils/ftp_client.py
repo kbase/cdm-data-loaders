@@ -6,11 +6,20 @@ downloads.  Protocol-agnostic — callers supply the FTP hostname.
 """
 
 import contextlib
+import logging
 import socket
 import threading
 import time
 from ftplib import FTP, error_temp
 from pathlib import Path
+
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_fixed,
+)
 
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
@@ -73,19 +82,20 @@ def ftp_list_dir(ftp: FTP, path: str, retries: int = 3) -> list[str]:
     :return: list of filenames
     """
     ftp.cwd(path)
-    for attempt in range(1, retries + 1):
-        try:
-            files: list[str] = []
-            ftp.retrlines("NLST", files.append)
-        except error_temp as e:
-            if attempt < retries:
-                logger.warning("Transient FTP error listing %s (attempt %d/%d): %s", path, attempt, retries, e)
-                time.sleep(2)
-            else:
-                raise
-        else:
-            return files
-    return []  # unreachable, but keeps type checkers happy
+
+    @retry(
+        retry=retry_if_exception_type(error_temp),
+        stop=stop_after_attempt(retries),
+        wait=wait_fixed(2),
+        reraise=True,
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )
+    def _list() -> list[str]:
+        files: list[str] = []
+        ftp.retrlines("NLST", files.append)
+        return files
+
+    return _list()
 
 
 def ftp_download_file(ftp: FTP, remote_path: str, local_path: str, retries: int = 3) -> None:
@@ -96,20 +106,19 @@ def ftp_download_file(ftp: FTP, remote_path: str, local_path: str, retries: int 
     :param local_path: local destination path
     :param retries: number of retry attempts
     """
-    for attempt in range(1, retries + 1):
-        try:
-            with Path(local_path).open("wb") as f:
-                ftp.retrbinary(f"RETR {remote_path}", f.write)
-        except error_temp as e:
-            if attempt < retries:
-                logger.warning(
-                    "Transient FTP error downloading %s (attempt %d/%d): %s", remote_path, attempt, retries, e
-                )
-                time.sleep(2)
-            else:
-                raise
-        else:
-            return
+
+    @retry(
+        retry=retry_if_exception_type(error_temp),
+        stop=stop_after_attempt(retries),
+        wait=wait_fixed(2),
+        reraise=True,
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )
+    def _download() -> None:
+        with Path(local_path).open("wb") as f:
+            ftp.retrbinary(f"RETR {remote_path}", f.write)
+
+    _download()
 
 
 def ftp_retrieve_text(ftp: FTP, remote_path: str) -> str:

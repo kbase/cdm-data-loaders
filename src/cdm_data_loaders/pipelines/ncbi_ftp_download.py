@@ -6,15 +6,16 @@ domain-specific download logic is in :mod:`cdm_data_loaders.ncbi_ftp.assembly`.
 """
 
 import json
+import logging
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from ftplib import error_temp
 from pathlib import Path
 from typing import Any
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field
+from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST, download_assembly_to_local
@@ -63,20 +64,6 @@ class DownloadSettings(BaseSettings):
         validation_alias=AliasChoices("l", "limit"),
     )
 
-    @field_validator("threads")
-    @classmethod
-    def validate_threads(cls, v: int) -> int:
-        """Validate threads is within range.
-
-        :param v: number of threads
-        :raises ValueError: if out of range
-        :return: validated thread count
-        """
-        if v < 1 or v > 32:  # noqa: PLR2004
-            msg = f"threads must be between 1 and 32, got {v}"
-            raise ValueError(msg)
-        return v
-
 
 # ── Batch download ───────────────────────────────────────────────────────
 
@@ -113,23 +100,26 @@ def download_batch(
 
     def _download_one(path: str) -> tuple[str, Exception | None]:
         nonlocal success_count
-        last_error: Exception | None = None
-        for attempt in range(1, 4):
-            try:
-                stats = download_assembly_to_local(path, output_dir, ftp_host=ftp_host, ftp=pool.get())
-            except error_temp as e:
-                last_error = e
-                if attempt < 3:  # noqa: PLR2004
-                    logger.warning("Transient FTP error for %s, retry %d/3: %s", path, attempt, e)
-                    time.sleep(5)
-            except Exception as e:  # noqa: BLE001
-                return path, e
-            else:
-                with lock:
-                    success_count += 1
-                    all_stats.append(stats)
-                return path, None
-        return path, last_error
+
+        @retry(
+            retry=retry_if_exception_type(error_temp),
+            stop=stop_after_attempt(3),
+            wait=wait_fixed(5),
+            reraise=True,
+            before_sleep=before_sleep_log(logger, logging.WARNING),
+        )
+        def _attempt() -> dict[str, Any]:
+            return download_assembly_to_local(path, output_dir, ftp_host=ftp_host, ftp=pool.get())
+
+        try:
+            stats = _attempt()
+        except Exception as e:  # noqa: BLE001
+            return path, e
+        else:
+            with lock:
+                success_count += 1
+                all_stats.append(stats)
+            return path, None
 
     try:
         with ThreadPoolExecutor(max_workers=threads) as executor:

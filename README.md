@@ -5,21 +5,14 @@ Repo for CDM input data loading and wrangling
 - [cdm-data-loaders](#cdm-data-loaders)
   - [Environment and python management](#environment-and-python-management)
   - [Installation](#installation)
+    - [Lakehouse and Use with Jupyter notebooks](#lakehouse-and-use-with-jupyter-notebooks)
   - [Running import pipelines](#running-import-pipelines)
   - [Development](#development)
     - [Spark and other non-python dependencies](#spark-and-other-non-python-dependencies)
     - [Tests](#tests)
+      - [Integration tests (MinIO + NCBI FTP)](#integration-tests-minio--ncbi-ftp)
   - [Loading genomes, contigs, and features](#loading-genomes-contigs-and-features)
   - [Running bbmap stats and checkm2 on genome or contigset files](#running-bbmap-stats-and-checkm2-on-genome-or-contigset-files)
-  - [Changelog](#changelog)
-    - [v0.1.7](#v017)
-    - [v0.1.6](#v016)
-    - [v0.1.5](#v015)
-    - [v0.1.4](#v014)
-    - [v0.1.3](#v013)
-    - [v0.1.2](#v012)
-    - [v0.1.1](#v011)
-    - [v0.1.0](#v010)
 
 
 
@@ -55,6 +48,57 @@ To activate a virtual environment with these dependencies installed, run
 ```
 
 If you are using IDEs like VSCode, they should pick up the creation of the new environment and offer it for executing python code.
+
+
+### Lakehouse and Use with Jupyter notebooks
+
+`cdm-data-loaders` can be installed on platforms like the KBase Lakehouse using the same installation steps:
+
+```sh
+cd cdm-data-loaders
+uv sync
+source .venv/bin/activate
+```
+
+To use the library in a Jupyter notebook, it must be registered as a Jupyter kernel. After performing the three steps above,
+run the following commands:
+
+```sh
+uv pip install -e .
+uv pip install ipykernel
+uv run python -m ipykernel install --user --name cdm-data-loaders --display-name "cdm-data-loaders"
+```
+
+The `cdm-data-loaders` kernel should now be available from the dropdown list of kernels in the Jupyter notebook interface.
+
+#### Jupyter Kernel Environment Variables
+
+Often you will need access to environment variables that are included in the default Lakehouse
+Jupyter environment, but will not be automatically included in your custom Jupyter kernel. To address
+this, first identify the needed variables and values, and add them to your new kernel configuration
+with the following steps:
+
+Open a new Jupyter Notebook __with the default kernel__ and run this in a new cell:
+```python
+import os
+for k, v in sorted(os.environ.items()):
+    if "AWS" in k or "S3" in k or "MINIO" in k: # replace with whatever keys you're interested in
+        print(f"{k}={v}")
+```
+Take the output and add the environment vars to the `kernel.json` for your new kernel (e.g., in `cdm-data-loaders/.venv/share/jupyter/kernels/python3/kernel.json`):
+```json
+{
+  "argv": ["..."],
+  "display_name": "cdm-data-loaders",
+  "language": "python",
+  "env": {
+    "AWS_ACCESS_KEY_ID": "...",
+    "AWS_SECRET_ACCESS_KEY": "...",
+    "AWS_DEFAULT_REGION": "...",
+    ...
+  }
+}
+```
 
 
 ## Running import pipelines
@@ -140,6 +184,24 @@ End-to-end integration tests for the NCBI assembly pipeline live in `tests/integ
 - Docker (for MinIO)
 - Network access to `ftp.ncbi.nlm.nih.gov`
 
+**Running with Docker Compose (easiest)**
+
+The [docker-compose.yml](docker-compose.yml) at the repo root defines both a MinIO service and the integration test runner. To build the image, start MinIO, and run the integration tests in one command:
+
+```sh
+docker compose up --build --abort-on-container-exit
+```
+
+Compose will stream test output to the terminal and exit with the pytest exit code. To clean up afterwards:
+
+```sh
+docker compose down --volumes
+```
+
+**Running manually**
+
+If you prefer to run the tests directly against a local MinIO instance (e.g. for faster iteration during development), follow the steps below.
+
 **1. Start MinIO locally:**
 
 ```sh
@@ -209,41 +271,3 @@ Run the stats and checkm2 tools with the following command:
 bash scripts/run_tools.sh path/to/genome_paths_file.json output_dir
 ```
 where `path/to/genome_paths_file.json` specifies the path to the genome paths file (format specified above) and `output_dir` is the directory for the results.
-
-
-## Changelog
-
-### v0.1.7
-
-- Add in AllTheBacteria file download client.
-
-### v0.1.6
-
-- Make NCBI REST API client more resilient to errors and ensure existing imports are not lost.
-
-### v0.1.5
-
-- Add batch size parameter to the NCBI REST API interface.
-
-
-### v0.1.4
-
-- Add in NCBI REST API interface.
-
-
-### v0.1.3
-
-- Add in file batcher for use with file-based importers.
-
-
-### v0.1.2
-
-- Update XML File Splitter to use the latest version, which includes the `gzip` parameter.
-
-### v0.1.1
-
-- Add [XML File Splitter](https://github.com/ialarmedalien/xml_file_splitter) to the container.
-
-### v0.1.0
-
-- Initial release.

@@ -2,21 +2,24 @@
 
 import csv
 import logging
-from collections.abc import Callable
+import re
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
+from frozendict import frozendict
 from requests.exceptions import HTTPError
 
 from cdm_data_loaders.pipelines import all_the_bacteria, core
 from cdm_data_loaders.pipelines.all_the_bacteria import (
+    ALL_ATB_FILE_NAME,
     DATASET_NAME,
     AtbSettings,
     cli,
     download_atb_index_tsv,
     get_file_download_links,
+    load_patterns,
     osf_file_downloader,
     run_atb_pipeline,
 )
@@ -50,8 +53,25 @@ def test_settings(tmp_path: Path, dlt_config: dict[str, Any]) -> AtbSettings:
     return AtbSettings(dlt_config=dlt_config, output=str(tmp_path))
 
 
-def test_cli_calls_run_ncbi_pipeline(monkeypatch: pytest.MonkeyPatch, dlt_config: dict[str, Any]) -> None:
-    """Ensure that cli() calls run_ncbi_pipeline with the settings."""
+@pytest.fixture
+def test_s3_settings(dlt_config: dict[str, Any]) -> AtbSettings:
+    """Generate fake settings that use s3."""
+    return AtbSettings(dlt_config=dlt_config, use_destination="s3")
+
+
+@pytest.fixture
+def pattern_file(tmp_path: Path) -> Path:
+    """Pattern file for testing load_patterns."""
+    p = tmp_path / "patterns.txt"
+    p.write_text(
+        "hello world\nfoo.bar\nstarts with*\n2+2=4\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def test_cli_calls_run_atb_pipeline(monkeypatch: pytest.MonkeyPatch, dlt_config: dict[str, Any]) -> None:
+    """Ensure that cli() calls run_atb_pipeline with the settings."""
     mock_settings_instance = MagicMock()
     mock_settings_cls = MagicMock(return_value=mock_settings_instance)
     mock_run_atb_pipeline = MagicMock()
@@ -65,6 +85,92 @@ def test_cli_calls_run_ncbi_pipeline(monkeypatch: pytest.MonkeyPatch, dlt_config
     mock_run_atb_pipeline.assert_called_once_with(mock_settings_instance)
 
 
+def test_load_patterns_returns_compiled_pattern(pattern_file: Path) -> None:
+    """load_patterns() should return a compiled re.Pattern object."""
+    assert isinstance(load_patterns(pattern_file), re.Pattern)
+
+
+def test_load_patterns_exact_match(pattern_file: Path) -> None:
+    """Plain text lines should match exactly against their literal content."""
+    pattern = load_patterns(pattern_file)
+    assert isinstance(pattern, re.Pattern)
+    assert pattern.match("hello world")
+    assert pattern.match("foo.bar")
+    assert pattern.match("2+2=4")
+
+    # patterns are anchored with ^ and $, so partial matches should not succeed
+    assert not pattern.match("hello world!!!")
+    assert not pattern.match("well, hello world")
+
+    # dot is literal, not a wildcard
+    assert not pattern.match("fooXbar")
+    # + is literal, not a quantifier
+    assert not pattern.match("22=4")
+
+    # line ending with * should match the prefix followed by any suffix
+    assert pattern.match("starts with")
+    assert pattern.match("starts with anything")
+    assert pattern.match("starts with 123!@#")
+
+    # line ending with * should not match strings with a different prefix
+    assert not pattern.match("ends with")
+
+
+def test_load_patterns_blank_lines_are_ignored(tmp_path: Path) -> None:
+    """Blank lines in the file should be silently skipped."""
+    p = tmp_path / "patterns.txt"
+    p.write_text("\nhello\n\nworld\n", encoding="utf-8")
+    pattern = load_patterns(p)
+    assert isinstance(pattern, re.Pattern)
+    assert pattern.match("hello")
+    assert pattern.match("world")
+    assert not pattern.match("")
+
+
+def test_load_patterns_only_wildcard_matches_anything(tmp_path: Path) -> None:
+    """A file containing only '*' should produce a pattern that matches any string."""
+    p = tmp_path / "patterns.txt"
+    p.write_text("*\n", encoding="utf-8")
+    pattern = load_patterns(p)
+    assert isinstance(pattern, re.Pattern)
+    assert pattern.match("")
+    assert pattern.match("anything at all")
+
+
+def test_load_patterns_alternation(tmp_path: Path) -> None:
+    """Each line in the file should become an alternative in the combined pattern."""
+    p = tmp_path / "patterns.txt"
+    p.write_text("cat\ndog\nbird\n", encoding="utf-8")
+    pattern = load_patterns(p)
+    assert isinstance(pattern, re.Pattern)
+    assert pattern.match("cat")
+    assert pattern.match("dog")
+    assert pattern.match("bird")
+    assert not pattern.match("fish")
+
+
+def test_load_patterns_no_file_returns_none(tmp_path: Path) -> None:
+    """Ensure that loading a non-existent file returns None."""
+    pattern = load_patterns(tmp_path / "some" / "path")
+    assert pattern is None
+
+
+def test_load_patterns_touched_file_returns_none(tmp_path: Path) -> None:
+    """Ensure that loading an empty file returns None."""
+    p = tmp_path / "patterns.txt"
+    p.touch()
+    pattern = load_patterns(p)
+    assert pattern is None
+
+
+def test_load_patterns_empty_file_returns_none(tmp_path: Path) -> None:
+    """Ensure that loading an empty file returns None."""
+    p = tmp_path / "patterns.txt"
+    p.write_text("\n\n   \t\n  \n   \n\t\t\n", encoding="utf-8")
+    pattern = load_patterns(p)
+    assert pattern is None
+
+
 @pytest.mark.vcr
 def test_download_atb_index_tsv_vcr(test_settings: AtbSettings) -> None:
     """Ensure that the download_atb_index function fetches the correct file."""
@@ -75,11 +181,57 @@ def test_download_atb_index_tsv_vcr(test_settings: AtbSettings) -> None:
     assert output_file.parent == raw_data_dir
 
 
+@pytest.mark.default_cassette("test_download_atb_index_tsv_vcr.yaml")
+def test_download_atb_index_tsv_vcr_destination_s3(test_s3_settings: AtbSettings) -> None:
+    """Ensure that the download_atb_index function fetches the correct file."""
+    mock_download_client = MagicMock()
+    mock_stream_to_s3 = MagicMock()
+    mock_requests = MagicMock()
+    with (
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader", return_value=mock_download_client),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.stream_to_s3", mock_stream_to_s3),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.requests", mock_requests),
+    ):
+        output_file = download_atb_index_tsv(test_s3_settings)
+
+    download_url = "https://osf.io/download/r6gcp/"
+    mock_stream_to_s3.assert_called_once_with(
+        url=download_url, s3_path=f"{test_s3_settings.raw_data_dir}/{ALL_ATB_FILE_NAME}", requests=mock_requests
+    )
+    mock_download_client.download.assert_called_once_with(url=download_url, destination=Path(ALL_ATB_FILE_NAME))
+    assert output_file == Path(ALL_ATB_FILE_NAME)
+
+
 @pytest.mark.vcr
 def test_download_atb_index_tsv_error_404(test_settings: AtbSettings) -> None:
     """Ensure that a 404 response causes an error and the function to die."""
     with pytest.raises(HTTPError, match="404 Client Error"):
         download_atb_index_tsv(test_settings)
+
+
+@pytest.mark.default_cassette("test_download_atb_index_tsv_vcr.yaml")
+def test_download_atb_index_s3_error_boom(test_s3_settings: AtbSettings, caplog: pytest.LogCaptureFixture) -> None:
+    """Ensure that an error in the s3 upload causes things to die unpleasantly."""
+    mock_download_client = MagicMock()
+    mock_stream_to_s3 = MagicMock(side_effect=ValueError("ZOMG!"))
+    mock_requests = MagicMock()
+    with (
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader", return_value=mock_download_client),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.stream_to_s3", mock_stream_to_s3),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.requests", mock_requests),
+        pytest.raises(ValueError, match="ZOMG!"),
+    ):
+        download_atb_index_tsv(test_s3_settings)
+
+    download_url = "https://osf.io/download/r6gcp/"
+    mock_stream_to_s3.assert_called_once_with(
+        url=download_url, s3_path=f"{test_s3_settings.raw_data_dir}/{ALL_ATB_FILE_NAME}", requests=mock_requests
+    )
+    mock_download_client.assert_not_called()
+    mock_download_client.download.assert_not_called()
+    last_log_record = caplog.records.pop()
+    assert last_log_record.levelno == logging.ERROR
+    assert last_log_record.message == f"Could not transfer {ALL_ATB_FILE_NAME} to s3"
 
 
 @pytest.mark.vcr
@@ -102,10 +254,10 @@ def test_download_atv_index_tsv_error_cannot_download_tsv(test_settings: AtbSett
         download_atb_index_tsv(test_settings)
 
 
-def test_get_file_download_links() -> None:
-    """Ensure that the appropriate files are picked out of the ATB file index TSV file."""
+def test_get_file_download_links(test_settings: AtbSettings) -> None:
+    """Ensure that the appropriate files are picked out of the ATB file index TSV file using the default matcher."""
     file_path = Path("tests") / "data" / "atb" / "all_atb_files.tsv"
-    filtered_files = list(get_file_download_links(file_path))
+    filtered_files = list(get_file_download_links(test_settings, file_path))
     # load the expected results
     expected = Path("tests") / "data" / "atb" / "filtered_files.tsv"
     with expected.open() as fh:
@@ -115,11 +267,41 @@ def test_get_file_download_links() -> None:
     assert filtered_files[0] == expected_files
 
 
-def test_get_file_download_links_invalid_file(caplog: pytest.LogCaptureFixture) -> None:
+EXPECTED_LINES = {
+    "*": "all_atb_files.tsv",
+    "AllTheBacteria/Annotation/Bakta\nAllTheBacteria/Assembly\nAllTheBacteria/Metadata\n": "assembly_bakta_metadata_exact.tsv",
+    "AllTheBacteria/Annotation/Bakta*\nAllTheBacteria/Assembly\nAllTheBacteria/Metadata\n": "assembly_bakta_star_metadata.tsv",
+    "AllTheBacteria/Annotation/Bakta": "bakta_exact.tsv",
+    "AllTheBacteria/Annotation/Bakta*": "bakta_star.tsv",
+}
+
+
+@pytest.mark.parametrize("pattern_lines", EXPECTED_LINES)
+def test_get_file_download_links_use_pattern_file(
+    tmp_path: Path, dlt_config: dict[str, Any], pattern_lines: str
+) -> None:
+    """Generate a pattern file from EXPECTED_LINES and check that the output from get_file_download_links is correct."""
+    # create the pattern file
+    p = tmp_path / "patterns.txt"
+    p.write_text(f"{pattern_lines}\n", encoding="utf-8")
+
+    settings = AtbSettings(dlt_config=dlt_config, input_dir=str(tmp_path), pattern_file="patterns.txt")
+    file_path = Path("tests") / "data" / "atb" / "all_atb_files.tsv"
+    filtered_files = list(get_file_download_links(settings, file_path))
+    # load the expected results
+    expected = Path("tests") / "data" / "atb" / EXPECTED_LINES[pattern_lines]
+    with expected.open() as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        expected_files = list(reader)
+    assert len(filtered_files[0]) > 1
+    assert filtered_files[0] == expected_files
+
+
+def test_get_file_download_links_invalid_file(test_settings: AtbSettings, caplog: pytest.LogCaptureFixture) -> None:
     """Ensure that the correct fields are present in the ATB TSV file and throw an error if not."""
     file_path = Path("tests") / "data" / "atb" / "invalid_atb_files.tsv"
     with pytest.raises(RuntimeError, match="Missing required ATB file index TSV headers"):
-        list(get_file_download_links(file_path))
+        list(get_file_download_links(test_settings, file_path))
     records = caplog.records
     assert records[-1].levelno == logging.ERROR
     assert records[-1].message.startswith(
@@ -129,143 +311,244 @@ def test_get_file_download_links_invalid_file(caplog: pytest.LogCaptureFixture) 
     assert records[-2].message.startswith("ATB file index TSV headers have changed.")
 
 
-def test_get_file_download_links_empty_file(caplog: pytest.LogCaptureFixture, tmp_path: Path) -> None:
+def test_get_file_download_links_empty_file(
+    test_settings: AtbSettings, caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
     """Ensure that an empty file causes a runtime error."""
     file_path = tmp_path / "fake_file.tsv"
     file_path.touch()
     with pytest.raises(RuntimeError, match=f"No valid TSV data found in {file_path!s}"):
-        list(get_file_download_links(file_path))
+        list(get_file_download_links(test_settings, file_path))
     records = caplog.records
     assert records[-1].levelno == logging.ERROR
     assert records[-1].message == f"No valid TSV data found in {file_path!s}"
 
 
-def test_get_file_download_links_no_file() -> None:
+def test_get_file_download_links_no_file(test_settings: AtbSettings) -> None:
     """Ensure an error is thrown if the file cannot be found."""
     file_path = Path("/path") / "to" / "file"
     with pytest.raises(FileNotFoundError, match="No such file or directory"):
-        list(get_file_download_links(file_path))
+        list(get_file_download_links(test_settings, file_path))
+
+
+FILE_DOWNLOADER_OUTPUT = [
+    frozendict(
+        {
+            "filename": "file1.txt",
+            "url": "https://osf.io/file1",
+            "md5": "md5sum1",
+            "project": "AllTheBacteria/Annotation/Project",
+            "path": "Annotation/Project/file1.txt",
+        }
+    ),
+    frozendict(
+        {
+            "filename": "file2.txt",
+            "url": "https://osf.io/file2",
+            "md5": "md5sum2",
+            "project": "AllTheBacteria/Side/Project/",
+            "path": "Side/Project/file2.txt",
+        }
+    ),
+    frozendict(
+        {
+            "filename": "some/path/to/file3.txt",
+            "url": "https://osf.io/file3",
+            "md5": "md5sum3",
+            "project": "AllTheBacteria",
+            "path": "some/path/to/file3.txt",
+        }
+    ),
+    frozendict(
+        {
+            "filename": "not/least/file4.txt",
+            "url": "https://osf.io/file4",
+            "md5": "md5sum4",
+            "project": "AllTheBacteria/last/but",
+            "path": "last/but/not/least/file4.txt",
+        }
+    ),
+]
 
 
 # osf_file_downloader tests
 @pytest.mark.parametrize(
-    ("atb_file_list", "expected_calls", "expected_paths"),
+    "atb_input",
     [
-        (
-            [
-                {"filename": "file1.txt", "url": "https://osf.io/file1", "md5": "md5sum1"},
-                {"filename": "file2.txt", "url": "https://osf.io/file2", "md5": "md5sum2"},
-            ],
-            [
-                (
-                    "https://osf.io/file1",
-                    "file1.txt",
-                    "md5sum1",
-                ),
-                (
-                    "https://osf.io/file2",
-                    "file2.txt",
-                    "md5sum2",
-                ),
-            ],
-            ["file1.txt", "file2.txt"],
-        ),
+        # each of the files singly and then the whole lot as a batch
+        *[[f] for f in FILE_DOWNLOADER_OUTPUT],
+        FILE_DOWNLOADER_OUTPUT,
     ],
 )
+@pytest.mark.parametrize("use_destination", VALID_DESTINATIONS)
 def test_osf_file_downloader_success(
-    test_settings: AtbSettings,
-    atb_file_list: list[dict[str, Any]],
-    expected_calls: list[tuple[str, str, str]],
-    expected_paths: list[str],
+    request: pytest.FixtureRequest,
+    atb_input: list[dict[str, Any]],
+    use_destination: str,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Ensure that the osf_file_downloader function correctly calls the download client for each file."""
+    settings = request.getfixturevalue("test_s3_settings" if use_destination == "s3" else "test_settings")
+
+    atb_file_list = [{k: v for k, v in f.items() if k != "path"} for f in atb_input]
+
+    # expected_output path needs the raw data dir adding to it
+    expected_output = [dict(f.items()) for f in atb_input]
+    for f in expected_output:
+        f["path"] = f"{settings.raw_data_dir}/{f['path']}"
+
     mock_download_client = MagicMock()
-    mock_logger = MagicMock()
+    mock_stream_to_s3 = MagicMock()
+    mock_requests = MagicMock()
     with (
         patch("cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader", return_value=mock_download_client),
-        patch("cdm_data_loaders.pipelines.all_the_bacteria.logger", mock_logger),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.stream_to_s3", mock_stream_to_s3),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.requests", mock_requests),
     ):
-        output = list(osf_file_downloader(test_settings, atb_file_list))
+        # get the output from the generator
+        output = list(osf_file_downloader(settings, atb_file_list))
 
-    for item, filename in zip(atb_file_list, expected_paths, strict=True):
-        assert item["path"] == str(Path(test_settings.raw_data_dir) / filename)
+    # should have a separate call for each file downloaded
+    if use_destination == "s3":
+        mock_download_client.download.assert_not_called()
+        call_args = [c.kwargs for c in mock_stream_to_s3.call_args_list]
+        assert call_args == [
+            {
+                "url": f["url"],
+                "s3_path": f["path"],
+                "requests": mock_requests,
+            }
+            for f in atb_file_list
+        ]
+    else:
+        assert mock_download_client.download.call_count == len(atb_file_list)
 
-    assert output[0].data == [
-        {**f, "path": str(Path(test_settings.raw_data_dir) / f["filename"])} for f in atb_file_list
-    ]
+        call_list = [c.kwargs for c in mock_download_client.download.call_args_list]
+        expected_calls = [
+            {
+                "url": f["url"],
+                "destination": Path(settings.raw_data_dir) / f["path"],
+                "expected_checksum": f["md5"],
+                "checksum_fn": "md5",
+            }
+            for f in atb_input
+        ]
+        assert call_list == expected_calls
 
-    assert mock_download_client.download.call_count == len(expected_calls)
+    # output from dlt.mark.with_table_name
+    assert output[0].data == expected_output
+    # the input args are mutated in place
+    assert atb_file_list == expected_output
 
-    for url, filename, checksum in expected_calls:
-        mock_download_client.download.assert_any_call(
-            url,
-            Path(test_settings.raw_data_dir) / filename,
-            expected_checksum=checksum,
-            checksum_fn="md5",
-        )
-
-    mock_logger.assert_not_called()
     # no logs should be emitted for successful downloads
     assert caplog.records == []
 
 
 @pytest.mark.parametrize(
-    ("atb_file_list", "download_side_effect", "expected_exceptions", "expected_paths"),
+    ("atb_file_list", "expected_exceptions", "expected_paths"),
     [
         (
             [
-                {"filename": "good_file.txt", "url": "https://osf.io/good", "md5": "md5sum1"},
-                {"filename": "great_file.txt", "url": "https://osf.io/great", "md5": "md5sum2"},
-                {"filename": "bad_file.txt", "url": "https://osf.io/bad", "md5": "badmd5"},
+                {
+                    "project": "AllTheBacteria/One",
+                    "filename": "Two/good_file.txt",
+                    "url": "https://osf.io/good",
+                    "md5": "md5sum1",
+                },
+                {
+                    "project": "AllTheBacteria/One/Two",
+                    "filename": "great_file.txt",
+                    "url": "https://osf.io/great",
+                    "md5": "md5sum2",
+                },
+                {
+                    "project": "AllTheBacteria/One",
+                    "filename": "fail.txt",
+                    "url": "https://osf.io/fail",
+                    "md5": "badmd5",
+                },
             ],
-            lambda url, _save_path, **_kwargs: (
-                (_ for _ in ()).throw(RuntimeError("download failed")) if url == "https://osf.io/bad" else None
-            ),
-            ["Could not download file from https://osf.io/bad: download failed"],
-            {"good_file.txt": True, "great_file.txt": True, "bad_file.txt": False},
+            ["Could not download file from https://osf.io/fail: Loser!"],
+            {"Two/good_file.txt": True, "great_file.txt": True, "fail.txt": False},
         ),
         (
             [
-                {"filename": "bad_file.txt", "url": "https://osf.io/bad", "md5": "badmd5"},
-                {"filename": "even_worse.txt", "url": "https://osf.io/even_worse", "md5": "badmd5"},
+                {"project": "Dud", "filename": "bad_file.txt", "url": "https://osf.io/bad", "md5": "badmd5"},
+                {
+                    "project": "Dud",
+                    "filename": "also_very_bad.txt",
+                    "url": "https://osf.io/also_very_bad",
+                    "md5": "badmd5",
+                },
             ],
-            lambda _url, _save_path, **_kwargs: (_ for _ in ()).throw(Exception("Boom!")),
             [
-                "Could not download file from https://osf.io/bad: Boom!",
-                "Could not download file from https://osf.io/even_worse: Boom!",
+                "Could not download file from https://osf.io/bad: BOOM!",
+                "Could not download file from https://osf.io/also_very_bad: BOOM!",
             ],
-            {"bad_file.txt": False, "even_worse.txt": False},
+            {"bad_file.txt": False, "also_very_bad.txt": False},
         ),
     ],
 )
-def test_osf_file_downloader_error_handling(
-    test_settings: AtbSettings,
+@pytest.mark.parametrize("use_destination", VALID_DESTINATIONS)
+def test_osf_file_downloader_error_handling(  # noqa: PLR0913
     atb_file_list: list[dict[str, Any]],
-    download_side_effect: Callable,
     expected_exceptions: list[str],
     expected_paths: dict[str, bool],
+    use_destination: str,
+    caplog: pytest.LogCaptureFixture,
+    request: pytest.FixtureRequest,
 ) -> None:
     """Ensure that errors during file download are handled correctly."""
+    settings = request.getfixturevalue("test_s3_settings" if use_destination == "s3" else "test_settings")
+
+    def file_downloader_boom(**args) -> None:  # noqa: ANN003
+        if "url" in args:
+            if "bad" in args["url"]:
+                msg = "BOOM!"
+                raise ValueError(msg)
+            if "fail" in args["url"]:
+                msg_0 = "Loser!"
+                raise RuntimeError(msg_0)
+
+    mock_requests = MagicMock()
     mock_download_client = MagicMock()
-    mock_download_client.download.side_effect = download_side_effect
-    mock_logger = MagicMock()
+    mock_download_client.download.side_effect = file_downloader_boom
+    mock_stream_to_s3 = MagicMock(side_effect=file_downloader_boom)
 
     with (
         patch("cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader", return_value=mock_download_client),
-        patch("cdm_data_loaders.pipelines.all_the_bacteria.logger", mock_logger),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.stream_to_s3", mock_stream_to_s3),
+        patch("cdm_data_loaders.pipelines.all_the_bacteria.requests", mock_requests),
     ):
-        list(osf_file_downloader(test_settings, atb_file_list))
+        list(osf_file_downloader(settings, atb_file_list))
+
+    if use_destination == "s3":
+        mock_download_client.download.assert_not_called()
+        call_args = [c.kwargs for c in mock_stream_to_s3.call_args_list]
+        assert call_args == [
+            {
+                "url": f["url"],
+                "s3_path": f"{settings.raw_data_dir}/{f['project'].replace('AllTheBacteria/', '')}/{f['filename']}",
+                "requests": mock_requests,
+            }
+            for f in atb_file_list
+        ]
+    else:
+        mock_stream_to_s3.assert_not_called()
+
+    expected_file_names = {
+        "Two/good_file.txt": f"{settings.raw_data_dir}/One/Two/good_file.txt",
+        "great_file.txt": f"{settings.raw_data_dir}/One/Two/great_file.txt",
+    }
 
     for item in atb_file_list:
         if item["filename"] in expected_paths and expected_paths[item["filename"]]:
-            assert item["path"] == str(Path(test_settings.raw_data_dir) / item["filename"])
+            assert item["path"] == expected_file_names[item["filename"]]
         else:
             assert "path" not in item
 
-    # FIXME: why is caplog not working here? Ideally this should use caplog instead of a mock logger.
-    exception_call_args = [call.args[0] for call in mock_logger.exception.call_args_list]
-    assert exception_call_args == expected_exceptions
+    log_messages = [r.message for r in caplog.records]
+    assert expected_exceptions == log_messages
 
 
 def test_run_atb_pipeline(

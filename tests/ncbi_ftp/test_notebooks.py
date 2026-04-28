@@ -44,47 +44,31 @@ def _extract_code_cells(notebook_path: Path) -> list[str]:
 
 
 @pytest.mark.parametrize("notebook", NCBI_NOTEBOOKS)
-class TestNotebookSyntax:
-    """Validate that every code cell in each notebook is syntactically valid Python."""
-
-    def test_all_cells_parse(self, notebook: str) -> None:
-        """Verify every code cell compiles without SyntaxError."""
-        path = NOTEBOOKS_DIR / notebook
-        assert path.exists(), f"Notebook not found: {path}"
-        cells = _extract_code_cells(path)
-        assert len(cells) > 0, f"No code cells found in {notebook}"
-        for i, source in enumerate(cells, 1):
-            try:
-                ast.parse(source, filename=f"{notebook}:cell{i}")
-            except SyntaxError as exc:
-                pytest.fail(f"{notebook} cell {i} has a syntax error: {exc}")
-
-    def test_no_empty_code_cells(self, notebook: str) -> None:
-        """Verify no code cell is completely empty."""
-        path = NOTEBOOKS_DIR / notebook
-        cells = _extract_code_cells(path)
-        for i, source in enumerate(cells, 1):
-            assert source.strip(), f"{notebook} cell {i} is empty"
+def test_notebook_syntax(notebook: str) -> None:
+    """Every code cell is syntactically valid Python and non-empty."""
+    path = NOTEBOOKS_DIR / notebook
+    assert path.exists(), f"Notebook not found: {path}"
+    cells = _extract_code_cells(path)
+    assert len(cells) > 0, f"No code cells found in {notebook}"
+    for i, source in enumerate(cells, 1):
+        assert source.strip(), f"{notebook} cell {i} is empty"
+        try:
+            ast.parse(source, filename=f"{notebook}:cell{i}")
+        except SyntaxError as exc:
+            pytest.fail(f"{notebook} cell {i} has a syntax error: {exc}")
 
 
-class TestManifestNotebookImports:
-    """Verify that all imports in the manifest notebook resolve."""
-
-    def test_imports_resolve(self) -> None:
-        """All manifest notebook imports are verified at module load time above."""
-        assert isinstance(FTP_HOST, str)
-        assert FTP_HOST
-        assert AssemblyRecord is not None
-        assert callable(download_assembly_summary)
-        assert callable(compute_diff)
-        assert callable(write_updated_manifest)
+def test_manifest_notebook_imports() -> None:
+    """All manifest notebook imports are verified at module load time above."""
+    assert isinstance(FTP_HOST, str) and FTP_HOST
+    assert AssemblyRecord is not None
+    assert callable(download_assembly_summary)
+    assert callable(compute_diff)
+    assert callable(write_updated_manifest)
 
 
-class TestPromoteNotebookImports:
-    """Verify that all imports in the promote notebook resolve."""
-
-    def test_imports_resolve(self) -> None:
-        """All promote notebook imports are verified at module load time above."""
-        assert callable(promote_from_s3)
-        assert isinstance(DEFAULT_LAKEHOUSE_KEY_PREFIX, str)
-        assert callable(split_s3_path)
+def test_promote_notebook_imports() -> None:
+    """All promote notebook imports are verified at module load time above."""
+    assert callable(promote_from_s3)
+    assert isinstance(DEFAULT_LAKEHOUSE_KEY_PREFIX, str)
+    assert callable(split_s3_path)

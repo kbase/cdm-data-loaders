@@ -193,7 +193,8 @@ def write_delta(spark: SparkSession, sdf: DataFrame, delta_ns: str, table: str, 
                 )
         """
     merge_or_overwrite_schema = "mergeSchema" if mode == APPEND else "overwriteSchema"
-    writer = sdf.write.format("delta").mode(mode).option(merge_or_overwrite_schema, "true")
+    # use to(schema) to ensure that the schema is saved with the dataframe
+    writer = sdf.to(sdf.schema).write.format("delta").mode(mode).option(merge_or_overwrite_schema, "true")
 
     logger.info("Writing table %s in mode %s (rows=%d)", db_table, mode, sdf.count())
     logger.debug(sdf.printSchema())

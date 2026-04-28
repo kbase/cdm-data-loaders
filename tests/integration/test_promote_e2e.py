@@ -8,11 +8,8 @@ Marked ``integration`` and ``slow_test``; auto-skipped when MinIO is
 unreachable.  Each test method gets its own bucket.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
-from typing import TYPE_CHECKING
 
 import pytest
 
@@ -26,8 +23,7 @@ from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX, prom
 
 from .conftest import get_object_metadata, list_all_keys, seed_lakehouse
 
-if TYPE_CHECKING:
-    from pathlib import Path
+from pathlib import Path
 
 # Fake assembly details used across tests
 ACCESSION_A = "GCF_900000001.1"

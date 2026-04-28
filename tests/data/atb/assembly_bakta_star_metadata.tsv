@@ -1,0 +1,15 @@
+project	project_id	filename	url	md5	size(MB)
+AllTheBacteria/Annotation/Bakta	zt57s	File_Lists/atb.bakta.incr_release.202408.status.tsv.gz	https://osf.io/download/2skzy/	7da48fce8e310916a072786872f475b1	14.19
+AllTheBacteria/Annotation/Bakta	zt57s	File_Lists/atb.bakta.r0.2.status.tsv.gz	https://osf.io/download/rxfks/	b7255867206dc66f2c26db31921a67a6	53.87
+AllTheBacteria/Annotation/Bakta/Incr_release.202408_Set_1	kdnwp	atb.bakta.incr_release.202408.batch.1.tar.xz	https://osf.io/download/r84xg/	a3ba0148c435f31b4de3f0b72e01075d	1378.51
+AllTheBacteria/Annotation/Bakta/Incr_release.202408_Set_1	kdnwp	atb.bakta.incr_release.202408.batch.10.tar.xz	https://osf.io/download/qxye9/	e0724b0a605da7298b802f01145d8b49	388.76
+AllTheBacteria/Annotation/Bakta/Incr_release.202408_Set_2	p4kvy	atb.bakta.incr_release.202408.batch.49.tar.xz	https://osf.io/download/nyua7/	c8871eab5ee9071b101ba7bbafa7983b	2320.01
+AllTheBacteria/Annotation/Bakta/Incr_release.202408_Set_2	p4kvy	atb.bakta.incr_release.202408.batch.50.tar.xz	https://osf.io/download/tqrs2/	887db770a7e176e644a2b413de4b07e5	2169.25
+AllTheBacteria/Annotation/Bakta/Release_0.2_Set_1	tyw72	atb.bakta.r0.2.batch.1.tar.xz	https://osf.io/download/vpg3d/	5e6ccd68f5c6a69a14dafaf599f9377e	293.86
+AllTheBacteria/Annotation/Bakta/Release_0.2_Set_1	tyw72	atb.bakta.r0.2.batch.10.tar.xz	https://osf.io/download/gbzev/	8fab65bbeadc99201a1df83f32b8c779	132.76
+AllTheBacteria/Annotation/Bakta/Release_0.2_Set_9	evurw	atb.bakta.r0.2.batch.228.tar.xz	https://osf.io/download/679b9dd3bc1fdea8290eb046/	dc061bcc2e1bb9c30887a4dfefb1b6c2	3841.85
+AllTheBacteria/Annotation/Bakta/Release_0.2_Set_9	evurw	atb.bakta.r0.2.batch.229.tar.xz	https://osf.io/download/679ba14cae64ecefd50eaea0/	db0081059366d08e8c3cd8c19857ef42	3902.73
+AllTheBacteria/Assembly	zxfmy	File_Lists/file_list.all.20240805.tsv.gz	https://osf.io/download/dw3h7/	5fc5c88a0593785341e466143a97f126	17.04
+AllTheBacteria/Assembly	zxfmy	File_Lists/file_list.all.202505.tsv.gz	https://osf.io/download/69a03f582574717cb3643d62/	0a9ee0b1efaf42b3ea9e89ce91d2b9e1	22.13
+AllTheBacteria/Metadata	h7wzy	0.1/HQ_set_0.1/hq_dataset.accessions.txt.gz	https://osf.io/download/3znhb/	6f001b72101779b5ff6a556f46c9ddab	4.11
+AllTheBacteria/Metadata	h7wzy	0.1/HQ_set_0.1/hq_dataset.counts_bar_plot.pdf	https://osf.io/download/p5vkt/	a147e807f6a661b6f7f6dc856aa0465c	0.02

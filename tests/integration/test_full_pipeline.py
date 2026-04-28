@@ -38,6 +38,7 @@ PATH_PREFIX = DEFAULT_LAKEHOUSE_KEY_PREFIX
 
 @pytest.mark.integration
 @pytest.mark.slow_test
+@pytest.mark.external_request
 class TestFullPipelineSmallBatch:
     """Run the complete pipeline for a single assembly: diff → download → promote."""
 
@@ -103,6 +104,7 @@ class TestFullPipelineSmallBatch:
 
 @pytest.mark.integration
 @pytest.mark.slow_test
+@pytest.mark.external_request
 class TestFullPipelineIncrementalSync:
     """Run the pipeline twice to test incremental sync with archival."""
 

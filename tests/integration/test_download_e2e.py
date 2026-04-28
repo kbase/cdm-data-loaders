@@ -5,15 +5,11 @@ Marked ``integration`` and ``slow_test``; auto-skipped when MinIO is
 unreachable.
 """
 
-from __future__ import annotations
-
 import json
-from typing import TYPE_CHECKING
 
 import pytest
 
-if TYPE_CHECKING:
-    from pathlib import Path
+from pathlib import Path
 
 from cdm_data_loaders.ncbi_ftp.manifest import (
     compute_diff,
@@ -49,6 +45,7 @@ def _manifest_for_one_assembly(tmp_path: Path) -> tuple[Path, str]:
 
 @pytest.mark.integration
 @pytest.mark.slow_test
+@pytest.mark.external_request
 class TestDownloadSmallBatch:
     """Download a single assembly from NCBI FTP and verify local output."""
 
@@ -91,6 +88,7 @@ class TestDownloadSmallBatch:
 
 @pytest.mark.integration
 @pytest.mark.slow_test
+@pytest.mark.external_request
 class TestDownloadResumeIncomplete:
     """Verify download handles re-runs when some files are already present."""
 
