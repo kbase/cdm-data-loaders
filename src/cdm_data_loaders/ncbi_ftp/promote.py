@@ -39,7 +39,8 @@ DEFAULT_LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
 
 def promote_from_s3(  # noqa: PLR0913
     staging_key_prefix: str,
-    bucket: str,
+    staging_bucket: str,
+    lakehouse_bucket: str,
     removed_manifest_path: str | Path | None = None,
     updated_manifest_path: str | Path | None = None,
     ncbi_release: str | None = None,
@@ -54,7 +55,8 @@ def promote_from_s3(  # noqa: PLR0913
     with MD5 metadata from ``.md5`` sidecar files.
 
     :param staging_key_prefix: S3 key prefix where CTS output was written
-    :param bucket: S3 bucket name
+    :param staging_bucket: S3 bucket containing the staged files (e.g. ``"cts"``)
+    :param lakehouse_bucket: S3 bucket for the final Lakehouse destination (e.g. ``"cdm-lake"``)
     :param removed_manifest_path: local path to the removed_manifest file
     :param updated_manifest_path: local path to the updated_manifest file
     :param ncbi_release: NCBI release version tag for archiving
@@ -69,7 +71,7 @@ def promote_from_s3(  # noqa: PLR0913
 
     # Collect all objects under the staging prefix
     staged_objects: list[str] = []
-    for page in paginator.paginate(Bucket=bucket, Prefix=normalized_staging_key_prefix):
+    for page in paginator.paginate(Bucket=staging_bucket, Prefix=normalized_staging_key_prefix):
         staged_objects.extend(obj["Key"] for obj in page.get("Contents", []))
 
     # Separate data files from sidecars
@@ -87,7 +89,7 @@ def promote_from_s3(  # noqa: PLR0913
         if manifest_file and Path(str(manifest_file)).is_file():
             archived += _archive_assemblies(
                 str(manifest_file),
-                bucket=bucket,
+                lakehouse_bucket=lakehouse_bucket,
                 ncbi_release=ncbi_release,
                 lakehouse_key_prefix=lakehouse_key_prefix,
                 archive_reason=reason,
@@ -100,13 +102,14 @@ def promote_from_s3(  # noqa: PLR0913
         sidecars,
         normalized_staging_key_prefix,
         lakehouse_key_prefix,
-        bucket,
+        staging_bucket,
+        lakehouse_bucket,
         dry_run=dry_run,
     )
 
     # Trim manifest for resumability
     if manifest_s3_key and promoted_accessions and not dry_run:
-        _trim_manifest(manifest_s3_key, bucket, promoted_accessions)
+        _trim_manifest(manifest_s3_key, staging_bucket, promoted_accessions)
 
     # Upload frictionless descriptors for each promoted assembly
     descriptors_written = 0
@@ -115,7 +118,7 @@ def promote_from_s3(  # noqa: PLR0913
             continue
         try:
             descriptor = create_descriptor(adir, acc, resources)
-            upload_descriptor(descriptor, adir, bucket, lakehouse_key_prefix, dry_run=dry_run)
+            upload_descriptor(descriptor, adir, lakehouse_bucket, lakehouse_key_prefix, dry_run=dry_run)
             descriptors_written += 1
         except Exception:
             logger.exception("Failed to write descriptor for %s", adir)
@@ -149,7 +152,8 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
     sidecars: set[str],
     normalized_staging_prefix: str,
     lakehouse_key_prefix: str,
-    bucket: str,
+    staging_bucket: str,
+    lakehouse_bucket: str,
     *,
     dry_run: bool,
 ) -> tuple[int, int, set[str], defaultdict[tuple[str, str], list[DescriptorResource]]]:
@@ -181,19 +185,19 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
                 tmp_path = tmp.name
             try:
-                s3.download_file(Bucket=bucket, Key=staged_key, Filename=tmp_path)
+                s3.download_file(Bucket=staging_bucket, Key=staged_key, Filename=tmp_path)
 
                 # Read MD5 from sidecar
                 metadata: dict[str, str] = {}
                 md5_key = staged_key + ".md5"
                 if md5_key in sidecars:
-                    md5_obj = s3.get_object(Bucket=bucket, Key=md5_key)
+                    md5_obj = s3.get_object(Bucket=staging_bucket, Key=md5_key)
                     metadata["md5"] = md5_obj["Body"].read().decode().strip()
 
                 final_key_path = PurePosixPath(final_key)
                 upload_succeeded = upload_file(
                     tmp_path,
-                    f"{bucket}/{final_key_path.parent}",
+                    f"{lakehouse_bucket}/{final_key_path.parent}",
                     metadata=metadata,
                     object_name=final_key_path.name,
                 )
@@ -240,7 +244,7 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
 
 def _archive_assemblies(  # noqa: PLR0913
     manifest_local_path: str,
-    bucket: str,
+    lakehouse_bucket: str,
     ncbi_release: str | None = None,
     lakehouse_key_prefix: str = DEFAULT_LAKEHOUSE_KEY_PREFIX,
     archive_reason: str = "unknown",
@@ -256,7 +260,7 @@ def _archive_assemblies(  # noqa: PLR0913
     originals remain in place to be overwritten by the promote step.
 
     :param manifest_local_path: local path to a manifest file (one accession per line)
-    :param bucket: S3 bucket name
+    :param lakehouse_bucket: S3 bucket for the Lakehouse (source and archive destination)
     :param ncbi_release: release tag used in the archive path
     :param lakehouse_key_prefix: S3 key prefix for the Lakehouse dataset root
     :param archive_reason: metadata value describing why the object was archived
@@ -284,7 +288,7 @@ def _archive_assemblies(  # noqa: PLR0913
 
         paginator = s3.get_paginator("list_objects_v2")
         matching_keys: list[str] = []
-        for page in paginator.paginate(Bucket=bucket, Prefix=source_prefix):
+        for page in paginator.paginate(Bucket=lakehouse_bucket, Prefix=source_prefix):
             matching_keys.extend(obj["Key"] for obj in page.get("Contents", []) if accession in obj["Key"])
 
         if not matching_keys:
@@ -310,8 +314,8 @@ def _archive_assemblies(  # noqa: PLR0913
 
             try:
                 copy_object(
-                    f"{bucket}/{source_key}",
-                    f"{bucket}/{archive_key}",
+                    f"{lakehouse_bucket}/{source_key}",
+                    f"{lakehouse_bucket}/{archive_key}",
                     metadata={
                         "ncbi_last_release": release_tag,
                         "archive_reason": archive_reason,
@@ -319,7 +323,7 @@ def _archive_assemblies(  # noqa: PLR0913
                     },
                 )
                 if delete_source:
-                    delete_object(f"{bucket}/{source_key}")
+                    delete_object(f"{lakehouse_bucket}/{source_key}")
                 archived += 1
                 logger.debug("  Archived: %s -> %s", source_key, archive_key)
             except Exception:
@@ -330,7 +334,7 @@ def _archive_assemblies(  # noqa: PLR0913
             try:
                 archive_descriptor(
                     assembly_dir,
-                    bucket,
+                    lakehouse_bucket,
                     lakehouse_key_prefix,
                     release_tag,
                     archive_reason=archive_reason,
@@ -346,11 +350,11 @@ def _archive_assemblies(  # noqa: PLR0913
 # ── Manifest trimming ───────────────────────────────────────────────────
 
 
-def _trim_manifest(manifest_s3_key: str, bucket: str, promoted_accessions: set[str]) -> None:
+def _trim_manifest(manifest_s3_key: str, staging_bucket: str, promoted_accessions: set[str]) -> None:
     """Remove promoted accessions from the transfer manifest in S3.
 
     :param manifest_s3_key: S3 object key of the transfer_manifest.txt
-    :param bucket: S3 bucket name
+    :param staging_bucket: S3 bucket containing the transfer manifest
     :param promoted_accessions: set of accessions that were successfully promoted
     """
     s3 = get_s3_client()
@@ -360,13 +364,13 @@ def _trim_manifest(manifest_s3_key: str, bucket: str, promoted_accessions: set[s
 
     try:
         try:
-            s3.download_file(Bucket=bucket, Key=manifest_s3_key, Filename=tmp_path)
+            s3.download_file(Bucket=staging_bucket, Key=manifest_s3_key, Filename=tmp_path)
         except s3.exceptions.NoSuchKey:
-            logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", bucket, manifest_s3_key)
+            logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", staging_bucket, manifest_s3_key)
             return
         except botocore.exceptions.ClientError as e:
             if e.response["Error"]["Code"] == "404":
-                logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", bucket, manifest_s3_key)
+                logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", staging_bucket, manifest_s3_key)
                 return
             raise
 
@@ -378,7 +382,7 @@ def _trim_manifest(manifest_s3_key: str, bucket: str, promoted_accessions: set[s
         with Path(tmp_path).open("w") as f:
             f.writelines(remaining)
 
-        s3.upload_file(Filename=tmp_path, Bucket=bucket, Key=manifest_s3_key)
+        s3.upload_file(Filename=tmp_path, Bucket=staging_bucket, Key=manifest_s3_key)
         logger.info(
             "Trimmed manifest: %d -> %d entries (%d promoted)",
             len(lines),

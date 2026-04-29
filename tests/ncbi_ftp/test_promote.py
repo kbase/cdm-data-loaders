@@ -31,7 +31,7 @@ def test_promote_dry_run_no_writes(mock_s3_client_no_checksum: botocore.client.B
     prefix = "staging/run1/"
     _stage_files(mock_s3_client_no_checksum, prefix)
 
-    report = promote_from_s3(staging_key_prefix=prefix, bucket=TEST_BUCKET, dry_run=True)
+    report = promote_from_s3(staging_key_prefix=prefix, staging_bucket=TEST_BUCKET, lakehouse_bucket=TEST_BUCKET, dry_run=True)
     assert report["promoted"] == 1
     assert report["dry_run"] is True
 
@@ -45,7 +45,7 @@ def test_promote_with_metadata(mock_s3_client_no_checksum: botocore.client.BaseC
     prefix = "staging/run1/"
     _stage_files(mock_s3_client_no_checksum, prefix)
 
-    report = promote_from_s3(staging_key_prefix=prefix, bucket=TEST_BUCKET)
+    report = promote_from_s3(staging_key_prefix=prefix, staging_bucket=TEST_BUCKET, lakehouse_bucket=TEST_BUCKET)
     assert report["promoted"] == 1  # only .fna.gz, not download_report.json
     assert report["failed"] == 0
 
@@ -106,7 +106,7 @@ def test_archive_assemblies_removed(mock_s3_client_no_checksum: botocore.client.
     assert (
         _archive_assemblies(
             str(manifest),
-            bucket=TEST_BUCKET,
+            lakehouse_bucket=TEST_BUCKET,
             ncbi_release="2024-01",
             archive_reason="replaced_or_suppressed",
             delete_source=True,
@@ -137,7 +137,7 @@ def test_archive_assemblies_updated_no_delete(
 
     assert (
         _archive_assemblies(
-            str(manifest), bucket=TEST_BUCKET, ncbi_release="2024-06", archive_reason="updated", delete_source=False
+            str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-06", archive_reason="updated", delete_source=False
         )
         == 1
     )
@@ -164,9 +164,9 @@ def test_archive_assemblies_multiple_releases_no_collision(
     manifest = tmp_path / "updated.txt"
     manifest.write_text(f"{accession}\n")
 
-    _archive_assemblies(str(manifest), bucket=TEST_BUCKET, ncbi_release="2024-01", archive_reason="updated")
+    _archive_assemblies(str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01", archive_reason="updated")
     mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=key, Body=b"v2-data")
-    _archive_assemblies(str(manifest), bucket=TEST_BUCKET, ncbi_release="2024-06", archive_reason="updated")
+    _archive_assemblies(str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-06", archive_reason="updated")
 
     archive_key_1 = (
         f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-01/raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
@@ -191,7 +191,7 @@ def test_archive_assemblies_dry_run(mock_s3_client_no_checksum: botocore.client.
     assert (
         _archive_assemblies(
             str(manifest),
-            bucket=TEST_BUCKET,
+            lakehouse_bucket=TEST_BUCKET,
             ncbi_release="2024-01",
             archive_reason="replaced_or_suppressed",
             delete_source=True,
@@ -212,7 +212,7 @@ def test_archive_assemblies_no_objects_skips(
     """Accessions with no existing S3 objects are silently skipped."""
     manifest = tmp_path / "updated.txt"
     manifest.write_text("GCF_000001215.4\n")
-    assert _archive_assemblies(str(manifest), bucket=TEST_BUCKET, ncbi_release="2024-01") == 0
+    assert _archive_assemblies(str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01") == 0
 
 
 @pytest.mark.s3
@@ -228,7 +228,7 @@ def test_archive_assemblies_unknown_release_fallback(
     manifest = tmp_path / "updated.txt"
     manifest.write_text(f"{accession}\n")
 
-    assert _archive_assemblies(str(manifest), bucket=TEST_BUCKET, ncbi_release=None) == 1
+    assert _archive_assemblies(str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release=None) == 1
 
     archive_key = (
         f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/unknown/raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
