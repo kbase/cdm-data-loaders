@@ -201,6 +201,7 @@ def upload_file(
     destination_dir: str,
     object_name: str | None = None,
     metadata: dict[str, str] | None = None,
+    show_progress: bool = True,
 ) -> bool:
     """Upload an object to an S3 bucket.
 
@@ -232,7 +233,7 @@ def upload_file(
 
     s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
     if metadata is None and object_exists(s3_path):
-        logger.info("File already present: %s", s3_path)
+        logger.debug("File already present: %s", s3_path)
         return True
 
     s3 = get_s3_client()
@@ -241,21 +242,29 @@ def upload_file(
     extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": metadata}) if metadata is not None else {})}
 
     # Upload the file
-    file_size = local_file_path.stat().st_size
-    with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
-        logger.info("uploading %s to %s", str(local_file_path), s3_path)
-        try:
+    logger.debug("uploading %s to %s", str(local_file_path), s3_path)
+    try:
+        if show_progress:
+            file_size = local_file_path.stat().st_size
+            with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
+                s3.upload_file(
+                    Filename=str(local_file_path),
+                    Bucket=bucket,
+                    Key=key,
+                    Callback=pbar.update,
+                    ExtraArgs=extra_args,
+                )
+        else:
             s3.upload_file(
                 Filename=str(local_file_path),
                 Bucket=bucket,
                 Key=key,
-                Callback=pbar.update,
                 ExtraArgs=extra_args,
             )
-        except Exception as e:  # noqa: BLE001
-            logger.exception("Error uploading to s3")
-            return False
-        return True
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Error uploading to s3")
+        return False
+    return True
 
 
 def stream_to_s3(url: str, s3_path: str, requests: ModuleType) -> str:
@@ -287,7 +296,9 @@ def stream_to_s3(url: str, s3_path: str, requests: ModuleType) -> str:
     return f"{bucket}/{key}"
 
 
-def download_file(s3_path: str, local_file_path: str | Path, version_id: str | None = None) -> None:
+def download_file(
+    s3_path: str, local_file_path: str | Path, version_id: str | None = None, show_progress: bool = True
+) -> None:
     """Download an object from s3.
 
     WARNING: will overwrite existing files but will not overwrite a file whilst trying to make a directory
@@ -333,13 +344,21 @@ def download_file(s3_path: str, local_file_path: str | Path, version_id: str | N
     # set ``unit_scale=True`` so tqdm uses SI unit prefixes
     # ``unit="B"`` means it adds the string "B" as a suffix
     # progress is reported as (e.g.) "14.5kB/s".
-    with tqdm.tqdm(total=object_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
+    if show_progress:
+        with tqdm.tqdm(total=object_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
+            s3.download_file(
+                Bucket=bucket,
+                Key=key,
+                ExtraArgs=extra_args,
+                Filename=str(local_file_path),
+                Callback=pbar.update,
+            )
+    else:
         s3.download_file(
             Bucket=bucket,
             Key=key,
             ExtraArgs=extra_args,
             Filename=str(local_file_path),
-            Callback=pbar.update,
         )
 
 

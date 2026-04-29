@@ -194,7 +194,7 @@ def upload_descriptor(
 
     try:
         s3.upload_file(Filename=tmp_path, Bucket=bucket, Key=key)
-        logger.info("Uploaded descriptor: s3://%s/%s", bucket, key)
+        logger.debug("Uploaded descriptor: s3://%s/%s", bucket, key)
     finally:
         Path(tmp_path).unlink()
 

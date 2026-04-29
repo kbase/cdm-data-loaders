@@ -15,6 +15,7 @@ from ftplib import error_temp
 from pathlib import Path
 from typing import Any
 
+import tqdm
 from pydantic import AliasChoices, Field
 from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -126,14 +127,16 @@ def download_batch(
             return path, None
 
     try:
-        with ThreadPoolExecutor(max_workers=threads) as executor:
-            futures = {executor.submit(_download_one, p): p for p in assembly_paths}
-            for future in as_completed(futures):
-                path, error = future.result()
-                if error:
-                    logger.error("FAILED: %s: %s", path, error)
-                    with lock:
-                        failed.append({"path": path, "error": str(error)})
+        with tqdm.tqdm(total=len(assembly_paths), unit="assembly", desc="Downloading from NCBI FTP") as pbar:
+            with ThreadPoolExecutor(max_workers=threads) as executor:
+                futures = {executor.submit(_download_one, p): p for p in assembly_paths}
+                for future in as_completed(futures):
+                    path, error = future.result()
+                    if error:
+                        logger.error("FAILED: %s: %s", path, error)
+                        with lock:
+                            failed.append({"path": path, "error": str(error)})
+                    pbar.update(1)
     finally:
         pool.close_all()
 
@@ -263,13 +266,15 @@ def download_and_stage(
 
             def _upload(task: tuple[Path, str]) -> None:
                 local_file, dest = task
-                upload_file(local_file, dest)
+                upload_file(local_file, dest, show_progress=False)
 
-            with ThreadPoolExecutor(max_workers=threads) as executor:
-                futures = [executor.submit(_upload, t) for t in upload_tasks]
-                for future in as_completed(futures):
-                    future.result()
-                    staged_objects += 1
+            with tqdm.tqdm(total=len(upload_tasks), unit="file", desc="Staging to S3") as pbar:
+                with ThreadPoolExecutor(max_workers=threads) as executor:
+                    futures = [executor.submit(_upload, t) for t in upload_tasks]
+                    for future in as_completed(futures):
+                        future.result()
+                        staged_objects += 1
+                        pbar.update(1)
 
             logger.info("Staged %d objects to s3://%s/%s", staged_objects, bucket, staging_key_prefix)
 

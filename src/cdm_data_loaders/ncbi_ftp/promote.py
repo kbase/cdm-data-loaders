@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import botocore.exceptions
+import tqdm
 
 from cdm_data_loaders.ncbi_ftp.metadata import (
     DescriptorResource,
@@ -113,9 +114,8 @@ def promote_from_s3(  # noqa: PLR0913
 
     # Upload frictionless descriptors for each promoted assembly
     descriptors_written = 0
-    for (adir, acc), resources in assembly_resources.items():
-        if not resources:
-            continue
+    non_empty = [(k, v) for k, v in assembly_resources.items() if v]
+    for (adir, acc), resources in tqdm.tqdm(non_empty, unit="descriptor", desc="Writing descriptors"):
         try:
             descriptor = create_descriptor(adir, acc, resources)
             upload_descriptor(descriptor, adir, lakehouse_bucket, lakehouse_key_prefix, dry_run=dry_run)
@@ -167,7 +167,7 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
     promoted_accessions: set[str] = set()
     assembly_resources: defaultdict[tuple[str, str], list[DescriptorResource]] = defaultdict(list)
 
-    for staged_key in data_files:
+    for staged_key in tqdm.tqdm(data_files, unit="file", desc="Promoting"):
         if staged_key.endswith("download_report.json"):
             continue
 
@@ -177,7 +177,7 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
         final_key = lakehouse_key_prefix + rel_path
 
         if dry_run:
-            logger.info("[dry-run] would promote: %s -> %s", staged_key, final_key)
+            logger.debug("[dry-run] would promote: %s -> %s", staged_key, final_key)
             promoted += 1
             continue
 
@@ -200,6 +200,7 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
                     f"{lakehouse_bucket}/{final_key_path.parent}",
                     metadata=metadata,
                     object_name=final_key_path.name,
+                    show_progress=False,
                 )
                 if not upload_succeeded:
                     logger.error("Failed to upload promoted file %s to %s", staged_key, final_key)
@@ -276,7 +277,7 @@ def _archive_assemblies(  # noqa: PLR0913
     with Path(manifest_local_path).open() as f:
         accessions = [line.strip() for line in f if line.strip()]
 
-    for accession in accessions:
+    for accession in tqdm.tqdm(accessions, unit="accession", desc="Archiving"):
         m = re.match(r"(GC[AF])_(\d{3})(\d{3})(\d{3})\.\d+", accession)
         if not m:
             logger.warning("Cannot parse accession for archival: %s", accession)

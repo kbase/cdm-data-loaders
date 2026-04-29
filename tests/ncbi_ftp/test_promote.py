@@ -31,7 +31,9 @@ def test_promote_dry_run_no_writes(mock_s3_client_no_checksum: botocore.client.B
     prefix = "staging/run1/"
     _stage_files(mock_s3_client_no_checksum, prefix)
 
-    report = promote_from_s3(staging_key_prefix=prefix, staging_bucket=TEST_BUCKET, lakehouse_bucket=TEST_BUCKET, dry_run=True)
+    report = promote_from_s3(
+        staging_key_prefix=prefix, staging_bucket=TEST_BUCKET, lakehouse_bucket=TEST_BUCKET, dry_run=True
+    )
     assert report["promoted"] == 1
     assert report["dry_run"] is True
 
@@ -137,7 +139,11 @@ def test_archive_assemblies_updated_no_delete(
 
     assert (
         _archive_assemblies(
-            str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-06", archive_reason="updated", delete_source=False
+            str(manifest),
+            lakehouse_bucket=TEST_BUCKET,
+            ncbi_release="2024-06",
+            archive_reason="updated",
+            delete_source=False,
         )
         == 1
     )

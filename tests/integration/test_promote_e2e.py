@@ -145,7 +145,9 @@ class TestPromoteIdempotent:
 class TestPromoteArchiveUpdated:
     """Archive existing assemblies before overwriting with updated versions."""
 
-    def test_archive_updated(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path) -> None:
+    def test_archive_updated(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+    ) -> None:
         """Updated assemblies are archived before being overwritten."""
         s3 = minio_s3_client
 
@@ -190,7 +192,9 @@ class TestPromoteArchiveUpdated:
 class TestPromoteArchiveRemoved:
     """Archive and delete replaced/suppressed assemblies."""
 
-    def test_archive_removed(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path) -> None:
+    def test_archive_removed(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+    ) -> None:
         """Removed assemblies are archived and source objects are deleted."""
         s3 = minio_s3_client
 
@@ -261,7 +265,9 @@ class TestPromoteDryRun:
 class TestPromoteTrimsManifest:
     """Manifest trimming removes promoted accessions."""
 
-    def test_trims_manifest(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path) -> None:
+    def test_trims_manifest(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+    ) -> None:
         """Transfer manifest in MinIO is trimmed to exclude promoted accessions."""
         s3 = minio_s3_client
 
@@ -354,7 +360,9 @@ class TestPromoteCreatesDescriptor:
         assert body["identifier"] == f"NCBI:{ACCESSION_A}"
         assert body["resource_type"] == "dataset"
 
-    def test_descriptor_resources_include_promoted_files(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
+    def test_descriptor_resources_include_promoted_files(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
         """Descriptor's ``resources`` list references the final Lakehouse key."""
         s3 = minio_s3_client
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
@@ -373,7 +381,9 @@ class TestPromoteCreatesDescriptor:
         resource_paths = [r["path"] for r in body["resources"]]
         assert any(PATH_PREFIX + "raw_data/" in p for p in resource_paths)
 
-    def test_descriptor_resources_have_md5(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
+    def test_descriptor_resources_have_md5(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
         """Resources with .md5 sidecars include the hash value."""
         s3 = minio_s3_client
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
@@ -393,7 +403,9 @@ class TestPromoteCreatesDescriptor:
         for resource in body["resources"]:
             assert "hash" in resource, f"Expected hash in resource: {resource}"
 
-    def test_multiple_assemblies_get_separate_descriptors(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
+    def test_multiple_assemblies_get_separate_descriptors(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
         """Each assembly gets its own descriptor file."""
         s3 = minio_s3_client
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
@@ -418,7 +430,9 @@ class TestPromoteCreatesDescriptor:
 class TestPromoteArchiveUpdatedIncludesDescriptor:
     """Archiving updated assemblies also archives the descriptor."""
 
-    def test_archive_copies_descriptor(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path) -> None:
+    def test_archive_copies_descriptor(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+    ) -> None:
         """After archiving an updated assembly, the descriptor appears under archive/."""
         s3 = minio_s3_client
 
@@ -454,7 +468,9 @@ class TestPromoteArchiveUpdatedIncludesDescriptor:
 class TestPromoteArchiveRemovedIncludesDescriptor:
     """Archiving removed assemblies also archives the descriptor."""
 
-    def test_archive_removed_copies_descriptor(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path) -> None:
+    def test_archive_removed_copies_descriptor(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+    ) -> None:
         """After archiving a removed assembly, the descriptor is under archive/."""
         s3 = minio_s3_client
 

@@ -393,16 +393,14 @@ def test_upload_file_uses_custom_object_name(mock_s3_client: Any, sample_file: P
 
 
 @pytest.mark.s3
-def test_upload_file_skips_when_already_present(
-    mock_s3_client: Any, sample_file: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Verify that uploading a file that already exists is skipped and returns True."""
+def test_upload_file_skips_when_already_present(mock_s3_client: Any, sample_file: Path) -> None:
+    """Verify that uploading a file that already exists is skipped, returns True, and leaves the object unchanged."""
     mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
     result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads")
     assert result is True
-    last_log_message = caplog.records[-1]
-    assert "File already present" in last_log_message.message
-    assert last_log_message.levelno == logging.INFO
+    # The existing object must not have been overwritten
+    obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}")
+    assert obj["Body"].read() == b"old"
 
 
 @pytest.mark.usefixtures("mock_s3_client")
