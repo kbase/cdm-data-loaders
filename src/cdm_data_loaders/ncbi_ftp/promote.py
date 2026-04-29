@@ -19,6 +19,7 @@ import tqdm
 from cdm_data_loaders.ncbi_ftp.metadata import (
     DescriptorResource,
     archive_descriptor,
+    build_descriptor_key,
     create_descriptor,
     upload_descriptor,
 )
@@ -27,6 +28,7 @@ from cdm_data_loaders.utils.s3 import (
     copy_object,
     delete_object,
     get_s3_client,
+    object_exists,
     upload_file,
 )
 
@@ -247,9 +249,13 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
             # Write descriptor and delete staged files immediately after a fully successful assembly
             if assembly_failed == 0 and promoted_keys:
                 try:
-                    descriptor = create_descriptor(adir, acc, resources)
-                    upload_descriptor(descriptor, adir, lakehouse_bucket, lakehouse_key_prefix, dry_run=False)
-                    descriptors_written += 1
+                    descriptor_key = build_descriptor_key(adir, lakehouse_key_prefix)
+                    if object_exists(f"{lakehouse_bucket}/{descriptor_key}"):
+                        logger.debug("Descriptor already exists, skipping: %s", descriptor_key)
+                    else:
+                        descriptor = create_descriptor(adir, acc, resources)
+                        upload_descriptor(descriptor, adir, lakehouse_bucket, lakehouse_key_prefix, dry_run=False)
+                        descriptors_written += 1
                 except Exception:
                     logger.exception("Failed to write descriptor for %s", adir)
 

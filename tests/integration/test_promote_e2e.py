@@ -114,7 +114,12 @@ class TestPromoteIdempotent:
     """Promoting the same staging data twice should succeed without errors."""
 
     def test_promote_idempotent(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
-        """Second promote succeeds and produces the same final state."""
+        """Second promote on empty staging succeeds and leaves the lakehouse unchanged.
+
+        After the first promote, staged files are deleted.  A second run therefore
+        finds nothing to promote — which is correct and expected.  The lakehouse
+        contents must be identical after both runs.
+        """
         s3 = minio_s3_client
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
 
@@ -135,8 +140,9 @@ class TestPromoteIdempotent:
         keys_after_second = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
 
         assert report1["failed"] == 0
+        assert report1["promoted"] >= 1
         assert report2["failed"] == 0
-        assert report2["promoted"] >= 1
+        assert report2["promoted"] == 0  # staging was cleared by the first run
         assert keys_after_first == keys_after_second
 
 
