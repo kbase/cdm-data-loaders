@@ -18,7 +18,7 @@ from typing import Any
 
 import tqdm
 from pydantic import AliasChoices, Field
-from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_fixed, wait_exponential
+from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cdm_data_loaders.ncbi_ftp.assembly import (
