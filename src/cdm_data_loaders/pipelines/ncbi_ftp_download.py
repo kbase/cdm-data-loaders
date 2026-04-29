@@ -168,7 +168,9 @@ def download_batch(
             return path, None
 
     try:
-        with tqdm.tqdm(total=len(assembly_paths), unit="assembly", desc="Downloading from NCBI FTP") as pbar:
+        with tqdm.tqdm(
+            total=len(assembly_paths), unit="assembly", desc="Downloading from NCBI FTP", smoothing=0.01
+        ) as pbar:
             with ThreadPoolExecutor(max_workers=threads) as executor:
                 futures = {executor.submit(_download_one, p): p for p in assembly_paths}
                 for future in as_completed(futures):
@@ -330,7 +332,9 @@ def download_and_stage(
             return path, None
 
         try:
-            with tqdm.tqdm(total=len(assembly_paths), unit="assembly", desc="Downloading & staging") as pbar:
+            with tqdm.tqdm(
+                total=len(assembly_paths), unit="assembly", desc="Downloading & staging", smoothing=0.01
+            ) as pbar:
                 with ThreadPoolExecutor(max_workers=threads) as executor:
                     futures = {executor.submit(_download_upload_one, p): p for p in assembly_paths}
                     for future in as_completed(futures):
