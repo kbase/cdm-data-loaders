@@ -25,13 +25,6 @@ _MOCK_STATS = {
     "files_skipped_checksum_mismatch": 0,
     "files_without_checksum": 0,
 }
-_MOCK_STATS_2 = {
-    "accession": "GCF_000001405.40",
-    "assembly_dir": "GCF_000001405.40_GRCh38.p14",
-    "files_downloaded": 0,
-    "files_skipped_checksum_mismatch": 0,
-    "files_without_checksum": 0,
-}
 
 _DEFAULT_THREADS = 4
 _CUSTOM_THREADS = 8
