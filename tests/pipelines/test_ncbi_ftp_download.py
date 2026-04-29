@@ -254,15 +254,6 @@ _MANIFEST_CONTENT = (
 _TEST_BUCKET = "test-bucket"
 _STAGING_PREFIX = "staging/run1/"
 
-_MOCK_REPORT = {
-    "timestamp": "2026-01-01T00:00:00+00:00",
-    "total_attempted": 2,
-    "succeeded": 2,
-    "failed": 0,
-    "failures": [],
-    "assembly_stats": [],
-}
-
 
 def _make_moto_s3():
     """Return a moto-backed S3 client with the test bucket created."""
