@@ -98,7 +98,7 @@ def promote_from_s3(  # noqa: PLR0913
                 dry_run=dry_run,
             )
 
-    promoted, failed, promoted_accessions, assembly_resources = _promote_data_files(
+    promoted, failed, descriptors_written, promoted_accessions = _promote_data_files(
         data_files,
         sidecars,
         normalized_staging_key_prefix,
@@ -111,17 +111,6 @@ def promote_from_s3(  # noqa: PLR0913
     # Trim manifest for resumability
     if manifest_s3_key and promoted_accessions and not dry_run:
         _trim_manifest(manifest_s3_key, staging_bucket, promoted_accessions)
-
-    # Upload frictionless descriptors for each promoted assembly
-    descriptors_written = 0
-    non_empty = [(k, v) for k, v in assembly_resources.items() if v]
-    for (adir, acc), resources in tqdm.tqdm(non_empty, unit="descriptor", desc="Writing descriptors"):
-        try:
-            descriptor = create_descriptor(adir, acc, resources)
-            upload_descriptor(descriptor, adir, lakehouse_bucket, lakehouse_key_prefix, dry_run=dry_run)
-            descriptors_written += 1
-        except Exception:
-            logger.exception("Failed to write descriptor for %s", adir)
 
     if descriptors_written:
         logger.info("Wrote %d frictionless descriptor(s)", descriptors_written)
@@ -156,88 +145,128 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
     lakehouse_bucket: str,
     *,
     dry_run: bool,
-) -> tuple[int, int, set[str], defaultdict[tuple[str, str], list[DescriptorResource]]]:
+) -> tuple[int, int, int, set[str]]:
     """Promote each data file from staging to the final Lakehouse path.
 
-    :return: (promoted_count, failed_count, promoted_accessions, assembly_resources)
+    Files are grouped by assembly.  When all files for an assembly are promoted
+    successfully, the frictionless descriptor is written immediately and the staged
+    files (including sidecars) are deleted from staging.  This prevents staging
+    accumulation across runs and ensures partial runs leave descriptors for all
+    completed assemblies.
+
+    :return: (promoted_count, failed_count, descriptors_written, promoted_accessions)
     """
     s3 = get_s3_client()
     promoted = 0
     failed = 0
+    descriptors_written = 0
     promoted_accessions: set[str] = set()
-    assembly_resources: defaultdict[tuple[str, str], list[DescriptorResource]] = defaultdict(list)
 
-    for staged_key in tqdm.tqdm(data_files, unit="file", desc="Promoting"):
+    # Group files by assembly; skip download_report.json and non-raw_data paths
+    assembly_files: defaultdict[tuple[str, str], list[str]] = defaultdict(list)
+    for staged_key in data_files:
         if staged_key.endswith("download_report.json"):
             continue
-
         rel_path = staged_key[len(normalized_staging_prefix) :]
         if not rel_path.startswith("raw_data/"):
             continue
-        final_key = lakehouse_key_prefix + rel_path
+        acc_match = re.search(r"(GC[AF]_\d{9}\.\d+)", staged_key)
+        adir_match = re.search(r"raw_data/GC[AF]/\d+/\d+/\d+/([^/]+)/", staged_key)
+        if acc_match and adir_match:
+            assembly_files[(adir_match.group(1), acc_match.group(1))].append(staged_key)
 
-        if dry_run:
-            logger.debug("[dry-run] would promote: %s -> %s", staged_key, final_key)
-            promoted += 1
-            continue
+    total_files = sum(len(v) for v in assembly_files.values())
+    with tqdm.tqdm(total=total_files, unit="file", desc="Promoting") as pbar:
+        for (adir, acc), files in assembly_files.items():
+            assembly_failed = 0
+            resources: list[DescriptorResource] = []
+            promoted_keys: list[str] = []
 
-        try:
-            with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                tmp_path = tmp.name
-            try:
-                s3.download_file(Bucket=staging_bucket, Key=staged_key, Filename=tmp_path)
-
-                # Read MD5 from sidecar
-                metadata: dict[str, str] = {}
-                md5_key = staged_key + ".md5"
-                if md5_key in sidecars:
-                    md5_obj = s3.get_object(Bucket=staging_bucket, Key=md5_key)
-                    metadata["md5"] = md5_obj["Body"].read().decode().strip()
-
+            for staged_key in files:
+                rel_path = staged_key[len(normalized_staging_prefix) :]
+                final_key = lakehouse_key_prefix + rel_path
                 final_key_path = PurePosixPath(final_key)
-                upload_succeeded = upload_file(
-                    tmp_path,
-                    f"{lakehouse_bucket}/{final_key_path.parent}",
-                    metadata=metadata,
-                    object_name=final_key_path.name,
-                    show_progress=False,
-                )
-                if not upload_succeeded:
-                    logger.error("Failed to upload promoted file %s to %s", staged_key, final_key)
-                    failed += 1
+
+                if dry_run:
+                    logger.debug("[dry-run] would promote: %s -> %s", staged_key, final_key)
+                    promoted += 1
+                    pbar.update(1)
                     continue
 
-                promoted += 1
+                file_promoted = False
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                        tmp_path = tmp.name
+                    try:
+                        s3.download_file(Bucket=staging_bucket, Key=staged_key, Filename=tmp_path)
 
-                # Track promoted accession for manifest trimming
-                acc_match = re.search(r"(GC[AF]_\d{9}\.\d+)", staged_key)
-                if acc_match:
-                    promoted_accessions.add(acc_match.group(1))
+                        # Read MD5 from sidecar
+                        metadata: dict[str, str] = {}
+                        md5_key = staged_key + ".md5"
+                        if md5_key in sidecars:
+                            md5_obj = s3.get_object(Bucket=staging_bucket, Key=md5_key)
+                            metadata["md5"] = md5_obj["Body"].read().decode().strip()
 
-                # Track resources for frictionless descriptor creation
-                adir_match = re.search(r"raw_data/GC[AF]/\d+/\d+/\d+/([^/]+)/", final_key)
-                if adir_match and acc_match:
-                    adir = adir_match.group(1)
-                    acc = acc_match.group(1)
-                    fname = final_key_path.name
-                    ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
-                    md5_hash = metadata.get("md5")
-                    resource: DescriptorResource = {
-                        "name": fname.lower(),
-                        "path": final_key,
-                        "format": ext,
-                        "bytes": Path(tmp_path).stat().st_size,
-                        "hash": md5_hash,
-                    }
-                    assembly_resources[(adir, acc)].append(resource)
+                        upload_succeeded = upload_file(
+                            tmp_path,
+                            f"{lakehouse_bucket}/{final_key_path.parent}",
+                            metadata=metadata,
+                            object_name=final_key_path.name,
+                            show_progress=False,
+                        )
+                        if not upload_succeeded:
+                            logger.error("Failed to upload promoted file %s to %s", staged_key, final_key)
+                        else:
+                            promoted += 1
+                            promoted_keys.append(staged_key)
+                            promoted_accessions.add(acc)
+                            file_promoted = True
 
-            finally:
-                Path(tmp_path).unlink()
-        except Exception:
-            logger.exception("Failed to promote %s", staged_key)
-            failed += 1
+                            fname = final_key_path.name
+                            ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
+                            resource: DescriptorResource = {
+                                "name": fname.lower(),
+                                "path": final_key,
+                                "format": ext,
+                                "bytes": Path(tmp_path).stat().st_size,
+                                "hash": metadata.get("md5"),
+                            }
+                            resources.append(resource)
 
-    return promoted, failed, promoted_accessions, assembly_resources
+                    finally:
+                        Path(tmp_path).unlink()
+                except Exception:
+                    logger.exception("Failed to promote %s", staged_key)
+
+                if not file_promoted:
+                    assembly_failed += 1
+                pbar.update(1)
+
+            failed += assembly_failed
+
+            # Write descriptor and delete staged files immediately after a fully successful assembly
+            if assembly_failed == 0 and promoted_keys:
+                try:
+                    descriptor = create_descriptor(adir, acc, resources)
+                    upload_descriptor(descriptor, adir, lakehouse_bucket, lakehouse_key_prefix, dry_run=False)
+                    descriptors_written += 1
+                except Exception:
+                    logger.exception("Failed to write descriptor for %s", adir)
+
+                for staged_key in promoted_keys:
+                    try:
+                        delete_object(f"{staging_bucket}/{staged_key}")
+                    except Exception:
+                        logger.warning("Failed to delete staged file %s", staged_key)
+                    for sidecar_ext in (".md5", ".crc64nvme"):
+                        sidecar_key = staged_key + sidecar_ext
+                        if sidecar_key in sidecars:
+                            try:
+                                delete_object(f"{staging_bucket}/{sidecar_key}")
+                            except Exception:
+                                logger.warning("Failed to delete staged sidecar %s", sidecar_key)
+
+    return promoted, failed, descriptors_written, promoted_accessions
 
 
 # ── Archive assemblies ──────────────────────────────────────────────────

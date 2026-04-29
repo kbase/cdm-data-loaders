@@ -18,6 +18,21 @@ from cdm_data_loaders.pipelines.ncbi_ftp_download import (
 )
 from cdm_data_loaders.utils.s3 import reset_s3_client
 
+_MOCK_STATS = {
+    "accession": "GCF_000001215.4",
+    "assembly_dir": "GCF_000001215.4_Release_6_plus_ISO1_MT",
+    "files_downloaded": 0,
+    "files_skipped_checksum_mismatch": 0,
+    "files_without_checksum": 0,
+}
+_MOCK_STATS_2 = {
+    "accession": "GCF_000001405.40",
+    "assembly_dir": "GCF_000001405.40_GRCh38.p14",
+    "files_downloaded": 0,
+    "files_skipped_checksum_mismatch": 0,
+    "files_without_checksum": 0,
+}
+
 _DEFAULT_THREADS = 4
 _CUSTOM_THREADS = 8
 _ALIAS_THREADS = 16
@@ -279,7 +294,7 @@ def test_download_and_stage_manifest_source(
     manifest_s3_key: str | None,
     use_local: bool,
 ) -> None:
-    """Manifest lines are passed to download_batch regardless of source (S3 or local)."""
+    """Assembly paths from the manifest are processed regardless of source (S3 or local)."""
     reset_s3_client()
     s3 = _make_moto_s3()
 
@@ -290,11 +305,11 @@ def test_download_and_stage_manifest_source(
         manifest_local = tmp_path / "manifest.txt"
         manifest_local.write_text(_MANIFEST_CONTENT)
 
-    captured_content: list[str] = []
+    called_paths: list[str] = []
 
-    def _capturing_batch(manifest_path, output_dir, **kwargs):  # noqa: ARG001
-        captured_content.append(Path(manifest_path).read_text())
-        return _MOCK_REPORT
+    def _fake_download(path, output_dir, **kwargs):  # noqa: ARG001
+        called_paths.append(path)
+        return _MOCK_STATS
 
     import cdm_data_loaders.utils.s3 as s3_mod
 
@@ -302,7 +317,11 @@ def test_download_and_stage_manifest_source(
         patch.object(s3_mod, "get_s3_client", return_value=s3),
         patch.object(s3_mod, "_s3_client", s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
-        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_batch", side_effect=_capturing_batch),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
+        patch(
+            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            side_effect=_fake_download,
+        ),
     ):
         download_and_stage(
             bucket=_TEST_BUCKET,
@@ -310,9 +329,11 @@ def test_download_and_stage_manifest_source(
             manifest_s3_key=manifest_s3_key,
             manifest_local_path=manifest_local,
             dry_run=True,
+            threads=1,
         )
 
-    assert captured_content == [_MANIFEST_CONTENT]
+    expected_paths = [l for l in _MANIFEST_CONTENT.splitlines() if l.strip()]
+    assert sorted(called_paths) == sorted(expected_paths)
 
     reset_s3_client()
 
@@ -363,7 +384,11 @@ def test_download_and_stage_exactly_one_source_required(
             patch.object(s3_mod, "get_s3_client", return_value=s3),
             patch.object(s3_mod, "_s3_client", s3),
             patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
-            patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_batch", return_value=_MOCK_REPORT),
+            patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
+            patch(
+                "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+                return_value=_MOCK_STATS,
+            ),
         ):
             result = download_and_stage(
                 bucket=_TEST_BUCKET,
@@ -372,7 +397,7 @@ def test_download_and_stage_exactly_one_source_required(
                 manifest_local_path=local_path,
                 dry_run=True,
             )
-        assert result["succeeded"] == _MOCK_REPORT["succeeded"]
+        assert result["succeeded"] == _EXPECTED_ATTEMPTED
 
     reset_s3_client()
 
@@ -382,24 +407,22 @@ def test_download_and_stage_exactly_one_source_required(
 
 @mock_aws
 def test_download_and_stage_uploads_to_staging(tmp_path: Path) -> None:
-    """Files produced in raw_data/ and download_report.json are all uploaded to staging."""
+    """Files produced by download_assembly_to_local and download_report.json are all staged to S3."""
     reset_s3_client()
     s3 = _make_moto_s3()
 
     manifest_local = tmp_path / "manifest.txt"
-    manifest_local.write_text(_MANIFEST_CONTENT)
+    # Single assembly so the fake download writes exactly the files we expect
+    manifest_local.write_text("/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n")
 
     assembly_rel = "raw_data/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT"
 
-    def _fake_download_batch(manifest_path, output_dir, **kwargs):  # noqa: ARG001
-        out = Path(output_dir)
-        asm_dir = out / assembly_rel
+    def _fake_download(path, output_dir, **kwargs):  # noqa: ARG001
+        asm_dir = Path(output_dir) / assembly_rel
         asm_dir.mkdir(parents=True)
         (asm_dir / "genomic.fna.gz").write_bytes(b"fasta_data")
         (asm_dir / "genomic.fna.gz.md5").write_bytes(b"abc123")
-        report_path = out / "download_report.json"
-        report_path.write_text(json.dumps(_MOCK_REPORT))
-        return _MOCK_REPORT
+        return {**_MOCK_STATS, "files_downloaded": 2}
 
     import cdm_data_loaders.utils.s3 as s3_mod
 
@@ -407,7 +430,11 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path) -> None:
         patch.object(s3_mod, "get_s3_client", return_value=s3),
         patch.object(s3_mod, "_s3_client", s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
-        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_batch", side_effect=_fake_download_batch),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
+        patch(
+            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            side_effect=_fake_download,
+        ),
     ):
         report = download_and_stage(
             bucket=_TEST_BUCKET,
@@ -443,11 +470,11 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path) -> None:
     manifest_local = tmp_path / "manifest.txt"
     manifest_local.write_text(_MANIFEST_CONTENT)
 
-    def _fake_download_batch(manifest_path, output_dir, **kwargs):  # noqa: ARG001
+    def _fake_download(path, output_dir, **kwargs):  # noqa: ARG001
         asm_dir = Path(output_dir) / "raw_data/GCF/000/001/215/GCF_000001215.4"
-        asm_dir.mkdir(parents=True)
+        asm_dir.mkdir(parents=True, exist_ok=True)
         (asm_dir / "genomic.fna.gz").write_bytes(b"fasta")
-        return _MOCK_REPORT
+        return _MOCK_STATS
 
     import cdm_data_loaders.utils.s3 as s3_mod
 
@@ -455,7 +482,11 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path) -> None:
         patch.object(s3_mod, "get_s3_client", return_value=s3),
         patch.object(s3_mod, "_s3_client", s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
-        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_batch", side_effect=_fake_download_batch),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
+        patch(
+            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            side_effect=_fake_download,
+        ),
     ):
         report = download_and_stage(
             bucket=_TEST_BUCKET,
@@ -485,7 +516,7 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path) -> None:
 )
 @mock_aws
 def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int) -> None:
-    """The limit parameter is forwarded verbatim to download_batch."""
+    """The limit parameter truncates the number of assemblies processed."""
     reset_s3_client()
     s3 = _make_moto_s3()
 
@@ -498,7 +529,11 @@ def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int) -> None:
         patch.object(s3_mod, "get_s3_client", return_value=s3),
         patch.object(s3_mod, "_s3_client", s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
-        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_batch", return_value=_MOCK_REPORT) as mock_batch,
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
+        patch(
+            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            return_value=_MOCK_STATS,
+        ) as mock_dl,
     ):
         download_and_stage(
             bucket=_TEST_BUCKET,
@@ -508,7 +543,9 @@ def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int) -> None:
             dry_run=True,
         )
 
-    assert mock_batch.call_args.kwargs["limit"] == limit
+    # The manifest has 2 entries; limit caps how many were processed
+    expected_calls = min(limit, _EXPECTED_ATTEMPTED)
+    assert mock_dl.call_count == expected_calls
 
     reset_s3_client()
 
@@ -518,7 +555,7 @@ def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int) -> None:
 
 @mock_aws
 def test_download_and_stage_report_shape(tmp_path: Path) -> None:
-    """Return value includes all download_batch keys plus staged_objects, staging_key_prefix, dry_run."""
+    """Return value contains all expected keys including staged_objects, staging_key_prefix, dry_run."""
     reset_s3_client()
     s3 = _make_moto_s3()
 
@@ -531,7 +568,11 @@ def test_download_and_stage_report_shape(tmp_path: Path) -> None:
         patch.object(s3_mod, "get_s3_client", return_value=s3),
         patch.object(s3_mod, "_s3_client", s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
-        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_batch", return_value=_MOCK_REPORT),
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
+        patch(
+            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            return_value=_MOCK_STATS,
+        ),
     ):
         report = download_and_stage(
             bucket=_TEST_BUCKET,
@@ -540,11 +581,12 @@ def test_download_and_stage_report_shape(tmp_path: Path) -> None:
             dry_run=True,
         )
 
-    assert report == {
-        **_MOCK_REPORT,
-        "staged_objects": 0,
-        "staging_key_prefix": _STAGING_PREFIX,
-        "dry_run": True,
-    }
+    for key in ("timestamp", "total_attempted", "succeeded", "failed", "failures", "assembly_stats"):
+        assert key in report
+    assert report["staged_objects"] == 0
+    assert report["staging_key_prefix"] == _STAGING_PREFIX
+    assert report["dry_run"] is True
+    assert report["total_attempted"] == _EXPECTED_ATTEMPTED
+    assert report["succeeded"] == _EXPECTED_ATTEMPTED
 
     reset_s3_client()

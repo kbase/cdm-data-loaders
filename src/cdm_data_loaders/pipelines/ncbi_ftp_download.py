@@ -7,6 +7,7 @@ domain-specific download logic is in :mod:`cdm_data_loaders.ncbi_ftp.assembly`.
 
 import json
 import logging
+import shutil
 import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,7 +21,12 @@ from pydantic import AliasChoices, Field
 from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST, download_assembly_to_local
+from cdm_data_loaders.ncbi_ftp.assembly import (
+    FTP_HOST,
+    build_accession_path,
+    download_assembly_to_local,
+    parse_assembly_path,
+)
 from cdm_data_loaders.pipelines.core import run_cli
 from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, INPUT_MOUNT, OUTPUT_MOUNT
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
@@ -68,6 +74,41 @@ class DownloadSettings(BaseSettings):
         description="Limit to first N assemblies (for testing)",
         validation_alias=AliasChoices("l", "limit"),
     )
+
+
+# ── Private helpers ─────────────────────────────────────────────────────
+
+
+def _upload_assembly_dir(
+    assembly_dir: Path,
+    tmp_root: Path,
+    bucket: str,
+    staging_key_prefix: str,
+) -> int:
+    """Upload all files under *assembly_dir* to S3, deleting each file immediately after upload.
+
+    Empty directories are removed after all files are uploaded.  If the
+    directory does not exist (e.g. the assembly had no files) the function
+    returns zero without raising.
+
+    :param assembly_dir: local directory for one assembly
+    :param tmp_root: root of the temp directory (used to compute relative S3 paths)
+    :param bucket: destination S3 bucket
+    :param staging_key_prefix: S3 key prefix within *bucket*
+    :return: number of files uploaded
+    """
+    if not assembly_dir.exists():
+        return 0
+    count = 0
+    for f in sorted(assembly_dir.rglob("*")):
+        if f.is_file():
+            relative = f.relative_to(tmp_root)
+            dest_prefix = f"{bucket}/{staging_key_prefix.rstrip('/')}/{relative.parent}"
+            upload_file(f, dest_prefix, show_progress=False)
+            f.unlink()
+            count += 1
+    shutil.rmtree(assembly_dir, ignore_errors=True)
+    return count
 
 
 # ── Batch download ───────────────────────────────────────────────────────
@@ -208,13 +249,18 @@ def download_and_stage(
 
     Exactly one of *manifest_s3_key* or *manifest_local_path* must be given.
 
+    Downloads and uploads are pipelined per assembly: each worker downloads one
+    assembly, immediately uploads its files to S3, then deletes the local copies
+    before picking up the next assembly.  At most *threads* assembly directories
+    exist on disk simultaneously, preventing disk exhaustion on large batches.
+
     :param bucket: destination S3 bucket name
     :param staging_key_prefix: key prefix inside the bucket (e.g. ``"staging/run1/"``)
     :param manifest_s3_key: S3 object key of the transfer manifest within *bucket*
     :param manifest_local_path: local path to the transfer manifest file
-    :param threads: number of parallel download **and** upload threads
+    :param threads: number of parallel download-and-upload workers
     :param ftp_host: NCBI FTP hostname
-    :param limit: optional limit for testing (pass to :func:`download_batch`)
+    :param limit: optional limit for testing
     :param dry_run: when ``True``, download but skip all S3 uploads
     :return: download report extended with ``staged_objects``, ``staging_key_prefix``, ``dry_run``
     """
@@ -238,45 +284,88 @@ def download_and_stage(
             manifest_dest.write_bytes(Path(manifest_local_path).read_bytes())
             logger.info("Manifest read from local path: %s", manifest_local_path)
 
-        report = download_batch(
-            manifest_path=manifest_dest,
-            output_dir=tmp,
-            threads=threads,
-            ftp_host=ftp_host,
-            limit=limit,
-        )
+        with manifest_dest.open() as f:
+            assembly_paths = [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
+        if limit:
+            assembly_paths = assembly_paths[:limit]
+
+        logger.info("Starting download & stage of %d assemblies with %d threads", len(assembly_paths), threads)
+
+        pool = ThreadLocalFTP(ftp_host)
+        lock = threading.Lock()
+        success_count = 0
         staged_objects = 0
+        failed: list[dict[str, str]] = []
+        all_stats: list[dict[str, Any]] = []
+
+        def _download_upload_one(path: str) -> tuple[str, Exception | None]:
+            nonlocal success_count, staged_objects
+
+            @retry(
+                retry=retry_if_exception_type(error_temp),
+                stop=stop_after_attempt(3),
+                wait=wait_fixed(5),
+                reraise=True,
+                before_sleep=before_sleep_log(logger, logging.WARNING),
+            )
+            def _attempt() -> dict[str, Any]:
+                return download_assembly_to_local(path, tmp, ftp_host=ftp_host, ftp=pool.get())
+
+            try:
+                stats = _attempt()
+            except Exception as e:  # noqa: BLE001
+                return path, e
+
+            if not dry_run:
+                _db, assembly_dir_name, _accession = parse_assembly_path(path)
+                assembly_local_dir = tmp / build_accession_path(assembly_dir_name)
+                count = _upload_assembly_dir(assembly_local_dir, tmp, bucket, staging_key_prefix)
+                with lock:
+                    staged_objects += count
+
+            with lock:
+                success_count += 1
+                all_stats.append(stats)
+            return path, None
+
+        try:
+            with tqdm.tqdm(total=len(assembly_paths), unit="assembly", desc="Downloading & staging") as pbar:
+                with ThreadPoolExecutor(max_workers=threads) as executor:
+                    futures = {executor.submit(_download_upload_one, p): p for p in assembly_paths}
+                    for future in as_completed(futures):
+                        path, error = future.result()
+                        if error:
+                            logger.error("FAILED: %s: %s", path, error)
+                            with lock:
+                                failed.append({"path": path, "error": str(error)})
+                        pbar.update(1)
+        finally:
+            pool.close_all()
+
+        report: dict[str, Any] = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "total_attempted": len(assembly_paths),
+            "succeeded": success_count,
+            "failed": len(failed),
+            "failures": failed,
+            "assembly_stats": all_stats,
+        }
 
         if not dry_run:
-            raw_data_dir = tmp / "raw_data"
-            report_json = tmp / "download_report.json"
-
-            upload_tasks: list[tuple[Path, str]] = []
-
-            if raw_data_dir.exists():
-                for local_file in sorted(raw_data_dir.rglob("*")):
-                    if local_file.is_file():
-                        relative = local_file.relative_to(tmp)
-                        dest_prefix = f"{bucket}/{staging_key_prefix.rstrip('/')}/{relative.parent}"
-                        upload_tasks.append((local_file, dest_prefix))
-
-            if report_json.exists():
-                upload_tasks.append((report_json, f"{bucket}/{staging_key_prefix.rstrip('/')}"))
-
-            def _upload(task: tuple[Path, str]) -> None:
-                local_file, dest = task
-                upload_file(local_file, dest, show_progress=False)
-
-            with tqdm.tqdm(total=len(upload_tasks), unit="file", desc="Staging to S3") as pbar:
-                with ThreadPoolExecutor(max_workers=threads) as executor:
-                    futures = [executor.submit(_upload, t) for t in upload_tasks]
-                    for future in as_completed(futures):
-                        future.result()
-                        staged_objects += 1
-                        pbar.update(1)
-
+            report_path = tmp / "download_report.json"
+            with report_path.open("w") as f:
+                json.dump(report, f, indent=2)
+            upload_file(report_path, f"{bucket}/{staging_key_prefix.rstrip('/')}", show_progress=False)
+            staged_objects += 1
             logger.info("Staged %d objects to s3://%s/%s", staged_objects, bucket, staging_key_prefix)
+
+        logger.info(
+            "SUMMARY: %d attempted, %d succeeded, %d failed",
+            len(assembly_paths),
+            success_count,
+            len(failed),
+        )
 
     return {
         **report,
