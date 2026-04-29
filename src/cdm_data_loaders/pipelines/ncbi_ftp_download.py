@@ -18,7 +18,7 @@ from typing import Any
 
 import tqdm
 from pydantic import AliasChoices, Field
-from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_fixed
+from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_fixed, wait_exponential
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cdm_data_loaders.ncbi_ftp.assembly import (
@@ -148,9 +148,9 @@ def download_batch(
         nonlocal success_count
 
         @retry(
-            retry=retry_if_exception_type(error_temp),
-            stop=stop_after_attempt(3),
-            wait=wait_fixed(5),
+            retry=retry_if_exception_type((error_temp, BrokenPipeError, ConnectionResetError, EOFError)),
+            stop=stop_after_attempt(5),
+            wait=wait_exponential(multiplier=1, min=5, max=60),
             reraise=True,
             before_sleep=before_sleep_log(logger, logging.WARNING),
         )
@@ -303,9 +303,9 @@ def download_and_stage(
             nonlocal success_count, staged_objects
 
             @retry(
-                retry=retry_if_exception_type(error_temp),
-                stop=stop_after_attempt(3),
-                wait=wait_fixed(5),
+                retry=retry_if_exception_type((error_temp, BrokenPipeError, ConnectionResetError, EOFError)),
+                stop=stop_after_attempt(5),
+                wait=wait_exponential(multiplier=1, min=5, max=60),
                 reraise=True,
                 before_sleep=before_sleep_log(logger, logging.WARNING),
             )
