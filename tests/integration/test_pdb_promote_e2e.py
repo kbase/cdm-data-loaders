@@ -176,14 +176,13 @@ class TestPdbPromoteArchiveUpdated:
         assert report["failed"] == 0
 
         # Verify archive exists
-        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "archive/2024-04-01/")
+        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "archive/2024-04-01/updated/")
         assert len(archive_keys) >= 1, f"Expected archive objects, found: {archive_keys}"
 
-        # Verify archive metadata
-        for key in archive_keys:
-            meta = get_object_metadata(s3, test_bucket, key)
-            assert meta.get("archive_reason") == "updated"
-            assert meta.get("pdb_last_release") == "2024-04-01"
+        # Archive reason is encoded in the path — verify no keys landed outside the expected segment
+        all_archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "archive/")
+        for key in all_archive_keys:
+            assert "/updated/" in key, f"Unexpected archive key outside 'updated' segment: {key}"
 
 
 @pytest.mark.integration
@@ -212,13 +211,13 @@ class TestPdbPromoteArchiveRemoved:
         assert report["failed"] == 0
 
         # Verify archive exists
-        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "archive/2024-04-01/")
+        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "archive/2024-04-01/obsoleted/")
         assert len(archive_keys) >= 1
 
-        # Verify archive metadata
-        for key in archive_keys:
-            meta = get_object_metadata(s3, test_bucket, key)
-            assert meta.get("archive_reason") == "obsoleted"
+        # Archive reason is encoded in the path
+        all_archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "archive/")
+        for key in all_archive_keys:
+            assert "/obsoleted/" in key, f"Unexpected archive key outside 'obsoleted' segment: {key}"
 
         # Verify source objects are deleted
         source_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + build_entry_path(PDB_ID_A))
@@ -464,12 +463,12 @@ class TestPdbPromoteArchiveUpdatedIncludesDescriptor:
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
-        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX)
+        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX, "updated")
         resp = s3.head_object(Bucket=test_bucket, Key=archive_key)
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
 
     def test_archive_descriptor_metadata(self, minio_s3_client: object, test_bucket: str, tmp_path: Path) -> None:
-        """Archived descriptor carries the expected archive_reason metadata."""
+        """Archived descriptor path encodes archive_reason and release tag as path segments."""
         s3 = minio_s3_client
 
         seed_pdb_entry(s3, test_bucket, PDB_ID_A, {"structures/old.cif.gz": b"old data"}, PATH_PREFIX)
@@ -491,10 +490,11 @@ class TestPdbPromoteArchiveUpdatedIncludesDescriptor:
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
-        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX)
-        meta = get_object_metadata(s3, test_bucket, archive_key)
-        assert meta.get("archive_reason") == "updated"
-        assert meta.get("pdb_last_release") == "2024-04-01"
+        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX, "updated")
+        # Archive reason and release are encoded in the key path, not object metadata
+        assert "/archive/2024-04-01/updated/" in archive_key
+        resp = s3.head_object(Bucket=test_bucket, Key=archive_key)
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
 
     def test_promote_overwrites_descriptor_with_new_version(
         self, minio_s3_client: object, test_bucket: str, tmp_path: Path
@@ -556,14 +556,14 @@ class TestPdbPromoteArchiveRemovedIncludesDescriptor:
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
-        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX)
+        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX, "obsoleted")
         resp = s3.head_object(Bucket=test_bucket, Key=archive_key)
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
 
     def test_archive_descriptor_has_obsoleted_reason(
         self, minio_s3_client: object, test_bucket: str, tmp_path: Path
     ) -> None:
-        """Archived descriptor for an obsoleted entry carries archive_reason=obsoleted."""
+        """Archived descriptor for an obsoleted entry has 'obsoleted' in the key path."""
         s3 = minio_s3_client
 
         seed_pdb_entry(s3, test_bucket, PDB_ID_A, {"structures/old.cif.gz": b"old data"}, PATH_PREFIX)
@@ -584,10 +584,11 @@ class TestPdbPromoteArchiveRemovedIncludesDescriptor:
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
-        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX)
-        meta = get_object_metadata(s3, test_bucket, archive_key)
-        assert meta.get("archive_reason") == "obsoleted"
-        assert meta.get("pdb_last_release") == "2024-04-01"
+        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX, "obsoleted")
+        # Archive reason and release are encoded in the key path, not object metadata
+        assert "/archive/2024-04-01/obsoleted/" in archive_key
+        resp = s3.head_object(Bucket=test_bucket, Key=archive_key)
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
 
     def test_no_descriptor_to_archive_is_handled_gracefully(
         self, minio_s3_client: object, test_bucket: str, tmp_path: Path
@@ -610,7 +611,7 @@ class TestPdbPromoteArchiveRemovedIncludesDescriptor:
 
         assert report["failed"] == 0
         # No descriptor archive key should exist (nothing to copy from)
-        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX)
+        archive_key = build_archive_descriptor_key(PDB_ID_A, "2024-04-01", PATH_PREFIX, "obsoleted")
         archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "archive/")
         assert archive_key not in archive_keys
 

@@ -24,7 +24,7 @@ from cdm_data_loaders.pdb.metadata import (
 )
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.s3 import (
-    copy_object_with_metadata,
+    copy_object,
     delete_object,
     get_s3_client,
     upload_file_with_metadata,
@@ -188,8 +188,8 @@ def _promote_data_files(
                 upload_succeeded = upload_file_with_metadata(
                     tmp_path,
                     f"{bucket}/{final_key_path.parent}",
-                    metadata={},
                     object_name=final_key_path.name,
+                    show_progress=False,
                 )
                 if not upload_succeeded:
                     logger.exception("Failed to upload promoted file %s to %s", staged_key, final_key)
@@ -247,14 +247,13 @@ def _archive_entries(  # noqa: PLR0913
     :param bucket: S3 bucket name
     :param pdb_release: release date tag used in the archive path
     :param lakehouse_key_prefix: S3 key prefix for the Lakehouse dataset root
-    :param archive_reason: metadata value describing why the object was archived
+    :param archive_reason: reason for archival, encoded as a path segment
     :param delete_source: if True, delete the source object after copying
     :param dry_run: if True, log without making changes
     :return: number of objects archived
     """
     s3 = get_s3_client()
     release_tag = pdb_release or "unknown"
-    datestamp = datetime.now(UTC).strftime("%Y-%m-%d")
     archived = 0
 
     with Path(manifest_local_path).open() as f:
@@ -279,7 +278,7 @@ def _archive_entries(  # noqa: PLR0913
 
         for source_key in matching_keys:
             rel = source_key[len(lakehouse_key_prefix) :]
-            archive_key = f"{lakehouse_key_prefix}archive/{release_tag}/{rel}"
+            archive_key = f"{lakehouse_key_prefix}archive/{release_tag}/{archive_reason}/{rel}"
 
             if dry_run:
                 logger.info("[dry-run] would archive: %s -> %s", source_key, archive_key)
@@ -287,14 +286,9 @@ def _archive_entries(  # noqa: PLR0913
                 continue
 
             try:
-                copy_object_with_metadata(
+                copy_object(
                     f"{bucket}/{source_key}",
                     f"{bucket}/{archive_key}",
-                    metadata={
-                        "pdb_last_release": release_tag,
-                        "archive_reason": archive_reason,
-                        "archive_date": datestamp,
-                    },
                 )
                 if delete_source:
                     delete_object(f"{bucket}/{source_key}")

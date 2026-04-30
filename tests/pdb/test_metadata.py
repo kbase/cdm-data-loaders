@@ -81,9 +81,9 @@ def test_build_descriptor_key(pdb_id: str, key_prefix: str, expected: str) -> No
     ],
 )
 def test_build_archive_descriptor_key(pdb_id: str, release_tag: str, key_prefix: str) -> None:
-    """Verify archive key is under archive/{release_tag}/metadata/."""
-    key = build_archive_descriptor_key(pdb_id, release_tag, key_prefix)
-    assert f"archive/{release_tag}/metadata/" in key
+    """Verify archive key is under archive/{release_tag}/{archive_reason}/metadata/."""
+    key = build_archive_descriptor_key(pdb_id, release_tag, key_prefix, "updated")
+    assert f"archive/{release_tag}/updated/metadata/" in key
     assert key.endswith("_datapackage.json")
     assert "//" not in key
 
@@ -227,7 +227,7 @@ def _mock_s3_with_descriptor() -> Generator[tuple[botocore.client.BaseClient, Ma
         with (
             patch.object(s3_utils, "get_s3_client", return_value=client),
             patch.object(metadata_mod, "get_s3_client", return_value=client),
-            patch.object(metadata_mod, "copy_object_with_metadata") as mock_copy,
+            patch.object(metadata_mod, "copy_object") as mock_copy,
         ):
             yield client, mock_copy
         reset_s3_client()
@@ -250,7 +250,7 @@ def test_archive_descriptor_calls_copy_with_correct_keys(
     _, mock_copy = _mock_s3_with_descriptor
     archive_descriptor(_PDB_ID, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG)
     live_key = build_descriptor_key(_PDB_ID, _KEY_PREFIX)
-    archive_key = build_archive_descriptor_key(_PDB_ID, _RELEASE_TAG, _KEY_PREFIX)
+    archive_key = build_archive_descriptor_key(_PDB_ID, _RELEASE_TAG, _KEY_PREFIX, "unknown")
     mock_copy.assert_called_once()
     args = mock_copy.call_args[0]
     assert f"{TEST_BUCKET}/{live_key}" in args

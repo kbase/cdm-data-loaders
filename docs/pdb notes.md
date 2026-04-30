@@ -39,31 +39,96 @@ A few caveats worth noting for planning:
 - EM entries are growing fastest and tend to have the largest coordinate files
 - The `current_file_holdings.json.gz` (17.6 MB compressed) in the Beta holdings would give exact per-entry file-type availability if you need to stratify precisely
 
-From our Google doc:
 
-Assignee: Matt
-Status: Investigating
-Source Info: https://www.wwpdb.org/ftp/pdb-beta-ftp-sites 
-https://www.wwpdb.org/ftp/pdb-beta-ftp-sites (new ID format and download instructions)
-https://mmcif.wwpdb.org/docs/user-guide/guide.html (mmCIF format)
-https://mmcif.wwpdb.org/ (mmCIF Database)
-https://rcsbapi.readthedocs.io/en/latest/ (python package for interacting with rcsb.org API)
-DTS Manifest:
-Data Files:
-Sample Metadata: n/a?
-Script(s):
-Notes: existing stuff has been pulled in via https://github.com/kbaseincubator/BERIL-research-observatory/tree/main/data/pdb_collection 
-https://data.rcsb.org/ 
-https://www.wwpdb.org/ftp/pdb-beta-ftp-sites 
-rscb.org endpoints follow similar structure as mmCIF (with some differences)
-Accessing Data
-AlphaFold data not in PDB archive (just linked on website) - download from Google Cloud / FTP site
-Use rsync for bulk transfer
-Use short URL format for downloading individual files (wwPDB: PDB Beta Archive Download)
-Use rscb.org REST API (/search and /data) for finding records and getting metadata
-Versioning
-Each recordset has Major and Minor version
-Major: change in coordinates
-Minor: updates to metadata
-Keeps only latest minor version in archive
-Provides historical archive snapshots (could get previous minor versions this way)
+
+Notes on what was "brought in" with BERIL repo code:
+
+Here's what was brought in:
+
+---
+
+## What files were ingested
+
+The script pulled **metadata only** (no coordinate/structure files) from two sources:
+
+| Source | What was fetched |
+|---|---|
+| RCSB GraphQL API (`data.rcsb.org/graphql`) | Entry-level metadata: method, resolution, R-factors, organism, dates, DOI — batched 1000 IDs at a time |
+| EBI SIFTS FTP (`ftp.ebi.ac.uk/.../pdb_chain_uniprot.tsv.gz`) | PDB chain → UniProt accession mapping |
+
+These were downloaded to scratch at `/pscratch/sd/p/psdehal/pdb_collection/` and converted to TSV, then uploaded to the lakehouse.
+
+**Confirmed ingested (2026-03-14, from changelog):**
+
+| File | Rows | Content |
+|---|---|---|
+| `pdb_entries.tsv` | 250,741 | One row/entry: pdb_id, title, method, resolution, r_work, r_free, organism, tax_id, dates, DOI |
+| `pdb_uniprot_mapping.tsv` | 966,977 | PDB chain → UniProt (from SIFTS) |
+| `pdb_validation.tsv` | ~250K | clashscore, Ramachandran outliers, rotamer outliers, angles/bonds RMSZ |
+
+**Also defined in config (added ~1 month ago, ingestion status unclear):**
+
+- `pdb_taxonomy.tsv` — pdb_id, taxonomy_id, organism
+- `pdb_ligands.tsv` — pdb_id, ligand_id, name, type, formula, formula_weight
+- `pdb_citations.tsv` — pdb_id, citation_id, title, year, journal, DOI, pubmed_id, authors
+- `pdb_pfam.tsv` — pdb_id, chain_id, uniprot_accession, pfam_id, coverage
+- `pdb_sequence_clusters.tsv` — cluster_id, pdb_entity_id, identity_level
+
+---
+
+## Where is it in the lakehouse
+
+From `pdb_collection.json`:
+
+**Bronze (raw TSVs):**
+```
+s3a://cdm-lake/tenant-general-warehouse/kescience/datasets/pdb/
+  pdb_entries.tsv
+  pdb_uniprot_mapping.tsv
+  pdb_validation.tsv
+  [+ 5 extended .tsv files if ingested]
+```
+
+**Silver (Delta Lake / SQL):**
+```
+s3a://cdm-lake/tenant-sql-warehouse/kescience/kescience_pdb.db
+  → kescience_pdb.pdb_entries
+  → kescience_pdb.pdb_uniprot_mapping
+  → kescience_pdb.pdb_validation
+```
+
+---
+
+**Key gap relative to what we're planning to load:** The BERIL collection is entirely **derived metadata** (GraphQL + SIFTS), not the raw wwPDB archive files (mmCIF coordinates, structure factors, validation XMLs/PDFs, assembly files). So "at least everything in this link" means the 3+ derived metadata tables — not the raw archive files described elsewhere in your notes.
+
+
+
+
+# From our Google doc
+
+* Assignee: Matt
+* Status: Investigating
+* Source Info: https://www.wwpdb.org/ftp/pdb-beta-ftp-sites 
+  * https://www.wwpdb.org/ftp/pdb-beta-ftp-sites (new ID format and download instructions)
+  * https://mmcif.wwpdb.org/docs/user-guide/guide.html (mmCIF format)
+  * https://mmcif.wwpdb.org/ (mmCIF Database)
+  * https://rcsbapi.readthedocs.io/en/latest/ (python package for interacting with rcsb.org API)
+* DTS Manifest:
+* Data Files:
+* Sample Metadata: n/a?
+* Script(s):
+* Notes: existing stuff has been pulled in via https://github.com/kbaseincubator/BERIL-research-observatory/tree/main/data/pdb_collection 
+  * https://data.rcsb.org/ 
+  * https://www.wwpdb.org/ftp/pdb-beta-ftp-sites 
+  * rscb.org endpoints follow similar structure as mmCIF (with some differences)
+  * Accessing Data
+    * AlphaFold data not in PDB archive (just linked on website) - download from Google Cloud / FTP site
+    * Use rsync for bulk transfer
+    * Use short URL format for downloading individual files (wwPDB: PDB Beta Archive Download)
+    * Use rscb.org REST API (/search and /data) for finding records and getting metadata
+  * Versioning
+    * Each recordset has Major and Minor version
+      * Major: change in coordinates
+      * Minor: updates to metadata
+    * Keeps only latest minor version in archive
+    * Provides historical archive snapshots (could get previous minor versions this way)

@@ -30,7 +30,7 @@ def test_archive_entries_copies_to_archive_prefix(mock_s3_client: object, tmp_pa
 
     with (
         patch.object(promote_mod, "get_s3_client", return_value=client),
-        patch.object(promote_mod, "copy_object_with_metadata") as mock_copy,
+        patch.object(promote_mod, "copy_object") as mock_copy,
     ):
         _archive_entries(
             str(manifest_path),
@@ -43,7 +43,7 @@ def test_archive_entries_copies_to_archive_prefix(mock_s3_client: object, tmp_pa
 
     mock_copy.assert_called_once()
     _, dest = mock_copy.call_args[0]
-    assert "archive/2024-04-01" in dest
+    assert "archive/2024-04-01/obsoleted" in dest
 
 
 def test_archive_entries_dry_run_does_not_copy(mock_s3_client: object, tmp_path: Path) -> None:
@@ -57,7 +57,7 @@ def test_archive_entries_dry_run_does_not_copy(mock_s3_client: object, tmp_path:
 
     with (
         patch.object(promote_mod, "get_s3_client", return_value=client),
-        patch.object(promote_mod, "copy_object_with_metadata") as mock_copy,
+        patch.object(promote_mod, "copy_object") as mock_copy,
     ):
         _archive_entries(str(manifest_path), bucket=TEST_BUCKET, dry_run=True)
 

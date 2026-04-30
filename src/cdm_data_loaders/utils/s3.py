@@ -469,8 +469,43 @@ def copy_object(
     )
 
 
-#: Alias used by callers that require metadata to be set on the destination object.
-copy_object_with_metadata = copy_object
+def copy_object_with_metadata(
+    current_s3_path: str,
+    new_s3_path: str,
+    metadata: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Copy an object to a new location, optionally replacing user metadata.
+
+    When *metadata* is supplied the copy is made with ``MetadataDirective=REPLACE``
+    and the given dict is attached as S3 user metadata.  When *metadata* is
+    ``None`` (the default) the source metadata is inherited via the default
+    ``MetadataDirective=COPY`` behaviour.
+
+    Note: ``ChecksumAlgorithm`` is intentionally omitted to avoid the
+    botocore ≥1.36 ``AccessDenied`` interaction when combined with
+    ``MetadataDirective=REPLACE``.
+
+    :param current_s3_path: source path including bucket
+    :param new_s3_path: destination path including bucket
+    :param metadata: optional user metadata to set on the destination;
+        when provided the source metadata is replaced entirely
+    :return: response dict from the CopyObject API call
+    """
+    s3 = get_s3_client()
+    (current_s3_bucket, current_s3_key) = split_s3_path(current_s3_path)
+    (new_s3_bucket, new_s3_key) = split_s3_path(new_s3_path)
+
+    kwargs: dict[str, Any] = {
+        "CopySource": {"Bucket": current_s3_bucket, "Key": current_s3_key},
+        "Bucket": new_s3_bucket,
+        "Key": new_s3_key,
+    }
+    if metadata is not None:
+        kwargs["MetadataDirective"] = "REPLACE"
+        kwargs["Metadata"] = metadata
+
+    return s3.copy_object(**kwargs)
+
 
 #: Alias used by callers that require metadata to be attached on upload.
 upload_file_with_metadata = upload_file
