@@ -1084,7 +1084,6 @@ class TestPromoteStagingCleanup:
         _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, files, with_md5=True)
 
         # Verify sidecars exist before promote
-        rel = build_accession_path(ASSEMBLY_DIR_A)
         before_keys = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
         assert any(k.endswith(".md5") for k in before_keys), "Test setup: expected .md5 sidecars"
 
