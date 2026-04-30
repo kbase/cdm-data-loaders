@@ -163,7 +163,7 @@ def download_assembly_to_local(
     dest_dir = Path(output_dir) / rel_path
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Downloading %s -> %s", accession, dest_dir)
+    logger.debug("Downloading %s -> %s", accession, dest_dir)
 
     owns_ftp = ftp is None
     if owns_ftp:
@@ -196,7 +196,7 @@ def download_assembly_to_local(
         for filename in target_files:
             last_activity = _download_and_verify(ftp, filename, dest_dir, md5_checksums, stats, last_activity)
 
-        logger.info("  %s: %d files downloaded", accession, stats["files_downloaded"])
+        logger.debug("  %s: %d files downloaded", accession, stats["files_downloaded"])
 
     finally:
         if owns_ftp:

@@ -77,9 +77,9 @@ def test_build_descriptor_key(prefix: str) -> None:
     ],
 )
 def test_build_archive_descriptor_key(prefix: str, tag: str) -> None:
-    """Archive key includes tag and has no double slash; trailing slash on prefix is normalized."""
-    key = build_archive_descriptor_key(_ASSEMBLY_DIR, tag, prefix)
-    assert key == f"{_KEY_PREFIX}archive/{tag}/metadata/{_ASSEMBLY_DIR}_datapackage.json"
+    """Archive key includes tag and reason segment; no double slash; prefix trailing slash normalized."""
+    key = build_archive_descriptor_key(_ASSEMBLY_DIR, tag, prefix, "updated")
+    assert key == f"{_KEY_PREFIX}archive/{tag}/updated/metadata/{_ASSEMBLY_DIR}_datapackage.json"
     assert "//" not in key
 
 

@@ -22,6 +22,7 @@ from cdm_data_loaders.utils.s3 import (
     copy_directory,
     copy_object,
     delete_object,
+    delete_objects,
     download_file,
     get_s3_client,
     head_object,
@@ -393,16 +394,14 @@ def test_upload_file_uses_custom_object_name(mock_s3_client: Any, sample_file: P
 
 
 @pytest.mark.s3
-def test_upload_file_skips_when_already_present(
-    mock_s3_client: Any, sample_file: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Verify that uploading a file that already exists is skipped and returns True."""
+def test_upload_file_skips_when_already_present(mock_s3_client: Any, sample_file: Path) -> None:
+    """Verify that uploading a file that already exists is skipped, returns True, and leaves the object unchanged."""
     mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
     result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads")
     assert result is True
-    last_log_message = caplog.records[-1]
-    assert "File already present" in last_log_message.message
-    assert last_log_message.levelno == logging.INFO
+    # The existing object must not have been overwritten
+    obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}")
+    assert obj["Body"].read() == b"old"
 
 
 @pytest.mark.usefixtures("mock_s3_client")
@@ -901,7 +900,7 @@ def test_delete_object_removes_object(mock_s3_client: Any, bucket: str, protocol
 def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: Any, sample_file: Path, bucket: str) -> None:
     """Verify that upload_file with metadata stores user metadata on the uploaded object."""
     metadata = {"md5": "abc123", "source": "ncbi"}
-    result = upload_file(sample_file, f"{bucket}/uploads", metadata=metadata)
+    result = upload_file(sample_file, f"{bucket}/uploads", tags=metadata)
     assert result is True
 
     resp = mock_s3_client.head_object(Bucket=bucket, Key=f"uploads/{sample_file.name}")
@@ -912,7 +911,7 @@ def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: Any, sample
 @pytest.mark.s3
 def test_upload_file_with_metadata_custom_object_name(mock_s3_client: Any, sample_file: Path) -> None:
     """Verify that the object_name parameter overrides the filename."""
-    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", metadata={"k": "v"}, object_name="renamed.txt")
+    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", tags={"k": "v"}, object_name="renamed.txt")
     assert result is True
     obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key="uploads/renamed.txt")
     assert obj["Body"].read() == b"hello s3"
@@ -922,7 +921,7 @@ def test_upload_file_with_metadata_custom_object_name(mock_s3_client: Any, sampl
 def test_upload_file_with_metadata_overwrites_existing(mock_s3_client: Any, sample_file: Path) -> None:
     """Verify that upload_file with metadata uploads even when the object already exists."""
     mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
-    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", metadata={"new": "true"})
+    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", tags={"new": "true"})
     assert result is True
     obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}")
     assert obj["Body"].read() == b"hello s3"
@@ -933,7 +932,7 @@ def test_upload_file_with_metadata_overwrites_existing(mock_s3_client: Any, samp
 def test_upload_file_with_metadata_raises_on_empty_destination(sample_file: Path) -> None:
     """Verify ValueError when destination_dir is empty."""
     with pytest.raises(ValueError, match="No destination directory"):
-        upload_file(sample_file, "", metadata={"k": "v"})
+        upload_file(sample_file, "", tags={"k": "v"})
 
 
 @pytest.mark.usefixtures("mock_s3_client")
@@ -941,7 +940,7 @@ def test_upload_file_with_metadata_raises_on_empty_destination(sample_file: Path
 @pytest.mark.s3
 def test_upload_file_with_metadata_accepts_str_and_path(sample_file: Path, path_type: type[str] | type[Path]) -> None:
     """Verify that upload_file with metadata accepts both str and Path."""
-    result = upload_file(path_type(sample_file), f"{CDM_LAKE_BUCKET}/uploads", metadata={})
+    result = upload_file(path_type(sample_file), f"{CDM_LAKE_BUCKET}/uploads", tags={})
     assert result is True
 
 
@@ -976,40 +975,35 @@ def test_head_object_with_protocols(mock_s3_client: Any, protocol: str) -> None:
     assert result["size"] == SIZE_DATA
 
 
-# copy_object with metadata
+# copy_object
 @pytest.mark.parametrize("destination", BUCKETS)
 @pytest.mark.s3
-def test_copy_object_with_metadata_replaces_metadata(mocked_s3_client_no_checksum: Any, destination: str) -> None:
-    """Verify that copy_object with metadata copies and replaces metadata."""
+def test_copy_object_preserves_user_metadata(mocked_s3_client_no_checksum: Any, destination: str) -> None:
+    """copy_object preserves source user metadata (MetadataDirective=COPY default)."""
     mocked_s3_client_no_checksum.put_object(
-        Bucket=CDM_LAKE_BUCKET, Key="src/file.txt", Body=b"archive me", Metadata={"old_key": "old_val"}
+        Bucket=CDM_LAKE_BUCKET, Key="src/file.txt", Body=b"archive me", Metadata={"md5": "abc123"}
     )
-    new_metadata = {"archive_reason": "replaced", "archive_date": "2026-04-16"}
     response = copy_object(
         f"{CDM_LAKE_BUCKET}/src/file.txt",
         f"{destination}/archive/file.txt",
-        metadata=new_metadata,
     )
     assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_STATUS_OK
 
-    # verify the destination has the new metadata, not the old
+    # source user metadata is preserved (MetadataDirective=COPY)
     resp = mocked_s3_client_no_checksum.head_object(Bucket=destination, Key="archive/file.txt")
-    assert resp["Metadata"]["archive_reason"] == "replaced"
-    assert resp["Metadata"]["archive_date"] == "2026-04-16"
-    assert "old_key" not in resp["Metadata"]
+    assert resp["Metadata"].get("md5") == "abc123"
 
     # verify source still exists
     assert object_exists(f"{CDM_LAKE_BUCKET}/src/file.txt")
 
 
 @pytest.mark.s3
-def test_copy_object_with_metadata_preserves_content(mocked_s3_client_no_checksum: Any) -> None:
+def test_copy_object_preserves_content(mocked_s3_client_no_checksum: Any) -> None:
     """Verify that the content of the copied object matches the original."""
     mocked_s3_client_no_checksum.put_object(Bucket=CDM_LAKE_BUCKET, Key="src/data.bin", Body=b"binary data")
     copy_object(
         f"{CDM_LAKE_BUCKET}/src/data.bin",
         f"{CDM_LAKE_BUCKET}/dst/data.bin",
-        metadata={"tag": "value"},
     )
     obj = mocked_s3_client_no_checksum.get_object(Bucket=CDM_LAKE_BUCKET, Key="dst/data.bin")
     assert obj["Body"].read() == b"binary data"
@@ -1024,3 +1018,34 @@ def test_delete_object_no_such_bucket() -> None:
     assert object_exists(s3_path) is False
     with pytest.raises(Exception, match="The specified bucket does not exist"):
         delete_object(s3_path)
+
+
+# delete_objects
+@pytest.mark.s3
+def test_delete_objects_removes_all(mock_s3_client: Any) -> None:
+    """delete_objects removes every listed key in a single call."""
+    keys = ["bulk/a.txt", "bulk/b.txt", "bulk/c.txt"]
+    for k in keys:
+        mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key=k, Body=b"data")
+
+    errors = delete_objects(CDM_LAKE_BUCKET, keys)
+
+    assert errors == []
+    for k in keys:
+        assert object_exists(f"{CDM_LAKE_BUCKET}/{k}") is False
+
+
+@pytest.mark.s3
+def test_delete_objects_empty_list_is_noop(mock_s3_client: Any) -> None:
+    """delete_objects with an empty list makes no API call and returns no errors."""
+    mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key="keep/me.txt", Body=b"safe")
+    errors = delete_objects(CDM_LAKE_BUCKET, [])
+    assert errors == []
+    assert object_exists(f"{CDM_LAKE_BUCKET}/keep/me.txt") is True
+
+
+@pytest.mark.s3
+def test_delete_objects_nonexistent_keys_no_error(mock_s3_client: Any) -> None:
+    """Deleting keys that don't exist returns no errors (S3 delete is idempotent)."""
+    errors = delete_objects(CDM_LAKE_BUCKET, ["ghost/a.txt", "ghost/b.txt"])
+    assert errors == []

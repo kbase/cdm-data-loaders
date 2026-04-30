@@ -49,8 +49,8 @@ Understanding this decomposition is the key to configuring the notebooks.
 ### Lakehouse object (final location)
 
 ```
-s3://{STORE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}raw_data/{GCF|GCA}/{nnn}/{nnn}/{nnn}/{assembly_dir}/{filename}
-     └── bucket ──┘ └── key prefix ──────┘└── build_accession_path() ────────────────────────┘
+s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}raw_data/{GCF|GCA}/{nnn}/{nnn}/{nnn}/{assembly_dir}/{filename}
+     └── bucket ─────┘ └── key prefix ──────┘└── build_accession_path() ────────────────────────┘
 ```
 
 Example:
@@ -61,8 +61,8 @@ s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/raw_data/GCF/900/000/
 ### Staging object (Phase 2 output)
 
 ```
-s3://{STORE_BUCKET}/{STAGING_KEY_PREFIX}raw_data/{GCF|GCA}/{nnn}/{nnn}/{nnn}/{assembly_dir}/{filename}
-     └── bucket ──┘ └── key prefix ────┘└── build_accession_path() ────────────────────────┘
+s3://{STAGING_BUCKET}/{STAGING_KEY_PREFIX}raw_data/{GCF|GCA}/{nnn}/{nnn}/{nnn}/{assembly_dir}/{filename}
+     └── bucket ─────┘ └── key prefix ────┘└── build_accession_path() ────────────────────────┘
 ```
 
 ### Local output (Phase 1)
@@ -102,6 +102,7 @@ included `scripts/s3_local.py` helper (requires no extra installs — only
 
 ```sh
 uv run python scripts/s3_local.py mb s3://cdm-lake
+uv run python scripts/s3_local.py mb s3://cts
 ```
 
 ### Lakehouse
@@ -161,13 +162,13 @@ Open `notebooks/ncbi_ftp_manifest.ipynb` in JupyterLab or VS Code.
 | `LIMIT`               | `10`                             | int    | cap to 10 assemblies                                    |
 | `PREVIOUS_SUMMARY_URI` | `None`                          | s3:// URI | first run — everything is "new"                       |
 | `SNAPSHOT_UPLOAD_URI`  | `None`                          | s3:// URI | skip S3 upload for local testing                      |
-| `STORE_BUCKET`        | `"cdm-lake"` (or `None`)         | bucket name | set to prune assemblies already in the Lakehouse   |
+| `LAKEHOUSE_BUCKET`    | `"cdm-lake"` (or `None`)         | bucket name | set to prune assemblies already in the Lakehouse   |
 | `STORE_KEY_PREFIX`    | `"tenant-general-warehouse/kbase/datasets/ncbi/"` | S3 key prefix | default Lakehouse path prefix    |
 | `OUTPUT_DIR`          | `Path("output")`                 | local path | keep as-is (local directory)                        |
 
 ### Initialise the S3 client for MinIO
 
-If you set `PREVIOUS_SUMMARY_URI`, `SNAPSHOT_UPLOAD_URI`, `STORE_BUCKET`,
+If you set `PREVIOUS_SUMMARY_URI`, `SNAPSHOT_UPLOAD_URI`, `LAKEHOUSE_BUCKET`,
 or `STAGING_URI` to point at your local MinIO, you must initialise
 the S3 client **before** running the cells that use them.  Insert a new cell
 after Cell 1 (Imports) with:
@@ -184,7 +185,7 @@ get_s3_client({
 ```
 
 If all three S3 variables are `None` (purely local testing), this cell can
-be skipped — though on repeat runs you should set `STORE_BUCKET` so
+be skipped — though on repeat runs you should set `LAKEHOUSE_BUCKET` so
 assemblies already promoted to the Lakehouse are pruned from the transfer
 manifest.
 
@@ -202,7 +203,7 @@ checksums would take days.
 
 **How it works:**
 1. Set `SCAN_STORE = True` in Cell 5
-2. The notebook scans all objects under `s3://{STORE_BUCKET}/{STORE_KEY_PREFIX}`
+2. The notebook scans all objects under `s3://{LAKEHOUSE_BUCKET}/{STORE_KEY_PREFIX}`
 3. For each unique assembly found, it extracts the accession and uses the
    earliest object `LastModified` as a conservative `seq_rel_date`
 4. It saves the synthetic summary to `LOCAL_SYNTHETIC_SUMMARY` (default:
@@ -213,7 +214,7 @@ checksums would take days.
 **Example (for a 500K-assembly store):**
 ```python
 SCAN_STORE = True
-STORE_BUCKET = "cdm-lake"
+LAKEHOUSE_BUCKET = "cdm-lake"
 STORE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
 LOCAL_SYNTHETIC_SUMMARY = Path("output/synthetic_summary_from_store.txt")
 
@@ -350,13 +351,13 @@ The download step writes to the local filesystem.  To feed Phase 3 we need
 to upload the staged files into MinIO under a staging prefix:
 
 ```sh
-uv run python scripts/s3_local.py cp notebooks/staging/raw_data/ s3://cdm-lake/staging/run1/raw_data/
+uv run python scripts/s3_local.py cp notebooks/staging/raw_data/ s3://cts/staging/run1/raw_data/
 ```
 
 Verify the upload:
 
 ```sh
-uv run python scripts/s3_local.py ls s3://cdm-lake/staging/run1/
+uv run python scripts/s3_local.py ls s3://cts/staging/run1/
 ```
 
 ---
@@ -369,7 +370,8 @@ Open `notebooks/ncbi_ftp_promote.ipynb`.
 
 | Constant                | Walkthrough value                                    | Format | Why                                         |
 |-------------------------|------------------------------------------------------|--------|---------------------------------------------|
-| `STORE_BUCKET`          | `"cdm-lake"`                                         | bucket name | matches the bucket created in Step 1   |
+| `STAGING_BUCKET`        | `"cts"`                                              | bucket name | CTS staging bucket (Phase 2 writes here) |
+| `LAKEHOUSE_BUCKET`      | `"cdm-lake"`                                         | bucket name | final Lakehouse destination            |
 | `STAGING_KEY_PREFIX`    | `"staging/run1/"`                                    | S3 key prefix | matches the upload prefix from Step 3d |
 | `REMOVED_MANIFEST_PATH` | `None`                                              | local path | nothing to remove on first run            |
 | `UPDATED_MANIFEST_PATH` | `None`                                              | local path | nothing to archive on first run           |
@@ -436,7 +438,7 @@ uv run python scripts/s3_local.py head \
 Each promoted assembly gets a [frictionless](https://framework.frictionlessdata.io/) data package descriptor stored at:
 
 ```
-s3://{STORE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}metadata/{assembly_dir}_datapackage.json
+s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}metadata/{assembly_dir}_datapackage.json
 ```
 
 For example:
@@ -458,7 +460,7 @@ When an assembly is archived (updated or removed), its live descriptor is
 copied to:
 
 ```
-s3://{STORE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}archive/{release_tag}/metadata/{assembly_dir}_datapackage.json
+s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}archive/{release_tag}/metadata/{assembly_dir}_datapackage.json
 ```
 
 Use the last cell of `notebooks/ncbi_ftp_promote.ipynb` to list and preview

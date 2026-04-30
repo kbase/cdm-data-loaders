@@ -9,23 +9,27 @@ manifest so that a re-run of Phase 2 only downloads remaining entries.
 import re
 import tempfile
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import botocore.exceptions
+import tqdm
 
 from cdm_data_loaders.ncbi_ftp.metadata import (
     DescriptorResource,
     archive_descriptor,
+    build_descriptor_key,
     create_descriptor,
     upload_descriptor,
 )
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.s3 import (
     copy_object,
-    delete_object,
+    delete_objects,
     get_s3_client,
+    object_exists,
     upload_file,
 )
 
@@ -39,7 +43,8 @@ DEFAULT_LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
 
 def promote_from_s3(  # noqa: PLR0913
     staging_key_prefix: str,
-    bucket: str,
+    staging_bucket: str,
+    lakehouse_bucket: str,
     removed_manifest_path: str | Path | None = None,
     updated_manifest_path: str | Path | None = None,
     ncbi_release: str | None = None,
@@ -54,7 +59,8 @@ def promote_from_s3(  # noqa: PLR0913
     with MD5 metadata from ``.md5`` sidecar files.
 
     :param staging_key_prefix: S3 key prefix where CTS output was written
-    :param bucket: S3 bucket name
+    :param staging_bucket: S3 bucket containing the staged files (e.g. ``"cts"``)
+    :param lakehouse_bucket: S3 bucket for the final Lakehouse destination (e.g. ``"cdm-lake"``)
     :param removed_manifest_path: local path to the removed_manifest file
     :param updated_manifest_path: local path to the updated_manifest file
     :param ncbi_release: NCBI release version tag for archiving
@@ -69,7 +75,7 @@ def promote_from_s3(  # noqa: PLR0913
 
     # Collect all objects under the staging prefix
     staged_objects: list[str] = []
-    for page in paginator.paginate(Bucket=bucket, Prefix=normalized_staging_key_prefix):
+    for page in paginator.paginate(Bucket=staging_bucket, Prefix=normalized_staging_key_prefix):
         staged_objects.extend(obj["Key"] for obj in page.get("Contents", []))
 
     # Separate data files from sidecars
@@ -87,7 +93,7 @@ def promote_from_s3(  # noqa: PLR0913
         if manifest_file and Path(str(manifest_file)).is_file():
             archived += _archive_assemblies(
                 str(manifest_file),
-                bucket=bucket,
+                lakehouse_bucket=lakehouse_bucket,
                 ncbi_release=ncbi_release,
                 lakehouse_key_prefix=lakehouse_key_prefix,
                 archive_reason=reason,
@@ -95,30 +101,19 @@ def promote_from_s3(  # noqa: PLR0913
                 dry_run=dry_run,
             )
 
-    promoted, failed, promoted_accessions, assembly_resources = _promote_data_files(
+    promoted, failed, descriptors_written, promoted_accessions = _promote_data_files(
         data_files,
         sidecars,
         normalized_staging_key_prefix,
         lakehouse_key_prefix,
-        bucket,
+        staging_bucket,
+        lakehouse_bucket,
         dry_run=dry_run,
     )
 
     # Trim manifest for resumability
     if manifest_s3_key and promoted_accessions and not dry_run:
-        _trim_manifest(manifest_s3_key, bucket, promoted_accessions)
-
-    # Upload frictionless descriptors for each promoted assembly
-    descriptors_written = 0
-    for (adir, acc), resources in assembly_resources.items():
-        if not resources:
-            continue
-        try:
-            descriptor = create_descriptor(adir, acc, resources)
-            upload_descriptor(descriptor, adir, bucket, lakehouse_key_prefix, dry_run=dry_run)
-            descriptors_written += 1
-        except Exception:
-            logger.exception("Failed to write descriptor for %s", adir)
+        _trim_manifest(manifest_s3_key, staging_bucket, promoted_accessions)
 
     if descriptors_written:
         logger.info("Wrote %d frictionless descriptor(s)", descriptors_written)
@@ -149,90 +144,148 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
     sidecars: set[str],
     normalized_staging_prefix: str,
     lakehouse_key_prefix: str,
-    bucket: str,
+    staging_bucket: str,
+    lakehouse_bucket: str,
     *,
     dry_run: bool,
-) -> tuple[int, int, set[str], defaultdict[tuple[str, str], list[DescriptorResource]]]:
+) -> tuple[int, int, int, set[str]]:
     """Promote each data file from staging to the final Lakehouse path.
 
-    :return: (promoted_count, failed_count, promoted_accessions, assembly_resources)
+    Files are grouped by assembly.  When all files for an assembly are promoted
+    successfully, the frictionless descriptor is written immediately and the staged
+    files (including sidecars) are deleted from staging.  This prevents staging
+    accumulation across runs and ensures partial runs leave descriptors for all
+    completed assemblies.
+
+    :return: (promoted_count, failed_count, descriptors_written, promoted_accessions)
     """
     s3 = get_s3_client()
     promoted = 0
     failed = 0
+    descriptors_written = 0
     promoted_accessions: set[str] = set()
-    assembly_resources: defaultdict[tuple[str, str], list[DescriptorResource]] = defaultdict(list)
 
+    # Group files by assembly; skip download_report.json and non-raw_data paths
+    assembly_files: defaultdict[tuple[str, str], list[str]] = defaultdict(list)
     for staged_key in data_files:
         if staged_key.endswith("download_report.json"):
             continue
-
         rel_path = staged_key[len(normalized_staging_prefix) :]
         if not rel_path.startswith("raw_data/"):
             continue
+        acc_match = re.search(r"(GC[AF]_\d{9}\.\d+)", staged_key)
+        adir_match = re.search(r"raw_data/GC[AF]/\d+/\d+/\d+/([^/]+)/", staged_key)
+        if acc_match and adir_match:
+            assembly_files[(adir_match.group(1), acc_match.group(1))].append(staged_key)
+
+    def _promote_one(staged_key: str) -> tuple[DescriptorResource, str]:
+        """Download one staged file, re-upload to Lakehouse with MD5 metadata.
+
+        :return: ``(resource_dict, staged_key)`` on success; raises on failure.
+        """
+        rel_path = staged_key[len(normalized_staging_prefix) :]
         final_key = lakehouse_key_prefix + rel_path
+        final_key_path = PurePosixPath(final_key)
 
-        if dry_run:
-            logger.info("[dry-run] would promote: %s -> %s", staged_key, final_key)
-            promoted += 1
-            continue
-
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp_path = tmp.name
         try:
-            with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                tmp_path = tmp.name
-            try:
-                s3.download_file(Bucket=bucket, Key=staged_key, Filename=tmp_path)
+            s3.download_file(Bucket=staging_bucket, Key=staged_key, Filename=tmp_path)
 
-                # Read MD5 from sidecar
-                metadata: dict[str, str] = {}
-                md5_key = staged_key + ".md5"
-                if md5_key in sidecars:
-                    md5_obj = s3.get_object(Bucket=bucket, Key=md5_key)
-                    metadata["md5"] = md5_obj["Body"].read().decode().strip()
+            metadata: dict[str, str] = {}
+            md5_key = staged_key + ".md5"
+            if md5_key in sidecars:
+                md5_obj = s3.get_object(Bucket=staging_bucket, Key=md5_key)
+                metadata["md5"] = md5_obj["Body"].read().decode().strip()
 
-                final_key_path = PurePosixPath(final_key)
-                upload_succeeded = upload_file(
-                    tmp_path,
-                    f"{bucket}/{final_key_path.parent}",
-                    metadata=metadata,
-                    object_name=final_key_path.name,
-                )
-                if not upload_succeeded:
-                    logger.error("Failed to upload promoted file %s to %s", staged_key, final_key)
-                    failed += 1
-                    continue
+            upload_succeeded = upload_file(
+                tmp_path,
+                f"{lakehouse_bucket}/{final_key_path.parent}",
+                tags=metadata,
+                object_name=final_key_path.name,
+                show_progress=False,
+            )
+            if not upload_succeeded:
+                msg = f"upload_file returned False for {staged_key}"
+                raise RuntimeError(msg)
 
-                promoted += 1
+            fname = final_key_path.name
+            ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
+            resource: DescriptorResource = {
+                "name": fname.lower(),
+                "path": final_key,
+                "format": ext,
+                "bytes": Path(tmp_path).stat().st_size,
+                "hash": metadata.get("md5"),
+            }
+            return resource, staged_key
+        finally:
+            Path(tmp_path).unlink()
 
-                # Track promoted accession for manifest trimming
-                acc_match = re.search(r"(GC[AF]_\d{9}\.\d+)", staged_key)
-                if acc_match:
-                    promoted_accessions.add(acc_match.group(1))
+    total_files = sum(len(v) for v in assembly_files.values())
+    _dry_run_log_count = 0
+    with tqdm.tqdm(total=total_files, unit="file", desc="Promoting") as pbar:
+        for (adir, acc), files in assembly_files.items():
+            assembly_failed = 0
+            resources: list[DescriptorResource] = []
+            promoted_keys: list[str] = []
 
-                # Track resources for frictionless descriptor creation
-                adir_match = re.search(r"raw_data/GC[AF]/\d+/\d+/\d+/([^/]+)/", final_key)
-                if adir_match and acc_match:
-                    adir = adir_match.group(1)
-                    acc = acc_match.group(1)
-                    fname = final_key_path.name
-                    ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
-                    md5_hash = metadata.get("md5")
-                    resource: DescriptorResource = {
-                        "name": fname.lower(),
-                        "path": final_key,
-                        "format": ext,
-                        "bytes": Path(tmp_path).stat().st_size,
-                        "hash": md5_hash,
-                    }
-                    assembly_resources[(adir, acc)].append(resource)
+            if dry_run:
+                for staged_key in files:
+                    rel_path = staged_key[len(normalized_staging_prefix) :]
+                    final_key = lakehouse_key_prefix + rel_path
+                    if _dry_run_log_count < 10:
+                        logger.info("[dry-run] would promote: %s -> %s", staged_key, final_key)
+                    else:
+                        logger.debug("[dry-run] would promote: %s -> %s", staged_key, final_key)
+                    _dry_run_log_count += 1
+                    promoted += 1
+                    pbar.update(1)
+                continue
 
-            finally:
-                Path(tmp_path).unlink()
-        except Exception:
-            logger.exception("Failed to promote %s", staged_key)
-            failed += 1
+            # Download and re-upload all files for this assembly concurrently
+            n_workers = min(32, len(files))
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
+                futures = {executor.submit(_promote_one, key): key for key in files}
+                for future in as_completed(futures):
+                    staged_key = futures[future]
+                    try:
+                        resource, _ = future.result()
+                        resources.append(resource)
+                        promoted_keys.append(staged_key)
+                        promoted += 1
+                        promoted_accessions.add(acc)
+                    except Exception:
+                        logger.exception("Failed to promote %s", staged_key)
+                        assembly_failed += 1
+                    pbar.update(1)
 
-    return promoted, failed, promoted_accessions, assembly_resources
+            failed += assembly_failed
+
+            # Write descriptor and delete staged files immediately after a fully successful assembly
+            if assembly_failed == 0 and promoted_keys:
+                try:
+                    descriptor_key = build_descriptor_key(adir, lakehouse_key_prefix)
+                    if object_exists(f"{lakehouse_bucket}/{descriptor_key}"):
+                        logger.debug("Descriptor already exists, skipping: %s", descriptor_key)
+                    else:
+                        descriptor = create_descriptor(adir, acc, resources)
+                        upload_descriptor(descriptor, adir, lakehouse_bucket, lakehouse_key_prefix, dry_run=False)
+                        descriptors_written += 1
+                except Exception:
+                    logger.exception("Failed to write descriptor for %s", adir)
+
+                # Batch-delete all staged data files and their sidecars in one API call
+                keys_to_delete = list(promoted_keys)
+                for key in promoted_keys:
+                    for sidecar_ext in (".md5", ".crc64nvme"):
+                        if key + sidecar_ext in sidecars:
+                            keys_to_delete.append(key + sidecar_ext)
+                del_errors = delete_objects(staging_bucket, keys_to_delete)
+                for err in del_errors:
+                    logger.warning("Failed to delete staged file %s: %s", err.get("Key"), err.get("Message"))
+
+    return promoted, failed, descriptors_written, promoted_accessions
 
 
 # ── Archive assemblies ──────────────────────────────────────────────────
@@ -240,7 +293,7 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
 
 def _archive_assemblies(  # noqa: PLR0913
     manifest_local_path: str,
-    bucket: str,
+    lakehouse_bucket: str,
     ncbi_release: str | None = None,
     lakehouse_key_prefix: str = DEFAULT_LAKEHOUSE_KEY_PREFIX,
     archive_reason: str = "unknown",
@@ -256,7 +309,7 @@ def _archive_assemblies(  # noqa: PLR0913
     originals remain in place to be overwritten by the promote step.
 
     :param manifest_local_path: local path to a manifest file (one accession per line)
-    :param bucket: S3 bucket name
+    :param lakehouse_bucket: S3 bucket for the Lakehouse (source and archive destination)
     :param ncbi_release: release tag used in the archive path
     :param lakehouse_key_prefix: S3 key prefix for the Lakehouse dataset root
     :param archive_reason: metadata value describing why the object was archived
@@ -266,13 +319,13 @@ def _archive_assemblies(  # noqa: PLR0913
     """
     s3 = get_s3_client()
     release_tag = ncbi_release or "unknown"
-    datestamp = datetime.now(UTC).strftime("%Y-%m-%d")
     archived = 0
 
     with Path(manifest_local_path).open() as f:
         accessions = [line.strip() for line in f if line.strip()]
 
-    for accession in accessions:
+    _dry_run_log_count = 0
+    for accession in tqdm.tqdm(accessions, unit="accession", desc="Archiving"):
         m = re.match(r"(GC[AF])_(\d{3})(\d{3})(\d{3})\.\d+", accession)
         if not m:
             logger.warning("Cannot parse accession for archival: %s", accession)
@@ -284,7 +337,7 @@ def _archive_assemblies(  # noqa: PLR0913
 
         paginator = s3.get_paginator("list_objects_v2")
         matching_keys: list[str] = []
-        for page in paginator.paginate(Bucket=bucket, Prefix=source_prefix):
+        for page in paginator.paginate(Bucket=lakehouse_bucket, Prefix=source_prefix):
             matching_keys.extend(obj["Key"] for obj in page.get("Contents", []) if accession in obj["Key"])
 
         if not matching_keys:
@@ -299,38 +352,59 @@ def _archive_assemblies(  # noqa: PLR0913
                 assembly_dir = adir_match.group(1)
                 break
 
-        for source_key in matching_keys:
-            rel = source_key[len(lakehouse_key_prefix) :]
-            archive_key = f"{lakehouse_key_prefix}archive/{release_tag}/{rel}"
+        key_pairs = [
+            (
+                source_key,
+                f"{lakehouse_key_prefix}archive/{release_tag}/{archive_reason}/{source_key[len(lakehouse_key_prefix) :]}",
+            )
+            for source_key in matching_keys
+        ]
 
-            if dry_run:
-                logger.info("[dry-run] would archive: %s -> %s", source_key, archive_key)
-                archived += 1
-                continue
+        if dry_run:
+            for source_key, archive_key in key_pairs:
+                if _dry_run_log_count < 10:
+                    logger.info("[dry-run] would archive: %s -> %s", source_key, archive_key)
+                else:
+                    logger.debug("[dry-run] would archive: %s -> %s", source_key, archive_key)
+                _dry_run_log_count += 1
+            archived += len(key_pairs)
+            continue
 
-            try:
-                copy_object(
-                    f"{bucket}/{source_key}",
-                    f"{bucket}/{archive_key}",
-                    metadata={
-                        "ncbi_last_release": release_tag,
-                        "archive_reason": archive_reason,
-                        "archive_date": datestamp,
-                    },
-                )
-                if delete_source:
-                    delete_object(f"{bucket}/{source_key}")
-                archived += 1
-                logger.debug("  Archived: %s -> %s", source_key, archive_key)
-            except Exception:
-                logger.exception("Failed to archive %s", source_key)
+        # Copy all files for this accession concurrently
+        keys_to_delete: list[str] = []
+        n_workers = min(32, len(key_pairs))
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = {
+                executor.submit(
+                    copy_object,
+                    f"{lakehouse_bucket}/{src}",
+                    f"{lakehouse_bucket}/{arch}",
+                ): src
+                for src, arch in key_pairs
+            }
+            for future in as_completed(futures):
+                src = futures[future]
+                try:
+                    future.result()
+                    archived += 1
+                    if delete_source:
+                        keys_to_delete.append(src)
+                    logger.debug("  Archived: %s", src)
+                except Exception:
+                    logger.exception("Failed to archive %s", src)
+
+        # Batch-delete source keys in a single API call
+        if keys_to_delete:
+            del_errors = delete_objects(lakehouse_bucket, keys_to_delete)
+            for err in del_errors:
+                logger.warning("Failed to delete %s: %s", err.get("Key"), err.get("Message"))
 
         # Archive the frictionless descriptor alongside raw data
         if assembly_dir:
             try:
                 archive_descriptor(
                     assembly_dir,
-                    bucket,
+                    lakehouse_bucket,
                     lakehouse_key_prefix,
                     release_tag,
                     archive_reason=archive_reason,
@@ -346,11 +420,11 @@ def _archive_assemblies(  # noqa: PLR0913
 # ── Manifest trimming ───────────────────────────────────────────────────
 
 
-def _trim_manifest(manifest_s3_key: str, bucket: str, promoted_accessions: set[str]) -> None:
+def _trim_manifest(manifest_s3_key: str, staging_bucket: str, promoted_accessions: set[str]) -> None:
     """Remove promoted accessions from the transfer manifest in S3.
 
     :param manifest_s3_key: S3 object key of the transfer_manifest.txt
-    :param bucket: S3 bucket name
+    :param staging_bucket: S3 bucket containing the transfer manifest
     :param promoted_accessions: set of accessions that were successfully promoted
     """
     s3 = get_s3_client()
@@ -360,13 +434,13 @@ def _trim_manifest(manifest_s3_key: str, bucket: str, promoted_accessions: set[s
 
     try:
         try:
-            s3.download_file(Bucket=bucket, Key=manifest_s3_key, Filename=tmp_path)
+            s3.download_file(Bucket=staging_bucket, Key=manifest_s3_key, Filename=tmp_path)
         except s3.exceptions.NoSuchKey:
-            logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", bucket, manifest_s3_key)
+            logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", staging_bucket, manifest_s3_key)
             return
         except botocore.exceptions.ClientError as e:
             if e.response["Error"]["Code"] == "404":
-                logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", bucket, manifest_s3_key)
+                logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", staging_bucket, manifest_s3_key)
                 return
             raise
 
@@ -378,7 +452,7 @@ def _trim_manifest(manifest_s3_key: str, bucket: str, promoted_accessions: set[s
         with Path(tmp_path).open("w") as f:
             f.writelines(remaining)
 
-        s3.upload_file(Filename=tmp_path, Bucket=bucket, Key=manifest_s3_key)
+        s3.upload_file(Filename=tmp_path, Bucket=staging_bucket, Key=manifest_s3_key)
         logger.info(
             "Trimmed manifest: %d -> %d entries (%d promoted)",
             len(lines),

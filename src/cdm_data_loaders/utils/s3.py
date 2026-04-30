@@ -200,7 +200,8 @@ def upload_file(
     local_file_path: Path | str,
     destination_dir: str,
     object_name: str | None = None,
-    metadata: dict[str, str] | None = None,
+    tags: dict[str, str] | None = None,
+    show_progress: bool = True,
 ) -> bool:
     """Upload an object to an S3 bucket.
 
@@ -231,31 +232,39 @@ def upload_file(
         object_name = local_file_path.name
 
     s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
-    if metadata is None and object_exists(s3_path):
-        logger.info("File already present: %s", s3_path)
+    if tags is None and object_exists(s3_path):
+        logger.debug("File already present: %s", s3_path)
         return True
 
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
 
-    extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": metadata}) if metadata is not None else {})}
+    extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": tags}) if tags is not None else {})}
 
     # Upload the file
-    file_size = local_file_path.stat().st_size
-    with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
-        logger.info("uploading %s to %s", str(local_file_path), s3_path)
-        try:
+    logger.debug("uploading %s to %s", str(local_file_path), s3_path)
+    try:
+        if show_progress:
+            file_size = local_file_path.stat().st_size
+            with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
+                s3.upload_file(
+                    Filename=str(local_file_path),
+                    Bucket=bucket,
+                    Key=key,
+                    Callback=pbar.update,
+                    ExtraArgs=extra_args,
+                )
+        else:
             s3.upload_file(
                 Filename=str(local_file_path),
                 Bucket=bucket,
                 Key=key,
-                Callback=pbar.update,
                 ExtraArgs=extra_args,
             )
-        except Exception as e:  # noqa: BLE001
-            logger.exception("Error uploading to s3")
-            return False
-        return True
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Error uploading to s3")
+        return False
+    return True
 
 
 def stream_to_s3(url: str, s3_path: str, requests: ModuleType) -> str:
@@ -287,7 +296,9 @@ def stream_to_s3(url: str, s3_path: str, requests: ModuleType) -> str:
     return f"{bucket}/{key}"
 
 
-def download_file(s3_path: str, local_file_path: str | Path, version_id: str | None = None) -> None:
+def download_file(
+    s3_path: str, local_file_path: str | Path, version_id: str | None = None, show_progress: bool = True
+) -> None:
     """Download an object from s3.
 
     WARNING: will overwrite existing files but will not overwrite a file whilst trying to make a directory
@@ -333,13 +344,21 @@ def download_file(s3_path: str, local_file_path: str | Path, version_id: str | N
     # set ``unit_scale=True`` so tqdm uses SI unit prefixes
     # ``unit="B"`` means it adds the string "B" as a suffix
     # progress is reported as (e.g.) "14.5kB/s".
-    with tqdm.tqdm(total=object_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
+    if show_progress:
+        with tqdm.tqdm(total=object_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
+            s3.download_file(
+                Bucket=bucket,
+                Key=key,
+                ExtraArgs=extra_args,
+                Filename=str(local_file_path),
+                Callback=pbar.update,
+            )
+    else:
         s3.download_file(
             Bucket=bucket,
             Key=key,
             ExtraArgs=extra_args,
             Filename=str(local_file_path),
-            Callback=pbar.update,
         )
 
 
@@ -420,13 +439,11 @@ def upload_dir(
 def copy_object(
     current_s3_path: str,
     new_s3_path: str,
-    metadata: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Copy an object from one place to another, adding in a CRC64NVME checksum.
+    """Copy an object from one place to another, inheriting the source user metadata.
 
-    When *metadata* is supplied the destination object carries exactly those
-    key/value pairs (``MetadataDirective='REPLACE'``).  When *metadata* is
-    ``None`` (the default) the source metadata is inherited.
+    Source user metadata (e.g. ``md5``) is preserved on the destination because
+    ``MetadataDirective`` is omitted, which defaults to ``COPY``.
 
     A successful copy operation will return a response where
     resp["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -438,26 +455,17 @@ def copy_object(
     :type current_s3_path: str
     :param new_s3_path: the desired new file path on s3, INCLUDING the bucket name
     :type new_s3_path: str
-    :param metadata: user metadata to set on the destination object; when provided the source metadata is replaced
-    :type metadata: dict[str, str] | None
-    :return: dictionary containing response
+    :return: dictionary containing response from the copy operation
     :rtype: dict[str, Any]
     """
     s3 = get_s3_client()
     (current_s3_bucket, current_s3_key) = split_s3_path(current_s3_path)
     (new_s3_bucket, new_s3_key) = split_s3_path(new_s3_path)
 
-    extra: dict[str, Any] = {}
-    if metadata is not None:
-        extra["Metadata"] = metadata
-        extra["MetadataDirective"] = "REPLACE"
-
     return s3.copy_object(
         CopySource={"Bucket": current_s3_bucket, "Key": current_s3_key},
         Bucket=new_s3_bucket,
         Key=new_s3_key,
-        **extra,
-        **DEFAULT_EXTRA_ARGS,
     )
 
 
@@ -517,7 +525,6 @@ def copy_directory(current_s3_path: str, new_s3_path: str) -> tuple[dict[str, st
                     CopySource={"Bucket": current_s3_bucket, "Key": current_key},
                     Bucket=new_s3_bucket,
                     Key=new_key,
-                    **DEFAULT_EXTRA_ARGS,
                 )
                 if resp["ResponseMetadata"]["HTTPStatusCode"] == SUCCESS_RESPONSE:
                     successes[source_path] = dest_path
@@ -547,3 +554,28 @@ def delete_object(s3_path: str) -> dict[str, Any]:
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
     return s3.delete_object(Bucket=bucket, Key=key)
+
+
+def delete_objects(bucket: str, keys: list[str]) -> list[dict[str, Any]]:
+    """Delete multiple objects from an S3 bucket in a single API call.
+
+    Splits into batches of 1000 (the S3 API maximum per request).
+
+    :param bucket: S3 bucket name (no protocol prefix)
+    :param keys: list of S3 keys to delete
+    :return: list of per-key error dicts returned by S3 (empty if all succeeded)
+    :rtype: list[dict[str, Any]]
+    """
+    if not keys:
+        return []
+
+    s3 = get_s3_client()
+    errors: list[dict[str, Any]] = []
+    for i in range(0, len(keys), 1000):
+        batch = keys[i : i + 1000]
+        resp = s3.delete_objects(
+            Bucket=bucket,
+            Delete={"Objects": [{"Key": k} for k in batch], "Quiet": False},
+        )
+        errors.extend(resp.get("Errors", []))
+    return errors

@@ -153,8 +153,26 @@ class ThreadLocalFTP:
         self._connections: list[FTP] = []
 
     def get(self) -> FTP:
-        """Return the FTP connection for the current thread, creating one if needed."""
+        """Return the FTP connection for the current thread, reconnecting if stale.
+
+        Sends a NOOP to verify the connection is still alive before returning it.
+        If the server has closed the connection (e.g. after an idle timeout or
+        session limit), the dead socket is discarded and a fresh connection is
+        established transparently.
+        """
         ftp = getattr(self._local, "ftp", None)
+        if ftp is not None:
+            try:
+                ftp.voidcmd("NOOP")
+            except Exception:
+                # Connection is stale — discard it and reconnect below
+                with contextlib.suppress(Exception):
+                    ftp.quit()
+                with self._lock:
+                    with contextlib.suppress(ValueError):
+                        self._connections.remove(ftp)
+                ftp = None
+                self._local.ftp = None
         if ftp is None:
             ftp = connect_ftp(self._host, self._timeout)
             self._local.ftp = ftp

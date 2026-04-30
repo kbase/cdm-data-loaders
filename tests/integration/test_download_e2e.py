@@ -10,7 +10,9 @@ import json
 import pytest
 
 from pathlib import Path
+from unittest.mock import patch
 
+import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.manifest import (
     compute_diff,
     download_assembly_summary,
@@ -18,7 +20,7 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     parse_assembly_summary,
     write_transfer_manifest,
 )
-from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch
+from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch, download_and_stage
 
 # Use same stable prefix as manifest tests
 STABLE_PREFIX = "900"
@@ -125,3 +127,61 @@ class TestDownloadResumeIncomplete:
         # All original files should still exist
         files_after_second = set(output_dir.rglob("*"))
         assert files_after_first.issubset(files_after_second)
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+@pytest.mark.external_request
+def test_download_and_stage_e2e(
+    tmp_path: Path,
+    minio_s3_client,
+    test_bucket: str,
+) -> None:
+    """Download one assembly and verify it is staged under the expected S3 prefix."""
+    manifest_path, _acc = _manifest_for_one_assembly(tmp_path)
+
+    staging_prefix = "staging/e2e-test/"
+
+    # Seed the manifest in MinIO so download_and_stage can read it from S3
+    manifest_s3_key = f"{staging_prefix}input/transfer_manifest.txt"
+    minio_s3_client.put_object(
+        Bucket=test_bucket,
+        Key=manifest_s3_key,
+        Body=manifest_path.read_bytes(),
+    )
+
+    with patch.object(s3_utils, "get_s3_client", return_value=minio_s3_client):
+        report = download_and_stage(
+            bucket=test_bucket,
+            staging_key_prefix=staging_prefix,
+            manifest_s3_key=manifest_s3_key,
+            threads=1,
+            limit=1,
+            dry_run=False,
+        )
+
+    assert report["succeeded"] >= 1
+    assert report["failed"] == 0
+    assert report["staged_objects"] > 0
+    assert report["staging_key_prefix"] == staging_prefix
+    assert report["dry_run"] is False
+
+    # Verify raw_data/ files and .md5 sidecars are staged
+    paginator = minio_s3_client.get_paginator("list_objects_v2")
+    staged_keys = [
+        obj["Key"]
+        for page in paginator.paginate(Bucket=test_bucket, Prefix=f"{staging_prefix}raw_data/")
+        for obj in page.get("Contents", [])
+    ]
+    assert len(staged_keys) > 0, "Expected staged files under raw_data/"
+
+    data_files = [k for k in staged_keys if not k.endswith(".md5")]
+    md5_files = [k for k in staged_keys if k.endswith(".md5")]
+    assert len(data_files) > 0, "Expected data files"
+    assert len(md5_files) > 0, "Expected .md5 sidecar files"
+
+    # Verify download_report.json was also uploaded
+    report_key = f"{staging_prefix}download_report.json"
+    resp = minio_s3_client.get_object(Bucket=test_bucket, Key=report_key)
+    saved_report = json.loads(resp["Body"].read())
+    assert saved_report["succeeded"] >= 1

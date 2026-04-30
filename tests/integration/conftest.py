@@ -153,6 +153,36 @@ def test_bucket(minio_s3_client: botocore.client.BaseClient, request: pytest.Fix
     return bucket
 
 
+@pytest.fixture
+def staging_test_bucket(minio_s3_client: botocore.client.BaseClient, request: pytest.FixtureRequest) -> str:
+    """Create a per-test staging bucket in MinIO and return its name.
+
+    Mirrors ``test_bucket`` but uses a ``staging-`` prefix so staging and
+    Lakehouse buckets are distinct within the same test.
+    """
+    bucket = "staging-" + _bucket_name_from_node(request.node.nodeid)
+    if len(bucket) > _MAX_BUCKET_LEN:
+        suffix = hashlib.md5(bucket.encode()).hexdigest()[:6]  # noqa: S324
+        bucket = f"{bucket[: _MAX_BUCKET_LEN - 7]}-{suffix}"
+    s3 = minio_s3_client
+
+    try:
+        s3.head_bucket(Bucket=bucket)
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket):
+            for obj in page.get("Contents", []):
+                s3.delete_object(Bucket=bucket, Key=obj["Key"])
+    except s3.exceptions.NoSuchBucket:
+        s3.create_bucket(Bucket=bucket)
+    except botocore.exceptions.ClientError as e:
+        if e.response["Error"]["Code"] in ("404", "NoSuchBucket"):
+            s3.create_bucket(Bucket=bucket)
+        else:
+            raise
+
+    return bucket
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────
 
 
@@ -257,12 +287,12 @@ def list_all_keys(s3: botocore.client.BaseClient, bucket: str, prefix: str = "")
 
 
 def get_object_metadata(s3: botocore.client.BaseClient, bucket: str, key: str) -> dict[str, Any]:
-    """Return the user metadata dict for an S3 object.
+    """Return the S3 user metadata dict for an S3 object (from HeadObject).
 
     :param s3: boto3 S3 client
     :param bucket: bucket name
     :param key: object key
-    :return: metadata dict
+    :return: user metadata dict
     """
     resp = s3.head_object(Bucket=bucket, Key=key)
     return resp.get("Metadata", {})

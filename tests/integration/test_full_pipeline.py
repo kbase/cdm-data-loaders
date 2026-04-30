@@ -29,7 +29,7 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
 from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX, promote_from_s3
 from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch
 
-from .conftest import get_object_metadata, list_all_keys, stage_files_to_minio
+from .conftest import get_object_metadata, list_all_keys, stage_files_to_minio, staging_test_bucket  # noqa: F401
 
 STABLE_PREFIX = "900"
 STAGING_PREFIX = "staging/run1/"
@@ -46,6 +46,7 @@ class TestFullPipelineSmallBatch:
         self,
         minio_s3_client: object,
         test_bucket: str,
+        staging_test_bucket: str,
         tmp_path: Path,
     ) -> None:
         """Single assembly flows through all three phases into MinIO."""
@@ -76,13 +77,14 @@ class TestFullPipelineSmallBatch:
         assert report["failed"] == 0
 
         # ── Upload local output to MinIO staging ────────────────────────
-        keys = stage_files_to_minio(s3, test_bucket, output_dir, STAGING_PREFIX)
+        keys = stage_files_to_minio(s3, staging_test_bucket, output_dir, STAGING_PREFIX)
         assert len(keys) > 0, "Expected files staged to MinIO"
 
         # ── Phase 3: Promote from staging to final path ─────────────────
         promote_report = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
         )
         assert promote_report["promoted"] >= 1
@@ -112,6 +114,7 @@ class TestFullPipelineIncrementalSync:
         self,
         minio_s3_client: object,
         test_bucket: str,
+        staging_test_bucket: str,
         tmp_path: Path,
     ) -> None:
         """Second sync archives the old version and promotes the new one."""
@@ -133,15 +136,16 @@ class TestFullPipelineIncrementalSync:
         report1 = download_batch(str(manifest1), str(output1), threads=1, limit=1)
         assert report1["succeeded"] >= 1
 
-        stage_files_to_minio(s3, test_bucket, output1, STAGING_PREFIX)
+        stage_files_to_minio(s3, staging_test_bucket, output1, STAGING_PREFIX)
 
-        # Upload manifest to MinIO for trimming
+        # Upload manifest to MinIO for trimming (manifest lives in staging bucket)
         manifest_key = "ncbi/transfer_manifest.txt"
-        s3.upload_file(Filename=str(manifest1), Bucket=test_bucket, Key=manifest_key)
+        s3.upload_file(Filename=str(manifest1), Bucket=staging_test_bucket, Key=manifest_key)
 
         promote1 = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
             manifest_s3_key=manifest_key,
             lakehouse_key_prefix=PATH_PREFIX,
         )
@@ -190,15 +194,16 @@ class TestFullPipelineIncrementalSync:
         assert report2["succeeded"] >= 1
 
         # Clean staging and re-stage
-        staging_keys = list_all_keys(s3, test_bucket, STAGING_PREFIX)
+        staging_keys = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
         for key in staging_keys:
-            s3.delete_object(Bucket=test_bucket, Key=key)
-        stage_files_to_minio(s3, test_bucket, output2, STAGING_PREFIX)
+            s3.delete_object(Bucket=staging_test_bucket, Key=key)
+        stage_files_to_minio(s3, staging_test_bucket, output2, STAGING_PREFIX)
 
         # Phase 3 — promote with archival
         promote2 = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
             updated_manifest_path=str(updated_manifest),
             ncbi_release="test-incremental",
             lakehouse_key_prefix=PATH_PREFIX,
@@ -210,8 +215,7 @@ class TestFullPipelineIncrementalSync:
         if promote2["archived"] > 0:
             assert len(archive_keys) >= 1
             for key in archive_keys:
-                meta = get_object_metadata(s3, test_bucket, key)
-                assert meta.get("archive_reason") == "updated"
+                assert "/updated/" in key
 
         # Final Lakehouse path should still have files
         final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
