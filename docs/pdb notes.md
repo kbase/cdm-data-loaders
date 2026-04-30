@@ -1,4 +1,4 @@
-Copilot's Size Estimates:
+# Copilot's Size Estimates
 
 Now I have enough data to give you a solid estimate. Here's what the numbers look like based on the wwPDB holdings and RCSB statistics (as of April 2026):
 
@@ -41,7 +41,7 @@ A few caveats worth noting for planning:
 
 
 
-Notes on what was "brought in" with BERIL repo code:
+# Notes on what was "brought in" with BERIL repo code
 
 Here's what was brought in:
 

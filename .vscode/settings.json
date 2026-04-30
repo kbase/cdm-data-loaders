@@ -19,5 +19,8 @@
     "python.testing.pytestArgs": [
         "tests"
     ],
-    "editor.formatOnSave": true
+    "editor.formatOnSave": true,
+    "chat.tools.terminal.autoApprove": {
+        "uv": true
+    }
 }
