@@ -439,18 +439,11 @@ def upload_dir(
 def copy_object(
     current_s3_path: str,
     new_s3_path: str,
-    tags: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Copy an object from one place to another, inheriting the source user metadata.
 
     Source user metadata (e.g. ``md5``) is preserved on the destination because
     ``MetadataDirective`` is omitted, which defaults to ``COPY``.
-
-    When *metadata* is supplied it is applied as S3 object **tags** via a
-    separate ``put_object_tagging`` call rather than as user metadata.  This
-    avoids passing ``MetadataDirective=REPLACE`` to ``CopyObject``, which causes
-    botocore to inject an unsigned checksum header that AWS rejects with
-    AccessDenied.
 
     A successful copy operation will return a response where
     resp["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -462,8 +455,6 @@ def copy_object(
     :type current_s3_path: str
     :param new_s3_path: the desired new file path on s3, INCLUDING the bucket name
     :type new_s3_path: str
-    :param tags: key-value pairs to set as S3 object tags on the destination
-    :type tags: dict[str, str] | None
     :return: dictionary containing response from the copy operation
     :rtype: dict[str, Any]
     """
@@ -471,20 +462,11 @@ def copy_object(
     (current_s3_bucket, current_s3_key) = split_s3_path(current_s3_path)
     (new_s3_bucket, new_s3_key) = split_s3_path(new_s3_path)
 
-    resp = s3.copy_object(
+    return s3.copy_object(
         CopySource={"Bucket": current_s3_bucket, "Key": current_s3_key},
         Bucket=new_s3_bucket,
         Key=new_s3_key,
     )
-
-    if tags:
-        s3.put_object_tagging(
-            Bucket=new_s3_bucket,
-            Key=new_s3_key,
-            Tagging={"TagSet": [{"Key": k, "Value": v} for k, v in tags.items()]},
-        )
-
-    return resp
 
 
 def copy_directory(current_s3_path: str, new_s3_path: str) -> tuple[dict[str, str], dict[str, Any]]:

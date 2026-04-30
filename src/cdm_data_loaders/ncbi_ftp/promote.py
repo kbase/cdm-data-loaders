@@ -311,7 +311,6 @@ def _archive_assemblies(  # noqa: PLR0913
     """
     s3 = get_s3_client()
     release_tag = ncbi_release or "unknown"
-    datestamp = datetime.now(UTC).strftime("%Y-%m-%d")
     archived = 0
 
     with Path(manifest_local_path).open() as f:
@@ -347,7 +346,7 @@ def _archive_assemblies(  # noqa: PLR0913
 
         for source_key in matching_keys:
             rel = source_key[len(lakehouse_key_prefix) :]
-            archive_key = f"{lakehouse_key_prefix}archive/{release_tag}/{rel}"
+            archive_key = f"{lakehouse_key_prefix}archive/{release_tag}/{archive_reason}/{rel}"
 
             if dry_run:
                 if _dry_run_log_count < 10:
@@ -362,11 +361,6 @@ def _archive_assemblies(  # noqa: PLR0913
                 copy_object(
                     f"{lakehouse_bucket}/{source_key}",
                     f"{lakehouse_bucket}/{archive_key}",
-                    tags={
-                        "ncbi_last_release": release_tag,
-                        "archive_reason": archive_reason,
-                        "archive_date": datestamp,
-                    },
                 )
                 if delete_source:
                     delete_object(f"{lakehouse_bucket}/{source_key}")

@@ -118,7 +118,7 @@ def test_archive_assemblies_removed(mock_s3_client_no_checksum: botocore.client.
     assert mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=key).get("KeyCount", 0) == 0
 
     archive_key = (
-        f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-01/"
+        f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-01/replaced_or_suppressed/"
         f"raw_data/GCF/000/005/845/{accession}_ASM584v2/{accession}_genomic.fna.gz"
     )
     assert mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=archive_key).get("KeyCount", 0) == 1
@@ -149,15 +149,9 @@ def test_archive_assemblies_updated_no_delete(
     )
     assert mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=key).get("KeyCount", 0) == 1
 
-    archive_key = (
-        f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-06/raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
-    )
+    archive_key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-06/updated/raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
     resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=archive_key)
     assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
-    tag_resp = mock_s3_client_no_checksum.get_object_tagging(Bucket=TEST_BUCKET, Key=archive_key)
-    tags = {t["Key"]: t["Value"] for t in tag_resp["TagSet"]}
-    assert tags["archive_reason"] == "updated"
-    assert tags["ncbi_last_release"] == "2024-06"
 
 
 @pytest.mark.s3
@@ -177,12 +171,8 @@ def test_archive_assemblies_multiple_releases_no_collision(
     mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=key, Body=b"v2-data")
     _archive_assemblies(str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-06", archive_reason="updated")
 
-    archive_key_1 = (
-        f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-01/raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
-    )
-    archive_key_2 = (
-        f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-06/raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
-    )
+    archive_key_1 = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-01/updated/raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
+    archive_key_2 = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-06/updated/raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
     assert mock_s3_client_no_checksum.get_object(Bucket=TEST_BUCKET, Key=archive_key_1)["Body"].read() == b"v1-data"
     assert mock_s3_client_no_checksum.get_object(Bucket=TEST_BUCKET, Key=archive_key_2)["Body"].read() == b"v2-data"
 
@@ -239,7 +229,5 @@ def test_archive_assemblies_unknown_release_fallback(
 
     assert _archive_assemblies(str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release=None) == 1
 
-    archive_key = (
-        f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/unknown/raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
-    )
+    archive_key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/unknown/unknown/raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
     assert mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=archive_key).get("KeyCount", 0) == 1

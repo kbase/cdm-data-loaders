@@ -67,16 +67,19 @@ def build_descriptor_key(assembly_dir: str, key_prefix: str) -> str:
     return f"{prefix}metadata/{assembly_dir}_datapackage.json"
 
 
-def build_archive_descriptor_key(assembly_dir: str, release_tag: str, key_prefix: str) -> str:
+def build_archive_descriptor_key(
+    assembly_dir: str, release_tag: str, key_prefix: str, archive_reason: str = "unknown"
+) -> str:
     """Return the S3 key for the archived descriptor of *assembly_dir*.
 
     :param assembly_dir: full assembly directory name
     :param release_tag: NCBI release tag used in the archive path, e.g. ``"2024-01"``
     :param key_prefix: Lakehouse key prefix
-    :return: S3 key under ``archive/{release_tag}/metadata/``
+    :param archive_reason: reason for archival, encoded as a path segment
+    :return: S3 key under ``archive/{release_tag}/{archive_reason}/metadata/``
     """
     prefix = key_prefix.rstrip("/") + "/"
-    return f"{prefix}archive/{release_tag}/metadata/{assembly_dir}_datapackage.json"
+    return f"{prefix}archive/{release_tag}/{archive_reason}/metadata/{assembly_dir}_datapackage.json"
 
 
 def create_descriptor(
@@ -224,7 +227,7 @@ def archive_descriptor(  # noqa: PLR0913
     :return: ``True`` if the descriptor was (or would be) archived; ``False`` if not found
     """
     source_key = build_descriptor_key(assembly_dir, key_prefix)
-    archive_key = build_archive_descriptor_key(assembly_dir, release_tag, key_prefix)
+    archive_key = build_archive_descriptor_key(assembly_dir, release_tag, key_prefix, archive_reason)
 
     if dry_run:
         logger.debug("[dry-run] would archive descriptor: s3://%s/%s -> %s", bucket, source_key, archive_key)
@@ -243,15 +246,9 @@ def archive_descriptor(  # noqa: PLR0913
             return False
         raise
 
-    datestamp = datetime.now(UTC).strftime("%Y-%m-%d")
     copy_object(
         f"{bucket}/{source_key}",
         f"{bucket}/{archive_key}",
-        tags={
-            "ncbi_last_release": release_tag,
-            "archive_reason": archive_reason,
-            "archive_date": datestamp,
-        },
     )
     logger.debug("Archived descriptor: s3://%s/%s -> %s", bucket, source_key, archive_key)
     return True

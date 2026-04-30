@@ -974,44 +974,35 @@ def test_head_object_with_protocols(mock_s3_client: Any, protocol: str) -> None:
     assert result["size"] == SIZE_DATA
 
 
-# copy_object with metadata
+# copy_object
 @pytest.mark.parametrize("destination", BUCKETS)
 @pytest.mark.s3
-def test_copy_object_with_metadata_replaces_metadata(mocked_s3_client_no_checksum: Any, destination: str) -> None:
-    """Verify that copy_object with tags copies the object and sets S3 object tags on the destination."""
+def test_copy_object_preserves_user_metadata(mocked_s3_client_no_checksum: Any, destination: str) -> None:
+    """copy_object preserves source user metadata (MetadataDirective=COPY default)."""
     mocked_s3_client_no_checksum.put_object(
-        Bucket=CDM_LAKE_BUCKET, Key="src/file.txt", Body=b"archive me", Metadata={"old_key": "old_val"}
+        Bucket=CDM_LAKE_BUCKET, Key="src/file.txt", Body=b"archive me", Metadata={"md5": "abc123"}
     )
-    new_tags = {"archive_reason": "replaced", "archive_date": "2026-04-16"}
     response = copy_object(
         f"{CDM_LAKE_BUCKET}/src/file.txt",
         f"{destination}/archive/file.txt",
-        tags=new_tags,
     )
     assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_STATUS_OK
 
-    # archive fields are stored as S3 tags, not user metadata
-    tag_resp = mocked_s3_client_no_checksum.get_object_tagging(Bucket=destination, Key="archive/file.txt")
-    tag_dict = {t["Key"]: t["Value"] for t in tag_resp["TagSet"]}
-    assert tag_dict["archive_reason"] == "replaced"
-    assert tag_dict["archive_date"] == "2026-04-16"
-
     # source user metadata is preserved (MetadataDirective=COPY)
     resp = mocked_s3_client_no_checksum.head_object(Bucket=destination, Key="archive/file.txt")
-    assert resp["Metadata"].get("old_key") == "old_val"
+    assert resp["Metadata"].get("md5") == "abc123"
 
     # verify source still exists
     assert object_exists(f"{CDM_LAKE_BUCKET}/src/file.txt")
 
 
 @pytest.mark.s3
-def test_copy_object_with_metadata_preserves_content(mocked_s3_client_no_checksum: Any) -> None:
+def test_copy_object_preserves_content(mocked_s3_client_no_checksum: Any) -> None:
     """Verify that the content of the copied object matches the original."""
     mocked_s3_client_no_checksum.put_object(Bucket=CDM_LAKE_BUCKET, Key="src/data.bin", Body=b"binary data")
     copy_object(
         f"{CDM_LAKE_BUCKET}/src/data.bin",
         f"{CDM_LAKE_BUCKET}/dst/data.bin",
-        tags={"tag": "value"},
     )
     obj = mocked_s3_client_no_checksum.get_object(Bucket=CDM_LAKE_BUCKET, Key="dst/data.bin")
     assert obj["Body"].read() == b"binary data"

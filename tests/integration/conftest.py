@@ -261,19 +261,3 @@ def get_object_metadata(s3: botocore.client.BaseClient, bucket: str, key: str) -
     """
     resp = s3.head_object(Bucket=bucket, Key=key)
     return resp.get("Metadata", {})
-
-
-def get_object_tags(s3: botocore.client.BaseClient, bucket: str, key: str) -> dict[str, Any]:
-    """Return the S3 object tags dict for an S3 object (from GetObjectTagging).
-
-    Archive attributes (e.g. ``archive_reason``) are stored as S3 object tags
-    rather than user metadata to avoid the botocore unsigned-header bug with
-    ``MetadataDirective=REPLACE``.
-
-    :param s3: boto3 S3 client
-    :param bucket: bucket name
-    :param key: object key
-    :return: tags dict
-    """
-    resp = s3.get_object_tagging(Bucket=bucket, Key=key)
-    return {t["Key"]: t["Value"] for t in resp.get("TagSet", [])}

@@ -21,7 +21,7 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
 )
 from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX, promote_from_s3
 
-from .conftest import get_object_metadata, get_object_tags, list_all_keys, seed_lakehouse, staging_test_bucket  # noqa: F401
+from .conftest import get_object_metadata, list_all_keys, seed_lakehouse, staging_test_bucket  # noqa: F401
 
 from pathlib import Path
 
@@ -188,9 +188,8 @@ class TestPromoteArchiveUpdated:
 
         # Verify archive metadata
         for key in archive_keys:
-            tags = get_object_tags(s3, test_bucket, key)
-            assert tags.get("archive_reason") == "updated"
-            assert tags.get("ncbi_last_release") == "2024-01"
+            assert "/updated/" in key
+            assert "/2024-01/" in key
 
 
 @pytest.mark.integration
@@ -231,8 +230,7 @@ class TestPromoteArchiveRemoved:
 
         # Verify archive metadata
         for key in archive_keys:
-            tags = get_object_tags(s3, test_bucket, key)
-            assert tags.get("archive_reason") == "replaced_or_suppressed"
+            assert "/replaced_or_suppressed/" in key
 
         # Verify source objects are deleted
         rel = build_accession_path(ASSEMBLY_DIR_A)
@@ -463,7 +461,7 @@ class TestPromoteArchiveUpdatedIncludesDescriptor:
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
-        archive_key = build_archive_descriptor_key(ASSEMBLY_DIR_A, "2024-01", PATH_PREFIX)
+        archive_key = build_archive_descriptor_key(ASSEMBLY_DIR_A, "2024-01", PATH_PREFIX, "updated")
         # Confirm the archive descriptor object exists
         resp = s3.head_object(Bucket=test_bucket, Key=archive_key)
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
@@ -499,7 +497,7 @@ class TestPromoteArchiveRemovedIncludesDescriptor:
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
-        archive_key = build_archive_descriptor_key(ASSEMBLY_DIR_A, "2024-01", PATH_PREFIX)
+        archive_key = build_archive_descriptor_key(ASSEMBLY_DIR_A, "2024-01", PATH_PREFIX, "replaced_or_suppressed")
         resp = s3.head_object(Bucket=test_bucket, Key=archive_key)
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
 
