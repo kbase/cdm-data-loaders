@@ -178,6 +178,7 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
             assembly_files[(adir_match.group(1), acc_match.group(1))].append(staged_key)
 
     total_files = sum(len(v) for v in assembly_files.values())
+    _dry_run_log_count = 0
     with tqdm.tqdm(total=total_files, unit="file", desc="Promoting") as pbar:
         for (adir, acc), files in assembly_files.items():
             assembly_failed = 0
@@ -190,7 +191,11 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
                 final_key_path = PurePosixPath(final_key)
 
                 if dry_run:
-                    logger.debug("[dry-run] would promote: %s -> %s", staged_key, final_key)
+                    if _dry_run_log_count < 10:
+                        logger.info("[dry-run] would promote: %s -> %s", staged_key, final_key)
+                    else:
+                        logger.debug("[dry-run] would promote: %s -> %s", staged_key, final_key)
+                    _dry_run_log_count += 1
                     promoted += 1
                     pbar.update(1)
                     continue
@@ -312,6 +317,7 @@ def _archive_assemblies(  # noqa: PLR0913
     with Path(manifest_local_path).open() as f:
         accessions = [line.strip() for line in f if line.strip()]
 
+    _dry_run_log_count = 0
     for accession in tqdm.tqdm(accessions, unit="accession", desc="Archiving"):
         m = re.match(r"(GC[AF])_(\d{3})(\d{3})(\d{3})\.\d+", accession)
         if not m:
@@ -344,7 +350,11 @@ def _archive_assemblies(  # noqa: PLR0913
             archive_key = f"{lakehouse_key_prefix}archive/{release_tag}/{rel}"
 
             if dry_run:
-                logger.info("[dry-run] would archive: %s -> %s", source_key, archive_key)
+                if _dry_run_log_count < 10:
+                    logger.info("[dry-run] would archive: %s -> %s", source_key, archive_key)
+                else:
+                    logger.debug("[dry-run] would archive: %s -> %s", source_key, archive_key)
+                _dry_run_log_count += 1
                 archived += 1
                 continue
 

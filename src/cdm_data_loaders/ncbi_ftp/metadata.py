@@ -182,7 +182,7 @@ def upload_descriptor(
     key = build_descriptor_key(assembly_dir, key_prefix)
 
     if dry_run:
-        logger.info("[dry-run] would upload descriptor: s3://%s/%s", bucket, key)
+        logger.debug("[dry-run] would upload descriptor: s3://%s/%s", bucket, key)
         return key
 
     s3 = get_s3_client()
@@ -227,7 +227,7 @@ def archive_descriptor(  # noqa: PLR0913
     archive_key = build_archive_descriptor_key(assembly_dir, release_tag, key_prefix)
 
     if dry_run:
-        logger.info("[dry-run] would archive descriptor: s3://%s/%s -> %s", bucket, source_key, archive_key)
+        logger.debug("[dry-run] would archive descriptor: s3://%s/%s -> %s", bucket, source_key, archive_key)
         return True
 
     s3 = get_s3_client()
