@@ -104,9 +104,11 @@ def _upload_assembly_dir(
         if f.is_file():
             relative = f.relative_to(tmp_root)
             dest_prefix = f"{bucket}/{staging_key_prefix.rstrip('/')}/{relative.parent}"
-            upload_file(f, dest_prefix, show_progress=False)
+            if upload_file(f, dest_prefix, show_progress=False):
+                count += 1
+            else:
+                logger.warning("Failed to upload %s to %s", f, dest_prefix)
             f.unlink()
-            count += 1
     shutil.rmtree(assembly_dir, ignore_errors=True)
     return count
 
@@ -360,8 +362,10 @@ def download_and_stage(
             report_path = tmp / "download_report.json"
             with report_path.open("w") as f:
                 json.dump(report, f, indent=2)
-            upload_file(report_path, f"{bucket}/{staging_key_prefix.rstrip('/')}", show_progress=False)
-            staged_objects += 1
+            if upload_file(report_path, f"{bucket}/{staging_key_prefix.rstrip('/')}", show_progress=False):
+                staged_objects += 1
+            else:
+                logger.warning("Failed to upload download report to s3://%s/%s", bucket, staging_key_prefix)
             logger.info("Staged %d objects to s3://%s/%s", staged_objects, bucket, staging_key_prefix)
 
         logger.info(
