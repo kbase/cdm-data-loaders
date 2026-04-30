@@ -246,7 +246,7 @@ def archive_descriptor(  # noqa: PLR0913
             return False
         raise
 
-    copy_object(
+    _ = copy_object(
         f"{bucket}/{source_key}",
         f"{bucket}/{archive_key}",
     )

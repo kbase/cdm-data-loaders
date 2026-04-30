@@ -270,7 +270,10 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
                         logger.debug("Descriptor already exists, skipping: %s", descriptor_key)
                     else:
                         descriptor = create_descriptor(adir, acc, resources)
-                        upload_descriptor(descriptor, adir, lakehouse_bucket, lakehouse_key_prefix, dry_run=False)
+                        descriptor_key = upload_descriptor(
+                            descriptor, adir, lakehouse_bucket, lakehouse_key_prefix, dry_run=False
+                        )
+                        logger.debug("Uploaded descriptor: %s", descriptor_key)
                         descriptors_written += 1
                 except Exception:
                     logger.exception("Failed to write descriptor for %s", adir)
@@ -402,7 +405,7 @@ def _archive_assemblies(  # noqa: PLR0913
         # Archive the frictionless descriptor alongside raw data
         if assembly_dir:
             try:
-                archive_descriptor(
+                archived_desc = archive_descriptor(
                     assembly_dir,
                     lakehouse_bucket,
                     lakehouse_key_prefix,
@@ -410,6 +413,8 @@ def _archive_assemblies(  # noqa: PLR0913
                     archive_reason=archive_reason,
                     dry_run=dry_run,
                 )
+                if not archived_desc:
+                    logger.debug("No descriptor found to archive for %s", assembly_dir)
             except Exception:
                 logger.exception("Failed to archive descriptor for %s", assembly_dir)
 

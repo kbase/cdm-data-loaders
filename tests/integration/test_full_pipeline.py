@@ -61,7 +61,7 @@ class TestFullPipelineSmallBatch:
         assert len(diff.new) > 0, f"No new assemblies in prefix {STABLE_PREFIX}"
 
         manifest_path = tmp_path / "transfer_manifest.txt"
-        write_transfer_manifest(diff, filtered, manifest_path)
+        _ = write_transfer_manifest(diff, filtered, manifest_path)
 
         # ── Phase 2: Download one assembly from real FTP ────────────────
         output_dir = tmp_path / "output"
@@ -129,7 +129,7 @@ class TestFullPipelineIncrementalSync:
         assert len(diff1.new) > 0, f"No new assemblies in prefix {STABLE_PREFIX}"
 
         manifest1 = tmp_path / "transfer_manifest_1.txt"
-        write_transfer_manifest(diff1, filtered, manifest1)
+        _ = write_transfer_manifest(diff1, filtered, manifest1)
 
         output1 = tmp_path / "output1"
         output1.mkdir()
@@ -179,13 +179,13 @@ class TestFullPipelineIncrementalSync:
             assert downloaded_acc in diff2.updated, f"Expected {downloaded_acc} in updated list"
 
         manifest2 = tmp_path / "transfer_manifest_2.txt"
-        write_transfer_manifest(diff2, filtered, manifest2)
+        _ = write_transfer_manifest(diff2, filtered, manifest2)
 
         updated_manifest = tmp_path / "updated_manifest.txt"
-        write_updated_manifest(diff2, updated_manifest)
+        _ = write_updated_manifest(diff2, updated_manifest)
 
         removed_manifest = tmp_path / "removed_manifest.txt"
-        write_removed_manifest(diff2, removed_manifest)
+        _ = write_removed_manifest(diff2, removed_manifest)
 
         # Phase 2 — re-download the updated assembly
         output2 = tmp_path / "output2"
