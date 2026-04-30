@@ -9,6 +9,7 @@ manifest so that a re-run of Phase 2 only downloads remaining entries.
 import re
 import tempfile
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -27,6 +28,7 @@ from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.s3 import (
     copy_object,
     delete_object,
+    delete_objects,
     get_s3_client,
     object_exists,
     upload_file,
@@ -344,30 +346,52 @@ def _archive_assemblies(  # noqa: PLR0913
                 assembly_dir = adir_match.group(1)
                 break
 
-        for source_key in matching_keys:
-            rel = source_key[len(lakehouse_key_prefix) :]
-            archive_key = f"{lakehouse_key_prefix}archive/{release_tag}/{archive_reason}/{rel}"
+        key_pairs = [
+            (
+                source_key,
+                f"{lakehouse_key_prefix}archive/{release_tag}/{archive_reason}/{source_key[len(lakehouse_key_prefix) :]}",
+            )
+            for source_key in matching_keys
+        ]
 
-            if dry_run:
+        if dry_run:
+            for source_key, archive_key in key_pairs:
                 if _dry_run_log_count < 10:
                     logger.info("[dry-run] would archive: %s -> %s", source_key, archive_key)
                 else:
                     logger.debug("[dry-run] would archive: %s -> %s", source_key, archive_key)
                 _dry_run_log_count += 1
-                archived += 1
-                continue
+            archived += len(key_pairs)
+            continue
 
-            try:
-                copy_object(
-                    f"{lakehouse_bucket}/{source_key}",
-                    f"{lakehouse_bucket}/{archive_key}",
-                )
-                if delete_source:
-                    delete_object(f"{lakehouse_bucket}/{source_key}")
-                archived += 1
-                logger.debug("  Archived: %s -> %s", source_key, archive_key)
-            except Exception:
-                logger.exception("Failed to archive %s", source_key)
+        # Copy all files for this accession concurrently
+        keys_to_delete: list[str] = []
+        n_workers = min(32, len(key_pairs))
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = {
+                executor.submit(
+                    copy_object,
+                    f"{lakehouse_bucket}/{src}",
+                    f"{lakehouse_bucket}/{arch}",
+                ): src
+                for src, arch in key_pairs
+            }
+            for future in as_completed(futures):
+                src = futures[future]
+                try:
+                    future.result()
+                    archived += 1
+                    if delete_source:
+                        keys_to_delete.append(src)
+                    logger.debug("  Archived: %s", src)
+                except Exception:
+                    logger.exception("Failed to archive %s", src)
+
+        # Batch-delete source keys in a single API call
+        if keys_to_delete:
+            del_errors = delete_objects(lakehouse_bucket, keys_to_delete)
+            for err in del_errors:
+                logger.warning("Failed to delete %s: %s", err.get("Key"), err.get("Message"))
 
         # Archive the frictionless descriptor alongside raw data
         if assembly_dir:

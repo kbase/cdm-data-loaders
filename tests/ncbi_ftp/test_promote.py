@@ -231,3 +231,324 @@ def test_archive_assemblies_unknown_release_fallback(
 
     archive_key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/unknown/unknown/raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
     assert mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=archive_key).get("KeyCount", 0) == 1
+
+
+# ── Concurrent / multi-file archive (new behaviour) ─────────────────────
+
+
+@pytest.mark.s3
+def test_archive_assemblies_multi_file_all_copied(
+    mock_s3_client_no_checksum: botocore.client.BaseClient, tmp_path: Path
+) -> None:
+    """All files for an accession are copied concurrently — none missed."""
+    accession = "GCF_000001215.4"
+    asm_dir = f"{accession}_Release_6"
+    base = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/{asm_dir}/"
+    file_names = [
+        f"{accession}_genomic.fna.gz",
+        f"{accession}_protein.faa.gz",
+        f"{accession}_rna.fna.gz",
+        f"{accession}_assembly_report.txt",
+        f"{accession}_assembly_stats.txt",
+    ]
+    for fname in file_names:
+        mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=f"{base}{fname}", Body=fname.encode())
+
+    manifest = tmp_path / "updated.txt"
+    manifest.write_text(f"{accession}\n")
+
+    archived = _archive_assemblies(
+        str(manifest),
+        lakehouse_bucket=TEST_BUCKET,
+        ncbi_release="2024-01",
+        archive_reason="updated",
+        delete_source=False,
+    )
+
+    assert archived == len(file_names)
+    archive_base = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-01/updated/raw_data/GCF/000/001/215/{asm_dir}/"
+    for fname in file_names:
+        resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{archive_base}{fname}")
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+
+
+@pytest.mark.s3
+def test_archive_assemblies_multi_file_content_preserved(
+    mock_s3_client_no_checksum: botocore.client.BaseClient, tmp_path: Path
+) -> None:
+    """Archive copies preserve byte-for-byte content of each file."""
+    accession = "GCF_000001215.4"
+    asm_dir = f"{accession}_Release_6"
+    base = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/{asm_dir}/"
+    files = {
+        f"{accession}_genomic.fna.gz": b"\x1f\x8bGENOMIC",
+        f"{accession}_protein.faa.gz": b"\x1f\x8bPROTEIN",
+    }
+    for fname, body in files.items():
+        mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=f"{base}{fname}", Body=body)
+
+    manifest = tmp_path / "updated.txt"
+    manifest.write_text(f"{accession}\n")
+
+    _archive_assemblies(
+        str(manifest),
+        lakehouse_bucket=TEST_BUCKET,
+        ncbi_release="2024-01",
+        archive_reason="updated",
+        delete_source=False,
+    )
+
+    archive_base = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-01/updated/raw_data/GCF/000/001/215/{asm_dir}/"
+    for fname, original_body in files.items():
+        obj = mock_s3_client_no_checksum.get_object(Bucket=TEST_BUCKET, Key=f"{archive_base}{fname}")
+        assert obj["Body"].read() == original_body, f"Content mismatch for {fname}"
+
+
+@pytest.mark.s3
+def test_archive_assemblies_multi_file_delete_all(
+    mock_s3_client_no_checksum: botocore.client.BaseClient, tmp_path: Path
+) -> None:
+    """Batch delete removes ALL source files when delete_source=True."""
+    accession = "GCF_000005845.2"
+    asm_dir = f"{accession}_ASM584v2"
+    base = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/005/845/{asm_dir}/"
+    file_names = [
+        f"{accession}_genomic.fna.gz",
+        f"{accession}_protein.faa.gz",
+        f"{accession}_assembly_report.txt",
+    ]
+    for fname in file_names:
+        mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=f"{base}{fname}", Body=b"data")
+
+    manifest = tmp_path / "removed.txt"
+    manifest.write_text(f"{accession}\n")
+
+    archived = _archive_assemblies(
+        str(manifest),
+        lakehouse_bucket=TEST_BUCKET,
+        ncbi_release="2024-03",
+        archive_reason="replaced_or_suppressed",
+        delete_source=True,
+    )
+
+    assert archived == len(file_names)
+    # All sources deleted
+    for fname in file_names:
+        result = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=f"{base}{fname}")
+        assert result.get("KeyCount", 0) == 0, f"Source not deleted: {fname}"
+    # All archives present
+    archive_base = (
+        f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-03/replaced_or_suppressed/raw_data/GCF/000/005/845/{asm_dir}/"
+    )
+    for fname in file_names:
+        resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{archive_base}{fname}")
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+
+
+# ── Partial-archive idempotency ──────────────────────────────────────────
+
+
+@pytest.mark.s3
+def test_archive_assemblies_partial_already_archived_overwritten(
+    mock_s3_client_no_checksum: botocore.client.BaseClient, tmp_path: Path
+) -> None:
+    """Re-running archive after a partial run overwrites the already-archived files.
+
+    Simulates a partial failure: file_a was archived, file_b was not.
+    The second run should archive both file_a (overwrite) and file_b.
+    """
+    accession = "GCF_000001215.4"
+    asm_dir = f"{accession}_Release_6"
+    base = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/{asm_dir}/"
+    archive_base = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-01/updated/raw_data/GCF/000/001/215/{asm_dir}/"
+
+    file_a = f"{accession}_genomic.fna.gz"
+    file_b = f"{accession}_protein.faa.gz"
+
+    mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=f"{base}{file_a}", Body=b"new-genomic")
+    mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=f"{base}{file_b}", Body=b"new-protein")
+    # Simulate partial prior run: file_a already archived with stale content
+    mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=f"{archive_base}{file_a}", Body=b"stale-genomic")
+
+    manifest = tmp_path / "updated.txt"
+    manifest.write_text(f"{accession}\n")
+
+    archived = _archive_assemblies(
+        str(manifest),
+        lakehouse_bucket=TEST_BUCKET,
+        ncbi_release="2024-01",
+        archive_reason="updated",
+        delete_source=False,
+    )
+
+    assert archived == 2  # noqa: PLR2004
+    # file_a should now have the current content (overwritten)
+    obj_a = mock_s3_client_no_checksum.get_object(Bucket=TEST_BUCKET, Key=f"{archive_base}{file_a}")
+    assert obj_a["Body"].read() == b"new-genomic", "Re-run should overwrite stale archive"
+    # file_b should now be archived
+    obj_b = mock_s3_client_no_checksum.get_object(Bucket=TEST_BUCKET, Key=f"{archive_base}{file_b}")
+    assert obj_b["Body"].read() == b"new-protein"
+
+
+@pytest.mark.s3
+def test_archive_assemblies_partial_delete_resumes(
+    mock_s3_client_no_checksum: botocore.client.BaseClient, tmp_path: Path
+) -> None:
+    """Re-running replaced_or_suppressed archive after partial copy+delete is safe.
+
+    Simulates: file_a was copied+deleted, file_b was copied but NOT deleted,
+    file_c was not touched. The re-run finds only file_b and file_c present
+    (file_a is gone), archives both, and deletes both.
+    """
+    accession = "GCF_000005845.2"
+    asm_dir = f"{accession}_ASM584v2"
+    base = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/005/845/{asm_dir}/"
+    archive_base = (
+        f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-03/replaced_or_suppressed/raw_data/GCF/000/005/845/{asm_dir}/"
+    )
+
+    file_b = f"{accession}_protein.faa.gz"
+    file_c = f"{accession}_assembly_report.txt"
+
+    # file_a already gone (deleted in first partial run)
+    # file_b present at source (not yet deleted from first partial run)
+    mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=f"{base}{file_b}", Body=b"protein")
+    # file_c present at source (not touched at all)
+    mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=f"{base}{file_c}", Body=b"report")
+    # file_a already at archive destination
+    mock_s3_client_no_checksum.put_object(
+        Bucket=TEST_BUCKET, Key=f"{archive_base}{accession}_genomic.fna.gz", Body=b"genomic"
+    )
+
+    manifest = tmp_path / "removed.txt"
+    manifest.write_text(f"{accession}\n")
+
+    archived = _archive_assemblies(
+        str(manifest),
+        lakehouse_bucket=TEST_BUCKET,
+        ncbi_release="2024-03",
+        archive_reason="replaced_or_suppressed",
+        delete_source=True,
+    )
+
+    # Only the 2 remaining source files were archived
+    assert archived == 2  # noqa: PLR2004
+    # Both now gone from source
+    for fname in (file_b, file_c):
+        result = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=f"{base}{fname}")
+        assert result.get("KeyCount", 0) == 0, f"Expected {fname} deleted"
+    # file_a archive still intact (not touched by re-run)
+    resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{archive_base}{accession}_genomic.fna.gz")
+    assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+
+
+@pytest.mark.s3
+def test_archive_assemblies_idempotent_updated_reruns_cleanly(
+    mock_s3_client_no_checksum: botocore.client.BaseClient, tmp_path: Path
+) -> None:
+    """Running updated archive twice on the same data produces the same result."""
+    accession = "GCF_000001215.4"
+    asm_dir = f"{accession}_Release_6"
+    base = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/{asm_dir}/"
+    file_names = [f"{accession}_genomic.fna.gz", f"{accession}_protein.faa.gz"]
+    for fname in file_names:
+        mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=f"{base}{fname}", Body=b"content")
+
+    manifest = tmp_path / "updated.txt"
+    manifest.write_text(f"{accession}\n")
+
+    archived_1 = _archive_assemblies(
+        str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01", archive_reason="updated"
+    )
+    archived_2 = _archive_assemblies(
+        str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01", archive_reason="updated"
+    )
+
+    assert archived_1 == len(file_names)
+    assert archived_2 == len(file_names)
+    # Sources still present after both runs (delete_source=False)
+    for fname in file_names:
+        resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{base}{fname}")
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+
+
+@pytest.mark.s3
+def test_archive_assemblies_multi_accession_manifest(
+    mock_s3_client_no_checksum: botocore.client.BaseClient, tmp_path: Path
+) -> None:
+    """Multiple accessions in a single manifest are all archived."""
+    accessions = [
+        ("GCF_000001215.4", "GCF_000001215.4_Release_6", "GCF/000/001/215"),
+        ("GCF_000005845.2", "GCF_000005845.2_ASM584v2", "GCF/000/005/845"),
+    ]
+    for accession, asm_dir, path in accessions:
+        key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/{path}/{asm_dir}/{accession}_genomic.fna.gz"
+        mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=key, Body=b"data")
+
+    manifest = tmp_path / "updated.txt"
+    manifest.write_text("\n".join(acc for acc, _, _ in accessions) + "\n")
+
+    archived = _archive_assemblies(
+        str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01", archive_reason="updated"
+    )
+
+    assert archived == len(accessions)
+    for accession, asm_dir, path in accessions:
+        archive_key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-01/updated/raw_data/{path}/{asm_dir}/{accession}_genomic.fna.gz"
+        result = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=archive_key)
+        assert result.get("KeyCount", 0) == 1, f"Archive missing for {accession}"
+
+
+@pytest.mark.s3
+def test_archive_assemblies_dry_run_multi_file(
+    mock_s3_client_no_checksum: botocore.client.BaseClient, tmp_path: Path
+) -> None:
+    """dry_run with multiple files per accession makes no copies and no deletes."""
+    accession = "GCF_000005845.2"
+    asm_dir = f"{accession}_ASM584v2"
+    base = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/005/845/{asm_dir}/"
+    file_names = [f"{accession}_genomic.fna.gz", f"{accession}_protein.faa.gz", f"{accession}_rna.fna.gz"]
+    for fname in file_names:
+        mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=f"{base}{fname}", Body=b"data")
+
+    manifest = tmp_path / "removed.txt"
+    manifest.write_text(f"{accession}\n")
+
+    archived = _archive_assemblies(
+        str(manifest),
+        lakehouse_bucket=TEST_BUCKET,
+        ncbi_release="2024-01",
+        archive_reason="replaced_or_suppressed",
+        delete_source=True,
+        dry_run=True,
+    )
+
+    # Reported count matches
+    assert archived == len(file_names)
+    # No actual archive keys created
+    archive_prefix = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/"
+    result = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=archive_prefix)
+    assert result.get("KeyCount", 0) == 0
+    # Sources untouched
+    for fname in file_names:
+        resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{base}{fname}")
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+
+
+@pytest.mark.s3
+def test_archive_assemblies_invalid_accession_skipped(
+    mock_s3_client_no_checksum: botocore.client.BaseClient, tmp_path: Path
+) -> None:
+    """Malformed accession lines are skipped; valid ones still archived."""
+    accession = "GCF_000001215.4"
+    asm_dir = f"{accession}_Release_6"
+    key = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
+    mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=key, Body=b"data")
+
+    manifest = tmp_path / "mixed.txt"
+    manifest.write_text("NOT_AN_ACCESSION\n\n   \n" + f"{accession}\n")
+
+    archived = _archive_assemblies(
+        str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01", archive_reason="updated"
+    )
+    assert archived == 1

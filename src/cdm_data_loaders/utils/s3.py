@@ -547,3 +547,28 @@ def delete_object(s3_path: str) -> dict[str, Any]:
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
     return s3.delete_object(Bucket=bucket, Key=key)
+
+
+def delete_objects(bucket: str, keys: list[str]) -> list[dict[str, Any]]:
+    """Delete multiple objects from an S3 bucket in a single API call.
+
+    Splits into batches of 1000 (the S3 API maximum per request).
+
+    :param bucket: S3 bucket name (no protocol prefix)
+    :param keys: list of S3 keys to delete
+    :return: list of per-key error dicts returned by S3 (empty if all succeeded)
+    :rtype: list[dict[str, Any]]
+    """
+    if not keys:
+        return []
+
+    s3 = get_s3_client()
+    errors: list[dict[str, Any]] = []
+    for i in range(0, len(keys), 1000):
+        batch = keys[i : i + 1000]
+        resp = s3.delete_objects(
+            Bucket=bucket,
+            Delete={"Objects": [{"Key": k} for k in batch], "Quiet": False},
+        )
+        errors.extend(resp.get("Errors", []))
+    return errors
