@@ -1,10 +1,13 @@
 """Tests for ncbi_ftp.promote module — S3 promote, archive, manifest trimming."""
 
+import hashlib
 from pathlib import Path
+from unittest.mock import patch
 
 import botocore.client
 import pytest
 
+import cdm_data_loaders.ncbi_ftp.promote as promote_mod
 from cdm_data_loaders.ncbi_ftp.promote import (
     DEFAULT_LAKEHOUSE_KEY_PREFIX,
     _archive_assemblies,
@@ -12,6 +15,51 @@ from cdm_data_loaders.ncbi_ftp.promote import (
     promote_from_s3,
 )
 from tests.ncbi_ftp.conftest import TEST_BUCKET
+
+
+# ── Promotion test constants ─────────────────────────────────────────────
+
+_STAGE_PREFIX = "staging/run1/"
+
+# Assembly 1
+_ACC1 = "GCF_000001215.4"
+_DIR1 = "GCF_000001215.4_Release_6"
+_STG1 = f"{_STAGE_PREFIX}raw_data/GCF/000/001/215/{_DIR1}/"
+_LKH1 = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/001/215/{_DIR1}/"
+
+# Assembly 2
+_ACC2 = "GCF_000005845.2"
+_DIR2 = "GCF_000005845.2_ASM584v2"
+_STG2 = f"{_STAGE_PREFIX}raw_data/GCF/000/005/845/{_DIR2}/"
+_LKH2 = f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}raw_data/GCF/000/005/845/{_DIR2}/"
+
+
+def _stage(
+    s3: botocore.client.BaseClient,
+    staging_base: str,
+    files: dict[str, bytes],
+    *,
+    with_md5: bool = True,
+    with_crc64: bool = False,
+) -> list[str]:
+    """Stage files at *staging_base*, optionally adding .md5 / .crc64nvme sidecars.
+
+    Returns list of all staged keys (data files only, not sidecars).
+    """
+    keys = []
+    for fname, content in files.items():
+        key = f"{staging_base}{fname}"
+        s3.put_object(Bucket=TEST_BUCKET, Key=key, Body=content)
+        keys.append(key)
+        if with_md5:
+            s3.put_object(
+                Bucket=TEST_BUCKET,
+                Key=f"{key}.md5",
+                Body=hashlib.md5(content).hexdigest().encode(),  # noqa: S324
+            )
+        if with_crc64:
+            s3.put_object(Bucket=TEST_BUCKET, Key=f"{key}.crc64nvme", Body=b"fake-crc")
+    return keys
 
 
 def _stage_files(s3_client: botocore.client.BaseClient, prefix: str) -> None:
@@ -552,3 +600,408 @@ def test_archive_assemblies_invalid_accession_skipped(
         str(manifest), lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01", archive_reason="updated"
     )
     assert archived == 1
+
+
+# ── Concurrent / multi-file promotion (new behaviour) ────────────────────
+
+
+@pytest.mark.s3
+def test_promote_multi_file_all_land_at_final_path(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """All files for an assembly are promoted concurrently — none missed."""
+    file_names = [
+        f"{_ACC1}_genomic.fna.gz",
+        f"{_ACC1}_protein.faa.gz",
+        f"{_ACC1}_rna.fna.gz",
+        f"{_ACC1}_assembly_report.txt",
+        f"{_ACC1}_assembly_stats.txt",
+    ]
+    _stage(mock_s3_client_no_checksum, _STG1, {f: f.encode() for f in file_names})
+
+    report = promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    assert report["promoted"] == len(file_names)
+    assert report["failed"] == 0
+    for fname in file_names:
+        resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{_LKH1}{fname}")
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+
+
+@pytest.mark.s3
+def test_promote_multi_file_content_preserved(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """Content at the final key is byte-identical to the staged content."""
+    files = {
+        f"{_ACC1}_genomic.fna.gz": b"\x1f\x8bGENOMIC",
+        f"{_ACC1}_protein.faa.gz": b"\x1f\x8bPROTEIN",
+        f"{_ACC1}_rna.fna.gz": b"\x1f\x8bRNA",
+    }
+    _stage(mock_s3_client_no_checksum, _STG1, files)
+
+    promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    for fname, expected in files.items():
+        obj = mock_s3_client_no_checksum.get_object(Bucket=TEST_BUCKET, Key=f"{_LKH1}{fname}")
+        assert obj["Body"].read() == expected, f"Content mismatch for {fname}"
+
+
+@pytest.mark.s3
+def test_promote_md5_metadata_set_from_sidecar(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """MD5 metadata on the promoted object matches the .md5 sidecar value."""
+    content = b"\x1f\x8bGENOMIC"
+    fname = f"{_ACC1}_genomic.fna.gz"
+    _stage(mock_s3_client_no_checksum, _STG1, {fname: content}, with_md5=True)
+    expected_md5 = hashlib.md5(content).hexdigest()  # noqa: S324
+
+    promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{_LKH1}{fname}")
+    assert resp["Metadata"].get("md5") == expected_md5
+
+
+@pytest.mark.s3
+def test_promote_no_sidecar_no_md5_metadata(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """A file staged without a .md5 sidecar is promoted but carries no md5 metadata."""
+    fname = f"{_ACC1}_genomic.fna.gz"
+    _stage(mock_s3_client_no_checksum, _STG1, {fname: b"data"}, with_md5=False)
+
+    promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{_LKH1}{fname}")
+    assert resp["Metadata"].get("md5") is None
+
+
+@pytest.mark.s3
+def test_promote_staging_data_files_deleted_after_promote(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """Staged data files are deleted from staging after a fully successful assembly promote."""
+    files = {
+        f"{_ACC1}_genomic.fna.gz": b"genomic",
+        f"{_ACC1}_protein.faa.gz": b"protein",
+    }
+    staged_keys = _stage(mock_s3_client_no_checksum, _STG1, files)
+
+    promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    for key in staged_keys:
+        result = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=key)
+        assert result.get("KeyCount", 0) == 0, f"Staged data file not deleted: {key}"
+
+
+@pytest.mark.s3
+def test_promote_md5_sidecars_deleted_after_promote(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """Staged .md5 sidecar files are deleted from staging after a successful promote."""
+    files = {
+        f"{_ACC1}_genomic.fna.gz": b"genomic",
+        f"{_ACC1}_protein.faa.gz": b"protein",
+    }
+    staged_keys = _stage(mock_s3_client_no_checksum, _STG1, files, with_md5=True)
+
+    promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    for key in staged_keys:
+        for sidecar_key in (f"{key}.md5", f"{key}.crc64nvme"):
+            result = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=sidecar_key)
+            assert result.get("KeyCount", 0) == 0, f"Sidecar not deleted: {sidecar_key}"
+
+
+@pytest.mark.s3
+def test_promote_crc64nvme_sidecars_deleted_after_promote(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """Staged .crc64nvme sidecar files are also batch-deleted after a successful promote."""
+    fname = f"{_ACC1}_genomic.fna.gz"
+    _stage(mock_s3_client_no_checksum, _STG1, {fname: b"data"}, with_md5=True, with_crc64=True)
+
+    promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    staged_key = f"{_STG1}{fname}"
+    for sidecar_key in (f"{staged_key}.md5", f"{staged_key}.crc64nvme"):
+        result = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=sidecar_key)
+        assert result.get("KeyCount", 0) == 0, f"Sidecar not deleted: {sidecar_key}"
+
+
+@pytest.mark.s3
+def test_promote_partial_failure_staging_not_cleaned(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """When one file in an assembly fails, NO staged files for that assembly are deleted.
+
+    Preserving staging on partial failure lets an operator re-run without
+    re-staging and without losing the partially-promoted state.
+    """
+    file_ok = f"{_ACC1}_genomic.fna.gz"
+    file_fail = f"{_ACC1}_protein.faa.gz"
+    _stage(mock_s3_client_no_checksum, _STG1, {file_ok: b"ok", file_fail: b"fail"})
+    staged_ok = f"{_STG1}{file_ok}"
+    staged_fail = f"{_STG1}{file_fail}"
+
+    # Make download_file raise for exactly the failing key
+    original_download = mock_s3_client_no_checksum.download_file
+
+    def _download_one_fail(Bucket: str, Key: str, Filename: str, **kw: object) -> None:  # noqa: N803
+        if Key == staged_fail:
+            msg = "simulated download failure"
+            raise RuntimeError(msg)
+        return original_download(Bucket=Bucket, Key=Key, Filename=Filename, **kw)
+
+    mock_s3_client_no_checksum.download_file = _download_one_fail
+
+    report = promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    assert report["failed"] == 1
+    # Staging files must still be present (cleanup skipped due to failure)
+    for key in (staged_ok, staged_fail):
+        resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=key)
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200, (
+            f"Expected staged file to survive partial failure: {key}"
+        )  # noqa: PLR2004
+
+
+@pytest.mark.s3
+def test_promote_partial_failure_failed_count(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """report[\"failed\"] reflects the number of files that could not be promoted."""
+    file_names = [f"{_ACC1}_genomic.fna.gz", f"{_ACC1}_protein.faa.gz", f"{_ACC1}_rna.fna.gz"]
+    _stage(mock_s3_client_no_checksum, _STG1, {f: b"data" for f in file_names})
+
+    failing_key = f"{_STG1}{file_names[1]}"
+    original_download = mock_s3_client_no_checksum.download_file
+
+    def _download_middle_fail(Bucket: str, Key: str, Filename: str, **kw: object) -> None:  # noqa: N803
+        if Key == failing_key:
+            msg = "simulated failure"
+            raise RuntimeError(msg)
+        return original_download(Bucket=Bucket, Key=Key, Filename=Filename, **kw)
+
+    mock_s3_client_no_checksum.download_file = _download_middle_fail
+
+    report = promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    assert report["failed"] == 1
+    assert report["promoted"] == 2  # noqa: PLR2004
+
+
+@pytest.mark.s3
+def test_promote_two_assemblies_independent_cleanup(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """A fully successful assembly cleans up its staging even when another assembly partially fails.
+
+    Assembly 1 fully succeeds → staging cleared.
+    Assembly 2 has one failing file → staging NOT cleared.
+    """
+    # Assembly 1: two files, both succeed
+    _stage(
+        mock_s3_client_no_checksum,
+        _STG1,
+        {f"{_ACC1}_genomic.fna.gz": b"g1", f"{_ACC1}_protein.faa.gz": b"p1"},
+    )
+    # Assembly 2: two files, one will fail
+    _stage(
+        mock_s3_client_no_checksum,
+        _STG2,
+        {f"{_ACC2}_genomic.fna.gz": b"g2", f"{_ACC2}_protein.faa.gz": b"p2"},
+    )
+    failing_key = f"{_STG2}{_ACC2}_protein.faa.gz"
+    original_download = mock_s3_client_no_checksum.download_file
+
+    def _patched(Bucket: str, Key: str, Filename: str, **kw: object) -> None:  # noqa: N803
+        if Key == failing_key:
+            msg = "simulated failure"
+            raise RuntimeError(msg)
+        return original_download(Bucket=Bucket, Key=Key, Filename=Filename, **kw)
+
+    mock_s3_client_no_checksum.download_file = _patched
+
+    report = promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    assert report["failed"] == 1
+
+    # Assembly 1 staging must be gone
+    for fname in (f"{_ACC1}_genomic.fna.gz", f"{_ACC1}_protein.faa.gz"):
+        result = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=f"{_STG1}{fname}")
+        assert result.get("KeyCount", 0) == 0, f"Assembly 1 staging should be cleaned: {fname}"
+
+    # Assembly 2 staging must remain (partial failure)
+    for fname in (f"{_ACC2}_genomic.fna.gz", f"{_ACC2}_protein.faa.gz"):
+        resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{_STG2}{fname}")
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200, (
+            f"Assembly 2 staging must survive partial failure: {fname}"
+        )  # noqa: PLR2004
+
+
+@pytest.mark.s3
+def test_promote_multi_assembly_all_succeed_all_cleaned(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """Two assemblies both fully succeed → all staged files removed for both."""
+    _stage(mock_s3_client_no_checksum, _STG1, {f"{_ACC1}_genomic.fna.gz": b"g1"})
+    _stage(mock_s3_client_no_checksum, _STG2, {f"{_ACC2}_genomic.fna.gz": b"g2"})
+
+    report = promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    assert report["promoted"] == 2  # noqa: PLR2004
+    assert report["failed"] == 0
+
+    for stg, fname, lkh in (
+        (_STG1, f"{_ACC1}_genomic.fna.gz", _LKH1),
+        (_STG2, f"{_ACC2}_genomic.fna.gz", _LKH2),
+    ):
+        result = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=f"{stg}{fname}")
+        assert result.get("KeyCount", 0) == 0, f"Staging not cleaned: {fname}"
+        resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{lkh}{fname}")
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+
+
+@pytest.mark.s3
+def test_promote_dry_run_multi_file_no_writes_no_cleanup(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """dry_run with multiple files writes nothing to final path and does not delete staging."""
+    file_names = [f"{_ACC1}_genomic.fna.gz", f"{_ACC1}_protein.faa.gz", f"{_ACC1}_rna.fna.gz"]
+    staged_keys = _stage(mock_s3_client_no_checksum, _STG1, {f: f.encode() for f in file_names})
+
+    report = promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+        dry_run=True,
+    )
+
+    assert report["promoted"] == len(file_names)
+    assert report["dry_run"] is True
+
+    # Final path must be empty
+    result = mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=_LKH1)
+    assert result.get("KeyCount", 0) == 0
+
+    # Staging keys must survive
+    for key in staged_keys:
+        resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=key)
+        assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200, f"Staging deleted during dry-run: {key}"  # noqa: PLR2004
+
+
+@pytest.mark.s3
+def test_promote_skips_non_raw_data_paths(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """Files outside raw_data/ (e.g. download_report.json) are silently skipped."""
+    # Stage a real data file alongside non-promotable files
+    _stage(mock_s3_client_no_checksum, _STG1, {f"{_ACC1}_genomic.fna.gz": b"data"})
+    mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=f"{_STAGE_PREFIX}download_report.json", Body=b"{}")
+    mock_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key=f"{_STAGE_PREFIX}logs/run.log", Body=b"logs")
+
+    report = promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    assert report["promoted"] == 1  # only the .fna.gz
+    assert report["failed"] == 0
+
+
+@pytest.mark.s3
+def test_promote_idempotent_second_run_on_empty_staging(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """Second promote run after staging has been cleaned promotes 0 files without error."""
+    _stage(mock_s3_client_no_checksum, _STG1, {f"{_ACC1}_genomic.fna.gz": b"data"})
+
+    report1 = promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+    report2 = promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    assert report1["promoted"] == 1
+    assert report2["promoted"] == 0
+    assert report2["failed"] == 0
+
+    # Final key still present after second run
+    resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{_LKH1}{_ACC1}_genomic.fna.gz")
+    assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+
+
+@pytest.mark.s3
+def test_promote_multi_file_md5_per_file(
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+) -> None:
+    """Each promoted file carries the MD5 matching its own content, not another file's."""
+    files = {
+        f"{_ACC1}_genomic.fna.gz": b"GENOMIC_UNIQUE",
+        f"{_ACC1}_protein.faa.gz": b"PROTEIN_UNIQUE",
+        f"{_ACC1}_rna.fna.gz": b"RNA_UNIQUE",
+    }
+    _stage(mock_s3_client_no_checksum, _STG1, files, with_md5=True)
+
+    promote_from_s3(
+        staging_key_prefix=_STAGE_PREFIX,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+    )
+
+    for fname, content in files.items():
+        expected_md5 = hashlib.md5(content).hexdigest()  # noqa: S324
+        resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{_LKH1}{fname}")
+        assert resp["Metadata"].get("md5") == expected_md5, f"Wrong MD5 on {fname}"

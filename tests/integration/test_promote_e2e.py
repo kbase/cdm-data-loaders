@@ -944,3 +944,373 @@ class TestArchiveDryRunParallel:
         for key in source_keys:
             remaining = list_all_keys(s3, test_bucket, key)
             assert len(remaining) == 1, f"Source missing after dry-run: {key}"
+
+
+# ── Concurrent promotion tests ────────────────────────────────────────────
+
+
+def _stage_many(
+    s3: object,
+    bucket: str,
+    assembly_dir: str,
+    files: dict[str, bytes],
+    *,
+    with_md5: bool = True,
+) -> None:
+    """Stage *files* with optional .md5 sidecars under the standard staging prefix."""
+    rel = build_accession_path(assembly_dir)
+    base = f"{STAGING_PREFIX}{rel}"
+    for fname, content in files.items():
+        key = f"{base}{fname}"
+        s3.put_object(Bucket=bucket, Key=key, Body=content)
+        if with_md5:
+            s3.put_object(Bucket=bucket, Key=f"{key}.md5", Body=_md5(content).encode())
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPromoteMultiFileConcurrent:
+    """Verify concurrent promotion lands all files with correct content and MD5."""
+
+    def test_six_files_all_promoted_with_correct_content(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
+        """Every staged file arrives at the correct final key with byte-identical content."""
+        s3 = minio_s3_client
+        many_files = {
+            f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"GENOMIC",
+            f"{ASSEMBLY_DIR_A}_protein.faa.gz": b"PROTEIN",
+            f"{ASSEMBLY_DIR_A}_rna.fna.gz": b"RNA",
+            f"{ASSEMBLY_DIR_A}_assembly_report.txt": b"REPORT",
+            f"{ASSEMBLY_DIR_A}_assembly_stats.txt": b"STATS",
+            f"{ASSEMBLY_DIR_A}_cds_from_genomic.fna.gz": b"CDS",
+        }
+        _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, many_files)
+
+        report = promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        assert report["promoted"] == len(many_files)
+        assert report["failed"] == 0
+
+        rel = build_accession_path(ASSEMBLY_DIR_A)
+        for fname, expected_body in many_files.items():
+            key = f"{PATH_PREFIX}{rel}{fname}"
+            obj = s3.get_object(Bucket=test_bucket, Key=key)
+            assert obj["Body"].read() == expected_body, f"Content mismatch: {fname}"
+
+    def test_md5_metadata_correct_per_file(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
+        """Each promoted file carries MD5 metadata matching its own content, not another file's."""
+        s3 = minio_s3_client
+        files = {
+            f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"GENOMIC_UNIQUE",
+            f"{ASSEMBLY_DIR_A}_protein.faa.gz": b"PROTEIN_UNIQUE",
+            f"{ASSEMBLY_DIR_A}_rna.fna.gz": b"RNA_UNIQUE",
+        }
+        _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, files, with_md5=True)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        rel = build_accession_path(ASSEMBLY_DIR_A)
+        for fname, content in files.items():
+            key = f"{PATH_PREFIX}{rel}{fname}"
+            meta = get_object_metadata(s3, test_bucket, key)
+            assert meta.get("md5") == _md5(content), f"Wrong MD5 metadata on {fname}"
+
+    def test_file_without_sidecar_has_no_md5_metadata(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
+        """A file staged without a .md5 sidecar is promoted but has no md5 metadata key."""
+        s3 = minio_s3_client
+        fname = f"{ASSEMBLY_DIR_A}_genomic.fna.gz"
+        _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, {fname: FAKE_GENOMIC}, with_md5=False)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        rel = build_accession_path(ASSEMBLY_DIR_A)
+        meta = get_object_metadata(s3, test_bucket, f"{PATH_PREFIX}{rel}{fname}")
+        assert "md5" not in meta, f"Expected no md5 metadata, got: {meta}"
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPromoteStagingCleanup:
+    """After a fully successful promote, all staged files and sidecars are deleted."""
+
+    def test_staged_data_files_deleted(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
+        """Data files are removed from staging after a successful assembly promote."""
+        s3 = minio_s3_client
+        files = {
+            f"{ASSEMBLY_DIR_A}_genomic.fna.gz": FAKE_GENOMIC,
+            f"{ASSEMBLY_DIR_A}_protein.faa.gz": FAKE_PROTEIN,
+        }
+        _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, files, with_md5=False)
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        remaining_staging = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
+        assert len(remaining_staging) == 0, f"Staging not cleaned: {remaining_staging}"
+
+    def test_md5_sidecars_deleted(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
+        """Both data files and .md5 sidecars are removed from staging after promote."""
+        s3 = minio_s3_client
+        files = {
+            f"{ASSEMBLY_DIR_A}_genomic.fna.gz": FAKE_GENOMIC,
+            f"{ASSEMBLY_DIR_A}_protein.faa.gz": FAKE_PROTEIN,
+        }
+        _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, files, with_md5=True)
+
+        # Verify sidecars exist before promote
+        rel = build_accession_path(ASSEMBLY_DIR_A)
+        before_keys = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
+        assert any(k.endswith(".md5") for k in before_keys), "Test setup: expected .md5 sidecars"
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        after_keys = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
+        assert len(after_keys) == 0, f"Staging not fully cleaned (including sidecars): {after_keys}"
+
+    def test_two_assemblies_staging_both_cleaned(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
+        """Staging for both assemblies is fully cleaned when both assemblies succeed."""
+        s3 = minio_s3_client
+        _stage_many(
+            s3,
+            staging_test_bucket,
+            ASSEMBLY_DIR_A,
+            {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": FAKE_GENOMIC},
+            with_md5=True,
+        )
+        _stage_many(
+            s3,
+            staging_test_bucket,
+            ASSEMBLY_DIR_B,
+            {f"{ASSEMBLY_DIR_B}_genomic.fna.gz": FAKE_GENOMIC},
+            with_md5=True,
+        )
+
+        report = promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        assert report["promoted"] == 2  # noqa: PLR2004
+        assert report["failed"] == 0
+        remaining = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
+        assert len(remaining) == 0, f"Staging not fully cleaned after two-assembly promote: {remaining}"
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPromoteTwoAssembliesBothLand:
+    """Both assemblies staged together are both promoted to correct Lakehouse paths."""
+
+    def test_both_assemblies_at_correct_final_paths(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
+        """Each assembly's files appear at distinct, correctly-routed final Lakehouse paths."""
+        s3 = minio_s3_client
+        files_a = {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"genomic-A"}
+        files_b = {f"{ASSEMBLY_DIR_B}_genomic.fna.gz": b"genomic-B"}
+        _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, files_a)
+        _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_B, files_b)
+
+        report = promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        assert report["promoted"] == 2  # noqa: PLR2004
+        assert report["failed"] == 0
+
+        rel_a = build_accession_path(ASSEMBLY_DIR_A)
+        rel_b = build_accession_path(ASSEMBLY_DIR_B)
+        obj_a = s3.get_object(Bucket=test_bucket, Key=f"{PATH_PREFIX}{rel_a}{ASSEMBLY_DIR_A}_genomic.fna.gz")
+        obj_b = s3.get_object(Bucket=test_bucket, Key=f"{PATH_PREFIX}{rel_b}{ASSEMBLY_DIR_B}_genomic.fna.gz")
+        assert obj_a["Body"].read() == b"genomic-A"
+        assert obj_b["Body"].read() == b"genomic-B"
+
+    def test_final_path_keys_do_not_overlap(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
+        """Files for assembly A and assembly B land at distinct paths — no key collision."""
+        s3 = minio_s3_client
+        _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"a"})
+        _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_B, {f"{ASSEMBLY_DIR_B}_genomic.fna.gz": b"b"})
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        rel_a = build_accession_path(ASSEMBLY_DIR_A)
+        rel_b = build_accession_path(ASSEMBLY_DIR_B)
+        keys_a = list_all_keys(s3, test_bucket, f"{PATH_PREFIX}{rel_a}")
+        keys_b = list_all_keys(s3, test_bucket, f"{PATH_PREFIX}{rel_b}")
+        assert len(keys_a) == 1
+        assert len(keys_b) == 1
+        assert keys_a[0] != keys_b[0]
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPromoteDryRunMultiFile:
+    """dry_run leaves staging untouched and writes nothing to the Lakehouse."""
+
+    def test_dry_run_many_files_staging_untouched(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
+        """All staged files (data + .md5) survive a dry-run promote unchanged."""
+        s3 = minio_s3_client
+        many_files = {
+            f"{ASSEMBLY_DIR_A}_genomic.fna.gz": FAKE_GENOMIC,
+            f"{ASSEMBLY_DIR_A}_protein.faa.gz": FAKE_PROTEIN,
+            f"{ASSEMBLY_DIR_A}_rna.fna.gz": b"RNA",
+        }
+        _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, many_files, with_md5=True)
+        staging_before = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
+
+        report = promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+            dry_run=True,
+        )
+
+        assert report["promoted"] == len(many_files)
+        assert report["dry_run"] is True
+
+        # Staging unchanged
+        staging_after = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
+        assert staging_after == staging_before, "Dry-run should not alter staging"
+
+        # Nothing at final path
+        final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
+        assert len(final_keys) == 0, f"Dry-run created Lakehouse objects: {final_keys}"
+
+    def test_dry_run_two_assemblies_nothing_written(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
+        """Dry-run with two staged assemblies creates no Lakehouse objects."""
+        s3 = minio_s3_client
+        _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": FAKE_GENOMIC})
+        _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_B, {f"{ASSEMBLY_DIR_B}_genomic.fna.gz": FAKE_GENOMIC})
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+            dry_run=True,
+        )
+
+        final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
+        assert len(final_keys) == 0, f"Dry-run created objects: {final_keys}"
+
+
+@pytest.mark.integration
+@pytest.mark.slow_test
+class TestPromoteSecondRunOnEmptyStaging:
+    """After staging is cleaned, a second promote run promotes 0 files without error."""
+
+    def test_second_run_promoted_zero(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
+        """Re-running promote on already-cleaned staging succeeds with promoted=0."""
+        s3 = minio_s3_client
+        _stage_many(
+            s3,
+            staging_test_bucket,
+            ASSEMBLY_DIR_A,
+            {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": FAKE_GENOMIC},
+            with_md5=True,
+        )
+
+        report1 = promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+        report2 = promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+
+        assert report1["promoted"] == 1
+        assert report2["promoted"] == 0
+        assert report2["failed"] == 0
+
+        # Final key still present after second run
+        rel = build_accession_path(ASSEMBLY_DIR_A)
+        final_keys = list_all_keys(s3, test_bucket, f"{PATH_PREFIX}{rel}")
+        assert len(final_keys) == 1
+
+    def test_lakehouse_unchanged_on_second_run(
+        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+    ) -> None:
+        """Lakehouse contents are identical before and after a second (no-op) promote run."""
+        s3 = minio_s3_client
+        _stage_many(
+            s3,
+            staging_test_bucket,
+            ASSEMBLY_DIR_A,
+            {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": FAKE_GENOMIC, f"{ASSEMBLY_DIR_A}_protein.faa.gz": FAKE_PROTEIN},
+            with_md5=True,
+        )
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+        keys_after_first = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
+
+        promote_from_s3(
+            staging_key_prefix=STAGING_PREFIX,
+            staging_bucket=staging_test_bucket,
+            lakehouse_bucket=test_bucket,
+            lakehouse_key_prefix=PATH_PREFIX,
+        )
+        keys_after_second = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
+
+        assert keys_after_first == keys_after_second
