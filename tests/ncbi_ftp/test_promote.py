@@ -6,7 +6,6 @@ from pathlib import Path
 import botocore.client
 import pytest
 
-import cdm_data_loaders.ncbi_ftp.promote as promote_mod
 from cdm_data_loaders.ncbi_ftp.promote import (
     DEFAULT_LAKEHOUSE_KEY_PREFIX,
     _archive_assemblies,
