@@ -153,8 +153,11 @@ def test_archive_assemblies_updated_no_delete(
         f"{DEFAULT_LAKEHOUSE_KEY_PREFIX}archive/2024-06/raw_data/GCF/000/001/215/{asm_dir}/{accession}_genomic.fna.gz"
     )
     resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=archive_key)
-    assert resp["Metadata"]["archive_reason"] == "updated"
-    assert resp["Metadata"]["ncbi_last_release"] == "2024-06"
+    assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+    tag_resp = mock_s3_client_no_checksum.get_object_tagging(Bucket=TEST_BUCKET, Key=archive_key)
+    tags = {t["Key"]: t["Value"] for t in tag_resp["TagSet"]}
+    assert tags["archive_reason"] == "updated"
+    assert tags["ncbi_last_release"] == "2024-06"
 
 
 @pytest.mark.s3

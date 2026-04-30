@@ -29,7 +29,7 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
 from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX, promote_from_s3
 from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch
 
-from .conftest import get_object_metadata, list_all_keys, stage_files_to_minio, staging_test_bucket  # noqa: F401
+from .conftest import get_object_metadata, get_object_tags, list_all_keys, stage_files_to_minio, staging_test_bucket  # noqa: F401
 
 STABLE_PREFIX = "900"
 STAGING_PREFIX = "staging/run1/"
@@ -215,8 +215,8 @@ class TestFullPipelineIncrementalSync:
         if promote2["archived"] > 0:
             assert len(archive_keys) >= 1
             for key in archive_keys:
-                meta = get_object_metadata(s3, test_bucket, key)
-                assert meta.get("archive_reason") == "updated"
+                tags = get_object_tags(s3, test_bucket, key)
+                assert tags.get("archive_reason") == "updated"
 
         # Final Lakehouse path should still have files
         final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")

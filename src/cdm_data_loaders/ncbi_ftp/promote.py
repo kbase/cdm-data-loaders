@@ -217,7 +217,7 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
                         upload_succeeded = upload_file(
                             tmp_path,
                             f"{lakehouse_bucket}/{final_key_path.parent}",
-                            metadata=metadata,
+                            tags=metadata,
                             object_name=final_key_path.name,
                             show_progress=False,
                         )
@@ -362,7 +362,7 @@ def _archive_assemblies(  # noqa: PLR0913
                 copy_object(
                     f"{lakehouse_bucket}/{source_key}",
                     f"{lakehouse_bucket}/{archive_key}",
-                    metadata={
+                    tags={
                         "ncbi_last_release": release_tag,
                         "archive_reason": archive_reason,
                         "archive_date": datestamp,

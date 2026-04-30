@@ -200,7 +200,7 @@ def upload_file(
     local_file_path: Path | str,
     destination_dir: str,
     object_name: str | None = None,
-    metadata: dict[str, str] | None = None,
+    tags: dict[str, str] | None = None,
     show_progress: bool = True,
 ) -> bool:
     """Upload an object to an S3 bucket.
@@ -232,14 +232,14 @@ def upload_file(
         object_name = local_file_path.name
 
     s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
-    if metadata is None and object_exists(s3_path):
+    if tags is None and object_exists(s3_path):
         logger.debug("File already present: %s", s3_path)
         return True
 
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
 
-    extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": metadata}) if metadata is not None else {})}
+    extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": tags}) if tags is not None else {})}
 
     # Upload the file
     logger.debug("uploading %s to %s", str(local_file_path), s3_path)
@@ -439,13 +439,18 @@ def upload_dir(
 def copy_object(
     current_s3_path: str,
     new_s3_path: str,
-    metadata: dict[str, str] | None = None,
+    tags: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Copy an object from one place to another, adding in a CRC64NVME checksum.
+    """Copy an object from one place to another, inheriting the source user metadata.
 
-    When *metadata* is supplied the destination object carries exactly those
-    key/value pairs (``MetadataDirective='REPLACE'``).  When *metadata* is
-    ``None`` (the default) the source metadata is inherited.
+    Source user metadata (e.g. ``md5``) is preserved on the destination because
+    ``MetadataDirective`` is omitted, which defaults to ``COPY``.
+
+    When *metadata* is supplied it is applied as S3 object **tags** via a
+    separate ``put_object_tagging`` call rather than as user metadata.  This
+    avoids passing ``MetadataDirective=REPLACE`` to ``CopyObject``, which causes
+    botocore to inject an unsigned checksum header that AWS rejects with
+    AccessDenied.
 
     A successful copy operation will return a response where
     resp["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -457,26 +462,29 @@ def copy_object(
     :type current_s3_path: str
     :param new_s3_path: the desired new file path on s3, INCLUDING the bucket name
     :type new_s3_path: str
-    :param metadata: user metadata to set on the destination object; when provided the source metadata is replaced
-    :type metadata: dict[str, str] | None
-    :return: dictionary containing response
+    :param tags: key-value pairs to set as S3 object tags on the destination
+    :type tags: dict[str, str] | None
+    :return: dictionary containing response from the copy operation
     :rtype: dict[str, Any]
     """
     s3 = get_s3_client()
     (current_s3_bucket, current_s3_key) = split_s3_path(current_s3_path)
     (new_s3_bucket, new_s3_key) = split_s3_path(new_s3_path)
 
-    extra: dict[str, Any] = {}
-    if metadata is not None:
-        extra["Metadata"] = metadata
-        extra["MetadataDirective"] = "REPLACE"
-
-    return s3.copy_object(
+    resp = s3.copy_object(
         CopySource={"Bucket": current_s3_bucket, "Key": current_s3_key},
         Bucket=new_s3_bucket,
         Key=new_s3_key,
-        **extra,
     )
+
+    if tags:
+        s3.put_object_tagging(
+            Bucket=new_s3_bucket,
+            Key=new_s3_key,
+            Tagging={"TagSet": [{"Key": k, "Value": v} for k, v in tags.items()]},
+        )
+
+    return resp
 
 
 def copy_directory(current_s3_path: str, new_s3_path: str) -> tuple[dict[str, str], dict[str, Any]]:

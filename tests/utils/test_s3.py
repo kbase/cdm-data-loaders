@@ -899,7 +899,7 @@ def test_delete_object_removes_object(mock_s3_client: Any, bucket: str, protocol
 def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: Any, sample_file: Path, bucket: str) -> None:
     """Verify that upload_file with metadata stores user metadata on the uploaded object."""
     metadata = {"md5": "abc123", "source": "ncbi"}
-    result = upload_file(sample_file, f"{bucket}/uploads", metadata=metadata)
+    result = upload_file(sample_file, f"{bucket}/uploads", tags=metadata)
     assert result is True
 
     resp = mock_s3_client.head_object(Bucket=bucket, Key=f"uploads/{sample_file.name}")
@@ -910,7 +910,7 @@ def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: Any, sample
 @pytest.mark.s3
 def test_upload_file_with_metadata_custom_object_name(mock_s3_client: Any, sample_file: Path) -> None:
     """Verify that the object_name parameter overrides the filename."""
-    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", metadata={"k": "v"}, object_name="renamed.txt")
+    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", tags={"k": "v"}, object_name="renamed.txt")
     assert result is True
     obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key="uploads/renamed.txt")
     assert obj["Body"].read() == b"hello s3"
@@ -920,7 +920,7 @@ def test_upload_file_with_metadata_custom_object_name(mock_s3_client: Any, sampl
 def test_upload_file_with_metadata_overwrites_existing(mock_s3_client: Any, sample_file: Path) -> None:
     """Verify that upload_file with metadata uploads even when the object already exists."""
     mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
-    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", metadata={"new": "true"})
+    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", tags={"new": "true"})
     assert result is True
     obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}")
     assert obj["Body"].read() == b"hello s3"
@@ -931,7 +931,7 @@ def test_upload_file_with_metadata_overwrites_existing(mock_s3_client: Any, samp
 def test_upload_file_with_metadata_raises_on_empty_destination(sample_file: Path) -> None:
     """Verify ValueError when destination_dir is empty."""
     with pytest.raises(ValueError, match="No destination directory"):
-        upload_file(sample_file, "", metadata={"k": "v"})
+        upload_file(sample_file, "", tags={"k": "v"})
 
 
 @pytest.mark.usefixtures("mock_s3_client")
@@ -939,7 +939,7 @@ def test_upload_file_with_metadata_raises_on_empty_destination(sample_file: Path
 @pytest.mark.s3
 def test_upload_file_with_metadata_accepts_str_and_path(sample_file: Path, path_type: type[str] | type[Path]) -> None:
     """Verify that upload_file with metadata accepts both str and Path."""
-    result = upload_file(path_type(sample_file), f"{CDM_LAKE_BUCKET}/uploads", metadata={})
+    result = upload_file(path_type(sample_file), f"{CDM_LAKE_BUCKET}/uploads", tags={})
     assert result is True
 
 
@@ -978,23 +978,27 @@ def test_head_object_with_protocols(mock_s3_client: Any, protocol: str) -> None:
 @pytest.mark.parametrize("destination", BUCKETS)
 @pytest.mark.s3
 def test_copy_object_with_metadata_replaces_metadata(mocked_s3_client_no_checksum: Any, destination: str) -> None:
-    """Verify that copy_object with metadata copies and replaces metadata."""
+    """Verify that copy_object with tags copies the object and sets S3 object tags on the destination."""
     mocked_s3_client_no_checksum.put_object(
         Bucket=CDM_LAKE_BUCKET, Key="src/file.txt", Body=b"archive me", Metadata={"old_key": "old_val"}
     )
-    new_metadata = {"archive_reason": "replaced", "archive_date": "2026-04-16"}
+    new_tags = {"archive_reason": "replaced", "archive_date": "2026-04-16"}
     response = copy_object(
         f"{CDM_LAKE_BUCKET}/src/file.txt",
         f"{destination}/archive/file.txt",
-        metadata=new_metadata,
+        tags=new_tags,
     )
     assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_STATUS_OK
 
-    # verify the destination has the new metadata, not the old
+    # archive fields are stored as S3 tags, not user metadata
+    tag_resp = mocked_s3_client_no_checksum.get_object_tagging(Bucket=destination, Key="archive/file.txt")
+    tag_dict = {t["Key"]: t["Value"] for t in tag_resp["TagSet"]}
+    assert tag_dict["archive_reason"] == "replaced"
+    assert tag_dict["archive_date"] == "2026-04-16"
+
+    # source user metadata is preserved (MetadataDirective=COPY)
     resp = mocked_s3_client_no_checksum.head_object(Bucket=destination, Key="archive/file.txt")
-    assert resp["Metadata"]["archive_reason"] == "replaced"
-    assert resp["Metadata"]["archive_date"] == "2026-04-16"
-    assert "old_key" not in resp["Metadata"]
+    assert resp["Metadata"].get("old_key") == "old_val"
 
     # verify source still exists
     assert object_exists(f"{CDM_LAKE_BUCKET}/src/file.txt")
@@ -1007,7 +1011,7 @@ def test_copy_object_with_metadata_preserves_content(mocked_s3_client_no_checksu
     copy_object(
         f"{CDM_LAKE_BUCKET}/src/data.bin",
         f"{CDM_LAKE_BUCKET}/dst/data.bin",
-        metadata={"tag": "value"},
+        tags={"tag": "value"},
     )
     obj = mocked_s3_client_no_checksum.get_object(Bucket=CDM_LAKE_BUCKET, Key="dst/data.bin")
     assert obj["Body"].read() == b"binary data"

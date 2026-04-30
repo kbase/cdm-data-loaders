@@ -247,7 +247,7 @@ def archive_descriptor(  # noqa: PLR0913
     copy_object(
         f"{bucket}/{source_key}",
         f"{bucket}/{archive_key}",
-        metadata={
+        tags={
             "ncbi_last_release": release_tag,
             "archive_reason": archive_reason,
             "archive_date": datestamp,
