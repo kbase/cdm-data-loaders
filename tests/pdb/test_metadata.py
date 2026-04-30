@@ -62,7 +62,12 @@ _SAMPLE_RESOURCES: list[DescriptorResource] = [
     ("pdb_id", "key_prefix", "expected"),
     [
         pytest.param(_PDB_ID, _KEY_PREFIX, f"{_KEY_PREFIX}metadata/{_PDB_ID}_datapackage.json", id="standard"),
-        pytest.param(_PDB_ID, _KEY_PREFIX.rstrip("/"), f"{_KEY_PREFIX}metadata/{_PDB_ID}_datapackage.json", id="no_trailing_slash"),
+        pytest.param(
+            _PDB_ID,
+            _KEY_PREFIX.rstrip("/"),
+            f"{_KEY_PREFIX}metadata/{_PDB_ID}_datapackage.json",
+            id="no_trailing_slash",
+        ),
     ],
 )
 def test_build_descriptor_key(pdb_id: str, key_prefix: str, expected: str) -> None:
@@ -281,4 +286,3 @@ def test_archive_descriptor_missing_returns_false() -> None:
             result = archive_descriptor(_PDB_ID, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG)
         reset_s3_client()
     assert result is False
-

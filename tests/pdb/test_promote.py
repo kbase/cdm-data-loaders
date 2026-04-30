@@ -126,4 +126,3 @@ def test_promote_from_s3_dry_run_returns_report(mock_s3_client: object) -> None:
     assert report["dry_run"] is True
     assert report["promoted"] == 1
     assert report["failed"] == 0
-

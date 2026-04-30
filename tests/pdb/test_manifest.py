@@ -59,9 +59,7 @@ from .conftest import SAMPLE_CURRENT_HOLDINGS, SAMPLE_DATES, SAMPLE_REMOVED
         pytest.param("bad_data", set(), None, id="unexpected_type_returns_empty"),
     ],
 )
-def test_parse_current_holdings(
-    data: object, expected_keys: set[str], check: object
-) -> None:
+def test_parse_current_holdings(data: object, expected_keys: set[str], check: object) -> None:
     """Verify dict/list/lowercase/empty holdings data is parsed correctly."""
     records = parse_current_holdings(data)  # type: ignore[arg-type]
     assert set(records.keys()) == expected_keys
@@ -333,5 +331,3 @@ def test_holdings_snapshot_round_trip(tmp_path: Path) -> None:
     snap_path = tmp_path / "snapshot.json.gz"
     save_holdings_snapshot(records, snap_path)
     assert load_holdings_snapshot(snap_path) == records
-
-

@@ -175,7 +175,7 @@ def _promote_data_files(  # noqa: PLR0913
     for staged_key in data_files:
         if staged_key.endswith("download_report.json"):
             continue
-        rel_path = staged_key[len(normalized_staging_prefix):]
+        rel_path = staged_key[len(normalized_staging_prefix) :]
         if not rel_path.startswith("raw_data/"):
             continue
         m = _PDB_ID_RE.search(staged_key)
@@ -187,7 +187,7 @@ def _promote_data_files(  # noqa: PLR0913
 
         :return: ``(resource_dict, staged_key)`` on success; raises on failure.
         """
-        rel_path = staged_key[len(normalized_staging_prefix):]
+        rel_path = staged_key[len(normalized_staging_prefix) :]
         final_key = lakehouse_key_prefix + rel_path
         final_key_path = PurePosixPath(final_key)
 
@@ -236,7 +236,7 @@ def _promote_data_files(  # noqa: PLR0913
 
             if dry_run:
                 for staged_key in files:
-                    rel_path = staged_key[len(normalized_staging_prefix):]
+                    rel_path = staged_key[len(normalized_staging_prefix) :]
                     final_key = lakehouse_key_prefix + rel_path
                     if _dry_run_log_count < 10:  # noqa: PLR2004
                         logger.info("[dry-run] would promote: %s -> %s", staged_key, final_key)
@@ -270,7 +270,10 @@ def _promote_data_files(  # noqa: PLR0913
             if entry_failed == 0 and promoted_keys:
                 try:
                     descriptor = create_descriptor(pdb_id, resources)
-                    upload_descriptor(descriptor, pdb_id, lakehouse_bucket, lakehouse_key_prefix, dry_run=False)
+                    descriptor_key = upload_descriptor(
+                        descriptor, pdb_id, lakehouse_bucket, lakehouse_key_prefix, dry_run=False
+                    )
+                    logger.debug("Uploaded descriptor: %s", descriptor_key)
                     descriptors_written += 1
                 except Exception:
                     logger.exception("Failed to write descriptor for %s", pdb_id)
@@ -335,7 +338,7 @@ def _archive_entries(  # noqa: PLR0913
         key_pairs = [
             (
                 source_key,
-                f"{lakehouse_key_prefix}archive/{release_tag}/{archive_reason}/{source_key[len(lakehouse_key_prefix):]}",
+                f"{lakehouse_key_prefix}archive/{release_tag}/{archive_reason}/{source_key[len(lakehouse_key_prefix) :]}",
             )
             for source_key in matching_keys
         ]
@@ -349,7 +352,7 @@ def _archive_entries(  # noqa: PLR0913
                 _dry_run_log_count += 1
             archived += len(key_pairs)
             # Archive descriptor in dry-run too
-            archive_descriptor(
+            archived_desc = archive_descriptor(
                 pdb_id,
                 lakehouse_bucket,
                 lakehouse_key_prefix,
@@ -357,6 +360,8 @@ def _archive_entries(  # noqa: PLR0913
                 archive_reason=archive_reason,
                 dry_run=True,
             )
+            if not archived_desc:
+                logger.debug("No descriptor found to archive for %s", pdb_id)
             continue
 
         # Copy all files for this entry concurrently
@@ -390,7 +395,7 @@ def _archive_entries(  # noqa: PLR0913
 
         # Archive the frictionless descriptor alongside raw data
         try:
-            archive_descriptor(
+            archived_desc = archive_descriptor(
                 pdb_id,
                 lakehouse_bucket,
                 lakehouse_key_prefix,
@@ -398,6 +403,8 @@ def _archive_entries(  # noqa: PLR0913
                 archive_reason=archive_reason,
                 dry_run=False,
             )
+            if not archived_desc:
+                logger.debug("No descriptor found to archive for %s", pdb_id)
         except Exception:
             logger.exception("Failed to archive descriptor for %s", pdb_id)
 
@@ -449,4 +456,3 @@ def _trim_manifest(manifest_s3_key: str, staging_bucket: str, promoted_ids: set[
         )
     finally:
         Path(tmp_path).unlink()
-

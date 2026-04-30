@@ -69,7 +69,9 @@ def build_descriptor_key(pdb_id: str, key_prefix: str) -> str:
     return f"{prefix}metadata/{pdb_id}_datapackage.json"
 
 
-def build_archive_descriptor_key(pdb_id: str, release_tag: str, key_prefix: str, archive_reason: str = "unknown") -> str:
+def build_archive_descriptor_key(
+    pdb_id: str, release_tag: str, key_prefix: str, archive_reason: str = "unknown"
+) -> str:
     """Return the S3 key for the archived descriptor of *pdb_id*.
 
     :param pdb_id: extended PDB ID, e.g. ``"pdb_00001abc"``
@@ -247,7 +249,7 @@ def archive_descriptor(  # noqa: PLR0913
             return False
         raise
 
-    copy_object(
+    _ = copy_object(
         f"{bucket}/{source_key}",
         f"{bucket}/{archive_key}",
     )
