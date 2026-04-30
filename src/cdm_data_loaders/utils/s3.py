@@ -476,7 +476,6 @@ def copy_object(
         Bucket=new_s3_bucket,
         Key=new_s3_key,
         **extra,
-        **DEFAULT_EXTRA_ARGS,
     )
 
 
@@ -529,7 +528,6 @@ def copy_directory(current_s3_path: str, new_s3_path: str) -> tuple[dict[str, st
                     CopySource={"Bucket": current_s3_bucket, "Key": current_key},
                     Bucket=new_s3_bucket,
                     Key=new_key,
-                    **DEFAULT_EXTRA_ARGS,
                 )
                 if resp["ResponseMetadata"]["HTTPStatusCode"] == SUCCESS_RESPONSE:
                     successes[source_path] = dest_path
