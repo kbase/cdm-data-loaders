@@ -46,7 +46,10 @@ def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseCli
     if _s3_client is not None:
         return _s3_client
 
-    config = Config(retries={"total_max_attempts": AWS_CLIENT_TOTAL_MAX_ATTEMPTS, "mode": AWS_CLIENT_RETRY_MODE})
+    config = Config(
+        retries={"total_max_attempts": AWS_CLIENT_TOTAL_MAX_ATTEMPTS, "mode": AWS_CLIENT_RETRY_MODE},
+        tcp_keepalive=True,
+    )
 
     if not args:
         # try using env vars and skip manual configuration

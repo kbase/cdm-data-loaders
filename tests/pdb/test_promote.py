@@ -34,7 +34,7 @@ def test_archive_entries_copies_to_archive_prefix(mock_s3_client: object, tmp_pa
     ):
         _archive_entries(
             str(manifest_path),
-            bucket=TEST_BUCKET,
+            lakehouse_bucket=TEST_BUCKET,
             pdb_release="2024-04-01",
             lakehouse_key_prefix=_LAKEHOUSE_PREFIX,
             archive_reason="obsoleted",
@@ -59,7 +59,7 @@ def test_archive_entries_dry_run_does_not_copy(mock_s3_client: object, tmp_path:
         patch.object(promote_mod, "get_s3_client", return_value=client),
         patch.object(promote_mod, "copy_object") as mock_copy,
     ):
-        _archive_entries(str(manifest_path), bucket=TEST_BUCKET, dry_run=True)
+        _archive_entries(str(manifest_path), lakehouse_bucket=TEST_BUCKET, dry_run=True)
 
     mock_copy.assert_not_called()
 
@@ -71,7 +71,7 @@ def test_archive_entries_invalid_pdb_id_skipped(mock_s3_client: object, tmp_path
     manifest_path.write_text("not_a_pdb_id\n")
 
     with patch.object(promote_mod, "get_s3_client", return_value=client):
-        count = _archive_entries(str(manifest_path), bucket=TEST_BUCKET)
+        count = _archive_entries(str(manifest_path), lakehouse_bucket=TEST_BUCKET)
 
     assert count == 0
 
@@ -118,7 +118,8 @@ def test_promote_from_s3_dry_run_returns_report(mock_s3_client: object) -> None:
     ):
         report = promote_from_s3(
             staging_key_prefix=staging_prefix,
-            bucket=TEST_BUCKET,
+            staging_bucket=TEST_BUCKET,
+            lakehouse_bucket=TEST_BUCKET,
             dry_run=True,
         )
 

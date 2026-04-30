@@ -98,7 +98,8 @@ class TestPdbPromoteFromStaging:
 
         report = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
@@ -125,14 +126,16 @@ class TestPdbPromoteIdempotent:
 
         report1 = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
         )
         keys_after_first = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
 
         report2 = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
         )
         keys_after_second = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
@@ -165,7 +168,8 @@ class TestPdbPromoteArchiveUpdated:
 
         report = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             updated_manifest_path=str(updated_manifest),
             pdb_release="2024-04-01",
             lakehouse_key_prefix=PATH_PREFIX,
@@ -201,7 +205,8 @@ class TestPdbPromoteArchiveRemoved:
 
         report = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             removed_manifest_path=str(removed_manifest),
             pdb_release="2024-04-01",
             lakehouse_key_prefix=PATH_PREFIX,
@@ -236,7 +241,8 @@ class TestPdbPromoteDryRun:
 
         report = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
             dry_run=True,
         )
@@ -267,7 +273,8 @@ class TestPdbPromoteTrimsManifest:
 
         report = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             manifest_s3_key=manifest_key,
             lakehouse_key_prefix=PATH_PREFIX,
         )
@@ -298,7 +305,8 @@ class TestPdbPromoteOnlySidecars:
 
         report = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
@@ -323,7 +331,8 @@ class TestPdbPromoteMultipleEntries:
 
         report = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
@@ -350,7 +359,8 @@ class TestPdbPromoteCreatesDescriptor:
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
@@ -368,7 +378,8 @@ class TestPdbPromoteCreatesDescriptor:
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
@@ -383,7 +394,8 @@ class TestPdbPromoteCreatesDescriptor:
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
@@ -406,7 +418,8 @@ class TestPdbPromoteCreatesDescriptor:
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
@@ -423,7 +436,8 @@ class TestPdbPromoteCreatesDescriptor:
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
         )
 
@@ -457,7 +471,8 @@ class TestPdbPromoteArchiveUpdatedIncludesDescriptor:
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             updated_manifest_path=str(updated_manifest),
             pdb_release="2024-04-01",
             lakehouse_key_prefix=PATH_PREFIX,
@@ -484,7 +499,8 @@ class TestPdbPromoteArchiveUpdatedIncludesDescriptor:
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             updated_manifest_path=str(updated_manifest),
             pdb_release="2024-04-01",
             lakehouse_key_prefix=PATH_PREFIX,
@@ -517,7 +533,8 @@ class TestPdbPromoteArchiveUpdatedIncludesDescriptor:
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             updated_manifest_path=str(updated_manifest),
             pdb_release="2024-04-01",
             lakehouse_key_prefix=PATH_PREFIX,
@@ -550,7 +567,8 @@ class TestPdbPromoteArchiveRemovedIncludesDescriptor:
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             removed_manifest_path=str(removed_manifest),
             pdb_release="2024-04-01",
             lakehouse_key_prefix=PATH_PREFIX,
@@ -578,7 +596,8 @@ class TestPdbPromoteArchiveRemovedIncludesDescriptor:
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             removed_manifest_path=str(removed_manifest),
             pdb_release="2024-04-01",
             lakehouse_key_prefix=PATH_PREFIX,
@@ -603,7 +622,8 @@ class TestPdbPromoteArchiveRemovedIncludesDescriptor:
 
         report = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             removed_manifest_path=str(removed_manifest),
             pdb_release="2024-04-01",
             lakehouse_key_prefix=PATH_PREFIX,
@@ -628,7 +648,8 @@ class TestPdbPromoteDryRunNoDescriptor:
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             lakehouse_key_prefix=PATH_PREFIX,
             dry_run=True,
         )
@@ -652,7 +673,8 @@ class TestPdbPromoteDryRunNoDescriptor:
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
-            bucket=test_bucket,
+            staging_bucket=test_bucket,
+            lakehouse_bucket=test_bucket,
             updated_manifest_path=str(updated_manifest),
             pdb_release="2024-04-01",
             lakehouse_key_prefix=PATH_PREFIX,
