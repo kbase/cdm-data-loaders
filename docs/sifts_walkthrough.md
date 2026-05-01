@@ -71,6 +71,7 @@ Open `notebooks/pdb_sifts.ipynb` and set:
 ```python
 LAKEHOUSE_BUCKET     = "cdm-lake"
 LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/pdb"
+FILES                = None   # None = download all 16 SIFTS files
 DRY_RUN              = False
 ```
 
@@ -81,10 +82,16 @@ credentials cell (cell 4) — it will configure the S3 client with
 Run all cells.  Expected output on first run:
 
 ```
-Upload status : new
-Destination   : cdm-lake/tenant-general-warehouse/kbase/datasets/pdb/derived_data/sifts/pdb_chain_uniprot.tsv.gz
-Archive key   : None
-Dry run       : False
+Dry run : False
+Files   : 16
+
+Filename                                      Status                    Archive key
+----------------------------------------------------------------------------------------------------
+pdb_chain_cath_uniprot.tsv.gz                 new
+pdb_chain_ensembl.tsv.gz                      new
+...
+pdb_chain_uniprot.tsv.gz                      new
+...
 ```
 
 ### 4. Verify the upload
@@ -96,11 +103,11 @@ aws --endpoint-url http://localhost:9000 s3 ls \
 
 ### 5. Re-running (idempotency check)
 
-Run the notebook a second time.  Because the file has not changed, the pipeline
-skips the upload:
+Run the notebook a second time.  Because the files have not changed, the
+pipeline skips each upload:
 
 ```
-Upload status : unchanged
+pdb_chain_uniprot.tsv.gz    unchanged
 ```
 
 ---
@@ -122,6 +129,7 @@ export AWS_DEFAULT_REGION=us-east-1
 ```python
 LAKEHOUSE_BUCKET     = "kbase-cdm-lake-prod"
 LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/pdb"
+FILES                = None   # None = download all 16 SIFTS files
 DRY_RUN              = False
 ```
 
@@ -141,11 +149,8 @@ print(result)
 ## Dry-run mode
 
 Setting `DRY_RUN = True` (or `dry_run=True` in `SiftsSettings`) logs what the
-pipeline *would* do without downloading or uploading anything:
-
-```
-Upload status : dry_run
-```
+pipeline *would* do without downloading or uploading anything.  Each file shows
+status `dry_run` in the output table.
 
 ---
 

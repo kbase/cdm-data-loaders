@@ -19,6 +19,7 @@ class SiftsSettings(BaseSettings):
         LAKEHOUSE_BUCKET=cdm-lake
         LAKEHOUSE_KEY_PREFIX=tenant-general-warehouse/kbase/datasets/pdb
         SIFTS_FTP_HOST=ftp.ebi.ac.uk
+        SIFTS_FILES=pdb_chain_uniprot.tsv.gz,pdb_chain_go.tsv.gz
         DRY_RUN=false
     """
 
@@ -27,4 +28,5 @@ class SiftsSettings(BaseSettings):
     lakehouse_bucket: str
     lakehouse_key_prefix: str = DEFAULT_LAKEHOUSE_KEY_PREFIX
     sifts_ftp_host: str = "ftp.ebi.ac.uk"
+    sifts_files: list[str] | None = None
     dry_run: bool = False
