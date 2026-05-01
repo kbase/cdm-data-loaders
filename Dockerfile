@@ -12,8 +12,8 @@ FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim
 # Set environment variable to noninteractive to prevent prompts during apt operations
 ENV DEBIAN_FRONTEND=noninteractive
 
-# add tini and git
-RUN apt-get update -y && apt-get install -y --no-install-recommends tini git ca-certificates && \
+# add tini, git, and rsync
+RUN apt-get update -y && apt-get install -y --no-install-recommends tini git ca-certificates rsync && \
     rm -rf /var/lib/apt/lists/*
 
 # copy only the compiled xml-file-splitter binary from the Rust image

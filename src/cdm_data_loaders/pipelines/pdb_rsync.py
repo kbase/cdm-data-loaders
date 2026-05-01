@@ -164,12 +164,20 @@ def _run_rsync(cmd: list[str], pdb_id: str, max_attempts: int = 3) -> None:
     :param cmd: rsync command tokens
     :param pdb_id: PDB ID (used only for log messages)
     :param max_attempts: total number of attempts (1 = no retry)
+    :raises FileNotFoundError: immediately (no retry) if the rsync binary is not installed
     :raises RuntimeError: if all attempts fail
     """
     last_stderr = ""
     last_returncode = -1
     for attempt in range(1, max_attempts + 1):
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+        except FileNotFoundError:
+            msg = (
+                "rsync binary not found. Install rsync before running this pipeline "
+                "(e.g. 'apt-get install rsync' or add it to your cluster init script)."
+            )
+            raise FileNotFoundError(msg) from None
         if result.returncode == 0:
             return
         last_returncode = result.returncode
