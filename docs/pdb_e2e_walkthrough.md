@@ -210,23 +210,20 @@ Open `notebooks/pdb_manifest.ipynb` in JupyterLab or VS Code.
 
 ### Initialise the S3 client for MinIO
 
-If any S3 variables point at your local MinIO, you must initialise the client
-before running the cells that use it.  Insert a new cell after the Imports
-cell with:
+The notebook has a dedicated credentials cell (cell 4) immediately after the
+Imports cell.  Set `PROVIDE_CREDENTIALS = True` in that cell to configure the
+client for a local MinIO instance:
 
 ```python
-from cdm_data_loaders.utils.s3 import get_s3_client, reset_s3_client
-
-reset_s3_client()
-get_s3_client({
-    "endpoint_url": "http://localhost:9000",
-    "aws_access_key_id": "minioadmin",
-    "aws_secret_access_key": "minioadmin",
-})
+PROVIDE_CREDENTIALS = True
 ```
 
-If `STORE_BUCKET`, `PREVIOUS_SNAPSHOT_URI`, and `SNAPSHOT_UPLOAD_URI` are
-all `None`, this cell can be skipped.
+The cell will then call `reset_s3_client()` and configure it with
+`http://localhost:9000` and the `minioadmin` credentials.
+
+Leave `PROVIDE_CREDENTIALS = False` (the default) when running against AWS
+or another environment that provides credentials via environment variables or
+an IAM role.
 
 ### Optional: Bootstrap from an existing store (SCAN_STORE)
 
@@ -405,18 +402,17 @@ Open `notebooks/pdb_promote.ipynb`.
 
 ### Initialise the S3 client for MinIO
 
-Insert a cell after the Imports cell:
+The notebook has a dedicated credentials cell (cell 5) between the Configure
+and S3 validation cells.  Set `PROVIDE_CREDENTIALS = True` in that cell to
+configure the client for a local MinIO instance:
 
 ```python
-from cdm_data_loaders.utils.s3 import get_s3_client, reset_s3_client
-
-reset_s3_client()
-get_s3_client({
-    "endpoint_url": "http://localhost:9000",
-    "aws_access_key_id": "minioadmin",
-    "aws_secret_access_key": "minioadmin",
-})
+PROVIDE_CREDENTIALS = True
 ```
+
+Leave `PROVIDE_CREDENTIALS = False` (the default) when running against AWS
+or another environment that provides credentials via environment variables or
+an IAM role.
 
 ### Run the notebook
 

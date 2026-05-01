@@ -189,7 +189,7 @@ def upload_descriptor(
     key = build_descriptor_key(pdb_id, key_prefix)
 
     if dry_run:
-        logger.info("[dry-run] would upload descriptor: s3://%s/%s", bucket, key)
+        logger.debug("[dry-run] would upload descriptor: s3://%s/%s", bucket, key)
         return key
 
     s3 = get_s3_client()
@@ -201,7 +201,7 @@ def upload_descriptor(
 
     try:
         s3.upload_file(Filename=tmp_path, Bucket=bucket, Key=key)
-        logger.info("Uploaded descriptor: s3://%s/%s", bucket, key)
+        logger.debug("Uploaded descriptor: s3://%s/%s", bucket, key)
     finally:
         Path(tmp_path).unlink()
 
@@ -234,7 +234,7 @@ def archive_descriptor(  # noqa: PLR0913
     archive_key = build_archive_descriptor_key(pdb_id, release_tag, key_prefix, archive_reason)
 
     if dry_run:
-        logger.info("[dry-run] would archive descriptor: s3://%s/%s -> %s", bucket, source_key, archive_key)
+        logger.debug("[dry-run] would archive descriptor: s3://%s/%s -> %s", bucket, source_key, archive_key)
         return True
 
     s3 = get_s3_client()

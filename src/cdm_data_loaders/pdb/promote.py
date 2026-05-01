@@ -22,6 +22,8 @@ from cdm_data_loaders.pdb.entry import DEFAULT_LAKEHOUSE_KEY_PREFIX, build_entry
 from cdm_data_loaders.pdb.metadata import (
     DescriptorResource,
     archive_descriptor,
+    build_archive_descriptor_key,
+    build_descriptor_key,
     create_descriptor,
     upload_descriptor,
 )
@@ -351,17 +353,14 @@ def _archive_entries(  # noqa: PLR0913
                     logger.debug("[dry-run] would archive: %s -> %s", source_key, archive_key)
                 _dry_run_log_count += 1
             archived += len(key_pairs)
-            # Archive descriptor in dry-run too
-            archived_desc = archive_descriptor(
-                pdb_id,
-                lakehouse_bucket,
-                lakehouse_key_prefix,
-                release_tag,
-                archive_reason=archive_reason,
-                dry_run=True,
-            )
-            if not archived_desc:
-                logger.debug("No descriptor found to archive for %s", pdb_id)
+            # Archive descriptor in dry-run too (inline to share _dry_run_log_count)
+            desc_src = build_descriptor_key(pdb_id, lakehouse_key_prefix)
+            desc_arch = build_archive_descriptor_key(pdb_id, release_tag, lakehouse_key_prefix, archive_reason)
+            if _dry_run_log_count < 10:  # noqa: PLR2004
+                logger.info("[dry-run] would archive descriptor: s3://%s/%s -> %s", lakehouse_bucket, desc_src, desc_arch)
+            else:
+                logger.debug("[dry-run] would archive descriptor: s3://%s/%s -> %s", lakehouse_bucket, desc_src, desc_arch)
+            _dry_run_log_count += 1
             continue
 
         # Copy all files for this entry concurrently
