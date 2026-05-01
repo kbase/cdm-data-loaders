@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "bioregistry"
-version = "0.13.40"
+version = "0.13.47"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -348,9 +348,9 @@ dependencies = [
     { name = "sssom-pydantic" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/56/48/1b0d2628c3ead36efc02b94517c86573e7a30a05b3e70430f321b1b4b8e0/bioregistry-0.13.40.tar.gz", hash = "sha256:ef8305b9a29d17e00a345e0b4e22294c52c08a15cf25156af9d66ab44015e66d", size = 6000260, upload-time = "2026-04-15T11:00:43.195Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/9f/401f4912a0e26a426c3a4183903e29b19cc438748c6daa21c8197aee9e1c/bioregistry-0.13.47.tar.gz", hash = "sha256:c676c31a46298f005715d76ec1da2aeaff3dd990a059a9182dfdd87b01b5ae9c", size = 6012879, upload-time = "2026-04-29T07:41:55.867Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/a6/4e45c6863714678188a061cc94585f2ffb1330658945953def9fb698634d/bioregistry-0.13.40-py3-none-any.whl", hash = "sha256:3841e53d6297dfb32ec8a7ee4f6d74fe87ac83cfbd9b9e2553e442599c4e8e73", size = 6087315, upload-time = "2026-04-15T11:00:38.229Z" },
+    { url = "https://files.pythonhosted.org/packages/1d/45/edc303399d62f95fd8fd33eb26a703b794e8f3b97ed22d35cc6fb1a866f0/bioregistry-0.13.47-py3-none-any.whl", hash = "sha256:d1895abf8b0fdbae179f2f87d28293442227a9eb5efd77a53d35fe77b4e91661", size = 6101297, upload-time = "2026-04-29T07:42:37.123Z" },
 ]
 
 [[package]]
@@ -432,7 +432,7 @@ xml = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bioregistry", specifier = ">=0.13.31" },
+    { name = "bioregistry", specifier = ">=0.13.47" },
     { name = "boto3", extras = ["crt"], specifier = ">=1.42.55" },
     { name = "click", specifier = ">=8.3.1" },
     { name = "defusedxml", specifier = ">=0.7.1" },
@@ -773,16 +773,16 @@ wheels = [
 
 [[package]]
 name = "curies"
-version = "0.13.3"
+version = "0.13.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "pystow" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/06/5f/abed32e461a1b8d201da0744250e569cccd401df3c8a1e133868fa7923e8/curies-0.13.3.tar.gz", hash = "sha256:ee48a8def8fe65b162029505e2554221d3ccdc7c5580716abd9d5693539ed9ee", size = 68827, upload-time = "2026-04-08T11:53:42.081Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/3e/b8a1ae5b85eaf1af994641dee46effbc6fb4d8f7df3074146a0ae1af1227/curies-0.13.8.tar.gz", hash = "sha256:85349db98ed1851bcb04a36419e54f5dcd9461225c33fe4ebb1bdc4e84946956", size = 70481, upload-time = "2026-04-24T11:47:58.341Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/68/06/5ca84afe654733e274e81b2d59b39578d9b6787421eae0e9c27a1ef013c9/curies-0.13.3-py3-none-any.whl", hash = "sha256:eefd58bcc7e0e49ab8f7341a751cce1d62a4669ef93de4683f0a370824bd2289", size = 78026, upload-time = "2026-04-08T11:53:40.834Z" },
+    { url = "https://files.pythonhosted.org/packages/13/16/9dab08acd9e203e3aa337a4e973b91e46821b8061013681b700b0c3f19c3/curies-0.13.8-py3-none-any.whl", hash = "sha256:0e8e5bd99b02063651fbafbe655a00afa185972d08b314dcc97a22747df2ef05", size = 79740, upload-time = "2026-04-24T11:47:56.791Z" },
 ]
 
 [[package]]
