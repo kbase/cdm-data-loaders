@@ -9,7 +9,7 @@ from cdm_data_loaders.utils.download.core import DownloadError, NonRetryableDown
 from cdm_data_loaders.utils.download.graphql_client import GraphQLClient
 
 GRAPHQL_URL = "https://data.rcsb.org/graphql"
-SIMPLE_QUERY = "query { entries(entry_ids: [\"4HHB\"]) { rcsb_id } }"
+SIMPLE_QUERY = 'query { entries(entry_ids: ["4HHB"]) { rcsb_id } }'
 
 
 def _mock_response(status_code: int, json_data: dict) -> MagicMock:

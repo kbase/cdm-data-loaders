@@ -24,7 +24,10 @@ class TestDownloadSiftsFile:
             # Create a fake file so stat() doesn't fail
             dest = tmp_path / SIFTS_UNIPROT_FILE
             dest.write_bytes(b"fake content")
-            with patch("cdm_data_loaders.sifts.download.ftp_download_file", side_effect=lambda ftp, remote, local: Path(local).write_bytes(b"fake")):
+            with patch(
+                "cdm_data_loaders.sifts.download.ftp_download_file",
+                side_effect=lambda ftp, remote, local: Path(local).write_bytes(b"fake"),
+            ):
                 download_sifts_file(SIFTS_UNIPROT_FILE, tmp_path)
 
         mock_connect.assert_called_once_with(DEFAULT_SIFTS_HOST)

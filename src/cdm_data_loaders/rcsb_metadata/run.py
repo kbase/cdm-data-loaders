@@ -122,7 +122,9 @@ def run_rcsb_metadata(settings: RcsbMetadataSettings) -> RcsbMetadataResult:
     logger.info("RCSB metadata pipeline starting (dry_run=%s)", settings.dry_run)
 
     if settings.dry_run:
-        logger.info("[dry-run] would fetch %d entity types and upload to s3://%s", len(ENTITY_TYPES), settings.lakehouse_bucket)
+        logger.info(
+            "[dry-run] would fetch %d entity types and upload to s3://%s", len(ENTITY_TYPES), settings.lakehouse_bucket
+        )
         result = RcsbMetadataResult(dry_run=True)
         for entity_type in ENTITY_TYPES:
             filename = f"{entity_type}.ndjson"

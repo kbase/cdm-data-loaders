@@ -78,9 +78,16 @@ class TestRunRcsbMetadataLive:
         with (
             patch.object(run_mod, "fetch_entry_ids", return_value=SAMPLE_IDS) as mock_ids,
             patch.object(run_mod, "_write_ndjson", return_value=len(SAMPLE_IDS)) as mock_write,
-            patch.object(run_mod, "versioned_upload", side_effect=lambda **kw: upload_results[kw["local_path"].stem]) as mock_upload,
+            patch.object(
+                run_mod, "versioned_upload", side_effect=lambda **kw: upload_results[kw["local_path"].stem]
+            ) as mock_upload,
         ):
-            yield {"mock_ids": mock_ids, "mock_write": mock_write, "mock_upload": mock_upload, "upload_results": upload_results}
+            yield {
+                "mock_ids": mock_ids,
+                "mock_write": mock_write,
+                "mock_upload": mock_upload,
+                "upload_results": upload_results,
+            }
 
     def test_returns_result(self, patched_run):
         settings = _make_settings()

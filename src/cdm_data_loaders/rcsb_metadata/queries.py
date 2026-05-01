@@ -14,7 +14,6 @@ Supported entity types:
     - ``sequence_clusters`` — RCSB sequence cluster membership
 """
 
-
 # ---------------------------------------------------------------------------
 # Canonical order of entity types for deterministic run output
 # ---------------------------------------------------------------------------

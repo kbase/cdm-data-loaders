@@ -55,6 +55,7 @@ class TestRcsbMetadataIntegration:
     @pytest.fixture
     def mock_gql(self):
         """Patch fetch_entry_ids and GraphQLClient.post_query with synthetic data."""
+
         def post_query_side_effect(url, query, variables=None):
             ids = (variables or {}).get("ids", [])
             # Guess entity type from query text

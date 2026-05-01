@@ -68,7 +68,9 @@ def run_sifts(settings: SiftsSettings) -> SiftsResult:
     filename = SIFTS_UNIPROT_FILE
     dest_key = f"{settings.lakehouse_key_prefix.strip('/')}/{SIFTS_DERIVED_DATA_PREFIX.strip('/')}/{filename}"
     dest_path = f"{settings.lakehouse_bucket}/{dest_key}"
-    archive_base = f"{settings.lakehouse_bucket}/{settings.lakehouse_key_prefix.strip('/')}/{SIFTS_ARCHIVE_PREFIX.strip('/')}"
+    archive_base = (
+        f"{settings.lakehouse_bucket}/{settings.lakehouse_key_prefix.strip('/')}/{SIFTS_ARCHIVE_PREFIX.strip('/')}"
+    )
     sub_path = f"sifts/{filename}"
 
     logger.info("SIFTS pipeline starting (dry_run=%s)", settings.dry_run)
@@ -77,7 +79,9 @@ def run_sifts(settings: SiftsSettings) -> SiftsResult:
         tmp_dir = Path(tmp)
 
         if settings.dry_run:
-            logger.info("[dry-run] would download %s and upload to s3://%s/%s", filename, settings.lakehouse_bucket, dest_key)
+            logger.info(
+                "[dry-run] would download %s and upload to s3://%s/%s", filename, settings.lakehouse_bucket, dest_key
+            )
             return SiftsResult(
                 filename=filename,
                 upload_status="dry_run",
