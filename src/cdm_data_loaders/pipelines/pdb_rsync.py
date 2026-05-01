@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
@@ -89,6 +90,12 @@ class PdbRsyncSettings(BaseSettings):
         description="Limit to first N entries (for testing)",
         validation_alias=AliasChoices("l", "limit"),
     )
+    rsync_retries: int = Field(
+        default=3,
+        ge=1,
+        description="Maximum rsync attempts per entry (1 = no retries)",
+        validation_alias=AliasChoices("rsync-retries", "rsync_retries"),
+    )
 
     @field_validator("workers")
     @classmethod
@@ -151,6 +158,46 @@ def _build_rsync_cmd(
 # ── Single-entry download ────────────────────────────────────────────────
 
 
+def _run_rsync(cmd: list[str], pdb_id: str, max_attempts: int = 3) -> None:
+    """Run an rsync command, retrying transient failures with exponential backoff.
+
+    :param cmd: rsync command tokens
+    :param pdb_id: PDB ID (used only for log messages)
+    :param max_attempts: total number of attempts (1 = no retry)
+    :raises RuntimeError: if all attempts fail
+    """
+    last_stderr = ""
+    last_returncode = -1
+    for attempt in range(1, max_attempts + 1):
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+        if result.returncode == 0:
+            return
+        last_returncode = result.returncode
+        last_stderr = result.stderr.strip()
+        if attempt < max_attempts:
+            wait = 2 ** (attempt - 1)  # 1 s, 2 s, 4 s, …
+            logger.warning(
+                "rsync attempt %d/%d failed for %s (exit %d), retrying in %ds: %s",
+                attempt,
+                max_attempts,
+                pdb_id,
+                result.returncode,
+                wait,
+                last_stderr,
+            )
+            time.sleep(wait)
+        else:
+            logger.error(
+                "rsync failed for %s after %d attempt(s) (exit %d): %s",
+                pdb_id,
+                max_attempts,
+                last_returncode,
+                last_stderr,
+            )
+    msg = f"rsync failed for {pdb_id} after {max_attempts} attempt(s) (exit {last_returncode}): {last_stderr}"
+    raise RuntimeError(msg)
+
+
 def _write_crc64nvme_sidecars(entry_local_path: Path) -> int:
     """Compute and write ``.crc64nvme`` sidecar files for all non-sidecar files.
 
@@ -176,6 +223,7 @@ def download_entry(
     rsync_host: str = RSYNC_HOST,
     rsync_port: int = RSYNC_PORT,
     file_types: list[str] | None = None,
+    max_rsync_attempts: int = 3,
 ) -> dict[str, Any]:
     """Download a single PDB entry via rsync and write CRC64NVME sidecars.
 
@@ -184,6 +232,7 @@ def download_entry(
     :param rsync_host: rsync server hostname
     :param rsync_port: rsync server port
     :param file_types: file-type subdirs to include, or None for all
+    :param max_rsync_attempts: total rsync attempts per entry (1 = no retry)
     :return: stats dict with ``pdb_id``, ``files_downloaded``, ``sidecars_written``
     """
     normed = pdb_id.lower()
@@ -194,12 +243,7 @@ def download_entry(
     cmd = _build_rsync_cmd(normed, output_dir, rsync_host, rsync_port, file_types)
     logger.debug("rsync command: %s", " ".join(cmd))
 
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
-
-    if result.returncode != 0:
-        logger.error("rsync failed for %s (exit %d): %s", pdb_id, result.returncode, result.stderr.strip())
-        msg = f"rsync failed for {pdb_id} with exit code {result.returncode}: {result.stderr.strip()}"
-        raise RuntimeError(msg)
+    _run_rsync(cmd, normed, max_attempts=max_rsync_attempts)
 
     # Count downloaded files (non-sidecar)
     files_downloaded = sum(1 for p in entry_local.rglob("*") if p.is_file() and p.suffix not in (".crc64nvme", ".md5"))
@@ -225,6 +269,7 @@ def download_batch(
     rsync_port: int = RSYNC_PORT,
     file_types: list[str] | None = None,
     limit: int | None = None,
+    max_rsync_attempts: int = 3,
 ) -> dict[str, Any]:
     """Download all PDB entries listed in the manifest.
 
@@ -235,6 +280,7 @@ def download_batch(
     :param rsync_port: rsync port
     :param file_types: file-type subdirs to include, or None for all
     :param limit: optional limit for testing
+    :param max_rsync_attempts: total rsync attempts per entry (1 = no retry)
     :return: report dict with overall stats
     """
     with Path(manifest_path).open() as f:
@@ -253,7 +299,7 @@ def download_batch(
     def _download_one(pdb_id: str) -> tuple[str, Exception | None]:
         nonlocal success_count
         try:
-            stats = download_entry(pdb_id, output_dir, rsync_host, rsync_port, file_types)
+            stats = download_entry(pdb_id, output_dir, rsync_host, rsync_port, file_types, max_rsync_attempts)
         except Exception as e:  # noqa: BLE001
             return pdb_id, e
         else:
@@ -314,6 +360,7 @@ def run_download(config: PdbRsyncSettings) -> None:
         rsync_port=config.rsync_port,
         file_types=config.file_types if config.file_types else None,
         limit=config.limit,
+        max_rsync_attempts=config.rsync_retries,
     )
     if report["failed"] > 0:
         msg = f"PDB download completed with {report['failed']} failures"
@@ -377,6 +424,7 @@ def download_and_stage(
     file_types: list[str] | None = None,
     limit: int | None = None,
     dry_run: bool = False,
+    max_rsync_attempts: int = 3,
 ) -> dict[str, Any]:
     """Download PDB entries via rsync and stage them to S3 (Phase 2).
 
@@ -400,6 +448,7 @@ def download_and_stage(
     :param file_types: file-type subdirs to include, or None for all
     :param limit: optional limit for testing
     :param dry_run: when ``True``, download but skip all S3 uploads
+    :param max_rsync_attempts: total rsync attempts per entry (1 = no retry)
     :return: download report extended with ``staged_objects``, ``staging_key_prefix``, ``dry_run``
     """
     if manifest_s3_key is not None and manifest_local_path is not None:
@@ -439,7 +488,7 @@ def download_and_stage(
         def _download_upload_one(pdb_id: str) -> tuple[str, Exception | None]:
             nonlocal success_count, staged_objects
             try:
-                stats = download_entry(pdb_id, tmp, rsync_host, rsync_port, file_types)
+                stats = download_entry(pdb_id, tmp, rsync_host, rsync_port, file_types, max_rsync_attempts)
             except Exception as e:  # noqa: BLE001
                 return pdb_id, e
 
