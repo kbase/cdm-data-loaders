@@ -46,7 +46,7 @@ models = [
 ]
 xml = [
     "xmlschema>=4.3.1",
-    "xsdata[cli,lxml]>=26.1",
+    "xsdata[cli,lxml]>=26.2",
 ]
 
 [project.optional-dependencies]

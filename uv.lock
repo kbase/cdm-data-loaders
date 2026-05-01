@@ -463,7 +463,7 @@ models = [
 ]
 xml = [
     { name = "xmlschema", specifier = ">=4.3.1" },
-    { name = "xsdata", extras = ["cli", "lxml"], specifier = ">=26.1" },
+    { name = "xsdata", extras = ["cli", "lxml"], specifier = ">=26.2" },
 ]
 
 [[package]]
