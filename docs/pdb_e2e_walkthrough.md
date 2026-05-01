@@ -62,16 +62,23 @@ All S3 paths in this pipeline compose from a small set of variables.
 
 | Format | Example | Description |
 |--------|---------|-------------|
-| **s3:// URI** | `s3://cdm-lake/staging/pdb-run1/` | Full URI with scheme + bucket + key |
+| **s3:// URI** | `s3://cts/staging/pdb-run1/` | Full URI with scheme + bucket + key |
 | **bucket name** | `cdm-lake` | Just the bucket, no scheme |
 | **S3 key prefix** | `tenant-general-warehouse/kbase/datasets/pdb/` | Path within a bucket (no scheme, no bucket) |
 | **local path** | `output/removed_manifest.txt` | Filesystem path on the host |
 
+Two separate S3 buckets are involved:
+
+| Variable | Walkthrough value | Purpose |
+|----------|------------------|---------|
+| `STAGING_BUCKET` | `cts` | CTS staging bucket — Phase 2 writes downloaded files here |
+| `LAKEHOUSE_BUCKET` | `cdm-lake` | Final Lakehouse destination — Phase 3 promotes files here |
+
 ### Lakehouse object (final location)
 
 ```
-s3://{BUCKET}/{LAKEHOUSE_KEY_PREFIX}raw_data/{hash_dir}/{pdb_id}/{file_type}/{filename}
-     └─ bucket ─┘└── key prefix ───┘└───── build_entry_path() ──────────────┘
+s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}raw_data/{hash_dir}/{pdb_id}/{file_type}/{filename}
+     └── bucket ───────┘└── key prefix ───┘└───── build_entry_path() ──────────────┘
 ```
 
 Example:
@@ -82,7 +89,12 @@ s3://cdm-lake/tenant-general-warehouse/kbase/datasets/pdb/raw_data/cn/pdb_00001c
 ### Staging object (Phase 2 output)
 
 ```
-s3://{BUCKET}/{STAGING_KEY_PREFIX}raw_data/{hash_dir}/{pdb_id}/{file_type}/{filename}
+s3://{STAGING_BUCKET}/{STAGING_KEY_PREFIX}raw_data/{hash_dir}/{pdb_id}/{file_type}/{filename}
+```
+
+Example:
+```
+s3://cts/staging/pdb-run1/raw_data/cn/pdb_00001crn/structures/pdb_00001crn.cif.gz
 ```
 
 ### Local output (Phase 1)
@@ -111,12 +123,17 @@ docker run -d \
   minio/minio:RELEASE.2025-02-28T09-55-16Z server /data --console-address ":9001"
 ```
 
-Create a test bucket via the [MinIO console](http://localhost:9001)
+Create test buckets via the [MinIO console](http://localhost:9001)
 (login: `minioadmin` / `minioadmin`), or with the included helper:
 
 ```sh
 uv run python scripts/s3_local.py mb s3://cdm-lake
+uv run python scripts/s3_local.py mb s3://cts
 ```
+
+Two buckets are needed:
+- **`cdm-lake`** — the Lakehouse destination (Phase 3 promotes files here)
+- **`cts`** — the CTS staging bucket (Phase 2 writes downloaded files here)
 
 ### Install the package and register a Jupyter kernel
 
@@ -187,7 +204,7 @@ Open `notebooks/pdb_manifest.ipynb` in JupyterLab or VS Code.
 | `LIMIT` | `10` | int | cap to 10 entries for speed |
 | `PREVIOUS_SNAPSHOT_URI` | `None` | s3:// URI | first run — everything is "new" |
 | `SCAN_STORE` | `False` | bool | no prior data to scan on first run |
-| `STORE_BUCKET` | `"cdm-lake"` | bucket name | used to prune already-promoted entries |
+| `STORE_BUCKET` | `"cdm-lake"` | bucket name | Lakehouse bucket — used to prune already-promoted entries |
 | `STORE_KEY_PREFIX` | `"tenant-general-warehouse/kbase/datasets/pdb/"` | S3 key prefix | default Lakehouse path prefix |
 | `OUTPUT_DIR` | `Path("output")` | local path | keep as-is |
 
@@ -208,7 +225,7 @@ get_s3_client({
 })
 ```
 
-If `STORE_BUCKET`, `PREVIOUS_SNAPSHOT_URI`, and the snapshot upload URI are
+If `STORE_BUCKET`, `PREVIOUS_SNAPSHOT_URI`, and `SNAPSHOT_UPLOAD_URI` are
 all `None`, this cell can be skipped.
 
 ### Optional: Bootstrap from an existing store (SCAN_STORE)
@@ -352,16 +369,18 @@ used to verify the transfer.
 
 ### 3d. Upload staged files to MinIO
 
+Upload into the **staging bucket** (`cts`), not the Lakehouse bucket:
+
 ```sh
 uv run python scripts/s3_local.py cp \
   notebooks/staging/raw_data/ \
-  s3://cdm-lake/staging/pdb-run1/raw_data/
+  s3://cts/staging/pdb-run1/raw_data/
 ```
 
 Verify:
 
 ```sh
-uv run python scripts/s3_local.py ls s3://cdm-lake/staging/pdb-run1/
+uv run python scripts/s3_local.py ls s3://cts/staging/pdb-run1/
 ```
 
 ---
@@ -374,7 +393,8 @@ Open `notebooks/pdb_promote.ipynb`.
 
 | Constant | Walkthrough value | Format | Why |
 |----------|-------------------|--------|-----|
-| `BUCKET` | `"cdm-lake"` | bucket name | matches the bucket from Step 1 |
+| `STAGING_BUCKET` | `"cts"` | bucket name | CTS staging bucket — matches the upload target from Step 3d |
+| `LAKEHOUSE_BUCKET` | `"cdm-lake"` | bucket name | final Lakehouse destination |
 | `STAGING_KEY_PREFIX` | `"staging/pdb-run1/"` | S3 key prefix | matches the upload prefix from Step 3d |
 | `REMOVED_MANIFEST_PATH` | `None` | local path | nothing to remove on first run |
 | `UPDATED_MANIFEST_PATH` | `None` | local path | nothing to archive on first run |
@@ -408,7 +428,7 @@ get_s3_client({
 After a successful promote run the Lakehouse in MinIO will look like:
 
 ```
-cdm-lake/
+cdm-lake/                                           ← LAKEHOUSE_BUCKET
   tenant-general-warehouse/kbase/datasets/pdb/
     raw_data/
       ab/
@@ -420,6 +440,9 @@ cdm-lake/
     metadata/
       pdb_00001abc_datapackage.json
 ```
+
+The staging bucket (`cts`) retains the original staged files and the
+`download_report.json` — these can be cleaned up once promotion is verified.
 
 The `.crc64nvme` sidecars are **not** copied to the Lakehouse — they are used
 by the promote step for transfer-integrity verification only.
@@ -438,6 +461,9 @@ uv run python scripts/s3_local.py ls \
 # List all promoted entries
 uv run python scripts/s3_local.py ls \
   s3://cdm-lake/tenant-general-warehouse/kbase/datasets/pdb/raw_data/
+
+# Verify staged files are still in the CTS bucket
+uv run python scripts/s3_local.py ls s3://cts/staging/pdb-run1/
 ```
 
 ### Frictionless metadata descriptors
@@ -470,7 +496,7 @@ When an entry is archived (updated or obsoleted), its live descriptor is
 copied to:
 
 ```
-s3://{BUCKET}/{LAKEHOUSE_KEY_PREFIX}archive/{pdb_release}/metadata/{pdb_id}_datapackage.json
+s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}archive/{pdb_release}/metadata/{pdb_id}_datapackage.json
 ```
 
 To inspect a descriptor directly:
@@ -523,11 +549,14 @@ Set `LIMIT = None` for production runs.
 
 ### Manifest trimming
 
-Set `MANIFEST_S3_KEY` to the S3 object key of `transfer_manifest.txt`
-(e.g. `"staging/pdb-run1/transfer_manifest.txt"`) so the promote notebook
-removes each successfully promoted ID from the manifest.  This makes the
-pipeline **resumable** — a re-run of Phase 3 only processes entries that
-haven't been promoted yet.
+Set `MANIFEST_S3_KEY` to the S3 object key of `transfer_manifest.txt` within
+`STAGING_BUCKET` (e.g. `"staging/pdb-run1/transfer_manifest.txt"`) so the
+promote notebook removes each successfully promoted ID from the manifest.
+This makes the pipeline **resumable** — a re-run of Phase 3 only processes
+entries that haven't been promoted yet.
+
+Note: the manifest is trimmed in-place in `STAGING_BUCKET` (`cts` in the
+walkthrough), not in the Lakehouse bucket.
 
 ### Release tag
 
@@ -557,7 +586,7 @@ rm -rf staging/ output/
 | `connect` timeout in Phase 1 | `files-beta.rcsb.org` unreachable | Check network; retry |
 | `rsync: connection unexpectedly closed` | Port 32382 blocked | Ensure outbound TCP 32382 is open |
 | `rsync: failed to connect` | Wrong host or port | Verify `RSYNC_HOST = "rsync-beta.rcsb.org"`, `RSYNC_PORT = 32382` |
-| Phase 3 shows 0 promoted | Staging prefix doesn't match | Verify `STAGING_KEY_PREFIX` matches the upload path from Step 3d |
+| Phase 3 shows 0 promoted | Staging prefix or bucket doesn't match | Verify `STAGING_BUCKET = "cts"` and `STAGING_KEY_PREFIX` matches the upload path from Step 3d |
 | `CRC64NVME` errors uploading to MinIO | MinIO version too old | Pin to `minio/minio:RELEASE.2025-02-28T09-55-16Z` or newer |
 | Phase 1 downloads ~200K entries on first run | `HASH_FROM`/`HASH_TO` not set | Set a narrow range (`"ab"` → `"ab"`) or set `LIMIT = 10` |
 | `berdl_notebook_utils` import error | Missing local client init | Add the `get_s3_client({...})` cell described in Step 2 |
