@@ -21,7 +21,7 @@ from cdm_data_loaders.rcsb_metadata.queries import ENTITY_TYPES
 from cdm_data_loaders.rcsb_metadata.run import run_rcsb_metadata
 from cdm_data_loaders.rcsb_metadata.settings import (
     RCSB_ARCHIVE_PREFIX,
-    RCSB_DERIVED_DATA_PREFIX,
+    RCSB_RAW_DATA_PREFIX,
     RcsbMetadataSettings,
 )
 from cdm_data_loaders.utils.download.graphql_client import GraphQLClient
@@ -41,7 +41,7 @@ def _settings(bucket: str, batch_size: int = 3, dry_run: bool = False) -> RcsbMe
 
 def _dest_key(entity_type: str, settings: RcsbMetadataSettings) -> str:
     prefix = settings.lakehouse_key_prefix.strip("/")
-    return f"{prefix}/{RCSB_DERIVED_DATA_PREFIX.strip('/')}/{entity_type}.ndjson"
+    return f"{prefix}/{RCSB_RAW_DATA_PREFIX.strip('/')}/{entity_type}.ndjson"
 
 
 def _mock_gql_records(entity_type: str, ids: list[str]) -> list[dict[str, Any]]:
@@ -79,6 +79,8 @@ class TestRcsbMetadataIntegration:
         assert set(result.entity_results.keys()) == set(ENTITY_TYPES)
         for entity_type, er in result.entity_results.items():
             assert er.upload_status == "new", f"{entity_type}: {er}"
+        assert result.descriptor_key is not None
+        assert "rcsb/metadata" in result.descriptor_key
 
     def test_files_present_in_minio(self, minio_s3_client, test_bucket, mock_gql):
         settings = _settings(test_bucket)

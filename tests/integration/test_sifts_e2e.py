@@ -20,7 +20,7 @@ import pytest
 import cdm_data_loaders.sifts.run as sifts_run_mod
 import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.sifts.run import run_sifts
-from cdm_data_loaders.sifts.settings import SIFTS_ARCHIVE_PREFIX, SIFTS_DERIVED_DATA_PREFIX, SiftsSettings
+from cdm_data_loaders.sifts.settings import SIFTS_ARCHIVE_PREFIX, SIFTS_RAW_DATA_PREFIX, SiftsSettings
 from cdm_data_loaders.utils.s3 import reset_s3_client
 
 FAKE_CONTENT_V1 = b"pdb_chain\tuniprot_acc\n4HHB_A\tP69905\n"
@@ -55,7 +55,7 @@ def _sifts_settings(bucket: str, dry_run: bool = False) -> SiftsSettings:
 
 def _dest_key(settings: SiftsSettings) -> str:
     prefix = settings.lakehouse_key_prefix.strip("/")
-    return f"{prefix}/{SIFTS_DERIVED_DATA_PREFIX}/pdb_chain_uniprot.tsv.gz"
+    return f"{prefix}/{SIFTS_RAW_DATA_PREFIX}/pdb_chain_uniprot.tsv.gz"
 
 
 class TestSiftsIntegration:
@@ -69,6 +69,8 @@ class TestSiftsIntegration:
         fr = result.file_results[_UNIPROT_FILE]
         assert fr.upload_status == "new"
         assert fr.archive_key is None
+        assert result.descriptor_key is not None
+        assert "sifts/metadata" in result.descriptor_key
 
         # Verify file exists in MinIO
         key = _dest_key(settings)
@@ -86,6 +88,8 @@ class TestSiftsIntegration:
         fr = result.file_results[_UNIPROT_FILE]
         assert fr.upload_status == "unchanged"
         assert fr.archive_key is None
+        # Descriptor still written on unchanged runs (data is consistent)
+        assert result.descriptor_key is not None
 
     def test_changed_content_archives_old_version(self, minio_s3_client, test_bucket):
         settings = _sifts_settings(test_bucket)

@@ -136,3 +136,44 @@ class TestVersionedUploadArchivedAndReplaced:
         result = versioned_upload(local, DEST_PATH, ARCHIVE_BASE, SUB_PATH, today=date(2026, 5, 7))
 
         assert "/2026-05-07/" in result.archive_key
+
+
+class TestVersionedUploadLocalMd5Bytes:
+    """UploadResult exposes local_md5 and local_bytes for all statuses."""
+
+    def test_new_exposes_md5_and_bytes(self, mock_s3_client, tmp_path: Path):
+        content = b"hello world\n"
+        local = tmp_path / "pdb_entries.ndjson"
+        local.write_bytes(content)
+
+        result = versioned_upload(local, DEST_PATH, ARCHIVE_BASE, SUB_PATH, today=FIXED_DATE)
+
+        assert result.status == "new"
+        expected_md5 = hashlib.md5(content).hexdigest()
+        assert result.local_md5 == expected_md5
+        assert result.local_bytes == len(content)
+
+    def test_unchanged_exposes_md5_and_bytes(self, mock_s3_client, tmp_path: Path):
+        content = b"stable content\n"
+        local = tmp_path / "pdb_entries.ndjson"
+        local.write_bytes(content)
+
+        versioned_upload(local, DEST_PATH, ARCHIVE_BASE, SUB_PATH, today=FIXED_DATE)
+        result = versioned_upload(local, DEST_PATH, ARCHIVE_BASE, SUB_PATH, today=FIXED_DATE)
+
+        assert result.status == "unchanged"
+        assert result.local_md5 == hashlib.md5(content).hexdigest()
+        assert result.local_bytes == len(content)
+
+    def test_archived_and_replaced_exposes_new_md5_and_bytes(self, mock_s3_client, tmp_path: Path):
+        local = tmp_path / "pdb_entries.ndjson"
+        local.write_bytes(b"v1\n")
+        versioned_upload(local, DEST_PATH, ARCHIVE_BASE, SUB_PATH, today=FIXED_DATE)
+
+        new_content = b"v2 content\n"
+        local.write_bytes(new_content)
+        result = versioned_upload(local, DEST_PATH, ARCHIVE_BASE, SUB_PATH, today=FIXED_DATE)
+
+        assert result.status == "archived_and_replaced"
+        assert result.local_md5 == hashlib.md5(new_content).hexdigest()
+        assert result.local_bytes == len(new_content)

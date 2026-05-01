@@ -5,12 +5,19 @@ from unittest.mock import patch
 
 import pytest
 
+import cdm_data_loaders.sifts.run as run_mod
 from cdm_data_loaders.sifts.run import SiftsResult, run_sifts
 from cdm_data_loaders.sifts.settings import SiftsSettings
 from cdm_data_loaders.utils.s3_versioned_upload import UploadResult
 
 FAKE_CONTENT = b"pdb_chain\tuniprot_acc\nAAA_A\tP12345\n"
 _FILE = "pdb_chain_uniprot.tsv.gz"
+
+
+@pytest.fixture(autouse=True)
+def _patch_descriptor_step(monkeypatch):
+    """Suppress descriptor write in all run tests unless explicitly testing it."""
+    monkeypatch.setattr(run_mod, "_write_sifts_descriptor", lambda result, settings: None)
 
 
 def _fake_settings(**kwargs) -> SiftsSettings:
@@ -101,4 +108,4 @@ class TestRunSiftsUpdate:
         with patch("cdm_data_loaders.sifts.run.download_sifts_files", side_effect=_make_fake_download()):
             result = run_sifts(settings)
 
-        assert "derived_data/sifts/pdb_chain_uniprot.tsv.gz" in result.file_results[_FILE].dest_path
+        assert "derived_data/sifts/raw_data/pdb_chain_uniprot.tsv.gz" in result.file_results[_FILE].dest_path

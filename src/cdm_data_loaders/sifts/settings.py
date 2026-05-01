@@ -3,7 +3,8 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/pdb"
-SIFTS_DERIVED_DATA_PREFIX = "derived_data/sifts"
+SIFTS_RAW_DATA_PREFIX = "derived_data/sifts/raw_data"
+SIFTS_METADATA_PREFIX = "derived_data/sifts/metadata"
 SIFTS_ARCHIVE_PREFIX = "derived_data/archive"
 
 

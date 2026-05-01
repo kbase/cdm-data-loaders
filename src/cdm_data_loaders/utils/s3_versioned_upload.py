@@ -36,11 +36,15 @@ class UploadResult:
     :param status: one of ``"new"``, ``"archived_and_replaced"``, or ``"unchanged"``
     :param archive_key: the S3 key the old version was copied to, or ``None``
     :param dest_path: the final S3 destination path (``bucket/key`` form)
+    :param local_md5: hex MD5 of the uploaded local file (populated for all statuses)
+    :param local_bytes: byte size of the uploaded local file
     """
 
     status: UploadStatus
     archive_key: str | None
     dest_path: str
+    local_md5: str | None = None
+    local_bytes: int | None = None
 
 
 def _md5_of_file(path: Path) -> str:
@@ -116,7 +120,13 @@ def versioned_upload(
         etag = resp.get("ETag", "")
         if _etag_matches_md5(etag, local_md5):
             logger.debug("No change detected for %s — skipping upload", s3_dest_path)
-            return UploadResult(status="unchanged", archive_key=None, dest_path=s3_dest_path)
+            return UploadResult(
+                status="unchanged",
+                archive_key=None,
+                dest_path=s3_dest_path,
+                local_md5=local_md5,
+                local_bytes=local_path.stat().st_size,
+            )
 
         # Content differs — archive old version
         date_str = today.strftime("%Y-%m-%d")
@@ -130,7 +140,13 @@ def versioned_upload(
         dest_name = dest_key.split("/")[-1]
         upload_file(local_path, dest_dir, object_name=dest_name, tags={}, show_progress=False)
         logger.debug("Replaced %s with new version", s3_dest_path)
-        return UploadResult(status="archived_and_replaced", archive_key=archive_path, dest_path=s3_dest_path)
+        return UploadResult(
+            status="archived_and_replaced",
+            archive_key=archive_path,
+            dest_path=s3_dest_path,
+            local_md5=local_md5,
+            local_bytes=local_path.stat().st_size,
+        )
 
     # No existing object — first upload
     dest_bucket, dest_key = split_s3_path(s3_dest_path)
@@ -138,4 +154,10 @@ def versioned_upload(
     dest_name = dest_key.split("/")[-1]
     upload_file(local_path, dest_dir, object_name=dest_name, show_progress=False)
     logger.debug("Uploaded new object: %s", s3_dest_path)
-    return UploadResult(status="new", archive_key=None, dest_path=s3_dest_path)
+    return UploadResult(
+        status="new",
+        archive_key=None,
+        dest_path=s3_dest_path,
+        local_md5=local_md5,
+        local_bytes=local_path.stat().st_size,
+    )
