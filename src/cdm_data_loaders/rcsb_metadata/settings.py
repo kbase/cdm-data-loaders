@@ -24,6 +24,7 @@ class RcsbMetadataSettings(BaseSettings):
     lakehouse_bucket: str
     lakehouse_key_prefix: str = DEFAULT_LAKEHOUSE_KEY_PREFIX
     rcsb_graphql_url: str = "https://data.rcsb.org/graphql"
-    rcsb_entry_ids_url: str = "https://data.rcsb.org/holdings/released/entry_ids"
+    rcsb_entry_ids_url: str = "https://data.rcsb.org/rest/v1/holdings/current/entry_ids"
     rcsb_batch_size: int = 1000
+    limit: int | None = None
     dry_run: bool = False

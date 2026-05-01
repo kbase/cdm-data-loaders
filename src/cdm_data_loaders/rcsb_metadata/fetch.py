@@ -26,7 +26,7 @@ from cdm_data_loaders.utils.download.graphql_client import GraphQLClient
 logger = get_cdm_logger()
 
 RCSB_GRAPHQL_URL = "https://data.rcsb.org/graphql"
-RCSB_ENTRY_IDS_URL = "https://data.rcsb.org/holdings/released/entry_ids"
+RCSB_ENTRY_IDS_URL = "https://data.rcsb.org/rest/v1/holdings/current/entry_ids"
 DEFAULT_BATCH_SIZE = 1000
 
 
@@ -44,11 +44,11 @@ def fetch_entry_ids(
     if client is None:
         client = httpx.Client(timeout=httpx.Timeout(60.0), follow_redirects=True)
     try:
-        logger.info("Fetching released entry IDs from %s", url)
+        logger.debug("Fetching released entry IDs from %s", url)
         resp = client.get(url)
         resp.raise_for_status()
         ids: list[str] = resp.json()
-        logger.info("Retrieved %d released entry IDs", len(ids))
+        logger.debug("Retrieved %d released entry IDs", len(ids))
         return ids
     finally:
         if close_client:

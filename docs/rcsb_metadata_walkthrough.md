@@ -4,10 +4,34 @@ Step-by-step guide for fetching per-entry metadata from the RCSB PDB GraphQL
 API and uploading NDJSON files to the Lakehouse bronze layer, locally with
 MinIO or directly to production S3.
 
+## Relationship to the PDB rsync pipeline
+
+The PDB archive and the RCSB Data API are complementary sources for the same
+set of entries.  The two CDM pipelines cover different asset types:
+
+| Pipeline | What it stores | Entry ID format | Source |
+|----------|---------------|-----------------|--------|
+| PDB rsync (Phases 1–3) | Raw structure files (CIF, SF, validation PDFs, assemblies) | 8-char extended — `pdb_00001abc` | wwPDB Beta rsync |
+| **This pipeline** | Derived annotations (scores, taxonomy, clusters, citations…) as NDJSON | 4-char classic — `4HHB` | RCSB GraphQL / REST API |
+
+The classic and extended IDs refer to the same entry — `4HHB` maps to
+`pdb_00004hhb` by zero-padding.  The RCSB Data API currently uses classic
+4-char IDs; the wwPDB Beta archive uses the extended form because PDB is
+exhausting the 4-char ID space for new depositions.
+
 > **Prerequisites**
 > - [uv](https://docs.astral.sh/uv/) installed
 > - Docker or Podman (for the local MinIO walkthrough)
 > - Network access to `data.rcsb.org`
+
+---
+
+## External APIs
+
+| Service | Endpoint | Documentation |
+|---------|----------|---------------|
+| RCSB entry ID list | `https://data.rcsb.org/rest/v1/holdings/current/entry_ids` | [RCSB Data API](https://data.rcsb.org) |
+| RCSB GraphQL API | `https://data.rcsb.org/graphql` | [RCSB GraphQL explorer](https://data.rcsb.org/graphiql/index.html) |
 
 ---
 
@@ -59,17 +83,23 @@ pipeline uses automatic exponential-backoff retry on transient errors.
 
 ### 1. Start MinIO
 
-```bash
-docker compose up -d minio
+```sh
+docker run -d \
+  --name minio \
+  -p 9000:9000 \
+  -p 9001:9001 \
+  -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio:RELEASE.2025-02-28T09-55-16Z server /data --console-address ":9001"
 ```
 
 ### 2. Create the Lakehouse bucket
 
-```bash
-export AWS_ACCESS_KEY_ID=minioadmin
-export AWS_SECRET_ACCESS_KEY=minioadmin
+Create the test bucket via the [MinIO console](http://localhost:9001)
+(login: `minioadmin` / `minioadmin`), or with the included helper:
 
-aws --endpoint-url http://localhost:9000 s3 mb s3://cdm-lake
+```sh
+uv run python scripts/s3_local.py mb s3://cdm-lake
 ```
 
 ### 3. Configure and run the notebook
@@ -80,25 +110,32 @@ Open `notebooks/pdb_rcsb_metadata.ipynb` and set:
 LAKEHOUSE_BUCKET     = "cdm-lake"
 LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/pdb"
 BATCH_SIZE           = 1000
+LIMIT                = 100   # set to None to process all entries
 DRY_RUN              = False
 ```
+
+To test against local MinIO, also set `PROVIDE_CREDENTIALS = True` in the
+credentials cell (cell 4) — it will configure the S3 client with
+`http://localhost:9000` and the `minioadmin` credentials automatically.
 
 Run all cells.  Expected output (abbreviated):
 
 ```
-Total PDB entries : 226341
+Total PDB entries : 100
 Dry run           : False
 
 Entity type               Status                    Records  Archive key
 --------------------------------------------------------------------------------
-entries                   new                        226341
-validation                new                        226341
-taxonomy                  new                        226341
-ligands                   new                        226341
-citations                 new                        226341
-pfam                      new                        226341
-sequence_clusters         new                        226341
+entries                   new                           100
+validation                new                           100
+taxonomy                  new                           100
+ligands                   new                           100
+citations                 new                           100
+pfam                      new                           100
+sequence_clusters         new                           100
 ```
+
+To run the full pipeline (all ~253 K entries), set `LIMIT = None`.
 
 ### 4. Verify the uploads
 

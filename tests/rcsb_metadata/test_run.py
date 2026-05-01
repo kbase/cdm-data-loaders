@@ -1,5 +1,7 @@
 """Tests for rcsb_metadata.run."""
 
+import json
+import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -180,3 +182,105 @@ class TestRcsbMetadataResultToDict:
         assert d["dry_run"] is False
         assert "entries" in d["entities"]
         assert d["entities"]["entries"]["upload_status"] == "new"
+
+
+class TestRunRcsbMetadataLimit:
+    """Tests for the limit setting that slices the entry ID list."""
+
+    @pytest.fixture
+    def patched_run_with_ids(self, mock_s3_client):
+        ten_ids = [f"ID{i:04d}" for i in range(10)]
+        upload_results = {et: _new_upload_result(et) for et in ENTITY_TYPES}
+        with (
+            patch.object(run_mod, "fetch_entry_ids", return_value=ten_ids) as mock_ids,
+            patch.object(run_mod, "_write_ndjson", return_value=3) as mock_write,
+            patch.object(run_mod, "versioned_upload", side_effect=lambda **kw: upload_results[kw["local_path"].stem]),
+        ):
+            yield mock_ids, mock_write, ten_ids
+
+    def test_limit_slices_ids(self, patched_run_with_ids):
+        _, mock_write, _ = patched_run_with_ids
+        settings = _make_settings(limit=3)
+        result = run_rcsb_metadata(settings)
+        assert result.total_entries == 3  # noqa: PLR2004
+        first_call_ids = mock_write.call_args_list[0][0][1]
+        assert len(first_call_ids) == 3  # noqa: PLR2004
+
+    def test_limit_none_uses_all_ids(self, patched_run_with_ids):
+        _, mock_write, ten_ids = patched_run_with_ids
+        settings = _make_settings(limit=None)
+        result = run_rcsb_metadata(settings)
+        assert result.total_entries == len(ten_ids)
+
+    def test_limit_larger_than_list_uses_all(self, patched_run_with_ids):
+        _, mock_write, ten_ids = patched_run_with_ids
+        settings = _make_settings(limit=9999)
+        result = run_rcsb_metadata(settings)
+        assert result.total_entries == len(ten_ids)
+
+
+class TestWriteNdjson:
+    """Unit tests for the _write_ndjson helper."""
+
+    def _settings(self) -> RcsbMetadataSettings:
+        return RcsbMetadataSettings.model_construct(
+            lakehouse_bucket="bucket",
+            lakehouse_key_prefix="prefix",
+            rcsb_graphql_url="https://data.rcsb.org/graphql",
+            rcsb_batch_size=2,
+            limit=None,
+            dry_run=False,
+        )
+
+    def test_writes_one_line_per_record(self):
+        records = [{"rcsb_id": "4HHB"}, {"rcsb_id": "1CBS"}]
+        with (
+            patch.object(run_mod, "fetch_entity", return_value=iter(records)),
+            tempfile.NamedTemporaryFile(suffix=".ndjson", delete=False) as tmp,
+        ):
+            tmp_path = Path(tmp.name)
+        try:
+            count = run_mod._write_ndjson("entries", ["4HHB", "1CBS"], tmp_path, self._settings())
+            lines = tmp_path.read_text().splitlines()
+        finally:
+            tmp_path.unlink(missing_ok=True)
+        assert count == 2  # noqa: PLR2004
+        assert len(lines) == 2  # noqa: PLR2004
+
+    def test_each_line_is_valid_json(self):
+        records = [{"rcsb_id": "4HHB", "x": 1}, {"rcsb_id": "1CBS", "x": 2}]
+        with (
+            patch.object(run_mod, "fetch_entity", return_value=iter(records)),
+            tempfile.NamedTemporaryFile(suffix=".ndjson", delete=False) as tmp,
+        ):
+            tmp_path = Path(tmp.name)
+        try:
+            run_mod._write_ndjson("entries", ["4HHB", "1CBS"], tmp_path, self._settings())
+            parsed = [json.loads(line) for line in tmp_path.read_text().splitlines()]
+        finally:
+            tmp_path.unlink(missing_ok=True)
+        assert parsed[0]["rcsb_id"] == "4HHB"
+        assert parsed[1]["rcsb_id"] == "1CBS"
+
+    def test_returns_zero_for_empty_results(self):
+        with (
+            patch.object(run_mod, "fetch_entity", return_value=iter([])),
+            tempfile.NamedTemporaryFile(suffix=".ndjson", delete=False) as tmp,
+        ):
+            tmp_path = Path(tmp.name)
+        try:
+            count = run_mod._write_ndjson("entries", [], tmp_path, self._settings())
+        finally:
+            tmp_path.unlink(missing_ok=True)
+        assert count == 0
+
+    def test_passes_batch_size_to_fetch_entity(self):
+        with tempfile.NamedTemporaryFile(suffix=".ndjson", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            with patch.object(run_mod, "fetch_entity", return_value=iter([])) as mock_fetch:
+                run_mod._write_ndjson("entries", ["4HHB"], tmp_path, self._settings())
+            call_kwargs = mock_fetch.call_args[1]
+            assert call_kwargs["batch_size"] == 2  # noqa: PLR2004
+        finally:
+            tmp_path.unlink(missing_ok=True)

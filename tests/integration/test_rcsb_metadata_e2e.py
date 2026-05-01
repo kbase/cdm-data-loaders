@@ -130,22 +130,77 @@ class TestRcsbMetadataIntegration:
         result = run_rcsb_metadata(settings)
         assert result.total_entries == len(SAMPLE_IDS)
 
+    def test_limit_restricts_entries_processed(self, minio_s3_client, test_bucket, mock_gql):
+        """limit=1 should process only the first entry ID for each entity type."""
+        settings = RcsbMetadataSettings(
+            lakehouse_bucket=test_bucket,
+            rcsb_batch_size=3,
+            limit=1,
+        )
+        result = run_rcsb_metadata(settings)
+
+        assert result.total_entries == 1
+        for entity_type, er in result.entity_results.items():
+            assert er.upload_status == "new", f"{entity_type}: {er}"
+            assert er.records_written == 1, f"{entity_type}: expected 1 record, got {er.records_written}"
+
+    def test_limit_files_have_correct_line_count(self, minio_s3_client, test_bucket, mock_gql):
+        """NDJSON files in MinIO should contain exactly limit lines."""
+        limit = 2
+        settings = RcsbMetadataSettings(
+            lakehouse_bucket=test_bucket,
+            rcsb_batch_size=3,
+            limit=limit,
+        )
+        run_rcsb_metadata(settings)
+
+        for entity_type in ENTITY_TYPES:
+            key = _dest_key(entity_type, settings)
+            resp = minio_s3_client.get_object(Bucket=test_bucket, Key=key)
+            lines = resp["Body"].read().decode().strip().splitlines()
+            assert len(lines) == limit, f"{entity_type}: expected {limit} lines, got {len(lines)}"
+
 
 @pytest.mark.external_request
 @pytest.mark.slow_test
-class TestRcsbMetadataExternalRequest:
-    """Hit the real RCSB API with a small ID list.  Expects network access."""
+class TestRcsbMetadataRealApi:
+    """Hit the real RCSB holdings and GraphQL APIs; upload results to MinIO.
 
-    def test_real_rcsb_entries_fetch(self, minio_s3_client, test_bucket):
-        """Fetch 10 entries from real RCSB GraphQL and upload to MinIO."""
-        # Override entry IDs URL to return just 10 IDs
-        ten_ids = ["4HHB", "1CBS", "2RH1", "1AON", "3J3Q", "6WVE", "7WP0", "5T8Y", "1BNA", "3CQV"]
+    These tests exercise the full pipeline end-to-end with no mocking of
+    external network calls.  They are marked ``slow_test`` so they can be
+    excluded from fast CI runs (``-m "integration and not slow_test"``), but
+    they are part of the normal ``integration`` tier and MUST NOT be skipped
+    by default — skipping them is what allowed a broken holdings URL to go
+    undetected.
+    """
 
-        settings = _settings(test_bucket, batch_size=5)
-        with patch.object(rcsb_run_mod, "fetch_entry_ids", return_value=ten_ids):
-            result = run_rcsb_metadata(settings)
+    def test_real_rcsb_pipeline(self, minio_s3_client, test_bucket):
+        """Fetch 10 entries from the real RCSB holdings + GraphQL APIs and upload to MinIO."""
+        settings = RcsbMetadataSettings(
+            lakehouse_bucket=test_bucket,
+            rcsb_batch_size=5,
+            limit=10,
+        )
+        result = run_rcsb_metadata(settings)
 
-        assert result.total_entries == 10
+        assert result.total_entries == 10  # noqa: PLR2004
         for entity_type, er in result.entity_results.items():
             assert er.upload_status in ("new", "archived_and_replaced", "unchanged"), f"{entity_type}: {er}"
             assert er.records_written > 0, f"{entity_type}: no records written"
+
+    def test_real_rcsb_files_present_in_minio(self, minio_s3_client, test_bucket):
+        """Verify NDJSON files for every entity type land in MinIO with correct content."""
+        settings = RcsbMetadataSettings(
+            lakehouse_bucket=test_bucket,
+            rcsb_batch_size=5,
+            limit=3,
+        )
+        run_rcsb_metadata(settings)
+
+        for entity_type in ENTITY_TYPES:
+            key = _dest_key(entity_type, settings)
+            resp = minio_s3_client.get_object(Bucket=test_bucket, Key=key)
+            lines = resp["Body"].read().decode().strip().splitlines()
+            assert len(lines) == 3, f"{entity_type}: expected 3 lines, got {len(lines)}"
+            first = json.loads(lines[0])
+            assert "rcsb_id" in first, f"{entity_type}: first record missing rcsb_id"

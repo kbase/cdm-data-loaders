@@ -73,13 +73,13 @@ def run_sifts(settings: SiftsSettings) -> SiftsResult:
     )
     sub_path = f"sifts/{filename}"
 
-    logger.info("SIFTS pipeline starting (dry_run=%s)", settings.dry_run)
+    logger.debug("SIFTS pipeline starting (dry_run=%s)", settings.dry_run)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
 
         if settings.dry_run:
-            logger.info(
+            logger.debug(
                 "[dry-run] would download %s and upload to s3://%s/%s", filename, settings.lakehouse_bucket, dest_key
             )
             return SiftsResult(
@@ -102,7 +102,7 @@ def run_sifts(settings: SiftsSettings) -> SiftsResult:
             sub_path=sub_path,
         )
 
-    logger.info(
+    logger.debug(
         "SIFTS pipeline complete: %s -> %s (status=%s)",
         filename,
         dest_path,

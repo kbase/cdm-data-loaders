@@ -357,9 +357,13 @@ def _archive_entries(  # noqa: PLR0913
             desc_src = build_descriptor_key(pdb_id, lakehouse_key_prefix)
             desc_arch = build_archive_descriptor_key(pdb_id, release_tag, lakehouse_key_prefix, archive_reason)
             if _dry_run_log_count < 10:  # noqa: PLR2004
-                logger.info("[dry-run] would archive descriptor: s3://%s/%s -> %s", lakehouse_bucket, desc_src, desc_arch)
+                logger.info(
+                    "[dry-run] would archive descriptor: s3://%s/%s -> %s", lakehouse_bucket, desc_src, desc_arch
+                )
             else:
-                logger.debug("[dry-run] would archive descriptor: s3://%s/%s -> %s", lakehouse_bucket, desc_src, desc_arch)
+                logger.debug(
+                    "[dry-run] would archive descriptor: s3://%s/%s -> %s", lakehouse_bucket, desc_src, desc_arch
+                )
             _dry_run_log_count += 1
             continue
 

@@ -98,9 +98,15 @@ class TestSiftsIntegration:
 
 @pytest.mark.external_request
 @pytest.mark.slow_test
-class TestSiftsExternalRequest:
-    def test_downloads_real_sifts_file(self, minio_s3_client, test_bucket, tmp_path):
-        """Hit real EBI FTP and upload to MinIO.  File is gzipped TSV, non-zero size."""
+class TestSiftsRealApi:
+    """Hit the real EBI FTP server; upload results to MinIO.
+
+    Part of the normal ``integration`` tier — must not be excluded by default.
+    Use ``-m "integration and not slow_test"`` to skip in fast CI runs.
+    """
+
+    def test_downloads_real_sifts_file(self, minio_s3_client, test_bucket):
+        """Download the real SIFTS file from EBI FTP and upload to MinIO."""
         settings = _sifts_settings(test_bucket)
         result = run_sifts(settings)
 

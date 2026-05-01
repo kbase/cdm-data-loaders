@@ -115,13 +115,13 @@ def versioned_upload(
         resp = s3.head_object(Bucket=bucket, Key=key)
         etag = resp.get("ETag", "")
         if _etag_matches_md5(etag, local_md5):
-            logger.info("No change detected for %s — skipping upload", s3_dest_path)
+            logger.debug("No change detected for %s — skipping upload", s3_dest_path)
             return UploadResult(status="unchanged", archive_key=None, dest_path=s3_dest_path)
 
         # Content differs — archive old version
         date_str = today.strftime("%Y-%m-%d")
         archive_path = f"{archive_base_path.rstrip('/')}/{date_str}/{sub_path.lstrip('/')}"
-        logger.info("Archiving previous version: %s -> %s", s3_dest_path, archive_path)
+        logger.debug("Archiving previous version: %s -> %s", s3_dest_path, archive_path)
         _ = copy_object(s3_dest_path, archive_path)
 
         # Upload new version — pass tags={} to force overwrite (upload_file skips if object exists with tags=None)
@@ -129,7 +129,7 @@ def versioned_upload(
         dest_dir = f"{dest_bucket}/{'/'.join(dest_key.split('/')[:-1])}"
         dest_name = dest_key.split("/")[-1]
         upload_file(local_path, dest_dir, object_name=dest_name, tags={}, show_progress=False)
-        logger.info("Replaced %s with new version", s3_dest_path)
+        logger.debug("Replaced %s with new version", s3_dest_path)
         return UploadResult(status="archived_and_replaced", archive_key=archive_path, dest_path=s3_dest_path)
 
     # No existing object — first upload
@@ -137,5 +137,5 @@ def versioned_upload(
     dest_dir = f"{dest_bucket}/{'/'.join(dest_key.split('/')[:-1])}"
     dest_name = dest_key.split("/")[-1]
     upload_file(local_path, dest_dir, object_name=dest_name, show_progress=False)
-    logger.info("Uploaded new object: %s", s3_dest_path)
+    logger.debug("Uploaded new object: %s", s3_dest_path)
     return UploadResult(status="new", archive_key=None, dest_path=s3_dest_path)

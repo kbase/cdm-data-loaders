@@ -119,10 +119,10 @@ def run_rcsb_metadata(settings: RcsbMetadataSettings) -> RcsbMetadataResult:
     :param settings: pipeline configuration
     :return: :class:`RcsbMetadataResult` with per-entity outcomes
     """
-    logger.info("RCSB metadata pipeline starting (dry_run=%s)", settings.dry_run)
+    logger.debug("RCSB metadata pipeline starting (dry_run=%s)", settings.dry_run)
 
     if settings.dry_run:
-        logger.info(
+        logger.debug(
             "[dry-run] would fetch %d entity types and upload to s3://%s", len(ENTITY_TYPES), settings.lakehouse_bucket
         )
         result = RcsbMetadataResult(dry_run=True)
@@ -139,6 +139,8 @@ def run_rcsb_metadata(settings: RcsbMetadataSettings) -> RcsbMetadataResult:
         return result
 
     pdb_ids = fetch_entry_ids(url=settings.rcsb_entry_ids_url)
+    if settings.limit is not None:
+        pdb_ids = pdb_ids[: settings.limit]
     result = RcsbMetadataResult(total_entries=len(pdb_ids), dry_run=False)
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -150,7 +152,7 @@ def run_rcsb_metadata(settings: RcsbMetadataSettings) -> RcsbMetadataResult:
             archive_base = f"{settings.lakehouse_bucket}/{settings.lakehouse_key_prefix.strip('/')}/{RCSB_ARCHIVE_PREFIX.strip('/')}"
             sub_path = f"rcsb/{filename}"
 
-            logger.info("Processing entity type: %s", entity_type)
+            logger.debug("Processing entity type: %s", entity_type)
             local_path = tmp_dir / filename
 
             try:
@@ -168,7 +170,7 @@ def run_rcsb_metadata(settings: RcsbMetadataSettings) -> RcsbMetadataResult:
                     dest_path=upload_result.dest_path,
                     archive_key=upload_result.archive_key,
                 )
-                logger.info(
+                logger.debug(
                     "Entity %s: %d records, status=%s",
                     entity_type,
                     records,
@@ -185,5 +187,5 @@ def run_rcsb_metadata(settings: RcsbMetadataSettings) -> RcsbMetadataResult:
                     error=str(exc),
                 )
 
-    logger.info("RCSB metadata pipeline complete: %d entity types processed", len(result.entity_results))
+    logger.debug("RCSB metadata pipeline complete: %d entity types processed", len(result.entity_results))
     return result

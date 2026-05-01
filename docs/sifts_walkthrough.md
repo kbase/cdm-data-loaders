@@ -11,6 +11,14 @@ MinIO or directly to production S3.
 
 ---
 
+## External APIs
+
+| Service | Endpoint | Documentation |
+|---------|----------|---------------|
+| EBI SIFTS FTP | `ftp://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/tsv/` | [SIFTS documentation](https://www.ebi.ac.uk/pdbe/docs/sifts/) |
+
+---
+
 ## What SIFTS provides
 
 [SIFTS](https://www.ebi.ac.uk/pdbe/docs/sifts/) (Structure Integration with
@@ -37,20 +45,23 @@ place (`status = "unchanged"`).
 
 ### 1. Start MinIO
 
-```bash
-docker compose up -d minio
+```sh
+docker run -d \
+  --name minio \
+  -p 9000:9000 \
+  -p 9001:9001 \
+  -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio:RELEASE.2025-02-28T09-55-16Z server /data --console-address ":9001"
 ```
-
-The MinIO console is available at `http://localhost:9001` (credentials in
-`docker-compose.yml`).
 
 ### 2. Create the Lakehouse bucket
 
-```bash
-export AWS_ACCESS_KEY_ID=minioadmin
-export AWS_SECRET_ACCESS_KEY=minioadmin
+Create the test bucket via the [MinIO console](http://localhost:9001)
+(login: `minioadmin` / `minioadmin`), or with the included helper:
 
-aws --endpoint-url http://localhost:9000 s3 mb s3://cdm-lake
+```sh
+uv run python scripts/s3_local.py mb s3://cdm-lake
 ```
 
 ### 3. Configure and run the notebook
@@ -63,8 +74,11 @@ LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/pdb"
 DRY_RUN              = False
 ```
 
-Point the notebook kernel at the project virtual environment, then run all
-cells.  Expected output on first run:
+To test against local MinIO, also set `PROVIDE_CREDENTIALS = True` in the
+credentials cell (cell 4) — it will configure the S3 client with
+`http://localhost:9000` and the `minioadmin` credentials automatically.
+
+Run all cells.  Expected output on first run:
 
 ```
 Upload status : new

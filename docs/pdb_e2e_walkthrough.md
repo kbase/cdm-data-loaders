@@ -15,6 +15,15 @@ for the Phase 2 rsync download step.
 
 ---
 
+## External APIs
+
+| Service | Endpoint | Documentation |
+|---------|----------|---------------|
+| wwPDB Beta holdings | `https://files-beta.rcsb.org/pub/wwpdb/pdb/holdings` | [RCSB file download services](https://www.rcsb.org/docs/programmatic-access/file-download-services) |
+| wwPDB Beta rsync | `rsync://rsync-beta.rcsb.org/pdb_data/` (port 32382) | [RCSB file download services](https://www.rcsb.org/docs/programmatic-access/file-download-services) |
+
+---
+
 ## Architecture overview
 
 ```
@@ -94,7 +103,7 @@ s3://{STAGING_BUCKET}/{STAGING_KEY_PREFIX}raw_data/{hash_dir}/{pdb_id}/{file_typ
 
 Example:
 ```
-s3://cts/staging/pdb-run1/raw_data/cn/pdb_00001crn/structures/pdb_00001crn.cif.gz
+s3://cts/staging/pdb-run1/output/raw_data/cn/pdb_00001crn/structures/pdb_00001crn.cif.gz
 ```
 
 ### Local output (Phase 1)
@@ -151,32 +160,18 @@ uv run python -m ipykernel install --user --name cdm-data-loaders --display-name
 When opening the manifest or promote notebooks, select the `cdm-data-loaders`
 kernel.
 
-### Add S3 credentials to the kernel (Lakehouse only)
+### S3 credentials
 
-Open a notebook with the default kernel and run:
+Both notebooks include a dedicated `PROVIDE_CREDENTIALS` cell that handles
+credentials directly — no `kernel.json` edits required.
 
-```python
-import os
-for k, v in sorted(os.environ.items()):
-    if "AWS" in k or "S3" in k or "MINIO" in k:
-        print(f"{k}={v}")
-```
-
-Add the printed variables to the `env` block in the kernel's `kernel.json`
-(e.g. `.venv/share/jupyter/kernels/cdm-data-loaders/kernel.json`):
-
-```json
-{
-  "argv": ["..."],
-  "display_name": "cdm-data-loaders",
-  "language": "python",
-  "env": {
-    "AWS_ACCESS_KEY_ID": "...",
-    "AWS_SECRET_ACCESS_KEY": "...",
-    "AWS_DEFAULT_REGION": "..."
-  }
-}
-```
+- **Local MinIO:** Set `PROVIDE_CREDENTIALS = True` in the credentials cell.
+  The cell will configure the S3 client with `http://localhost:9000` and the
+  `minioadmin` credentials automatically.
+- **Production AWS / IAM role:** Leave `PROVIDE_CREDENTIALS = False` (the
+  default).  Credentials are picked up from environment variables
+  (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`) or an
+  IAM instance role.
 
 ---
 
@@ -195,7 +190,7 @@ Open `notebooks/pdb_manifest.ipynb` in JupyterLab or VS Code.
 5. Saves a `holdings_snapshot.json.gz` to carry forward as the next run's
    baseline.
 
-### Constants to change (Cell 2)
+### Constants to change (Cell 5)
 
 | Constant | Walkthrough value | Format | Why |
 |----------|-------------------|--------|-----|
@@ -371,13 +366,13 @@ Upload into the **staging bucket** (`cts`), not the Lakehouse bucket:
 ```sh
 uv run python scripts/s3_local.py cp \
   notebooks/staging/raw_data/ \
-  s3://cts/staging/pdb-run1/raw_data/
+  s3://cts/staging/pdb-run1/output/raw_data/
 ```
 
 Verify:
 
 ```sh
-uv run python scripts/s3_local.py ls s3://cts/staging/pdb-run1/
+uv run python scripts/s3_local.py ls s3://cts/staging/pdb-run1/output/
 ```
 
 ---
@@ -386,13 +381,13 @@ uv run python scripts/s3_local.py ls s3://cts/staging/pdb-run1/
 
 Open `notebooks/pdb_promote.ipynb`.
 
-### Constants to change (Cell 2)
+### Constants to change (Cell 4)
 
 | Constant | Walkthrough value | Format | Why |
 |----------|-------------------|--------|-----|
 | `STAGING_BUCKET` | `"cts"` | bucket name | CTS staging bucket — matches the upload target from Step 3d |
 | `LAKEHOUSE_BUCKET` | `"cdm-lake"` | bucket name | final Lakehouse destination |
-| `STAGING_KEY_PREFIX` | `"staging/pdb-run1/"` | S3 key prefix | matches the upload prefix from Step 3d |
+| `STAGING_KEY_PREFIX` | `"staging/pdb-run1/output/"` | S3 key prefix | must include the `output/` suffix written by the download container |
 | `REMOVED_MANIFEST_PATH` | `None` | local path | nothing to remove on first run |
 | `UPDATED_MANIFEST_PATH` | `None` | local path | nothing to archive on first run |
 | `PDB_RELEASE` | `None` | string | no release tag needed for local testing |

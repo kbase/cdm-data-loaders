@@ -163,3 +163,20 @@ class TestFetchEntity:
 
         call_url = gql.post_query.call_args[0][0]
         assert call_url == custom_url
+
+    def test_closes_auto_created_gql_client(self):
+        """When no gql_client is provided, the auto-created one should be closed."""
+        mock_gql = _gql_client([{"rcsb_id": "4HHB"}])
+        with patch("cdm_data_loaders.rcsb_metadata.fetch.GraphQLClient", return_value=mock_gql):
+            list(fetch_entity("entries", ["4HHB"]))
+        mock_gql.close.assert_called_once()
+
+
+class TestFetchEntryIdsAutoClient:
+    def test_closes_auto_created_http_client(self):
+        """When no client is provided, the auto-created httpx.Client should be closed."""
+        mock_client = MagicMock()
+        mock_client.get.return_value = _http_response(200, ["4HHB"])
+        with patch("cdm_data_loaders.rcsb_metadata.fetch.httpx.Client", return_value=mock_client):
+            fetch_entry_ids()
+        mock_client.close.assert_called_once()
