@@ -40,14 +40,14 @@ _FILENAMES = ["pdb_chain_uniprot.tsv.gz", "pdb_chain_go.tsv.gz"]
 _SAMPLE_RESOURCES: list[DescriptorResource] = [
     {
         "name": "pdb_chain_uniprot.tsv.gz",
-        "path": f"{_KEY_PREFIX}/derived_data/sifts/raw_data/pdb_chain_uniprot.tsv.gz",
+        "path": f"{_KEY_PREFIX}/metadata/sifts/raw_data/pdb_chain_uniprot.tsv.gz",
         "format": "gz",
         "bytes": 4096,
         "hash": "md5:abc123",
     },
     {
         "name": "pdb_chain_go.tsv.gz",
-        "path": f"{_KEY_PREFIX}/derived_data/sifts/raw_data/pdb_chain_go.tsv.gz",
+        "path": f"{_KEY_PREFIX}/metadata/sifts/raw_data/pdb_chain_go.tsv.gz",
         "format": "gz",
         "bytes": 2048,
         "hash": None,
@@ -60,17 +60,17 @@ _SAMPLE_RESOURCES: list[DescriptorResource] = [
 
 @pytest.mark.parametrize("prefix", [_KEY_PREFIX, _KEY_PREFIX + "/"])
 def test_build_descriptor_key(prefix: str) -> None:
-    """Key is under derived_data/sifts/metadata/; trailing slash normalized; no double slash."""
+    """Key is under metadata/sifts/metadata/; trailing slash normalized; no double slash."""
     key = build_descriptor_key(prefix)
-    assert key == f"{_KEY_PREFIX}/derived_data/sifts/metadata/sifts_datapackage.json"
+    assert key == f"{_KEY_PREFIX}/metadata/sifts/metadata/sifts_datapackage.json"
     assert "//" not in key
 
 
 @pytest.mark.parametrize("prefix", [_KEY_PREFIX, _KEY_PREFIX + "/"])
 def test_build_archive_descriptor_key(prefix: str) -> None:
-    """Archive key includes date_tag; is under derived_data/archive/; no double slash."""
+    """Archive key includes date_tag; is under metadata/archive/; no double slash."""
     key = build_archive_descriptor_key(prefix, _DATE_TAG)
-    assert key == f"{_KEY_PREFIX}/derived_data/archive/{_DATE_TAG}/sifts/metadata/sifts_datapackage.json"
+    assert key == f"{_KEY_PREFIX}/metadata/archive/{_DATE_TAG}/sifts/metadata/sifts_datapackage.json"
     assert "//" not in key
 
 

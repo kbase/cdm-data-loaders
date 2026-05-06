@@ -31,8 +31,8 @@ every PDB polymer chain to its canonical UniProt accession.
 ## Output paths
 
 ```
-s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}/derived_data/sifts/pdb_chain_uniprot.tsv.gz
-s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}/derived_data/archive/{YYYY-MM-DD}/sifts/pdb_chain_uniprot.tsv.gz
+s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}/metadata/sifts/pdb_chain_uniprot.tsv.gz
+s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}/metadata/archive/{YYYY-MM-DD}/sifts/pdb_chain_uniprot.tsv.gz
 ```
 
 An archive copy is created automatically when the file content has changed
@@ -98,7 +98,7 @@ pdb_chain_uniprot.tsv.gz                      new
 
 ```bash
 aws --endpoint-url http://localhost:9000 s3 ls \
-  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/pdb/derived_data/sifts/
+  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/pdb/metadata/sifts/
 ```
 
 ### 5. Re-running (idempotency check)

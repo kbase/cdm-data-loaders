@@ -3,9 +3,9 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/pdb"
-RCSB_RAW_DATA_PREFIX = "derived_data/rcsb/raw_data"
-RCSB_METADATA_PREFIX = "derived_data/rcsb/metadata"
-RCSB_ARCHIVE_PREFIX = "derived_data/archive"
+RCSB_RAW_DATA_PREFIX = "metadata/rcsb/raw_data"
+RCSB_METADATA_PREFIX = "metadata/rcsb/metadata"
+RCSB_ARCHIVE_PREFIX = "metadata/archive"
 
 
 class RcsbMetadataSettings(BaseSettings):

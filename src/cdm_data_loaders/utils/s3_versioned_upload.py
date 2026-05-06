@@ -8,8 +8,8 @@ Typical usage::
 
     result = versioned_upload(
         local_path=Path("/tmp/pdb_entries.ndjson"),
-        s3_dest_path="cdm-lake/tenant-general-warehouse/kbase/datasets/pdb/derived_data/rcsb/pdb_entries.ndjson",
-        archive_base_path="cdm-lake/tenant-general-warehouse/kbase/datasets/pdb/derived_data/archive",
+        s3_dest_path="cdm-lake/tenant-general-warehouse/kbase/datasets/pdb/metadata/rcsb/pdb_entries.ndjson",
+        archive_base_path="cdm-lake/tenant-general-warehouse/kbase/datasets/pdb/metadata/archive",
         sub_path="rcsb/pdb_entries.ndjson",
     )
     # result.status is "new", "archived_and_replaced", or "unchanged"
@@ -97,7 +97,7 @@ def versioned_upload(
     :param s3_dest_path: destination S3 path including bucket, e.g.
         ``"cdm-lake/tenant-…/pdb_entries.ndjson"``
     :param archive_base_path: S3 prefix for archive copies, e.g.
-        ``"cdm-lake/tenant-…/derived_data/archive"``
+        ``"cdm-lake/tenant-…/metadata/archive"``
     :param sub_path: relative path appended to the dated archive prefix, e.g.
         ``"rcsb/pdb_entries.ndjson"``
     :param today: override the archive date (defaults to today in UTC); useful

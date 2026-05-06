@@ -16,9 +16,9 @@ from cdm_data_loaders.utils.s3_versioned_upload import versioned_upload
 
 AWS_REGION = "us-east-1"
 TEST_BUCKET = "test-lake"
-DEST_KEY = "tenant-general-warehouse/kbase/datasets/pdb/derived_data/rcsb/pdb_entries.ndjson"
+DEST_KEY = "tenant-general-warehouse/kbase/datasets/pdb/metadata/rcsb/pdb_entries.ndjson"
 DEST_PATH = f"{TEST_BUCKET}/{DEST_KEY}"
-ARCHIVE_BASE = f"{TEST_BUCKET}/tenant-general-warehouse/kbase/datasets/pdb/derived_data/archive"
+ARCHIVE_BASE = f"{TEST_BUCKET}/tenant-general-warehouse/kbase/datasets/pdb/metadata/archive"
 SUB_PATH = "rcsb/pdb_entries.ndjson"
 FIXED_DATE = date(2026, 4, 30)
 
@@ -81,7 +81,7 @@ class TestVersionedUploadUnchanged:
         versioned_upload(local, DEST_PATH, ARCHIVE_BASE, SUB_PATH, today=FIXED_DATE)
         versioned_upload(local, DEST_PATH, ARCHIVE_BASE, SUB_PATH, today=FIXED_DATE)
 
-        archive_prefix = "tenant-general-warehouse/kbase/datasets/pdb/derived_data/archive/"
+        archive_prefix = "tenant-general-warehouse/kbase/datasets/pdb/metadata/archive/"
         paginator = mock_s3_client.get_paginator("list_objects_v2")
         keys = []
         for page in paginator.paginate(Bucket=TEST_BUCKET, Prefix=archive_prefix):

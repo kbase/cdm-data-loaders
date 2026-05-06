@@ -31,7 +31,7 @@ def _new_upload_result(entity_type: str) -> UploadResult:
     return UploadResult(
         status="new",
         archive_key=None,
-        dest_path=f"{TEST_BUCKET}/{TEST_PREFIX}/derived_data/rcsb/raw_data/{entity_type}.ndjson",
+        dest_path=f"{TEST_BUCKET}/{TEST_PREFIX}/metadata/rcsb/raw_data/{entity_type}.ndjson",
         local_md5="deadbeef",
         local_bytes=1024,
     )

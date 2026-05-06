@@ -108,4 +108,4 @@ class TestRunSiftsUpdate:
         with patch("cdm_data_loaders.sifts.run.download_sifts_files", side_effect=_make_fake_download()):
             result = run_sifts(settings)
 
-        assert "derived_data/sifts/raw_data/pdb_chain_uniprot.tsv.gz" in result.file_results[_FILE].dest_path
+        assert "metadata/sifts/raw_data/pdb_chain_uniprot.tsv.gz" in result.file_results[_FILE].dest_path

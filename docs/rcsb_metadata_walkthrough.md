@@ -56,8 +56,8 @@ file per entity type.
 ## Output paths
 
 ```
-s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}/derived_data/rcsb/{entity_type}.ndjson
-s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}/derived_data/archive/{YYYY-MM-DD}/rcsb/{entity_type}.ndjson
+s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}/metadata/rcsb/{entity_type}.ndjson
+s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}/metadata/archive/{YYYY-MM-DD}/rcsb/{entity_type}.ndjson
 ```
 
 An archive copy is created for each file when its content has changed since the
@@ -141,7 +141,7 @@ To run the full pipeline (all ~253 K entries), set `LIMIT = None`.
 
 ```bash
 aws --endpoint-url http://localhost:9000 s3 ls \
-  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/pdb/derived_data/rcsb/
+  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/pdb/metadata/rcsb/
 ```
 
 ### 5. Re-running (idempotency check)

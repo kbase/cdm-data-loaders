@@ -40,14 +40,14 @@ _ENTITY_TYPES = ["entries", "validation", "taxonomy"]
 _SAMPLE_RESOURCES: list[DescriptorResource] = [
     {
         "name": "entries.ndjson",
-        "path": f"{_KEY_PREFIX}/derived_data/rcsb/raw_data/entries.ndjson",
+        "path": f"{_KEY_PREFIX}/metadata/rcsb/raw_data/entries.ndjson",
         "format": "ndjson",
         "bytes": 2048,
         "hash": "md5:abc123",
     },
     {
         "name": "validation.ndjson",
-        "path": f"{_KEY_PREFIX}/derived_data/rcsb/raw_data/validation.ndjson",
+        "path": f"{_KEY_PREFIX}/metadata/rcsb/raw_data/validation.ndjson",
         "format": "ndjson",
         "bytes": 512,
         "hash": None,
@@ -60,17 +60,17 @@ _SAMPLE_RESOURCES: list[DescriptorResource] = [
 
 @pytest.mark.parametrize("prefix", [_KEY_PREFIX, _KEY_PREFIX + "/"])
 def test_build_descriptor_key(prefix: str) -> None:
-    """Key is under derived_data/rcsb/metadata/, ends with _datapackage.json; trailing slash normalized."""
+    """Key is under metadata/rcsb/metadata/, ends with _datapackage.json; trailing slash normalized."""
     key = build_descriptor_key(prefix)
-    assert key == f"{_KEY_PREFIX}/derived_data/rcsb/metadata/rcsb_metadata_datapackage.json"
+    assert key == f"{_KEY_PREFIX}/metadata/rcsb/metadata/rcsb_metadata_datapackage.json"
     assert "//" not in key
 
 
 @pytest.mark.parametrize("prefix", [_KEY_PREFIX, _KEY_PREFIX + "/"])
 def test_build_archive_descriptor_key(prefix: str) -> None:
-    """Archive key includes date_tag and is under derived_data/archive/; no double slash."""
+    """Archive key includes date_tag and is under metadata/archive/; no double slash."""
     key = build_archive_descriptor_key(prefix, _DATE_TAG)
-    assert key == f"{_KEY_PREFIX}/derived_data/archive/{_DATE_TAG}/rcsb/metadata/rcsb_metadata_datapackage.json"
+    assert key == f"{_KEY_PREFIX}/metadata/archive/{_DATE_TAG}/rcsb/metadata/rcsb_metadata_datapackage.json"
     assert "//" not in key
 
 

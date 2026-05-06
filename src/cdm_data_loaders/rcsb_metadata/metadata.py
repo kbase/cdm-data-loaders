@@ -6,11 +6,11 @@ the NCBI FTP and PDB pipelines.
 
 The descriptor is stored at::
 
-    {key_prefix}/derived_data/rcsb/metadata/rcsb_metadata_datapackage.json
+    {key_prefix}/metadata/rcsb/metadata/rcsb_metadata_datapackage.json
 
 and archived at::
 
-    {key_prefix}/derived_data/archive/{date_tag}/rcsb/metadata/rcsb_metadata_datapackage.json
+    {key_prefix}/metadata/archive/{date_tag}/rcsb/metadata/rcsb_metadata_datapackage.json
 
 The descriptor ``resources`` list records the Lakehouse S3 path, byte size,
 format, and MD5 hash for each NDJSON file produced by the run.
@@ -45,7 +45,7 @@ _SAVED_BY = "cdm-data-loaders-rcsb-metadata"
 _SCHEMA_VERSION = "1.0"
 
 # S3 path relative to key_prefix where the live descriptor lives
-_DESCRIPTOR_SUBPATH = "derived_data/rcsb/metadata/rcsb_metadata_datapackage.json"
+_DESCRIPTOR_SUBPATH = "metadata/rcsb/metadata/rcsb_metadata_datapackage.json"
 
 
 class DescriptorResource(TypedDict, total=False):
@@ -65,7 +65,7 @@ def build_descriptor_key(key_prefix: str) -> str:
     """Return the S3 key for the live RCSB metadata descriptor.
 
     :param key_prefix: Lakehouse key prefix (trailing slash optional)
-    :return: S3 key ending with ``derived_data/rcsb/metadata/rcsb_metadata_datapackage.json``
+    :return: S3 key ending with ``metadata/rcsb/metadata/rcsb_metadata_datapackage.json``
     """
     prefix = key_prefix.rstrip("/") + "/"
     return f"{prefix}{_DESCRIPTOR_SUBPATH}"
@@ -76,10 +76,10 @@ def build_archive_descriptor_key(key_prefix: str, date_tag: str) -> str:
 
     :param key_prefix: Lakehouse key prefix (trailing slash optional)
     :param date_tag: ISO date string used in the archive path, e.g. ``"2026-05-01"``
-    :return: S3 key under ``derived_data/archive/{date_tag}/rcsb/metadata/``
+    :return: S3 key under ``metadata/archive/{date_tag}/rcsb/metadata/``
     """
     prefix = key_prefix.rstrip("/") + "/"
-    return f"{prefix}derived_data/archive/{date_tag}/rcsb/metadata/rcsb_metadata_datapackage.json"
+    return f"{prefix}metadata/archive/{date_tag}/rcsb/metadata/rcsb_metadata_datapackage.json"
 
 
 def create_descriptor(
