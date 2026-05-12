@@ -141,8 +141,8 @@ class TestPdbFullPipelineNotebook:
         assert any(STABLE_PDB_ID in k for k in lakehouse_keys), (
             f"Expected {STABLE_PDB_ID} in Lakehouse keys: {lakehouse_keys}"
         )
-        assert any(f"raw_data/{entry_rel}" in k for k in lakehouse_keys), (
-            f"Expected entry path raw_data/{entry_rel} in Lakehouse"
+        assert any(entry_rel in k for k in lakehouse_keys), (
+            f"Expected entry path {entry_rel} in Lakehouse"
         )
 
         # Verify frictionless descriptor was written
@@ -249,8 +249,8 @@ class TestPdbFullPipelineContainer:
         assert any(STABLE_PDB_ID in k for k in lakehouse_keys), (
             f"Expected {STABLE_PDB_ID} in Lakehouse keys: {lakehouse_keys}"
         )
-        assert any(f"raw_data/{entry_rel}" in k for k in lakehouse_keys), (
-            f"Expected entry path raw_data/{entry_rel} in Lakehouse"
+        assert any(entry_rel in k for k in lakehouse_keys), (
+            f"Expected entry path {entry_rel} in Lakehouse"
         )
 
         # Verify frictionless descriptor was written

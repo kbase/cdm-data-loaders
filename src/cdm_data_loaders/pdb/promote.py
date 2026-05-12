@@ -294,6 +294,23 @@ def _promote_data_files(  # noqa: PLR0913
                     descriptors_written += 1
                 except Exception:
                     logger.exception("Failed to write descriptor for %s", pdb_id)
+
+                # Delete staged files (data + sidecars) now that entry is in Lakehouse
+                keys_to_delete = list(promoted_keys)
+                for key in promoted_keys:
+                    if key + ".crc64nvme" in sidecars:
+                        keys_to_delete.append(key + ".crc64nvme")
+                    if key + ".md5" in sidecars:
+                        keys_to_delete.append(key + ".md5")
+                delete_errors = delete_objects(staging_bucket, keys_to_delete)
+                if delete_errors:
+                    logger.warning(
+                        "Errors deleting staged files for %s: %s", pdb_id, delete_errors
+                    )
+                else:
+                    logger.debug(
+                        "Deleted %d staged object(s) for %s", len(keys_to_delete), pdb_id
+                    )
     rcsb_client.close()
 
     return promoted, failed, descriptors_written, promoted_ids

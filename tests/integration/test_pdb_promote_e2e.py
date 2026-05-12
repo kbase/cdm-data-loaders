@@ -132,6 +132,9 @@ class TestPdbPromoteIdempotent:
         )
         keys_after_first = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
 
+        # Re-stage the same entry to simulate a second run with the same staging data
+        _stage_entry(s3, test_bucket, PDB_ID_A)
+
         report2 = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=test_bucket,
