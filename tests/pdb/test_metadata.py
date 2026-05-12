@@ -104,7 +104,7 @@ def test_create_descriptor_structure() -> None:
     assert _PDB_ID in d["titles"][0]["title"]
     assert _PDB_ID in d["descriptions"][0]["description_text"]
     assert d["resource_type"] == "dataset"
-    assert d["license"] == {}
+    assert d["license"] == {"id": "CC0-1.0", "url": "https://creativecommons.org/publicdomain/zero/1.0/"}
 
 
 def test_create_descriptor_url_points_to_rcsb() -> None:
@@ -116,10 +116,12 @@ def test_create_descriptor_url_points_to_rcsb() -> None:
 
 
 def test_create_descriptor_contributor() -> None:
-    """Contributor is RCSB with the correct ROR ID."""
+    """Without rcsb_entry the sole contributor is the RCSB DataCurator fallback."""
     d = create_descriptor(_PDB_ID, _SAMPLE_RESOURCES, timestamp=_TIMESTAMP)
+    assert len(d["contributors"]) == 1
     assert d["contributors"][0]["name"] == "Research Collaboratory for Structural Bioinformatics"
-    assert d["contributors"][0]["contributor_id"] == "ROR:02e8wq794"
+    assert d["contributors"][0]["contributor_roles"] == "DataCurator"
+    assert "contributor_id" not in d["contributors"][0]
 
 
 def test_create_descriptor_meta() -> None:
@@ -286,3 +288,128 @@ def test_archive_descriptor_missing_returns_false() -> None:
             result = archive_descriptor(_PDB_ID, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG)
         reset_s3_client()
     assert result is False
+
+
+# ── create_descriptor enrichment (rcsb_entry / rcsb_pubmed) ──────────────
+
+_SAMPLE_RCSB_ENTRY = {
+    "struct": {"title": "CRYSTAL STRUCTURE OF A TEST PROTEIN"},
+    "audit_author": [
+        {"name": "Smith, J.", "pdbx_ordinal": 1},
+        {"name": "Doe, A.", "pdbx_ordinal": 2},
+    ],
+    "struct_keywords": {"text": "TEST, PROTEIN, STRUCTURE"},
+    "exptl": [{"method": "X-RAY DIFFRACTION"}],
+    "rcsb_accession_info": {
+        "deposit_date": "1994-01-19T00:00:00+0000",
+        "initial_release_date": "1994-06-30T00:00:00+0000",
+    },
+    "pdbx_audit_revision_history": [
+        {"ordinal": 1, "major_revision": 1, "minor_revision": 0, "revision_date": "1994-06-30T00:00:00+0000"},
+        {"ordinal": 2, "major_revision": 2, "minor_revision": 0, "revision_date": "2009-02-24T00:00:00+0000"},
+    ],
+    "rcsb_primary_citation": {
+        "pdbx_database_id_DOI": "10.1093/nar/22.17.3574",
+        "pdbx_database_id_PubMed": 7937069,
+    },
+}
+
+_SAMPLE_RCSB_PUBMED = {
+    "rcsb_pubmed_abstract_text": "This paper describes the refined crystal structure of the test protein.",
+}
+
+
+def test_enriched_title_from_rcsb_entry() -> None:
+    """struct.title is used as the descriptor title when rcsb_entry is supplied."""
+    d = create_descriptor(_PDB_ID, [], timestamp=_TIMESTAMP, rcsb_entry=_SAMPLE_RCSB_ENTRY)
+    assert d["titles"][0]["title"] == "CRYSTAL STRUCTURE OF A TEST PROTEIN"
+
+
+def test_fallback_title_without_rcsb_entry() -> None:
+    """Generic title is used when rcsb_entry is None."""
+    d = create_descriptor(_PDB_ID, [], timestamp=_TIMESTAMP)
+    assert d["titles"][0]["title"] == f"PDB Entry {_PDB_ID}"
+
+
+def test_description_from_pubmed_abstract() -> None:
+    """PubMed abstract is preferred for description when rcsb_pubmed is supplied."""
+    d = create_descriptor(
+        _PDB_ID, [], timestamp=_TIMESTAMP, rcsb_entry=_SAMPLE_RCSB_ENTRY, rcsb_pubmed=_SAMPLE_RCSB_PUBMED
+    )
+    assert d["descriptions"][0]["description_text"] == _SAMPLE_RCSB_PUBMED["rcsb_pubmed_abstract_text"]
+
+
+def test_description_falls_back_to_struct_keywords() -> None:
+    """struct_keywords.text is used for description when no rcsb_pubmed is supplied."""
+    d = create_descriptor(_PDB_ID, [], timestamp=_TIMESTAMP, rcsb_entry=_SAMPLE_RCSB_ENTRY)
+    assert d["descriptions"][0]["description_text"] == "TEST, PROTEIN, STRUCTURE"
+
+
+def test_description_generic_fallback() -> None:
+    """Generic description is used when neither rcsb_pubmed nor rcsb_entry is supplied."""
+    d = create_descriptor(_PDB_ID, [], timestamp=_TIMESTAMP)
+    assert "wwPDB" in d["descriptions"][0]["description_text"]
+
+
+def test_contributors_from_audit_author() -> None:
+    """audit_author entries appear as DataCreator persons; RCSB DataCurator is appended."""
+    d = create_descriptor(_PDB_ID, [], timestamp=_TIMESTAMP, rcsb_entry=_SAMPLE_RCSB_ENTRY)
+    contributors = d["contributors"]
+    # First two are the depositors
+    assert contributors[0] == {"contributor_type": "Person", "name": "Smith, J.", "contributor_roles": "DataCreator"}
+    assert contributors[1] == {"contributor_type": "Person", "name": "Doe, A.", "contributor_roles": "DataCreator"}
+    # Last is the RCSB DataCurator fallback
+    assert contributors[-1]["contributor_roles"] == "DataCurator"
+    assert contributors[-1]["name"] == "Research Collaboratory for Structural Bioinformatics"
+
+
+def test_license_is_always_cc0() -> None:
+    """License is CC0-1.0 regardless of whether rcsb_entry is provided."""
+    for rcsb_entry in (None, _SAMPLE_RCSB_ENTRY):
+        d = create_descriptor(_PDB_ID, [], timestamp=_TIMESTAMP, rcsb_entry=rcsb_entry)
+        assert d["license"]["id"] == "CC0-1.0"
+        assert "creativecommons.org" in d["license"]["url"]
+
+
+def test_publisher_is_wwpdb() -> None:
+    """Publisher is Worldwide Protein Data Bank with the correct ROR."""
+    d = create_descriptor(_PDB_ID, [], timestamp=_TIMESTAMP)
+    assert d["publisher"]["organization_name"] == "Worldwide Protein Data Bank"
+    assert d["publisher"]["organization_id"] == "ROR:047qy5748"
+
+
+def test_related_identifiers_doi() -> None:
+    """DOI from rcsb_primary_citation is included in related_identifiers."""
+    d = create_descriptor(_PDB_ID, [], timestamp=_TIMESTAMP, rcsb_entry=_SAMPLE_RCSB_ENTRY)
+    assert "related_identifiers" in d
+    doi_entry = d["related_identifiers"][0]
+    assert doi_entry["identifier"] == "10.1093/nar/22.17.3574"
+    assert doi_entry["identifier_type"] == "DOI"
+
+
+def test_no_related_identifiers_without_doi() -> None:
+    """related_identifiers key is absent when there is no DOI."""
+    entry_no_doi = {**_SAMPLE_RCSB_ENTRY, "rcsb_primary_citation": {}}
+    d = create_descriptor(_PDB_ID, [], timestamp=_TIMESTAMP, rcsb_entry=entry_no_doi)
+    assert "related_identifiers" not in d
+
+
+def test_meta_extra_fields_populated() -> None:
+    """Extra RCSB meta fields appear in meta when rcsb_entry is supplied."""
+    d = create_descriptor(_PDB_ID, [], timestamp=_TIMESTAMP, rcsb_entry=_SAMPLE_RCSB_ENTRY)
+    meta = d["meta"]
+    assert meta["deposit_date"] == "1994-01-19T00:00:00+0000"
+    assert meta["initial_release_date"] == "1994-06-30T00:00:00+0000"
+    assert meta["experimental_method"] == "X-RAY DIFFRACTION"
+    assert meta["keywords"] == "TEST, PROTEIN, STRUCTURE"
+    assert len(meta["revision_history"]) == 2
+    assert meta["pubmed_id"] == 7937069
+
+
+def test_meta_extra_fields_absent_without_rcsb_entry() -> None:
+    """Extra RCSB meta fields are not present when rcsb_entry is None."""
+    d = create_descriptor(_PDB_ID, [], timestamp=_TIMESTAMP)
+    meta = d["meta"]
+    for key in ("deposit_date", "initial_release_date", "experimental_method", "keywords", "revision_history", "pubmed_id"):
+        assert key not in meta
+

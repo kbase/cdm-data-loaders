@@ -267,7 +267,7 @@ the production Lakehouse MinIO.  An SSH SOCKS5 tunnel is required to reach
 ssh -f -D 1338 -N <ac.anl_username>@login.kbase.us
 
 # 2. Route HTTPS through the tunnel (affects this terminal session only)
-export HTTPS_PROXY=socks5://127.0.0.1:1338
+export HTTPS_PROXY=socks5h://127.0.0.1:1338
 
 # 3. Verify the tunnel is running
 ps aux | grep "ssh -f -D 1338"
@@ -408,6 +408,12 @@ uv run python scripts/s3_local.py cp \
 Open `notebooks/pdb_download.ipynb`.  The notebook runs `rsync` locally and
 uploads staged files directly to MinIO, pipelining downloads so only one
 entry is on disk at a time.
+
+If running locally targetting production, start the notebook from the terminal with the ssh tunnel running:
+```bash
+uv pip install notebook
+jupyter notebook notebooks/pdb_download.ipynb
+```
 
 > **Note:** This notebook requires `rsync` on the machine where it runs.
 > It is not suitable for running inside JupyterHub (no rsync available there).
@@ -762,7 +768,7 @@ rm -rf notebooks/staging/ output/
 | Phase 1 downloads ~200K entries on first run | `HASH_FROM`/`HASH_TO` not set | Set a narrow range (`"ab"` → `"ab"`) or set `LIMIT = 10` |
 | No credentials in Lakehouse kernel env | S3 vars not in `kernel.json` | Re-run the env-var snippet in the default kernel and update `kernel.json` |
 | Descriptor not written | Entry had no promotable files | Verify staging prefix is correct and files exist under `raw_data/` |
-| `HTTPS_PROXY` not working for Option A production | `pysocks` not installed | `uv pip install pysocks` in the local venv |
+| `HTTPS_PROXY` not working for Option A production | `pysocks` not installed, or using `socks5://` instead of `socks5h://` | Use `socks5h://` (remote DNS) and ensure `pysocks` is installed (`uv pip install pysocks`) |
 
 ---
 

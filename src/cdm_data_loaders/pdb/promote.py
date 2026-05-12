@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import botocore.exceptions
+import httpx
 import tqdm
 
 from cdm_data_loaders.pdb.entry import DEFAULT_LAKEHOUSE_KEY_PREFIX, build_entry_path
@@ -27,6 +28,7 @@ from cdm_data_loaders.pdb.metadata import (
     create_descriptor,
     upload_descriptor,
 )
+from cdm_data_loaders.pdb.rcsb_api import fetch_entry_core, fetch_entry_pubmed
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.s3 import (
     copy_object,
@@ -230,6 +232,7 @@ def _promote_data_files(  # noqa: PLR0913
 
     total_files = sum(len(v) for v in entry_files.values())
     _dry_run_log_count = 0
+    rcsb_client = httpx.Client(timeout=httpx.Timeout(30.0), follow_redirects=True)
     with tqdm.tqdm(total=total_files, unit="file", desc="Promoting") as pbar:
         for pdb_id, files in entry_files.items():
             entry_failed = 0
@@ -270,8 +273,20 @@ def _promote_data_files(  # noqa: PLR0913
 
             # Write descriptor after a fully successful entry
             if entry_failed == 0 and promoted_keys:
+                rcsb_entry = None
+                rcsb_pubmed = None
                 try:
-                    descriptor = create_descriptor(pdb_id, resources)
+                    rcsb_entry = fetch_entry_core(pdb_id, client=rcsb_client)
+                    rcsb_pubmed = fetch_entry_pubmed(pdb_id, client=rcsb_client)
+                except Exception:
+                    logger.warning(
+                        "Failed to fetch RCSB metadata for %s; descriptor will use fallback values",
+                        pdb_id,
+                    )
+                try:
+                    descriptor = create_descriptor(
+                        pdb_id, resources, rcsb_entry=rcsb_entry, rcsb_pubmed=rcsb_pubmed
+                    )
                     descriptor_key = upload_descriptor(
                         descriptor, pdb_id, lakehouse_bucket, lakehouse_key_prefix, dry_run=False
                     )
@@ -279,6 +294,7 @@ def _promote_data_files(  # noqa: PLR0913
                     descriptors_written += 1
                 except Exception:
                     logger.exception("Failed to write descriptor for %s", pdb_id)
+    rcsb_client.close()
 
     return promoted, failed, descriptors_written, promoted_ids
 

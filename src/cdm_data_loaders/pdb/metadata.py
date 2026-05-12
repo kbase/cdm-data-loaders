@@ -34,12 +34,15 @@ logger = get_cdm_logger()
 _RCSB_CONTRIBUTOR = {
     "contributor_type": "Organization",
     "name": "Research Collaboratory for Structural Bioinformatics",
-    "contributor_id": "ROR:02e8wq794",
     "contributor_roles": "DataCurator",
 }
 _RCSB_PUBLISHER = {
-    "organization_name": "Research Collaboratory for Structural Bioinformatics",
-    "organization_id": "ROR:02e8wq794",
+    "organization_name": "Worldwide Protein Data Bank",
+    "organization_id": "ROR:047qy5748",
+}
+_CC0_LICENSE = {
+    "id": "CC0-1.0",
+    "url": "https://creativecommons.org/publicdomain/zero/1.0/",
 }
 _SAVED_BY = "cdm-data-loaders-pdb"
 _SCHEMA_VERSION = "1.0"
@@ -90,17 +93,30 @@ def create_descriptor(
     *,
     last_modified: str | None = None,
     timestamp: int | None = None,
+    rcsb_entry: dict[str, Any] | None = None,
+    rcsb_pubmed: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a KBase credit metadata descriptor for a PDB entry.
 
     Resource names are lowercased.  Resources whose ``hash`` or ``bytes``
     value is ``None`` have those keys removed entirely.
 
+    When *rcsb_entry* is supplied (from
+    :func:`~cdm_data_loaders.pdb.rcsb_api.fetch_entry_core`), the descriptor
+    is enriched with per-entry data: structure title, depositor contributors,
+    experimental method, keywords, revision history, and primary citation DOI.
+    When *rcsb_pubmed* is also supplied, the PubMed abstract is used as the
+    description.
+
     :param pdb_id: extended PDB ID, e.g. ``"pdb_00001abc"``
     :param resources: list of :class:`DescriptorResource` dicts
     :param last_modified: ISO-8601 date of last modification (used as version);
         defaults to today's date
     :param timestamp: Unix timestamp to embed; defaults to ``datetime.now(UTC)``
+    :param rcsb_entry: raw JSON from ``/rest/v1/core/entry/{id}``; enriches
+        title, contributors, and meta fields when provided
+    :param rcsb_pubmed: raw JSON from ``/rest/v1/core/pubmed/{id}``; uses the
+        PubMed abstract as the description when provided
     :return: descriptor dict ready for serialisation and frictionless validation
     """
     ts = timestamp if timestamp is not None else int(datetime.now(UTC).timestamp())
@@ -122,22 +138,74 @@ def create_descriptor(
             entry["hash"] = res["hash"]
         normalised.append(entry)
 
-    return {
+    # ── Enrich from RCSB API data ──────────────────────────────────────────
+
+    # Title: use RCSB struct.title when available
+    title = (rcsb_entry or {}).get("struct", {}).get("title") or f"PDB Entry {pdb_id}"
+
+    # Description: PubMed abstract → struct_keywords → generic fallback
+    if rcsb_pubmed and rcsb_pubmed.get("rcsb_pubmed_abstract_text"):
+        description = rcsb_pubmed["rcsb_pubmed_abstract_text"]
+    elif rcsb_entry and (rcsb_entry.get("struct_keywords") or {}).get("text"):
+        description = rcsb_entry["struct_keywords"]["text"]
+    else:
+        description = (
+            f"Macromolecular structure data for PDB entry {pdb_id} downloaded from the wwPDB Beta archive"
+        )
+
+    # Contributors: depositors as DataCreator (from audit_author), then RCSB as DataCurator
+    contributors: list[dict[str, Any]] = []
+    for author in (rcsb_entry or {}).get("audit_author") or []:
+        name = author.get("name", "").strip()
+        if name:
+            contributors.append({
+                "contributor_type": "Person",
+                "name": name,
+                "contributor_roles": "DataCreator",
+            })
+    contributors.append(_RCSB_CONTRIBUTOR)
+
+    # Related identifiers: DOI from primary citation
+    related_identifiers: list[dict[str, Any]] = []
+    doi = ((rcsb_entry or {}).get("rcsb_primary_citation") or {}).get("pdbx_database_id_DOI")
+    if doi:
+        related_identifiers.append({
+            "identifier": doi,
+            "identifier_type": "DOI",
+            "relation_type": "IsDescribedBy",
+        })
+
+    # Extra meta fields from RCSB accession info
+    extra_meta: dict[str, Any] = {}
+    if rcsb_entry:
+        accession = rcsb_entry.get("rcsb_accession_info") or {}
+        if accession.get("deposit_date"):
+            extra_meta["deposit_date"] = accession["deposit_date"]
+        if accession.get("initial_release_date"):
+            extra_meta["initial_release_date"] = accession["initial_release_date"]
+        exptl = rcsb_entry.get("exptl") or []
+        if exptl and exptl[0].get("method"):
+            extra_meta["experimental_method"] = exptl[0]["method"]
+        keywords = (rcsb_entry.get("struct_keywords") or {}).get("text")
+        if keywords:
+            extra_meta["keywords"] = keywords
+        revision_history = rcsb_entry.get("pdbx_audit_revision_history")
+        if revision_history:
+            extra_meta["revision_history"] = revision_history
+        pubmed_id = (rcsb_entry.get("rcsb_primary_citation") or {}).get("pdbx_database_id_PubMed")
+        if pubmed_id:
+            extra_meta["pubmed_id"] = pubmed_id
+
+    descriptor: dict[str, Any] = {
         "identifier": f"PDB:{pdb_id}",
         "resource_type": "dataset",
         "version": version,
-        "titles": [{"title": f"PDB Entry {pdb_id}"}],
-        "descriptions": [
-            {
-                "description_text": (
-                    f"Macromolecular structure data for PDB entry {pdb_id} downloaded from the wwPDB Beta archive"
-                )
-            }
-        ],
+        "titles": [{"title": title}],
+        "descriptions": [{"description_text": description}],
         "url": f"https://www.rcsb.org/structure/{classic_id.upper()}",
-        "contributors": [_RCSB_CONTRIBUTOR],
+        "contributors": contributors,
         "publisher": _RCSB_PUBLISHER,
-        "license": {},
+        "license": _CC0_LICENSE,
         "meta": {
             "credit_metadata_schema_version": _SCHEMA_VERSION,
             "credit_metadata_source": [
@@ -149,9 +217,13 @@ def create_descriptor(
             ],
             "saved_by": _SAVED_BY,
             "timestamp": ts,
+            **extra_meta,
         },
         "resources": normalised,
     }
+    if related_identifiers:
+        descriptor["related_identifiers"] = related_identifiers
+    return descriptor
 
 
 def validate_descriptor(descriptor: dict[str, Any], pdb_id: str) -> None:
