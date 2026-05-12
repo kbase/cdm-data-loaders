@@ -219,12 +219,13 @@ def _promote_data_files(  # noqa: PLR0913
 
             fname = final_key_path.name
             ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
+            crc = metadata.get("crc64nvme")
             resource: DescriptorResource = {
                 "name": fname.lower(),
                 "path": final_key,
                 "format": ext,
                 "bytes": Path(tmp_path).stat().st_size,
-                "hash": metadata.get("crc64nvme"),
+                "hash": f"crc64nvme:{crc}" if crc else None,
             }
             return resource, staged_key
         finally:
