@@ -11,6 +11,7 @@
 # Dev Checklist:
 
 - [ ] My code follows the guidelines at https://sites.google.com/lbl.gov/trussresources/home?authuser=0
+- [ ] My submission follows the [AI Covenant](/AI_COVENANT.md) principles
 - [ ] I have performed a self-review of my own code
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have made corresponding changes to the documentation
