@@ -366,14 +366,14 @@ def scan_store_to_synthetic_summary(
 
 def _fetch_accession_checksums_from_ftp(
     ftp: FTP | None, ftp_host: str, last_activity: float, current_accession: str
-) -> dict[str, str]:
+) -> tuple[dict[str, str], float]:
     """Fetch and parse the md5checksums.txt file for a given accession from FTP.
 
     :param ftp: FTP connection object
     :param ftp_host: NCBI FTP hostname
     :param last_activity: timestamp of the last FTP activity
     :param current_accession: accession identifier
-    :return: dictionary mapping file names to MD5 checksums
+    :return: dictionary mapping file names to MD5 checksums and updated last_activity timestamp
     """
     if ftp is None:
         ftp = connect_ftp(ftp_host)
@@ -385,10 +385,10 @@ def _fetch_accession_checksums_from_ftp(
         ftp_checksums = parse_md5_checksums_file(md5_text)
     except Exception:  # noqa: BLE001
         logger.warning("Cannot fetch md5checksums.txt for %s, keeping in transfer list", current_accession)
-        return {}
+        return {}, last_activity
     return {
         fname: md5 for fname, md5 in ftp_checksums.items() if any(fname.endswith(suffix) for suffix in FILE_FILTERS)
-    }
+    }, last_activity
 
 
 def _does_accession_need_update(
@@ -483,7 +483,9 @@ def verify_transfer_candidates(  # noqa: PLR0913
                 continue
 
             # Objects exist — need FTP md5 checksums to decide
-            target_checksums = _fetch_accession_checksums_from_ftp(ftp, ftp_host, last_activity, rec.ftp_path)
+            target_checksums, last_activity = _fetch_accession_checksums_from_ftp(
+                ftp, ftp_host, last_activity, rec.ftp_path
+            )
 
             if not target_checksums:
                 confirmed.append(acc)

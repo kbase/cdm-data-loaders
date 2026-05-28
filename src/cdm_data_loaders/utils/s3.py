@@ -263,8 +263,8 @@ def upload_file(
                 Key=key,
                 ExtraArgs=extra_args,
             )
-    except Exception as e:  # noqa: BLE001
-        logger.exception(f"Error uploading to s3: {e}")
+    except Exception:  # noqa: BLE001
+        logger.exception("Error uploading to s3")
         return False
     return True
 
