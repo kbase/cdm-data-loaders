@@ -66,7 +66,7 @@ def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseCli
                 "aws_access_key_id": settings.MINIO_ACCESS_KEY,
                 "aws_secret_access_key": settings.MINIO_SECRET_KEY,
             }
-        except (ModuleNotFoundError, ImportError, NameError) as e:
+        except (ModuleNotFoundError, ImportError, NameError):
             logger.exception("Failed to load berdl settings")
             raise
 
@@ -205,8 +205,8 @@ def upload_file(
 ) -> bool:
     """Upload an object to an S3 bucket.
 
-    When *metadata* is supplied the file is always uploaded (no existence check)
-    and the dict is attached as S3 user metadata.  When *metadata* is ``None``
+    When *tags* is supplied the file is always uploaded (no existence check)
+    and the dict is attached as S3 user metadata.  When *tags* is ``None``
     (the default) the existing behaviour is preserved: the upload is skipped if
     the object is already present.
 
@@ -216,8 +216,10 @@ def upload_file(
     :type destination_dir: str
     :param object_name: S3 object name. If not specified, the name of the file from local_file_path is used.
     :type object_name: str | None
-    :param metadata: user metadata key/value pairs to attach to the object; when provided the upload always runs
-    :type metadata: dict[str, str] | None
+    :param tags: user metadata key/value pairs to attach to the object; when provided the upload always runs
+    :type tags: dict[str, str] | None
+    :param show_progress: whether to display a tqdm progress bar during upload, defaults to True
+    :type show_progress: bool, optional
     :return: True if file was uploaded, else False
     :rtype: bool
     """
@@ -262,7 +264,7 @@ def upload_file(
                 ExtraArgs=extra_args,
             )
     except Exception as e:  # noqa: BLE001
-        logger.exception("Error uploading to s3")
+        logger.exception(f"Error uploading to s3: {e}")
         return False
     return True
 
@@ -466,6 +468,7 @@ def copy_object(
         CopySource={"Bucket": current_s3_bucket, "Key": current_s3_key},
         Bucket=new_s3_bucket,
         Key=new_s3_key,
+        **DEFAULT_EXTRA_ARGS,
     )
 
 
@@ -518,6 +521,7 @@ def copy_directory(current_s3_path: str, new_s3_path: str) -> tuple[dict[str, st
                     CopySource={"Bucket": current_s3_bucket, "Key": current_key},
                     Bucket=new_s3_bucket,
                     Key=new_key,
+                    **DEFAULT_EXTRA_ARGS,
                 )
                 if resp["ResponseMetadata"]["HTTPStatusCode"] == SUCCESS_RESPONSE:
                     successes[source_path] = dest_path

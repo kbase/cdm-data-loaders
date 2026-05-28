@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 STABLE_PREFIX = "900"
 
 
-# ── Helpers ─────────────────────────────────────────────────────────────
+# Helpers
 
 
 def _download_and_filter() -> tuple[dict[str, AssemblyRecord], dict[str, AssemblyRecord]]:
@@ -50,7 +50,7 @@ def _download_and_filter() -> tuple[dict[str, AssemblyRecord], dict[str, Assembl
     return full, filtered
 
 
-# ── Tests ───────────────────────────────────────────────────────────────
+# Tests
 
 
 @pytest.mark.integration

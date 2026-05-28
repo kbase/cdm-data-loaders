@@ -24,7 +24,7 @@ import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
 from cdm_data_loaders.utils.s3 import reset_s3_client
 
-# ── MinIO connection defaults ───────────────────────────────────────────
+# MinIO connection defaults
 
 MINIO_ENDPOINT_URL = os.environ["MINIO_ENDPOINT_URL"]
 MINIO_ACCESS_KEY = os.environ["MINIO_ACCESS_KEY"]
@@ -34,7 +34,7 @@ MINIO_SECRET_KEY = os.environ["MINIO_SECRET_KEY"]
 _MAX_BUCKET_LEN = 63
 
 
-# ── MinIO reachability check ────────────────────────────────────────────
+# MinIO reachability check
 
 _minio_available: bool | None = None
 
@@ -72,7 +72,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_marker)
 
 
-# ── Fixtures ────────────────────────────────────────────────────────────
+# Fixtures
 
 
 @pytest.fixture
@@ -177,7 +177,7 @@ def staging_test_bucket(minio_s3_client: botocore.client.BaseClient, request: py
     return bucket
 
 
-# ── Helpers ─────────────────────────────────────────────────────────────
+# Helpers
 
 
 def stage_files_to_minio(

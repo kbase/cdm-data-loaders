@@ -15,7 +15,6 @@ from requests.exceptions import ConnectionError as ConnError
 from requests.exceptions import HTTPError
 
 import cdm_data_loaders.utils.s3 as s3_utils
-from tests.s3_helpers import strip_checksum_algorithm
 from cdm_data_loaders.utils.s3 import (
     CDM_LAKE_BUCKET,
     DEFAULT_EXTRA_ARGS,
@@ -34,6 +33,7 @@ from cdm_data_loaders.utils.s3 import (
     upload_dir,
     upload_file,
 )
+from tests.s3_helpers import strip_checksum_algorithm
 
 AWS_REGION = "us-east-1"
 

@@ -53,7 +53,7 @@ class DescriptorResource(TypedDict, total=False):
     hash: str | None
 
 
-# ── Public helpers ────────────────────────────────────────────────────────
+# Public helpers
 
 
 def build_descriptor_key(assembly_dir: str, key_prefix: str) -> str:

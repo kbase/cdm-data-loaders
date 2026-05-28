@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VALID_COMMANDS=(all_the_bacteria ncbi_ftp_sync ncbi_rest_api uniprot uniref xml_split test integration-test bash)
+VALID_COMMANDS=(all_the_bacteria ncbi_ftp_sync ncbi_rest_api uniprot uniref xml_split test integration_test bash)
 
 usage() {
   local joined
@@ -40,7 +40,7 @@ case "$cmd" in
   test)
     exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark"
     ;;
-  integration-test)
+  integration_test)
     # run the integration tests (requires a running MinIO instance)
     exec /usr/bin/tini -- uv run --no-sync pytest -m "integration" -v "$@"
     ;;

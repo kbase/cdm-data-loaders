@@ -8,8 +8,7 @@ from cdm_data_loaders.ncbi_ftp.assembly import (
     parse_md5_checksums_file,
 )
 
-
-# ── Path helpers ─────────────────────────────────────────────────────────
+# Path helpers
 
 
 @pytest.mark.parametrize(
@@ -64,7 +63,7 @@ def test_parse_assembly_path_invalid() -> None:
         parse_assembly_path("/random/path/")
 
 
-# ── parse_md5_checksums_file ─────────────────────────────────────────────
+# parse_md5_checksums_file
 
 
 @pytest.mark.parametrize(

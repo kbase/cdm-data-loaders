@@ -10,8 +10,8 @@ from moto import mock_aws
 
 import cdm_data_loaders.ncbi_ftp.promote as promote_mod
 import cdm_data_loaders.utils.s3 as s3_utils
-from tests.s3_helpers import strip_checksum_algorithm
 from cdm_data_loaders.utils.s3 import CDM_LAKE_BUCKET, reset_s3_client
+from tests.s3_helpers import strip_checksum_algorithm
 
 AWS_REGION = "us-east-1"
 TEST_BUCKET = CDM_LAKE_BUCKET

@@ -42,7 +42,7 @@ def make_settings(**kwargs: str | int) -> DownloadSettings:
     return DownloadSettings(_cli_parse_args=[], **kwargs)
 
 
-# ── Settings defaults ────────────────────────────────────────────────────
+# Settings defaults
 
 
 class TestDownloadSettingsDefaults:
@@ -74,7 +74,7 @@ class TestDownloadSettingsDefaults:
         assert s.limit is None
 
 
-# ── Settings all params ──────────────────────────────────────────────────
+# Settings all params
 
 
 class TestDownloadSettingsAllParams:
@@ -96,7 +96,7 @@ class TestDownloadSettingsAllParams:
         assert s.limit == _CUSTOM_LIMIT
 
 
-# ── Settings aliases ─────────────────────────────────────────────────────
+# Settings aliases
 
 
 class TestDownloadSettingsAliases:
@@ -123,7 +123,7 @@ class TestDownloadSettingsAliases:
         assert s.limit == _ALIAS_LIMIT
 
 
-# ── Settings validation ──────────────────────────────────────────────────
+# Settings validation
 
 
 class TestDownloadSettingsValidation:
@@ -155,7 +155,7 @@ class TestDownloadSettingsValidation:
             make_settings(limit=0)
 
 
-# ── download_batch ───────────────────────────────────────────────────────
+# download_batch
 
 
 class TestDownloadBatch:
@@ -245,7 +245,7 @@ class TestDownloadBatch:
         assert report["succeeded"] == 0
 
 
-# ── Helpers shared by download_and_stage tests ───────────────────────────
+# Helpers shared by download_and_stage tests
 
 _MANIFEST_CONTENT = (
     "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n"
@@ -262,7 +262,7 @@ def _make_moto_s3():
     return client
 
 
-# ── download_and_stage — manifest source ────────────────────────────────
+# download_and_stage — manifest source
 
 
 @pytest.mark.parametrize(
@@ -322,7 +322,7 @@ def test_download_and_stage_manifest_source(
     reset_s3_client()
 
 
-# ── download_and_stage — exactly one source required ────────────────────
+# download_and_stage — exactly one source required
 
 
 @pytest.mark.parametrize(
@@ -386,7 +386,7 @@ def test_download_and_stage_exactly_one_source_required(
     reset_s3_client()
 
 
-# ── download_and_stage — uploads to staging ──────────────────────────────
+# download_and_stage — uploads to staging
 
 
 @mock_aws
@@ -442,7 +442,7 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path) -> None:
     reset_s3_client()
 
 
-# ── download_and_stage — dry_run skips upload ────────────────────────────
+# download_and_stage — dry_run skips upload
 
 
 @mock_aws
@@ -488,7 +488,7 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path) -> None:
     reset_s3_client()
 
 
-# ── download_and_stage — limit forwarded ────────────────────────────────
+# download_and_stage — limit forwarded
 
 
 @pytest.mark.parametrize(
@@ -534,7 +534,7 @@ def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int) -> None:
     reset_s3_client()
 
 
-# ── download_and_stage — report shape ───────────────────────────────────
+# download_and_stage — report shape
 
 
 @mock_aws

@@ -57,7 +57,7 @@ _SAMPLE_RESOURCES: list[DescriptorResource] = [
 ]
 
 
-# ── build_descriptor_key / build_archive_descriptor_key ─────────────────
+# build_descriptor_key / build_archive_descriptor_key
 
 
 @pytest.mark.parametrize("prefix", [_KEY_PREFIX, _KEY_PREFIX.rstrip("/")])
@@ -83,7 +83,7 @@ def test_build_archive_descriptor_key(prefix: str, tag: str) -> None:
     assert "//" not in key
 
 
-# ── create_descriptor ────────────────────────────────────────────────────
+# create_descriptor
 
 
 def test_create_descriptor() -> None:
@@ -169,7 +169,7 @@ def test_create_descriptor_empty_resources() -> None:
     assert d["resources"] == []
 
 
-# ── validate_descriptor ──────────────────────────────────────────────────
+# validate_descriptor
 
 
 def test_validate_descriptor_valid() -> None:
@@ -186,7 +186,7 @@ def test_validate_descriptor_empty_raises() -> None:
         validate_descriptor({}, _ACCESSION)
 
 
-# ── upload_descriptor / archive_descriptor ───────────────────────────────
+# upload_descriptor / archive_descriptor
 
 
 @pytest.fixture

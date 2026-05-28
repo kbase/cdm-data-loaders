@@ -42,7 +42,7 @@ def _split(uri: str) -> tuple[str, str]:
     return parts[0], parts[1] if len(parts) > 1 else ""
 
 
-# ── subcommands ─────────────────────────────────────────────────────────
+# subcommands
 
 
 def cmd_mb(args: list[str]) -> None:
@@ -110,7 +110,7 @@ def cmd_head(args: list[str]) -> None:
     print(json.dumps(meta, indent=2))
 
 
-# ── dispatch ────────────────────────────────────────────────────────────
+# dispatch
 
 COMMANDS = {"mb": cmd_mb, "cp": cmd_cp, "ls": cmd_ls, "head": cmd_head}
 

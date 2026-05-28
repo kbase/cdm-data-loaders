@@ -40,5 +40,5 @@ services:
           fi
           echo 'Waiting for MinIO...' && sleep 1
         done
-        exec /app/scripts/entrypoint.sh integration-test
+        exec /app/scripts/entrypoint.sh integration_test
     command: []

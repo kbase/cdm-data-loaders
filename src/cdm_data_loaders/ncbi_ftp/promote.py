@@ -29,6 +29,7 @@ from cdm_data_loaders.utils.s3 import (
     copy_object,
     delete_objects,
     get_s3_client,
+    list_matching_objects,
     object_exists,
     upload_file,
 )
@@ -37,8 +38,10 @@ logger = get_cdm_logger()
 
 DEFAULT_LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
 
+_MAX_DRY_RUN_LOGS = 10
 
-# ── Promote from S3 staging prefix ──────────────────────────────────────
+
+# Promote from S3 staging prefix
 
 
 def promote_from_s3(  # noqa: PLR0913
@@ -69,18 +72,13 @@ def promote_from_s3(  # noqa: PLR0913
     :param dry_run: if True, log actions without side effects
     :return: report dict with counts
     """
-    s3 = get_s3_client()
-    paginator = s3.get_paginator("list_objects_v2")
+    # Get list of objects under the staging prefix
     normalized_staging_key_prefix = staging_key_prefix.rstrip("/") + "/"
-
-    # Collect all objects under the staging prefix
-    staged_objects: list[str] = []
-    for page in paginator.paginate(Bucket=staging_bucket, Prefix=normalized_staging_key_prefix):
-        staged_objects.extend(obj["Key"] for obj in page.get("Contents", []))
+    staged_objects: list[dict[str, Any]] = list_matching_objects(f"{staging_bucket}/{normalized_staging_key_prefix}")
 
     # Separate data files from sidecars
-    sidecars = {k for k in staged_objects if k.endswith((".crc64nvme", ".md5"))}
-    data_files = [k for k in staged_objects if k not in sidecars]
+    sidecars = {k["Key"] for k in staged_objects if k["Key"].endswith((".crc64nvme", ".md5"))}
+    data_files = [k["Key"] for k in staged_objects if k["Key"] not in sidecars]
 
     logger.info("Found %d data files and %d sidecars in staging", len(data_files), len(sidecars))
 
@@ -136,7 +134,7 @@ def promote_from_s3(  # noqa: PLR0913
     return report
 
 
-# ── Promote data files (per-file loop) ──────────────────────────────────
+# Promote data files (per-file loop)
 
 
 def _promote_data_files(  # noqa: PLR0913, PLR0915
@@ -234,7 +232,7 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
                 for staged_key in files:
                     rel_path = staged_key[len(normalized_staging_prefix) :]
                     final_key = lakehouse_key_prefix + rel_path
-                    if _dry_run_log_count < 10:
+                    if _dry_run_log_count < _MAX_DRY_RUN_LOGS:
                         logger.info("[dry-run] would promote: %s -> %s", staged_key, final_key)
                     else:
                         logger.debug("[dry-run] would promote: %s -> %s", staged_key, final_key)
@@ -280,10 +278,12 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
 
                 # Batch-delete all staged data files and their sidecars in one API call
                 keys_to_delete = list(promoted_keys)
-                for key in promoted_keys:
-                    for sidecar_ext in (".md5", ".crc64nvme"):
-                        if key + sidecar_ext in sidecars:
-                            keys_to_delete.append(key + sidecar_ext)
+                keys_to_delete.extend(
+                    key + sidecar_ext
+                    for key in promoted_keys
+                    for sidecar_ext in (".md5", ".crc64nvme")
+                    if key + sidecar_ext in sidecars
+                )
                 del_errors = delete_objects(staging_bucket, keys_to_delete)
                 for err in del_errors:
                     logger.warning("Failed to delete staged file %s: %s", err.get("Key"), err.get("Message"))
@@ -291,7 +291,7 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
     return promoted, failed, descriptors_written, promoted_accessions
 
 
-# ── Archive assemblies ──────────────────────────────────────────────────
+# Archive assemblies
 
 
 def _archive_assemblies(  # noqa: PLR0913
@@ -365,7 +365,7 @@ def _archive_assemblies(  # noqa: PLR0913
 
         if dry_run:
             for source_key, archive_key in key_pairs:
-                if _dry_run_log_count < 10:
+                if _dry_run_log_count < _MAX_DRY_RUN_LOGS:
                     logger.info("[dry-run] would archive: %s -> %s", source_key, archive_key)
                 else:
                     logger.debug("[dry-run] would archive: %s -> %s", source_key, archive_key)
@@ -422,7 +422,7 @@ def _archive_assemblies(  # noqa: PLR0913
     return archived
 
 
-# ── Manifest trimming ───────────────────────────────────────────────────
+# Manifest trimming
 
 
 def _trim_manifest(manifest_s3_key: str, staging_bucket: str, promoted_accessions: set[str]) -> None:

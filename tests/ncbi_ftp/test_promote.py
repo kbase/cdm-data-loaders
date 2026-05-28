@@ -14,8 +14,7 @@ from cdm_data_loaders.ncbi_ftp.promote import (
 )
 from tests.ncbi_ftp.conftest import TEST_BUCKET
 
-
-# ── Promotion test constants ─────────────────────────────────────────────
+# Promotion test constants
 
 _STAGE_PREFIX = "staging/run1/"
 
@@ -279,7 +278,7 @@ def test_archive_assemblies_unknown_release_fallback(
     assert mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=archive_key).get("KeyCount", 0) == 1
 
 
-# ── Concurrent / multi-file archive (new behaviour) ─────────────────────
+# Concurrent / multi-file archive (new behaviour)
 
 
 @pytest.mark.s3
@@ -391,7 +390,7 @@ def test_archive_assemblies_multi_file_delete_all(
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
 
 
-# ── Partial-archive idempotency ──────────────────────────────────────────
+# Partial-archive idempotency
 
 
 @pytest.mark.s3
@@ -600,7 +599,7 @@ def test_archive_assemblies_invalid_accession_skipped(
     assert archived == 1
 
 
-# ── Concurrent / multi-file promotion (new behaviour) ────────────────────
+# Concurrent / multi-file promotion (new behaviour)
 
 
 @pytest.mark.s3
@@ -794,7 +793,7 @@ def test_promote_partial_failure_staging_not_cleaned(
         resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=key)
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200, (
             f"Expected staged file to survive partial failure: {key}"
-        )  # noqa: PLR2004
+        )
 
 
 @pytest.mark.s3
@@ -803,7 +802,7 @@ def test_promote_partial_failure_failed_count(
 ) -> None:
     """report[\"failed\"] reflects the number of files that could not be promoted."""
     file_names = [f"{_ACC1}_genomic.fna.gz", f"{_ACC1}_protein.faa.gz", f"{_ACC1}_rna.fna.gz"]
-    _stage(mock_s3_client_no_checksum, _STG1, {f: b"data" for f in file_names})
+    _stage(mock_s3_client_no_checksum, _STG1, dict.fromkeys(file_names, b"data"))
 
     failing_key = f"{_STG1}{file_names[1]}"
     original_download = mock_s3_client_no_checksum.download_file
@@ -876,7 +875,7 @@ def test_promote_two_assemblies_independent_cleanup(
         resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{_STG2}{fname}")
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200, (
             f"Assembly 2 staging must survive partial failure: {fname}"
-        )  # noqa: PLR2004
+        )
 
 
 @pytest.mark.s3
