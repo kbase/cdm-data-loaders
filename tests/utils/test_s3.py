@@ -900,7 +900,7 @@ def test_delete_object_removes_object(mock_s3_client: Any, bucket: str, protocol
 def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: Any, sample_file: Path, bucket: str) -> None:
     """Verify that upload_file with metadata stores user metadata on the uploaded object."""
     metadata = {"md5": "abc123", "source": "ncbi"}
-    result = upload_file(sample_file, f"{bucket}/uploads", tags=metadata)
+    result = upload_file(sample_file, f"{bucket}/uploads", user_metadata=metadata)
     assert result is True
 
     resp = mock_s3_client.head_object(Bucket=bucket, Key=f"uploads/{sample_file.name}")
@@ -911,7 +911,7 @@ def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: Any, sample
 @pytest.mark.s3
 def test_upload_file_with_metadata_custom_object_name(mock_s3_client: Any, sample_file: Path) -> None:
     """Verify that the object_name parameter overrides the filename."""
-    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", tags={"k": "v"}, object_name="renamed.txt")
+    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", user_metadata={"k": "v"}, object_name="renamed.txt")
     assert result is True
     obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key="uploads/renamed.txt")
     assert obj["Body"].read() == b"hello s3"
@@ -921,7 +921,7 @@ def test_upload_file_with_metadata_custom_object_name(mock_s3_client: Any, sampl
 def test_upload_file_with_metadata_overwrites_existing(mock_s3_client: Any, sample_file: Path) -> None:
     """Verify that upload_file with metadata uploads even when the object already exists."""
     mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
-    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", tags={"new": "true"})
+    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", user_metadata={"new": "true"})
     assert result is True
     obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}")
     assert obj["Body"].read() == b"hello s3"
@@ -932,7 +932,7 @@ def test_upload_file_with_metadata_overwrites_existing(mock_s3_client: Any, samp
 def test_upload_file_with_metadata_raises_on_empty_destination(sample_file: Path) -> None:
     """Verify ValueError when destination_dir is empty."""
     with pytest.raises(ValueError, match="No destination directory"):
-        upload_file(sample_file, "", tags={"k": "v"})
+        upload_file(sample_file, "", user_metadata={"k": "v"})
 
 
 @pytest.mark.usefixtures("mock_s3_client")
@@ -940,7 +940,7 @@ def test_upload_file_with_metadata_raises_on_empty_destination(sample_file: Path
 @pytest.mark.s3
 def test_upload_file_with_metadata_accepts_str_and_path(sample_file: Path, path_type: type[str] | type[Path]) -> None:
     """Verify that upload_file with metadata accepts both str and Path."""
-    result = upload_file(path_type(sample_file), f"{CDM_LAKE_BUCKET}/uploads", tags={})
+    result = upload_file(path_type(sample_file), f"{CDM_LAKE_BUCKET}/uploads", user_metadata={})
     assert result is True
 
 

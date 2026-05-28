@@ -200,13 +200,14 @@ def upload_file(
     local_file_path: Path | str,
     destination_dir: str,
     object_name: str | None = None,
-    tags: dict[str, str] | None = None,
+    user_metadata: dict[str, str] | None = None,
+    *,
     show_progress: bool = True,
 ) -> bool:
     """Upload an object to an S3 bucket.
 
-    When *tags* is supplied the file is always uploaded (no existence check)
-    and the dict is attached as S3 user metadata.  When *tags* is ``None``
+    When *user_metadata* is supplied the file is always uploaded (no existence check)
+    and the dict is attached as S3 user metadata.  When *user_metadata* is ``None``
     (the default) the existing behaviour is preserved: the upload is skipped if
     the object is already present.
 
@@ -216,8 +217,8 @@ def upload_file(
     :type destination_dir: str
     :param object_name: S3 object name. If not specified, the name of the file from local_file_path is used.
     :type object_name: str | None
-    :param tags: user metadata key/value pairs to attach to the object; when provided the upload always runs
-    :type tags: dict[str, str] | None
+    :param user_metadata: user metadata key/value pairs to attach to the object; when provided the upload always runs
+    :type user_metadata: dict[str, str] | None
     :param show_progress: whether to display a tqdm progress bar during upload, defaults to True
     :type show_progress: bool, optional
     :return: True if file was uploaded, else False
@@ -234,14 +235,14 @@ def upload_file(
         object_name = local_file_path.name
 
     s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
-    if tags is None and object_exists(s3_path):
+    if user_metadata is None and object_exists(s3_path):
         logger.debug("File already present: %s", s3_path)
         return True
 
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
 
-    extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": tags}) if tags is not None else {})}
+    extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": user_metadata}) if user_metadata is not None else {})}
 
     # Upload the file
     logger.debug("uploading %s to %s", str(local_file_path), s3_path)
