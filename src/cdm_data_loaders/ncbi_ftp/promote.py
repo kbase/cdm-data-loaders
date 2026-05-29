@@ -40,6 +40,14 @@ DEFAULT_LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
 
 _MAX_DRY_RUN_LOGS = 10
 
+# Precompile regexes for performance
+
+# Extract the accession from a path (e.g., "raw_data/GCF/000/001/405/GCF_000001405.39/file" -> "GCF_000001405.39")
+_ACCESSION_REGEX = re.compile(r"(GC[AF]_\d{9}\.\d+)")
+
+# Extract the database, and 3-digit groups from an accession
+# (e.g., "GCF_000001405.39" -> ("GCF", "000", "001", "405"))
+_ACCESSION_PARTS_REGEX = re.compile(r"(GC[AF])_(\d{3})(\d{3})(\d{3})\.\d+")
 
 # Promote from S3 staging prefix
 
@@ -137,7 +145,144 @@ def promote_from_s3(  # noqa: PLR0913
 # Promote data files (per-file loop)
 
 
-def _promote_data_files(  # noqa: PLR0913, PLR0915
+def _group_files_by_assembly(
+    data_files: list[str], normalized_staging_prefix: str
+) -> defaultdict[tuple[str, str], list[str]]:
+    """Group files by assembly; skip download_report.json and non-raw_data paths.
+
+    :param data_files: list of S3 keys for staged data files
+    :param normalized_staging_prefix: normalized staging prefix in S3
+    :return: dict mapping (assembly_dir, accession) to list of staged keys for that assembly
+    """
+    assembly_files: defaultdict[tuple[str, str], list[str]] = defaultdict(list)
+    for staged_key in data_files:
+        if staged_key.endswith("download_report.json"):
+            continue
+        rel_path = staged_key[len(normalized_staging_prefix) :]
+        if not rel_path.startswith("raw_data/"):
+            continue
+        acc_match = _ACCESSION_REGEX.search(staged_key)
+        adir_match = re.search(r"raw_data/GC[AF]/\d+/\d+/\d+/([^/]+)/", staged_key)
+        if acc_match and adir_match:
+            assembly_files[(adir_match.group(1), acc_match.group(1))].append(staged_key)
+    return assembly_files
+
+
+def _promote_file(  # noqa: PLR0913
+    staged_key: str,
+    normalized_staging_prefix: str,
+    lakehouse_key_prefix: str,
+    staging_bucket: str,
+    lakehouse_bucket: str,
+    sidecars: set[str],
+) -> tuple[DescriptorResource, str]:
+    """Download one staged file, re-upload to Lakehouse with MD5 metadata.
+
+    :param staged_key: S3 key of the staged file
+    :param normalized_staging_prefix: normalized staging prefix in S3
+    :param lakehouse_key_prefix: S3 key prefix for final Lakehouse locations
+    :param staging_bucket: S3 bucket containing the staged file
+    :param lakehouse_bucket: S3 bucket for the final Lakehouse destination
+    :param sidecars: set of S3 keys for sidecar files (to check for MD5 metadata)
+    :return: ``(resource_dict, staged_key)`` on success; raises on failure.
+    """
+    s3 = get_s3_client()
+    rel_path = staged_key[len(normalized_staging_prefix) :]
+    final_key = lakehouse_key_prefix + rel_path
+    final_key_path = PurePosixPath(final_key)
+
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        s3.download_file(Bucket=staging_bucket, Key=staged_key, Filename=tmp_path)
+
+        metadata: dict[str, str] = {}
+        md5_key = staged_key + ".md5"
+        if md5_key in sidecars:
+            md5_obj = s3.get_object(Bucket=staging_bucket, Key=md5_key)
+            metadata["md5"] = md5_obj["Body"].read().decode().strip()
+
+        upload_succeeded = upload_file(
+            tmp_path,
+            f"{lakehouse_bucket}/{final_key_path.parent}",
+            user_metadata=metadata,
+            object_name=final_key_path.name,
+            show_progress=False,
+        )
+        if not upload_succeeded:
+            msg = f"upload_file returned False for {staged_key}"
+            raise RuntimeError(msg)
+
+        fname = final_key_path.name
+        ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
+        resource: DescriptorResource = {
+            "name": fname.lower(),
+            "path": final_key,
+            "format": ext,
+            "bytes": Path(tmp_path).stat().st_size,
+            "hash": metadata.get("md5"),
+        }
+        return resource, staged_key
+    finally:
+        Path(tmp_path).unlink()
+
+
+def _write_descriptor_for_assembly(
+    assembly_dir: str,
+    accession: str,
+    resources: list[DescriptorResource],
+    lakehouse_bucket: str,
+    lakehouse_key_prefix: str,
+) -> bool:
+    """Create and upload a frictionless descriptor for an assembly.
+
+    :param assembly_dir: full assembly directory name
+    :param accession: assembly accession (e.g. "GCF_000001405.39")
+    :param resources: list of DescriptorResource dicts for the assembly's files
+    :param lakehouse_bucket: S3 bucket for the final Lakehouse destination
+    :param lakehouse_key_prefix: S3 key prefix for final Lakehouse locations
+    :return: True if the descriptor was successfully written, False otherwise
+    """
+    try:
+        descriptor_key = build_descriptor_key(assembly_dir, lakehouse_key_prefix)
+        if object_exists(f"{lakehouse_bucket}/{descriptor_key}"):
+            logger.debug("Descriptor already exists, skipping: %s", descriptor_key)
+        else:
+            descriptor = create_descriptor(assembly_dir, accession, resources)
+            descriptor_key = upload_descriptor(
+                descriptor, assembly_dir, lakehouse_bucket, lakehouse_key_prefix, dry_run=False
+            )
+            logger.debug("Uploaded descriptor: %s", descriptor_key)
+            return True
+    except Exception:
+        logger.exception("Failed to write descriptor for %s", assembly_dir)
+    return False
+
+
+def _batch_delete(
+    promoted_keys: list[str],
+    sidecars: set[str],
+    staging_bucket: str,
+) -> None:
+    """Batch-delete all staged data files and their sidecars in one API call.
+
+    :param promoted_keys: list of staged keys that were successfully promoted
+    :param sidecars: set of all sidecar keys in staging (to check for existence of sidecars for promoted files)
+    :param staging_bucket: S3 bucket containing the staged files
+    """
+    keys_to_delete = list(promoted_keys)
+    keys_to_delete.extend(
+        key + sidecar_ext
+        for key in promoted_keys
+        for sidecar_ext in (".md5", ".crc64nvme")
+        if key + sidecar_ext in sidecars
+    )
+    del_errors = delete_objects(staging_bucket, keys_to_delete)
+    for err in del_errors:
+        logger.warning("Failed to delete staged file %s: %s", err.get("Key"), err.get("Message"))
+
+
+def _promote_data_files(  # noqa: PLR0913
     data_files: list[str],
     sidecars: set[str],
     normalized_staging_prefix: str,
@@ -157,68 +302,21 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
 
     :return: (promoted_count, failed_count, descriptors_written, promoted_accessions)
     """
-    s3 = get_s3_client()
     promoted = 0
     failed = 0
     descriptors_written = 0
     promoted_accessions: set[str] = set()
-
-    # Group files by assembly; skip download_report.json and non-raw_data paths
-    assembly_files: defaultdict[tuple[str, str], list[str]] = defaultdict(list)
-    for staged_key in data_files:
-        if staged_key.endswith("download_report.json"):
-            continue
-        rel_path = staged_key[len(normalized_staging_prefix) :]
-        if not rel_path.startswith("raw_data/"):
-            continue
-        acc_match = re.search(r"(GC[AF]_\d{9}\.\d+)", staged_key)
-        adir_match = re.search(r"raw_data/GC[AF]/\d+/\d+/\d+/([^/]+)/", staged_key)
-        if acc_match and adir_match:
-            assembly_files[(adir_match.group(1), acc_match.group(1))].append(staged_key)
+    assembly_files = _group_files_by_assembly(data_files, normalized_staging_prefix)
 
     def _promote_one(staged_key: str) -> tuple[DescriptorResource, str]:
-        """Download one staged file, re-upload to Lakehouse with MD5 metadata.
-
-        :return: ``(resource_dict, staged_key)`` on success; raises on failure.
-        """
-        rel_path = staged_key[len(normalized_staging_prefix) :]
-        final_key = lakehouse_key_prefix + rel_path
-        final_key_path = PurePosixPath(final_key)
-
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp_path = tmp.name
-        try:
-            s3.download_file(Bucket=staging_bucket, Key=staged_key, Filename=tmp_path)
-
-            metadata: dict[str, str] = {}
-            md5_key = staged_key + ".md5"
-            if md5_key in sidecars:
-                md5_obj = s3.get_object(Bucket=staging_bucket, Key=md5_key)
-                metadata["md5"] = md5_obj["Body"].read().decode().strip()
-
-            upload_succeeded = upload_file(
-                tmp_path,
-                f"{lakehouse_bucket}/{final_key_path.parent}",
-                user_metadata=metadata,
-                object_name=final_key_path.name,
-                show_progress=False,
-            )
-            if not upload_succeeded:
-                msg = f"upload_file returned False for {staged_key}"
-                raise RuntimeError(msg)
-
-            fname = final_key_path.name
-            ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
-            resource: DescriptorResource = {
-                "name": fname.lower(),
-                "path": final_key,
-                "format": ext,
-                "bytes": Path(tmp_path).stat().st_size,
-                "hash": metadata.get("md5"),
-            }
-            return resource, staged_key
-        finally:
-            Path(tmp_path).unlink()
+        return _promote_file(
+            staged_key,
+            normalized_staging_prefix,
+            lakehouse_key_prefix,
+            staging_bucket,
+            lakehouse_bucket,
+            sidecars,
+        )
 
     total_files = sum(len(v) for v in assembly_files.values())
     _dry_run_log_count = 0
@@ -262,31 +360,11 @@ def _promote_data_files(  # noqa: PLR0913, PLR0915
 
             # Write descriptor and delete staged files immediately after a fully successful assembly
             if assembly_failed == 0 and promoted_keys:
-                try:
-                    descriptor_key = build_descriptor_key(adir, lakehouse_key_prefix)
-                    if object_exists(f"{lakehouse_bucket}/{descriptor_key}"):
-                        logger.debug("Descriptor already exists, skipping: %s", descriptor_key)
-                    else:
-                        descriptor = create_descriptor(adir, acc, resources)
-                        descriptor_key = upload_descriptor(
-                            descriptor, adir, lakehouse_bucket, lakehouse_key_prefix, dry_run=False
-                        )
-                        logger.debug("Uploaded descriptor: %s", descriptor_key)
-                        descriptors_written += 1
-                except Exception:
-                    logger.exception("Failed to write descriptor for %s", adir)
+                if _write_descriptor_for_assembly(adir, acc, resources, lakehouse_bucket, lakehouse_key_prefix):
+                    descriptors_written += 1
 
-                # Batch-delete all staged data files and their sidecars in one API call
-                keys_to_delete = list(promoted_keys)
-                keys_to_delete.extend(
-                    key + sidecar_ext
-                    for key in promoted_keys
-                    for sidecar_ext in (".md5", ".crc64nvme")
-                    if key + sidecar_ext in sidecars
-                )
-                del_errors = delete_objects(staging_bucket, keys_to_delete)
-                for err in del_errors:
-                    logger.warning("Failed to delete staged file %s: %s", err.get("Key"), err.get("Message"))
+                # delete staged files in batch with their sidecars (if any)
+                _batch_delete(promoted_keys, sidecars, staging_bucket)
 
     return promoted, failed, descriptors_written, promoted_accessions
 
