@@ -42,7 +42,7 @@ def get_s3_client(args: dict[str, str | None] | None = None) -> botocore.client.
         - endpoint_url: the endpoint URL for the S3 client (e.g., "https://s3.amazonaws.com" or "https://my-s3-server.com")
 
     If arguments are not provided, the client will be created using boto3's default
-    configuration method, which looks environment variables (AWS_ACCESS_KEY_ID,
+    configuration method, which looks for environment variables (AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY, and AWS_ENDPOINT_URL_S3 or AWS_ENDPOINT_URL) or an ``./aws`` config directory.
     See the boto3 documentation for more details.
 
@@ -65,9 +65,7 @@ def get_s3_client(args: dict[str, str | None] | None = None) -> botocore.client.
     kwargs = {k: v for k, v in args.items() if k in valid_kwargs and v is not None}
 
     # make sure that if aws_access_key_id or aws_secret_access_key is provided, the other is also provided.
-    if (kwargs.get("aws_access_key_id") and not kwargs.get("aws_secret_access_key")) or (
-        not kwargs.get("aws_access_key_id") and kwargs.get("aws_secret_access_key")
-    ):
+    if bool(kwargs.get("aws_access_key_id")) ^ bool(kwargs.get("aws_secret_access_key")):
         msg = "Cannot initialise s3 client: aws_access_key_id and aws_secret_access_key must be provided together, either via args or environment variables or a config file"
         raise ValueError(msg)
 
