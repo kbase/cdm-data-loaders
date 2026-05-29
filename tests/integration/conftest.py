@@ -7,7 +7,6 @@ the final state of the object store via the MinIO console.
 """
 
 import hashlib
-import os
 import re
 from pathlib import Path
 from typing import Any
