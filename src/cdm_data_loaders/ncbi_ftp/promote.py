@@ -42,12 +42,15 @@ _MAX_DRY_RUN_LOGS = 10
 
 # Precompile regexes for performance
 
-# Extract the accession from a path (e.g., "raw_data/GCF/000/001/405/GCF_000001405.39/file" -> "GCF_000001405.39")
+# Extract the accession from a path (e.g., "raw_data/GCF/000/001/405/GCF_000001405.39_Some_description/file" -> "GCF_000001405.39")
 _ACCESSION_REGEX = re.compile(r"(GC[AF]_\d{9}\.\d+)")
 
 # Extract the database, and 3-digit groups from an accession
 # (e.g., "GCF_000001405.39" -> ("GCF", "000", "001", "405"))
 _ACCESSION_PARTS_REGEX = re.compile(r"(GC[AF])_(\d{3})(\d{3})(\d{3})\.\d+")
+
+# Extract the assembly_dir from a path (e.g., "raw_data/GCF/000/001/405/GCF_000001405.39_Some_description/file" -> "GCF_000001405.39_Some_description")
+_ASSEMBLY_DIR_REGEX = re.compile(r"raw_data/GC[AF]/\d+/\d+/\d+/([^/]+)/")
 
 # Promote from S3 staging prefix
 
@@ -372,6 +375,109 @@ def _promote_data_files(  # noqa: PLR0913
 # Archive assemblies
 
 
+def _get_accession_path_prefix(accession: str, lakehouse_key_prefix: str) -> str | None:
+    """Get the S3 key prefix for all files related to an accession.
+
+    :param accession: assembly accession (e.g. "GCF_000001405.39_Some_description")
+    :param lakehouse_key_prefix: S3 key prefix for the Lakehouse dataset root
+    :return: S3 key prefix under which all files for the accession are stored, or None if the accession format is invalid
+    """
+    m = _ACCESSION_PARTS_REGEX.match(accession)
+    if not m:
+        logger.warning("Invalid accession format: %s", accession)
+        return None
+    db = m.group(1)
+    p1, p2, p3 = m.group(2), m.group(3), m.group(4)
+    return f"{lakehouse_key_prefix}raw_data/{db}/{p1}/{p2}/{p3}/{accession}"
+
+
+def _get_source_dest_pairs_for_accession(
+    accession: str,
+    lakehouse_bucket: str,
+    lakehouse_key_prefix: str,
+    release_tag: str,
+    archive_reason: str,
+) -> list[tuple[str, str]]:
+    """Get list of (source_key, archive_key) pairs for all objects related to an accession.
+
+    :param accession: assembly accession (e.g. "GCF_000001405.39_Some_description")
+    :param lakehouse_bucket: S3 bucket for the Lakehouse (source and archive destination)
+    :param lakehouse_key_prefix: S3 key prefix for the Lakehouse dataset root
+    :param release_tag: release tag for the archive
+    :param archive_reason: reason for archiving
+    :return: list of (source_key, archive_key) pairs for all objects related to the accession
+    """
+    source_prefix = _get_accession_path_prefix(accession, lakehouse_key_prefix)
+    if not source_prefix:
+        return []
+    matching_objs: list[dict[str, Any]] = list_matching_objects(f"{lakehouse_bucket}/{source_prefix}")
+    return [
+        (
+            obj["Key"],
+            f"{lakehouse_key_prefix}archive/{release_tag}/{archive_reason}/{obj['Key'][len(lakehouse_key_prefix) :]}",
+        )
+        for obj in matching_objs
+    ]
+
+
+def _dry_run_output(key_pairs: list[tuple[str, str]], log_count: int) -> int:
+    """Log source and archive key pairs for a dry run, with a limit on how many are logged at INFO level.
+
+    :param key_pairs: list of (source_key, archive_key) pairs
+    :param log_count: current count of logged entries
+    :return: updated count of logged entries
+    """
+    _dry_run_log_count = log_count
+    for source_key, archive_key in key_pairs:
+        if _dry_run_log_count < _MAX_DRY_RUN_LOGS:
+            logger.info("[dry-run] would archive: %s -> %s", source_key, archive_key)
+        else:
+            logger.debug("[dry-run] would archive: %s -> %s", source_key, archive_key)
+        _dry_run_log_count += 1
+    return _dry_run_log_count
+
+
+def _archive_objects(key_pairs: list[tuple[str, str]], lakehouse_bucket: str, *, delete_source: bool) -> int:
+    """Copy objects from source keys to archive keys, optionally deleting the source objects.
+
+    :param key_pairs: list of (source_key, archive_key) pairs
+    :param lakehouse_bucket: S3 bucket for the Lakehouse (source and archive destination)
+    :param delete_source: if True, delete the source object after copying
+    :return: number of objects successfully archived
+    """
+    archived = 0
+    if not key_pairs:
+        return archived
+    keys_to_delete: list[str] = []
+    n_workers = min(32, len(key_pairs))
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        futures = {
+            executor.submit(
+                copy_object,
+                f"{lakehouse_bucket}/{src}",
+                f"{lakehouse_bucket}/{arch}",
+            ): src
+            for src, arch in key_pairs
+        }
+        for future in as_completed(futures):
+            src = futures[future]
+            try:
+                future.result()
+                archived += 1
+                if delete_source:
+                    keys_to_delete.append(src)
+                logger.debug("  Archived: %s", src)
+            except Exception:
+                logger.exception("Failed to archive %s", src)
+
+    if delete_source and keys_to_delete:
+        del_errors = delete_objects(lakehouse_bucket, keys_to_delete)
+        for err in del_errors:
+            logger.warning("Failed to delete %s: %s", err.get("Key"), err.get("Message"))
+
+    return archived
+
+
 def _archive_assemblies(  # noqa: PLR0913
     manifest_local_path: str,
     lakehouse_bucket: str,
@@ -398,7 +504,6 @@ def _archive_assemblies(  # noqa: PLR0913
     :param dry_run: if True, log without making changes
     :return: number of objects archived
     """
-    s3 = get_s3_client()
     release_tag = ncbi_release or "unknown"
     archived = 0
 
@@ -407,78 +512,32 @@ def _archive_assemblies(  # noqa: PLR0913
 
     _dry_run_log_count = 0
     for accession in tqdm.tqdm(accessions, unit="accession", desc="Archiving"):
-        m = re.match(r"(GC[AF])_(\d{3})(\d{3})(\d{3})\.\d+", accession)
-        if not m:
-            logger.warning("Cannot parse accession for archival: %s", accession)
-            continue
-
-        db = m.group(1)
-        p1, p2, p3 = m.group(2), m.group(3), m.group(4)
-        source_prefix = f"{lakehouse_key_prefix}raw_data/{db}/{p1}/{p2}/{p3}/"
-
-        paginator = s3.get_paginator("list_objects_v2")
-        matching_keys: list[str] = []
-        for page in paginator.paginate(Bucket=lakehouse_bucket, Prefix=source_prefix):
-            matching_keys.extend(obj["Key"] for obj in page.get("Contents", []) if accession in obj["Key"])
-
-        if not matching_keys:
+        # get list of (source_key, archive_key) pairs for all objects related to this accession
+        key_pairs: list[tuple[str, str]] = _get_source_dest_pairs_for_accession(
+            accession,
+            lakehouse_bucket,
+            lakehouse_key_prefix,
+            release_tag,
+            archive_reason,
+        )
+        if not key_pairs:
             logger.debug("No objects found for %s, skipping archive", accession)
             continue
 
+        # Archive all files for this accession
+        if dry_run:
+            _dry_run_log_count = _dry_run_output(key_pairs, _dry_run_log_count)
+            archived += len(key_pairs)
+            continue
+        archived += _archive_objects(key_pairs, lakehouse_bucket, delete_source=delete_source)
+
         # Infer assembly_dir from key paths for descriptor archival
         assembly_dir: str | None = None
-        for key in matching_keys:
-            adir_match = re.search(r"raw_data/GC[AF]/\d+/\d+/\d+/([^/]+)/", key)
+        for src, _ in key_pairs:
+            adir_match = _ASSEMBLY_DIR_REGEX.search(src)
             if adir_match:
                 assembly_dir = adir_match.group(1)
                 break
-
-        key_pairs = [
-            (
-                source_key,
-                f"{lakehouse_key_prefix}archive/{release_tag}/{archive_reason}/{source_key[len(lakehouse_key_prefix) :]}",
-            )
-            for source_key in matching_keys
-        ]
-
-        if dry_run:
-            for source_key, archive_key in key_pairs:
-                if _dry_run_log_count < _MAX_DRY_RUN_LOGS:
-                    logger.info("[dry-run] would archive: %s -> %s", source_key, archive_key)
-                else:
-                    logger.debug("[dry-run] would archive: %s -> %s", source_key, archive_key)
-                _dry_run_log_count += 1
-            archived += len(key_pairs)
-            continue
-
-        # Copy all files for this accession concurrently
-        keys_to_delete: list[str] = []
-        n_workers = min(32, len(key_pairs))
-        with ThreadPoolExecutor(max_workers=n_workers) as executor:
-            futures = {
-                executor.submit(
-                    copy_object,
-                    f"{lakehouse_bucket}/{src}",
-                    f"{lakehouse_bucket}/{arch}",
-                ): src
-                for src, arch in key_pairs
-            }
-            for future in as_completed(futures):
-                src = futures[future]
-                try:
-                    future.result()
-                    archived += 1
-                    if delete_source:
-                        keys_to_delete.append(src)
-                    logger.debug("  Archived: %s", src)
-                except Exception:
-                    logger.exception("Failed to archive %s", src)
-
-        # Batch-delete source keys in a single API call
-        if keys_to_delete:
-            del_errors = delete_objects(lakehouse_bucket, keys_to_delete)
-            for err in del_errors:
-                logger.warning("Failed to delete %s: %s", err.get("Key"), err.get("Message"))
 
         # Archive the frictionless descriptor alongside raw data
         if assembly_dir:
