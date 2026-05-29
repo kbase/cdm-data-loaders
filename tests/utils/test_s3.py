@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import boto3
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, PartialCredentialsError
 from moto import mock_aws
 from requests.exceptions import ConnectionError as ConnError
 from requests.exceptions import HTTPError
@@ -34,7 +34,8 @@ from cdm_data_loaders.utils.s3 import (
     upload_file,
 )
 
-AWS_REGION = "us-east-1"
+HTTP_200 = 200
+HTTP_204 = 204
 
 SAMPLE_FILES = [
     "dir_one/file1.txt",
@@ -61,13 +62,15 @@ def mock_s3_client() -> Generator[Any, Any]:
     Resets the cached client before and after to prevent state leaking between tests.
     """
     with mock_aws():
-        client = boto3.client("s3", region_name=AWS_REGION)
+        client = boto3.client("s3")
         for bucket in FILES_IN_BUCKETS:
             client.create_bucket(Bucket=bucket)
 
+        # delete any existing client
         reset_s3_client()
         assert s3_utils._s3_client is None  # noqa: SLF001
 
+        # patch in the client that we have just created
         with patch.object(s3_utils, "get_s3_client", return_value=client):
             yield client
 
@@ -128,78 +131,177 @@ def populate_mock_s3(client: Any, file_list_by_bucket: dict[str, list[str]]) -> 
             client.head_object(Bucket=bucket, Key=file)
 
 
+def prep_client_init(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set up environment variables to allow get_s3_client to initialize without error."""
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+    # set up env vars to ensure that the argument takes precedence
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://env-endpoint.com")
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "aws_access_key_id_env_var")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws_secret_access_key_env_var")
+
+
 # Client creation / reset
+@mock_aws
 @pytest.mark.s3
-def test_get_s3_client_raises_on_missing_args() -> None:
-    """Verify that get_s3_client raises ValueError when required arguments are absent."""
-    reset_s3_client()
-    with pytest.raises(ValueError, match="missing arguments"):
-        get_s3_client(args={"endpoint_url": "http://localhost", "aws_access_key_id": "key"})
+@pytest.mark.parametrize("endpoint_url", ["http://localhost", None])
+def test_get_s3_client_success_via_args(endpoint_url: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that get_s3_client creates a client with the correct credentials and endpoint URL using args for the creds."""
+    prep_client_init(monkeypatch)
+
+    args = {
+        "aws_access_key_id": "aws_access_key_id_argument",
+        "aws_secret_access_key": "aws_secret_access_key_argument",
+        "endpoint_url": endpoint_url,
+    }
+
+    client = get_s3_client(args)
+    assert client is not None
+    credentials = client._request_signer._credentials  # noqa: SLF001
+    assert credentials.access_key == "aws_access_key_id_argument"
+    assert credentials.secret_key == "aws_secret_access_key_argument"  # noqa: S105
+    expected_endpoint = endpoint_url or "http://env-endpoint.com"
+    assert client.meta.endpoint_url == expected_endpoint
+
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
 
 
+@mock_aws
 @pytest.mark.s3
-def test_get_s3_client_returns_client_with_valid_args() -> None:
-    """Verify that get_s3_client returns a usable client when all required args are provided."""
-    reset_s3_client()
-    with mock_aws():
-        client = get_s3_client(
-            args={
-                "endpoint_url": "http://localhost:9000",
-                "aws_access_key_id": "key",
-                "aws_secret_access_key": "secret",
-            }
-        )
-        assert client is not None
+@pytest.mark.parametrize("endpoint_url", ["http://localhost", None])
+def test_get_s3_client_success_via_env(endpoint_url: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that get_s3_client creates a client with the correct credentials and endpoint URL using env vars for the creds."""
+    prep_client_init(monkeypatch)
+
+    args = {
+        "endpoint_url": endpoint_url,
+    }
+
+    client = get_s3_client(args)
+    assert client is not None
+    credentials = client._request_signer._credentials  # noqa: SLF001
+    assert credentials.access_key == "aws_access_key_id_env_var"
+    assert credentials.secret_key == "aws_secret_access_key_env_var"  # noqa: S105
+    expected_endpoint = endpoint_url or "http://env-endpoint.com"
+    assert client.meta.endpoint_url == expected_endpoint
+
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
 
 
+@mock_aws
+@pytest.mark.s3
+@pytest.mark.parametrize(
+    ("aws_access_key_id", "aws_secret_access_key"), [("aws_access_key_id", None), (None, "aws_secret_access_key")]
+)
+def test_get_s3_client_incomplete_creds_via_args(
+    aws_access_key_id: str | None, aws_secret_access_key: str | None
+) -> None:
+    """Verify that get_s3_client raises ValueError when only one of aws_access_key_id or aws_secret_access_key is provided via arguments."""
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+    args = {
+        "aws_access_key_id": aws_access_key_id,
+        "aws_secret_access_key": aws_secret_access_key,
+    }
+    with pytest.raises(
+        ValueError,
+        match="Cannot initialise s3 client: aws_access_key_id and aws_secret_access_key must be provided together",
+    ):
+        get_s3_client(args)
+    assert s3_utils._s3_client is None  # noqa: SLF001
+
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+
+
+@mock_aws
+@pytest.mark.s3
+@pytest.mark.parametrize(
+    ("aws_access_key_id", "aws_secret_access_key", "error_type", "error_msg"),
+    [
+        (
+            "aws_access_key_id",
+            None,
+            PartialCredentialsError,
+            "Partial credentials found in env, missing: AWS_SECRET_ACCESS_KEY",
+        ),
+        (None, "aws_secret_access_key", ValueError, "missing configuration values: aws_access_key_id"),
+        (None, None, ValueError, "missing configuration values: aws_access_key_id, aws_secret_access_key"),
+    ],
+)
+def test_get_s3_client_incomplete_creds_via_env(
+    aws_access_key_id: str | None,
+    aws_secret_access_key: str | None,
+    error_type: type[Exception],
+    error_msg: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that get_s3_client raises ValueError when only one of aws_access_key_id or aws_secret_access_key is provided."""
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+    args = {
+        "aws_access_key_id": aws_access_key_id,
+        "aws_secret_access_key": aws_secret_access_key,
+    }
+    for key, value in args.items():
+        if value:
+            monkeypatch.setenv(key.upper(), value)
+        else:
+            monkeypatch.delenv(key.upper(), raising=False)
+    # ensure that the AWS config file cannot accidentally be used to provide creds
+    monkeypatch.setenv("AWS_CONFIG_FILE", "/dev/null")
+
+    with pytest.raises(
+        error_type,
+        match=error_msg,
+    ):
+        get_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+
+
+@mock_aws
 @pytest.mark.s3
 def test_get_s3_client_returns_same_instance() -> None:
     """Verify that repeated calls to get_s3_client return the exact same cached client instance."""
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
-    with mock_aws():
-        args = {
+
+    args = {
+        "endpoint_url": "http://localhost:9000",
+        "aws_access_key_id": "key",
+        "aws_secret_access_key": "secret",
+    }
+    client_a = get_s3_client(args)  # type: ignore[reportArgumentType]
+    assert s3_utils._s3_client is not None  # noqa: SLF001
+    # call again with no args - should return the stored version
+    client_b = get_s3_client()
+    assert client_a is client_b
+    # call again with invalid args - should return the stored version, ignoring args
+    client_c = get_s3_client(args={"this": "that", "pip": "pop"})
+    assert client_c == client_a
+    # reset the client and call
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+    client_d = get_s3_client(
+        {
             "endpoint_url": "http://localhost:9000",
-            "aws_access_key_id": "key",
-            "aws_secret_access_key": "secret",
+            "aws_access_key_id": "not a key",
+            "aws_secret_access_key": "not a secret",
         }
-        client_a = get_s3_client(args=args)
-        assert s3_utils._s3_client is not None  # noqa: SLF001
-        # call again with no args - should return the stored version
-        client_b = get_s3_client()
-        assert client_a is client_b
-        # call again with invalid args - should return the stored version, ignoring args
-        client_c = get_s3_client(args={"this": "that", "pip": "pop"})
-        assert client_c == client_a
-        # reset the client and call
-        reset_s3_client()
-        assert s3_utils._s3_client is None  # noqa: SLF001
-        client_d = get_s3_client(
-            {
-                "endpoint_url": "http://localhost:9000",
-                "aws_access_key_id": "not a key",
-                "aws_secret_access_key": "not a secret",
-            }
-        )
-        assert client_d != client_a
+    )
+    assert client_d != client_a
 
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
 
 
-@pytest.mark.s3
-def test_get_s3_client_populates_from_environment() -> None:
-    # set up the environment
-
-    pass
-
-
 # split_s3_path
-
 PATH = "path"
 TO = "to"
 TO_FILE = "to/file.txt"
@@ -239,7 +341,6 @@ INVALID_PATH_ERRORS = {
 
 
 @pytest.mark.parametrize("invalid_path", list(INVALID_PATH_ERRORS.keys()))
-@pytest.mark.s3
 def test_split_s3_path_errors(invalid_path: str) -> None:
     """Ensure that an error is thrown if an invalid s3 path is passed in."""
     with pytest.raises(ValueError, match=INVALID_PATH_ERRORS[invalid_path]):
@@ -247,7 +348,6 @@ def test_split_s3_path_errors(invalid_path: str) -> None:
 
 
 @pytest.mark.parametrize("valid_path", list(EXPECTED.keys()))
-@pytest.mark.s3
 def test_split_s3_path_success(valid_path: str) -> None:
     """Verify that a valid path is correctly split into bucket and key."""
     (bucket, path) = split_s3_path(valid_path)
@@ -534,7 +634,7 @@ def test_stream_to_s3_uploads_large_file(mock_s3_client: Any) -> None:
 
 
 @pytest.mark.skip("TODO: add test(s)")
-def test_accepts_custom_requests_implementation() -> None:
+def test_stream_to_s3_accepts_custom_requests_implementation() -> None:
     """A subclassed or alternate requests module works as a drop-in."""
     # TODO: add test here?
 
@@ -694,7 +794,7 @@ def strip_checksum_algorithm(method: Callable):
     """
 
     @functools.wraps(method)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         """Remove the ChecksumAlgorithm argument from the call."""
         kwargs.pop("ChecksumAlgorithm", None)
         return method(*args, **kwargs)
@@ -703,14 +803,14 @@ def strip_checksum_algorithm(method: Callable):
 
 
 @pytest.fixture
-def mocked_s3_client_no_checksum(mock_s3_client: Any) -> Generator[Any, Any]:
+def mocked_s3_client_no_checksum(mock_s3_client: Any) -> Any:
     """Yield the mocked S3 client with copy_object patched to strip ChecksumAlgorithm.
 
     This works around the moto limitation of not supporting CRC64NVME checksums,
     allowing copy_object calls that include ChecksumAlgorithm to succeed.
     """
     mock_s3_client.copy_object = strip_checksum_algorithm(mock_s3_client.copy_object)
-    yield mock_s3_client
+    return mock_s3_client
 
 
 # copy_object
@@ -728,7 +828,7 @@ def test_copy_object(mocked_s3_client_no_checksum: Any, destination: str) -> Non
 
     obj = mocked_s3_client_no_checksum.get_object(Bucket=destination, Key="dst/path/to/file.txt")
     assert obj["Body"].read() == b"copy me"
-    assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
+    assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_200
 
 
 @pytest.mark.s3
@@ -752,8 +852,6 @@ def test_copy_object_source_bucket_nonexistent() -> None:
 
 
 # copy_directory tests
-
-
 def put_objects(mock_s3_client: Any, bucket: str, keys: list[str], body: bytes = b"data") -> None:
     """Helper to seed objects into a bucket."""
     for key in keys:
@@ -890,12 +988,12 @@ def test_delete_object_removes_object(mock_s3_client: Any, bucket: str, protocol
 
     resp = delete_object(s3_path)
     assert object_exists(s3_path) is False
-    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == 204
+    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_204
 
     # retry the deletion
     resp = delete_object(s3_path)
     assert object_exists(s3_path) is False
-    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == 204
+    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_204
 
 
 # delete_object - bucket does not exist

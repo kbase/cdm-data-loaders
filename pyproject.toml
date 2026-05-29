@@ -14,7 +14,7 @@ dependencies = [
     "click>=8.4.1",
     "defusedxml>=0.7.1",
     "delta-spark>=4.1.0",
-    "dlt[deltalake,duckdb,filesystem,iceberg,parquet]>=1.27.0",
+    "dlt[deltalake,duckdb,filesystem,parquet]>=1.27.0",
     "frictionless[aws]>=5.19.0",
     "frozendict>=2.4.7",
     "ipykernel>=7.2.0",
@@ -196,23 +196,20 @@ markers = ["requires_spark: must be run in an environment where spark is availab
 USER = "fake_user"
 KBASE_AUTH_TOKEN = "test-token-123"
 CDM_TASK_SERVICE_URL = "http://localhost:8080"
-MINIO_ENDPOINT_URL = "http://localhost:9000"
-MINIO_ACCESS_KEY = "minioadmin"
-MINIO_SECRET_KEY = "minioadmin"
-MINIO_SECURE_FLAG = "false"
 BERDL_POD_IP = "192.168.1.100"
 SPARK_MASTER_URL = "spark://localhost:7077"
 BERDL_HIVE_METASTORE_URI = "thrift://localhost:9083"
 SPARK_CLUSTER_MANAGER_API_URL = "http://localhost:8000"
 GOVERNANCE_API_URL = "http://localhost:8000"
 DATALAKE_MCP_SERVER_URL = "http://localhost:8080"
-AWS_ACCESS_KEY_ID = "whatever"
-AWS_SECRET_ACCESS_KEY = "whatever"
-AWS_SECURITY_TOKEN = "whatever"
-AWS_SESSION_TOKEN = "whatever"
+S3_ENDPOINT_URL = "http://localhost:9000"
+# aws config settings
+AWS_CONFIG_FILE = "/dev/null"  # ensure tests don't pick up creds from a real config file
 AWS_DEFAULT_REGION = "us-east-1"
 AWS_ENDPOINT_URL = { unset = true }
 AWS_ENDPOINT_URL_S3 = { unset = true}
+AWS_ACCESS_KEY_ID = { unset = true}
+AWS_SECRET_ACCESS_KEY = { unset = true}
 
 [tool.uv.sources]
 cdm-schema = { git = "https://github.com/kbase/cdm-schema.git" }
