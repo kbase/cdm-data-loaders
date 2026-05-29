@@ -24,12 +24,6 @@ import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
 from cdm_data_loaders.utils.s3 import reset_s3_client
 
-# MinIO connection defaults
-
-MINIO_ENDPOINT_URL = os.environ["MINIO_ENDPOINT_URL"]
-MINIO_ACCESS_KEY = os.environ["MINIO_ACCESS_KEY"]
-MINIO_SECRET_KEY = os.environ["MINIO_SECRET_KEY"]
-
 # Maximum length of a bucket name per S3/DNS spec
 _MAX_BUCKET_LEN = 63
 
@@ -44,9 +38,6 @@ def _minio_reachable() -> bool:
     try:
         client = boto3.client(
             "s3",
-            endpoint_url=MINIO_ENDPOINT_URL,
-            aws_access_key_id=MINIO_ACCESS_KEY,
-            aws_secret_access_key=MINIO_SECRET_KEY,
             config=botocore.config.Config(
                 connect_timeout=1,
                 read_timeout=1,
@@ -82,12 +73,7 @@ def minio_s3_client() -> botocore.client.BaseClient:
     Patches ``get_s3_client`` on every module that uses it so internal calls
     are transparently routed to MinIO.
     """
-    client = boto3.client(
-        "s3",
-        endpoint_url=MINIO_ENDPOINT_URL,
-        aws_access_key_id=MINIO_ACCESS_KEY,
-        aws_secret_access_key=MINIO_SECRET_KEY,
-    )
+    client = boto3.client("s3")
 
     reset_s3_client()
     with (

@@ -22,9 +22,9 @@ services:
       minio:
         condition: service_healthy
     environment:
-      MINIO_ENDPOINT_URL: http://minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      AWS_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
     entrypoint:
       - /bin/sh
       - -c
@@ -32,7 +32,7 @@ services:
         attempts=0
         until python3 -c "
         import urllib.request, os
-        urllib.request.urlopen(os.environ['MINIO_ENDPOINT_URL'] + '/minio/health/live', timeout=1)
+        urllib.request.urlopen(os.environ['AWS_ENDPOINT_URL'] + '/minio/health/live', timeout=1)
         " 2>/dev/null; do
           attempts=$$((attempts + 1))
           if [ "$$attempts" -ge 30 ]; then

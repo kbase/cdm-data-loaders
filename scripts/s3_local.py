@@ -11,9 +11,9 @@ Usage (all commands assume ``uv run`` from the repo root):
 
 Environment variables (with defaults for the walkthrough):
 
-    MINIO_ENDPOINT_URL  http://localhost:9000
-    MINIO_ACCESS_KEY    minioadmin
-    MINIO_SECRET_KEY    minioadmin
+    AWS_ENDPOINT_URL         http://localhost:9000
+    AWS_ACCESS_KEY_ID        minioadmin
+    AWS_SECRET_ACCESS_KEY    minioadmin
 """
 
 import json
@@ -28,9 +28,9 @@ from botocore.client import BaseClient
 def _client() -> BaseClient:
     return boto3.client(
         "s3",
-        endpoint_url=os.environ.get("MINIO_ENDPOINT_URL", "http://localhost:9000"),
-        aws_access_key_id=os.environ.get("MINIO_ACCESS_KEY", "minioadmin"),
-        aws_secret_access_key=os.environ.get("MINIO_SECRET_KEY", "minioadmin"),
+        endpoint_url=os.environ.get("AWS_ENDPOINT_URL", "http://localhost:9000"),
+        aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin"),
+        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin"),
     )
 
 

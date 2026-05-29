@@ -392,8 +392,9 @@ def test_verify_transfer_candidates_empty_input(mock_connect: MagicMock) -> None
     assert verify_transfer_candidates([], {}, _BUCKET, "prefix/") == []
 
 
+@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
-def test_verify_transfer_candidates_unknown_accession_kept(mock_connect: MagicMock) -> None:
+def test_verify_transfer_candidates_unknown_accession_kept(mock_connect: MagicMock, mock_s3: MagicMock) -> None:
     """Accessions not in assemblies dict are kept (conservative)."""
     mock_connect.return_value = MagicMock()
     assert verify_transfer_candidates(["GCF_999999999.1"], {}, _BUCKET, "prefix/") == ["GCF_999999999.1"]

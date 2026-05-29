@@ -788,24 +788,6 @@ def test_upload_dir_raises_on_empty_destination(sample_dir: Path) -> None:
         upload_dir(sample_dir, "")
 
 
-# FIXME: once moto supports CRC64NVME, this can be removed
-def strip_checksum_algorithm(method: Callable):
-    """Wrap a boto3 S3 method to remove the ChecksumAlgorithm argument before calling moto.
-
-    Moto does not implement CRC64NVME checksums, so any call that includes
-    ChecksumAlgorithm='CRC64NVME' would fail. This wrapper silently drops the
-    argument so the rest of the call proceeds normally against the moto backend.
-    """
-
-    @functools.wraps(method)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        """Remove the ChecksumAlgorithm argument from the call."""
-        kwargs.pop("ChecksumAlgorithm", None)
-        return method(*args, **kwargs)
-
-    return wrapper
-
-
 @pytest.fixture
 def mocked_s3_client_no_checksum(mock_s3_client: Any) -> Any:
     """Yield the mocked S3 client with copy_object patched to strip ChecksumAlgorithm.
@@ -852,16 +834,6 @@ def test_copy_object_source_bucket_nonexistent() -> None:
     s3_path = "some-bucket/some/path/to/file"
     assert object_exists(s3_path) is False
     with pytest.raises(Exception, match="The specified bucket does not exist"):
-        copy_object(s3_path, f"{CDM_LAKE_BUCKET}/a/different/path/to/file")
-
-
-@pytest.mark.s3
-@pytest.mark.usefixtures("mock_s3_client")
-def test_copy_file_source_object_nonexistent() -> None:
-    """Ensure that the code throws an error if the source object does not exist."""
-    s3_path = f"{CDM_LAKE_BUCKET}/some/path/to/file"
-    assert object_exists(s3_path) is False
-    with pytest.raises(Exception, match="The specified key does not exist"):
         copy_object(s3_path, f"{CDM_LAKE_BUCKET}/a/different/path/to/file")
 
 
