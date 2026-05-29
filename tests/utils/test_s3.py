@@ -34,9 +34,8 @@ from cdm_data_loaders.utils.s3 import (
     upload_file,
 )
 
-AWS_REGION = "us-east-1"
-AWS_ENV_VARS = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_ENDPOINT_URL_S3", "AWS_ENDPOINT_URL"]
-
+HTTP_200 = 200
+HTTP_204 = 204
 
 SAMPLE_FILES = [
     "dir_one/file1.txt",
@@ -63,13 +62,15 @@ def mock_s3_client() -> Generator[Any, Any]:
     Resets the cached client before and after to prevent state leaking between tests.
     """
     with mock_aws():
-        client = boto3.client("s3", region_name=AWS_REGION)
+        client = boto3.client("s3")
         for bucket in FILES_IN_BUCKETS:
             client.create_bucket(Bucket=bucket)
 
+        # delete any existing client
         reset_s3_client()
         assert s3_utils._s3_client is None  # noqa: SLF001
 
+        # patch in the client that we have just created
         with patch.object(s3_utils, "get_s3_client", return_value=client):
             yield client
 
@@ -130,18 +131,25 @@ def populate_mock_s3(client: Any, file_list_by_bucket: dict[str, list[str]]) -> 
             client.head_object(Bucket=bucket, Key=file)
 
 
+def prep_client_init(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set up environment variables to allow get_s3_client to initialize without error."""
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+    # set up env vars to ensure that the argument takes precedence
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://env-endpoint.com")
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "aws_access_key_id_env_var")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws_secret_access_key_env_var")
+
+
 # Client creation / reset
 @mock_aws
 @pytest.mark.s3
 @pytest.mark.parametrize("endpoint_url", ["http://localhost", None])
 def test_get_s3_client_success_via_args(endpoint_url: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that get_s3_client creates a client with the correct credentials and endpoint URL using args for the creds."""
-    reset_s3_client()
-    assert s3_utils._s3_client is None  # noqa: SLF001
-    # set up env vars to ensure that the argument takes precedence
-    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://env-endpoint.com")
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "aws_access_key_id_env_var")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws_secret_access_key_env_var")
+    prep_client_init(monkeypatch)
+
     args = {
         "aws_access_key_id": "aws_access_key_id_argument",
         "aws_secret_access_key": "aws_secret_access_key_argument",
@@ -165,12 +173,8 @@ def test_get_s3_client_success_via_args(endpoint_url: str | None, monkeypatch: p
 @pytest.mark.parametrize("endpoint_url", ["http://localhost", None])
 def test_get_s3_client_success_via_env(endpoint_url: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that get_s3_client creates a client with the correct credentials and endpoint URL using env vars for the creds."""
-    reset_s3_client()
-    assert s3_utils._s3_client is None  # noqa: SLF001
-    # set up the endpoint URL as an env var to ensure that the argument takes precedence
-    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://env-endpoint.com")
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "aws_access_key_id_env_var")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws_secret_access_key_env_var")
+    prep_client_init(monkeypatch)
+
     args = {
         "endpoint_url": endpoint_url,
     }
@@ -247,6 +251,7 @@ def test_get_s3_client_incomplete_creds_via_env(
             monkeypatch.setenv(key.upper(), value)
         else:
             monkeypatch.delenv(key.upper(), raising=False)
+    # ensure that the AWS config file cannot accidentally be used to provide creds
     monkeypatch.setenv("AWS_CONFIG_FILE", "/dev/null")
 
     with pytest.raises(
@@ -629,7 +634,7 @@ def test_stream_to_s3_uploads_large_file(mock_s3_client: Any) -> None:
 
 
 @pytest.mark.skip("TODO: add test(s)")
-def test_accepts_custom_requests_implementation() -> None:
+def test_stream_to_s3_accepts_custom_requests_implementation() -> None:
     """A subclassed or alternate requests module works as a drop-in."""
     # TODO: add test here?
 
@@ -789,7 +794,7 @@ def strip_checksum_algorithm(method: Callable):
     """
 
     @functools.wraps(method)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         """Remove the ChecksumAlgorithm argument from the call."""
         kwargs.pop("ChecksumAlgorithm", None)
         return method(*args, **kwargs)
@@ -823,7 +828,7 @@ def test_copy_object(mocked_s3_client_no_checksum: Any, destination: str) -> Non
 
     obj = mocked_s3_client_no_checksum.get_object(Bucket=destination, Key="dst/path/to/file.txt")
     assert obj["Body"].read() == b"copy me"
-    assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
+    assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_200
 
 
 @pytest.mark.s3
@@ -983,12 +988,12 @@ def test_delete_object_removes_object(mock_s3_client: Any, bucket: str, protocol
 
     resp = delete_object(s3_path)
     assert object_exists(s3_path) is False
-    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == 204
+    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_204
 
     # retry the deletion
     resp = delete_object(s3_path)
     assert object_exists(s3_path) is False
-    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == 204
+    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_204
 
 
 # delete_object - bucket does not exist
