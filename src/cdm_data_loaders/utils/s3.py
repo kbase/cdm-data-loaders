@@ -158,32 +158,17 @@ def list_matching_objects(s3_path: str) -> list[dict[str, Any]]:
     return contents
 
 
-def head_object(s3_path: str) -> dict[str, Any] | None:
-    """Return metadata for an S3 object, or None if it does not exist.
-
-    The returned dict contains:
-    - ``size``: content length in bytes
-    - ``metadata``: user metadata dict
-    - ``checksum_crc64nvme``: CRC64NVME checksum string (if available)
+def head_object(s3_path: str) -> dict[str, Any]:
+    """Check whether an object exists on s3.
 
     :param s3_path: path to the object on s3, INCLUDING the bucket name
     :type s3_path: str
-    :return: dict with object info, or None if the object does not exist
-    :rtype: dict[str, Any] | None
+    :return: response from the head_object request
+    :rtype: dict[str, Any]
     """
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
-    try:
-        resp = s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
-    except Exception as e:  # noqa: BLE001
-        if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
-            return None
-        raise
-    return {
-        "size": resp["ContentLength"],
-        "metadata": resp.get("Metadata", {}),
-        "checksum_crc64nvme": resp.get("ChecksumCRC64NVME"),
-    }
+    return s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
 
 
 def object_exists(s3_path: str) -> bool:
@@ -194,11 +179,8 @@ def object_exists(s3_path: str) -> bool:
     :return: True if the object exists, False otherwise
     :rtype: bool
     """
-    s3 = get_s3_client()
-
-    (bucket, key) = split_s3_path(s3_path)
     try:
-        s3.head_object(Bucket=bucket, Key=key)
+        head_object(s3_path)
     except Exception as e:  # noqa: BLE001
         error_string = str(e)
         if not error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):

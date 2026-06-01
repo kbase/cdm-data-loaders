@@ -60,14 +60,23 @@ SIZE_DATA = 4
 
 
 @pytest.fixture
-def mock_s3_client() -> Generator[Any, Any]:
+def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[Any, Any]:
     """Yield a mocked S3 client with both valid buckets created.
 
     The function get_s3_client() is patched to ensure that all module functions use this client.
 
     Resets the cached client before and after to prevent state leaking between tests.
     """
+    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    boto3.DEFAULT_SESSION = None
+
     with mock_aws():
+        reset_s3_client()
         client = boto3.client("s3")
         for bucket in FILES_IN_BUCKETS:
             client.create_bucket(Bucket=bucket)
@@ -451,12 +460,13 @@ def test_head_object_and_object_exists_true_and_false(mock_s3_client: Any, proto
         for f in file_list:
             output = head_object(f"{protocol}{bucket}/{f}")
             assert output is not None
-            assert isinstance(output["size"], int)
+            assert isinstance(output["ContentLength"], int)
             assert object_exists(f"{protocol}{bucket}/{f}") is True
 
         nonexistent_file = f"{protocol}{bucket}/a-file-i-just-made-up.txt"
         assert object_exists(nonexistent_file) is False
-        assert head_object(nonexistent_file) is None
+        with pytest.raises(ClientError, match="404"):
+            _ = head_object(nonexistent_file)
 
 
 @pytest.mark.parametrize("s3_path", ["absent", "dir_one", "dir_one/", "dir_one/file1.tnt"])
@@ -1049,18 +1059,16 @@ def test_head_object_returns_info(mock_s3_client: Any) -> None:
     mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key="info/file.txt", Body=b"hello", Metadata={"md5": "abc123"})
     result = head_object(f"{CDM_LAKE_BUCKET}/info/file.txt")
     assert result is not None
-    assert result["size"] == SIZE_HELLO
-    assert result["metadata"]["md5"] == "abc123"
-    # moto may not populate CRC64NVME, but the key should be present
-    assert "checksum_crc64nvme" in result
+    assert result["ContentLength"] == SIZE_HELLO
+    assert result["Metadata"]["md5"] == "abc123"
 
 
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
-def test_head_object_returns_none_for_missing() -> None:
+def test_head_object_raises_for_missing() -> None:
     """Verify that head_object returns None for a non-existent object."""
-    result = head_object(f"{CDM_LAKE_BUCKET}/does/not/exist.txt")
-    assert result is None
+    with pytest.raises(ClientError, match="404"):
+        _ = head_object(f"{CDM_LAKE_BUCKET}/does/not/exist.txt")
 
 
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
@@ -1070,7 +1078,7 @@ def test_head_object_with_protocols(mock_s3_client: Any, protocol: str) -> None:
     mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key="proto/file.txt", Body=b"data")
     result = head_object(f"{protocol}{CDM_LAKE_BUCKET}/proto/file.txt")
     assert result is not None
-    assert result["size"] == SIZE_DATA
+    assert result["ContentLength"] == SIZE_DATA
 
 
 # copy_object

@@ -190,8 +190,15 @@ def test_validate_descriptor_empty_raises() -> None:
 
 
 @pytest.fixture
-def mock_s3() -> Generator[botocore.client.BaseClient]:
+def mock_s3(monkeypatch: pytest.MonkeyPatch) -> Generator[botocore.client.BaseClient]:
     """Mocked S3 client with the CDM Lake bucket pre-created."""
+    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    boto3.DEFAULT_SESSION = None
     with mock_aws():
         client = boto3.client("s3", region_name=AWS_REGION)
         client.create_bucket(Bucket=TEST_BUCKET)

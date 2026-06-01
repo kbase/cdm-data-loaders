@@ -208,10 +208,11 @@ S3_ENDPOINT_URL = "http://localhost:9000"
 # aws config settings
 AWS_CONFIG_FILE = "/dev/null"  # ensure tests don't pick up creds from a real config file
 AWS_DEFAULT_REGION = "us-east-1"
-AWS_ENDPOINT_URL = { unset = true }
-AWS_ENDPOINT_URL_S3 = { unset = true}
-AWS_ACCESS_KEY_ID = { unset = true}
-AWS_SECRET_ACCESS_KEY = { unset = true}
+# default to use containerized S3 test store
+AWS_ENDPOINT_URL = "http://localhost:9000"
+AWS_ENDPOINT_URL_S3 = { unset = true }
+AWS_ACCESS_KEY_ID = "minioadmin"
+AWS_SECRET_ACCESS_KEY = "minioadmin"
 
 [tool.uv.sources]
 cdm-schema = { git = "https://github.com/kbase/cdm-schema.git" }

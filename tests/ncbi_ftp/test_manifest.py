@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from cdm_data_loaders.ncbi_ftp.manifest import (
     AssemblyRecord,
@@ -317,11 +318,11 @@ def test_verify_transfer_candidates_prunes_when_all_match(
 
     def head_side_effect(s3_path: str) -> dict | None:
         if "_genomic.fna.gz" in s3_path:
-            return {"size": 100, "metadata": {"md5": "d41d8cd98f00b204e9800998ecf8427e"}, "checksum_crc64nvme": None}
+            return {"ContentLength": 100, "Metadata": {"md5": "d41d8cd98f00b204e9800998ecf8427e"}, "ChecksumCRC64NVME": None}
         if "_protein.faa.gz" in s3_path:
-            return {"size": 100, "metadata": {"md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"}, "checksum_crc64nvme": None}
+            return {"ContentLength": 100, "Metadata": {"md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"}, "ChecksumCRC64NVME": None}
         if "_assembly_report.txt" in s3_path:
-            return {"size": 100, "metadata": {"md5": "ffffffffffffffffffffffffffffffff"}, "checksum_crc64nvme": None}
+            return {"ContentLength": 100, "Metadata": {"md5": "ffffffffffffffffffffffffffffffff"}, "ChecksumCRC64NVME": None}
         return None
 
     mock_head.side_effect = head_side_effect
@@ -340,12 +341,12 @@ def test_verify_transfer_candidates_keeps_when_md5_differs(
 ) -> None:
     """Assembly is kept when at least one file has a different MD5."""
     mock_connect.return_value = MagicMock()
-    mock_head.return_value = {"size": 100, "metadata": {"md5": "WRONG"}, "checksum_crc64nvme": None}
+    mock_head.return_value = {"ContentLength": 100, "Metadata": {"md5": "WRONG"}, "ChecksumCRC64NVME": None}
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
 @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
-@patch("cdm_data_loaders.ncbi_ftp.manifest.head_object", return_value=None)
+@patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_keeps_when_s3_object_missing(
@@ -356,6 +357,12 @@ def test_verify_transfer_candidates_keeps_when_s3_object_missing(
 ) -> None:
     """Assembly is kept when at least one file doesn't exist in S3."""
     mock_connect.return_value = MagicMock()
+
+    def head_side_effect(s3_path: str) -> dict[str, Any]:
+        if "GCF_000001215.4" in s3_path:
+            raise ClientError({ "Error": { "Code": "404", "Message": "Not found" } }, "HeadObject")
+        return {}
+    mock_head.side_effect = head_side_effect
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
@@ -371,7 +378,7 @@ def test_verify_transfer_candidates_keeps_when_no_md5_metadata(
 ) -> None:
     """Assembly is kept when S3 object exists but has no md5 metadata."""
     mock_connect.return_value = MagicMock()
-    mock_head.return_value = {"size": 100, "metadata": {}, "checksum_crc64nvme": None}
+    mock_head.return_value = {"ContentLength": 100, "Metadata": {}, "ChecksumCRC64NVME": None}
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
@@ -401,7 +408,7 @@ def test_verify_transfer_candidates_unknown_accession_kept(mock_connect: MagicMo
 
 
 @patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
-@patch("cdm_data_loaders.ncbi_ftp.manifest.head_object", return_value=None)
+@patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_short_circuits_on_first_mismatch(
@@ -412,6 +419,12 @@ def test_verify_transfer_candidates_short_circuits_on_first_mismatch(
 ) -> None:
     """Verification stops checking after the first missing/mismatched file."""
     mock_connect.return_value = MagicMock()
+
+    def head_side_effects(s3_path: str) -> dict[str, Any]:
+        if "GCF_000001215.4" in s3_path:
+            raise ClientError({ "Error": { "Code": "404", "Message": "Not found" }}, "HeadObject")
+        return {}
+    mock_head.side_effect = head_side_effects
     verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX)
     assert mock_head.call_count == 1
 
@@ -432,12 +445,12 @@ def test_verify_transfer_candidates_mixed(
     def head_side_effect(s3_path: str) -> dict | None:
         if "GCF_000001215.4_Release_6_plus_ISO1_MT/" in s3_path:
             if "_genomic.fna.gz" in s3_path:
-                return {"size": 1, "metadata": {"md5": "d41d8cd98f00b204e9800998ecf8427e"}, "checksum_crc64nvme": None}
+                return {"ContentLength": 1, "Metadata": {"md5": "d41d8cd98f00b204e9800998ecf8427e"}, "ChecksumCRC64NVME": None}
             if "_protein.faa.gz" in s3_path:
-                return {"size": 1, "metadata": {"md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"}, "checksum_crc64nvme": None}
+                return {"ContentLength": 1, "Metadata": {"md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"}, "ChecksumCRC64NVME": None}
             if "_assembly_report.txt" in s3_path:
-                return {"size": 1, "metadata": {"md5": "ffffffffffffffffffffffffffffffff"}, "checksum_crc64nvme": None}
-        return None
+                return {"ContentLength": 1, "Metadata": {"md5": "ffffffffffffffffffffffffffffffff"}, "ChecksumCRC64NVME": None}
+        raise ClientError({ "Error": { "Code": "404", "Message": "Not found" }}, "HeadObject")
 
     mock_head.side_effect = head_side_effect
     result = verify_transfer_candidates(["GCF_000001215.4", "GCF_000001405.40"], _assemblies(), _BUCKET, _KEY_PREFIX)

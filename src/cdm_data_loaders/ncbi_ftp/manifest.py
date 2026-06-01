@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 from cdm_data_loaders.ncbi_ftp.assembly import (
     FILE_FILTERS,
     FTP_HOST,
@@ -405,13 +407,16 @@ def _does_accession_need_update(
     """
     for fname, expected_md5 in target_checksums.items():
         s3_path = f"{bucket}/{s3_prefix}{fname}"
-        obj_info = head_object(s3_path)
+        s3_md5 = ""
+        try:
+            obj_info = head_object(s3_path)
+            s3_md5 = obj_info.get("Metadata",{}).get("md5", "")
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "404": # type: ignore[union-attr]
+                logger.debug("File missing from store: %s", s3_path)
+                return True
+            raise
 
-        if obj_info is None:
-            logger.debug("File missing from store: %s", s3_path)
-            return True
-
-        s3_md5 = obj_info["metadata"].get("md5", "")
         if s3_md5 != expected_md5:
             logger.debug("MD5 mismatch for %s: S3=%s FTP=%s", s3_path, s3_md5, expected_md5)
             return True

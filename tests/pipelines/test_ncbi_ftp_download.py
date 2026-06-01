@@ -255,8 +255,15 @@ _TEST_BUCKET = "test-bucket"
 _STAGING_PREFIX = "staging/run1/"
 
 
-def _make_moto_s3():
+def _make_moto_s3(monkeypatch: pytest.MonkeyPatch):
     """Return a moto-backed S3 client with the test bucket created."""
+    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    boto3.DEFAULT_SESSION = None
     client = boto3.client("s3", region_name="us-east-1")
     client.create_bucket(Bucket=_TEST_BUCKET)
     return client
@@ -277,10 +284,11 @@ def test_download_and_stage_manifest_source(
     tmp_path: Path,
     manifest_s3_key: str | None,
     use_local: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Assembly paths from the manifest are processed regardless of source (S3 or local)."""
     reset_s3_client()
-    s3 = _make_moto_s3()
+    s3 = _make_moto_s3(monkeypatch)
 
     manifest_local: Path | None = None
     if manifest_s3_key is not None:
@@ -340,6 +348,7 @@ def test_download_and_stage_exactly_one_source_required(
     s3_key: str | None,
     local_path: str | None,
     should_raise: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """ValueError is raised when both or neither manifest sources are given."""
     reset_s3_client()
@@ -353,7 +362,7 @@ def test_download_and_stage_exactly_one_source_required(
                 manifest_local_path=local_path,
             )
     else:
-        s3 = _make_moto_s3()
+        s3 = _make_moto_s3(monkeypatch)
         # For s3_only: seed the object; for local_only: create the file
         if s3_key is not None:
             s3.put_object(Bucket=_TEST_BUCKET, Key=s3_key, Body=_MANIFEST_CONTENT.encode())
@@ -390,10 +399,10 @@ def test_download_and_stage_exactly_one_source_required(
 
 
 @mock_aws
-def test_download_and_stage_uploads_to_staging(tmp_path: Path) -> None:
+def test_download_and_stage_uploads_to_staging(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Files produced by download_assembly_to_local and download_report.json are all staged to S3."""
     reset_s3_client()
-    s3 = _make_moto_s3()
+    s3 = _make_moto_s3(monkeypatch)
 
     manifest_local = tmp_path / "manifest.txt"
     # Single assembly so the fake download writes exactly the files we expect
@@ -446,10 +455,10 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path) -> None:
 
 
 @mock_aws
-def test_download_and_stage_dry_run_skips_upload(tmp_path: Path) -> None:
+def test_download_and_stage_dry_run_skips_upload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """dry_run=True leaves S3 empty and returns staged_objects=0."""
     reset_s3_client()
-    s3 = _make_moto_s3()
+    s3 = _make_moto_s3(monkeypatch)
 
     manifest_local = tmp_path / "manifest.txt"
     manifest_local.write_text(_MANIFEST_CONTENT)
@@ -499,10 +508,10 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path) -> None:
     ],
 )
 @mock_aws
-def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int) -> None:
+def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int, monkeypatch: pytest.MonkeyPatch) -> None:
     """The limit parameter truncates the number of assemblies processed."""
     reset_s3_client()
-    s3 = _make_moto_s3()
+    s3 = _make_moto_s3(monkeypatch)
 
     manifest_local = tmp_path / "manifest.txt"
     manifest_local.write_text(_MANIFEST_CONTENT)
@@ -538,10 +547,10 @@ def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int) -> None:
 
 
 @mock_aws
-def test_download_and_stage_report_shape(tmp_path: Path) -> None:
+def test_download_and_stage_report_shape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Return value contains all expected keys including staged_objects, staging_key_prefix, dry_run."""
     reset_s3_client()
-    s3 = _make_moto_s3()
+    s3 = _make_moto_s3(monkeypatch)
 
     manifest_local = tmp_path / "manifest.txt"
     manifest_local.write_text(_MANIFEST_CONTENT)
