@@ -225,13 +225,9 @@ def compute_diff(
     known = set(previous_assemblies) if previous_assemblies is not None else (previous_accessions or set())
 
     for acc, rec in current.items():
-        if rec.status == "replaced":
+        if rec.status in ("replaced", "suppressed"):
             if acc in known:
-                diff.replaced.append(acc)
-            continue
-        if rec.status == "suppressed":
-            if acc in known:
-                diff.suppressed.append(acc)
+                getattr(diff, rec.status).append(acc)
             continue
         if rec.status != "latest":
             continue
@@ -479,8 +475,8 @@ def verify_transfer_candidates(  # noqa: PLR0913
             s3_prefix = f"{key_prefix}{s3_rel}"
 
             # Quick check: does *anything* exist under this prefix?
-            resp = s3.list_objects_v2(Bucket=bucket, Prefix=s3_prefix, MaxKeys=1)
-            if resp.get("KeyCount", 0) == 0:
+            resp = list_matching_objects(f"{bucket}/{s3_prefix}", max_keys=1)
+            if not resp:
                 # Nothing in the store — definitely needs downloading
                 confirmed.append(acc)
                 skipped_missing += 1

@@ -281,20 +281,6 @@ _MD5_CHECKSUMS_TXT = (
 )
 
 
-def _mock_s3_with_objects() -> MagicMock:
-    """Return a mock S3 client whose list_objects_v2 always reports objects exist."""
-    client = MagicMock()
-    client.list_objects_v2.return_value = {"KeyCount": 1}
-    return client
-
-
-def _mock_s3_empty() -> MagicMock:
-    """Return a mock S3 client whose list_objects_v2 reports no objects."""
-    client = MagicMock()
-    client.list_objects_v2.return_value = {"KeyCount": 0}
-    return client
-
-
 _BUCKET = "cdm-lake"
 _KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
 
@@ -303,7 +289,7 @@ def _assemblies() -> dict:
     return parse_assembly_summary(SAMPLE_SUMMARY)
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
@@ -311,7 +297,7 @@ def test_verify_transfer_candidates_prunes_when_all_match(
     mock_connect: MagicMock,
     mock_retrieve: MagicMock,
     mock_head: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """Assemblies where every file matches S3 are pruned from the list."""
     mock_connect.return_value = MagicMock()
@@ -341,7 +327,7 @@ def test_verify_transfer_candidates_prunes_when_all_match(
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == []
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
@@ -349,7 +335,7 @@ def test_verify_transfer_candidates_keeps_when_md5_differs(
     mock_connect: MagicMock,
     mock_retrieve: MagicMock,
     mock_head: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """Assembly is kept when at least one file has a different MD5."""
     mock_connect.return_value = MagicMock()
@@ -357,7 +343,7 @@ def test_verify_transfer_candidates_keeps_when_md5_differs(
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
@@ -365,7 +351,7 @@ def test_verify_transfer_candidates_keeps_when_s3_object_missing(
     mock_connect: MagicMock,
     mock_retrieve: MagicMock,
     mock_head: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """Assembly is kept when at least one file doesn't exist in S3."""
     mock_connect.return_value = MagicMock()
@@ -379,7 +365,7 @@ def test_verify_transfer_candidates_keeps_when_s3_object_missing(
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
@@ -387,7 +373,7 @@ def test_verify_transfer_candidates_keeps_when_no_md5_metadata(
     mock_connect: MagicMock,
     mock_retrieve: MagicMock,
     mock_head: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """Assembly is kept when S3 object exists but has no md5 metadata."""
     mock_connect.return_value = MagicMock()
@@ -395,11 +381,11 @@ def test_verify_transfer_candidates_keeps_when_no_md5_metadata(
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", side_effect=Exception("FTP error"))
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_keeps_when_ftp_fails(
-    mock_connect: MagicMock, mock_retrieve: MagicMock, mock_s3: MagicMock
+    mock_connect: MagicMock, mock_retrieve: MagicMock, mock_list: MagicMock
 ) -> None:
     """Assembly is kept (conservative) when md5checksums.txt cannot be fetched."""
     mock_connect.return_value = MagicMock()
@@ -412,15 +398,15 @@ def test_verify_transfer_candidates_empty_input(mock_connect: MagicMock) -> None
     assert verify_transfer_candidates([], {}, _BUCKET, "prefix/") == []
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
-def test_verify_transfer_candidates_unknown_accession_kept(mock_connect: MagicMock, mock_s3: MagicMock) -> None:
+def test_verify_transfer_candidates_unknown_accession_kept(mock_connect: MagicMock, mock_list: MagicMock) -> None:
     """Accessions not in assemblies dict are kept (conservative)."""
     mock_connect.return_value = MagicMock()
     assert verify_transfer_candidates(["GCF_999999999.1"], {}, _BUCKET, "prefix/") == ["GCF_999999999.1"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
@@ -428,7 +414,7 @@ def test_verify_transfer_candidates_short_circuits_on_first_mismatch(
     mock_connect: MagicMock,
     mock_retrieve: MagicMock,
     mock_head: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """Verification stops checking after the first missing/mismatched file."""
     mock_connect.return_value = MagicMock()
@@ -443,7 +429,7 @@ def test_verify_transfer_candidates_short_circuits_on_first_mismatch(
     assert mock_head.call_count == 1
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
@@ -451,7 +437,7 @@ def test_verify_transfer_candidates_mixed(
     mock_connect: MagicMock,
     mock_retrieve: MagicMock,
     mock_head: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """A mix of matching and non-matching assemblies: matched pruned, unmatched kept."""
     mock_connect.return_value = MagicMock()
@@ -483,11 +469,11 @@ def test_verify_transfer_candidates_mixed(
     assert result == ["GCF_000001405.40"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_empty())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=[])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_skips_ftp_when_folder_missing(
     mock_connect: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """Accessions with no objects in S3 are confirmed without FTP round-trip."""
     result = verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX)

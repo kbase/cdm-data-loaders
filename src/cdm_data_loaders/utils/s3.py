@@ -132,7 +132,7 @@ def split_s3_path(s3_path: str) -> tuple[str | None, str]:
     return (path_parts[0], path_parts[1])
 
 
-def list_matching_objects(s3_path: str) -> list[dict[str, Any]]:
+def list_matching_objects(s3_path: str, *, max_keys: int = 1000) -> list[dict[str, Any]]:
     """List the remote paths that start with ``s3_path``.
 
     Note: since s3 paths are basically cosmetic, this function returns all paths that start with
@@ -143,13 +143,15 @@ def list_matching_objects(s3_path: str) -> list[dict[str, Any]]:
 
     :param s3_path: directory to be listed, INCLUDING the bucket name
     :type s3_path: str
+    :param max_keys: maximum number of keys to return. boto3 defaults to 1000 records max.
+    :type max_keys: int
     :return: list of object metadata dicts in the directory
     :rtype: list[dict[str, Any]]
     """
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
     paginator = s3.get_paginator("list_objects_v2")
-    page_iterator = paginator.paginate(Bucket=bucket, Prefix=key)
+    page_iterator = paginator.paginate(Bucket=bucket, Prefix=key, MaxKeys=max_keys)
 
     contents = []
     for page in page_iterator:
