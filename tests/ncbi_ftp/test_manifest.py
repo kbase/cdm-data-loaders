@@ -318,11 +318,23 @@ def test_verify_transfer_candidates_prunes_when_all_match(
 
     def head_side_effect(s3_path: str) -> dict | None:
         if "_genomic.fna.gz" in s3_path:
-            return {"ContentLength": 100, "Metadata": {"md5": "d41d8cd98f00b204e9800998ecf8427e"}, "ChecksumCRC64NVME": None}
+            return {
+                "ContentLength": 100,
+                "Metadata": {"md5": "d41d8cd98f00b204e9800998ecf8427e"},
+                "ChecksumCRC64NVME": None,
+            }
         if "_protein.faa.gz" in s3_path:
-            return {"ContentLength": 100, "Metadata": {"md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"}, "ChecksumCRC64NVME": None}
+            return {
+                "ContentLength": 100,
+                "Metadata": {"md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"},
+                "ChecksumCRC64NVME": None,
+            }
         if "_assembly_report.txt" in s3_path:
-            return {"ContentLength": 100, "Metadata": {"md5": "ffffffffffffffffffffffffffffffff"}, "ChecksumCRC64NVME": None}
+            return {
+                "ContentLength": 100,
+                "Metadata": {"md5": "ffffffffffffffffffffffffffffffff"},
+                "ChecksumCRC64NVME": None,
+            }
         return None
 
     mock_head.side_effect = head_side_effect
@@ -360,8 +372,9 @@ def test_verify_transfer_candidates_keeps_when_s3_object_missing(
 
     def head_side_effect(s3_path: str) -> dict[str, Any]:
         if "GCF_000001215.4" in s3_path:
-            raise ClientError({ "Error": { "Code": "404", "Message": "Not found" } }, "HeadObject")
+            raise ClientError({"Error": {"Code": "404", "Message": "Not found"}}, "HeadObject")
         return {}
+
     mock_head.side_effect = head_side_effect
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
@@ -422,8 +435,9 @@ def test_verify_transfer_candidates_short_circuits_on_first_mismatch(
 
     def head_side_effects(s3_path: str) -> dict[str, Any]:
         if "GCF_000001215.4" in s3_path:
-            raise ClientError({ "Error": { "Code": "404", "Message": "Not found" }}, "HeadObject")
+            raise ClientError({"Error": {"Code": "404", "Message": "Not found"}}, "HeadObject")
         return {}
+
     mock_head.side_effect = head_side_effects
     verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX)
     assert mock_head.call_count == 1
@@ -445,12 +459,24 @@ def test_verify_transfer_candidates_mixed(
     def head_side_effect(s3_path: str) -> dict | None:
         if "GCF_000001215.4_Release_6_plus_ISO1_MT/" in s3_path:
             if "_genomic.fna.gz" in s3_path:
-                return {"ContentLength": 1, "Metadata": {"md5": "d41d8cd98f00b204e9800998ecf8427e"}, "ChecksumCRC64NVME": None}
+                return {
+                    "ContentLength": 1,
+                    "Metadata": {"md5": "d41d8cd98f00b204e9800998ecf8427e"},
+                    "ChecksumCRC64NVME": None,
+                }
             if "_protein.faa.gz" in s3_path:
-                return {"ContentLength": 1, "Metadata": {"md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"}, "ChecksumCRC64NVME": None}
+                return {
+                    "ContentLength": 1,
+                    "Metadata": {"md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"},
+                    "ChecksumCRC64NVME": None,
+                }
             if "_assembly_report.txt" in s3_path:
-                return {"ContentLength": 1, "Metadata": {"md5": "ffffffffffffffffffffffffffffffff"}, "ChecksumCRC64NVME": None}
-        raise ClientError({ "Error": { "Code": "404", "Message": "Not found" }}, "HeadObject")
+                return {
+                    "ContentLength": 1,
+                    "Metadata": {"md5": "ffffffffffffffffffffffffffffffff"},
+                    "ChecksumCRC64NVME": None,
+                }
+        raise ClientError({"Error": {"Code": "404", "Message": "Not found"}}, "HeadObject")
 
     mock_head.side_effect = head_side_effect
     result = verify_transfer_candidates(["GCF_000001215.4", "GCF_000001405.40"], _assemblies(), _BUCKET, _KEY_PREFIX)

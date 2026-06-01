@@ -410,9 +410,9 @@ def _does_accession_need_update(
         s3_md5 = ""
         try:
             obj_info = head_object(s3_path)
-            s3_md5 = obj_info.get("Metadata",{}).get("md5", "")
+            s3_md5 = obj_info.get("Metadata", {}).get("md5", "")
         except ClientError as e:
-            if e.response["Error"]["Code"] == "404": # type: ignore[union-attr]
+            if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
                 logger.debug("File missing from store: %s", s3_path)
                 return True
             raise

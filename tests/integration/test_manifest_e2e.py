@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 STABLE_PREFIX = "900"
 
 # Max number of files to transfer for partial upload
-MAX_PARTIAL_FILES=2
+MAX_PARTIAL_FILES = 2
 
 # Helpers
 
@@ -215,8 +215,8 @@ class TestVerifyTransferCandidatesPrunes:
                     Body=b"placeholder",
                     Metadata={"md5": md5},
                 )
-                file_count+=1
-                if file_count>MAX_PARTIAL_FILES:
+                file_count += 1
+                if file_count > MAX_PARTIAL_FILES:
                     break
 
         # verify_transfer_candidates should prune the seeded assembly
