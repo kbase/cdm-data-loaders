@@ -100,13 +100,15 @@ def reset_s3_client() -> None:
     _s3_client = None
 
 
-def split_s3_path(s3_path: str) -> tuple[str | None, str]:
+def split_s3_path(s3_path: str, *, allow_bucket_only: bool = False) -> tuple[str | None, str]:
     """Convert a full s3 path (including bucket) into a bucket and key pair.
 
     Returns a tuple of bucket, key
 
     :param s3_path: an s3 path, including the bucket name
     :type s3_path: str
+    :param allow_bucket_only: Allow parsing of a path that only includes a bucket (no key)
+    :type allow_bucket_only: bool
     :return: tuple of (bucket, key)
     :rtype: tuple[str | None, str]
     """
@@ -127,7 +129,7 @@ def split_s3_path(s3_path: str) -> tuple[str | None, str]:
 
     path_parts = unprefixed_path.split("/", 1)
     # return just the bucket if that is all that was passed
-    if len(path_parts) == 1:
+    if allow_bucket_only and len(path_parts) == 1:
         return (path_parts[0], "")
 
     # the first part should be the bucket and the second part the key
@@ -587,7 +589,7 @@ def cmd_mb(args: list[str]) -> None:
     """Create a bucket: ``mb s3://bucket``."""
     if not args:
         raise SystemExit("Usage: s3_local.py mb s3://BUCKET")
-    bucket, _ = split_s3_path(args[0])
+    bucket, _ = split_s3_path(args[0], allow_bucket_only=True)
     s3 = get_s3_client()
     try:
         s3.head_bucket(Bucket=bucket)
