@@ -10,7 +10,6 @@ downstream phases receive a final, pre-filtered manifest.
 import contextlib
 import csv
 import json
-import re
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
