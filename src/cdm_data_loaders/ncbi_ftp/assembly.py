@@ -13,7 +13,7 @@ from typing import Any
 
 from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX, FTP_HOST
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-from cdm_data_loaders.utils.checksums import compute_md5, verify_md5
+from cdm_data_loaders.utils.checksums import verify_md5
 from cdm_data_loaders.utils.ftp_client import connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
 
 logger = get_cdm_logger()
