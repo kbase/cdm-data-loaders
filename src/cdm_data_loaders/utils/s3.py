@@ -7,8 +7,10 @@ from typing import Any
 import boto3
 import botocore
 import botocore.client
+import json
 import tqdm
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
@@ -124,6 +126,10 @@ def split_s3_path(s3_path: str) -> tuple[str | None, str]:
         raise ValueError(err_msg)
 
     path_parts = unprefixed_path.split("/", 1)
+    # return just the bucket if that is all that was passed
+    if len(path_parts) == 1:
+        return (path_parts[0], "")
+
     # the first part should be the bucket and the second part the key
     if len(path_parts) != 2 or not path_parts[1]:  # noqa: PLR2004
         err_msg = f"Invalid path: '{s3_path}'\nCould not parse out bucket and key"
@@ -572,3 +578,79 @@ def delete_objects(bucket: str, keys: list[str]) -> list[dict[str, Any]]:
         )
         errors.extend(resp.get("Errors", []))
     return errors
+
+
+# Helper functions for command-line tool
+
+
+def cmd_mb(args: list[str]) -> None:
+    """Create a bucket: ``mb s3://bucket``."""
+    if not args:
+        raise SystemExit("Usage: s3_local.py mb s3://BUCKET")
+    bucket, _ = split_s3_path(args[0])
+    s3 = get_s3_client()
+    try:
+        s3.head_bucket(Bucket=bucket)
+        print(f"Bucket already exists: {bucket}")
+    except Exception:  # noqa: BLE001
+        s3.create_bucket(Bucket=bucket)
+        print(f"Created bucket: {bucket}")
+
+
+def cmd_cp(args: list[str]) -> None:
+    """Recursive upload: ``cp LOCAL_DIR s3://bucket/prefix/``."""
+    if len(args) < 2:  # noqa: PLR2004
+        raise SystemExit("Usage: s3_local.py cp LOCAL_DIR s3://BUCKET/PREFIX/")
+    local_dir = Path(args[0])
+    bucket, prefix = split_s3_path(args[1])
+    prefix = prefix.rstrip("/") + "/" if prefix else ""
+    s3 = get_s3_client()
+    count = 0
+    for path in sorted(local_dir.rglob("*")):
+        if path.is_dir():
+            continue
+        rel = path.relative_to(local_dir)
+        key = f"{prefix}{rel}"
+        s3.upload_file(Filename=str(path), Bucket=bucket, Key=key)
+        count += 1
+        print(f"  {key}")
+    print(f"Uploaded {count} files to s3://{bucket}/{prefix}")
+
+
+def cmd_ls(args: list[str]) -> None:
+    """List objects: ``ls s3://bucket/prefix/ [--limit N]``."""
+    if not args:
+        raise SystemExit("Usage: s3_local.py ls s3://BUCKET/PREFIX/ [--limit N]")
+    bucket, prefix = split_s3_path(args[0])
+    limit = 20
+    if "--limit" in args:
+        idx = args.index("--limit")
+        limit = int(args[idx + 1])
+    s3 = get_s3_client()
+    paginator = s3.get_paginator("list_objects_v2")
+    shown = 0
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            print(f"  {obj['Size']:>10}  {obj['Key']}")
+            shown += 1
+            if shown >= limit:
+                return
+
+
+def cmd_head(args: list[str]) -> None:
+    """Show metadata: ``head s3://bucket/key``."""
+    if not args:
+        raise SystemExit("Usage: s3_local.py head s3://BUCKET/KEY")
+    bucket, key = split_s3_path(args[0])
+    s3 = get_s3_client()
+    meta = {}
+    try:
+        resp = s3.head_object(Bucket=bucket, Key=key)
+        meta = resp.get("Metadata", {})
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
+            print(f"File not found in store: {bucket}/{key}")
+            return
+        raise
+    print(f"Metadata for {bucket}/{key}:")
+    print(json.dumps(meta, indent=2))
