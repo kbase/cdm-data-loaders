@@ -13,7 +13,7 @@ from typing import Any
 
 from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX, FTP_HOST
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-from cdm_data_loaders.utils.checksums import compute_md5
+from cdm_data_loaders.utils.checksums import compute_md5, verify_md5
 from cdm_data_loaders.utils.ftp_client import connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
 
 logger = get_cdm_logger()
@@ -61,12 +61,11 @@ def build_accession_path(assembly_dir: str) -> str:
     :return: relative path string
     :raises ValueError: if the assembly directory name cannot be parsed
     """
-    m = ACCESSION_PARTS_REGEX.match(assembly_dir)
-    if not m:
-        msg = f"Cannot parse accession: {assembly_dir}"
-        raise ValueError(msg)
-    db, p1, p2, p3 = m.groups()
-    return f"raw_data/{db}/{p1}/{p2}/{p3}/{assembly_dir}/"
+    if m := ACCESSION_PARTS_REGEX.match(assembly_dir):
+        db, p1, p2, p3 = m.groups()
+        return f"raw_data/{db}/{p1}/{p2}/{p3}/{assembly_dir}/"
+    msg = f"Cannot parse accession: {assembly_dir}"
+    raise ValueError(msg)
 
 
 def parse_assembly_path(assembly_path: str) -> tuple[str, str, str]:
@@ -102,15 +101,13 @@ def _download_and_verify(  # noqa: PLR0913
     # Returns False if file checksums mismatch, True otherwise
     def validate_file(local_file: Path) -> bool:
         if expected_md5:
-            actual_md5 = compute_md5(str(local_file))
-            if actual_md5 == expected_md5:
+            if verify_md5(local_file, expected_md5):
                 (dest_dir / f"{filename}.md5").write_text(expected_md5)
             else:
                 logger.warning(
-                    "  MD5 mismatch for %s: expected %s, got %s",
+                    "  MD5 mismatch for %s: expected %s",
                     filename,
                     expected_md5,
-                    actual_md5,
                 )
                 return False
             logger.debug("  MD5 verified: %s", filename)

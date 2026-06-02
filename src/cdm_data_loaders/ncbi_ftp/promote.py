@@ -6,7 +6,6 @@ archives replaced/suppressed and updated assemblies, and trims the transfer
 manifest so that a re-run of Phase 2 only downloads remaining entries.
 """
 
-import re
 import tempfile
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed

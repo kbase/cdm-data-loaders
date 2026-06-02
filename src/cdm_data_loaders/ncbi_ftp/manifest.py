@@ -187,11 +187,11 @@ def filter_by_prefix_range(
     filtered: dict[str, AssemblyRecord] = {}
     for acc, rec in assemblies.items():
         pfx = accession_prefix(acc)
-        if pfx is None:
-            continue
-        if prefix_from is not None and pfx < prefix_from:
-            continue
-        if prefix_to is not None and pfx > prefix_to:
+        if (
+            pfx is None
+            or (prefix_from is not None and pfx < prefix_from)
+            or (prefix_to is not None and pfx > prefix_to)
+        ):
             continue
         filtered[acc] = rec
     return filtered
