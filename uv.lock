@@ -361,21 +361,24 @@ dependencies = [
 
 [[package]]
 name = "bioregistry"
-version = "0.13.57"
+version = "0.13.58"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "curies" },
+    { name = "idna" },
     { name = "more-click" },
     { name = "pydantic", extra = ["email"] },
     { name = "pystow" },
+    { name = "python-multipart" },
     { name = "requests" },
     { name = "sssom-pydantic" },
     { name = "tqdm" },
+    { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/eb/b4/1843ebbe998ec88b19b2128e4e1ea51976d12949066e5b9260ca1dbe5ea5/bioregistry-0.13.57.tar.gz", hash = "sha256:03d504adb861b858fbfcfe3a6e83057fa10a6f5992e46958f971b53a3fe812ea", size = 6048550, upload-time = "2026-05-23T04:33:55.516Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/5e/22e9ffc92d81d2325b2134723e971671ea09e1467b07e76d557c45e6c6e6/bioregistry-0.13.58.tar.gz", hash = "sha256:06e6f1188988502cf117d4476107e03f0b1460cc31fdaf7f470493ccf5f82361", size = 6050994, upload-time = "2026-05-30T04:43:14.693Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b8/b5/20c3ccde3f3432851f8470d4f95271a018ac73e05e563cfbce63d0527f40/bioregistry-0.13.57-py3-none-any.whl", hash = "sha256:59a0341b666fd960e7508792e5cffb128de3677202c1dbdf17c12051fbe145ef", size = 6139134, upload-time = "2026-05-23T04:33:52.303Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/9b/b9ce93afd4abb2c8a55c1f4204f4043617992f26248ef89ef4d8fe811648/bioregistry-0.13.58-py3-none-any.whl", hash = "sha256:2272f23aa2bc31b384a52613b890de7310f89d3b0a3bec83490395babc6655aa", size = 6141702, upload-time = "2026-05-30T04:43:11.605Z" },
 ]
 
 [[package]]
@@ -467,7 +470,7 @@ xml = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bioregistry", specifier = ">=0.13.57" },
+    { name = "bioregistry", specifier = ">=0.13.58" },
     { name = "boto3", extras = ["crt"], specifier = ">=1.42.55" },
     { name = "click", specifier = ">=8.4.1" },
     { name = "defusedxml", specifier = ">=0.7.1" },
@@ -2599,7 +2602,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "(platform_python_implementation != 'PyPy' and sys_platform == 'win32') or (sys_platform != 'emscripten' and sys_platform != 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
