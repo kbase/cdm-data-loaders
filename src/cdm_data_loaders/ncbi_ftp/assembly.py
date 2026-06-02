@@ -6,19 +6,17 @@ threading, CLI) lives in :mod:`cdm_data_loaders.pipelines.ncbi_ftp_download`.
 """
 
 import contextlib
-import re
 import time
 from ftplib import FTP
 from pathlib import Path
 from typing import Any
 
+from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX, FTP_HOST
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.checksums import compute_md5
 from cdm_data_loaders.utils.ftp_client import connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
 
 logger = get_cdm_logger()
-
-FTP_HOST = "ftp.ncbi.nlm.nih.gov"
 
 FILE_FILTERS = [
     "_gene_ontology.gaf.gz",
@@ -32,17 +30,6 @@ FILE_FILTERS = [
     "_gene_expression_counts.txt.gz",
     "_normalized_gene_expression_counts.txt.gz",
 ]
-
-# Pre-compile regex patterns for performance
-
-# Extracts database (GCF or GCA) and 3-digit prefixes from an assembly directory name
-# (e.g. "GCF_000001215.4" → ("GCF", "000", "001", "215"))
-ASSEMBLY_DIR_REGEX = re.compile(r"(GC[AF])_(\d{3})(\d{3})(\d{3})\.\d+.*")
-
-# Extracts database, full assembly directory, and accession from an FTP path
-# (e.g. "/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/"
-#   → ("GCF", "GCF_000001215.4_Release_6_plus_ISO1_MT", "GCF_000001215.4"))
-ASSEMBLY_PATH_REGEX = re.compile(r"/(GC[AF])/\d{3}/\d{3}/\d{3}/((GC[AF]_\d{9}\.\d+)_[^/]+)/?$")
 
 
 def parse_md5_checksums_file(text: str) -> dict[str, str]:
@@ -74,7 +61,7 @@ def build_accession_path(assembly_dir: str) -> str:
     :return: relative path string
     :raises ValueError: if the assembly directory name cannot be parsed
     """
-    m = ASSEMBLY_DIR_REGEX.match(assembly_dir)
+    m = ACCESSION_PARTS_REGEX.match(assembly_dir)
     if not m:
         msg = f"Cannot parse accession: {assembly_dir}"
         raise ValueError(msg)
@@ -90,7 +77,7 @@ def parse_assembly_path(assembly_path: str) -> tuple[str, str, str]:
     :raises ValueError: if the path cannot be parsed
     """
     if m := ASSEMBLY_PATH_REGEX.search(assembly_path.rstrip("/")):
-        return m.group(1), m.group(2), m.group(3)
+        return m.group(3), m.group(1), m.group(2)
     msg = f"Cannot parse assembly path: {assembly_path}"
     raise ValueError(msg)
 

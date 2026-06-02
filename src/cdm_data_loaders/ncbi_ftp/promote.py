@@ -17,6 +17,7 @@ from typing import Any
 import botocore.exceptions
 import tqdm
 
+from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX
 from cdm_data_loaders.ncbi_ftp.metadata import (
     DescriptorResource,
     archive_descriptor,
@@ -40,17 +41,6 @@ DEFAULT_LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
 
 _MAX_DRY_RUN_LOGS = 10
 
-# Precompile regexes for performance
-
-# Extract the accession from a path (e.g., "raw_data/GCF/000/001/405/GCF_000001405.39_Some_description/file" -> "GCF_000001405.39")
-_ACCESSION_REGEX = re.compile(r"(GC[AF]_\d{9}\.\d+)")
-
-# Extract the database, and 3-digit groups from an accession
-# (e.g., "GCF_000001405.39" -> ("GCF", "000", "001", "405"))
-_ACCESSION_PARTS_REGEX = re.compile(r"(GC[AF])_(\d{3})(\d{3})(\d{3})\.\d+")
-
-# Extract the assembly_dir from a path (e.g., "raw_data/GCF/000/001/405/GCF_000001405.39_Some_description/file" -> "GCF_000001405.39_Some_description")
-_ASSEMBLY_DIR_REGEX = re.compile(r"raw_data/GC[AF]/\d+/\d+/\d+/([^/]+)/")
 
 # Promote from S3 staging prefix
 
@@ -164,10 +154,9 @@ def _group_files_by_assembly(
         rel_path = staged_key[len(normalized_staging_prefix) :]
         if not rel_path.startswith("raw_data/"):
             continue
-        acc_match = _ACCESSION_REGEX.search(staged_key)
-        adir_match = re.search(r"raw_data/GC[AF]/\d+/\d+/\d+/([^/]+)/", staged_key)
-        if acc_match and adir_match:
-            assembly_files[(adir_match.group(1), acc_match.group(1))].append(staged_key)
+        m = ASSEMBLY_PATH_REGEX.search(staged_key)
+        if m:
+            assembly_files[(m.group(1), m.group(2))].append(staged_key)
     return assembly_files
 
 
@@ -382,7 +371,7 @@ def _get_accession_path_prefix(accession: str, lakehouse_key_prefix: str) -> str
     :param lakehouse_key_prefix: S3 key prefix for the Lakehouse dataset root
     :return: S3 key prefix under which all files for the accession are stored, or None if the accession format is invalid
     """
-    m = _ACCESSION_PARTS_REGEX.match(accession)
+    m = ACCESSION_PARTS_REGEX.match(accession)
     if not m:
         logger.warning("Invalid accession format: %s", accession)
         return None
@@ -534,7 +523,7 @@ def _archive_assemblies(  # noqa: PLR0913
         # Infer assembly_dir from key paths for descriptor archival
         assembly_dir: str | None = None
         for src, _ in key_pairs:
-            adir_match = _ASSEMBLY_DIR_REGEX.search(src)
+            adir_match = ASSEMBLY_PATH_REGEX.search(src)
             if adir_match:
                 assembly_dir = adir_match.group(1)
                 break

@@ -26,9 +26,10 @@ from cdm_data_loaders.ncbi_ftp.assembly import (
     build_accession_path,
     parse_md5_checksums_file,
 )
+from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.ftp_client import FTP, connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
-from cdm_data_loaders.utils.s3 import get_s3_client, head_object, list_matching_objects
+from cdm_data_loaders.utils.s3 import head_object, list_matching_objects
 
 logger = get_cdm_logger()
 
@@ -42,15 +43,6 @@ SUMMARY_FTP_PATHS: dict[str, str] = {
     "genbank": "/genomes/ASSEMBLY_REPORTS/assembly_summary_genbank.txt",
 }
 
-# Pre-compile regex patterns for performance
-
-# Extracts the full directory name and accession id from an S3 key
-# (e.g. "GCF_000001215.4_Release_6_plus_ISO1_MT" and "GCF_000001215.4"
-#  from "some/prefix/GCF_000001215.4_Release_6_plus_ISO1_MT/")
-ACCESSION_REGEX = re.compile(r"((GC[AF]_\d{9}\.\d+)[^/]*)/")
-
-# Extracts the 3-digit prefix from an accession (e.g. GCF_000001215.4 → "000")
-ACCESSION_PREFIX_REGEX = re.compile(r"GC[AF]_(\d{3})\d{6}\.\d+")
 
 # Data structures
 
@@ -172,8 +164,8 @@ def get_latest_assembly_paths(assemblies: dict[str, AssemblyRecord], ftp_host: s
 
 def accession_prefix(accession: str) -> str | None:
     """Extract the 3-digit prefix from an accession (e.g. ``GCF_000005845.2`` → ``"000"``)."""
-    m = re.match(r"GC[AF]_(\d{3})\d{6}\.\d+", accession)
-    return m.group(1) if m else None
+    m = ACCESSION_PARTS_REGEX.match(accession)
+    return m.group(2) if m else None
 
 
 def filter_by_prefix_range(
@@ -271,7 +263,7 @@ def _extract_accession_dir_and_id_from_s3_key(key: str) -> tuple[str | None, str
     e.g. "some/prefix/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz"
          → ("GCF_000001215.4_Release_6_plus_ISO1_MT", "GCF_000001215.4")
     """
-    m = ACCESSION_REGEX.search(key)
+    m = ASSEMBLY_PATH_REGEX.search(key)
     return (m.group(1), m.group(2)) if m else (None, None)
 
 
@@ -451,7 +443,6 @@ def verify_transfer_candidates(  # noqa: PLR0913
     if not accessions:
         return []
 
-    s3 = get_s3_client()
     ftp: Any = None  # lazily connected only when needed
     confirmed: list[str] = []
     pruned = 0
