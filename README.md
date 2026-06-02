@@ -10,6 +10,7 @@ Repo for CDM input data loading and wrangling
   - [Development](#development)
     - [Spark and other non-python dependencies](#spark-and-other-non-python-dependencies)
     - [Tests](#tests)
+      - [Integration tests (MinIO + NCBI FTP)](#integration-tests-minio--ncbi-ftp)
   - [Loading genomes, contigs, and features](#loading-genomes-contigs-and-features)
   - [Running bbmap stats and checkm2 on genome or contigset files](#running-bbmap-stats-and-checkm2-on-genome-or-contigset-files)
 
@@ -69,6 +70,35 @@ uv run python -m ipykernel install --user --name cdm-data-loaders --display-name
 ```
 
 The `cdm-data-loaders` kernel should now be available from the dropdown list of kernels in the Jupyter notebook interface.
+
+#### Jupyter Kernel Environment Variables
+
+Often you will need access to environment variables that are included in the default Lakehouse
+Jupyter environment, but will not be automatically included in your custom Jupyter kernel. To address
+this, first identify the needed variables and values, and add them to your new kernel configuration
+with the following steps:
+
+Open a new Jupyter Notebook __with the default kernel__ and run this in a new cell:
+```python
+import os
+for k, v in sorted(os.environ.items()):
+    if "AWS" in k or "S3" in k or "MINIO" in k: # replace with whatever keys you're interested in
+        print(f"{k}={v}")
+```
+Take the output and add the environment vars to the `kernel.json` for your new kernel (e.g., in `cdm-data-loaders/.venv/share/jupyter/kernels/python3/kernel.json`):
+```json
+{
+  "argv": ["..."],
+  "display_name": "cdm-data-loaders",
+  "language": "python",
+  "env": {
+    "AWS_ACCESS_KEY_ID": "...",
+    "AWS_SECRET_ACCESS_KEY": "...",
+    "AWS_DEFAULT_REGION": "...",
+    ...
+  }
+}
+```
 
 
 ## Running import pipelines
@@ -144,6 +174,65 @@ To generate coverage for the tests, run
 ```
 
 The standard python `coverage` package is used and coverage can be generated as html or other formats by changing the parameters.
+
+
+#### Integration tests (MinIO + NCBI FTP)
+
+End-to-end integration tests for the NCBI assembly pipeline live in `tests/integration/`. They exercise the full flow — manifest diffing, FTP download, S3 promote/archive — against a locally running [MinIO](https://min.io/) container and the real NCBI FTP server.
+
+**Requirements:**
+- Docker (for MinIO)
+- Network access to `ftp.ncbi.nlm.nih.gov`
+
+**Running with Docker Compose (easiest)**
+
+The [docker-compose.yml](docker-compose.yml) at the repo root defines both a MinIO service and the integration test runner. To build the image, start MinIO, and run the integration tests in one command:
+
+```sh
+docker compose up --build --abort-on-container-exit
+```
+
+Compose will stream test output to the terminal and exit with the pytest exit code. To clean up afterwards:
+
+```sh
+docker compose down --volumes
+```
+
+**Running manually**
+
+If you prefer to run the tests directly against a local MinIO instance (e.g. for faster iteration during development), follow the steps below.
+
+**1. Start MinIO locally:**
+
+```sh
+docker run -d \
+  --name minio \
+  -p 9000:9000 \
+  -p 9001:9001 \
+  -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio:RELEASE.2025-02-28T09-55-16Z server /data --console-address ":9001"
+```
+
+**2. Run the integration tests:**
+
+```sh
+> uv run pytest tests/integration/ -m integration -v
+```
+
+Tests are automatically skipped when MinIO is not reachable, so the default `uv run pytest` will never fail due to a missing MinIO instance.
+
+**3. Inspect results:**
+
+Buckets are **not** cleaned up after tests. Browse the MinIO console at [http://localhost:9001](http://localhost:9001) (login: `minioadmin` / `minioadmin`) to inspect the final state of each test bucket. Each test method creates its own bucket (e.g. `integ-test-promote-dry-run`).
+
+**4. Stop MinIO when done:**
+
+```sh
+docker stop minio && docker rm minio
+```
+
+> **Note:** These tests download real assemblies from NCBI FTP and are inherently slow (~30–60s per assembly). They are also marked `slow_test` so you can exclude them independently: `uv run pytest -m "not slow_test"`.
 
 
 ## Loading genomes, contigs, and features
