@@ -168,9 +168,8 @@ class ThreadLocalFTP:
                 # Connection is stale — discard it and reconnect below
                 with contextlib.suppress(Exception):
                     ftp.quit()
-                with self._lock:
-                    with contextlib.suppress(ValueError):
-                        self._connections.remove(ftp)
+                with self._lock, contextlib.suppress(ValueError):
+                    self._connections.remove(ftp)
                 ftp = None
                 self._local.ftp = None
         if ftp is None:

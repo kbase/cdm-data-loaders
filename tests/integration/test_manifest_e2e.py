@@ -35,8 +35,10 @@ if TYPE_CHECKING:
 # assemblies, keeping FTP traffic minimal.
 STABLE_PREFIX = "900"
 
+# Max number of files to transfer for partial upload
+MAX_PARTIAL_FILES = 2
 
-# ── Helpers ─────────────────────────────────────────────────────────────
+# Helpers
 
 
 def _download_and_filter() -> tuple[dict[str, AssemblyRecord], dict[str, AssemblyRecord]]:
@@ -50,7 +52,7 @@ def _download_and_filter() -> tuple[dict[str, AssemblyRecord], dict[str, Assembl
     return full, filtered
 
 
-# ── Tests ───────────────────────────────────────────────────────────────
+# Tests
 
 
 @pytest.mark.integration
@@ -172,8 +174,12 @@ class TestVerifyTransferCandidatesPrunes:
             pytest.skip(f"No latest assemblies in prefix {STABLE_PREFIX}")
 
         # Pick one assembly to pre-seed in MinIO with correct checksums
-        acc = next(iter(sorted(latest)))
+        # and one to partially pre-seed to ensure it doesn't get pruned
+        i_latest = iter(sorted(latest))
+        acc = next(i_latest)
+        acc_part = next(i_latest)
         rec = latest[acc]
+        rec_part = latest[acc_part]
         ftp_dir = rec.ftp_path.replace("https://ftp.ncbi.nlm.nih.gov", "")
 
         # Fetch the real md5checksums.txt from FTP
@@ -186,9 +192,9 @@ class TestVerifyTransferCandidatesPrunes:
         checksums = parse_md5_checksums_file(md5_text)
 
         # Seed MinIO with dummy files that have the right MD5 metadata
-        rel = build_accession_path(rec.assembly_dir)
         s3 = minio_s3_client
         path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
+        rel = build_accession_path(rec.assembly_dir)
         for fname, md5 in checksums.items():
             if any(fname.endswith(suffix) for suffix in FILE_FILTERS):
                 key = f"{path_prefix}{rel}{fname}"
@@ -198,6 +204,20 @@ class TestVerifyTransferCandidatesPrunes:
                     Body=b"placeholder",
                     Metadata={"md5": md5},
                 )
+        rel = build_accession_path(rec_part.assembly_dir)
+        file_count = 0
+        for fname, md5 in checksums.items():
+            if any(fname.endswith(suffix) for suffix in FILE_FILTERS):
+                key = f"{path_prefix}{rel}{fname}"
+                s3.put_object(
+                    Bucket=test_bucket,
+                    Key=key,
+                    Body=b"placeholder",
+                    Metadata={"md5": md5},
+                )
+                file_count += 1
+                if file_count > MAX_PARTIAL_FILES:
+                    break
 
         # verify_transfer_candidates should prune the seeded assembly
         candidates = sorted(latest.keys())
@@ -209,6 +229,7 @@ class TestVerifyTransferCandidatesPrunes:
         )
 
         assert acc not in result, f"Expected {acc} to be pruned (MD5 matches)"
+        assert acc_part in result, f"Expected {acc_part} to not be pruned (missing files)"
         # Other candidates without seeded data should remain
         remaining_candidates = [c for c in candidates if c != acc]
         for c in remaining_candidates:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST  # noqa: F401
+from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST
 from cdm_data_loaders.ncbi_ftp.manifest import (  # noqa: F401
     AssemblyRecord,
     compute_diff,
@@ -22,7 +22,7 @@ from cdm_data_loaders.ncbi_ftp.promote import (
     DEFAULT_LAKEHOUSE_KEY_PREFIX,
     promote_from_s3,
 )
-from cdm_data_loaders.utils.s3 import split_s3_path  # noqa: F401
+from cdm_data_loaders.utils.s3 import split_s3_path
 
 NOTEBOOKS_DIR = Path(__file__).resolve().parents[2] / "notebooks"
 
@@ -77,7 +77,7 @@ def test_promote_notebook_imports() -> None:
 
 def test_download_notebook_imports() -> None:
     """All download notebook imports resolve without error."""
-    from cdm_data_loaders.pipelines.ncbi_ftp_download import (  # noqa: F401
+    from cdm_data_loaders.pipelines.ncbi_ftp_download import (
         DEFAULT_STAGING_KEY_PREFIX,
         download_and_stage,
     )

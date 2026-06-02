@@ -6,19 +6,17 @@ threading, CLI) lives in :mod:`cdm_data_loaders.pipelines.ncbi_ftp_download`.
 """
 
 import contextlib
-import re
 import time
 from ftplib import FTP
 from pathlib import Path
 from typing import Any
 
+from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX, FTP_HOST
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-from cdm_data_loaders.utils.checksums import compute_md5
+from cdm_data_loaders.utils.checksums import verify_md5
 from cdm_data_loaders.utils.ftp_client import connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
 
 logger = get_cdm_logger()
-
-FTP_HOST = "ftp.ncbi.nlm.nih.gov"
 
 FILE_FILTERS = [
     "_gene_ontology.gaf.gz",
@@ -44,17 +42,14 @@ def parse_md5_checksums_file(text: str) -> dict[str, str]:
     """
     checksums: dict[str, str] = {}
     for raw_line in text.strip().splitlines():
-        stripped = raw_line.strip()
-        if not stripped:
-            continue
-        parts = stripped.split("  ", maxsplit=1)
+        parts = raw_line.strip().split("  ", maxsplit=1)
         if len(parts) == 2:  # noqa: PLR2004
             md5_hash, filename = parts
             checksums[filename.removeprefix("./")] = md5_hash.strip()
     return checksums
 
 
-# ── Path helpers ─────────────────────────────────────────────────────────
+# Path helpers
 
 
 def build_accession_path(assembly_dir: str) -> str:
@@ -66,12 +61,11 @@ def build_accession_path(assembly_dir: str) -> str:
     :return: relative path string
     :raises ValueError: if the assembly directory name cannot be parsed
     """
-    m = re.match(r"GC[AF]_(\d{3})(\d{3})(\d{3})\.\d+.*", assembly_dir)
-    if not m:
-        msg = f"Cannot parse accession: {assembly_dir}"
-        raise ValueError(msg)
-    p1, p2, p3 = m.groups()
-    return f"raw_data/{assembly_dir[:3]}/{p1}/{p2}/{p3}/{assembly_dir}/"
+    if m := ACCESSION_PARTS_REGEX.match(assembly_dir):
+        db, p1, p2, p3 = m.groups()
+        return f"raw_data/{db}/{p1}/{p2}/{p3}/{assembly_dir}/"
+    msg = f"Cannot parse accession: {assembly_dir}"
+    raise ValueError(msg)
 
 
 def parse_assembly_path(assembly_path: str) -> tuple[str, str, str]:
@@ -81,17 +75,13 @@ def parse_assembly_path(assembly_path: str) -> tuple[str, str, str]:
     :return: tuple of ``(database, assembly_dir, accession)``
     :raises ValueError: if the path cannot be parsed
     """
-    m = re.search(
-        r"/(GC[AF])/\d{3}/\d{3}/\d{3}/((GC[AF]_\d{9}\.\d+)_[^/]+)/?$",
-        assembly_path.rstrip("/"),
-    )
-    if not m:
-        msg = f"Cannot parse assembly path: {assembly_path}"
-        raise ValueError(msg)
-    return m.group(1), m.group(2), m.group(3)
+    if m := ASSEMBLY_PATH_REGEX.search(assembly_path.rstrip("/")):
+        return m.group(3), m.group(1), m.group(2)
+    msg = f"Cannot parse assembly path: {assembly_path}"
+    raise ValueError(msg)
 
 
-# ── Single assembly download ────────────────────────────────────────────
+# Single assembly download
 
 
 def _download_and_verify(  # noqa: PLR0913
@@ -107,36 +97,37 @@ def _download_and_verify(  # noqa: PLR0913
     local_file = dest_dir / filename
     expected_md5 = md5_checksums.get(filename)
 
+    # Define a helper function to validate the MD5 checksum of the downloaded file if one exists.
+    # Returns False if file checksums mismatch, True otherwise
+    def validate_file(local_file: Path) -> bool:
+        if expected_md5:
+            if verify_md5(local_file, expected_md5):
+                (dest_dir / f"{filename}.md5").write_text(expected_md5)
+            else:
+                logger.warning(
+                    "  MD5 mismatch for %s: expected %s",
+                    filename,
+                    expected_md5,
+                )
+                return False
+            logger.debug("  MD5 verified: %s", filename)
+        else:
+            stats["files_without_checksum"] += 1
+        return True
+
+    # Try 3 times to download and validate the file; if it fails, delete any partial file and return
     for attempt in range(1, 4):
         logger.debug("  Downloading %s (attempt %d/3)", filename, attempt)
         with local_file.open("wb") as f:
             ftp.retrbinary(f"RETR {filename}", f.write)
         last_activity = time.monotonic()
 
-        if expected_md5:
-            actual_md5 = compute_md5(str(local_file))
-            if actual_md5 != expected_md5:
-                logger.warning(
-                    "  MD5 mismatch for %s: expected %s, got %s",
-                    filename,
-                    expected_md5,
-                    actual_md5,
-                )
-                if attempt < 3:  # noqa: PLR2004
-                    continue
-                stats["files_skipped_checksum_mismatch"] += 1
-                local_file.unlink(missing_ok=True)
-                return last_activity
-            logger.debug("  MD5 verified: %s", filename)
-        else:
-            stats["files_without_checksum"] += 1
+        if validate_file(local_file):
+            stats["files_downloaded"] += 1
+            return last_activity
 
-        if expected_md5:
-            (dest_dir / f"{filename}.md5").write_text(expected_md5)
-
-        stats["files_downloaded"] += 1
-        return last_activity
-
+    stats["files_skipped_checksum_mismatch"] += 1
+    local_file.unlink(missing_ok=True)
     return last_activity
 
 

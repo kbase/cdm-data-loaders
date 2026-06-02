@@ -10,7 +10,6 @@ downstream phases receive a final, pre-filtered manifest.
 import contextlib
 import csv
 import json
-import re
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -18,17 +17,25 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 from cdm_data_loaders.ncbi_ftp.assembly import (
     FILE_FILTERS,
     FTP_HOST,
     build_accession_path,
     parse_md5_checksums_file,
 )
+from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-from cdm_data_loaders.utils.ftp_client import connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
-from cdm_data_loaders.utils.s3 import get_s3_client, head_object
+from cdm_data_loaders.utils.ftp_client import FTP, connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
+from cdm_data_loaders.utils.s3 import head_object, list_matching_objects
 
 logger = get_cdm_logger()
+
+_DATABASE_ACC_PREFIX: dict[str, str] = {
+    "refseq": "GCF_",
+    "genbank": "GCA_",
+}
 
 SUMMARY_FTP_PATHS: dict[str, str] = {
     "refseq": "/genomes/ASSEMBLY_REPORTS/assembly_summary_refseq.txt",
@@ -36,7 +43,7 @@ SUMMARY_FTP_PATHS: dict[str, str] = {
 }
 
 
-# ── Data structures ─────────────────────────────────────────────────────
+# Data structures
 
 
 @dataclass
@@ -60,7 +67,7 @@ class DiffResult:
     suppressed: list[str] = field(default_factory=list)
 
 
-# ── Assembly summary download & parsing ──────────────────────────────────
+# Assembly summary download & parsing
 
 
 def download_assembly_summary(database: str = "refseq", ftp_host: str = FTP_HOST) -> str:
@@ -151,13 +158,13 @@ def get_latest_assembly_paths(assemblies: dict[str, AssemblyRecord], ftp_host: s
     return paths
 
 
-# ── Prefix filtering ────────────────────────────────────────────────────
+# Prefix filtering
 
 
 def accession_prefix(accession: str) -> str | None:
     """Extract the 3-digit prefix from an accession (e.g. ``GCF_000005845.2`` → ``"000"``)."""
-    m = re.match(r"GC[AF]_(\d{3})\d{6}\.\d+", accession)
-    return m.group(1) if m else None
+    m = ACCESSION_PARTS_REGEX.match(accession)
+    return m.group(2) if m else None
 
 
 def filter_by_prefix_range(
@@ -179,20 +186,20 @@ def filter_by_prefix_range(
     filtered: dict[str, AssemblyRecord] = {}
     for acc, rec in assemblies.items():
         pfx = accession_prefix(acc)
-        if pfx is None:
-            continue
-        if prefix_from is not None and pfx < prefix_from:
-            continue
-        if prefix_to is not None and pfx > prefix_to:
+        if (
+            pfx is None
+            or (prefix_from is not None and pfx < prefix_from)
+            or (prefix_to is not None and pfx > prefix_to)
+        ):
             continue
         filtered[acc] = rec
     return filtered
 
 
-# ── Diff computation ────────────────────────────────────────────────────
+# Diff computation
 
 
-def compute_diff(  # noqa: PLR0912
+def compute_diff(
     current: dict[str, AssemblyRecord],
     previous_assemblies: dict[str, AssemblyRecord] | None = None,
     previous_accessions: set[str] | None = None,
@@ -206,21 +213,12 @@ def compute_diff(  # noqa: PLR0912
     """
     diff = DiffResult()
 
-    if previous_assemblies is not None:
-        known = set(previous_assemblies.keys())
-    elif previous_accessions is not None:
-        known = previous_accessions
-    else:
-        known = set()
+    known = set(previous_assemblies) if previous_assemblies is not None else (previous_accessions or set())
 
     for acc, rec in current.items():
-        if rec.status == "replaced":
+        if rec.status in ("replaced", "suppressed"):
             if acc in known:
-                diff.replaced.append(acc)
-            continue
-        if rec.status == "suppressed":
-            if acc in known:
-                diff.suppressed.append(acc)
+                getattr(diff, rec.status).append(acc)
             continue
         if rec.status != "latest":
             continue
@@ -233,10 +231,8 @@ def compute_diff(  # noqa: PLR0912
                 diff.updated.append(acc)
 
     # Accessions in previous but entirely absent from current (withdrawn)
-    current_accs = set(current.keys())
-    for acc in known:
-        if acc not in current_accs and acc not in diff.suppressed:
-            diff.suppressed.append(acc)
+    current_accs = set(current)
+    diff.suppressed.extend(known - current_accs)
 
     diff.new.sort()
     diff.updated.sort()
@@ -245,7 +241,7 @@ def compute_diff(  # noqa: PLR0912
     return diff
 
 
-# ── FTP URL helpers ──────────────────────────────────────────────────────
+# FTP URL helpers
 
 
 def _ftp_dir_from_url(ftp_url: str, ftp_host: str = FTP_HOST) -> str:
@@ -257,39 +253,17 @@ def _ftp_dir_from_url(ftp_url: str, ftp_host: str = FTP_HOST) -> str:
     return ftp_url
 
 
-# ── Synthetic summary from S3 store scan ────────────────────────────────
+# Synthetic summary from S3 store scan
 
 
-def _extract_accession_from_s3_key(key: str) -> str | None:
-    """Extract the assembly accession from an S3 object key.
+def _extract_accession_dir_and_id_from_s3_key(key: str) -> tuple[str | None, str | None]:
+    """Extract both accession and assembly directory from an S3 object key.
 
-    Looks for the pattern GCF_######.# or GCA_######.# in the key path.
-
-    :param key: S3 object key
-    :return: accession (e.g. "GCF_000001215.4") or None if not found
+    e.g. "some/prefix/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz"
+         → ("GCF_000001215.4_Release_6_plus_ISO1_MT", "GCF_000001215.4")
     """
-    m = re.search(r"(GC[AF]_\d{3}\d{6}\.\d+)", key)
-    return m.group(1) if m else None
-
-
-def _extract_assembly_dir_from_s3_key(key: str) -> str | None:
-    """Extract the assembly directory name from an S3 object key.
-
-    The assembly directory is the path component that follows the accession
-    and contains assembly metadata (e.g. "GCF_000001215.4_Release_6_plus_ISO1_MT").
-
-    :param key: S3 object key
-    :return: assembly directory name or None if not found
-    """
-    # Match accession followed by underscore and then capture until next /
-    m = re.search(r"(GC[AF]_\d{3}\d{6}\.\d+[^/]*)/", key)
-    return m.group(1) if m else None
-
-
-_DATABASE_ACC_PREFIX: dict[str, str] = {
-    "refseq": "GCF_",
-    "genbank": "GCA_",
-}
+    m = ASSEMBLY_PATH_REGEX.search(key)
+    return (m.group(1), m.group(2)) if m else (None, None)
 
 
 def scan_store_to_synthetic_summary(
@@ -326,7 +300,7 @@ def scan_store_to_synthetic_summary(
     :return: dict mapping accession to ``AssemblyRecord``
     """
     try:
-        datetime.strptime(release_date, "%Y/%m/%d")
+        datetime.strptime(release_date, "%Y/%m/%d").astimezone(UTC)
     except ValueError as exc:
         msg = f"Invalid release_date '{release_date}'. Expected format YYYY/MM/DD."
         raise ValueError(msg) from exc
@@ -336,54 +310,108 @@ def scan_store_to_synthetic_summary(
         msg = f"Unknown database: {database!r}. Expected 'refseq' or 'genbank'."
         raise ValueError(msg)
 
-    s3 = get_s3_client()
     assemblies: dict[str, AssemblyRecord] = {}
     processed_count = 0
 
     try:
-        paginator = s3.get_paginator("list_objects_v2")
-        pages = paginator.paginate(Bucket=bucket, Prefix=key_prefix)
+        objs = list_matching_objects(f"{bucket}/{key_prefix}")
 
-        for page in pages:
-            for obj in page.get("Contents", []):
-                acc = _extract_accession_from_s3_key(obj["Key"])
-                if not acc or not acc.startswith(acc_prefix):
-                    continue
-                assembly_dir = _extract_assembly_dir_from_s3_key(obj["Key"])
+        for obj in objs:
+            assembly_dir, acc = _extract_accession_dir_and_id_from_s3_key(obj["Key"])
+            if not acc or not acc.startswith(acc_prefix):
+                continue
 
-                if not acc or not assembly_dir:
-                    continue
+            if not assembly_dir:
+                continue
 
-                if acc not in assemblies:
-                    # First object for this accession; store it.
-                    # Construct a fake FTP path that ends with assembly_dir so
-                    # that round-tripping through parse_assembly_summary (which
-                    # derives assembly_dir via ftp_path.rstrip("/").split("/")[-1])
-                    # yields the correct assembly_dir and therefore correct diffs.
-                    fake_ftp_path = f"https://ftp.ncbi.nlm.nih.gov/synthetic/{assembly_dir}"
-                    assemblies[acc] = AssemblyRecord(
-                        accession=acc,
-                        status="latest",
-                        seq_rel_date=release_date,
-                        ftp_path=fake_ftp_path,
-                        assembly_dir=assembly_dir,
-                    )
-                    processed_count += 1
-                    if progress_callback is not None:
-                        progress_callback(processed_count, acc)
+            if acc not in assemblies:
+                # First object for this accession; store it.
+                # Construct a fake FTP path that ends with assembly_dir so
+                # that round-tripping through parse_assembly_summary (which
+                # derives assembly_dir via ftp_path.rstrip("/").split("/")[-1])
+                # yields the correct assembly_dir and therefore correct diffs.
+                fake_ftp_path = f"https://ftp.ncbi.nlm.nih.gov/synthetic/{assembly_dir}"
+                assemblies[acc] = AssemblyRecord(
+                    accession=acc,
+                    status="latest",
+                    seq_rel_date=release_date,
+                    ftp_path=fake_ftp_path,
+                    assembly_dir=assembly_dir,
+                )
+                processed_count += 1
+                if progress_callback is not None:
+                    progress_callback(processed_count, acc)
 
-    except Exception as e:  # noqa: BLE001
-        logger.error("Error scanning store: %s", e)
+    except Exception:
+        logger.exception("Error scanning store")
         raise
 
     logger.info("Scanned S3 store: found %d unique assemblies", len(assemblies))
     return assemblies
 
 
-# ── Checksum verification against S3 store ───────────────────────────────
+# Checksum verification against S3 store
 
 
-def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
+def _fetch_accession_checksums_from_ftp(
+    ftp: FTP | None, ftp_host: str, last_activity: float, current_accession: str
+) -> tuple[dict[str, str], float]:
+    """Fetch and parse the md5checksums.txt file for a given accession from FTP.
+
+    :param ftp: FTP connection object
+    :param ftp_host: NCBI FTP hostname
+    :param last_activity: timestamp of the last FTP activity
+    :param current_accession: accession identifier
+    :return: dictionary mapping file names to MD5 checksums and updated last_activity timestamp
+    """
+    if ftp is None:
+        ftp = connect_ftp(ftp_host)
+    last_activity = ftp_noop_keepalive(ftp, last_activity)
+    ftp_dir = _ftp_dir_from_url(current_accession, ftp_host)
+    try:
+        md5_text = ftp_retrieve_text(ftp, ftp_dir.rstrip("/") + "/md5checksums.txt")
+        last_activity = time.monotonic()
+        ftp_checksums = parse_md5_checksums_file(md5_text)
+    except Exception:  # noqa: BLE001
+        logger.warning("Cannot fetch md5checksums.txt for %s, keeping in transfer list", current_accession)
+        return {}, last_activity
+    return {
+        fname: md5 for fname, md5 in ftp_checksums.items() if any(fname.endswith(suffix) for suffix in FILE_FILTERS)
+    }, last_activity
+
+
+def _does_accession_need_update(
+    target_checksums: dict[str, str],
+    bucket: str,
+    s3_prefix: str,
+) -> bool:
+    """Check if any file for an accession needs updating by comparing FTP checksums to S3 metadata.
+
+    :param target_checksums: dict mapping file names to expected MD5 checksums from FTP
+    :param bucket: S3 bucket name
+    :param s3_prefix: S3 key prefix for the assembly in question
+    :return: True if any file is missing or has a checksum mismatch, False otherwise
+    """
+    for fname, expected_md5 in target_checksums.items():
+        s3_path = f"{bucket}/{s3_prefix}{fname}"
+        s3_md5 = ""
+        try:
+            obj_info = head_object(s3_path)
+            s3_md5 = obj_info.get("Metadata", {}).get("md5", "")
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
+                logger.debug("File missing from store: %s", s3_path)
+                return True
+            raise
+
+        if s3_md5 != expected_md5:
+            logger.debug("MD5 mismatch for %s: S3=%s FTP=%s", s3_path, s3_md5, expected_md5)
+            return True
+
+    return False
+
+
+def verify_transfer_candidates(  # noqa: PLR0913
     accessions: list[str],
     current_assemblies: dict[str, AssemblyRecord],
     bucket: str,
@@ -414,20 +442,22 @@ def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
     if not accessions:
         return []
 
-    s3 = get_s3_client()
     ftp: Any = None  # lazily connected only when needed
     confirmed: list[str] = []
     pruned = 0
     skipped_missing = 0
     last_activity = time.monotonic()
 
+    def _progress(done: int, total: int, acc: str) -> None:
+        if progress_callback is not None:
+            progress_callback(done, total, acc)
+
     try:
         for done, acc in enumerate(accessions, start=1):
             rec = current_assemblies.get(acc)
             if not rec:
                 confirmed.append(acc)
-                if progress_callback is not None:
-                    progress_callback(done, len(accessions), acc)
+                _progress(done, len(accessions), acc)
                 continue
 
             # Build S3 prefix for this assembly
@@ -435,61 +465,26 @@ def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
             s3_prefix = f"{key_prefix}{s3_rel}"
 
             # Quick check: does *anything* exist under this prefix?
-            resp = s3.list_objects_v2(Bucket=bucket, Prefix=s3_prefix, MaxKeys=1)
-            if resp.get("KeyCount", 0) == 0:
+            resp = list_matching_objects(f"{bucket}/{s3_prefix}", max_keys=1)
+            if not resp:
                 # Nothing in the store — definitely needs downloading
                 confirmed.append(acc)
                 skipped_missing += 1
-                if progress_callback is not None:
-                    progress_callback(done, len(accessions), acc)
+                _progress(done, len(accessions), acc)
                 continue
 
             # Objects exist — need FTP md5 checksums to decide
-            if ftp is None:
-                ftp = connect_ftp(ftp_host)
-
-            last_activity = ftp_noop_keepalive(ftp, last_activity)
-
-            ftp_dir = _ftp_dir_from_url(rec.ftp_path, ftp_host)
-            try:
-                md5_text = ftp_retrieve_text(ftp, ftp_dir.rstrip("/") + "/md5checksums.txt")
-                last_activity = time.monotonic()
-                ftp_checksums = parse_md5_checksums_file(md5_text)
-            except Exception:  # noqa: BLE001
-                logger.warning("Cannot fetch md5checksums.txt for %s, keeping in transfer list", acc)
-                confirmed.append(acc)
-                if progress_callback is not None:
-                    progress_callback(done, len(accessions), acc)
-                continue
-
-            # Filter to files we'd actually download
-            target_checksums = {
-                fname: md5
-                for fname, md5 in ftp_checksums.items()
-                if any(fname.endswith(suffix) for suffix in FILE_FILTERS)
-            }
+            target_checksums, last_activity = _fetch_accession_checksums_from_ftp(
+                ftp, ftp_host, last_activity, rec.ftp_path
+            )
 
             if not target_checksums:
                 confirmed.append(acc)
-                if progress_callback is not None:
-                    progress_callback(done, len(accessions), acc)
+                _progress(done, len(accessions), acc)
                 continue
 
             # Short-circuit: if any file differs or is missing, keep the assembly
-            needs_update = False
-            for fname, expected_md5 in target_checksums.items():
-                s3_path = f"{bucket}/{s3_prefix}{fname}"
-                obj_info = head_object(s3_path)
-
-                if obj_info is None:
-                    needs_update = True
-                    break
-
-                s3_md5 = obj_info["metadata"].get("md5", "")
-                if s3_md5 != expected_md5:
-                    logger.debug("MD5 mismatch for %s/%s: S3=%s FTP=%s", acc, fname, s3_md5, expected_md5)
-                    needs_update = True
-                    break
+            needs_update = _does_accession_need_update(target_checksums, bucket, s3_prefix)
 
             if needs_update:
                 confirmed.append(acc)
@@ -497,8 +492,7 @@ def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
                 pruned += 1
                 logger.debug("Pruned %s — all files match S3 checksums", acc)
 
-            if progress_callback is not None:
-                progress_callback(done, len(accessions), acc)
+            _progress(done, len(accessions), acc)
     finally:
         if ftp is not None:
             with contextlib.suppress(Exception):
@@ -514,7 +508,7 @@ def verify_transfer_candidates(  # noqa: PLR0912, PLR0915
     return confirmed
 
 
-# ── Manifest writing ────────────────────────────────────────────────────
+# Manifest writing
 
 
 def write_transfer_manifest(

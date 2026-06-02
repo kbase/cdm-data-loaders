@@ -7,7 +7,6 @@ the final state of the object store via the MinIO console.
 """
 
 import hashlib
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -27,17 +26,11 @@ import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
 from cdm_data_loaders.utils.s3 import reset_s3_client
 
-# ── MinIO connection defaults ───────────────────────────────────────────
-
-MINIO_ENDPOINT_URL = os.environ["MINIO_ENDPOINT_URL"]
-MINIO_ACCESS_KEY = os.environ["MINIO_ACCESS_KEY"]
-MINIO_SECRET_KEY = os.environ["MINIO_SECRET_KEY"]
-
 # Maximum length of a bucket name per S3/DNS spec
 _MAX_BUCKET_LEN = 63
 
 
-# ── MinIO reachability check ────────────────────────────────────────────
+# MinIO reachability check
 
 _minio_available: bool | None = None
 
@@ -47,9 +40,6 @@ def _minio_reachable() -> bool:
     try:
         client = boto3.client(
             "s3",
-            endpoint_url=MINIO_ENDPOINT_URL,
-            aws_access_key_id=MINIO_ACCESS_KEY,
-            aws_secret_access_key=MINIO_SECRET_KEY,
             config=botocore.config.Config(
                 connect_timeout=1,
                 read_timeout=1,
@@ -75,7 +65,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_marker)
 
 
-# ── Fixtures ────────────────────────────────────────────────────────────
+# Fixtures
 
 
 @pytest.fixture
@@ -85,12 +75,7 @@ def minio_s3_client() -> botocore.client.BaseClient:
     Patches ``get_s3_client`` on every module that uses it so internal calls
     are transparently routed to MinIO.
     """
-    client = boto3.client(
-        "s3",
-        endpoint_url=MINIO_ENDPOINT_URL,
-        aws_access_key_id=MINIO_ACCESS_KEY,
-        aws_secret_access_key=MINIO_SECRET_KEY,
-    )
+    client = boto3.client("s3")
 
     reset_s3_client()
     with (
@@ -183,7 +168,7 @@ def staging_test_bucket(minio_s3_client: botocore.client.BaseClient, request: py
     return bucket
 
 
-# ── Helpers ─────────────────────────────────────────────────────────────
+# Helpers
 
 
 def stage_files_to_minio(

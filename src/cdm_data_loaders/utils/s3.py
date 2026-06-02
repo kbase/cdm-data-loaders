@@ -7,8 +7,10 @@ from typing import Any
 import boto3
 import botocore
 import botocore.client
+import json
 import tqdm
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
@@ -30,11 +32,21 @@ _s3_client: botocore.client.BaseClient | None = None
 logger = get_cdm_logger()
 
 
-def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseClient:
+def get_s3_client(args: dict[str, str | None] | None = None) -> botocore.client.BaseClient:
     """Create an S3 client using the provided arguments.
 
-    The client is created once and cached for subsequent calls. Call
-    reset_s3_client() to force a new client to be created on the next call.
+    The client is created once and cached for subsequent calls.
+    Call reset_s3_client() to force a new client to be created on the next call.
+
+    To configure the client using arguments, provide a dictionary with the following keys:
+        - aws_access_key_id: the access key ID for the S3 client
+        - aws_secret_access_key: the secret access key for the S3 client
+        - endpoint_url: the endpoint URL for the S3 client (e.g., "https://s3.amazonaws.com" or "https://my-s3-server.com")
+
+    If arguments are not provided, the client will be created using boto3's default
+    configuration method, which looks for environment variables (AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY, and AWS_ENDPOINT_URL_S3 or AWS_ENDPOINT_URL) or an ``./aws`` config directory.
+    See the boto3 documentation for more details.
 
     :param args: arguments for creating the S3 client, defaults to None
     :type args: dict[str, str] | None, optional
@@ -52,35 +64,36 @@ def get_s3_client(args: dict[str, str] | None = None) -> botocore.client.BaseCli
     )
 
     if not args:
-        # try using env vars and skip manual configuration
-        client = boto3.client("s3", config=config)
-        # check for credentials and endpoint_url
-        credentials = client._request_signer._credentials  # noqa: SLF001
-        if credentials.access_key and credentials.secret_key and client.meta.endpoint_url:
-            _s3_client = client
-            return _s3_client
+        args = {}
 
-        try:
-            from berdl_notebook_utils.berdl_settings import get_settings  # noqa: PLC0415
+    valid_kwargs = ["aws_access_key_id", "aws_secret_access_key", "endpoint_url"]
+    kwargs = {k: v for k, v in args.items() if k in valid_kwargs and v is not None}
 
-            settings = get_settings()
-            args = {
-                "endpoint_url": settings.MINIO_ENDPOINT_URL,
-                "aws_access_key_id": settings.MINIO_ACCESS_KEY,
-                "aws_secret_access_key": settings.MINIO_SECRET_KEY,
-            }
-        except (ModuleNotFoundError, ImportError, NameError) as e:
-            logger.exception("Failed to load berdl settings")
-            raise
-
-    required_args = ["endpoint_url", "aws_access_key_id", "aws_secret_access_key"]
-    keyword_args = {kw: args.get(kw) for kw in required_args}
-    missing = [kw for kw in required_args if not keyword_args[kw]]
-    if missing:
-        msg = "Cannot initialise s3 client: missing arguments: " + ", ".join(missing)
+    # make sure that if aws_access_key_id or aws_secret_access_key is provided, the other is also provided.
+    if bool(kwargs.get("aws_access_key_id")) ^ bool(kwargs.get("aws_secret_access_key")):
+        msg = "Cannot initialise s3 client: aws_access_key_id and aws_secret_access_key must be provided together, either via args or environment variables or a config file"
         raise ValueError(msg)
 
-    _s3_client = boto3.client("s3", config=config, **keyword_args)
+    # initialise using boto3's default config behaviour, plus any overrides from args
+    client = boto3.client("s3", config=config, **kwargs)
+
+    missing = []
+    # boto3 will not raise an error on client creation if credentials are missing, so throw an error now
+    credentials = client._request_signer._credentials  # noqa: SLF001
+    if not credentials:
+        missing = ["aws_access_key_id", "aws_secret_access_key"]
+    else:
+        if not credentials.access_key:
+            missing.append("aws_access_key_id")
+        if not credentials.secret_key:
+            missing.append("aws_secret_access_key")
+
+    if missing:
+        msg = "Cannot initialise s3 client: missing configuration values: " + ", ".join(missing)
+        raise ValueError(msg)
+
+    # nothing missing: we are good to go!
+    _s3_client = client
     return _s3_client
 
 
@@ -90,13 +103,15 @@ def reset_s3_client() -> None:
     _s3_client = None
 
 
-def split_s3_path(s3_path: str) -> tuple[str | None, str]:
+def split_s3_path(s3_path: str, *, allow_bucket_only: bool = False) -> tuple[str | None, str]:
     """Convert a full s3 path (including bucket) into a bucket and key pair.
 
     Returns a tuple of bucket, key
 
     :param s3_path: an s3 path, including the bucket name
     :type s3_path: str
+    :param allow_bucket_only: Allow parsing of a path that only includes a bucket (no key)
+    :type allow_bucket_only: bool
     :return: tuple of (bucket, key)
     :rtype: tuple[str | None, str]
     """
@@ -116,6 +131,10 @@ def split_s3_path(s3_path: str) -> tuple[str | None, str]:
         raise ValueError(err_msg)
 
     path_parts = unprefixed_path.split("/", 1)
+    # return just the bucket if that is all that was passed
+    if allow_bucket_only and len(path_parts) == 1:
+        return (path_parts[0], "")
+
     # the first part should be the bucket and the second part the key
     if len(path_parts) != 2 or not path_parts[1]:  # noqa: PLR2004
         err_msg = f"Invalid path: '{s3_path}'\nCould not parse out bucket and key"
@@ -124,7 +143,7 @@ def split_s3_path(s3_path: str) -> tuple[str | None, str]:
     return (path_parts[0], path_parts[1])
 
 
-def list_matching_objects(s3_path: str) -> list[dict[str, Any]]:
+def list_matching_objects(s3_path: str, *, max_keys: int = 1000) -> list[dict[str, Any]]:
     """List the remote paths that start with ``s3_path``.
 
     Note: since s3 paths are basically cosmetic, this function returns all paths that start with
@@ -135,13 +154,15 @@ def list_matching_objects(s3_path: str) -> list[dict[str, Any]]:
 
     :param s3_path: directory to be listed, INCLUDING the bucket name
     :type s3_path: str
+    :param max_keys: maximum number of keys to return. boto3 defaults to 1000 records max.
+    :type max_keys: int
     :return: list of object metadata dicts in the directory
     :rtype: list[dict[str, Any]]
     """
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
     paginator = s3.get_paginator("list_objects_v2")
-    page_iterator = paginator.paginate(Bucket=bucket, Prefix=key)
+    page_iterator = paginator.paginate(Bucket=bucket, Prefix=key, MaxKeys=max_keys)
 
     contents = []
     for page in page_iterator:
@@ -150,32 +171,17 @@ def list_matching_objects(s3_path: str) -> list[dict[str, Any]]:
     return contents
 
 
-def head_object(s3_path: str) -> dict[str, Any] | None:
-    """Return metadata for an S3 object, or None if it does not exist.
-
-    The returned dict contains:
-    - ``size``: content length in bytes
-    - ``metadata``: user metadata dict
-    - ``checksum_crc64nvme``: CRC64NVME checksum string (if available)
+def head_object(s3_path: str) -> dict[str, Any]:
+    """Check whether an object exists on s3.
 
     :param s3_path: path to the object on s3, INCLUDING the bucket name
     :type s3_path: str
-    :return: dict with object info, or None if the object does not exist
-    :rtype: dict[str, Any] | None
+    :return: response from the head_object request
+    :rtype: dict[str, Any]
     """
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
-    try:
-        resp = s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
-    except Exception as e:  # noqa: BLE001
-        if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
-            return None
-        raise
-    return {
-        "size": resp["ContentLength"],
-        "metadata": resp.get("Metadata", {}),
-        "checksum_crc64nvme": resp.get("ChecksumCRC64NVME"),
-    }
+    return s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
 
 
 def object_exists(s3_path: str) -> bool:
@@ -186,11 +192,8 @@ def object_exists(s3_path: str) -> bool:
     :return: True if the object exists, False otherwise
     :rtype: bool
     """
-    s3 = get_s3_client()
-
-    (bucket, key) = split_s3_path(s3_path)
     try:
-        s3.head_object(Bucket=bucket, Key=key)
+        head_object(s3_path)
     except Exception as e:  # noqa: BLE001
         error_string = str(e)
         if not error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
@@ -203,13 +206,14 @@ def upload_file(
     local_file_path: Path | str,
     destination_dir: str,
     object_name: str | None = None,
-    tags: dict[str, str] | None = None,
+    user_metadata: dict[str, str] | None = None,
+    *,
     show_progress: bool = True,
 ) -> bool:
     """Upload an object to an S3 bucket.
 
-    When *metadata* is supplied the file is always uploaded (no existence check)
-    and the dict is attached as S3 user metadata.  When *metadata* is ``None``
+    When *user_metadata* is supplied the file is always uploaded (no existence check)
+    and the dict is attached as S3 user metadata.  When *user_metadata* is ``None``
     (the default) the existing behaviour is preserved: the upload is skipped if
     the object is already present.
 
@@ -219,8 +223,10 @@ def upload_file(
     :type destination_dir: str
     :param object_name: S3 object name. If not specified, the name of the file from local_file_path is used.
     :type object_name: str | None
-    :param metadata: user metadata key/value pairs to attach to the object; when provided the upload always runs
-    :type metadata: dict[str, str] | None
+    :param user_metadata: user metadata key/value pairs to attach to the object; when provided the upload always runs
+    :type user_metadata: dict[str, str] | None
+    :param show_progress: whether to display a tqdm progress bar during upload, defaults to True
+    :type show_progress: bool, optional
     :return: True if file was uploaded, else False
     :rtype: bool
     """
@@ -235,14 +241,14 @@ def upload_file(
         object_name = local_file_path.name
 
     s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
-    if tags is None and object_exists(s3_path):
+    if user_metadata is None and object_exists(s3_path):
         logger.debug("File already present: %s", s3_path)
         return True
 
     s3 = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
 
-    extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": tags}) if tags is not None else {})}
+    extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": user_metadata}) if user_metadata is not None else {})}
 
     # Upload the file
     logger.debug("uploading %s to %s", str(local_file_path), s3_path)
@@ -264,7 +270,7 @@ def upload_file(
                 Key=key,
                 ExtraArgs=extra_args,
             )
-    except Exception as e:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("Error uploading to s3")
         return False
     return True
@@ -469,6 +475,7 @@ def copy_object(
         CopySource={"Bucket": current_s3_bucket, "Key": current_s3_key},
         Bucket=new_s3_bucket,
         Key=new_s3_key,
+        **DEFAULT_EXTRA_ARGS,
     )
 
 
@@ -563,6 +570,7 @@ def copy_directory(current_s3_path: str, new_s3_path: str) -> tuple[dict[str, st
                     CopySource={"Bucket": current_s3_bucket, "Key": current_key},
                     Bucket=new_s3_bucket,
                     Key=new_key,
+                    **DEFAULT_EXTRA_ARGS,
                 )
                 if resp["ResponseMetadata"]["HTTPStatusCode"] == SUCCESS_RESPONSE:
                     successes[source_path] = dest_path
@@ -617,3 +625,79 @@ def delete_objects(bucket: str, keys: list[str]) -> list[dict[str, Any]]:
         )
         errors.extend(resp.get("Errors", []))
     return errors
+
+
+# Helper functions for command-line tool
+
+
+def cmd_mb(args: list[str]) -> None:
+    """Create a bucket: ``mb s3://bucket``."""
+    if not args:
+        raise SystemExit("Usage: s3_local.py mb s3://BUCKET")
+    bucket, _ = split_s3_path(args[0], allow_bucket_only=True)
+    s3 = get_s3_client()
+    try:
+        s3.head_bucket(Bucket=bucket)
+        print(f"Bucket already exists: {bucket}")
+    except Exception:  # noqa: BLE001
+        s3.create_bucket(Bucket=bucket)
+        print(f"Created bucket: {bucket}")
+
+
+def cmd_cp(args: list[str]) -> None:
+    """Recursive upload: ``cp LOCAL_DIR s3://bucket/prefix/``."""
+    if len(args) < 2:  # noqa: PLR2004
+        raise SystemExit("Usage: s3_local.py cp LOCAL_DIR s3://BUCKET/PREFIX/")
+    local_dir = Path(args[0])
+    bucket, prefix = split_s3_path(args[1])
+    prefix = prefix.rstrip("/") + "/" if prefix else ""
+    s3 = get_s3_client()
+    count = 0
+    for path in sorted(local_dir.rglob("*")):
+        if path.is_dir():
+            continue
+        rel = path.relative_to(local_dir)
+        key = f"{prefix}{rel}"
+        s3.upload_file(Filename=str(path), Bucket=bucket, Key=key)
+        count += 1
+        print(f"  {key}")
+    print(f"Uploaded {count} files to s3://{bucket}/{prefix}")
+
+
+def cmd_ls(args: list[str]) -> None:
+    """List objects: ``ls s3://bucket/prefix/ [--limit N]``."""
+    if not args:
+        raise SystemExit("Usage: s3_local.py ls s3://BUCKET/PREFIX/ [--limit N]")
+    bucket, prefix = split_s3_path(args[0])
+    limit = 20
+    if "--limit" in args:
+        idx = args.index("--limit")
+        limit = int(args[idx + 1])
+    s3 = get_s3_client()
+    paginator = s3.get_paginator("list_objects_v2")
+    shown = 0
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            print(f"  {obj['Size']:>10}  {obj['Key']}")
+            shown += 1
+            if shown >= limit:
+                return
+
+
+def cmd_head(args: list[str]) -> None:
+    """Show metadata: ``head s3://bucket/key``."""
+    if not args:
+        raise SystemExit("Usage: s3_local.py head s3://BUCKET/KEY")
+    bucket, key = split_s3_path(args[0])
+    s3 = get_s3_client()
+    meta = {}
+    try:
+        resp = s3.head_object(Bucket=bucket, Key=key)
+        meta = resp.get("Metadata", {})
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
+            print(f"File not found in store: {bucket}/{key}")
+            return
+        raise
+    print(f"Metadata for {bucket}/{key}:")
+    print(json.dumps(meta, indent=2))

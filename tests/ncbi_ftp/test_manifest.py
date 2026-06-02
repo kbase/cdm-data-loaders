@@ -1,16 +1,18 @@
 """Tests for ncbi_ftp.manifest module — assembly summary parsing, diff, filtering, writing."""
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from cdm_data_loaders.ncbi_ftp.manifest import (
     AssemblyRecord,
     DiffResult,
-    _extract_accession_from_s3_key,
-    _extract_assembly_dir_from_s3_key,
+    _extract_accession_dir_and_id_from_s3_key,
     _ftp_dir_from_url,
     accession_prefix,
     compute_diff,
@@ -30,7 +32,7 @@ from .conftest import SAMPLE_SUMMARY
 _EXPECTED_TWO = 2
 
 
-# ── parse_assembly_summary ───────────────────────────────────────────────
+# parse_assembly_summary
 
 
 _EXPECTED_ASSEMBLIES = {
@@ -88,7 +90,7 @@ def test_parse_assembly_summary_input_types(source: str, tmp_path: Path) -> None
     assert parse_assembly_summary(arg) == _EXPECTED_ASSEMBLIES
 
 
-# ── get_latest_assembly_paths ────────────────────────────────────────────
+# get_latest_assembly_paths
 
 
 def test_get_latest_assembly_paths() -> None:
@@ -104,7 +106,7 @@ def test_get_latest_assembly_paths_empty() -> None:
     assert get_latest_assembly_paths(parse_assembly_summary("# empty\n")) == []
 
 
-# ── compute_diff ─────────────────────────────────────────────────────────
+# compute_diff
 
 
 def test_compute_diff_new() -> None:
@@ -149,7 +151,7 @@ def test_compute_diff_scan_store_fallback() -> None:
     assert "GCF_000001405.40" in diff.new
 
 
-# ── accession_prefix & filter_by_prefix_range ────────────────────────────
+# accession_prefix & filter_by_prefix_range
 
 
 @pytest.mark.parametrize(
@@ -173,7 +175,7 @@ def test_filter_by_prefix_range() -> None:
     assert len(filter_by_prefix_range(assemblies)) == len(assemblies)
 
 
-# ── Manifest writing ────────────────────────────────────────────────────
+# Manifest writing
 
 
 def test_write_transfer_manifest(tmp_path: Path) -> None:
@@ -232,7 +234,7 @@ def test_write_diff_summary(tmp_path: Path) -> None:
     }
 
 
-# ── _ftp_dir_from_url ───────────────────────────────────────────────────
+# _ftp_dir_from_url
 
 
 @pytest.mark.parametrize(
@@ -268,7 +270,7 @@ def test_ftp_dir_from_url(url: str, expected: str, kwargs: dict) -> None:
     assert _ftp_dir_from_url(url, **kwargs) == expected
 
 
-# ── verify_transfer_candidates ───────────────────────────────────────────
+# verify_transfer_candidates
 
 
 _MD5_CHECKSUMS_TXT = (
@@ -279,20 +281,6 @@ _MD5_CHECKSUMS_TXT = (
 )
 
 
-def _mock_s3_with_objects() -> MagicMock:
-    """Return a mock S3 client whose list_objects_v2 always reports objects exist."""
-    client = MagicMock()
-    client.list_objects_v2.return_value = {"KeyCount": 1}
-    return client
-
-
-def _mock_s3_empty() -> MagicMock:
-    """Return a mock S3 client whose list_objects_v2 reports no objects."""
-    client = MagicMock()
-    client.list_objects_v2.return_value = {"KeyCount": 0}
-    return client
-
-
 _BUCKET = "cdm-lake"
 _KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
 
@@ -301,7 +289,7 @@ def _assemblies() -> dict:
     return parse_assembly_summary(SAMPLE_SUMMARY)
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
@@ -309,25 +297,37 @@ def test_verify_transfer_candidates_prunes_when_all_match(
     mock_connect: MagicMock,
     mock_retrieve: MagicMock,
     mock_head: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """Assemblies where every file matches S3 are pruned from the list."""
     mock_connect.return_value = MagicMock()
 
     def head_side_effect(s3_path: str) -> dict | None:
         if "_genomic.fna.gz" in s3_path:
-            return {"size": 100, "metadata": {"md5": "d41d8cd98f00b204e9800998ecf8427e"}, "checksum_crc64nvme": None}
+            return {
+                "ContentLength": 100,
+                "Metadata": {"md5": "d41d8cd98f00b204e9800998ecf8427e"},
+                "ChecksumCRC64NVME": None,
+            }
         if "_protein.faa.gz" in s3_path:
-            return {"size": 100, "metadata": {"md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"}, "checksum_crc64nvme": None}
+            return {
+                "ContentLength": 100,
+                "Metadata": {"md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"},
+                "ChecksumCRC64NVME": None,
+            }
         if "_assembly_report.txt" in s3_path:
-            return {"size": 100, "metadata": {"md5": "ffffffffffffffffffffffffffffffff"}, "checksum_crc64nvme": None}
+            return {
+                "ContentLength": 100,
+                "Metadata": {"md5": "ffffffffffffffffffffffffffffffff"},
+                "ChecksumCRC64NVME": None,
+            }
         return None
 
     mock_head.side_effect = head_side_effect
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == []
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
@@ -335,30 +335,37 @@ def test_verify_transfer_candidates_keeps_when_md5_differs(
     mock_connect: MagicMock,
     mock_retrieve: MagicMock,
     mock_head: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """Assembly is kept when at least one file has a different MD5."""
     mock_connect.return_value = MagicMock()
-    mock_head.return_value = {"size": 100, "metadata": {"md5": "WRONG"}, "checksum_crc64nvme": None}
+    mock_head.return_value = {"ContentLength": 100, "Metadata": {"md5": "WRONG"}, "ChecksumCRC64NVME": None}
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
-@patch("cdm_data_loaders.ncbi_ftp.manifest.head_object", return_value=None)
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
+@patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_keeps_when_s3_object_missing(
     mock_connect: MagicMock,
     mock_retrieve: MagicMock,
     mock_head: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """Assembly is kept when at least one file doesn't exist in S3."""
     mock_connect.return_value = MagicMock()
+
+    def head_side_effect(s3_path: str) -> dict[str, Any]:
+        if "GCF_000001215.4" in s3_path:
+            raise ClientError({"Error": {"Code": "404", "Message": "Not found"}}, "HeadObject")
+        return {}
+
+    mock_head.side_effect = head_side_effect
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
@@ -366,19 +373,19 @@ def test_verify_transfer_candidates_keeps_when_no_md5_metadata(
     mock_connect: MagicMock,
     mock_retrieve: MagicMock,
     mock_head: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """Assembly is kept when S3 object exists but has no md5 metadata."""
     mock_connect.return_value = MagicMock()
-    mock_head.return_value = {"size": 100, "metadata": {}, "checksum_crc64nvme": None}
+    mock_head.return_value = {"ContentLength": 100, "Metadata": {}, "ChecksumCRC64NVME": None}
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", side_effect=Exception("FTP error"))
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_keeps_when_ftp_fails(
-    mock_connect: MagicMock, mock_retrieve: MagicMock, mock_s3: MagicMock
+    mock_connect: MagicMock, mock_retrieve: MagicMock, mock_list: MagicMock
 ) -> None:
     """Assembly is kept (conservative) when md5checksums.txt cannot be fetched."""
     mock_connect.return_value = MagicMock()
@@ -391,30 +398,38 @@ def test_verify_transfer_candidates_empty_input(mock_connect: MagicMock) -> None
     assert verify_transfer_candidates([], {}, _BUCKET, "prefix/") == []
 
 
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
-def test_verify_transfer_candidates_unknown_accession_kept(mock_connect: MagicMock) -> None:
+def test_verify_transfer_candidates_unknown_accession_kept(mock_connect: MagicMock, mock_list: MagicMock) -> None:
     """Accessions not in assemblies dict are kept (conservative)."""
     mock_connect.return_value = MagicMock()
     assert verify_transfer_candidates(["GCF_999999999.1"], {}, _BUCKET, "prefix/") == ["GCF_999999999.1"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
-@patch("cdm_data_loaders.ncbi_ftp.manifest.head_object", return_value=None)
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
+@patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_short_circuits_on_first_mismatch(
     mock_connect: MagicMock,
     mock_retrieve: MagicMock,
     mock_head: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """Verification stops checking after the first missing/mismatched file."""
     mock_connect.return_value = MagicMock()
+
+    def head_side_effects(s3_path: str) -> dict[str, Any]:
+        if "GCF_000001215.4" in s3_path:
+            raise ClientError({"Error": {"Code": "404", "Message": "Not found"}}, "HeadObject")
+        return {}
+
+    mock_head.side_effect = head_side_effects
     verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX)
     assert mock_head.call_count == 1
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_with_objects())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
@@ -422,7 +437,7 @@ def test_verify_transfer_candidates_mixed(
     mock_connect: MagicMock,
     mock_retrieve: MagicMock,
     mock_head: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """A mix of matching and non-matching assemblies: matched pruned, unmatched kept."""
     mock_connect.return_value = MagicMock()
@@ -430,23 +445,35 @@ def test_verify_transfer_candidates_mixed(
     def head_side_effect(s3_path: str) -> dict | None:
         if "GCF_000001215.4_Release_6_plus_ISO1_MT/" in s3_path:
             if "_genomic.fna.gz" in s3_path:
-                return {"size": 1, "metadata": {"md5": "d41d8cd98f00b204e9800998ecf8427e"}, "checksum_crc64nvme": None}
+                return {
+                    "ContentLength": 1,
+                    "Metadata": {"md5": "d41d8cd98f00b204e9800998ecf8427e"},
+                    "ChecksumCRC64NVME": None,
+                }
             if "_protein.faa.gz" in s3_path:
-                return {"size": 1, "metadata": {"md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"}, "checksum_crc64nvme": None}
+                return {
+                    "ContentLength": 1,
+                    "Metadata": {"md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"},
+                    "ChecksumCRC64NVME": None,
+                }
             if "_assembly_report.txt" in s3_path:
-                return {"size": 1, "metadata": {"md5": "ffffffffffffffffffffffffffffffff"}, "checksum_crc64nvme": None}
-        return None
+                return {
+                    "ContentLength": 1,
+                    "Metadata": {"md5": "ffffffffffffffffffffffffffffffff"},
+                    "ChecksumCRC64NVME": None,
+                }
+        raise ClientError({"Error": {"Code": "404", "Message": "Not found"}}, "HeadObject")
 
     mock_head.side_effect = head_side_effect
     result = verify_transfer_candidates(["GCF_000001215.4", "GCF_000001405.40"], _assemblies(), _BUCKET, _KEY_PREFIX)
     assert result == ["GCF_000001405.40"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client", return_value=_mock_s3_empty())
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=[])
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_skips_ftp_when_folder_missing(
     mock_connect: MagicMock,
-    mock_s3: MagicMock,
+    mock_list: MagicMock,
 ) -> None:
     """Accessions with no objects in S3 are confirmed without FTP round-trip."""
     result = verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX)
@@ -454,7 +481,7 @@ def test_verify_transfer_candidates_skips_ftp_when_folder_missing(
     mock_connect.assert_not_called()
 
 
-# ── Synthetic summary from S3 store scan ────────────────────────────────
+# Synthetic summary from S3 store scan
 
 
 @pytest.mark.parametrize(
@@ -462,73 +489,50 @@ def test_verify_transfer_candidates_skips_ftp_when_folder_missing(
     [
         pytest.param(
             "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz",
-            "GCF_000001215.4",
+            ("GCF_000001215.4_Release_6_plus_ISO1_MT", "GCF_000001215.4"),
             id="long_path",
         ),
-        pytest.param("some/path/GCA_999999999.1_whatever/data.txt", "GCA_999999999.1", id="short_path"),
-        pytest.param("some/random/path", None, id="no_accession"),
-        pytest.param("", None, id="empty"),
-    ],
-)
-def test_extract_accession_from_s3_key(key: str, expected: str | None) -> None:
-    """Accession is extracted from S3 key paths; invalid/empty paths return None."""
-    assert _extract_accession_from_s3_key(key) == expected
-
-
-@pytest.mark.parametrize(
-    ("key", "expected"),
-    [
         pytest.param(
-            "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz",
-            "GCF_000001215.4_Release_6_plus_ISO1_MT",
-            id="long_path",
+            "some/path/GCA_999999999.1_whatever/data.txt",
+            ("GCA_999999999.1_whatever", "GCA_999999999.1"),
+            id="short_path",
         ),
         pytest.param(
             "prefix/GCA_999999999.1_assembly_name/subdir/data.txt",
-            "GCA_999999999.1_assembly_name",
+            ("GCA_999999999.1_assembly_name", "GCA_999999999.1"),
             id="subdir",
         ),
-        pytest.param("some/random/path", None, id="no_assembly_dir"),
-        pytest.param("", None, id="empty"),
+        pytest.param("some/random/path", (None, None), id="no_accession"),
+        pytest.param("", (None, None), id="empty"),
     ],
 )
-def test_extract_assembly_dir_from_s3_key(key: str, expected: str | None) -> None:
-    """Assembly directory is extracted from S3 key paths; invalid/empty paths return None."""
-    assert _extract_assembly_dir_from_s3_key(key) == expected
+def test_extract_accession_dir_and_id_from_s3_key(key: str, expected: str | None) -> None:
+    """Accession is extracted from S3 key paths; invalid/empty paths return None."""
+    assert _extract_accession_dir_and_id_from_s3_key(key) == expected
 
 
-def _make_mock_s3_paginator() -> MagicMock:
-    """Return a mock S3 client with two assemblies (GCF_000001215.4, GCF_000005845.2)."""
-    from datetime import datetime, timezone
-
-    mock = MagicMock()
-    mock_paginator = MagicMock()
-    mock.get_paginator.return_value = mock_paginator
-    mock_paginator.paginate.return_value = [
+def _make_mock_list_object_return_value() -> list[dict[str, Any]]:
+    """Return a response for list objects with two assemblies (GCF_000001215.4, GCF_000005845.2)."""
+    return [
         {
-            "Contents": [
-                {
-                    "Key": "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6/file1.gz",
-                    "LastModified": datetime(2024, 1, 15, tzinfo=timezone.utc),
-                },
-                {
-                    "Key": "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6/file2.gz",
-                    "LastModified": datetime(2024, 1, 16, tzinfo=timezone.utc),
-                },
-                {
-                    "Key": "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000005845.2_Assembly/file.gz",
-                    "LastModified": datetime(2024, 2, 20, tzinfo=timezone.utc),
-                },
-            ]
-        }
+            "Key": "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6/file1.gz",
+            "LastModified": datetime(2024, 1, 15, tzinfo=UTC),
+        },
+        {
+            "Key": "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6/file2.gz",
+            "LastModified": datetime(2024, 1, 16, tzinfo=UTC),
+        },
+        {
+            "Key": "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000005845.2_Assembly/file.gz",
+            "LastModified": datetime(2024, 2, 20, tzinfo=UTC),
+        },
     ]
-    return mock
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
-def test_scan_store_builds_summary(mock_get_s3: MagicMock) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
+def test_scan_store_builds_summary(mock_list_matching_objects: MagicMock) -> None:
     """Synthetic summary is built correctly with provided release_date for all assemblies."""
-    mock_get_s3.return_value = _make_mock_s3_paginator()
+    mock_list_matching_objects.return_value = _make_mock_list_object_return_value()
     assert scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024/01/31") == {
         "GCF_000001215.4": AssemblyRecord(
             accession="GCF_000001215.4",
@@ -547,47 +551,37 @@ def test_scan_store_builds_summary(mock_get_s3: MagicMock) -> None:
     }
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
-def test_scan_store_applies_release_date_to_all(mock_get_s3: MagicMock) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
+def test_scan_store_applies_release_date_to_all(mock_list_matching_objects: MagicMock) -> None:
     """Provided release_date is used even when files have different LastModified dates."""
-    from datetime import datetime, timezone
-
-    mock = MagicMock()
-    mock_paginator = MagicMock()
-    mock.get_paginator.return_value = mock_paginator
-    mock_paginator.paginate.return_value = [
+    mock_list_matching_objects.return_value = [
         {
-            "Contents": [
-                {
-                    "Key": "prefix/GCF_000001215.4_v1/file_newer.gz",
-                    "LastModified": datetime(2024, 3, 20, tzinfo=timezone.utc),
-                },
-                {
-                    "Key": "prefix/GCF_000001215.4_v1/file_older.gz",
-                    "LastModified": datetime(2024, 1, 10, tzinfo=timezone.utc),
-                },
-            ]
-        }
+            "Key": "prefix/GCF_000001215.4_v1/file_newer.gz",
+            "LastModified": datetime(2024, 3, 20, tzinfo=UTC),
+        },
+        {
+            "Key": "prefix/GCF_000001215.4_v1/file_older.gz",
+            "LastModified": datetime(2024, 1, 10, tzinfo=UTC),
+        },
     ]
-    mock_get_s3.return_value = mock
     assert (
         scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024/03/31")["GCF_000001215.4"].seq_rel_date
         == "2024/03/31"
     )
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
-def test_scan_store_raises_for_invalid_release_date(mock_get_s3: MagicMock) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
+def test_scan_store_raises_for_invalid_release_date(mock_list_matching_objects: MagicMock) -> None:
     """Invalid release_date format is rejected."""
-    mock_get_s3.return_value = _make_mock_s3_paginator()
+    mock_list_matching_objects.return_value = _make_mock_list_object_return_value()
     with pytest.raises(ValueError, match="Invalid release_date"):
         scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024-03-31")
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
-def test_scan_store_invokes_progress_callback(mock_get_s3: MagicMock) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
+def test_scan_store_invokes_progress_callback(mock_list_matching_objects: MagicMock) -> None:
     """Progress callback is called once per unique assembly discovered."""
-    mock_get_s3.return_value = _make_mock_s3_paginator()
+    mock_list_matching_objects.return_value = _make_mock_list_object_return_value()
     calls: list[tuple[int, str]] = []
     scan_store_to_synthetic_summary(
         "test-bucket", "prefix/", "2024/01/31", progress_callback=lambda n, a: calls.append((n, a))
@@ -597,65 +591,41 @@ def test_scan_store_invokes_progress_callback(mock_get_s3: MagicMock) -> None:
     assert calls[1][0] == 2
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
-def test_scan_store_handles_empty_store(mock_get_s3: MagicMock) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
+def test_scan_store_handles_empty_store(mock_list_matching_objects: MagicMock) -> None:
     """Empty store returns empty dict."""
-    mock = MagicMock()
-    mock_paginator = MagicMock()
-    mock.get_paginator.return_value = mock_paginator
-    mock_paginator.paginate.return_value = [{"Contents": []}]
-    mock_get_s3.return_value = mock
+    mock_list_matching_objects.return_value = []
     assert scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024/01/31") == {}
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
-def test_scan_store_skips_objects_without_accession(mock_get_s3: MagicMock) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
+def test_scan_store_skips_objects_without_accession(mock_list_matching_objects: MagicMock) -> None:
     """Objects without valid accessions in the key are skipped."""
-    from datetime import datetime, timezone
-
-    mock = MagicMock()
-    mock_paginator = MagicMock()
-    mock.get_paginator.return_value = mock_paginator
-    mock_paginator.paginate.return_value = [
+    mock_list_matching_objects.return_value = [
+        {"Key": "prefix/some/random/file.txt", "LastModified": datetime(2024, 1, 1, tzinfo=UTC)},
         {
-            "Contents": [
-                {"Key": "prefix/some/random/file.txt", "LastModified": datetime(2024, 1, 1, tzinfo=timezone.utc)},
-                {
-                    "Key": "prefix/GCF_000001215.4_Assembly/valid_file.gz",
-                    "LastModified": datetime(2024, 2, 1, tzinfo=timezone.utc),
-                },
-            ]
-        }
+            "Key": "prefix/GCF_000001215.4_Assembly/valid_file.gz",
+            "LastModified": datetime(2024, 2, 1, tzinfo=UTC),
+        },
     ]
-    mock_get_s3.return_value = mock
     result = scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024/01/31")
     assert len(result) == 1
     assert "GCF_000001215.4" in result
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_s3_client")
-def test_scan_store_assembly_dir_survives_round_trip(mock_get_s3: MagicMock, tmp_path: Path) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
+def test_scan_store_assembly_dir_survives_round_trip(mock_list_matching_objects: MagicMock, tmp_path: Path) -> None:
     """assembly_dir is preserved after save-to-file / parse-back round-trip.
 
     Regression: previously ftp_path was written as "" causing assembly_dir=""
     and compute_diff flagging every assembly as updated.
     """
-    from datetime import datetime, timezone
-
-    mock = MagicMock()
-    mock_paginator = MagicMock()
-    mock_paginator.paginate.return_value = [
+    mock_list_matching_objects.return_value = [
         {
-            "Contents": [
-                {
-                    "Key": "prefix/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz",
-                    "LastModified": datetime(2024, 3, 10, tzinfo=timezone.utc),
-                }
-            ]
+            "Key": "prefix/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz",
+            "LastModified": datetime(2024, 3, 10, tzinfo=UTC),
         }
     ]
-    mock.get_paginator.return_value = mock_paginator
-    mock_get_s3.return_value = mock
 
     synthetic = scan_store_to_synthetic_summary("test-bucket", "prefix/", "2024/03/10")
 

@@ -52,7 +52,7 @@ class TestFullPipelineSmallBatch:
         """Single assembly flows through all three phases into MinIO."""
         s3 = minio_s3_client
 
-        # ── Phase 1: Manifest generation ────────────────────────────────
+        # Step 1: Manifest generation
         raw = download_assembly_summary(database="refseq")
         full = parse_assembly_summary(raw)
         filtered = filter_by_prefix_range(full, prefix_from=STABLE_PREFIX, prefix_to=STABLE_PREFIX)
@@ -63,7 +63,7 @@ class TestFullPipelineSmallBatch:
         manifest_path = tmp_path / "transfer_manifest.txt"
         _ = write_transfer_manifest(diff, filtered, manifest_path)
 
-        # ── Phase 2: Download one assembly from real FTP ────────────────
+        # Step 2: Download one assembly from real FTP
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
@@ -76,11 +76,11 @@ class TestFullPipelineSmallBatch:
         assert report["succeeded"] >= 1
         assert report["failed"] == 0
 
-        # ── Upload local output to MinIO staging ────────────────────────
+        # Upload local output to MinIO staging
         keys = stage_files_to_minio(s3, staging_test_bucket, output_dir, STAGING_PREFIX)
         assert len(keys) > 0, "Expected files staged to MinIO"
 
-        # ── Phase 3: Promote from staging to final path ─────────────────
+        # Step 3: Promote from staging to final path
         promote_report = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
@@ -90,7 +90,7 @@ class TestFullPipelineSmallBatch:
         assert promote_report["promoted"] >= 1
         assert promote_report["failed"] == 0
 
-        # ── Verify final state ──────────────────────────────────────────
+        # Verify final state
         final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
         assert len(final_keys) >= 1, "Expected files at final Lakehouse path"
 
@@ -120,7 +120,7 @@ class TestFullPipelineIncrementalSync:
         """Second sync archives the old version and promotes the new one."""
         s3 = minio_s3_client
 
-        # ── First sync: Phase 1 → 2 → 3 ────────────────────────────────
+        # First sync: Steps 1 -> 2 -> 3
         raw = download_assembly_summary(database="refseq")
         full = parse_assembly_summary(raw)
         filtered = filter_by_prefix_range(full, prefix_from=STABLE_PREFIX, prefix_to=STABLE_PREFIX)
@@ -154,7 +154,7 @@ class TestFullPipelineIncrementalSync:
         first_sync_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
         assert len(first_sync_keys) >= 1
 
-        # ── Second sync: Manufacture "previous" with a tweak ────────────
+        # Second sync: Manufacture "previous" with a tweak
         # Treat first-sync state as "previous", but modify one assembly's
         # seq_rel_date so it shows up as "updated".
         previous: dict[str, AssemblyRecord] = {}

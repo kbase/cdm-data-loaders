@@ -10,8 +10,8 @@ from moto import mock_aws
 
 import cdm_data_loaders.ncbi_ftp.promote as promote_mod
 import cdm_data_loaders.utils.s3 as s3_utils
-from tests.s3_helpers import strip_checksum_algorithm
 from cdm_data_loaders.utils.s3 import CDM_LAKE_BUCKET, reset_s3_client
+from tests.s3_helpers import strip_checksum_algorithm
 
 AWS_REGION = "us-east-1"
 TEST_BUCKET = CDM_LAKE_BUCKET
@@ -46,8 +46,16 @@ SAMPLE_SUMMARY = (
 
 
 @pytest.fixture
-def mock_s3_client() -> Generator[botocore.client.BaseClient]:
+def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[botocore.client.BaseClient]:
     """Yield a mocked S3 client with the CDM Lake bucket created."""
+    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    boto3.DEFAULT_SESSION = None
+
     with mock_aws():
         client = boto3.client("s3", region_name=AWS_REGION)
         client.create_bucket(Bucket=TEST_BUCKET)

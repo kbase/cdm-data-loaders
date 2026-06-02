@@ -1,7 +1,10 @@
 """Tests for ncbi_ftp.promote module — S3 promote, archive, manifest trimming."""
 
 import hashlib
+import logging
 from pathlib import Path
+from typing import Any
+from unittest.mock import patch
 
 import botocore.client
 import pytest
@@ -9,13 +12,16 @@ import pytest
 from cdm_data_loaders.ncbi_ftp.promote import (
     DEFAULT_LAKEHOUSE_KEY_PREFIX,
     _archive_assemblies,
+    _archive_objects,
+    _dry_run_output,
+    _get_accession_path_prefix,
+    _get_source_dest_pairs_for_accession,
     _trim_manifest,
     promote_from_s3,
 )
 from tests.ncbi_ftp.conftest import TEST_BUCKET
 
-
-# ── Promotion test constants ─────────────────────────────────────────────
+# Promotion test constants
 
 _STAGE_PREFIX = "staging/run1/"
 
@@ -139,6 +145,215 @@ def test_trim_manifest(
         assert acc in remaining
     for acc in expected_absent:
         assert acc not in remaining
+
+
+# Helpers for _archive_assemblies tests
+
+
+def _mock_list_matching_objects(path: str) -> list[dict[str, Any]]:
+    bucket = "some-bucket"
+    prefix = "some/prefix/"
+    if path == f"{bucket}/{prefix}raw_data/GCF/000/001/215/GCF_000001215.4_Release_6":
+        return [
+            {"Key": f"{prefix}raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_genomic.fna.gz"},
+            {"Key": f"{prefix}raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_protein.faa.gz"},
+        ]
+    if path == f"{bucket}/{prefix}raw_data/GCF/000/005/845/GCF_000005845.2_ASM584v2":
+        return [
+            {"Key": f"{prefix}raw_data/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_genomic.fna.gz"},
+        ]
+    return []
+
+
+@pytest.mark.parametrize(
+    ("accession", "prefix", "expected"),
+    [
+        pytest.param(
+            "GCF_012345678.90_Some_description",
+            "some/prefix/",
+            "some/prefix/raw_data/GCF/012/345/678/GCF_012345678.90_Some_description",
+            id="standard",
+        ),
+        pytest.param(
+            "GCF_000001215.4_Release_6",
+            "another/prefix/",
+            "another/prefix/raw_data/GCF/000/001/215/GCF_000001215.4_Release_6",
+            id="standard-2",
+        ),
+        pytest.param("INVALID_ACCESSION", "prefix/", None, id="invalid-format"),
+    ],
+)
+def test_get_accession_path_prefix(
+    accession: str,
+    prefix: str,
+    expected: str | None,
+) -> None:
+    """get_accession_path_prefix returns correct path for valid accessions, None for invalid."""
+    result = _get_accession_path_prefix(accession, prefix)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("accession", "bucket", "prefix", "release_tag", "archive_reason", "expected"),
+    [
+        pytest.param(
+            "GCF_000001215.4_Release_6",
+            "some-bucket",
+            "some/prefix/",
+            "2024-01",
+            "test-reason",
+            [
+                (
+                    "some/prefix/raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_genomic.fna.gz",
+                    "some/prefix/archive/2024-01/test-reason/raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_genomic.fna.gz",
+                ),
+                (
+                    "some/prefix/raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_protein.faa.gz",
+                    "some/prefix/archive/2024-01/test-reason/raw_data/GCF/000/001/215/GCF_000001215.4_Release_6/GCF_000001215.4_protein.faa.gz",
+                ),
+            ],
+            id="standard",
+        ),
+        pytest.param(
+            "GCF_000005845.2_ASM584v2",
+            "some-bucket",
+            "some/prefix/",
+            "2024-01",
+            "test-reason",
+            [
+                (
+                    "some/prefix/raw_data/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_genomic.fna.gz",
+                    "some/prefix/archive/2024-01/test-reason/raw_data/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_genomic.fna.gz",
+                ),
+            ],
+            id="standard-2",
+        ),
+        pytest.param(
+            "GCF_000001405.39_GRCh38.p14",
+            "some-bucket",
+            "some/prefix/",
+            "2024-01",
+            "test-reason",
+            [],
+            id="accession-not-found",
+        ),
+        pytest.param(
+            "INVALID_ACCESSION",
+            "some-bucket",
+            "some/prefix/",
+            "2024-01",
+            "test-reason",
+            [],
+            id="invalid-format",
+        ),
+    ],
+)
+def test_get_source_dest_pairs_for_accession(  #  noqa: PLR0913
+    accession: str,
+    bucket: str,
+    prefix: str,
+    release_tag: str,
+    archive_reason: str,
+    expected: list[tuple[str, str]],
+) -> None:
+    """get_source_dest_pairs_for_accession returns correct source-dest pairs for valid accessions, empty list for invalid."""
+    with patch("cdm_data_loaders.ncbi_ftp.promote.list_matching_objects", side_effect=_mock_list_matching_objects):
+        result = _get_source_dest_pairs_for_accession(
+            accession,
+            bucket,
+            prefix,
+            release_tag,
+            archive_reason,
+        )
+        assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("key_pairs", "log_count", "expected", "info_log_strings"),
+    [
+        pytest.param(
+            [("source1", "dest1"), ("source2", "dest2")],
+            0,
+            2,
+            ["[dry-run] would archive: source1 -> dest1", "[dry-run] would archive: source2 -> dest2"],
+            id="standard",
+        ),
+        pytest.param(
+            [("source1", "dest1"), ("source2", "dest2"), ("source3", "dest3")],
+            9,
+            12,
+            ["[dry-run] would archive: source1 -> dest1"],
+            id="exceeds-log-cutoff",
+        ),
+        pytest.param(
+            [],
+            0,
+            0,
+            [],
+            id="empty",
+        ),
+    ],
+)
+def test_dry_run_output(
+    key_pairs: list[tuple[str, str]],
+    log_count: int,
+    expected: int,
+    info_log_strings: list[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """In dry_run mode, _archive_assemblies logs source-dest pairs but does not copy."""
+    with caplog.at_level(logging.INFO):
+        result = _dry_run_output(key_pairs, log_count)
+        assert result == expected
+        for log_string in info_log_strings:
+            assert log_string in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("key_pairs", "bucket", "delete_source", "expected", "existing_objects"),
+    [
+        pytest.param(
+            [("source1", "dest1"), ("source2", "dest2")],
+            TEST_BUCKET,
+            False,
+            2,
+            ["source1", "source2", "dest1", "dest2"],
+            id="keep-source",
+        ),
+        pytest.param(
+            [("source1", "dest1"), ("source2", "dest2")],
+            TEST_BUCKET,
+            True,
+            2,
+            ["dest1", "dest2"],
+            id="delete-source",
+        ),
+        pytest.param(
+            [],
+            TEST_BUCKET,
+            True,
+            0,
+            [],
+            id="empty",
+        ),
+    ],
+)
+@pytest.mark.s3
+def test_archive_objects(  #  noqa: PLR0913
+    mock_s3_client_no_checksum: botocore.client.BaseClient,
+    key_pairs: list[tuple[str, str]],
+    bucket: str,
+    delete_source: bool,
+    expected: int,
+    existing_objects: list[str],
+) -> None:
+    """_archive_assemblies copies source to dest for each pair, and deletes source if delete_source=True."""
+    for source, _ in key_pairs:
+        mock_s3_client_no_checksum.put_object(Bucket=bucket, Key=source, Body=b"data")
+    assert _archive_objects(key_pairs, bucket, delete_source=delete_source) == expected
+    assert mock_s3_client_no_checksum.list_objects_v2(Bucket=bucket).get("KeyCount", 0) == len(existing_objects)
+    for obj in mock_s3_client_no_checksum.list_objects_v2(Bucket=bucket).get("Contents", []):
+        assert obj["Key"] in existing_objects, f"Unexpected object in bucket: {obj['Key']}"
 
 
 @pytest.mark.s3
@@ -279,7 +494,7 @@ def test_archive_assemblies_unknown_release_fallback(
     assert mock_s3_client_no_checksum.list_objects_v2(Bucket=TEST_BUCKET, Prefix=archive_key).get("KeyCount", 0) == 1
 
 
-# ── Concurrent / multi-file archive (new behaviour) ─────────────────────
+# Concurrent / multi-file archive (new behaviour)
 
 
 @pytest.mark.s3
@@ -391,7 +606,7 @@ def test_archive_assemblies_multi_file_delete_all(
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
 
 
-# ── Partial-archive idempotency ──────────────────────────────────────────
+# Partial-archive idempotency
 
 
 @pytest.mark.s3
@@ -600,7 +815,7 @@ def test_archive_assemblies_invalid_accession_skipped(
     assert archived == 1
 
 
-# ── Concurrent / multi-file promotion (new behaviour) ────────────────────
+# Concurrent / multi-file promotion (new behaviour)
 
 
 @pytest.mark.s3
@@ -794,7 +1009,7 @@ def test_promote_partial_failure_staging_not_cleaned(
         resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=key)
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200, (
             f"Expected staged file to survive partial failure: {key}"
-        )  # noqa: PLR2004
+        )
 
 
 @pytest.mark.s3
@@ -803,7 +1018,7 @@ def test_promote_partial_failure_failed_count(
 ) -> None:
     """report[\"failed\"] reflects the number of files that could not be promoted."""
     file_names = [f"{_ACC1}_genomic.fna.gz", f"{_ACC1}_protein.faa.gz", f"{_ACC1}_rna.fna.gz"]
-    _stage(mock_s3_client_no_checksum, _STG1, {f: b"data" for f in file_names})
+    _stage(mock_s3_client_no_checksum, _STG1, dict.fromkeys(file_names, b"data"))
 
     failing_key = f"{_STG1}{file_names[1]}"
     original_download = mock_s3_client_no_checksum.download_file
@@ -876,7 +1091,7 @@ def test_promote_two_assemblies_independent_cleanup(
         resp = mock_s3_client_no_checksum.head_object(Bucket=TEST_BUCKET, Key=f"{_STG2}{fname}")
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200, (
             f"Assembly 2 staging must survive partial failure: {fname}"
-        )  # noqa: PLR2004
+        )
 
 
 @pytest.mark.s3

@@ -9,9 +9,7 @@ import base64
 import hashlib
 from pathlib import Path
 
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-
-logger = get_cdm_logger()
+from awscrt.checksums import crc64nvme as _crc64nvme
 
 
 def compute_md5(file_path: str | Path) -> str:
@@ -46,8 +44,6 @@ def compute_crc64nvme(file_path: str | Path) -> str:
     :param file_path: path to the file
     :return: base64-encoded CRC64/NVME checksum
     """
-    from awscrt.checksums import crc64nvme as _crc64nvme  # noqa: PLC0415
-
     crc = 0
     with Path(file_path).open("rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):

@@ -10,6 +10,7 @@ unreachable.  Each test method gets its own bucket.
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -22,8 +23,6 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
 from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX, promote_from_s3
 
 from .conftest import get_object_metadata, list_all_keys, seed_lakehouse, staging_test_bucket  # noqa: F401
-
-from pathlib import Path
 
 # Fake assembly details used across tests
 ACCESSION_A = "GCF_900000001.1"
@@ -74,7 +73,7 @@ def _write_manifest(tmp_path: Path, accessions: list[str], name: str) -> Path:
     return path
 
 
-# ── Tests ───────────────────────────────────────────────────────────────
+# Tests
 
 
 @pytest.mark.integration
@@ -524,7 +523,7 @@ class TestPromoteDryRunNoDescriptor:
         assert len(metadata_keys) == 0, f"Dry-run should not create descriptor files, found: {metadata_keys}"
 
 
-# ── Parallel archiving tests ─────────────────────────────────────────────
+# Parallel archiving tests
 
 
 @pytest.mark.integration
@@ -946,7 +945,7 @@ class TestArchiveDryRunParallel:
             assert len(remaining) == 1, f"Source missing after dry-run: {key}"
 
 
-# ── Concurrent promotion tests ────────────────────────────────────────────
+# Concurrent promotion tests
 
 
 def _stage_many(

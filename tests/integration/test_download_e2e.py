@@ -6,11 +6,10 @@ unreachable.
 """
 
 import json
-
-import pytest
-
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.manifest import (
@@ -20,7 +19,7 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     parse_assembly_summary,
     write_transfer_manifest,
 )
-from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch, download_and_stage
+from cdm_data_loaders.pipelines.ncbi_ftp_download import download_and_stage, download_batch
 
 # Use same stable prefix as manifest tests
 STABLE_PREFIX = "900"

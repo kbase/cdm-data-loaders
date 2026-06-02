@@ -18,8 +18,8 @@ from typing import Any
 
 import tqdm
 from pydantic import AliasChoices, Field
-from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from cdm_data_loaders.ncbi_ftp.assembly import (
     FTP_HOST,
@@ -35,8 +35,6 @@ from cdm_data_loaders.utils.s3 import get_s3_client, upload_file
 
 logger = get_cdm_logger()
 
-
-# ── Constants ────────────────────────────────────────────────────────────
 
 DEFAULT_STAGING_KEY_PREFIX = "staging/"
 
@@ -76,7 +74,7 @@ class DownloadSettings(BaseSettings):
     )
 
 
-# ── Private helpers ─────────────────────────────────────────────────────
+# Private helpers
 
 
 def _upload_assembly_dir(
@@ -113,7 +111,7 @@ def _upload_assembly_dir(
     return count
 
 
-# ── Batch download ───────────────────────────────────────────────────────
+# Batch download
 
 
 def download_batch(
@@ -170,18 +168,20 @@ def download_batch(
             return path, None
 
     try:
-        with tqdm.tqdm(
-            total=len(assembly_paths), unit="assembly", desc="Downloading from NCBI FTP", smoothing=0.01
-        ) as pbar:
-            with ThreadPoolExecutor(max_workers=threads) as executor:
-                futures = {executor.submit(_download_one, p): p for p in assembly_paths}
-                for future in as_completed(futures):
-                    path, error = future.result()
-                    if error:
-                        logger.error("FAILED: %s: %s", path, error)
-                        with lock:
-                            failed.append({"path": path, "error": str(error)})
-                    pbar.update(1)
+        with (
+            tqdm.tqdm(
+                total=len(assembly_paths), unit="assembly", desc="Downloading from NCBI FTP", smoothing=0.01
+            ) as pbar,
+            ThreadPoolExecutor(max_workers=threads) as executor,
+        ):
+            futures = {executor.submit(_download_one, p): p for p in assembly_paths}
+            for future in as_completed(futures):
+                path, error = future.result()
+                if error:
+                    logger.error("FAILED: %s: %s", path, error)
+                    with lock:
+                        failed.append({"path": path, "error": str(error)})
+                pbar.update(1)
     finally:
         pool.close_all()
 
@@ -210,7 +210,7 @@ def download_batch(
     return report
 
 
-# ── CTS entry point ─────────────────────────────────────────────────────
+# CTS entry point
 
 
 def run_download(config: DownloadSettings) -> None:
@@ -235,7 +235,7 @@ def cli() -> None:
     run_cli(DownloadSettings, run_download)
 
 
-# ── Notebook / interactive entry point ──────────────────────────────────
+# Notebook / interactive entry point
 
 
 def download_and_stage(
@@ -334,18 +334,20 @@ def download_and_stage(
             return path, None
 
         try:
-            with tqdm.tqdm(
-                total=len(assembly_paths), unit="assembly", desc="Downloading & staging", smoothing=0.01
-            ) as pbar:
-                with ThreadPoolExecutor(max_workers=threads) as executor:
-                    futures = {executor.submit(_download_upload_one, p): p for p in assembly_paths}
-                    for future in as_completed(futures):
-                        path, error = future.result()
-                        if error:
-                            logger.error("FAILED: %s: %s", path, error)
-                            with lock:
-                                failed.append({"path": path, "error": str(error)})
-                        pbar.update(1)
+            with (
+                tqdm.tqdm(
+                    total=len(assembly_paths), unit="assembly", desc="Downloading & staging", smoothing=0.01
+                ) as pbar,
+                ThreadPoolExecutor(max_workers=threads) as executor,
+            ):
+                futures = {executor.submit(_download_upload_one, p): p for p in assembly_paths}
+                for future in as_completed(futures):
+                    path, error = future.result()
+                    if error:
+                        logger.error("FAILED: %s: %s", path, error)
+                        with lock:
+                            failed.append({"path": path, "error": str(error)})
+                    pbar.update(1)
         finally:
             pool.close_all()
 
