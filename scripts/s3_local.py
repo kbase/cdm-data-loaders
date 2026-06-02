@@ -18,18 +18,19 @@ Environment variables (with defaults for the walkthrough):
 
 import os
 import sys
-from pathlib import Path
 
 import cdm_data_loaders.utils.s3 as s3
 
 
 def _client() -> None:
     s3.reset_s3_client()
-    _ = s3.get_s3_client({
-        "endpoint_url": os.environ.get("AWS_ENDPOINT_URL", "http://localhost:9000"),
-        "aws_access_key_id": os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin"),
-        "aws_secret_access_key": os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin"),
-    })
+    _ = s3.get_s3_client(
+        {
+            "endpoint_url": os.environ.get("AWS_ENDPOINT_URL", "http://localhost:9000"),
+            "aws_access_key_id": os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin"),
+            "aws_secret_access_key": os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin"),
+        }
+    )
 
 
 # dispatch
