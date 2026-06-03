@@ -218,6 +218,7 @@ def test_get_s3_client_incomplete_creds_via_args(
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
     args = {
+        "endpoint_url": None,
         "aws_access_key_id": aws_access_key_id,
         "aws_secret_access_key": aws_secret_access_key,
     }
