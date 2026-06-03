@@ -9,14 +9,20 @@ FROM ghcr.io/ialarmedalien/xml_file_splitter:latest AS rust-app
 # Use a Python image with uv pre-installed
 FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim
 
+ARG QSV_VERSION="20.1.0"
+
 # Set environment variable to noninteractive to prevent prompts during apt operations
 ENV DEBIAN_FRONTEND=noninteractive
 
 # add tini and git
-RUN apt-get update -y && apt-get install -y --no-install-recommends tini git ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y && apt-get install -y --no-install-recommends tini git ca-certificates wget unzip && rm -rf /var/lib/apt/lists/*
 
-# copy only the compiled xml-file-splitter binary from the Rust image
+# download the qsv binary from the GitHub releases and copy it to /usr/local/bin
+RUN wget https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip && \
+    unzip qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip -d /usr/local/bin/ && \
+    rm qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip
+
+# copy over the compiled xml-file-splitter binary from the Rust image
 COPY --from=rust-app /usr/local/bin/xml_file_splitter /usr/local/bin/xml_file_splitter
 
 # Setup a non-root user
