@@ -215,17 +215,10 @@ def test_get_s3_client_incomplete_creds_via_args(
     aws_access_key_id: str | None, aws_secret_access_key: str | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify that get_s3_client raises ValueError when only one of aws_access_key_id or aws_secret_access_key is provided via arguments."""
-    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
-    monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
-    monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
-    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
-    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
-    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
-    boto3.DEFAULT_SESSION = None
+    prep_client_init(monkeypatch)
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
     args = {
-        "endpoint_url": None,
         "aws_access_key_id": aws_access_key_id,
         "aws_secret_access_key": aws_secret_access_key,
     }
