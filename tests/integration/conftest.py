@@ -3,7 +3,8 @@
 Integration tests are auto-skipped when CEPH is not reachable.  Each test
 method gets its own bucket (derived from the test node name) that is emptied
 on re-run but **never deleted** after the test — this lets developers inspect
-the final state of the object store via the CEPH console.
+the final state of the object store. The CEPH dashboard does not currently
+allow inspection of the store, but the `s3_local` command-line tool can be used.
 """
 
 import hashlib

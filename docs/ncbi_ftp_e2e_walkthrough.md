@@ -395,7 +395,7 @@ cdm-lake/
 
 ## 5. Inspect results in CEPH
 
-Browse the [CEPH console](http://localhost:9001) or use the CLI:
+Use the CLI to inspect the final state of the store:
 
 ```sh
 # List final Lakehouse objects
