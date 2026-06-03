@@ -14,7 +14,7 @@ dependencies = [
     "click>=8.4.1",
     "defusedxml>=0.7.1",
     "delta-spark>=4.1.0",
-    "dlt[deltalake,duckdb,filesystem,parquet]>=1.27.0",
+    "dlt[deltalake,duckdb,filesystem,parquet]>=1.27.2",
     "frictionless[aws]>=5.19.0",
     "frozendict>=2.4.7",
     "ipykernel>=7.2.0",
@@ -26,6 +26,7 @@ dependencies = [
 
 [project.scripts]
 all_the_bacteria = "cdm_data_loaders.pipelines.all_the_bacteria:cli"
+ncbi_ftp_sync = "cdm_data_loaders.pipelines.ncbi_ftp_download:cli"
 ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"
 uniprot = "cdm_data_loaders.pipelines.uniprot_kb:cli"
 uniref = "cdm_data_loaders.pipelines.uniref:cli"
@@ -168,7 +169,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = ["T201"] # ignore printing in notebooks
-"tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002"]  # use of assert, booleans
+"tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002"]  # use of assert, booleans, unused mock args
+"tests/integration/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002", "ANN401"]
 "tests/utils/test_s3.py" = ["ANN401"]
 "**/__init__.py" = ["D104"]
 
@@ -180,7 +182,7 @@ max-complexity = 15
 convention = "google"
 
 [build-system]
-requires = ["uv_build>=0.11.8,<0.20.0"]
+requires = ["uv_build>=0.11.18,<0.20.0"]
 build-backend = "uv_build"
 
 [tool.pytest]
@@ -189,7 +191,7 @@ log_cli = true
 log_cli_level = "INFO"
 log_level = "INFO"
 addopts = ["-v"]
-markers = ["requires_spark: must be run in an environment where spark is available", "s3: tests that mock s3 interactions", "slow_test: does what it says on the tin"]
+markers = ["requires_spark: must be run in an environment where spark is available", "s3: tests that mock s3 interactions", "slow_test: does what it says on the tin", "integration: end-to-end tests requiring a running MinIO instance and network access", "external_request: tests that make real network requests to external services (e.g. NCBI FTP)"]
 
 # environment settings for running tests
 [tool.pytest_env]
@@ -206,10 +208,11 @@ S3_ENDPOINT_URL = "http://localhost:9000"
 # aws config settings
 AWS_CONFIG_FILE = "/dev/null"  # ensure tests don't pick up creds from a real config file
 AWS_DEFAULT_REGION = "us-east-1"
-AWS_ENDPOINT_URL = { unset = true }
-AWS_ENDPOINT_URL_S3 = { unset = true}
-AWS_ACCESS_KEY_ID = { unset = true}
-AWS_SECRET_ACCESS_KEY = { unset = true}
+# default to use containerized S3 test store
+AWS_ENDPOINT_URL = "http://localhost:9000"
+AWS_ENDPOINT_URL_S3 = { unset = true }
+AWS_ACCESS_KEY_ID = "minioadmin"
+AWS_SECRET_ACCESS_KEY = "minioadmin"
 
 [tool.uv.sources]
 cdm-schema = { git = "https://github.com/kbase/cdm-schema.git" }
