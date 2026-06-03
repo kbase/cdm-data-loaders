@@ -149,31 +149,33 @@ def create_descriptor(
     elif rcsb_entry and (rcsb_entry.get("struct_keywords") or {}).get("text"):
         description = rcsb_entry["struct_keywords"]["text"]
     else:
-        description = (
-            f"Macromolecular structure data for PDB entry {pdb_id} downloaded from the wwPDB Beta archive"
-        )
+        description = f"Macromolecular structure data for PDB entry {pdb_id} downloaded from the wwPDB Beta archive"
 
     # Contributors: depositors as DataCreator (from audit_author), then RCSB as DataCurator
     contributors: list[dict[str, Any]] = []
     for author in (rcsb_entry or {}).get("audit_author") or []:
         name = author.get("name", "").strip()
         if name:
-            contributors.append({
-                "contributor_type": "Person",
-                "name": name,
-                "contributor_roles": "DataCreator",
-            })
+            contributors.append(
+                {
+                    "contributor_type": "Person",
+                    "name": name,
+                    "contributor_roles": "DataCreator",
+                }
+            )
     contributors.append(_RCSB_CONTRIBUTOR)
 
     # Related identifiers: DOI from primary citation
     related_identifiers: list[dict[str, Any]] = []
     doi = ((rcsb_entry or {}).get("rcsb_primary_citation") or {}).get("pdbx_database_id_DOI")
     if doi:
-        related_identifiers.append({
-            "identifier": doi,
-            "identifier_type": "DOI",
-            "relation_type": "IsDescribedBy",
-        })
+        related_identifiers.append(
+            {
+                "identifier": doi,
+                "identifier_type": "DOI",
+                "relation_type": "IsDescribedBy",
+            }
+        )
 
     # Extra meta fields from RCSB accession info
     extra_meta: dict[str, Any] = {}

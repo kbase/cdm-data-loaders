@@ -184,8 +184,16 @@ def test_validate_descriptor_empty_raises() -> None:
 
 
 @pytest.fixture
-def _mock_s3() -> Generator[botocore.client.BaseClient]:
+def _mock_s3(monkeypatch: pytest.MonkeyPatch) -> Generator[botocore.client.BaseClient]:
     """Yield a mocked S3 client with the CDM Lake bucket pre-created."""
+    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    boto3.DEFAULT_SESSION = None
+
     with mock_aws():
         client = boto3.client("s3", region_name=AWS_REGION)
         client.create_bucket(Bucket=TEST_BUCKET)
@@ -222,8 +230,18 @@ def test_upload_descriptor_dry_run_skips_upload(_mock_s3: botocore.client.BaseCl
 
 
 @pytest.fixture
-def _mock_s3_with_descriptor() -> Generator[tuple[botocore.client.BaseClient, MagicMock]]:
+def _mock_s3_with_descriptor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[tuple[botocore.client.BaseClient, MagicMock]]:
     """S3 with a live descriptor already uploaded."""
+    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    boto3.DEFAULT_SESSION = None
+
     with mock_aws():
         client = boto3.client("s3", region_name=AWS_REGION)
         client.create_bucket(Bucket=TEST_BUCKET)
@@ -275,8 +293,16 @@ def test_archive_descriptor_dry_run(
 
 
 @pytest.mark.s3
-def test_archive_descriptor_missing_returns_false() -> None:
+def test_archive_descriptor_missing_returns_false(monkeypatch: pytest.MonkeyPatch) -> None:
     """Returns False when no descriptor exists at the live key."""
+    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    boto3.DEFAULT_SESSION = None
+
     with mock_aws():
         client = boto3.client("s3", region_name=AWS_REGION)
         client.create_bucket(Bucket=TEST_BUCKET)
@@ -410,6 +436,12 @@ def test_meta_extra_fields_absent_without_rcsb_entry() -> None:
     """Extra RCSB meta fields are not present when rcsb_entry is None."""
     d = create_descriptor(_PDB_ID, [], timestamp=_TIMESTAMP)
     meta = d["meta"]
-    for key in ("deposit_date", "initial_release_date", "experimental_method", "keywords", "revision_history", "pubmed_id"):
+    for key in (
+        "deposit_date",
+        "initial_release_date",
+        "experimental_method",
+        "keywords",
+        "revision_history",
+        "pubmed_id",
+    ):
         assert key not in meta
-

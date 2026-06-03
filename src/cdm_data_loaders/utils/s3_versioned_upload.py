@@ -21,6 +21,8 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Literal
 
+from botocore.exceptions import ClientError
+
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.s3 import copy_object, head_object, split_s3_path, upload_file
 
@@ -108,7 +110,12 @@ def versioned_upload(
         today = datetime.now(UTC).date()
 
     local_md5 = _md5_of_file(local_path)
-    existing = head_object(s3_dest_path)
+    existing = None
+    try:
+        existing = head_object(s3_dest_path)
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "404":
+            existing = None
 
     if existing is not None:
         # S3 head_object doesn't expose ETag directly; fetch it via raw boto3 call
@@ -138,7 +145,7 @@ def versioned_upload(
         dest_bucket, dest_key = split_s3_path(s3_dest_path)
         dest_dir = f"{dest_bucket}/{'/'.join(dest_key.split('/')[:-1])}"
         dest_name = dest_key.split("/")[-1]
-        upload_file(local_path, dest_dir, object_name=dest_name, tags={}, show_progress=False)
+        upload_file(local_path, dest_dir, object_name=dest_name, user_metadata={}, show_progress=False)
         logger.debug("Replaced %s with new version", s3_dest_path)
         return UploadResult(
             status="archived_and_replaced",

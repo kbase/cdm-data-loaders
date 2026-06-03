@@ -113,12 +113,8 @@ class TestPdbFullPipelineNotebook:
         assert any("raw_data/" in k for k in staged_keys), (
             f"No raw_data/ files found in staging bucket under {STAGING_PREFIX}"
         )
-        assert any(STABLE_PDB_ID in k for k in staged_keys), (
-            f"Expected {STABLE_PDB_ID} in staged keys"
-        )
-        assert any(k.endswith(".crc64nvme") for k in staged_keys), (
-            "Expected .crc64nvme sidecar files in staging"
-        )
+        assert any(STABLE_PDB_ID in k for k in staged_keys), f"Expected {STABLE_PDB_ID} in staged keys"
+        assert any(k.endswith(".crc64nvme") for k in staged_keys), "Expected .crc64nvme sidecar files in staging"
 
         # ── Phase 3: promote ─────────────────────────────────────────────
         promote_report = promote_from_s3(
@@ -141,9 +137,7 @@ class TestPdbFullPipelineNotebook:
         assert any(STABLE_PDB_ID in k for k in lakehouse_keys), (
             f"Expected {STABLE_PDB_ID} in Lakehouse keys: {lakehouse_keys}"
         )
-        assert any(entry_rel in k for k in lakehouse_keys), (
-            f"Expected entry path {entry_rel} in Lakehouse"
-        )
+        assert any(entry_rel in k for k in lakehouse_keys), f"Expected entry path {entry_rel} in Lakehouse"
 
         # Verify frictionless descriptor was written
         descriptor_keys = list_all_keys(minio_s3_client, test_bucket, f"{LAKEHOUSE_PREFIX}metadata/")
@@ -153,9 +147,7 @@ class TestPdbFullPipelineNotebook:
 
         # Verify staging bucket is cleaned up (promote deletes staged files)
         remaining = list_all_keys(minio_s3_client, staging_test_bucket, STAGING_PREFIX + "raw_data/")
-        assert len(remaining) == 0, (
-            f"Staging files not cleaned up after promote: {remaining}"
-        )
+        assert len(remaining) == 0, f"Staging files not cleaned up after promote: {remaining}"
 
 
 # ── Option B: container/CTS (download_batch + manual upload) ────────────
@@ -222,12 +214,8 @@ class TestPdbFullPipelineContainer:
             STAGING_PREFIX,
         )
         assert len(staged_keys) > 0, "No files uploaded to MinIO staging"
-        assert any("raw_data/" in k for k in staged_keys), (
-            "Expected raw_data/ files in staging"
-        )
-        assert any(k.endswith(".crc64nvme") for k in staged_keys), (
-            "Expected .crc64nvme sidecar files in staging"
-        )
+        assert any("raw_data/" in k for k in staged_keys), "Expected raw_data/ files in staging"
+        assert any(k.endswith(".crc64nvme") for k in staged_keys), "Expected .crc64nvme sidecar files in staging"
 
         # ── Phase 3: promote ─────────────────────────────────────────────
         promote_report = promote_from_s3(
@@ -249,9 +237,7 @@ class TestPdbFullPipelineContainer:
         assert any(STABLE_PDB_ID in k for k in lakehouse_keys), (
             f"Expected {STABLE_PDB_ID} in Lakehouse keys: {lakehouse_keys}"
         )
-        assert any(entry_rel in k for k in lakehouse_keys), (
-            f"Expected entry path {entry_rel} in Lakehouse"
-        )
+        assert any(entry_rel in k for k in lakehouse_keys), f"Expected entry path {entry_rel} in Lakehouse"
 
         # Verify frictionless descriptor was written
         descriptor_keys = list_all_keys(minio_s3_client, test_bucket, f"{LAKEHOUSE_PREFIX}metadata/")
@@ -261,6 +247,4 @@ class TestPdbFullPipelineContainer:
 
         # Verify staging bucket is cleaned up (promote deletes staged files)
         remaining = list_all_keys(minio_s3_client, staging_test_bucket, STAGING_PREFIX + "raw_data/")
-        assert len(remaining) == 0, (
-            f"Staging files not cleaned up after promote: {remaining}"
-        )
+        assert len(remaining) == 0, f"Staging files not cleaned up after promote: {remaining}"

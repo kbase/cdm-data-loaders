@@ -209,7 +209,7 @@ def _promote_data_files(  # noqa: PLR0913
             upload_succeeded = upload_file(
                 tmp_path,
                 f"{lakehouse_bucket}/{final_key_path.parent}",
-                tags=metadata,
+                user_metadata=metadata,
                 object_name=final_key_path.name,
                 show_progress=False,
             )
@@ -285,9 +285,7 @@ def _promote_data_files(  # noqa: PLR0913
                         pdb_id,
                     )
                 try:
-                    descriptor = create_descriptor(
-                        pdb_id, resources, rcsb_entry=rcsb_entry, rcsb_pubmed=rcsb_pubmed
-                    )
+                    descriptor = create_descriptor(pdb_id, resources, rcsb_entry=rcsb_entry, rcsb_pubmed=rcsb_pubmed)
                     descriptor_key = upload_descriptor(
                         descriptor, pdb_id, lakehouse_bucket, lakehouse_key_prefix, dry_run=False
                     )
@@ -305,13 +303,9 @@ def _promote_data_files(  # noqa: PLR0913
                         keys_to_delete.append(key + ".md5")
                 delete_errors = delete_objects(staging_bucket, keys_to_delete)
                 if delete_errors:
-                    logger.warning(
-                        "Errors deleting staged files for %s: %s", pdb_id, delete_errors
-                    )
+                    logger.warning("Errors deleting staged files for %s: %s", pdb_id, delete_errors)
                 else:
-                    logger.debug(
-                        "Deleted %d staged object(s) for %s", len(keys_to_delete), pdb_id
-                    )
+                    logger.debug("Deleted %d staged object(s) for %s", len(keys_to_delete), pdb_id)
     rcsb_client.close()
 
     return promoted, failed, descriptors_written, promoted_ids

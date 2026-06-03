@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict
 
+from botocore.exceptions import ClientError
 from frictionless import Package
 
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
@@ -226,9 +227,12 @@ def archive_descriptor(
     source_path = f"{bucket}/{source_key}"
     archive_path = f"{bucket}/{archive_key}"
 
-    if head_object(source_path) is None:
-        logger.warning("No existing SIFTS descriptor to archive at s3://%s", source_path)
-        return False
+    try:
+        _ = head_object(source_path)
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "404":
+            logger.warning("No existing SIFTS descriptor to archive at s3://%s", source_path)
+            return False
 
     if dry_run:
         logger.debug("[dry-run] would archive SIFTS descriptor: %s -> %s", source_path, archive_path)
