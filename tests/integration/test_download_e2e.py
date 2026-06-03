@@ -1,7 +1,7 @@
 """End-to-end tests for Phase 2 — FTP download of assemblies.
 
 These tests download real (small) assemblies from the NCBI FTP server.
-Marked ``integration`` and ``slow_test``; auto-skipped when MinIO is
+Marked ``integration`` and ``slow_test``; auto-skipped when CEPH is
 unreachable.
 """
 
@@ -133,7 +133,7 @@ class TestDownloadResumeIncomplete:
 @pytest.mark.external_request
 def test_download_and_stage_e2e(
     tmp_path: Path,
-    minio_s3_client,
+    ceph_s3_client,
     test_bucket: str,
 ) -> None:
     """Download one assembly and verify it is staged under the expected S3 prefix."""
@@ -141,15 +141,15 @@ def test_download_and_stage_e2e(
 
     staging_prefix = "staging/e2e-test/"
 
-    # Seed the manifest in MinIO so download_and_stage can read it from S3
+    # Seed the manifest in CEPH so download_and_stage can read it from S3
     manifest_s3_key = f"{staging_prefix}input/transfer_manifest.txt"
-    minio_s3_client.put_object(
+    ceph_s3_client.put_object(
         Bucket=test_bucket,
         Key=manifest_s3_key,
         Body=manifest_path.read_bytes(),
     )
 
-    with patch.object(s3_utils, "get_s3_client", return_value=minio_s3_client):
+    with patch.object(s3_utils, "get_s3_client", return_value=ceph_s3_client):
         report = download_and_stage(
             bucket=test_bucket,
             staging_key_prefix=staging_prefix,
@@ -166,7 +166,7 @@ def test_download_and_stage_e2e(
     assert report["dry_run"] is False
 
     # Verify raw_data/ files and .md5 sidecars are staged
-    paginator = minio_s3_client.get_paginator("list_objects_v2")
+    paginator = ceph_s3_client.get_paginator("list_objects_v2")
     staged_keys = [
         obj["Key"]
         for page in paginator.paginate(Bucket=test_bucket, Prefix=f"{staging_prefix}raw_data/")
@@ -181,6 +181,6 @@ def test_download_and_stage_e2e(
 
     # Verify download_report.json was also uploaded
     report_key = f"{staging_prefix}download_report.json"
-    resp = minio_s3_client.get_object(Bucket=test_bucket, Key=report_key)
+    resp = ceph_s3_client.get_object(Bucket=test_bucket, Key=report_key)
     saved_report = json.loads(resp["Body"].read())
     assert saved_report["succeeded"] >= 1

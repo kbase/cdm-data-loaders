@@ -1,10 +1,10 @@
-"""End-to-end tests for Phase 3 — promote and archive in MinIO.
+"""End-to-end tests for Phase 3 — promote and archive in CEPH.
 
-Pre-stages fake assembly files in MinIO and exercises ``promote_from_s3``
+Pre-stages fake assembly files in CEPH and exercises ``promote_from_s3``
 with various combinations of manifests, archive operations, dry-run mode,
 manifest trimming, and incomplete staging.
 
-Marked ``integration`` and ``slow_test``; auto-skipped when MinIO is
+Marked ``integration`` and ``slow_test``; auto-skipped when CEPH is
 unreachable.  Each test method gets its own bucket.
 """
 
@@ -81,9 +81,9 @@ def _write_manifest(tmp_path: Path, accessions: list[str], name: str) -> Path:
 class TestPromoteFromStaging:
     """Promote staged files to final Lakehouse paths."""
 
-    def test_promote_from_staging(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
+    def test_promote_from_staging(self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
         """Staged files appear at the final Lakehouse path with MD5 metadata."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
 
         report = promote_from_s3(
@@ -112,14 +112,14 @@ class TestPromoteFromStaging:
 class TestPromoteIdempotent:
     """Promoting the same staging data twice should succeed without errors."""
 
-    def test_promote_idempotent(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
+    def test_promote_idempotent(self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
         """Second promote on empty staging succeeds and leaves the lakehouse unchanged.
 
         After the first promote, staged files are deleted.  A second run therefore
         finds nothing to promote — which is correct and expected.  The lakehouse
         contents must be identical after both runs.
         """
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
 
         report1 = promote_from_s3(
@@ -151,10 +151,10 @@ class TestPromoteArchiveUpdated:
     """Archive existing assemblies before overwriting with updated versions."""
 
     def test_archive_updated(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """Updated assemblies are archived before being overwritten."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
 
         # Seed "old" version at the final Lakehouse path
         old_files = {
@@ -197,10 +197,10 @@ class TestPromoteArchiveRemoved:
     """Archive and delete replaced/suppressed assemblies."""
 
     def test_archive_removed(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """Removed assemblies are archived and source objects are deleted."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
 
         # Seed assemblies at final path
         files = {
@@ -242,9 +242,9 @@ class TestPromoteArchiveRemoved:
 class TestPromoteDryRun:
     """Dry-run mode should not create any objects."""
 
-    def test_promote_dry_run(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
+    def test_promote_dry_run(self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
         """Dry-run logs actions but creates no objects at the final path."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
 
         report = promote_from_s3(
@@ -269,12 +269,12 @@ class TestPromoteTrimsManifest:
     """Manifest trimming removes promoted accessions."""
 
     def test_trims_manifest(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
-        """Transfer manifest in MinIO is trimmed to exclude promoted accessions."""
-        s3 = minio_s3_client
+        """Transfer manifest in CEPH is trimmed to exclude promoted accessions."""
+        s3 = ceph_s3_client
 
-        # Upload a transfer manifest with 3 entries to MinIO (manifest lives in staging)
+        # Upload a transfer manifest with 3 entries to CEPH (manifest lives in staging)
         manifest_key = "ncbi/transfer_manifest.txt"
         manifest_lines = [
             "/genomes/all/GCF/900/000/001/GCF_900000001.1_FakeAssemblyA/\n",
@@ -297,7 +297,7 @@ class TestPromoteTrimsManifest:
 
         assert report["failed"] == 0
 
-        # Read back the manifest from MinIO (it lives in staging)
+        # Read back the manifest from CEPH (it lives in staging)
         resp = s3.get_object(Bucket=staging_test_bucket, Key=manifest_key)
         remaining = resp["Body"].read().decode()
         remaining_lines = [line.strip() for line in remaining.strip().splitlines() if line.strip()]
@@ -312,9 +312,9 @@ class TestPromoteTrimsManifest:
 class TestPromoteIncompleteStaging:
     """Incomplete staging (sidecar only, no data) should not promote anything."""
 
-    def test_incomplete_staging(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
+    def test_incomplete_staging(self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
         """Only .md5 sidecars staged → nothing promoted."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
 
         # Stage only .md5 sidecars (no data files)
         rel = build_accession_path(ASSEMBLY_DIR_A)
@@ -344,9 +344,9 @@ class TestPromoteIncompleteStaging:
 class TestPromoteCreatesDescriptor:
     """Promote step writes a frictionless descriptor for each promoted assembly."""
 
-    def test_descriptor_created(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
+    def test_descriptor_created(self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
         """After promote, a JSON descriptor exists under ``metadata/``."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
 
         promote_from_s3(
@@ -364,10 +364,10 @@ class TestPromoteCreatesDescriptor:
         assert body["resource_type"] == "dataset"
 
     def test_descriptor_resources_include_promoted_files(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """Descriptor's ``resources`` list references the final Lakehouse key."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
 
         promote_from_s3(
@@ -385,10 +385,10 @@ class TestPromoteCreatesDescriptor:
         assert any(PATH_PREFIX + "raw_data/" in p for p in resource_paths)
 
     def test_descriptor_resources_have_md5(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """Resources with .md5 sidecars include the hash value."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
 
         promote_from_s3(
@@ -407,10 +407,10 @@ class TestPromoteCreatesDescriptor:
             assert "hash" in resource, f"Expected hash in resource: {resource}"
 
     def test_multiple_assemblies_get_separate_descriptors(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """Each assembly gets its own descriptor file."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_B)
 
@@ -434,17 +434,17 @@ class TestPromoteArchiveUpdatedIncludesDescriptor:
     """Archiving updated assemblies also archives the descriptor."""
 
     def test_archive_copies_descriptor(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """After archiving an updated assembly, the descriptor appears under archive/."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
 
         # Seed old version at Lakehouse path *including* a live descriptor
         old_files = {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": "old content"}
         seed_lakehouse(s3, test_bucket, ACCESSION_A, old_files, PATH_PREFIX, ASSEMBLY_DIR_A)
         # Pre-upload a descriptor so archive_descriptor can find it
         descriptor = create_descriptor(ASSEMBLY_DIR_A, ACCESSION_A, [])
-        # Upload directly to MinIO (not via promote)
+        # Upload directly to CEPH (not via promote)
         descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, PATH_PREFIX)
         s3.put_object(Bucket=test_bucket, Key=descriptor_key, Body=json.dumps(descriptor).encode())
 
@@ -472,10 +472,10 @@ class TestPromoteArchiveRemovedIncludesDescriptor:
     """Archiving removed assemblies also archives the descriptor."""
 
     def test_archive_removed_copies_descriptor(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """After archiving a removed assembly, the descriptor is under archive/."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
 
         # Seed the assembly at final Lakehouse path
         files = {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": "content"}
@@ -506,9 +506,9 @@ class TestPromoteArchiveRemovedIncludesDescriptor:
 class TestPromoteDryRunNoDescriptor:
     """Dry-run must not write any descriptor files."""
 
-    def test_dry_run_no_descriptor(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
+    def test_dry_run_no_descriptor(self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
         """Dry-run does not upload a descriptor to the metadata/ prefix."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
 
         promote_from_s3(
@@ -532,12 +532,12 @@ class TestArchiveMultiFileConcurrent:
     """Verify parallel copy archives all files correctly with correct content."""
 
     def test_all_files_archived_with_correct_content(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """Every file is archived with byte-identical content when copied concurrently."""
         from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies
 
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
 
         # Seed many files for assembly A at final Lakehouse path
         many_files = {
@@ -572,12 +572,12 @@ class TestArchiveMultiFileConcurrent:
             assert actual_body == expected_body, f"Content mismatch for {fname}"
 
     def test_archive_key_paths_are_correct(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """Archived keys follow the exact ``archive/{release}/{reason}/{rel_path}`` pattern."""
         from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies
 
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         files = {f"{ASSEMBLY_DIR_B}_genomic.fna.gz": b"content"}
         seed_lakehouse(s3, test_bucket, ACCESSION_B, files, PATH_PREFIX, ASSEMBLY_DIR_B)
 
@@ -603,12 +603,12 @@ class TestArchiveDeleteSourceBatch:
     """Verify batch delete removes all source objects after concurrent copy."""
 
     def test_all_sources_deleted_after_archive(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """After archive with delete_source=True, no source objects remain."""
         from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies
 
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         many_files = {
             f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"genomic",
             f"{ASSEMBLY_DIR_A}_protein.faa.gz": b"protein",
@@ -634,12 +634,12 @@ class TestArchiveDeleteSourceBatch:
             assert len(remaining) == 0, f"Source not deleted: {key}"
 
     def test_archive_present_source_gone(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """Archive destinations exist AND sources are gone after replaced_or_suppressed archive."""
         from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies
 
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         files = {
             f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"genomic",
             f"{ASSEMBLY_DIR_A}_protein.faa.gz": b"protein",
@@ -676,7 +676,7 @@ class TestPartialArchiveResume:
     """
 
     def test_partial_updated_archive_resumes(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """Re-running after a partial updated archive overwrites stale copies and archives missing files.
 
@@ -686,7 +686,7 @@ class TestPartialArchiveResume:
         """
         from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies
 
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         rel = build_accession_path(ASSEMBLY_DIR_A)
 
         file_a = f"{ASSEMBLY_DIR_A}_genomic.fna.gz"
@@ -724,7 +724,7 @@ class TestPartialArchiveResume:
         assert len(source_keys) == len(current_content)
 
     def test_partial_replaced_archive_resumes_and_deletes(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """Re-running replaced_or_suppressed archive after partial run completes and deletes all sources.
 
@@ -734,7 +734,7 @@ class TestPartialArchiveResume:
         """
         from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies
 
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         rel = build_accession_path(ASSEMBLY_DIR_A)
 
         file_a = f"{ASSEMBLY_DIR_A}_genomic.fna.gz"
@@ -782,12 +782,12 @@ class TestPartialArchiveResume:
         assert resp_a["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
 
     def test_full_rerun_after_complete_archive_is_idempotent(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """Running archive again when all files already exist at archive paths is safe (no errors)."""
         from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies
 
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         files = {
             f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"genomic",
             f"{ASSEMBLY_DIR_A}_protein.faa.gz": b"protein",
@@ -832,12 +832,12 @@ class TestArchiveMultiAccessionManifest:
     """Multiple accessions in a single manifest are all archived."""
 
     def test_two_accessions_both_archived(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """Both accessions are archived with correct keys when listed in one manifest."""
         from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies
 
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
 
         files_a = {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"genomic-A"}
         files_b = {f"{ASSEMBLY_DIR_B}_genomic.fna.gz": b"genomic-B"}
@@ -867,12 +867,12 @@ class TestArchiveMultiAccessionManifest:
         assert len(list_all_keys(s3, test_bucket, f"{PATH_PREFIX}{rel_b}")) == 0
 
     def test_three_accessions_correct_archive_reason_segment(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """Archive keys for all three accessions include the archive_reason segment."""
         from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies
 
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         accessions_and_dirs = [
             (ACCESSION_A, ASSEMBLY_DIR_A),
             (ACCESSION_B, ASSEMBLY_DIR_B),
@@ -911,12 +911,12 @@ class TestArchiveDryRunParallel:
     """Dry-run with many files leaves everything unchanged."""
 
     def test_dry_run_no_copies_no_deletes(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str, tmp_path: Path
     ) -> None:
         """Dry-run with multiple files per accession creates no archive keys and keeps sources."""
         from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies
 
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         many_files = {
             f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"genomic",
             f"{ASSEMBLY_DIR_A}_protein.faa.gz": b"protein",
@@ -972,10 +972,10 @@ class TestPromoteMultiFileConcurrent:
     """Verify concurrent promotion lands all files with correct content and MD5."""
 
     def test_six_files_all_promoted_with_correct_content(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """Every staged file arrives at the correct final key with byte-identical content."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         many_files = {
             f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"GENOMIC",
             f"{ASSEMBLY_DIR_A}_protein.faa.gz": b"PROTEIN",
@@ -1003,10 +1003,10 @@ class TestPromoteMultiFileConcurrent:
             assert obj["Body"].read() == expected_body, f"Content mismatch: {fname}"
 
     def test_md5_metadata_correct_per_file(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """Each promoted file carries MD5 metadata matching its own content, not another file's."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         files = {
             f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"GENOMIC_UNIQUE",
             f"{ASSEMBLY_DIR_A}_protein.faa.gz": b"PROTEIN_UNIQUE",
@@ -1028,10 +1028,10 @@ class TestPromoteMultiFileConcurrent:
             assert meta.get("md5") == _md5(content), f"Wrong MD5 metadata on {fname}"
 
     def test_file_without_sidecar_has_no_md5_metadata(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """A file staged without a .md5 sidecar is promoted but has no md5 metadata key."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         fname = f"{ASSEMBLY_DIR_A}_genomic.fna.gz"
         _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, {fname: FAKE_GENOMIC}, with_md5=False)
 
@@ -1053,10 +1053,10 @@ class TestPromoteStagingCleanup:
     """After a fully successful promote, all staged files and sidecars are deleted."""
 
     def test_staged_data_files_deleted(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """Data files are removed from staging after a successful assembly promote."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         files = {
             f"{ASSEMBLY_DIR_A}_genomic.fna.gz": FAKE_GENOMIC,
             f"{ASSEMBLY_DIR_A}_protein.faa.gz": FAKE_PROTEIN,
@@ -1073,9 +1073,9 @@ class TestPromoteStagingCleanup:
         remaining_staging = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
         assert len(remaining_staging) == 0, f"Staging not cleaned: {remaining_staging}"
 
-    def test_md5_sidecars_deleted(self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
+    def test_md5_sidecars_deleted(self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
         """Both data files and .md5 sidecars are removed from staging after promote."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         files = {
             f"{ASSEMBLY_DIR_A}_genomic.fna.gz": FAKE_GENOMIC,
             f"{ASSEMBLY_DIR_A}_protein.faa.gz": FAKE_PROTEIN,
@@ -1097,10 +1097,10 @@ class TestPromoteStagingCleanup:
         assert len(after_keys) == 0, f"Staging not fully cleaned (including sidecars): {after_keys}"
 
     def test_two_assemblies_staging_both_cleaned(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """Staging for both assemblies is fully cleaned when both assemblies succeed."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_many(
             s3,
             staging_test_bucket,
@@ -1135,10 +1135,10 @@ class TestPromoteTwoAssembliesBothLand:
     """Both assemblies staged together are both promoted to correct Lakehouse paths."""
 
     def test_both_assemblies_at_correct_final_paths(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """Each assembly's files appear at distinct, correctly-routed final Lakehouse paths."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         files_a = {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"genomic-A"}
         files_b = {f"{ASSEMBLY_DIR_B}_genomic.fna.gz": b"genomic-B"}
         _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, files_a)
@@ -1162,10 +1162,10 @@ class TestPromoteTwoAssembliesBothLand:
         assert obj_b["Body"].read() == b"genomic-B"
 
     def test_final_path_keys_do_not_overlap(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """Files for assembly A and assembly B land at distinct paths — no key collision."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": b"a"})
         _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_B, {f"{ASSEMBLY_DIR_B}_genomic.fna.gz": b"b"})
 
@@ -1191,10 +1191,10 @@ class TestPromoteDryRunMultiFile:
     """dry_run leaves staging untouched and writes nothing to the Lakehouse."""
 
     def test_dry_run_many_files_staging_untouched(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """All staged files (data + .md5) survive a dry-run promote unchanged."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         many_files = {
             f"{ASSEMBLY_DIR_A}_genomic.fna.gz": FAKE_GENOMIC,
             f"{ASSEMBLY_DIR_A}_protein.faa.gz": FAKE_PROTEIN,
@@ -1223,10 +1223,10 @@ class TestPromoteDryRunMultiFile:
         assert len(final_keys) == 0, f"Dry-run created Lakehouse objects: {final_keys}"
 
     def test_dry_run_two_assemblies_nothing_written(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """Dry-run with two staged assemblies creates no Lakehouse objects."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_A, {f"{ASSEMBLY_DIR_A}_genomic.fna.gz": FAKE_GENOMIC})
         _stage_many(s3, staging_test_bucket, ASSEMBLY_DIR_B, {f"{ASSEMBLY_DIR_B}_genomic.fna.gz": FAKE_GENOMIC})
 
@@ -1247,11 +1247,9 @@ class TestPromoteDryRunMultiFile:
 class TestPromoteSecondRunOnEmptyStaging:
     """After staging is cleaned, a second promote run promotes 0 files without error."""
 
-    def test_second_run_promoted_zero(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
-    ) -> None:
+    def test_second_run_promoted_zero(self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str) -> None:
         """Re-running promote on already-cleaned staging succeeds with promoted=0."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_many(
             s3,
             staging_test_bucket,
@@ -1283,10 +1281,10 @@ class TestPromoteSecondRunOnEmptyStaging:
         assert len(final_keys) == 1
 
     def test_lakehouse_unchanged_on_second_run(
-        self, minio_s3_client: object, test_bucket: str, staging_test_bucket: str
+        self, ceph_s3_client: object, test_bucket: str, staging_test_bucket: str
     ) -> None:
         """Lakehouse contents are identical before and after a second (no-op) promote run."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         _stage_many(
             s3,
             staging_test_bucket,

@@ -1,9 +1,9 @@
-"""Shared fixtures and helpers for MinIO-backed integration tests.
+"""Shared fixtures and helpers for CEPH-backed integration tests.
 
-Integration tests are auto-skipped when MinIO is not reachable.  Each test
+Integration tests are auto-skipped when CEPH is not reachable.  Each test
 method gets its own bucket (derived from the test node name) that is emptied
 on re-run but **never deleted** after the test — this lets developers inspect
-the final state of the object store via the MinIO console.
+the final state of the object store via the CEPH console.
 """
 
 import hashlib
@@ -27,13 +27,13 @@ from cdm_data_loaders.utils.s3 import reset_s3_client
 _MAX_BUCKET_LEN = 63
 
 
-# MinIO reachability check
+# CEPH reachability check
 
-_minio_available: bool | None = None
+_ceph_available: bool | None = None
 
 
-def _minio_reachable() -> bool:
-    """Return True if the MinIO endpoint accepts connections."""
+def _ceph_reachable() -> bool:
+    """Return True if the CEPH endpoint accepts connections."""
     try:
         client = boto3.client(
             "s3",
@@ -50,13 +50,13 @@ def _minio_reachable() -> bool:
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:  # noqa: ARG001
-    """Auto-skip ``@pytest.mark.integration`` tests when MinIO is unreachable."""
-    global _minio_available  # noqa: PLW0603
-    if _minio_available is None:
-        _minio_available = _minio_reachable()
-    if _minio_available:
+    """Auto-skip ``@pytest.mark.integration`` tests when CEPH is unreachable."""
+    global _ceph_available  # noqa: PLW0603
+    if _ceph_available is None:
+        _ceph_available = _ceph_reachable()
+    if _ceph_available:
         return
-    skip_marker = pytest.mark.skip(reason="MinIO not reachable — skipping integration tests")
+    skip_marker = pytest.mark.skip(reason="CEPH not reachable — skipping integration tests")
     for item in items:
         if "integration" in item.keywords:
             item.add_marker(skip_marker)
@@ -66,11 +66,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 @pytest.fixture
-def minio_s3_client() -> botocore.client.BaseClient:
-    """Session-scoped real boto3 S3 client pointed at the local MinIO instance.
+def ceph_s3_client() -> botocore.client.BaseClient:
+    """Session-scoped real boto3 S3 client pointed at the local CEPH instance.
 
     Patches ``get_s3_client`` on every module that uses it so internal calls
-    are transparently routed to MinIO.
+    are transparently routed to CEPH.
     """
     client = boto3.client("s3")
 
@@ -105,14 +105,14 @@ def _bucket_name_from_node(node_id: str) -> str:
 
 
 @pytest.fixture
-def test_bucket(minio_s3_client: botocore.client.BaseClient, request: pytest.FixtureRequest) -> str:
-    """Create a per-test-method bucket in MinIO and return its name.
+def test_bucket(ceph_s3_client: botocore.client.BaseClient, request: pytest.FixtureRequest) -> str:
+    """Create a per-test-method bucket in CEPH and return its name.
 
     On re-run, any existing objects are deleted first so the test starts clean.
     The bucket is **not** deleted after the test.
     """
     bucket = _bucket_name_from_node(request.node.nodeid)
-    s3 = minio_s3_client
+    s3 = ceph_s3_client
 
     try:
         s3.head_bucket(Bucket=bucket)
@@ -133,8 +133,8 @@ def test_bucket(minio_s3_client: botocore.client.BaseClient, request: pytest.Fix
 
 
 @pytest.fixture
-def staging_test_bucket(minio_s3_client: botocore.client.BaseClient, request: pytest.FixtureRequest) -> str:
-    """Create a per-test staging bucket in MinIO and return its name.
+def staging_test_bucket(ceph_s3_client: botocore.client.BaseClient, request: pytest.FixtureRequest) -> str:
+    """Create a per-test staging bucket in CEPH and return its name.
 
     Mirrors ``test_bucket`` but uses a ``staging-`` prefix so staging and
     Lakehouse buckets are distinct within the same test.
@@ -143,7 +143,7 @@ def staging_test_bucket(minio_s3_client: botocore.client.BaseClient, request: py
     if len(bucket) > _MAX_BUCKET_LEN:
         suffix = hashlib.md5(bucket.encode()).hexdigest()[:6]  # noqa: S324
         bucket = f"{bucket[: _MAX_BUCKET_LEN - 7]}-{suffix}"
-    s3 = minio_s3_client
+    s3 = ceph_s3_client
 
     try:
         s3.head_bucket(Bucket=bucket)
@@ -165,13 +165,13 @@ def staging_test_bucket(minio_s3_client: botocore.client.BaseClient, request: py
 # Helpers
 
 
-def stage_files_to_minio(
+def stage_files_to_ceph(
     s3: botocore.client.BaseClient,
     bucket: str,
     local_dir: str | Path,
     staging_prefix: str,
 ) -> list[str]:
-    """Upload a local directory tree to a MinIO staging prefix.
+    """Upload a local directory tree to a CEPH staging prefix.
 
     :param s3: boto3 S3 client
     :param bucket: target bucket
@@ -199,7 +199,7 @@ def seed_lakehouse(  # noqa: PLR0913
     path_prefix: str,
     assembly_dir: str | None = None,
 ) -> list[str]:
-    """Seed assembly files at the final Lakehouse path in MinIO.
+    """Seed assembly files at the final Lakehouse path in CEPH.
 
     :param s3: boto3 S3 client
     :param bucket: target bucket

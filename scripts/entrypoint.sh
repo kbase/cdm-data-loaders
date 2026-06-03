@@ -41,7 +41,7 @@ case "$cmd" in
     exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark"
     ;;
   integration_test)
-    # run the integration tests (requires a running MinIO instance)
+    # run the integration tests (requires a running CEPH instance)
     exec /usr/bin/tini -- uv run --no-sync pytest -m "integration" -v "$@"
     ;;
   bash)

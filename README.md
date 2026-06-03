@@ -10,7 +10,7 @@ Repo for CDM input data loading and wrangling
   - [Development](#development)
     - [Spark and other non-python dependencies](#spark-and-other-non-python-dependencies)
     - [Tests](#tests)
-      - [Integration tests (MinIO + NCBI FTP)](#integration-tests-minio--ncbi-ftp)
+      - [Integration tests (CEPH + NCBI FTP)](#integration-tests-ceph--ncbi-ftp)
   - [Loading genomes, contigs, and features](#loading-genomes-contigs-and-features)
   - [Running bbmap stats and checkm2 on genome or contigset files](#running-bbmap-stats-and-checkm2-on-genome-or-contigset-files)
 
@@ -162,17 +162,17 @@ To generate coverage for the tests, run
 The standard python `coverage` package is used and coverage can be generated as html or other formats by changing the parameters.
 
 
-#### Integration tests (MinIO + NCBI FTP)
+#### Integration tests (CEPH + NCBI FTP)
 
-End-to-end integration tests for the NCBI assembly pipeline live in `tests/integration/`. They exercise the full flow — manifest diffing, FTP download, S3 promote/archive — against a locally running [MinIO](https://min.io/) container and the real NCBI FTP server.
+End-to-end integration tests for the NCBI assembly pipeline live in `tests/integration/`. They exercise the full flow — manifest diffing, FTP download, S3 promote/archive — against a locally running [CEPH](https://ceph.io/) container and the real NCBI FTP server.
 
 **Requirements:**
-- Docker (for MinIO)
+- Docker or Podman (for CEPH)
 - Network access to `ftp.ncbi.nlm.nih.gov`
 
 **Running with Docker Compose (easiest)**
 
-The [docker-compose.yml](docker-compose.yml) at the repo root defines both a MinIO service and the integration test runner. To build the image, start MinIO, and run the integration tests in one command:
+The [docker-compose.yml](docker-compose.yml) at the repo root defines both a CEPH service and the integration test runner. To build the image, start CEPH, and run the integration tests in one command:
 
 ```sh
 docker compose up --build --abort-on-container-exit
@@ -186,18 +186,19 @@ docker compose down --volumes
 
 **Running manually**
 
-If you prefer to run the tests directly against a local MinIO instance (e.g. for faster iteration during development), follow the steps below.
+If you prefer to run the tests directly against a local CEPH instance (e.g. for faster iteration during development), follow the steps below.
 
-**1. Start MinIO locally:**
+**1. Start CEPH locally:**
 
 ```sh
 docker run -d \
-  --name minio \
-  -p 9000:9000 \
-  -p 9001:9001 \
-  -e MINIO_ROOT_USER=minioadmin \
-  -e MINIO_ROOT_PASSWORD=minioadmin \
-  minio/minio:RELEASE.2025-02-28T09-55-16Z server /data --console-address ":9001"
+  --name ceph \
+  -p 9000:8080 \
+  -p 9001:8443 \
+  -e RGW_PORT=8080 \
+  -e RGW_ACCESS_KEY=test_access_key \
+  -e RGW_SECRET_KEY=test_access_secret \
+  ghcr.io/kbasetest/ceph-rgw-test-image:0.1.5
 ```
 
 **2. Run the integration tests:**
@@ -206,16 +207,16 @@ docker run -d \
 > uv run pytest tests/integration/ -m integration -v
 ```
 
-Tests are automatically skipped when MinIO is not reachable, so the default `uv run pytest` will never fail due to a missing MinIO instance.
+Tests are automatically skipped when CEPH is not reachable, so the default `uv run pytest` will never fail due to a missing CEPH instance.
 
 **3. Inspect results:**
 
-Buckets are **not** cleaned up after tests. Browse the MinIO console at [http://localhost:9001](http://localhost:9001) (login: `minioadmin` / `minioadmin`) to inspect the final state of each test bucket. Each test method creates its own bucket (e.g. `integ-test-promote-dry-run`).
+Buckets are **not** cleaned up after tests. Browse the CEPH console at [http://localhost:9001](http://localhost:9001) (login: `admin` / `admin`) to inspect the final state of each test bucket. Each test method creates its own bucket (e.g. `integ-test-promote-dry-run`).
 
-**4. Stop MinIO when done:**
+**4. Stop CEPH when done:**
 
 ```sh
-docker stop minio && docker rm minio
+docker stop ceph && docker rm ceph
 ```
 
 > **Note:** These tests download real assemblies from NCBI FTP and are inherently slow (~30–60s per assembly). They are also marked `slow_test` so you can exclude them independently: `uv run pytest -m "not slow_test"`.
