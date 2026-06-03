@@ -96,10 +96,7 @@ docker run -d \
 (Note that a similar service is included in the `docker-compose` configuration file at the root of
 this repository that is used in CI test workflows.)
 
-Create a test bucket via the [CEPH console](http://localhost:9001)
-(login: `admin` / `admin`), or from the command line using the
-included `scripts/s3_local.py` helper (requires no extra installs — only
-`boto3` which is already a project dependency):
+Create test buckets from the command line using the included `scripts/s3_local.py` helper (requires no extra installs — only `boto3` which is already a project dependency):
 
 ```sh
 uv run python scripts/s3_local.py mb s3://cdm-lake
