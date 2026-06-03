@@ -256,6 +256,7 @@ def test_get_s3_client_incomplete_creds_via_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify that get_s3_client raises ValueError when only one of aws_access_key_id or aws_secret_access_key is provided."""
+    prep_client_init(monkeypatch)
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
     args = {
