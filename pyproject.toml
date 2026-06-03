@@ -9,7 +9,7 @@ authors = [
 ]
 
 dependencies = [
-    "bioregistry>=0.13.57",
+    "bioregistry>=0.13.58",
     "boto3[crt]>=1.42.55",
     "click>=8.4.1",
     "defusedxml>=0.7.1",
