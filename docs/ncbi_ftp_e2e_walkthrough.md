@@ -1,7 +1,7 @@
 # NCBI FTP Pipeline — Local End-to-End Walkthrough
 
 Step-by-step instructions for running a small (≤ 10 assembly) end-to-end sync
-of NCBI RefSeq records against a local MinIO container.  The walkthrough uses
+of NCBI RefSeq records against a local CEPH container.  The walkthrough uses
 the two existing Jupyter notebooks for Phases 1 and 3, and the project's Docker
 image for the Phase 2 download step.
 
@@ -80,25 +80,23 @@ s3://{STAGING_BUCKET}/{STAGING_KEY_PREFIX}raw_data/{GCF|GCA}/{nnn}/{nnn}/{nnn}/{
 
 ### Local testing
 
-### Start MinIO
+### Start CEPH
 
 ```sh
 docker run -d \
-  --name minio \
-  -p 9000:9000 \
-  -p 9001:9001 \
-  -e MINIO_ROOT_USER=minioadmin \
-  -e MINIO_ROOT_PASSWORD=minioadmin \
-  minio/minio:RELEASE.2025-02-28T09-55-16Z server /data --console-address ":9001"
+  --name ceph \
+  -p 9000:8080 \
+  -p 9001:8443 \
+  -e RGW_PORT=8080 \
+  -e RGW_ACCESS_KEY=test_access_key \
+  -e RGW_SECRET_KEY=test_access_secret \
+  ghcr.io/kbasetest/ceph-rgw-test-image:0.1.5
 ```
 
 (Note that a similar service is included in the `docker-compose` configuration file at the root of
 this repository that is used in CI test workflows.)
 
-Create a test bucket via the [MinIO console](http://localhost:9001)
-(login: `minioadmin` / `minioadmin`), or from the command line using the
-included `scripts/s3_local.py` helper (requires no extra installs — only
-`boto3` which is already a project dependency):
+Create test buckets from the command line using the included `scripts/s3_local.py` helper (requires no extra installs — only `boto3` which is already a project dependency):
 
 ```sh
 uv run python scripts/s3_local.py mb s3://cdm-lake
@@ -142,10 +140,10 @@ Open `notebooks/ncbi_ftp_manifest.ipynb` in JupyterLab or VS Code.
 | `STORE_KEY_PREFIX`    | `"tenant-general-warehouse/kbase/datasets/ncbi/"` | S3 key prefix | default Lakehouse path prefix    |
 | `OUTPUT_DIR`          | `Path("output")`                 | local path | keep as-is (local directory)                        |
 
-### Initialise the S3 client for MinIO
+### Initialise the S3 client for CEPH
 
 If you set `PREVIOUS_SUMMARY_URI`, `SNAPSHOT_UPLOAD_URI`, `LAKEHOUSE_BUCKET`,
-or `STAGING_URI` to point at your local MinIO, you must initialise
+or `STAGING_URI` to point at your local CEPH, you must initialise
 the S3 client **before** running the cells that use them.  Insert a new cell
 after Cell 1 (Imports) with:
 
@@ -155,8 +153,8 @@ from cdm_data_loaders.utils.s3 import get_s3_client, reset_s3_client
 reset_s3_client()
 get_s3_client({
     "endpoint_url": "http://localhost:9000",
-    "aws_access_key_id": "minioadmin",
-    "aws_secret_access_key": "minioadmin",
+    "aws_access_key_id": "test_access_key",
+    "aws_secret_access_key": "test_access_secret",
 })
 ```
 
@@ -229,7 +227,7 @@ can stage them into the container.  For local testing, set
 `STAGING_URI = None` (the default) and copy the manifest manually in
 Step 3b below.
 
-If you are testing against MinIO and want to exercise the S3 upload path:
+If you are testing against CEPH and want to exercise the S3 upload path:
 
 ```python
 STAGING_URI = "s3://cdm-lake/staging/run1/"
@@ -321,10 +319,10 @@ the FTP server's `md5checksums.txt`.
 >   --threads 2 --limit 10
 > ```
 
-### 3d. Upload staged files to MinIO
+### 3d. Upload staged files to CEPH
 
 The download step writes to the local filesystem.  To feed Phase 3 we need
-to upload the staged files into MinIO under a staging prefix:
+to upload the staged files into CEPH under a staging prefix:
 
 ```sh
 uv run python scripts/s3_local.py cp notebooks/staging/raw_data/ s3://cts/staging/run1/raw_data/
@@ -356,10 +354,10 @@ Open `notebooks/ncbi_ftp_promote.ipynb`.
 | `LAKEHOUSE_KEY_PREFIX`  | `"tenant-general-warehouse/kbase/datasets/ncbi/"`    | S3 key prefix | keep default                         |
 | `DRY_RUN`               | `True`                                               | bool   | **start with dry-run!**                     |
 
-### Initialise the S3 client for MinIO
+### Initialise the S3 client for CEPH
 
 The notebook calls `get_s3_client()` which, by default, tries to import
-credentials from `berdl_notebook_utils`.  For local MinIO you need to
+credentials from `berdl_notebook_utils`.  For local CEPH you need to
 initialise the client manually **before** running Cell 4.  Insert a new cell
 after Cell 2 (Imports) with:
 
@@ -369,8 +367,8 @@ from cdm_data_loaders.utils.s3 import get_s3_client, reset_s3_client
 reset_s3_client()  # clear any cached client
 get_s3_client({
     "endpoint_url": "http://localhost:9000",
-    "aws_access_key_id": "minioadmin",
-    "aws_secret_access_key": "minioadmin",
+    "aws_access_key_id": "test_access_key",
+    "aws_secret_access_key": "test_access_secret",
 })
 ```
 
@@ -382,7 +380,7 @@ get_s3_client({
 3. If the dry-run looks correct, set `DRY_RUN = False` in Cell 3 and re-run
    from Cell 3.
 
-After promotion the final Lakehouse layout in MinIO will look like:
+After promotion the final Lakehouse layout in CEPH will look like:
 
 ```
 cdm-lake/
@@ -395,9 +393,9 @@ cdm-lake/
 
 ---
 
-## 5. Inspect results in MinIO
+## 5. Inspect results in CEPH
 
-Browse the [MinIO console](http://localhost:9001) or use the CLI:
+Use the CLI to inspect the final state of the store:
 
 ```sh
 # List final Lakehouse objects
@@ -471,8 +469,8 @@ previous snapshot:
 ## 7. Cleanup
 
 ```sh
-# Stop and remove MinIO
-docker stop minio && docker rm minio
+# Stop and remove CEPH
+docker stop ceph && docker rm ceph
 
 # Remove local staging data
 rm -rf staging/ output/
@@ -484,9 +482,8 @@ rm -rf staging/ output/
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `berdl_notebook_utils` import error in notebook | Missing local MinIO client init | Add the `get_s3_client({...})` cell described in Step 4 |
+| `berdl_notebook_utils` import error in notebook | Missing local CEPH client init | Add the `get_s3_client({...})` cell described in Step 4 |
 | `connect_ftp() timeout` | NCBI FTP may be slow or rate-limited | Retry; reduce `--threads` to 1 |
-| `CRC64NVME` errors uploading to MinIO | MinIO version too old (needs ≥ `2025-02-07`) | Pin to `minio/minio:RELEASE.2025-02-28T09-55-16Z` or newer |
 | Phase 3 shows 0 promoted | Staging prefix doesn't match or bucket is wrong | Verify `STAGING_KEY_PREFIX` matches the S3 upload path from Step 3d |
 | Container can't reach FTP | Docker network isolation | Use `--network host` or ensure DNS resolution works inside the container |
 

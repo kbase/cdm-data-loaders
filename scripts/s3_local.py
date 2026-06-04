@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ruff: noqa: T201, EM101, EM102, TRY003, D103
-"""Thin S3 CLI for local MinIO testing (no aws-cli install required).
+"""Thin S3 CLI for local CEPH testing (no aws-cli install required).
 
 Usage (all commands assume ``uv run`` from the repo root):
 
@@ -12,8 +12,8 @@ Usage (all commands assume ``uv run`` from the repo root):
 Environment variables (with defaults for the walkthrough):
 
     AWS_ENDPOINT_URL         http://localhost:9000
-    AWS_ACCESS_KEY_ID        minioadmin
-    AWS_SECRET_ACCESS_KEY    minioadmin
+    AWS_ACCESS_KEY_ID        test_access_key
+    AWS_SECRET_ACCESS_KEY    test_access_secret
 """
 
 import os
@@ -27,8 +27,8 @@ def _client() -> None:
     _ = s3.get_s3_client(
         {
             "endpoint_url": os.environ.get("AWS_ENDPOINT_URL", "http://localhost:9000"),
-            "aws_access_key_id": os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin"),
-            "aws_secret_access_key": os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin"),
+            "aws_access_key_id": os.environ.get("AWS_ACCESS_KEY_ID", "test_access_key"),
+            "aws_secret_access_key": os.environ.get("AWS_SECRET_ACCESS_KEY", "test_access_secret"),
         }
     )
 

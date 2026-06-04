@@ -1,9 +1,9 @@
 """End-to-end tests for the full NCBI assembly pipeline (Phase 1 → 2 → 3).
 
 Exercises the entire flow: download summary from real NCBI FTP, compute diff,
-download a single assembly, stage in MinIO, promote to final Lakehouse path.
+download a single assembly, stage in CEPH, promote to final Lakehouse path.
 
-Marked ``integration`` and ``slow_test``; auto-skipped when MinIO is
+Marked ``integration`` and ``slow_test``; auto-skipped when CEPH is
 unreachable.
 """
 
@@ -29,7 +29,7 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
 from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX, promote_from_s3
 from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch
 
-from .conftest import get_object_metadata, list_all_keys, stage_files_to_minio, staging_test_bucket  # noqa: F401
+from .conftest import get_object_metadata, list_all_keys, stage_files_to_ceph, staging_test_bucket  # noqa: F401
 
 STABLE_PREFIX = "900"
 STAGING_PREFIX = "staging/run1/"
@@ -44,13 +44,13 @@ class TestFullPipelineSmallBatch:
 
     def test_full_pipeline_small_batch(
         self,
-        minio_s3_client: object,
+        ceph_s3_client: object,
         test_bucket: str,
         staging_test_bucket: str,
         tmp_path: Path,
     ) -> None:
-        """Single assembly flows through all three phases into MinIO."""
-        s3 = minio_s3_client
+        """Single assembly flows through all three phases into CEPH."""
+        s3 = ceph_s3_client
 
         # Step 1: Manifest generation
         raw = download_assembly_summary(database="refseq")
@@ -76,9 +76,9 @@ class TestFullPipelineSmallBatch:
         assert report["succeeded"] >= 1
         assert report["failed"] == 0
 
-        # Upload local output to MinIO staging
-        keys = stage_files_to_minio(s3, staging_test_bucket, output_dir, STAGING_PREFIX)
-        assert len(keys) > 0, "Expected files staged to MinIO"
+        # Upload local output to CEPH staging
+        keys = stage_files_to_ceph(s3, staging_test_bucket, output_dir, STAGING_PREFIX)
+        assert len(keys) > 0, "Expected files staged to CEPH"
 
         # Step 3: Promote from staging to final path
         promote_report = promote_from_s3(
@@ -112,13 +112,13 @@ class TestFullPipelineIncrementalSync:
 
     def test_full_pipeline_incremental(
         self,
-        minio_s3_client: object,
+        ceph_s3_client: object,
         test_bucket: str,
         staging_test_bucket: str,
         tmp_path: Path,
     ) -> None:
         """Second sync archives the old version and promotes the new one."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
 
         # First sync: Steps 1 -> 2 -> 3
         raw = download_assembly_summary(database="refseq")
@@ -136,9 +136,9 @@ class TestFullPipelineIncrementalSync:
         report1 = download_batch(str(manifest1), str(output1), threads=1, limit=1)
         assert report1["succeeded"] >= 1
 
-        stage_files_to_minio(s3, staging_test_bucket, output1, STAGING_PREFIX)
+        stage_files_to_ceph(s3, staging_test_bucket, output1, STAGING_PREFIX)
 
-        # Upload manifest to MinIO for trimming (manifest lives in staging bucket)
+        # Upload manifest to CEPH for trimming (manifest lives in staging bucket)
         manifest_key = "ncbi/transfer_manifest.txt"
         s3.upload_file(Filename=str(manifest1), Bucket=staging_test_bucket, Key=manifest_key)
 
@@ -197,7 +197,7 @@ class TestFullPipelineIncrementalSync:
         staging_keys = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
         for key in staging_keys:
             s3.delete_object(Bucket=staging_test_bucket, Key=key)
-        stage_files_to_minio(s3, staging_test_bucket, output2, STAGING_PREFIX)
+        stage_files_to_ceph(s3, staging_test_bucket, output2, STAGING_PREFIX)
 
         # Phase 3 — promote with archival
         promote2 = promote_from_s3(
