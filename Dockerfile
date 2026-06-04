@@ -3,13 +3,11 @@
 # Dockerfile is based heavily on the example uv dockerfile:
 # https://github.com/astral-sh/uv-docker-example
 
-# Pull the pre-built Rust app from ghcr.io
-FROM ghcr.io/ialarmedalien/xml_file_splitter:latest AS rust-app
-
 # Use a Python image with uv pre-installed
 FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim
 
 ARG QSV_VERSION="20.1.0"
+ARG XML_FILE_SPLITTER_VERSION="v0.1.2"
 
 # Set environment variable to noninteractive to prevent prompts during apt operations
 ENV DEBIAN_FRONTEND=noninteractive
@@ -17,13 +15,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 # add tini and git
 RUN apt-get update -y && apt-get install -y --no-install-recommends tini git ca-certificates wget unzip && rm -rf /var/lib/apt/lists/*
 
-# download the qsv binary from the GitHub releases and copy it to /usr/local/bin
-RUN wget https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip && \
-    unzip qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip -d /usr/local/bin/ && \
-    rm qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip
+WORKDIR /tmp
 
-# copy over the compiled xml-file-splitter binary from the Rust image
-COPY --from=rust-app /usr/local/bin/xml_file_splitter /usr/local/bin/xml_file_splitter
+# download and install the xml_file_splitter and qsv binaries, and copy them to /usr/local/bin
+RUN wget https://github.com/ialarmedalien/xml_file_splitter/releases/download/${XML_FILE_SPLITTER_VERSION}/xml_file_splitter-aarch64-unknown-linux-gnu.tar.gz && \
+    tar -xvf xml_file_splitter-aarch64-unknown-linux-gnu.tar.gz && \
+    mv xml_file_splitter-aarch64-unknown-linux-gnu/xml_file_splitter /usr/local/bin/ && \
+    # qsv release -- only need the `qsv` binary from it
+    wget https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip && \
+    unzip qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip -d /tmp/qsv && \
+    mv /tmp/qsv/qsv /usr/local/bin/ && \
+    rm -rf /tmp/*
 
 # Setup a non-root user
 RUN groupadd --system --gid 999 nonroot \
