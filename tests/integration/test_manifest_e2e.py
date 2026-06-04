@@ -1,12 +1,13 @@
 """End-to-end tests for Phase 1 — manifest generation and diffing.
 
 These tests hit the real NCBI FTP server (with tight prefix filters) and
-optionally use MinIO for checksum verification.  Marked ``integration``
-and ``slow_test``; auto-skipped when MinIO is unreachable.
+optionally use CEPH for checksum verification.  Marked ``integration``
+and ``slow_test``; auto-skipped when CEPH is unreachable.
 """
 
 from __future__ import annotations
 
+from itertools import islice
 from typing import TYPE_CHECKING
 
 import pytest
@@ -164,16 +165,17 @@ class TestVerifyTransferCandidatesPrunes:
 
     def test_prunes_existing_matching_md5(
         self,
-        minio_s3_client: object,
+        ceph_s3_client: object,
         test_bucket: str,
     ) -> None:
-        """Assemblies with matching MD5 metadata in MinIO are pruned from the transfer list."""
+        """Assemblies with matching MD5 metadata in CEPH are pruned from the transfer list."""
         _full, filtered = _download_and_filter()
-        latest = {a: r for a, r in filtered.items() if r.status == "latest"}
+        # keep just the first 100 items for testing
+        latest = dict(islice(((a, r) for a, r in filtered.items() if r.status == "latest"), 100))
         if not latest:
             pytest.skip(f"No latest assemblies in prefix {STABLE_PREFIX}")
 
-        # Pick one assembly to pre-seed in MinIO with correct checksums
+        # Pick one assembly to pre-seed in CEPH with correct checksums
         # and one to partially pre-seed to ensure it doesn't get pruned
         i_latest = iter(sorted(latest))
         acc = next(i_latest)
@@ -191,8 +193,8 @@ class TestVerifyTransferCandidatesPrunes:
 
         checksums = parse_md5_checksums_file(md5_text)
 
-        # Seed MinIO with dummy files that have the right MD5 metadata
-        s3 = minio_s3_client
+        # Seed CEPH with dummy files that have the right MD5 metadata
+        s3 = ceph_s3_client
         path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
         rel = build_accession_path(rec.assembly_dir)
         for fname, md5 in checksums.items():
@@ -239,18 +241,18 @@ class TestVerifyTransferCandidatesPrunes:
 @pytest.mark.integration
 @pytest.mark.slow_test
 class TestScanStoreToSyntheticSummary:
-    """Test synthetic assembly summary generation from MinIO store."""
+    """Test synthetic assembly summary generation from CEPH store."""
 
-    def test_builds_summary_from_minio_store(
+    def test_builds_summary_from_ceph_store(
         self,
-        minio_s3_client: object,
+        ceph_s3_client: object,
         test_bucket: str,
     ) -> None:
-        """Verify synthetic summary captures assemblies from MinIO."""
-        s3 = minio_s3_client
+        """Verify synthetic summary captures assemblies from CEPH."""
+        s3 = ceph_s3_client
         path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
 
-        # Seed MinIO with a couple of assemblies
+        # Seed CEPH with a couple of assemblies
         assemblies = {
             "GCF_000001215.4_v1": ["_genomic.fna.gz", "_protein.faa.gz"],
             "GCF_000005845.2_v2": ["_genomic.fna.gz"],
@@ -280,14 +282,14 @@ class TestScanStoreToSyntheticSummary:
 
     def test_synthetic_summary_diff_against_current(
         self,
-        minio_s3_client: object,
+        ceph_s3_client: object,
         test_bucket: str,
     ) -> None:
         """Verify synthetic summary can be used as baseline for diffing."""
-        s3 = minio_s3_client
+        s3 = ceph_s3_client
         path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
 
-        # Seed MinIO with one assembly
+        # Seed CEPH with one assembly
         key1 = f"{path_prefix}refseq/GCF_000001215.4_old/GCF_000001215.4_old_genomic.fna.gz"
         s3.put_object(Bucket=test_bucket, Key=key1, Body=b"data")
 

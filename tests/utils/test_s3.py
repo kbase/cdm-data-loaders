@@ -212,9 +212,10 @@ def test_get_s3_client_success_via_env(endpoint_url: str | None, monkeypatch: py
     ("aws_access_key_id", "aws_secret_access_key"), [("aws_access_key_id", None), (None, "aws_secret_access_key")]
 )
 def test_get_s3_client_incomplete_creds_via_args(
-    aws_access_key_id: str | None, aws_secret_access_key: str | None
+    aws_access_key_id: str | None, aws_secret_access_key: str | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify that get_s3_client raises ValueError when only one of aws_access_key_id or aws_secret_access_key is provided via arguments."""
+    prep_client_init(monkeypatch)
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
     args = {
@@ -255,6 +256,7 @@ def test_get_s3_client_incomplete_creds_via_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify that get_s3_client raises ValueError when only one of aws_access_key_id or aws_secret_access_key is provided."""
+    prep_client_init(monkeypatch)
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
     args = {
