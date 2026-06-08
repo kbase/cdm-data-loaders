@@ -27,5 +27,5 @@ services:
       AWS_ENDPOINT_URL: http://ceph:8080
       AWS_ACCESS_KEY_ID: test_access_key
       AWS_SECRET_ACCESS_KEY: test_access_secret
-    entrypoint: [ "/app/scripts/entrypoint.sh", "integration_test" ]
+    entrypoint: [ "/app/scripts/entrypoint.sh", "ceph_integration_test" ]
     command: []

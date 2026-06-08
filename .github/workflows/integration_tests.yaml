@@ -1,4 +1,4 @@
-name: Integration tests
+name: CEPH Integration tests
 
 on:
     workflow_call:
@@ -17,14 +17,14 @@ permissions:
     contents: read
 
 jobs:
-    integration_tests:
+    ceph_integration_tests:
         runs-on: ubuntu-latest
 
         steps:
             - name: Checkout
               uses: actions/checkout@v6
 
-            - name: Run integration tests
+            - name: Run CEPH-backed integration tests
               run: |
                   docker compose up \
                     --build \
@@ -40,7 +40,7 @@ jobs:
                   echo "=== ceph logs ==="
                   docker logs cdm-data-loaders-ceph-1 || true
 
-                  echo "=== integration test logs ==="
+                  echo "=== ceph integration test logs ==="
                   docker logs cdm-data-loaders-integration-tests-1 || true
 
                   echo "=== ceph inspect state ==="

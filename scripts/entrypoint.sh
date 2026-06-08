@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VALID_COMMANDS=(all_the_bacteria ncbi_ftp_sync ncbi_rest_api uniprot uniref xml_split test integration_test bash)
+VALID_COMMANDS=(all_the_bacteria ncbi_ftp_sync ncbi_rest_api uniprot uniref xml_split test ceph_integration_test bash)
 
 usage() {
   local joined
@@ -40,9 +40,9 @@ case "$cmd" in
   test)
     exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark"
     ;;
-  integration_test)
-    # run the integration tests (requires a running CEPH instance)
-    exec /usr/bin/tini -- uv run --no-sync pytest -m "integration" -v "$@"
+  ceph_integration_test)
+    # run the CEPH-backed integration tests (requires a running CEPH instance)
+    exec /usr/bin/tini -- uv run --no-sync pytest -m "requires_ceph" -v "$@"
     ;;
   bash)
     exec /usr/bin/tini -- /bin/bash

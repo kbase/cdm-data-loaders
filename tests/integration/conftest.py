@@ -1,9 +1,8 @@
 """Shared fixtures and helpers for CEPH-backed integration tests.
 
-Integration tests are auto-skipped when CEPH is not reachable.  Each test
-method gets its own bucket (derived from the test node name) that is emptied
-on re-run but **never deleted** after the test — this lets developers inspect
-the final state of the object store. The CEPH dashboard does not currently
+Each test method gets its own bucket (derived from the test node name) that is
+emptied on re-run but **never deleted** after the test — this lets developers
+inspect the final state of the object store. The CEPH dashboard does not currently
 allow inspection of the store, but the `s3_local` command-line tool can be used.
 """
 
@@ -15,7 +14,6 @@ from unittest.mock import patch
 
 import boto3
 import botocore.client
-import botocore.config
 import pytest
 
 import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
@@ -26,41 +24,6 @@ from cdm_data_loaders.utils.s3 import reset_s3_client
 
 # Maximum length of a bucket name per S3/DNS spec
 _MAX_BUCKET_LEN = 63
-
-
-# CEPH reachability check
-
-_ceph_available: bool | None = None
-
-
-def _ceph_reachable() -> bool:
-    """Return True if the CEPH endpoint accepts connections."""
-    try:
-        client = boto3.client(
-            "s3",
-            config=botocore.config.Config(
-                connect_timeout=1,
-                read_timeout=1,
-                retries={"max_attempts": 1},
-            ),
-        )
-        client.list_buckets()
-    except Exception:  # noqa: BLE001
-        return False
-    return True
-
-
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:  # noqa: ARG001
-    """Auto-skip ``@pytest.mark.integration`` tests when CEPH is unreachable."""
-    global _ceph_available  # noqa: PLW0603
-    if _ceph_available is None:
-        _ceph_available = _ceph_reachable()
-    if _ceph_available:
-        return
-    skip_marker = pytest.mark.skip(reason="CEPH not reachable — skipping integration tests")
-    for item in items:
-        if "integration" in item.keywords:
-            item.add_marker(skip_marker)
 
 
 # Fixtures

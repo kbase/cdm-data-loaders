@@ -3,7 +3,7 @@
 Exercises the entire flow: download summary from real NCBI FTP, compute diff,
 download a single assembly, stage in CEPH, promote to final Lakehouse path.
 
-Marked ``integration`` and ``slow_test``; auto-skipped when CEPH is
+Marked ``requires_ceph`` and ``slow_test``; auto-skipped when CEPH is
 unreachable.
 """
 
@@ -36,7 +36,7 @@ STAGING_PREFIX = "staging/run1/"
 PATH_PREFIX = DEFAULT_LAKEHOUSE_KEY_PREFIX
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 @pytest.mark.external_request
 class TestFullPipelineSmallBatch:
@@ -104,7 +104,7 @@ class TestFullPipelineSmallBatch:
         assert has_md5, "Expected at least one file with MD5 metadata"
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 @pytest.mark.external_request
 class TestFullPipelineIncrementalSync:
