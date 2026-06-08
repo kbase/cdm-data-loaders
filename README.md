@@ -142,16 +142,16 @@ See the [BERDataLakehouse/spark_notebook](https://github.com/BERDataLakehouse/sp
 
 Tests are categorised using pytest markers to allow developers to execute some or all the tests. See [pyproject.toml](pyproject.toml) for the markers used.
 
-To run all tests (requires a running Spark instance), execute the command:
+To run all tests (requires a running Spark instance and a running CEPH test container), execute the command:
 
 ```sh
 > uv run pytest
 ```
 
-To run only tests that do not require Spark, run
+To run only tests that do not require Spark or CEPH, run
 
 ```sh
-> uv run pytest -m "not requires_spark"
+> uv run pytest -m "not requires_spark and not requires_ceph"
 ```
 
 To generate coverage for the tests, run

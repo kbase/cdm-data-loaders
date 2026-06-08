@@ -4,8 +4,8 @@ Pre-stages fake assembly files in CEPH and exercises ``promote_from_s3``
 with various combinations of manifests, archive operations, dry-run mode,
 manifest trimming, and incomplete staging.
 
-Marked ``requires_ceph`` and ``slow_test``; auto-skipped when CEPH is
-unreachable.  Each test method gets its own bucket.
+Marked ``requires_ceph`` (when a running CEPH test store is required) and
+``slow_test``.  Each test method gets its own bucket.
 """
 
 import hashlib

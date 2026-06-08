@@ -3,8 +3,8 @@
 Exercises the entire flow: download summary from real NCBI FTP, compute diff,
 download a single assembly, stage in CEPH, promote to final Lakehouse path.
 
-Marked ``requires_ceph`` and ``slow_test``; auto-skipped when CEPH is
-unreachable.
+Marked ``requires_ceph`` (when a runnning CEPH test store is required) and
+``slow_test``.
 """
 
 from __future__ import annotations
