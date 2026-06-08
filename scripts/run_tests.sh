@@ -10,4 +10,4 @@ cd "$SCRIPT_DIR"
 uv venv --system-site-packages
 
 # run the tests using the active venv and with the dev dependencies installed.
-uv run --active --frozen --group dev pytest --cov=src --cov-report=xml
+uv run --active --frozen --group dev pytest -m "not requires_ceph" --cov=src --cov-report=xml
