@@ -7,14 +7,10 @@ Marked ``requires_ceph`` (when a runnning CEPH test store is required) and
 ``slow_test``.
 """
 
-from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 from cdm_data_loaders.ncbi_ftp.manifest import (
     AssemblyRecord,
@@ -29,7 +25,7 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
 from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX, promote_from_s3
 from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch
 
-from .conftest import get_object_metadata, list_all_keys, stage_files_to_ceph, staging_test_bucket  # noqa: F401
+from .conftest import get_object_metadata, list_all_keys, stage_files_to_ceph
 
 STABLE_PREFIX = "900"
 STAGING_PREFIX = "staging/run1/"
