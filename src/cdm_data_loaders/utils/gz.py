@@ -11,6 +11,35 @@ from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 logger = get_cdm_logger()
 
 
+def decompress_file(file: Path) -> None:
+    """Decompress a gzip file.
+
+    :param file: file to decompress
+    :type file: Path
+    """
+    if file.suffix != ".gz":
+        logger.info("File %s does not end with .gz: skipping decompression", str(file))
+        return
+
+    if not file.exists():
+        logger.warning("File %s does not exist: skipping decompression", str(file))
+        return
+
+    if not file.is_file():
+        logger.warning("%s is not a file: skipping decompression", str(file))
+        return
+
+    # remove .gz suffix
+    output_file = file.with_suffix("")
+    if output_file.exists():
+        logger.info("Found existing file %s: skipping decompression", output_file)
+        return
+
+    with gzip.open(file, "rb") as f_in, output_file.open("wb") as f_out:
+        shutil.copyfileobj(f_in, f_out)
+    logger.info("Created output file %s", output_file)
+
+
 def compress_files(directory: Path | str, file_glob: str) -> None:
     """Compress all files matching a certain pattern in a directory.
 
