@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import boto3
 import botocore.client
+import botocore.config
 import pytest
 
 import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
@@ -24,6 +25,44 @@ from cdm_data_loaders.utils.s3 import reset_s3_client
 
 # Maximum length of a bucket name per S3/DNS spec
 _MAX_BUCKET_LEN = 63
+
+
+# CEPH reachability check
+
+_ceph_available: bool | None = None
+
+
+def _ceph_reachable() -> bool:
+    """Return True if the CEPH endpoint accepts connections."""
+    try:
+        client = boto3.client(
+            "s3",
+            config=botocore.config.Config(
+                connect_timeout=1,
+                read_timeout=1,
+                retries={"max_attempts": 1},
+            ),
+        )
+        client.list_buckets()
+    except Exception:  # noqa: BLE001
+        return False
+    return True
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Fail CEPH-required tests early when CEPH is unavailable."""
+    if "requires_ceph" not in item.keywords:
+        return
+
+    global _ceph_available  # noqa: PLW0603
+    if _ceph_available is None:
+        _ceph_available = _ceph_reachable()
+
+    if not _ceph_available:
+        pytest.fail(
+            "CEPH not reachable. Start a CEPH test store or deselect with -m 'not requires_ceph'.",
+            pytrace=False,
+        )
 
 
 # Fixtures
