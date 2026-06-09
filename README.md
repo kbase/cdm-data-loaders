@@ -10,7 +10,7 @@ Repo for CDM input data loading and wrangling
   - [Development](#development)
     - [Spark and other non-python dependencies](#spark-and-other-non-python-dependencies)
     - [Tests](#tests)
-      - [Integration tests (CEPH + NCBI FTP)](#integration-tests-ceph--ncbi-ftp)
+      - [CEPH-Backed integration tests (CEPH + NCBI FTP)](#ceph-backed-integration-tests-ceph--ncbi-ftp)
   - [Loading genomes, contigs, and features](#loading-genomes-contigs-and-features)
   - [Running bbmap stats and checkm2 on genome or contigset files](#running-bbmap-stats-and-checkm2-on-genome-or-contigset-files)
 
@@ -142,16 +142,16 @@ See the [BERDataLakehouse/spark_notebook](https://github.com/BERDataLakehouse/sp
 
 Tests are categorised using pytest markers to allow developers to execute some or all the tests. See [pyproject.toml](pyproject.toml) for the markers used.
 
-To run all tests (requires a running Spark instance), execute the command:
+To run all tests (requires a running Spark instance and a running CEPH test container), execute the command:
 
 ```sh
 > uv run pytest
 ```
 
-To run only tests that do not require Spark, run
+To run only tests that do not require Spark or CEPH, run
 
 ```sh
-> uv run pytest -m "not requires_spark"
+> uv run pytest -m "not requires_spark and not requires_ceph"
 ```
 
 To generate coverage for the tests, run
@@ -162,7 +162,7 @@ To generate coverage for the tests, run
 The standard python `coverage` package is used and coverage can be generated as html or other formats by changing the parameters.
 
 
-#### Integration tests (CEPH + NCBI FTP)
+#### CEPH-Backed integration tests (CEPH + NCBI FTP)
 
 End-to-end integration tests for the NCBI assembly pipeline live in `tests/integration/`. They exercise the full flow — manifest diffing, FTP download, S3 promote/archive — against a locally running [CEPH](https://ceph.io/) container and the real NCBI FTP server.
 
@@ -204,10 +204,8 @@ docker run -d \
 **2. Run the integration tests:**
 
 ```sh
-> uv run pytest tests/integration/ -m integration -v
+> uv run pytest tests/integration/ -m requires_ceph -v
 ```
-
-Tests are automatically skipped when CEPH is not reachable, so the default `uv run pytest` will never fail due to a missing CEPH instance.
 
 **3. Inspect results:**
 

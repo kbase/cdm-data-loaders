@@ -1,8 +1,8 @@
 """End-to-end tests for Phase 2 — FTP download of assemblies.
 
 These tests download real (small) assemblies from the NCBI FTP server.
-Marked ``integration`` and ``slow_test``; auto-skipped when CEPH is
-unreachable.
+Marked ``requires_ceph`` (if a running CEPH test store is required) and
+``slow_test``.
 """
 
 import json
@@ -44,7 +44,6 @@ def _manifest_for_one_assembly(tmp_path: Path) -> tuple[Path, str]:
     return manifest_path, diff.new[0]
 
 
-@pytest.mark.integration
 @pytest.mark.slow_test
 @pytest.mark.external_request
 class TestDownloadSmallBatch:
@@ -87,7 +86,6 @@ class TestDownloadSmallBatch:
         assert saved_report["succeeded"] >= 1
 
 
-@pytest.mark.integration
 @pytest.mark.slow_test
 @pytest.mark.external_request
 class TestDownloadResumeIncomplete:
@@ -128,7 +126,7 @@ class TestDownloadResumeIncomplete:
         assert files_after_first.issubset(files_after_second)
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 @pytest.mark.external_request
 def test_download_and_stage_e2e(

@@ -1,8 +1,8 @@
 """End-to-end tests for Phase 1 — manifest generation and diffing.
 
 These tests hit the real NCBI FTP server (with tight prefix filters) and
-optionally use CEPH for checksum verification.  Marked ``integration``
-and ``slow_test``; auto-skipped when CEPH is unreachable.
+optionally use CEPH for checksum verification.  Marked ``requires_ceph``
+(if a running CEPH test store is required) and ``slow_test``.
 """
 
 from __future__ import annotations
@@ -56,7 +56,6 @@ def _download_and_filter() -> tuple[dict[str, AssemblyRecord], dict[str, Assembl
 # Tests
 
 
-@pytest.mark.integration
 @pytest.mark.slow_test
 @pytest.mark.external_request
 class TestFreshSyncNoPrevious:
@@ -94,7 +93,6 @@ class TestFreshSyncNoPrevious:
         assert summary_path.exists()
 
 
-@pytest.mark.integration
 @pytest.mark.slow_test
 @pytest.mark.external_request
 class TestIncrementalDiffSyntheticPrevious:
@@ -157,7 +155,7 @@ class TestIncrementalDiffSyntheticPrevious:
         assert updated_acc in updated_list
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 @pytest.mark.external_request
 class TestVerifyTransferCandidatesPrunes:
@@ -238,7 +236,7 @@ class TestVerifyTransferCandidatesPrunes:
             assert c in result, f"Expected {c} to remain (not seeded)"
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestScanStoreToSyntheticSummary:
     """Test synthetic assembly summary generation from CEPH store."""

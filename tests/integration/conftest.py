@@ -1,9 +1,8 @@
 """Shared fixtures and helpers for CEPH-backed integration tests.
 
-Integration tests are auto-skipped when CEPH is not reachable.  Each test
-method gets its own bucket (derived from the test node name) that is emptied
-on re-run but **never deleted** after the test — this lets developers inspect
-the final state of the object store. The CEPH dashboard does not currently
+Each test method gets its own bucket (derived from the test node name) that is
+emptied on re-run but **never deleted** after the test — this lets developers
+inspect the final state of the object store. The CEPH dashboard does not currently
 allow inspection of the store, but the `s3_local` command-line tool can be used.
 """
 
@@ -50,17 +49,20 @@ def _ceph_reachable() -> bool:
     return True
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:  # noqa: ARG001
-    """Auto-skip ``@pytest.mark.integration`` tests when CEPH is unreachable."""
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Fail CEPH-required tests early when CEPH is unavailable."""
+    if "requires_ceph" not in item.keywords:
+        return
+
     global _ceph_available  # noqa: PLW0603
     if _ceph_available is None:
         _ceph_available = _ceph_reachable()
-    if _ceph_available:
-        return
-    skip_marker = pytest.mark.skip(reason="CEPH not reachable — skipping integration tests")
-    for item in items:
-        if "integration" in item.keywords:
-            item.add_marker(skip_marker)
+
+    if not _ceph_available:
+        pytest.fail(
+            "CEPH not reachable. Start a CEPH test store or deselect with -m 'not requires_ceph'.",
+            pytrace=False,
+        )
 
 
 # Fixtures

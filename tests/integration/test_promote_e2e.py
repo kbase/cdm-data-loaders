@@ -4,8 +4,8 @@ Pre-stages fake assembly files in CEPH and exercises ``promote_from_s3``
 with various combinations of manifests, archive operations, dry-run mode,
 manifest trimming, and incomplete staging.
 
-Marked ``integration`` and ``slow_test``; auto-skipped when CEPH is
-unreachable.  Each test method gets its own bucket.
+Marked ``requires_ceph`` (when a running CEPH test store is required) and
+``slow_test``.  Each test method gets its own bucket.
 """
 
 import hashlib
@@ -76,7 +76,7 @@ def _write_manifest(tmp_path: Path, accessions: list[str], name: str) -> Path:
 # Tests
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteFromStaging:
     """Promote staged files to final Lakehouse paths."""
@@ -107,7 +107,7 @@ class TestPromoteFromStaging:
             assert "md5" in meta, f"Missing md5 metadata on {key}"
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteIdempotent:
     """Promoting the same staging data twice should succeed without errors."""
@@ -145,7 +145,7 @@ class TestPromoteIdempotent:
         assert keys_after_first == keys_after_second
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteArchiveUpdated:
     """Archive existing assemblies before overwriting with updated versions."""
@@ -191,7 +191,7 @@ class TestPromoteArchiveUpdated:
             assert "/2024-01/" in key
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteArchiveRemoved:
     """Archive and delete replaced/suppressed assemblies."""
@@ -237,7 +237,7 @@ class TestPromoteArchiveRemoved:
         assert len(source_keys) == 0, f"Expected source objects deleted, found: {source_keys}"
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteDryRun:
     """Dry-run mode should not create any objects."""
@@ -263,7 +263,7 @@ class TestPromoteDryRun:
         assert len(final_keys) == 0, f"Dry-run should not create objects, found: {final_keys}"
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteTrimsManifest:
     """Manifest trimming removes promoted accessions."""
@@ -307,7 +307,7 @@ class TestPromoteTrimsManifest:
         assert "GCF_900000003" in remaining_lines[0]
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteIncompleteStaging:
     """Incomplete staging (sidecar only, no data) should not promote anything."""
@@ -339,7 +339,7 @@ class TestPromoteIncompleteStaging:
         assert len(final_keys) == 0
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteCreatesDescriptor:
     """Promote step writes a frictionless descriptor for each promoted assembly."""
@@ -428,7 +428,7 @@ class TestPromoteCreatesDescriptor:
             assert body["identifier"] == f"NCBI:{accession}"
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteArchiveUpdatedIncludesDescriptor:
     """Archiving updated assemblies also archives the descriptor."""
@@ -466,7 +466,7 @@ class TestPromoteArchiveUpdatedIncludesDescriptor:
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteArchiveRemovedIncludesDescriptor:
     """Archiving removed assemblies also archives the descriptor."""
@@ -501,7 +501,7 @@ class TestPromoteArchiveRemovedIncludesDescriptor:
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteDryRunNoDescriptor:
     """Dry-run must not write any descriptor files."""
@@ -526,7 +526,7 @@ class TestPromoteDryRunNoDescriptor:
 # Parallel archiving tests
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestArchiveMultiFileConcurrent:
     """Verify parallel copy archives all files correctly with correct content."""
@@ -597,7 +597,7 @@ class TestArchiveMultiFileConcurrent:
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestArchiveDeleteSourceBatch:
     """Verify batch delete removes all source objects after concurrent copy."""
@@ -665,7 +665,7 @@ class TestArchiveDeleteSourceBatch:
         assert len(source_keys) == 0, f"Source objects remain: {source_keys}"
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPartialArchiveResume:
     """Corner case: a prior archive run was interrupted mid-way.
@@ -826,7 +826,7 @@ class TestPartialArchiveResume:
             assert obj["Body"].read() == expected_body
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestArchiveMultiAccessionManifest:
     """Multiple accessions in a single manifest are all archived."""
@@ -905,7 +905,7 @@ class TestArchiveMultiAccessionManifest:
             assert "/2024-03/" in key, f"Archive key missing release segment: {key}"
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestArchiveDryRunParallel:
     """Dry-run with many files leaves everything unchanged."""
@@ -966,7 +966,7 @@ def _stage_many(
             s3.put_object(Bucket=bucket, Key=f"{key}.md5", Body=_md5(content).encode())
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteMultiFileConcurrent:
     """Verify concurrent promotion lands all files with correct content and MD5."""
@@ -1047,7 +1047,7 @@ class TestPromoteMultiFileConcurrent:
         assert "md5" not in meta, f"Expected no md5 metadata, got: {meta}"
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteStagingCleanup:
     """After a fully successful promote, all staged files and sidecars are deleted."""
@@ -1129,7 +1129,7 @@ class TestPromoteStagingCleanup:
         assert len(remaining) == 0, f"Staging not fully cleaned after two-assembly promote: {remaining}"
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteTwoAssembliesBothLand:
     """Both assemblies staged together are both promoted to correct Lakehouse paths."""
@@ -1185,7 +1185,7 @@ class TestPromoteTwoAssembliesBothLand:
         assert keys_a[0] != keys_b[0]
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteDryRunMultiFile:
     """dry_run leaves staging untouched and writes nothing to the Lakehouse."""
@@ -1242,7 +1242,7 @@ class TestPromoteDryRunMultiFile:
         assert len(final_keys) == 0, f"Dry-run created objects: {final_keys}"
 
 
-@pytest.mark.integration
+@pytest.mark.requires_ceph
 @pytest.mark.slow_test
 class TestPromoteSecondRunOnEmptyStaging:
     """After staging is cleaned, a second promote run promotes 0 files without error."""
