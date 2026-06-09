@@ -7,7 +7,6 @@ Marked ``requires_ceph`` (when a runnning CEPH test store is required) and
 ``slow_test``.
 """
 
-
 from pathlib import Path
 
 import pytest
