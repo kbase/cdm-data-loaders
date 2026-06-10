@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from collections.abc import Generator
 from functools import partial
 from itertools import islice
@@ -17,7 +18,7 @@ from dlt.sources.helpers.rest_client.client import RESTClient
 from dlt.sources.helpers.rest_client.paginators import (
     JSONResponseCursorPaginator,
 )
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import SettingsConfigDict
 from requests.exceptions import HTTPError
 
@@ -34,16 +35,22 @@ NCBI_API_KEY = os.environ.get("NCBI_API_KEY") or "DEMO_KEY"
 
 # Max number of items to request per page from the NCBI REST API (max allowed is 1000).
 MAX_RESULTS_PER_PAGE = 1000
+# Max number of IDs to send in a multi-ID query
+# Max URL length seems to be 4611 (as of Jun 2026)
+MAX_IDS_PER_QUERY = 250
 
 DATASET = "dataset"
 ANNOTATION = "annotation"
 ERROR = "error"
+
+QUERY_TYPE_REGEX = re.compile(r"^(" + DATASET + r"|" + ANNOTATION + r")$")
 
 logger = logging.getLogger("dlt")
 
 REST_CLIENT_HOOKS = {}
 
 ARG_ALIAS_BATCH_SIZE = ["-b", "--batch-size", "--batch_size"]
+ARG_ALIAS_QUERY_TYPE = ["-q", "--query-type", "--query_type"]
 
 
 class NcbiSettings(CtsSettings):
@@ -52,12 +59,31 @@ class NcbiSettings(CtsSettings):
     model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT, cli_prog_name="ncbi_rest_api")
 
     batch_size: int = Field(
-        default=MAX_RESULTS_PER_PAGE,
+        default=MAX_IDS_PER_QUERY,
         description="Number of IDs to send in each request to the NCBI REST API.",
         validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIAS_BATCH_SIZE]),
         ge=1,
-        le=MAX_RESULTS_PER_PAGE,
+        le=MAX_IDS_PER_QUERY,
     )
+
+    query_type: str | None = Field(
+        default=None,
+        description="The type of query to perform, dataset or annotation. By default, both are performed.",
+        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIAS_QUERY_TYPE]),
+        pattern=QUERY_TYPE_REGEX,
+    )
+
+    @field_validator("query_type", mode="before")
+    @classmethod
+    def trim_lc_query_type(cls, v: str | None) -> str | None:
+        """Prepare the query_type parameter for validation.
+
+        :param v: query_type parameter
+        :type v: str | None
+        :return: cleaned query type param
+        :rtype: str | None
+        """
+        return v.strip().lower() if v and v.strip() else None
 
 
 def generate_file_path_name_from_url(settings: NcbiSettings, url_string: str) -> Path:
@@ -96,6 +122,32 @@ def save_raw_response(settings: NcbiSettings, response: Response, *_: Any, **__:
     file_path = generate_file_path_name_from_url(settings, response.url)
     file_path.write_bytes(response.content)
     return response
+
+
+PIPELINE_SETTINGS: NcbiSettings | None = None
+
+
+def set_settings(settings_obj: NcbiSettings) -> None:
+    """Set the global PIPELINE_SETTINGS object to the supplied obj.
+
+    :param settings_obj: settings object
+    :type settings_obj: NcbiSettings
+    """
+    # ugh, somewhat horrible
+    global PIPELINE_SETTINGS
+    PIPELINE_SETTINGS = settings_obj
+
+
+def get_settings() -> NcbiSettings:
+    """Get the pipeline settings.
+
+    return: pipeline settings
+    :rtype: NcbiSettings
+    """
+    if PIPELINE_SETTINGS is None:
+        err_msg = "Pipeline settings have not been initialised"
+        raise RuntimeError(err_msg)
+    return PIPELINE_SETTINGS
 
 
 ncbi_genome_client = RESTClient(
@@ -161,28 +213,38 @@ def get_assembly_reports(assembly_id_list: list[str]) -> dict[str, Any]:
     if not assembly_id_list:
         return {}
 
-    errors = []
+    settings = get_settings()
+    fetch_dataset: bool = settings.query_type in (None, DATASET)
+    fetch_annotation: bool = settings.query_type in (None, ANNOTATION)
+    errors: list[dict[str, Any]] = []
 
     # N.b. invalid IDs will not be present in dataset_reports
     dataset_reports = {}
-    try:
-        dataset_reports = get_dataset_reports(assembly_id_list)
-    except Exception as e:  # noqa: BLE001
-        add_error(errors, e, "dataset_report", assembly_id_list=assembly_id_list)
+    if fetch_dataset:
+        try:
+            dataset_reports = get_dataset_reports(assembly_id_list)
+        except Exception as e:  # noqa: BLE001
+            add_error(errors, e, "dataset_report", assembly_id_list=assembly_id_list)
 
     annotation_reports: dict[str, Any] = {}
-    for assembly_id in assembly_id_list:
-        try:
-            annotation_reports[assembly_id] = get_annotation_report(assembly_id)
-        except Exception as e:  # noqa: BLE001
-            add_error(errors, e, "annotation_report", assembly_id=assembly_id)
+    if fetch_annotation:
+        for assembly_id in assembly_id_list:
+            try:
+                annotation_reports[assembly_id] = get_annotation_report(assembly_id)
+            except Exception as e:  # noqa: BLE001
+                add_error(errors, e, "annotation_report", assembly_id=assembly_id)
 
     # ensure every assembly_id in the list has either the downloaded dataset_report or None
-    return {
-        DATASET: {assembly_id: dataset_reports.get(assembly_id) for assembly_id in assembly_id_list},
-        ANNOTATION: {assembly_id: annotation_reports.get(assembly_id) for assembly_id in assembly_id_list},
+    output: dict[str, Any] = {
         ERROR: errors,
     }
+    if fetch_annotation:
+        output[ANNOTATION] = {assembly_id: annotation_reports.get(assembly_id) for assembly_id in assembly_id_list}
+
+    if fetch_dataset:
+        output[DATASET] = {assembly_id: dataset_reports.get(assembly_id) for assembly_id in assembly_id_list}
+
+    return output
 
 
 def get_dataset_reports(assembly_id_list: list[str]) -> dict[str, None | dict[str, Any]]:
@@ -268,8 +330,9 @@ def assemble_assembly_reports(
 
 
 @dlt.resource(name="assembly_list")
-def assembly_list(settings: NcbiSettings) -> Generator[list[str], Any, Any]:
+def assembly_list() -> Generator[list[str], Any, Any]:
     """List of assemblies to fetch."""
+    settings = get_settings()
     batcher = BatchCursor(settings.input_dir, batch_size=1)
     while files := batcher.get_batch():
         for file_path in files:
@@ -300,11 +363,10 @@ def run_ncbi_pipeline(settings: NcbiSettings) -> None:
     :param settings: configuration for the pipeline
     :type settings: NcbiSettings
     """
+    set_settings(settings)
+
     if settings.dev_mode:
         REST_CLIENT_HOOKS["response"] = [partial(save_raw_response, settings)]
-
-    # ensure that assembly_list has the correct settings bound before running the pipeline
-    assembly_list.bind(settings)
 
     pipeline_kwargs = {
         "pipeline_name": DATASET_NAME,
