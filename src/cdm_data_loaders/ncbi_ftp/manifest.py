@@ -273,7 +273,7 @@ def _ftp_dir_from_url(ftp_url: str, ftp_host: str = FTP_HOST) -> PurePosixPath:
     # Full URL
     if parsed.scheme in {"ftp", "https"}:
         if parsed.netloc and parsed.netloc != ftp_host:
-            msg = f"Unexpected FPT host: {parsed.netloc}"
+            msg = f"Unexpected FTP host: {parsed.netloc}"
             raise ValueError(msg)
         return PurePosixPath(parsed.path)
 
