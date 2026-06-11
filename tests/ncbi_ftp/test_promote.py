@@ -44,7 +44,7 @@ class DownloadFileClient(Protocol):
 
     def download_file(self, Bucket: str, Key: str, Filename: str, **kw: object) -> None:  #  noqa: N803
         """Download a file from an S3 store."""
-        ...
+        pass
 
 
 def _stage(
