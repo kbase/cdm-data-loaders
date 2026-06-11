@@ -2,7 +2,7 @@
 
 import ast
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -21,6 +21,10 @@ from cdm_data_loaders.ncbi_ftp.manifest import (  # noqa: F401
 from cdm_data_loaders.ncbi_ftp.promote import (
     DEFAULT_LAKEHOUSE_KEY_PREFIX,
     promote_from_s3,
+)
+from cdm_data_loaders.pipelines.ncbi_ftp_download import (
+    DEFAULT_STAGING_KEY_PREFIX,
+    download_and_stage,
 )
 from cdm_data_loaders.utils.s3 import split_s3_path
 
@@ -61,7 +65,8 @@ def test_notebook_syntax(notebook: str) -> None:
 
 def test_manifest_notebook_imports() -> None:
     """All manifest notebook imports are verified at module load time above."""
-    assert isinstance(FTP_HOST, str) and FTP_HOST
+    assert isinstance(FTP_HOST, str)
+    assert FTP_HOST
     assert AssemblyRecord is not None
     assert callable(download_assembly_summary)
     assert callable(compute_diff)
@@ -71,16 +76,11 @@ def test_manifest_notebook_imports() -> None:
 def test_promote_notebook_imports() -> None:
     """All promote notebook imports are verified at module load time above."""
     assert callable(promote_from_s3)
-    assert isinstance(DEFAULT_LAKEHOUSE_KEY_PREFIX, str)
+    assert isinstance(DEFAULT_LAKEHOUSE_KEY_PREFIX, PurePosixPath)
     assert callable(split_s3_path)
 
 
 def test_download_notebook_imports() -> None:
     """All download notebook imports resolve without error."""
-    from cdm_data_loaders.pipelines.ncbi_ftp_download import (
-        DEFAULT_STAGING_KEY_PREFIX,
-        download_and_stage,
-    )
-
     assert callable(download_and_stage)
-    assert isinstance(DEFAULT_STAGING_KEY_PREFIX, str)
+    assert isinstance(DEFAULT_STAGING_KEY_PREFIX, PurePosixPath)

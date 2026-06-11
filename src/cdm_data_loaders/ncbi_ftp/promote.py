@@ -36,7 +36,7 @@ from cdm_data_loaders.utils.s3 import (
 
 logger = get_cdm_logger()
 
-DEFAULT_LAKEHOUSE_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
+DEFAULT_LAKEHOUSE_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
 
 _MAX_DRY_RUN_LOGS = 10
 
@@ -45,15 +45,15 @@ _MAX_DRY_RUN_LOGS = 10
 
 
 def promote_from_s3(  # noqa: PLR0913
-    staging_key_prefix: str,
-    staging_bucket: str,
-    lakehouse_bucket: str,
-    removed_manifest_path: str | Path | None = None,
-    updated_manifest_path: str | Path | None = None,
-    ncbi_release: str | None = None,
-    manifest_s3_key: str | None = None,
-    lakehouse_key_prefix: str = DEFAULT_LAKEHOUSE_KEY_PREFIX,
     *,
+    staging_bucket: PurePosixPath,
+    staging_key_prefix: PurePosixPath,
+    lakehouse_bucket: PurePosixPath,
+    lakehouse_key_prefix: PurePosixPath = DEFAULT_LAKEHOUSE_KEY_PREFIX,
+    removed_manifest_path: Path | None = None,
+    updated_manifest_path: Path | None = None,
+    manifest_s3_key: PurePosixPath | None = None,
+    ncbi_release: str | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Promote files from an S3 staging prefix to the final Lakehouse path.
@@ -61,24 +61,23 @@ def promote_from_s3(  # noqa: PLR0913
     Downloads each file to a temp location and re-uploads to the final path
     with MD5 metadata from ``.md5`` sidecar files.
 
-    :param staging_key_prefix: S3 key prefix where CTS output was written
     :param staging_bucket: S3 bucket containing the staged files (e.g. ``"cts"``)
+    :param staging_key_prefix: S3 key prefix where CTS output was written
     :param lakehouse_bucket: S3 bucket for the final Lakehouse destination (e.g. ``"cdm-lake"``)
+    :param lakehouse_key_prefix: S3 key prefix for final Lakehouse locations
     :param removed_manifest_path: local path to the removed_manifest file
     :param updated_manifest_path: local path to the updated_manifest file
-    :param ncbi_release: NCBI release version tag for archiving
     :param manifest_s3_key: S3 object key for transfer_manifest.txt (for trimming)
-    :param lakehouse_key_prefix: S3 key prefix for final Lakehouse locations
+    :param ncbi_release: NCBI release version tag for archiving
     :param dry_run: if True, log actions without side effects
     :return: report dict with counts
     """
     # Get list of objects under the staging prefix
-    normalized_staging_key_prefix = staging_key_prefix.rstrip("/") + "/"
-    staged_objects: list[dict[str, Any]] = list_matching_objects(f"{staging_bucket}/{normalized_staging_key_prefix}")
+    staged_objects: list[dict[str, Any]] = list_matching_objects(str(staging_bucket / staging_key_prefix))
 
     # Separate data files from sidecars
-    sidecars = {k["Key"] for k in staged_objects if k["Key"].endswith((".crc64nvme", ".md5"))}
-    data_files = [k["Key"] for k in staged_objects if k["Key"] not in sidecars]
+    sidecars = {PurePosixPath(k["Key"]) for k in staged_objects if k["Key"].endswith((".crc64nvme", ".md5"))}
+    data_files = [PurePosixPath(k["Key"]) for k in staged_objects if PurePosixPath(k["Key"]) not in sidecars]
 
     logger.info("Found %d data files and %d sidecars in staging", len(data_files), len(sidecars))
 
@@ -90,7 +89,7 @@ def promote_from_s3(  # noqa: PLR0913
     ]:
         if manifest_file and Path(str(manifest_file)).is_file():
             archived += _archive_assemblies(
-                str(manifest_file),
+                manifest_file,
                 lakehouse_bucket=lakehouse_bucket,
                 ncbi_release=ncbi_release,
                 lakehouse_key_prefix=lakehouse_key_prefix,
@@ -102,7 +101,7 @@ def promote_from_s3(  # noqa: PLR0913
     promoted, failed, descriptors_written, promoted_accessions = _promote_data_files(
         data_files,
         sidecars,
-        normalized_staging_key_prefix,
+        staging_key_prefix,
         lakehouse_key_prefix,
         staging_bucket,
         lakehouse_bucket,
@@ -138,39 +137,39 @@ def promote_from_s3(  # noqa: PLR0913
 
 
 def _group_files_by_assembly(
-    data_files: list[str], normalized_staging_prefix: str
-) -> defaultdict[tuple[str, str], list[str]]:
+    data_files: list[PurePosixPath], staging_prefix: PurePosixPath
+) -> defaultdict[tuple[PurePosixPath, str], list[PurePosixPath]]:
     """Group files by assembly; skip download_report.json and non-raw_data paths.
 
     :param data_files: list of S3 keys for staged data files
-    :param normalized_staging_prefix: normalized staging prefix in S3
+    :param staging_prefix: staging prefix in S3
     :return: dict mapping (assembly_dir, accession) to list of staged keys for that assembly
     """
-    assembly_files: defaultdict[tuple[str, str], list[str]] = defaultdict(list)
+    assembly_files: defaultdict[tuple[PurePosixPath, str], list[PurePosixPath]] = defaultdict(list)
     for staged_key in data_files:
-        if staged_key.endswith("download_report.json"):
+        if staged_key.match("**/download_report.json"):
             continue
-        rel_path = staged_key[len(normalized_staging_prefix) :]
-        if not rel_path.startswith("raw_data/"):
+        rel_path = staged_key.relative_to(staging_prefix)
+        if not rel_path.is_relative_to("raw_data/"):
             continue
-        m = ASSEMBLY_PATH_REGEX.search(staged_key)
+        m = ASSEMBLY_PATH_REGEX.search(str(staged_key))
         if m:
-            assembly_files[(m.group(1), m.group(2))].append(staged_key)
+            assembly_files[(PurePosixPath(m.group(1)), m.group(2))].append(staged_key)
     return assembly_files
 
 
 def _promote_file(  # noqa: PLR0913
-    staged_key: str,
-    normalized_staging_prefix: str,
-    lakehouse_key_prefix: str,
-    staging_bucket: str,
-    lakehouse_bucket: str,
-    sidecars: set[str],
-) -> tuple[DescriptorResource, str]:
+    staged_key: PurePosixPath,
+    staging_prefix: PurePosixPath,
+    lakehouse_key_prefix: PurePosixPath,
+    staging_bucket: PurePosixPath,
+    lakehouse_bucket: PurePosixPath,
+    sidecars: set[PurePosixPath],
+) -> tuple[DescriptorResource, PurePosixPath]:
     """Download one staged file, re-upload to Lakehouse with MD5 metadata.
 
     :param staged_key: S3 key of the staged file
-    :param normalized_staging_prefix: normalized staging prefix in S3
+    :param staging_prefix: staging prefix in S3
     :param lakehouse_key_prefix: S3 key prefix for final Lakehouse locations
     :param staging_bucket: S3 bucket containing the staged file
     :param lakehouse_bucket: S3 bucket for the final Lakehouse destination
@@ -178,24 +177,24 @@ def _promote_file(  # noqa: PLR0913
     :return: ``(resource_dict, staged_key)`` on success; raises on failure.
     """
     s3 = get_s3_client()
-    rel_path = staged_key[len(normalized_staging_prefix) :]
-    final_key = lakehouse_key_prefix + rel_path
+    rel_path = staged_key.relative_to(staging_prefix)
+    final_key = lakehouse_key_prefix / rel_path
     final_key_path = PurePosixPath(final_key)
 
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp_path = tmp.name
     try:
-        s3.download_file(Bucket=staging_bucket, Key=staged_key, Filename=tmp_path)
+        s3.download_file(Bucket=str(staging_bucket), Key=str(staged_key), Filename=tmp_path)
 
         metadata: dict[str, str] = {}
-        md5_key = staged_key + ".md5"
+        md5_key = staged_key.with_name(staged_key.name + ".md5")
         if md5_key in sidecars:
-            md5_obj = s3.get_object(Bucket=staging_bucket, Key=md5_key)
+            md5_obj = s3.get_object(Bucket=str(staging_bucket), Key=str(md5_key))
             metadata["md5"] = md5_obj["Body"].read().decode().strip()
 
         upload_succeeded = upload_file(
             tmp_path,
-            f"{lakehouse_bucket}/{final_key_path.parent}",
+            str(lakehouse_bucket / final_key_path.parent),
             user_metadata=metadata,
             object_name=final_key_path.name,
             show_progress=False,
@@ -219,11 +218,11 @@ def _promote_file(  # noqa: PLR0913
 
 
 def _write_descriptor_for_assembly(
-    assembly_dir: str,
+    assembly_dir: PurePosixPath,
     accession: str,
     resources: list[DescriptorResource],
-    lakehouse_bucket: str,
-    lakehouse_key_prefix: str,
+    lakehouse_bucket: PurePosixPath,
+    lakehouse_key_prefix: PurePosixPath,
 ) -> bool:
     """Create and upload a frictionless descriptor for an assembly.
 
@@ -236,7 +235,7 @@ def _write_descriptor_for_assembly(
     """
     try:
         descriptor_key = build_descriptor_key(assembly_dir, lakehouse_key_prefix)
-        if object_exists(f"{lakehouse_bucket}/{descriptor_key}"):
+        if object_exists(str(lakehouse_bucket / descriptor_key)):
             logger.debug("Descriptor already exists, skipping: %s", descriptor_key)
         else:
             descriptor = create_descriptor(assembly_dir, accession, resources)
@@ -251,9 +250,9 @@ def _write_descriptor_for_assembly(
 
 
 def _batch_delete(
-    promoted_keys: list[str],
-    sidecars: set[str],
-    staging_bucket: str,
+    promoted_keys: list[PurePosixPath],
+    sidecars: set[PurePosixPath],
+    staging_bucket: PurePosixPath,
 ) -> None:
     """Batch-delete all staged data files and their sidecars in one API call.
 
@@ -263,23 +262,24 @@ def _batch_delete(
     """
     keys_to_delete = list(promoted_keys)
     keys_to_delete.extend(
-        key + sidecar_ext
+        key.with_name(key.name + sidecar_ext)
         for key in promoted_keys
         for sidecar_ext in (".md5", ".crc64nvme")
-        if key + sidecar_ext in sidecars
+        if key.with_name(key.name + sidecar_ext) in sidecars
     )
-    del_errors = delete_objects(staging_bucket, keys_to_delete)
+    string_keys_to_delete = [str(key) for key in keys_to_delete]
+    del_errors = delete_objects(str(staging_bucket), string_keys_to_delete)
     for err in del_errors:
         logger.warning("Failed to delete staged file %s: %s", err.get("Key"), err.get("Message"))
 
 
 def _promote_data_files(  # noqa: PLR0913
-    data_files: list[str],
-    sidecars: set[str],
-    normalized_staging_prefix: str,
-    lakehouse_key_prefix: str,
-    staging_bucket: str,
-    lakehouse_bucket: str,
+    data_files: list[PurePosixPath],
+    sidecars: set[PurePosixPath],
+    staging_prefix: PurePosixPath,
+    lakehouse_key_prefix: PurePosixPath,
+    staging_bucket: PurePosixPath,
+    lakehouse_bucket: PurePosixPath,
     *,
     dry_run: bool,
 ) -> tuple[int, int, int, set[str]]:
@@ -297,12 +297,12 @@ def _promote_data_files(  # noqa: PLR0913
     failed = 0
     descriptors_written = 0
     promoted_accessions: set[str] = set()
-    assembly_files = _group_files_by_assembly(data_files, normalized_staging_prefix)
+    assembly_files = _group_files_by_assembly(data_files, staging_prefix)
 
-    def _promote_one(staged_key: str) -> tuple[DescriptorResource, str]:
+    def _promote_one(staged_key: PurePosixPath) -> tuple[DescriptorResource, PurePosixPath]:
         return _promote_file(
             staged_key,
-            normalized_staging_prefix,
+            staging_prefix,
             lakehouse_key_prefix,
             staging_bucket,
             lakehouse_bucket,
@@ -315,12 +315,12 @@ def _promote_data_files(  # noqa: PLR0913
         for (adir, acc), files in assembly_files.items():
             assembly_failed = 0
             resources: list[DescriptorResource] = []
-            promoted_keys: list[str] = []
+            promoted_keys: list[PurePosixPath] = []
 
             if dry_run:
                 for staged_key in files:
-                    rel_path = staged_key[len(normalized_staging_prefix) :]
-                    final_key = lakehouse_key_prefix + rel_path
+                    rel_path = staged_key.relative_to(staging_prefix)
+                    final_key = lakehouse_key_prefix / rel_path
                     if _dry_run_log_count < _MAX_DRY_RUN_LOGS:
                         logger.info("[dry-run] would promote: %s -> %s", staged_key, final_key)
                     else:
@@ -363,7 +363,7 @@ def _promote_data_files(  # noqa: PLR0913
 # Archive assemblies
 
 
-def _get_accession_path_prefix(accession: str, lakehouse_key_prefix: str) -> str | None:
+def _get_accession_path_prefix(accession: str, lakehouse_key_prefix: PurePosixPath) -> PurePosixPath | None:
     """Get the S3 key prefix for all files related to an accession.
 
     :param accession: assembly accession (e.g. "GCF_000001405.39_Some_description")
@@ -376,16 +376,16 @@ def _get_accession_path_prefix(accession: str, lakehouse_key_prefix: str) -> str
         return None
     db = m.group(1)
     p1, p2, p3 = m.group(2), m.group(3), m.group(4)
-    return f"{lakehouse_key_prefix}raw_data/{db}/{p1}/{p2}/{p3}/{accession}"
+    return lakehouse_key_prefix / "raw_data" / db / p1 / p2 / p3 / accession
 
 
 def _get_source_dest_pairs_for_accession(
     accession: str,
-    lakehouse_bucket: str,
-    lakehouse_key_prefix: str,
+    lakehouse_bucket: PurePosixPath,
+    lakehouse_key_prefix: PurePosixPath,
     release_tag: str,
     archive_reason: str,
-) -> list[tuple[str, str]]:
+) -> list[tuple[PurePosixPath, PurePosixPath]]:
     """Get list of (source_key, archive_key) pairs for all objects related to an accession.
 
     :param accession: assembly accession (e.g. "GCF_000001405.39_Some_description")
@@ -398,17 +398,21 @@ def _get_source_dest_pairs_for_accession(
     source_prefix = _get_accession_path_prefix(accession, lakehouse_key_prefix)
     if not source_prefix:
         return []
-    matching_objs: list[dict[str, Any]] = list_matching_objects(f"{lakehouse_bucket}/{source_prefix}")
+    matching_objs: list[dict[str, Any]] = list_matching_objects(f"{lakehouse_bucket / source_prefix}")
     return [
         (
-            obj["Key"],
-            f"{lakehouse_key_prefix}archive/{release_tag}/{archive_reason}/{obj['Key'][len(lakehouse_key_prefix) :]}",
+            PurePosixPath(obj["Key"]),
+            lakehouse_key_prefix
+            / "archive"
+            / release_tag
+            / archive_reason
+            / Path(obj["Key"]).relative_to(lakehouse_key_prefix),
         )
         for obj in matching_objs
     ]
 
 
-def _dry_run_output(key_pairs: list[tuple[str, str]], log_count: int) -> int:
+def _dry_run_output(key_pairs: list[tuple[PurePosixPath, PurePosixPath]], log_count: int) -> int:
     """Log source and archive key pairs for a dry run, with a limit on how many are logged at INFO level.
 
     :param key_pairs: list of (source_key, archive_key) pairs
@@ -425,7 +429,9 @@ def _dry_run_output(key_pairs: list[tuple[str, str]], log_count: int) -> int:
     return _dry_run_log_count
 
 
-def _archive_objects(key_pairs: list[tuple[str, str]], lakehouse_bucket: str, *, delete_source: bool) -> int:
+def _archive_objects(
+    key_pairs: list[tuple[PurePosixPath, PurePosixPath]], lakehouse_bucket: PurePosixPath, *, delete_source: bool
+) -> int:
     """Copy objects from source keys to archive keys, optionally deleting the source objects.
 
     :param key_pairs: list of (source_key, archive_key) pairs
@@ -436,14 +442,14 @@ def _archive_objects(key_pairs: list[tuple[str, str]], lakehouse_bucket: str, *,
     archived = 0
     if not key_pairs:
         return archived
-    keys_to_delete: list[str] = []
+    keys_to_delete: list[str] = []  # strings so they can be passed to delete_objects() in s3 module
     n_workers = min(32, len(key_pairs))
     with ThreadPoolExecutor(max_workers=n_workers) as executor:
         futures = {
             executor.submit(
                 copy_object,
-                f"{lakehouse_bucket}/{src}",
-                f"{lakehouse_bucket}/{arch}",
+                str(lakehouse_bucket / src),
+                str(lakehouse_bucket / arch),
             ): src
             for src, arch in key_pairs
         }
@@ -453,13 +459,13 @@ def _archive_objects(key_pairs: list[tuple[str, str]], lakehouse_bucket: str, *,
                 future.result()
                 archived += 1
                 if delete_source:
-                    keys_to_delete.append(src)
+                    keys_to_delete.append(str(src))
                 logger.debug("  Archived: %s", src)
             except Exception:
                 logger.exception("Failed to archive %s", src)
 
     if delete_source and keys_to_delete:
-        del_errors = delete_objects(lakehouse_bucket, keys_to_delete)
+        del_errors = delete_objects(str(lakehouse_bucket), keys_to_delete)
         for err in del_errors:
             logger.warning("Failed to delete %s: %s", err.get("Key"), err.get("Message"))
 
@@ -467,10 +473,10 @@ def _archive_objects(key_pairs: list[tuple[str, str]], lakehouse_bucket: str, *,
 
 
 def _archive_assemblies(  # noqa: PLR0913
-    manifest_local_path: str,
-    lakehouse_bucket: str,
+    manifest_local_path: Path,
+    lakehouse_bucket: PurePosixPath,
     ncbi_release: str | None = None,
-    lakehouse_key_prefix: str = DEFAULT_LAKEHOUSE_KEY_PREFIX,
+    lakehouse_key_prefix: PurePosixPath = DEFAULT_LAKEHOUSE_KEY_PREFIX,
     archive_reason: str = "unknown",
     *,
     delete_source: bool = False,
@@ -501,7 +507,7 @@ def _archive_assemblies(  # noqa: PLR0913
     _dry_run_log_count = 0
     for accession in tqdm.tqdm(accessions, unit="accession", desc="Archiving"):
         # get list of (source_key, archive_key) pairs for all objects related to this accession
-        key_pairs: list[tuple[str, str]] = _get_source_dest_pairs_for_accession(
+        key_pairs: list[tuple[PurePosixPath, PurePosixPath]] = _get_source_dest_pairs_for_accession(
             accession,
             lakehouse_bucket,
             lakehouse_key_prefix,
@@ -520,11 +526,11 @@ def _archive_assemblies(  # noqa: PLR0913
         archived += _archive_objects(key_pairs, lakehouse_bucket, delete_source=delete_source)
 
         # Infer assembly_dir from key paths for descriptor archival
-        assembly_dir: str | None = None
+        assembly_dir: PurePosixPath | None = None
         for src, _ in key_pairs:
-            adir_match = ASSEMBLY_PATH_REGEX.search(src)
+            adir_match = ASSEMBLY_PATH_REGEX.search(f"{src}")
             if adir_match:
-                assembly_dir = adir_match.group(1)
+                assembly_dir = PurePosixPath(adir_match.group(1))
                 break
 
         # Archive the frictionless descriptor alongside raw data
@@ -550,7 +556,9 @@ def _archive_assemblies(  # noqa: PLR0913
 # Manifest trimming
 
 
-def _trim_manifest(manifest_s3_key: str, staging_bucket: str, promoted_accessions: set[str]) -> None:
+def _trim_manifest(
+    manifest_s3_key: PurePosixPath, staging_bucket: PurePosixPath, promoted_accessions: set[str]
+) -> None:
     """Remove promoted accessions from the transfer manifest in S3.
 
     :param manifest_s3_key: S3 object key of the transfer_manifest.txt
@@ -564,7 +572,7 @@ def _trim_manifest(manifest_s3_key: str, staging_bucket: str, promoted_accession
 
     try:
         try:
-            s3.download_file(Bucket=staging_bucket, Key=manifest_s3_key, Filename=tmp_path)
+            s3.download_file(Bucket=str(staging_bucket), Key=str(manifest_s3_key), Filename=tmp_path)
         except s3.exceptions.NoSuchKey:
             logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", staging_bucket, manifest_s3_key)
             return
@@ -582,7 +590,7 @@ def _trim_manifest(manifest_s3_key: str, staging_bucket: str, promoted_accession
         with Path(tmp_path).open("w") as f:
             f.writelines(remaining)
 
-        s3.upload_file(Filename=tmp_path, Bucket=staging_bucket, Key=manifest_s3_key)
+        s3.upload_file(Filename=tmp_path, Bucket=str(staging_bucket), Key=str(manifest_s3_key))
         logger.info(
             "Trimmed manifest: %d -> %d entries (%d promoted)",
             len(lines),

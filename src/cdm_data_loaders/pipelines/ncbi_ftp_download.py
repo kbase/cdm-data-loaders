@@ -13,7 +13,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from ftplib import error_temp
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import tqdm
@@ -36,7 +36,7 @@ from cdm_data_loaders.utils.s3 import get_s3_client, upload_file
 logger = get_cdm_logger()
 
 
-DEFAULT_STAGING_KEY_PREFIX = "staging/"
+DEFAULT_STAGING_KEY_PREFIX: PurePosixPath = PurePosixPath("staging/")
 
 
 class DownloadSettings(BaseSettings):
@@ -44,13 +44,13 @@ class DownloadSettings(BaseSettings):
 
     model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT)
 
-    manifest: str = Field(
-        default=f"{INPUT_MOUNT}/transfer_manifest.txt",
+    manifest: Path = Field(
+        default=Path(INPUT_MOUNT) / "transfer_manifest.txt",
         description="Path to the transfer manifest file listing FTP paths to download",
         validation_alias=AliasChoices("m", "manifest"),
     )
-    output_dir: str = Field(
-        default=OUTPUT_MOUNT,
+    output_dir: Path = Field(
+        default=Path(OUTPUT_MOUNT),
         description="Output directory for downloaded assembly files",
         validation_alias=AliasChoices("output-dir", "output_dir"),
     )
@@ -80,8 +80,8 @@ class DownloadSettings(BaseSettings):
 def _upload_assembly_dir(
     assembly_dir: Path,
     tmp_root: Path,
-    bucket: str,
-    staging_key_prefix: str,
+    bucket: PurePosixPath,
+    staging_key_prefix: PurePosixPath,
 ) -> int:
     """Upload all files under *assembly_dir* to S3, deleting each file immediately after upload.
 
@@ -101,8 +101,8 @@ def _upload_assembly_dir(
     for f in sorted(assembly_dir.rglob("*")):
         if f.is_file():
             relative = f.relative_to(tmp_root)
-            dest_prefix = f"{bucket}/{staging_key_prefix.rstrip('/')}/{relative.parent}"
-            if upload_file(f, dest_prefix, show_progress=False):
+            dest_prefix = bucket / staging_key_prefix / relative.parent
+            if upload_file(f, str(dest_prefix), show_progress=False):
                 count += 1
             else:
                 logger.warning("Failed to upload %s to %s", f, dest_prefix)
@@ -115,8 +115,8 @@ def _upload_assembly_dir(
 
 
 def download_batch(
-    manifest_path: str | Path,
-    output_dir: str | Path,
+    manifest_path: Path,
+    output_dir: Path,
     threads: int = 4,
     ftp_host: str = FTP_HOST,
     limit: int | None = None,
@@ -130,8 +130,8 @@ def download_batch(
     :param limit: optional limit for testing
     :return: report dict with overall stats
     """
-    with Path(manifest_path).open() as f:
-        assembly_paths = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+    with manifest_path.open() as f:
+        assembly_paths = [PurePosixPath(line.strip()) for line in f if line.strip() and not line.startswith("#")]
 
     if limit:
         assembly_paths = assembly_paths[:limit]
@@ -144,7 +144,7 @@ def download_batch(
     failed: list[dict[str, str]] = []
     all_stats: list[dict[str, Any]] = []
 
-    def _download_one(path: str) -> tuple[str, Exception | None]:
+    def _download_one(path: PurePosixPath) -> tuple[str, Exception | None]:
         nonlocal success_count
 
         @retry(
@@ -160,12 +160,12 @@ def download_batch(
         try:
             stats = _attempt()
         except Exception as e:  # noqa: BLE001
-            return path, e
+            return str(path), e
         else:
             with lock:
                 success_count += 1
                 all_stats.append(stats)
-            return path, None
+            return str(path), None
 
     try:
         with (
@@ -194,7 +194,7 @@ def download_batch(
         "assembly_stats": all_stats,
     }
 
-    report_path = Path(output_dir) / "download_report.json"
+    report_path = output_dir / "download_report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with report_path.open("w") as f:
         json.dump(report, f, indent=2)
@@ -238,12 +238,12 @@ def cli() -> None:
 # Notebook / interactive entry point
 
 
-def download_and_stage(
+def download_and_stage(  #  noqa: PLR0913, PLR0915
     *,
-    bucket: str,
-    staging_key_prefix: str,
-    manifest_s3_key: str | None = None,
-    manifest_local_path: str | Path | None = None,
+    bucket: PurePosixPath,
+    staging_key_prefix: PurePosixPath,
+    manifest_s3_key: PurePosixPath | None = None,
+    manifest_local_path: Path | None = None,
     threads: int = 4,
     ftp_host: str = FTP_HOST,
     limit: int | None = None,
@@ -281,15 +281,15 @@ def download_and_stage(
 
         if manifest_s3_key is not None:
             s3 = get_s3_client()
-            response = s3.get_object(Bucket=bucket, Key=manifest_s3_key)
+            response = s3.get_object(Bucket=str(bucket), Key=str(manifest_s3_key))
             manifest_dest.write_bytes(response["Body"].read())
             logger.info("Manifest read from S3: s3://%s/%s", bucket, manifest_s3_key)
-        else:
-            manifest_dest.write_bytes(Path(manifest_local_path).read_bytes())
+        elif manifest_local_path:
+            manifest_dest.write_bytes(manifest_local_path.read_bytes())
             logger.info("Manifest read from local path: %s", manifest_local_path)
 
         with manifest_dest.open() as f:
-            assembly_paths = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+            assembly_paths = [PurePosixPath(line.strip()) for line in f if line.strip() and not line.startswith("#")]
 
         if limit:
             assembly_paths = assembly_paths[:limit]
@@ -303,7 +303,7 @@ def download_and_stage(
         failed: list[dict[str, str]] = []
         all_stats: list[dict[str, Any]] = []
 
-        def _download_upload_one(path: str) -> tuple[str, Exception | None]:
+        def _download_upload_one(path: PurePosixPath) -> tuple[str, Exception | None]:
             nonlocal success_count, staged_objects
 
             @retry(
@@ -319,7 +319,7 @@ def download_and_stage(
             try:
                 stats = _attempt()
             except Exception as e:  # noqa: BLE001
-                return path, e
+                return str(path), e
 
             if not dry_run:
                 _db, assembly_dir_name, _accession = parse_assembly_path(path)
@@ -331,7 +331,7 @@ def download_and_stage(
             with lock:
                 success_count += 1
                 all_stats.append(stats)
-            return path, None
+            return str(path), None
 
         try:
             with (
@@ -364,7 +364,7 @@ def download_and_stage(
             report_path = tmp / "download_report.json"
             with report_path.open("w") as f:
                 json.dump(report, f, indent=2)
-            if upload_file(report_path, f"{bucket}/{staging_key_prefix.rstrip('/')}", show_progress=False):
+            if upload_file(report_path, str(bucket / staging_key_prefix), show_progress=False):
                 staged_objects += 1
             else:
                 logger.warning("Failed to upload download report to s3://%s/%s", bucket, staging_key_prefix)

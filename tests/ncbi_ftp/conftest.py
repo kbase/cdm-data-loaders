@@ -1,6 +1,7 @@
 """Shared fixtures for ncbi_ftp tests."""
 
 from collections.abc import Generator
+from pathlib import PurePosixPath
 from unittest.mock import patch
 
 import boto3
@@ -14,7 +15,7 @@ from cdm_data_loaders.utils.s3 import CDM_LAKE_BUCKET, reset_s3_client
 from tests.s3_helpers import strip_checksum_algorithm
 
 AWS_REGION = "us-east-1"
-TEST_BUCKET = CDM_LAKE_BUCKET
+TEST_BUCKET: PurePosixPath = PurePosixPath(CDM_LAKE_BUCKET)
 
 
 # Minimal assembly_summary_refseq.txt content (tab-separated, 20+ columns)
@@ -58,7 +59,7 @@ def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[botocore.client
 
     with mock_aws():
         client = boto3.client("s3", region_name=AWS_REGION)
-        client.create_bucket(Bucket=TEST_BUCKET)
+        client.create_bucket(Bucket=str(TEST_BUCKET))
 
         reset_s3_client()
         with (

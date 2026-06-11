@@ -4,7 +4,7 @@ import socket
 import time
 from collections.abc import Callable
 from ftplib import FTP, error_temp
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -95,8 +95,8 @@ class TestFtpListDir:
                 callback(name)
 
         mock_ftp.retrlines.side_effect = fake_retrlines
-        result = ftp_list_dir(mock_ftp, "/some/path")
-        assert result == ["file1.txt", "file2.gz"]
+        result = ftp_list_dir(mock_ftp, PurePosixPath("/some/path"))
+        assert result == [PurePosixPath("file1.txt"), PurePosixPath("file2.gz")]
         mock_ftp.cwd.assert_called_once_with("/some/path")
 
     def test_retries_on_error_temp(self) -> None:
@@ -112,8 +112,8 @@ class TestFtpListDir:
             callback("file.txt")
 
         mock_ftp.retrlines.side_effect = fake_retrlines
-        result = ftp_list_dir(mock_ftp, "/path", retries=3)
-        assert result == ["file.txt"]
+        result = ftp_list_dir(mock_ftp, PurePosixPath("/path"), retries=3)
+        assert result == [PurePosixPath("file.txt")]
         assert call_count == _EXPECTED_RETRY_COUNT
 
     def test_raises_after_exhausted_retries(self) -> None:
@@ -121,7 +121,7 @@ class TestFtpListDir:
         mock_ftp = MagicMock(spec=FTP)
         mock_ftp.retrlines.side_effect = error_temp(_ERR_421)  # noqa: S321
         with pytest.raises(error_temp):
-            ftp_list_dir(mock_ftp, "/path", retries=_EXPECTED_RETRY_COUNT)
+            ftp_list_dir(mock_ftp, PurePosixPath("/path"), retries=_EXPECTED_RETRY_COUNT)
 
 
 class TestFtpDownloadFile:
@@ -136,7 +136,7 @@ class TestFtpDownloadFile:
 
         mock_ftp.retrbinary.side_effect = fake_retrbinary
         local = tmp_path / "out.bin"
-        ftp_download_file(mock_ftp, "remote.bin", str(local))
+        ftp_download_file(mock_ftp, PurePosixPath("remote.bin"), local)
         assert local.read_bytes() == b"file data"
 
     def test_retries_on_error_temp(self, tmp_path: Path) -> None:
@@ -153,8 +153,8 @@ class TestFtpDownloadFile:
             callback(b"ok")
 
         mock_ftp.retrbinary.side_effect = fake_retrbinary
-        local = str(tmp_path / "out.bin")
-        ftp_download_file(mock_ftp, "remote.bin", local, retries=3)
+        local = tmp_path / "out.bin"
+        ftp_download_file(mock_ftp, PurePosixPath("remote.bin"), local, retries=3)
         assert call_count == _EXPECTED_RETRY_COUNT
 
 
@@ -170,7 +170,7 @@ class TestFtpRetrieveText:
                 callback(line)
 
         mock_ftp.retrlines.side_effect = fake_retrlines
-        result = ftp_retrieve_text(mock_ftp, "remote.txt")
+        result = ftp_retrieve_text(mock_ftp, PurePosixPath("remote.txt"))
         assert result == "line1\nline2"
 
 
