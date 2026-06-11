@@ -3,7 +3,7 @@
 import json
 from collections.abc import Generator
 from pathlib import Path, PurePosixPath
-from typing import Any, NotRequired, TypedDict, Unpack, cast
+from typing import NotRequired, TypedDict, Unpack, cast
 from unittest.mock import MagicMock, patch
 
 import boto3
