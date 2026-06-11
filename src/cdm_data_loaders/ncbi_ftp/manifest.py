@@ -63,7 +63,7 @@ class AssemblyRecord:
         status: "latest", "replaced", or "suppressed".
         seq_rel_date: Release date.
         ftp_url: Full FTP URL.
-        assembly_dir: FTP path to the assembly folder (e.g., GCF/000/001/215/GCF_000001215.4_Release_6_plus_IS01_MT/).
+        assembly_dir: Assembly directory name (final path segment from the FTP URL).
     """
 
     accession: str
