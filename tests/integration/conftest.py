@@ -239,7 +239,10 @@ def list_all_keys(
     """
     keys: list[PurePosixPath] = []
     paginator = s3.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=str(bucket), Prefix=str(prefix)):
+    paginate_kwargs: dict[str, str] = {"Bucket": str(bucket)}
+    if prefix is not None:
+        paginate_kwargs["Prefix"] = str(prefix)
+    for page in paginator.paginate(**paginate_kwargs):
         keys.extend(PurePosixPath(obj["Key"]) for obj in page.get("Contents", []))
     return sorted(keys)
 

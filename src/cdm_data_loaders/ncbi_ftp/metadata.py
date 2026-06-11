@@ -121,6 +121,12 @@ def create_descriptor(
             "path": str(res["path"]) if "path" in res else None,
             "format": res.get("format", ""),
         }
+        if entry["name"] is None:
+            msg = f"Missing name for file descriptor in {accession_full}"
+            raise ValueError(msg)
+        if entry["path"] is None:
+            msg = f"Missing path for file descriptor in {accession_full}"
+            raise ValueError(msg)
         if res.get("bytes") is not None:
             entry["bytes"] = res.get("bytes", None)
         if res.get("hash") is not None:

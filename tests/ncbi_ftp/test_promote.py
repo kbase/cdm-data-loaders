@@ -41,9 +41,9 @@ _LKH2: PurePosixPath = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data/GCF/000/005/845"
 
 class DownloadFileClient(Protocol):
     """Protocol for dynamic BaseClient with download_file function."""
+
     def download_file(self, Bucket: str, Key: str, Filename: str, **kw: object) -> None:  #  noqa: N803
         """Download a file from an S3 store."""
-        pass
 
 
 def _stage(

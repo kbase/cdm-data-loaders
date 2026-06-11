@@ -73,7 +73,7 @@ def promote_from_s3(  # noqa: PLR0913
     :return: report dict with counts
     """
     # Get list of objects under the staging prefix
-    staged_objects: list[dict[str, Any]] = list_matching_objects(str(staging_bucket / staging_key_prefix))
+    staged_objects: list[dict[str, Any]] = list_matching_objects(f"{staging_bucket / staging_key_prefix}/")
 
     # Separate data files from sidecars
     sidecars = {PurePosixPath(k["Key"]) for k in staged_objects if k["Key"].endswith((".crc64nvme", ".md5"))}
@@ -406,7 +406,7 @@ def _get_source_dest_pairs_for_accession(
             / "archive"
             / release_tag
             / archive_reason
-            / Path(obj["Key"]).relative_to(lakehouse_key_prefix),
+            / PurePosixPath(obj["Key"]).relative_to(lakehouse_key_prefix),
         )
         for obj in matching_objs
     ]
