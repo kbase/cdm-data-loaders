@@ -291,11 +291,10 @@ def _extract_accession_dir_and_id_from_s3_key(key: PurePosixPath) -> tuple[str, 
     e.g. "some/prefix/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz"
          → ("GCF_000001215.4_Release_6_plus_ISO1_MT", "GCF_000001215.4")
     """
-    m = ASSEMBLY_PATH_REGEX.search(str(key))
-    if not m:
-        msg = f"Could not parse S3 key for accession info: {key}"
-        raise ValueError(msg)
-    return (m.group(1), m.group(2))
+    if m := ASSEMBLY_PATH_REGEX.search(str(key)):
+        return (m.group(1), m.group(2))
+    msg = f"Could not parse S3 key for accession info: {key}"
+    raise ValueError(msg)
 
 
 def scan_store_to_synthetic_summary(
