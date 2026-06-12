@@ -128,9 +128,9 @@ def create_descriptor(
             msg = f"Missing path for file descriptor in {accession_full}"
             raise ValueError(msg)
         if res.get("bytes") is not None:
-            entry["bytes"] = res.get("bytes", None)
+            entry["bytes"] = res.get("bytes")
         if res.get("hash") is not None:
-            entry["hash"] = res.get("hash", None)
+            entry["hash"] = res.get("hash")
         normalised.append(entry)
 
     return {

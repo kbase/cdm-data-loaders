@@ -374,8 +374,7 @@ def _get_accession_path_prefix(accession: str, lakehouse_key_prefix: PurePosixPa
     if not m:
         logger.warning("Invalid accession format: %s", accession)
         return None
-    db = m.group(1)
-    p1, p2, p3 = m.group(2), m.group(3), m.group(4)
+    db, p1, p2, p3 = m.group(1), m.group(2), m.group(3), m.group(4)
     return lakehouse_key_prefix / "raw_data" / db / p1 / p2 / p3 / accession
 
 
@@ -528,8 +527,7 @@ def _archive_assemblies(  # noqa: PLR0913
         # Infer assembly_dir from key paths for descriptor archival
         assembly_dir: PurePosixPath | None = None
         for src, _ in key_pairs:
-            adir_match = ASSEMBLY_PATH_REGEX.search(f"{src}")
-            if adir_match:
+            if adir_match := ASSEMBLY_PATH_REGEX.search(f"{src}"):
                 assembly_dir = PurePosixPath(adir_match.group(1))
                 break
 

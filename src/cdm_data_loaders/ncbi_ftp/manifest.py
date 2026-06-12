@@ -182,11 +182,10 @@ def get_latest_assembly_paths(
 
 def accession_prefix(accession: str) -> str:
     """Extract the 3-digit prefix from an accession (e.g. ``GCF_000005845.2`` → ``"000"``)."""
-    m = ACCESSION_PARTS_REGEX.match(accession)
-    if not m:
-        msg = f"Could not parse accession: {accession}"
-        raise ValueError(msg)
-    return m.group(2)
+    if m := ACCESSION_PARTS_REGEX.match(accession):
+        return m.group(2)
+    msg = f"Could not parse accession: {accession}"
+    raise ValueError(msg)
 
 
 def filter_by_prefix_range(
@@ -432,6 +431,7 @@ def _does_accession_need_update(
             s3_md5 = obj_info.get("Metadata", {}).get("md5", "")
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code")
+            # boto3 error codes are not always ints, so check the conversion first
             try:
                 code_int = int(code)
             except (TypeError, ValueError):
