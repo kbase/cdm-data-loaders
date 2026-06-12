@@ -370,12 +370,11 @@ def _get_accession_path_prefix(accession: str, lakehouse_key_prefix: PurePosixPa
     :param lakehouse_key_prefix: S3 key prefix for the Lakehouse dataset root
     :return: S3 key prefix under which all files for the accession are stored, or None if the accession format is invalid
     """
-    m = ACCESSION_PARTS_REGEX.match(accession)
+    m = ACCESSION_PARTS_REGEX.match(accession)  # returns, e.g., "GCF", "000", "001"', "405" captured groups
     if not m:
         logger.warning("Invalid accession format: %s", accession)
         return None
-    db, p1, p2, p3 = m.group(1), m.group(2), m.group(3), m.group(4)
-    return lakehouse_key_prefix / "raw_data" / db / p1 / p2 / p3 / accession
+    return PurePosixPath(lakehouse_key_prefix, "raw_data", *m.groups(), accession)
 
 
 def _get_source_dest_pairs_for_accession(
