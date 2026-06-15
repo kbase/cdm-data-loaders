@@ -36,7 +36,7 @@ from cdm_data_loaders.utils.s3 import get_s3_client, upload_file
 logger = get_cdm_logger()
 
 
-DEFAULT_STAGING_KEY_PREFIX: PurePosixPath = PurePosixPath("staging/")
+DEFAULT_STAGING_KEY_PREFIX: PurePosixPath = PurePosixPath("staging")
 
 
 class DownloadSettings(BaseSettings):

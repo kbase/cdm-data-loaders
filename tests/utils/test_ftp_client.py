@@ -95,7 +95,7 @@ class TestFtpListDir:
                 callback(name)
 
         mock_ftp.retrlines.side_effect = fake_retrlines
-        result = ftp_list_dir(mock_ftp, PurePosixPath("/some/path"))
+        result = ftp_list_dir(mock_ftp, PurePosixPath("/") / "some" / "path")
         assert result == [PurePosixPath("file1.txt"), PurePosixPath("file2.gz")]
         mock_ftp.cwd.assert_called_once_with("/some/path")
 
@@ -121,7 +121,7 @@ class TestFtpListDir:
         mock_ftp = MagicMock(spec=FTP)
         mock_ftp.retrlines.side_effect = error_temp(_ERR_421)  # noqa: S321
         with pytest.raises(error_temp):
-            ftp_list_dir(mock_ftp, PurePosixPath("/path"), retries=_EXPECTED_RETRY_COUNT)
+            ftp_list_dir(mock_ftp, PurePosixPath("/") / "path", retries=_EXPECTED_RETRY_COUNT)
 
 
 class TestFtpDownloadFile:

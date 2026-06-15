@@ -2,13 +2,15 @@
 
 from collections.abc import Generator
 from pathlib import PurePosixPath
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import boto3
 import botocore.client
 import pytest
 from moto import mock_aws
 
+import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
 import cdm_data_loaders.ncbi_ftp.promote as promote_mod
 import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.utils.s3 import CDM_LAKE_BUCKET, reset_s3_client
@@ -45,6 +47,19 @@ SAMPLE_SUMMARY = (
     "ASM9999v1\t\t\t\tna\n"
 )
 
+# Relative paths for test accessions
+ACC_PATH_215 = PurePosixPath("GCF") / "000" / "001" / "215" / "GCF_000001215.4_Release_6_plus_ISO1_MT"
+ACC_PATH_405 = PurePosixPath("GCF") / "000" / "001" / "405" / "GCF_000001405.40_GRCh38.p14"
+ACC_PATH_845 = PurePosixPath("GCF") / "000" / "005" / "845" / "GCF_000005845.2_ASM584v2"
+ACC_PATH_999 = PurePosixPath("GCF") / "000" / "009" / "999" / "GCF_000009999.1_ASM999v1"
+
+_MD5_CHECKSUMS_TXT = (
+    "d41d8cd98f00b204e9800998ecf8427e  ./GCF_000001215.4_Release_6_plus_ISO1_MT_genomic.fna.gz\n"
+    "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4  ./GCF_000001215.4_Release_6_plus_ISO1_MT_protein.faa.gz\n"
+    "ffffffffffffffffffffffffffffffff  ./GCF_000001215.4_Release_6_plus_ISO1_MT_assembly_report.txt\n"
+    "0000000000000000000000000000dead  ./GCF_000001215.4_Release_6_plus_ISO1_MT_README.txt\n"
+)
+
 
 @pytest.fixture
 def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[botocore.client.BaseClient]:
@@ -76,3 +91,15 @@ def mock_s3_client_no_checksum(mock_s3_client: botocore.client.BaseClient) -> bo
     mock_s3_client.copy_object = strip_checksum_algorithm(mock_s3_client.copy_object)  # type: ignore[method-assign]
     mock_s3_client.upload_file = strip_checksum_algorithm(mock_s3_client.upload_file)  # type: ignore[method-assign]
     return mock_s3_client
+
+
+@pytest.fixture
+def manifest_transfer_mocks(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    """Mocked manifest transfer functions for retrieving MD5 checksum text and listing matching S3 objects."""
+    mock_retrieve = MagicMock(return_value=_MD5_CHECKSUMS_TXT)
+    mock_list = MagicMock(return_value=["one key"])
+
+    monkeypatch.setattr(manifest_mod, "ftp_retrieve_text", mock_retrieve)
+    monkeypatch.setattr(manifest_mod, "list_matching_objects", mock_list)
+
+    return SimpleNamespace(retrieve=mock_retrieve, list=mock_list)

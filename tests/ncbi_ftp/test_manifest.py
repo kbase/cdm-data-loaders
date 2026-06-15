@@ -3,6 +3,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -27,7 +28,7 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     write_updated_manifest,
 )
 
-from .conftest import SAMPLE_SUMMARY
+from .conftest import ACC_PATH_215, ACC_PATH_405, SAMPLE_SUMMARY
 
 _EXPECTED_TWO = 2
 
@@ -96,8 +97,8 @@ def test_parse_assembly_summary_input_types(source: str, tmp_path: Path) -> None
 def test_get_latest_assembly_paths() -> None:
     """Only 'latest' assemblies appear; paths are FTP directories with trailing slash."""
     assert dict(get_latest_assembly_paths(parse_assembly_summary(SAMPLE_SUMMARY))) == {
-        "GCF_000001215.4": PurePosixPath("/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/"),
-        "GCF_000001405.40": PurePosixPath("/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/"),
+        "GCF_000001215.4": PurePosixPath("/") / "genomes" / "all" / ACC_PATH_215,
+        "GCF_000001405.40": PurePosixPath("/") / "genomes" / "all" / ACC_PATH_405,
     }
 
 
@@ -244,26 +245,26 @@ def test_write_diff_summary(tmp_path: Path) -> None:
     ("url", "expected", "kwargs"),
     [
         pytest.param(
-            "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6",
-            PurePosixPath("/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6"),
+            "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT",
+            PurePosixPath("/") / "genomes" / "all" / ACC_PATH_215,
             {},
             id="https_url",
         ),
         pytest.param(
-            "ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6",
-            PurePosixPath("/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6"),
+            "ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT",
+            PurePosixPath("/") / "genomes" / "all" / ACC_PATH_215,
             {},
             id="ftp_url",
         ),
         pytest.param(
-            "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6",
+            "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT",
             None,
             {},
             id="bare_path",
         ),
         pytest.param(
             "ftp://custom.host.example.com/genomes/all/GCF/000/001/215",
-            PurePosixPath("/genomes/all/GCF/000/001/215"),
+            PurePosixPath("/") / "genomes" / "all" / "GCF" / "000" / "001" / "215",
             {"ftp_host": "custom.host.example.com"},
             id="custom_ftp_host",
         ),
@@ -281,31 +282,20 @@ def test_ftp_dir_from_url(url: str, expected: str | None, kwargs: dict) -> None:
 # verify_transfer_candidates
 
 
-_MD5_CHECKSUMS_TXT = (
-    "d41d8cd98f00b204e9800998ecf8427e  ./GCF_000001215.4_Release_6_plus_ISO1_MT_genomic.fna.gz\n"
-    "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4  ./GCF_000001215.4_Release_6_plus_ISO1_MT_protein.faa.gz\n"
-    "ffffffffffffffffffffffffffffffff  ./GCF_000001215.4_Release_6_plus_ISO1_MT_assembly_report.txt\n"
-    "0000000000000000000000000000dead  ./GCF_000001215.4_Release_6_plus_ISO1_MT_README.txt\n"
-)
-
-
 _BUCKET: PurePosixPath = PurePosixPath("cdm-lake")
-_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi/")
+_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse") / "kbase" / "datasets " / "ncbi"
 
 
 def _assemblies() -> dict:
     return parse_assembly_summary(SAMPLE_SUMMARY)
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
+@pytest.mark.usefixtures("manifest_transfer_mocks")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_prunes_when_all_match(
     mock_connect: MagicMock,
-    mock_retrieve: MagicMock,  #  noqa: ARG001
     mock_head: MagicMock,
-    mock_list: MagicMock,  #  noqa: ARG001
 ) -> None:
     """Assemblies where every file matches S3 are pruned from the list."""
     mock_connect.return_value = MagicMock()
@@ -335,15 +325,12 @@ def test_verify_transfer_candidates_prunes_when_all_match(
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == []
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
+@pytest.mark.usefixtures("manifest_transfer_mocks")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_keeps_when_md5_differs(
     mock_connect: MagicMock,
-    mock_retrieve: MagicMock,  #  noqa: ARG001
     mock_head: MagicMock,
-    mock_list: MagicMock,  #  noqa: ARG001
 ) -> None:
     """Assembly is kept when at least one file has a different MD5."""
     mock_connect.return_value = MagicMock()
@@ -351,15 +338,12 @@ def test_verify_transfer_candidates_keeps_when_md5_differs(
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
+@pytest.mark.usefixtures("manifest_transfer_mocks")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_keeps_when_s3_object_missing(
     mock_connect: MagicMock,
-    mock_retrieve: MagicMock,  #  noqa: ARG001
     mock_head: MagicMock,
-    mock_list: MagicMock,  #  noqa: ARG001
 ) -> None:
     """Assembly is kept when at least one file doesn't exist in S3."""
     mock_connect.return_value = MagicMock()
@@ -373,15 +357,12 @@ def test_verify_transfer_candidates_keeps_when_s3_object_missing(
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
+@pytest.mark.usefixtures("manifest_transfer_mocks")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_keeps_when_no_md5_metadata(
     mock_connect: MagicMock,
-    mock_retrieve: MagicMock,  # noqa: ARG001
     mock_head: MagicMock,
-    mock_list: MagicMock,  # noqa: ARG001
 ) -> None:
     """Assembly is kept when S3 object exists but has no md5 metadata."""
     mock_connect.return_value = MagicMock()
@@ -389,45 +370,38 @@ def test_verify_transfer_candidates_keeps_when_no_md5_metadata(
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
-@patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", side_effect=Exception("FTP error"))
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_keeps_when_ftp_fails(
-    mock_connect: MagicMock,
-    mock_retrieve: MagicMock,  # noqa: ARG001
-    mock_list: MagicMock,  # noqa: ARG001
+    mock_connect: MagicMock, manifest_transfer_mocks: SimpleNamespace
 ) -> None:
     """Assembly is kept (conservative) when md5checksums.txt cannot be fetched."""
     mock_connect.return_value = MagicMock()
+    manifest_transfer_mocks.retrieve.side_effect = Exception("FTP error")
     assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
-def test_verify_transfer_candidates_empty_input(mock_connect: MagicMock) -> None:  # noqa: ARG001
+def test_verify_transfer_candidates_empty_input() -> None:
     """Empty accession list returns empty result without connecting."""
-    assert verify_transfer_candidates([], {}, _BUCKET, PurePosixPath("prefix")) == []
+    with patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp", return_value=MagicMock()):
+        assert verify_transfer_candidates([], {}, _BUCKET, PurePosixPath("prefix")) == []
 
 
+@pytest.mark.usefixtures("manifest_transfer_mocks")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
-@patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_unknown_accession_kept(
     mock_connect: MagicMock,
-    mock_list: MagicMock,  # noqa: ARG001
 ) -> None:
     """Accessions not in assemblies dict are kept (conservative)."""
     mock_connect.return_value = MagicMock()
-    assert verify_transfer_candidates(["GCF_999999999.1"], {}, _BUCKET, PurePosixPath("prefix/")) == ["GCF_999999999.1"]
+    assert verify_transfer_candidates(["GCF_999999999.1"], {}, _BUCKET, PurePosixPath("prefix")) == ["GCF_999999999.1"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
+@pytest.mark.usefixtures("manifest_transfer_mocks")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_short_circuits_on_first_mismatch(
     mock_connect: MagicMock,
-    mock_retrieve: MagicMock,  # noqa: ARG001
     mock_head: MagicMock,
-    mock_list: MagicMock,  # noqa: ARG001
 ) -> None:
     """Verification stops checking after the first missing/mismatched file."""
     mock_connect.return_value = MagicMock()
@@ -442,15 +416,12 @@ def test_verify_transfer_candidates_short_circuits_on_first_mismatch(
     assert mock_head.call_count == 1
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
+@pytest.mark.usefixtures("manifest_transfer_mocks")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.head_object")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.ftp_retrieve_text", return_value=_MD5_CHECKSUMS_TXT)
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_mixed(
     mock_connect: MagicMock,
-    mock_retrieve: MagicMock,  # noqa: ARG001
     mock_head: MagicMock,
-    mock_list: MagicMock,  # noqa: ARG001
 ) -> None:
     """A mix of matching and non-matching assemblies: matched pruned, unmatched kept."""
     mock_connect.return_value = MagicMock()
@@ -482,13 +453,14 @@ def test_verify_transfer_candidates_mixed(
     assert result == ["GCF_000001405.40"]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=[])
+@pytest.mark.usefixtures("manifest_transfer_mocks")
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_skips_ftp_when_folder_missing(
     mock_connect: MagicMock,
-    mock_list: MagicMock,  # noqa: ARG001
+    manifest_transfer_mocks: SimpleNamespace,
 ) -> None:
     """Accessions with no objects in S3 are confirmed without FTP round-trip."""
+    manifest_transfer_mocks.list.return_value = []
     result = verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX)
     assert result == ["GCF_000001215.4"]
     mock_connect.assert_not_called()
@@ -501,23 +473,27 @@ def test_verify_transfer_candidates_skips_ftp_when_folder_missing(
     ("key", "expected"),
     [
         pytest.param(
-            PurePosixPath(
-                "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz"
-            ),
+            PurePosixPath("tenant-general-warehouse")
+            / "kbase"
+            / "datasets"
+            / "ncbi"
+            / "refseq"
+            / "GCF_000001215.4_Release_6_plus_ISO1_MT"
+            / "file.gz",
             ("GCF_000001215.4_Release_6_plus_ISO1_MT", "GCF_000001215.4"),
             id="long_path",
         ),
         pytest.param(
-            PurePosixPath("some/path/GCA_999999999.1_whatever/data.txt"),
+            PurePosixPath("some") / "path" / "GCA_999999999.1_whatever" / "data.txt",
             ("GCA_999999999.1_whatever", "GCA_999999999.1"),
             id="short_path",
         ),
         pytest.param(
-            PurePosixPath("prefix/GCA_999999999.1_assembly_name/subdir/data.txt"),
+            PurePosixPath("prefix") / "GCA_999999999.1_assembly_name" / "subdir" / "data.txt",
             ("GCA_999999999.1_assembly_name", "GCA_999999999.1"),
             id="subdir",
         ),
-        pytest.param(PurePosixPath("some/random/path"), None, id="no_accession"),
+        pytest.param(PurePosixPath("some") / "random" / "path", None, id="no_accession"),
         pytest.param(PurePosixPath(""), None, id="empty"),
     ],
 )
@@ -534,21 +510,31 @@ def _make_mock_list_object_return_value() -> list[dict[str, Any]]:
     """Return a response for list objects with two assemblies (GCF_000001215.4, GCF_000005845.2)."""
     return [
         {
-            "Key": PurePosixPath(
-                "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6/file1.gz"
-            ),
+            "Key": PurePosixPath("tenant-general-warehouse")
+            / "kbase"
+            / "datasets"
+            / "ncbi"
+            / "refseq"
+            / "GCF_000001215.4_Release_6/file1.gz",
             "LastModified": datetime(2024, 1, 15, tzinfo=UTC),
         },
         {
-            "Key": PurePosixPath(
-                "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000001215.4_Release_6/file2.gz"
-            ),
+            "Key": PurePosixPath("tenant-general-warehouse")
+            / "kbase"
+            / "datasets"
+            / "ncbi"
+            / "refseq"
+            / "GCF_000001215.4_Release_6/file2.gz",
             "LastModified": datetime(2024, 1, 16, tzinfo=UTC),
         },
         {
-            "Key": PurePosixPath(
-                "tenant-general-warehouse/kbase/datasets/ncbi/refseq/GCF_000005845.2_Assembly/file.gz"
-            ),
+            "Key": PurePosixPath("tenant-general-warehouse")
+            / "kbase"
+            / "datasets"
+            / "ncbi"
+            / "refseq"
+            / "GCF_000005845.2_Assembly"
+            / "file.gz",
             "LastModified": datetime(2024, 2, 20, tzinfo=UTC),
         },
     ]
@@ -632,9 +618,12 @@ def test_scan_store_handles_empty_store(mock_list_matching_objects: MagicMock) -
 def test_scan_store_skips_objects_without_accession(mock_list_matching_objects: MagicMock) -> None:
     """Objects without valid accessions in the key are skipped."""
     mock_list_matching_objects.return_value = [
-        {"Key": PurePosixPath("prefix/some/random/file.txt"), "LastModified": datetime(2024, 1, 1, tzinfo=UTC)},
         {
-            "Key": PurePosixPath("prefix/GCF_000001215.4_Assembly/valid_file.gz"),
+            "Key": PurePosixPath("prefix") / "some" / "random" / "file.txt",
+            "LastModified": datetime(2024, 1, 1, tzinfo=UTC),
+        },
+        {
+            "Key": PurePosixPath("prefix") / "GCF_000001215.4_Assembly" / "valid_file.gz",
             "LastModified": datetime(2024, 2, 1, tzinfo=UTC),
         },
     ]
@@ -659,6 +648,7 @@ def test_scan_store_assembly_dir_survives_round_trip(mock_list_matching_objects:
 
     synthetic = scan_store_to_synthetic_summary(PurePosixPath("test-bucket"), PurePosixPath("prefix"), "2024/03/10")
 
+    # save scanned records to synthetic summary file
     out_file = tmp_path / "synthetic_summary.txt"
     with out_file.open("w") as f:
         for acc in sorted(synthetic.keys()):
@@ -667,6 +657,7 @@ def test_scan_store_assembly_dir_survives_round_trip(mock_list_matching_objects:
                 f"{rec.accession}\t.\t.\t.\t.\t.\t.\t.\t.\t.\t{rec.status}\t.\t.\t.\t{rec.seq_rel_date}\t.\t.\t.\t.\t{rec.ftp_url}\t.\n"
             )
 
+    # ensure generated summary file can be parsed to regenerate original sythentic summary records
     reparsed = parse_assembly_summary(out_file)
     assert "GCF_000001215.4" in reparsed
     reparsed_rec = reparsed["GCF_000001215.4"]

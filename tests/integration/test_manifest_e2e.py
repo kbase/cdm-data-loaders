@@ -284,7 +284,7 @@ class TestScanStoreToSyntheticSummary:
         path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
 
         # Seed CEPH with one assembly
-        key1 = path_prefix / "refseq/GCF_000001215.4_old/GCF_000001215.4_old_genomic.fna.gz"
+        key1 = path_prefix / "refseq" / "GCF_000001215.4_old" / "GCF_000001215.4_old_genomic.fna.gz"
         s3.put_object(Bucket=str(test_bucket), Key=str(key1), Body=b"data")
 
         # Build synthetic summary from store

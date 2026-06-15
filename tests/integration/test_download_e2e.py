@@ -138,10 +138,10 @@ def test_download_and_stage_e2e(
     """Download one assembly and verify it is staged under the expected S3 prefix."""
     manifest_path, _acc = _manifest_for_one_assembly(tmp_path)
 
-    staging_prefix = PurePosixPath("staging/e2e-test/")
+    staging_prefix = PurePosixPath("staging") / "e2e-test"
 
     # Seed the manifest in CEPH so download_and_stage can read it from S3
-    manifest_s3_key = staging_prefix / "input/transfer_manifest.txt"
+    manifest_s3_key = staging_prefix / "input" / "transfer_manifest.txt"
     ceph_s3_client.put_object(
         Bucket=str(test_bucket),
         Key=str(manifest_s3_key),

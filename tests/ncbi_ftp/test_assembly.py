@@ -10,6 +10,8 @@ from cdm_data_loaders.ncbi_ftp.assembly import (
     parse_md5_checksums_file,
 )
 
+from .conftest import ACC_PATH_215
+
 # Path helpers
 
 
@@ -18,12 +20,12 @@ from cdm_data_loaders.ncbi_ftp.assembly import (
     [
         pytest.param(
             "GCF_000001215.4_Release_6_plus_ISO1_MT",
-            PurePosixPath("raw_data/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT"),
+            PurePosixPath("raw_data") / ACC_PATH_215,
             id="gcf",
         ),
         pytest.param(
             "GCA_012345678.1_ASM1234v1",
-            PurePosixPath("raw_data/GCA/012/345/678/GCA_012345678.1_ASM1234v1"),
+            PurePosixPath("raw_data") / "GCA" / "012" / "345" / "678" / "GCA_012345678.1_ASM1234v1",
             id="gca",
         ),
     ],
@@ -43,12 +45,12 @@ def test_build_accession_path_invalid() -> None:
     ("path", "expected"),
     [
         pytest.param(
-            PurePosixPath("/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/"),
+            PurePosixPath("/") / "genomes" / "all" / ACC_PATH_215,
             ("GCF", PurePosixPath("GCF_000001215.4_Release_6_plus_ISO1_MT"), "GCF_000001215.4"),
             id="with_trailing_slash",
         ),
         pytest.param(
-            PurePosixPath("/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT"),
+            PurePosixPath("/") / "genomes" / "all" / ACC_PATH_215,
             ("GCF", PurePosixPath("GCF_000001215.4_Release_6_plus_ISO1_MT"), "GCF_000001215.4"),
             id="without_trailing_slash",
         ),
@@ -62,7 +64,7 @@ def test_parse_assembly_path(path: PurePosixPath, expected: tuple[str, PurePosix
 def test_parse_assembly_path_invalid() -> None:
     """Verify ValueError on invalid path."""
     with pytest.raises(ValueError, match="Cannot parse"):
-        parse_assembly_path(PurePosixPath("/random/path/"))
+        parse_assembly_path(PurePosixPath("/") / "random" / "path")
 
 
 # parse_md5_checksums_file

@@ -40,8 +40,8 @@ _DATABASE_ACC_PREFIX: dict[str, str] = {
 }
 
 SUMMARY_FTP_PATHS: dict[str, PurePosixPath] = {
-    "refseq": PurePosixPath("/genomes/ASSEMBLY_REPORTS/assembly_summary_refseq.txt"),
-    "genbank": PurePosixPath("/genomes/ASSEMBLY_REPORTS/assembly_summary_genbank.txt"),
+    "refseq": PurePosixPath("/") / "genomes" / "ASSEMBLY_REPORTS" / "assembly_summary_refseq.txt",
+    "genbank": PurePosixPath("/") / "genomes" / "ASSEMBLY_REPORTS" / "assembly_summary_genbank.txt",
 }
 
 # Assembly summary file columns of interest

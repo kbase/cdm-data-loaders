@@ -187,7 +187,7 @@ def _promote_file(  # noqa: PLR0913
         s3.download_file(Bucket=str(staging_bucket), Key=str(staged_key), Filename=tmp_path)
 
         metadata: dict[str, str] = {}
-        md5_key = staged_key.with_name(staged_key.name + ".md5")
+        md5_key = staged_key.with_name(f"{staged_key.name}.md5")
         if md5_key in sidecars:
             md5_obj = s3.get_object(Bucket=str(staging_bucket), Key=str(md5_key))
             metadata["md5"] = md5_obj["Body"].read().decode().strip()
@@ -262,10 +262,10 @@ def _batch_delete(
     """
     keys_to_delete = list(promoted_keys)
     keys_to_delete.extend(
-        key.with_name(key.name + sidecar_ext)
+        key.with_name(f"{key.name}{sidecar_ext}")
         for key in promoted_keys
         for sidecar_ext in (".md5", ".crc64nvme")
-        if key.with_name(key.name + sidecar_ext) in sidecars
+        if key.with_name(f"{key.name}{sidecar_ext}") in sidecars
     )
     string_keys_to_delete = [str(key) for key in keys_to_delete]
     del_errors = delete_objects(str(staging_bucket), string_keys_to_delete)

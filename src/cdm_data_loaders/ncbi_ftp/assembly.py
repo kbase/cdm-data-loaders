@@ -61,9 +61,8 @@ def build_accession_path(assembly_dir: PurePosixPath) -> PurePosixPath:
     :return: relative path
     :raises ValueError: if the assembly directory name cannot be parsed
     """
-    if m := ACCESSION_PARTS_REGEX.match(f"{assembly_dir}"):
-        db, p1, p2, p3 = m.groups()
-        return PurePosixPath("raw_data") / db / p1 / p2 / p3 / assembly_dir
+    if m := ACCESSION_PARTS_REGEX.match(f"{assembly_dir}"):  # returns e.g., "GCF", "000", "001", "215" captured groups
+        return PurePosixPath("raw_data", *m.groups(), assembly_dir)
     msg = f"Cannot parse accession: {assembly_dir}"
     raise ValueError(msg)
 

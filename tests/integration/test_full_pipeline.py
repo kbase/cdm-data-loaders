@@ -28,7 +28,7 @@ from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch
 from .conftest import get_object_metadata, list_all_keys, stage_files_to_ceph
 
 STABLE_PREFIX = "900"
-STAGING_PREFIX = PurePosixPath("staging/run1")
+STAGING_PREFIX = PurePosixPath("staging") / "run1"
 PATH_PREFIX = DEFAULT_LAKEHOUSE_KEY_PREFIX
 
 
@@ -135,7 +135,7 @@ class TestFullPipelineIncrementalSync:
         stage_files_to_ceph(s3, staging_test_bucket, output1, STAGING_PREFIX)
 
         # Upload manifest to CEPH for trimming (manifest lives in staging bucket)
-        manifest_key = PurePosixPath("ncbi/transfer_manifest.txt")
+        manifest_key = PurePosixPath("ncbi") / "transfer_manifest.txt"
         s3.upload_file(Filename=str(manifest1), Bucket=str(staging_test_bucket), Key=str(manifest_key))
 
         promote1 = promote_from_s3(

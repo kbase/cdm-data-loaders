@@ -31,20 +31,34 @@ AWS_REGION = "us-east-1"
 _ACCESSION = "GCF_000001215.4"
 _ASSEMBLY_DIR = PurePosixPath("GCF_000001215.4_Release_6_plus_ISO1_MT")
 _RELEASE_TAG = "2024-01"
-_KEY_PREFIX = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
+_KEY_PREFIX = PurePosixPath("tenant-general-warehouse") / "kbase" / "datasets" / "ncbi"
 _TIMESTAMP = 1_700_000_000
 
 _SAMPLE_RESOURCES: list[DescriptorResource] = [
     {
         "name": "GCF_000001215.4_genomic.fna.gz",
-        "path": _KEY_PREFIX / "raw_data/GCF/000/001/215/" / _ASSEMBLY_DIR / "GCF_000001215.4_genomic.fna.gz",
+        "path": _KEY_PREFIX
+        / "raw_data"
+        / "GCF"
+        / "000"
+        / "001"
+        / "215"
+        / _ASSEMBLY_DIR
+        / "GCF_000001215.4_genomic.fna.gz",
         "format": "gz",
         "bytes": 1024,
         "hash": "abc123",
     },
     {
         "name": "GCF_000001215.4_assembly_report.txt",
-        "path": _KEY_PREFIX / "raw_data/GCF/000/001/215" / _ASSEMBLY_DIR / "GCF_000001215.4_assembly_report.txt",
+        "path": _KEY_PREFIX
+        / "raw_data"
+        / "GCF"
+        / "000"
+        / "001"
+        / "215"
+        / _ASSEMBLY_DIR
+        / "GCF_000001215.4_assembly_report.txt",
         "format": "txt",
         "bytes": 512,
         "hash": None,  # no md5 sidecar for this one
@@ -59,7 +73,7 @@ _SAMPLE_RESOURCES: list[DescriptorResource] = [
 def test_build_descriptor_key(prefix: PurePosixPath) -> None:
     """Key is under metadata/, ends with _datapackage.json, trailing slash on prefix is normalized."""
     key = build_descriptor_key(_ASSEMBLY_DIR, prefix)
-    assert key == _KEY_PREFIX / "metadata" / _ASSEMBLY_DIR.with_name(_ASSEMBLY_DIR.name + "_datapackage.json")
+    assert key == _KEY_PREFIX / "metadata" / _ASSEMBLY_DIR.with_name(f"{_ASSEMBLY_DIR.name}_datapackage.json")
 
 
 @pytest.mark.parametrize(
@@ -76,8 +90,9 @@ def test_build_archive_descriptor_key(prefix: PurePosixPath, tag: str) -> None:
         _KEY_PREFIX
         / "archive"
         / tag
-        / "updated/metadata"
-        / _ASSEMBLY_DIR.with_name(_ASSEMBLY_DIR.name + "_datapackage.json")
+        / "updated"
+        / "metadata"
+        / _ASSEMBLY_DIR.with_name(f"{_ASSEMBLY_DIR.name}_datapackage.json")
     )
     assert key == expected
 
@@ -150,7 +165,7 @@ def test_create_descriptor_resource_name_lowercased() -> None:
     resources: list[DescriptorResource] = [
         {
             "name": "FILE_UPPER.FNA.GZ",
-            "path": PurePosixPath("s3://bucket/a"),
+            "path": PurePosixPath("s3://") / "bucket" / "a",
             "format": "gz",
             "bytes": 100,
             "hash": "x",
@@ -163,7 +178,7 @@ def test_create_descriptor_resource_name_lowercased() -> None:
 def test_create_descriptor_null_bytes_omitted() -> None:
     """Resources with bytes=None have the 'bytes' key removed from the output."""
     resources: list[DescriptorResource] = [
-        {"name": "f.txt", "path": PurePosixPath("s3://b/f.txt"), "format": "txt", "bytes": None, "hash": "x"},
+        {"name": "f.txt", "path": PurePosixPath("s3://") / "b" / "f.txt", "format": "txt", "bytes": None, "hash": "x"},
     ]
     d = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, resources, timestamp=_TIMESTAMP)
     assert "bytes" not in d["resources"][0]
@@ -272,7 +287,7 @@ def test_archive_descriptor_dry_run(mock_s3_with_descriptor: tuple[botocore.clie
     mock_copy.assert_not_called()
 
 
-@pytest.mark.s3
-def test_archive_descriptor_missing_returns_false(mock_s3: botocore.client.BaseClient) -> None:  # noqa: ARG001
+@pytest.mark.usefixtures("mock_s3")
+def test_archive_descriptor_missing_returns_false() -> None:
     """Returns False when no descriptor exists at the live key."""
     assert archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG) is False

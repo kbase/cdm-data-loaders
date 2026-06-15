@@ -3,7 +3,7 @@
 import json
 from collections.abc import Generator
 from pathlib import Path, PurePosixPath
-from typing import NotRequired, TypedDict, Unpack, cast
+from typing import Any, NotRequired, TypedDict, Unpack, cast
 from unittest.mock import MagicMock, patch
 
 import boto3
@@ -108,14 +108,14 @@ class TestDownloadSettingsAllParams:
     def test_all_params(self) -> None:
         """Verify all parameters are correctly set when provided."""
         s = make_settings(
-            manifest=Path("/data/my_manifest.txt"),
-            output_dir=Path("/data/output"),
+            manifest=Path("/") / "data" / "my_manifest.txt",
+            output_dir=Path("/") / "data" / "output",
             threads=_CUSTOM_THREADS,
             ftp_host="ftp.example.com",
             limit=_CUSTOM_LIMIT,
         )
-        assert s.manifest == Path("/data/my_manifest.txt")
-        assert s.output_dir == Path("/data/output")
+        assert s.manifest == Path("/") / "data" / "my_manifest.txt"
+        assert s.output_dir == Path("/") / "data" / "output"
         assert s.threads == _CUSTOM_THREADS
         assert s.ftp_host == "ftp.example.com"
         assert s.limit == _CUSTOM_LIMIT
@@ -129,13 +129,13 @@ class TestDownloadSettingsAliases:
 
     def test_manifest_alias_m(self) -> None:
         """Verify 'm' alias resolves to manifest."""
-        s = make_settings(m=Path("/data/m.txt"))
-        assert s.manifest == Path("/data/m.txt")
+        s = make_settings(m=Path("/") / "data" / "m.txt")
+        assert s.manifest == Path("/") / "data" / "m.txt"
 
     def test_output_dir_alias(self) -> None:
         """Verify 'output_dir' / 'output-dir' alias resolves to output_dir."""
-        s = make_settings(output_dir=Path("/data/o"))
-        assert s.output_dir == Path("/data/o")
+        s = make_settings(output_dir=Path("/") / "data" / "o")
+        assert s.output_dir == Path("/") / "data" / "o"
 
     def test_threads_alias_t(self) -> None:
         """Verify 't' alias resolves to threads."""
@@ -277,7 +277,7 @@ _MANIFEST_CONTENT = (
     "/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/\n"
 )
 _TEST_BUCKET = PurePosixPath("test-bucket")
-_STAGING_PREFIX = PurePosixPath("staging/run1/")
+_STAGING_PREFIX = PurePosixPath("staging") / "run1"
 
 
 def _make_moto_s3(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN202
@@ -300,7 +300,7 @@ def _make_moto_s3(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN202
 @pytest.mark.parametrize(
     ("manifest_s3_key", "use_local"),
     [
-        pytest.param(Path("staging/input/transfer_manifest.txt"), False, id="s3_source"),
+        pytest.param(Path("staging") / "input" / "transfer_manifest.txt", False, id="s3_source"),
         pytest.param(None, True, id="local_source"),
     ],
 )
@@ -359,10 +359,10 @@ def test_download_and_stage_manifest_source(
 @pytest.mark.parametrize(
     ("s3_key", "local_path", "should_raise"),
     [
-        pytest.param(PurePosixPath("s3/key"), Path("local/path"), True, id="both_provided_raises"),
+        pytest.param(PurePosixPath("s3") / "key", Path("local") / "path", True, id="both_provided_raises"),
         pytest.param(None, None, True, id="neither_provided_raises"),
-        pytest.param(PurePosixPath("s3/key"), None, False, id="s3_only_ok"),
-        pytest.param(None, Path("local/path"), False, id="local_only_ok"),
+        pytest.param(PurePosixPath("s3") / "key", None, False, id="s3_only_ok"),
+        pytest.param(None, Path("local") / "path", False, id="local_only_ok"),
     ],
 )
 @mock_aws
@@ -487,7 +487,7 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path, monkeypatch: py
     manifest_local.write_text(_MANIFEST_CONTENT)
 
     def _fake_download(path: Path, output_dir: Path, **kwargs: object) -> dict[str, str | int]:  # noqa: ARG001
-        asm_dir = Path(output_dir) / "raw_data/GCF/000/001/215/GCF_000001215.4"
+        asm_dir = Path(output_dir) / "raw_data" / "GCF" / "000" / "001" / "215" / "GCF_000001215.4"
         asm_dir.mkdir(parents=True, exist_ok=True)
         (asm_dir / "genomic.fna.gz").write_bytes(b"fasta")
         return _MOCK_STATS

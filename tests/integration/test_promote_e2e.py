@@ -34,8 +34,9 @@ ASSEMBLY_DIR_B: PurePosixPath = PurePosixPath("GCF_900000002.1_FakeAssemblyB")
 ACCESSION_C = "GCF_900000003.1"
 ASSEMBLY_DIR_C: PurePosixPath = PurePosixPath("GCF_900000003.1_FakeAssemblyC")
 
-STAGING_PREFIX: PurePosixPath = PurePosixPath("staging/run1")
+STAGING_PREFIX: PurePosixPath = PurePosixPath("staging") / "run1"
 PATH_PREFIX: PurePosixPath = DEFAULT_LAKEHOUSE_KEY_PREFIX
+ARCHIVE_PREFIX: PurePosixPath = PATH_PREFIX / "archive" / "2024-01"
 
 # Fake file contents for staging
 FAKE_GENOMIC = b">seq1\nATCGATCG\n"
@@ -56,15 +57,15 @@ def _stage_assembly(
     base = STAGING_PREFIX / rel
 
     files = {
-        assembly_dir.with_name(assembly_dir.name + "_genomic.fna.gz"): FAKE_GENOMIC,
-        assembly_dir.with_name(assembly_dir.name + "_protein.faa.gz"): FAKE_PROTEIN,
+        assembly_dir.with_name(f"{assembly_dir.name}_genomic.fna.gz"): FAKE_GENOMIC,
+        assembly_dir.with_name(f"{assembly_dir.name}_protein.faa.gz"): FAKE_PROTEIN,
     }
 
     for fname, content in files.items():
         key = base / fname
         s3.put_object(Bucket=str(bucket), Key=str(key), Body=content)
         # Write .md5 sidecar
-        md5_key = key.with_name(key.name + ".md5")
+        md5_key = key.with_name(f"{key.name}.md5")
         s3.put_object(Bucket=str(bucket), Key=str(md5_key), Body=_md5(content).encode())
 
 
@@ -188,7 +189,7 @@ class TestPromoteArchiveUpdated:
         assert report["failed"] == 0
 
         # Verify archive exists
-        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "archive/2024-01/")
+        archive_keys = list_all_keys(s3, test_bucket, ARCHIVE_PREFIX)
         assert len(archive_keys) >= 2  # noqa: PLR2004
 
         # Verify archive metadata
@@ -230,7 +231,7 @@ class TestPromoteArchiveRemoved:
         assert report["failed"] == 0
 
         # Verify archive exists
-        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "archive/2024-01/")
+        archive_keys = list_all_keys(s3, test_bucket, ARCHIVE_PREFIX)
         assert len(archive_keys) >= 1
 
         # Verify archive metadata
@@ -283,7 +284,7 @@ class TestPromoteTrimsManifest:
         s3 = ceph_s3_client
 
         # Upload a transfer manifest with 3 entries to CEPH (manifest lives in staging)
-        manifest_key = PurePosixPath("ncbi/transfer_manifest.txt")
+        manifest_key = PurePosixPath("ncbi") / "transfer_manifest.txt"
         manifest_lines = [
             "/genomes/all/GCF/900/000/001/GCF_900000001.1_FakeAssemblyA/\n",
             "/genomes/all/GCF/900/000/002/GCF_900000002.1_FakeAssemblyB/\n",
@@ -330,7 +331,7 @@ class TestPromoteIncompleteStaging:
         rel = build_accession_path(ASSEMBLY_DIR_A)
         base = STAGING_PREFIX / rel
         fname = PurePosixPath(f"{ASSEMBLY_DIR_A}_genomic.fna.gz")
-        md5_key = base / fname.with_name(fname.name + ".md5")
+        md5_key = base / fname.with_name(f"{fname.name}.md5")
         s3.put_object(Bucket=str(staging_test_bucket), Key=str(md5_key), Body=_md5(FAKE_GENOMIC).encode())
 
         report = promote_from_s3(
@@ -533,7 +534,7 @@ class TestPromoteDryRunNoDescriptor:
             dry_run=True,
         )
 
-        metadata_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "metadata/")
+        metadata_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "metadata")
         assert len(metadata_keys) == 0, f"Dry-run should not create descriptor files, found: {metadata_keys}"
 
 
@@ -578,7 +579,7 @@ class TestArchiveMultiFileConcurrent:
         # Verify every archived file has correct content
         rel = build_accession_path(ASSEMBLY_DIR_A)
         for fname, expected_body in many_files.items():
-            archive_key = PATH_PREFIX / "archive/2024-01/updated" / rel / fname
+            archive_key = ARCHIVE_PREFIX / "updated" / rel / fname
             obj = s3.get_object(Bucket=str(test_bucket), Key=str(archive_key))
             actual_body = obj["Body"].read()
             assert actual_body == expected_body, f"Content mismatch for {fname}"
@@ -602,7 +603,9 @@ class TestArchiveMultiFileConcurrent:
         )
 
         rel = build_accession_path(ASSEMBLY_DIR_B)
-        expected_key = PATH_PREFIX / "archive/2024-02/replaced_or_suppressed" / rel / f"{ASSEMBLY_DIR_B}_genomic.fna.gz"
+        expected_key = (
+            PATH_PREFIX / "archive" / "2024-02" / "replaced_or_suppressed" / rel / f"{ASSEMBLY_DIR_B}_genomic.fna.gz"
+        )
         resp = s3.head_object(Bucket=str(test_bucket), Key=str(expected_key))
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == HTTPStatus.OK
 
@@ -664,7 +667,7 @@ class TestArchiveDeleteSourceBatch:
 
         rel = build_accession_path(ASSEMBLY_DIR_A)
         # Archive keys present
-        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "archive/2024-01/replaced_or_suppressed/")
+        archive_keys = list_all_keys(s3, test_bucket, ARCHIVE_PREFIX / "replaced_or_suppressed")
         assert len(archive_keys) == len(files), f"Expected {len(files)} archive keys, got: {archive_keys}"
         # Source keys absent
         source_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / rel)
@@ -705,7 +708,7 @@ class TestPartialArchiveResume:
         seed_lakehouse(s3, test_bucket, ACCESSION_A, current_content, PATH_PREFIX, ASSEMBLY_DIR_A)
 
         # Pre-seed a stale archive copy for file_a (simulating prior partial run)
-        archive_prefix = PATH_PREFIX / "archive/2024-01/updated" / rel
+        archive_prefix = ARCHIVE_PREFIX / "updated" / rel
         s3.put_object(Bucket=str(test_bucket), Key=str(archive_prefix / file_a), Body=b"stale-genomic")
 
         updated_manifest = _write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
@@ -746,7 +749,7 @@ class TestPartialArchiveResume:
         file_a = PurePosixPath(f"{ASSEMBLY_DIR_A}_genomic.fna.gz")
         file_b = PurePosixPath(f"{ASSEMBLY_DIR_A}_protein.faa.gz")
         file_c = PurePosixPath(f"{ASSEMBLY_DIR_A}_rna.fna.gz")
-        archive_prefix = PATH_PREFIX / "archive/2024-01/replaced_or_suppressed" / rel
+        archive_prefix = ARCHIVE_PREFIX / "replaced_or_suppressed" / rel
 
         # Only file_b and file_c remain at source (file_a already gone)
         s3.put_object(
@@ -825,7 +828,7 @@ class TestPartialArchiveResume:
         # Archive keys still present with correct content
         rel = build_accession_path(ASSEMBLY_DIR_A)
         for fname, expected_body in files.items():
-            key = PATH_PREFIX / "archive/2024-01/updated" / rel / fname
+            key = ARCHIVE_PREFIX / "updated" / rel / fname
             obj = s3.get_object(Bucket=str(test_bucket), Key=str(key))
             assert obj["Body"].read() == expected_body
 
@@ -860,10 +863,16 @@ class TestArchiveMultiAccessionManifest:
         assert archived == 2  # noqa: PLR2004
         rel_a = build_accession_path(ASSEMBLY_DIR_A)
         rel_b = build_accession_path(ASSEMBLY_DIR_B)
-        key_a = PATH_PREFIX / "archive/2024-01/replaced_or_suppressed" / rel_a / f"{ASSEMBLY_DIR_A}_genomic.fna.gz"
-        key_b = PATH_PREFIX / "archive/2024-01/replaced_or_suppressed" / rel_b / f"{ASSEMBLY_DIR_B}_genomic.fna.gz"
-        assert s3.head_object(Bucket=str(test_bucket), Key=str(key_a))["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
-        assert s3.head_object(Bucket=str(test_bucket), Key=str(key_b))["ResponseMetadata"]["HTTPStatusCode"] == 200  # noqa: PLR2004
+        key_a = ARCHIVE_PREFIX / "replaced_or_suppressed" / rel_a / f"{ASSEMBLY_DIR_A}_genomic.fna.gz"
+        key_b = ARCHIVE_PREFIX / "replaced_or_suppressed" / rel_b / f"{ASSEMBLY_DIR_B}_genomic.fna.gz"
+        assert (
+            s3.head_object(Bucket=str(test_bucket), Key=str(key_a))["ResponseMetadata"]["HTTPStatusCode"]
+            == HTTPStatus.OK
+        )
+        assert (
+            s3.head_object(Bucket=str(test_bucket), Key=str(key_b))["ResponseMetadata"]["HTTPStatusCode"]
+            == HTTPStatus.OK
+        )
         # Sources deleted
         assert len(list_all_keys(s3, test_bucket, PATH_PREFIX / rel_a)) == 0
         assert len(list_all_keys(s3, test_bucket, PATH_PREFIX / rel_b)) == 0
@@ -898,7 +907,7 @@ class TestArchiveMultiAccessionManifest:
             delete_source=False,
         )
 
-        all_archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "archive/2024-03/")
+        all_archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "archive" / "2024-03")
         assert len(all_archive_keys) == 3  # noqa: PLR2004
         for key in all_archive_keys:
             assert "replaced_or_suppressed" in key.parts, f"Archive key missing reason segment: {key}"
@@ -935,7 +944,7 @@ class TestArchiveDryRunParallel:
 
         assert archived == len(many_files)
         # No archive keys
-        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "archive/")
+        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "archive")
         assert len(archive_keys) == 0, f"Dry-run created archive keys: {archive_keys}"
         # All sources still present
         for key in source_keys:

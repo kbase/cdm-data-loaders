@@ -63,7 +63,7 @@ def build_descriptor_key(assembly_dir: PurePosixPath, key_prefix: PurePosixPath)
     :param key_prefix: Lakehouse key prefix (trailing slash optional)
     :return: S3 key, e.g. ``tenant-general-warehouse/.../ncbi/metadata/GCF_..._datapackage.json``
     """
-    return key_prefix / "metadata" / assembly_dir.with_name(assembly_dir.name + "_datapackage.json")
+    return key_prefix / "metadata" / assembly_dir.with_name(f"{assembly_dir.name}_datapackage.json")
 
 
 def build_archive_descriptor_key(
@@ -83,7 +83,7 @@ def build_archive_descriptor_key(
         / release_tag
         / archive_reason
         / "metadata"
-        / assembly_dir.with_name(assembly_dir.name + "_datapackage.json")
+        / assembly_dir.with_name(f"{assembly_dir.name}_datapackage.json")
     )
 
 

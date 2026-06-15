@@ -7,15 +7,10 @@ from pathlib import Path, PurePosixPath
 import pytest
 
 from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST
-from cdm_data_loaders.ncbi_ftp.manifest import (  # noqa: F401
+from cdm_data_loaders.ncbi_ftp.manifest import (
     AssemblyRecord,
     compute_diff,
     download_assembly_summary,
-    filter_by_prefix_range,
-    parse_assembly_summary,
-    write_diff_summary,
-    write_removed_manifest,
-    write_transfer_manifest,
     write_updated_manifest,
 )
 from cdm_data_loaders.ncbi_ftp.promote import (
