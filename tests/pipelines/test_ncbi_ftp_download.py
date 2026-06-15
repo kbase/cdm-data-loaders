@@ -54,12 +54,6 @@ class _DownloadSettingsKwargs(TypedDict, total=False):
 def make_settings(**kwargs: Unpack[_DownloadSettingsKwargs]) -> DownloadSettings:
     """Generate a validated DownloadSettings object."""
     data: dict[str, object] = dict(kwargs)
-    if "m" in data:
-        data["manifest"] = data.pop("m")
-    if "t" in data:
-        data["threads"] = data.pop("t")
-    if "l" in data:
-        data["limit"] = data.pop("l")
 
     # use _cli_parse_args=[] to exclude command line args to pytest that might
     # override settings (e.g., "-m")
