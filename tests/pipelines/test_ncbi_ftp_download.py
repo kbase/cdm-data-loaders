@@ -3,7 +3,7 @@
 import json
 from collections.abc import Generator
 from pathlib import Path, PurePosixPath
-from typing import Any, NotRequired, TypedDict, Unpack, cast
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import boto3
@@ -40,25 +40,10 @@ _ALIAS_LIMIT = 50
 _EXPECTED_ATTEMPTED = 2
 
 
-class _DownloadSettingsKwargs(TypedDict, total=False):
-    manifest: Path
-    m: Path
-    output_dir: Path
-    threads: int
-    t: int
-    ftp_host: str
-    limit: NotRequired[int | None]
-    l: NotRequired[int | None]  # noqa: E741
-
-
-def make_settings(**kwargs: Unpack[_DownloadSettingsKwargs]) -> DownloadSettings:
+def make_settings(**kwargs: str | int | bool | Path | PurePosixPath) -> DownloadSettings:
     """Generate a validated DownloadSettings object."""
-    data: dict[str, object] = dict(kwargs)
-
-    # use _cli_parse_args=[] to exclude command line args to pytest that might
-    # override settings (e.g., "-m")
     settings_ctor = cast("Any", DownloadSettings)
-    return settings_ctor(_cli_parse_args=[], **data)
+    return settings_ctor(_cli_parse_args=[], **kwargs)
 
 
 # Settings defaults
