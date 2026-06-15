@@ -14,8 +14,10 @@ import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
+from http import HTTPStatus
+from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlsplit
 
 from botocore.exceptions import ClientError
 
@@ -37,24 +39,38 @@ _DATABASE_ACC_PREFIX: dict[str, str] = {
     "genbank": "GCA_",
 }
 
-SUMMARY_FTP_PATHS: dict[str, str] = {
-    "refseq": "/genomes/ASSEMBLY_REPORTS/assembly_summary_refseq.txt",
-    "genbank": "/genomes/ASSEMBLY_REPORTS/assembly_summary_genbank.txt",
+SUMMARY_FTP_PATHS: dict[str, PurePosixPath] = {
+    "refseq": PurePosixPath("/") / "genomes" / "ASSEMBLY_REPORTS" / "assembly_summary_refseq.txt",
+    "genbank": PurePosixPath("/") / "genomes" / "ASSEMBLY_REPORTS" / "assembly_summary_genbank.txt",
 }
 
+# Assembly summary file columns of interest
+_ACCESSION_COL = 0
+_STATUS_COL = 10
+_SEQ_REL_DATE_COL = 14
+_FTP_URL_COL = 19
+_MIN_COL = 20
 
 # Data structures
 
 
 @dataclass
 class AssemblyRecord:
-    """Parsed row from an NCBI assembly summary file."""
+    """Parsed row from an NCBI assembly summary file.
+
+    Attributes:
+        accession: Assembly accession (e.g., "GCF_000001215.4").
+        status: "latest", "replaced", or "suppressed".
+        seq_rel_date: Release date.
+        ftp_url: Full FTP URL.
+        assembly_dir: Assembly directory name (final path segment from the FTP URL).
+    """
 
     accession: str
     status: str
     seq_rel_date: str
-    ftp_path: str
-    assembly_dir: str
+    ftp_url: str
+    assembly_dir: PurePosixPath
 
 
 @dataclass
@@ -116,18 +132,19 @@ def parse_assembly_summary(source: str | Path | list[str]) -> dict[str, Assembly
             delimiter="\t",
         )
         for row in reader:
-            if len(row) < 20:  # noqa: PLR2004
+            if len(row) < _MIN_COL:
                 continue
-            accession = row[0]
-            ftp_path = row[19]
-            if ftp_path == "na":
+            accession = row[_ACCESSION_COL]
+            ftp_url = row[_FTP_URL_COL]
+            if ftp_url == "na":
                 continue
+            assembly_dir = PurePosixPath(_ftp_dir_from_url(ftp_url).name)
             assemblies[accession] = AssemblyRecord(
                 accession=accession,
-                status=row[10],
-                seq_rel_date=row[14],
-                ftp_path=ftp_path,
-                assembly_dir=ftp_path.rstrip("/").split("/")[-1],
+                status=row[_STATUS_COL],
+                seq_rel_date=row[_SEQ_REL_DATE_COL],
+                ftp_url=ftp_url,
+                assembly_dir=assembly_dir,
             )
 
     if isinstance(source, Path) or (isinstance(source, str) and "\n" not in source and Path(source).is_file()):
@@ -142,29 +159,33 @@ def parse_assembly_summary(source: str | Path | list[str]) -> dict[str, Assembly
     return assemblies
 
 
-def get_latest_assembly_paths(assemblies: dict[str, AssemblyRecord], ftp_host: str = FTP_HOST) -> list[tuple[str, str]]:
+def get_latest_assembly_paths(
+    assemblies: dict[str, AssemblyRecord], ftp_host: str = FTP_HOST
+) -> list[tuple[str, PurePosixPath]]:
     """Extract FTP directory paths for all assemblies with ``latest`` status.
 
     :param assemblies: parsed assembly records
     :param ftp_host: FTP hostname for URL stripping
     :return: list of ``(accession, ftp_dir_path)`` tuples
     """
-    paths: list[tuple[str, str]] = []
+    paths: list[tuple[str, PurePosixPath]] = []
     for accession, rec in assemblies.items():
         if rec.status != "latest":
             continue
-        ftp_path = _ftp_dir_from_url(rec.ftp_path, ftp_host)
-        paths.append((accession, ftp_path.rstrip("/") + "/"))
+        ftp_path = _ftp_dir_from_url(rec.ftp_url, ftp_host)
+        paths.append((accession, ftp_path))
     return paths
 
 
 # Prefix filtering
 
 
-def accession_prefix(accession: str) -> str | None:
+def accession_prefix(accession: str) -> str:
     """Extract the 3-digit prefix from an accession (e.g. ``GCF_000005845.2`` → ``"000"``)."""
-    m = ACCESSION_PARTS_REGEX.match(accession)
-    return m.group(2) if m else None
+    if m := ACCESSION_PARTS_REGEX.match(accession):
+        return m.group(2)
+    msg = f"Could not parse accession: {accession}"
+    raise ValueError(msg)
 
 
 def filter_by_prefix_range(
@@ -244,31 +265,40 @@ def compute_diff(
 # FTP URL helpers
 
 
-def _ftp_dir_from_url(ftp_url: str, ftp_host: str = FTP_HOST) -> str:
+def _ftp_dir_from_url(ftp_url: str, ftp_host: str = FTP_HOST) -> PurePosixPath:
     """Convert an FTP URL from the assembly summary to an FTP directory path."""
-    if ftp_url.startswith("https://"):
-        return ftp_url.replace(f"https://{ftp_host}", "")
-    if ftp_url.startswith("ftp://"):
-        return ftp_url.replace(f"ftp://{ftp_host}", "")
-    return ftp_url
+    parsed = urlsplit(ftp_url)
+
+    # Full URL
+    if parsed.scheme in {"ftp", "https"}:
+        if parsed.netloc and parsed.netloc != ftp_host:
+            msg = f"Unexpected FTP host: {parsed.netloc}"
+            raise ValueError(msg)
+        return PurePosixPath(parsed.path)
+
+    # unparsable url
+    msg = f"Could not parse FTP URL: {ftp_url}"
+    raise ValueError(msg)
 
 
 # Synthetic summary from S3 store scan
 
 
-def _extract_accession_dir_and_id_from_s3_key(key: str) -> tuple[str | None, str | None]:
+def _extract_accession_dir_and_id_from_s3_key(key: PurePosixPath) -> tuple[str, str]:
     """Extract both accession and assembly directory from an S3 object key.
 
     e.g. "some/prefix/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz"
          → ("GCF_000001215.4_Release_6_plus_ISO1_MT", "GCF_000001215.4")
     """
-    m = ASSEMBLY_PATH_REGEX.search(key)
-    return (m.group(1), m.group(2)) if m else (None, None)
+    if m := ASSEMBLY_PATH_REGEX.search(str(key)):
+        return (m.group(1), m.group(2))
+    msg = f"Could not parse S3 key for accession info: {key}"
+    raise ValueError(msg)
 
 
 def scan_store_to_synthetic_summary(
-    bucket: str,
-    key_prefix: str,
+    bucket: PurePosixPath,
+    key_prefix: PurePosixPath,
     release_date: str,
     database: str = "refseq",
     progress_callback: Callable[[int, str], None] | None = None,
@@ -314,14 +344,15 @@ def scan_store_to_synthetic_summary(
     processed_count = 0
 
     try:
-        objs = list_matching_objects(f"{bucket}/{key_prefix}")
+        objs = list_matching_objects(str(bucket / key_prefix))
 
         for obj in objs:
-            assembly_dir, acc = _extract_accession_dir_and_id_from_s3_key(obj["Key"])
-            if not acc or not acc.startswith(acc_prefix):
+            try:
+                assembly_dir, acc = _extract_accession_dir_and_id_from_s3_key(obj["Key"])
+            except ValueError:
                 continue
 
-            if not assembly_dir:
+            if not acc.startswith(acc_prefix):
                 continue
 
             if acc not in assemblies:
@@ -335,8 +366,8 @@ def scan_store_to_synthetic_summary(
                     accession=acc,
                     status="latest",
                     seq_rel_date=release_date,
-                    ftp_path=fake_ftp_path,
-                    assembly_dir=assembly_dir,
+                    ftp_url=fake_ftp_path,
+                    assembly_dir=PurePosixPath(assembly_dir),
                 )
                 processed_count += 1
                 if progress_callback is not None:
@@ -355,7 +386,7 @@ def scan_store_to_synthetic_summary(
 
 def _fetch_accession_checksums_from_ftp(
     ftp: FTP | None, ftp_host: str, last_activity: float, current_accession: str
-) -> tuple[dict[str, str], float]:
+) -> tuple[dict[PurePosixPath, str], float]:
     """Fetch and parse the md5checksums.txt file for a given accession from FTP.
 
     :param ftp: FTP connection object
@@ -369,21 +400,21 @@ def _fetch_accession_checksums_from_ftp(
     last_activity = ftp_noop_keepalive(ftp, last_activity)
     ftp_dir = _ftp_dir_from_url(current_accession, ftp_host)
     try:
-        md5_text = ftp_retrieve_text(ftp, ftp_dir.rstrip("/") + "/md5checksums.txt")
+        md5_text = ftp_retrieve_text(ftp, ftp_dir / "md5checksums.txt")
         last_activity = time.monotonic()
         ftp_checksums = parse_md5_checksums_file(md5_text)
     except Exception:  # noqa: BLE001
         logger.warning("Cannot fetch md5checksums.txt for %s, keeping in transfer list", current_accession)
         return {}, last_activity
     return {
-        fname: md5 for fname, md5 in ftp_checksums.items() if any(fname.endswith(suffix) for suffix in FILE_FILTERS)
+        fname: md5 for fname, md5 in ftp_checksums.items() if any(fname.match(f"**{suffix}") for suffix in FILE_FILTERS)
     }, last_activity
 
 
 def _does_accession_need_update(
-    target_checksums: dict[str, str],
-    bucket: str,
-    s3_prefix: str,
+    target_checksums: dict[PurePosixPath, str],
+    bucket: PurePosixPath,
+    s3_prefix: PurePosixPath,
 ) -> bool:
     """Check if any file for an accession needs updating by comparing FTP checksums to S3 metadata.
 
@@ -393,13 +424,20 @@ def _does_accession_need_update(
     :return: True if any file is missing or has a checksum mismatch, False otherwise
     """
     for fname, expected_md5 in target_checksums.items():
-        s3_path = f"{bucket}/{s3_prefix}{fname}"
+        s3_path = bucket / s3_prefix / fname
         s3_md5 = ""
         try:
-            obj_info = head_object(s3_path)
+            obj_info = head_object(str(s3_path))
             s3_md5 = obj_info.get("Metadata", {}).get("md5", "")
         except ClientError as e:
-            if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
+            code = e.response.get("Error", {}).get("Code")
+            # boto3 error codes are not always ints, so check the conversion first
+            try:
+                code_int = int(code)
+            except (TypeError, ValueError):
+                code_int = None
+
+            if code_int == HTTPStatus.NOT_FOUND:
                 logger.debug("File missing from store: %s", s3_path)
                 return True
             raise
@@ -414,8 +452,8 @@ def _does_accession_need_update(
 def verify_transfer_candidates(  # noqa: PLR0913
     accessions: list[str],
     current_assemblies: dict[str, AssemblyRecord],
-    bucket: str,
-    key_prefix: str,
+    bucket: PurePosixPath,
+    key_prefix: PurePosixPath,
     ftp_host: str = FTP_HOST,
     progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> list[str]:
@@ -462,10 +500,10 @@ def verify_transfer_candidates(  # noqa: PLR0913
 
             # Build S3 prefix for this assembly
             s3_rel = build_accession_path(rec.assembly_dir)
-            s3_prefix = f"{key_prefix}{s3_rel}"
+            s3_prefix = key_prefix / s3_rel
 
             # Quick check: does *anything* exist under this prefix?
-            resp = list_matching_objects(f"{bucket}/{s3_prefix}", max_keys=1)
+            resp = list_matching_objects(str(bucket / s3_prefix), max_keys=1)
             if not resp:
                 # Nothing in the store — definitely needs downloading
                 confirmed.append(acc)
@@ -475,7 +513,7 @@ def verify_transfer_candidates(  # noqa: PLR0913
 
             # Objects exist — need FTP md5 checksums to decide
             target_checksums, last_activity = _fetch_accession_checksums_from_ftp(
-                ftp, ftp_host, last_activity, rec.ftp_path
+                ftp, ftp_host, last_activity, rec.ftp_url
             )
 
             if not target_checksums:
@@ -514,9 +552,9 @@ def verify_transfer_candidates(  # noqa: PLR0913
 def write_transfer_manifest(
     diff: DiffResult,
     current_assemblies: dict[str, AssemblyRecord],
-    output_path: str | Path,
+    output_path: Path,
     ftp_host: str = FTP_HOST,
-) -> list[str]:
+) -> list[PurePosixPath]:
     """Write the transfer manifest (new + updated assemblies).
 
     Each line is an FTP directory path suitable for Phase 2 download.
@@ -528,22 +566,22 @@ def write_transfer_manifest(
     :return: list of FTP paths written
     """
     to_transfer = diff.new + diff.updated
-    paths: list[str] = []
+    paths: list[PurePosixPath] = []
     for acc in sorted(to_transfer):
         rec = current_assemblies.get(acc)
         if not rec:
             continue
-        ftp_path = _ftp_dir_from_url(rec.ftp_path, ftp_host)
-        paths.append(ftp_path.rstrip("/") + "/")
+        ftp_path = _ftp_dir_from_url(rec.ftp_url, ftp_host)
+        paths.append(ftp_path)
 
     with Path(output_path).open("w") as f:
-        f.writelines(p + "\n" for p in paths)
+        f.writelines(f"{p}\n" for p in paths)
 
     logger.info("Wrote %d entries to transfer manifest: %s", len(paths), output_path)
     return paths
 
 
-def write_removed_manifest(diff: DiffResult, output_path: str | Path) -> list[str]:
+def write_removed_manifest(diff: DiffResult, output_path: Path) -> list[str]:
     """Write the removed manifest (replaced + suppressed accessions).
 
     :param diff: computed diff result
@@ -551,13 +589,13 @@ def write_removed_manifest(diff: DiffResult, output_path: str | Path) -> list[st
     :return: list of accessions written
     """
     removed = sorted(diff.replaced + diff.suppressed)
-    with Path(output_path).open("w") as f:
+    with output_path.open("w") as f:
         f.writelines(acc + "\n" for acc in removed)
     logger.info("Wrote %d entries to removed manifest: %s", len(removed), output_path)
     return removed
 
 
-def write_updated_manifest(diff: DiffResult, output_path: str | Path) -> list[str]:
+def write_updated_manifest(diff: DiffResult, output_path: Path) -> list[str]:
     """Write the updated manifest (accessions whose content changed).
 
     This file is consumed by Phase 3 to archive existing S3 objects
@@ -568,7 +606,7 @@ def write_updated_manifest(diff: DiffResult, output_path: str | Path) -> list[st
     :return: list of accessions written
     """
     updated = sorted(diff.updated)
-    with Path(output_path).open("w") as f:
+    with output_path.open("w") as f:
         f.writelines(acc + "\n" for acc in updated)
     logger.info("Wrote %d entries to updated manifest: %s", len(updated), output_path)
     return updated
@@ -576,7 +614,7 @@ def write_updated_manifest(diff: DiffResult, output_path: str | Path) -> list[st
 
 def write_diff_summary(
     diff: DiffResult,
-    output_path: str | Path,
+    output_path: Path,
     database: str,
     prefix_from: str | None = None,
     prefix_to: str | None = None,
@@ -612,7 +650,7 @@ def write_diff_summary(
             "suppressed": diff.suppressed,
         },
     }
-    with Path(output_path).open("w") as f:
+    with output_path.open("w") as f:
         json.dump(summary, f, indent=2)
     logger.info("Wrote diff summary to: %s", output_path)
     return summary

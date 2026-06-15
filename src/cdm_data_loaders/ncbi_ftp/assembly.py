@@ -8,7 +8,7 @@ threading, CLI) lives in :mod:`cdm_data_loaders.pipelines.ncbi_ftp_download`.
 import contextlib
 import time
 from ftplib import FTP
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX, FTP_HOST
@@ -32,7 +32,7 @@ FILE_FILTERS = [
 ]
 
 
-def parse_md5_checksums_file(text: str) -> dict[str, str]:
+def parse_md5_checksums_file(text: str) -> dict[PurePosixPath, str]:
     """Parse an NCBI ``md5checksums.txt`` file into a filename-to-hash mapping.
 
     Each line has the format ``<md5>  ./<filename>`` (two-space separator).
@@ -40,43 +40,42 @@ def parse_md5_checksums_file(text: str) -> dict[str, str]:
     :param text: raw text of the md5checksums.txt file
     :return: dict mapping filename to MD5 hex digest
     """
-    checksums: dict[str, str] = {}
+    checksums: dict[PurePosixPath, str] = {}
     for raw_line in text.strip().splitlines():
         parts = raw_line.strip().split("  ", maxsplit=1)
         if len(parts) == 2:  # noqa: PLR2004
             md5_hash, filename = parts
-            checksums[filename.removeprefix("./")] = md5_hash.strip()
+            checksums[PurePosixPath(filename.removeprefix("./"))] = md5_hash.strip()
     return checksums
 
 
 # Path helpers
 
 
-def build_accession_path(assembly_dir: str) -> str:
+def build_accession_path(assembly_dir: PurePosixPath) -> PurePosixPath:
     """Build the relative output path for an assembly directory.
 
     Produces ``raw_data/{GCF|GCA}/{000}/{001}/{215}/{assembly_dir}/``.
 
     :param assembly_dir: full assembly directory name (e.g. ``GCF_000001215.4_Release_6...``)
-    :return: relative path string
+    :return: relative path
     :raises ValueError: if the assembly directory name cannot be parsed
     """
-    if m := ACCESSION_PARTS_REGEX.match(assembly_dir):
-        db, p1, p2, p3 = m.groups()
-        return f"raw_data/{db}/{p1}/{p2}/{p3}/{assembly_dir}/"
+    if m := ACCESSION_PARTS_REGEX.match(f"{assembly_dir}"):  # returns e.g., "GCF", "000", "001", "215" captured groups
+        return PurePosixPath("raw_data", *m.groups(), assembly_dir)
     msg = f"Cannot parse accession: {assembly_dir}"
     raise ValueError(msg)
 
 
-def parse_assembly_path(assembly_path: str) -> tuple[str, str, str]:
+def parse_assembly_path(assembly_path: PurePosixPath) -> tuple[str, PurePosixPath, str]:
     """Extract database, assembly_dir, and accession from an FTP assembly path.
 
     :param assembly_path: FTP directory path (e.g. ``/genomes/all/GCF/000/.../GCF_000001215.4_Rel.../``)
     :return: tuple of ``(database, assembly_dir, accession)``
     :raises ValueError: if the path cannot be parsed
     """
-    if m := ASSEMBLY_PATH_REGEX.search(assembly_path.rstrip("/")):
-        return m.group(3), m.group(1), m.group(2)
+    if m := ASSEMBLY_PATH_REGEX.search(str(assembly_path)):
+        return m.group(3), PurePosixPath(m.group(1)), m.group(2)
     msg = f"Cannot parse assembly path: {assembly_path}"
     raise ValueError(msg)
 
@@ -86,9 +85,9 @@ def parse_assembly_path(assembly_path: str) -> tuple[str, str, str]:
 
 def _download_and_verify(  # noqa: PLR0913
     ftp: FTP,
-    filename: str,
+    filename: PurePosixPath,
     dest_dir: Path,
-    md5_checksums: dict[str, str],
+    md5_checksums: dict[PurePosixPath, str],
     stats: dict[str, Any],
     last_activity: float,
 ) -> float:
@@ -132,8 +131,8 @@ def _download_and_verify(  # noqa: PLR0913
 
 
 def download_assembly_to_local(
-    assembly_path: str,
-    output_dir: str | Path,
+    assembly_path: PurePosixPath,
+    output_dir: Path,
     ftp_host: str = FTP_HOST,
     ftp: FTP | None = None,
 ) -> dict[str, Any]:
@@ -147,11 +146,11 @@ def download_assembly_to_local(
     :param output_dir: base output directory
     :param ftp_host: FTP hostname
     :param ftp: optional existing FTP connection (caller manages lifecycle)
-    :return: dict with download statistics
+    :return: json parsable dict with download statistics
     """
     _database, assembly_dir, accession = parse_assembly_path(assembly_path)
     rel_path = build_accession_path(assembly_dir)
-    dest_dir = Path(output_dir) / rel_path
+    dest_dir: Path = output_dir / rel_path
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     logger.debug("Downloading %s -> %s", accession, dest_dir)
@@ -161,27 +160,28 @@ def download_assembly_to_local(
         ftp = connect_ftp(ftp_host)
     stats: dict[str, Any] = {
         "accession": accession,
-        "assembly_dir": assembly_dir,
+        "assembly_dir": str(assembly_dir),
         "files_downloaded": 0,
         "files_skipped_checksum_mismatch": 0,
         "files_without_checksum": 0,
     }
 
     try:
-        ftp.cwd(assembly_path.rstrip("/"))
+        ftp.cwd(str(assembly_path))
 
-        files: list[str] = []
-        ftp.retrlines("NLST", files.append)
+        file_strings: list[str] = []
+        ftp.retrlines("NLST", file_strings.append)
+        files: list[PurePosixPath] = [PurePosixPath(f) for f in file_strings]
 
         # Download and parse md5checksums.txt
-        md5_checksums: dict[str, str] = {}
-        if "md5checksums.txt" in files:
-            md5_text = ftp_retrieve_text(ftp, "md5checksums.txt")
+        md5_checksums: dict[PurePosixPath, str] = {}
+        if PurePosixPath("md5checksums.txt") in files:
+            md5_text = ftp_retrieve_text(ftp, PurePosixPath("md5checksums.txt"))
             md5_checksums = parse_md5_checksums_file(md5_text)
             (dest_dir / "md5checksums.txt").write_text(md5_text)
             stats["files_downloaded"] += 1
 
-        target_files = [f for f in files if any(f.endswith(s) for s in FILE_FILTERS)]
+        target_files = [f for f in files if any(f.match(f"**{s}") for s in FILE_FILTERS)]
         last_activity = time.monotonic()
 
         for filename in target_files:

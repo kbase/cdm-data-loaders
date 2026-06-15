@@ -6,10 +6,11 @@ Marked ``requires_ceph`` (if a running CEPH test store is required) and
 """
 
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest.mock import patch
 
 import pytest
+from botocore.client import BaseClient
 
 import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.manifest import (
@@ -57,8 +58,8 @@ class TestDownloadSmallBatch:
         output_dir.mkdir()
 
         report = download_batch(
-            manifest_path=str(manifest_path),
-            output_dir=str(output_dir),
+            manifest_path=manifest_path,
+            output_dir=output_dir,
             threads=1,
             limit=1,
         )
@@ -100,8 +101,8 @@ class TestDownloadResumeIncomplete:
 
         # First download
         report1 = download_batch(
-            manifest_path=str(manifest_path),
-            output_dir=str(output_dir),
+            manifest_path=manifest_path,
+            output_dir=output_dir,
             threads=1,
             limit=1,
         )
@@ -111,8 +112,8 @@ class TestDownloadResumeIncomplete:
 
         # Second download — same manifest
         report2 = download_batch(
-            manifest_path=str(manifest_path),
-            output_dir=str(output_dir),
+            manifest_path=manifest_path,
+            output_dir=output_dir,
             threads=1,
             limit=1,
         )
@@ -131,19 +132,19 @@ class TestDownloadResumeIncomplete:
 @pytest.mark.external_request
 def test_download_and_stage_e2e(
     tmp_path: Path,
-    ceph_s3_client,
-    test_bucket: str,
+    ceph_s3_client: BaseClient,
+    test_bucket: PurePosixPath,
 ) -> None:
     """Download one assembly and verify it is staged under the expected S3 prefix."""
     manifest_path, _acc = _manifest_for_one_assembly(tmp_path)
 
-    staging_prefix = "staging/e2e-test/"
+    staging_prefix = PurePosixPath("staging") / "e2e-test"
 
     # Seed the manifest in CEPH so download_and_stage can read it from S3
-    manifest_s3_key = f"{staging_prefix}input/transfer_manifest.txt"
+    manifest_s3_key = staging_prefix / "input" / "transfer_manifest.txt"
     ceph_s3_client.put_object(
-        Bucket=test_bucket,
-        Key=manifest_s3_key,
+        Bucket=str(test_bucket),
+        Key=str(manifest_s3_key),
         Body=manifest_path.read_bytes(),
     )
 
@@ -167,7 +168,7 @@ def test_download_and_stage_e2e(
     paginator = ceph_s3_client.get_paginator("list_objects_v2")
     staged_keys = [
         obj["Key"]
-        for page in paginator.paginate(Bucket=test_bucket, Prefix=f"{staging_prefix}raw_data/")
+        for page in paginator.paginate(Bucket=str(test_bucket), Prefix=str(staging_prefix / "raw_data"))
         for obj in page.get("Contents", [])
     ]
     assert len(staged_keys) > 0, "Expected staged files under raw_data/"
@@ -178,7 +179,7 @@ def test_download_and_stage_e2e(
     assert len(md5_files) > 0, "Expected .md5 sidecar files"
 
     # Verify download_report.json was also uploaded
-    report_key = f"{staging_prefix}download_report.json"
-    resp = ceph_s3_client.get_object(Bucket=test_bucket, Key=report_key)
+    report_key = staging_prefix / "download_report.json"
+    resp = ceph_s3_client.get_object(Bucket=str(test_bucket), Key=str(report_key))
     saved_report = json.loads(resp["Body"].read())
     assert saved_report["succeeded"] >= 1

@@ -19,7 +19,7 @@ size, file format, and MD5 hash of each promoted data file.
 import json
 import tempfile
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, TypedDict
 
 from frictionless import Package
@@ -47,7 +47,7 @@ class DescriptorResource(TypedDict, total=False):
     """A single resource entry in the frictionless descriptor ``resources`` list."""
 
     name: str
-    path: str
+    path: PurePosixPath
     format: str
     bytes: int | None
     hash: str | None
@@ -56,20 +56,19 @@ class DescriptorResource(TypedDict, total=False):
 # Public helpers
 
 
-def build_descriptor_key(assembly_dir: str, key_prefix: str) -> str:
+def build_descriptor_key(assembly_dir: PurePosixPath, key_prefix: PurePosixPath) -> PurePosixPath:
     """Return the S3 key for the live descriptor of *assembly_dir*.
 
     :param assembly_dir: full assembly directory name, e.g. ``GCF_000001215.4_Release_6_plus_ISO1_MT``
     :param key_prefix: Lakehouse key prefix (trailing slash optional)
     :return: S3 key, e.g. ``tenant-general-warehouse/.../ncbi/metadata/GCF_..._datapackage.json``
     """
-    prefix = key_prefix.rstrip("/") + "/"
-    return f"{prefix}metadata/{assembly_dir}_datapackage.json"
+    return key_prefix / "metadata" / assembly_dir.with_name(f"{assembly_dir.name}_datapackage.json")
 
 
 def build_archive_descriptor_key(
-    assembly_dir: str, release_tag: str, key_prefix: str, archive_reason: str = "unknown"
-) -> str:
+    assembly_dir: PurePosixPath, release_tag: str, key_prefix: PurePosixPath, archive_reason: str = "unknown"
+) -> PurePosixPath:
     """Return the S3 key for the archived descriptor of *assembly_dir*.
 
     :param assembly_dir: full assembly directory name
@@ -78,12 +77,18 @@ def build_archive_descriptor_key(
     :param archive_reason: reason for archival, encoded as a path segment
     :return: S3 key under ``archive/{release_tag}/{archive_reason}/metadata/``
     """
-    prefix = key_prefix.rstrip("/") + "/"
-    return f"{prefix}archive/{release_tag}/{archive_reason}/metadata/{assembly_dir}_datapackage.json"
+    return (
+        key_prefix
+        / "archive"
+        / release_tag
+        / archive_reason
+        / "metadata"
+        / assembly_dir.with_name(f"{assembly_dir.name}_datapackage.json")
+    )
 
 
 def create_descriptor(
-    assembly_dir: str,
+    assembly_dir: PurePosixPath,
     accession_full: str,
     resources: list[DescriptorResource],
     *,
@@ -112,14 +117,20 @@ def create_descriptor(
     normalised: list[dict[str, Any]] = []
     for res in resources:
         entry: dict[str, Any] = {
-            "name": res["name"].lower(),
-            "path": res["path"],
+            "name": res["name"].lower() if "name" in res else None,
+            "path": str(res["path"]) if "path" in res else None,
             "format": res.get("format", ""),
         }
+        if entry["name"] is None:
+            msg = f"Missing name for file descriptor in {accession_full}"
+            raise ValueError(msg)
+        if entry["path"] is None:
+            msg = f"Missing path for file descriptor in {accession_full}"
+            raise ValueError(msg)
         if res.get("bytes") is not None:
-            entry["bytes"] = res["bytes"]
+            entry["bytes"] = res.get("bytes")
         if res.get("hash") is not None:
-            entry["hash"] = res["hash"]
+            entry["hash"] = res.get("hash")
         normalised.append(entry)
 
     return {
@@ -167,12 +178,12 @@ def validate_descriptor(descriptor: dict[str, Any], accession_full: str) -> None
 
 def upload_descriptor(
     descriptor: dict[str, Any],
-    assembly_dir: str,
-    bucket: str,
-    key_prefix: str,
+    assembly_dir: PurePosixPath,
+    bucket: PurePosixPath,
+    key_prefix: PurePosixPath,
     *,
     dry_run: bool = False,
-) -> str:
+) -> PurePosixPath:
     """Serialise and upload a descriptor to the live ``metadata/`` path.
 
     :param descriptor: descriptor dict from :func:`create_descriptor`
@@ -196,7 +207,7 @@ def upload_descriptor(
         tmp.write(body)
 
     try:
-        s3.upload_file(Filename=tmp_path, Bucket=bucket, Key=key)
+        s3.upload_file(Filename=tmp_path, Bucket=str(bucket), Key=str(key))
         logger.debug("Uploaded descriptor: s3://%s/%s", bucket, key)
     finally:
         Path(tmp_path).unlink()
@@ -205,9 +216,9 @@ def upload_descriptor(
 
 
 def archive_descriptor(  # noqa: PLR0913
-    assembly_dir: str,
-    bucket: str,
-    key_prefix: str,
+    assembly_dir: PurePosixPath,
+    bucket: PurePosixPath,
+    key_prefix: PurePosixPath,
     release_tag: str,
     *,
     archive_reason: str = "unknown",
@@ -235,7 +246,7 @@ def archive_descriptor(  # noqa: PLR0913
 
     s3 = get_s3_client()
     try:
-        s3.head_object(Bucket=bucket, Key=source_key)
+        s3.head_object(Bucket=str(bucket), Key=str(source_key))
     except s3.exceptions.NoSuchKey:
         logger.warning("Descriptor not found, skipping archive: s3://%s/%s", bucket, source_key)
         return False
@@ -247,8 +258,8 @@ def archive_descriptor(  # noqa: PLR0913
         raise
 
     _ = copy_object(
-        f"{bucket}/{source_key}",
-        f"{bucket}/{archive_key}",
+        str(bucket / source_key),
+        str(bucket / archive_key),
     )
     logger.debug("Archived descriptor: s3://%s/%s -> %s", bucket, source_key, archive_key)
     return True

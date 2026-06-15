@@ -5,12 +5,11 @@ optionally use CEPH for checksum verification.  Marked ``requires_ceph``
 (if a running CEPH test store is required) and ``slow_test``.
 """
 
-from __future__ import annotations
-
 from itertools import islice
-from typing import TYPE_CHECKING
+from pathlib import Path, PurePosixPath
 
 import pytest
+from botocore.client import BaseClient
 
 from cdm_data_loaders.ncbi_ftp.assembly import FILE_FILTERS, FTP_HOST, build_accession_path, parse_md5_checksums_file
 from cdm_data_loaders.ncbi_ftp.manifest import (
@@ -28,9 +27,6 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
 )
 from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX
 from cdm_data_loaders.utils.ftp_client import connect_ftp, ftp_retrieve_text
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 # Use a high-numbered prefix range that typically has only a handful of
 # assemblies, keeping FTP traffic minimal.
@@ -113,7 +109,7 @@ class TestIncrementalDiffSyntheticPrevious:
                 accession=rec.accession,
                 status=rec.status,
                 seq_rel_date=rec.seq_rel_date,
-                ftp_path=rec.ftp_path,
+                ftp_url=rec.ftp_url,
                 assembly_dir=rec.assembly_dir,
             )
 
@@ -131,8 +127,8 @@ class TestIncrementalDiffSyntheticPrevious:
             accession=fake_suppressed,
             status="latest",
             seq_rel_date="2020/01/01",
-            ftp_path="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/900/999/999/GCF_900999999.1_FakeAsm",
-            assembly_dir="GCF_900999999.1_FakeAsm",
+            ftp_url="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/900/999/999/GCF_900999999.1_FakeAsm",
+            assembly_dir=PurePosixPath("GCF_900999999.1_FakeAsm"),
         )
 
         diff = compute_diff(filtered, previous_assemblies=previous)
@@ -163,8 +159,8 @@ class TestVerifyTransferCandidatesPrunes:
 
     def test_prunes_existing_matching_md5(
         self,
-        ceph_s3_client: object,
-        test_bucket: str,
+        ceph_s3_client: BaseClient,
+        test_bucket: PurePosixPath,
     ) -> None:
         """Assemblies with matching MD5 metadata in CEPH are pruned from the transfer list."""
         _full, filtered = _download_and_filter()
@@ -180,12 +176,12 @@ class TestVerifyTransferCandidatesPrunes:
         acc_part = next(i_latest)
         rec = latest[acc]
         rec_part = latest[acc_part]
-        ftp_dir = rec.ftp_path.replace("https://ftp.ncbi.nlm.nih.gov", "")
+        ftp_dir = PurePosixPath(rec.ftp_url.replace("https://ftp.ncbi.nlm.nih.gov", ""))
 
         # Fetch the real md5checksums.txt from FTP
         ftp = connect_ftp(FTP_HOST)
         try:
-            md5_text = ftp_retrieve_text(ftp, ftp_dir.rstrip("/") + "/md5checksums.txt")
+            md5_text = ftp_retrieve_text(ftp, ftp_dir / "md5checksums.txt")
         finally:
             ftp.quit()
 
@@ -196,22 +192,22 @@ class TestVerifyTransferCandidatesPrunes:
         path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
         rel = build_accession_path(rec.assembly_dir)
         for fname, md5 in checksums.items():
-            if any(fname.endswith(suffix) for suffix in FILE_FILTERS):
-                key = f"{path_prefix}{rel}{fname}"
+            if any(fname.match(f"**{suffix}") for suffix in FILE_FILTERS):
+                key = path_prefix / rel / fname
                 s3.put_object(
-                    Bucket=test_bucket,
-                    Key=key,
+                    Bucket=str(test_bucket),
+                    Key=str(key),
                     Body=b"placeholder",
                     Metadata={"md5": md5},
                 )
         rel = build_accession_path(rec_part.assembly_dir)
         file_count = 0
         for fname, md5 in checksums.items():
-            if any(fname.endswith(suffix) for suffix in FILE_FILTERS):
-                key = f"{path_prefix}{rel}{fname}"
+            if any(fname.match(f"**{suffix}") for suffix in FILE_FILTERS):
+                key = path_prefix / rel / fname
                 s3.put_object(
-                    Bucket=test_bucket,
-                    Key=key,
+                    Bucket=str(test_bucket),
+                    Key=str(key),
                     Body=b"placeholder",
                     Metadata={"md5": md5},
                 )
@@ -243,8 +239,8 @@ class TestScanStoreToSyntheticSummary:
 
     def test_builds_summary_from_ceph_store(
         self,
-        ceph_s3_client: object,
-        test_bucket: str,
+        ceph_s3_client: BaseClient,
+        test_bucket: PurePosixPath,
     ) -> None:
         """Verify synthetic summary captures assemblies from CEPH."""
         s3 = ceph_s3_client
@@ -258,10 +254,10 @@ class TestScanStoreToSyntheticSummary:
 
         for assembly_dir, files in assemblies.items():
             for fname in files:
-                key = f"{path_prefix}refseq/{assembly_dir}/{assembly_dir}{fname}"
+                key = path_prefix / "refseq" / assembly_dir / f"{assembly_dir}{fname}"
                 s3.put_object(
-                    Bucket=test_bucket,
-                    Key=key,
+                    Bucket=str(test_bucket),
+                    Key=str(key),
                     Body=b"placeholder",
                 )
 
@@ -276,20 +272,20 @@ class TestScanStoreToSyntheticSummary:
         rec1 = result["GCF_000001215.4"]
         assert rec1.accession == "GCF_000001215.4"
         assert rec1.status == "latest"
-        assert rec1.assembly_dir == "GCF_000001215.4_v1"
+        assert rec1.assembly_dir == PurePosixPath("GCF_000001215.4_v1")
 
     def test_synthetic_summary_diff_against_current(
         self,
-        ceph_s3_client: object,
-        test_bucket: str,
+        ceph_s3_client: BaseClient,
+        test_bucket: PurePosixPath,
     ) -> None:
         """Verify synthetic summary can be used as baseline for diffing."""
         s3 = ceph_s3_client
         path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
 
         # Seed CEPH with one assembly
-        key1 = f"{path_prefix}refseq/GCF_000001215.4_old/GCF_000001215.4_old_genomic.fna.gz"
-        s3.put_object(Bucket=test_bucket, Key=key1, Body=b"data")
+        key1 = path_prefix / "refseq" / "GCF_000001215.4_old" / "GCF_000001215.4_old_genomic.fna.gz"
+        s3.put_object(Bucket=str(test_bucket), Key=str(key1), Body=b"data")
 
         # Build synthetic summary from store
         synthetic = scan_store_to_synthetic_summary(test_bucket, path_prefix, "2024/04/20")
@@ -301,15 +297,15 @@ class TestScanStoreToSyntheticSummary:
                 accession="GCF_000001215.4",
                 status="latest",
                 seq_rel_date=synthetic["GCF_000001215.4"].seq_rel_date,
-                ftp_path="",
-                assembly_dir="GCF_000001215.4_old",
+                ftp_url="",
+                assembly_dir=PurePosixPath("GCF_000001215.4_old"),
             ),
             "GCF_000005845.2": AssemblyRecord(
                 accession="GCF_000005845.2",
                 status="latest",
                 seq_rel_date="2024/04/20",
-                ftp_path="",
-                assembly_dir="GCF_000005845.2_new",
+                ftp_url="",
+                assembly_dir=PurePosixPath("GCF_000005845.2_new"),
             ),
         }
 

@@ -7,9 +7,10 @@ Marked ``requires_ceph`` (when a runnning CEPH test store is required) and
 ``slow_test``.
 """
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
+from botocore.client import BaseClient
 
 from cdm_data_loaders.ncbi_ftp.manifest import (
     AssemblyRecord,
@@ -27,7 +28,7 @@ from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch
 from .conftest import get_object_metadata, list_all_keys, stage_files_to_ceph
 
 STABLE_PREFIX = "900"
-STAGING_PREFIX = "staging/run1/"
+STAGING_PREFIX = PurePosixPath("staging") / "run1"
 PATH_PREFIX = DEFAULT_LAKEHOUSE_KEY_PREFIX
 
 
@@ -39,9 +40,9 @@ class TestFullPipelineSmallBatch:
 
     def test_full_pipeline_small_batch(
         self,
-        ceph_s3_client: object,
-        test_bucket: str,
-        staging_test_bucket: str,
+        ceph_s3_client: BaseClient,
+        test_bucket: PurePosixPath,
+        staging_test_bucket: PurePosixPath,
         tmp_path: Path,
     ) -> None:
         """Single assembly flows through all three phases into CEPH."""
@@ -63,8 +64,8 @@ class TestFullPipelineSmallBatch:
         output_dir.mkdir()
 
         report = download_batch(
-            manifest_path=str(manifest_path),
-            output_dir=str(output_dir),
+            manifest_path=manifest_path,
+            output_dir=output_dir,
             threads=1,
             limit=1,
         )
@@ -86,7 +87,7 @@ class TestFullPipelineSmallBatch:
         assert promote_report["failed"] == 0
 
         # Verify final state
-        final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
+        final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
         assert len(final_keys) >= 1, "Expected files at final Lakehouse path"
 
         # At least one file should have MD5 metadata
@@ -107,9 +108,9 @@ class TestFullPipelineIncrementalSync:
 
     def test_full_pipeline_incremental(
         self,
-        ceph_s3_client: object,
-        test_bucket: str,
-        staging_test_bucket: str,
+        ceph_s3_client: BaseClient,
+        test_bucket: PurePosixPath,
+        staging_test_bucket: PurePosixPath,
         tmp_path: Path,
     ) -> None:
         """Second sync archives the old version and promotes the new one."""
@@ -128,14 +129,14 @@ class TestFullPipelineIncrementalSync:
 
         output1 = tmp_path / "output1"
         output1.mkdir()
-        report1 = download_batch(str(manifest1), str(output1), threads=1, limit=1)
+        report1 = download_batch(manifest1, output1, threads=1, limit=1)
         assert report1["succeeded"] >= 1
 
         stage_files_to_ceph(s3, staging_test_bucket, output1, STAGING_PREFIX)
 
         # Upload manifest to CEPH for trimming (manifest lives in staging bucket)
-        manifest_key = "ncbi/transfer_manifest.txt"
-        s3.upload_file(Filename=str(manifest1), Bucket=staging_test_bucket, Key=manifest_key)
+        manifest_key = PurePosixPath("ncbi") / "transfer_manifest.txt"
+        s3.upload_file(Filename=str(manifest1), Bucket=str(staging_test_bucket), Key=str(manifest_key))
 
         promote1 = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
@@ -146,7 +147,7 @@ class TestFullPipelineIncrementalSync:
         )
         assert promote1["promoted"] >= 1
 
-        first_sync_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
+        first_sync_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
         assert len(first_sync_keys) >= 1
 
         # Second sync: Manufacture "previous" with a tweak
@@ -158,7 +159,7 @@ class TestFullPipelineIncrementalSync:
                 accession=rec.accession,
                 status=rec.status,
                 seq_rel_date=rec.seq_rel_date,
-                ftp_path=rec.ftp_path,
+                ftp_url=rec.ftp_url,
                 assembly_dir=rec.assembly_dir,
             )
 
@@ -185,13 +186,13 @@ class TestFullPipelineIncrementalSync:
         # Phase 2 — re-download the updated assembly
         output2 = tmp_path / "output2"
         output2.mkdir()
-        report2 = download_batch(str(manifest2), str(output2), threads=1, limit=1)
+        report2 = download_batch(manifest2, output2, threads=1, limit=1)
         assert report2["succeeded"] >= 1
 
         # Clean staging and re-stage
         staging_keys = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
         for key in staging_keys:
-            s3.delete_object(Bucket=staging_test_bucket, Key=key)
+            s3.delete_object(Bucket=str(staging_test_bucket), Key=str(key))
         stage_files_to_ceph(s3, staging_test_bucket, output2, STAGING_PREFIX)
 
         # Phase 3 — promote with archival
@@ -199,19 +200,19 @@ class TestFullPipelineIncrementalSync:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            updated_manifest_path=str(updated_manifest),
+            updated_manifest_path=updated_manifest,
             ncbi_release="test-incremental",
             lakehouse_key_prefix=PATH_PREFIX,
         )
         assert promote2["failed"] == 0
 
         # Verify archive exists
-        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "archive/test-incremental/")
+        archive_keys = list_all_keys(s3, PurePosixPath(test_bucket), PATH_PREFIX / "archive/test-incremental")
         if promote2["archived"] > 0:
             assert len(archive_keys) >= 1
             for key in archive_keys:
-                assert "/updated/" in key
+                assert "updated" in key.parts
 
         # Final Lakehouse path should still have files
-        final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX + "raw_data/")
+        final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
         assert len(final_keys) >= 1

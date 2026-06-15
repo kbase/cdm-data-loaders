@@ -1,21 +1,16 @@
 """Unit tests for cdm_data_loaders.ncbi_ftp.metadata."""
 
-from __future__ import annotations
-
 import json
 import time
-from typing import TYPE_CHECKING
+from collections.abc import Generator
+from pathlib import PurePosixPath
 from unittest.mock import MagicMock, patch
 from urllib.parse import urlparse
 
 import boto3
+import botocore.client
 import pytest
 from moto import mock_aws
-
-if TYPE_CHECKING:
-    from collections.abc import Generator
-
-    import botocore.client
 
 import cdm_data_loaders.ncbi_ftp.metadata as metadata_mod
 import cdm_data_loaders.utils.s3 as s3_utils
@@ -34,22 +29,36 @@ from tests.ncbi_ftp.conftest import TEST_BUCKET
 AWS_REGION = "us-east-1"
 
 _ACCESSION = "GCF_000001215.4"
-_ASSEMBLY_DIR = "GCF_000001215.4_Release_6_plus_ISO1_MT"
+_ASSEMBLY_DIR = PurePosixPath("GCF_000001215.4_Release_6_plus_ISO1_MT")
 _RELEASE_TAG = "2024-01"
-_KEY_PREFIX = "tenant-general-warehouse/kbase/datasets/ncbi/"
+_KEY_PREFIX = PurePosixPath("tenant-general-warehouse") / "kbase" / "datasets" / "ncbi"
 _TIMESTAMP = 1_700_000_000
 
 _SAMPLE_RESOURCES: list[DescriptorResource] = [
     {
         "name": "GCF_000001215.4_genomic.fna.gz",
-        "path": f"{_KEY_PREFIX}raw_data/GCF/000/001/215/{_ASSEMBLY_DIR}/GCF_000001215.4_genomic.fna.gz",
+        "path": _KEY_PREFIX
+        / "raw_data"
+        / "GCF"
+        / "000"
+        / "001"
+        / "215"
+        / _ASSEMBLY_DIR
+        / "GCF_000001215.4_genomic.fna.gz",
         "format": "gz",
         "bytes": 1024,
         "hash": "abc123",
     },
     {
         "name": "GCF_000001215.4_assembly_report.txt",
-        "path": f"{_KEY_PREFIX}raw_data/GCF/000/001/215/{_ASSEMBLY_DIR}/GCF_000001215.4_assembly_report.txt",
+        "path": _KEY_PREFIX
+        / "raw_data"
+        / "GCF"
+        / "000"
+        / "001"
+        / "215"
+        / _ASSEMBLY_DIR
+        / "GCF_000001215.4_assembly_report.txt",
         "format": "txt",
         "bytes": 512,
         "hash": None,  # no md5 sidecar for this one
@@ -60,27 +69,32 @@ _SAMPLE_RESOURCES: list[DescriptorResource] = [
 # build_descriptor_key / build_archive_descriptor_key
 
 
-@pytest.mark.parametrize("prefix", [_KEY_PREFIX, _KEY_PREFIX.rstrip("/")])
-def test_build_descriptor_key(prefix: str) -> None:
+@pytest.mark.parametrize("prefix", [_KEY_PREFIX])
+def test_build_descriptor_key(prefix: PurePosixPath) -> None:
     """Key is under metadata/, ends with _datapackage.json, trailing slash on prefix is normalized."""
     key = build_descriptor_key(_ASSEMBLY_DIR, prefix)
-    assert key == f"{_KEY_PREFIX}metadata/{_ASSEMBLY_DIR}_datapackage.json"
-    assert "//" not in key
+    assert key == _KEY_PREFIX / "metadata" / _ASSEMBLY_DIR.with_name(f"{_ASSEMBLY_DIR.name}_datapackage.json")
 
 
 @pytest.mark.parametrize(
     ("prefix", "tag"),
     [
-        pytest.param(_KEY_PREFIX, _RELEASE_TAG, id="trailing_slash"),
-        pytest.param(_KEY_PREFIX.rstrip("/"), _RELEASE_TAG, id="no_trailing_slash"),
+        pytest.param(_KEY_PREFIX, _RELEASE_TAG, id="tag"),
         pytest.param(_KEY_PREFIX, "2025-06", id="different_tag"),
     ],
 )
-def test_build_archive_descriptor_key(prefix: str, tag: str) -> None:
-    """Archive key includes tag and reason segment; no double slash; prefix trailing slash normalized."""
+def test_build_archive_descriptor_key(prefix: PurePosixPath, tag: str) -> None:
+    """Archive key includes tag and reason segment."""
     key = build_archive_descriptor_key(_ASSEMBLY_DIR, tag, prefix, "updated")
-    assert key == f"{_KEY_PREFIX}archive/{tag}/updated/metadata/{_ASSEMBLY_DIR}_datapackage.json"
-    assert "//" not in key
+    expected = (
+        _KEY_PREFIX
+        / "archive"
+        / tag
+        / "updated"
+        / "metadata"
+        / _ASSEMBLY_DIR.with_name(f"{_ASSEMBLY_DIR.name}_datapackage.json")
+    )
+    assert key == expected
 
 
 # create_descriptor
@@ -92,7 +106,8 @@ def test_create_descriptor() -> None:
 
     # URL hostname is computed; can't express as equality
     host = urlparse(d["url"]).hostname
-    assert host is not None and (host == "ncbi.nlm.nih.gov" or host.endswith(".ncbi.nlm.nih.gov"))
+    assert host is not None
+    assert host == "ncbi.nlm.nih.gov" or host.endswith(".ncbi.nlm.nih.gov")
 
     # resource[1]: hash=None → key absent; bytes=512 → key present
     r1 = d["resources"][1]
@@ -127,13 +142,13 @@ def test_create_descriptor() -> None:
             }
         ],
     }
-    assert _ASSEMBLY_DIR in d["titles"][0]["title"]
+    assert f"{_ASSEMBLY_DIR}" in d["titles"][0]["title"]
     assert _ACCESSION in d["descriptions"][0]["description_text"]
     r0 = d["resources"][0]
     assert {k: r0[k] for k in ("hash", "bytes", "path")} == {
         "hash": "abc123",
         "bytes": 1024,
-        "path": _SAMPLE_RESOURCES[0]["path"],
+        "path": str(_SAMPLE_RESOURCES[0].get("path")),
     }
 
 
@@ -148,7 +163,13 @@ def test_create_descriptor_default_timestamp_is_recent() -> None:
 def test_create_descriptor_resource_name_lowercased() -> None:
     """Resource names are converted to lowercase."""
     resources: list[DescriptorResource] = [
-        {"name": "FILE_UPPER.FNA.GZ", "path": "s3://bucket/a", "format": "gz", "bytes": 100, "hash": "x"},
+        {
+            "name": "FILE_UPPER.FNA.GZ",
+            "path": PurePosixPath("s3://") / "bucket" / "a",
+            "format": "gz",
+            "bytes": 100,
+            "hash": "x",
+        },
     ]
     d = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, resources, timestamp=_TIMESTAMP)
     assert d["resources"][0]["name"] == "file_upper.fna.gz"
@@ -157,7 +178,7 @@ def test_create_descriptor_resource_name_lowercased() -> None:
 def test_create_descriptor_null_bytes_omitted() -> None:
     """Resources with bytes=None have the 'bytes' key removed from the output."""
     resources: list[DescriptorResource] = [
-        {"name": "f.txt", "path": "s3://b/f.txt", "format": "txt", "bytes": None, "hash": "x"},
+        {"name": "f.txt", "path": PurePosixPath("s3://") / "b" / "f.txt", "format": "txt", "bytes": None, "hash": "x"},
     ]
     d = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, resources, timestamp=_TIMESTAMP)
     assert "bytes" not in d["resources"][0]
@@ -201,7 +222,7 @@ def mock_s3(monkeypatch: pytest.MonkeyPatch) -> Generator[botocore.client.BaseCl
     boto3.DEFAULT_SESSION = None
     with mock_aws():
         client = boto3.client("s3", region_name=AWS_REGION)
-        client.create_bucket(Bucket=TEST_BUCKET)
+        client.create_bucket(Bucket=str(TEST_BUCKET))
         reset_s3_client()
         with (
             patch.object(s3_utils, "get_s3_client", return_value=client),
@@ -212,11 +233,13 @@ def mock_s3(monkeypatch: pytest.MonkeyPatch) -> Generator[botocore.client.BaseCl
 
 
 @pytest.fixture
-def mock_s3_with_descriptor(mock_s3: botocore.client.BaseClient) -> tuple[botocore.client.BaseClient, MagicMock]:
+def mock_s3_with_descriptor(
+    mock_s3: botocore.client.BaseClient,
+) -> Generator[tuple[botocore.client.BaseClient, MagicMock]]:
     """mock_s3 with a live descriptor pre-uploaded and copy_object patched."""
     descriptor = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, _SAMPLE_RESOURCES, timestamp=_TIMESTAMP)
     live_key = build_descriptor_key(_ASSEMBLY_DIR, _KEY_PREFIX)
-    mock_s3.put_object(Bucket=TEST_BUCKET, Key=live_key, Body=json.dumps(descriptor).encode())
+    mock_s3.put_object(Bucket=str(TEST_BUCKET), Key=f"{live_key}", Body=json.dumps(descriptor).encode())
     with patch.object(metadata_mod, "copy_object") as mock_copy:
         yield mock_s3, mock_copy
 
@@ -228,9 +251,9 @@ def test_upload_descriptor(mock_s3: botocore.client.BaseClient) -> None:
     key = upload_descriptor(descriptor, _ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX)
     expected_key = build_descriptor_key(_ASSEMBLY_DIR, _KEY_PREFIX)
     assert key == expected_key
-    assert key.startswith(_KEY_PREFIX)
-    assert key.endswith("_datapackage.json")
-    body = json.loads(mock_s3.get_object(Bucket=TEST_BUCKET, Key=key)["Body"].read())
+    assert key.is_relative_to(_KEY_PREFIX)
+    assert key.match("**_datapackage.json")
+    body = json.loads(mock_s3.get_object(Bucket=str(TEST_BUCKET), Key=str(key))["Body"].read())
     assert body["identifier"] == f"NCBI:{_ACCESSION}"
 
 
@@ -240,7 +263,7 @@ def test_upload_descriptor_dry_run(mock_s3: botocore.client.BaseClient) -> None:
     descriptor = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, _SAMPLE_RESOURCES, timestamp=_TIMESTAMP)
     key = upload_descriptor(descriptor, _ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, dry_run=True)
     assert key == build_descriptor_key(_ASSEMBLY_DIR, _KEY_PREFIX)
-    objs = mock_s3.list_objects_v2(Bucket=TEST_BUCKET).get("Contents", [])
+    objs = mock_s3.list_objects_v2(Bucket=str(TEST_BUCKET)).get("Contents", [])
     assert not any(o["Key"] == key for o in objs)
 
 
@@ -252,8 +275,8 @@ def test_archive_descriptor(mock_s3_with_descriptor: tuple[botocore.client.BaseC
     assert result is True
     mock_copy.assert_called_once()
     args = mock_copy.call_args[0]
-    assert f"{TEST_BUCKET}/{build_descriptor_key(_ASSEMBLY_DIR, _KEY_PREFIX)}" in args
-    assert f"{TEST_BUCKET}/{build_archive_descriptor_key(_ASSEMBLY_DIR, _RELEASE_TAG, _KEY_PREFIX)}" in args
+    assert f"{TEST_BUCKET / build_descriptor_key(_ASSEMBLY_DIR, _KEY_PREFIX)}" in args
+    assert f"{TEST_BUCKET / build_archive_descriptor_key(_ASSEMBLY_DIR, _RELEASE_TAG, _KEY_PREFIX)}" in args
 
 
 @pytest.mark.s3
@@ -264,7 +287,7 @@ def test_archive_descriptor_dry_run(mock_s3_with_descriptor: tuple[botocore.clie
     mock_copy.assert_not_called()
 
 
-@pytest.mark.s3
-def test_archive_descriptor_missing_returns_false(mock_s3: botocore.client.BaseClient) -> None:
+@pytest.mark.usefixtures("mock_s3")
+def test_archive_descriptor_missing_returns_false() -> None:
     """Returns False when no descriptor exists at the live key."""
     assert archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG) is False

@@ -1,7 +1,9 @@
 """Tests for pipelines.ncbi_ftp_download — settings, batch orchestration, CLI."""
 
 import json
-from pathlib import Path
+from collections.abc import Generator
+from pathlib import Path, PurePosixPath
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import boto3
@@ -9,6 +11,7 @@ import pytest
 from moto import mock_aws
 from pydantic import ValidationError
 
+import cdm_data_loaders.utils.s3 as s3_mod
 from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST
 from cdm_data_loaders.pipelines.cts_defaults import INPUT_MOUNT, OUTPUT_MOUNT
 from cdm_data_loaders.pipelines.ncbi_ftp_download import (
@@ -37,9 +40,10 @@ _ALIAS_LIMIT = 50
 _EXPECTED_ATTEMPTED = 2
 
 
-def make_settings(**kwargs: str | int) -> DownloadSettings:
+def make_settings(**kwargs: str | int | bool | Path | PurePosixPath) -> DownloadSettings:
     """Generate a validated DownloadSettings object."""
-    return DownloadSettings(_cli_parse_args=[], **kwargs)
+    settings_ctor = cast("Any", DownloadSettings)
+    return settings_ctor(_cli_parse_args=[], **kwargs)
 
 
 # Settings defaults
@@ -51,12 +55,12 @@ class TestDownloadSettingsDefaults:
     def test_manifest_default(self) -> None:
         """Verify default manifest path uses INPUT_MOUNT."""
         s = make_settings()
-        assert s.manifest == f"{INPUT_MOUNT}/transfer_manifest.txt"
+        assert s.manifest == Path(INPUT_MOUNT) / "transfer_manifest.txt"
 
     def test_output_dir_default(self) -> None:
         """Verify default output_dir uses OUTPUT_MOUNT."""
         s = make_settings()
-        assert s.output_dir == OUTPUT_MOUNT
+        assert s.output_dir == Path(OUTPUT_MOUNT)
 
     def test_threads_default(self) -> None:
         """Verify default threads is 4."""
@@ -83,14 +87,14 @@ class TestDownloadSettingsAllParams:
     def test_all_params(self) -> None:
         """Verify all parameters are correctly set when provided."""
         s = make_settings(
-            manifest="/data/my_manifest.txt",
-            output_dir="/data/output",
+            manifest=Path("/") / "data" / "my_manifest.txt",
+            output_dir=Path("/") / "data" / "output",
             threads=_CUSTOM_THREADS,
             ftp_host="ftp.example.com",
             limit=_CUSTOM_LIMIT,
         )
-        assert s.manifest == "/data/my_manifest.txt"
-        assert s.output_dir == "/data/output"
+        assert s.manifest == Path("/") / "data" / "my_manifest.txt"
+        assert s.output_dir == Path("/") / "data" / "output"
         assert s.threads == _CUSTOM_THREADS
         assert s.ftp_host == "ftp.example.com"
         assert s.limit == _CUSTOM_LIMIT
@@ -104,13 +108,13 @@ class TestDownloadSettingsAliases:
 
     def test_manifest_alias_m(self) -> None:
         """Verify 'm' alias resolves to manifest."""
-        s = make_settings(m="/data/m.txt")
-        assert s.manifest == "/data/m.txt"
+        s = make_settings(m=Path("/") / "data" / "m.txt")
+        assert s.manifest == Path("/") / "data" / "m.txt"
 
     def test_output_dir_alias(self) -> None:
         """Verify 'output_dir' / 'output-dir' alias resolves to output_dir."""
-        s = make_settings(output_dir="/data/o")
-        assert s.output_dir == "/data/o"
+        s = make_settings(output_dir=Path("/") / "data" / "o")
+        assert s.output_dir == Path("/") / "data" / "o"
 
     def test_threads_alias_t(self) -> None:
         """Verify 't' alias resolves to threads."""
@@ -162,7 +166,7 @@ class TestDownloadBatch:
     """Test download_batch with mocked internals."""
 
     @pytest.fixture(autouse=True)
-    def _mock_ftp_pool(self) -> None:
+    def _mock_ftp_pool(self) -> Generator[None]:
         """Prevent real FTP connections from the ThreadLocalFTP pool."""
         mock_pool = MagicMock()
         with patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP", return_value=mock_pool):
@@ -181,8 +185,8 @@ class TestDownloadBatch:
         mock_stats = {"accession": "test", "files_downloaded": 3}
         with patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local", return_value=mock_stats):
             report = download_batch(
-                manifest_path=str(manifest),
-                output_dir=str(output),
+                manifest_path=manifest,
+                output_dir=output,
                 threads=1,
                 ftp_host="ftp.example.com",
             )
@@ -204,8 +208,8 @@ class TestDownloadBatch:
         mock_stats = {"accession": "test", "files_downloaded": 1}
         with patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local", return_value=mock_stats):
             report = download_batch(
-                manifest_path=str(manifest),
-                output_dir=str(output),
+                manifest_path=manifest,
+                output_dir=output,
                 threads=1,
                 limit=1,
             )
@@ -220,7 +224,7 @@ class TestDownloadBatch:
 
         mock_stats = {"accession": "GCF_000001215.4", "files_downloaded": 5}
         with patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local", return_value=mock_stats):
-            download_batch(manifest_path=str(manifest), output_dir=str(output), threads=1)
+            download_batch(manifest_path=manifest, output_dir=output, threads=1)
 
         report_file = output / "download_report.json"
         assert report_file.exists()
@@ -239,7 +243,7 @@ class TestDownloadBatch:
             "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
             side_effect=RuntimeError("connection lost"),
         ):
-            report = download_batch(manifest_path=str(manifest), output_dir=str(output), threads=1)
+            report = download_batch(manifest_path=manifest, output_dir=output, threads=1)
 
         assert report["failed"] == 1
         assert report["succeeded"] == 0
@@ -251,11 +255,11 @@ _MANIFEST_CONTENT = (
     "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n"
     "/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/\n"
 )
-_TEST_BUCKET = "test-bucket"
-_STAGING_PREFIX = "staging/run1/"
+_TEST_BUCKET = PurePosixPath("test-bucket")
+_STAGING_PREFIX = PurePosixPath("staging") / "run1"
 
 
-def _make_moto_s3(monkeypatch: pytest.MonkeyPatch):
+def _make_moto_s3(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN202
     """Return a moto-backed S3 client with the test bucket created."""
     # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
@@ -265,7 +269,7 @@ def _make_moto_s3(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
     boto3.DEFAULT_SESSION = None
     client = boto3.client("s3", region_name="us-east-1")
-    client.create_bucket(Bucket=_TEST_BUCKET)
+    client.create_bucket(Bucket=f"{_TEST_BUCKET}")
     return client
 
 
@@ -275,15 +279,15 @@ def _make_moto_s3(monkeypatch: pytest.MonkeyPatch):
 @pytest.mark.parametrize(
     ("manifest_s3_key", "use_local"),
     [
-        pytest.param("staging/input/transfer_manifest.txt", False, id="s3_source"),
+        pytest.param(Path("staging") / "input" / "transfer_manifest.txt", False, id="s3_source"),
         pytest.param(None, True, id="local_source"),
     ],
 )
 @mock_aws
 def test_download_and_stage_manifest_source(
     tmp_path: Path,
-    manifest_s3_key: str | None,
-    use_local: bool,
+    manifest_s3_key: PurePosixPath | None,
+    use_local: bool,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Assembly paths from the manifest are processed regardless of source (S3 or local)."""
@@ -292,18 +296,16 @@ def test_download_and_stage_manifest_source(
 
     manifest_local: Path | None = None
     if manifest_s3_key is not None:
-        s3.put_object(Bucket=_TEST_BUCKET, Key=manifest_s3_key, Body=_MANIFEST_CONTENT.encode())
+        s3.put_object(Bucket=str(_TEST_BUCKET), Key=str(manifest_s3_key), Body=_MANIFEST_CONTENT.encode())
     else:
         manifest_local = tmp_path / "manifest.txt"
         manifest_local.write_text(_MANIFEST_CONTENT)
 
-    called_paths: list[str] = []
+    called_paths: list[Path] = []
 
-    def _fake_download(path, output_dir, **kwargs):  # noqa: ARG001
+    def _fake_download(path: Path, output_dir: Path, **kwargs: object) -> dict[str, str | int]:  # noqa: ARG001
         called_paths.append(path)
         return _MOCK_STATS
-
-    import cdm_data_loaders.utils.s3 as s3_mod
 
     with (
         patch.object(s3_mod, "get_s3_client", return_value=s3),
@@ -324,7 +326,7 @@ def test_download_and_stage_manifest_source(
             threads=1,
         )
 
-    expected_paths = [l for l in _MANIFEST_CONTENT.splitlines() if l.strip()]
+    expected_paths: list[Path] = [Path(line) for line in _MANIFEST_CONTENT.splitlines() if line.strip()]
     assert sorted(called_paths) == sorted(expected_paths)
 
     reset_s3_client()
@@ -336,17 +338,17 @@ def test_download_and_stage_manifest_source(
 @pytest.mark.parametrize(
     ("s3_key", "local_path", "should_raise"),
     [
-        pytest.param("s3/key", "local/path", True, id="both_provided_raises"),
+        pytest.param(PurePosixPath("s3") / "key", Path("local") / "path", True, id="both_provided_raises"),
         pytest.param(None, None, True, id="neither_provided_raises"),
-        pytest.param("s3/key", None, False, id="s3_only_ok"),
-        pytest.param(None, "local/path", False, id="local_only_ok"),
+        pytest.param(PurePosixPath("s3") / "key", None, False, id="s3_only_ok"),
+        pytest.param(None, Path("local") / "path", False, id="local_only_ok"),
     ],
 )
 @mock_aws
 def test_download_and_stage_exactly_one_source_required(
     tmp_path: Path,
-    s3_key: str | None,
-    local_path: str | None,
+    s3_key: PurePosixPath | None,
+    local_path: Path | None,
     should_raise: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -365,13 +367,11 @@ def test_download_and_stage_exactly_one_source_required(
         s3 = _make_moto_s3(monkeypatch)
         # For s3_only: seed the object; for local_only: create the file
         if s3_key is not None:
-            s3.put_object(Bucket=_TEST_BUCKET, Key=s3_key, Body=_MANIFEST_CONTENT.encode())
+            s3.put_object(Bucket=str(_TEST_BUCKET), Key=str(s3_key), Body=_MANIFEST_CONTENT.encode())
         if local_path is not None:
             real_local = tmp_path / "manifest.txt"
             real_local.write_text(_MANIFEST_CONTENT)
             local_path = real_local
-
-        import cdm_data_loaders.utils.s3 as s3_mod
 
         with (
             patch.object(s3_mod, "get_s3_client", return_value=s3),
@@ -410,14 +410,12 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path, monkeypatch: pyte
 
     assembly_rel = "raw_data/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT"
 
-    def _fake_download(path, output_dir, **kwargs):  # noqa: ARG001
+    def _fake_download(path: Path, output_dir: Path, **kwargs: Path) -> dict[str, str | int]:  # noqa: ARG001
         asm_dir = Path(output_dir) / assembly_rel
         asm_dir.mkdir(parents=True)
         (asm_dir / "genomic.fna.gz").write_bytes(b"fasta_data")
         (asm_dir / "genomic.fna.gz.md5").write_bytes(b"abc123")
         return {**_MOCK_STATS, "files_downloaded": 2}
-
-    import cdm_data_loaders.utils.s3 as s3_mod
 
     with (
         patch.object(s3_mod, "get_s3_client", return_value=s3),
@@ -438,12 +436,16 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path, monkeypatch: pyte
         )
 
     paginator = s3.get_paginator("list_objects_v2")
-    uploaded_keys = {obj["Key"] for page in paginator.paginate(Bucket=_TEST_BUCKET) for obj in page.get("Contents", [])}
+    uploaded_keys: set[PurePosixPath] = {
+        PurePosixPath(obj["Key"])
+        for page in paginator.paginate(Bucket=str(_TEST_BUCKET))
+        for obj in page.get("Contents", [])
+    }
 
     expected_keys = {
-        f"{_STAGING_PREFIX}{assembly_rel}/genomic.fna.gz",
-        f"{_STAGING_PREFIX}{assembly_rel}/genomic.fna.gz.md5",
-        f"{_STAGING_PREFIX}download_report.json",
+        _STAGING_PREFIX / assembly_rel / "genomic.fna.gz",
+        _STAGING_PREFIX / assembly_rel / "genomic.fna.gz.md5",
+        _STAGING_PREFIX / "download_report.json",
     }
     assert uploaded_keys == expected_keys
     assert report["staged_objects"] == len(expected_keys)
@@ -463,13 +465,11 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path, monkeypatch: py
     manifest_local = tmp_path / "manifest.txt"
     manifest_local.write_text(_MANIFEST_CONTENT)
 
-    def _fake_download(path, output_dir, **kwargs):  # noqa: ARG001
-        asm_dir = Path(output_dir) / "raw_data/GCF/000/001/215/GCF_000001215.4"
+    def _fake_download(path: Path, output_dir: Path, **kwargs: object) -> dict[str, str | int]:  # noqa: ARG001
+        asm_dir = Path(output_dir) / "raw_data" / "GCF" / "000" / "001" / "215" / "GCF_000001215.4"
         asm_dir.mkdir(parents=True, exist_ok=True)
         (asm_dir / "genomic.fna.gz").write_bytes(b"fasta")
         return _MOCK_STATS
-
-    import cdm_data_loaders.utils.s3 as s3_mod
 
     with (
         patch.object(s3_mod, "get_s3_client", return_value=s3),
@@ -489,7 +489,7 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path, monkeypatch: py
             threads=1,
         )
 
-    listed = s3.list_objects_v2(Bucket=_TEST_BUCKET)
+    listed = s3.list_objects_v2(Bucket=str(_TEST_BUCKET))
     assert listed.get("KeyCount", 0) == 0
     assert report["staged_objects"] == 0
     assert report["dry_run"] is True
@@ -515,8 +515,6 @@ def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int, monkeypa
 
     manifest_local = tmp_path / "manifest.txt"
     manifest_local.write_text(_MANIFEST_CONTENT)
-
-    import cdm_data_loaders.utils.s3 as s3_mod
 
     with (
         patch.object(s3_mod, "get_s3_client", return_value=s3),
@@ -554,8 +552,6 @@ def test_download_and_stage_report_shape(tmp_path: Path, monkeypatch: pytest.Mon
 
     manifest_local = tmp_path / "manifest.txt"
     manifest_local.write_text(_MANIFEST_CONTENT)
-
-    import cdm_data_loaders.utils.s3 as s3_mod
 
     with (
         patch.object(s3_mod, "get_s3_client", return_value=s3),
