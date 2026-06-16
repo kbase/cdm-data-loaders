@@ -1,6 +1,7 @@
 # CDM Data Loaders Changelog
 
 - [CDM Data Loaders Changelog](#cdm-data-loaders-changelog)
+    - [v0.1.9](#v019)
     - [v0.1.8](#v018)
     - [v0.1.7](#v017)
     - [v0.1.6](#v016)
@@ -11,6 +12,11 @@
     - [v0.1.1](#v011)
     - [v0.1.0](#v010)
 
+
+### v0.1.9
+
+- Splitting out NCBI REST API pipeline into annotation and dataset components.
+- NCBI FTP pipeline and accompanying notebooks added.
 
 ### v0.1.8
 
