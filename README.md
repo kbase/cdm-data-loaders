@@ -5,10 +5,12 @@ Repo for CDM input data loading and wrangling
 - [cdm-data-loaders](#cdm-data-loaders)
   - [Environment and python management](#environment-and-python-management)
   - [Installation](#installation)
+    - [Lakehouse and Use with Jupyter notebooks](#lakehouse-and-use-with-jupyter-notebooks)
   - [Running import pipelines](#running-import-pipelines)
   - [Development](#development)
     - [Spark and other non-python dependencies](#spark-and-other-non-python-dependencies)
     - [Tests](#tests)
+      - [CEPH-Backed integration tests (CEPH + NCBI FTP)](#ceph-backed-integration-tests-ceph--ncbi-ftp)
   - [Loading genomes, contigs, and features](#loading-genomes-contigs-and-features)
   - [Running bbmap stats and checkm2 on genome or contigset files](#running-bbmap-stats-and-checkm2-on-genome-or-contigset-files)
 
@@ -46,6 +48,43 @@ To activate a virtual environment with these dependencies installed, run
 ```
 
 If you are using IDEs like VSCode, they should pick up the creation of the new environment and offer it for executing python code.
+
+
+### Lakehouse and Use with Jupyter notebooks
+
+`cdm-data-loaders` can be installed on platforms like the KBase Lakehouse using the same installation steps:
+
+```sh
+cd cdm-data-loaders
+uv sync
+source .venv/bin/activate
+```
+
+To use the library in a Jupyter notebook, it must be registered as a Jupyter kernel. After performing the three steps above,
+run the following commands:
+
+```sh
+uv pip install -e .
+uv pip install ipykernel
+uv run python -m ipykernel install --user --name cdm-data-loaders --display-name "cdm-data-loaders"
+```
+
+The `cdm-data-loaders` kernel should now be available from the dropdown list of kernels in the Jupyter notebook interface.
+
+#### Jupyter Kernel Environment Variables
+
+If you would like to include environment variables for your kernel that are not present in your default environment, you can add them to the `kernel.json` for your new kernel (e.g., in `cdm-data-loaders/.venv/share/jupyter/kernels/python3/kernel.json`):
+```json
+{
+  "argv": ["..."],
+  "display_name": "cdm-data-loaders",
+  "language": "python",
+  "env": {
+    "MY_CUSTOM_VAR": "...",
+    ...
+  }
+}
+```
 
 
 ## Running import pipelines
@@ -103,16 +142,16 @@ See the [BERDataLakehouse/spark_notebook](https://github.com/BERDataLakehouse/sp
 
 Tests are categorised using pytest markers to allow developers to execute some or all the tests. See [pyproject.toml](pyproject.toml) for the markers used.
 
-To run all tests (requires a running Spark instance), execute the command:
+To run all tests (requires a running Spark instance and a running CEPH test container), execute the command:
 
 ```sh
 > uv run pytest
 ```
 
-To run only tests that do not require Spark, run
+To run only tests that do not require Spark or CEPH, run
 
 ```sh
-> uv run pytest -m "not requires_spark"
+> uv run pytest -m "not requires_spark and not requires_ceph"
 ```
 
 To generate coverage for the tests, run
@@ -121,6 +160,64 @@ To generate coverage for the tests, run
 ```
 
 The standard python `coverage` package is used and coverage can be generated as html or other formats by changing the parameters.
+
+
+#### CEPH-Backed integration tests (CEPH + NCBI FTP)
+
+End-to-end integration tests for the NCBI assembly pipeline live in `tests/integration/`. They exercise the full flow — manifest diffing, FTP download, S3 promote/archive — against a locally running [CEPH](https://ceph.io/) container and the real NCBI FTP server.
+
+**Requirements:**
+- Docker or Podman (for CEPH)
+- Network access to `ftp.ncbi.nlm.nih.gov`
+
+**Running with Docker Compose (easiest)**
+
+The [docker-compose.yml](docker-compose.yml) at the repo root defines both a CEPH service and the integration test runner. To build the image, start CEPH, and run the integration tests in one command:
+
+```sh
+docker compose up --build --abort-on-container-exit
+```
+
+Compose will stream test output to the terminal and exit with the pytest exit code. To clean up afterwards:
+
+```sh
+docker compose down --volumes
+```
+
+**Running manually**
+
+If you prefer to run the tests directly against a local CEPH instance (e.g. for faster iteration during development), follow the steps below.
+
+**1. Start CEPH locally:**
+
+```sh
+docker run -d \
+  --name ceph \
+  -p 9000:8080 \
+  -p 9001:8443 \
+  -e RGW_PORT=8080 \
+  -e RGW_ACCESS_KEY=test_access_key \
+  -e RGW_SECRET_KEY=test_access_secret \
+  ghcr.io/kbasetest/ceph-rgw-test-image:0.1.5
+```
+
+**2. Run the integration tests:**
+
+```sh
+> uv run pytest tests/integration/ -m requires_ceph -v
+```
+
+**3. Inspect results:**
+
+Buckets are **not** cleaned up after tests. The CEPH dashboard at [http://localhost:9001](http://localhost:9001) (login: `admin` / `admin`) does not support inspecting bucket contents; use the CLI below (e.g. `scripts/s3_local.py ls/head`) to inspect the final state of each test bucket. Each test method creates its own bucket (e.g. `integ-test-promote-dry-run`).
+
+**4. Stop CEPH when done:**
+
+```sh
+docker stop ceph && docker rm ceph
+```
+
+> **Note:** These tests download real assemblies from NCBI FTP and are inherently slow (~30–60s per assembly). They are also marked `slow_test` so you can exclude them independently: `uv run pytest -m "not slow_test"`.
 
 
 ## Loading genomes, contigs, and features

@@ -1,9 +1,10 @@
 """Tests for the NCBI datasets API pipeline functions."""
 
+import re
 from pathlib import Path
 from typing import Any
 from unittest import mock
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from dlt.extract.items import DataItemWithMeta
@@ -18,9 +19,11 @@ from cdm_data_loaders.pipelines.cts_defaults import ARG_ALIASES
 from cdm_data_loaders.pipelines.ncbi_rest_api import (
     ANNOTATION,
     ARG_ALIAS_BATCH_SIZE,
+    ARG_ALIAS_QUERY_TYPE,
     DATASET,
     DATASET_NAME,
     ERROR,
+    MAX_IDS_PER_QUERY,
     NcbiSettings,
     assemble_assembly_reports,
     assembly_list,
@@ -28,7 +31,9 @@ from cdm_data_loaders.pipelines.ncbi_rest_api import (
     get_annotation_report,
     get_assembly_reports,
     get_dataset_reports,
+    get_settings,
     run_ncbi_pipeline,
+    set_settings,
 )
 from tests.pipelines.conftest import (
     DEFAULT_VCR_CONFIG,
@@ -51,17 +56,23 @@ def patch_rest_client_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cdm_data_loaders.pipelines.ncbi_rest_api.REST_CLIENT_HOOKS", {})
 
 
-BATCH_SIZE_STRING = "500"
-BATCH_SIZE_INT = 500
+ID_WITH_2K_ANNOTS = "GCF_000003135.1"
+ID_WITH_500_ANNOTS = "GCF_000007725.1"
+ID_TRIGGERS_500_ERR = "GCF_500_ERROR"
+VALID_IDS = [ID_WITH_500_ANNOTS, ID_WITH_2K_ANNOTS]
+INVALID_ID = "invalid_id"
+ALL_IDS = [*VALID_IDS, INVALID_ID]
+BATCH_SIZE = 200
+BATCH_SIZE_STRING = str(BATCH_SIZE)
 
-TEST_NCBI_SETTINGS = frozendict(
-    **TEST_CTS_SETTINGS,
-    batch_size=BATCH_SIZE_STRING,
-)
+TEST_NCBI_SETTINGS = frozendict(**TEST_CTS_SETTINGS, batch_size=BATCH_SIZE_STRING, query_type="")
 
-TEST_NCBI_SETTINGS_RECONCILED = frozendict(
-    **TEST_CTS_SETTINGS_RECONCILED,
-    batch_size=BATCH_SIZE_INT,
+TEST_NCBI_SETTINGS_RECONCILED = frozendict(**TEST_CTS_SETTINGS_RECONCILED, batch_size=BATCH_SIZE, query_type=None)
+
+TEST_NCBI_SETTINGS_V1 = frozendict(**TEST_CTS_SETTINGS, batch_size=BATCH_SIZE_STRING, query_type=" ANNOTATION ")
+
+TEST_NCBI_SETTINGS_RECONCILED_V1 = frozendict(
+    **TEST_CTS_SETTINGS_RECONCILED, batch_size=BATCH_SIZE, query_type=ANNOTATION
 )
 
 
@@ -69,16 +80,6 @@ TEST_NCBI_SETTINGS_RECONCILED = frozendict(
 def vcr_config() -> dict[str, Any]:
     """VCR config for tests that make HTTP requests."""
     return {**DEFAULT_VCR_CONFIG}
-
-
-ID_WITH_2K_ANNOTS = "GCF_000003135.1"
-ID_WITH_500_ANNOTS = "GCF_000007725.1"
-ID_TRIGGERS_500_ERR = "GCF_500_ERROR"
-VALID_IDS = [ID_WITH_500_ANNOTS, ID_WITH_2K_ANNOTS]
-INVALID_ID = "invalid_id"
-ALL_IDS = [*VALID_IDS, INVALID_ID]
-BATCH_SIZE = 500
-BATCH_SIZE_STRING = "500"
 
 
 @pytest.fixture(scope="module")
@@ -105,9 +106,58 @@ def assembly_ids(valid_assembly_ids: list[str], invalid_assembly_id: str) -> lis
     return [*valid_assembly_ids, invalid_assembly_id]
 
 
+@pytest.fixture(scope="module")
+def test_settings() -> NcbiSettings:
+    """Generate a test settings class."""
+    return make_settings_autofill_config(NcbiSettings)  # type: ignore[reportReturnType]
+
+
 def make_settings(**kwargs: str | int | bool) -> NcbiSettings:
     """Generate a validated NcbiSettings object."""
     return NcbiSettings.model_validate(kwargs)
+
+
+@pytest.fixture(autouse=True)
+def reset_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset the pipeline settings prior to running tests.
+
+    :param monkeypatch: monkeypatch
+    :type monkeypatch: pytest.MonkeyPatch
+    """
+    monkeypatch.setattr(ncbi_module, "PIPELINE_SETTINGS", None)
+
+
+def test_get_set_settings(test_settings: NcbiSettings) -> None:
+    """Test setting and retrieval of settings."""
+    assert ncbi_module.PIPELINE_SETTINGS is None
+    with pytest.raises(RuntimeError, match="Pipeline settings have not been initialised"):
+        get_settings()
+
+    set_settings(test_settings)
+    assert test_settings == ncbi_module.PIPELINE_SETTINGS
+    assert get_settings() == test_settings
+
+    set_settings(None)  # type: ignore[reportArgumentType]
+    assert ncbi_module.PIPELINE_SETTINGS is None
+    with pytest.raises(RuntimeError, match="Pipeline settings have not been initialised"):
+        get_settings()
+
+
+@pytest.mark.parametrize(
+    ("batch_size", "parsed_batch_size"),
+    [
+        ("10", 10),
+        (10, 10),
+        (None, MAX_IDS_PER_QUERY),
+    ],
+)
+def test_settings_valid_batch_size(batch_size: int | str | None, parsed_batch_size: int) -> None:
+    """Ensure that a valid batch size is correctly parsed."""
+    if batch_size is None:
+        settings: NcbiSettings = make_settings_autofill_config(NcbiSettings)  # type: ignore[reportReturnType]
+    else:
+        settings: NcbiSettings = make_settings_autofill_config(NcbiSettings, batch_size=batch_size)  # type: ignore[reportReturnType]
+    assert settings.batch_size == parsed_batch_size
 
 
 @pytest.mark.parametrize(
@@ -115,9 +165,10 @@ def make_settings(**kwargs: str | int | bool) -> NcbiSettings:
     [
         ("0", "Input should be greater than or equal to 1"),
         ("-1", "Input should be greater than or equal to 1"),
-        ("1001", "Input should be less than or equal to 1000"),
+        ("1001", f"Input should be less than or equal to {MAX_IDS_PER_QUERY}"),
         ("notanint", "Input should be a valid integer"),
         ("", "Input should be a valid integer"),
+        ("1.2345", "Input should be a valid integer"),
     ],
 )
 @pytest.mark.parametrize("use_cliapp", [True, False])
@@ -131,12 +182,61 @@ def test_cli_invalid_batch_size_via_cli_raises(bad_batch_size: str, message: str
             make_settings_autofill_config(NcbiSettings, batch_size=bad_batch_size)
 
 
-def test_settings_all_params_set() -> None:
+@pytest.mark.parametrize(
+    ("query_type", "parsed_query_type"),
+    [
+        (ANNOTATION, ANNOTATION),
+        (DATASET, DATASET),
+        ("  ANNOTATION  ", ANNOTATION),
+        ("\n\nDataset\t\n", DATASET),
+        ("   ", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_cli_valid_query_type(query_type: str | None, parsed_query_type: str | None) -> None:
+    """Ensure that a valid batch size is correctly parsed."""
+    settings: NcbiSettings = make_settings_autofill_config(NcbiSettings, query_type=query_type)  # type: ignore[reportReturnType]
+    assert settings.query_type == parsed_query_type
+
+    if query_type is None:
+        alt_settings: NcbiSettings = make_settings_autofill_config(NcbiSettings)  # type: ignore[reportReturnType]
+        assert alt_settings.query_type == parsed_query_type
+
+
+STRING_MATCH_MESSAGE = re.escape("String should match pattern '^(dataset|annotation)$'")
+
+
+@pytest.mark.parametrize(
+    "query_type",
+    [
+        "annot",
+        "anotation",
+        "data set",
+    ],
+)
+@pytest.mark.parametrize("use_cliapp", [True, False])
+def test_cli_invalid_query_type(query_type: str, use_cliapp: bool) -> None:
+    """Ensure that an invalid batch size passed via CLI raises an error."""
+    if use_cliapp:
+        with pytest.raises(ValidationError, match=STRING_MATCH_MESSAGE):
+            CliApp.run(NcbiSettings, cli_args=["--query-type", query_type])
+    else:
+        with pytest.raises(ValidationError, match=STRING_MATCH_MESSAGE):
+            make_settings_autofill_config(NcbiSettings, query_type=query_type)
+
+
+@pytest.mark.parametrize(
+    ("settings", "reconciled"),
+    [(TEST_NCBI_SETTINGS, TEST_NCBI_SETTINGS_RECONCILED), (TEST_NCBI_SETTINGS_V1, TEST_NCBI_SETTINGS_RECONCILED_V1)],
+)
+def test_settings_all_params_set(settings: frozendict, reconciled: frozendict) -> None:
     """Ensure that settings are set correctly when all args are specified."""
-    s = make_settings_autofill_config(NcbiSettings, **TEST_NCBI_SETTINGS)
-    check_settings(s, TEST_NCBI_SETTINGS_RECONCILED)
+    s = make_settings_autofill_config(NcbiSettings, **settings)
+    check_settings(s, reconciled)
 
 
+@pytest.mark.parametrize("query_type", ARG_ALIAS_QUERY_TYPE)
 @pytest.mark.parametrize("batch_size", ARG_ALIAS_BATCH_SIZE)
 @pytest.mark.parametrize("dev_mode", ARG_ALIASES["dev_mode"])
 @pytest.mark.parametrize("input_dir", ARG_ALIASES["input_dir"])
@@ -147,6 +247,7 @@ def test_settings_all_params_set() -> None:
     ARG_ALIASES["use_output_dir_for_pipeline_metadata"],
 )
 def test_cli_all_variants(  # noqa: PLR0913
+    query_type: str,
     batch_size: str,
     dev_mode: str,
     input_dir: str,
@@ -160,6 +261,8 @@ def test_cli_all_variants(  # noqa: PLR0913
         NcbiSettings,
         dlt_config=dlt_config,
         cli_args=[
+            query_type,
+            "",
             batch_size,
             BATCH_SIZE_STRING,
             dev_mode,
@@ -224,8 +327,9 @@ def check_annotation_report(annotation_report: list[dict[str, Any]] | None, asse
 def test_assembly_list_resource() -> None:
     """Test that the assembly list resource yields the expected assembly IDs."""
     settings: NcbiSettings = make_settings_autofill_config(NcbiSettings, input_dir="tests/data/ncbi_rest_api/input")  # type: ignore[reportAssignmentType]
+    set_settings(settings)
 
-    ass_list = list(assembly_list(settings))
+    ass_list = list(assembly_list())
     assert ass_list == [
         "GCF_029958545.3",
         "GCF_029958565.3",
@@ -270,7 +374,8 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
             "raw_data_dir": "/some/dir/raw_data",
             "use_destination": "local_fs",
             "use_output_dir_for_pipeline_metadata": bool(use_pipeline_dir),
-            "batch_size": 1000,
+            "batch_size": MAX_IDS_PER_QUERY,
+            "query_type": None,
         },
     )
 
@@ -280,7 +385,6 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
     mock_dlt.destination.assert_called_once()
     assert mock_dlt.destination.call_args_list[0].kwargs == {"max_table_nesting": 0}
     assert mock_dlt.destination.call_args_list[0].args == ("local_fs",)
-    mock_assembly_list.bind.assert_called_once_with(settings)
 
     mock_dlt.pipeline.assert_called_once()
     assert mock_dlt.pipeline.call_args.kwargs["destination"] == mock_dlt.destination.return_value
@@ -346,14 +450,16 @@ def test_get_annotation_report_invalid_id() -> None:
     assert get_annotation_report(INVALID_ID) is None
 
 
-def test_get_assembly_reports_empty_id_list() -> None:
+def test_get_assembly_reports_empty_id_list(test_settings: NcbiSettings) -> None:
     """Ensure that getting reports for an empty list returns nothing."""
+    set_settings(test_settings)
     assert get_assembly_reports([]) == {}
 
 
 @pytest.mark.vcr
-def test_get_assembly_reports() -> None:
+def test_get_assembly_reports(test_settings: NcbiSettings) -> None:
     """Test the retrieval of annotation and dataset reports."""
+    set_settings(test_settings)
     assembly_reports = get_assembly_reports(ALL_IDS)
     assert set(assembly_reports) == {DATASET, ANNOTATION, ERROR}
     for datatype in [DATASET, ANNOTATION]:
@@ -363,6 +469,41 @@ def test_get_assembly_reports() -> None:
         check_annotation_report(assembly_reports[ANNOTATION][assembly_id], assembly_id)
         check_dataset_report(assembly_reports[DATASET][assembly_id], assembly_id)
     assert assembly_reports[ERROR] == []
+
+
+@pytest.mark.parametrize("query_type", [None, DATASET, ANNOTATION])
+def test_get_assembly_reports_mock_subs(query_type: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure that the correct subs are called and the correct subs are not called with the query_type parameter."""
+    settings: NcbiSettings = make_settings_autofill_config(NcbiSettings, query_type=query_type)  # type: ignore[reportAssignmentType]
+    set_settings(settings)
+    mock_get_annotation_report = MagicMock(return_value={"this": "that"})
+    mock_get_dataset_reports = MagicMock(return_value=dict.fromkeys(ALL_IDS, "blob"))
+
+    monkeypatch.setattr(ncbi_module, "get_annotation_report", mock_get_annotation_report)
+    monkeypatch.setattr(ncbi_module, "get_dataset_reports", mock_get_dataset_reports)
+
+    output = get_assembly_reports(ALL_IDS)
+    assert output[ERROR] == []
+
+    if query_type == ANNOTATION:
+        mock_get_dataset_reports.assert_not_called()
+        assert DATASET not in output
+
+    else:
+        mock_get_dataset_reports.assert_called_once_with(ALL_IDS)
+        assert output[DATASET] == dict.fromkeys(ALL_IDS, "blob")
+
+    if query_type == DATASET:
+        mock_get_annotation_report.assert_not_called()
+        assert ANNOTATION not in output
+    else:
+        assert mock_get_annotation_report.call_args_list == [
+            call(
+                n,
+            )
+            for n in ALL_IDS
+        ]
+        assert output[ANNOTATION] == {this_id: {"this": "that"} for this_id in ALL_IDS}
 
 
 RECORDED_ERRORS = {
@@ -412,8 +553,9 @@ RECORDED_ERRORS = {
 @mock.patch("tenacity.nap.time.sleep", MagicMock())
 @pytest.mark.default_cassette("test_get_assembly_reports_annotation_report_errors.yaml")
 @pytest.mark.vcr
-def test_get_assembly_reports_annotation_report_errors() -> None:
+def test_get_assembly_reports_annotation_report_errors(test_settings: NcbiSettings) -> None:
     """Test the retrieval of assembly data when errors occur fetching annotation reports."""
+    set_settings(test_settings)
     original_get_annotation_report = get_annotation_report
 
     def patched_get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:
@@ -451,8 +593,9 @@ def test_get_assembly_reports_annotation_report_errors() -> None:
 
 @mock.patch("tenacity.nap.time.sleep", MagicMock())
 @pytest.mark.vcr
-def test_get_assembly_reports_dataset_report_errors() -> None:
+def test_get_assembly_reports_dataset_report_errors(test_settings: NcbiSettings) -> None:
     """Test the retrieval of assembly data when an error occurs fetching dataset reports."""
+    set_settings(test_settings)
     assembly_reports = get_assembly_reports(ALL_IDS)
     assert set(assembly_reports) == {DATASET, ANNOTATION, ERROR}
     for datatype in [DATASET, ANNOTATION]:
@@ -467,8 +610,9 @@ def test_get_assembly_reports_dataset_report_errors() -> None:
 
 @mock.patch("tenacity.nap.time.sleep", MagicMock())
 @pytest.mark.vcr
-def test_get_assembly_reports_total_wipeout() -> None:
+def test_get_assembly_reports_total_wipeout(test_settings: NcbiSettings) -> None:
     """Test the retrieval of assembly data when all queries fail."""
+    set_settings(test_settings)
     original_get_annotation_report = get_annotation_report
 
     def patched_get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:

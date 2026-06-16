@@ -91,4 +91,4 @@ jobs:
       - name: Run local tests
         shell: bash
         continue-on-error: false
-        run: uv run pytest -m "not requires_spark"
+        run: uv run pytest -m "not requires_spark and not requires_ceph"

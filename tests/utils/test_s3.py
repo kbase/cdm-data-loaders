@@ -1,15 +1,15 @@
 """Tests for s3_utils.py using moto to mock AWS S3."""
 
-import functools
 import io
-from collections.abc import Callable, Generator
+import logging
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import boto3
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, PartialCredentialsError
 from moto import mock_aws
 from requests.exceptions import ConnectionError as ConnError
 from requests.exceptions import HTTPError
@@ -18,8 +18,10 @@ import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.utils.s3 import (
     CDM_LAKE_BUCKET,
     DEFAULT_EXTRA_ARGS,
+    copy_directory,
     copy_object,
     delete_object,
+    delete_objects,
     download_file,
     get_s3_client,
     head_object,
@@ -31,8 +33,10 @@ from cdm_data_loaders.utils.s3 import (
     upload_dir,
     upload_file,
 )
+from tests.s3_helpers import strip_checksum_algorithm
 
-AWS_REGION = "us-east-1"
+HTTP_200 = 200
+HTTP_204 = 204
 
 SAMPLE_FILES = [
     "dir_one/file1.txt",
@@ -49,23 +53,39 @@ FILES_IN_BUCKETS = {
 }
 BUCKETS = [CDM_LAKE_BUCKET, ALT_BUCKET]
 
+HTTP_STATUS_OK = 200
+HTTP_STATUS_NO_CONTENT = 204
+SIZE_HELLO = 5
+SIZE_DATA = 4
+
 
 @pytest.fixture
-def mock_s3_client() -> Generator[Any, Any]:
+def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[Any, Any]:
     """Yield a mocked S3 client with both valid buckets created.
 
     The function get_s3_client() is patched to ensure that all module functions use this client.
 
     Resets the cached client before and after to prevent state leaking between tests.
     """
+    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    boto3.DEFAULT_SESSION = None
+
     with mock_aws():
-        client = boto3.client("s3", region_name=AWS_REGION)
+        reset_s3_client()
+        client = boto3.client("s3")
         for bucket in FILES_IN_BUCKETS:
             client.create_bucket(Bucket=bucket)
 
+        # delete any existing client
         reset_s3_client()
         assert s3_utils._s3_client is None  # noqa: SLF001
 
+        # patch in the client that we have just created
         with patch.object(s3_utils, "get_s3_client", return_value=client):
             yield client
 
@@ -126,78 +146,179 @@ def populate_mock_s3(client: Any, file_list_by_bucket: dict[str, list[str]]) -> 
             client.head_object(Bucket=bucket, Key=file)
 
 
+def prep_client_init(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set up environment variables to allow get_s3_client to initialize without error."""
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+    # set up env vars to ensure that the argument takes precedence
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://env-endpoint.com")
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "aws_access_key_id_env_var")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws_secret_access_key_env_var")
+
+
 # Client creation / reset
+@mock_aws
 @pytest.mark.s3
-def test_get_s3_client_raises_on_missing_args() -> None:
-    """Verify that get_s3_client raises ValueError when required arguments are absent."""
-    reset_s3_client()
-    with pytest.raises(ValueError, match="missing arguments"):
-        get_s3_client(args={"endpoint_url": "http://localhost", "aws_access_key_id": "key"})
+@pytest.mark.parametrize("endpoint_url", ["http://localhost", None])
+def test_get_s3_client_success_via_args(endpoint_url: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that get_s3_client creates a client with the correct credentials and endpoint URL using args for the creds."""
+    prep_client_init(monkeypatch)
+
+    args = {
+        "aws_access_key_id": "aws_access_key_id_argument",
+        "aws_secret_access_key": "aws_secret_access_key_argument",
+        "endpoint_url": endpoint_url,
+    }
+
+    client = get_s3_client(args)
+    assert client is not None
+    credentials = client._request_signer._credentials  # noqa: SLF001
+    assert credentials.access_key == "aws_access_key_id_argument"
+    assert credentials.secret_key == "aws_secret_access_key_argument"  # noqa: S105
+    expected_endpoint = endpoint_url or "http://env-endpoint.com"
+    assert client.meta.endpoint_url == expected_endpoint
+
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
 
 
+@mock_aws
 @pytest.mark.s3
-def test_get_s3_client_returns_client_with_valid_args() -> None:
-    """Verify that get_s3_client returns a usable client when all required args are provided."""
-    reset_s3_client()
-    with mock_aws():
-        client = get_s3_client(
-            args={
-                "endpoint_url": "http://localhost:9000",
-                "aws_access_key_id": "key",
-                "aws_secret_access_key": "secret",
-            }
-        )
-        assert client is not None
+@pytest.mark.parametrize("endpoint_url", ["http://localhost", None])
+def test_get_s3_client_success_via_env(endpoint_url: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that get_s3_client creates a client with the correct credentials and endpoint URL using env vars for the creds."""
+    prep_client_init(monkeypatch)
+
+    args = {
+        "endpoint_url": endpoint_url,
+    }
+
+    client = get_s3_client(args)
+    assert client is not None
+    credentials = client._request_signer._credentials  # noqa: SLF001
+    assert credentials.access_key == "aws_access_key_id_env_var"
+    assert credentials.secret_key == "aws_secret_access_key_env_var"  # noqa: S105
+    expected_endpoint = endpoint_url or "http://env-endpoint.com"
+    assert client.meta.endpoint_url == expected_endpoint
+
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
 
 
+@mock_aws
+@pytest.mark.s3
+@pytest.mark.parametrize(
+    ("aws_access_key_id", "aws_secret_access_key"), [("aws_access_key_id", None), (None, "aws_secret_access_key")]
+)
+def test_get_s3_client_incomplete_creds_via_args(
+    aws_access_key_id: str | None, aws_secret_access_key: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify that get_s3_client raises ValueError when only one of aws_access_key_id or aws_secret_access_key is provided via arguments."""
+    prep_client_init(monkeypatch)
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+    args = {
+        "aws_access_key_id": aws_access_key_id,
+        "aws_secret_access_key": aws_secret_access_key,
+    }
+    with pytest.raises(
+        ValueError,
+        match="Cannot initialise s3 client: aws_access_key_id and aws_secret_access_key must be provided together",
+    ):
+        get_s3_client(args)
+    assert s3_utils._s3_client is None  # noqa: SLF001
+
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+
+
+@mock_aws
+@pytest.mark.s3
+@pytest.mark.parametrize(
+    ("aws_access_key_id", "aws_secret_access_key", "error_type", "error_msg"),
+    [
+        (
+            "aws_access_key_id",
+            None,
+            PartialCredentialsError,
+            "Partial credentials found in env, missing: AWS_SECRET_ACCESS_KEY",
+        ),
+        (None, "aws_secret_access_key", ValueError, "missing configuration values: aws_access_key_id"),
+        (None, None, ValueError, "missing configuration values: aws_access_key_id, aws_secret_access_key"),
+    ],
+)
+def test_get_s3_client_incomplete_creds_via_env(
+    aws_access_key_id: str | None,
+    aws_secret_access_key: str | None,
+    error_type: type[Exception],
+    error_msg: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that get_s3_client raises ValueError when only one of aws_access_key_id or aws_secret_access_key is provided."""
+    prep_client_init(monkeypatch)
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+    args = {
+        "aws_access_key_id": aws_access_key_id,
+        "aws_secret_access_key": aws_secret_access_key,
+    }
+    for key, value in args.items():
+        if value:
+            monkeypatch.setenv(key.upper(), value)
+        else:
+            monkeypatch.delenv(key.upper(), raising=False)
+    # ensure that the AWS config file cannot accidentally be used to provide creds
+    monkeypatch.setenv("AWS_CONFIG_FILE", "/dev/null")
+
+    with pytest.raises(
+        error_type,
+        match=error_msg,
+    ):
+        get_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+
+
+@mock_aws
 @pytest.mark.s3
 def test_get_s3_client_returns_same_instance() -> None:
     """Verify that repeated calls to get_s3_client return the exact same cached client instance."""
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
-    with mock_aws():
-        args = {
+
+    args = {
+        "endpoint_url": "http://localhost:9000",
+        "aws_access_key_id": "key",
+        "aws_secret_access_key": "secret",
+    }
+    client_a = get_s3_client(args)  # type: ignore[reportArgumentType]
+    assert s3_utils._s3_client is not None  # noqa: SLF001
+    # call again with no args - should return the stored version
+    client_b = get_s3_client()
+    assert client_a is client_b
+    # call again with invalid args - should return the stored version, ignoring args
+    client_c = get_s3_client(args={"this": "that", "pip": "pop"})
+    assert client_c == client_a
+    # reset the client and call
+    reset_s3_client()
+    assert s3_utils._s3_client is None  # noqa: SLF001
+    client_d = get_s3_client(
+        {
             "endpoint_url": "http://localhost:9000",
-            "aws_access_key_id": "key",
-            "aws_secret_access_key": "secret",
+            "aws_access_key_id": "not a key",
+            "aws_secret_access_key": "not a secret",
         }
-        client_a = get_s3_client(args=args)
-        assert s3_utils._s3_client is not None  # noqa: SLF001
-        # call again with no args - should return the stored version
-        client_b = get_s3_client()
-        assert client_a is client_b
-        # call again with invalid args - should return the stored version, ignoring args
-        client_c = get_s3_client(args={"this": "that", "pip": "pop"})
-        assert client_c == client_a
-        # reset the client and call
-        reset_s3_client()
-        assert s3_utils._s3_client is None  # noqa: SLF001
-        client_d = get_s3_client(
-            {
-                "endpoint_url": "http://localhost:9000",
-                "aws_access_key_id": "not a key",
-                "aws_secret_access_key": "not a secret",
-            }
-        )
-        assert client_d != client_a
+    )
+    assert client_d != client_a
 
     reset_s3_client()
     assert s3_utils._s3_client is None  # noqa: SLF001
 
 
-@pytest.mark.s3
-def test_get_s3_client_populates_from_environment() -> None:
-    # set up the environment
-
-    pass
-
-
 # split_s3_path
-
 PATH = "path"
 TO = "to"
 TO_FILE = "to/file.txt"
@@ -237,7 +358,6 @@ INVALID_PATH_ERRORS = {
 
 
 @pytest.mark.parametrize("invalid_path", list(INVALID_PATH_ERRORS.keys()))
-@pytest.mark.s3
 def test_split_s3_path_errors(invalid_path: str) -> None:
     """Ensure that an error is thrown if an invalid s3 path is passed in."""
     with pytest.raises(ValueError, match=INVALID_PATH_ERRORS[invalid_path]):
@@ -245,7 +365,6 @@ def test_split_s3_path_errors(invalid_path: str) -> None:
 
 
 @pytest.mark.parametrize("valid_path", list(EXPECTED.keys()))
-@pytest.mark.s3
 def test_split_s3_path_success(valid_path: str) -> None:
     """Verify that a valid path is correctly split into bucket and key."""
     (bucket, path) = split_s3_path(valid_path)
@@ -316,7 +435,7 @@ EXPECTED_FILE_LIST = {
 }
 
 
-# TODO: use a single fixture for all these tests
+# NOTE: These tests currently compose multiple fixtures explicitly for readability.
 @pytest.mark.parametrize("dir_path", EXPECTED_FILE_LIST.keys())
 @pytest.mark.s3
 def test_list_matching_objects_returns_more_than_1000_entries(
@@ -342,13 +461,14 @@ def test_head_object_and_object_exists_true_and_false(mock_s3_client: Any, proto
     for bucket, file_list in FILES_IN_BUCKETS.items():
         for f in file_list:
             output = head_object(f"{protocol}{bucket}/{f}")
-            assert output.get("ResponseMetadata", {}).get("HTTPStatusCode") == 200
+            assert output is not None
+            assert isinstance(output["ContentLength"], int)
             assert object_exists(f"{protocol}{bucket}/{f}") is True
 
         nonexistent_file = f"{protocol}{bucket}/a-file-i-just-made-up.txt"
         assert object_exists(nonexistent_file) is False
-        with pytest.raises(ClientError, match=r"An error occurred \(404\) when calling the HeadObject operation"):
-            head_object(nonexistent_file)
+        with pytest.raises(ClientError, match="404"):
+            _ = head_object(nonexistent_file)
 
 
 @pytest.mark.parametrize("s3_path", ["absent", "dir_one", "dir_one/", "dir_one/file1.tnt"])
@@ -386,14 +506,14 @@ def test_upload_file_uses_custom_object_name(mock_s3_client: Any, sample_file: P
 
 
 @pytest.mark.s3
-def test_upload_file_skips_when_already_present(
-    mock_s3_client: Any, sample_file: Path, capsys: pytest.CaptureFixture
-) -> None:
-    """Verify that uploading a file that already exists is skipped and returns True."""
+def test_upload_file_skips_when_already_present(mock_s3_client: Any, sample_file: Path) -> None:
+    """Verify that uploading a file that already exists is skipped, returns True, and leaves the object unchanged."""
     mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
     result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads")
     assert result is True
-    assert "File already present" in capsys.readouterr().out
+    # The existing object must not have been overwritten
+    obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}")
+    assert obj["Body"].read() == b"old"
 
 
 @pytest.mark.usefixtures("mock_s3_client")
@@ -530,7 +650,7 @@ def test_stream_to_s3_uploads_large_file(mock_s3_client: Any) -> None:
 
 
 @pytest.mark.skip("TODO: add test(s)")
-def test_accepts_custom_requests_implementation() -> None:
+def test_stream_to_s3_accepts_custom_requests_implementation() -> None:
     """A subclassed or alternate requests module works as a drop-in."""
     # TODO: add test here?
 
@@ -617,7 +737,7 @@ def test_download_file_does_not_clobber_existing_file_to_mkdir(mock_s3_client: A
 
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
-def test_download_file_does_not_exist(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+def test_download_file_does_not_exist(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """Ensure that attempting to download a file that does not exist raises an error."""
     bucket = BUCKETS[0]
     key = "to/the/door.txt"
@@ -629,7 +749,9 @@ def test_download_file_does_not_exist(tmp_path: Path, capsys: pytest.CaptureFixt
     ):
         download_file(f"{bucket}/{key}", tmp_path / "file.txt")
 
-    assert "File not found" in capsys.readouterr().out
+    last_log_message = caplog.records[-1]
+    assert "File not found" in last_log_message.message
+    assert last_log_message.levelno == logging.ERROR
 
 
 # TODO: Missing tests
@@ -678,40 +800,22 @@ def test_upload_dir_raises_on_empty_destination(sample_dir: Path) -> None:
         upload_dir(sample_dir, "")
 
 
-# FIXME: once moto supports CRC64NVME, this can be removed
-def strip_checksum_algorithm(method: Callable):
-    """Wrap a boto3 S3 method to remove the ChecksumAlgorithm argument before calling moto.
-
-    Moto does not implement CRC64NVME checksums, so any call that includes
-    ChecksumAlgorithm='CRC64NVME' would fail. This wrapper silently drops the
-    argument so the rest of the call proceeds normally against the moto backend.
-    """
-
-    @functools.wraps(method)
-    def wrapper(*args, **kwargs):
-        """Remove the ChecksumAlgorithm argument from the call."""
-        kwargs.pop("ChecksumAlgorithm", None)
-        return method(*args, **kwargs)
-
-    return wrapper
-
-
 @pytest.fixture
-def mocked_s3_client_no_checksum(mock_s3_client: Any) -> Generator[Any, Any]:
+def mocked_s3_client_no_checksum(mock_s3_client: Any) -> Any:
     """Yield the mocked S3 client with copy_object patched to strip ChecksumAlgorithm.
 
     This works around the moto limitation of not supporting CRC64NVME checksums,
     allowing copy_object calls that include ChecksumAlgorithm to succeed.
     """
     mock_s3_client.copy_object = strip_checksum_algorithm(mock_s3_client.copy_object)
-    yield mock_s3_client
+    return mock_s3_client
 
 
 # copy_object
 @pytest.mark.parametrize("destination", BUCKETS)
 @pytest.mark.s3
-def test_copy_file(mocked_s3_client_no_checksum: Any, destination: str) -> None:
-    """Verify that copy_file copies an object to a new key within the same bucket."""
+def test_copy_object(mocked_s3_client_no_checksum: Any, destination: str) -> None:
+    """Verify that copy_object copies an object to a new key within the same bucket."""
     mocked_s3_client_no_checksum.put_object(Bucket=CDM_LAKE_BUCKET, Key="src/file.txt", Body=b"copy me")
     assert object_exists(f"{CDM_LAKE_BUCKET}/src/file.txt")
     response = copy_object(f"{CDM_LAKE_BUCKET}/src/file.txt", f"{destination}/dst/path/to/file.txt")
@@ -722,7 +826,27 @@ def test_copy_file(mocked_s3_client_no_checksum: Any, destination: str) -> None:
 
     obj = mocked_s3_client_no_checksum.get_object(Bucket=destination, Key="dst/path/to/file.txt")
     assert obj["Body"].read() == b"copy me"
-    assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
+    assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_200
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_copy_object_source_object_nonexistent() -> None:
+    """Ensure that the code throws an error if the source object does not exist."""
+    s3_path = f"{CDM_LAKE_BUCKET}/some/path/to/file"
+    assert object_exists(s3_path) is False
+    with pytest.raises(Exception, match="The specified key does not exist"):
+        copy_object(s3_path, f"{CDM_LAKE_BUCKET}/a/different/path/to/file")
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_copy_object_source_bucket_nonexistent() -> None:
+    """Ensure that the code throws an error if the bucket does not exist."""
+    s3_path = "some-bucket/some/path/to/file"
+    assert object_exists(s3_path) is False
+    with pytest.raises(Exception, match="The specified bucket does not exist"):
+        copy_object(s3_path, f"{CDM_LAKE_BUCKET}/a/different/path/to/file")
 
 
 @pytest.mark.s3
@@ -735,14 +859,129 @@ def test_copy_file_source_object_nonexistent() -> None:
         copy_object(s3_path, f"{CDM_LAKE_BUCKET}/a/different/path/to/file")
 
 
+# copy_directory tests
+def put_objects(mock_s3_client: Any, bucket: str, keys: list[str], body: bytes = b"data") -> None:
+    """Helper to seed objects into a bucket."""
+    for key in keys:
+        mock_s3_client.put_object(Bucket=bucket, Key=key, Body=body)
+
+
+def list_keys(mock_s3_client: Any, bucket: str, prefix: str = "") -> set[str]:
+    """Helper to list all keys in a bucket under a prefix."""
+    paginator = mock_s3_client.get_paginator("list_objects_v2")
+    keys = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        keys.extend(obj["Key"] for obj in page.get("Contents", []))
+    return set(keys)
+
+
+@pytest.mark.s3
+@pytest.mark.parametrize("source_suffix", ["", "/"])
+@pytest.mark.parametrize("dest_suffix", ["", "/"])
+def test_copy_directory_copies_all_objects_to_dest(
+    mocked_s3_client_no_checksum: Any, source_suffix: str, dest_suffix: str
+) -> None:
+    """Verify that all objects under the source prefix are present in the successes dict.
+
+    Ensure that copy works correctly with or without a slash at the end of the directory name.
+    """
+    mock_s3_client = mocked_s3_client_no_checksum
+    populate_mock_s3(mock_s3_client, {CDM_LAKE_BUCKET: FILES_IN_BUCKETS[CDM_LAKE_BUCKET]})
+    source_bucket_files = list_keys(mock_s3_client, CDM_LAKE_BUCKET)
+    assert set(source_bucket_files) == set(SAMPLE_FILES)
+    dest_bucket_files = list_keys(mock_s3_client, ALT_BUCKET)
+    assert dest_bucket_files == set()
+
+    successes, errors = copy_directory(
+        f"s3://{CDM_LAKE_BUCKET}/dir_one{source_suffix}", f"s3://{ALT_BUCKET}/some/destination/dir{dest_suffix}"
+    )
+
+    assert errors == {}
+    expected_files = {
+        f"{CDM_LAKE_BUCKET}/{f}": f"{ALT_BUCKET}/some/destination/dir{f.replace('dir_one', '')}" for f in SAMPLE_FILES
+    }
+    assert successes == expected_files
+    # ensure that the original files are still in place
+    assert set(list_keys(mock_s3_client, CDM_LAKE_BUCKET)) == set(SAMPLE_FILES)
+    # destination should have new files from the source
+    assert set(list_keys(mock_s3_client, ALT_BUCKET)) == {
+        f.removeprefix(f"{ALT_BUCKET}/") for f in expected_files.values()
+    }
+
+    # check the content
+    for src, dest in expected_files.items():
+        src_resp = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key=src.removeprefix(f"{CDM_LAKE_BUCKET}/"))
+        assert src_resp["Body"].read() == src.encode()
+        dest_resp = mock_s3_client.get_object(Bucket=ALT_BUCKET, Key=dest.removeprefix(f"{ALT_BUCKET}/"))
+        assert dest_resp["Body"].read() == src.encode()
+
+
+@pytest.mark.s3
+def test_copy_directory_copy_within_same_bucket(mock_s3_client: Any) -> None:
+    """Verify that copying between two prefixes within the same bucket works correctly."""
+    populate_mock_s3(mock_s3_client, {CDM_LAKE_BUCKET: ["foo/a.txt", "foo/b.txt"]})
+
+    successes, errors = copy_directory(f"s3://{CDM_LAKE_BUCKET}/foo", f"s3://{CDM_LAKE_BUCKET}/bar")
+
+    assert successes == {"cdm-lake/foo/a.txt": "cdm-lake/bar/a.txt", "cdm-lake/foo/b.txt": "cdm-lake/bar/b.txt"}
+    assert errors == {}
+    assert list_keys(mock_s3_client, CDM_LAKE_BUCKET, prefix="bar") == {"bar/a.txt", "bar/b.txt"}
+    assert list_keys(mock_s3_client, CDM_LAKE_BUCKET) == {"foo/a.txt", "foo/b.txt", "bar/a.txt", "bar/b.txt"}
+
+
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
-def test_copy_file_source_bucket_nonexistent() -> None:
-    """Ensure that the code throws an error if the bucket does not exist."""
-    s3_path = "some-bucket/some/path/to/file"
-    assert object_exists(s3_path) is False
+def test_copy_directory_empty_directory_returns_empty_dicts() -> None:
+    """Verify that when the source prefix matches no objects, both the successes and errors dictionaries are returned empty."""
+    successes, errors = copy_directory(f"s3://{CDM_LAKE_BUCKET}/nonexistent/", f"s3://{ALT_BUCKET}/bar/")
+
+    assert successes == {}
+    assert errors == {}
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_copy_directory_does_not_copy_objects_outside_prefix(mock_s3_client: Any) -> None:
+    """Verify that objects whose keys share a prefix string but are not under the source directory.
+
+    Example: 'foobar/' when copying 'foo/'.
+    """
+    populate_mock_s3(
+        mock_s3_client,
+        {
+            CDM_LAKE_BUCKET: [
+                "foo/a.txt",
+                "foobar/should-not-be-copied.txt",
+            ]
+        },
+    )
+    copy_directory(f"s3://{CDM_LAKE_BUCKET}/foo", f"s3://{ALT_BUCKET}/bar")
+    assert list_keys(mock_s3_client, ALT_BUCKET) == {"bar/a.txt"}
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_copy_directory_missing_source_bucket_returns_error() -> None:
+    """Verify that when the source bucket does not exist, botocore throws an error."""
+    # FIXME: throws a s3.Client.exceptions.NoSuchBucket
     with pytest.raises(Exception, match="The specified bucket does not exist"):
-        copy_object(s3_path, f"{CDM_LAKE_BUCKET}/a/different/path/to/file")
+        copy_directory("s3://nonexistent-bucket/bar", f"s3://{CDM_LAKE_BUCKET}/foo")
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_copy_directory_missing_dest_bucket_records_errors(mock_s3_client: Any) -> None:
+    """Verify that when the destination bucket does not exist, the errors dict contains all objects under the original dir."""
+    # FIXME: throw a bucket not exists error?
+    populate_mock_s3(mock_s3_client, {CDM_LAKE_BUCKET: ["foo/a.txt", "foo/b.txt"]})
+
+    # with pytest.raises(FileNotFoundError, match="The specified bucket does not exist"):
+    successes, errors = copy_directory(f"s3://{CDM_LAKE_BUCKET}/foo", "s3://nonexistent-bucket/bar")
+
+    assert successes == {}
+    assert f"{CDM_LAKE_BUCKET}/foo/a.txt" in errors
+    assert f"{CDM_LAKE_BUCKET}/foo/b.txt" in errors
+    assert isinstance(errors[f"{CDM_LAKE_BUCKET}/foo/a.txt"], Exception)
 
 
 # delete_object
@@ -757,12 +996,125 @@ def test_delete_object_removes_object(mock_s3_client: Any, bucket: str, protocol
 
     resp = delete_object(s3_path)
     assert object_exists(s3_path) is False
-    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == 204
+    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_204
 
     # retry the deletion
     resp = delete_object(s3_path)
     assert object_exists(s3_path) is False
-    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == 204
+    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_204
+
+
+# upload_file with metadata
+@pytest.mark.parametrize("bucket", BUCKETS)
+@pytest.mark.s3
+def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: Any, sample_file: Path, bucket: str) -> None:
+    """Verify that upload_file with metadata stores user metadata on the uploaded object."""
+    metadata = {"md5": "abc123", "source": "ncbi"}
+    result = upload_file(sample_file, f"{bucket}/uploads", user_metadata=metadata)
+    assert result is True
+
+    resp = mock_s3_client.head_object(Bucket=bucket, Key=f"uploads/{sample_file.name}")
+    assert resp["Metadata"]["md5"] == "abc123"
+    assert resp["Metadata"]["source"] == "ncbi"
+
+
+@pytest.mark.s3
+def test_upload_file_with_metadata_custom_object_name(mock_s3_client: Any, sample_file: Path) -> None:
+    """Verify that the object_name parameter overrides the filename."""
+    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", user_metadata={"k": "v"}, object_name="renamed.txt")
+    assert result is True
+    obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key="uploads/renamed.txt")
+    assert obj["Body"].read() == b"hello s3"
+
+
+@pytest.mark.s3
+def test_upload_file_with_metadata_overwrites_existing(mock_s3_client: Any, sample_file: Path) -> None:
+    """Verify that upload_file with metadata uploads even when the object already exists."""
+    mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
+    result = upload_file(sample_file, f"{CDM_LAKE_BUCKET}/uploads", user_metadata={"new": "true"})
+    assert result is True
+    obj = mock_s3_client.get_object(Bucket=CDM_LAKE_BUCKET, Key=f"uploads/{sample_file.name}")
+    assert obj["Body"].read() == b"hello s3"
+
+
+@pytest.mark.usefixtures("mock_s3_client")
+@pytest.mark.s3
+def test_upload_file_with_metadata_raises_on_empty_destination(sample_file: Path) -> None:
+    """Verify ValueError when destination_dir is empty."""
+    with pytest.raises(ValueError, match="No destination directory"):
+        upload_file(sample_file, "", user_metadata={"k": "v"})
+
+
+@pytest.mark.usefixtures("mock_s3_client")
+@pytest.mark.parametrize("path_type", [str, Path])
+@pytest.mark.s3
+def test_upload_file_with_metadata_accepts_str_and_path(sample_file: Path, path_type: type[str] | type[Path]) -> None:
+    """Verify that upload_file with metadata accepts both str and Path."""
+    result = upload_file(path_type(sample_file), f"{CDM_LAKE_BUCKET}/uploads", user_metadata={})
+    assert result is True
+
+
+# head_object
+@pytest.mark.s3
+def test_head_object_returns_info(mock_s3_client: Any) -> None:
+    """Verify that head_object returns size, metadata, and checksum fields."""
+    mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key="info/file.txt", Body=b"hello", Metadata={"md5": "abc123"})
+    result = head_object(f"{CDM_LAKE_BUCKET}/info/file.txt")
+    assert result is not None
+    assert result["ContentLength"] == SIZE_HELLO
+    assert result["Metadata"]["md5"] == "abc123"
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_head_object_raises_for_missing() -> None:
+    """Verify that head_object returns None for a non-existent object."""
+    with pytest.raises(ClientError, match="404"):
+        _ = head_object(f"{CDM_LAKE_BUCKET}/does/not/exist.txt")
+
+
+@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
+@pytest.mark.s3
+def test_head_object_with_protocols(mock_s3_client: Any, protocol: str) -> None:
+    """Verify that head_object handles all valid protocol prefixes."""
+    mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key="proto/file.txt", Body=b"data")
+    result = head_object(f"{protocol}{CDM_LAKE_BUCKET}/proto/file.txt")
+    assert result is not None
+    assert result["ContentLength"] == SIZE_DATA
+
+
+# copy_object
+@pytest.mark.parametrize("destination", BUCKETS)
+@pytest.mark.s3
+def test_copy_object_preserves_user_metadata(mocked_s3_client_no_checksum: Any, destination: str) -> None:
+    """copy_object preserves source user metadata (MetadataDirective=COPY default)."""
+    mocked_s3_client_no_checksum.put_object(
+        Bucket=CDM_LAKE_BUCKET, Key="src/file.txt", Body=b"archive me", Metadata={"md5": "abc123"}
+    )
+    response = copy_object(
+        f"{CDM_LAKE_BUCKET}/src/file.txt",
+        f"{destination}/archive/file.txt",
+    )
+    assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_STATUS_OK
+
+    # source user metadata is preserved (MetadataDirective=COPY)
+    resp = mocked_s3_client_no_checksum.head_object(Bucket=destination, Key="archive/file.txt")
+    assert resp["Metadata"].get("md5") == "abc123"
+
+    # verify source still exists
+    assert object_exists(f"{CDM_LAKE_BUCKET}/src/file.txt")
+
+
+@pytest.mark.s3
+def test_copy_object_preserves_content(mocked_s3_client_no_checksum: Any) -> None:
+    """Verify that the content of the copied object matches the original."""
+    mocked_s3_client_no_checksum.put_object(Bucket=CDM_LAKE_BUCKET, Key="src/data.bin", Body=b"binary data")
+    copy_object(
+        f"{CDM_LAKE_BUCKET}/src/data.bin",
+        f"{CDM_LAKE_BUCKET}/dst/data.bin",
+    )
+    obj = mocked_s3_client_no_checksum.get_object(Bucket=CDM_LAKE_BUCKET, Key="dst/data.bin")
+    assert obj["Body"].read() == b"binary data"
 
 
 # delete_object - bucket does not exist
@@ -774,3 +1126,34 @@ def test_delete_object_no_such_bucket() -> None:
     assert object_exists(s3_path) is False
     with pytest.raises(Exception, match="The specified bucket does not exist"):
         delete_object(s3_path)
+
+
+# delete_objects
+@pytest.mark.s3
+def test_delete_objects_removes_all(mock_s3_client: Any) -> None:
+    """delete_objects removes every listed key in a single call."""
+    keys = ["bulk/a.txt", "bulk/b.txt", "bulk/c.txt"]
+    for k in keys:
+        mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key=k, Body=b"data")
+
+    errors = delete_objects(CDM_LAKE_BUCKET, keys)
+
+    assert errors == []
+    for k in keys:
+        assert object_exists(f"{CDM_LAKE_BUCKET}/{k}") is False
+
+
+@pytest.mark.s3
+def test_delete_objects_empty_list_is_noop(mock_s3_client: Any) -> None:
+    """delete_objects with an empty list makes no API call and returns no errors."""
+    mock_s3_client.put_object(Bucket=CDM_LAKE_BUCKET, Key="keep/me.txt", Body=b"safe")
+    errors = delete_objects(CDM_LAKE_BUCKET, [])
+    assert errors == []
+    assert object_exists(f"{CDM_LAKE_BUCKET}/keep/me.txt") is True
+
+
+@pytest.mark.s3
+def test_delete_objects_nonexistent_keys_no_error(mock_s3_client: Any) -> None:
+    """Deleting keys that don't exist returns no errors (S3 delete is idempotent)."""
+    errors = delete_objects(CDM_LAKE_BUCKET, ["ghost/a.txt", "ghost/b.txt"])
+    assert errors == []

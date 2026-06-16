@@ -7,15 +7,25 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from cdm_data_loaders.utils.gz import compress_file, compress_files, main
+from cdm_data_loaders.utils.gz import compress_file, compress_files, decompress_file, main
+
+TEMP_FILE_CONTENT = b"Hello, world!\nThis is a test."
 
 
 @pytest.fixture
 def temporary_file(tmp_path: Path) -> Path:
     """Create a temporary text file and return its path."""
     file_path = tmp_path / "sample.txt"
-    content = b"Hello, world!\nThis is a test."
-    file_path.write_bytes(content)
+    file_path.write_bytes(TEMP_FILE_CONTENT)
+    return file_path
+
+
+@pytest.fixture
+def temporary_gz(tmp_path: Path) -> Path:
+    """Create a temporary gzipped text file and return its path."""
+    file_path = tmp_path / "sample.txt.gz"
+    with gzip.open(file_path, "wb") as f:
+        f.write(TEMP_FILE_CONTENT)
     return file_path
 
 
@@ -29,8 +39,7 @@ def test_compress_file_creates_gzip(temporary_file: Path, caplog: pytest.LogCapt
     """Test that running compress file actually compresses a file."""
     # Ensure no .gz exists initially
     gz_path = temporary_file.with_suffix(temporary_file.suffix + ".gz")
-    if gz_path.exists():
-        gz_path.unlink()
+    assert not gz_path.exists()
 
     compress_file(temporary_file)
 
@@ -133,6 +142,91 @@ def test_compress_files_invalid_directory(tmp_path: Path) -> None:
     non_existent = tmp_path / "no_such_dir"
     with pytest.raises(FileNotFoundError, match=f"Directory {non_existent!s} not found"):
         compress_files(non_existent, "*")
+
+
+def test_decompress_file_creates_file(temporary_gz: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Test that running decompress file actually decompresses a file."""
+    # Ensure no decompressed file exists initially
+    decompressed_file = temporary_gz.with_suffix("")
+    assert not decompressed_file.exists()
+    assert temporary_gz.exists()
+
+    decompress_file(temporary_gz)
+
+    # Verify the decompressed file was created
+    assert decompressed_file.exists()
+
+    # compare content of the decompressed file
+    assert decompressed_file.read_bytes() == TEMP_FILE_CONTENT
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.INFO
+    assert f"Created output file {decompressed_file!s}" in caplog.records[0].message
+
+
+@pytest.mark.parametrize("file_name", ["data", "data.tar", "not_a_gz", "file.gz.bak"])
+def test_decompress_file_skips_non_gz_file(tmp_path: Path, file_name: str, caplog: pytest.LogCaptureFixture) -> None:
+    """Ensure that an existing decompressed file prevents decompress_file from running decompression."""
+    file_path = tmp_path / file_name
+    # attempt to decompress data.bin.gz
+    decompress_file(file_path)
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.INFO
+    assert f"File {file_path!s} does not end with .gz: skipping decompression" in caplog.records[0].message
+
+
+def test_decompress_file_skips_directory(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Ensure that if the supplied path is a directory, decompression does not occur."""
+    file_path = tmp_path / "some_directory.gz"
+    file_path.mkdir(parents=True, exist_ok=True)
+    assert file_path.exists()
+    assert file_path.is_dir()
+
+    decompress_file(file_path)
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.WARNING
+    assert f"{file_path!s} is not a file: skipping decompression" in caplog.records[0].message
+
+
+def test_decompress_file_skips_missing_file(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Ensure that a missing file prevents decompress_file from running decompression."""
+    missing_file = tmp_path / "missing.gz"
+    decompress_file(missing_file)
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.WARNING
+    assert f"File {missing_file!s} does not exist: skipping decompression" in caplog.records[0].message
+
+
+@pytest.mark.parametrize("file_name", ["data", "data.tar", "not_a_gz", "file.gz.bak"])
+def test_decompress_file_skips_existing_decompressed_file(
+    tmp_path: Path, file_name: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Ensure that an existing decompressed file prevents decompress_file from running decompression."""
+    file_path = tmp_path / file_name
+    file_path.write_bytes(b"binary\x00data")
+    assert file_path.name == file_name
+    assert file_path.exists()
+
+    original_mtime = file_path.stat().st_mtime
+    # fake gzip file
+    gz_path = file_path.with_suffix(file_path.suffix + ".gz")
+    gz_path.write_bytes(b"some old crap")
+    assert gz_path.name == file_name + ".gz"
+    assert gz_path.exists()
+
+    # attempt to decompress data.bin.gz
+    decompress_file(gz_path)
+
+    # Ensure the .gz file was not overwritten (mtime unchanged)
+    assert file_path.stat().st_mtime == original_mtime
+    assert file_path.read_bytes() == b"binary\x00data"
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.INFO
+    assert f"Found existing file {file_path!s}: skipping decompression" in caplog.records[0].message
 
 
 @pytest.mark.skip("CliRunner conflicts with logging, causing a ValueError")

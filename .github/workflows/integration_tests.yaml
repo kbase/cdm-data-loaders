@@ -1,0 +1,54 @@
+name: CEPH Integration tests
+
+on:
+    workflow_call:
+
+    push:
+        branches:
+            - main
+    pull_request:
+        types:
+            - opened
+            - reopened
+            - synchronize
+            - ready_for_review
+
+permissions:
+    contents: read
+
+jobs:
+    ceph_integration_tests:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Run CEPH-backed integration tests
+              run: |
+                  docker compose up \
+                    --build \
+                    --abort-on-container-exit \
+                    --exit-code-from integration-tests
+
+            - name: Capture compose diagnostics on failure
+              if: failure()
+              run: |
+                  echo "=== docker compose ps ==="
+                  docker compose ps -a || true
+
+                  echo "=== ceph logs ==="
+                  docker logs cdm-data-loaders-ceph-1 || true
+
+                  echo "=== ceph integration test logs ==="
+                  docker logs cdm-data-loaders-integration-tests-1 || true
+
+                  echo "=== ceph inspect state ==="
+                  docker inspect cdm-data-loaders-ceph-1 --format '{{json .State}}' || true
+
+                  echo "=== ceph health state ==="
+                  docker inspect cdm-data-loaders-ceph-1 --format '{{json .State.Health}}' || true
+
+            - name: Tear down
+              if: always()
+              run: docker compose down --volumes

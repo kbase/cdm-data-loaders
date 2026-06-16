@@ -6,6 +6,8 @@ Batch downloading from OSF: https://allthebacteria.org/docs/osf_downloads/
 
 all_atb_files.tsv: https://osf.io/xv7q9/files/r6gcp (or Rg6cp, casing varies)
 
+# TODO: change the output to delta tables.
+
 """
 
 import csv

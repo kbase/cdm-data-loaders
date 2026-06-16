@@ -1,0 +1,31 @@
+services:
+  ceph:
+    image: ghcr.io/kbasetest/ceph-rgw-test-image:0.1.5
+    environment:
+      RGW_PORT: "8080"
+      RGW_ACCESS_KEY: test_access_key
+      RGW_SECRET_KEY: test_access_secret
+    ports:
+      - "9000:8080"
+      - "9001:8443"
+    healthcheck:
+      # Mark healthy only when the RGW/S3 HTTP endpoint is reachable.
+      test: [ "CMD-SHELL", "curl -fsS http://127.0.0.1:8080/ >/dev/null || wget -q -O- http://127.0.0.1:8080/ >/dev/null" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  integration-tests:
+    image: cdm-data-loaders-integration-tests:latest
+    build:
+      context: .
+    depends_on:
+      ceph:
+        condition: service_healthy
+    environment:
+      AWS_ENDPOINT_URL: http://ceph:8080
+      AWS_ACCESS_KEY_ID: test_access_key
+      AWS_SECRET_ACCESS_KEY: test_access_secret
+    entrypoint: [ "/app/scripts/entrypoint.sh", "ceph_integration_test" ]
+    command: []

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VALID_COMMANDS=(all_the_bacteria ncbi_rest_api uniprot uniref xml_split test bash)
+VALID_COMMANDS=(all_the_bacteria ncbi_ftp_sync ncbi_rest_api uniprot uniref xml_split test ceph_integration_test bash)
 
 usage() {
   local joined
@@ -21,6 +21,10 @@ case "$cmd" in
   all_the_bacteria)
     exec /usr/bin/tini -- uv run --no-sync all_the_bacteria "$@"
     ;;
+  ncbi_ftp_sync)
+    # Run the NCBI FTP assembly download pipeline (Phase 2)
+    exec /usr/bin/tini -- uv run --no-sync ncbi_ftp_sync "$@"
+    ;;
   ncbi_rest_api)
     exec /usr/bin/tini -- uv run --no-sync ncbi_rest_api "$@"
     ;;
@@ -34,7 +38,11 @@ case "$cmd" in
     exec /usr/bin/tini -- xml_file_splitter "$@"
     ;;
   test)
-    exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark"
+    exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark and not requires_ceph"
+    ;;
+  ceph_integration_test)
+    # run the CEPH-backed integration tests (requires a running CEPH instance)
+    exec /usr/bin/tini -- uv run --no-sync pytest -m "requires_ceph" -v "$@"
     ;;
   bash)
     exec /usr/bin/tini -- /bin/bash
