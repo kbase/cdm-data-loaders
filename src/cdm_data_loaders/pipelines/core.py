@@ -12,11 +12,9 @@ from dlt.extract.items import DataItemWithMeta
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
-from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_BATCH_SIZE, BatchedFileInputSettings, CtsSettings
-from cdm_data_loaders.utils.file_system import BatchCursor
+from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_PIPELINE_BATCH_SIZE, BatchedFileInputSettings, CtsSettings
+from cdm_data_loaders.utils.batcher import NumericFileSequenceBatcher
 from cdm_data_loaders.utils.xml_utils import stream_xml_file
-
-logger = logging.getLogger("dlt")
 
 
 def construct_env_var() -> None:
@@ -38,6 +36,7 @@ def sync_configs(settings: CtsSettings, dlt_config: Any) -> None:
 def dump_settings(settings: CtsSettings) -> None:
     """Dump the pipeline settings to the logger."""
     settings_minus_dlt_config = settings.model_dump(exclude={"dlt_config"})
+    logger: logging.Logger = logging.getLogger(__name__)
     logger.info("Pipeline settings:")
     logger.info(settings_minus_dlt_config)
 
@@ -50,16 +49,15 @@ def run_cli(settings_cls: type[CtsSettings], pipeline_fn: Callable[[Any], None])
     """
     # piece together env vars
     construct_env_var()
-
     # instantiate the config
     try:
         settings = settings_cls(dlt_config=dlt.config)
         sync_configs(settings, dlt.config)
     except (SettingsError, ValidationError, ValueError):
-        logger.exception("Error initialising config")
+        logging.getLogger(__name__).exception("Error initialising config")
         raise
     except Exception:
-        logger.exception("Unexpected error setting up config")
+        logging.getLogger(__name__).exception("Unexpected error setting up config")
         raise
 
     dump_settings(settings)
@@ -102,6 +100,7 @@ def run_pipeline(
     pipeline = dlt.pipeline(destination=destination, **pipeline_kwargs)
 
     slack_hook: str | None = pipeline.runtime_config.slack_incoming_hook
+    logger: logging.Logger = logging.getLogger(__name__)
 
     if not slack_hook:
         logger.info("Slack webhook not configured; no Slack alerts will be sent.")
@@ -138,13 +137,17 @@ def stream_xml_file_resource(
     :param log_interval: log a progress message every N entries
     :type log_interval: int
     """
+    logger = logging.getLogger(__name__)
     timestamp = datetime.datetime.now(tz=datetime.UTC)
     batch_params: dict[str, Any] = {}
     if settings.start_at:
         batch_params["start_at"] = settings.start_at
 
-    batcher = BatchCursor(settings.input_dir, batch_size=DEFAULT_BATCH_SIZE, **batch_params)
+    batcher = NumericFileSequenceBatcher(
+        directory=settings.input_dir, batch_size=DEFAULT_PIPELINE_BATCH_SIZE, **batch_params
+    )
     while files := batcher.get_batch():
+        logger.debug("Files to be processed:%s", "".join("- " + str(f) + "\n" for f in files))
         for file_path in files:
             logger.info("Reading from %s", str(file_path))
             for n_entries, entry in enumerate(stream_xml_file(file_path, xml_tag)):

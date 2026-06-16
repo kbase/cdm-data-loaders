@@ -246,7 +246,7 @@ def test_settings_all_params_set(settings: frozendict, reconciled: frozendict) -
     "use_output_dir_for_pipeline_metadata",
     ARG_ALIASES["use_output_dir_for_pipeline_metadata"],
 )
-def test_cli_all_variants(  # noqa: PLR0913
+def test_cli_all_variants(
     query_type: str,
     batch_size: str,
     dev_mode: str,

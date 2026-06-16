@@ -8,15 +8,15 @@ threading, CLI) lives in :mod:`cdm_data_loaders.pipelines.ncbi_ftp_download`.
 import contextlib
 import time
 from ftplib import FTP
+from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX, FTP_HOST
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.checksums import verify_md5
 from cdm_data_loaders.utils.ftp_client import connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 FILE_FILTERS = [
     "_gene_ontology.gaf.gz",

@@ -13,6 +13,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from ftplib import error_temp
+from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -29,12 +30,8 @@ from cdm_data_loaders.ncbi_ftp.assembly import (
 )
 from cdm_data_loaders.pipelines.core import run_cli
 from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, INPUT_MOUNT, OUTPUT_MOUNT
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.ftp_client import ThreadLocalFTP
 from cdm_data_loaders.utils.s3 import get_s3_client, upload_file
-
-logger = get_cdm_logger()
-
 
 DEFAULT_STAGING_KEY_PREFIX: PurePosixPath = PurePosixPath("staging")
 
@@ -105,7 +102,7 @@ def _upload_assembly_dir(
             if upload_file(f, str(dest_prefix), show_progress=False):
                 count += 1
             else:
-                logger.warning("Failed to upload %s to %s", f, dest_prefix)
+                getLogger(__name__).warning("Failed to upload %s to %s", f, dest_prefix)
             f.unlink()
     shutil.rmtree(assembly_dir, ignore_errors=True)
     return count
@@ -130,6 +127,7 @@ def download_batch(
     :param limit: optional limit for testing
     :return: report dict with overall stats
     """
+    logger: Logger = getLogger(__name__)
     with manifest_path.open() as f:
         assembly_paths = [PurePosixPath(line.strip()) for line in f if line.strip() and not line.startswith("#")]
 
@@ -268,6 +266,7 @@ def download_and_stage(  #  noqa: PLR0913, PLR0915
     :param dry_run: when ``True``, download but skip all S3 uploads
     :return: download report extended with ``staged_objects``, ``staging_key_prefix``, ``dry_run``
     """
+    logger: Logger = getLogger(__name__)
     if manifest_s3_key is not None and manifest_local_path is not None:
         msg = "Provide exactly one of manifest_s3_key or manifest_local_path, not both"
         raise ValueError(msg)

@@ -6,19 +6,18 @@ These metadata files provide information and links for UniProt and related downl
 """
 
 import datetime
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 from xml.etree.ElementTree import Element
 
 from defusedxml.ElementTree import parse
 
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-
 NS = {"": "http://www.metalinker.org/"}
 NOW = datetime.datetime.now(tz=datetime.UTC)
 COLUMNS = ["id", "db", "xref"]
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 def parse_metalink(metalink_xml_path: Path | str) -> Element | None:

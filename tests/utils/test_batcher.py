@@ -1,12 +1,20 @@
 """Tests of file system-related utilities."""
 
+import logging
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
-from cdm_data_loaders.utils.file_system import FILE_NAME_REGEX, BatchCursor
+from cdm_data_loaders.utils.batcher import (
+    FILE_NAME_REGEX,
+    MIN_BATCH_SIZE,
+    MIN_END_AT,
+    MIN_START_AT,
+    NumericFileSequenceBatcher,
+)
 
 # the maximum file number in the directory
 MAX_FILE_NUMBER = 15
@@ -46,11 +54,10 @@ EXPECTED: dict[int | None, dict[int | None, Any]] = {
 EXPECTED[None] = EXPECTED[1]
 # batch_size greater than # of records
 EXPECTED[20] = EXPECTED[15]
-# add in results for start_at == 0 or not specified
+# add in results where start_at is not specified (i.e. uses the default value)
 for ix, vals in EXPECTED.items():
     if ix is not None:
         EXPECTED[ix][None] = vals[1]
-        EXPECTED[ix][0] = vals[1]
 
 EXPECTED_END_AT = deepcopy(EXPECTED)
 
@@ -87,58 +94,188 @@ def file_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_batcher_defaults() -> None:
+@pytest.fixture(scope="module")
+def non_matching_file_names() -> list[str]:
+    """List of file names that do not match the pattern required by NumericFileSequenceBatcher."""
+    return [
+        # no numbers
+        "README.md",
+        # contains non-\w character
+        ".hidden_00001.txt",
+        # no extension
+        "data_00001",
+        # files in nested dirs -- will not be found
+        "nested/data_00010.txt",
+        "nested/dir1/data_00020.txt",
+    ]
+
+
+@pytest.fixture
+def mixed_dir(tmp_path: Path, non_matching_file_names: list[str]) -> Path:
+    """Directory containing valid files alongside files that should be ignored."""
+    make_sequence(tmp_path, "data", "txt", range(1, 6))
+    more_files = [
+        "data_123.txt",
+        "data_000001.txt",
+        "data_000100.txt.gz",
+        "data_000200.txt.tar.gz",
+        "data_000400.csv.gz",
+        "file_000300.txt.tar.gz",
+        *non_matching_file_names,
+    ]
+    make_files(tmp_path, more_files)
+    return tmp_path
+
+
+def test_init_batcher_defaults() -> None:
     """Ensure defaults are set correctly."""
-    bc = BatchCursor(".")
-    assert bc.start_at == 1
-    assert bc.batch_size == 1
-    assert bc.end_at is None
+    bc = NumericFileSequenceBatcher(directory="path/to/dir")  # type: ignore[reportArgumentType]
+    assert bc.batch_size == MIN_BATCH_SIZE
+    assert bc.start_at == MIN_START_AT
+    assert bc.end_at == MIN_END_AT
     assert bc.file_regex == FILE_NAME_REGEX
+    assert bc.directory == Path("path/to/dir")
 
 
-def test_batcher_default_end_at() -> None:
-    """Ensure default end_at is set correctly."""
-    bc = BatchCursor(".", end_at=0)
-    assert bc.end_at is None
+def test_init_batcher_values() -> None:
+    """Ensure defaults are set correctly."""
+    start_at = 26
+    batch_size = 10
+    end_at = 26
+    bc = NumericFileSequenceBatcher(
+        directory=Path("path/to/dir"), start_at=start_at, batch_size=batch_size, end_at=end_at
+    )
+    assert bc.start_at == start_at
+    assert bc.batch_size == batch_size
+    assert bc.end_at == end_at
+    assert bc.file_regex == FILE_NAME_REGEX
+    assert bc.directory == Path("path/to/dir")
 
 
-@pytest.mark.parametrize("batch_size", [None, 0, -1, 1.0, 1.2345678, -15, -1234567890, "something", "50", "None"])
-def test_invalid_batch_size(batch_size: float | str | None) -> None:
+def test_init_batcher_no_directory() -> None:
+    """Ensure the batcher throws an error if a directory is not specified."""
+    with pytest.raises(ValidationError, match=r"directory\s+Field required") as err:
+        NumericFileSequenceBatcher()  # type: ignore[reportCallIssue]
+
+    assert err.match(r"directory\s+Field required")
+
+
+VALID_INTEGER = r"\s+Input should be a valid integer"
+GTE_ONE = r"\s+Input should be greater than or equal to 1"
+GTE_ZERO = r"\s+Input should be greater than or equal to 0"
+
+GTE_ONE_TEST_VALUES = [
+    (None, VALID_INTEGER),
+    (0, GTE_ONE),
+    (-1, GTE_ONE),
+    (1.0, VALID_INTEGER),
+    (1.2345678, VALID_INTEGER),
+    (-15, GTE_ONE),
+    (-1234567890, GTE_ONE),
+    ("something", VALID_INTEGER),
+    ("50", VALID_INTEGER),
+    ("None", VALID_INTEGER),
+]
+
+
+@pytest.mark.parametrize(("batch_size", "err_msg"), GTE_ONE_TEST_VALUES)
+def test_init_batcher_invalid_batch_size(batch_size: float | str | None, err_msg: str) -> None:
     """Test invalid batch_size, start_at, end_at, and file_regex parameters."""
-    with pytest.raises(ValueError, match="batch_size must be an integer, 1 or greater"):
-        BatchCursor(".", batch_size)  # pyright: ignore[reportArgumentType]
+    with pytest.raises(ValidationError, match=f"batch_size{err_msg}"):
+        NumericFileSequenceBatcher(directory=".", batch_size=batch_size)  # pyright: ignore[reportArgumentType]
 
 
-@pytest.mark.parametrize("start_at", [None, -1, 1.0, 1.2345678, -15, -1234567890, "something", "50", "None"])
-def test_invalid_start_at_params(start_at: float | None) -> None:
+@pytest.mark.parametrize(("start_at", "err_msg"), GTE_ONE_TEST_VALUES)
+def test_init_batcher_invalid_start_at_params(start_at: float | None, err_msg: str) -> None:
     """Test invalid start_at parameters."""
-    with pytest.raises(ValueError, match="start_at must be an integer, 0 or greater"):
-        BatchCursor(".", start_at=start_at)  # pyright: ignore[reportArgumentType]
+    with pytest.raises(ValidationError, match=f"start_at{err_msg}"):
+        NumericFileSequenceBatcher(directory=".", start_at=start_at)  # pyright: ignore[reportArgumentType]
 
 
-@pytest.mark.parametrize("end_at", [None, -1, 1.0, 1.2345678, -15, -1234567890, "something", "50", "None"])
-def test_invalid_end_at_params(end_at: float | None) -> None:
+@pytest.mark.parametrize(
+    ("end_at", "err_msg"),
+    [
+        (None, VALID_INTEGER),
+        (-1, GTE_ZERO),
+        (1.0, VALID_INTEGER),
+        (1.2345678, VALID_INTEGER),
+        (-15, GTE_ZERO),
+        (-1234567890, GTE_ZERO),
+        ("something", VALID_INTEGER),
+        ("50", VALID_INTEGER),
+        ("None", VALID_INTEGER),
+    ],
+)
+def test_init_batcher_invalid_end_at_params(end_at: str | float | None, err_msg: str) -> None:
     """Test invalid end_at parameters."""
-    with pytest.raises(ValueError, match="end_at must be an integer, 1 or greater"):
-        BatchCursor(".", end_at=end_at)  # pyright: ignore[reportArgumentType]
+    with pytest.raises(ValidationError, match=f"end_at{err_msg}"):
+        NumericFileSequenceBatcher(directory=".", end_at=end_at)  # pyright: ignore[reportArgumentType]
 
 
-def test_invalid_start_vs_end_at_params() -> None:
+@pytest.mark.parametrize(
+    ("batch_size", "batch_size_err_msg"),
+    [
+        (None, VALID_INTEGER),
+        (0, GTE_ONE),
+        (-1, GTE_ONE),
+        (1.0, VALID_INTEGER),
+        ("50", VALID_INTEGER),
+    ],
+)
+@pytest.mark.parametrize(
+    ("start_at", "start_at_err_msg"),
+    [
+        (None, VALID_INTEGER),
+        (0, GTE_ONE),
+        (1.0, VALID_INTEGER),
+        (-1234567890, GTE_ONE),
+        ("50", VALID_INTEGER),
+    ],
+)
+@pytest.mark.parametrize(
+    ("end_at", "end_at_err_msg"),
+    [
+        (None, VALID_INTEGER),
+        (-1, GTE_ZERO),
+        (1.2345678, VALID_INTEGER),
+        (-1234567890, GTE_ZERO),
+        ("50", VALID_INTEGER),
+    ],
+)
+def test_init_batcher_multiple_errors(
+    batch_size: str | float | None,
+    start_at: str | float | None,
+    end_at: str | float | None,
+    batch_size_err_msg: str,
+    start_at_err_msg: str,
+    end_at_err_msg: str,
+) -> None:
+    """Ensure that supplying the NumericFileSequenceBatcher with lots of dodgy values triggers an error."""
+    with pytest.raises(ValidationError, match="3 validation errors for NumericFileSequenceBatcher") as exc:
+        NumericFileSequenceBatcher(directory=Path(), start_at=start_at, end_at=end_at, batch_size=batch_size)  # type: ignore[reportArgumentType]
+    assert exc.match(f"start_at{start_at_err_msg}")
+    assert exc.match(f"end_at{end_at_err_msg}")
+    assert exc.match(f"batch_size{batch_size_err_msg}")
+
+
+@pytest.mark.parametrize(("start_at", "end_at"), [(5, 3), (123456789, 123456788)])
+def test_init_batcher_invalid_start_vs_end_at_params(start_at: int, end_at: int) -> None:
     """Ensure that an error is thrown if start_at and end_at are not compatible."""
-    with pytest.raises(ValueError, match="end_at must be greater than start_at"):
-        BatchCursor(".", start_at=2, end_at=1)
+    with pytest.raises(ValidationError, match="end_at must be greater than start_at"):
+        NumericFileSequenceBatcher(directory="some/dir", start_at=start_at, end_at=end_at)  # pyright: ignore[reportArgumentType]
 
 
-def test_ok_start_end_at_params() -> None:
+@pytest.mark.parametrize(("start_at", "end_at"), [(1, 0), (1, 1), (20, 20), (5, 0), (3, 7)])
+def test_init_batcher_valid_start_vs_end_at_params(start_at: int, end_at: int) -> None:
     """Ensure that 0 is a valid end_at parameter, regardless of start_at value."""
-    bc = BatchCursor(".", start_at=5, end_at=0)
-    assert bc.end_at is None
-    assert bc.start_at == 5  # noqa: PLR2004
+    bc = NumericFileSequenceBatcher(directory=".", start_at=start_at, end_at=end_at)  # pyright: ignore[reportArgumentType]
+    assert bc.start_at == start_at
+    assert bc.end_at == end_at
 
 
 def test_end_at_greater_than_start_at_during_iteration() -> None:
     """Ensure that if end_at is smaller than start_at during iteration, an empty list is returned."""
-    bc = BatchCursor(".", start_at=0, end_at=5)
+    bc = NumericFileSequenceBatcher(directory=".", start_at=MIN_START_AT, end_at=5)  # pyright: ignore[reportArgumentType]
     assert bc.end_at == 5  # noqa: PLR2004
     bc.start_at = 10
     assert bc.get_batch() == []
@@ -149,7 +286,7 @@ CUTOFF_VALUE = 12
 
 # your basic batch
 @pytest.mark.parametrize("end_at", [None, 0, CUTOFF_VALUE])
-@pytest.mark.parametrize("start_at", [None, 0, 1, 6, 8, 11])
+@pytest.mark.parametrize("start_at", [None, 1, 6, 8, 11])
 @pytest.mark.parametrize("batch_size", EXPECTED.keys())
 def test_get_batch_parametrized(
     file_dir: Path,
@@ -166,7 +303,7 @@ def test_get_batch_parametrized(
     if end_at is not None:
         cursor_params["end_at"] = end_at
 
-    cursor = BatchCursor(file_dir, **cursor_params)
+    cursor = NumericFileSequenceBatcher(directory=file_dir, **cursor_params)
 
     # generate the expected files
     expected_files: list[list[Path]] = [
@@ -202,14 +339,14 @@ def test_get_batch_parametrized(
 
 def test_get_batch_default_start_at_is_zero(file_dir: Path) -> None:
     """Ensure that the default start_at is 0."""
-    cursor_default = BatchCursor(file_dir, batch_size=3)
-    cursor_explicit = BatchCursor(file_dir, batch_size=3, start_at=0)
+    cursor_default = NumericFileSequenceBatcher(directory=file_dir, batch_size=3)
+    cursor_explicit = NumericFileSequenceBatcher(directory=file_dir, batch_size=3, start_at=MIN_START_AT)
     assert cursor_default.get_batch() == cursor_explicit.get_batch()
 
 
 def test_get_batch_start_at_matches_sequence_number(file_dir: Path) -> None:
     """Ensure start_at value matches sequence number."""
-    cursor = BatchCursor(file_dir, batch_size=5, start_at=15)
+    cursor = NumericFileSequenceBatcher(directory=file_dir, batch_size=5, start_at=15)
     result = cursor.get_batch()
     assert len(result) == 1
     assert result[0].name == "report_00015.csv"
@@ -219,8 +356,8 @@ def test_get_batch_start_at_matches_sequence_number(file_dir: Path) -> None:
 def test_get_batch_start_at_advances_after_get_batch(file_dir: Path) -> None:
     """Ensure that the start_at value changes after each successful get_batch operation."""
     batch_size = 5
-    cursor = BatchCursor(file_dir, batch_size=batch_size, start_at=0)
-    assert cursor.start_at == 0
+    cursor = NumericFileSequenceBatcher(directory=file_dir, batch_size=batch_size, start_at=MIN_START_AT)
+    assert cursor.start_at == MIN_START_AT
     batch_1 = cursor.get_batch()
     assert cursor.start_at == batch_size + 1  # next file is report_00006.csv
     batch_2 = cursor.get_batch()
@@ -238,7 +375,7 @@ def test_get_batch_start_at_advances_after_get_batch(file_dir: Path) -> None:
 def test_get_batch_cursor_does_not_advance_on_empty_result(file_dir: Path) -> None:
     """Ensure that the cursor does not advance if the batch is empty."""
     start_at = 999
-    cursor = BatchCursor(file_dir, batch_size=5, start_at=start_at)
+    cursor = NumericFileSequenceBatcher(directory=file_dir, batch_size=5, start_at=start_at)
     cursor.get_batch()
     assert cursor.start_at == start_at
 
@@ -246,7 +383,7 @@ def test_get_batch_cursor_does_not_advance_on_empty_result(file_dir: Path) -> No
 def test_get_batch_partial_batch_advances_correctly(file_dir: Path) -> None:
     """Ensure that the cursor only advances as far as the last file in the batch."""
     # Only 3 files remain from 13 onward
-    cursor = BatchCursor(file_dir, batch_size=5, start_at=13)
+    cursor = NumericFileSequenceBatcher(directory=file_dir, batch_size=5, start_at=13)
     result = cursor.get_batch()
     assert result == [file_dir / f"report_{n:05}.csv" for n in [13, 14, 15]]
     assert cursor.start_at == 16  # noqa: PLR2004
@@ -255,11 +392,11 @@ def test_get_batch_partial_batch_advances_correctly(file_dir: Path) -> None:
 def test_get_batch_cursor_can_be_reset(file_dir: Path) -> None:
     """Ensure that the cursor can be reset."""
     batch_size = 5
-    cursor = BatchCursor(file_dir, batch_size=batch_size)
+    cursor = NumericFileSequenceBatcher(directory=file_dir, batch_size=batch_size)
     original_result = cursor.get_batch()
     assert cursor.start_at == batch_size + 1
     # set cursor to 0
-    cursor.start_at = 0
+    cursor.start_at = 1
     reset_result = cursor.get_batch()
     assert cursor.start_at == batch_size + 1
     assert original_result == reset_result
@@ -269,19 +406,19 @@ def test_get_batch_cursor_can_be_reset(file_dir: Path) -> None:
 # Edge cases -- boundaries
 def test_get_batch_start_at_beyond_end_returns_empty_list(file_dir: Path) -> None:
     """Ensure that nothing is returned if start_at is too high."""
-    cursor = BatchCursor(file_dir, batch_size=5, start_at=999)
+    cursor = NumericFileSequenceBatcher(directory=file_dir, batch_size=5, start_at=999)
     assert cursor.get_batch() == []
 
 
 def test_get_batch_empty_directory_returns_empty_list(tmp_path: Path) -> None:
     """Ensure that an empty dir returns nothing."""
-    cursor = BatchCursor(tmp_path, batch_size=5)
+    cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=5)
     assert cursor.get_batch() == []
 
 
 def test_get_batch_batch_size_larger_than_remaining_files(file_dir: Path) -> None:
     """Ensure that batches are sized correctly for partial batches."""
-    cursor = BatchCursor(file_dir, batch_size=10, start_at=10)
+    cursor = NumericFileSequenceBatcher(directory=file_dir, batch_size=10, start_at=10)
     result = cursor.get_batch()
     # should have 00010 - 00015
     assert result[-1].name == "report_00015.csv"
@@ -294,7 +431,7 @@ def test_get_batch_start_at_skips_to_next_available_when_gap(tmp_path: Path) -> 
     """Ensure that gaps in the sequence are dealt with correctly."""
     # Files exist for 1,2,3 then jump to 10,11,12 — no 4-9
     make_sequence(tmp_path, "data", "csv.gz", [1, 2, 3, 10, 11, 12])
-    cursor = BatchCursor(tmp_path, batch_size=5, start_at=5)
+    cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=5, start_at=5)
     # retrieve 5 files, starting at 00005
     assert cursor.get_batch() == [tmp_path / f"data_{n:05}.csv.gz" for n in [10, 11, 12]]
     assert cursor.start_at == 13  # noqa: PLR2004
@@ -304,7 +441,7 @@ def test_get_batch_start_at_skips_to_next_available_when_gap(tmp_path: Path) -> 
 def test__get_batchsequential_calls_across_gap(tmp_path: Path) -> None:
     """Ensure that files are correctly retrieved across gaps in the sequence."""
     make_sequence(tmp_path, "data", "csv.gz", [1, 2, 3, 10, 11, 12])
-    cursor = BatchCursor(tmp_path, batch_size=2)
+    cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=2)
     assert cursor.get_batch() == [tmp_path / f"data_{n:05}.csv.gz" for n in [1, 2]]
     assert cursor.start_at == 3  # noqa: PLR2004
 
@@ -321,7 +458,7 @@ def test__get_batchsequential_calls_across_gap(tmp_path: Path) -> None:
 def test_get_batch_sequential_calls_across_gap_with_end_at(tmp_path: Path) -> None:
     """Ensure that files are correctly retrieved across gaps in the sequence when end_at is specified."""
     make_sequence(tmp_path, "data", "csv.gz", [1, 2, 3, 5, 8, 11, 15])
-    cursor = BatchCursor(tmp_path, batch_size=2, end_at=10)
+    cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=2, end_at=10)
     assert cursor.get_batch() == [tmp_path / f"data_{n:05}.csv.gz" for n in [1, 2]]
     assert cursor.start_at == 3  # noqa: PLR2004
 
@@ -335,35 +472,10 @@ def test_get_batch_sequential_calls_across_gap_with_end_at(tmp_path: Path) -> No
     assert cursor.start_at == 9  # noqa: PLR2004
 
 
-@pytest.fixture
-def mixed_dir(tmp_path: Path) -> Path:
-    """Directory containing valid files alongside files that should be ignored."""
-    make_sequence(tmp_path, "data", "txt", range(1, 6))
-    more_files = [
-        "data_123.txt",
-        "data_000001.txt",
-        "data_000100.txt.gz",
-        "data_000200.txt.tar.gz",
-        "data_000400.csv.gz",
-        "file_000300.txt.tar.gz",
-        # no numbers
-        "README.md",
-        # contains non-\w character
-        ".hidden_00001.txt",
-        # no extension
-        "data_00001",
-        # files in nested dirs -- will not be found
-        "nested/data_00010.txt",
-        "nested/dir1/data_00020.txt",
-    ]
-    make_files(tmp_path, more_files)
-    return tmp_path
-
-
 # File-name pattern filtering
 def test_get_batch_ignores_invalid_filenames(mixed_dir: Path) -> None:
     """Ensure that filenames are matched correctly."""
-    cursor = BatchCursor(mixed_dir, batch_size=20)
+    cursor = NumericFileSequenceBatcher(directory=mixed_dir, batch_size=20)
     generated_file_names = [f"data_{n:05}.txt" for n in range(1, 6)]
     file_names = sorted(
         [
@@ -383,8 +495,20 @@ def test_get_batch_mixed_extensions_sorted_correctly(tmp_path: Path) -> None:
     """Ensure that files with a mix of extensions are sorted numerially."""
     names = ["data_00001.csv", "data_00001.tar.gz", "data_00002.tar.gz", "data_00003.txt"]
     make_files(tmp_path, names)
-    cursor = BatchCursor(tmp_path, batch_size=10)
+    cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=10)
     assert [p.name for p in cursor.get_batch()] == names
+
+
+def test_get_batch_exits_early_with_no_matching_files(
+    tmp_path: Path, non_matching_file_names: list[str], caplog
+) -> None:
+    """Ensure that the batcher exits from get_batch early if there are no files that match the file_regex."""
+    make_files(tmp_path, non_matching_file_names)
+    cursor = NumericFileSequenceBatcher(directory=tmp_path)
+    assert cursor.get_batch() == []
+    assert len(caplog.records) == 1
+    assert caplog.records[-1].levelno == logging.WARNING
+    assert caplog.records[-1].message == f"No matching files found in {tmp_path!s}"
 
 
 # Dynamic / live-directory behaviour
@@ -392,12 +516,12 @@ def test_get_batch_picks_up_newly_added_files(tmp_path: Path) -> None:
     """Ensure that adding files to a dir during batching picks up new files correctly."""
     # dir contains log_00001.txt -> log_00003.txt
     make_sequence(tmp_path, "log", "txt", range(1, 4))
-    cursor = BatchCursor(tmp_path, batch_size=10)
+    cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=10)
     assert cursor.get_batch() == [tmp_path / f"log_{n:05}.txt" for n in [1, 2, 3]]
 
     (tmp_path / "log_00004.txt").touch()
     # Reset cursor to re-scan from the start
-    cursor.start_at = 0
+    cursor.start_at = MIN_START_AT
     assert cursor.get_batch() == [tmp_path / f"log_{n:05}.txt" for n in [1, 2, 3, 4]]
 
 
@@ -405,7 +529,7 @@ def test_get_batch_new_files_within_current_window_are_included(tmp_path: Path) 
     """Ensure that all new files within the current batching params are included, regardless of sequence position."""
     # dir contains log_00001.txt -> log_00005.txt
     make_sequence(tmp_path, "log", "txt", range(1, 6))
-    cursor = BatchCursor(tmp_path, batch_size=3, end_at=13)
+    cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=3, end_at=13)
 
     assert cursor.get_batch() == [tmp_path / f"log_{n:05}.txt" for n in [1, 2, 3]]
     assert cursor.start_at == 4  # noqa: PLR2004

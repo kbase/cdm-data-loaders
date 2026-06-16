@@ -20,10 +20,9 @@
 
 import datetime as dt
 import re
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
-
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
 RELEASE_VERSION_DATE: re.Pattern[str] = re.compile(
     r"is pleased to announce UniProt Knowledgebase \(UniProtKB\) Release\s+(\w+) \((\d{1,2}-[a-zA-Z]+-\d{4})\)\."
@@ -38,7 +37,7 @@ RELEASE_STATS: re.Pattern[str] = re.compile(r"(\w+) Release .*? consists of ([\d
 DATE_FORMAT = "%d-%b-%Y"
 
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 def parse_relnotes(relnotes_path: Path) -> dict[str, Any]:

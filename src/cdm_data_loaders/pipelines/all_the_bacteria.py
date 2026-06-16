@@ -6,7 +6,7 @@ Batch downloading from OSF: https://allthebacteria.org/docs/osf_downloads/
 
 all_atb_files.tsv: https://osf.io/xv7q9/files/r6gcp (or Rg6cp, casing varies)
 
-# TODO: change the output to delta tables.
+# TODO: change the output to parquet files.
 
 """
 
@@ -32,9 +32,6 @@ from cdm_data_loaders.pipelines.core import (
 from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.utils.download.sync_client import FileDownloader
 from cdm_data_loaders.utils.s3 import stream_to_s3
-
-logger = logging.getLogger("dlt")
-
 
 DATASET_NAME = "all_the_bacteria"
 ALL_FILES_TSV_FILE_ID = "R6gcp"
@@ -119,7 +116,7 @@ def load_patterns(pattern_file: Path) -> re.Pattern | None:
         if patterns:
             return re.compile("^(" + "|".join(patterns) + ")$")
     except Exception:
-        logger.exception("Could not load patterns from %s", str(pattern_file))
+        logging.getLogger(__name__).exception("Could not load patterns from %s", str(pattern_file))
 
     return None
 
@@ -133,6 +130,7 @@ def download_atb_index_tsv(settings: AtbSettings) -> Path:
     :return: path to the downloaded file
     :rtype: Path
     """
+    logger = logging.getLogger(__name__)
     # get the all_atb_files.tsv file info from the OSF API and retrieve the download link
     osf_client = RESTClient(
         base_url="https://api.osf.io/v2/",
@@ -183,6 +181,7 @@ def get_file_download_links(settings: AtbSettings, atb_files_tsv: Path) -> Gener
     :yield: list of fields to download
     :rtype: Generator[list[dict[str, Any]], Any]
     """
+    logger = logging.getLogger(__name__)
     pattern_to_match = settings.pattern_matches
     with atb_files_tsv.open() as index_file:
         reader = csv.DictReader(index_file, delimiter="\t")
@@ -202,9 +201,7 @@ def get_file_download_links(settings: AtbSettings, atb_files_tsv: Path) -> Gener
                 logger.error(err_msg)
                 raise RuntimeError(err_msg)
 
-        files_to_download = [row for row in all_lines if pattern_to_match.match(row["project"])]
-
-        yield files_to_download
+        yield [row for row in all_lines if pattern_to_match.match(row["project"])]
 
 
 def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any]]) -> Generator[DataItemWithMeta, Any]:
@@ -215,6 +212,7 @@ def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any
     :param atb_file_list: info about files to transfer, as a list of dictionaries
     :type atb_file_list: list[dict[str, Any]]
     """
+    logger = logging.getLogger(__name__)
     client = FileDownloader()
     successful_downloads = []
     for f in atb_file_list:

@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from http import HTTPStatus
+from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
@@ -28,11 +29,10 @@ from cdm_data_loaders.ncbi_ftp.assembly import (
     parse_md5_checksums_file,
 )
 from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.ftp_client import FTP, connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
 from cdm_data_loaders.utils.s3 import head_object, list_matching_objects
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 _DATABASE_ACC_PREFIX: dict[str, str] = {
     "refseq": "GCF_",

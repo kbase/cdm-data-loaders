@@ -144,14 +144,18 @@ def test_compress_files_invalid_directory(tmp_path: Path) -> None:
         compress_files(non_existent, "*")
 
 
-def test_decompress_file_creates_file(temporary_gz: Path, caplog: pytest.LogCaptureFixture) -> None:
+@pytest.mark.parametrize("input_type", [str, Path])
+def test_decompress_file_creates_file(
+    temporary_gz: Path, caplog: pytest.LogCaptureFixture, input_type: type[str] | type[Path]
+) -> None:
     """Test that running decompress file actually decompresses a file."""
     # Ensure no decompressed file exists initially
     decompressed_file = temporary_gz.with_suffix("")
     assert not decompressed_file.exists()
     assert temporary_gz.exists()
 
-    decompress_file(temporary_gz)
+    # cast to either string or Path
+    decompress_file(input_type(temporary_gz))
 
     # Verify the decompressed file was created
     assert decompressed_file.exists()

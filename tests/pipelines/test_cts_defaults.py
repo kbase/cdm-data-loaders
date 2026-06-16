@@ -8,11 +8,11 @@ from pydantic_settings import CliApp
 
 from cdm_data_loaders.pipelines.cts_defaults import (
     ARG_ALIASES,
-    DEFAULT_START_AT,
     VALID_DESTINATIONS,
     BatchedFileInputSettings,
     CtsSettings,
 )
+from cdm_data_loaders.utils.batcher import MIN_START_AT
 from tests.pipelines.conftest import (
     DEFAULT_BATCH_FILE_SETTINGS_RECONCILED,
     DEFAULT_CTS_SETTINGS_RECONCILED,
@@ -98,7 +98,7 @@ def test_settings_all_settings_specified(
 ) -> None:
     """Ensure the CTS settings are set up correctly."""
     s = make_settings(settings_cls, dlt_config=dlt_config, **args)
-    check_settings(s, dict(expected))
+    check_settings(s, expected)
 
 
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
@@ -108,7 +108,7 @@ def test_cli_app_run_default_settings(settings_cls: type[CtsSettings], dlt_confi
     expected = (
         DEFAULT_CTS_SETTINGS_RECONCILED if settings_cls == CtsSettings else DEFAULT_BATCH_FILE_SETTINGS_RECONCILED
     )
-    check_settings(s, dict(expected))
+    check_settings(s, expected)
 
 
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
@@ -403,7 +403,7 @@ def test_settings_generate_pipeline_raw_data_dirs(
         "output": DESTINATION_TO_OUTPUT[use_destination] if output == "" else OUTPUT_PATHS[output][OUT],
     }
     if settings_cls == BatchedFileInputSettings:
-        expected["start_at"] = DEFAULT_START_AT
+        expected["start_at"] = MIN_START_AT
 
     if (OUTPUT_PATHS[expected["output"]][S3] and use_destination == "local_fs") or (
         OUTPUT_PATHS[expected["output"]][S3] is False and use_destination == "s3"
@@ -463,7 +463,7 @@ def test_cli_app_run_generate_pipeline_raw_data_dirs(
         "output": DESTINATION_TO_OUTPUT[use_destination] if output == "" else OUTPUT_PATHS[output][OUT],
     }
     if settings_cls == BatchedFileInputSettings:
-        expected["start_at"] = DEFAULT_START_AT
+        expected["start_at"] = MIN_START_AT
 
     if (OUTPUT_PATHS[expected["output"]][S3] and use_destination == "local_fs") or (
         OUTPUT_PATHS[expected["output"]][S3] is False and use_destination == "s3"
