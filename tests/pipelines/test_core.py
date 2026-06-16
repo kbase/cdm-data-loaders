@@ -76,7 +76,7 @@ def config(request: pytest.FixtureRequest) -> BatchedFileInputSettings:
     return make_batched_settings(**request.param)
 
 
-def assert_pipeline_run_correctly(  # noqa: PLR0913
+def assert_pipeline_run_correctly(
     mock_dlt: MagicMock,
     fake_resource: MagicMock,
     destination: str,
@@ -454,7 +454,7 @@ def test_run_pipeline_graceful_fail(
 
 @pytest.mark.parametrize("slack_configured", [True, False])
 @pytest.mark.parametrize("success", [True, False])
-def test_run_pipeline_slack_configured(  # noqa: PLR0913
+def test_run_pipeline_slack_configured(
     test_bfi_settings: BatchedFileInputSettings,
     mock_dlt: MagicMock,
     mock_send_slack_message: MagicMock,
@@ -691,7 +691,7 @@ def test_stream_xml_file_resource_processes_all_files_across_batches(
     assert caplog.messages == [f"Reading from {f!s}" for f in fake_files]
 
 
-def test_stream_xml_file_resource_multiple_batches_with_output(  # noqa: PLR0913
+def test_stream_xml_file_resource_multiple_batches_with_output(
     mock_dlt: MagicMock,
     patched_io: tuple[MagicMock, MagicMock],
     fake_files: list[Path],

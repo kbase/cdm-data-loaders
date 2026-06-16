@@ -19,7 +19,7 @@ output_path = sync_client.download(
 
 """
 
-from logging import Logger, getLogger
+from logging import WARNING, Logger, getLogger
 from pathlib import Path
 from typing import Any
 
@@ -96,7 +96,7 @@ class FileDownloader:
                 max=max_backoff,
             ),
             reraise=True,
-            before_sleep=before_sleep_log(logger, logging.WARNING),
+            before_sleep=before_sleep_log(logger, WARNING),
         )
 
     def download(

@@ -29,7 +29,7 @@ n_rows_per_file = 4
 
 
 @pytest.mark.requires_spark
-def test_write_rejects(  # noqa: PLR0913
+def test_write_rejects(
     spark: SparkSession,
     pipeline_run: PipelineRun,
     caplog: pytest.LogCaptureFixture,
@@ -86,7 +86,7 @@ def test_write_rejects(  # noqa: PLR0913
 
 
 @pytest.mark.requires_spark
-def test_write_rejects_no_rejects(  # noqa: PLR0913
+def test_write_rejects_no_rejects(
     spark: SparkSession,
     pipeline_run: PipelineRun,
     caplog: pytest.LogCaptureFixture,

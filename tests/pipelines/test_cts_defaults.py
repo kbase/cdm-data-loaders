@@ -294,7 +294,7 @@ def test_settings_trailing_slash_stripped(
     "use_output_dir_for_pipeline_metadata",
     ARG_ALIASES["use_output_dir_for_pipeline_metadata"],
 )
-def test_cli_app_run_alt_settings(  # noqa: PLR0913
+def test_cli_app_run_alt_settings(
     settings_cls: type[CtsSettings],
     dev_mode: str,
     input_dir: str,
