@@ -22,10 +22,10 @@ Result:
 - Schema conforms to the CDM-style structured annotation model.
 """
 
-import logging
 import os
 import sys
 import urllib.request
+from logging import Logger, getLogger
 
 import click
 from delta import configure_spark_with_delta_pip
@@ -45,8 +45,7 @@ from pyspark.sql.functions import (
 )
 from pyspark.sql.types import StringType
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger: Logger = getLogger(__name__)
 
 # --- Constants ---
 SUBJECT = "subject"

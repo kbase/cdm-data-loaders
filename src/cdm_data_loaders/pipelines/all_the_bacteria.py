@@ -11,9 +11,9 @@ all_atb_files.tsv: https://osf.io/xv7q9/files/r6gcp (or Rg6cp, casing varies)
 """
 
 import csv
-import logging
 import re
 from collections.abc import Generator
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +33,8 @@ from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT
 from cdm_data_loaders.utils.download.sync_client import FileDownloader
 from cdm_data_loaders.utils.s3 import stream_to_s3
 
-logger = logging.getLogger(__name__)
+logger: Logger = getLogger(__name__)
+
 
 DATASET_NAME = "all_the_bacteria"
 ALL_FILES_TSV_FILE_ID = "R6gcp"

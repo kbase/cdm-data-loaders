@@ -25,6 +25,7 @@ that cross-referenced database.
 
 import datetime
 from logging import Logger, getLogger
+from typing import Final
 from uuid import uuid4
 
 import click
@@ -40,16 +41,15 @@ from cdm_data_loaders.utils.spark_delta import APPEND, set_up_workspace, write_d
 from cdm_data_loaders.validation.dataframe_validator import DataFrameValidator, Validator
 from cdm_data_loaders.validation.df_nullable_fields import validate as check_nullable_fields
 
-APP_NAME = "uniprot_idmapping"
-NOW = datetime.datetime.now(tz=datetime.UTC)
-DB = "db"
-XREF = "xref"
-ID = "id"
-COLUMNS = [ID, DB, XREF]
-
-
 logger: Logger = getLogger(__name__)
 
+
+APP_NAME: Final[str] = "uniprot_idmapping"
+NOW = datetime.datetime.now(tz=datetime.UTC)
+DB: Final[str] = "db"
+XREF: Final[str] = "xref"
+ID: Final[str] = "id"
+COLUMNS = [ID, DB, XREF]
 ID_MAPPING_SCHEMA = [StructField(n, StringType(), nullable=False) for n in COLUMNS]
 
 

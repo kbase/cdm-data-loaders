@@ -268,7 +268,6 @@ def download_and_stage(  #  noqa: PLR0913, PLR0915
     :param dry_run: when ``True``, download but skip all S3 uploads
     :return: download report extended with ``staged_objects``, ``staging_key_prefix``, ``dry_run``
     """
-    logger: Logger = getLogger(__name__)
     if manifest_s3_key is not None and manifest_local_path is not None:
         msg = "Provide exactly one of manifest_s3_key or manifest_local_path, not both"
         raise ValueError(msg)

@@ -5,12 +5,12 @@ expects input files with the naming format `{text_string}_{digits}.{ext}`, e.g.
 batch_001.txt, batch_002.txt, batch_003.txt.
 """
 
-import logging
 import os
 import re
 from collections.abc import Generator
 from functools import partial
 from itertools import islice
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Final
 from urllib.parse import parse_qs, urlparse
@@ -34,6 +34,8 @@ from cdm_data_loaders.pipelines.core import (
 from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.utils.batcher import NumericFileSequenceBatcher
 
+logger: Logger = getLogger(__name__)
+
 DATASET_NAME: Final[str] = "ncbi_rest_api"
 
 NCBI_API_KEY = os.environ.get("NCBI_API_KEY") or "DEMO_KEY"
@@ -51,9 +53,6 @@ ERROR: Final[str] = "error"
 QUERY_TYPE_REGEX: Final[re.Pattern[str]] = re.compile(r"^(" + DATASET + r"|" + ANNOTATION + r")$")
 
 REST_CLIENT_HOOKS = {}
-
-logger: logging.Logger = logging.getLogger(__name__)
-
 
 ARG_ALIAS_BATCH_SIZE = ["-b", "--batch-size", "--batch_size"]
 ARG_ALIAS_QUERY_TYPE = ["-q", "--query-type", "--query_type"]

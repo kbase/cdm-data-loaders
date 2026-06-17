@@ -1,9 +1,9 @@
 """Common reusable pipeline elements."""
 
 import datetime
-import logging
 import os
 from collections.abc import Callable, Generator
+from logging import Logger, getLogger
 from typing import Any
 
 import dlt
@@ -16,7 +16,7 @@ from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_PIPELINE_BATCH_SIZE,
 from cdm_data_loaders.utils.batcher import NumericFileSequenceBatcher
 from cdm_data_loaders.utils.xml_utils import stream_xml_file
 
-logger = logging.getLogger(__name__)
+logger: Logger = getLogger(__name__)
 
 
 def construct_env_var() -> None:
@@ -55,7 +55,7 @@ def run_cli(settings_cls: type[CtsSettings], pipeline_fn: Callable[[Any], None])
         settings = settings_cls(dlt_config=dlt.config)
         sync_configs(settings, dlt.config)
     except (SettingsError, ValidationError, ValueError):
-        logging.getLogger(__name__).exception("Error initialising config")
+        logger.exception("Error initialising config")
         raise
     except Exception:
         logger.exception("Unexpected error setting up config")
@@ -101,7 +101,6 @@ def run_pipeline(
     pipeline = dlt.pipeline(destination=destination, **pipeline_kwargs)
 
     slack_hook: str | None = pipeline.runtime_config.slack_incoming_hook
-    logger: logging.Logger = logging.getLogger(__name__)
 
     if not slack_hook:
         logger.info("Slack webhook not configured; no Slack alerts will be sent.")
@@ -138,7 +137,6 @@ def stream_xml_file_resource(
     :param log_interval: log a progress message every N entries
     :type log_interval: int
     """
-    logger = logging.getLogger(__name__)
     timestamp = datetime.datetime.now(tz=datetime.UTC)
     batch_params: dict[str, Any] = {}
     if settings.start_at:
