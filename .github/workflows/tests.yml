@@ -49,11 +49,11 @@ jobs:
         shell: bash
         continue-on-error: false
         run: |
-          docker pull ghcr.io/berdatalakehouse/spark_notebook:main
+          docker pull ghcr.io/kbasedatalakehouse/spark_notebook:main
           echo "Running tests inside container..."
           # slightly nasty hack
           chmod 777 .
-          docker run --rm -e NB_USER=runner -v .:/tmp/cdm ghcr.io/berdatalakehouse/spark_notebook:main /bin/bash /tmp/cdm/scripts/run_tests.sh
+          docker run --rm -e NB_USER=runner -v .:/tmp/cdm ghcr.io/kbasedatalakehouse/spark_notebook:main /bin/bash /tmp/cdm/scripts/run_tests.sh
 
       - name: Send to Codecov
         id: send_to_codecov

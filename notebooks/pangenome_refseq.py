@@ -11,8 +11,6 @@ This script:
    - missing_refseq_ids
 """
 
-from __future__ import annotations
-
 import logging
 import tempfile
 import urllib.request
@@ -20,9 +18,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import click
-from pyspark.sql.functions import regexp_replace
-
 from berdl_notebook_utils.setup_spark_session import get_spark_session
+from pyspark.sql.functions import regexp_replace
 
 if TYPE_CHECKING:
     from pyspark.sql import SparkSession
