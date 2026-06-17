@@ -92,7 +92,7 @@ def test_read_tsv_csv(spark: SparkSession, csv_schema: list[StructField], all_li
 @pytest.mark.requires_spark
 @pytest.mark.parametrize("mode", INGEST_MODES)
 @pytest.mark.parametrize("csv_lines", [VALID, MISSING_REQUIRED, TYPE_MISMATCH, TOO_FEW_COLS, TOO_MANY_COLS, ALL_LINES])
-def test_csv_read_modes(  # noqa: PLR0913
+def test_csv_read_modes(
     spark: SparkSession,
     mode: str,
     csv_lines: str,

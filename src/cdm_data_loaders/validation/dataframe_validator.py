@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from logging import Logger, getLogger
 from typing import Any
 
 from pyspark.sql import DataFrame, SparkSession
@@ -12,10 +13,9 @@ from cdm_data_loaders.audit.metrics import write_metrics
 from cdm_data_loaders.audit.rejects import write_rejects
 from cdm_data_loaders.audit.schema import ROW_ERRORS
 from cdm_data_loaders.core.pipeline_run import PipelineRun
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.validation.validation_result import ValidationResult
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 @dataclass

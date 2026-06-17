@@ -33,7 +33,7 @@ from tests.conftest import NAMESPACE, PIPELINE_RUN, TEST_NS
 @pytest.mark.parametrize("pipeline", [PIPELINE_RUN[PIPELINE], "pipe_2"])
 @pytest.mark.parametrize("source", [PIPELINE_RUN[SOURCE], "/src/two"])
 @pytest.mark.parametrize("add_default_data", [True, False])
-def test_write_metrics(  # noqa: PLR0913
+def test_write_metrics(
     spark: SparkSession,
     pipeline: str,
     source: str,

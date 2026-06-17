@@ -24,6 +24,8 @@ that cross-referenced database.
 """
 
 import datetime
+from logging import Logger, getLogger
+from typing import Final
 from uuid import uuid4
 
 import click
@@ -34,22 +36,20 @@ from pyspark.sql.types import StringType, StructField
 from cdm_data_loaders.core.constants import CDM_LAKE_S3, INVALID_DATA_FIELD_NAME
 from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.readers.dsv import read
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.s3 import list_matching_objects
 from cdm_data_loaders.utils.spark_delta import APPEND, set_up_workspace, write_delta
 from cdm_data_loaders.validation.dataframe_validator import DataFrameValidator, Validator
 from cdm_data_loaders.validation.df_nullable_fields import validate as check_nullable_fields
 
-APP_NAME = "uniprot_idmapping"
+logger: Logger = getLogger(__name__)
+
+
+APP_NAME: Final[str] = "uniprot_idmapping"
 NOW = datetime.datetime.now(tz=datetime.UTC)
-DB = "db"
-XREF = "xref"
-ID = "id"
+DB: Final[str] = "db"
+XREF: Final[str] = "xref"
+ID: Final[str] = "id"
 COLUMNS = [ID, DB, XREF]
-
-
-logger = get_cdm_logger()
-
 ID_MAPPING_SCHEMA = [StructField(n, StringType(), nullable=False) for n in COLUMNS]
 
 
@@ -100,8 +100,8 @@ def read_and_write(spark: SparkSession, pipeline_run: PipelineRun, id_mapping_ts
 
     :param spark: spark sesh
     :type spark: SparkSession
-    :param delta_ns: namespace to write to
-    :type delta_ns: str
+    :param pipeline_run: ID of the pipeline run
+    :type pipeline_run: PipelineRun
     :param id_mapping_tsv: path to the ID mapping file
     :type id_mapping_tsv: str
     :param mode: write mode (append or overwrite)
@@ -123,7 +123,7 @@ def read_and_write(spark: SparkSession, pipeline_run: PipelineRun, id_mapping_ts
     "--namespace",
     default="uniprot",
     show_default=True,
-    help="Delta Lake database name",
+    help="Database name",
 )
 @click.option(
     "--tenant-name",
@@ -135,12 +135,12 @@ def cli(source: str, namespace: str, tenant_name: str | None) -> None:
 
     :param source: full path to the source directory containing ID mapping file(s)
     :type source: str
-    :param namespace: Delta Lake database name
+    :param namespace: Database name
     :type namespace: str
     :param tenant_name: Tenant warehouse to save processed data to; defaults to saving data to the user warehouse if a tenant is not specified
     :type tenant_name: str | None
     """
-    (spark, delta_ns) = set_up_workspace(APP_NAME, namespace, tenant_name)
+    (spark, database_name) = set_up_workspace(APP_NAME, namespace, tenant_name)
 
     # TODO: other locations / local files?
     bucket_list = list_matching_objects(source)
@@ -148,7 +148,7 @@ def cli(source: str, namespace: str, tenant_name: str | None) -> None:
         # file names are in the 'Key' value
         # 'tenant-general-warehouse/kbase/datasets/uniprot/id_mapping/id_mapping_part_001.tsv.gz'
         file_path = f"{CDM_LAKE_S3}/{file['Key']}"
-        pipeline_run = PipelineRun(str(uuid4()), APP_NAME, file_path, delta_ns)
+        pipeline_run = PipelineRun(str(uuid4()), APP_NAME, file_path, database_name)
         logger.info("Reading in mappings from %s", file_path)
         read_and_write(spark, pipeline_run, file_path)
 

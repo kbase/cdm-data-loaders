@@ -1,11 +1,12 @@
 """Checkpoint audit table functions: adding and updating information on data import pipeline execution."""
 
+from logging import Logger, getLogger
+
 from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as sf
 
 from cdm_data_loaders.audit.schema import (
-    AUDIT_SCHEMA,
     CHECKPOINT,
     LAST_ENTRY_ID,
     PIPELINE,
@@ -18,7 +19,8 @@ from cdm_data_loaders.audit.schema import (
     current_run_expr,
 )
 from cdm_data_loaders.core.pipeline_run import PipelineRun
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
+
+logger: Logger = getLogger(__name__)
 
 
 # Checkpoint table-related functions
@@ -58,7 +60,7 @@ def upsert_checkpoint(
         .whenNotMatchedInsertAll()
         .execute()
     )
-    get_cdm_logger().info("%s %s: checkpoint created/updated", run.pipeline, run.run_id)
+    logger.info("%s %s: checkpoint created/updated", run.pipeline, run.run_id)
 
 
 def update_checkpoint_status(spark: SparkSession, run: PipelineRun, status: str) -> None:
@@ -80,7 +82,7 @@ def update_checkpoint_status(spark: SparkSession, run: PipelineRun, status: str)
     # N.b. this may not work correctly if another process updates the table in the interim
     metrics = delta.history(1).select("operationMetrics").collect()[0][0]
     if int(metrics.get("numUpdatedRows", 0)) == 0:
-        get_cdm_logger().warning(
+        logger.warning(
             "%s %s: cannot update '%s' to status %s because no record exists.",
             run.pipeline,
             run.run_id,
@@ -88,7 +90,7 @@ def update_checkpoint_status(spark: SparkSession, run: PipelineRun, status: str)
             status,
         )
     else:
-        get_cdm_logger().info("%s %s: checkpoint successfully updated to status %s", run.pipeline, run.run_id, status)
+        logger.info("%s %s: checkpoint successfully updated to status %s", run.pipeline, run.run_id, status)
 
 
 def load_checkpoint(spark: SparkSession, run: PipelineRun) -> str | None:

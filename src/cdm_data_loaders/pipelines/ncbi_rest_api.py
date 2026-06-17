@@ -1,13 +1,18 @@
-"""Pipeline to import data from the NCBI API."""
+"""Pipeline to import data from the NCBI API.
 
-import logging
+Like other importers in the cdm-data-loaders repo, the NCBI REST API pipeline
+expects input files with the naming format `{text_string}_{digits}.{ext}`, e.g.
+batch_001.txt, batch_002.txt, batch_003.txt.
+"""
+
 import os
 import re
 from collections.abc import Generator
 from functools import partial
 from itertools import islice
+from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 from urllib.parse import parse_qs, urlparse
 
 import dlt
@@ -27,25 +32,25 @@ from cdm_data_loaders.pipelines.core import (
     run_pipeline,
 )
 from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
-from cdm_data_loaders.utils.file_system import BatchCursor
+from cdm_data_loaders.utils.batcher import NumericFileSequenceBatcher
 
-DATASET_NAME = "ncbi_rest_api"
+logger: Logger = getLogger(__name__)
+
+DATASET_NAME: Final[str] = "ncbi_rest_api"
 
 NCBI_API_KEY = os.environ.get("NCBI_API_KEY") or "DEMO_KEY"
 
 # Max number of items to request per page from the NCBI REST API (max allowed is 1000).
-MAX_RESULTS_PER_PAGE = 1000
+MAX_RESULTS_PER_PAGE: Final[int] = 1000
 # Max number of IDs to send in a multi-ID query
 # Max URL length seems to be 4611 (as of Jun 2026)
-MAX_IDS_PER_QUERY = 250
+MAX_IDS_PER_QUERY: Final[int] = 250
 
-DATASET = "dataset"
-ANNOTATION = "annotation"
-ERROR = "error"
+DATASET: Final[str] = "dataset"
+ANNOTATION: Final[str] = "annotation"
+ERROR: Final[str] = "error"
 
-QUERY_TYPE_REGEX = re.compile(r"^(" + DATASET + r"|" + ANNOTATION + r")$")
-
-logger = logging.getLogger("dlt")
+QUERY_TYPE_REGEX: Final[re.Pattern[str]] = re.compile(r"^(" + DATASET + r"|" + ANNOTATION + r")$")
 
 REST_CLIENT_HOOKS = {}
 
@@ -333,7 +338,7 @@ def assemble_assembly_reports(
 def assembly_list() -> Generator[list[str], Any, Any]:
     """List of assemblies to fetch."""
     settings = get_settings()
-    batcher = BatchCursor(settings.input_dir, batch_size=1)
+    batcher = NumericFileSequenceBatcher(directory=settings.input_dir, batch_size=1)
     while files := batcher.get_batch():
         for file_path in files:
             with file_path.open() as f:

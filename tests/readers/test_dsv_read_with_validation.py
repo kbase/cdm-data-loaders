@@ -69,7 +69,7 @@ def read_with_validation(
 @pytest.mark.requires_spark
 @pytest.mark.parametrize("mode", INGEST_MODES)
 @pytest.mark.parametrize("csv_lines", [VALID, MISSING_REQUIRED, TYPE_MISMATCH, TOO_FEW_COLS, TOO_MANY_COLS, ALL_LINES])
-def test_csv_read_with_validation_errors(  # noqa: PLR0913
+def test_csv_read_with_validation_errors(
     spark: SparkSession,
     mode: str,
     csv_lines: str,

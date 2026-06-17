@@ -19,15 +19,15 @@ size, file format, and MD5 hash of each promoted data file.
 import json
 import tempfile
 from datetime import UTC, datetime
+from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import Any, TypedDict
 
 from frictionless import Package
 
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.s3 import copy_object, get_s3_client
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 _NCBI_CONTRIBUTOR = {
     "contributor_type": "Organization",

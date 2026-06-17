@@ -6,10 +6,11 @@ import shutil
 from collections.abc import Generator
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pytest
 from berdl_notebook_utils.setup_spark_session import generate_spark_conf
+from frozendict import frozendict
 from pyspark.conf import SparkConf
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import (
@@ -34,20 +35,17 @@ from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.readers.dsv import INVALID_DATA_FIELD
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
-SAVE_DIR = "spark.sql.warehouse.dir"
+SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 
 
-TEST_NS = "test_ns"
-PIPELINE_RUN = {RUN_ID: "1234-5678-90", PIPELINE: "KeystoneXL", SOURCE: "/path/to/file"}
-ALT_PIPELINE_RUN = {RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL", SOURCE: "/path/to/dir"}
+TEST_NS: Final[str] = "test_ns"
+PIPELINE_RUN = frozendict({RUN_ID: "1234-5678-90", PIPELINE: "KeystoneXL", SOURCE: "/path/to/file"})
+ALT_PIPELINE_RUN = frozendict({RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL", SOURCE: "/path/to/dir"})
 
 
 @pytest.fixture(autouse=True)
 def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
-    """Fiddle with the loggers used in the tests for a better experience.
-
-    N.b. this is overwritten by the conftest in the pipelines directory, which uses the dlt logger.
-    """
+    """Fiddle with the loggers used in the tests for a better experience."""
     vcr_logger = logging.getLogger("vcr")
     vcr_logger.setLevel("ERROR")
     # turn on log propagation for the dlt logger
@@ -80,7 +78,7 @@ def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
     spark = SparkSession.builder.config(conf=spark_conf).getOrCreate()
     save_dir = spark.conf.get(SAVE_DIR).removeprefix("file:")  # pyright: ignore[reportOptionalMemberAccess]
     if save_dir != str(tmp_path):
-        get_cdm_logger().error(f"spark dir: {tmp_path}; save dir: {save_dir}")
+        logging.getLogger(__name__).error("spark dir: %s; save dir: %s", tmp_path, save_dir)
     yield spark
     spark.catalog.clearCache()
     spark.stop()

@@ -1,7 +1,7 @@
 """DLT pipeline to import UniRef data."""
 
 from collections.abc import Generator
-from typing import Any
+from typing import Any, Final
 
 import dlt
 from dlt.extract.items import DataItemWithMeta
@@ -19,8 +19,8 @@ from cdm_data_loaders.pipelines.cts_defaults import (
     BatchedFileInputSettings,
 )
 
-APP_NAME = "uniref_importer"
-UNIREF_LOG_INTERVAL = 10000
+APP_NAME: Final[str] = "uniref_importer"
+UNIREF_LOG_INTERVAL: Final[int] = 10000
 
 
 UNIREF_VARIANT_ALIASES = ["-u", "--uniref", "--uniref-variant", "--uniref_variant"]
@@ -56,7 +56,7 @@ class UnirefSettings(BatchedFileInputSettings):
         return v
 
 
-@dlt.resource(name="parse_uniref", parallelized=True)
+@dlt.resource(name="parse_uniref", file_format="parquet", parallelized=True)
 def parse_uniref(settings: UnirefSettings) -> Generator[DataItemWithMeta, Any]:
     """Parse the information from UniRef files, batch by batch.
 
@@ -86,7 +86,6 @@ def run_uniref_pipeline(settings: UnirefSettings) -> None:
             "pipeline_name": f"uniref_{settings.uniref_variant}",
             "dataset_name": "uniprot_kb",
         },
-        pipeline_run_kwargs={"table_format": "delta"},
     )
 
 

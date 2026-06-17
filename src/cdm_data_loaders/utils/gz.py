@@ -2,21 +2,23 @@
 
 import gzip
 import shutil
+from logging import Logger, getLogger
 from pathlib import Path
 
 import click
 
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
-def decompress_file(file: Path) -> None:
+def decompress_file(file: str | Path) -> None:
     """Decompress a gzip file.
 
     :param file: file to decompress
-    :type file: Path
+    :type file: str | Path
     """
+    if not isinstance(file, Path):
+        file = Path(file)
+
     if file.suffix != ".gz":
         logger.info("File %s does not end with .gz: skipping decompression", str(file))
         return

@@ -1,11 +1,12 @@
 """Audit table for recording metrics."""
 
+from logging import Logger, getLogger
+
 from delta.tables import DeltaTable
 from pyspark.sql import DataFrame, Row, SparkSession
 from pyspark.sql import functions as sf
 
 from cdm_data_loaders.audit.schema import (
-    AUDIT_SCHEMA,
     METRICS,
     N_INVALID,
     N_READ,
@@ -19,9 +20,8 @@ from cdm_data_loaders.audit.schema import (
     current_run_expr,
 )
 from cdm_data_loaders.core.pipeline_run import PipelineRun
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 def write_metrics(
@@ -91,6 +91,6 @@ def write_metrics(
         .whenNotMatchedInsertAll()
         .execute()
     )
-    get_cdm_logger().info("%s %s: ingest metrics written to '%s' table.", run.pipeline, run.run_id, METRICS)
+    logger.info("%s %s: ingest metrics written to '%s' table.", run.pipeline, run.run_id, METRICS)
 
     return metrics

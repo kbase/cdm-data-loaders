@@ -166,7 +166,7 @@ def test_make_settings_all_params_set() -> None:
     "use_output_dir_for_pipeline_metadata",
     ARG_ALIASES["use_output_dir_for_pipeline_metadata"],
 )
-def test_cli_app_run_alt_settings(  # noqa: PLR0913
+def test_cli_app_run_alt_settings(
     dev_mode: str,
     input_dir: str,
     output: str,
@@ -233,12 +233,11 @@ def test_run_uniref_pipeline_args_set_correctly(test_settings: UnirefSettings) -
 
     assert mock_run_pipeline.call_count == 1
     _, kwargs = mock_run_pipeline.call_args
-    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
+    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs"}
     assert kwargs["pipeline_kwargs"] == {
         "pipeline_name": f"uniref_{test_settings.uniref_variant}",
         "dataset_name": "uniprot_kb",
     }
-    assert kwargs["pipeline_run_kwargs"] == {"table_format": "delta"}
     assert kwargs["settings"] == test_settings
     assert isinstance(kwargs["resource"], Callable)
 
@@ -264,10 +263,7 @@ def test_run_uniref_pipeline_sets_core_run_pipeline_args_correctly(
         pipeline_name=f"uniref_{test_settings.uniref_variant}",
         dataset_name="uniprot_kb",
     )
-    mock_dlt.pipeline.return_value.run.assert_called_once_with(
-        expected_resource,
-        table_format="delta",
-    )
+    mock_dlt.pipeline.return_value.run.assert_called_once_with(expected_resource)
 
 
 def test_parse_uniref_resource(test_settings: UnirefSettings) -> None:
@@ -320,7 +316,7 @@ def test_integration_cli_uniref_pipeline_output_validated(
         assert isinstance(resource, Callable)  # after draining the generator, resource should be a list
         # the resource should be the output of parse_uniref
         assert resource.name == "parse_uniref"
-        assert kwargs == {"table_format": "delta"}
+        assert kwargs == {}
         return list(resource)
 
     mock_stream.side_effect = fake_stream_xml_file

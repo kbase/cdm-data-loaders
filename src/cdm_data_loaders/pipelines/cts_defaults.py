@@ -1,20 +1,21 @@
 """Common defaults for running pipelines on the KBase CTS."""
 
-from typing import Any, Self
+from typing import Any, Final, Self
 
 import dlt.common.configuration.accessors
 from frozendict import frozendict
 from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, CliSuppress, SettingsConfigDict
 
-INPUT_MOUNT = "/input_dir"
-OUTPUT_MOUNT = "/output_dir"
-
-VALID_DESTINATIONS = ["local_fs", "s3"]
-DEFAULT_BATCH_SIZE = 50
-DEFAULT_START_AT = 0
+from cdm_data_loaders.utils.batcher import MIN_START_AT
 
 # TODO: frozendict can be moved to the stdlib implementation when py 3.15 is released.
+
+
+INPUT_MOUNT: Final[str] = "/input_dir"
+OUTPUT_MOUNT: Final[str] = "/output_dir"
+
+VALID_DESTINATIONS: list[str] = ["local_fs", "s3"]
 
 
 DEFAULT_CTS_SETTINGS = frozendict(
@@ -31,9 +32,11 @@ DEFAULT_CTS_SETTINGS = frozendict(
 DEFAULT_BATCH_FILE_SETTINGS = frozendict(
     {
         **DEFAULT_CTS_SETTINGS,
-        "start_at": DEFAULT_START_AT,
+        "start_at": MIN_START_AT,
     }
 )
+
+DEFAULT_PIPELINE_BATCH_SIZE: Final[int] = 50
 
 
 ARG_ALIASES = frozendict(

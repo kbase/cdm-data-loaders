@@ -5,12 +5,12 @@ Contains the core logic for parsing a UniProt XML file that can be successfully 
 """
 
 import datetime
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
 from lxml.etree import Element, tounicode
 
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.helpers import _ensembl_type
 from cdm_data_loaders.utils.xml_utils import get_text
 
@@ -43,7 +43,7 @@ PREFIX_TRANSLATION: dict[str, str] = {
     "pubmed": "PMID",
 }
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 # TODO: FIXME!!!

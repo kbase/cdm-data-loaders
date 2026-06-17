@@ -22,7 +22,7 @@ from cdm_data_loaders.pipelines.core import (
     sync_configs,
 )
 from cdm_data_loaders.pipelines.cts_defaults import (
-    DEFAULT_BATCH_SIZE,
+    DEFAULT_PIPELINE_BATCH_SIZE,
     VALID_DESTINATIONS,
     BatchedFileInputSettings,
     CtsSettings,
@@ -76,7 +76,7 @@ def config(request: pytest.FixtureRequest) -> BatchedFileInputSettings:
     return make_batched_settings(**request.param)
 
 
-def assert_pipeline_run_correctly(  # noqa: PLR0913
+def assert_pipeline_run_correctly(
     mock_dlt: MagicMock,
     fake_resource: MagicMock,
     destination: str,
@@ -273,7 +273,7 @@ def test_run_cli_reraises_settings_error(
         ({"destination": {}}, ValueError, "No valid destinations found in dlt configuration"),
     ],
 )
-def test_run_cli_reraises_validation_errors(  # noqa: PLR0913
+def test_run_cli_reraises_validation_errors(
     settings_cls: type[CtsSettings],
     bad_dlt_config: None | dict[str, Any],
     error: type[Exception],
@@ -454,7 +454,7 @@ def test_run_pipeline_graceful_fail(
 
 @pytest.mark.parametrize("slack_configured", [True, False])
 @pytest.mark.parametrize("success", [True, False])
-def test_run_pipeline_slack_configured(  # noqa: PLR0913
+def test_run_pipeline_slack_configured(
     test_bfi_settings: BatchedFileInputSettings,
     mock_dlt: MagicMock,
     mock_send_slack_message: MagicMock,
@@ -542,7 +542,7 @@ def test_run_pipeline_dev_mode_absent_from_pipeline_kwargs_when_false(
 def test_stream_xml_resource_nonzero_start_at_passed_to_batcher(
     patched_io: tuple[MagicMock, MagicMock], start_at: int
 ) -> None:
-    """start_at > 0 is truthy and must be forwarded to BatchCursor."""
+    """start_at > 0 is truthy and must be forwarded to NumericFileSequenceBatcher."""
     mock_batcher_cls, _ = patched_io
     mock_batcher_cls.return_value = make_batcher([])
     settings = make_batched_settings(input_dir="/i", start_at=start_at)
@@ -601,7 +601,7 @@ def test_stream_xml_file_resource_empty_batch_yields_nothing(
     patched_io: tuple[MagicMock, MagicMock],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """No items yielded when BatchCursor returns an empty batch; BatchCursor receives correct args."""
+    """No items yielded when NumericFileSequenceBatcher returns an empty batch; NumericFileSequenceBatcher receives correct args."""
     mock_batcher = MagicMock()
     mock_batcher.get_batch.return_value = []
     mock_batcher_cls, mock_stream = patched_io
@@ -610,11 +610,13 @@ def test_stream_xml_file_resource_empty_batch_yields_nothing(
     results = list(stream_xml_file_resource(config, "xml_tag", MagicMock()))
     assert results == []
 
-    expected_batcher_kwargs = {"batch_size": DEFAULT_BATCH_SIZE}
-    if config.start_at:
-        expected_batcher_kwargs["start_at"] = config.start_at
+    expected_batcher_kwargs = {
+        "directory": config.input_dir,
+        "batch_size": DEFAULT_PIPELINE_BATCH_SIZE,
+        "start_at": config.start_at,
+    }
 
-    assert mock_batcher_cls.call_args_list == [call(config.input_dir, **expected_batcher_kwargs)]
+    assert mock_batcher_cls.call_args_list == [call(**expected_batcher_kwargs)]
     mock_batcher.get_batch.assert_called_once()
     mock_stream.assert_not_called()
     assert caplog.records == []
@@ -689,7 +691,7 @@ def test_stream_xml_file_resource_processes_all_files_across_batches(
     assert caplog.messages == [f"Reading from {f!s}" for f in fake_files]
 
 
-def test_stream_xml_file_resource_multiple_batches_with_output(  # noqa: PLR0913
+def test_stream_xml_file_resource_multiple_batches_with_output(
     mock_dlt: MagicMock,
     patched_io: tuple[MagicMock, MagicMock],
     fake_files: list[Path],

@@ -19,7 +19,7 @@ output_path = sync_client.download(
 
 """
 
-import logging
+from logging import WARNING, Logger, getLogger
 from pathlib import Path
 from typing import Any
 
@@ -32,14 +32,13 @@ from tenacity import (
     wait_exponential,
 )
 
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.download.core import (
     DownloadCore,
     DownloadError,
     NonRetryableDownloadError,
 )
 
-logger: logging.Logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 def get_httpx_client() -> httpx.Client:
@@ -97,7 +96,7 @@ class FileDownloader:
                 max=max_backoff,
             ),
             reraise=True,
-            before_sleep=before_sleep_log(logger, logging.WARNING),
+            before_sleep=before_sleep_log(logger, WARNING),
         )
 
     def download(

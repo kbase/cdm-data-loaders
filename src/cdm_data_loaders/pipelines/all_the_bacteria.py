@@ -6,14 +6,14 @@ Batch downloading from OSF: https://allthebacteria.org/docs/osf_downloads/
 
 all_atb_files.tsv: https://osf.io/xv7q9/files/r6gcp (or Rg6cp, casing varies)
 
-# TODO: change the output to delta tables.
+# TODO: change the output to parquet files.
 
 """
 
 import csv
-import logging
 import re
 from collections.abc import Generator
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +33,7 @@ from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT
 from cdm_data_loaders.utils.download.sync_client import FileDownloader
 from cdm_data_loaders.utils.s3 import stream_to_s3
 
-logger = logging.getLogger("dlt")
+logger: Logger = getLogger(__name__)
 
 
 DATASET_NAME = "all_the_bacteria"
@@ -202,9 +202,7 @@ def get_file_download_links(settings: AtbSettings, atb_files_tsv: Path) -> Gener
                 logger.error(err_msg)
                 raise RuntimeError(err_msg)
 
-        files_to_download = [row for row in all_lines if pattern_to_match.match(row["project"])]
-
-        yield files_to_download
+        yield [row for row in all_lines if pattern_to_match.match(row["project"])]
 
 
 def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any]]) -> Generator[DataItemWithMeta, Any]:

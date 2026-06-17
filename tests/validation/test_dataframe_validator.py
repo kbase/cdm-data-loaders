@@ -38,7 +38,7 @@ def test_validate_dataframe_empty_df(pipeline_run: PipelineRun, empty_df: DataFr
 
 
 @pytest.mark.requires_spark
-def test_validate_dataframe_no_validation(  # noqa: PLR0913
+def test_validate_dataframe_no_validation(
     spark: SparkSession,
     csv_schema: list[StructField],
     annotated_df_data: list[dict[str, Any]],

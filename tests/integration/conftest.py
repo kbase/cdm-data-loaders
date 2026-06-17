@@ -196,7 +196,7 @@ def stage_files_to_ceph(
     return keys
 
 
-def seed_lakehouse(  # noqa: PLR0913
+def seed_lakehouse(
     s3: botocore.client.BaseClient,
     bucket: PurePosixPath,
     accession: str,

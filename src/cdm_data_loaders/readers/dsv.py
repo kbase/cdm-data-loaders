@@ -1,12 +1,12 @@
 """Generic DSV file reader with validation of incoming data."""
 
+from logging import Logger, getLogger
 from typing import Any
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import StringType, StructField, StructType
 
 from cdm_data_loaders.core.constants import INVALID_DATA_FIELD_NAME
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
 # mapping of delimiters to format names (for logging)
 # spark defaults to separating on commas if nothing is specified
@@ -29,7 +29,7 @@ DEFAULT_DSV_OPTIONS = {
 }
 
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 def get_format_name(delimiter: str | None) -> str:

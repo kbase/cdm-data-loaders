@@ -1,11 +1,12 @@
 """Run audit table functions: additions and updates to the run table, which tracks overall run status for a pipeline."""
 
+from logging import Logger, getLogger
+
 from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as sf
 
 from cdm_data_loaders.audit.schema import (
-    AUDIT_SCHEMA,
     END_TIME,
     ERROR,
     PIPELINE,
@@ -21,7 +22,8 @@ from cdm_data_loaders.audit.schema import (
     match_run,
 )
 from cdm_data_loaders.core.pipeline_run import PipelineRun
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
+
+logger: Logger = getLogger(__name__)
 
 
 def _table_not_updated(delta: DeltaTable) -> bool:
@@ -73,14 +75,14 @@ def complete_run(spark: SparkSession, run: PipelineRun, records_processed: int) 
     )
     # check whether rows were updated by looking in the delta log
     if _table_not_updated(delta):
-        get_cdm_logger().warning(
+        logger.warning(
             "%s %s: cannot update '%s' to status %s because no record exists.",
             run.pipeline,
             run.run_id,
             RUN,
             STATUS_SUCCESS,
         )
-    get_cdm_logger().info("%s %s: run completed", run.pipeline, run.run_id)
+    logger.info("%s %s: run completed", run.pipeline, run.run_id)
 
 
 def fail_run(spark: SparkSession, run: PipelineRun, error: Exception) -> None:
@@ -104,11 +106,11 @@ def fail_run(spark: SparkSession, run: PipelineRun, error: Exception) -> None:
     )
     # check whether rows were updated by looking in the delta log
     if _table_not_updated(delta):
-        get_cdm_logger().warning(
+        logger.warning(
             "%s %s: cannot update '%s' to status %s because no record exists.",
             run.pipeline,
             run.run_id,
             RUN,
             STATUS_ERROR,
         )
-    get_cdm_logger().error("%s %s: run failed with %s", run.pipeline, run.run_id, error.__repr__())
+    logger.error("%s %s: run failed with %s", run.pipeline, run.run_id, error.__repr__())

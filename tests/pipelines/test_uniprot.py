@@ -71,7 +71,7 @@ def test_make_settings_all_params_set() -> None:
     "use_output_dir_for_pipeline_metadata",
     ARG_ALIASES["use_output_dir_for_pipeline_metadata"],
 )
-def test_cli_app_run_alt_settings(  # noqa: PLR0913
+def test_cli_app_run_alt_settings(
     dev_mode: str,
     input_dir: str,
     output: str,
@@ -136,9 +136,8 @@ def test_run_uniprot_pipeline_args_set_correctly(test_settings: UniProtSettings)
 
     assert mock_run_pipeline.call_count == 1
     _, kwargs = mock_run_pipeline.call_args
-    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
+    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs"}
     assert kwargs["pipeline_kwargs"] == {"pipeline_name": "uniprot_kb", "dataset_name": "uniprot_kb"}
-    assert kwargs["pipeline_run_kwargs"] == {"table_format": "delta"}
     assert kwargs["settings"] == test_settings
     assert isinstance(kwargs["resource"], Callable)
 
@@ -164,10 +163,7 @@ def test_run_uniprot_pipeline_sets_core_run_pipeline_args_correctly(
         pipeline_name="uniprot_kb",
         dataset_name="uniprot_kb",
     )
-    mock_dlt.pipeline.return_value.run.assert_called_once_with(
-        expected_resource,
-        table_format="delta",
-    )
+    mock_dlt.pipeline.return_value.run.assert_called_once_with(expected_resource)
 
 
 def test_parse_uniprot_resource(test_settings: UniProtSettings) -> None:
