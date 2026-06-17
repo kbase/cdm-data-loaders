@@ -540,10 +540,16 @@ def test_run_pipeline_slack_configured(
     if slack_configured:
         if success:
             mock_send_slack_message.assert_called_once_with(
-                "http://some.url.slack.com", "Pipeline completed successfully!"
+                "http://some.url.slack.com",
+                "Pipeline completed successfully!",
+                False,  # noqa: FBT003
             )
         else:
-            mock_send_slack_message.assert_called_once_with("http://some.url.slack.com", f"Pipeline failed: {error!s}")
+            mock_send_slack_message.assert_called_once_with(
+                "http://some.url.slack.com",
+                f"Pipeline failed: {error!s}",
+                False,  # noqa: FBT003
+            )
         assert f"No Slack alerts will be sent: {WEBHOOK_NOT_CONFIGURED}" not in caplog.messages
     else:
         mock_send_slack_message.assert_not_called()
