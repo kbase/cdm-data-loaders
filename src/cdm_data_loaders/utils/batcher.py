@@ -1,4 +1,4 @@
-"""File system-related utilities."""
+"""Utilities for splitting a selection into batches."""
 
 import re
 from logging import Logger, getLogger

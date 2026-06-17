@@ -16,6 +16,8 @@ from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_PIPELINE_BATCH_SIZE,
 from cdm_data_loaders.utils.batcher import NumericFileSequenceBatcher
 from cdm_data_loaders.utils.xml_utils import stream_xml_file
 
+logger = logging.getLogger(__name__)
+
 
 def construct_env_var() -> None:
     """Use environment variables to construct a new environment variable."""
@@ -36,7 +38,6 @@ def sync_configs(settings: CtsSettings, dlt_config: Any) -> None:
 def dump_settings(settings: CtsSettings) -> None:
     """Dump the pipeline settings to the logger."""
     settings_minus_dlt_config = settings.model_dump(exclude={"dlt_config"})
-    logger: logging.Logger = logging.getLogger(__name__)
     logger.info("Pipeline settings:")
     logger.info(settings_minus_dlt_config)
 
@@ -57,7 +58,7 @@ def run_cli(settings_cls: type[CtsSettings], pipeline_fn: Callable[[Any], None])
         logging.getLogger(__name__).exception("Error initialising config")
         raise
     except Exception:
-        logging.getLogger(__name__).exception("Unexpected error setting up config")
+        logger.exception("Unexpected error setting up config")
         raise
 
     dump_settings(settings)

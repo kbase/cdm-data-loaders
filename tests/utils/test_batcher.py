@@ -134,7 +134,7 @@ def test_init_batcher_defaults() -> None:
     assert bc.start_at == MIN_START_AT
     assert bc.end_at == MIN_END_AT
     assert bc.file_regex == FILE_NAME_REGEX
-    assert bc.directory == Path("path/to/dir")
+    assert bc.directory == Path("path") / "to" / "dir"
 
 
 def test_init_batcher_values() -> None:
@@ -143,13 +143,13 @@ def test_init_batcher_values() -> None:
     batch_size = 10
     end_at = 26
     bc = NumericFileSequenceBatcher(
-        directory=Path("path/to/dir"), start_at=start_at, batch_size=batch_size, end_at=end_at
+        directory=Path("path") / "to" / "dir", start_at=start_at, batch_size=batch_size, end_at=end_at
     )
     assert bc.start_at == start_at
     assert bc.batch_size == batch_size
     assert bc.end_at == end_at
     assert bc.file_regex == FILE_NAME_REGEX
-    assert bc.directory == Path("path/to/dir")
+    assert bc.directory == Path("path") / "to" / "dir"
 
 
 def test_init_batcher_no_directory() -> None:

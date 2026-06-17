@@ -52,6 +52,9 @@ QUERY_TYPE_REGEX: Final[re.Pattern[str]] = re.compile(r"^(" + DATASET + r"|" + A
 
 REST_CLIENT_HOOKS = {}
 
+logger: logging.Logger = logging.getLogger(__name__)
+
+
 ARG_ALIAS_BATCH_SIZE = ["-b", "--batch-size", "--batch_size"]
 ARG_ALIAS_QUERY_TYPE = ["-q", "--query-type", "--query_type"]
 
@@ -255,7 +258,7 @@ def get_dataset_reports(assembly_id_list: list[str]) -> dict[str, None | dict[st
     if not assembly_id_list:
         return {}
 
-    logging.getLogger(__name__).info("fetching dataset reports for:\n%s", ", ".join(sorted(assembly_id_list)))
+    logger.info("fetching dataset reports for:\n%s", ", ".join(sorted(assembly_id_list)))
     assembly_dataset_reports = []
 
     for page in ncbi_genome_client.paginate(
@@ -276,7 +279,7 @@ def get_dataset_reports(assembly_id_list: list[str]) -> dict[str, None | dict[st
 
 def get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:
     """Fetch the annotation report for an assembly from the NCBI datasets REST API."""
-    logging.getLogger(__name__).info("fetching annotation report for %s", assembly_id)
+    logger.info("fetching annotation report for %s", assembly_id)
     page_data = []
 
     for page in ncbi_genome_client.paginate(

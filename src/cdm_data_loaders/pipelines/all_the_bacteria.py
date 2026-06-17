@@ -33,6 +33,8 @@ from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT
 from cdm_data_loaders.utils.download.sync_client import FileDownloader
 from cdm_data_loaders.utils.s3 import stream_to_s3
 
+logger = logging.getLogger(__name__)
+
 DATASET_NAME = "all_the_bacteria"
 ALL_FILES_TSV_FILE_ID = "R6gcp"
 ALL_ATB_FILE_NAME = "all_atb_files.tsv"
@@ -116,7 +118,7 @@ def load_patterns(pattern_file: Path) -> re.Pattern | None:
         if patterns:
             return re.compile("^(" + "|".join(patterns) + ")$")
     except Exception:
-        logging.getLogger(__name__).exception("Could not load patterns from %s", str(pattern_file))
+        logger.exception("Could not load patterns from %s", str(pattern_file))
 
     return None
 
@@ -130,7 +132,6 @@ def download_atb_index_tsv(settings: AtbSettings) -> Path:
     :return: path to the downloaded file
     :rtype: Path
     """
-    logger = logging.getLogger(__name__)
     # get the all_atb_files.tsv file info from the OSF API and retrieve the download link
     osf_client = RESTClient(
         base_url="https://api.osf.io/v2/",
@@ -181,7 +182,6 @@ def get_file_download_links(settings: AtbSettings, atb_files_tsv: Path) -> Gener
     :yield: list of fields to download
     :rtype: Generator[list[dict[str, Any]], Any]
     """
-    logger = logging.getLogger(__name__)
     pattern_to_match = settings.pattern_matches
     with atb_files_tsv.open() as index_file:
         reader = csv.DictReader(index_file, delimiter="\t")
@@ -212,7 +212,6 @@ def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any
     :param atb_file_list: info about files to transfer, as a list of dictionaries
     :type atb_file_list: list[dict[str, Any]]
     """
-    logger = logging.getLogger(__name__)
     client = FileDownloader()
     successful_downloads = []
     for f in atb_file_list:

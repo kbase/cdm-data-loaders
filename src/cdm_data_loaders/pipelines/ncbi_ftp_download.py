@@ -33,6 +33,9 @@ from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT
 from cdm_data_loaders.utils.ftp_client import ThreadLocalFTP
 from cdm_data_loaders.utils.s3 import get_s3_client, upload_file
 
+logger: Logger = getLogger(__name__)
+
+
 DEFAULT_STAGING_KEY_PREFIX: PurePosixPath = PurePosixPath("staging")
 
 
@@ -102,7 +105,7 @@ def _upload_assembly_dir(
             if upload_file(f, str(dest_prefix), show_progress=False):
                 count += 1
             else:
-                getLogger(__name__).warning("Failed to upload %s to %s", f, dest_prefix)
+                logger.warning("Failed to upload %s to %s", f, dest_prefix)
             f.unlink()
     shutil.rmtree(assembly_dir, ignore_errors=True)
     return count
@@ -127,7 +130,6 @@ def download_batch(
     :param limit: optional limit for testing
     :return: report dict with overall stats
     """
-    logger: Logger = getLogger(__name__)
     with manifest_path.open() as f:
         assembly_paths = [PurePosixPath(line.strip()) for line in f if line.strip() and not line.startswith("#")]
 
