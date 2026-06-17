@@ -4,7 +4,7 @@ import datetime
 import os
 from collections.abc import Callable, Generator
 from logging import Logger, getLogger
-from typing import Any
+from typing import Any, Final
 
 import dlt
 from dlt.common.runtime.slack import send_slack_message
@@ -16,7 +16,34 @@ from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_PIPELINE_BATCH_SIZE,
 from cdm_data_loaders.utils.batcher import NumericFileSequenceBatcher
 from cdm_data_loaders.utils.xml_utils import stream_xml_file
 
+WEBHOOK_NOT_CONFIGURED: Final[str] = "Slack webhook not configured"
+NO_MESSAGE: Final[str] = "No message supplied"
+
+
 logger: Logger = getLogger(__name__)
+
+
+def send_slack_message_carefully(slack_hook: str, message: str, is_markdown: bool = False) -> None:  # noqa: FBT001, FBT002
+    """Carefully send a slack message by wrapping it in a try/except.
+
+    :param slack_hook: _description_
+    :type slack_hook: str
+    :param message: _description_
+    :type message: str
+    :param is_markdown: _description_, defaults to False
+    :type is_markdown: bool, optional
+    """
+    if not slack_hook:
+        logger.warning("Cannot send slack message: %s", WEBHOOK_NOT_CONFIGURED)
+        return
+    if not message:
+        logger.warning("Cannot send slack message: %s", NO_MESSAGE)
+        return
+
+    try:
+        send_slack_message(slack_hook, message, is_markdown)
+    except Exception:
+        logger.exception("Failed to send slack message")
 
 
 def construct_env_var() -> None:
@@ -103,7 +130,7 @@ def run_pipeline(
     slack_hook: str | None = pipeline.runtime_config.slack_incoming_hook
 
     if not slack_hook:
-        logger.info("Slack webhook not configured; no Slack alerts will be sent.")
+        logger.info("No Slack alerts will be sent: %s", WEBHOOK_NOT_CONFIGURED)
 
     try:
         load_info = pipeline.run(resource, **(pipeline_run_kwargs or {}))
@@ -111,13 +138,13 @@ def run_pipeline(
         err_msg = f"Pipeline failed: {e!s}"
         logger.exception(err_msg)
         if slack_hook:
-            send_slack_message(slack_hook, err_msg)
+            send_slack_message_carefully(slack_hook, err_msg)
         return
 
     logger.info(load_info)
     logger.info("Work complete!")
     if slack_hook:
-        send_slack_message(slack_hook, "Pipeline completed successfully!")
+        send_slack_message_carefully(slack_hook, "Pipeline completed successfully!")
 
 
 def stream_xml_file_resource(
