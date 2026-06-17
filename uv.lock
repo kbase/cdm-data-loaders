@@ -489,7 +489,6 @@ source = { editable = "." }
 dependencies = [
     { name = "bioregistry" },
     { name = "boto3", extra = ["crt"] },
-    { name = "cdm-task-service-client" },
     { name = "click" },
     { name = "defusedxml" },
     { name = "delta-spark" },
@@ -528,7 +527,6 @@ xml = [
 requires-dist = [
     { name = "bioregistry", specifier = ">=0.13.58" },
     { name = "boto3", extras = ["crt"], specifier = ">=1.42.55" },
-    { name = "cdm-task-service-client", git = "https://github.com/kbase/cdm-task-service-client.git" },
     { name = "click", specifier = ">=8.4.1" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "delta-spark", specifier = ">=4.2.0" },
