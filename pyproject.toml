@@ -170,10 +170,11 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = ["T201"] # ignore printing in notebooks
+"**/__init__.py" = ["D104"] # no docstrings for __init__ files
+"scripts/**/*.py" = ["T201"] # ignore printing in scripts
 "tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002"]  # use of assert, booleans, unused mock args
 "tests/integration/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002", "ANN401"]
 "tests/utils/test_s3.py" = ["ANN401"]
-"**/__init__.py" = ["D104"]
 
 [tool.ruff.lint.mccabe]
 # Flag errors (`C901`) whenever the complexity level exceeds 15.
@@ -217,5 +218,5 @@ AWS_SECRET_ACCESS_KEY = "test_access_secret"
 
 [tool.uv.sources]
 cdm-schema = { git = "https://github.com/kbase/cdm-schema.git" }
-berdl-notebook-utils = { git = "https://github.com/BERDataLakehouse/spark_notebook.git", subdirectory = "notebook_utils" }
+berdl-notebook-utils = { git = "https://github.com/KBaseDataLakehouse/spark_notebook.git", subdirectory = "notebook_utils" }
 cdm-task-service-client = { git = "https://github.com/kbase/cdm-task-service-client.git" }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ruff: noqa: T201, EM101, EM102, TRY003, D103
+# ruff: noqa: D103
 """Thin S3 CLI for local CEPH testing (no aws-cli install required).
 
 Usage (all commands assume ``uv run`` from the repo root):
@@ -19,7 +19,7 @@ Environment variables (with defaults for the walkthrough):
 import os
 import sys
 
-import cdm_data_loaders.utils.s3 as s3
+from cdm_data_loaders.utils import s3
 
 
 def _client() -> None:
@@ -41,7 +41,8 @@ COMMANDS = {"mb": s3.cmd_mb, "cp": s3.cmd_cp, "ls": s3.cmd_ls, "head": s3.cmd_he
 def main() -> None:
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:  # noqa: PLR2004
         cmds = ", ".join(COMMANDS)
-        raise SystemExit(f"Usage: s3_local.py <{cmds}> [args ...]\n\n{__doc__}")
+        err_msg = f"Usage: s3_local.py <{cmds}> [args ...]\n\n{__doc__}"
+        raise SystemExit(err_msg)
     _client()
     COMMANDS[sys.argv[1]](sys.argv[2:])
 
