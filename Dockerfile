@@ -55,7 +55,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Then, add the rest of the project source code and install it
 # Installing separately from its dependencies allows optimal layer caching
-# COPY --chown=nonroot:nonroot . /app
 COPY --chown=nonroot:nonroot .dlt /app/.dlt
 COPY --chown=nonroot:nonroot docs /app/docs
 COPY --chown=nonroot:nonroot scripts /app/scripts
@@ -68,7 +67,7 @@ COPY --chown=nonroot:nonroot uv.lock /app/uv.lock
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-editable
 
-    # Place executables in the environment at the front of the path
+# Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
 
 RUN chmod +x ./scripts/entrypoint.sh

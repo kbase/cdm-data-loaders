@@ -1,12 +1,13 @@
 """Utilities for interacting with Spark and delta tables."""
 
+from logging import Logger, getLogger
+
 from berdl_notebook_utils.setup_spark_session import get_spark_session
 from berdl_notebook_utils.spark.database import create_namespace_if_not_exists
 from pyspark.sql import DataFrame, DataFrameWriter, SparkSession
 
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
+logger: Logger = getLogger(__name__)
 
-logger = get_cdm_logger()
 
 APPEND = "append"
 OVERWRITE = "overwrite"
