@@ -64,6 +64,7 @@ def test_make_settings_all_params_set() -> None:
 
 @pytest.mark.parametrize("dev_mode", ARG_ALIASES["dev_mode"])
 @pytest.mark.parametrize("input_dir", ARG_ALIASES["input_dir"])
+@pytest.mark.parametrize("log_config_file", ARG_ALIASES["log_config_file"])
 @pytest.mark.parametrize("output", ARG_ALIASES["output"])
 @pytest.mark.parametrize("start_at", ARG_ALIASES["start_at"])
 @pytest.mark.parametrize("use_destination", ARG_ALIASES["use_destination"])
@@ -71,9 +72,10 @@ def test_make_settings_all_params_set() -> None:
     "use_output_dir_for_pipeline_metadata",
     ARG_ALIASES["use_output_dir_for_pipeline_metadata"],
 )
-def test_cli_app_run_alt_settings(  # noqa: PLR0913
+def test_cli_app_run_alt_settings(
     dev_mode: str,
     input_dir: str,
+    log_config_file: str,
     output: str,
     start_at: str,
     use_destination: str,
@@ -86,6 +88,8 @@ def test_cli_app_run_alt_settings(  # noqa: PLR0913
         TEST_SETTINGS["dev_mode"],
         input_dir,
         TEST_SETTINGS["input_dir"],
+        log_config_file,
+        TEST_SETTINGS["log_config_file"],
         output,
         TEST_SETTINGS["output"],
         start_at,
@@ -136,9 +140,8 @@ def test_run_uniprot_pipeline_args_set_correctly(test_settings: UniProtSettings)
 
     assert mock_run_pipeline.call_count == 1
     _, kwargs = mock_run_pipeline.call_args
-    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
+    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs"}
     assert kwargs["pipeline_kwargs"] == {"pipeline_name": "uniprot_kb", "dataset_name": "uniprot_kb"}
-    assert kwargs["pipeline_run_kwargs"] == {"table_format": "delta"}
     assert kwargs["settings"] == test_settings
     assert isinstance(kwargs["resource"], Callable)
 
@@ -164,10 +167,7 @@ def test_run_uniprot_pipeline_sets_core_run_pipeline_args_correctly(
         pipeline_name="uniprot_kb",
         dataset_name="uniprot_kb",
     )
-    mock_dlt.pipeline.return_value.run.assert_called_once_with(
-        expected_resource,
-        table_format="delta",
-    )
+    mock_dlt.pipeline.return_value.run.assert_called_once_with(expected_resource)
 
 
 def test_parse_uniprot_resource(test_settings: UniProtSettings) -> None:

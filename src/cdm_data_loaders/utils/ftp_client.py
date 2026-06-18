@@ -11,6 +11,7 @@ import socket
 import threading
 import time
 from ftplib import FTP, error_temp
+from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 
 from tenacity import (
@@ -21,9 +22,7 @@ from tenacity import (
     wait_fixed,
 )
 
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 DEFAULT_TIMEOUT = 60
 

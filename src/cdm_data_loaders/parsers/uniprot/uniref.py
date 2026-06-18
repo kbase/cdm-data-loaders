@@ -13,12 +13,11 @@ Data goes into the Cluster, ClusterMember and Entity tables.
 """
 
 import datetime
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
 from lxml.etree import Element, tounicode
-
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
 UNIREF_URL = "http://uniprot.org/uniref"
 ENTRY_XML_TAG = f"{{{UNIREF_URL}}}entry"
@@ -38,7 +37,7 @@ PREFIX_TRANSLATION = {
     "NCBI taxonomy": "NCBITaxon",
 }
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 def dump_xml_element(element: Element) -> str:

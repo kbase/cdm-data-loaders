@@ -240,17 +240,19 @@ def test_settings_all_params_set(settings: frozendict, reconciled: frozendict) -
 @pytest.mark.parametrize("batch_size", ARG_ALIAS_BATCH_SIZE)
 @pytest.mark.parametrize("dev_mode", ARG_ALIASES["dev_mode"])
 @pytest.mark.parametrize("input_dir", ARG_ALIASES["input_dir"])
+@pytest.mark.parametrize("log_config_file", ARG_ALIASES["log_config_file"])
 @pytest.mark.parametrize("output", ARG_ALIASES["output"])
 @pytest.mark.parametrize("use_destination", ARG_ALIASES["use_destination"])
 @pytest.mark.parametrize(
     "use_output_dir_for_pipeline_metadata",
     ARG_ALIASES["use_output_dir_for_pipeline_metadata"],
 )
-def test_cli_all_variants(  # noqa: PLR0913
+def test_cli_all_variants(
     query_type: str,
     batch_size: str,
     dev_mode: str,
     input_dir: str,
+    log_config_file: str,
     output: str,
     use_destination: str,
     use_output_dir_for_pipeline_metadata: str,
@@ -269,6 +271,8 @@ def test_cli_all_variants(  # noqa: PLR0913
             TEST_NCBI_SETTINGS["dev_mode"],
             input_dir,
             TEST_NCBI_SETTINGS["input_dir"],
+            log_config_file,
+            TEST_NCBI_SETTINGS["log_config_file"],
             output,
             TEST_NCBI_SETTINGS["output"],
             use_destination,
@@ -369,6 +373,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
         {
             "dev_mode": bool(dev_mode),
             "input_dir": "tests/data/ncbi_rest_api/input",
+            "log_config_file": None,
             "output": "/some/dir",
             "pipeline_dir": "/some/dir/.dlt_conf" if use_pipeline_dir else None,
             "raw_data_dir": "/some/dir/raw_data",

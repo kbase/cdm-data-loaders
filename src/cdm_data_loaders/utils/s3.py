@@ -1,5 +1,7 @@
 """Utilities for s3 interaction."""
 
+import json
+from logging import Logger, getLogger
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -7,12 +9,9 @@ from typing import Any
 import boto3
 import botocore
 import botocore.client
-import json
 import tqdm
 from botocore.config import Config
 from botocore.exceptions import ClientError
-
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
 CDM_LAKE_BUCKET = "cdm-lake"
 DEFAULT_EXTRA_ARGS = {"ChecksumAlgorithm": "CRC64NVME"}
@@ -29,7 +28,7 @@ SUCCESS_RESPONSE = 200
 
 _s3_client: botocore.client.BaseClient | None = None
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 def get_s3_client(args: dict[str, str | None] | None = None) -> botocore.client.BaseClient:
@@ -588,7 +587,8 @@ def delete_objects(bucket: str, keys: list[str]) -> list[dict[str, Any]]:
 def cmd_mb(args: list[str]) -> None:
     """Create a bucket: ``mb s3://bucket``."""
     if not args:
-        raise SystemExit("Usage: s3_local.py mb s3://BUCKET")
+        err_msg = "Usage: s3_local.py mb s3://BUCKET"
+        raise SystemExit(err_msg)
     bucket, _ = split_s3_path(args[0], allow_bucket_only=True)
     s3 = get_s3_client()
     try:
@@ -602,7 +602,8 @@ def cmd_mb(args: list[str]) -> None:
 def cmd_cp(args: list[str]) -> None:
     """Recursive upload: ``cp LOCAL_DIR s3://bucket/prefix/``."""
     if len(args) < 2:  # noqa: PLR2004
-        raise SystemExit("Usage: s3_local.py cp LOCAL_DIR s3://BUCKET/PREFIX/")
+        err_msg = "Usage: s3_local.py cp LOCAL_DIR s3://BUCKET/PREFIX/"
+        raise SystemExit(err_msg)
     local_dir = Path(args[0])
     bucket, prefix = split_s3_path(args[1])
     prefix = prefix.rstrip("/") + "/" if prefix else ""
@@ -622,7 +623,8 @@ def cmd_cp(args: list[str]) -> None:
 def cmd_ls(args: list[str]) -> None:
     """List objects: ``ls s3://bucket/prefix/ [--limit N]``."""
     if not args:
-        raise SystemExit("Usage: s3_local.py ls s3://BUCKET/PREFIX/ [--limit N]")
+        err_msg = "Usage: s3_local.py ls s3://BUCKET/PREFIX/ [--limit N]"
+        raise SystemExit(err_msg)
     bucket, prefix = split_s3_path(args[0])
     limit = 20
     if "--limit" in args:
@@ -642,7 +644,8 @@ def cmd_ls(args: list[str]) -> None:
 def cmd_head(args: list[str]) -> None:
     """Show metadata: ``head s3://bucket/key``."""
     if not args:
-        raise SystemExit("Usage: s3_local.py head s3://BUCKET/KEY")
+        err_msg = "Usage: s3_local.py head s3://BUCKET/KEY"
+        raise SystemExit(err_msg)
     bucket, key = split_s3_path(args[0])
     s3 = get_s3_client()
     meta = {}

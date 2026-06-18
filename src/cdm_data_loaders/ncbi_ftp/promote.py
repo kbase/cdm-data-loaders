@@ -10,6 +10,7 @@ import tempfile
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
+from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -24,7 +25,6 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
     create_descriptor,
     upload_descriptor,
 )
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.s3 import (
     copy_object,
     delete_objects,
@@ -34,7 +34,7 @@ from cdm_data_loaders.utils.s3 import (
     upload_file,
 )
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 DEFAULT_LAKEHOUSE_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
 

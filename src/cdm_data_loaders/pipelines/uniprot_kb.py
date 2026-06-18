@@ -1,7 +1,7 @@
 """DLT pipeline to import UniProt data."""
 
 from collections.abc import Generator
-from typing import Any
+from typing import Any, Final
 
 import dlt
 from dlt.extract.items import DataItemWithMeta
@@ -15,8 +15,8 @@ from cdm_data_loaders.pipelines.core import (
 )
 from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, BatchedFileInputSettings
 
-APP_NAME = "uniprot_kb_importer"
-UNIPROT_LOG_INTERVAL = 1000
+APP_NAME: Final[str] = "uniprot_kb_importer"
+UNIPROT_LOG_INTERVAL: Final[int] = 1000
 
 
 class UniProtSettings(BatchedFileInputSettings):
@@ -28,7 +28,7 @@ class UniProtSettings(BatchedFileInputSettings):
     )
 
 
-@dlt.resource(name="parse_uniprot", parallelized=True)
+@dlt.resource(name="parse_uniprot", file_format="parquet", parallelized=True)
 def parse_uniprot(settings: UniProtSettings) -> Generator[DataItemWithMeta, Any]:
     """Parse the information from UniProt files, batch by batch."""
     yield from stream_xml_file_resource(
@@ -48,7 +48,6 @@ def run_uniprot_pipeline(settings: UniProtSettings) -> None:
             "pipeline_name": "uniprot_kb",
             "dataset_name": "uniprot_kb",
         },
-        pipeline_run_kwargs={"table_format": "delta"},
     )
 
 

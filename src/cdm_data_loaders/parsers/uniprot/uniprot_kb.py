@@ -5,12 +5,12 @@ Contains the core logic for parsing a UniProt XML file that can be successfully 
 """
 
 import datetime
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
 from lxml.etree import Element, tounicode
 
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.helpers import _ensembl_type
 from cdm_data_loaders.utils.xml_utils import get_text
 
@@ -43,7 +43,7 @@ PREFIX_TRANSLATION: dict[str, str] = {
     "pubmed": "PMID",
 }
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 # TODO: FIXME!!!
@@ -138,23 +138,17 @@ def parse_cross_references(entry: Element) -> list[dict[str, Any]]:
         description_suffix = f" for UniProt:{molecules[0].get('id')}" if len(molecules) > 0 else ""
 
         prop_list = [{"type": p.get("type"), "value": p.get("value")} for p in dbxref.findall("ns:property", NS)]
-        if prop_list and db in ("Ensembl", "EMBL", "RefSeq", "MANE-Select"):
-            if db == "Ensembl":
-                refs.extend(parse_ensembl_dbxref(xref, prop_list, description_suffix))
-                continue
+        prop_list_dispatch_hash = {
+            "Ensembl": parse_ensembl_dbxref,
+            # embl/genbank
+            "EMBL": parse_embl_dbxref,
+            "RefSeq": parse_refseq_dbxref,
+            "MANE-Select": parse_mane_dbxref,
+        }
 
-            if db == "EMBL":
-                # embl / genbank
-                refs.extend(parse_embl_dbxref(xref, prop_list, description_suffix))
-                continue
-
-            if db == "RefSeq":
-                refs.extend(parse_refseq_dbxref(xref, prop_list, description_suffix))
-                continue
-
-            if db == "MANE-Select":
-                refs.extend(parse_mane_dbxref(xref, prop_list, description_suffix))
-                continue
+        if prop_list and db in prop_list_dispatch_hash:
+            refs.extend(prop_list_dispatch_hash[db](xref, prop_list, description_suffix))
+            continue
 
         if db == "GO":
             refs.extend([{DB: "GO", XREF: xref.removeprefix("GO:")}])
@@ -364,15 +358,15 @@ def dump_xml_element(element: Element) -> str:
 
 def parse_uniprot_entry(
     entry: Element,
-    current_timestamp: datetime.datetime,
+    timestamp: datetime.datetime,
     file_path: str | Path,
 ) -> dict[str, Any]:
     """Parse a UniProt entry to yield the appropriate CDM schema tables.
 
     :param entry: an entry from a UniProt XML file
     :type entry: Element
-    :param current_timestamp: current timestamp
-    :type current_timestamp: datetime.datetime
+    :param timestamp: current timestamp
+    :type timestamp: datetime.datetime
     :param file_path: path of the file currently being parsed
     :type file_path: str | Path
     :return: dictionary of parsed data, indexed by table name
@@ -401,7 +395,7 @@ def parse_uniprot_entry(
             # TODO: add in "created" field when merging datasets?
             "created": None,
             "data_source": f"UniProt/{entry.attrib.get('dataset')}",
-            "updated": current_timestamp,
+            "updated": timestamp,
         }
 
         ref_data = parse_references(entry)

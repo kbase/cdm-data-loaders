@@ -1,5 +1,7 @@
 """Audit table for recording data rejected as invalid during ingest."""
 
+from logging import Logger, getLogger
+
 import pyspark.sql.functions as sf
 from pyspark.sql import DataFrame
 from pyspark.sql.types import StructField
@@ -16,9 +18,8 @@ from cdm_data_loaders.audit.schema import (
     TIMESTAMP,
 )
 from cdm_data_loaders.core.pipeline_run import PipelineRun
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 def write_rejects(
@@ -81,4 +82,4 @@ def write_rejects(
     # write to disk
     rejects_df.write.format("delta").mode("append").saveAsTable(f"{run.namespace}.{REJECTS}")
 
-    get_cdm_logger().info("%s %s: invalid rows written to '%s' audit table.", run.pipeline, run.run_id, REJECTS)
+    logger.info("%s %s: invalid rows written to '%s' audit table.", run.pipeline, run.run_id, REJECTS)

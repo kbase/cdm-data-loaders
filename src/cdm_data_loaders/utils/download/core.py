@@ -1,16 +1,14 @@
 """File downloader with tenacity for retry support."""
 
 import hashlib
-import logging
 from collections.abc import AsyncIterable, Iterable
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
 import httpx
 
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-
-logger: logging.Logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 class DownloadError(Exception):

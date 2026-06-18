@@ -1,6 +1,7 @@
 # CDM Data Loaders Changelog
 
 - [CDM Data Loaders Changelog](#cdm-data-loaders-changelog)
+    - [v0.1.10](#v0110)
     - [v0.1.9](#v019)
     - [v0.1.8](#v018)
     - [v0.1.7](#v017)
@@ -12,6 +13,11 @@
     - [v0.1.1](#v011)
     - [v0.1.0](#v010)
 
+
+### v0.1.10
+
+- Add in the ability to configure loggers using a file
+- Bugfix for UniProt pipeline
 
 ### v0.1.9
 

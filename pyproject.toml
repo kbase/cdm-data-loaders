@@ -1,6 +1,6 @@
 [project]
 name = "cdm-data-loaders"
-version = "0.1.9"
+version = "0.1.10"
 description = "Data loaders and wranglers for the CDM."
 requires-python = ">= 3.13"
 readme = "README.md"
@@ -14,7 +14,7 @@ dependencies = [
     "click>=8.4.1",
     "defusedxml>=0.7.1",
     "delta-spark>=4.2.0",
-    "dlt[deltalake,duckdb,filesystem,parquet,pyiceberg]>=1.27.2",
+    "dlt[deltalake,duckdb,filesystem,hub,parquet,pyiceberg]>=1.27.2",
     "frictionless[aws]>=5.19.0",
     "frozendict>=2.4.7",
     "ipykernel>=7.2.0",
@@ -170,10 +170,17 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = ["T201"] # ignore printing in notebooks
-"tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002"]  # use of assert, booleans, unused mock args
+"**/__init__.py" = ["D104"] # no docstrings for __init__ files
+"scripts/**/*.py" = ["T201"] # ignore printing in scripts
+# S101: use of assert
+# T201: print statements
+# FBT001, FBT002: booleans as args
+# ANN401: type annotations
+# ARG002: unused mock args
+# PLR0913: too many arguments
+"tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002", "PLR0913"]
 "tests/integration/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002", "ANN401"]
 "tests/utils/test_s3.py" = ["ANN401"]
-"**/__init__.py" = ["D104"]
 
 [tool.ruff.lint.mccabe]
 # Flag errors (`C901`) whenever the complexity level exceeds 15.
@@ -217,5 +224,5 @@ AWS_SECRET_ACCESS_KEY = "test_access_secret"
 
 [tool.uv.sources]
 cdm-schema = { git = "https://github.com/kbase/cdm-schema.git" }
-berdl-notebook-utils = { git = "https://github.com/BERDataLakehouse/spark_notebook.git", subdirectory = "notebook_utils" }
+berdl-notebook-utils = { git = "https://github.com/KBaseDataLakehouse/spark_notebook.git", subdirectory = "notebook_utils" }
 cdm-task-service-client = { git = "https://github.com/kbase/cdm-task-service-client.git" }

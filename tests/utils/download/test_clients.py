@@ -88,7 +88,7 @@ async def test_chunked_streaming(tmp_path: Path, downloader_adapter: DownloaderA
     ],
 )
 @pytest.mark.asyncio
-async def test_download_validate_response(  # noqa: PLR0913
+async def test_download_validate_response(
     status: int,
     status_text: str | None,
     error: type[Exception] | None,
@@ -243,7 +243,7 @@ async def test_checksum_mismatch(tmp_path: Path, sample_content: bytes, download
 @pytest.mark.parametrize("max_attempts", range(1, 5))
 @pytest.mark.parametrize("response_type", ["error", "timeout"])
 @pytest.mark.asyncio
-async def test_timeout_and_server_error_retries(  # noqa: PLR0913
+async def test_timeout_and_server_error_retries(
     tmp_path: Path,
     sample_content: bytes,
     max_attempts: int,

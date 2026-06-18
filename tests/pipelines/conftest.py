@@ -1,9 +1,8 @@
 """Shared fixtures for pipelines tests."""
 
-import logging
 from itertools import batched
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 from unittest.mock import MagicMock
 
 import dlt
@@ -14,8 +13,8 @@ from frozendict import frozendict
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.all_the_bacteria import AtbSettings
 from cdm_data_loaders.pipelines.cts_defaults import (
+    DEFAULT_BATCH_FILE_SETTINGS,
     DEFAULT_CTS_SETTINGS,
-    DEFAULT_START_AT,
     BatchedFileInputSettings,
     CtsSettings,
 )
@@ -25,10 +24,10 @@ from cdm_data_loaders.pipelines.uniref import UnirefSettings
 
 CASSETTES_DIR = "tests/cassettes"
 
-START_AT_VALUE = 50
-START_AT_STRING = "50"
-
-CONFIG_BUCKET = {"local_fs": "/output_dir", "s3": "s3://some/s3/bucket"}
+START_AT_VALUE: Final[int] = 50
+START_AT_STRING: Final[str] = "50"
+TEST_LOG_CONFIG_FILE: Final[str] = "log_conf.json"
+CONFIG_BUCKET = frozendict({"local_fs": "/output_dir", "s3": "s3://some/s3/bucket"})
 
 TEST_DLT_CONFIG = frozendict(
     {
@@ -54,12 +53,14 @@ def _generate_dlt_config() -> dict[str, Any]:
     }
 
 
-DESTINATION_TO_OUTPUT = {
-    "local_fs": TEST_DLT_CONFIG["destination.local_fs.bucket_url"],
-    "s3": TEST_DLT_CONFIG["destination.s3.bucket_url"],
-}
+DESTINATION_TO_OUTPUT = frozendict(
+    {
+        "local_fs": TEST_DLT_CONFIG["destination.local_fs.bucket_url"],
+        "s3": TEST_DLT_CONFIG["destination.s3.bucket_url"],
+    }
+)
 
-DESTINATION_OUTPUT = DESTINATION_TO_OUTPUT[DEFAULT_CTS_SETTINGS["use_destination"]]
+DESTINATION_OUTPUT: Final[str] = DESTINATION_TO_OUTPUT[DEFAULT_CTS_SETTINGS["use_destination"]]
 
 DEFAULT_CTS_SETTINGS_RECONCILED = frozendict(
     {
@@ -70,12 +71,13 @@ DEFAULT_CTS_SETTINGS_RECONCILED = frozendict(
     }
 )
 
-DEFAULT_BATCH_FILE_SETTINGS_RECONCILED = frozendict({**DEFAULT_CTS_SETTINGS_RECONCILED, "start_at": DEFAULT_START_AT})
+DEFAULT_BATCH_FILE_SETTINGS_RECONCILED = frozendict({**DEFAULT_BATCH_FILE_SETTINGS, **DEFAULT_CTS_SETTINGS_RECONCILED})
 
 TEST_CTS_SETTINGS = frozendict(
     {
         "dev_mode": "false",
         "input_dir": "/dir/path",
+        "log_config_file": "some/path",
         "output": "/some/dir",
         "use_destination": "local_fs",
         "use_output_dir_for_pipeline_metadata": "true",
@@ -123,7 +125,7 @@ DEFAULT_VCR_CONFIG = frozendict(
 
 
 def make_batcher(files: list[Path], batch_size: int = 5) -> MagicMock:
-    """Return a mock BatchCursor that yields ``files`` in batches then an empty list."""
+    """Return a mock NumericFileSequenceBatcher that yields ``files`` in batches then an empty list."""
     batches = [list(b) for b in batched(files, batch_size, strict=False)]
     mock_batcher = MagicMock()
     mock_batcher.get_batch.side_effect = [*batches, []]
@@ -178,6 +180,12 @@ def fake_files() -> list[Path]:
     return [Path(f"/fake/input/part_{n}.xml") for n in [1, 2, 3, 4, 5]]
 
 
+@pytest.fixture(autouse=True)
+def mock_init_logger(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock the init_logger call in core to prevent the logger from trying to initialise itself every time."""
+    monkeypatch.setattr(core, "init_logger", MagicMock())
+
+
 @pytest.fixture
 def mock_dlt(monkeypatch: pytest.MonkeyPatch, dlt_config: dict[str, Any]) -> MagicMock:
     """Patch dlt in core, wiring pipeline.return_value to a fresh MagicMock."""
@@ -192,20 +200,20 @@ def mock_dlt(monkeypatch: pytest.MonkeyPatch, dlt_config: dict[str, Any]) -> Mag
 
 @pytest.fixture
 def patched_io(monkeypatch: pytest.MonkeyPatch) -> tuple[MagicMock, MagicMock]:
-    """Patch BatchCursor and stream_xml_file inside core; return (mock_batcher_cls, mock_stream)."""
+    """Patch NumericFileSequenceBatcher and stream_xml_file inside core; return (mock_batcher_cls, mock_stream)."""
     mock_batcher_cls = MagicMock()
     mock_stream = MagicMock(return_value=[])
-    monkeypatch.setattr(core, "BatchCursor", mock_batcher_cls)
+    monkeypatch.setattr(core, "NumericFileSequenceBatcher", mock_batcher_cls)
     monkeypatch.setattr(core, "stream_xml_file", mock_stream)
     return mock_batcher_cls, mock_stream
 
 
 @pytest.fixture
 def patched_io_empty_batcher(monkeypatch: pytest.MonkeyPatch) -> tuple[MagicMock, MagicMock]:
-    """Like patched_io but BatchCursor immediately returns an empty batch."""
+    """Like patched_io but NumericFileSequenceBatcher immediately returns an empty batch."""
     mock_batcher_cls = MagicMock()
     mock_stream = MagicMock(return_value=[])
     mock_batcher_cls.return_value = make_batcher([])
-    monkeypatch.setattr(core, "BatchCursor", mock_batcher_cls)
+    monkeypatch.setattr(core, "NumericFileSequenceBatcher", mock_batcher_cls)
     monkeypatch.setattr(core, "stream_xml_file", mock_stream)
     return mock_batcher_cls, mock_stream

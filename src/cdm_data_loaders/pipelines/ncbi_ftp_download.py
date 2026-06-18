@@ -13,6 +13,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from ftplib import error_temp
+from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -29,11 +30,10 @@ from cdm_data_loaders.ncbi_ftp.assembly import (
 )
 from cdm_data_loaders.pipelines.core import run_cli
 from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, INPUT_MOUNT, OUTPUT_MOUNT
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.ftp_client import ThreadLocalFTP
 from cdm_data_loaders.utils.s3 import get_s3_client, upload_file
 
-logger = get_cdm_logger()
+logger: Logger = getLogger(__name__)
 
 
 DEFAULT_STAGING_KEY_PREFIX: PurePosixPath = PurePosixPath("staging")

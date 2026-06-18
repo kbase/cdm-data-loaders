@@ -12,12 +12,13 @@ This module centralizes common operations:
 
 import gzip
 from collections.abc import Generator
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
 from lxml.etree import Element, iterparse
 
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
+logger: Logger = getLogger(__name__)
 
 
 def get_text(elem: Element | None, default: str | None = None) -> str | None:
@@ -136,7 +137,6 @@ def stream_xml_file(file_path: str | Path, element_with_ns: str) -> Generator[El
     :yield: elements from the file
     :rtype: Generator[Element, Any]
     """
-    logger = get_cdm_logger()
     if isinstance(file_path, Path):
         file_path = str(file_path)
     logger.info("Streaming XML from %s", file_path)
@@ -185,7 +185,7 @@ def parse_head_matter(fh, ns_dict) -> dict[str, str]:
 
     if ns[""] != ns_dict["ns"]:
         if ns[""] in ns_dict.values():
-            get_cdm_logger().warning("xmlns set to '%s'", ns[""])
+            logger.warning("xmlns set to '%s'", ns[""])
             ns_dict["ns"] = ns[""]
         else:
             msg = f"Unexpected default namespace: got '{ns['']}', expected '{ns_dict['ns']}'"
