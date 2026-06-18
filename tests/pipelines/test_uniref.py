@@ -158,6 +158,7 @@ def test_make_settings_all_params_set() -> None:
 
 @pytest.mark.parametrize("dev_mode", ARG_ALIASES["dev_mode"])
 @pytest.mark.parametrize("input_dir", ARG_ALIASES["input_dir"])
+@pytest.mark.parametrize("log_config_file", ARG_ALIASES["log_config_file"])
 @pytest.mark.parametrize("output", ARG_ALIASES["output"])
 @pytest.mark.parametrize("start_at", ARG_ALIASES["start_at"])
 @pytest.mark.parametrize("uniref_variant", UNIREF_VARIANT_ALIASES)
@@ -169,6 +170,7 @@ def test_make_settings_all_params_set() -> None:
 def test_cli_app_run_alt_settings(
     dev_mode: str,
     input_dir: str,
+    log_config_file: str,
     output: str,
     start_at: str,
     uniref_variant: str,
@@ -182,6 +184,8 @@ def test_cli_app_run_alt_settings(
         TEST_SETTINGS["dev_mode"],
         input_dir,
         TEST_SETTINGS["input_dir"],
+        log_config_file,
+        TEST_SETTINGS["log_config_file"],
         output,
         TEST_SETTINGS["output"],
         start_at,

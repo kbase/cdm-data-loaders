@@ -5,9 +5,11 @@ from typing import Any, Final, Self
 import dlt.common.configuration.accessors
 from frozendict import frozendict
 from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
-from pydantic_settings import BaseSettings, CliSuppress, SettingsConfigDict
+from pydantic_settings import CliSuppress, SettingsConfigDict
 
 from cdm_data_loaders.utils.batcher import MIN_START_AT
+from cdm_data_loaders.utils.cdm_logger import ARG_ALIASES as LOGGER_ARG_ALIASES
+from cdm_data_loaders.utils.cdm_logger import DEFAULT_LOG_CONFIG_FILE, LoggerSettings
 
 # TODO: frozendict can be moved to the stdlib implementation when py 3.15 is released.
 
@@ -22,6 +24,7 @@ DEFAULT_CTS_SETTINGS = frozendict(
     {
         "dev_mode": False,
         "input_dir": INPUT_MOUNT,
+        "log_config_file": DEFAULT_LOG_CONFIG_FILE,
         # N.b. this gets replaced by destination.local_fs.bucket_url
         "output": "",
         "use_destination": "local_fs",
@@ -44,6 +47,7 @@ ARG_ALIASES = frozendict(
         "batch_size": ["-b", "--batch_size", "--batch-size"],
         "dev_mode": ["--dev_mode", "--dev-mode", "--dev"],
         "input_dir": ["-i", "--input_dir", "--input-dir"],
+        "log_config_file": LOGGER_ARG_ALIASES,
         "output": ["-o", "--output"],
         "start_at": ["-s", "--start_at", "--start-at"],
         "use_destination": ["-d", "--use_destination", "--use-destination"],
@@ -65,7 +69,7 @@ DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
 )
 
 
-class CtsSettings(BaseSettings):
+class CtsSettings(LoggerSettings):
     """Configuration for running a basic import pipeline."""
 
     model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT)

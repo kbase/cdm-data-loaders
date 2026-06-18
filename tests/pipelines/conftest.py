@@ -77,6 +77,7 @@ TEST_CTS_SETTINGS = frozendict(
     {
         "dev_mode": "false",
         "input_dir": "/dir/path",
+        "log_config_file": "some/path",
         "output": "/some/dir",
         "use_destination": "local_fs",
         "use_output_dir_for_pipeline_metadata": "true",
@@ -177,6 +178,12 @@ def dlt_config() -> dict[str, Any]:
 def fake_files() -> list[Path]:
     """List of five files, used for testing."""
     return [Path(f"/fake/input/part_{n}.xml") for n in [1, 2, 3, 4, 5]]
+
+
+@pytest.fixture(autouse=True)
+def mock_init_logger(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock the init_logger call in core to prevent the logger from trying to initialise itself every time."""
+    monkeypatch.setattr(core, "init_logger", MagicMock())
 
 
 @pytest.fixture

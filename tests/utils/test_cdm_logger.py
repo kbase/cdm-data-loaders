@@ -1,391 +1,372 @@
-"""Tests for cdm_data_loaders/utils/cdm_logger.py."""
+"""Tests for the CDM logger."""
 
 import json
 import logging
-import logging.handlers
-from collections.abc import Generator
-from copy import deepcopy
+from contextlib import nullcontext
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
+from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 from frozendict import frozendict
 
 import cdm_data_loaders.utils.cdm_logger as cdm_logger_module
 from cdm_data_loaders.utils.cdm_logger import (
-    DEFAULT_LOGGER_NAME,
-    JSON_LOG_CONFIG,
-    LOG_FILENAME,
-    LOGGING_CONFIG,
-    MAX_LOG_BACKUPS,
-    MAX_LOG_FILE_SIZE,
-    _attach_file_handler,
-    _load_logging_config,
-    _set_level_safe,
+    LoggerSettings,
+    _load_config_from_path,
+    configure_root_logger_from_dlt,
     get_cdm_logger,
-    init_logger,
-)
-
-# Add near the top of the test file, alongside the other imports
-MODULE_LOGGER_NAME = "cdm_data_loaders.utils.cdm_logger"
-
-
-VALID_JSON_CONFIG = frozendict(
-    {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "handlers": {
-            "CONFIGURE_HANDLER_NAME": {
-                "class": "logging.StreamHandler",
-                "formatter": "json",
-                "level": "INFO",
-                "stream": "ext://sys.stdout",
-            }
-        },
-        "formatters": {"json": {"format": JSON_LOG_CONFIG}},
-        "loggers": {DEFAULT_LOGGER_NAME: {"level": "INFO", "handlers": ["CONFIGURE_HANDLER_NAME"]}},
-    }
 )
 
 
-def _write_config(path: Path, test_name: str, config: dict[str, Any] | None = None) -> Path:
-    """Write a JSON logging config to path, using VALID_JSON_CONFIG by default."""
-    # edit the config to ensure that it is recognisable as being from a specific source
-    if not config:
-        config = deepcopy(dict(VALID_JSON_CONFIG))
-        # switch out the handler name for a test-specific name
-        config["loggers"][DEFAULT_LOGGER_NAME]["handlers"] = [test_name]
-        config["handlers"][test_name] = config["handlers"].pop("CONFIGURE_HANDLER_NAME")
-
-    path.write_text(json.dumps(config if config is not None else VALID_JSON_CONFIG))
-    return path
+def get_logger_dict() -> dict[str, Any]:
+    """Get the dictionary of existing loggers."""
+    return logging.Logger.manager.loggerDict
 
 
 @pytest.fixture(autouse=True)
-def reset_logging() -> Generator[None, Any]:
-    """Remove CDM and dlt loggers from the manager and clear their handlers before and after tests."""
+def reset_module_state(monkeypatch: pytest.MonkeyPatch) -> Generator[None, Any]:
+    """Reset global module state and root logging config between every test."""
+    # Reset the guard flag so each test starts from a clean slate
+    monkeypatch.setattr(cdm_logger_module, "ROOT_LOGGER_CONFIGURED", False)
 
-    def _clean() -> None:
-        for name in (DEFAULT_LOGGER_NAME, "dlt"):
-            logger = logging.root.manager.loggerDict.pop(name, None)
-            if isinstance(logger, logging.Logger):
-                logger.handlers.clear()
+    # Clear root logger handlers so dictConfig calls don't accumulate
+    root_logger: logging.Logger = logging.getLogger("root")
+    root_logger.handlers.clear()
 
-    _clean()
     yield
-    _clean()
+
+    # Teardown: reset again after test
+    root_logger.handlers.clear()
+
+
+@pytest.fixture
+def mock_config_root_logger() -> Generator[MagicMock, Any]:
+    """Patch dlt's config_root_logger so tests are hermetic."""
+    with patch("cdm_data_loaders.utils.cdm_logger.config_root_logger") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_dlt_logger(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    dlt_mock = MagicMock()
+    dlt_mock.propagate = False
+    dlt_mock.handlers = [1, 2, 3, 4]
+
+    monkeypatch.setitem(logging.Logger.manager.loggerDict, "dlt", dlt_mock)
+    return dlt_mock
 
 
 @pytest.fixture
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Remove logging-related env vars during tests."""
-    monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("LOG_CONFIG_FILE", raising=False)
-    monkeypatch.delenv("ENABLE_FILE_LOGGING", raising=False)
+    monkeypatch.delenv("LOG-CONFIG-FILE", raising=False)
 
 
 @pytest.fixture
-def empty_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def empty_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_env: None) -> None:
     """Remove LOG_CONFIG_FILE env vars and chdir to an empty temporary directory with no config file."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("LOG_CONFIG_FILE", raising=False)
+
+
+YAML_CONFIG = frozendict(
+    {
+        "version": 1,
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+            }
+        },
+        "loggers": {"root": {"level": "DEBUG", "handlers": ["console"]}},
+    }
+)
+
+
+JSON_CONFIG = frozendict(
+    {
+        "version": 1,
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+            }
+        },
+        "loggers": {"root": {"level": "WARNING", "handlers": ["console"]}},
+    }
+)
 
 
 @pytest.fixture
-def cdm_logger(clean_env: None, empty_cwd: None) -> logging.Logger:  # noqa: ARG001
-    """Return a CDM logger initialised with LOGGING_CONFIG."""
-    return init_logger()
+def yaml_config_file(tmp_path: Path) -> Path:
+    """Write a minimal valid YAML logging config and return its path."""
+    p = tmp_path / "logging.yaml"
+    p.write_text(yaml.dump(dict(YAML_CONFIG)))
+    return p
 
 
 @pytest.fixture
-def dlt_logger() -> logging.Logger:
-    """Register a pre-configured dlt logger in the logging manager."""
-    logger = logging.getLogger("dlt")
-    logger.setLevel(logging.WARNING)
-    return logger
+def json_config_file(tmp_path: Path) -> Path:
+    """Write a minimal valid JSON logging config and return its path."""
+    p = tmp_path / "logging.json"
+    p.write_text(json.dumps(dict(JSON_CONFIG)))
+    return p
 
 
 @pytest.fixture
-def config_in_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Write a valid config file in a temporary dir and chdir into it, simulating a config found in the CWD."""
-    path = _write_config(tmp_path / cdm_logger_module.LOGGING_CONFIG_FILENAME, "config_in_cwd")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("LOG_CONFIG_FILE", raising=False)
-    return path
+def settings_with_yaml(yaml_config_file: Path) -> LoggerSettings:
+    """Logger settings object for the YAML config file."""
+    return LoggerSettings(log_config_file=str(yaml_config_file))
 
 
 @pytest.fixture
-def config_at_explicit_path(tmp_path: Path) -> Path:
-    """Write a valid config file in a temporary directory."""
-    return _write_config(tmp_path / "custom_logging_config.json", "config_at_explicit_path")
+def settings_with_json(json_config_file: Path) -> LoggerSettings:
+    """Logger settings object for the json config file."""
+    return LoggerSettings(log_config_file=str(json_config_file))
 
 
-# _load_logging_config — resolution order
-@pytest.mark.usefixtures("config_in_cwd")
-def test_load_logging_config_uses_explicit_path_first(config_at_explicit_path: Path) -> None:
-    """Ensure that the config file argument is used in preference to other choices."""
-    config = _load_logging_config(config_file=config_at_explicit_path)
-    assert config["disable_existing_loggers"] is False
-    assert config["loggers"][DEFAULT_LOGGER_NAME]["handlers"] == ["config_at_explicit_path"]
-    assert set(config["handlers"]) == {"config_at_explicit_path"}
+@pytest.fixture
+def settings_without_config() -> LoggerSettings:
+    """Logger settings object with no log config file."""
+    return LoggerSettings(log_config_file=None)
 
 
-@pytest.mark.usefixtures("config_in_cwd")
-def test_load_logging_config_uses_env_var_over_cwd(
-    config_at_explicit_path: Path, monkeypatch: pytest.MonkeyPatch
+FILE_CONTENT = frozendict(
+    {
+        "valid.json": json.dumps(dict(JSON_CONFIG)),
+        "valid.yml": yaml.dump(dict(YAML_CONFIG)),
+        "valid.yaml": yaml.dump({"version": 1, "loggers": {}}),
+        "invalid.json": "{not valid json",
+        "invalid.yaml": ": : invalid: yaml: : :",
+    }
+)
+
+# LoggerSettings
+
+
+def test_logger_settings_with_log_config_file(yaml_config_file: Path) -> None:
+    """LoggerSettings stores the log_config_file path passed directly to the constructor."""
+    settings = LoggerSettings(log_config_file=str(yaml_config_file))
+    assert settings.log_config_file == str(yaml_config_file)
+
+
+@pytest.mark.parametrize("log_config_file_is_none", [True, False])
+def test_logger_settings_with_without_params(log_config_file_is_none: bool) -> None:
+    """LoggerSettings.log_config_file is None when no value is provided."""
+    settings = LoggerSettings(log_config_file=None) if log_config_file_is_none else LoggerSettings()
+    assert settings.log_config_file is None
+
+
+@pytest.mark.parametrize(
+    "env_var_name",
+    ["log-config-file", "log_config_file", "LOG_CONFIG_FILE", "LOG-CONFIG-FILE"],
+)
+def test_logger_settings_alias_accepted_via_environment(
+    env_var_name: str, monkeypatch: pytest.MonkeyPatch, yaml_config_file: Path
 ) -> None:
-    """Ensure that the LOG_CONFIG_FILE env var is used in preference to the LOGGING_CONFIG fallback."""
-    monkeypatch.setenv("LOG_CONFIG_FILE", str(config_at_explicit_path))
-    config = _load_logging_config()
-    assert config["loggers"][DEFAULT_LOGGER_NAME]["handlers"] == ["config_at_explicit_path"]
-    assert set(config["handlers"]) == {"config_at_explicit_path"}
+    """Both hyphenated and underscored environment variable aliases are resolved to log_config_file."""
+    monkeypatch.setenv(env_var_name, str(yaml_config_file))
+    settings = LoggerSettings()  # pyright: ignore[reportCallIssue]
+    assert settings.log_config_file == str(yaml_config_file)
 
 
-@pytest.mark.usefixtures("config_in_cwd")
-def test_load_logging_config_uses_cwd_when_no_arg_or_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When no argument or env var is provided, the logging_config.json in the current working directory is loaded."""
-    monkeypatch.delenv("LOG_CONFIG_FILE", raising=False)
-    config = _load_logging_config()
-    assert config["disable_existing_loggers"] is False
-    assert config["loggers"][DEFAULT_LOGGER_NAME]["handlers"] == ["config_in_cwd"]
-    assert set(config["handlers"]) == {"config_in_cwd"}
+# _load_config_from_path
 
 
-@pytest.mark.usefixtures("empty_cwd")
-def test_load_logging_config_falls_back_to_frozendict_when_all_sources_fail(caplog: pytest.LogCaptureFixture) -> None:
-    """Ensure that logging falls back to the default frozendict if no other sources are found."""
-    with caplog.at_level(logging.WARNING, logger=MODULE_LOGGER_NAME):
-        config = _load_logging_config()
-    assert config == {**LOGGING_CONFIG, "disable_existing_loggers": False}
-    log_message = caplog.records[-1]
-    assert log_message.message == "No logging config file found. Falling back to built-in config."
-
-
-@pytest.mark.usefixtures("config_in_cwd")
-def test_load_logging_config_skips_bad_argument_path_and_tries_next(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+@pytest.mark.parametrize(
+    ("file_name", "expected"),
+    [
+        ("logger_config", pytest.raises(ValueError, match=r"Unsupported config file format: logger_config")),
+        ("logger.toml", pytest.raises(ValueError, match=r"Unsupported config file format: logger.toml")),
+        ("path/to/logger.cfg", pytest.raises(ValueError, match=r"Unsupported config file format: logger.cfg")),
+        ("path/to/file.json", pytest.raises(FileNotFoundError, match="No such file or directory")),
+        ("valid.json", nullcontext(dict(JSON_CONFIG))),
+        ("valid.yaml", nullcontext({"version": 1, "loggers": {}})),
+        ("valid.yml", nullcontext(dict(YAML_CONFIG))),
+        (
+            "invalid.json",
+            pytest.raises(json.decoder.JSONDecodeError, match="Expecting property name enclosed in double quotes"),
+        ),
+        ("invalid.yaml", pytest.raises(yaml.YAMLError, match=r"expected <block end>, but found \':\'\n")),
+    ],
+)
+def test_load_config_from_path_pass_fail(
+    tmp_path: Path, file_name: str, expected: nullcontext | pytest.RaisesExc
 ) -> None:
-    """Ensure that a non-existent or invalid config file is ignored and the next source tried."""
-    monkeypatch.delenv("LOG_CONFIG_FILE", raising=False)
-    with caplog.at_level(logging.DEBUG, logger=MODULE_LOGGER_NAME):
-        config = _load_logging_config(config_file=tmp_path / "nonexistent.json")
-    assert config["disable_existing_loggers"] is False
-    assert any("nonexistent.json" in m for m in caplog.messages)
+    """Test the loading of a config file, both successfully and with failure states."""
+    p = tmp_path / file_name
+    if file_name in FILE_CONTENT:
+        p.write_text(FILE_CONTENT[file_name])
+
+    with expected as e:
+        assert _load_config_from_path(p) == e
 
 
-@pytest.mark.usefixtures("config_in_cwd")
-def test_load_logging_config_skips_bad_env_var_path_and_tries_next(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+# configure_root_logger_from_dlt
+def test_configure_root_logger_from_dlt_configures_dlt_on_first_call(
+    mock_config_root_logger: MagicMock, mock_dlt_logger: MagicMock
 ) -> None:
-    """Ensure that a non-existent or invalid config file is ignored and the next source tried."""
-    monkeypatch.setenv("LOG_CONFIG_FILE", str(tmp_path / "nonexistent.json"))
-    with caplog.at_level(logging.WARNING, logger=MODULE_LOGGER_NAME):
-        config = _load_logging_config()
-    assert config["disable_existing_loggers"] is False
-    assert any("nonexistent.json" in m for m in caplog.messages)
+    """The first call sets dlt logger propagation, invokes config_root_logger, and sets the guard."""
+    # check what is initialised in the way of loggers
+    assert "dlt" in logging.Logger.manager.loggerDict
+
+    configure_root_logger_from_dlt()
+
+    mock_config_root_logger.assert_called_once()
+    dlt_logger = logging.getLogger("dlt")
+    assert dlt_logger == mock_dlt_logger
+    assert dlt_logger.propagate is True
+    assert dlt_logger.handlers == []
+    assert cdm_logger_module.ROOT_LOGGER_CONFIGURED is True
 
 
-@pytest.mark.usefixtures("config_in_cwd")
-def test_load_logging_config_skips_invalid_json_and_tries_next(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+def test_configure_root_logger_from_dlt_does_not_reconfigure_on_subsequent_calls(
+    mock_config_root_logger: MagicMock,
 ) -> None:
-    """Ensure that a non-existent or invalid config file is ignored and the next source tried."""
-    bad_path = tmp_path / "bad_config.json"
-    bad_path.write_text("this is not json {{{")
-    monkeypatch.delenv("LOG_CONFIG_FILE", raising=False)
-    with caplog.at_level(logging.WARNING, logger=MODULE_LOGGER_NAME):
-        config = _load_logging_config(config_file=bad_path)
-    assert config["disable_existing_loggers"] is False
-    assert any("bad_config.json" in m for m in caplog.messages)
+    """Calling configure_root_logger_from_dlt a second time is a no-op; config_root_logger is only called once."""
+    configure_root_logger_from_dlt()
+    configure_root_logger_from_dlt()
+
+    mock_config_root_logger.assert_called_once()
 
 
-def test_load_logging_config_overrides_disable_existing_loggers_when_true_in_file(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, request: pytest.FixtureRequest
-) -> None:
-    """If a config file sets disable_existing_loggers to True, _load_logging_config should override it."""
-    path = _write_config(
-        tmp_path / "bad.json", request.node.originalname, {**VALID_JSON_CONFIG, "disable_existing_loggers": True}
-    )
-    with caplog.at_level(logging.WARNING, logger=MODULE_LOGGER_NAME):
-        config = _load_logging_config(config_file=path)
-    assert config["disable_existing_loggers"] is False
-    assert any(
-        "sets disable_existing_loggers to True. Overriding to prevent existing loggers being silently disabled" in m
-        for m in caplog.messages
-    )
+def test_configure_root_logger_skips_when_guard_already_set(mock_config_root_logger: MagicMock, monkeypatch) -> None:
+    """When ROOT_LOGGER_CONFIGURED is already True, config_root_logger is never called."""
+    monkeypatch.setattr(cdm_logger_module, "ROOT_LOGGER_CONFIGURED", True)
+
+    configure_root_logger_from_dlt()
+
+    mock_config_root_logger.assert_not_called()
 
 
-@pytest.mark.usefixtures("clean_env")
-def test_init_logger_accepts_explicit_config_file(config_at_explicit_path: Path) -> None:
-    """init_logger should accept a config_file argument and pass it through to _load_logging_config without error."""
-    logger = init_logger(config_file=config_at_explicit_path)
+# get_cdm_logger
+def test_get_cdm_logger_calls_init_logger_with_args() -> None:
+    """get_cdm_logger should call init_logger to ensure logging is initialised."""
+    settings = LoggerSettings()
+
+    with patch("cdm_data_loaders.utils.cdm_logger.init_logger") as mock_init:
+        logger = get_cdm_logger("test.logger", settings=settings)
+
+    mock_init.assert_called_once_with(settings)
     assert isinstance(logger, logging.Logger)
+    assert logger.name == "test.logger"
 
 
-@pytest.mark.usefixtures("empty_cwd")
-def test_init_logger_uses_log_config_file_env_var(
-    config_at_explicit_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """When LOG_CONFIG_FILE is set in the environment and no config_file argument is passed, init_logger should load config from that path."""
-    monkeypatch.setenv("LOG_CONFIG_FILE", str(config_at_explicit_path))
-    monkeypatch.delenv("LOG_LEVEL", raising=False)
-    logger = init_logger()
+def test_get_cdm_logger_without_settings_passes_none_to_init_logger() -> None:
+    """get_cdm_logger called with no settings argument should pass None to init_logger."""
+    with patch("cdm_data_loaders.utils.cdm_logger.init_logger") as mock_init:
+        logger = get_cdm_logger("another.logger")
+
+    mock_init.assert_called_once_with(None)
     assert isinstance(logger, logging.Logger)
+    assert logger.name == "another.logger"
 
 
-def test_init_logger_happy_path(cdm_logger: logging.Logger) -> None:
-    """init_logger should return a Logger with the CDM default name."""
-    assert isinstance(cdm_logger, logging.Logger)
-    assert cdm_logger.name == DEFAULT_LOGGER_NAME
-    # calling init_logger more than once returns the same object
-    assert init_logger() is init_logger()
-    assert cdm_logger.level == logging.INFO
-
-
-@pytest.mark.parametrize("level", ["DEBUG", "Info", "warning"])
-@pytest.mark.usefixtures("clean_env", "empty_cwd")
-def test_init_logger_explicit_level_argument(level: str) -> None:
-    """Ensure that the log level can be set explicitly."""
-    logger = init_logger(log_level=level)
-    assert logger.level == getattr(logging, level.upper())
-
-
-@pytest.mark.usefixtures("clean_env", "empty_cwd")
-def test_init_logger_env_var_sets_level(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When LOG_LEVEL is set in the environment, init_logger should apply it to the logger level."""
-    monkeypatch.setenv("LOG_LEVEL", "ERROR")
-    assert init_logger().level == logging.ERROR
-
-
-@pytest.mark.usefixtures("clean_env", "empty_cwd")
-def test_init_logger_argument_takes_priority_over_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An explicit log_level argument should take precedence over the LOG_LEVEL env var when both are set."""
-    monkeypatch.setenv("LOG_LEVEL", "ERROR")
-    assert init_logger(log_level="DEBUG").level == logging.DEBUG
-
-
-def test_init_logger_log_level_gates_emission_correctly(
-    cdm_logger: logging.Logger, caplog: pytest.LogCaptureFixture
+def test_get_cdm_logger_returns_logger_with_correct_name(
+    settings_with_yaml: LoggerSettings, mock_config_root_logger: MagicMock
 ) -> None:
-    """Messages at or above the configured level should be captured; messages below it should be suppressed."""
-    with caplog.at_level(logging.INFO, logger=DEFAULT_LOGGER_NAME):
-        cdm_logger.info("should appear")
-        cdm_logger.debug("should not appear")
+    """The returned object is a Logger whose name matches the argument passed in."""
+    result = get_cdm_logger("my.service", settings=settings_with_yaml)
 
-    assert "should appear" in caplog.messages
-    assert "should not appear" not in caplog.messages
+    assert isinstance(result, logging.Logger)
+    assert result.name == "my.service"
 
 
-# console
-def test_init_logger_console_handler_configured_correctly(cdm_logger: logging.Logger) -> None:
-    """The logger should have a StreamHandler at INFO level by default.
-
-    No RotatingFileHandler should be attached unless explicitly requested.
-    """
-    stream_handlers = [h for h in cdm_logger.handlers if type(h) is logging.StreamHandler]
-    assert len(stream_handlers) == 1
-    assert stream_handlers[0].level == logging.INFO
-    rotating_handlers = [h for h in cdm_logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
-    assert rotating_handlers == []
-
-
-@pytest.mark.usefixtures("clean_env", "empty_cwd")
-def test_get_cdm_logger_creates_cdm_logger_when_none_exists() -> None:
-    """When neither a dlt nor a CDM logger exists, get_cdm_logger should initialise and return a new CDM logger."""
-    logger = get_cdm_logger()
-    assert isinstance(logger, logging.Logger)
-    assert logger.name == DEFAULT_LOGGER_NAME
-    assert DEFAULT_LOGGER_NAME in logging.root.manager.loggerDict
-    # get_cdm_logger should returns the existing logger rather than creating a new one.
-    assert get_cdm_logger() is init_logger()
-
-
-@pytest.mark.usefixtures("clean_env", "empty_cwd", "dlt_logger")
-def test_get_cdm_logger_prefers_dlt_over_cdm_logger() -> None:
-    """When a dlt logger is present in the logging manager, get_cdm_logger should return it even if a CDM logger also exists."""
-    init_logger()
-    assert get_cdm_logger().name == "dlt"
-
-
-@pytest.mark.parametrize("level", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
-def test_set_level_safe_accepts_all_valid_levels(cdm_logger: logging.Logger, level: str) -> None:
-    """_set_level_safe should accept all standard logging level strings."""
-    _set_level_safe(cdm_logger, level)
-    assert cdm_logger.level == getattr(logging, level)
-
-
-@pytest.mark.parametrize("level", ["debug", "Info", "wARNING"])
-def test_set_level_safe_is_case_insensitive(cdm_logger: logging.Logger, level: str) -> None:
-    """Ensure that _set_level_safe normalises case issues."""
-    _set_level_safe(cdm_logger, level)
-    assert cdm_logger.level == getattr(logging, level.upper())
-
-
-def test_set_level_safe_raises_descriptive_error_for_invalid_level(cdm_logger: logging.Logger) -> None:
-    """_set_level_safe should raise a ValueError for an unrecognised level string.
-
-    The error message should echo back the bad value and list the valid options.
-    """
-    with pytest.raises(ValueError, match=r"Invalid log level 'VERBOS'\. Must be one of"):
-        _set_level_safe(cdm_logger, "VERBOS")
-
-
-# file handler
-def test_attach_file_handler_adds_correctly_configured_handler(cdm_logger: logging.Logger, tmp_path: Path) -> None:
-    """_attach_file_handler should add a single RotatingFileHandler with a log file at the specified path."""
-    log_path = tmp_path / LOG_FILENAME
-    _attach_file_handler(cdm_logger, log_path)
-
-    rotating_handlers = [h for h in cdm_logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
-    assert len(rotating_handlers) == 1
-
-    handler = rotating_handlers[0]
-    assert handler.maxBytes == MAX_LOG_FILE_SIZE
-    assert handler.backupCount == MAX_LOG_BACKUPS
-    assert handler.formatter._fmt == JSON_LOG_CONFIG  # noqa: SLF001
-
-    assert log_path.exists()
-
-    # try attaching a second handler
-    _attach_file_handler(cdm_logger, log_path)
-
-    assert len([h for h in cdm_logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]) == 1
-
-
-def test_attach_file_handler_creates_missing_parent_directory(cdm_logger: logging.Logger, tmp_path: Path) -> None:
-    """_attach_file_handler should create the parent directory of the log file path if it does not exist."""
-    log_path = tmp_path / "nested" / "dirs" / LOG_FILENAME
-    assert not log_path.parent.exists()
-    _attach_file_handler(cdm_logger, log_path)
-    assert log_path.parent.exists()
-    assert log_path.exists()
-
-
-def test_attach_file_handler_detects_any_file_handler_type(cdm_logger: logging.Logger, tmp_path: Path) -> None:
-    """_attach_file_handler should not add a second file handler."""
-    existing = logging.FileHandler(tmp_path / "other.log")
-    cdm_logger.addHandler(existing)
-
-    _attach_file_handler(cdm_logger, tmp_path / LOG_FILENAME)
-
-    file_handlers = [h for h in cdm_logger.handlers if "FileHandler" in type(h).__name__]
-    assert len(file_handlers) == 1
-
-
-@pytest.mark.parametrize("env_value", ["true", "TRUE", "True"])
-@pytest.mark.usefixtures("clean_env")
-def test_init_logger_file_handler_added_when_requested(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, env_value: str
+def test_get_cdm_logger_uses_yaml_config_when_provided(
+    settings_with_yaml: LoggerSettings, mock_config_root_logger: MagicMock
 ) -> None:
-    """A file handler should be attached when enable_file_logging=True or ENABLE_FILE_LOGGING env var is set."""
-    log_path = tmp_path / LOG_FILENAME
+    """When settings point to a YAML file, dictConfig receives the parsed YAML content."""
+    with patch("cdm_data_loaders.utils.cdm_logger.logging.config.dictConfig") as mock_dict_config:
+        get_cdm_logger("svc", settings=settings_with_yaml)
 
-    logger_arg = init_logger(enable_file_logging=True, log_file=log_path)
-    assert any("FileHandler" in type(h).__name__ for h in logger_arg.handlers)
+    applied_config = mock_dict_config.call_args[0][0]
+    assert applied_config["disable_existing_loggers"] is False
+    assert applied_config["loggers"]["root"]["level"] == "DEBUG"
 
-    logger_arg.handlers.clear()
-    logging.root.manager.loggerDict.pop(DEFAULT_LOGGER_NAME, None)
 
-    monkeypatch.setenv("ENABLE_FILE_LOGGING", env_value)
-    logger_env = init_logger(log_file=log_path)
-    assert any("FileHandler" in type(h).__name__ for h in logger_env.handlers)
+def test_get_cdm_logger_uses_json_config_when_provided(
+    settings_with_json: LoggerSettings, mock_config_root_logger: MagicMock
+) -> None:
+    """When settings point to a JSON file, dictConfig receives the parsed JSON content."""
+    with patch("cdm_data_loaders.utils.cdm_logger.logging.config.dictConfig") as mock_dict_config:
+        get_cdm_logger("svc", settings=settings_with_json)
+
+    applied_config = mock_dict_config.call_args[0][0]
+    assert applied_config["loggers"]["root"]["level"] == "WARNING"
+
+
+def test_get_cdm_logger_falls_back_to_builtin_config_when_no_settings(
+    mock_config_root_logger: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Passing settings=None applies the built-in INFO config and emits a warning."""
+    with (
+        patch("cdm_data_loaders.utils.cdm_logger.logging.config.dictConfig") as mock_dict_config,
+        caplog.at_level(logging.WARNING, logger="cdm_data_loaders.utils.cdm_logger"),
+    ):
+        get_cdm_logger("svc", settings=None)
+
+    applied_config = mock_dict_config.call_args[0][0]
+    assert applied_config["loggers"]["root"]["level"] == "INFO"
+    assert any("Falling back to built-in config" in m for m in caplog.messages)
+
+
+def test_get_cdm_logger_falls_back_to_builtin_config_when_log_config_file_is_none(
+    settings_without_config: LoggerSettings, mock_config_root_logger: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Settings with log_config_file=None applies the built-in INFO config and emits a warning."""
+    with (
+        patch("cdm_data_loaders.utils.cdm_logger.logging.config.dictConfig") as mock_dict_config,
+        caplog.at_level(logging.WARNING, logger="cdm_data_loaders.utils.cdm_logger"),
+    ):
+        get_cdm_logger("svc", settings=settings_without_config)
+
+    applied_config = mock_dict_config.call_args[0][0]
+    assert applied_config["loggers"]["root"]["level"] == "INFO"
+    assert any("Falling back to built-in config" in m for m in caplog.messages)
+
+
+def test_get_cdm_logger_disable_existing_loggers_always_set_false(
+    settings_with_yaml: LoggerSettings, mock_config_root_logger: MagicMock
+) -> None:
+    """disable_existing_loggers is always injected as False to prevent silently killing pre-existing loggers."""
+    with patch("cdm_data_loaders.utils.cdm_logger.logging.config.dictConfig") as mock_dict_config:
+        get_cdm_logger("svc", settings=settings_with_yaml)
+
+    applied_config = mock_dict_config.call_args[0][0]
+    assert applied_config["disable_existing_loggers"] is False
+
+
+def test_get_cdm_logger_calls_configure_root_logger_from_dlt(
+    settings_with_yaml: LoggerSettings, mock_config_root_logger: MagicMock
+) -> None:
+    """get_cdm_logger always delegates to configure_root_logger_from_dlt after applying config."""
+    with patch("cdm_data_loaders.utils.cdm_logger.configure_root_logger_from_dlt") as mock_configure:
+        get_cdm_logger("svc", settings=settings_with_yaml)
+
+    mock_configure.assert_called_once()
+
+
+def test_get_cdm_logger_dlt_already_initialised_does_not_reconfigure(
+    settings_with_yaml: LoggerSettings, mock_config_root_logger: MagicMock
+) -> None:
+    """When the dlt logger is already initialised, repeated calls to get_cdm_logger do not re-invoke config_root_logger."""
+    cdm_logger_module.ROOT_LOGGER_CONFIGURED = True
+
+    get_cdm_logger("svc", settings=settings_with_yaml)
+    get_cdm_logger("svc", settings=settings_with_yaml)
+
+    mock_config_root_logger.assert_not_called()
+
+
+def test_get_cdm_logger_dlt_not_yet_initialised_configures_on_first_call(
+    settings_with_yaml: LoggerSettings, mock_config_root_logger: MagicMock
+) -> None:
+    """When the dlt logger has not yet been initialised, the first call to get_cdm_logger configures it and sets the guard."""
+    assert cdm_logger_module.ROOT_LOGGER_CONFIGURED is False
+
+    get_cdm_logger("svc", settings=settings_with_yaml)
+
+    mock_config_root_logger.assert_called_once()
+    assert cdm_logger_module.ROOT_LOGGER_CONFIGURED is True

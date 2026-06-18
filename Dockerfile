@@ -55,7 +55,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Then, add the rest of the project source code and install it
 # Installing separately from its dependencies allows optimal layer caching
-COPY --chown=nonroot:nonroot . /app
+COPY --chown=nonroot:nonroot .dlt /app/.dlt
+COPY --chown=nonroot:nonroot docs /app/docs
+COPY --chown=nonroot:nonroot scripts /app/scripts
+COPY --chown=nonroot:nonroot src /app/src
+COPY --chown=nonroot:nonroot tests /app/tests
+COPY --chown=nonroot:nonroot README.md /app/README.md
+COPY --chown=nonroot:nonroot pyproject.toml /app/pyproject.toml
+COPY --chown=nonroot:nonroot uv.lock /app/uv.lock
+
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-editable
 
@@ -63,6 +71,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ENV PATH="/app/.venv/bin:$PATH"
 
 RUN chmod +x ./scripts/entrypoint.sh
+
+# make sure that the nonroot user owns the app directory
+RUN chown nonroot:nonroot /app
+
 # Use the non-root user to run our application
 USER nonroot
 ENTRYPOINT ["./scripts/entrypoint.sh"]
