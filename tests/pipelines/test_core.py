@@ -6,7 +6,7 @@ import os
 from collections.abc import Generator
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -15,9 +15,12 @@ from pydantic_settings import SettingsError
 
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import (
+    NO_MESSAGE,
+    WEBHOOK_NOT_CONFIGURED,
     construct_env_var,
     run_cli,
     run_pipeline,
+    send_slack_message_carefully,
     stream_xml_file_resource,
     sync_configs,
 )
@@ -160,6 +163,64 @@ def test_construct_env_var_overwrites_existing_hook() -> None:
     ):
         assert construct_env_var() is None
         assert os.environ["RUNTIME__SLACK_INCOMING_HOOK"] == "https://hooks.slack.com/services/B/T/C/"
+
+
+# send slack message carefully
+SLACK_HOOK: Final[str] = "https://slack.hook/what/ever"
+TEST_MESSAGE: Final[str] = "3... 2... 1... testing?"
+
+
+@pytest.mark.parametrize(
+    ("slack_hook", "message", "err_msg"),
+    [
+        ("", TEST_MESSAGE, WEBHOOK_NOT_CONFIGURED),
+        (SLACK_HOOK, "", NO_MESSAGE),
+        ("", "", WEBHOOK_NOT_CONFIGURED),
+    ],
+)
+def test_send_slack_message_carefully_params_fail(
+    slack_hook: str,
+    message: str,
+    err_msg: str,
+    caplog: pytest.LogCaptureFixture,
+    mock_send_slack_message: MagicMock,
+) -> None:
+    """Test sending a slack message ever so carefully, but with incorrect parameters."""
+    send_slack_message_carefully(slack_hook, message)
+    mock_send_slack_message.assert_not_called()
+    assert len(caplog.records) == 1
+    assert caplog.records[-1].levelno == logging.WARNING
+    assert caplog.records[-1].message == f"Cannot send slack message: {err_msg}"
+
+
+@pytest.mark.parametrize("markdown", [True, False, None])
+def test_send_slack_message_carefully_markdown_params(
+    markdown: None | bool, mock_send_slack_message: MagicMock
+) -> None:
+    """Test that the markdown param is correctly passed on to send_slack_message.
+
+    :param markdown: markdown parameter
+    :type markdown: None | bool
+    """
+    if markdown is None:
+        send_slack_message_carefully(SLACK_HOOK, TEST_MESSAGE)
+    else:
+        send_slack_message_carefully(SLACK_HOOK, TEST_MESSAGE, markdown)
+
+    if markdown:
+        mock_send_slack_message.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, True)  # noqa: FBT003
+    else:
+        mock_send_slack_message.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, False)  # noqa: FBT003
+
+
+def test_send_slack_message_fail_error_oh_no(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    """Ensure that errors are caught and don't crash the whole goddamn ship of fools."""
+    slack_mock = MagicMock(side_effect=ValueError("Oh no! An error!"))
+    monkeypatch.setattr(core, "send_slack_message", slack_mock)
+    send_slack_message_carefully(SLACK_HOOK, TEST_MESSAGE)
+    assert len(caplog.records) == 1
+    assert caplog.records[-1].levelno == logging.ERROR
+    assert caplog.records[-1].message == "Failed to send slack message"
 
 
 # sync_configs
@@ -463,6 +524,7 @@ def test_run_pipeline_slack_configured(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test that a slack message is sent if the slack_incoming_hook runtime config value is available."""
+    error = None
     # set up slack config
     if slack_configured:
         slack_hook = "http://some.url.slack.com"
@@ -478,14 +540,20 @@ def test_run_pipeline_slack_configured(
     if slack_configured:
         if success:
             mock_send_slack_message.assert_called_once_with(
-                "http://some.url.slack.com", "Pipeline completed successfully!"
+                "http://some.url.slack.com",
+                "Pipeline completed successfully!",
+                False,  # noqa: FBT003
             )
         else:
-            mock_send_slack_message.assert_called_once_with("http://some.url.slack.com", f"Pipeline failed: {error!s}")
-        assert "Slack webhook not configured; no Slack alerts will be sent" not in caplog.messages
+            mock_send_slack_message.assert_called_once_with(
+                "http://some.url.slack.com",
+                f"Pipeline failed: {error!s}",
+                False,  # noqa: FBT003
+            )
+        assert f"No Slack alerts will be sent: {WEBHOOK_NOT_CONFIGURED}" not in caplog.messages
     else:
         mock_send_slack_message.assert_not_called()
-        assert "Slack webhook not configured; no Slack alerts will be sent." in caplog.messages
+        assert f"No Slack alerts will be sent: {WEBHOOK_NOT_CONFIGURED}" in caplog.messages
 
     if success:
         # log messages on success
