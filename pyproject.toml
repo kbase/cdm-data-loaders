@@ -1,6 +1,6 @@
 [project]
 name = "cdm-data-loaders"
-version = "0.1.9"
+version = "0.1.10"
 description = "Data loaders and wranglers for the CDM."
 requires-python = ">= 3.13"
 readme = "README.md"
@@ -14,7 +14,7 @@ dependencies = [
     "click>=8.4.1",
     "defusedxml>=0.7.1",
     "delta-spark>=4.2.0",
-    "dlt[deltalake,duckdb,filesystem,parquet,pyiceberg]>=1.27.2",
+    "dlt[deltalake,duckdb,filesystem,hub,parquet,pyiceberg]>=1.27.2",
     "frictionless[aws]>=5.19.0",
     "frozendict>=2.4.7",
     "ipykernel>=7.2.0",
