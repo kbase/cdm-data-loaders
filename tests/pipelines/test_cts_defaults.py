@@ -287,6 +287,7 @@ def test_settings_trailing_slash_stripped(
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize("dev_mode", ARG_ALIASES["dev_mode"])
 @pytest.mark.parametrize("input_dir", ARG_ALIASES["input_dir"])
+@pytest.mark.parametrize("log_config_file", ARG_ALIASES["log_config_file"])
 @pytest.mark.parametrize("output", ARG_ALIASES["output"])
 @pytest.mark.parametrize("start_at", ARG_ALIASES["start_at"])
 @pytest.mark.parametrize("use_destination", ARG_ALIASES["use_destination"])
@@ -298,6 +299,7 @@ def test_cli_app_run_alt_settings(
     settings_cls: type[CtsSettings],
     dev_mode: str,
     input_dir: str,
+    log_config_file: str,
     output: str,
     start_at: str,
     use_destination: str,
@@ -311,6 +313,8 @@ def test_cli_app_run_alt_settings(
         TEST_BATCH_FILE_SETTINGS["dev_mode"],
         input_dir,
         TEST_BATCH_FILE_SETTINGS["input_dir"],
+        log_config_file,
+        TEST_BATCH_FILE_SETTINGS["log_config_file"],
         output,
         TEST_BATCH_FILE_SETTINGS["output"],
         use_destination,

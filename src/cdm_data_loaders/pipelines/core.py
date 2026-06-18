@@ -14,6 +14,7 @@ from pydantic_settings import SettingsError
 
 from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_PIPELINE_BATCH_SIZE, BatchedFileInputSettings, CtsSettings
 from cdm_data_loaders.utils.batcher import NumericFileSequenceBatcher
+from cdm_data_loaders.utils.cdm_logger import init_logger
 from cdm_data_loaders.utils.xml_utils import stream_xml_file
 
 WEBHOOK_NOT_CONFIGURED: Final[str] = "Slack webhook not configured"
@@ -81,6 +82,7 @@ def run_cli(settings_cls: type[CtsSettings], pipeline_fn: Callable[[Any], None])
     try:
         settings = settings_cls(dlt_config=dlt.config)
         sync_configs(settings, dlt.config)
+        init_logger(settings)
     except (SettingsError, ValidationError, ValueError):
         logger.exception("Error initialising config")
         raise

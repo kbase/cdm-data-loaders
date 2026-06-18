@@ -875,12 +875,21 @@ def test_parse_organism(xml: str, expected: list[dict[str, str]]) -> None:
         # TODO: put together a full example!
     ],
 )
-def test_parse_uniprot_entry(xml: str, expected: dict[str, list[dict[str, Any]]]) -> None:
+@pytest.mark.parametrize("args_style", ["positional", "kwargs"])
+def test_parse_uniprot_entry(args_style: str, xml: str, expected: dict[str, list[dict[str, Any]]]) -> None:
     """Test the parsing of generic cross references."""
     xml_str = entry_wrap(xml)
-    parsed_entry = parse_uniprot_entry(
-        fromstring(xml_str, parser=XMLParser(remove_blank_text=True)),
-        datetime.datetime.now(tz=datetime.UTC),
-        FILE_PATH,
-    )
+    if args_style == "positional":
+        parsed_entry = parse_uniprot_entry(
+            fromstring(xml_str, parser=XMLParser(remove_blank_text=True)),
+            datetime.datetime.now(tz=datetime.UTC),
+            FILE_PATH,
+        )
+    else:
+        parsed_entry = parse_uniprot_entry(
+            file_path=FILE_PATH,
+            timestamp=datetime.datetime.now(tz=datetime.UTC),
+            entry=fromstring(xml_str, parser=XMLParser(remove_blank_text=True)),
+        )
+
     assert parsed_entry == expected
