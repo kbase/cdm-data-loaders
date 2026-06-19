@@ -1207,7 +1207,7 @@ def test_delete_objects_nonexistent_keys_no_error(mock_s3_client: Any) -> None:
     assert errors == []
 
 
-# CLI heler function tests
+# CLI helper function tests
 
 TEST_PROTOCOLS = [
     "",
