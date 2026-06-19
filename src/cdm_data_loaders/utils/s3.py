@@ -613,8 +613,8 @@ def cmd_cp(args: list[str]) -> None:
     local_path = Path(args[0])
     try:
         bucket, prefix = split_s3_path(args[1], allow_bucket_only=True)
-    except Exception as e:  # noqa: BLE001
-        raise SystemExit(str(e))  # noqa: B904
+    except ValueError as e:
+        raise SystemExit(str(e)) from e
     s3 = get_s3_client()
     count = 0
     if local_path.is_file():
