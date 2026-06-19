@@ -371,6 +371,49 @@ def test_split_s3_path_success(valid_path: str) -> None:
     assert (bucket, path) == EXPECTED[valid_path]
 
 
+EXPECTED_ALLOW_BUCKET_ONLY = {
+    "path/to": (PATH, TO),
+    "path/to/": (PATH, "to/"),
+    "path/to/file.txt": (PATH, TO_FILE),
+    "path": (PATH, ""),
+    "path/": (PATH, ""),
+    "s3://path/to": (PATH, TO),
+    "s3://path/to/": (PATH, "to/"),
+    "s3://path/to/file.txt": (PATH, TO_FILE),
+    "s3://path": (PATH, ""),
+    "s3://path/": (PATH, ""),
+    "s3a://path/to": (PATH, TO),
+    "s3a://path/to/": (PATH, "to/"),
+    "s3a://path/to/file.txt": (PATH, TO_FILE),
+    "s3a://path": (PATH, ""),
+    "s3a://path/": (PATH, ""),
+}
+
+INVALID_PATH_ALLOW_BUCKET_ONLY_ERRORS = {
+    "": NO_PATH_FOUND,
+    "/": START_WITH_BUCKET_NAME,
+    "/path": START_WITH_BUCKET_NAME,
+    "/path/to/file.txt": START_WITH_BUCKET_NAME,
+    "s3://": NO_PATH_FOUND,
+    "s3:///": START_WITH_BUCKET_NAME,
+    "s3a://": NO_PATH_FOUND,
+}
+
+
+@pytest.mark.parametrize("invalid_path", list(INVALID_PATH_ALLOW_BUCKET_ONLY_ERRORS.keys()))
+def test_split_s3_path_allow_bucket_only_errors(invalid_path: str) -> None:
+    """Ensure that an error is thrown if an invalid s3 path is passed in."""
+    with pytest.raises(ValueError, match=INVALID_PATH_ALLOW_BUCKET_ONLY_ERRORS[invalid_path]):
+        split_s3_path(invalid_path, allow_bucket_only=True)
+
+
+@pytest.mark.parametrize("valid_path", list(EXPECTED_ALLOW_BUCKET_ONLY.keys()))
+def test_split_s3_path_allow_bucket_only_success(valid_path: str) -> None:
+    """Verify that a valid path is correctly split into bucket and key."""
+    (bucket, path) = split_s3_path(valid_path, allow_bucket_only=True)
+    assert (bucket, path) == EXPECTED_ALLOW_BUCKET_ONLY[valid_path]
+
+
 # list_matching_objects
 @pytest.mark.parametrize("bucket", BUCKETS)
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])

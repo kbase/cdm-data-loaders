@@ -104,7 +104,7 @@ def split_s3_path(s3_path: str, *, allow_bucket_only: bool = False) -> tuple[str
 
     Returns a tuple of bucket, key
 
-    :param s3_path: an s3 path, including the bucket name
+    :param s3_path: an s3 path, including the bucket name (`s3://bucket/key` or `bucket/key`)
     :type s3_path: str
     :param allow_bucket_only: Allow parsing of a path that only includes a bucket (no key)
     :type allow_bucket_only: bool
@@ -128,7 +128,10 @@ def split_s3_path(s3_path: str, *, allow_bucket_only: bool = False) -> tuple[str
 
     path_parts = unprefixed_path.split("/", 1)
     # return just the bucket if that is all that was passed
-    if allow_bucket_only and len(path_parts) == 1:
+    # allow s3 paths like:
+    #   s3://bucket
+    #   s3://bucket/
+    if allow_bucket_only and (len(path_parts) == 1 or (len(path_parts) == 2 and not path_parts[1])):  # noqa: PLR2004
         return (path_parts[0], "")
 
     # the first part should be the bucket and the second part the key
@@ -593,10 +596,10 @@ def cmd_mb(args: list[str]) -> None:
     s3 = get_s3_client()
     try:
         s3.head_bucket(Bucket=bucket)
-        print(f"Bucket already exists: {bucket}")
+        print(f"Bucket already exists: {bucket}")  # noqa: T201
     except Exception:  # noqa: BLE001
         s3.create_bucket(Bucket=bucket)
-        print(f"Created bucket: {bucket}")
+        print(f"Created bucket: {bucket}")  # noqa: T201
 
 
 def cmd_cp(args: list[str]) -> None:
@@ -616,8 +619,8 @@ def cmd_cp(args: list[str]) -> None:
         key = f"{prefix}{rel}"
         s3.upload_file(Filename=str(path), Bucket=bucket, Key=key)
         count += 1
-        print(f"  {key}")
-    print(f"Uploaded {count} files to s3://{bucket}/{prefix}")
+        print(f"  {key}")  # noqa: T201
+    print(f"Uploaded {count} files to s3://{bucket}/{prefix}")  # noqa: T201
 
 
 def cmd_ls(args: list[str]) -> None:
@@ -625,7 +628,7 @@ def cmd_ls(args: list[str]) -> None:
     if not args:
         err_msg = "Usage: s3_local.py ls s3://BUCKET/PREFIX/ [--limit N]"
         raise SystemExit(err_msg)
-    bucket, prefix = split_s3_path(args[0])
+    bucket, prefix = split_s3_path(args[0], allow_bucket_only=True)
     limit = 20
     if "--limit" in args:
         idx = args.index("--limit")
@@ -635,7 +638,7 @@ def cmd_ls(args: list[str]) -> None:
     shown = 0
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
-            print(f"  {obj['Size']:>10}  {obj['Key']}")
+            print(f"  {obj['Size']:>10}  {obj['Key']}")  # noqa: T201
             shown += 1
             if shown >= limit:
                 return
@@ -654,8 +657,8 @@ def cmd_head(args: list[str]) -> None:
         meta = resp.get("Metadata", {})
     except ClientError as e:
         if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
-            print(f"File not found in store: {bucket}/{key}")
+            print(f"File not found in store: {bucket}/{key}")  # noqa: T201
             return
         raise
-    print(f"Metadata for {bucket}/{key}:")
-    print(json.dumps(meta, indent=2))
+    print(f"Metadata for {bucket}/{key}:")  # noqa: T201
+    print(json.dumps(meta, indent=2))  # noqa: T201
