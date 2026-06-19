@@ -589,10 +589,13 @@ def delete_objects(bucket: str, keys: list[str]) -> list[dict[str, Any]]:
 
 def cmd_mb(args: list[str]) -> None:
     """Create a bucket: ``mb s3://bucket``."""
-    if not args:
+    if not args or len(args) != 1:
         err_msg = "Usage: s3_local.py mb s3://BUCKET"
         raise SystemExit(err_msg)
-    bucket, _ = split_s3_path(args[0], allow_bucket_only=True)
+    try:
+        bucket, _ = split_s3_path(args[0], allow_bucket_only=True)
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(str(e))  # noqa: B904
     s3 = get_s3_client()
     try:
         s3.head_bucket(Bucket=bucket)
@@ -604,22 +607,30 @@ def cmd_mb(args: list[str]) -> None:
 
 def cmd_cp(args: list[str]) -> None:
     """Recursive upload: ``cp LOCAL_DIR s3://bucket/prefix/``."""
-    if len(args) < 2:  # noqa: PLR2004
-        err_msg = "Usage: s3_local.py cp LOCAL_DIR s3://BUCKET/PREFIX/"
+    if len(args) != 2:  # noqa: PLR2004
+        err_msg = "Usage: s3_local.py cp [LOCAL_DIR | LOCAL_FILE] s3://BUCKET[/PREFIX/]"
         raise SystemExit(err_msg)
-    local_dir = Path(args[0])
-    bucket, prefix = split_s3_path(args[1])
-    prefix = prefix.rstrip("/") + "/" if prefix else ""
+    local_path = Path(args[0])
+    try:
+        bucket, prefix = split_s3_path(args[1], allow_bucket_only=True)
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(str(e))  # noqa: B904
     s3 = get_s3_client()
     count = 0
-    for path in sorted(local_dir.rglob("*")):
-        if path.is_dir():
-            continue
-        rel = path.relative_to(local_dir)
-        key = f"{prefix}{rel}"
-        s3.upload_file(Filename=str(path), Bucket=bucket, Key=key)
-        count += 1
-        print(f"  {key}")  # noqa: T201
+    if local_path.is_file():
+        s3.upload_file(Filename=str(local_path), Bucket=bucket, Key=prefix)
+        count = 1
+        print(f"  {prefix}")  # noqa: T201
+    else:
+        prefix = prefix.rstrip("/") + "/" if prefix else ""
+        for path in sorted(local_path.rglob("*")):
+            if path.is_dir():
+                continue
+            rel = path.relative_to(local_path)
+            key = f"{prefix}{rel}"
+            s3.upload_file(Filename=str(path), Bucket=bucket, Key=key)
+            count += 1
+            print(f"  {key}")  # noqa: T201
     print(f"Uploaded {count} files to s3://{bucket}/{prefix}")  # noqa: T201
 
 
@@ -628,7 +639,10 @@ def cmd_ls(args: list[str]) -> None:
     if not args:
         err_msg = "Usage: s3_local.py ls s3://BUCKET[/PREFIX/] [--limit N]"
         raise SystemExit(err_msg)
-    bucket, prefix = split_s3_path(args[0], allow_bucket_only=True)
+    try:
+        bucket, prefix = split_s3_path(args[0], allow_bucket_only=True)
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(str(e))  # noqa: B904
     limit = 20
     if "--limit" in args:
         idx = args.index("--limit")
@@ -649,7 +663,10 @@ def cmd_head(args: list[str]) -> None:
     if not args:
         err_msg = "Usage: s3_local.py head s3://BUCKET/KEY"
         raise SystemExit(err_msg)
-    bucket, key = split_s3_path(args[0])
+    try:
+        bucket, key = split_s3_path(args[0])
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(str(e))  # noqa: B904
     s3 = get_s3_client()
     meta = {}
     try:

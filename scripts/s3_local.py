@@ -6,6 +6,7 @@ Usage (all commands assume ``uv run`` from the repo root):
 
     uv run python scripts/s3_local.py mb  s3://cdm-lake
     uv run python scripts/s3_local.py cp  staging/raw_data/ s3://cdm-lake/staging/run1/raw_data/
+    uv run python scripts/s3_local.py cp  my/local/file.txt s3://cdm-lake/staging/staged_file.txt
     uv run python scripts/s3_local.py ls  s3://cdm-lake/staging/run1/
     uv run python scripts/s3_local.py head s3://cdm-lake/some/key.gz
 
