@@ -1308,7 +1308,7 @@ TEST_CP_KEY_PREFIXES = [
 @pytest.mark.s3
 @pytest.mark.parametrize(("path", "bucket", "prefix"), TEST_CP_KEY_PREFIXES)
 def test_cmd_cp_copies_dir(mock_s3_client: Any, sample_dir: Path, path: str, bucket: str, prefix: str) -> None:
-    """CLI cp helper copeis local folder to store."""
+    """CLI cp helper copies local folder to store."""
     mock_s3_client.create_bucket(Bucket=bucket)
     with patch("builtins.print") as mock_print:
         cmd_cp([str(sample_dir), path])
