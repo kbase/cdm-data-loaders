@@ -643,8 +643,8 @@ def cmd_ls(args: list[str]) -> None:
         raise SystemExit(err_msg)
     try:
         bucket, prefix = split_s3_path(args[0], allow_bucket_only=True)
-    except Exception as e:  # noqa: BLE001
-        raise SystemExit(str(e))  # noqa: B904
+    except ValueError as e:
+        raise SystemExit(str(e)) from e
     limit = 20
     if "--limit" in args:
         idx = args.index("--limit")
