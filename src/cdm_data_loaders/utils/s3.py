@@ -667,8 +667,8 @@ def cmd_head(args: list[str]) -> None:
         raise SystemExit(err_msg)
     try:
         bucket, key = split_s3_path(args[0])
-    except Exception as e:  # noqa: BLE001
-        raise SystemExit(str(e))  # noqa: B904
+    except ValueError as e:
+        raise SystemExit(str(e)) from e
     s3 = get_s3_client()
     meta = {}
     try:
