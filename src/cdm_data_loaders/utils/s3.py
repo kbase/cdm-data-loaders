@@ -626,7 +626,7 @@ def cmd_cp(args: list[str]) -> None:
 def cmd_ls(args: list[str]) -> None:
     """List objects: ``ls s3://bucket/prefix/ [--limit N]``."""
     if not args:
-        err_msg = "Usage: s3_local.py ls s3://BUCKET/PREFIX/ [--limit N]"
+        err_msg = "Usage: s3_local.py ls s3://BUCKET[/PREFIX/] [--limit N]"
         raise SystemExit(err_msg)
     bucket, prefix = split_s3_path(args[0], allow_bucket_only=True)
     limit = 20
