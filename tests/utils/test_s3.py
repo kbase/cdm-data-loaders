@@ -1264,7 +1264,7 @@ def test_cmd_mb_handles_existing_bucket(mock_s3_client: Any, protocol: str, path
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
 @pytest.mark.parametrize(("args", "err_msg"), TEST_MB_ARGS_ERROR)
-def test_cmd_md_prints_error(args: list[str], err_msg: str) -> None:
+def test_cmd_mb_prints_error(args: list[str], err_msg: str) -> None:
     """CLI mb helper prints usage on invalid argument list."""
     with pytest.raises(SystemExit) as exc:
         cmd_mb(args)
