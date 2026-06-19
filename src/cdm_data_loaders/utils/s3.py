@@ -594,8 +594,8 @@ def cmd_mb(args: list[str]) -> None:
         raise SystemExit(err_msg)
     try:
         bucket, _ = split_s3_path(args[0], allow_bucket_only=True)
-    except Exception as e:  # noqa: BLE001
-        raise SystemExit(str(e))  # noqa: B904
+    except ValueError as e:
+        raise SystemExit(str(e)) from e
     s3 = get_s3_client()
     try:
         s3.head_bucket(Bucket=bucket)
