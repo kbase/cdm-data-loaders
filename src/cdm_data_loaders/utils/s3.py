@@ -619,7 +619,8 @@ def cmd_cp(args: list[str]) -> None:
     count = 0
     if local_path.is_file():
         if not prefix:
-            raise SystemExit("Usage: s3_local.py cp LOCAL_FILE s3://BUCKET/KEY")
+            err_msg = "Usage: s3_local.py cp LOCAL_FILE s3://BUCKET/KEY"
+            raise SystemExit(err_msg)
         s3.upload_file(Filename=str(local_path), Bucket=bucket, Key=prefix)
         count = 1
         print(f"  {prefix}")  # noqa: T201
