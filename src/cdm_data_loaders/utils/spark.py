@@ -1,4 +1,4 @@
-"""Utilities for interacting with Spark and database tables."""
+"""Utilities for interacting with Spark."""
 
 from logging import Logger, getLogger
 

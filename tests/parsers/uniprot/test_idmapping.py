@@ -21,7 +21,7 @@ from cdm_data_loaders.audit.schema import (
 )
 from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.parsers.uniprot.idmapping import ingest
-from cdm_data_loaders.utils.spark_delta import write_table
+from cdm_data_loaders.utils.spark import write_table
 from tests.audit.conftest import (
     INIT_TIMESTAMP_FIELDS,
 )
