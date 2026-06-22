@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from pyspark.sql import DataFrame, DataFrameWriter, Row, SparkSession
 
-from cdm_data_loaders.utils import spark_delta
+from cdm_data_loaders.utils import spark_delta as spark_utils
 from cdm_data_loaders.utils.spark_delta import (
     APPEND,
     DEFAULT_APP_NAME,
@@ -20,16 +20,17 @@ from cdm_data_loaders.utils.spark_delta import (
     WRITE_MODE,
     get_spark,
     preview_or_skip,
-    write_delta,
+    write_table,
 )
 from tests.helpers import assertDataFrameEqual
 
-original_set_up_ws_fn = spark_delta.set_up_workspace
+original_set_up_ws_fn = spark_utils.set_up_workspace
 
 SAVE_DIR = "spark.sql.warehouse.dir"
 DEFAULT_WRITE_MODE = ERROR
 DEFAULT_SAMPLE_DATA = {"a": "A1", "b": "B1"}
 TENANT_NAME = "The_Breakers"
+MODULE_NAME = "cdm_data_loaders.utils.spark_delta"
 
 
 def gen_ns_save_dir(current_save_dir: str, namespace: str, tenant_name: str | None) -> tuple[str, str]:
@@ -54,15 +55,15 @@ def fake_create_namespace_if_not_exists(
         raise ValueError(msg)
 
     if append_target:
-        delta_ns, db_location = gen_ns_save_dir(current_save_dir, namespace, tenant_name)
-        spark.sql(f"CREATE DATABASE IF NOT EXISTS {delta_ns} LOCATION '{db_location}'")
-        print(f"Namespace {delta_ns} is ready to use at location {db_location}.")
+        catalog_db, db_location = gen_ns_save_dir(current_save_dir, namespace, tenant_name)
+        spark.sql(f"CREATE DATABASE IF NOT EXISTS {catalog_db} LOCATION '{db_location}'")
+        print(f"Namespace {catalog_db} is ready to use at location {db_location}.")
     else:
-        delta_ns = namespace
-        spark.sql(f"CREATE DATABASE IF NOT EXISTS {delta_ns}")
-        print(f"Namespace {delta_ns} is ready to use.")
+        catalog_db = namespace
+        spark.sql(f"CREATE DATABASE IF NOT EXISTS {catalog_db}")
+        print(f"Namespace {catalog_db} is ready to use.")
 
-    return delta_ns
+    return catalog_db
 
 
 @pytest.fixture
@@ -70,7 +71,7 @@ def spark_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[tuple
     """Provide a Spark session with a per-test warehouse dir and patched workspace setup."""
     # patch the create_namespace_if_not_exists function
     monkeypatch.setattr(
-        "cdm_data_loaders.utils.spark_delta.create_namespace_if_not_exists",
+        f"{MODULE_NAME}.create_namespace_if_not_exists",
         fake_create_namespace_if_not_exists,
     )
 
@@ -78,12 +79,12 @@ def spark_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[tuple
         """Local override of set_up_workspace."""
         return original_set_up_ws_fn(*args, local=True, delta_lake=True, override={SAVE_DIR: str(tmp_path)})
 
-    monkeypatch.setattr(spark_delta, "set_up_workspace", set_up_test_workspace)
+    monkeypatch.setattr(spark_utils, "set_up_workspace", set_up_test_workspace)
 
     _, save_dir = gen_ns_save_dir(str(tmp_path), DEFAULT_NAMESPACE, TENANT_NAME)
-    (spark, delta_ns) = spark_delta.set_up_workspace("test_delta_app", DEFAULT_NAMESPACE, TENANT_NAME)
+    (spark, catalog_db) = spark_utils.set_up_workspace("test_app", DEFAULT_NAMESPACE, TENANT_NAME)
 
-    yield (spark, delta_ns, save_dir)
+    yield (spark, catalog_db, save_dir)
     spark.stop()
 
 
@@ -99,7 +100,7 @@ def test_get_spark(app_name: str | None, monkeypatch: pytest.MonkeyPatch) -> Non
         return "fake spark session"
 
     monkeypatch.setattr(
-        "cdm_data_loaders.utils.spark_delta.get_spark_session",
+        f"{MODULE_NAME}.get_spark_session",
         fake_get_spark_session,
     )
 
@@ -144,26 +145,26 @@ def test_set_up_workspace_defaults(
         else:
             assert args[1] == DEFAULT_NAMESPACE
         assert kwargs["tenant_name"] == tenant_name
-        return "delta namespace"
+        return "some namespace"
 
     monkeypatch.setattr(
-        "cdm_data_loaders.utils.spark_delta.get_spark_session",
+        f"{MODULE_NAME}.get_spark_session",
         fake_get_spark_session,
     )
 
     monkeypatch.setattr(
-        "cdm_data_loaders.utils.spark_delta.create_namespace_if_not_exists",
+        f"{MODULE_NAME}.create_namespace_if_not_exists",
         fake_create_ns,
     )
 
     if data_dir:
         with pytest.raises(NotImplementedError, match="The data_dir parameter has not been implemented\\."):
-            spark_delta.set_up_workspace(app_name, namespace, tenant_name, data_dir)
+            spark_utils.set_up_workspace(app_name, namespace, tenant_name, data_dir)
         return
 
-    spark, delta_ns = spark_delta.set_up_workspace(app_name, namespace, tenant_name, data_dir)
+    spark, catalog_db = spark_utils.set_up_workspace(app_name, namespace, tenant_name, data_dir)
     assert spark == "spark session"
-    assert delta_ns == "delta namespace"
+    assert catalog_db == "some namespace"
 
 
 @pytest.mark.requires_spark
@@ -181,8 +182,8 @@ def test_set_up_workspace_creates_database(
     Mimics the functionality of BERDL's `create_namespace_if_not_exists`.
     """
     app_name = "test_app"
-    # expected delta_ns, according to the namespace and tenant_name arguments
-    delta_ns = {
+    # expected catalog_db, according to the namespace and tenant_name arguments
+    catalog_db = {
         # namespace
         None: {
             # tenant
@@ -195,7 +196,7 @@ def test_set_up_workspace_creates_database(
         },
     }
 
-    expected = delta_ns[namespace][tenant_name]
+    expected = catalog_db[namespace][tenant_name]
     assert not spark.catalog.databaseExists(expected)
 
     def fake_create_namespace_if_not_exists(
@@ -212,7 +213,7 @@ def test_set_up_workspace_creates_database(
 
     # patch the create_namespace_if_not_exists function
     monkeypatch.setattr(
-        "cdm_data_loaders.utils.spark_delta.create_namespace_if_not_exists",
+        f"{MODULE_NAME}.create_namespace_if_not_exists",
         fake_create_namespace_if_not_exists,
     )
 
@@ -221,17 +222,17 @@ def test_set_up_workspace_creates_database(
         return original_set_up_ws_fn(*args, local=True, delta_lake=True, override={SAVE_DIR: str(tmp_path)})
 
     # patch the set_up_workspace function to add in the various extra kwargs for local use
-    monkeypatch.setattr(spark_delta, "set_up_workspace", set_up_test_workspace)
+    monkeypatch.setattr(spark_utils, "set_up_workspace", set_up_test_workspace)
 
     # create a spark session and ensure that the appropriate database has been created
-    (spark, delta_ns) = spark_delta.set_up_workspace(app_name, namespace, tenant_name)
-    assert expected == delta_ns
+    (spark, catalog_db) = spark_utils.set_up_workspace(app_name, namespace, tenant_name)
+    assert expected == catalog_db
     assert spark.catalog.databaseExists(expected)
 
 
 @pytest.mark.requires_spark
 @pytest.mark.parametrize("dataframe", [None, [1, 2, 3], {}, True])
-def test_write_delta_no_data(
+def test_write_table_no_data(
     spark: SparkSession,
     dataframe: DataFrame | bool | list | dict | None,
     caplog: pytest.LogCaptureFixture,
@@ -240,7 +241,7 @@ def test_write_delta_no_data(
     if isinstance(dataframe, bool):
         dataframe = spark.createDataFrame([], "name: string, age: int").show()
 
-    output = write_delta(spark, dataframe, "what", "ever", DEFAULT_WRITE_MODE)  # type: ignore
+    output = write_table(spark, dataframe, "what", "ever", DEFAULT_WRITE_MODE)  # type: ignore
     assert output is None
     assert len(caplog.records) == 1
     for record in caplog.records:
@@ -250,11 +251,11 @@ def test_write_delta_no_data(
 
 @pytest.mark.requires_spark
 @pytest.mark.parametrize("mode", ["some", "mode", 123, None, "whatever"])
-def test_write_delta_invalid_write_mode(spark: SparkSession, mode: str, caplog: pytest.LogCaptureFixture) -> None:
+def test_write_table_invalid_write_mode(spark: SparkSession, mode: str, caplog: pytest.LogCaptureFixture) -> None:
     """Ensure that an error is logged if an invalid write mode is supplied."""
-    error_msg = f"Invalid mode supplied for writing delta table: {mode}"
+    error_msg = f"Invalid mode supplied for writing table: {mode}"
     with pytest.raises(ValueError, match=error_msg):
-        write_delta(spark, {}, "what", "ever", mode)
+        write_table(spark, {}, "what", "ever", mode)
 
     assert len(caplog.records) == 1
     for record in caplog.records:
@@ -322,19 +323,19 @@ def check_saved_files(ns_save_dir: str | Path, table: str) -> None:
 
 
 def populate_db(
-    spark: SparkSession, caplog: pytest.LogCaptureFixture, delta_ns: str, table: str, ns_save_dir: str
+    spark: SparkSession, caplog: pytest.LogCaptureFixture, catalog_db: str, table: str, ns_save_dir: str
 ) -> None:
-    """Populate a database, save it as a delta table, and register it with Hive."""
-    db_table = f"{delta_ns}.{table}"
+    """Populate a database, save data as a new table, and register it in the catalog."""
+    db_table = f"{catalog_db}.{table}"
     # save a very boring dataframe to a new db_table
-    write_delta(
+    write_table(
         spark=spark,
         sdf=spark.createDataFrame([DEFAULT_SAMPLE_DATA]),
-        delta_ns=delta_ns,
+        catalog_db=catalog_db,
         table=table,
         mode=DEFAULT_WRITE_MODE,
     )
-    assert spark.catalog.databaseExists(delta_ns)
+    assert spark.catalog.databaseExists(catalog_db)
     assert spark.catalog.tableExists(db_table)
     # check the db contents are as expected
     check_query_output(spark, db_table, [DEFAULT_SAMPLE_DATA])
@@ -346,24 +347,24 @@ def populate_db(
 
 @pytest.mark.requires_spark
 @pytest.mark.parametrize("mode", WRITE_MODE)
-def test_write_delta_managed_table(
+def test_write_table_managed_table(
     mode: str,
     spark_db: tuple[SparkSession, str, str],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Test that a delta table is correctly written and registered in the Hive metastore.
+    """Test that a table is correctly written and registered in the catalog.
 
     All valid write modes are tested.
     """
-    spark, delta_ns, ns_save_dir = spark_db
+    spark, catalog_db, ns_save_dir = spark_db
     table = f"{mode}_example"
-    db_table = f"{delta_ns}.{table}"
+    db_table = f"{catalog_db}.{table}"
 
     df = spark.createDataFrame([DEFAULT_SAMPLE_DATA])
-    write_delta(
+    write_table(
         spark=spark,
         sdf=df,
-        delta_ns=delta_ns,
+        catalog_db=catalog_db,
         table=table,
         mode=mode,
     )
@@ -374,7 +375,7 @@ def test_write_delta_managed_table(
 
 
 @pytest.mark.requires_spark
-def test_write_delta_append_schema_merge(
+def test_write_table_append_schema_merge(
     spark_db: tuple[SparkSession, str, str], caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test adding data to an existing db using 'append' mode.
@@ -382,19 +383,19 @@ def test_write_delta_append_schema_merge(
     Append mode should merge schemas, adding new columns without dropping existing data.
     """
     mode = APPEND
-    spark, delta_ns, ns_save_dir = spark_db
+    spark, catalog_db, ns_save_dir = spark_db
     table = f"{mode}_test"
-    db_table = f"{delta_ns}.{table}"
+    db_table = f"{catalog_db}.{table}"
 
-    populate_db(spark, caplog, delta_ns, table, ns_save_dir)
+    populate_db(spark, caplog, catalog_db, table, ns_save_dir)
     caplog.clear()
 
     # second write - two rows with three columns (SCHEMA CHANGE ALERT!)
     new_rows = [{"a": "A2", "b": "B2", "c": "C2"}, {"a": "A3", "b": "B3", "c": "C3"}]
-    write_delta(
+    write_table(
         spark=spark,
         sdf=spark.createDataFrame(new_rows),
-        delta_ns=delta_ns,
+        catalog_db=catalog_db,
         table=table,
         mode=mode,
     )
@@ -404,7 +405,7 @@ def test_write_delta_append_schema_merge(
 
 
 @pytest.mark.requires_spark
-def test_write_delta_overwrite_schema(
+def test_write_table_overwrite_schema(
     spark_db: tuple[SparkSession, str, str], caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test adding data to an existing db using 'overwrite' mode.
@@ -412,18 +413,18 @@ def test_write_delta_overwrite_schema(
     Overwrite mode should overwrite the original schema and replace any existing data.
     """
     mode = OVERWRITE
-    spark, delta_ns, ns_save_dir = spark_db
+    spark, catalog_db, ns_save_dir = spark_db
     table = f"{mode}_test"
-    db_table = f"{delta_ns}.{table}"
+    db_table = f"{catalog_db}.{table}"
 
-    populate_db(spark, caplog, delta_ns, table, ns_save_dir)
+    populate_db(spark, caplog, catalog_db, table, ns_save_dir)
     caplog.clear()
 
     # second write - two rows with three columns (SCHEMA CHANGE ALERT!)
-    write_delta(
+    write_table(
         spark=spark,
         sdf=spark.createDataFrame([Row(x="X2", y="Y2", z="Z2"), Row(x="X3", y="Y3", z="Z3")]),
-        delta_ns=delta_ns,
+        catalog_db=catalog_db,
         table=table,
         mode=mode,
     )
@@ -434,26 +435,26 @@ def test_write_delta_overwrite_schema(
 
 @pytest.mark.requires_spark
 @pytest.mark.parametrize("mode", [IGNORE, ERROR, ERROR_IF_EXISTS])
-def test_write_delta_ignore_error(
+def test_write_table_ignore_error(
     spark_db: tuple[SparkSession, str, str], caplog: pytest.LogCaptureFixture, mode: str
 ) -> None:
     """Test adding data to an existing db using 'ignore' or either of the 'error' modes.
 
     "ignore" will write data if no table exists, but will not write anything if the table already exists.
-    "error" and "error_if_exists" would throw an error if the table already exists, but `write_delta` exits early.
+    "error" and "error_if_exists" would throw an error if the table already exists, but `write_table` exits early.
     """
-    spark, delta_ns, ns_save_dir = spark_db
+    spark, catalog_db, ns_save_dir = spark_db
     table = f"{mode}_test"
-    db_table = f"{delta_ns}.{table}"
+    db_table = f"{catalog_db}.{table}"
 
-    populate_db(spark, caplog, delta_ns, table, ns_save_dir)
+    populate_db(spark, caplog, catalog_db, table, ns_save_dir)
     caplog.clear()
 
     # second write - two rows with three columns (SCHEMA CHANGE ALERT!)
-    write_delta(
+    write_table(
         spark=spark,
         sdf=spark.createDataFrame([Row(x="X2", y="Y2", z="Z2"), Row(x="X3", y="Y3", z="Z3")]),
-        delta_ns=delta_ns,
+        catalog_db=catalog_db,
         table=table,
         mode=mode,
     )
@@ -469,13 +470,13 @@ def test_write_delta_ignore_error(
 
 
 @pytest.mark.requires_spark
-def test_write_delta_raise_error(
+def test_write_table_raise_error(
     spark_db: tuple[SparkSession, str, str], caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Ensure that errors are handled gracefully if something terrible happens during saveAsFile."""
-    spark, delta_ns, _ = spark_db
+    spark, catalog_db, _ = spark_db
     table = "error_handling"
-    db_table = f"{delta_ns}.{table}"
+    db_table = f"{catalog_db}.{table}"
 
     def save_as_oh_crap(*args: str, **kwargs: str | bool) -> None:  # noqa: ARG001
         """Local override of set_up_workspace."""
@@ -485,10 +486,10 @@ def test_write_delta_raise_error(
     monkeypatch.setattr(DataFrameWriter, "saveAsTable", save_as_oh_crap)
 
     with pytest.raises(Exception, match="Oh crap!"):
-        write_delta(
+        write_table(
             spark=spark,
             sdf=spark.createDataFrame([Row(x=2, y=3)]),
-            delta_ns=delta_ns,
+            catalog_db=catalog_db,
             table=table,
             mode=DEFAULT_WRITE_MODE,
         )
@@ -499,21 +500,21 @@ def test_write_delta_raise_error(
 
 @pytest.mark.requires_spark
 @pytest.mark.parametrize("mode", WRITE_MODE)
-def test_write_delta_uninited_namespace(
+def test_write_table_uninited_namespace(
     mode: str,
     spark_db: tuple[SparkSession, str, str],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test that a namespace that has not been registered throws an error."""
-    spark, _delta_ns, _ns_save_dir = spark_db
+    spark, _catalog_db, _ns_save_dir = spark_db
     table = f"{mode}_example"
     err_msg = "Could not find an appropriate base directory for saving data."
     df = spark.createDataFrame([DEFAULT_SAMPLE_DATA])
     with pytest.raises(RuntimeError, match=err_msg):
-        write_delta(
+        write_table(
             spark=spark,
             sdf=df,
-            delta_ns="namespace_I_just_made_up",
+            catalog_db="namespace_I_just_made_up",
             table=table,
             mode=mode,
         )
@@ -525,13 +526,13 @@ def test_write_delta_uninited_namespace(
 @pytest.mark.skip("Not yet implemented")
 @pytest.mark.requires_spark
 @pytest.mark.parametrize("mode", [APPEND, OVERWRITE])
-def test_write_delta_existing_proposed_path_warning(
+def test_write_table_existing_proposed_path_warning(
     mode: str, spark_db: tuple[SparkSession, str, str], caplog: pytest.LogCaptureFixture, tmp_path: Path
 ) -> None:
     """Test that a warning is emitted if there already exists data saved in another location."""
-    spark, delta_ns, _ns_save_dir = spark_db
+    spark, catalog_db, _ns_save_dir = spark_db
     table = f"{mode}_example"
-    db_table = f"{delta_ns}.{table}"
+    db_table = f"{catalog_db}.{table}"
     err_msg = "Existing path does not match the projected base path for the table. Data written to this directory must be tracked manually."
     save_dir = tmp_path / "save" / "some" / "data" / "here"
 
@@ -539,10 +540,10 @@ def test_write_delta_existing_proposed_path_warning(
     spark.sql(f"CREATE TABLE IF NOT EXISTS {db_table} USING DELTA LOCATION '{save_dir!s}'")
 
     df = spark.createDataFrame([DEFAULT_SAMPLE_DATA])
-    write_delta(
+    write_table(
         spark=spark,
         sdf=df,
-        delta_ns=delta_ns,
+        catalog_db=catalog_db,
         table=table,
         mode=mode,
     )
@@ -550,7 +551,7 @@ def test_write_delta_existing_proposed_path_warning(
     assert caplog.records[0].message.startswith(err_msg)
 
 
-# END write_delta tests. PHEW!
+# END write_table tests. PHEW!
 
 
 @pytest.mark.requires_spark
@@ -558,13 +559,13 @@ def test_preview_or_skip_existing(
     spark_db: tuple[SparkSession, str, str], caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture
 ) -> None:
     """Test the preview or skip function with an extant db."""
-    spark, delta_ns, ns_save_dir = spark_db
+    spark, catalog_db, ns_save_dir = spark_db
     table = "preview_test"
-    db_table = f"{delta_ns}.{table}"
-    populate_db(spark, caplog, delta_ns, table, ns_save_dir)
+    db_table = f"{catalog_db}.{table}"
+    populate_db(spark, caplog, catalog_db, table, ns_save_dir)
     caplog.clear()
 
-    preview_or_skip(spark, delta_ns, table)
+    preview_or_skip(spark, catalog_db, table)
 
     assert caplog.records[0].message == f"Preview for {db_table}:"
     captured = capsys.readouterr().out
