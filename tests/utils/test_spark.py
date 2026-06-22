@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 from pyspark.sql import DataFrame, DataFrameWriter, Row, SparkSession
 
-from cdm_data_loaders.utils import spark_delta as spark_utils
-from cdm_data_loaders.utils.spark_delta import (
+from cdm_data_loaders.utils import spark as spark_utils
+from cdm_data_loaders.utils.spark import (
     APPEND,
     DEFAULT_APP_NAME,
     DEFAULT_NAMESPACE,
@@ -30,7 +30,7 @@ SAVE_DIR = "spark.sql.warehouse.dir"
 DEFAULT_WRITE_MODE = ERROR
 DEFAULT_SAMPLE_DATA = {"a": "A1", "b": "B1"}
 TENANT_NAME = "The_Breakers"
-MODULE_NAME = "cdm_data_loaders.utils.spark_delta"
+MODULE_NAME = "cdm_data_loaders.utils.spark"
 
 
 def gen_ns_save_dir(current_save_dir: str, namespace: str, tenant_name: str | None) -> tuple[str, str]:
