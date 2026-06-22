@@ -149,7 +149,7 @@ def write_table(spark: SparkSession, sdf: DataFrame, catalog_db: str, table: str
     :type mode: str
     """
     if mode not in WRITE_MODE:
-        msg = f"Invalid mode supplied for writing database table: {mode}"
+        msg = f"Invalid mode supplied for writing table: {mode}"
         logger.error(msg)
         raise ValueError(msg)
 
