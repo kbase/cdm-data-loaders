@@ -21,7 +21,7 @@ from cdm_data_loaders.audit.schema import (
 )
 from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.parsers.uniprot.idmapping import ingest
-from cdm_data_loaders.utils.spark_delta import write_delta
+from cdm_data_loaders.utils.spark_delta import write_table
 from tests.audit.conftest import (
     INIT_TIMESTAMP_FIELDS,
 )
@@ -52,7 +52,7 @@ def test_ingest(
     else:
         table_name = "uniprot_identifier"
         # the test will write the delta table; we will check the results
-        write_delta(spark, ingest(spark, pipeline_run, str(test_mapping)), pipeline_run.namespace, table_name, "append")
+        write_table(spark, ingest(spark, pipeline_run, str(test_mapping)), pipeline_run.namespace, table_name, "append")
         df = spark.table(f"{pipeline_run.namespace}.{table_name}")
 
     assert isinstance(df, DataFrame)

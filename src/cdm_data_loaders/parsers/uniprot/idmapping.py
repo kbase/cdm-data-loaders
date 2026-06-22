@@ -37,7 +37,7 @@ from cdm_data_loaders.core.constants import CDM_LAKE_S3, INVALID_DATA_FIELD_NAME
 from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.readers.dsv import read
 from cdm_data_loaders.utils.s3 import list_matching_objects
-from cdm_data_loaders.utils.spark_delta import APPEND, set_up_workspace, write_delta
+from cdm_data_loaders.utils.spark_delta import APPEND, set_up_workspace, write_table
 from cdm_data_loaders.validation.dataframe_validator import DataFrameValidator, Validator
 from cdm_data_loaders.validation.df_nullable_fields import validate as check_nullable_fields
 
@@ -108,7 +108,7 @@ def read_and_write(spark: SparkSession, pipeline_run: PipelineRun, id_mapping_ts
     :type mode: str
     """
     # get the metalink XML and retrieve data source info
-    write_delta(
+    write_table(
         spark, ingest(spark, pipeline_run, id_mapping_tsv), pipeline_run.namespace, "uniprot_identifier", APPEND
     )
 

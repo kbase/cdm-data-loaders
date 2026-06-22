@@ -33,7 +33,6 @@ from cdm_data_loaders.audit.schema import (
 )
 from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.readers.dsv import INVALID_DATA_FIELD
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 
 SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 
@@ -58,6 +57,7 @@ def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
 @pytest.fixture
 def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
     """Generate a spark session with spark.sql.warehouse.dir set to the pytest temporary directory."""
+    logger = logging.getLogger(__name__)
     config = generate_spark_conf("test_delta_app", local=True, use_delta_lake=True)
     test_config = {
         "spark.sql.shuffle.partitions": 5,
@@ -75,13 +75,15 @@ def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
     config.update(test_config)
     config[SAVE_DIR] = str(tmp_path)
     spark_conf = SparkConf().setAll(list(config.items()))
+    logger.info("starting spark session...")
     spark = SparkSession.builder.config(conf=spark_conf).getOrCreate()
     save_dir = spark.conf.get(SAVE_DIR).removeprefix("file:")  # pyright: ignore[reportOptionalMemberAccess]
     if save_dir != str(tmp_path):
-        logging.getLogger(__name__).error("spark dir: %s; save dir: %s", tmp_path, save_dir)
+        logger.error("spark dir: %s; save dir: %s", tmp_path, save_dir)
     yield spark
     spark.catalog.clearCache()
     spark.stop()
+    logger.info("stopping spark session...")
     shutil.rmtree(save_dir)
 
 
