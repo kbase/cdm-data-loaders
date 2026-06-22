@@ -3,10 +3,11 @@
 import io
 import json
 import logging
+import re
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import boto3
 import pytest
@@ -1241,8 +1242,7 @@ def test_cmd_mb_creates_bucket(mock_s3_client: Any, protocol: str, path: str, bu
     """CLI mb helper creates bucket for valid paths."""
     with patch("builtins.print") as mock_print:
         cmd_mb([f"{protocol}{path}"])
-    mock_print.assert_called()
-    mock_print.assert_any_call(f"Created bucket: {bucket}")
+    mock_print.assert_called_once_with(f"Created bucket: {bucket}")
     mock_s3_client.head_bucket(Bucket=bucket)
 
 
@@ -1252,12 +1252,15 @@ def test_cmd_mb_creates_bucket(mock_s3_client: Any, protocol: str, path: str, bu
 def test_cmd_mb_handles_existing_bucket(mock_s3_client: Any, protocol: str, path: str, bucket: str) -> None:
     """CLI mb helper prints message when bucket already exists."""
     args = [f"{protocol}{path}"]
-    with patch("builtins.print"):
-        cmd_mb(args)
     with patch("builtins.print") as mock_print:
         cmd_mb(args)
-    mock_print.assert_called()
-    mock_print.assert_any_call(f"Bucket already exists: {bucket}")
+        cmd_mb(args)
+    mock_print.assert_has_calls(
+        [
+            call(f"Created bucket: {bucket}"),
+            call(f"Bucket already exists: {bucket}"),
+        ]
+    )
     mock_s3_client.head_bucket(Bucket=bucket)
 
 
@@ -1266,9 +1269,8 @@ def test_cmd_mb_handles_existing_bucket(mock_s3_client: Any, protocol: str, path
 @pytest.mark.parametrize(("args", "err_msg"), TEST_MB_ARGS_ERROR)
 def test_cmd_mb_prints_error(args: list[str], err_msg: str) -> None:
     """CLI mb helper prints usage on invalid argument list."""
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(SystemExit, match=err_msg):
         cmd_mb(args)
-    assert err_msg in str(exc.value)
 
 
 TEST_CP_PATHS = [
@@ -1286,9 +1288,12 @@ def test_cmd_cp_copies_file(mock_s3_client: Any, sample_file: Path, path: str, b
     mock_s3_client.create_bucket(Bucket=bucket)
     with patch("builtins.print") as mock_print:
         cmd_cp([str(sample_file), path])
-    mock_print.assert_called()
-    mock_print.assert_any_call(f"  {key}")
-    mock_print.assert_any_call(f"Uploaded 1 files to s3://{bucket}/{key}")
+    mock_print.assert_has_calls(
+        [
+            call(f"  {key}"),
+            call(f"Uploaded 1 files to s3://{bucket}/{key}"),
+        ]
+    )
     obj = mock_s3_client.get_object(Bucket=bucket, Key=key)
     assert obj["Body"].read() == b"hello s3"
 
@@ -1312,9 +1317,14 @@ def test_cmd_cp_copies_dir(mock_s3_client: Any, sample_dir: Path, path: str, buc
     mock_s3_client.create_bucket(Bucket=bucket)
     with patch("builtins.print") as mock_print:
         cmd_cp([str(sample_dir), path])
-    mock_print.assert_called()
     keys = {obj["Key"] for obj in mock_s3_client.list_objects_v2(Bucket=bucket)["Contents"]}
-    mock_print.assert_any_call(f"Uploaded {len(keys)} files to s3://{Path(bucket) / prefix}/")
+    expected_paths = [Path(prefix) / rel_path if prefix else Path(rel_path) for rel_path in SAMPLE_FILES]
+    mock_print.assert_has_calls(
+        [
+            *[call(f"  {key}") for key in expected_paths],
+            call(f"Uploaded {len(keys)} files to s3://{Path(bucket) / prefix}/"),
+        ]
+    )
     assert keys == {f"{Path(prefix) / f}" for f in SAMPLE_FILES}
 
 
@@ -1341,9 +1351,8 @@ TEST_CP_ARGS_ERROR = [
 @pytest.mark.parametrize(("args", "err_msg"), TEST_CP_ARGS_ERROR)
 def test_cmd_cp_prints_error(args: list[str], err_msg: str) -> None:
     """CLI cp helper prints usage on invalid argument list."""
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(SystemExit, match=re.escape(err_msg)):
         cmd_cp(args)
-    assert err_msg in str(exc.value)
 
 
 LS_FILES = [
@@ -1427,9 +1436,8 @@ def test_cmd_ls_empty_prefix_returns_nothing(mock_s3_client: Any) -> None:
 @pytest.mark.parametrize(("args", "err_msg"), TEST_LS_ARGS_ERROR)
 def test_cmd_ls_prints_error(args: list[str], err_msg: str) -> None:
     """CLI ls helper raises SystemExit with a useful message on invalid arguments."""
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(SystemExit, match=re.escape(err_msg)):
         cmd_ls(args)
-    assert err_msg in str(exc.value)
 
 
 # cmd_head
@@ -1510,6 +1518,5 @@ def test_cmd_head_handles_protocols(mock_s3_client: Any, protocol: str) -> None:
 @pytest.mark.parametrize(("args", "err_msg"), TEST_HEAD_ARGS_ERROR)
 def test_cmd_head_prints_error(args: list[str], err_msg: str) -> None:
     """CLI head helper raises SystemExit with a useful message on invalid arguments."""
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(SystemExit, match=err_msg):
         cmd_head(args)
-    assert err_msg in str(exc.value)
