@@ -6,7 +6,6 @@ from typing import Any
 
 from pyspark.sql import DataFrame, DataFrameWriter, SparkSession
 
-_spark_import_error: ModuleNotFoundError | None = None
 # Always export berdl functions for monkeypatching in tests, even when not present
 get_spark_session: Callable[..., Any] | None = None
 create_namespace_if_not_exists: Callable[..., str] | None = None
@@ -14,8 +13,8 @@ create_namespace_if_not_exists: Callable[..., str] | None = None
 try:
     from berdl_notebook_utils.setup_spark_session import get_spark_session
     from berdl_notebook_utils.spark.database import create_namespace_if_not_exists
-except ModuleNotFoundError as e:
-    _spark_import_error = e
+except ModuleNotFoundError:
+    pass
 
 
 logger: Logger = getLogger(__name__)
