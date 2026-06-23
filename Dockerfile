@@ -53,7 +53,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=secret,id=github_berdl_token \
-    GITHUB_BERDL_TOKEN=$(cat /run/secrets/github_berdl_token) \
+    if [ -f /run/secrets/github_berdl_token ]; then \
+        export GITHUB_BERDL_TOKEN=$(cat /run/secrets/github_berdl_token); \
+        export GIT_CONFIG_COUNT=1; \
+        export GIT_CONFIG_KEY_0="url.https://x-access-token:${GITHUB_BERDL_TOKEN}@github.com/.insteadOf"; \
+        export GIT_CONFIG_VALUE_0="https://github.com/"; \
+    fi && \
     uv sync ${EXTRAS} --locked --no-install-project --no-editable
 
 # Then, add the rest of the project source code and install it
@@ -69,7 +74,12 @@ COPY --chown=nonroot:nonroot uv.lock /app/uv.lock
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=secret,id=github_berdl_token \
-    GITHUB_BERDL_TOKEN=$(cat /run/secrets/github_berdl_token) \
+    if [ -f /run/secrets/github_berdl_token ]; then \
+        export GITHUB_BERDL_TOKEN=$(cat /run/secrets/github_berdl_token); \
+        export GIT_CONFIG_COUNT=1; \
+        export GIT_CONFIG_KEY_0="url.https://x-access-token:${GITHUB_BERDL_TOKEN}@github.com/.insteadOf"; \
+        export GIT_CONFIG_VALUE_0="https://github.com/"; \
+    fi && \
     uv sync ${EXTRAS} --locked --no-editable
 
 # Place executables in the environment at the front of the path

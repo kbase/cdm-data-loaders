@@ -227,5 +227,5 @@ AWS_SECRET_ACCESS_KEY = "test_access_secret"
 
 [tool.uv.sources]
 cdm-schema = { git = "https://github.com/kbase/cdm-schema.git" }
-berdl-notebook-utils = { git = "https://{GITHUB_BERDL_TOKEN}@github.com/KBaseDataLakehouse/spark_notebook.git", subdirectory = "notebook_utils" }
+berdl-notebook-utils = { git = "https://github.com/KBaseDataLakehouse/spark_notebook.git", subdirectory = "notebook_utils" }
 cdm-task-service-client = { git = "https://github.com/kbase/cdm-task-service-client.git" }

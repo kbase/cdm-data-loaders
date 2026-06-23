@@ -26,6 +26,8 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
+        env:
+          GITHUB_BERDL_TOKEN: ${{ secrets.GITHUB_BERDL_TOKEN }}
         run: uv sync
 
       - name: Run code formatting checks
@@ -86,6 +88,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
+        env:
+          GITHUB_BERDL_TOKEN: ${{ secrets.GITHUB_BERDL_TOKEN }}
         run: uv sync --dev
 
       - name: Run local tests

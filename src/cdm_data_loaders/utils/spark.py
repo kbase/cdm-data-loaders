@@ -6,17 +6,24 @@ from typing import Any
 
 from pyspark.sql import DataFrame, DataFrameWriter, SparkSession
 
-# Always export berdl functions for monkeypatching in tests, even when not present
-get_spark_session: Callable[..., Any] | None = None
-create_namespace_if_not_exists: Callable[..., str] | None = None
+_spark_import_error: ModuleNotFoundError | None = None
+
+
+def _missing_berdl(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401, ARG001
+    msg = "berdl-notebook-utils is required for Spark helpers; install with `uv sync --extra spark`."
+    raise ModuleNotFoundError(msg) from _spark_import_error
+
+
+# Always export berdl functions for monkeypatching in tests, even when optional deps aren't installed.
+get_spark_session: Callable[..., Any] = _missing_berdl
+create_namespace_if_not_exists: Callable[..., Any] = _missing_berdl
 
 try:
     from berdl_notebook_utils.setup_spark_session import get_spark_session
     from berdl_notebook_utils.spark.database import create_namespace_if_not_exists
 except ModuleNotFoundError as exc:
     # Optional dependency in non-notebook environments; keep defaults as None for monkeypatching/tests.
-    logger = getLogger(__name__)
-    logger.debug("Optional module 'berdl_notebook_utils' not available: %s", exc)
+    _spark_import_error = exc
 
 
 logger: Logger = getLogger(__name__)
