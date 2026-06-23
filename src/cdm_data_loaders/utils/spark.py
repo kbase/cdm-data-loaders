@@ -13,8 +13,10 @@ create_namespace_if_not_exists: Callable[..., str] | None = None
 try:
     from berdl_notebook_utils.setup_spark_session import get_spark_session
     from berdl_notebook_utils.spark.database import create_namespace_if_not_exists
-except ModuleNotFoundError:
-    pass
+except ModuleNotFoundError as exc:
+    # Optional dependency in non-notebook environments; keep defaults as None for monkeypatching/tests.
+    logger = getLogger(__name__)
+    logger.debug("Optional module 'berdl_notebook_utils' not available: %s", exc)
 
 
 logger: Logger = getLogger(__name__)
