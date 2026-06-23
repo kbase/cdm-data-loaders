@@ -40,6 +40,12 @@ To manually set up the virtual environment and install dependencies (including p
 > uv sync
 ```
 
+Note that this will exclude some Spark dependencies in private repos and disable Spark tests.
+To include these:
+```sh
+> uv sync --extra spark
+```
+
 To activate a virtual environment with these dependencies installed, run
 
 ```sh

@@ -25,6 +25,8 @@ jobs:
               uses: actions/checkout@v6
 
             - name: Run CEPH-backed integration tests
+              env:
+                  GITHUB_BERDL_TOKEN: ${{ secrets.GITHUB_BERDL_TOKEN }}
               run: |
                   docker compose up \
                     --build \

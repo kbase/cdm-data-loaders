@@ -502,9 +502,13 @@ dependencies = [
     { name = "tqdm" },
 ]
 
+[package.optional-dependencies]
+spark = [
+    { name = "berdl-notebook-utils" },
+]
+
 [package.dev-dependencies]
 dev = [
-    { name = "berdl-notebook-utils" },
     { name = "cdm-task-service-client" },
     { name = "moto", extra = ["s3"] },
     { name = "pytest" },
@@ -525,6 +529,7 @@ xml = [
 
 [package.metadata]
 requires-dist = [
+    { name = "berdl-notebook-utils", marker = "extra == 'spark'", git = "https://github.com/KBaseDataLakehouse/spark_notebook.git?subdirectory=notebook_utils" },
     { name = "bioregistry", specifier = ">=0.13.58" },
     { name = "boto3", extras = ["crt"], specifier = ">=1.42.55" },
     { name = "click", specifier = ">=8.4.1" },
@@ -539,10 +544,10 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.14.1" },
     { name = "tqdm", specifier = ">=4.67.3" },
 ]
+provides-extras = ["spark"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "berdl-notebook-utils", git = "https://github.com/KBaseDataLakehouse/spark_notebook.git?subdirectory=notebook_utils" },
     { name = "cdm-task-service-client", git = "https://github.com/kbase/cdm-task-service-client.git" },
     { name = "moto", extras = ["s3"], specifier = ">=5.2.1" },
     { name = "pytest", specifier = ">=9.0.2" },

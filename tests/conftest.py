@@ -1,6 +1,7 @@
 """Global configuration settings for tests."""
 
 import datetime
+import importlib.util
 import logging
 import shutil
 from collections.abc import Generator
@@ -9,7 +10,6 @@ from pathlib import Path
 from typing import Any, Final
 
 import pytest
-from berdl_notebook_utils.setup_spark_session import generate_spark_conf
 from frozendict import frozendict
 from pyspark.conf import SparkConf
 from pyspark.sql import DataFrame, SparkSession
@@ -42,6 +42,24 @@ PIPELINE_RUN = frozendict({RUN_ID: "1234-5678-90", PIPELINE: "KeystoneXL", SOURC
 ALT_PIPELINE_RUN = frozendict({RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL", SOURCE: "/path/to/dir"})
 
 
+def _spark_extra_available() -> bool:
+    """Detects whether spark dependencies are present."""
+    return importlib.util.find_spec("berdl_notebook_utils") is not None
+
+
+SPARK_EXTRA_AVAILABLE = _spark_extra_available()
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Skip spark tests when dependencies are not present."""
+    if SPARK_EXTRA_AVAILABLE:
+        return
+    skip_spark = pytest.mark.skip(reason="requires_spark: install with `uv sync --extra spark`")
+    for item in items:
+        if "requires_spark" in item.keywords:
+            item.add_marker(skip_spark)
+
+
 @pytest.fixture(autouse=True)
 def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
     """Fiddle with the loggers used in the tests for a better experience."""
@@ -57,6 +75,9 @@ def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
 @pytest.fixture
 def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
     """Generate a spark session with spark.sql.warehouse.dir set to the pytest temporary directory."""
+    # function level import to avoid failures when spark dependencies are not present
+    from berdl_notebook_utils.setup_spark_session import generate_spark_conf  # noqa: PLC0415
+
     logger = logging.getLogger(__name__)
     config = generate_spark_conf("test_delta_app", local=True, use_delta_lake=True)
     test_config = {

@@ -8,6 +8,7 @@ FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim
 
 ARG QSV_VERSION="20.1.0"
 ARG XML_FILE_SPLITTER_VERSION="v0.1.2"
+ARG EXTRAS="--extra spark"
 
 # Set environment variable to noninteractive to prevent prompts during apt operations
 ENV DEBIAN_FRONTEND=noninteractive
@@ -51,7 +52,9 @@ WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-install-project --no-editable
+    --mount=type=secret,id=github_berdl_token \
+    GITHUB_BERDL_TOKEN=$(cat /run/secrets/github_berdl_token) \
+    uv sync ${EXTRAS} --locked --no-install-project --no-editable
 
 # Then, add the rest of the project source code and install it
 # Installing separately from its dependencies allows optimal layer caching
@@ -65,7 +68,9 @@ COPY --chown=nonroot:nonroot pyproject.toml /app/pyproject.toml
 COPY --chown=nonroot:nonroot uv.lock /app/uv.lock
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-editable
+    --mount=type=secret,id=github_berdl_token \
+    GITHUB_BERDL_TOKEN=$(cat /run/secrets/github_berdl_token) \
+    uv sync ${EXTRAS} --locked --no-editable
 
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"

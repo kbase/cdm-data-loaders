@@ -33,7 +33,6 @@ uniref = "cdm_data_loaders.pipelines.uniref:cli"
 
 [dependency-groups]
 dev = [
-    "berdl-notebook-utils>=0.0.1",
     "cdm-task-service-client>=0.2.1",
     "moto[s3]>=5.2.1",
     "pytest>=9.0.2",
@@ -53,6 +52,10 @@ xml = [
 ]
 
 [project.optional-dependencies]
+
+spark = [
+    "berdl-notebook-utils>=0.0.1",
+]
 
 [tool.ruff]
 line-length = 120
@@ -224,5 +227,5 @@ AWS_SECRET_ACCESS_KEY = "test_access_secret"
 
 [tool.uv.sources]
 cdm-schema = { git = "https://github.com/kbase/cdm-schema.git" }
-berdl-notebook-utils = { git = "https://github.com/KBaseDataLakehouse/spark_notebook.git", subdirectory = "notebook_utils" }
+berdl-notebook-utils = { git = "https://{GITHUB_BERDL_TOKEN}@github.com/KBaseDataLakehouse/spark_notebook.git", subdirectory = "notebook_utils" }
 cdm-task-service-client = { git = "https://github.com/kbase/cdm-task-service-client.git" }

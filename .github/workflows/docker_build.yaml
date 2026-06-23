@@ -58,6 +58,8 @@ jobs:
                   tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TEST_TAG }}
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
+                  secrets: |
+                        "github_berdl_token=${{ secrets.GITHUB_BERDL_TOKEN }}"
 
             - name: Run non-spark tests on the built image
               id: run-tests-docker
@@ -75,3 +77,5 @@ jobs:
                   tags: ${{ steps.meta.outputs.tags }}
                   labels: ${{ steps.meta.outputs.labels }}
                   platforms: linux/amd64,linux/arm64/v8
+                  secrets: |
+                        "github_berdl_token=${{ secrets.GITHUB_BERDL_TOKEN }}"

@@ -20,6 +20,10 @@ services:
     image: cdm-data-loaders-integration-tests:latest
     build:
       context: .
+      args:
+        EXTRAS: ${EXTRAS---extra spark}
+      secrets:
+        - github_berdl_token
     depends_on:
       ceph:
         condition: service_healthy
@@ -29,3 +33,7 @@ services:
       AWS_SECRET_ACCESS_KEY: test_access_secret
     entrypoint: [ "/app/scripts/entrypoint.sh", "ceph_integration_test" ]
     command: []
+
+secrets:
+  github_berdl_token:
+    environment: GITHUB_BERDL_TOKEN
