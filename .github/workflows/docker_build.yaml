@@ -59,7 +59,7 @@ jobs:
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
                   secrets: |
-                        "github_berdl_token=${{ secrets.GITHUB_BERDL_TOKEN }}"
+                        github_berdl_token=${{ secrets.GITHUB_BERDL_TOKEN }}
 
             - name: Run non-spark tests on the built image
               id: run-tests-docker
