@@ -78,4 +78,4 @@ jobs:
                   labels: ${{ steps.meta.outputs.labels }}
                   platforms: linux/amd64,linux/arm64/v8
                   secrets: |
-                        "github_berdl_token=${{ secrets.GITHUB_BERDL_TOKEN }}"
+                        github_berdl_token=${{ secrets.GITHUB_BERDL_TOKEN }}
