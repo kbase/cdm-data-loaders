@@ -4,6 +4,7 @@ import logging
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from pyspark.sql import DataFrame, DataFrameWriter, Row, SparkSession
@@ -245,13 +246,12 @@ def test_write_table_no_data(
         assert record.message == "No data to write to what.ever"
 
 
-@pytest.mark.requires_spark
 @pytest.mark.parametrize("mode", ["some", "mode", 123, None, "whatever"])
-def test_write_table_invalid_write_mode(spark: SparkSession, mode: str, caplog: pytest.LogCaptureFixture) -> None:
+def test_write_table_invalid_write_mode(mode: str, caplog: pytest.LogCaptureFixture) -> None:
     """Ensure that an error is logged if an invalid write mode is supplied."""
     error_msg = f"Invalid mode supplied for writing table what.ever: {mode}"
     with pytest.raises(ValueError, match=error_msg):
-        write_table(spark, {}, "what", "ever", mode)  # pyright: ignore[reportArgumentType]
+        write_table(MagicMock(), {}, "what", "ever", mode)  # pyright: ignore[reportArgumentType]
 
     assert len(caplog.records) == 1
     for record in caplog.records:

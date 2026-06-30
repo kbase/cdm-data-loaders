@@ -17,6 +17,7 @@ WRITE_MODE = [APPEND, OVERWRITE, ERROR, ERROR_IF_EXISTS, IGNORE]
 
 DEFAULT_APP_NAME = "cdm_data_loader"
 DEFAULT_NAMESPACE = "default"
+DEFAULT_WRITE_MODE = APPEND
 
 
 def get_spark(
@@ -127,7 +128,9 @@ def get_existing_table_save_dir(spark: SparkSession, catalog_db: str, table: str
     raise ValueError(msg)
 
 
-def write_table(spark: SparkSession, sdf: DataFrame, catalog_db: str, table: str, mode: str = APPEND) -> None:
+def write_table(
+    spark: SparkSession, sdf: DataFrame, catalog_db: str, table: str, mode: str = DEFAULT_WRITE_MODE
+) -> None:
     """
     Write data as database tables and register it in the catalog.
 
@@ -142,11 +145,6 @@ def write_table(spark: SparkSession, sdf: DataFrame, catalog_db: str, table: str
     :param mode: spark write mode; one of the modes specified in WRITE_MODE
     :type mode: str
     """
-    if mode not in WRITE_MODE:
-        msg = f"Invalid mode supplied for writing table: {mode}"
-        logger.error(msg)
-        raise ValueError(msg)
-
     catalog_db_table = f"{catalog_db}.{table}"
     if mode not in WRITE_MODE:
         msg = f"Invalid mode supplied for writing table {catalog_db_table}: {mode}"
