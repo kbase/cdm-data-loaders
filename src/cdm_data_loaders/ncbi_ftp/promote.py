@@ -36,8 +36,6 @@ from cdm_data_loaders.utils.s3 import (
 
 logger: Logger = getLogger(__name__)
 
-DEFAULT_LAKEHOUSE_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
-
 _MAX_DRY_RUN_LOGS = 10
 
 
@@ -49,7 +47,7 @@ def promote_from_s3(  # noqa: PLR0913
     staging_bucket: PurePosixPath,
     staging_key_prefix: PurePosixPath,
     lakehouse_bucket: PurePosixPath,
-    lakehouse_key_prefix: PurePosixPath = DEFAULT_LAKEHOUSE_KEY_PREFIX,
+    lakehouse_key_prefix: PurePosixPath,
     removed_manifest_path: Path | None = None,
     updated_manifest_path: Path | None = None,
     manifest_s3_key: PurePosixPath | None = None,
@@ -91,8 +89,8 @@ def promote_from_s3(  # noqa: PLR0913
             archived += _archive_assemblies(
                 manifest_file,
                 lakehouse_bucket=lakehouse_bucket,
-                ncbi_release=ncbi_release,
                 lakehouse_key_prefix=lakehouse_key_prefix,
+                ncbi_release=ncbi_release,
                 archive_reason=reason,
                 delete_source=delete,
                 dry_run=dry_run,
@@ -473,8 +471,8 @@ def _archive_objects(
 def _archive_assemblies(  # noqa: PLR0913
     manifest_local_path: Path,
     lakehouse_bucket: PurePosixPath,
+    lakehouse_key_prefix: PurePosixPath,
     ncbi_release: str | None = None,
-    lakehouse_key_prefix: PurePosixPath = DEFAULT_LAKEHOUSE_KEY_PREFIX,
     archive_reason: str = "unknown",
     *,
     delete_source: bool = False,
