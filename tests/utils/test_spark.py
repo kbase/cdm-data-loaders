@@ -1,4 +1,4 @@
-"""Tests of the Spark / Delta utilities."""
+"""Tests of the Spark utilities."""
 
 import logging
 from collections.abc import Generator
@@ -27,10 +27,11 @@ from tests.helpers import assertDataFrameEqual
 original_set_up_ws_fn = spark_utils.set_up_workspace
 
 SAVE_DIR = "spark.sql.warehouse.dir"
-DEFAULT_WRITE_MODE = ERROR
+TEST_WRITE_MODE = ERROR
 DEFAULT_SAMPLE_DATA = {"a": "A1", "b": "B1"}
 TENANT_NAME = "The_Breakers"
-MODULE_NAME = "cdm_data_loaders.utils.spark"
+GET_SPARK_SESSION = "berdl_notebook_utils.setup_spark_session.get_spark_session"
+CREATE_NS = "berdl_notebook_utils.spark.database.create_namespace_if_not_exists"
 
 
 def gen_ns_save_dir(current_save_dir: str, namespace: str, tenant_name: str | None) -> tuple[str, str]:
@@ -71,13 +72,13 @@ def spark_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[tuple
     """Provide a Spark session with a per-test warehouse dir and patched workspace setup."""
     # patch the create_namespace_if_not_exists function
     monkeypatch.setattr(
-        f"{MODULE_NAME}.create_namespace_if_not_exists",
+        CREATE_NS,
         fake_create_namespace_if_not_exists,
     )
 
     def set_up_test_workspace(*args: str, **kwargs: str | bool) -> tuple[SparkSession, str]:  # noqa: ARG001
         """Local override of set_up_workspace."""
-        return original_set_up_ws_fn(*args, local=True, delta_lake=True, override={SAVE_DIR: str(tmp_path)})
+        return original_set_up_ws_fn(*args, local=True, override={SAVE_DIR: str(tmp_path)})
 
     monkeypatch.setattr(spark_utils, "set_up_workspace", set_up_test_workspace)
 
@@ -91,6 +92,7 @@ def spark_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[tuple
 @pytest.mark.parametrize("app_name", [None, "", "my_fave_app"])
 def test_get_spark(app_name: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test of the get_spark utility's ability to fill in the app name if not provided."""
+    pytest.importorskip("berdl_notebook_utils")
 
     def fake_get_spark_session(*args: str, **kwargs: str | bool) -> str:  # noqa: ARG001
         if app_name == "my_fave_app":
@@ -100,7 +102,7 @@ def test_get_spark(app_name: str | None, monkeypatch: pytest.MonkeyPatch) -> Non
         return "fake spark session"
 
     monkeypatch.setattr(
-        f"{MODULE_NAME}.get_spark_session",
+        GET_SPARK_SESSION,
         fake_get_spark_session,
     )
 
@@ -124,15 +126,14 @@ def test_get_spark_live(app_name: str | None) -> None:
 @pytest.mark.parametrize("app_name", [None, "", "my_fave_app"])
 @pytest.mark.parametrize("tenant_name", [None, "", "some_tenant"])
 @pytest.mark.parametrize("namespace", [None, "", "some_namespace"])
-@pytest.mark.parametrize("data_dir", [None, "", "path/to/ws"])
 def test_set_up_workspace_defaults(
     app_name: str | None,
     tenant_name: str | None,
     namespace: str | None,
-    data_dir: str | None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Check the default values when setting up a workspace."""
+    pytest.importorskip("berdl_notebook_utils")
 
     def fake_get_spark_session(*args: str, **kwargs: str | bool) -> str:  # noqa: ARG001
         assert args[0] == app_name if app_name else DEFAULT_APP_NAME
@@ -148,21 +149,16 @@ def test_set_up_workspace_defaults(
         return "some namespace"
 
     monkeypatch.setattr(
-        f"{MODULE_NAME}.get_spark_session",
+        GET_SPARK_SESSION,
         fake_get_spark_session,
     )
 
     monkeypatch.setattr(
-        f"{MODULE_NAME}.create_namespace_if_not_exists",
+        CREATE_NS,
         fake_create_ns,
     )
 
-    if data_dir:
-        with pytest.raises(NotImplementedError, match="The data_dir parameter has not been implemented\\."):
-            spark_utils.set_up_workspace(app_name, namespace, tenant_name, data_dir)
-        return
-
-    spark, catalog_db = spark_utils.set_up_workspace(app_name, namespace, tenant_name, data_dir)
+    spark, catalog_db = spark_utils.set_up_workspace(app_name, namespace, tenant_name)
     assert spark == "spark session"
     assert catalog_db == "some namespace"
 
@@ -213,13 +209,13 @@ def test_set_up_workspace_creates_database(
 
     # patch the create_namespace_if_not_exists function
     monkeypatch.setattr(
-        f"{MODULE_NAME}.create_namespace_if_not_exists",
+        CREATE_NS,
         fake_create_namespace_if_not_exists,
     )
 
     def set_up_test_workspace(*args: str, **kwargs: str | bool) -> tuple[SparkSession, str]:  # noqa: ARG001
         """Local override of set_up_workspace."""
-        return original_set_up_ws_fn(*args, local=True, delta_lake=True, override={SAVE_DIR: str(tmp_path)})
+        return original_set_up_ws_fn(*args, local=True, override={SAVE_DIR: str(tmp_path)})
 
     # patch the set_up_workspace function to add in the various extra kwargs for local use
     monkeypatch.setattr(spark_utils, "set_up_workspace", set_up_test_workspace)
@@ -241,7 +237,7 @@ def test_write_table_no_data(
     if isinstance(dataframe, bool):
         dataframe = spark.createDataFrame([], "name: string, age: int").show()
 
-    output = write_table(spark, dataframe, "what", "ever", DEFAULT_WRITE_MODE)  # type: ignore
+    output = write_table(spark, dataframe, "what", "ever", APPEND)  # pyright: ignore[reportArgumentType]
     assert output is None
     assert len(caplog.records) == 1
     for record in caplog.records:
@@ -253,9 +249,9 @@ def test_write_table_no_data(
 @pytest.mark.parametrize("mode", ["some", "mode", 123, None, "whatever"])
 def test_write_table_invalid_write_mode(spark: SparkSession, mode: str, caplog: pytest.LogCaptureFixture) -> None:
     """Ensure that an error is logged if an invalid write mode is supplied."""
-    error_msg = f"Invalid mode supplied for writing table: {mode}"
+    error_msg = f"Invalid mode supplied for writing table what.ever: {mode}"
     with pytest.raises(ValueError, match=error_msg):
-        write_table(spark, {}, "what", "ever", mode)
+        write_table(spark, {}, "what", "ever", mode)  # pyright: ignore[reportArgumentType]
 
     assert len(caplog.records) == 1
     for record in caplog.records:
@@ -263,35 +259,37 @@ def test_write_table_invalid_write_mode(spark: SparkSession, mode: str, caplog: 
         assert record.message == error_msg
 
 
-def check_query_output(spark: SparkSession, db_table: str, expected: list[dict[str, Any]]) -> None:
+def check_query_output(spark: SparkSession, catalog_db_table: str, expected: list[dict[str, Any]]) -> None:
     """Check that the query output matches the expected output."""
     # ensure that the table exists
-    assert spark.catalog.tableExists(db_table)
+    assert spark.catalog.tableExists(catalog_db_table)
     # run the query
-    results = spark.sql(f"SELECT * FROM {db_table}").collect()
+    results = spark.sql(f"SELECT * FROM {catalog_db_table}").collect()
     expected_collected = spark.createDataFrame(expected).collect()
     assertDataFrameEqual(results, expected_collected)
 
 
-def check_logger_output_successful_write(records: list[logging.LogRecord], db_table: str, mode: str, rows: int) -> None:
+def check_logger_output_successful_write(
+    records: list[logging.LogRecord], catalog_db_table: str, mode: str, rows: int
+) -> None:
     """Check that the logger has emitted the appropriate messages on a successful db write."""
     first_message = records[0]
-    assert f"Writing table {db_table} in mode {mode} (rows={rows})" in first_message.message
+    assert f"Writing table {catalog_db_table} in mode {mode} (rows={rows})" in first_message.message
     assert first_message.levelno == logging.INFO
     last_message = records[-1]
-    assert f"Saved managed table {db_table} (rows={rows})" in last_message.message
+    assert f"Saved managed table {catalog_db_table} (rows={rows})" in last_message.message
     assert last_message.levelno == logging.INFO
 
 
 def check_logger_output_successful_location_write(
-    records: list[logging.LogRecord], db_table: str, mode: str, rows: int
+    records: list[logging.LogRecord], catalog_db_table: str, mode: str, rows: int
 ) -> None:
     """Check that the logger has emitted the appropriate messages on a successful db write."""
     first_message = records[0]
-    assert f"Writing table {db_table} in mode {mode} (rows={rows})" in first_message.message
+    assert f"Writing table {catalog_db_table} in mode {mode} (rows={rows})" in first_message.message
     assert first_message.levelno == logging.INFO
     last_message = records[-1]
-    assert f"Saved external table {db_table} (rows={rows}) to " in last_message.message
+    assert f"Saved external table {catalog_db_table} (rows={rows}) to " in last_message.message
     assert last_message.levelno == logging.INFO
 
 
@@ -326,23 +324,23 @@ def populate_db(
     spark: SparkSession, caplog: pytest.LogCaptureFixture, catalog_db: str, table: str, ns_save_dir: str
 ) -> None:
     """Populate a database, save data as a new table, and register it in the catalog."""
-    db_table = f"{catalog_db}.{table}"
-    # save a very boring dataframe to a new db_table
+    catalog_db_table = f"{catalog_db}.{table}"
+    assert spark.catalog.databaseExists(catalog_db)
+    # save a very boring dataframe to a new catalog_db_table
     write_table(
         spark=spark,
         sdf=spark.createDataFrame([DEFAULT_SAMPLE_DATA]),
         catalog_db=catalog_db,
         table=table,
-        mode=DEFAULT_WRITE_MODE,
+        mode=TEST_WRITE_MODE,
     )
-    assert spark.catalog.databaseExists(catalog_db)
-    assert spark.catalog.tableExists(db_table)
+    assert spark.catalog.tableExists(catalog_db_table)
     # check the db contents are as expected
-    check_query_output(spark, db_table, [DEFAULT_SAMPLE_DATA])
+    check_query_output(spark, catalog_db_table, [DEFAULT_SAMPLE_DATA])
     # check there are saved files
     check_saved_files(ns_save_dir, table)
     # check the logger output
-    check_logger_output_successful_write(caplog.records, db_table, DEFAULT_WRITE_MODE, 1)
+    check_logger_output_successful_write(caplog.records, catalog_db_table, TEST_WRITE_MODE, 1)
 
 
 @pytest.mark.requires_spark
@@ -358,7 +356,7 @@ def test_write_table_managed_table(
     """
     spark, catalog_db, ns_save_dir = spark_db
     table = f"{mode}_example"
-    db_table = f"{catalog_db}.{table}"
+    catalog_db_table = f"{catalog_db}.{table}"
 
     df = spark.createDataFrame([DEFAULT_SAMPLE_DATA])
     write_table(
@@ -368,9 +366,9 @@ def test_write_table_managed_table(
         table=table,
         mode=mode,
     )
-    check_query_output(spark, db_table, [DEFAULT_SAMPLE_DATA])
+    check_query_output(spark, catalog_db_table, [DEFAULT_SAMPLE_DATA])
     assert len(caplog.records) > 1
-    check_logger_output_successful_write(caplog.records, db_table, mode, 1)
+    check_logger_output_successful_write(caplog.records, catalog_db_table, mode, 1)
     check_saved_files(ns_save_dir, table)
 
 
@@ -385,7 +383,7 @@ def test_write_table_append_schema_merge(
     mode = APPEND
     spark, catalog_db, ns_save_dir = spark_db
     table = f"{mode}_test"
-    db_table = f"{catalog_db}.{table}"
+    catalog_db_table = f"{catalog_db}.{table}"
 
     populate_db(spark, caplog, catalog_db, table, ns_save_dir)
     caplog.clear()
@@ -400,8 +398,8 @@ def test_write_table_append_schema_merge(
         mode=mode,
     )
     check_saved_files(ns_save_dir, table)
-    check_logger_output_successful_write(caplog.records, db_table, mode, 2)
-    check_query_output(spark, db_table, [{**DEFAULT_SAMPLE_DATA, "c": None}, *new_rows])
+    check_logger_output_successful_write(caplog.records, catalog_db_table, mode, 2)
+    check_query_output(spark, catalog_db_table, [{**DEFAULT_SAMPLE_DATA, "c": None}, *new_rows])
 
 
 @pytest.mark.requires_spark
@@ -415,7 +413,7 @@ def test_write_table_overwrite_schema(
     mode = OVERWRITE
     spark, catalog_db, ns_save_dir = spark_db
     table = f"{mode}_test"
-    db_table = f"{catalog_db}.{table}"
+    catalog_db_table = f"{catalog_db}.{table}"
 
     populate_db(spark, caplog, catalog_db, table, ns_save_dir)
     caplog.clear()
@@ -429,8 +427,8 @@ def test_write_table_overwrite_schema(
         mode=mode,
     )
     check_saved_files(ns_save_dir, table)
-    check_logger_output_successful_write(caplog.records, db_table, mode, 2)
-    check_query_output(spark, db_table, [{"x": f"X{n}", "y": f"Y{n}", "z": f"Z{n}"} for n in [2, 3]])
+    check_logger_output_successful_write(caplog.records, catalog_db_table, mode, 2)
+    check_query_output(spark, catalog_db_table, [{"x": f"X{n}", "y": f"Y{n}", "z": f"Z{n}"} for n in [2, 3]])
 
 
 @pytest.mark.requires_spark
@@ -445,7 +443,7 @@ def test_write_table_ignore_error(
     """
     spark, catalog_db, ns_save_dir = spark_db
     table = f"{mode}_test"
-    db_table = f"{catalog_db}.{table}"
+    catalog_db_table = f"{catalog_db}.{table}"
 
     populate_db(spark, caplog, catalog_db, table, ns_save_dir)
     caplog.clear()
@@ -463,10 +461,10 @@ def test_write_table_ignore_error(
     assert last_logger_message.levelno == logging.WARNING
     assert (
         last_logger_message.message
-        == f"Database table {db_table} already exists and writer is set to {mode} mode, so no data would be written. Aborting."
+        == f"Database table {catalog_db_table} already exists and writer is set to {mode} mode, so no data would be written. Aborting."
     )
     # check the db contents
-    check_query_output(spark, db_table, [DEFAULT_SAMPLE_DATA])
+    check_query_output(spark, catalog_db_table, [DEFAULT_SAMPLE_DATA])
 
 
 @pytest.mark.requires_spark
@@ -476,7 +474,7 @@ def test_write_table_raise_error(
     """Ensure that errors are handled gracefully if something terrible happens during saveAsFile."""
     spark, catalog_db, _ = spark_db
     table = "error_handling"
-    db_table = f"{catalog_db}.{table}"
+    catalog_db_table = f"{catalog_db}.{table}"
 
     def save_as_oh_crap(*args: str, **kwargs: str | bool) -> None:  # noqa: ARG001
         """Local override of set_up_workspace."""
@@ -491,11 +489,11 @@ def test_write_table_raise_error(
             sdf=spark.createDataFrame([Row(x=2, y=3)]),
             catalog_db=catalog_db,
             table=table,
-            mode=DEFAULT_WRITE_MODE,
+            mode=TEST_WRITE_MODE,
         )
     last_log_record = caplog.records[-1]
     assert last_log_record.levelno == logging.ERROR
-    assert last_log_record.message == f"Error writing managed table {db_table}"
+    assert last_log_record.message == f"Error writing managed table {catalog_db_table}"
 
 
 @pytest.mark.requires_spark
@@ -532,12 +530,11 @@ def test_write_table_existing_proposed_path_warning(
     """Test that a warning is emitted if there already exists data saved in another location."""
     spark, catalog_db, _ns_save_dir = spark_db
     table = f"{mode}_example"
-    db_table = f"{catalog_db}.{table}"
     err_msg = "Existing path does not match the projected base path for the table. Data written to this directory must be tracked manually."
     save_dir = tmp_path / "save" / "some" / "data" / "here"
 
     # set up a save directory for the table
-    spark.sql(f"CREATE TABLE IF NOT EXISTS {db_table} USING DELTA LOCATION '{save_dir!s}'")
+    spark.sql(f"CREATE TABLE IF NOT EXISTS {table} USING DELTA LOCATION '{save_dir!s}'")
 
     df = spark.createDataFrame([DEFAULT_SAMPLE_DATA])
     write_table(
@@ -561,13 +558,13 @@ def test_preview_or_skip_existing(
     """Test the preview or skip function with an extant db."""
     spark, catalog_db, ns_save_dir = spark_db
     table = "preview_test"
-    db_table = f"{catalog_db}.{table}"
+    catalog_db_table = f"{catalog_db}.{table}"
     populate_db(spark, caplog, catalog_db, table, ns_save_dir)
     caplog.clear()
 
     preview_or_skip(spark, catalog_db, table)
 
-    assert caplog.records[0].message == f"Preview for {db_table}:"
+    assert caplog.records[0].message == f"Preview for {catalog_db_table}:"
     captured = capsys.readouterr().out
     # N.b. this may be fragile if formatting of "show" statements changes
     for k, v in DEFAULT_SAMPLE_DATA.items():

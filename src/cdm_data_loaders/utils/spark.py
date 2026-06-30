@@ -2,8 +2,6 @@
 
 from logging import Logger, getLogger
 
-from berdl_notebook_utils.setup_spark_session import get_spark_session
-from berdl_notebook_utils.spark.database import create_namespace_if_not_exists
 from pyspark.sql import DataFrame, DataFrameWriter, SparkSession
 
 logger: Logger = getLogger(__name__)
@@ -36,6 +34,8 @@ def get_spark(
     :return: a Spark session
     :rtype: SparkSession
     """
+    from berdl_notebook_utils.setup_spark_session import get_spark_session  # noqa: PLC0415
+
     return get_spark_session(app_name or DEFAULT_APP_NAME, **kwargs)
 
 
@@ -43,7 +43,6 @@ def set_up_workspace(
     app_name: str | None = None,
     namespace: str | None = None,
     tenant_name: str | None = None,
-    data_dir: str | None = None,
     **kwargs: str | int | bool | dict | None,
 ) -> tuple[SparkSession, str]:
     """Set up a Spark session and namespace.
@@ -59,18 +58,13 @@ def set_up_workspace(
     :type namespace: str, optional
     :param tenant_name: name of the tenant, if applicable; defaults to None
     :type tenant_name: str, optional
-    :param data_dir: directory in which to save data, if applicable; defaults to None. NOT IMPLEMENTED.
-    :type data_dir: str, optional
     :param kwargs: extra arguments to supply to the spark session
     :type kwargs: dict[str, Any] | None
     :return: a Spark session and the BERDL-approved namespace
     :rtype: tuple[SparkSession, str]
     """
-    # TODO (?): implement data_dir
-    if data_dir:
-        msg = "The data_dir parameter has not been implemented."
-        logger.error(msg)
-        raise NotImplementedError(msg)
+    from berdl_notebook_utils.spark.database import create_namespace_if_not_exists  # noqa: PLC0415
+
     spark = get_spark(app_name or DEFAULT_APP_NAME, **kwargs)
     # if the namespace has already been created, this will return the doctored namespace
     catalog_db = create_namespace_if_not_exists(spark, namespace or DEFAULT_NAMESPACE, tenant_name=tenant_name)
@@ -154,6 +148,11 @@ def write_table(spark: SparkSession, sdf: DataFrame, catalog_db: str, table: str
         raise ValueError(msg)
 
     catalog_db_table = f"{catalog_db}.{table}"
+    if mode not in WRITE_MODE:
+        msg = f"Invalid mode supplied for writing table {catalog_db_table}: {mode}"
+        logger.error(msg)
+        raise ValueError(msg)
+
     if sdf is None or not isinstance(sdf, DataFrame) or sdf.isEmpty():
         logger.warning("No data to write to %s", catalog_db_table)
         return

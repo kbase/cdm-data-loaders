@@ -39,6 +39,8 @@ ENV UV_LINK_MODE=copy
 
 # Omit development dependencies
 # ENV UV_NO_DEV=1
+
+# don't try to synchronise each time uv is executed
 ENV UV_NO_SYNC=1
 
 # Ensure installed tools can be executed out of the box
