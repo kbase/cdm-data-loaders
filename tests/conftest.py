@@ -5,11 +5,11 @@ import logging
 import shutil
 from collections.abc import Generator
 from copy import deepcopy
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, Final
 
 import pytest
-from berdl_notebook_utils.setup_spark_session import generate_spark_conf
 from frozendict import frozendict
 from pyspark.conf import SparkConf
 from pyspark.sql import DataFrame, SparkSession
@@ -36,10 +36,63 @@ from cdm_data_loaders.readers.dsv import INVALID_DATA_FIELD
 
 SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 
-
 TEST_NS: Final[str] = "test_ns"
 PIPELINE_RUN = frozendict({RUN_ID: "1234-5678-90", PIPELINE: "KeystoneXL", SOURCE: "/path/to/file"})
 ALT_PIPELINE_RUN = frozendict({RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL", SOURCE: "/path/to/dir"})
+
+
+_notebook_utils_available: bool | None = None
+
+
+def _find_notebook_utils() -> bool:
+    """Check whether the current environment has the KBase Lakehouse notebook_utils lib available.
+
+    :return: True if they are available
+    :rtype: bool
+    """
+    global _notebook_utils_available  # noqa: PLW0603
+    if _notebook_utils_available is not None:
+        return _notebook_utils_available
+
+    # set to false by default
+    _notebook_utils_available = False
+    try:
+        sss = find_spec("berdl_notebook_utils.setup_spark_session")
+        db = find_spec("berdl_notebook_utils.spark.database")
+        if sss is not None and db is not None:
+            _notebook_utils_available = True
+    except Exception:
+        logging.getLogger(__name__).exception("Notebook utils not available: requires_notebook_utils tests will fail")
+
+    return _notebook_utils_available
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Set up tests to skip anything where dependencies are missing.
+
+    :param item: test item
+    :type item: pytest.Item
+    """
+    if "requires_spark" not in item.keywords:
+        return
+
+    # notebook utils are available: we're fine
+    if _find_notebook_utils():
+        return
+
+    # the raw string passed to -m
+    markexpr = item.config.option.markexpr
+    # tests matching any "not" markers will already have been filtered out
+    # markexpr will contain "requires_spark" when -m requires_spark is used
+    # N.b. this blatantly ignores more complex situations, like "not(marker or marker)"
+    if markexpr and "requires_spark" in markexpr and "not requires_spark" not in markexpr:
+        pytest.fail(
+            "Test is marked requires_spark, but Spark is not available in this environment.",
+            pytrace=False,
+        )
+    else:
+        # no markexpr or unrelated -m expression: skip silently
+        pytest.skip("Test is marked requires_spark, but Spark is not available in this environment.")
 
 
 @pytest.fixture(autouse=True)
@@ -58,7 +111,13 @@ def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
 def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
     """Generate a spark session with spark.sql.warehouse.dir set to the pytest temporary directory."""
     logger = logging.getLogger(__name__)
-    config = generate_spark_conf("test_delta_app", local=True, use_delta_lake=True)
+    try:
+        from berdl_notebook_utils.setup_spark_session import generate_spark_conf  # pyright: ignore[reportMissingImports]  # noqa: I001, PLC0415
+    except ModuleNotFoundError:
+        logger.exception("berdl_notebook_utils not available: cannot create a spark session")
+        raise
+
+    config = generate_spark_conf("test_delta_app", local=True)
     test_config = {
         "spark.sql.shuffle.partitions": 5,
         "spark.default.parallelism": 9,
