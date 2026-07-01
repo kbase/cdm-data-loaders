@@ -20,6 +20,7 @@ from cdm_data_loaders.pipelines.ncbi_ftp_download import (
     download_batch,
 )
 from cdm_data_loaders.utils.s3 import reset_s3_client
+from tests.pipelines.conftest import _generate_dlt_config
 
 _MOCK_STATS = {
     "accession": "GCF_000001215.4",
@@ -43,7 +44,7 @@ _EXPECTED_ATTEMPTED = 2
 def make_settings(**kwargs: str | int | bool | Path | PurePosixPath) -> DownloadSettings:
     """Generate a validated DownloadSettings object."""
     settings_ctor = cast("Any", DownloadSettings)
-    return settings_ctor(_cli_parse_args=[], **kwargs)
+    return settings_ctor(_cli_parse_args=[], dlt_config=_generate_dlt_config(), **kwargs)
 
 
 # Settings defaults

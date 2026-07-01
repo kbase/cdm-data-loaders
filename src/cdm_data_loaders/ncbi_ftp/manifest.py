@@ -136,7 +136,14 @@ def parse_assembly_summary(source: str | Path | list[str]) -> dict[str, Assembly
                 continue
             accession = row[_ACCESSION_COL]
             ftp_url = row[_FTP_URL_COL]
-            if ftp_url == "na":
+            if "https://ftp" not in ftp_url:
+                for col in row:
+                    if "https://ftp" in col:
+                        ftp_url = col
+                        break
+            if "https://ftp" not in ftp_url:
+                msg = f"Missing ftp path for record {accession}."
+                logger.warning(msg)
                 continue
             assembly_dir = PurePosixPath(_ftp_dir_from_url(ftp_url).name)
             assemblies[accession] = AssemblyRecord(
