@@ -43,7 +43,7 @@ class PromoteSettings(CtsSettings):
     destination_path: PurePosixPath = Field(
         default=DEFAULT_DESTINATION_PREFIX,
         description="Path to folder in the destination bucket where files will be promoted to; Will contain `raw_data/` folder",
-        validation_alias=AliasChoices("d", "destination-path", "destination_path"),
+        validation_alias=AliasChoices("destination-path", "destination_path"),
     )
     removed_manifest_path: Path | None = Field(
         default=None,
