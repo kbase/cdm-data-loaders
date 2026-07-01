@@ -47,7 +47,7 @@ class PromoteSettings(CtsSettings):
     )
     removed_manifest_path: Path | None = Field(
         default=None,
-        description="File path in the staging bucket for the removed files manifest, or None to skip archiving removed records",
+        description="Local filesystem path to the removed files manifest from Phase 1, or None to skip archiving removed records",
         validation_alias=AliasChoices("r", "removed-manifest", "removed_manifest"),
     )
     updated_manifest_path: Path | None = Field(
