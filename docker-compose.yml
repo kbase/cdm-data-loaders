@@ -14,7 +14,7 @@ services:
       # 2. curl: confirms the RGW HTTP listener is accepting connections.
       # NOTE: ceph health is NOT used here — this image permanently sits at HEALTH_WARN due to
       # AUTH_INSECURE_GLOBAL_ID_RECLAIM_ALLOWED and MON_MSGR2_NOT_ENABLED, so it never passes.
-      test: [ "CMD-SHELL", "ceph osd stat 2>/dev/null | grep -qE '[1-9][0-9]* up' && (curl -fsS http://127.0.0.1:8080/ >/dev/null 2>&1 || wget -q -O- http://127.0.0.1:8080/ >/dev/null 2>&1)" ]
+      test: [ "CMD-SHELL", "ceph osd stat 2>/dev/null | grep -qE '[1-9][0-9]* up' && curl -s http://127.0.0.1:8080/ >/dev/null 2>&1" ]
       interval: 10s
       timeout: 10s
       retries: 10
