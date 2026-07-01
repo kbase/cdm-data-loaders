@@ -354,8 +354,8 @@ suppressed assemblies, and trim the transfer manifest for resumability.
 | `--destination-path` | | `tenant-general-warehouse/kbase/datasets/ncbi` | S3 key prefix in the destination bucket to promote files into |
 | `--staging-bucket` | | `cts` | S3 bucket containing the staged files |
 | `--destination-bucket` | | `cdm-lake` | S3 bucket to promote files into (Lakehouse) |
-| `--removed-manifest` | `-r` | `{staging-path}/removed.txt` | Local path to the removed manifest from Phase 1; omit to skip archiving removed assemblies |
-| `--updated-manifest` | `-u` | `{staging-path}/updated.txt` | Local path to the updated manifest from Phase 1; omit to skip archiving updated assemblies |
+| `--removed-manifest` | `-r` | *(none)* | Local path to the removed manifest from Phase 1; omit to skip archiving removed assemblies |
+| `--updated-manifest` | `-u` | *(none)* | Local path to the updated manifest from Phase 1; omit to skip archiving updated assemblies |
 | `--transfer-manifest` | `-t` | `{staging-path}/transfer_manifest.txt` | S3 key of the transfer manifest to trim after a successful promote |
 | `--dry-run` | | `False` | Log what would happen without making any changes |
 
