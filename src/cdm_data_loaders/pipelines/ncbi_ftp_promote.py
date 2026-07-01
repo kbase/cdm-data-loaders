@@ -88,5 +88,5 @@ def run_promote(config: PromoteSettings) -> None:
 
 
 def cli() -> None:
-    """CLI entry point for ``ncbi_ftp_sync``."""
+    """CLI entry point for ``ncbi_ftp_promote``."""
     run_cli(PromoteSettings, run_promote)
