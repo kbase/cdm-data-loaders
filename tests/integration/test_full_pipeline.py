@@ -22,11 +22,12 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     write_transfer_manifest,
     write_updated_manifest,
 )
-from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX, promote_from_s3
+from cdm_data_loaders.ncbi_ftp.promote import promote_from_s3
 from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch
 
 from .conftest import get_object_metadata, list_all_keys, stage_files_to_ceph
 
+DEFAULT_LAKEHOUSE_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
 STABLE_PREFIX = "900"
 STAGING_PREFIX = PurePosixPath("staging") / "run1"
 PATH_PREFIX = DEFAULT_LAKEHOUSE_KEY_PREFIX

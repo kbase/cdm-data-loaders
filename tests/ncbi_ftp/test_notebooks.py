@@ -13,21 +13,15 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     download_assembly_summary,
     write_updated_manifest,
 )
-from cdm_data_loaders.ncbi_ftp.promote import (
-    DEFAULT_LAKEHOUSE_KEY_PREFIX,
-    promote_from_s3,
-)
 from cdm_data_loaders.pipelines.ncbi_ftp_download import (
     DEFAULT_STAGING_KEY_PREFIX,
     download_and_stage,
 )
-from cdm_data_loaders.utils.s3 import split_s3_path
 
 NOTEBOOKS_DIR = Path(__file__).resolve().parents[2] / "notebooks"
 
 NCBI_NOTEBOOKS = [
     "ncbi_ftp_manifest.ipynb",
-    "ncbi_ftp_promote.ipynb",
     "ncbi_ftp_download.ipynb",
 ]
 
@@ -66,13 +60,6 @@ def test_manifest_notebook_imports() -> None:
     assert callable(download_assembly_summary)
     assert callable(compute_diff)
     assert callable(write_updated_manifest)
-
-
-def test_promote_notebook_imports() -> None:
-    """All promote notebook imports are verified at module load time above."""
-    assert callable(promote_from_s3)
-    assert isinstance(DEFAULT_LAKEHOUSE_KEY_PREFIX, PurePosixPath)
-    assert callable(split_s3_path)
 
 
 def test_download_notebook_imports() -> None:

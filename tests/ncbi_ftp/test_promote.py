@@ -11,7 +11,6 @@ import botocore.client
 import pytest
 
 from cdm_data_loaders.ncbi_ftp.promote import (
-    DEFAULT_LAKEHOUSE_KEY_PREFIX,
     _archive_assemblies,
     _archive_objects,
     _dry_run_output,
@@ -21,6 +20,8 @@ from cdm_data_loaders.ncbi_ftp.promote import (
     promote_from_s3,
 )
 from tests.ncbi_ftp.conftest import ACC_PATH_215, ACC_PATH_845, TEST_BUCKET
+
+DEFAULT_LAKEHOUSE_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
 
 # Promotion test constants
 
@@ -90,7 +91,11 @@ def test_promote_dry_run_no_writes(mock_s3_client_no_checksum: botocore.client.B
     _stage_files(mock_s3_client_no_checksum, prefix)
 
     report = promote_from_s3(
-        staging_key_prefix=prefix, staging_bucket=TEST_BUCKET, lakehouse_bucket=TEST_BUCKET, dry_run=True
+        staging_key_prefix=prefix,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        dry_run=True,
     )
     assert report["promoted"] == 1
     assert report["dry_run"] is True
@@ -108,7 +113,12 @@ def test_promote_with_metadata(mock_s3_client_no_checksum: botocore.client.BaseC
     prefix = PurePosixPath("staging/run1")
     _stage_files(mock_s3_client_no_checksum, prefix)
 
-    report = promote_from_s3(staging_key_prefix=prefix, staging_bucket=TEST_BUCKET, lakehouse_bucket=TEST_BUCKET)
+    report = promote_from_s3(
+        staging_key_prefix=prefix,
+        staging_bucket=TEST_BUCKET,
+        lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+    )
     assert report["promoted"] == 1  # only .fna.gz, not download_report.json
     assert report["failed"] == 0
 
@@ -288,7 +298,7 @@ def test_get_accession_path_prefix(
         ),
     ],
 )
-def test_get_source_dest_pairs_for_accession(  #  noqa: PLR0913
+def test_get_source_dest_pairs_for_accession(
     accession: str,
     bucket: PurePosixPath,
     prefix: PurePosixPath,
@@ -383,7 +393,7 @@ def test_dry_run_output(
     ],
 )
 @pytest.mark.s3
-def test_archive_objects(  #  noqa: PLR0913
+def test_archive_objects(
     mock_s3_client_no_checksum: botocore.client.BaseClient,
     key_pairs: list[tuple[PurePosixPath, PurePosixPath]],
     bucket: PurePosixPath,
@@ -414,6 +424,7 @@ def test_archive_assemblies_removed(mock_s3_client_no_checksum: botocore.client.
         _archive_assemblies(
             manifest,
             lakehouse_bucket=TEST_BUCKET,
+            lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
             ncbi_release="2024-01",
             archive_reason="replaced_or_suppressed",
             delete_source=True,
@@ -453,6 +464,7 @@ def test_archive_assemblies_updated_no_delete(
         _archive_assemblies(
             manifest,
             lakehouse_bucket=TEST_BUCKET,
+            lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
             ncbi_release="2024-06",
             archive_reason="updated",
             delete_source=False,
@@ -486,9 +498,21 @@ def test_archive_assemblies_multiple_releases_no_collision(
     manifest = tmp_path / "updated.txt"
     manifest.write_text(f"{accession}\n")
 
-    _archive_assemblies(manifest, lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01", archive_reason="updated")
+    _archive_assemblies(
+        manifest,
+        lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        ncbi_release="2024-01",
+        archive_reason="updated",
+    )
     mock_s3_client_no_checksum.put_object(Bucket=str(TEST_BUCKET), Key=str(key), Body=b"v2-data")
-    _archive_assemblies(manifest, lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-06", archive_reason="updated")
+    _archive_assemblies(
+        manifest,
+        lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        ncbi_release="2024-06",
+        archive_reason="updated",
+    )
 
     archive_key_1 = (
         DEFAULT_LAKEHOUSE_KEY_PREFIX
@@ -532,6 +556,7 @@ def test_archive_assemblies_dry_run(mock_s3_client_no_checksum: botocore.client.
         _archive_assemblies(
             manifest,
             lakehouse_bucket=TEST_BUCKET,
+            lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
             ncbi_release="2024-01",
             archive_reason="replaced_or_suppressed",
             delete_source=True,
@@ -558,7 +583,15 @@ def test_archive_assemblies_no_objects_skips(
     """Accessions with no existing S3 objects are silently skipped."""
     manifest = tmp_path / "updated.txt"
     manifest.write_text("GCF_000001215.4\n")
-    assert _archive_assemblies(manifest, lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01") == 0
+    assert (
+        _archive_assemblies(
+            manifest,
+            lakehouse_bucket=TEST_BUCKET,
+            lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+            ncbi_release="2024-01",
+        )
+        == 0
+    )
 
 
 @pytest.mark.s3
@@ -573,7 +606,12 @@ def test_archive_assemblies_unknown_release_fallback(
     manifest = tmp_path / "updated.txt"
     manifest.write_text(f"{accession}\n")
 
-    assert _archive_assemblies(manifest, lakehouse_bucket=TEST_BUCKET, ncbi_release=None) == 1
+    assert (
+        _archive_assemblies(
+            manifest, lakehouse_bucket=TEST_BUCKET, lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX, ncbi_release=None
+        )
+        == 1
+    )
 
     archive_key = (
         DEFAULT_LAKEHOUSE_KEY_PREFIX
@@ -616,6 +654,7 @@ def test_archive_assemblies_multi_file_all_copied(
     archived = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
         ncbi_release="2024-01",
         archive_reason="updated",
         delete_source=False,
@@ -648,6 +687,7 @@ def test_archive_assemblies_multi_file_content_preserved(
     _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
         ncbi_release="2024-01",
         archive_reason="updated",
         delete_source=False,
@@ -680,6 +720,7 @@ def test_archive_assemblies_multi_file_delete_all(
     archived = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
         ncbi_release="2024-03",
         archive_reason="replaced_or_suppressed",
         delete_source=True,
@@ -731,6 +772,7 @@ def test_archive_assemblies_partial_already_archived_overwritten(
     archived = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
         ncbi_release="2024-01",
         archive_reason="updated",
         delete_source=False,
@@ -780,6 +822,7 @@ def test_archive_assemblies_partial_delete_resumes(
     archived = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
         ncbi_release="2024-03",
         archive_reason="replaced_or_suppressed",
         delete_source=True,
@@ -813,10 +856,18 @@ def test_archive_assemblies_idempotent_updated_reruns_cleanly(
     manifest.write_text(f"{accession}\n")
 
     archived_1 = _archive_assemblies(
-        manifest, lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01", archive_reason="updated"
+        manifest,
+        lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        ncbi_release="2024-01",
+        archive_reason="updated",
     )
     archived_2 = _archive_assemblies(
-        manifest, lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01", archive_reason="updated"
+        manifest,
+        lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        ncbi_release="2024-01",
+        archive_reason="updated",
     )
 
     assert archived_1 == len(file_names)
@@ -844,7 +895,11 @@ def test_archive_assemblies_multi_accession_manifest(
     manifest.write_text("\n".join(acc for acc, _, _ in accessions) + "\n")
 
     archived = _archive_assemblies(
-        manifest, lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01", archive_reason="updated"
+        manifest,
+        lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        ncbi_release="2024-01",
+        archive_reason="updated",
     )
 
     assert archived == len(accessions)
@@ -880,6 +935,7 @@ def test_archive_assemblies_dry_run_multi_file(
     archived = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
         ncbi_release="2024-01",
         archive_reason="replaced_or_suppressed",
         delete_source=True,
@@ -911,7 +967,11 @@ def test_archive_assemblies_invalid_accession_skipped(
     manifest.write_text("NOT_AN_ACCESSION\n\n   \n" + f"{accession}\n")
 
     archived = _archive_assemblies(
-        manifest, lakehouse_bucket=TEST_BUCKET, ncbi_release="2024-01", archive_reason="updated"
+        manifest,
+        lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        ncbi_release="2024-01",
+        archive_reason="updated",
     )
     assert archived == 1
 
@@ -937,6 +997,7 @@ def test_promote_multi_file_all_land_at_final_path(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     assert report["promoted"] == len(file_names)
@@ -962,6 +1023,7 @@ def test_promote_multi_file_content_preserved(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     for fname, expected in files.items():
@@ -983,6 +1045,7 @@ def test_promote_md5_metadata_set_from_sidecar(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     resp = mock_s3_client_no_checksum.head_object(Bucket=str(TEST_BUCKET), Key=str(_LKH1 / fname))
@@ -1001,6 +1064,7 @@ def test_promote_no_sidecar_no_md5_metadata(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     resp = mock_s3_client_no_checksum.head_object(Bucket=str(TEST_BUCKET), Key=str(_LKH1 / fname))
@@ -1022,6 +1086,7 @@ def test_promote_staging_data_files_deleted_after_promote(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     for key in staged_keys:
@@ -1044,6 +1109,7 @@ def test_promote_md5_sidecars_deleted_after_promote(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     for key in staged_keys:
@@ -1064,6 +1130,7 @@ def test_promote_crc64nvme_sidecars_deleted_after_promote(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     staged_key = f"{_STG1}{fname}"
@@ -1103,6 +1170,7 @@ def test_promote_partial_failure_staging_not_cleaned(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     assert report["failed"] == 1
@@ -1142,6 +1210,7 @@ def test_promote_partial_failure_failed_count(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     assert report["failed"] == 1
@@ -1185,6 +1254,7 @@ def test_promote_two_assemblies_independent_cleanup(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     assert report["failed"] == 1
@@ -1214,6 +1284,7 @@ def test_promote_multi_assembly_all_succeed_all_cleaned(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     assert report["promoted"] == 2  # noqa: PLR2004
@@ -1241,6 +1312,7 @@ def test_promote_dry_run_multi_file_no_writes_no_cleanup(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
         dry_run=True,
     )
 
@@ -1275,6 +1347,7 @@ def test_promote_skips_non_raw_data_paths(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     assert report["promoted"] == 1  # only the .fna.gz
@@ -1292,11 +1365,13 @@ def test_promote_idempotent_second_run_on_empty_staging(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
     report2 = promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     assert report1["promoted"] == 1
@@ -1324,6 +1399,7 @@ def test_promote_multi_file_md5_per_file(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
+        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
     )
 
     for fname, content in files.items():
