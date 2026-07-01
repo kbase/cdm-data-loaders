@@ -57,7 +57,7 @@ class PromoteSettings(CtsSettings):
     )
     transfer_manifest_path: PurePosixPath | None = Field(
         default_factory=lambda settings: settings["staging_path"] / DEFAULT_TRANSFER_MANIFEST_FILE,
-        description="File path to the transfer manifest of downloaded files, or None to skip pruning of staged files during promotion",
+        description="S3 object key of the transfer manifest to trim after promotion, or None to skip pruning staged files",
         validation_alias=AliasChoices("t", "transfer-manifest", "transfer_manifest"),
     )
     dry_run: CliImplicitFlag[bool] = Field(
