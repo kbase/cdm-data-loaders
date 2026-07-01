@@ -340,9 +340,9 @@ uv run python scripts/s3_local.py ls s3://cts/staging/run1/
 
 ---
 
-## 4. Phase 3 — Promote & archive (CLI)
+## 4. Phase 3 — Promote & archive (CLI tool)
 
-Phase 3 uses the `ncbi_ftp_promote` CLI to promote staged assemblies from
+Phase 3 uses the `ncbi_ftp_promote` CLI tool to promote staged assemblies from
 the S3 staging prefix to their final Lakehouse paths, archive replaced or
 suppressed assemblies, and trim the transfer manifest for resumability.
 
