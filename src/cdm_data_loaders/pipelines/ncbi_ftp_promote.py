@@ -52,7 +52,7 @@ class PromoteSettings(CtsSettings):
     )
     updated_manifest_path: Path | None = Field(
         default=None,
-        description="File path in the staging bucket for the updated files manifest, or None to skip archiving updated records",
+        description="Local filesystem path to the updated files manifest from Phase 1, or None to skip archiving updated records",
         validation_alias=AliasChoices("u", "updated-manifest", "updated_manifest"),
     )
     transfer_manifest_path: PurePosixPath | None = Field(
