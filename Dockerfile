@@ -8,6 +8,7 @@ FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim
 
 ARG QSV_VERSION="20.1.0"
 ARG XML_FILE_SPLITTER_VERSION="v0.1.2"
+ARG XSV_VALIDATOR_VERSION="v2026-07"
 
 # Set environment variable to noninteractive to prevent prompts during apt operations
 ENV DEBIAN_FRONTEND=noninteractive
@@ -17,15 +18,23 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends tini git ca-
 
 WORKDIR /tmp
 
-# download and install the xml_file_splitter and qsv binaries, and copy them to /usr/local/bin
+# download and install the xml_file_splitter, xsv-validator, and qsv binaries, and copy them to /usr/local/bin
 RUN wget https://github.com/ialarmedalien/xml_file_splitter/releases/download/${XML_FILE_SPLITTER_VERSION}/xml_file_splitter-aarch64-unknown-linux-gnu.tar.gz && \
     tar -xvf xml_file_splitter-aarch64-unknown-linux-gnu.tar.gz && \
     mv xml_file_splitter-aarch64-unknown-linux-gnu/xml_file_splitter /usr/local/bin/ && \
+    # xsv-validator, only need the script
+    wget https://github.com/cohere-llc/xsv-validator/archive/refs/tags/${XSV_VALIDATOR_VERSION}.tar.gz && \
+    mkdir /tmp/xsv-validator && tar -xvf ${XSV_VALIDATOR_VERSION}.tar.gz --strip-components=1 -C /tmp/xsv-validator/ && \
+    mv /tmp/xsv-validator/xsv-validate.sh /usr/local/bin/ && \
+    rm -fr /tmp/* && \
     # qsv release -- only need the `qsv` binary from it
     wget https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip && \
     unzip qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip -d /tmp/qsv && \
     mv /tmp/qsv/qsv /usr/local/bin/ && \
     rm -rf /tmp/*
+
+# check install of xsv-validate
+RUN xsv-validate.sh --help
 
 # Setup a non-root user
 RUN groupadd --system --gid 999 nonroot \
