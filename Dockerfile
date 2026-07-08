@@ -26,6 +26,7 @@ RUN wget https://github.com/ialarmedalien/xml_file_splitter/releases/download/${
     wget https://github.com/cohere-llc/xsv-validator/archive/refs/tags/${XSV_VALIDATOR_VERSION}.tar.gz && \
     mkdir /tmp/xsv-validator && tar -xvf ${XSV_VALIDATOR_VERSION}.tar.gz --strip-components=1 -C /tmp/xsv-validator/ && \
     mv /tmp/xsv-validator/xsv-validate.sh /usr/local/bin/ && \
+    chmod +x /usr/local/bin/xsv-validate.sh && \
     rm -fr /tmp/* && \
     # qsv release -- only need the `qsv` binary from it
     wget https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip && \
