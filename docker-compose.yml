@@ -8,6 +8,9 @@ services:
     ports:
       - "9000:8080"
       - "9001:8443"
+    tmpfs:
+      - /var/lib/ceph
+    restart: on-failure
     healthcheck:
       # Two-part check:
       # 1. ceph osd stat: verifies at least one OSD has joined the cluster.
