@@ -27,6 +27,7 @@ from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import SettingsConfigDict
 from requests.exceptions import HTTPError
 
+from cdm_data_loaders.core.fields import generate_aliases
 from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.pipelines.core import (
     run_cli,
@@ -54,8 +55,8 @@ QUERY_TYPE_REGEX: Final[re.Pattern[str]] = re.compile(r"^(" + DATASET + r"|" + A
 
 REST_CLIENT_HOOKS = {}
 
-ARG_ALIAS_BATCH_SIZE = ["-b", "--batch-size", "--batch_size"]
-ARG_ALIAS_QUERY_TYPE = ["-q", "--query-type", "--query_type"]
+ARG_ALIAS_BATCH_SIZE = generate_aliases("batch_size")
+ARG_ALIAS_QUERY_TYPE = generate_aliases("query_type")
 
 
 class NcbiRestApiSettings(CtsSettings):

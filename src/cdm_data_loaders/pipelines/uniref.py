@@ -8,6 +8,7 @@ from dlt.extract.items import DataItemWithMeta
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.fields import generate_aliases
 from cdm_data_loaders.core.settings import (
     DEFAULT_SETTINGS_CONFIG_DICT,
     BatchedFileInputSettings,
@@ -23,7 +24,7 @@ APP_NAME: Final[str] = "uniref_importer"
 UNIREF_LOG_INTERVAL: Final[int] = 10000
 
 
-UNIREF_VARIANT_ALIASES = ["-u", "--uniref", "--uniref-variant", "--uniref_variant"]
+UNIREF_VARIANT_ALIASES = generate_aliases("uniref_variant")
 
 
 class UnirefSettings(BatchedFileInputSettings):

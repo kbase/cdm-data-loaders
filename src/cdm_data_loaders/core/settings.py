@@ -25,7 +25,6 @@ from cdm_data_loaders.core.fields import (
     UseOutputDirForPipelineMetadata,
 )
 
-# TODO: frozendict can be moved to the stdlib implementation when py 3.15 is released.
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
     {
         "cli_parse_args": True,

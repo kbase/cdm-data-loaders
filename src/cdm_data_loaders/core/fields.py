@@ -9,9 +9,6 @@ from pydantic_settings import CliSuppress
 
 from cdm_data_loaders.utils.batcher import MIN_START_AT
 
-# TODO: frozendict can be moved to the stdlib implementation when py 3.15 is released.
-
-
 INPUT_MOUNT: Final[str] = "/input_dir"
 OUTPUT_MOUNT: Final[str] = "/output_dir"
 
@@ -46,6 +43,7 @@ DEFAULT_PIPELINE_BATCH_SIZE: Final[int] = 50
 SHORT_ALIASES = frozendict(
     {
         DEV_MODE: [],
+        LOG_CONFIG_FILE: [],
         USE_DESTINATION: ["-d"],
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: ["-p"],
     }

@@ -25,6 +25,7 @@ from frozendict import frozendict
 from pydantic import AliasChoices, Field, computed_field
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.fields import generate_aliases
 from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.pipelines.core import (
     run_cli,
@@ -44,8 +45,8 @@ ATB_VERSION = "2025-05"
 
 ARG_ALIASES = frozendict(
     {
-        "version": ["-v", "--version"],
-        "pattern_file": ["-f", "--pattern-file", "--pattern_file"],
+        "version": generate_aliases("version"),
+        "pattern_file": ["-f", *generate_aliases("pattern_file", False)],
     },
 )
 
