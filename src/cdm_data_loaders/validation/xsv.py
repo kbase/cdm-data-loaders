@@ -66,7 +66,7 @@ def validate(  # noqa: PLR0913
     :type delimiter: str | None
     :param missing_header: Flag indicating a xSV file has no header (one will be generated from the schema; default: False)
     :type missing_header: bool
-:param null_strings: Set of strings that indicate NULL values (set to None to use standard set; default: None)
+    :param null_strings: Set of strings that indicate NULL values (set to None to use standard set; default: None)
     :type null_strings: set[str] | None
     :param skip_lines: Number of lines to ignore at the top of the file (default: 0)
     :type skip_lines: int
@@ -76,7 +76,7 @@ def validate(  # noqa: PLR0913
     :rtype: ValidationResults
     """
     # validation
-if len(comment_char) != 1:
+    if len(comment_char) != 1:
         msg = f"Invalid comment character: '{comment_char}'; must be a single character."
         raise ValueError(msg)
     if delimiter is not None and len(delimiter) != 1:
