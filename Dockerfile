@@ -14,14 +14,15 @@ ARG XSV_VALIDATOR_VERSION="v2026-07"
 ENV DEBIAN_FRONTEND=noninteractive
 
 # add tini and git
-RUN apt-get update -y && apt-get install -y --no-install-recommends tini git ca-certificates wget unzip && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y && apt-get install -y --no-install-recommends tini git ca-certificates wget unzip libwayland-client0 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp
 
 # download and install the xml_file_splitter, xsv-validator, and qsv binaries, and copy them to /usr/local/bin
-RUN wget https://github.com/ialarmedalien/xml_file_splitter/releases/download/${XML_FILE_SPLITTER_VERSION}/xml_file_splitter-aarch64-unknown-linux-gnu.tar.gz && \
-    tar -xvf xml_file_splitter-aarch64-unknown-linux-gnu.tar.gz && \
-    mv xml_file_splitter-aarch64-unknown-linux-gnu/xml_file_splitter /usr/local/bin/ && \
+RUN ARCH=$(uname -m) && \
+    wget https://github.com/ialarmedalien/xml_file_splitter/releases/download/${XML_FILE_SPLITTER_VERSION}/xml_file_splitter-${ARCH}-unknown-linux-gnu.tar.gz && \
+    tar -xvf xml_file_splitter-${ARCH}-unknown-linux-gnu.tar.gz && \
+    mv xml_file_splitter-${ARCH}-unknown-linux-gnu/xml_file_splitter /usr/local/bin/ && \
     # xsv-validator, only need the script
     wget https://github.com/cohere-llc/xsv-validator/archive/refs/tags/${XSV_VALIDATOR_VERSION}.tar.gz && \
     mkdir /tmp/xsv-validator && tar -xvf ${XSV_VALIDATOR_VERSION}.tar.gz --strip-components=1 -C /tmp/xsv-validator/ && \
@@ -29,8 +30,8 @@ RUN wget https://github.com/ialarmedalien/xml_file_splitter/releases/download/${
     chmod +x /usr/local/bin/xsv-validate.sh && \
     rm -fr /tmp/* && \
     # qsv release -- only need the `qsv` binary from it
-    wget https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip && \
-    unzip qsv-${QSV_VERSION}-aarch64-unknown-linux-gnu.zip -d /tmp/qsv && \
+    wget https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-${ARCH}-unknown-linux-gnu.zip && \
+    unzip qsv-${QSV_VERSION}-${ARCH}-unknown-linux-gnu.zip -d /tmp/qsv && \
     mv /tmp/qsv/qsv /usr/local/bin/ && \
     rm -rf /tmp/*
 
