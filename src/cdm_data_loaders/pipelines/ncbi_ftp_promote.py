@@ -10,9 +10,9 @@ from pathlib import Path, PurePosixPath
 from pydantic import AliasChoices, Field
 from pydantic_settings import CliImplicitFlag
 
+from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.ncbi_ftp.promote import promote_from_s3
 from cdm_data_loaders.pipelines.core import run_cli
-from cdm_data_loaders.pipelines.cts_defaults import CtsSettings
 
 DEFAULT_STAGING_BUCKET: PurePosixPath = PurePosixPath("cts")
 DEFAULT_DESTINATION_BUCKET: PurePosixPath = PurePosixPath("cdm-lake")
