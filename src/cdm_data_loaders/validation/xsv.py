@@ -5,12 +5,9 @@ import json
 import subprocess
 from dataclasses import dataclass
 from enum import StrEnum, auto
-from logging import Logger, getLogger
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
-
-logger: Logger = getLogger(__name__)
 
 
 class Status(StrEnum):
