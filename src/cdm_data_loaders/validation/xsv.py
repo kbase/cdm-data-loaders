@@ -92,22 +92,20 @@ def validate(  # noqa: PLR0913
             schema_path: Path = schema
 
         # valid with xsv-validate.sh
+        # fmt: off
         args: list[str] = [
             "xsv-validate.sh",
             str(file_path),
-            "-s",
-            str(schema_path),
-            "-o",
-            str(output_path),
-            "--comment",
-            comment_char,
+            "-s", str(schema_path),
+            "-o", str(output_path),
+            "--comment", comment_char,
             *(["--delimiter", delimiter] if delimiter is not None else []),
             *(["--missing-header"] if missing_header else []),
             *([arg for elem in null_strings for arg in ("--null", elem)] if null_strings is not None else []),
-            "--skip-lines",
-            str(skip_lines),
+            "--skip-lines", str(skip_lines),
             *(["--summary-file"] if summary else []),
         ]
+        # fmt: on
         result = subprocess.run(args, capture_output=True, text=True)  # noqa: S603, PLW1510
 
     # assemble results
