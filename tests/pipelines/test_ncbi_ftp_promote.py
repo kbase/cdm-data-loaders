@@ -15,7 +15,7 @@ from cdm_data_loaders.pipelines.ncbi_ftp_promote import (
     PromoteSettings,
     run_promote,
 )
-from tests.pipelines.conftest import _generate_dlt_config
+from tests.conftest import _generate_dlt_config
 
 _DEFAULT_STAGING_PATH: PurePosixPath = PurePosixPath("staging") / "run1"
 
