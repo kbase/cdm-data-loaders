@@ -13,13 +13,10 @@ from pydantic import ValidationError
 from pydantic_settings import CliApp
 from requests import HTTPError
 
-from cdm_data_loaders.core.fields import ARG_ALIASES
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines import ncbi_rest_api as ncbi_module
 from cdm_data_loaders.pipelines.ncbi_rest_api import (
     ANNOTATION,
-    ARG_ALIAS_BATCH_SIZE,
-    ARG_ALIAS_QUERY_TYPE,
     DATASET,
     DATASET_NAME,
     ERROR,
@@ -44,6 +41,7 @@ from tests.core.conftest import (
     check_settings,
     make_settings_autofill_config,
 )
+from tests.pipelines.conftest import ARG_ALIASES
 
 
 @pytest.fixture(autouse=True)
@@ -238,8 +236,8 @@ def test_settings_all_params_set(settings: frozendict, reconciled: frozendict) -
     check_settings(s, reconciled)
 
 
-@pytest.mark.parametrize("query_type", ARG_ALIAS_QUERY_TYPE)
-@pytest.mark.parametrize("batch_size", ARG_ALIAS_BATCH_SIZE)
+@pytest.mark.parametrize("query_type", ARG_ALIASES["query_type"])
+@pytest.mark.parametrize("batch_size", ARG_ALIASES["batch_size"])
 @pytest.mark.parametrize("dev_mode", ARG_ALIASES["dev_mode"])
 @pytest.mark.parametrize("input_dir", ARG_ALIASES["input_dir"])
 @pytest.mark.parametrize("log_config_file", ARG_ALIASES["log_config_file"])

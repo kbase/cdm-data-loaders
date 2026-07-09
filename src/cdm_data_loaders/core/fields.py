@@ -44,8 +44,8 @@ SHORT_ALIASES = frozendict(
     {
         DEV_MODE: [],
         LOG_CONFIG_FILE: [],
-        USE_DESTINATION: ["-d"],
-        USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: ["-p"],
+        USE_DESTINATION: ["d"],
+        USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: ["p"],
     }
 )
 
@@ -60,16 +60,16 @@ def generate_aliases(field_name: str, short_aliases: bool = True) -> list[str]: 
     :return: A list of aliases for the field.
     :rtype: list[str]
     """
-    field_names = [f"--{field_name}"]
+    field_names = [field_name]
     if "_" in field_name:
-        field_names.append(f"--{field_name.replace('_', '-')}")
+        field_names.append(field_name.replace("_", "-"))
 
     if short_aliases:
-        return [*SHORT_ALIASES.get(field_name, [f"-{field_name[0]}"]), *field_names]
+        return [*SHORT_ALIASES.get(field_name, [field_name[0]]), *field_names]
     return field_names
 
 
-ARG_ALIASES = frozendict(
+ALIASES = frozendict(
     {
         k: generate_aliases(k)
         for k in [
@@ -84,12 +84,13 @@ ARG_ALIASES = frozendict(
     }
 )
 
+
 DevMode = Annotated[
     bool,
     Field(
         default=DEFAULTS[DEV_MODE],
         description="Whether to run the pipeline in dev mode, which saves raw API responses to disk and disables compression for easier debugging.",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES[DEV_MODE]]),
+        validation_alias=AliasChoices(*ALIASES[DEV_MODE]),
     ),
 ]
 # this should really just be _Accessor but leaving the dict version in for ease of testing
@@ -105,7 +106,7 @@ InputDir = Annotated[
         default=DEFAULTS[INPUT_DIR],
         description="Location of directory containing file(s) to import",
         # explicitly allow both kebab case and snake case
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES[INPUT_DIR]]),
+        validation_alias=AliasChoices(*ALIASES[INPUT_DIR]),
     ),
 ]
 LogConfigFile = Annotated[
@@ -113,7 +114,7 @@ LogConfigFile = Annotated[
     Field(
         default=DEFAULTS[LOG_CONFIG_FILE],
         description="Location of configuration file for the logger",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES[LOG_CONFIG_FILE]]),
+        validation_alias=AliasChoices(*ALIASES[LOG_CONFIG_FILE]),
     ),
 ]
 Output = Annotated[
@@ -121,7 +122,7 @@ Output = Annotated[
     Field(
         default=DEFAULTS[OUTPUT],
         description="Location to save imported data to, if different from the default supplied by the destination config",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES[OUTPUT]]),
+        validation_alias=AliasChoices(*ALIASES[OUTPUT]),
     ),
 ]
 StartAt = Annotated[
@@ -129,7 +130,7 @@ StartAt = Annotated[
     Field(
         default=DEFAULTS[START_AT],
         description="File to start import at",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES[START_AT]]),
+        validation_alias=AliasChoices(*ALIASES[START_AT]),
     ),
 ]
 UseDestination = Annotated[
@@ -137,7 +138,7 @@ UseDestination = Annotated[
     Field(
         default=DEFAULTS[USE_DESTINATION],
         description=f"DLT destination configuration to use for data output. Data to be saved to s3 should use the destination 's3'; to save data locally, use the destination 'local_fs'. The output directory can be specified using the 'output' field. Choices: {VALID_DESTINATIONS}",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES[USE_DESTINATION]]),
+        validation_alias=AliasChoices(*ALIASES[USE_DESTINATION]),
     ),
 ]
 UseOutputDirForPipelineMetadata = Annotated[
@@ -145,8 +146,6 @@ UseOutputDirForPipelineMetadata = Annotated[
     Field(
         default=DEFAULTS[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA],
         description="If true, use the output directory for pipeline metadata. Note: pipeline metadata cannot be stored in an S3 bucket, so this option should only be used when the destination is 'local_fs'.",
-        validation_alias=AliasChoices(
-            *[alias.strip("-") for alias in ARG_ALIASES[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA]]
-        ),
+        validation_alias=AliasChoices(*ALIASES[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA]),
     ),
 ]

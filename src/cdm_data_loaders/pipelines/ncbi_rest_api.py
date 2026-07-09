@@ -23,6 +23,7 @@ from dlt.sources.helpers.rest_client.client import RESTClient
 from dlt.sources.helpers.rest_client.paginators import (
     JSONResponseCursorPaginator,
 )
+from frozendict import frozendict
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import SettingsConfigDict
 from requests.exceptions import HTTPError
@@ -55,8 +56,10 @@ QUERY_TYPE_REGEX: Final[re.Pattern[str]] = re.compile(r"^(" + DATASET + r"|" + A
 
 REST_CLIENT_HOOKS = {}
 
-ARG_ALIAS_BATCH_SIZE = generate_aliases("batch_size")
-ARG_ALIAS_QUERY_TYPE = generate_aliases("query_type")
+BATCH_SIZE: Final[str] = "batch_size"
+QUERY_TYPE: Final[str] = "query_type"
+
+ALIASES = frozendict({k: generate_aliases(k) for k in [BATCH_SIZE, QUERY_TYPE]})
 
 
 class NcbiRestApiSettings(CtsSettings):
@@ -67,7 +70,7 @@ class NcbiRestApiSettings(CtsSettings):
     batch_size: int = Field(
         default=MAX_IDS_PER_QUERY,
         description="Number of IDs to send in each request to the NCBI REST API.",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIAS_BATCH_SIZE]),
+        validation_alias=AliasChoices(*ALIASES[BATCH_SIZE]),
         ge=1,
         le=MAX_IDS_PER_QUERY,
     )
@@ -75,7 +78,7 @@ class NcbiRestApiSettings(CtsSettings):
     query_type: str | None = Field(
         default=None,
         description="The type of query to perform, dataset or annotation. By default, both are performed.",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIAS_QUERY_TYPE]),
+        validation_alias=AliasChoices(*ALIASES[QUERY_TYPE]),
         pattern=QUERY_TYPE_REGEX,
     )
 

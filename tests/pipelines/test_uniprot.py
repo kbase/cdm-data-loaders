@@ -10,7 +10,6 @@ import pytest
 from frozendict import frozendict
 from pydantic_settings import CliApp
 
-from cdm_data_loaders.core.fields import ARG_ALIASES
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import ENTRY_XML_TAG
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines import uniprot_kb as uniprot_module
@@ -28,6 +27,7 @@ from tests.core.conftest import (
     make_settings_autofill_config,
 )
 from tests.pipelines.conftest import (
+    ARG_ALIASES,
     make_batcher,
 )
 

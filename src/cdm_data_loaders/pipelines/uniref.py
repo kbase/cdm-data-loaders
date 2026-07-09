@@ -1,10 +1,11 @@
 """DLT pipeline to import UniRef data."""
 
 from collections.abc import Generator
-from typing import Any, Final
+from typing import Annotated, Any, Final
 
 import dlt
 from dlt.extract.items import DataItemWithMeta
+from frozendict import frozendict
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import SettingsConfigDict
 
@@ -24,7 +25,8 @@ APP_NAME: Final[str] = "uniref_importer"
 UNIREF_LOG_INTERVAL: Final[int] = 10000
 
 
-UNIREF_VARIANT_ALIASES = generate_aliases("uniref_variant")
+UNIREF_VARIANT: Final[str] = "uniref_variant"
+ALIASES = frozendict({UNIREF_VARIANT: generate_aliases(UNIREF_VARIANT)})
 
 
 class UnirefSettings(BatchedFileInputSettings):
@@ -35,10 +37,13 @@ class UnirefSettings(BatchedFileInputSettings):
         cli_prog_name="uniref",
     )
 
-    uniref_variant: str = Field(
-        description=f"Which UniRef variant to import. Choices: {UNIREF_VARIANTS}",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in UNIREF_VARIANT_ALIASES]),
-    )
+    uniref_variant: Annotated[
+        str,
+        Field(
+            description=f"Which UniRef variant to import. Choices: {UNIREF_VARIANTS}",
+            validation_alias=AliasChoices(*[ALIASES[UNIREF_VARIANT]]),
+        ),
+    ]
 
     @field_validator("uniref_variant")
     @classmethod

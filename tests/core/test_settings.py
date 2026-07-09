@@ -3,11 +3,12 @@
 from typing import Any
 
 import pytest
+from frozendict import frozendict
 from pydantic import ValidationError
 from pydantic_settings import CliApp
 
 from cdm_data_loaders.core.fields import (
-    ARG_ALIASES,
+    ALIASES,
     VALID_DESTINATIONS,
 )
 from cdm_data_loaders.core.settings import (
@@ -24,6 +25,7 @@ from tests.core.conftest import (
     TEST_CTS_SETTINGS,
     TEST_CTS_SETTINGS_RECONCILED,
     check_settings,
+    generate_cli_arguments,
     make_settings,
     make_settings_autofill_config,
 )
@@ -37,6 +39,10 @@ S3 = "is_s3"
 OUT = "output"
 RAW = "raw_data_dir"
 PIPE = "pipeline_dir"
+
+
+# argument aliases for the fields, used for CLI parsing
+ARG_ALIASES: frozendict[str, list[str]] = generate_cli_arguments(ALIASES)
 
 
 # manually specify to avoid recapitulating logic
