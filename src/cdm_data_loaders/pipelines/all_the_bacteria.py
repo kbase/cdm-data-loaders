@@ -15,7 +15,7 @@ import re
 from collections.abc import Generator
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import dlt
 from dlt.extract.items import DataItemWithMeta
@@ -25,11 +25,12 @@ from frozendict import frozendict
 from pydantic import AliasChoices, Field, computed_field
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.fields import generate_aliases
+from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
 )
-from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.utils.download.sync_client import FileDownloader
 from cdm_data_loaders.utils.s3 import stream_to_s3
 
@@ -42,10 +43,13 @@ ALL_ATB_FILE_NAME = "all_atb_files.tsv"
 REGEX_FILE = "filters.txt"
 ATB_VERSION = "2025-05"
 
-ARG_ALIASES = frozendict(
+VERSION: Final[str] = "version"
+PATTERN_FILE: Final[str] = "pattern_file"
+
+ALIASES = frozendict(
     {
-        "version": ["-v", "--version"],
-        "pattern_file": ["-f", "--pattern-file", "--pattern_file"],
+        VERSION: generate_aliases(VERSION),
+        PATTERN_FILE: ["f", *generate_aliases(PATTERN_FILE, False)],
     },
 )
 
@@ -65,13 +69,13 @@ class AtbSettings(CtsSettings):
     version: str = Field(
         default=ATB_VERSION,
         description="Name of the current AllTheBacteria version",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES["version"]]),
+        validation_alias=AliasChoices(*ALIASES[VERSION]),
     )
 
     pattern_file: str | None = Field(
         default=None,
         description="Path, relative to the input dir, of a file containing patterns to match when downloading ATB files",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES["pattern_file"]]),
+        validation_alias=AliasChoices(*ALIASES[PATTERN_FILE]),
     )
 
     @computed_field

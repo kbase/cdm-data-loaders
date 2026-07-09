@@ -13,6 +13,14 @@ import pytest
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
+from cdm_data_loaders.core.fields import (
+    DEFAULT_PIPELINE_BATCH_SIZE,
+    VALID_DESTINATIONS,
+)
+from cdm_data_loaders.core.settings import (
+    BatchedFileInputSettings,
+    CtsSettings,
+)
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import (
     NO_MESSAGE,
@@ -24,14 +32,9 @@ from cdm_data_loaders.pipelines.core import (
     stream_xml_file_resource,
     sync_configs,
 )
-from cdm_data_loaders.pipelines.cts_defaults import (
-    DEFAULT_PIPELINE_BATCH_SIZE,
-    VALID_DESTINATIONS,
-    BatchedFileInputSettings,
-    CtsSettings,
-)
-from tests.pipelines.conftest import TEST_CTS_SETTINGS, _generate_dlt_config, make_batcher
-from tests.pipelines.test_cts_defaults import SETTINGS_CLASSES
+from tests.conftest import _generate_dlt_config
+from tests.core.test_settings import SETTINGS_CLASSES, TEST_CTS_SETTINGS
+from tests.pipelines.conftest import make_batcher
 
 
 @pytest.fixture(autouse=True)

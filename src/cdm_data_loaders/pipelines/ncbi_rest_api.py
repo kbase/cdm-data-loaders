@@ -23,15 +23,17 @@ from dlt.sources.helpers.rest_client.client import RESTClient
 from dlt.sources.helpers.rest_client.paginators import (
     JSONResponseCursorPaginator,
 )
+from frozendict import frozendict
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import SettingsConfigDict
 from requests.exceptions import HTTPError
 
+from cdm_data_loaders.core.fields import generate_aliases
+from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
 )
-from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.utils.batcher import NumericFileSequenceBatcher
 
 logger: Logger = getLogger(__name__)
@@ -54,11 +56,13 @@ QUERY_TYPE_REGEX: Final[re.Pattern[str]] = re.compile(r"^(" + DATASET + r"|" + A
 
 REST_CLIENT_HOOKS = {}
 
-ARG_ALIAS_BATCH_SIZE = ["-b", "--batch-size", "--batch_size"]
-ARG_ALIAS_QUERY_TYPE = ["-q", "--query-type", "--query_type"]
+BATCH_SIZE: Final[str] = "batch_size"
+QUERY_TYPE: Final[str] = "query_type"
+
+ALIASES = frozendict({k: generate_aliases(k) for k in [BATCH_SIZE, QUERY_TYPE]})
 
 
-class NcbiSettings(CtsSettings):
+class NcbiRestApiSettings(CtsSettings):
     """Configuration for running the NCBI REST API import pipeline."""
 
     model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT, cli_prog_name="ncbi_rest_api")
@@ -66,7 +70,7 @@ class NcbiSettings(CtsSettings):
     batch_size: int = Field(
         default=MAX_IDS_PER_QUERY,
         description="Number of IDs to send in each request to the NCBI REST API.",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIAS_BATCH_SIZE]),
+        validation_alias=AliasChoices(*ALIASES[BATCH_SIZE]),
         ge=1,
         le=MAX_IDS_PER_QUERY,
     )
@@ -74,7 +78,7 @@ class NcbiSettings(CtsSettings):
     query_type: str | None = Field(
         default=None,
         description="The type of query to perform, dataset or annotation. By default, both are performed.",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIAS_QUERY_TYPE]),
+        validation_alias=AliasChoices(*ALIASES[QUERY_TYPE]),
         pattern=QUERY_TYPE_REGEX,
     )
 
@@ -91,7 +95,7 @@ class NcbiSettings(CtsSettings):
         return v.strip().lower() if v and v.strip() else None
 
 
-def generate_file_path_name_from_url(settings: NcbiSettings, url_string: str) -> Path:
+def generate_file_path_name_from_url(settings: NcbiRestApiSettings, url_string: str) -> Path:
     """Given an NCBI URL, generate a save directory and file name for the raw HTTP responses.
 
     :param url_string: the URL
@@ -116,7 +120,7 @@ def generate_file_path_name_from_url(settings: NcbiSettings, url_string: str) ->
     return save_dir / file_name
 
 
-def save_raw_response(settings: NcbiSettings, response: Response, *_: Any, **__: Any) -> Response:  # noqa: ANN401
+def save_raw_response(settings: NcbiRestApiSettings, response: Response, *_: Any, **__: Any) -> Response:  # noqa: ANN401
     """Save the response content to disk.
 
     :param response: HTTP Response object
@@ -129,25 +133,25 @@ def save_raw_response(settings: NcbiSettings, response: Response, *_: Any, **__:
     return response
 
 
-PIPELINE_SETTINGS: NcbiSettings | None = None
+PIPELINE_SETTINGS: NcbiRestApiSettings | None = None
 
 
-def set_settings(settings_obj: NcbiSettings) -> None:
+def set_settings(settings_obj: NcbiRestApiSettings) -> None:
     """Set the global PIPELINE_SETTINGS object to the supplied obj.
 
     :param settings_obj: settings object
-    :type settings_obj: NcbiSettings
+    :type settings_obj: NcbiRestApiSettings
     """
     # ugh, somewhat horrible
     global PIPELINE_SETTINGS
     PIPELINE_SETTINGS = settings_obj
 
 
-def get_settings() -> NcbiSettings:
+def get_settings() -> NcbiRestApiSettings:
     """Get the pipeline settings.
 
     return: pipeline settings
-    :rtype: NcbiSettings
+    :rtype: NcbiRestApiSettings
     """
     if PIPELINE_SETTINGS is None:
         err_msg = "Pipeline settings have not been initialised"
@@ -362,11 +366,11 @@ def assembly_report_parser(
     return assemble_assembly_reports(assembly_reports)
 
 
-def run_ncbi_pipeline(settings: NcbiSettings) -> None:
+def run_ncbi_pipeline(settings: NcbiRestApiSettings) -> None:
     """Run the NCBI datasets API pipeline.
 
     :param settings: configuration for the pipeline
-    :type settings: NcbiSettings
+    :type settings: NcbiRestApiSettings
     """
     set_settings(settings)
 
@@ -389,7 +393,7 @@ def run_ncbi_pipeline(settings: NcbiSettings) -> None:
 
 def cli() -> None:
     """CLI interface for the NCBI REST API importer pipeline."""
-    run_cli(NcbiSettings, run_ncbi_pipeline)
+    run_cli(NcbiRestApiSettings, run_ncbi_pipeline)
 
 
 if __name__ == "__main__":
