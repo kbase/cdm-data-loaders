@@ -1,13 +1,10 @@
 """Shared fixtures for pipelines tests."""
 
-from itertools import batched
 from pathlib import Path
 from typing import Any, Final
-from unittest.mock import MagicMock
 
 import dlt
 import dlt.common.configuration.accessors
-import pytest
 from frozendict import frozendict
 from pydantic_settings import BaseSettings
 
