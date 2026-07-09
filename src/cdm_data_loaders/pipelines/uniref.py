@@ -41,7 +41,7 @@ class UnirefSettings(BatchedFileInputSettings):
         str,
         Field(
             description=f"Which UniRef variant to import. Choices: {UNIREF_VARIANTS}",
-            validation_alias=AliasChoices(*[ALIASES[UNIREF_VARIANT]]),
+            validation_alias=AliasChoices(*ALIASES[UNIREF_VARIANT]),
         ),
     ]
 
