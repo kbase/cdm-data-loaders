@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from enum import StrEnum, auto
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import FilePath, StringConstraints, validate_call
+
+NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
+CharStr = Annotated[str, StringConstraints(min_length=1, max_length=1)]
 
 
 class Status(StrEnum):
@@ -38,15 +43,16 @@ class ValidationResults:
     errors_file: Path | None
 
 
+@validate_call
 def validate(  # noqa: PLR0913
-    file_path: Path,
+    file_path: FilePath,
     *,
-    schema: Path | dict,
+    schema: FilePath | dict,
     output_path: Path,
-    comment_char: str = "#",
-    delimiter: str | None = None,
+    comment_char: CharStr = "#",
+    delimiter: CharStr | None = None,
     missing_header: bool = False,
-    null_strings: set[str] | None = None,
+    null_strings: set[NonEmptyStr] | None = None,
     skip_lines: int = 0,
     summary: bool = False,
 ) -> ValidationResults:
@@ -75,21 +81,6 @@ def validate(  # noqa: PLR0913
     :return: Summary information if `summary==True`, otherwise just the status and generic message
     :rtype: ValidationResults
     """
-    # validation
-    if len(comment_char) != 1:
-        msg = f"Invalid comment character: '{comment_char}'; must be a single character."
-        raise ValueError(msg)
-    if delimiter is not None and len(delimiter) != 1:
-        msg = f"Invalid delimiter:'{delimiter}'; must be a single character or None."
-        raise ValueError(msg)
-    null_strings = null_strings or set()
-    if "" in null_strings:
-        msg = "Null strings must include at least one character each"
-        raise ValueError(msg)
-    if not file_path.is_file():
-        msg = f"Input file '{file_path}' does not exist."
-        raise ValueError(msg)
-
     with contextlib.ExitStack() as stack:
         # prepare inputs for shell script
         if isinstance(schema, dict):
@@ -112,7 +103,7 @@ def validate(  # noqa: PLR0913
             comment_char,
             *(["--delimiter", delimiter] if delimiter is not None else []),
             *(["--missing-header"] if missing_header else []),
-            *[arg for elem in null_strings for arg in ("--null", elem)],
+            *([arg for elem in null_strings for arg in ("--null", elem)] if null_strings is not None else []),
             "--skip-lines",
             str(skip_lines),
             *(["--summary-file"] if summary else []),

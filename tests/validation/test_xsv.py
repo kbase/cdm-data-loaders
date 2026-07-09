@@ -15,6 +15,8 @@ from cdm_data_loaders.validation.xsv import Status, ValidationResults, validate
 
 _PATCH = "cdm_data_loaders.validation.xsv.subprocess.run"
 
+_CHAR_ERROR_REGEX = r"String should have at (?:least|most) 1 character"
+
 
 def _data_file(tmp_path: Path, content: str = "col1,col2\nval1,val2\n") -> Path:
     p = tmp_path / "data.csv"
@@ -47,7 +49,7 @@ def _get_args(mock_run: MagicMock) -> list[str]:
 @pytest.mark.parametrize("comment_char", ["", "##", "abc"])
 def test_validate_invalid_comment_char(tmp_path: Path, comment_char: str) -> None:
     """validate() raises ValueError when comment_char is not exactly one character."""
-    with pytest.raises(ValueError, match="Invalid comment char"):
+    with pytest.raises(ValueError, match=_CHAR_ERROR_REGEX):
         validate(_data_file(tmp_path), schema=_schema_file(tmp_path), output_path=tmp_path, comment_char=comment_char)
 
 
@@ -59,7 +61,7 @@ def test_validate_invalid_comment_char(tmp_path: Path, comment_char: str) -> Non
 @pytest.mark.parametrize("delimiter", ["", ",,", "ab"])
 def test_validate_invalid_delimiter(tmp_path: Path, delimiter: str) -> None:
     """validate() raises ValueError when delimiter is not exactly one character."""
-    with pytest.raises(ValueError, match="Invalid delimiter"):
+    with pytest.raises(ValueError, match=_CHAR_ERROR_REGEX):
         validate(_data_file(tmp_path), schema=_schema_file(tmp_path), output_path=tmp_path, delimiter=delimiter)
 
 
@@ -70,13 +72,13 @@ def test_validate_invalid_delimiter(tmp_path: Path, delimiter: str) -> None:
 
 def test_validate_null_strings_contains_empty_string(tmp_path: Path) -> None:
     """validate() raises ValueError when null_strings contains an empty string."""
-    with pytest.raises(ValueError, match="Null strings must include at least one character"):
+    with pytest.raises(ValueError, match=_CHAR_ERROR_REGEX):
         validate(_data_file(tmp_path), schema=_schema_file(tmp_path), output_path=tmp_path, null_strings={""})
 
 
 def test_validate_null_strings_mixed_valid_and_empty(tmp_path: Path) -> None:
     """validate() raises ValueError even when the empty string is mixed with valid strings."""
-    with pytest.raises(ValueError, match="Null strings must include at least one character"):
+    with pytest.raises(ValueError, match=_CHAR_ERROR_REGEX):
         validate(_data_file(tmp_path), schema=_schema_file(tmp_path), output_path=tmp_path, null_strings={"NA", ""})
 
 
@@ -87,7 +89,7 @@ def test_validate_null_strings_mixed_valid_and_empty(tmp_path: Path) -> None:
 
 def test_validate_missing_file(tmp_path: Path) -> None:
     """validate() raises ValueError when the input file does not exist."""
-    with pytest.raises(ValueError, match="does not exist"):
+    with pytest.raises(ValueError, match="Path does not point to a file"):
         validate(tmp_path / "missing.csv", schema=_schema_file(tmp_path), output_path=tmp_path)
 
 
