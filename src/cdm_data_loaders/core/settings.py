@@ -1,64 +1,31 @@
 """Common defaults for running pipelines on the KBase CTS."""
 
-from typing import Any, Final, Self
+from typing import Any, Self
 
-import dlt.common.configuration.accessors
 from frozendict import frozendict
-from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
-from pydantic_settings import CliSuppress, SettingsConfigDict
+from pydantic import computed_field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from cdm_data_loaders.utils.batcher import MIN_START_AT
-from cdm_data_loaders.utils.cdm_logger import ARG_ALIASES as LOGGER_ARG_ALIASES
-from cdm_data_loaders.utils.cdm_logger import DEFAULT_LOG_CONFIG_FILE, LoggerSettings
+from cdm_data_loaders.core.fields import (
+    DEFAULTS,
+    DEV_MODE,
+    INPUT_DIR,
+    LOG_CONFIG_FILE,
+    OUTPUT,
+    START_AT,
+    USE_DESTINATION,
+    USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
+    DevMode,
+    DltConfig,
+    InputDir,
+    LogConfigFile,
+    Output,
+    StartAt,
+    UseDestination,
+    UseOutputDirForPipelineMetadata,
+)
 
 # TODO: frozendict can be moved to the stdlib implementation when py 3.15 is released.
-
-
-INPUT_MOUNT: Final[str] = "/input_dir"
-OUTPUT_MOUNT: Final[str] = "/output_dir"
-
-VALID_DESTINATIONS: list[str] = ["local_fs", "s3"]
-
-
-DEFAULT_CTS_SETTINGS = frozendict(
-    {
-        "dev_mode": False,
-        "input_dir": INPUT_MOUNT,
-        "log_config_file": DEFAULT_LOG_CONFIG_FILE,
-        # N.b. this gets replaced by destination.local_fs.bucket_url
-        "output": "",
-        "use_destination": "local_fs",
-        "use_output_dir_for_pipeline_metadata": False,
-    }
-)
-
-DEFAULT_BATCH_FILE_SETTINGS = frozendict(
-    {
-        **DEFAULT_CTS_SETTINGS,
-        "start_at": MIN_START_AT,
-    }
-)
-
-DEFAULT_PIPELINE_BATCH_SIZE: Final[int] = 50
-
-
-ARG_ALIASES = frozendict(
-    {
-        "batch_size": ["-b", "--batch_size", "--batch-size"],
-        "dev_mode": ["--dev_mode", "--dev-mode", "--dev"],
-        "input_dir": ["-i", "--input_dir", "--input-dir"],
-        "log_config_file": LOGGER_ARG_ALIASES,
-        "output": ["-o", "--output"],
-        "start_at": ["-s", "--start_at", "--start-at"],
-        "use_destination": ["-d", "--use_destination", "--use-destination"],
-        "use_output_dir_for_pipeline_metadata": [
-            "-p",
-            "--use_output_dir_for_pipeline_metadata",
-            "--use-output-dir-for-pipeline-metadata",
-        ],
-    }
-)
-
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
     {
         "cli_parse_args": True,
@@ -69,43 +36,45 @@ DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
 )
 
 
+DEFAULT_CTS_SETTINGS = frozendict(
+    {
+        k: DEFAULTS[k]
+        for k in [
+            DEV_MODE,
+            INPUT_DIR,
+            LOG_CONFIG_FILE,
+            OUTPUT,
+            USE_DESTINATION,
+            USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
+        ]
+    }
+)
+
+DEFAULT_BATCH_FILE_SETTINGS = frozendict(
+    {
+        **DEFAULT_CTS_SETTINGS,
+        START_AT: DEFAULTS[START_AT],
+    }
+)
+
+
+class LoggerSettings(BaseSettings):
+    """Configuration for a class with a logger config."""
+
+    log_config_file: LogConfigFile
+
+
 class CtsSettings(LoggerSettings):
     """Configuration for running a basic import pipeline."""
 
     model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT)
 
-    dev_mode: bool = Field(
-        default=DEFAULT_CTS_SETTINGS["dev_mode"],
-        description="Whether to run the pipeline in dev mode, which saves raw API responses to disk and disables compression for easier debugging.",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES["dev_mode"]]),
-    )
-    input_dir: str = Field(
-        default=DEFAULT_CTS_SETTINGS["input_dir"],
-        description="Location of directory containing file(s) to import",
-        # explicitly allow both kebab case and snake case
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES["input_dir"]]),
-    )
-    output: str = Field(
-        default=DEFAULT_CTS_SETTINGS["output"],
-        description="Location to save imported data to, if different from the default supplied by the destination config",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES["output"]]),
-    )
-    use_destination: str = Field(
-        default=DEFAULT_CTS_SETTINGS["use_destination"],
-        description=f"DLT destination configuration to use for data output. Data to be saved to s3 should use the destination 's3'; to save data locally, use the destination 'local_fs'. The output directory can be specified using the 'output' field. Choices: {VALID_DESTINATIONS}",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES["use_destination"]]),
-    )
-    use_output_dir_for_pipeline_metadata: bool = Field(
-        default=DEFAULT_CTS_SETTINGS["use_output_dir_for_pipeline_metadata"],
-        description="If true, use the output directory for pipeline metadata.",
-        validation_alias=AliasChoices(
-            *[alias.strip("-") for alias in ARG_ALIASES["use_output_dir_for_pipeline_metadata"]]
-        ),
-    )
-    # this should really just be _Accessor but leaving it as-is for ease of testing
-    dlt_config: CliSuppress[dlt.common.configuration.accessors._Accessor | dict[str, Any]] = Field(
-        description="DLT configuration for the pipeline.",
-    )
+    dev_mode: DevMode
+    input_dir: InputDir
+    output: Output
+    use_destination: UseDestination
+    use_output_dir_for_pipeline_metadata: UseOutputDirForPipelineMetadata
+    dlt_config: DltConfig
 
     @model_validator(mode="after")
     def reconcile_with_dlt_config(self) -> Self:
@@ -129,7 +98,7 @@ class CtsSettings(LoggerSettings):
             if self.output != "/":
                 self.output.rstrip("/")
 
-        # TODO: this should never happen
+        # N.b. this should never happen
         if not self.output:
             err_msg = "No output specified!"
             raise ValueError(err_msg)
@@ -192,8 +161,4 @@ class CtsSettings(LoggerSettings):
 class BatchedFileInputSettings(CtsSettings):
     """Settings object for an importer that deals with batches of files."""
 
-    start_at: int = Field(
-        default=DEFAULT_BATCH_FILE_SETTINGS["start_at"],
-        description="File to start import at",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES["start_at"]]),
-    )
+    start_at: StartAt

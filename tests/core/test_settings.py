@@ -6,14 +6,16 @@ import pytest
 from pydantic import ValidationError
 from pydantic_settings import CliApp
 
-from cdm_data_loaders.pipelines.cts_defaults import (
+from cdm_data_loaders.core.fields import (
     ARG_ALIASES,
     VALID_DESTINATIONS,
+)
+from cdm_data_loaders.core.settings import (
     BatchedFileInputSettings,
     CtsSettings,
 )
 from cdm_data_loaders.utils.batcher import MIN_START_AT
-from tests.pipelines.conftest import (
+from tests.core.conftest import (
     DEFAULT_BATCH_FILE_SETTINGS_RECONCILED,
     DEFAULT_CTS_SETTINGS_RECONCILED,
     DESTINATION_TO_OUTPUT,

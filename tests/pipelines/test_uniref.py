@@ -11,10 +11,10 @@ from frozendict import frozendict
 from pydantic import ValidationError
 from pydantic_settings import CliApp
 
+from cdm_data_loaders.core.fields import ARG_ALIASES
 from cdm_data_loaders.parsers.uniprot.uniref import ENTRY_XML_TAG, UNIREF_VARIANTS
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines import uniref as uniref_module
-from cdm_data_loaders.pipelines.cts_defaults import ARG_ALIASES
 from cdm_data_loaders.pipelines.uniref import (
     UNIREF_LOG_INTERVAL,
     UNIREF_VARIANT_ALIASES,
@@ -23,12 +23,14 @@ from cdm_data_loaders.pipelines.uniref import (
     parse_uniref,
     run_uniref_pipeline,
 )
-from tests.pipelines.conftest import (
+from tests.core.conftest import (
     TEST_BATCH_FILE_SETTINGS,
     TEST_BATCH_FILE_SETTINGS_RECONCILED,
     check_settings,
-    make_batcher,
     make_settings_autofill_config,
+)
+from tests.pipelines.conftest import (
+    make_batcher,
 )
 
 # TODO: add a test to ensure that parse_uniref_entry is called with the appropriate args. Requires mocking the file batcher and stream_xml_file_resource functions.

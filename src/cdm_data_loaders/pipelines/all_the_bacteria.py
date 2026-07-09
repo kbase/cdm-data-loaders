@@ -25,11 +25,11 @@ from frozendict import frozendict
 from pydantic import AliasChoices, Field, computed_field
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
 )
-from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.utils.download.sync_client import FileDownloader
 from cdm_data_loaders.utils.s3 import stream_to_s3
 

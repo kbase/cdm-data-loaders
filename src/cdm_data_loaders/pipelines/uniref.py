@@ -8,15 +8,15 @@ from dlt.extract.items import DataItemWithMeta
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.settings import (
+    DEFAULT_SETTINGS_CONFIG_DICT,
+    BatchedFileInputSettings,
+)
 from cdm_data_loaders.parsers.uniprot.uniref import ENTRY_XML_TAG, UNIREF_VARIANTS, parse_uniref_entry
 from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
     stream_xml_file_resource,
-)
-from cdm_data_loaders.pipelines.cts_defaults import (
-    DEFAULT_SETTINGS_CONFIG_DICT,
-    BatchedFileInputSettings,
 )
 
 APP_NAME: Final[str] = "uniref_importer"

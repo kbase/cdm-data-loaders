@@ -7,13 +7,13 @@ import dlt
 from dlt.extract.items import DataItemWithMeta
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, BatchedFileInputSettings
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import ENTRY_XML_TAG, parse_uniprot_entry
 from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
     stream_xml_file_resource,
 )
-from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, BatchedFileInputSettings
 
 APP_NAME: Final[str] = "uniprot_kb_importer"
 UNIPROT_LOG_INTERVAL: Final[int] = 1000
