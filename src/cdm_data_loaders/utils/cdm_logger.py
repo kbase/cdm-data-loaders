@@ -6,21 +6,20 @@ import json
 import logging
 import logging.config
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 import yaml
 from dlt.common.runtime.json_logging import config_root_logger
 from frozendict import frozendict
-from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings
+
+from cdm_data_loaders.core.settings import LoggerSettings
 
 ROOT_LOGGER_CONFIGURED: bool = False
 
 
-# no default logger config file -- falls back to LOGGING_CONFIG if file not found.
-DEFAULT_LOG_CONFIG_FILE: Final = None
-
-# Immutable fallback config used when no external config file can be found
+# There is no default logger config file (see cdm_data_loaders.core.fields.DEFAULTS[LOG_CONFIG_FILE])
+# so the logger falls back to LOGGING_CONFIG if an external config file is not found.
+# Immutable fallback config
 LOGGING_CONFIG = frozendict(
     {
         "version": 1,
@@ -34,18 +33,6 @@ LOGGING_CONFIG = frozendict(
         "disable_existing_loggers": False,
     }
 )
-
-ARG_ALIASES = ["--log-config-file", "--log_config_file"]
-
-
-class LoggerSettings(BaseSettings):
-    """Configuration for a class with a logger config."""
-
-    log_config_file: str | None = Field(
-        default=DEFAULT_LOG_CONFIG_FILE,
-        description="Location of configuration file for the logger",
-        validation_alias=AliasChoices(*[alias.strip("-") for alias in ARG_ALIASES]),
-    )
 
 
 def _load_config_from_path(path: str | Path) -> dict[str, Any]:
@@ -87,7 +74,7 @@ def init_logger(settings: LoggerSettings | None = None) -> None:
     """Initialise logger configuration."""
     if not settings:
         # init settings (pulling in log_config_file from cmd line args / env vars) if not provided
-        settings = LoggerSettings()
+        settings = LoggerSettings()  # pyright: ignore[reportCallIssue]
 
     if settings and settings.log_config_file:
         config = _load_config_from_path(settings.log_config_file)

@@ -11,6 +11,7 @@ import pytest
 from frozendict import frozendict
 from requests.exceptions import HTTPError
 
+from cdm_data_loaders.core.fields import VALID_DESTINATIONS
 from cdm_data_loaders.pipelines import all_the_bacteria, core
 from cdm_data_loaders.pipelines.all_the_bacteria import (
     ALL_ATB_FILE_NAME,
@@ -23,9 +24,8 @@ from cdm_data_loaders.pipelines.all_the_bacteria import (
     osf_file_downloader,
     run_atb_pipeline,
 )
-from cdm_data_loaders.pipelines.cts_defaults import VALID_DESTINATIONS
 from cdm_data_loaders.utils.download.core import NonRetryableDownloadError
-from tests.pipelines.conftest import CASSETTES_DIR
+from tests.conftest import CASSETTES_DIR
 
 
 @pytest.fixture(autouse=True)

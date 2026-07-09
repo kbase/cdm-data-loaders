@@ -40,6 +40,21 @@ TEST_NS: Final[str] = "test_ns"
 PIPELINE_RUN = frozendict({RUN_ID: "1234-5678-90", PIPELINE: "KeystoneXL", SOURCE: "/path/to/file"})
 ALT_PIPELINE_RUN = frozendict({RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL", SOURCE: "/path/to/dir"})
 
+CASSETTES_DIR = "tests/cassettes"
+
+DEFAULT_VCR_CONFIG = frozendict(
+    {
+        "cassette_library_dir": CASSETTES_DIR,
+        "record_mode": "once",  # record on first run, replay thereafter
+        "serializer": "yaml",
+        "match_on": ["method", "scheme", "host", "path", "query"],
+        # strip the NCBI API key from cassettes
+        "filter_query_parameters": ["api_key"],
+        "filter_headers": ["api_key"],
+        "decode_compressed_response": True,
+        "allow_playback_repeats": True,
+    }
+)
 
 _notebook_utils_available: bool | None = None
 
@@ -175,6 +190,38 @@ def json_test_strings() -> dict[str, Any]:
         "array_of_objects": '[{"key": "value"}]',
         "object": '{"key": "value"}',
     }
+
+
+CONFIG_BUCKET = frozendict({"local_fs": "/output_dir", "s3": "s3://some/s3/bucket"})
+
+TEST_DLT_CONFIG = frozendict(
+    {
+        "destination.local_fs.bucket_url": CONFIG_BUCKET["local_fs"],
+        "destination.local_fs.destination_type": "filesystem",
+        "destination.s3.bucket_url": CONFIG_BUCKET["s3"],
+        "destination.s3.destination_type": "filesystem",
+        "normalize.data_writer.disable_compression": False,
+    }
+)
+
+
+def _generate_dlt_config() -> dict[str, Any]:
+    """Return a fresh DLT config dict (same shape as the conftest fixture)."""
+    return {
+        "destination": {
+            "local_fs": {"bucket_url": CONFIG_BUCKET["local_fs"]},
+            "s3": {"bucket_url": CONFIG_BUCKET["s3"]},
+        },
+        "destination.local_fs.bucket_url": CONFIG_BUCKET["local_fs"],
+        "destination.s3.bucket_url": CONFIG_BUCKET["s3"],
+        "normalize.data_writer.disable_compression": False,
+    }
+
+
+@pytest.fixture
+def dlt_config() -> dict[str, Any]:
+    """DLT config for testing purposes."""
+    return _generate_dlt_config()
 
 
 @pytest.fixture

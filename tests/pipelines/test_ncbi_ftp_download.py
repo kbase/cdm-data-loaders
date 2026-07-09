@@ -12,15 +12,15 @@ from moto import mock_aws
 from pydantic import ValidationError
 
 import cdm_data_loaders.utils.s3 as s3_mod
+from cdm_data_loaders.core.fields import INPUT_MOUNT, OUTPUT_MOUNT
 from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST
-from cdm_data_loaders.pipelines.cts_defaults import INPUT_MOUNT, OUTPUT_MOUNT
 from cdm_data_loaders.pipelines.ncbi_ftp_download import (
     DownloadSettings,
     download_and_stage,
     download_batch,
 )
 from cdm_data_loaders.utils.s3 import reset_s3_client
-from tests.pipelines.conftest import _generate_dlt_config
+from tests.conftest import _generate_dlt_config
 
 _MOCK_STATS = {
     "accession": "GCF_000001215.4",
