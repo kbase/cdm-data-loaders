@@ -144,8 +144,8 @@ def test_validate_default_message_no_summary_file(tmp_path: Path, returncode: in
 
 def test_validate_full_summary_data(tmp_path: Path) -> None:
     """validate() populates all result fields from a complete summary JSON file."""
-    num_valid=10
-    num_invalid=2
+    num_valid = 10
+    num_invalid = 2
     data_file = _data_file(tmp_path)
     summary = {
         "status_message": "Custom message",
