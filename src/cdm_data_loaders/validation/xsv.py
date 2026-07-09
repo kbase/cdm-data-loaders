@@ -76,8 +76,8 @@ def validate(  # noqa: PLR0913
     :rtype: ValidationResults
     """
     # validation
-    if len(comment_char) != 1:
-        msg = f"Invalid comment charater:'{comment_char}'; must be a single character."
+if len(comment_char) != 1:
+        msg = f"Invalid comment character: '{comment_char}'; must be a single character."
         raise ValueError(msg)
     if delimiter is not None and len(delimiter) != 1:
         msg = f"Invalid delimiter:'{delimiter}'; must be a single character or None."
