@@ -71,17 +71,22 @@ def dump_settings(settings: CtsSettings) -> None:
     logger.info(settings_minus_dlt_config)
 
 
-def run_cli(settings_cls: type[CtsSettings], pipeline_fn: Callable[[Any], None]) -> None:
+def run_cli(
+    settings_cls: type[CtsSettings], pipeline_fn: Callable[[Any], None], settings_kwargs: dict[str, Any] | None
+) -> None:
     """Generic CLI entry point for any pipeline.
 
     :param settings_cls: the Settings class to instantiate
     :param pipeline_fn: the run_pipeline function to call with the config
+    :param settings_kwargs: any extra non-cli/env var settings to be added
     """
     # piece together env vars
     construct_env_var()
     # instantiate the config
+    if not settings_kwargs:
+        settings_kwargs = {}
     try:
-        settings = settings_cls(dlt_config=dlt.config)
+        settings = settings_cls(dlt_config=dlt.config, **settings_kwargs)
         sync_configs(settings, dlt.config)
         init_logger(settings)
     except (SettingsError, ValidationError, ValueError):

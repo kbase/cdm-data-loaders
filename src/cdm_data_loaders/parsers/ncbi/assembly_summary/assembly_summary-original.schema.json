@@ -1,0 +1,439 @@
+{
+    "$id": "file:///Users/gwg/code/kbase/cdm-data-loaders/src/cdm_data_loaders/parsers/ncbi/assembly_summary/assembly_summary-original.schema.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "Inferred JSON Schema with `qsv schema clean.csv` and manually updated. This schema is for validating the file as-is from the NCBI website.",
+    "title": "JSON Schema for assembly summary files from NCBI",
+    "type": "object",
+    "properties": {
+        "annotation_date": {
+            "title": "Annotation date",
+            "description": "the date that the assembly was annotated",
+            "type": [
+                "string",
+                "null"
+            ],
+            "pattern": "^(19|20)\\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$",
+            "format": "date"
+        },
+        "annotation_name": {
+            "title": "Annotation name",
+            "description": "the name of the annotation that is on the assembly",
+            "minLength": 0,
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "annotation_provider": {
+            "title": "Annotation provider",
+            "description": "the group that provided the annotation on the assembly",
+            "minLength": 0,
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "asm_name": {
+            "title": "Assembly name",
+            "description": "the submitter's name for the genome assembly, when one was provided, otherwise a default name, in the form ASM#####v#, is provided by NCBI. Assembly names are not unique.",
+            "minLength": 0,
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "asm_not_live_date": {
+            "title": "Assembly no longer live date",
+            "description": "the date the assembly transitioned from version_status latest to either replaced or suppressed. When the assembly is in status latest, 'na' is reported.",
+            "type": [
+                "string",
+                "null"
+            ],
+            "pattern": "^(19|20)\\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$",
+            "format": "date"
+        },
+        "asm_submitter": {
+            "title": "Assembly submitter",
+            "description": "the submitting consortium or first position if a list of organizations. The full submitter information is available in the NCBI BioProject resource: www.ncbi.nlm.nih.gov/bioproject/",
+            "minLength": 0,
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "assembly_accession": {
+            "title": "Assembly accession",
+            "description": "the assembly accession.version reported in this field is a unique identifier for the set of sequences in this particular version of the genome assembly.",
+            "minLength": 15,
+            "type": "string",
+            "pattern": "^GC[AF]_[0-9]+\\.[0-9]+$"
+        },
+        "assembly_level": {
+            "anyOf": [
+                {
+                    "description": "all chromosomes are gapless and have no runs of 10 or more ambiguous bases (Ns), there are no unplaced or unlocalized scaffolds, and all the expected chromosomes are present (i.e. the assembly is not noted as having partial genome representation). Plasmids and organelles may or may not be included in the assembly but if present then the sequences are gapless.",
+                    "title": "Complete genome"
+                },
+                {
+                    "description": "there is sequence for one or more chromosomes. This could be a completely sequenced chromosome without gaps or a chromosome containing scaffolds or contigs with gaps between them. There may also be unplaced or unlocalized scaffolds.",
+                    "title": "Chromosome"
+                },
+                {
+                    "description": "some sequence contigs have been connected across gaps to create scaffolds, but the scaffolds are all unplaced or unlocalized.",
+                    "title": "Scaffold"
+                },
+                {
+                    "description": "nothing is assembled beyond the level of sequence contigs",
+                    "title": "Contig"
+                }
+            ],
+            "title": "Assembly level",
+            "description": "the highest level of assembly for any object in the genome assembly.",
+            "type": "string"
+        },
+        "assembly_type": {
+            "title": "Assembly type",
+            "description": "the type of assembly, including haploid, haploid-with-alt, diploid, unresolved-diploid, alternate-pseudohaplotype",
+            "type": "string"
+        },
+        "bioproject": {
+            "title": "BioProject",
+            "description": "accession for the BioProject which produced the sequences in the genome assembly. A BioProject is a collection of biological data related to a single initiative, originating from a single organization or from a consortium. A BioProject record provides users a single place to find links to the diverse data types generated for that project. The record can be retrieved from the NCBI BioProject resource: https://www.ncbi.nlm.nih.gov/bioproject/",
+            "maxLength": 12,
+            "minLength": 0,
+            "type": [
+                "string",
+                "null"
+            ],
+            "pattern": "^PRJ[DEN][A-Z][0-9]+$"
+        },
+        "biosample": {
+            "title": "BioSample",
+            "description": "accession for the BioSample from which the sequences in the genome assembly were obtained. A BioSample record contains a description of the biological source material used in experimental assays. The record can be retrieved from the NCBI BioSample resource: https://www.ncbi.nlm.nih.gov/biosample/",
+            "type": [
+                "string",
+                "null"
+            ],
+            "pattern": "^SAM[NED][A-Za-z0-9_]?[0-9]+$"
+        },
+        "contig_count": {
+            "title": "Contig count",
+            "description": "number of contigs in the primary assembly",
+            "minimum": 1,
+            "type": "integer"
+        },
+        "excluded_from_refseq": {
+            "title": "Excluded from RefSeq",
+            "description": "reasons the assembly was excluded from the NCBI Reference Sequence (RefSeq) project, including any assembly anomalies. See: https://www.ncbi.nlm.nih.gov/assembly/help/anomnotrefseq/",
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "ftp_path": {
+            "title": "FTP path",
+            "description": "the path to the directory on the NCBI genomes FTP site from which data for this genome assembly can be downloaded.",
+            "type": [
+                "string",
+                "null"
+            ],
+            "pattern": "^https://ftp.ncbi.nlm.nih.gov/genomes/all/.+"
+        },
+        "gbrs_paired_asm": {
+            "title": "GenBank/RefSeq paired assembly",
+            "description": "the accession.version of the GenBank assembly that is paired to the given RefSeq assembly, or vice-versa. 'na' is reported if the assembly is unpaired.",
+            "type": [
+                "string",
+                "null"
+            ],
+            "pattern": "^GC[AF]_[0-9]+\\.[0-9]+$"
+        },
+        "gc_percent": {
+            "title": "GC%",
+            "description": "Percent of nitrogenous bases (guanine or cytosine) in DNA submitted for the assembly, rounded to the nearest 0.5%",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "type": "number"
+        },
+        "genome_rep": {
+            "anyOf": [
+                {
+                    "description": "the data used to generate the assembly was obtained from the whole genome, as in Whole Genome Shotgun (WGS) assemblies for example. There may still be gaps in the assembly.",
+                    "title": "Full"
+                },
+                {
+                    "description": "the data used to generate the assembly came from only part of the genome.",
+                    "title": "Partial"
+                }
+            ],
+            "title": "Genome representation",
+            "description": "whether the goal for the assembly was to represent the whole genome or only part of it. Most assemblies have full genome representation with a minority being partial genome representation. See the Assembly help web page (https://www.ncbi.nlm.nih.gov/assembly/help/) for reasons that the genome representation would be set to partial.",
+            "type": "string"
+        },
+        "genome_size": {
+            "title": "Genome Size",
+            "description": "total length of all top-level sequences in the primary assembly",
+            "type": "integer"
+        },
+        "genome_size_ungapped": {
+            "title": "Genome Size - Ungapped length",
+            "description": "total length of all top-level sequences in the primary assembly ignoring gaps. Any stretch of 10 or more Ns in a sequence is treated like a gap",
+            "type": "integer"
+        },
+        "group": {
+            "title": "Taxonomy Group",
+            "description": "commonly used organism groups: Eukaryota: Animals, Fungi, Plants, Protists; Prokaryota: group corresponds to phylum; Viruses: groups defined as the first level (not ranked) below the kingdom of Viruses",
+            "type": "string"
+        },
+        "infraspecific_name": {
+            "title": "Infraspecific name",
+            "description": "the strain, breed, cultivar or ecotype of the organism from which the sequences in the genome assembly were derived. Data are reported in the form tag=value, e.g. strain=AF16. Strain, breed, cultivar and ecotype are not expected to be used together, however, if they are then they will be reported in a list separated by ', /'. Empty if no strain, breed, cultivar or ecotype is specified on the genomic sequence records.",
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "isolate": {
+            "title": "Isolate",
+            "description": "the individual isolate from which the sequences in the genome assembly were derived. Empty if no isolate is specified on the genomic sequence records.",
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "non_coding_gene_count": {
+            "title": "Non-coding gene count",
+            "description": "the total number of non-coding genes on the assembly",
+            "minimum": 0,
+            "type": [
+                "integer",
+                "null"
+            ]
+        },
+        "organism_name": {
+            "title": "Organism name",
+            "description": "the scientific name of the organism from which the sequences in the genome assembly were derived. This name is taken from the NCBI Taxonomy record for the taxid specified in column 6. Some older taxids were assigned at the strain level and for these the organism name will include the strain. Current practice is only to assign taxids at the species level; for these the organism name will be just the species, however, the strain name will be reported in the infraspecific_name field (column 9).",
+            "type": "string"
+        },
+        "paired_asm_comp": {
+            "anyOf": [
+                {
+                    "description": "GenBank and RefSeq assemblies are identical",
+                    "title": "identical"
+                },
+                {
+                    "description": "GenBank and RefSeq assemblies are not identical",
+                    "title": "different"
+                },
+                {
+                    "description": "not applicable since the assembly is unpaired",
+                    "title": "na"
+                }
+            ],
+            "title": "Paired assembly comparison",
+            "description": "whether the paired GenBank & RefSeq assemblies are identical or different.",
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "protein_coding_gene_count": {
+            "title": "Protein coding gene count",
+            "description": "the total number of protein coding genes on the assembly",
+            "minimum": 0,
+            "type": [
+                "integer",
+                "null"
+            ]
+        },
+        "pubmed_id": {
+            "title": "PubMed ID",
+            "description": "The PubMed ID(s) that are associated with the assembly, separated by commas",
+            "type": [
+                "string",
+                "null"
+            ],
+            "pattern": "^[0-9]+(;[0-9]+)*$"
+        },
+        "refseq_category": {
+            "anyOf": [
+                {
+                    "description": "a genome computationally or manually selected as a reference for the species.",
+                    "title": "reference genome"
+                },
+                {
+                    "description": "no RefSeq category assigned to this assembly",
+                    "title": "na"
+                }
+            ],
+            "title": "RefSeq Category",
+            "description": "whether the assembly is a reference genome in the NCBI Reference Sequence (RefSeq) project classification. Details of the selection of reference are at: https://www.ncbi.nlm.nih.gov/datasets/docs/v2/policies-annotation/genome-processing/reference-selection/",
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "relation_to_type_material": {
+            "anyOf": [
+                {
+                    "description": "the sequences in the genome assembly were derived from type material",
+                    "title": "assembly from type material"
+                },
+                {
+                    "description": "the sequences in the genome assembly were derived from synonym type material",
+                    "title": "assembly from synonym type material"
+                },
+                {
+                    "description": "the sequences in the genome assembly were derived from pathovar material",
+                    "title": "assembly from pathotype material"
+                },
+                {
+                    "description": "the sequences in the genome assembly were derived from neotype material",
+                    "title": "assembly designated as neotype"
+                },
+                {
+                    "description": "the sequences in the genome assembly were derived from reference material where type material never was available and is not likely to ever be available",
+                    "title": "assembly designated as reftype"
+                },
+                {
+                    "description": "the International Committee on Taxonomy of Viruses (ICTV) designated the genome assembly as the exemplar for the virus species",
+                    "title": "ICTV species exemplar"
+                },
+                {
+                    "description": "the International Committee on Taxonomy of Viruses (ICTV) designated the genome assembly an additional isolate for the virus species",
+                    "title": "ICTV additional isolate"
+                }
+            ],
+            "title": "Relation to type material",
+            "description": "contains a value if the sequences in the genome assembly were derived from type material.",
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "release_type": {
+            "anyOf": [
+                {
+                    "description": "changes from the previous assembly version result in a significant change to the coordinate system. The first version of an assembly is always a major release. Most subsequent genome assembly updates are also major releases.",
+                    "title": "Major"
+                },
+                {
+                    "description": "changes from the previous assembly version are limited to the following changes, none of which result in a significant change to the coordinate system of the primary assembly-unit: adding, removing or changing a non-nuclear assembly-unit; dropping unplaced or unlocalized scaffolds; adding up to 50 unplaced or unlocalized scaffolds which are shorter than the current scaffold-N50 value; and replacing a component with a gap of the same length.",
+                    "title": "Minor"
+                },
+                {
+                    "description": "the only change is the addition or modification of a patch assembly-unit.",
+                    "title": "Patch"
+                }
+            ],
+            "title": "Release type",
+            "description": "whether this version of the genome assembly is a major, minor or patch release. See the NCBI Assembly model web page (https://www.ncbi.nlm.nih.gov/assembly/model/#asmb_def) for definitions of assembly-units and genome patches.",
+            "type": "string"
+        },
+        "replicon_count": {
+            "title": "Replicon count",
+            "description": "total number of chromosomes, organelle genomes, and plasmids in the primary assembly",
+            "minimum": 0,
+            "type": "integer"
+        },
+        "scaffold_count": {
+            "title": "Scaffold count",
+            "description": "number of scaffolds including placed, unlocalized, unplaced, alternate loci and patch scaffolds in the primary assembly",
+            "minimum": 0,
+            "type": "integer"
+        },
+        "seq_rel_date": {
+            "title": "Sequence release date",
+            "description": "the date the sequences in the genome assembly were released in the International Nucleotide Sequence Database Collaboration (INSDC) databases, i.e. DDBJ, ENA or GenBank.",
+            "type": "string",
+            "pattern": "^(19|20)\\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$",
+            "format": "date"
+        },
+        "species_taxid": {
+            "title": "Species taxonomy ID",
+            "description": "the NCBI taxonomy identifier for the species from which the genome assembly was derived. The species taxid will differ from the organism taxid (column 6) only when the organism was reported at a sub- species or strain level.",
+            "type": "integer"
+        },
+        "taxid": {
+            "title": "Taxonomy ID",
+            "description": "the NCBI taxonomy identifier for the organism from which the genome assembly was derived. The NCBI Taxonomy Database is a curated classification and nomenclature for all of the organisms in the public sequence databases. The taxonomy record can be retrieved from the NCBI Taxonomy resource: https://www.ncbi.nlm.nih.gov/taxonomy/",
+            "type": "integer"
+        },
+        "total_gene_count": {
+            "title": "Total gene count",
+            "description": "the total number of genes that are annotated on the assembly. If an assembly has no genes, or is lacking a gene count, it will display 'na'. If an assembly has no features but is annotated, then it will show 0.",
+            "minimum": 0,
+            "type": [
+                "integer",
+                "null"
+            ]
+        },
+        "version_status": {
+            "anyOf": [
+                {
+                    "description": "the most recent of all the versions for this assembly chain",
+                    "title": "latest"
+                },
+                {
+                    "description": "this version has been replaced by a newer version of the assembly in the same chain",
+                    "title": "replaced"
+                },
+                {
+                    "description": "this version of the assembly has been suppressed",
+                    "title": "suppressed"
+                }
+            ],
+            "title": "Version status",
+            "description": "the release status for the genome assembly version. An assembly chain is the collection of all versions for the same assembly accession.",
+            "type": "string"
+        },
+        "wgs_master": {
+            "title": "WGS-master",
+            "description": "the GenBank Nucleotide accession and version for the master record of the Whole Genome Shotgun (WGS) project for the genome assembly. The master record can be retrieved from the NCBI Nucleotide resource: https://www.ncbi.nlm.nih.gov/nuccore Genome assemblies that are complete genomes, and those that are clone-based, do not have WGS-master records in which case this field will be empty.",
+            "type": [
+                "string",
+                "null"
+            ]
+        }
+    },
+    "required": [
+        "assembly_accession",
+        "bioproject",
+        "biosample",
+        "wgs_master",
+        "refseq_category",
+        "taxid",
+        "species_taxid",
+        "organism_name",
+        "infraspecific_name",
+        "isolate",
+        "version_status",
+        "assembly_level",
+        "release_type",
+        "genome_rep",
+        "seq_rel_date",
+        "asm_name",
+        "asm_submitter",
+        "gbrs_paired_asm",
+        "paired_asm_comp",
+        "ftp_path",
+        "excluded_from_refseq",
+        "relation_to_type_material",
+        "asm_not_live_date",
+        "assembly_type",
+        "group",
+        "genome_size",
+        "genome_size_ungapped",
+        "gc_percent",
+        "replicon_count",
+        "scaffold_count",
+        "contig_count",
+        "annotation_provider",
+        "annotation_name",
+        "annotation_date",
+        "total_gene_count",
+        "protein_coding_gene_count",
+        "non_coding_gene_count",
+        "pubmed_id"
+    ]
+}
