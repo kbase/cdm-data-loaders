@@ -19,14 +19,15 @@ import gzip
 import json
 import re
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.request import urlopen
 
+from botocore.exceptions import ClientError
 from pydantic import AliasChoices, Field
-from pydantic_settings import SettingsConfigDict
+from pydantic_settings import CliImplicitFlag, SettingsConfigDict
 
 from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.pdb.constants import (
@@ -42,6 +43,7 @@ from cdm_data_loaders.pdb.constants import (
     ManifestData,
     PDBRecord,
 )
+from cdm_data_loaders.pipelines.core import run_cli
 from cdm_data_loaders.utils.s3 import get_s3_client
 
 logger: Logger = getLogger(__name__)
@@ -67,24 +69,24 @@ class PdbManfestSettings(CtsSettings):
         description="File path relative to destination bucket/prefix for current holdings snapshot file",
         validation_alias=AliasChoices("snapshot"),
     )
-    bootstrap_date: datetime | None = Field(
+    bootstrap_date: date | None = Field(
         default=None,
         description="If a date is provided, the current PDB Lakehouse records will be used to generate a synthetic snapshot file with last-modified date set to this value for each record",
         validation_alias=AliasChoices("bootstrap"),
     )
-    skip_diff: bool = Field(
+    skip_diff: CliImplicitFlag[bool] = Field(
         default=False,
         description="If set, prevents reading of snapshot data. All current PDB records will be include in manifest",
         validation_alias=AliasChoices("skip-diff", "skip_diff"),
     )
     output_path: Path = Field(
         description="Local path to save generated manfiest files to",
-        validation_alias=AliasChoices("o", "output-path", "output_path"),
+        validation_alias=AliasChoices("output-path", "output_path"),
     )
     regex_filter: str | None = Field(
         default=None,
         description="RegEx string to filter records. Only PDB ids that pass the RegEx search will be included in manifest files.",
-        validation_alias=AliasChoices("r", "regex"),
+        validation_alias=AliasChoices("regex", "r"),
     )
 
 
@@ -93,6 +95,7 @@ def run_manifest_generation(config: PdbManfestSettings) -> None:
 
     "param config: validated pipeline settings
     """
+    config.output_path.mkdir(parents=True, exist_ok=True)
     snapshot: dict[str, PDBRecord] = {}
     if config.bootstrap_date:
         snapshot = _generate_snapshot_from_s3_state(
@@ -130,6 +133,20 @@ def run_manifest_generation(config: PdbManfestSettings) -> None:
     )
     _save_manifest_files(manifest_data, config.output_path)
     _save_summary_file(manifest_data, config.regex_filter, config.output_path)
+
+
+def cli() -> None:
+    """CLI interface for the PDB manifest generation pipeline."""
+    run_cli(PdbManfestSettings, run_manifest_generation)
+
+
+if __name__ == "__main__":
+    cli()
+
+
+# ------------------------
+# Private helper functions
+# ------------------------
 
 
 def _download_holdings_files(
@@ -202,7 +219,7 @@ def _extract_id_from_s3_key(key: str) -> str | None:
 def _generate_snapshot_from_s3_state(
     bucket: PurePosixPath,
     key_prefix: PurePosixPath,
-    date: datetime,
+    date: date,
 ) -> dict[str, PDBRecord]:
     """Bootstraps a holdings snapshot file based on the current store state."""
     s3 = get_s3_client()
@@ -274,6 +291,12 @@ def _download_holdings_snapshot(
     try:
         s3.download_file(Bucket=str(bucket), Key=str(key), Filename=str(tmp_path))
         return _load_holdings_snapshot(tmp_path)
+    except ClientError:
+        msg = (
+            f"PDB Snapshot file s3://{bucket / key} not found. Rerun with --skip-diff to download all current "
+            "records, or --bootstrap to generate a snapshot file from the current S3 store state."
+        )
+        raise ValueError(msg) from None
     finally:
         Path(tmp_path).unlink()
 

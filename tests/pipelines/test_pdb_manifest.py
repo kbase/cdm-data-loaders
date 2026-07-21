@@ -2,7 +2,7 @@
 
 import gzip
 import json
-from datetime import UTC, datetime
+from datetime import date
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from typing import ClassVar, cast
@@ -535,7 +535,7 @@ class TestRunManifestGeneration:
         mock_gen = MagicMock(return_value={})
         monkeypatch.setattr(pdb_manifest_mod, "_generate_snapshot_from_s3_state", mock_gen)
 
-        bootstrap_date = datetime(2020, 1, 1, tzinfo=UTC)
+        bootstrap_date = date(2020, 1, 1)
         run_manifest_generation(self._make_config(tmp_path, bootstrap_date=bootstrap_date))
 
         mock_gen.assert_called_once_with(
@@ -600,3 +600,15 @@ class TestRunManifestGeneration:
         total = summary["new"] + summary["updated"]
         assert total == len(self._CURRENT)
         assert summary["missing_dates"] == 1
+
+    def test_output_directory_created_when_missing(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """run_manifest_generation creates output_path and its parents when they don't exist."""
+        monkeypatch.setattr(pdb_manifest_mod, "_download_holdings_snapshot", MagicMock(return_value={}))
+
+        output_path = tmp_path / "nested" / "output"
+        assert not output_path.exists()
+
+        run_manifest_generation(self._make_config(tmp_path, skip_diff=True, output_path=output_path))
+
+        assert output_path.is_dir()
+        assert (output_path / "transfer_manifest.txt").exists()

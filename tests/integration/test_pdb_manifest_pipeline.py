@@ -8,7 +8,7 @@ a running CEPH test store and are marked ``requires_ceph`` + ``slow_test``.
 """
 
 from collections.abc import Generator
-from datetime import UTC, datetime
+from datetime import date
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from typing import cast
@@ -188,7 +188,7 @@ class TestGenerateSnapshotFromS3State:
     ) -> None:
         """Tests bootstrapped snapshot includes in-store ids."""
         _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, _FAKE_IDS)
-        bootstrap_date = datetime(2024, 1, 1, tzinfo=UTC)
+        bootstrap_date = date(2024, 1, 1)
 
         result = _generate_snapshot_from_s3_state(
             bucket=test_bucket,
@@ -205,7 +205,7 @@ class TestGenerateSnapshotFromS3State:
     ) -> None:
         """Ensures the provided snapshot date is properly set."""
         _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, _FAKE_IDS)
-        bootstrap_date = datetime(2024, 1, 1, tzinfo=UTC)
+        bootstrap_date = date(2024, 1, 1)
 
         result = _generate_snapshot_from_s3_state(
             bucket=test_bucket,
@@ -231,7 +231,7 @@ class TestGenerateSnapshotFromS3State:
         result = _generate_snapshot_from_s3_state(
             bucket=test_bucket,
             key_prefix=_PDB_KEY_PREFIX,
-            date=datetime(2024, 6, 1, tzinfo=UTC),
+            date=date(2024, 6, 1),
         )
 
         assert list(result.keys()).count(pdb_id) == 1
@@ -323,7 +323,7 @@ class TestRunManifestGenerationE2E:
         # pdb_00001def: in S3, bootstrap date older than current: updated.
         # pdb_00009999: in S3 but not in current holdings: removed.
         _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, ["pdb_00001def", "pdb_00009999"])
-        bootstrap_date = datetime(2020, 1, 1, tzinfo=UTC)
+        bootstrap_date = date(2020, 1, 1)
 
         config = self._make_config(test_bucket, tmp_path, bootstrap_date=bootstrap_date)
         run_manifest_generation(config)
