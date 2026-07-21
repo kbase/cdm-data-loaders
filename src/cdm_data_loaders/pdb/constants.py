@@ -6,10 +6,10 @@ from enum import StrEnum, auto
 from pathlib import Path, PurePosixPath
 
 DEFAULT_DESTINATION_BUCKET: PurePosixPath = PurePosixPath("cdm-lake")
-DEFAULT_DESTINATION_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/refdata/datasets/pdb")
+DEFAULT_DESTINATION_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse") / "refdata" / "datasets" / "pdb"
 DEFAULT_HOLDINGS_SNAPSHOT: PurePosixPath = PurePosixPath("current_holdings_snapshot.json.gz")
 
-HOLDINGS_BASE_URL = PurePosixPath("files-beta.rcsb.org/pub/wwpdb/pdb/holdings")
+HOLDINGS_BASE_URL = PurePosixPath("files-beta.rcsb.org") / "pub" / "wwpdb" / "pdb" / "holdings"
 
 
 class HoldingsFileTypes(StrEnum):

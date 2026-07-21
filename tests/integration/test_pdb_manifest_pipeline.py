@@ -19,6 +19,7 @@ import pytest
 
 import cdm_data_loaders.pipelines.pdb_manifest as pdb_manifest_mod
 from cdm_data_loaders.pdb.constants import (
+    DEFAULT_DESTINATION_PREFIX,
     HoldingsFileTypes,
     PDBRecord,
 )
@@ -32,7 +33,7 @@ from cdm_data_loaders.pipelines.pdb_manifest import (
 )
 
 # A prefix under which we seed fake PDB objects in CEPH
-_PDB_KEY_PREFIX = PurePosixPath("tenant-general-warehouse/refdata/datasets/pdb/raw_data")
+_PDB_KEY_PREFIX = DEFAULT_DESTINATION_PREFIX / "raw_data"
 
 # A handful of fake extended PDB IDs used across tests
 _FAKE_IDS = [
@@ -134,7 +135,7 @@ class TestSnapshotCeph:
             "pdb_00001abc": PDBRecord(id="pdb_00001abc", last_modified="2024-01-15"),
             "pdb_00001def": PDBRecord(id="pdb_00001def", last_modified="2023-06-30"),
         }
-        snapshot_key = PurePosixPath("snapshots/current_holdings_snapshot.json.gz")
+        snapshot_key = PurePosixPath("snapshots") / "current_holdings_snapshot.json.gz"
         local_file = tmp_path / "snapshot.json.gz"
 
         # Save locally then upload to CEPH
@@ -159,7 +160,7 @@ class TestSnapshotCeph:
         tmp_path: Path,
     ) -> None:
         """Tests round-trip saving/loading of empty snapshot to S3 store."""
-        snapshot_key = PurePosixPath("snapshots/empty_snapshot.json.gz")
+        snapshot_key = PurePosixPath("snapshots") / "empty_snapshot.json.gz"
         local_file = tmp_path / "empty.json.gz"
         _save_holdings_snapshot({}, local_file)
         pdb_ceph_client.upload_file(

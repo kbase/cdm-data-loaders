@@ -540,7 +540,7 @@ class TestRunManifestGeneration:
 
         mock_gen.assert_called_once_with(
             PurePosixPath("test-bucket"),
-            PurePosixPath("test/prefix"),
+            PurePosixPath("test") / "prefix",
             bootstrap_date,
         )
 
@@ -553,7 +553,7 @@ class TestRunManifestGeneration:
 
         mock_dl.assert_called_once_with(
             bucket=PurePosixPath("test-bucket"),
-            key=PurePosixPath("test/prefix/snapshot.json.gz"),
+            key=PurePosixPath("test") / "prefix" / "snapshot.json.gz",
         )
 
     @pytest.mark.parametrize(
