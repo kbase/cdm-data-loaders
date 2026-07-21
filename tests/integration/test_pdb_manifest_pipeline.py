@@ -10,6 +10,8 @@ a running CEPH test store and are marked ``requires_ceph`` + ``slow_test``.
 from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 import botocore.client
@@ -21,10 +23,12 @@ from cdm_data_loaders.pdb.constants import (
     PDBRecord,
 )
 from cdm_data_loaders.pipelines.pdb_manifest import (
+    PdbManfestSettings,
     _download_holdings_files,
     _download_holdings_snapshot,
     _generate_snapshot_from_s3_state,
     _save_holdings_snapshot,
+    run_manifest_generation,
 )
 
 # A prefix under which we seed fake PDB objects in CEPH
@@ -39,7 +43,7 @@ _FAKE_IDS = [
 
 
 # ---------------------------------------------------------------------------
-# Local fixture — patch pdb_manifest's get_s3_client to use CEPH client
+# Local fixture - patch pdb_manifest's get_s3_client to use CEPH client
 # ---------------------------------------------------------------------------
 
 
@@ -231,3 +235,180 @@ class TestGenerateSnapshotFromS3State:
         )
 
         assert list(result.keys()).count(pdb_id) == 1
+
+
+# ---------------------------------------------------------------------------
+# Full pipeline end-to-end tests
+# ---------------------------------------------------------------------------
+
+# Holdings data shared across E2E tests.
+# pdb_aaaaaaaa is intentionally absent from LAST_MODIFIED; should show up in missing_dates.
+_E2E_CURRENT: dict[str, PDBRecord] = {
+    "pdb_00001abc": PDBRecord(id="pdb_00001abc"),
+    "pdb_00001def": PDBRecord(id="pdb_00001def"),
+    "pdb_aaaaaaaa": PDBRecord(id="pdb_aaaaaaaa"),
+}
+_E2E_LAST_MODIFIED: dict[str, PDBRecord] = {
+    "pdb_00001abc": PDBRecord(id="pdb_00001abc", last_modified="2024-01-15"),
+    "pdb_00001def": PDBRecord(id="pdb_00001def", last_modified="2024-02-20"),
+}
+_E2E_REMOVED: dict[str, PDBRecord] = {}
+
+_SNAPSHOT_PREFIX = PurePosixPath("e2e-pdb-test")
+_SNAPSHOT_FILENAME = PurePosixPath("current_snapshot.json.gz")
+
+
+@pytest.mark.requires_ceph
+@pytest.mark.slow_test
+class TestRunManifestGenerationE2E:
+    """End-to-end tests for run_manifest_generation.
+
+    PDB HTTP downloads are mocked; S3 interactions use the real CEPH store.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _mock_holdings_download(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Replace live PDB downloads with controlled in-memory data."""
+        mock_raw = {
+            HoldingsFileTypes.CURRENT: dict(_E2E_CURRENT),
+            HoldingsFileTypes.LAST_MODIFIED: dict(_E2E_LAST_MODIFIED),
+            HoldingsFileTypes.REMOVED: dict(_E2E_REMOVED),
+        }
+        monkeypatch.setattr(pdb_manifest_mod, "_download_holdings_files", lambda: mock_raw)
+
+    def _make_config(
+        self,
+        test_bucket: PurePosixPath,
+        tmp_path: Path,
+        **kwargs: object,
+    ) -> PdbManfestSettings:
+        defaults: dict = {
+            "bootstrap_date": None,
+            "skip_diff": False,
+            "regex_filter": None,
+            "destination_bucket": test_bucket,
+            "destination_prefix": _PDB_KEY_PREFIX,
+            "holdings_snapshot_path": _SNAPSHOT_FILENAME,
+            "output_path": tmp_path,
+        }
+        defaults.update(kwargs)
+        return cast("PdbManfestSettings", SimpleNamespace(**defaults))
+
+    def _read_manifest(self, tmp_path: Path, filename: str) -> list[str]:
+        return (tmp_path / filename).read_text().splitlines()
+
+    @pytest.mark.usefixtures("pdb_ceph_client")
+    def test_skip_diff_all_current_records_are_new(
+        self,
+        test_bucket: PurePosixPath,
+        tmp_path: Path,
+    ) -> None:
+        """With skip_diff=True, every current ID appears as new in the transfer manifest."""
+        config = self._make_config(test_bucket, tmp_path, skip_diff=True)
+        run_manifest_generation(config)
+
+        transfer = sorted(self._read_manifest(tmp_path, "transfer_manifest.txt"))
+        assert transfer == sorted(_E2E_CURRENT.keys())
+        assert self._read_manifest(tmp_path, "updated_manifest.txt") == []
+        assert self._read_manifest(tmp_path, "removed_manifest.txt") == []
+        assert self._read_manifest(tmp_path, "missing_dates.txt") == ["pdb_aaaaaaaa"]
+
+    def test_bootstrap_date_uses_s3_state_as_previous(
+        self,
+        pdb_ceph_client: botocore.client.BaseClient,
+        test_bucket: PurePosixPath,
+        tmp_path: Path,
+    ) -> None:
+        """With bootstrap_date, the S3 store determines the previous snapshot."""
+        # pdb_00001def: in S3, bootstrap date older than current: updated.
+        # pdb_00009999: in S3 but not in current holdings: removed.
+        _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, ["pdb_00001def", "pdb_00009999"])
+        bootstrap_date = datetime(2020, 1, 1, tzinfo=UTC)
+
+        config = self._make_config(test_bucket, tmp_path, bootstrap_date=bootstrap_date)
+        run_manifest_generation(config)
+
+        # pdb_00001abc and pdb_aaaaaaaa are not in the store: new
+        transfer = self._read_manifest(tmp_path, "transfer_manifest.txt")
+        assert "pdb_00001abc" in transfer
+        assert "pdb_00001def" in transfer  # also in transfer (updated IDs included)
+        assert "pdb_aaaaaaaa" in transfer
+
+        assert self._read_manifest(tmp_path, "updated_manifest.txt") == ["pdb_00001def"]
+        assert self._read_manifest(tmp_path, "removed_manifest.txt") == ["pdb_00009999"]
+        assert self._read_manifest(tmp_path, "missing_dates.txt") == ["pdb_aaaaaaaa"]
+
+    def test_with_existing_snapshot_incremental_diff(
+        self,
+        pdb_ceph_client: botocore.client.BaseClient,
+        test_bucket: PurePosixPath,
+        tmp_path: Path,
+    ) -> None:
+        """An S3 snapshot drives incremental diffing; only changed records appear."""
+        # pdb_00001def: in snapshot with older date: updated.
+        # pdb_00009999: in snapshot but not in current holdings: removed.
+        previous = {
+            "pdb_00001def": PDBRecord(id="pdb_00001def", last_modified="2023-06-01"),
+            "pdb_00009999": PDBRecord(id="pdb_00009999", last_modified="2022-01-01"),
+        }
+        local_snapshot = tmp_path / "input_snapshot.json.gz"
+        _save_holdings_snapshot(previous, local_snapshot)
+        snapshot_key = _SNAPSHOT_PREFIX / _SNAPSHOT_FILENAME
+        pdb_ceph_client.upload_file(
+            Filename=str(local_snapshot),
+            Bucket=str(test_bucket),
+            Key=str(snapshot_key),
+        )
+
+        config = self._make_config(
+            test_bucket,
+            tmp_path,
+            destination_prefix=_SNAPSHOT_PREFIX,
+        )
+        run_manifest_generation(config)
+
+        # pdb_00001abc and pdb_aaaaaaaa were not in snapshot: new
+        transfer = self._read_manifest(tmp_path, "transfer_manifest.txt")
+        assert "pdb_00001abc" in transfer
+        assert "pdb_00001def" in transfer  # also in transfer (updated IDs included)
+        assert "pdb_aaaaaaaa" in transfer
+
+        assert self._read_manifest(tmp_path, "updated_manifest.txt") == ["pdb_00001def"]
+        assert self._read_manifest(tmp_path, "removed_manifest.txt") == ["pdb_00009999"]
+        assert self._read_manifest(tmp_path, "missing_dates.txt") == ["pdb_aaaaaaaa"]
+
+    @pytest.mark.usefixtures("pdb_ceph_client")
+    @pytest.mark.parametrize(
+        ("regex_filter", "expected_transfer", "expected_missing"),
+        [
+            pytest.param(
+                "pdb_00001",
+                ["pdb_00001abc", "pdb_00001def"],
+                [],
+                id="prefix-filter",
+            ),
+            pytest.param(
+                "pdb_aaa",
+                ["pdb_aaaaaaaa"],
+                ["pdb_aaaaaaaa"],
+                id="single-match-still-missing-date",
+            ),
+        ],
+    )
+    def test_regex_filter(
+        self,
+        test_bucket: PurePosixPath,
+        tmp_path: Path,
+        regex_filter: str,
+        expected_transfer: list[str],
+        expected_missing: list[str],
+    ) -> None:
+        """Regex filter restricts which IDs appear across all output manifest files."""
+        config = self._make_config(test_bucket, tmp_path, skip_diff=True, regex_filter=regex_filter)
+        run_manifest_generation(config)
+
+        transfer = sorted(self._read_manifest(tmp_path, "transfer_manifest.txt"))
+        assert transfer == sorted(expected_transfer)
+        assert self._read_manifest(tmp_path, "updated_manifest.txt") == []
+        assert self._read_manifest(tmp_path, "removed_manifest.txt") == []
+        assert sorted(self._read_manifest(tmp_path, "missing_dates.txt")) == sorted(expected_missing)

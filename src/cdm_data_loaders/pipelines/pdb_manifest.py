@@ -116,8 +116,12 @@ def run_manifest_generation(config: PdbManfestSettings) -> None:
         raw_data[HoldingsFileTypes.LAST_MODIFIED] = apply_regex_filter(raw_data[HoldingsFileTypes.LAST_MODIFIED])
         raw_data[HoldingsFileTypes.REMOVED] = apply_regex_filter(raw_data[HoldingsFileTypes.REMOVED])
         snapshot = apply_regex_filter(snapshot)
+    current_with_dates = {
+        pdb_id: raw_data[HoldingsFileTypes.LAST_MODIFIED].get(pdb_id, rec)
+        for pdb_id, rec in raw_data[HoldingsFileTypes.CURRENT].items()
+    }
     manifest_data = _generate_manifest_data(
-        current=raw_data[HoldingsFileTypes.CURRENT],
+        current=current_with_dates,
         removed=set(raw_data[HoldingsFileTypes.REMOVED].keys()),
         previous=snapshot,
         missing_dates=list(

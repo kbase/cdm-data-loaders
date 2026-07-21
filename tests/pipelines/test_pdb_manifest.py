@@ -2,11 +2,15 @@
 
 import gzip
 import json
-from pathlib import Path
+from datetime import UTC, datetime
+from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
+from typing import ClassVar, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+import cdm_data_loaders.pipelines.pdb_manifest as pdb_manifest_mod
 from cdm_data_loaders.pdb.constants import (
     HoldingsFile,
     HoldingsFileSchemas,
@@ -15,6 +19,7 @@ from cdm_data_loaders.pdb.constants import (
     PDBRecord,
 )
 from cdm_data_loaders.pipelines.pdb_manifest import (
+    PdbManfestSettings,
     _download_holdings_files,
     _extract_id_from_s3_key,
     _generate_manifest_data,
@@ -23,6 +28,7 @@ from cdm_data_loaders.pipelines.pdb_manifest import (
     _save_holdings_snapshot,
     _save_manifest_files,
     _save_summary_file,
+    run_manifest_generation,
 )
 
 # ---------------------------------------------------------------------------
@@ -459,3 +465,138 @@ class TestSaveSummaryFile:
             assert key not in summary
         assert "generated_at" in summary
         assert isinstance(summary["saved_to"], str)
+
+
+# ---------------------------------------------------------------------------
+# run_manifest_generation
+# ---------------------------------------------------------------------------
+
+
+class TestRunManifestGeneration:
+    """Unit tests for the run_manifest_generation orchestration.
+
+    All HTTP and S3 calls are mocked so no external services are required.
+    """
+
+    # Controlled holdings data: pdb_aaaaaaaa is intentionally absent from
+    # LAST_MODIFIED to exercise the missing-dates path.
+    _CURRENT: ClassVar[dict[str, PDBRecord]] = {
+        "pdb_00001abc": PDBRecord(id="pdb_00001abc"),
+        "pdb_00001def": PDBRecord(id="pdb_00001def"),
+        "pdb_aaaaaaaa": PDBRecord(id="pdb_aaaaaaaa"),
+    }
+    _LAST_MODIFIED: ClassVar[dict[str, PDBRecord]] = {
+        "pdb_00001abc": PDBRecord(id="pdb_00001abc", last_modified="2024-01-15"),
+        "pdb_00001def": PDBRecord(id="pdb_00001def", last_modified="2024-02-20"),
+    }
+    _REMOVED: ClassVar[dict[str, PDBRecord]] = {}
+
+    @pytest.fixture(autouse=True)
+    def _patch_holdings_download(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Replace HTTP downloads with controlled in-memory data."""
+        mock_raw = {
+            HoldingsFileTypes.CURRENT: dict(self._CURRENT),
+            HoldingsFileTypes.LAST_MODIFIED: dict(self._LAST_MODIFIED),
+            HoldingsFileTypes.REMOVED: dict(self._REMOVED),
+        }
+        monkeypatch.setattr(pdb_manifest_mod, "_download_holdings_files", lambda: mock_raw)
+
+    def _make_config(self, tmp_path: Path, **kwargs: object) -> PdbManfestSettings:
+        defaults: dict = {
+            "bootstrap_date": None,
+            "skip_diff": False,
+            "regex_filter": None,
+            "destination_bucket": PurePosixPath("test-bucket"),
+            "destination_prefix": PurePosixPath("test/prefix"),
+            "holdings_snapshot_path": PurePosixPath("snapshot.json.gz"),
+            "output_path": tmp_path,
+        }
+        defaults.update(kwargs)
+        return cast("PdbManfestSettings", SimpleNamespace(**defaults))
+
+    def _read_manifest(self, tmp_path: Path, filename: str) -> list[str]:
+        return (tmp_path / filename).read_text().splitlines()
+
+    def test_skip_diff_all_records_are_new(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """With skip_diff=True no snapshot is loaded and every current ID is new."""
+        mock_dl = MagicMock()
+        monkeypatch.setattr(pdb_manifest_mod, "_download_holdings_snapshot", mock_dl)
+
+        run_manifest_generation(self._make_config(tmp_path, skip_diff=True))
+
+        mock_dl.assert_not_called()
+        transfer = self._read_manifest(tmp_path, "transfer_manifest.txt")
+        assert sorted(transfer) == sorted(self._CURRENT.keys())
+        assert self._read_manifest(tmp_path, "updated_manifest.txt") == []
+        assert self._read_manifest(tmp_path, "removed_manifest.txt") == []
+
+    def test_bootstrap_date_calls_generate_snapshot(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """With bootstrap_date set, _generate_snapshot_from_s3_state is invoked."""
+        mock_gen = MagicMock(return_value={})
+        monkeypatch.setattr(pdb_manifest_mod, "_generate_snapshot_from_s3_state", mock_gen)
+
+        bootstrap_date = datetime(2020, 1, 1, tzinfo=UTC)
+        run_manifest_generation(self._make_config(tmp_path, bootstrap_date=bootstrap_date))
+
+        mock_gen.assert_called_once_with(
+            PurePosixPath("test-bucket"),
+            PurePosixPath("test/prefix"),
+            bootstrap_date,
+        )
+
+    def test_normal_mode_downloads_snapshot(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """Without skip_diff or bootstrap_date, _download_holdings_snapshot is invoked."""
+        mock_dl = MagicMock(return_value={})
+        monkeypatch.setattr(pdb_manifest_mod, "_download_holdings_snapshot", mock_dl)
+
+        run_manifest_generation(self._make_config(tmp_path))
+
+        mock_dl.assert_called_once_with(
+            bucket=PurePosixPath("test-bucket"),
+            key=PurePosixPath("test/prefix/snapshot.json.gz"),
+        )
+
+    @pytest.mark.parametrize(
+        ("regex_filter", "expected_ids"),
+        [
+            pytest.param("pdb_00001", ["pdb_00001abc", "pdb_00001def"], id="prefix-match"),
+            pytest.param("pdb_aaa", ["pdb_aaaaaaaa"], id="single-match"),
+            pytest.param("pdb_xxxxx", [], id="no-match"),
+        ],
+    )
+    def test_regex_filter_limits_transfer_manifest(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        regex_filter: str,
+        expected_ids: list[str],
+    ) -> None:
+        """Regex filter restricts which IDs appear in the output manifests."""
+        monkeypatch.setattr(pdb_manifest_mod, "_download_holdings_snapshot", MagicMock(return_value={}))
+
+        run_manifest_generation(self._make_config(tmp_path, skip_diff=True, regex_filter=regex_filter))
+
+        transfer = self._read_manifest(tmp_path, "transfer_manifest.txt")
+        assert sorted(transfer) == sorted(expected_ids)
+
+    def test_missing_dates_computed_as_current_minus_last_modified(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """IDs present in CURRENT but absent from LAST_MODIFIED appear in missing_dates.txt."""
+        monkeypatch.setattr(pdb_manifest_mod, "_download_holdings_snapshot", MagicMock(return_value={}))
+
+        run_manifest_generation(self._make_config(tmp_path, skip_diff=True))
+
+        missing = self._read_manifest(tmp_path, "missing_dates.txt")
+        assert missing == ["pdb_aaaaaaaa"]
+
+    def test_summary_file_written(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """A summary.json is written with correct counts."""
+        monkeypatch.setattr(pdb_manifest_mod, "_download_holdings_snapshot", MagicMock(return_value={}))
+
+        run_manifest_generation(self._make_config(tmp_path, skip_diff=True))
+
+        summary = json.loads((tmp_path / "summary.json").read_text())
+        total = summary["new"] + summary["updated"]
+        assert total == len(self._CURRENT)
+        assert summary["missing_dates"] == 1
