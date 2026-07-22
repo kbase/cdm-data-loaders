@@ -2,13 +2,16 @@
 
 import gzip
 import json
+import tempfile
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
-from typing import ClassVar, cast
-from unittest.mock import MagicMock, patch
+from typing import IO, ClassVar, cast
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 import cdm_data_loaders.pipelines.pdb_manifest as pdb_manifest_mod
 from cdm_data_loaders.pdb.constants import (
@@ -21,8 +24,10 @@ from cdm_data_loaders.pdb.constants import (
 from cdm_data_loaders.pipelines.pdb_manifest import (
     PdbManfestSettings,
     _download_holdings_files,
+    _download_holdings_snapshot,
     _extract_id_from_s3_key,
     _generate_manifest_data,
+    _generate_snapshot_from_s3_state,
     _load_holdings_snapshot,
     _parse_pdb_record,
     _save_holdings_snapshot,
@@ -319,6 +324,227 @@ class TestHoldingsSnapshotRoundTrip:
         path = tmp_path / "partial.json.gz"
         _save_holdings_snapshot(payload, path)
         assert _load_holdings_snapshot(path)[_ID_A].last_modified == ""
+
+
+# ---------------------------------------------------------------------------
+# _generate_snapshot_from_s3_state
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateSnapshotFromS3StateUnit:
+    """Unit tests for _generate_snapshot_from_s3_state() with a mocked S3 client."""
+
+    def _build_mock_s3(self, pages: list[list[str]]) -> MagicMock:
+        """Return a mock S3 client whose paginator yields one page per list of key strings."""
+        mock_s3 = MagicMock()
+        paginator = MagicMock()
+        mock_s3.get_paginator.return_value = paginator
+        page_dicts = [{"Contents": [{"Key": k} for k in keys]} if keys else {} for keys in pages]
+        paginator.paginate.return_value = page_dicts
+        return mock_s3
+
+    def test_empty_store_returns_empty_dict(self) -> None:
+        """Empty S3 store produces an empty snapshot."""
+        mock_s3 = self._build_mock_s3([[]])
+        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+            result = _generate_snapshot_from_s3_state(
+                PurePosixPath("bucket"), PurePosixPath("prefix"), date(2024, 1, 1)
+            )
+        assert result == {}
+
+    def test_returns_record_for_each_valid_key(self) -> None:
+        """Objects with extractable PDB IDs produce one record per ID."""
+        keys = [
+            "prefix/pdb_00001abc/pdb_00001abc_model.cif.gz",
+            "prefix/pdb_00001def/pdb_00001def_data.cif.gz",
+        ]
+        mock_s3 = self._build_mock_s3([keys])
+        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+            result = _generate_snapshot_from_s3_state(
+                PurePosixPath("bucket"), PurePosixPath("prefix"), date(2024, 1, 1)
+            )
+        assert set(result.keys()) == {"pdb_00001abc", "pdb_00001def"}
+
+    def test_sets_provided_date_on_all_records(self) -> None:
+        """The bootstrap date is written to every record's last_modified field."""
+        keys = [
+            "prefix/pdb_00001abc/model.cif.gz",
+            "prefix/pdb_00001def/model.cif.gz",
+        ]
+        mock_s3 = self._build_mock_s3([keys])
+        bootstrap = date(2023, 6, 15)
+        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+            result = _generate_snapshot_from_s3_state(PurePosixPath("bucket"), PurePosixPath("prefix"), bootstrap)
+        for rec in result.values():
+            assert rec.last_modified == bootstrap.isoformat()
+
+    def test_deduplicates_multiple_objects_per_pdb_id(self) -> None:
+        """Multiple S3 objects sharing a PDB ID produce exactly one snapshot entry."""
+        pdb_id = "pdb_00001abc"
+        keys = [
+            f"prefix/{pdb_id}/{pdb_id}_model.cif.gz",
+            f"prefix/{pdb_id}/{pdb_id}_data.cif.gz",
+            f"prefix/{pdb_id}/{pdb_id}_info.json",
+        ]
+        mock_s3 = self._build_mock_s3([keys])
+        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+            result = _generate_snapshot_from_s3_state(
+                PurePosixPath("bucket"), PurePosixPath("prefix"), date(2024, 1, 1)
+            )
+        assert len(result) == 1
+        assert pdb_id in result
+
+    def test_skips_keys_without_valid_pdb_id(self) -> None:
+        """Keys that contain no recognisable PDB ID are silently ignored."""
+        keys = [
+            "some/unrelated/path.txt",
+            "prefix/logs/error.log",
+            "prefix/pdb_00001abc/model.cif.gz",  # the only valid one
+        ]
+        mock_s3 = self._build_mock_s3([keys])
+        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+            result = _generate_snapshot_from_s3_state(
+                PurePosixPath("bucket"), PurePosixPath("prefix"), date(2024, 1, 1)
+            )
+        assert set(result.keys()) == {"pdb_00001abc"}
+
+    def test_aggregates_records_across_multiple_pages(self) -> None:
+        """Records distributed across paginator pages are all collected."""
+        mock_s3 = self._build_mock_s3(
+            [
+                ["prefix/pdb_00001abc/model.cif.gz"],
+                ["prefix/pdb_00001def/model.cif.gz"],
+                ["prefix/pdb_aaaaaaaa/model.cif.gz"],
+            ]
+        )
+        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+            result = _generate_snapshot_from_s3_state(
+                PurePosixPath("bucket"), PurePosixPath("prefix"), date(2024, 1, 1)
+            )
+        assert set(result.keys()) == {"pdb_00001abc", "pdb_00001def", "pdb_aaaaaaaa"}
+
+    def test_paginator_called_with_correct_bucket_and_prefix(self) -> None:
+        """list_objects_v2 paginator receives the exact bucket name and prefix."""
+        mock_s3 = self._build_mock_s3([[]])
+        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+            _generate_snapshot_from_s3_state(PurePosixPath("my-bucket"), PurePosixPath("a/b/c"), date(2024, 1, 1))
+        mock_s3.get_paginator.assert_called_once_with("list_objects_v2")
+        mock_s3.get_paginator.return_value.paginate.assert_called_once_with(Bucket="my-bucket", Prefix="a/b/c")
+
+    def test_page_with_no_contents_key_is_handled_gracefully(self) -> None:
+        """A paginator page with no 'Contents' key doesn't raise and contributes no records."""
+        mock_s3 = self._build_mock_s3(
+            [
+                [],  # renders as {} (no Contents key)
+                ["prefix/pdb_00001abc/model.cif.gz"],
+            ]
+        )
+        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+            result = _generate_snapshot_from_s3_state(
+                PurePosixPath("bucket"), PurePosixPath("prefix"), date(2024, 1, 1)
+            )
+        assert set(result.keys()) == {"pdb_00001abc"}
+
+
+# ---------------------------------------------------------------------------
+# _download_holdings_snapshot
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadHoldingsSnapshotUnit:
+    """Unit tests for _download_holdings_snapshot() with a mocked S3 client."""
+
+    _RECORDS: ClassVar[dict[str, PDBRecord]] = {
+        _ID_A: PDBRecord(id=_ID_A, last_modified=_DATE_NEW),
+        _ID_B: PDBRecord(id=_ID_B, last_modified=_DATE_OLD),
+    }
+
+    def _writing_side_effect(self, records: dict[str, PDBRecord]) -> Callable[..., None]:
+        """Return a download_file side_effect that writes a valid snapshot to Filename."""
+
+        def _effect(**kwargs: str) -> None:
+            _save_holdings_snapshot(records, Path(kwargs["Filename"]))
+
+        return _effect
+
+    def test_returns_parsed_snapshot_on_success(self) -> None:
+        """A successful download returns the correctly deserialised snapshot dict."""
+        mock_s3 = MagicMock()
+        mock_s3.download_file.side_effect = self._writing_side_effect(self._RECORDS)
+        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+            result = _download_holdings_snapshot(PurePosixPath("bucket"), PurePosixPath("path/snapshot.json.gz"))
+        assert result == self._RECORDS
+
+    def test_calls_download_file_with_correct_bucket_and_key(self) -> None:
+        """download_file is invoked with the exact bucket and key passed to the function."""
+        mock_s3 = MagicMock()
+        mock_s3.download_file.side_effect = self._writing_side_effect({})
+        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+            _download_holdings_snapshot(PurePosixPath("my-bucket"), PurePosixPath("some/key.json.gz"))
+        mock_s3.download_file.assert_called_once_with(Bucket="my-bucket", Key="some/key.json.gz", Filename=ANY)
+
+    def test_client_error_raises_value_error(self) -> None:
+        """A ClientError from S3 is converted into a descriptive ValueError."""
+        mock_s3 = MagicMock()
+        mock_s3.download_file.side_effect = ClientError(
+            {"Error": {"Code": "NoSuchKey", "Message": "Not found"}}, "GetObject"
+        )
+        with (
+            patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3),
+            pytest.raises(ValueError, match="not found"),
+        ):
+            _download_holdings_snapshot(PurePosixPath("bucket"), PurePosixPath("missing/key.json.gz"))
+
+    def test_error_message_includes_bucket_and_key(self) -> None:
+        """The ValueError message contains both the bucket name and the key path."""
+        mock_s3 = MagicMock()
+        mock_s3.download_file.side_effect = ClientError({"Error": {"Code": "NoSuchKey", "Message": ""}}, "GetObject")
+        with (
+            patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3),
+            pytest.raises(ValueError, match="Snapshot file") as exc_info,
+        ):
+            _download_holdings_snapshot(PurePosixPath("my-bucket"), PurePosixPath("path/to/snap.json.gz"))
+        msg = str(exc_info.value)
+        assert "my-bucket" in msg
+        assert "path/to/snap.json.gz" in msg
+
+    def test_temp_file_is_cleaned_up_on_success(self) -> None:
+        """The temporary download file is deleted after a successful call."""
+        captured: list[str] = []
+        mock_s3 = MagicMock()
+
+        def write_and_capture(**kwargs: str) -> None:
+            _save_holdings_snapshot({}, Path(kwargs["Filename"]))
+            captured.append(kwargs["Filename"])
+
+        mock_s3.download_file.side_effect = write_and_capture
+        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+            _download_holdings_snapshot(PurePosixPath("b"), PurePosixPath("k.json.gz"))
+
+        assert captured, "download_file was never called"
+        assert not Path(captured[0]).exists(), f"Temp file {captured[0]} was not cleaned up"
+
+    def test_temp_file_is_cleaned_up_on_error(self) -> None:
+        """The temporary download file is deleted even when a ClientError is raised."""
+        captured: list[Path] = []
+        real_ntf = tempfile.NamedTemporaryFile
+
+        def recording_ntf(**kwargs: object) -> IO[bytes]:
+            handle = real_ntf(**kwargs)  # type: ignore[arg-type]
+            captured.append(Path(handle.name))
+            return handle
+
+        mock_s3 = MagicMock()
+        mock_s3.download_file.side_effect = ClientError({"Error": {"Code": "NoSuchKey", "Message": ""}}, "GetObject")
+        with (
+            patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3),
+            patch("cdm_data_loaders.pipelines.pdb_manifest.tempfile.NamedTemporaryFile", side_effect=recording_ntf),
+            pytest.raises(ValueError, match="not found"),
+        ):
+            _download_holdings_snapshot(PurePosixPath("b"), PurePosixPath("k.json.gz"))
+
+        assert captured, "NamedTemporaryFile was never called"
+        assert not captured[0].exists(), f"Temp file {captured[0]} was not cleaned up after error"
 
 
 # ---------------------------------------------------------------------------

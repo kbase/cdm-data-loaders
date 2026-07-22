@@ -11,7 +11,7 @@ from collections.abc import Generator
 from datetime import date
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
-from typing import cast
+from typing import ClassVar, cast
 from unittest.mock import patch
 
 import botocore.client
@@ -413,3 +413,225 @@ class TestRunManifestGenerationE2E:
         assert self._read_manifest(tmp_path, "updated_manifest.txt") == []
         assert self._read_manifest(tmp_path, "removed_manifest.txt") == []
         assert sorted(self._read_manifest(tmp_path, "missing_dates.txt")) == sorted(expected_missing)
+
+
+# ---------------------------------------------------------------------------
+# Round-trip: generate snapshot from S3 state then run manifest generation
+# ---------------------------------------------------------------------------
+
+# Snapshot filename used by the round-trip tests (distinct from the other E2E tests).
+_ROUNDTRIP_SNAPSHOT_FILENAME = PurePosixPath("roundtrip_snapshot.json.gz")
+
+# IDs seeded into CEPH for the round-trip tests.
+_ROUNDTRIP_IDS: list[str] = ["pdb_00001abc", "pdb_00001def", "pdb_aaaaaaaa"]
+
+
+@pytest.mark.requires_ceph
+@pytest.mark.slow_test
+class TestSnapshotManifestRoundTripCeph:
+    """Generate a snapshot from the live S3 store state, then drive manifest generation.
+
+    These tests verify the full contract between ``_generate_snapshot_from_s3_state``,
+    ``_save_holdings_snapshot``, ``_download_holdings_snapshot``, and
+    ``run_manifest_generation``.  PDB HTTP calls are mocked; all S3 interactions
+    use the real CEPH test store via ``pdb_ceph_client``.
+    """
+
+    # A date well in the past so we can easily manufacture "newer" dates in holdings.
+    _BOOTSTRAP_DATE: ClassVar[date] = date(2020, 1, 1)
+    _NEWER_DATE: ClassVar[str] = "2024-06-15"
+
+    # ---------------------------------------------------------------------------
+    # Helpers
+    # ---------------------------------------------------------------------------
+
+    def _make_config(
+        self,
+        test_bucket: PurePosixPath,
+        output_path: Path,
+        **kwargs: object,
+    ) -> PdbManfestSettings:
+        defaults: dict = {
+            "bootstrap_date": None,
+            "skip_diff": False,
+            "regex_filter": None,
+            "destination_bucket": test_bucket,
+            "destination_prefix": _PDB_KEY_PREFIX,
+            "holdings_snapshot_path": _ROUNDTRIP_SNAPSHOT_FILENAME,
+            "output_path": output_path,
+        }
+        defaults.update(kwargs)
+        return cast("PdbManfestSettings", SimpleNamespace(**defaults))
+
+    def _build_and_upload_snapshot(
+        self,
+        s3: botocore.client.BaseClient,
+        bucket: PurePosixPath,
+        snap_date: date,
+        local_path: Path,
+    ) -> dict[str, PDBRecord]:
+        """Scan the CEPH store, save a snapshot locally, and upload it.
+
+        Returns the generated snapshot dict so callers can inspect its contents.
+        The snapshot is uploaded to the key read by ``_download_holdings_snapshot``
+        when using the config produced by ``_make_config``.
+        """
+        snapshot = _generate_snapshot_from_s3_state(
+            bucket=bucket,
+            key_prefix=_PDB_KEY_PREFIX,
+            date=snap_date,
+        )
+        _save_holdings_snapshot(snapshot, local_path)
+        s3.upload_file(
+            Filename=str(local_path),
+            Bucket=str(bucket),
+            Key=str(_PDB_KEY_PREFIX / _ROUNDTRIP_SNAPSHOT_FILENAME),
+        )
+        return snapshot
+
+    def _mock_holdings(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        current: dict[str, PDBRecord],
+        last_modified: dict[str, PDBRecord] | None = None,
+        removed: dict[str, PDBRecord] | None = None,
+    ) -> None:
+        monkeypatch.setattr(
+            pdb_manifest_mod,
+            "_download_holdings_files",
+            lambda: {
+                HoldingsFileTypes.CURRENT: dict(current),
+                HoldingsFileTypes.LAST_MODIFIED: dict(last_modified or {}),
+                HoldingsFileTypes.REMOVED: dict(removed or {}),
+            },
+        )
+
+    def _read_manifest(self, output_path: Path, filename: str) -> list[str]:
+        return (output_path / filename).read_text().splitlines()
+
+    # ---------------------------------------------------------------------------
+    # Tests
+    # ---------------------------------------------------------------------------
+
+    def test_no_changes_when_store_matches_holdings(
+        self,
+        pdb_ceph_client: botocore.client.BaseClient,
+        test_bucket: PurePosixPath,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When the snapshot exactly matches the current holdings, all manifests are empty."""
+        _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, _ROUNDTRIP_IDS)
+        self._build_and_upload_snapshot(pdb_ceph_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap.json.gz")
+
+        # Holdings current = same IDs; last-modified dates match the bootstrap date.
+        current = {id_: PDBRecord(id=id_) for id_ in _ROUNDTRIP_IDS}
+        last_modified = {
+            id_: PDBRecord(id=id_, last_modified=self._BOOTSTRAP_DATE.isoformat()) for id_ in _ROUNDTRIP_IDS
+        }
+        self._mock_holdings(monkeypatch, current, last_modified)
+
+        run_manifest_generation(self._make_config(test_bucket, tmp_path / "out"))
+
+        assert self._read_manifest(tmp_path / "out", "transfer_manifest.txt") == []
+        assert self._read_manifest(tmp_path / "out", "updated_manifest.txt") == []
+        assert self._read_manifest(tmp_path / "out", "removed_manifest.txt") == []
+        assert self._read_manifest(tmp_path / "out", "missing_dates.txt") == []
+
+    def test_records_removed_from_store_reappear_in_transfer_manifest(
+        self,
+        pdb_ceph_client: botocore.client.BaseClient,
+        test_bucket: PurePosixPath,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """IDs dropped from the S3 store between runs re-emerge as new in transfer_manifest.
+
+        Workflow:
+        1. Seed all IDs; generate snapshot. expect no changes on first run.
+        2. Delete some IDs from the store; regenerate snapshot, expect deleted IDs
+           are absent from the new snapshot but still present in the mocked
+           holdings: they appear as *new* in ``transfer_manifest.txt``.
+        """
+        removed_ids = ["pdb_00001def", "pdb_aaaaaaaa"]
+        current = {id_: PDBRecord(id=id_) for id_ in _ROUNDTRIP_IDS}
+        last_modified = {
+            id_: PDBRecord(id=id_, last_modified=self._BOOTSTRAP_DATE.isoformat()) for id_ in _ROUNDTRIP_IDS
+        }
+        self._mock_holdings(monkeypatch, current, last_modified)
+
+        # First run: baseline:nothing should appear in any manifest
+        _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, _ROUNDTRIP_IDS)
+        self._build_and_upload_snapshot(pdb_ceph_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap1.json.gz")
+        run_manifest_generation(self._make_config(test_bucket, tmp_path / "run1"))
+        assert self._read_manifest(tmp_path / "run1", "transfer_manifest.txt") == []
+
+        # Remove some records from the store
+        for pdb_id in removed_ids:
+            key = str(_PDB_KEY_PREFIX / pdb_id / f"{pdb_id}_model.cif.gz")
+            pdb_ceph_client.delete_object(Bucket=str(test_bucket), Key=key)
+
+        # Second run: removed IDs are absent from new snapshot: should appear in transfer_manifest.txt
+        self._build_and_upload_snapshot(pdb_ceph_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap2.json.gz")
+        run_manifest_generation(self._make_config(test_bucket, tmp_path / "run2"))
+
+        transfer = sorted(self._read_manifest(tmp_path / "run2", "transfer_manifest.txt"))
+        assert transfer == sorted(removed_ids)
+        assert self._read_manifest(tmp_path / "run2", "updated_manifest.txt") == []
+        assert self._read_manifest(tmp_path / "run2", "removed_manifest.txt") == []
+
+    def test_holdings_newer_date_triggers_updated_manifest(
+        self,
+        pdb_ceph_client: botocore.client.BaseClient,
+        test_bucket: PurePosixPath,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Records whose holdings last-modified date is newer than the snapshot appear in updated_manifest."""
+        ids = ["pdb_00001abc", "pdb_00001def"]
+        _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, ids)
+        self._build_and_upload_snapshot(pdb_ceph_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap.json.gz")
+
+        # pdb_00001abc has a newer date in holdings: should appear in updated
+        # pdb_00001def has the same date as the snapshot: should not appear in updated
+        current = {id_: PDBRecord(id=id_) for id_ in ids}
+        last_modified = {
+            "pdb_00001abc": PDBRecord(id="pdb_00001abc", last_modified=self._NEWER_DATE),
+            "pdb_00001def": PDBRecord(id="pdb_00001def", last_modified=self._BOOTSTRAP_DATE.isoformat()),
+        }
+        self._mock_holdings(monkeypatch, current, last_modified)
+
+        run_manifest_generation(self._make_config(test_bucket, tmp_path / "out"))
+
+        assert self._read_manifest(tmp_path / "out", "updated_manifest.txt") == ["pdb_00001abc"]
+        transfer = self._read_manifest(tmp_path / "out", "transfer_manifest.txt")
+        assert "pdb_00001abc" in transfer
+        assert "pdb_00001def" not in transfer
+
+    def test_id_absent_from_holdings_appears_in_removed_manifest(
+        self,
+        pdb_ceph_client: botocore.client.BaseClient,
+        test_bucket: PurePosixPath,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An ID present in the snapshot but absent from current holdings appears in removed_manifest."""
+        kept_in_holdings = ["pdb_00001abc", "pdb_00001def"]
+        dropped_from_holdings = ["pdb_aaaaaaaa"]
+
+        # Seed all IDs so the snapshot contains all three.
+        _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, _ROUNDTRIP_IDS)
+        self._build_and_upload_snapshot(pdb_ceph_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap.json.gz")
+
+        # Holdings no longer lists pdb_aaaaaaaa as current.
+        current = {id_: PDBRecord(id=id_) for id_ in kept_in_holdings}
+        last_modified = {
+            id_: PDBRecord(id=id_, last_modified=self._BOOTSTRAP_DATE.isoformat()) for id_ in kept_in_holdings
+        }
+        self._mock_holdings(monkeypatch, current, last_modified)
+
+        run_manifest_generation(self._make_config(test_bucket, tmp_path / "out"))
+
+        assert self._read_manifest(tmp_path / "out", "removed_manifest.txt") == dropped_from_holdings
+        assert self._read_manifest(tmp_path / "out", "transfer_manifest.txt") == []
+        assert self._read_manifest(tmp_path / "out", "updated_manifest.txt") == []
