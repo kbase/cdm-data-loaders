@@ -39,6 +39,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator import (
     CleanerValidatorArgs,
     clean_validate_file,
     generate_header,
+    new_summary,
 )
 from cdm_data_loaders.utils.download.sync_client import FileDownloader
 from cdm_data_loaders.utils.s3 import upload_file
@@ -340,7 +341,7 @@ def validate_files(
         raise RuntimeError("wtf")
     qsv_cmd = result.stdout.strip()
 
-    summary = {"error": [], "valid": {}, "invalid": []}
+    summary = new_summary()
     with TemporaryDirectory() as tmp_dir:
         tmp_dir_path = Path(tmp_dir)
         header_file_path: Path = generate_header(tmp_dir_path, FIRST_PASS_SCHEMA)
