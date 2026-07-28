@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 
 import boto3
+
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.download.async_client import AsyncFileDownloader
 from cdm_data_loaders.utils.download.s3_uploader import S3StreamUploader
@@ -16,7 +17,7 @@ from cdm_data_loaders.utils.link_scraper import (
 )
 
 GTDB_BASE_URL = "https://data.gtdb.ecogenomic.org/releases/"
-S3_PREFIX = "s3://cdm-lake/tenant-general-warehouse/refdata/gtdb/raw_data/"
+S3_PREFIX = "s3://cdm-lake/tenant-general-warehouse/refdata/datasets/gtdb/raw_data/"
 EXCLUDE_DIRS = {"gtdbtk_package"}
 
 # https://data.gtdb.ecogenomic.org/releases/release214/214.0/
