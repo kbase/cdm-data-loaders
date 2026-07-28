@@ -275,7 +275,13 @@ def upload_file(
     return True
 
 
-def stream_to_s3(url: str, s3_path: str, requests: ModuleType) -> str:
+def stream_to_s3(
+    url: str,
+    s3_path: str,
+    requests: ModuleType,
+    extra_headers: dict[str, Any] | None = None,
+    extra_args: dict[str, Any] | None = None,
+) -> str:
     """Stream directly from an HTTP download to s3.
 
     :param url: address of the object to transfer to s3
@@ -284,12 +290,16 @@ def stream_to_s3(url: str, s3_path: str, requests: ModuleType) -> str:
     :type s3_path: str
     :param requests: module implementing requests.get and returning a response
     :type requests: ModuleType
+    :param extra_headers: extra headers to pass to the GET request, defaults to None
+    :type extra_headers: dict[str, str] | None, optional
+    :param extra_args: extra S3 ExtraArgs to merge in (e.g. ACL, Metadata), defaults to None
+    :type extra_args: dict[str, Any] | None, optional
     :return: path of the file on s3, in the form bucket/key
     :rtype: str
     """
     s3_client = get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
-    with requests.get(url, stream=True) as response:
+    with requests.get(url, stream=True, headers=extra_headers or {}) as response:
         response.raise_for_status()
         s3_client.upload_fileobj(
             # raw stream from urllib3
@@ -298,6 +308,7 @@ def stream_to_s3(url: str, s3_path: str, requests: ModuleType) -> str:
             key,
             ExtraArgs={
                 **DEFAULT_EXTRA_ARGS,
+                **(extra_args or {}),
                 "ContentType": response.headers.get("content-type", "application/octet-stream"),
             },
         )
