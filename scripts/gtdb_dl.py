@@ -179,7 +179,7 @@ async def main() -> None:
         semaphore = asyncio.Semaphore(8)
 
         async def _upload(entry: DirEntry):
-            s3_path = entry_s3_key(entry, start_url, S3_PREFIX)
+            s3_path = entry_s3_key(entry, start_url, f"{S3_PREFIX}{release}")
             logger.info("Copying %s to %s", entry.url, s3_path)
             async with semaphore:
                 await asyncio.to_thread(
