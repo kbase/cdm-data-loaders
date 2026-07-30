@@ -1,145 +1,144 @@
 """Utilities for s3 interaction."""
 
-import json
+from dataclasses import dataclass
 from logging import Logger, getLogger
 from pathlib import Path
-from types import ModuleType
-from typing import Any
+from typing import Any, Final
 
-import boto3
-import botocore
-import botocore.client
-import tqdm
-from botocore.config import Config
 from botocore.exceptions import ClientError
 
-CDM_LAKE_BUCKET = "cdm-lake"
-DEFAULT_EXTRA_ARGS = {"ChecksumAlgorithm": "CRC64NVME"}
+from cdm_data_loaders.utils.file_transfer.checksums import ChecksumEntry
+from cdm_data_loaders.utils.file_transfer.progress import SynchronizedCallback, make_progress_bar
+from cdm_data_loaders.utils.file_transfer.s3 import client
+from cdm_data_loaders.utils.file_transfer.s3.client import DEFAULT_EXTRA_ARGS, split_s3_path
 
-VALID_S3_PREFIXES = ["s3://", "s3a://"]
-VALID_BUCKETS = [CDM_LAKE_BUCKET, "cts"]
+VALID_S3_PREFIXES: list[str] = ["s3://", "s3a://"]
 
-# "legacy", "standard", "adaptive"
-AWS_CLIENT_RETRY_MODE = "adaptive"
-# how many times to retry, including the initial attempt
-AWS_CLIENT_TOTAL_MAX_ATTEMPTS = 10
+SUCCESS_RESPONSE: Final[int] = 200
 
-SUCCESS_RESPONSE = 200
+NOT_FOUND_ERROR_CODES: frozenset[str] = frozenset({"404", "NoSuchKey", "NotFound", "NoSuchBucket"})
 
-_s3_client: botocore.client.BaseClient | None = None
+# S3 object metadata keys used to record the checksum used to verify an upload,
+# so future runs can compare against it without re-downloading the source file.
+# NOTE: S3 lowercases all user metadata keys, both on write and on read.
+CHECKSUM_ALGORITHM_METADATA_KEY: Final[str] = "checksum-algorithm"
+CHECKSUM_VALUE_METADATA_KEY: Final[str] = "checksum-value"
 
 logger: Logger = getLogger(__name__)
 
 
-def get_s3_client(args: dict[str, str | None] | None = None) -> botocore.client.BaseClient:
-    """Create an S3 client using the provided arguments.
+@dataclass(frozen=True, slots=True)
+class S3ObjectInfo:
+    """Metadata about an object that already exists in S3.
 
-    The client is created once and cached for subsequent calls.
-    Call reset_s3_client() to force a new client to be created on the next call.
-
-    To configure the client using arguments, provide a dictionary with the following keys:
-        - aws_access_key_id: the access key ID for the S3 client
-        - aws_secret_access_key: the secret access key for the S3 client
-        - endpoint_url: the endpoint URL for the S3 client (e.g., "https://s3.amazonaws.com" or "https://my-s3-server.com")
-
-    If arguments are not provided, the client will be created using boto3's default
-    configuration method, which looks for environment variables (AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY, and AWS_ENDPOINT_URL_S3 or AWS_ENDPOINT_URL) or an ``./aws`` config directory.
-    See the boto3 documentation for more details.
-
-    :param args: arguments for creating the S3 client, defaults to None
-    :type args: dict[str, str] | None, optional
-    :raises ValueError: if required arguments for creating the S3 client are missing
-    :return: initialised s3 client
-    :rtype: botocore.client.BaseClient
+    :param size: object size in bytes, as reported by S3
+    :type size: int
+    :param etag: the object's ETag, exactly as reported by the S3 API (including quotes)
+    :type etag: str
+    :param metadata: user-defined metadata attached to the object (keys are lowercase)
+    :type metadata: dict[str, str]
     """
-    global _s3_client  # noqa: PLW0603
-    if _s3_client is not None:
-        return _s3_client
 
-    config = Config(retries={"total_max_attempts": AWS_CLIENT_TOTAL_MAX_ATTEMPTS, "mode": AWS_CLIENT_RETRY_MODE})
-
-    if not args:
-        args = {}
-
-    valid_kwargs = ["aws_access_key_id", "aws_secret_access_key", "endpoint_url"]
-    kwargs = {k: v for k, v in args.items() if k in valid_kwargs and v is not None}
-
-    # make sure that if aws_access_key_id or aws_secret_access_key is provided, the other is also provided.
-    if bool(kwargs.get("aws_access_key_id")) ^ bool(kwargs.get("aws_secret_access_key")):
-        msg = "Cannot initialise s3 client: aws_access_key_id and aws_secret_access_key must be provided together, either via args or environment variables or a config file"
-        raise ValueError(msg)
-
-    # initialise using boto3's default config behaviour, plus any overrides from args
-    client = boto3.client("s3", config=config, **kwargs)
-
-    missing = []
-    # boto3 will not raise an error on client creation if credentials are missing, so throw an error now
-    credentials = client._request_signer._credentials  # noqa: SLF001
-    if not credentials:
-        missing = ["aws_access_key_id", "aws_secret_access_key"]
-    else:
-        if not credentials.access_key:
-            missing.append("aws_access_key_id")
-        if not credentials.secret_key:
-            missing.append("aws_secret_access_key")
-
-    if missing:
-        msg = "Cannot initialise s3 client: missing configuration values: " + ", ".join(missing)
-        raise ValueError(msg)
-
-    # nothing missing: we are good to go!
-    _s3_client = client
-    return _s3_client
+    size: int
+    etag: str
+    metadata: dict[str, str]
 
 
-def reset_s3_client() -> None:
-    """Reset the cached S3 client, forcing a new one to be created on the next call to get_s3_client."""
-    global _s3_client  # noqa: PLW0603
-    _s3_client = None
+@dataclass(frozen=True, slots=True)
+class SkipDecision:
+    """The outcome of deciding whether an upload can be skipped.
 
-
-def split_s3_path(s3_path: str, *, allow_bucket_only: bool = False) -> tuple[str | None, str]:
-    """Convert a full s3 path (including bucket) into a bucket and key pair.
-
-    Returns a tuple of bucket, key
-
-    :param s3_path: an s3 path, including the bucket name (`s3://bucket/key` or `bucket/key`)
-    :type s3_path: str
-    :param allow_bucket_only: Allow parsing of a path that only includes a bucket (no key)
-    :type allow_bucket_only: bool
-    :return: tuple of (bucket, key)
-    :rtype: tuple[str | None, str]
+    :param skip: whether the upload should be skipped
+    :type skip: bool
+    :param reason: human-readable explanation, used for logging
+    :type reason: str
+    :param confident: whether `skip` is based on a strong signal (a matching
+        checksum) as opposed to a weaker heuristic (size match only),
+        defaults to True
+    :type confident: bool
     """
-    if "://" in s3_path:
-        # remove the protocol prefix
-        (_, unprefixed_path) = s3_path.split("://", 1)
-    else:
-        unprefixed_path = s3_path
 
-    if not unprefixed_path:
-        # raises a value error
-        err_msg = f"Invalid path: '{s3_path}\nNo path found"
-        raise ValueError(err_msg)
+    skip: bool
+    reason: str
+    confident: bool = True
 
-    if unprefixed_path.startswith("/"):
-        err_msg = f"Invalid path: '{s3_path}'\ns3 paths must start with the bucket name"
-        raise ValueError(err_msg)
 
-    path_parts = unprefixed_path.split("/", 1)
-    # return just the bucket if that is all that was passed
-    # allow s3 paths like:
-    #   s3://bucket
-    #   s3://bucket/
-    if allow_bucket_only and (len(path_parts) == 1 or (len(path_parts) == 2 and not path_parts[1])):  # noqa: PLR2004
-        return (path_parts[0], "")
+def decide_skip(
+    existing: S3ObjectInfo | None,
+    remote_size: int | None,
+    expected_checksum: ChecksumEntry | None,
+) -> SkipDecision:
+    """Decide whether an upload can be skipped, based on what's already in S3.
 
-    # the first part should be the bucket and the second part the key
-    if len(path_parts) != 2 or not path_parts[1]:  # noqa: PLR2004
-        err_msg = f"Invalid path: '{s3_path}'\nCould not parse out bucket and key"
-        raise ValueError(err_msg)
+    Preference order:
 
-    return (path_parts[0], path_parts[1])
+    1. If no object exists at the destination, never skip.
+    2. If both a stored checksum (from a previous upload's metadata) and an
+       expected checksum are available, compare them directly — this is the
+       only fully reliable check, since S3's ETag is not a dependable
+       content hash for multipart uploads.
+    3. If a checksum was expected but the existing object has none recorded
+       (e.g. uploaded before checksum recording existed), fall back to
+       comparing sizes, flagged as unconfident.
+    4. If no checksum is available at all, compare sizes only, flagged as unconfident.
+    5. If nothing can be compared (no checksum, no size), never skip — safer
+       to re-upload than silently skip an unverifiable file.
+
+    :param existing: metadata for the object already in S3, or None if absent
+    :type existing: S3ObjectInfo | None
+    :param remote_size: size in bytes of the source file, if known (e.g. via
+        an HTTP HEAD request), or None if unknown
+    :type remote_size: int | None
+    :param expected_checksum: the checksum the source file is expected to
+        have, if known, or None
+    :type expected_checksum: ChecksumEntry | None
+    :return: the skip decision, with a human-readable reason
+    :rtype: SkipDecision
+    """
+    if existing is None:
+        return SkipDecision(skip=False, reason="object does not exist in S3")
+
+    if expected_checksum is not None:
+        stored = extract_stored_checksum(existing)
+        if stored is not None:
+            if (
+                stored.algorithm == expected_checksum.algorithm
+                and stored.value.lower() == expected_checksum.value.lower()
+            ):
+                return SkipDecision(
+                    skip=True, reason=f"{stored.algorithm} checksum matches stored value", confident=True
+                )
+            return SkipDecision(
+                skip=False,
+                reason=(
+                    f"stored checksum ({stored.algorithm}:{stored.value}) does not match "
+                    f"expected ({expected_checksum.algorithm}:{expected_checksum.value})"
+                ),
+                confident=True,
+            )
+        logger.warning(
+            "Object exists but has no stored checksum metadata; falling back to size comparison "
+            "(this is not a guaranteed content match)"
+        )
+
+    if remote_size is not None:
+        if existing.size == remote_size:
+            return SkipDecision(
+                skip=True,
+                reason=f"size matches ({remote_size} bytes) but content was not verified by checksum",
+                confident=False,
+            )
+        return SkipDecision(
+            skip=False,
+            reason=f"size mismatch: existing={existing.size} bytes, source={remote_size} bytes",
+            confident=True,
+        )
+
+    return SkipDecision(
+        skip=False,
+        reason="no checksum or size available to compare; re-uploading to be safe",
+        confident=False,
+    )
 
 
 def list_matching_objects(s3_path: str, *, max_keys: int = 1000) -> list[dict[str, Any]]:
@@ -158,7 +157,7 @@ def list_matching_objects(s3_path: str, *, max_keys: int = 1000) -> list[dict[st
     :return: list of object metadata dicts in the directory
     :rtype: list[dict[str, Any]]
     """
-    s3 = get_s3_client()
+    s3 = client.get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
     paginator = s3.get_paginator("list_objects_v2")
     page_iterator = paginator.paginate(Bucket=bucket, Prefix=key, MaxKeys=max_keys)
@@ -170,6 +169,36 @@ def list_matching_objects(s3_path: str, *, max_keys: int = 1000) -> list[dict[st
     return contents
 
 
+def get_existing_object_info(bucket: str, key: str) -> S3ObjectInfo | None:
+    """Fetch metadata for an object already in S3, if it exists.
+
+    :param s3_client: a boto3 S3 client
+    :type s3_client: Any
+    :param bucket: S3 bucket name
+    :type bucket: str
+    :param key: S3 object key
+    :type key: str
+    :raises ClientError: for any S3 error other than "object not found"
+    :return: metadata for the existing object, or None if no object exists at `bucket`/`key`
+    :rtype: S3ObjectInfo | None
+    """
+    s3 = client.get_s3_client()
+    try:
+        response = s3.head_object(Bucket=bucket, Key=key)
+    except ClientError as exc:
+        error_code = exc.response.get("Error", {}).get("Code")
+        status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        if error_code in NOT_FOUND_ERROR_CODES or status_code == 404:  # noqa: PLR2004
+            return None
+        raise
+
+    return S3ObjectInfo(
+        size=response.get("ContentLength", 0),
+        etag=response.get("ETag", ""),
+        metadata={k.lower(): v for k, v in response.get("Metadata", {}).items()},
+    )
+
+
 def head_object(s3_path: str) -> dict[str, Any]:
     """Check whether an object exists on s3.
 
@@ -178,7 +207,7 @@ def head_object(s3_path: str) -> dict[str, Any]:
     :return: response from the head_object request
     :rtype: dict[str, Any]
     """
-    s3 = get_s3_client()
+    s3 = client.get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
     return s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
 
@@ -191,14 +220,8 @@ def object_exists(s3_path: str) -> bool:
     :return: True if the object exists, False otherwise
     :rtype: bool
     """
-    try:
-        head_object(s3_path)
-    except Exception as e:  # noqa: BLE001
-        error_string = str(e)
-        if not error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
-            logger.exception("Error performing head operation on s3 object")
-        return False
-    return True
+    bucket, key = split_s3_path(s3_path)
+    return get_existing_object_info(bucket, key) is not None
 
 
 def upload_file(
@@ -244,7 +267,7 @@ def upload_file(
         logger.debug("File already present: %s", s3_path)
         return True
 
-    s3 = get_s3_client()
+    s3 = client.get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
 
     extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": user_metadata}) if user_metadata is not None else {})}
@@ -252,67 +275,19 @@ def upload_file(
     # Upload the file
     logger.debug("uploading %s to %s", str(local_file_path), s3_path)
     try:
-        if show_progress:
-            file_size = local_file_path.stat().st_size
-            with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
-                s3.upload_file(
-                    Filename=str(local_file_path),
-                    Bucket=bucket,
-                    Key=key,
-                    Callback=pbar.update,
-                    ExtraArgs=extra_args,
-                )
-        else:
+        file_size = local_file_path.stat().st_size
+        with make_progress_bar(total=file_size, desc=str(local_file_path), disable=not show_progress) as pbar:
             s3.upload_file(
                 Filename=str(local_file_path),
                 Bucket=bucket,
                 Key=key,
+                Callback=SynchronizedCallback(pbar.update),
                 ExtraArgs=extra_args,
             )
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Error uploading to s3")
         return False
     return True
-
-
-def stream_to_s3(
-    url: str,
-    s3_path: str,
-    requests: ModuleType,
-    extra_headers: dict[str, Any] | None = None,
-    extra_args: dict[str, Any] | None = None,
-) -> str:
-    """Stream directly from an HTTP download to s3.
-
-    :param url: address of the object to transfer to s3
-    :type url: str
-    :param s3_path: save path on s3
-    :type s3_path: str
-    :param requests: module implementing requests.get and returning a response
-    :type requests: ModuleType
-    :param extra_headers: extra headers to pass to the GET request, defaults to None
-    :type extra_headers: dict[str, str] | None, optional
-    :param extra_args: extra S3 ExtraArgs to merge in (e.g. ACL, Metadata), defaults to None
-    :type extra_args: dict[str, Any] | None, optional
-    :return: path of the file on s3, in the form bucket/key
-    :rtype: str
-    """
-    s3_client = get_s3_client()
-    (bucket, key) = split_s3_path(s3_path)
-    with requests.get(url, stream=True, headers=extra_headers or {}) as response:
-        response.raise_for_status()
-        s3_client.upload_fileobj(
-            # raw stream from urllib3
-            response.raw,
-            bucket,
-            key,
-            ExtraArgs={
-                **DEFAULT_EXTRA_ARGS,
-                **(extra_args or {}),
-                "ContentType": response.headers.get("content-type", "application/octet-stream"),
-            },
-        )
-    return f"{bucket}/{key}"
 
 
 def download_file(
@@ -341,43 +316,28 @@ def download_file(
             logger.exception("Could not save s3 file to %s", local_file_path)
             raise
 
-    s3 = get_s3_client()
+    s3 = client.get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
     kwargs = {"Bucket": bucket, "Key": key}
     if version_id is not None:
         kwargs["VersionId"] = version_id
 
     # Get the object size
-    try:
-        object_size = s3.head_object(**kwargs)["ContentLength"]
-    except Exception as e:  # noqa: BLE001
-        error_string = str(e)
-        if error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
-            logger.exception("File not found: %s", s3_path)
-        else:
-            logger.exception("Error downloading %s", s3_path)
-        raise
+    existing = get_existing_object_info(bucket, key)
+    if existing is None:
+        msg = f"File not found: {s3_path}"
+        raise FileNotFoundError(msg)
+    object_size = existing.size
 
     extra_args = {"VersionId": version_id} if version_id is not None else None
 
-    # set ``unit_scale=True`` so tqdm uses SI unit prefixes
-    # ``unit="B"`` means it adds the string "B" as a suffix
-    # progress is reported as (e.g.) "14.5kB/s".
-    if show_progress:
-        with tqdm.tqdm(total=object_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
-            s3.download_file(
-                Bucket=bucket,
-                Key=key,
-                ExtraArgs=extra_args,
-                Filename=str(local_file_path),
-                Callback=pbar.update,
-            )
-    else:
+    with make_progress_bar(total=object_size, desc=str(local_file_path), disable=not show_progress) as pbar:
         s3.download_file(
             Bucket=bucket,
             Key=key,
             ExtraArgs=extra_args,
             Filename=str(local_file_path),
+            Callback=SynchronizedCallback(pbar.update),
         )
 
 
@@ -477,7 +437,7 @@ def copy_object(
     :return: dictionary containing response from the copy operation
     :rtype: dict[str, Any]
     """
-    s3 = get_s3_client()
+    s3 = client.get_s3_client()
     (current_s3_bucket, current_s3_key) = split_s3_path(current_s3_path)
     (new_s3_bucket, new_s3_key) = split_s3_path(new_s3_path)
 
@@ -509,7 +469,7 @@ def copy_directory(current_s3_path: str, new_s3_path: str) -> tuple[dict[str, st
                for each failed copy
     :rtype: tuple[dict[str, str], dict[str, Any]]
     """
-    s3 = get_s3_client()
+    s3 = client.get_s3_client()
     (current_s3_bucket, current_s3_prefix) = split_s3_path(current_s3_path)
     (new_s3_bucket, new_s3_prefix) = split_s3_path(new_s3_path)
 
@@ -565,7 +525,7 @@ def delete_object(s3_path: str) -> dict[str, Any]:
     :return: dictionary containing response
     :rtype: dict[str, Any]
     """
-    s3 = get_s3_client()
+    s3 = client.get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
     return s3.delete_object(Bucket=bucket, Key=key)
 
@@ -583,7 +543,7 @@ def delete_objects(bucket: str, keys: list[str]) -> list[dict[str, Any]]:
     if not keys:
         return []
 
-    s3 = get_s3_client()
+    s3 = client.get_s3_client()
     errors: list[dict[str, Any]] = []
     for i in range(0, len(keys), 1000):
         batch = keys[i : i + 1000]
@@ -595,101 +555,30 @@ def delete_objects(bucket: str, keys: list[str]) -> list[dict[str, Any]]:
     return errors
 
 
-# Helper functions for command-line tool
+def extract_stored_checksum(existing: S3ObjectInfo) -> ChecksumEntry | None:
+    """Recover a checksum previously recorded in an S3 object's metadata, if present.
+
+    :param existing: metadata for the existing S3 object
+    :type existing: S3ObjectInfo
+    :return: the stored checksum, or None if the object has no recorded checksum
+    :rtype: ChecksumEntry | None
+    """
+    algorithm = existing.metadata.get(CHECKSUM_ALGORITHM_METADATA_KEY)
+    value = existing.metadata.get(CHECKSUM_VALUE_METADATA_KEY)
+    if algorithm and value:
+        return ChecksumEntry(algorithm=algorithm, value=value)
+    return None
 
 
-def cmd_mb(args: list[str]) -> None:
-    """Create a bucket: ``mb s3://bucket``."""
-    if not args or len(args) != 1:
-        err_msg = "Usage: s3_local.py mb s3://BUCKET"
-        raise SystemExit(err_msg)
-    try:
-        bucket, _ = split_s3_path(args[0], allow_bucket_only=True)
-    except ValueError as e:
-        raise SystemExit(str(e)) from e
-    s3 = get_s3_client()
-    try:
-        s3.head_bucket(Bucket=bucket)
-        print(f"Bucket already exists: {bucket}")  # noqa: T201
-    except Exception:  # noqa: BLE001
-        s3.create_bucket(Bucket=bucket)
-        print(f"Created bucket: {bucket}")  # noqa: T201
+def checksum_metadata(checksum: ChecksumEntry) -> dict[str, str]:
+    """Build an S3 object Metadata dict recording a checksum, for use in `ExtraArgs`.
 
-
-def cmd_cp(args: list[str]) -> None:
-    """Recursive upload: ``cp LOCAL_DIR s3://bucket/prefix/``."""
-    if len(args) != 2:  # noqa: PLR2004
-        err_msg = "Usage: s3_local.py cp [LOCAL_DIR | LOCAL_FILE] s3://BUCKET[/PREFIX/]"
-        raise SystemExit(err_msg)
-    local_path = Path(args[0])
-    try:
-        bucket, prefix = split_s3_path(args[1], allow_bucket_only=True)
-    except ValueError as e:
-        raise SystemExit(str(e)) from e
-    s3 = get_s3_client()
-    count = 0
-    if local_path.is_file():
-        if not prefix:
-            err_msg = "Usage: s3_local.py cp LOCAL_FILE s3://BUCKET/KEY"
-            raise SystemExit(err_msg)
-        s3.upload_file(Filename=str(local_path), Bucket=bucket, Key=prefix)
-        count = 1
-        print(f"  {prefix}")  # noqa: T201
-    else:
-        prefix = prefix.rstrip("/") + "/" if prefix else ""
-        for path in sorted(local_path.rglob("*")):
-            if path.is_dir():
-                continue
-            rel = path.relative_to(local_path)
-            key = f"{prefix}{rel}"
-            s3.upload_file(Filename=str(path), Bucket=bucket, Key=key)
-            count += 1
-            print(f"  {key}")  # noqa: T201
-    print(f"Uploaded {count} files to s3://{bucket}/{prefix}")  # noqa: T201
-
-
-def cmd_ls(args: list[str]) -> None:
-    """List objects: ``ls s3://bucket/prefix/ [--limit N]``."""
-    if not args:
-        err_msg = "Usage: s3_local.py ls s3://BUCKET[/PREFIX/] [--limit N]"
-        raise SystemExit(err_msg)
-    try:
-        bucket, prefix = split_s3_path(args[0], allow_bucket_only=True)
-    except ValueError as e:
-        raise SystemExit(str(e)) from e
-    limit = 20
-    if "--limit" in args:
-        idx = args.index("--limit")
-        limit = int(args[idx + 1])
-    s3 = get_s3_client()
-    paginator = s3.get_paginator("list_objects_v2")
-    shown = 0
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        for obj in page.get("Contents", []):
-            print(f"  {obj['Size']:>10}  {obj['Key']}")  # noqa: T201
-            shown += 1
-            if shown >= limit:
-                return
-
-
-def cmd_head(args: list[str]) -> None:
-    """Show metadata: ``head s3://bucket/key``."""
-    if not args:
-        err_msg = "Usage: s3_local.py head s3://BUCKET/KEY"
-        raise SystemExit(err_msg)
-    try:
-        bucket, key = split_s3_path(args[0])
-    except ValueError as e:
-        raise SystemExit(str(e)) from e
-    s3 = get_s3_client()
-    meta = {}
-    try:
-        resp = s3.head_object(Bucket=bucket, Key=key)
-        meta = resp.get("Metadata", {})
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "404":  # type: ignore[union-attr]
-            print(f"File not found in store: {bucket}/{key}")  # noqa: T201
-            return
-        raise
-    print(f"Metadata for {bucket}/{key}:")  # noqa: T201
-    print(json.dumps(meta, indent=2))  # noqa: T201
+    :param checksum: the checksum to record against the uploaded object
+    :type checksum: ChecksumEntry
+    :return: a dict suitable for merging into `ExtraArgs["Metadata"]`
+    :rtype: dict[str, str]
+    """
+    return {
+        CHECKSUM_ALGORITHM_METADATA_KEY: checksum.algorithm,
+        CHECKSUM_VALUE_METADATA_KEY: checksum.value,
+    }

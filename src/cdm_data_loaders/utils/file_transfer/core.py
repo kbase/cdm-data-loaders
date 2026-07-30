@@ -5,7 +5,7 @@ from collections.abc import AsyncIterable, Iterable
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
-
+from cdm_data_loaders.utils.file_transfer.checksums import validate_checksum_fn
 import httpx
 
 logger: Logger = getLogger(__name__)
@@ -57,18 +57,14 @@ class DownloadCore:
             checksum_fn = "sha256"
 
         # shake hashing algorithms require a length for the hexdigest => too much faff, error out
-        if checksum_fn not in hashlib.algorithms_available or checksum_fn.startswith("shake"):
-            err_msg = f"Hashing algorithm {checksum_fn} not supported."
-            logger.error(err_msg)
-            raise ValueError(err_msg)
-
+        validated_checksum_fn = validate_checksum_fn(checksum_fn)
         destination = Path(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
 
         if not extra_headers:
             extra_headers = {}
 
-        return (destination, checksum_fn, extra_headers)
+        return (destination, validated_checksum_fn, extra_headers)
 
     @staticmethod
     def validate_response(response: httpx.Response) -> bool:

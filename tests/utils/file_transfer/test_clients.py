@@ -8,14 +8,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from cdm_data_loaders.utils.download.async_client import AsyncFileDownloader
-from cdm_data_loaders.utils.download.core import (
+from cdm_data_loaders.utils.file_transfer.async_client import AsyncFileDownloader
+from cdm_data_loaders.utils.file_transfer.core import (
     ChecksumMismatchError,
     DownloadError,
     NonRetryableDownloadError,
 )
-from cdm_data_loaders.utils.download.sync_client import FileDownloader
-from tests.utils.download.conftest import DownloaderAdapter
+from cdm_data_loaders.utils.file_transfer.sync_client import FileDownloader
+from tests.utils.file_transfer.conftest import DownloaderAdapter
 
 DOWNLOAD_URL = "https://example.com/file.txt"
 

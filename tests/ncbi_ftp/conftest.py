@@ -12,12 +12,13 @@ from moto import mock_aws
 
 import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
 import cdm_data_loaders.ncbi_ftp.promote as promote_mod
-import cdm_data_loaders.utils.s3 as s3_utils
-from cdm_data_loaders.utils.s3 import CDM_LAKE_BUCKET, reset_s3_client
+import cdm_data_loaders.utils.file_transfer.s3 as s3_utils
+from cdm_data_loaders.utils.file_transfer.s3.client import reset_s3_client
 from tests.s3_helpers import strip_checksum_algorithm
+from tests.utils.file_transfer.s3.conftest import TEST_BUCKET as test_bucket_str
 
 AWS_REGION = "us-east-1"
-TEST_BUCKET: PurePosixPath = PurePosixPath(CDM_LAKE_BUCKET)
+TEST_BUCKET: PurePosixPath = PurePosixPath(test_bucket_str)
 
 
 # Minimal assembly_summary_refseq.txt content (tab-separated, 20+ columns)

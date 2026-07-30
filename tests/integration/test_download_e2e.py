@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 from botocore.client import BaseClient
 
-import cdm_data_loaders.utils.s3 as s3_utils
+import cdm_data_loaders.utils.file_transfer.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.manifest import (
     compute_diff,
     download_assembly_summary,

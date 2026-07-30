@@ -25,10 +25,10 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
     create_descriptor,
     upload_descriptor,
 )
-from cdm_data_loaders.utils.s3 import (
+from cdm_data_loaders.utils.file_transfer.s3.client import get_s3_client
+from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
     copy_object,
     delete_objects,
-    get_s3_client,
     list_matching_objects,
     object_exists,
     upload_file,

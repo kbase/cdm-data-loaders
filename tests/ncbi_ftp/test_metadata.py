@@ -13,7 +13,7 @@ import pytest
 from moto import mock_aws
 
 import cdm_data_loaders.ncbi_ftp.metadata as metadata_mod
-import cdm_data_loaders.utils.s3 as s3_utils
+import cdm_data_loaders.utils.file_transfer.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.metadata import (
     DescriptorResource,
     archive_descriptor,
@@ -23,7 +23,7 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
     upload_descriptor,
     validate_descriptor,
 )
-from cdm_data_loaders.utils.s3 import reset_s3_client
+from cdm_data_loaders.utils.file_transfer.s3.client import reset_s3_client
 from tests.ncbi_ftp.conftest import TEST_BUCKET
 
 AWS_REGION = "us-east-1"

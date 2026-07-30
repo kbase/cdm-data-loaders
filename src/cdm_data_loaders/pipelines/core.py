@@ -72,7 +72,7 @@ def dump_settings(settings: CtsSettings) -> None:
 
 
 def run_cli(
-    settings_cls: type[CtsSettings], pipeline_fn: Callable[[Any], None], settings_kwargs: dict[str, Any] | None
+    settings_cls: type[CtsSettings], pipeline_fn: Callable[[Any], None], settings_kwargs: dict[str, Any] | None = None
 ) -> None:
     """Generic CLI entry point for any pipeline.
 

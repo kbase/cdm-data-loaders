@@ -21,9 +21,9 @@ from botocore.exceptions import ClientError
 
 import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
 import cdm_data_loaders.ncbi_ftp.promote as promote_mod
-import cdm_data_loaders.utils.s3 as s3_utils
+import cdm_data_loaders.utils.file_transfer.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
-from cdm_data_loaders.utils.s3 import reset_s3_client
+from cdm_data_loaders.utils.file_transfer.s3.client import reset_s3_client
 
 # Maximum length of a bucket name per S3/DNS spec
 _MAX_BUCKET_LEN = 63

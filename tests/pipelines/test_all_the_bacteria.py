@@ -24,7 +24,7 @@ from cdm_data_loaders.pipelines.all_the_bacteria import (
     osf_file_downloader,
     run_atb_pipeline,
 )
-from cdm_data_loaders.utils.download.core import NonRetryableDownloadError
+from cdm_data_loaders.utils.file_transfer.core import NonRetryableDownloadError
 from tests.conftest import CASSETTES_DIR
 
 

@@ -1,13 +1,13 @@
-"""Synchronous file download client.
+"""Asynchronous file download client.
 
 Usage:
 
 # initialise a download client that downloads files in chunks of 1024 bytes and retries the downlooad
 # three times in case of connection/timeout errors
-sync_client = FileDownloader(max_attempts=3, chunk_size=1024)
+async_client = AsyncFileDownloader(max_attempts=3, chunk_size=1024)
 
 # output_path will be the path to the saved file
-output_path = sync_client.download(
+output_path = await async_client.download(
     "https://example.com/file.txt",
     Path("/path") / "to" / "save" / "file.txt"),
     expected_checksum="some_checksum",
@@ -19,20 +19,20 @@ output_path = sync_client.download(
 
 """
 
-from logging import WARNING, Logger, getLogger
+import asyncio
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
 import httpx
 from tenacity import (
-    before_sleep_log,
-    retry,
+    AsyncRetrying,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
 )
 
-from cdm_data_loaders.utils.download.core import (
+from cdm_data_loaders.utils.file_transfer.core import (
     DownloadCore,
     DownloadError,
     NonRetryableDownloadError,
@@ -41,9 +41,9 @@ from cdm_data_loaders.utils.download.core import (
 logger: Logger = getLogger(__name__)
 
 
-def get_httpx_client() -> httpx.Client:
+def get_async_httpx_client() -> httpx.AsyncClient:
     """Get a basic client for executing http requests."""
-    return httpx.Client(
+    return httpx.AsyncClient(
         timeout=httpx.Timeout(30.0),
         limits=httpx.Limits(
             max_connections=20,
@@ -53,9 +53,9 @@ def get_httpx_client() -> httpx.Client:
     )
 
 
-class FileDownloader:
+class AsyncFileDownloader:
     """
-    Synchronous downloader interface.
+    Asynchronous downloader interface.
     """
 
     RETRYABLE_EXCEPTIONS = (
@@ -64,15 +64,16 @@ class FileDownloader:
         DownloadError,
     )
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
-        client: httpx.Client | None = None,
+        client: httpx.AsyncClient | None = None,
         max_attempts: int = 5,
         min_backoff: int = 1,
         max_backoff: int = 30,
         chunk_size: int = 8192,
+        max_concurrency: int | None = None,
     ) -> None:
-        """Initialise a synchronous download client.
+        """Initialise an async download client.
 
         :param client: an httpx.Client object, defaults to None
         :type client: httpx.Client | None, optional
@@ -84,11 +85,14 @@ class FileDownloader:
         :type max_backoff: int, optional
         :param chunk_size: chunk size for the downloader, defaults to 8192
         :type chunk_size: int, optional
+        :param max_concurrency: maximum concurrency for the downloader, defaults to None
+        :type max_concurrency: int, optional
         """
-        self.client = client or get_httpx_client()
+        self.client = client or get_async_httpx_client()
         self.chunk_size = chunk_size
+        self.semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency else None
 
-        self._retry = retry(
+        self._retry = AsyncRetrying(
             retry=retry_if_exception_type(self.RETRYABLE_EXCEPTIONS),
             stop=stop_after_attempt(max_attempts),
             wait=wait_exponential(
@@ -96,15 +100,14 @@ class FileDownloader:
                 max=max_backoff,
             ),
             reraise=True,
-            before_sleep=before_sleep_log(logger, WARNING),
         )
 
-    def download(
+    async def download(
         self,
         url: str,
         destination: str | Path,
         expected_checksum: str | None = None,
-        checksum_fn: str | None = None,
+        checksum_fn: str | None = "sha256",
         extra_headers: dict[str, Any] | None = None,
     ) -> Path | None:
         """Download a file from ``url`` to ``destination`` on disk.
@@ -118,7 +121,7 @@ class FileDownloader:
         :type destination: str | Path
         :param expected_checksum: expected checksum (if known), defaults to None
         :type expected_checksum: str | None, optional
-        :param checksum_fn: function used for calculating the checksum. Set to "sha256" if not supplied.
+        :param checksum_fn: function used for calculating the checksum, defaults to "sha256"
         :type checksum_fn: str, optional
         :param extra_headers: allow extra headers to be passed, defaults to None
         :type last_modified: dict[str, Any | None, optional
@@ -127,13 +130,34 @@ class FileDownloader:
         """
         destination, checksum_fn, extra_headers = DownloadCore.validate_args(destination, checksum_fn, extra_headers)
 
-        @self._retry
-        def _once() -> Path | None:
-            return self._download_once(url, destination, expected_checksum, checksum_fn, extra_headers)
+        if self.semaphore:
+            async with self.semaphore:
+                return await self._download_with_retry(
+                    url,
+                    destination,
+                    expected_checksum,
+                    checksum_fn,
+                    extra_headers,
+                )
 
-        return _once()
+        return await self._download_with_retry(
+            url,
+            destination,
+            expected_checksum,
+            checksum_fn,
+            extra_headers,
+        )
 
-    def _download_once(
+    async def _download_with_retry(self, *args) -> Path | None:
+        async for attempt in self._retry:
+            with attempt:
+                return await self._download_once(*args)
+        # this should never be raised under normal circumstances
+        # tenacity should never exhaust silently
+        msg = "Iterator exhausted, unreachable code reached!"
+        raise RuntimeError(msg)
+
+    async def _download_once(
         self,
         url: str,
         destination: Path,
@@ -141,7 +165,7 @@ class FileDownloader:
         checksum_fn: str,
         extra_headers: dict[str, Any],
     ) -> Path | None:
-        """Core synchronous download function.
+        """Core download function.
 
         :param url: URL to download from
         :type url: str
@@ -149,25 +173,25 @@ class FileDownloader:
         :type destination: Path
         :param expected_checksum: expected checksum (if known), defaults to None
         :type expected_checksum: str | None, optional
-        :param checksum_fn: function used for calculating the checksum, defaults to "sha256"
-        :type checksum_fn: str, optional
-        :param extra_headers: any extra headers to pass to the request, defaults to None
-        :type extra_headers: dict[str, Any] | None, optional
+        :param checksum_fn: function used for calculating the checksum
+        :type checksum_fn: str
+        :param extra_headers: any extra headers to pass to the request
+        :type extra_headers: dict[str, Any]
         :raises DownloadError: for unrecoverable download errors
         :raises ChecksumMismatchError: if the checksum does not match expected_checksum
         :return: either the path to the downloaded file or None if no file was downloaded
         :rtype: Path | None
         """
         try:
-            with self.client.stream("GET", url, headers=extra_headers) as response:
-                continue_dl = DownloadCore.validate_response(response)
-                if not continue_dl:
+            async with self.client.stream("GET", url, headers=extra_headers) as response:
+                # check the response - should the download continue?
+                if not DownloadCore.validate_response(response):
                     logger.info("%s: resource has not been modified", url, extra={"url": url})
                     return None
 
-                chunks = response.iter_bytes(chunk_size=self.chunk_size)
+                chunks = response.aiter_bytes(chunk_size=self.chunk_size)
 
-                DownloadCore.write_and_hash(
+                await DownloadCore.write_and_hash_async(
                     url,
                     destination,
                     chunks,
