@@ -5,9 +5,9 @@ from pathlib import Path
 import boto3
 
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
-from cdm_data_loaders.utils.download.async_client import AsyncFileDownloader
-from cdm_data_loaders.utils.download.s3_uploader import S3StreamUploader
-from cdm_data_loaders.utils.download.sync_client import FileDownloader
+from cdm_data_loaders.utils.file_transfer.async_client import AsyncFileDownloader
+from cdm_data_loaders.utils.file_transfer.s3.streamer import S3StreamUploader
+from cdm_data_loaders.utils.file_transfer.sync_client import FileDownloader
 from cdm_data_loaders.utils.link_scraper import (
     DirEntry,
     crawl_directory,

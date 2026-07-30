@@ -511,6 +511,7 @@ dependencies = [
     { name = "frozendict" },
     { name = "ipykernel" },
     { name = "lxml" },
+    { name = "pandas" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "tqdm" },
@@ -518,7 +519,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "cdm-task-service-client" },
     { name = "moto", extra = ["s3"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -553,6 +553,7 @@ requires-dist = [
     { name = "frozendict", specifier = ">=2.4.7" },
     { name = "ipykernel", specifier = ">=7.2.0" },
     { name = "lxml", specifier = ">=6.1.0" },
+    { name = "pandas", specifier = ">=3.0.3" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pydantic-settings", specifier = ">=2.14.1" },
     { name = "tqdm", specifier = ">=4.67.3" },
@@ -560,7 +561,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "cdm-task-service-client", git = "https://github.com/kbase/cdm-task-service-client.git" },
     { name = "moto", extras = ["s3"], specifier = ">=5.2.1" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
@@ -577,7 +577,6 @@ models = [
     { name = "genson", specifier = ">=1.3.0" },
     { name = "json2python-models", specifier = ">=0.3.1" },
 ]
-rss = []
 xml = [
     { name = "xmlschema", specifier = ">=4.3.1" },
     { name = "xsdata", extras = ["cli", "lxml"], specifier = ">=26.2" },

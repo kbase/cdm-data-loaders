@@ -20,7 +20,7 @@ Environment variables (with defaults for the walkthrough):
 import os
 import sys
 
-from cdm_data_loaders.utils.file_transfer.s3 import client, cli
+from cdm_data_loaders.utils.file_transfer.s3 import cli, client
 
 
 def _client() -> None:

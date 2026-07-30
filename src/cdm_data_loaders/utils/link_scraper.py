@@ -16,8 +16,8 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
-from cdm_data_loaders.utils.download.checksums import ChecksumEntry, parse_checksum_file
-from cdm_data_loaders.utils.s3 import split_s3_path
+from cdm_data_loaders.utils.file_transfer.checksums import ChecksumEntry, validate_checksum_fn
+from cdm_data_loaders.utils.file_transfer.s3.client import split_s3_path
 
 logger: Logger = getLogger(__name__)
 
@@ -242,6 +242,44 @@ def process_listing(
     return ListingResult(files=files, subdirs=subdirs, manifest_url=manifest_url)
 
 
+def parse_checksum_file(text: str, base_url: str, algorithm: str) -> dict[str, ChecksumEntry]:
+    """Parse a `*SUM.txt`-style checksum manifest (md5sum/sha256sum -c format).
+
+    Expected line format: "<hex digest>  ./relative/path", one entry per
+    line (matches the output of GNU coreutils' md5sum/sha256sum/etc).
+
+    :param text: raw contents of the checksum manifest file
+    :type text: str
+    :param base_url: URL of the directory the manifest was fetched from;
+        relative paths inside the file are resolved against this
+    :type base_url: str
+    :param algorithm: hashlib algorithm name the digests in this file were
+        generated with, e.g. "md5", "sha256"
+    :type algorithm: str
+    :raises ValueError: if `algorithm` is not a supported hashlib algorithm
+    :return: mapping of absolute file URL to its expected ChecksumEntry
+    :rtype: dict[str, ChecksumEntry]
+    """
+    algorithm = validate_checksum_fn(algorithm)
+    checksums: dict[str, ChecksumEntry] = {}
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        parts = line.split(None, 1)
+        if len(parts) != 2:  # noqa: PLR2004
+            continue
+
+        digest, rel_path = parts
+        rel_path = rel_path.strip().removeprefix("./")
+        url = urljoin(base_url, rel_path)
+        checksums[url] = ChecksumEntry(algorithm=algorithm, value=digest.lower())
+
+    return checksums
+
+
 def _with_checksums(files: list[DirEntry], checksums: dict[str, ChecksumEntry]) -> list[DirEntry]:
     """Attach checksum information to a list of file entries.
 
@@ -255,7 +293,7 @@ def _with_checksums(files: list[DirEntry], checksums: dict[str, ChecksumEntry]) 
     return [dataclasses.replace(f, checksum=checksums.get(f.url)) for f in files]
 
 
-def crawl_directory(
+def crawl_directory(  # noqa: PLR0913
     start_url: str,
     *,
     exclude_dirs: set[str] | None = None,
@@ -315,7 +353,7 @@ def _crawl_sync(  # noqa: PLR0913
     url: str,
     client: httpx.Client,
     exclude_dirs: set[str],
-    prefer_compressed: bool,
+    prefer_compressed: bool,  # noqa: FBT001
     checksum_manifest: str | None,
     checksum_algorithm: str,
     files: list[DirEntry],
@@ -375,7 +413,7 @@ def _crawl_sync(  # noqa: PLR0913
         )
 
 
-async def crawl_directory_async(
+async def crawl_directory_async(  # noqa: PLR0913
     start_url: str,
     *,
     exclude_dirs: set[str] | None = None,
@@ -462,7 +500,7 @@ async def _crawl_async(  # noqa: PLR0913
     semaphore: asyncio.Semaphore | None,
     lock: asyncio.Lock,
     exclude_dirs: set[str],
-    prefer_compressed: bool,
+    prefer_compressed: bool,  # noqa: FBT001
     checksum_manifest: str | None,
     checksum_algorithm: str,
     files: list[DirEntry],

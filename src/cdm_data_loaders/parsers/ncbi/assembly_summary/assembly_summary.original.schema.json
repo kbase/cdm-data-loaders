@@ -12,8 +12,7 @@
                 "string",
                 "null"
             ],
-            "pattern": "^(19|20)\\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$",
-            "format": "date"
+            "pattern": "^((19|20)\\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])|na)$"
         },
         "annotation_name": {
             "title": "Annotation name",
@@ -49,8 +48,7 @@
                 "string",
                 "null"
             ],
-            "pattern": "^(19|20)\\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$",
-            "format": "date"
+            "pattern": "^((19|20)\\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])|na)$"
         },
         "asm_submitter": {
             "title": "Assembly submitter",
@@ -105,7 +103,7 @@
                 "string",
                 "null"
             ],
-            "pattern": "^PRJ[DEN][A-Z][0-9]+$"
+            "pattern": "^(PRJ[DEN][A-Z][0-9]+|na)$"
         },
         "biosample": {
             "title": "BioSample",
@@ -114,7 +112,7 @@
                 "string",
                 "null"
             ],
-            "pattern": "^SAM[NED][A-Za-z0-9_]?[0-9]+$"
+            "pattern": "^(SAM[NED][A-Za-z0-9_]?[0-9]+|SRS[0-9]{6}|na)$"
         },
         "contig_count": {
             "title": "Contig count",
@@ -137,7 +135,7 @@
                 "string",
                 "null"
             ],
-            "pattern": "^https://ftp.ncbi.nlm.nih.gov/genomes/all/.+"
+            "pattern": "^(https://ftp.ncbi.nlm.nih.gov/genomes/all/.+|na)"
         },
         "gbrs_paired_asm": {
             "title": "GenBank/RefSeq paired assembly",
@@ -146,7 +144,7 @@
                 "string",
                 "null"
             ],
-            "pattern": "^GC[AF]_[0-9]+\\.[0-9]+$"
+            "pattern": "^(GC[AF]_[0-9]+\\.[0-9]+|na)$"
         },
         "gc_percent": {
             "title": "GC%",
@@ -204,9 +202,9 @@
         "non_coding_gene_count": {
             "title": "Non-coding gene count",
             "description": "the total number of non-coding genes on the assembly",
-            "minimum": 0,
+            "pattern": "^([0-9]+|na)$",
             "type": [
-                "integer",
+                "string",
                 "null"
             ]
         },
@@ -240,9 +238,9 @@
         "protein_coding_gene_count": {
             "title": "Protein coding gene count",
             "description": "the total number of protein coding genes on the assembly",
-            "minimum": 0,
+            "pattern": "^([0-9]+|na)$",
             "type": [
-                "integer",
+                "string",
                 "null"
             ]
         },
@@ -253,7 +251,7 @@
                 "string",
                 "null"
             ],
-            "pattern": "^[0-9]+(;[0-9]+)*$"
+            "pattern": "^(na|[0-9]+(;[0-9]+)*)$"
         },
         "refseq_category": {
             "anyOf": [
@@ -362,9 +360,9 @@
         "total_gene_count": {
             "title": "Total gene count",
             "description": "the total number of genes that are annotated on the assembly. If an assembly has no genes, or is lacking a gene count, it will display 'na'. If an assembly has no features but is annotated, then it will show 0.",
-            "minimum": 0,
+            "pattern": "^([0-9]+|na)$",
             "type": [
-                "integer",
+                "string",
                 "null"
             ]
         },

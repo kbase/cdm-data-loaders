@@ -40,8 +40,8 @@ class FileEntryPartial(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    url: HttpUrl
-    s3_raw_data_dir: S3Path
+    url: str
+    s3_raw_data_dir: str
 
 
 class FileEntryFull(FileEntryPartial):
@@ -49,7 +49,7 @@ class FileEntryFull(FileEntryPartial):
 
     model_config = ConfigDict(extra="forbid")
 
-    s3_derived_dir: S3Path
+    s3_derived_dir: str
 
 
 class Files(BaseModel):
