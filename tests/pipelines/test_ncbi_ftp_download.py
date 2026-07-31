@@ -11,7 +11,6 @@ import pytest
 from moto import mock_aws
 from pydantic import ValidationError
 
-import cdm_data_loaders.utils.file_transfer.s3 as s3_mod
 from cdm_data_loaders.core.fields import INPUT_MOUNT, OUTPUT_MOUNT
 from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST
 from cdm_data_loaders.pipelines.ncbi_ftp_download import (
@@ -19,6 +18,7 @@ from cdm_data_loaders.pipelines.ncbi_ftp_download import (
     download_and_stage,
     download_batch,
 )
+from cdm_data_loaders.utils.file_transfer.s3 import client
 from cdm_data_loaders.utils.file_transfer.s3.client import reset_s3_client
 from tests.conftest import _generate_dlt_config
 
@@ -309,8 +309,8 @@ def test_download_and_stage_manifest_source(
         return _MOCK_STATS
 
     with (
-        patch.object(s3_mod, "get_s3_client", return_value=s3),
-        patch.object(s3_mod, "_s3_client", s3),
+        patch.object(client, "get_s3_client", return_value=s3),
+        patch.object(client, "_s3_client", s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
         patch(
@@ -375,8 +375,8 @@ def test_download_and_stage_exactly_one_source_required(
             local_path = real_local
 
         with (
-            patch.object(s3_mod, "get_s3_client", return_value=s3),
-            patch.object(s3_mod, "_s3_client", s3),
+            patch.object(client, "get_s3_client", return_value=s3),
+            patch.object(client, "_s3_client", s3),
             patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
             patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
             patch(
@@ -419,8 +419,8 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path, monkeypatch: pyte
         return {**_MOCK_STATS, "files_downloaded": 2}
 
     with (
-        patch.object(s3_mod, "get_s3_client", return_value=s3),
-        patch.object(s3_mod, "_s3_client", s3),
+        patch.object(client, "get_s3_client", return_value=s3),
+        patch.object(client, "_s3_client", s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
         patch(
@@ -473,8 +473,8 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path, monkeypatch: py
         return _MOCK_STATS
 
     with (
-        patch.object(s3_mod, "get_s3_client", return_value=s3),
-        patch.object(s3_mod, "_s3_client", s3),
+        patch.object(client, "get_s3_client", return_value=s3),
+        patch.object(client, "_s3_client", s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
         patch(
@@ -518,8 +518,8 @@ def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int, monkeypa
     manifest_local.write_text(_MANIFEST_CONTENT)
 
     with (
-        patch.object(s3_mod, "get_s3_client", return_value=s3),
-        patch.object(s3_mod, "_s3_client", s3),
+        patch.object(client, "get_s3_client", return_value=s3),
+        patch.object(client, "_s3_client", s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
         patch(
@@ -555,8 +555,8 @@ def test_download_and_stage_report_shape(tmp_path: Path, monkeypatch: pytest.Mon
     manifest_local.write_text(_MANIFEST_CONTENT)
 
     with (
-        patch.object(s3_mod, "get_s3_client", return_value=s3),
-        patch.object(s3_mod, "_s3_client", s3),
+        patch.object(client, "get_s3_client", return_value=s3),
+        patch.object(client, "_s3_client", s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
         patch(

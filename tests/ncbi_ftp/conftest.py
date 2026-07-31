@@ -11,8 +11,7 @@ import pytest
 from moto import mock_aws
 
 import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
-import cdm_data_loaders.ncbi_ftp.promote as promote_mod
-import cdm_data_loaders.utils.file_transfer.s3 as s3_utils
+from cdm_data_loaders.utils.file_transfer.s3 import client
 from cdm_data_loaders.utils.file_transfer.s3.client import reset_s3_client
 from tests.s3_helpers import strip_checksum_algorithm
 from tests.utils.file_transfer.s3.conftest import TEST_BUCKET as test_bucket_str  # noqa: N811
@@ -74,15 +73,12 @@ def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[botocore.client
     boto3.DEFAULT_SESSION = None
 
     with mock_aws():
-        client = boto3.client("s3", region_name=AWS_REGION)
-        client.create_bucket(Bucket=str(TEST_BUCKET))
+        s3_client = boto3.client("s3", region_name=AWS_REGION)
+        s3_client.create_bucket(Bucket=str(TEST_BUCKET))
 
         reset_s3_client()
-        with (
-            patch.object(s3_utils, "get_s3_client", return_value=client),
-            patch.object(promote_mod, "get_s3_client", return_value=client),
-        ):
-            yield client
+        with patch.object(client, "get_s3_client", return_value=s3_client):
+            yield s3_client
         reset_s3_client()
 
 

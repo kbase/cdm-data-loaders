@@ -12,7 +12,6 @@ from unittest.mock import patch
 import pytest
 from botocore.client import BaseClient
 
-import cdm_data_loaders.utils.file_transfer.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.manifest import (
     compute_diff,
     download_assembly_summary,
@@ -21,6 +20,7 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     write_transfer_manifest,
 )
 from cdm_data_loaders.pipelines.ncbi_ftp_download import download_and_stage, download_batch
+from cdm_data_loaders.utils.file_transfer.s3 import client
 
 # Use same stable prefix as manifest tests
 STABLE_PREFIX = "900"
@@ -148,7 +148,7 @@ def test_download_and_stage_e2e(
         Body=manifest_path.read_bytes(),
     )
 
-    with patch.object(s3_utils, "get_s3_client", return_value=ceph_s3_client):
+    with patch.object(client, "get_s3_client", return_value=ceph_s3_client):
         report = download_and_stage(
             bucket=test_bucket,
             staging_key_prefix=staging_prefix,

@@ -3,13 +3,15 @@
 import hashlib
 import io
 import logging
+from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Any, Final, Generator
+from typing import Any, Final
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
+import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
 from cdm_data_loaders.utils.file_transfer.checksums import HashingReader
 from cdm_data_loaders.utils.file_transfer.core import (
     ChecksumMismatchError,
@@ -31,7 +33,6 @@ from cdm_data_loaders.utils.file_transfer.s3.streamer import (
     stream_to_s3,
 )
 from tests.conftest import DEFAULT_VCR_CONFIG
-import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
 
 TEST_URL: Final[str] = "https://example.com/test-file.pdf"
 TEST_BUCKET: Final[str] = "test-bucket"
