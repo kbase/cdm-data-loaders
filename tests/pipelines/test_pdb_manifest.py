@@ -29,7 +29,6 @@ from cdm_data_loaders.pipelines.pdb_manifest import (
     _generate_manifest_data,
     _generate_snapshot_from_s3_state,
     _load_holdings_snapshot,
-    _parse_pdb_record,
     _save_holdings_snapshot,
     _save_manifest_files,
     _save_summary_file,
@@ -64,58 +63,6 @@ def _make_gzipped_response(data: dict | list[str]) -> MagicMock:
     resp.__enter__ = lambda s: s
     resp.__exit__ = MagicMock(return_value=False)
     return resp
-
-
-# ---------------------------------------------------------------------------
-# _parse_pdb_record
-# ---------------------------------------------------------------------------
-
-
-class TestParsePdbRecord:
-    """Parameterized cases for testing _parse_pdb_record()."""
-
-    @pytest.mark.parametrize(
-        ("holdings", "raw", "expected"),
-        [
-            pytest.param(
-                _HOLDINGS_ID_ONLY,
-                {"PDB_00001ABC": {"status": "RELEASED"}, "PDB_00001DEF": {}},
-                {"pdb_00001abc": PDBRecord(id="pdb_00001abc"), "pdb_00001def": PDBRecord(id="pdb_00001def")},
-                id="id-only-extracts-keys",
-            ),
-            pytest.param(
-                _HOLDINGS_ID_ONLY,
-                {"PDB_AAAAAAAA": {}},
-                {"pdb_aaaaaaaa": PDBRecord(id="pdb_aaaaaaaa")},
-                id="id-only-normalizes-case",
-            ),
-            pytest.param(_HOLDINGS_ID_ONLY, {}, {}, id="id-only-empty"),
-            pytest.param(
-                _HOLDINGS_ID_DATE,
-                {"PDB_00001ABC": "2024-01-15", "PDB_00001DEF": "2024-02-20"},
-                {
-                    "pdb_00001abc": PDBRecord(id="pdb_00001abc", last_modified="2024-01-15"),
-                    "pdb_00001def": PDBRecord(id="pdb_00001def", last_modified="2024-02-20"),
-                },
-                id="id-date-extracts-key-and-date",
-            ),
-            pytest.param(
-                _HOLDINGS_ID_DATE,
-                {"PDB_AAAAAAAA": "2024-03-01"},
-                {"pdb_aaaaaaaa": PDBRecord(id="pdb_aaaaaaaa", last_modified="2024-03-01")},
-                id="id-date-normalizes-case",
-            ),
-            pytest.param(_HOLDINGS_ID_DATE, {}, {}, id="id-date-empty"),
-        ],
-    )
-    def test_parse_pdb_record(self, holdings: HoldingsFile, raw: dict, expected: dict) -> None:
-        """Tests parsed output is as expected."""
-        assert _parse_pdb_record(holdings, raw) == expected
-
-    def test_invalid_schema_raises_value_error(self) -> None:
-        """Ensures ValueError is raised when an invalid schema is specified."""
-        with pytest.raises(ValueError, match="Invalid holdings file schema"):
-            _parse_pdb_record(_HOLDINGS_BAD, {"PDB_00001ABC": {}})
 
 
 # ---------------------------------------------------------------------------
@@ -577,17 +524,6 @@ class TestDownloadHoldingsFiles:
         assert "pdb_00001def" in result[HoldingsFileTypes.CURRENT]
         assert result[HoldingsFileTypes.LAST_MODIFIED]["pdb_00001abc"].last_modified == "2024-01-15"
         assert "pdb_00009999" in result[HoldingsFileTypes.REMOVED]
-
-    def test_non_dict_response_raises_type_error(self) -> None:
-        """Ensures invalid JSON data raises TypeError."""
-        with (
-            patch(
-                "cdm_data_loaders.pipelines.pdb_manifest.urlopen",
-                return_value=_make_gzipped_response(["not", "a", "dict"]),
-            ),
-            pytest.raises(TypeError, match="expected to contain a JSON dict"),
-        ):
-            _download_holdings_files()
 
 
 # ---------------------------------------------------------------------------

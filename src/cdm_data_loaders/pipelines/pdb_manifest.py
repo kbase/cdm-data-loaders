@@ -30,6 +30,7 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import CliImplicitFlag, SettingsConfigDict
 
 from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
+from cdm_data_loaders.parsers.pdb_holdings_file import parse_holdings_file
 from cdm_data_loaders.pdb.constants import (
     DEFAULT_DESTINATION_BUCKET,
     DEFAULT_DESTINATION_PREFIX,
@@ -37,8 +38,6 @@ from cdm_data_loaders.pdb.constants import (
     HOLDINGS_BASE_URL,
     HOLDINGS_FILES,
     PDB_ID_SEARCH_RE,
-    HoldingsFile,
-    HoldingsFileSchemas,
     HoldingsFileTypes,
     ManifestData,
     PDBRecord,
@@ -165,26 +164,10 @@ def _download_holdings_files(
         logger.info(msg)
         with urlopen(url) as response:  # noqa: S310
             compressed = response.read()
-        data = json.loads(gzip.decompress(compressed))
-        if not isinstance(data, dict):
-            msg = "Holdings file expected to contain a JSON dict"
-            raise TypeError(msg)
-        result[key] = _parse_pdb_record(holdings, data)
+        result[key] = parse_holdings_file(holdings, gzip.decompress(compressed))
         msg = f"Downloaded {holdings.filename} ({len(compressed)} bytes compressed)"
         logger.info(msg)
     return result
-
-
-def _parse_pdb_record(holdings: HoldingsFile, records: dict[str, Any]) -> dict[str, PDBRecord]:
-    """Parse a key-value pair from a holdings file entry into a PDBRecord."""
-    if holdings.schema == HoldingsFileSchemas.ID_DATE:
-        # extract data as a dict of id/updated-date pairs
-        return {key.lower(): PDBRecord(id=key.lower(), last_modified=val) for key, val in records.items()}
-    if holdings.schema == HoldingsFileSchemas.ID_ONLY:
-        # extract keys (ids) from data
-        return {key.lower(): PDBRecord(id=key.lower()) for key in records}
-    msg = f"Invalid holdings file schema: {holdings.schema}"
-    raise ValueError(msg)
 
 
 def _generate_manifest_data(
