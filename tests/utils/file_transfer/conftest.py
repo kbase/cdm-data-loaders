@@ -7,8 +7,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from cdm_data_loaders.utils.download.async_client import AsyncFileDownloader
-from cdm_data_loaders.utils.download.sync_client import FileDownloader
+from cdm_data_loaders.utils.file_transfer.async_client import AsyncFileDownloader
+from cdm_data_loaders.utils.file_transfer.sync_client import FileDownloader
 
 
 @dataclass
