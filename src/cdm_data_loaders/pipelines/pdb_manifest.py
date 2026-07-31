@@ -2,11 +2,11 @@
 
 Project documentation: https://www.rcsb.org/
 
-Batch downloading via rsync from: "rsync-beta.rcsb.org:32382
+Batch downloading via rsync from: rsync-beta.rcsb.org:32382
 
 Steps:
 - Downloads the current PDB holdings files
-- (Optional) Loads the set of holdings files from the last transfer OR bootsraps a set of holdings files from the current S3 store state
+- (Optional) Loads the set of holdings files from the last transfer OR bootstraps a set of holdings files from the current S3 store state
 - Produces a set of transfer manifest files:
     * ``transfer_manifest.txt`` - PDB IDs to download (new and updated)
     * ``removed_manifest.txt``  - PDB IDs to archive
