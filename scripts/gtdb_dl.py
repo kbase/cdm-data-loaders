@@ -175,21 +175,21 @@ async def main() -> None:
             max_concurrency=8,
         )
 
-        s3_client = boto3.client("s3")
-        uploader = S3StreamUploader(s3_client, max_attempts=3)
+        uploader = S3StreamUploader()
         semaphore = asyncio.Semaphore(8)
 
         async def _upload(entry: DirEntry):
             s3_path = entry_s3_key(entry, start_url, f"{S3_PREFIX}{release}")
+            upload_args = UploadRequest(
+                url=entry.url,
+                s3_path=s3_path,
+                expected_checksum=entry.checksum.value if entry.checksum else None,
+                checksum_fn=entry.checksum.algorithm if entry.checksum else None,
+                show_progress=True,
+            )  # pyright: ignore[reportCallIssue]
             logger.info("Copying %s to %s", entry.url, s3_path)
             async with semaphore:
-                await asyncio.to_thread(
-                    uploader.upload,
-                    entry.url,
-                    s3_path,
-                    expected_checksum=entry.checksum.value if entry.checksum else None,
-                    checksum_fn=entry.checksum.algorithm if entry.checksum else None,
-                )
+                await asyncio.to_thread(uploader.upload, upload_args)
 
         await asyncio.gather(*(_upload(entry) for entry in files))
 
