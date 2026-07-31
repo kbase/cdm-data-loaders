@@ -4,13 +4,13 @@ import base64
 import copy
 import dataclasses
 import hashlib
+from collections.abc import Generator
 from io import BytesIO
 from pathlib import Path
-from typing import Final, Any
-from collections.abc import Generator
-import requests
+from typing import Any, Final
 
 import pytest
+import requests
 from awscrt.checksums import crc64nvme as _crc64nvme
 
 from cdm_data_loaders.utils.file_transfer.checksums import (
@@ -89,7 +89,12 @@ def test_checksumentry_fail_frozen_immutable() -> None:
 def test_checksumentry_fail_frozen_prevents_new_attributes() -> None:
     """The frozen dataclass rejects attribute assignment even for names that aren't declared fields."""
     entry = ChecksumEntry(algorithm="sha256", value="flash_gordon")
-    with pytest.raises(TypeError, match=r"is not an instance or subtype of type \(ChecksumEntry\)"):
+    # can be one of two errors, depending on which version of CPython is in use.
+    # should be a FrozenInstanceError but some versions produce a TypeError instead
+    with pytest.raises(
+        (TypeError, dataclasses.FrozenInstanceError),
+        match=r"(is not an instance or subtype of type \(ChecksumEntry\)|cannot assign to field 'extra')",
+    ):
         entry.extra = "not allowed"  # type: ignore[attr-defined]
 
 
