@@ -1,11 +1,11 @@
 """Stream HTTP resources directly into S3, without buffering to local disk."""
 
-from dataclasses import dataclass
 from logging import WARNING, Logger, getLogger
 from types import ModuleType
-from typing import Any, Final
+from typing import Annotated, Any, Final
 
 import requests
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from tenacity import (
     before_sleep_log,
     retry,
@@ -36,6 +36,204 @@ logger: Logger = getLogger(__name__)
 DEFAULT_CHECKSUM_ALGORITHM: Final[str] = "sha256"
 
 
+class TransferContext(BaseModel):
+    """The external clients used to talk to S3 and to the remote HTTP source.
+
+    Also the base class for `S3UploaderSettings`, since an uploader's
+    settings include (and can stand in for) a transfer context.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    s3_client: Annotated[
+        Any, Field(default=None, description="a boto3 S3 client; a default one is created if not supplied")
+    ]
+    requests_module: Annotated[
+        ModuleType, Field(default=requests, description="module implementing requests.get/requests.head")
+    ]
+
+    @model_validator(mode="after")
+    def _default_s3_client(self) -> "TransferContext":
+        if self.s3_client is None:
+            self.s3_client = client.get_s3_client()
+        return self
+
+
+class TransferTuningFields(BaseModel):
+    """Options that tune the underlying S3 transfer itself.
+
+    Shared between `S3UploaderSettings` (uploader-wide defaults) and `UploadJob` (a single resolved transfer).
+    """
+
+    extra_args: Annotated[
+        dict[str, Any] | None, Field(default=None, description="extra S3 ExtraArgs to merge into the upload")
+    ]
+    transfer_config_kwargs: Annotated[
+        dict[str, Any] | None,
+        Field(default=None, description="extra `TransferConfig` keyword arguments (e.g. `max_concurrency`)"),
+    ]
+
+
+class UploadTarget(BaseModel):
+    """Fields describing *what* to upload and *where*, and how to check it against what's already there.
+
+    Shared between the caller-facing `UploadRequest` and the fully-resolved `UploadJob`.
+    """
+
+    url: Annotated[str, Field(description="address of the object to transfer to s3")]
+    s3_path: Annotated[str, Field(description="save path on s3, as 's3://bucket/key' or 'bucket/key'")]
+    extra_headers: Annotated[
+        dict[str, str] | None, Field(default=None, description="extra headers to pass to the GET/HEAD requests")
+    ]
+    expected_checksum: Annotated[str | None, Field(default=None, description="expected digest of the downloaded bytes")]
+    checksum_fn: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="hashlib algorithm name used to compute/verify `expected_checksum`; "
+            "None means 'not yet resolved'",
+        ),
+    ]
+    progress_desc: Annotated[
+        str | None, Field(default=None, description="label for the progress bar; defaults to the destination S3 key")
+    ]
+    force: Annotated[bool, Field(default=False, description="always upload regardless of what already exists in S3")]
+    expected_size: Annotated[
+        int | None, Field(default=None, description="known size of the source file in bytes, if already available")
+    ]
+
+
+class UploadRequest(UploadTarget):
+    """Caller-facing description of a single upload, resolved against an `S3StreamUploader`'s settings.
+
+    `show_progress`/`skip_if_exists` are `None` here (unlike on `UploadJob`,
+    where they're required) to mean "use the uploader's setting".
+    """
+
+    show_progress: Annotated[
+        bool | None, Field(default=None, description="display a tqdm progress bar; None defers to the uploader")
+    ]
+    skip_if_exists: Annotated[
+        bool | None,
+        Field(default=None, description="skip if a matching object exists; None defers to the uploader"),
+    ]
+
+
+class S3UploaderSettings(TransferContext, TransferTuningFields):
+    """Shared configuration for an `S3StreamUploader` instance.
+
+    Field names deliberately match `UploadJob`'s (`checksum_fn`,
+    `show_progress`, `skip_if_exists`) rather than being prefixed with
+    `default_`; the class each field lives on is what distinguishes
+    "uploader-wide setting" from "resolved, per-job value" — Pydantic's own
+    `Field(default=...)` already covers what each field is worth if the
+    caller doesn't override it.
+    """
+
+    max_attempts: Annotated[int, Field(default=5, description="how many times to retry the upload")]
+    min_backoff: Annotated[int, Field(default=1, description="minimum backoff for retries, in seconds")]
+    max_backoff: Annotated[int, Field(default=30, description="maximum backoff for retries, in seconds")]
+    timeout: Annotated[float, Field(default=30.0, description="request timeout in seconds")]
+    checksum_fn: Annotated[
+        str,
+        Field(
+            default=DEFAULT_CHECKSUM_ALGORITHM,
+            description="algorithm used when a request gives a checksum without an explicit algorithm",
+        ),
+    ]
+    show_progress: Annotated[
+        bool, Field(default=False, description="progress bar setting if not specified in the request")
+    ]
+    skip_if_exists: Annotated[
+        bool, Field(default=True, description="skip-if-exists setting if not specified in the request")
+    ]
+
+
+class UploadJob(UploadTarget, TransferTuningFields):
+    """Fully-resolved specification for a single streamed HTTP-to-S3 upload.
+
+    This is the sole argument accepted by every `S3UploadCore` method and by
+    `stream_to_s3`. Build one directly for one-off uploads, or via
+    `UploadJob.from_request()` when working through an `S3StreamUploader`.
+    """
+
+    context: Annotated[
+        TransferContext, Field(default_factory=TransferContext, description="the S3/HTTP clients to use")
+    ]
+    timeout: Annotated[float | None, Field(default=None, description="request timeout in seconds")]
+    show_progress: Annotated[bool, Field(default=False, description="display a tqdm progress bar")]
+    skip_if_exists: Annotated[
+        bool, Field(default=True, description="skip the transfer if a matching object already exists")
+    ]
+
+    @model_validator(mode="after")
+    def _resolve_checksum_fn(self) -> "UploadJob":
+        """Fill in a default `checksum_fn` if `expected_checksum` was given without one.
+
+        :raises ValueError: if the resolved algorithm is not a supported hashlib algorithm
+        """
+        self.checksum_fn = resolve_checksum_fn(self.expected_checksum, self.checksum_fn, DEFAULT_CHECKSUM_ALGORITHM)
+        return self
+
+    @property
+    def bucket(self) -> str:
+        return split_s3_path(self.s3_path)[0]
+
+    @property
+    def key(self) -> str:
+        return split_s3_path(self.s3_path)[1]
+
+    @property
+    def s3_client(self) -> Any:
+        return self.context.s3_client
+
+    @property
+    def requests_module(self) -> ModuleType:
+        return self.context.requests_module
+
+    @property
+    def checksum(self) -> ChecksumEntry | None:
+        """The expected checksum as a `ChecksumEntry`, or None if none is expected."""
+        if self.expected_checksum and self.checksum_fn:
+            return ChecksumEntry(algorithm=self.checksum_fn, value=self.expected_checksum)
+        return None
+
+    @classmethod
+    def from_request(cls, request: UploadRequest, settings: S3UploaderSettings) -> "UploadJob":
+        """Resolve a caller-facing `UploadRequest` into a full `UploadJob`, applying uploader defaults.
+
+        `settings` is passed directly as the job's `context`, since
+        `S3UploaderSettings` is itself a `TransferContext`.
+
+        :param request: the per-call upload description
+        :type request: UploadRequest
+        :param settings: the uploader's shared settings and clients
+        :type settings: S3UploaderSettings
+        :return: a fully-resolved job
+        :rtype: UploadJob
+        """
+        checksum_fn = request.checksum_fn
+        if checksum_fn is None and request.expected_checksum:
+            checksum_fn = settings.checksum_fn
+
+        return cls(
+            url=request.url,
+            s3_path=request.s3_path,
+            context=settings,
+            extra_headers=request.extra_headers,
+            extra_args=settings.extra_args,
+            expected_checksum=request.expected_checksum,
+            checksum_fn=checksum_fn,
+            timeout=settings.timeout,
+            show_progress=settings.show_progress if request.show_progress is None else request.show_progress,
+            progress_desc=request.progress_desc,
+            skip_if_exists=settings.skip_if_exists if request.skip_if_exists is None else request.skip_if_exists,
+            force=request.force,
+            expected_size=request.expected_size,
+            transfer_config_kwargs=settings.transfer_config_kwargs,
+        )
+
+
 class S3UploadCore:
     """
     Core request/upload/verify logic for streaming an HTTP resource into S3.
@@ -59,52 +257,31 @@ class S3UploadCore:
             raise DownloadError(msg)
 
     @staticmethod
-    def check_hash(  # noqa: PLR0913
-        url: str,
-        bucket: str,
-        key: str,
-        expected_checksum: str,
-        checksum_fn: str | None,
-        hasher: HashingReader,
-        s3_client: Any,
-    ) -> None:
+    def check_hash(job: UploadJob, hasher: HashingReader) -> None:
         """Compare the expected checksum to the one computed while uploading.
 
         Deletes the uploaded object before raising if the checksums do not match.
 
-        :param url: source URL the data was streamed from, used in error messages
-        :type url: str
-        :param bucket: destination S3 bucket
-        :type bucket: str
-        :param key: destination S3 key
-        :type key: str
-        :param expected_checksum: expected digest
-        :type expected_checksum: str
-        :param checksum_fn: hashlib algorithm name used, for error messages
-        :type checksum_fn: str | None
+        :param job: the job describing the transfer that was just performed
+        :type job: UploadJob
         :param hasher: the HashingReader used during the upload
         :type hasher: HashingReader
-        :param s3_client: a boto3 S3 client, used to delete the object on mismatch
-        :type s3_client: Any
         :raises ChecksumMismatchError: if the checksums do not match
         """
+        expected = job.expected_checksum
         actual = hasher.hexdigest()
-        if actual.lower() != expected_checksum.lower():
-            s3_client.delete_object(Bucket=bucket, Key=key)
+        if expected is not None and actual.lower() != expected.lower():
+            job.s3_client.delete_object(Bucket=job.bucket, Key=job.key)
             msg = (
-                f"{url}: {checksum_fn} checksum mismatch uploading to {bucket}/{key}: "
-                f"expected={expected_checksum}, actual={actual}"
+                f"{job.url}: {job.checksum_fn} checksum mismatch uploading to {job.bucket}/{job.key}: "
+                f"expected={expected}, actual={actual}"
             )
             raise ChecksumMismatchError(msg)
-        logger.info("%s: %s checksum verified for %s/%s", url, checksum_fn, bucket, key)
+        logger.info("%s: %s checksum verified for %s/%s", job.url, job.checksum_fn, job.bucket, job.key)
 
     @staticmethod
     def get_content_length(response: requests.Response) -> int | None:
         """Extract a response's Content-Length header as an int, if present.
-
-        Used both to size a determinate progress bar and to select a safe
-        multipart chunksize; when absent (e.g. chunked transfer-encoding),
-        the file size is treated as unknown by both.
 
         :param response: the HTTP response to inspect
         :type response: requests.Response
@@ -120,38 +297,24 @@ class S3UploadCore:
             return None
 
     @staticmethod
-    def get_remote_size(
-        requests_module: ModuleType,
-        url: str,
-        extra_headers: dict[str, str] | None,
-        timeout: float | None,
-    ) -> int | None:
+    def get_remote_size(job: UploadJob) -> int | None:
         """Get the size of a remote resource via an HTTP HEAD request, without downloading it.
 
-        Used to pre-check whether a source file's size matches an object
-        already in S3, before deciding whether a full download/upload is needed.
-
-        :param requests_module: module implementing requests.head
-        :type requests_module: ModuleType
-        :param url: address of the resource to inspect
-        :type url: str
-        :param extra_headers: extra headers to pass to the HEAD request
-        :type extra_headers: dict[str, str] | None
-        :param timeout: request timeout in seconds, or None for the library default
-        :type timeout: float | None
+        :param job: the job describing the transfer; uses `job.url`, `job.requests_module`,
+            `job.extra_headers`, and `job.timeout`
+        :type job: UploadJob
         :return: the resource's size in bytes, or None if it could not be determined
-            (e.g. the server doesn't support HEAD, or omits Content-Length)
         :rtype: int | None
         """
-        kwargs: dict[str, Any] = {"headers": extra_headers or {}}
-        if timeout is not None:
-            kwargs["timeout"] = timeout
+        kwargs: dict[str, Any] = {"headers": job.extra_headers or {}}
+        if job.timeout is not None:
+            kwargs["timeout"] = job.timeout
 
         try:
-            response = requests_module.head(url, **kwargs)
+            response = job.requests_module.head(job.url, **kwargs)
             response.raise_for_status()
         except Exception:
-            logger.warning("%s: HEAD request failed; cannot pre-check remote size", url, exc_info=True)
+            logger.warning("%s: HEAD request failed; cannot pre-check remote size", job.url, exc_info=True)
             return None
 
         content_length = response.headers.get("content-length")
@@ -163,194 +326,87 @@ class S3UploadCore:
             return None
 
     @staticmethod
-    def check_existing(  # noqa: PLR0913
-        url: str,
-        bucket: str,
-        key: str,
-        s3_client: Any,
-        requests_module: ModuleType,
-        extra_headers: dict[str, str] | None,
-        expected_checksum_entry: ChecksumEntry | None,
-        timeout: float | None,
-        expected_size: int | None = None,
-    ) -> bool:
-        """Check whether `bucket`/`key` already holds an equivalent file, and can be skipped.
+    def check_existing(job: UploadJob) -> bool:
+        """Check whether the job's destination already holds an equivalent file, and can be skipped.
 
-        Fetches S3 object metadata via `head_object` and, if an object
-        exists, compares it against the source using (in order of
-        preference) a checksum recorded in the object's metadata by a
-        previous upload, or the source's size.
-
-        :param url: address of the source file, used for the HEAD size check and logging
-        :type url: str
-        :param bucket: destination S3 bucket
-        :type bucket: str
-        :param key: destination S3 key
-        :type key: str
-        :param s3_client: a boto3 S3 client
-        :type s3_client: Any
-        :param requests_module: module implementing requests.head
-        :type requests_module: ModuleType
-        :param extra_headers: extra headers to pass to the HEAD request
-        :type extra_headers: dict[str, str] | None
-        :param expected_checksum_entry: the checksum the source file is
-            expected to have, if known, or None
-        :type expected_checksum_entry: ChecksumEntry | None
-        :param timeout: request timeout in seconds, or None for the library default
-        :type timeout: float | None
-        :param expected_size: known size of the source file in bytes, if
-            already available (e.g. from a directory listing), avoiding a
-            separate HEAD request; defaults to None
-        :type expected_size: int | None, optional
+        :param job: the job describing the candidate transfer
+        :type job: UploadJob
         :return: True if the upload can be safely skipped, False otherwise
         :rtype: bool
         """
-        existing = get_existing_object_info(bucket, key)
+        existing = get_existing_object_info(job.bucket, job.key)
         if existing is None:
             return False
 
-        remote_size = expected_size
+        remote_size = job.expected_size
         if remote_size is None:
-            remote_size = S3UploadCore.get_remote_size(requests_module, url, extra_headers, timeout)
+            remote_size = S3UploadCore.get_remote_size(job)
 
-        decision = decide_skip(existing, remote_size, expected_checksum_entry)
+        decision = decide_skip(existing, remote_size, job.checksum)
 
         log = logger.info if decision.confident else logger.warning
         if decision.skip:
-            log("%s: skipping upload to %s/%s (%s)", url, bucket, key, decision.reason)
+            log("%s: skipping upload to %s/%s (%s)", job.url, job.bucket, job.key, decision.reason)
         else:
-            log("%s: will (re-)upload to %s/%s (%s)", url, bucket, key, decision.reason)
+            log("%s: will (re-)upload to %s/%s (%s)", job.url, job.bucket, job.key, decision.reason)
 
         return decision.skip
 
     @staticmethod
-    def perform_upload(  # noqa: PLR0913
-        url: str,
-        s3_path: str,
-        s3_client: Any,
-        requests_module: ModuleType,
-        extra_headers: dict[str, str] | None,
-        extra_args: dict[str, Any] | None,
-        expected_checksum: str | None,
-        checksum_fn: str | None,
-        timeout: float | None = None,
-        show_progress: bool = False,  # noqa: FBT001, FBT002
-        progress_desc: str | None = None,
-        skip_if_exists: bool = True,  # noqa: FBT001, FBT002
-        force: bool = False,  # noqa: FBT001, FBT002
-        expected_size: int | None = None,
-        transfer_config_kwargs: dict[str, Any] | None = None,
-    ) -> str:
-        """Stream `url` into `s3_path`, skipping, verifying, and sizing the transfer as configured.
+    def perform_upload(job: UploadJob) -> str:
+        """Stream `job.url` into `job.s3_path`, skipping, verifying, and sizing the transfer as configured.
 
-        If `expected_checksum` is supplied and does not match the uploaded
-        data, the uploaded object is deleted before raising. If a checksum
-        is supplied, it is also recorded as object metadata on successful
+        If a checksum is expected and does not match the uploaded data, the
+        uploaded object is deleted before raising. If a checksum is
+        expected, it is also recorded as object metadata on successful
         upload, so future calls with `skip_if_exists=True` can rely on it.
 
         The multipart chunksize used for the transfer is automatically
         scaled up (via `transfer_config.build_transfer_config`) if the file
         is large enough that S3's default 8MB chunksize would exceed the
-        10,000-part limit, avoiding "Part number must be an integer between
-        1 and 10000" errors on very large files.
+        10,000-part limit.
 
-        :param url: address of the object to transfer to s3
-        :type url: str
-        :param s3_path: save path on s3, as 's3://bucket/key' or 'bucket/key'
-        :type s3_path: str
-        :param s3_client: a boto3 S3 client
-        :type s3_client: Any
-        :param requests_module: module implementing requests.get/requests.head
-        :type requests_module: ModuleType
-        :param extra_headers: extra headers to pass to the GET/HEAD requests
-        :type extra_headers: dict[str, str] | None
-        :param extra_args: extra S3 ExtraArgs to merge into the upload (e.g. ACL, Metadata)
-        :type extra_args: dict[str, Any] | None
-        :param expected_checksum: expected digest of the downloaded bytes, or
-            None to skip verification
-        :type expected_checksum: str | None
-        :param checksum_fn: hashlib algorithm name used to compute/verify
-            `expected_checksum`; required if `expected_checksum` is set
-        :type checksum_fn: str | None
-        :param timeout: request timeout in seconds, defaults to None (library default)
-        :type timeout: float | None, optional
-        :param show_progress: if True, display a tqdm progress bar tracking
-            bytes uploaded to S3, defaults to False
-        :type show_progress: bool, optional
-        :param progress_desc: label for the progress bar; defaults to the
-            destination S3 key if not supplied
-        :type progress_desc: str | None, optional
-        :param skip_if_exists: if True, check S3 for an existing object
-            before uploading and skip the transfer if it appears to already
-            match the source, defaults to True
-        :type skip_if_exists: bool, optional
-        :param force: if True, always upload regardless of what already
-            exists in S3, defaults to False
-        :type force: bool, optional
-        :param expected_size: known size of the source file in bytes, if
-            already available (e.g. from a directory listing); used to
-            avoid a HEAD request during the skip check and to compute the
-            multipart chunksize before the transfer starts, defaults to None
-        :type expected_size: int | None, optional
-        :param transfer_config_kwargs: extra `TransferConfig` keyword
-            arguments (e.g. `max_concurrency`), merged with the
-            automatically-computed `multipart_chunksize`, defaults to None
-        :type transfer_config_kwargs: dict[str, Any] | None, optional
+        :param job: full specification of the transfer to perform
+        :type job: UploadJob
         :raises NonRetryableDownloadError: for 4xx client errors
         :raises DownloadError: for 5xx server errors or other transport failures
-        :raises ChecksumMismatchError: if the uploaded data does not match `expected_checksum`
+        :raises ChecksumMismatchError: if the uploaded data does not match the expected checksum
         :return: path of the file on s3, in the form bucket/key
         :rtype: str
         """
-        bucket, key = split_s3_path(s3_path)
-        expected_checksum_entry = (
-            ChecksumEntry(algorithm=checksum_fn, value=expected_checksum) if expected_checksum and checksum_fn else None
-        )
+        bucket, key = job.bucket, job.key
 
-        if skip_if_exists and not force:
-            can_skip = S3UploadCore.check_existing(
-                url,
-                bucket,
-                key,
-                s3_client,
-                requests_module,
-                extra_headers,
-                expected_checksum_entry,
-                timeout,
-                expected_size=expected_size,
-            )
-            if can_skip:
-                return f"{bucket}/{key}"
+        if job.skip_if_exists and not job.force and S3UploadCore.check_existing(job):
+            return f"{bucket}/{key}"
 
-        merged_extra_args = {**DEFAULT_EXTRA_ARGS, **(extra_args or {})}
-        if expected_checksum_entry is not None:
+        merged_extra_args = {**DEFAULT_EXTRA_ARGS, **(job.extra_args or {})}
+        checksum_entry = job.checksum
+        if checksum_entry is not None:
             merged_extra_args["Metadata"] = {
                 **merged_extra_args.get("Metadata", {}),
-                **checksum_metadata(expected_checksum_entry),
+                **checksum_metadata(checksum_entry),
             }
 
-        get_kwargs: dict[str, Any] = {"stream": True, "headers": extra_headers or {}}
-        if timeout is not None:
-            get_kwargs["timeout"] = timeout
+        get_kwargs: dict[str, Any] = {"stream": True, "headers": job.extra_headers or {}}
+        if job.timeout is not None:
+            get_kwargs["timeout"] = job.timeout
 
-        with requests_module.get(url, **get_kwargs) as response:
+        with job.requests_module.get(job.url, **get_kwargs) as response:
             S3UploadCore.validate_response(response)
 
-            # Prefer a size already known ahead of time (e.g. from a directory
-            # listing) over the response header, since it's available even if
-            # the server response doesn't include Content-Length.
-            file_size = expected_size if expected_size is not None else S3UploadCore.get_content_length(response)
-            transfer_config = build_transfer_config(file_size, **(transfer_config_kwargs or {}))
+            file_size = (
+                job.expected_size if job.expected_size is not None else S3UploadCore.get_content_length(response)
+            )
+            transfer_config = build_transfer_config(file_size, **(job.transfer_config_kwargs or {}))
 
-            hasher = HashingReader(response.raw, checksum_fn) if expected_checksum else response.raw
+            hasher = HashingReader(response.raw, job.checksum_fn) if job.expected_checksum else response.raw
 
             with make_progress_bar(
                 total=file_size,
-                desc=progress_desc or key,
-                disable=not show_progress,
+                desc=job.progress_desc or key,
+                disable=not job.show_progress,
             ) as pbar:
-                s3_client.upload_fileobj(
-                    # raw stream from urllib3 (or a HashingReader wrapping it)
+                job.s3_client.upload_fileobj(
                     hasher,
                     bucket,
                     key,
@@ -362,97 +418,28 @@ class S3UploadCore:
                     Callback=SynchronizedCallback(pbar.update),
                 )
 
-            if expected_checksum:
-                S3UploadCore.check_hash(url, bucket, key, expected_checksum, checksum_fn, hasher, s3_client)
+            if job.expected_checksum:
+                S3UploadCore.check_hash(job, hasher)
 
-        logger.info("%s: upload to s3 successful", url, extra={"s3_path": f"{bucket}/{key}"})
+        logger.info("%s: upload to s3 successful", job.url, extra={"s3_path": f"{bucket}/{key}"})
         return f"{bucket}/{key}"
 
 
-def stream_to_s3(  # noqa: PLR0913
-    url: str,
-    s3_path: str,
-    s3_client: Any = None,
-    requests_module: ModuleType = requests,
-    extra_headers: dict[str, str] | None = None,
-    extra_args: dict[str, Any] | None = None,
-    expected_checksum: str | None = None,
-    checksum_fn: str | None = None,
-    show_progress: bool = False,  # noqa: FBT001, FBT002
-    progress_desc: str | None = None,
-    skip_if_exists: bool = True,  # noqa: FBT001, FBT002
-    force: bool = False,  # noqa: FBT001, FBT002
-    expected_size: int | None = None,
-    transfer_config_kwargs: dict[str, Any] | None = None,
-) -> str:
-    """Stream directly from an HTTP download to s3, with skip-if-exists, checksum, progress, and large-file support.
+def stream_to_s3(job: UploadJob) -> str:
+    """Stream directly from an HTTP download to s3, exactly as described by `job`.
 
-    :param url: address of the object to transfer to s3
-    :type url: str
-    :param s3_path: save path on s3, as 's3://bucket/key' or 'bucket/key'
-    :type s3_path: str
-    :param s3_client: a boto3 S3 client
-    :type s3_client: Any
-    :param requests_module: module implementing requests.get/requests.head and
-        returning a response, defaults to the real `requests` module (injectable for testing)
-    :type requests_module: ModuleType, optional
-    :param extra_headers: extra headers to pass to the GET/HEAD requests, defaults to None
-    :type extra_headers: dict[str, str] | None, optional
-    :param extra_args: extra S3 ExtraArgs to merge in (e.g. ACL, Metadata), defaults to None
-    :type extra_args: dict[str, Any] | None, optional
-    :param expected_checksum: expected digest of the downloaded bytes, defaults to None
-    :type expected_checksum: str | None, optional
-    :param checksum_fn: hashlib algorithm name used to compute/verify
-        `expected_checksum`; defaults to `DEFAULT_CHECKSUM_ALGORITHM` if
-        `expected_checksum` is given without it
-    :type checksum_fn: str | None, optional
-    :param show_progress: if True, display a tqdm progress bar tracking
-        bytes uploaded to S3, defaults to False
-    :type show_progress: bool, optional
-    :param progress_desc: label for the progress bar; defaults to the
-        destination S3 key if not supplied
-    :type progress_desc: str | None, optional
-    :param skip_if_exists: if True, check S3 for an existing object before
-        uploading and skip the transfer if it appears to already match the
-        source, defaults to True
-    :type skip_if_exists: bool, optional
-    :param force: if True, always upload regardless of what already exists
-        in S3, defaults to False
-    :type force: bool, optional
-    :param expected_size: known size of the source file in bytes, if already
-        available (e.g. from a directory listing); used to avoid a HEAD
-        request during the skip check and to size the multipart transfer
-        before it starts, defaults to None
-    :type expected_size: int | None, optional
-    :param transfer_config_kwargs: extra `TransferConfig` keyword arguments
-        (e.g. `max_concurrency`), merged with the automatically-computed
-        `multipart_chunksize`, defaults to None
-    :type transfer_config_kwargs: dict[str, Any] | None, optional
-    :raises ValueError: if `checksum_fn` (or its default) is not a supported hashlib algorithm
+    Thin top-level alias for `S3UploadCore.perform_upload`, kept as the
+    module's public, non-retried entry point.
+
+    :param job: full specification of the transfer to perform
+    :type job: UploadJob
     :raises NonRetryableDownloadError: for 4xx client errors
     :raises DownloadError: for 5xx server errors or other transport failures
-    :raises ChecksumMismatchError: if the uploaded data does not match `expected_checksum`
+    :raises ChecksumMismatchError: if the uploaded data does not match the expected checksum
     :return: path of the file on s3, in the form bucket/key
     :rtype: str
     """
-    checksum_fn = resolve_checksum_fn(expected_checksum, checksum_fn, DEFAULT_CHECKSUM_ALGORITHM)
-
-    return S3UploadCore.perform_upload(
-        url,
-        s3_path,
-        s3_client=s3_client or client.get_s3_client(),
-        requests_module=requests_module,
-        extra_headers=extra_headers,
-        extra_args=extra_args,
-        expected_checksum=expected_checksum,
-        checksum_fn=checksum_fn,
-        show_progress=show_progress,
-        progress_desc=progress_desc,
-        skip_if_exists=skip_if_exists,
-        force=force,
-        expected_size=expected_size,
-        transfer_config_kwargs=transfer_config_kwargs,
-    )
+    return S3UploadCore.perform_upload(job)
 
 
 class S3StreamUploader:
@@ -466,205 +453,57 @@ class S3StreamUploader:
         DownloadError,
     )
 
-    def __init__(  # noqa: PLR0913
-        self,
-        s3_client: Any = None,
-        requests_module: ModuleType = requests,
-        max_attempts: int = 5,
-        min_backoff: int = 1,
-        max_backoff: int = 30,
-        timeout: float = 30.0,
-        extra_args: dict[str, Any] | None = None,
-        default_checksum_fn: str = DEFAULT_CHECKSUM_ALGORITHM,
-        default_show_progress: bool = False,  # noqa: FBT001, FBT002
-        default_skip_if_exists: bool = True,  # noqa: FBT001, FBT002
-        transfer_config_kwargs: dict[str, Any] | None = None,
-    ) -> None:
+    def __init__(self, settings: S3UploaderSettings | None = None) -> None:
         """Initialise an S3 streaming uploader.
 
-        :param s3_client: a boto3 S3 client
-        :type s3_client: Any
-        :param requests_module: module implementing requests.get/requests.head, defaults to `requests`
-        :type requests_module: ModuleType, optional
-        :param max_attempts: how many times to retry the upload, defaults to 5
-        :type max_attempts: int, optional
-        :param min_backoff: minimum backoff for retries, defaults to 1
-        :type min_backoff: int, optional
-        :param max_backoff: maximum backoff for retries, defaults to 30
-        :type max_backoff: int, optional
-        :param timeout: request timeout in seconds, defaults to 30.0
-        :type timeout: float, optional
-        :param extra_args: extra S3 ExtraArgs applied to every upload, defaults to None
-        :type extra_args: dict[str, Any] | None, optional
-        :param default_checksum_fn: algorithm used when `upload()` is given an
-            expected checksum without an explicit algorithm, defaults to
-            `DEFAULT_CHECKSUM_ALGORITHM`
-        :type default_checksum_fn: str, optional
-        :param default_show_progress: whether `upload()` shows a progress bar
-            when not explicitly overridden per call, defaults to False
-        :type default_show_progress: bool, optional
-        :param default_skip_if_exists: whether `upload()` checks S3 for an
-            existing, matching object before uploading, when not explicitly
-            overridden per call, defaults to True
-        :type default_skip_if_exists: bool, optional
-        :param transfer_config_kwargs: extra `TransferConfig` keyword
-            arguments applied to every upload (e.g. `max_concurrency`),
-            merged with the automatically-computed `multipart_chunksize`
-            for each file, defaults to None
-        :type transfer_config_kwargs: dict[str, Any] | None, optional
+        :param settings: shared configuration for this uploader; defaults to `S3UploaderSettings()`
+        :type settings: S3UploaderSettings | None, optional
         """
-        self.s3_client = s3_client or client.get_s3_client()
-        self.requests = requests_module
-        self.timeout = timeout
-        self.extra_args = extra_args or {}
-        self.default_checksum_fn = default_checksum_fn
-        self.default_show_progress = default_show_progress
-        self.default_skip_if_exists = default_skip_if_exists
-        self.transfer_config_kwargs = transfer_config_kwargs or {}
-
+        self.settings = settings or S3UploaderSettings()
         self._retry = retry(
             retry=retry_if_exception_type(self.RETRYABLE_EXCEPTIONS),
-            stop=stop_after_attempt(max_attempts),
-            wait=wait_exponential(min=min_backoff, max=max_backoff),
+            stop=stop_after_attempt(self.settings.max_attempts),
+            wait=wait_exponential(min=self.settings.min_backoff, max=self.settings.max_backoff),
             reraise=True,
             before_sleep=before_sleep_log(logger, WARNING),
         )
 
-    def upload(  # noqa: PLR0913
-        self,
-        url: str,
-        s3_path: str,
-        extra_headers: dict[str, str] | None = None,
-        expected_checksum: str | None = None,
-        checksum_fn: str | None = None,
-        show_progress: bool | None = None,  # noqa: FBT001
-        progress_desc: str | None = None,
-        skip_if_exists: bool | None = None,  # noqa: FBT001
-        force: bool = False,  # noqa: FBT001, FBT002
-        expected_size: int | None = None,
-    ) -> str:
-        """Stream `url` into `s3_path` with retries, skip-if-exists, checksum, progress, and large-file support.
+    def upload(self, request: UploadRequest) -> str:
+        """Stream `request.url` into `request.s3_path` with retries, using this uploader's shared settings.
 
-        :param url: address of the object to transfer to s3
-        :type url: str
-        :param s3_path: save path on s3, as 's3://bucket/key' or 'bucket/key'
-        :type s3_path: str
-        :param extra_headers: extra headers to pass to the GET/HEAD requests, defaults to None
-        :type extra_headers: dict[str, str] | None, optional
-        :param expected_checksum: expected digest of the downloaded bytes, defaults to None
-        :type expected_checksum: str | None, optional
-        :param checksum_fn: hashlib algorithm name used to compute/verify
-            `expected_checksum`; defaults to `self.default_checksum_fn` if
-            `expected_checksum` is given without it
-        :type checksum_fn: str | None, optional
-        :param show_progress: if True, display a tqdm progress bar tracking
-            bytes uploaded to S3; defaults to `self.default_show_progress` if not given
-        :type show_progress: bool | None, optional
-        :param progress_desc: label for the progress bar; defaults to the
-            destination S3 key if not supplied
-        :type progress_desc: str | None, optional
-        :param skip_if_exists: if True, check S3 for an existing, matching
-            object before uploading and skip the transfer if found; defaults
-            to `self.default_skip_if_exists` if not given
-        :type skip_if_exists: bool | None, optional
-        :param force: if True, always upload regardless of what already
-            exists in S3, defaults to False
-        :type force: bool, optional
-        :param expected_size: known size of the source file in bytes, if
-            already available (e.g. from a directory listing); used to
-            avoid a HEAD request during the skip check and to size the
-            multipart transfer before it starts, defaults to None
-        :type expected_size: int | None, optional
-        :raises ValueError: if `checksum_fn` (or its default) is not a supported hashlib algorithm
+        :param request: the per-call upload description
+        :type request: UploadRequest
+        :raises ValueError: if `request.checksum_fn` (or the resolved setting) is not a supported hashlib algorithm
         :raises NonRetryableDownloadError: for 4xx client errors (not retried)
         :raises DownloadError: for 5xx server errors or other transport failures (retried)
-        :raises ChecksumMismatchError: if the uploaded data does not match `expected_checksum` (not retried)
+        :raises ChecksumMismatchError: if the uploaded data does not match `request.expected_checksum` (not retried)
         :return: path of the file on s3, in the form bucket/key
         :rtype: str
         """
-        checksum_fn = resolve_checksum_fn(expected_checksum, checksum_fn, self.default_checksum_fn)
-        show_progress = self.default_show_progress if show_progress is None else show_progress
-        skip_if_exists = self.default_skip_if_exists if skip_if_exists is None else skip_if_exists
+        job = UploadJob.from_request(request, self.settings)
 
         @self._retry
         def _once() -> str:
-            return self._upload_once(
-                url,
-                s3_path,
-                extra_headers,
-                expected_checksum,
-                checksum_fn,
-                show_progress,
-                progress_desc,
-                skip_if_exists,
-                force,
-                expected_size,
-            )
+            return self._upload_once(job)
 
         return _once()
 
-    def _upload_once(  # noqa: PLR0913
-        self,
-        url: str,
-        s3_path: str,
-        extra_headers: dict[str, str] | None,
-        expected_checksum: str | None,
-        checksum_fn: str | None,
-        show_progress: bool,  # noqa: FBT001
-        progress_desc: str | None,
-        skip_if_exists: bool,  # noqa: FBT001
-        force: bool,  # noqa: FBT001
-        expected_size: int | None,
-    ) -> str:
+    def _upload_once(self, job: UploadJob) -> str:
         """Perform a single upload attempt, translating unexpected errors into `DownloadError`.
 
-        :param url: address of the object to transfer to s3
-        :type url: str
-        :param s3_path: save path on s3, as 's3://bucket/key' or 'bucket/key'
-        :type s3_path: str
-        :param extra_headers: extra headers to pass to the GET/HEAD requests
-        :type extra_headers: dict[str, str] | None
-        :param expected_checksum: expected digest of the downloaded bytes, or None
-        :type expected_checksum: str | None
-        :param checksum_fn: resolved hashlib algorithm name, or None
-        :type checksum_fn: str | None
-        :param show_progress: whether to display a tqdm progress bar for this attempt
-        :type show_progress: bool
-        :param progress_desc: label for the progress bar, or None to use the S3 key
-        :type progress_desc: str | None
-        :param skip_if_exists: whether to check S3 for an existing, matching object first
-        :type skip_if_exists: bool
-        :param force: if True, always upload regardless of what already exists in S3
-        :type force: bool
-        :param expected_size: known size of the source file in bytes, or None
-        :type expected_size: int | None
+        :param job: full specification of the transfer to perform
+        :type job: UploadJob
         :raises NonRetryableDownloadError: for 4xx client errors
-        :raises ChecksumMismatchError: if the uploaded data does not match `expected_checksum`
+        :raises ChecksumMismatchError: if the uploaded data does not match the expected checksum
         :raises DownloadError: for any other failure, wrapping the original exception
         :return: path of the file on s3, in the form bucket/key
         :rtype: str
         """
         try:
-            return S3UploadCore.perform_upload(
-                url,
-                s3_path,
-                s3_client=self.s3_client,
-                requests_module=self.requests,
-                extra_headers=extra_headers,
-                extra_args=self.extra_args,
-                expected_checksum=expected_checksum,
-                checksum_fn=checksum_fn,
-                timeout=self.timeout,
-                show_progress=show_progress,
-                progress_desc=progress_desc,
-                skip_if_exists=skip_if_exists,
-                force=force,
-                expected_size=expected_size,
-                transfer_config_kwargs=self.transfer_config_kwargs,
-            )
+            return S3UploadCore.perform_upload(job)
         except (NonRetryableDownloadError, ChecksumMismatchError) as exc:
-            logger.exception("%s: %s; retry not possible", url, exc.args[0], extra={"url": url})
+            logger.exception("%s: %s; retry not possible", job.url, exc.args[0], extra={"url": job.url})
             raise
         except Exception as exc:
-            logger.exception("%s: %s; retry possible", url, exc, extra={"url": url})
+            logger.exception("%s: %s; retry possible", job.url, exc, extra={"url": job.url})
             raise DownloadError(str(exc)) from exc

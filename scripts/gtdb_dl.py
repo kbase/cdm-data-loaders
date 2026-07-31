@@ -6,7 +6,7 @@ import boto3
 
 from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
 from cdm_data_loaders.utils.file_transfer.async_client import AsyncFileDownloader
-from cdm_data_loaders.utils.file_transfer.s3.streamer import S3StreamUploader
+from cdm_data_loaders.utils.file_transfer.s3.streamer import S3StreamUploader, UploadRequest
 from cdm_data_loaders.utils.file_transfer.sync_client import FileDownloader
 from cdm_data_loaders.utils.link_scraper import (
     DirEntry,
@@ -85,17 +85,18 @@ def upload_to_s3(s3_prefix: str) -> None:
     """
     files = crawl_directory(GTDB_BASE_URL, exclude_dirs=EXCLUDE_DIRS, prefer_compressed=True)
 
-    s3_client = boto3.client("s3")
-    uploader = S3StreamUploader(s3_client, max_attempts=3)
+    uploader = S3StreamUploader()
 
     for entry in files:
         s3_path = entry_s3_key(entry, GTDB_BASE_URL, s3_prefix)
-        uploader.upload(
-            entry.url,
-            s3_path,
+        upload_args = UploadRequest(
+            url=entry.url,
+            s3_path=s3_path,
             expected_checksum=entry.checksum.value if entry.checksum else None,
             checksum_fn=entry.checksum.algorithm if entry.checksum else None,
-        )
+            show_progress=True,
+        )  # pyright: ignore[reportCallIssue]
+        uploader.upload(upload_args)
 
 
 def route_download(

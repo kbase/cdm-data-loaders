@@ -6,27 +6,27 @@ directly against plain integers.
 
 import math
 from logging import Logger, getLogger
-from typing import Any
+from typing import Any, Final
 
 from boto3.s3.transfer import TransferConfig
 
 logger: Logger = getLogger(__name__)
 
-MB = 1024**2
+MB: Final[int] = 1024**2
 
 # S3 hard limits (see AWS multipart upload documentation / s3transfer constants)
-S3_MAX_PARTS = 10_000
-S3_MIN_PART_SIZE = 5 * MB
+S3_MAX_PARTS: Final[int] = 10_000
+S3_MIN_PART_SIZE: Final[int] = 5 * MB
 
 # Matches s3transfer's own defaults, used as the starting point before scaling up.
-DEFAULT_MULTIPART_THRESHOLD = 8 * MB
-DEFAULT_MULTIPART_CHUNKSIZE = 8 * MB
+DEFAULT_MULTIPART_THRESHOLD: Final[int] = 8 * MB
+DEFAULT_MULTIPART_CHUNKSIZE: Final[int] = 8 * MB
 
 # Chunk size used when a file's size cannot be determined ahead of the
 # transfer (e.g. chunked transfer-encoding with no Content-Length). Large
 # enough to safely cover files up to ~625 GB without hitting the part limit,
 # at the cost of slightly less parallelism for small unknown-size transfers.
-UNKNOWN_SIZE_CHUNKSIZE = 64 * MB
+UNKNOWN_SIZE_CHUNKSIZE: Final[int] = 64 * MB
 
 
 def compute_multipart_chunksize(file_size: int | None, requested_chunksize: int | None = None) -> int:
