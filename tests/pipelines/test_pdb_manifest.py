@@ -15,8 +15,6 @@ from botocore.exceptions import ClientError
 
 import cdm_data_loaders.pipelines.pdb_manifest as pdb_manifest_mod
 from cdm_data_loaders.pdb.constants import (
-    HoldingsFile,
-    HoldingsFileSchemas,
     HoldingsFileTypes,
     ManifestData,
     PDBRecord,
@@ -38,10 +36,6 @@ from cdm_data_loaders.pipelines.pdb_manifest import (
 # ---------------------------------------------------------------------------
 # Shared test data
 # ---------------------------------------------------------------------------
-
-_HOLDINGS_ID_ONLY = HoldingsFile(filename=Path("dummy.json.gz"), schema=HoldingsFileSchemas.ID_ONLY)
-_HOLDINGS_ID_DATE = HoldingsFile(filename=Path("dummy.json.gz"), schema=HoldingsFileSchemas.ID_DATE)
-_HOLDINGS_BAD = HoldingsFile(filename=Path("dummy.json.gz"), schema="bad_schema")  # type: ignore[arg-type]
 
 _ID_A = "pdb_00001abc"
 _ID_B = "pdb_00001def"
