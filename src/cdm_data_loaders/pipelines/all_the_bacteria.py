@@ -31,8 +31,8 @@ from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
 )
-from cdm_data_loaders.utils.download.sync_client import FileDownloader
-from cdm_data_loaders.utils.s3 import stream_to_s3
+from cdm_data_loaders.utils.file_transfer.s3.streamer import stream_to_s3
+from cdm_data_loaders.utils.file_transfer.sync_client import FileDownloader
 
 logger: Logger = getLogger(__name__)
 
