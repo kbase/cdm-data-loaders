@@ -152,7 +152,7 @@ the S3 client **before** running the cells that use them.  Insert a new cell
 after Cell 1 (Imports) with:
 
 ```python
-from cdm_data_loaders.utils.s3 import get_s3_client, reset_s3_client
+from cdm_data_loaders.utils.file_transfer.s3.client import get_s3_client, reset_s3_client
 
 reset_s3_client()
 get_s3_client({
