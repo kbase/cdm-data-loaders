@@ -694,7 +694,10 @@ def test_copy_directory_copy_within_same_bucket(mock_s3_client: Any) -> None:
 
     successes, errors = copy_directory(f"s3://{TEST_BUCKET}/foo", f"s3://{TEST_BUCKET}/bar")
 
-    assert successes == {"cdm-lake/foo/a.txt": "cdm-lake/bar/a.txt", "cdm-lake/foo/b.txt": "cdm-lake/bar/b.txt"}
+    assert successes == {
+        f"{TEST_BUCKET}/foo/a.txt": f"{TEST_BUCKET}/bar/a.txt",
+        f"{TEST_BUCKET}/foo/b.txt": f"{TEST_BUCKET}/bar/b.txt",
+    }
     assert errors == {}
     assert list_keys(mock_s3_client, TEST_BUCKET, prefix="bar") == {"bar/a.txt", "bar/b.txt"}
     assert list_keys(mock_s3_client, TEST_BUCKET) == {"foo/a.txt", "foo/b.txt", "bar/a.txt", "bar/b.txt"}
@@ -866,7 +869,7 @@ def test_copy_object_preserves_user_metadata(mocked_s3_client_no_checksum: Any, 
         f"{TEST_BUCKET}/src/file.txt",
         f"{destination}/archive/file.txt",
     )
-    assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_STATUS_OK
+    assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_200
 
     # source user metadata is preserved (MetadataDirective=COPY)
     resp = mocked_s3_client_no_checksum.head_object(Bucket=destination, Key="archive/file.txt")

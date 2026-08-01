@@ -148,8 +148,8 @@ def test_get_s3_client_retry_configuration(monkeypatch: pytest.MonkeyPatch) -> N
     s3_client = get_s3_client()
     retries_config = s3_client.meta.config.retries
 
-    assert retries_config["mode"] == s3_client.AWS_CLIENT_RETRY_MODE
-    assert retries_config["total_max_attempts"] == s3_client.AWS_CLIENT_TOTAL_MAX_ATTEMPTS
+    assert retries_config["mode"] == client.AWS_CLIENT_RETRY_MODE
+    assert retries_config["total_max_attempts"] == client.AWS_CLIENT_TOTAL_MAX_ATTEMPTS
 
     reset_s3_client()
     assert client._s3_client is None  # noqa: SLF001
