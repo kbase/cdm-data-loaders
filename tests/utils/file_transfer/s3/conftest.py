@@ -8,6 +8,7 @@ from unittest.mock import patch
 import boto3
 import pytest
 from moto import mock_aws
+from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
 from cdm_data_loaders.utils.file_transfer.s3.client import reset_s3_client
@@ -68,7 +69,7 @@ TEST_MB_ARGS_ERROR = [
 
 
 @pytest.fixture
-def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[Any, Any]:
+def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[S3Client, Any]:
     """Yield a mocked S3 client with both valid buckets created.
 
     The function get_s3_client() is patched to ensure that all module functions use this client.
@@ -85,7 +86,7 @@ def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[Any, Any]:
 
     with mock_aws():
         reset_s3_client()
-        client = boto3.client("s3")
+        client: S3Client = boto3.client("s3")
         for bucket in FILES_IN_BUCKETS:
             client.create_bucket(Bucket=bucket)
 
@@ -102,7 +103,7 @@ def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[Any, Any]:
 
 
 @pytest.fixture
-def mocked_s3_client_no_checksum(mock_s3_client: Any) -> Any:
+def mocked_s3_client_no_checksum(mock_s3_client: S3Client) -> S3Client:
     """Yield the mocked S3 client with copy_object patched to strip ChecksumAlgorithm.
 
     This works around the moto limitation of not supporting CRC64NVME checksums,
@@ -141,7 +142,7 @@ def sample_dir(tmp_path: Path) -> Path:
     return sample_dir
 
 
-def populate_mock_s3(client: Any, file_list_by_bucket: dict[str, list[str]]) -> None:
+def populate_mock_s3(client: S3Client, file_list_by_bucket: dict[str, list[str]]) -> None:
     """Populate buckets with a list of files.
 
     File names should be a list, indexed by bucket.
@@ -150,7 +151,7 @@ def populate_mock_s3(client: Any, file_list_by_bucket: dict[str, list[str]]) -> 
     otherwise, the content will just be `x`.
 
     :param client: s3 client
-    :type client: Any
+    :type client: S3Client
     :param file_list: list of files, indexed by bucket
     :type file_list: dict[str, list[str]]
     """

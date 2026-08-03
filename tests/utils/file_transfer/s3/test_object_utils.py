@@ -1,24 +1,18 @@
 """Tests for s3_object utils.py using moto to mock AWS S3."""
 
 import io
-import json
 import logging
-import re
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
 import pytest
 from botocore.exceptions import ClientError
 from requests.exceptions import ConnectionError as ConnError
 from requests.exceptions import HTTPError
+from types_boto3_s3.client import S3Client
 
 from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
     DEFAULT_EXTRA_ARGS,
-    cmd_cp,
-    cmd_head,
-    cmd_ls,
-    cmd_mb,
     copy_directory,
     copy_object,
     delete_object,
@@ -32,7 +26,6 @@ from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
     upload_dir,
     upload_file,
 )
-from tests.s3_helpers import strip_checksum_algorithm
 from tests.utils.file_transfer.s3.conftest import (
     ALT_BUCKET,
     BUCKETS,
@@ -147,7 +140,7 @@ def test_split_s3_path_allow_bucket_only_success(valid_path: str) -> None:
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 @pytest.mark.s3
 def test_list_matching_objects_lists_objects(
-    mock_s3_client: Any,
+    mock_s3_client: S3Client,
     bucket: str,
     protocol: str,
 ) -> None:
@@ -161,7 +154,7 @@ def test_list_matching_objects_lists_objects(
 @pytest.mark.parametrize("dir_path", ["dir_one/sub_dir", "dir_one/sub_dir/", "dir_one/sub_dir/und"])
 @pytest.mark.s3
 def test_list_matching_objects_filters_by_prefix(
-    mock_s3_client: Any,
+    mock_s3_client: S3Client,
     dir_path: str,
 ) -> None:
     """Check that more specific queries, including those that have 'incomplete' dir/file names, return correct results."""
@@ -177,7 +170,7 @@ def test_list_matching_objects_filters_by_prefix(
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 @pytest.mark.s3
 def test_list_matching_objects_empty_for_missing_prefix(
-    mock_s3_client: Any,
+    mock_s3_client: S3Client,
     protocol: str,
 ) -> None:
     """Verify that an empty list is returned when no objects match the given prefix."""
@@ -210,7 +203,7 @@ EXPECTED_FILE_LIST = {
 @pytest.mark.parametrize("dir_path", EXPECTED_FILE_LIST.keys())
 @pytest.mark.s3
 def test_list_matching_objects_returns_more_than_1000_entries(
-    mock_s3_client: Any,
+    mock_s3_client: S3Client,
     dir_path: str,
 ) -> None:
     """Verify that pagination is followed so that more than 1000 objects are returned."""
@@ -226,7 +219,7 @@ def test_list_matching_objects_returns_more_than_1000_entries(
 # object_exists
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 @pytest.mark.s3
-def test_head_object_and_object_exists_true_and_false(mock_s3_client: Any, protocol: str) -> None:
+def test_head_object_and_object_exists_true_and_false(mock_s3_client: S3Client, protocol: str) -> None:
     """Verify that object_exists returns True for an object that exists in the bucket."""
     populate_mock_s3(mock_s3_client, FILES_IN_BUCKETS)
     for bucket, file_list in FILES_IN_BUCKETS.items():
@@ -246,7 +239,9 @@ def test_head_object_and_object_exists_true_and_false(mock_s3_client: Any, proto
 @pytest.mark.parametrize("bucket", BUCKETS)
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 @pytest.mark.s3
-def test_object_exists_returns_false_when_absent(mock_s3_client: Any, s3_path: str, protocol: str, bucket: str) -> None:
+def test_object_exists_returns_false_when_absent(
+    mock_s3_client: S3Client, s3_path: str, protocol: str, bucket: str
+) -> None:
     """Verify that object_exists returns False for an object that does not exist."""
     populate_mock_s3(mock_s3_client, FILES_IN_BUCKETS)
     assert object_exists(f"{protocol}{bucket}/{s3_path}") is False
@@ -258,7 +253,7 @@ def test_object_exists_returns_false_when_absent(mock_s3_client: Any, s3_path: s
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 @pytest.mark.s3
 def test_upload_file_succeeds(
-    mock_s3_client: Any, sample_file: Path, protocol: str, bucket: str, destination_dir: str
+    mock_s3_client: S3Client, sample_file: Path, protocol: str, bucket: str, destination_dir: str
 ) -> None:
     """Verify that a file is uploaded to the correct key in the specified bucket."""
     result = upload_file(sample_file, f"{protocol}{bucket}/{destination_dir}")
@@ -268,7 +263,7 @@ def test_upload_file_succeeds(
 
 
 @pytest.mark.s3
-def test_upload_file_uses_custom_object_name(mock_s3_client: Any, sample_file: Path) -> None:
+def test_upload_file_uses_custom_object_name(mock_s3_client: S3Client, sample_file: Path) -> None:
     """Verify that the object_name argument overrides the source filename as the S3 key."""
     result = upload_file(sample_file, f"{TEST_BUCKET}/uploads", object_name="custom.txt")
     assert result is True
@@ -277,7 +272,7 @@ def test_upload_file_uses_custom_object_name(mock_s3_client: Any, sample_file: P
 
 
 @pytest.mark.s3
-def test_upload_file_skips_when_already_present(mock_s3_client: Any, sample_file: Path) -> None:
+def test_upload_file_skips_when_already_present(mock_s3_client: S3Client, sample_file: Path) -> None:
     """Verify that uploading a file that already exists is skipped, returns True, and leaves the object unchanged."""
     mock_s3_client.put_object(Bucket=TEST_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
     result = upload_file(sample_file, f"{TEST_BUCKET}/uploads")
@@ -336,7 +331,7 @@ UPLOAD_BUCKET_KEY = f"{ALT_BUCKET}/{UPLOAD_TEST_KEY}"
 TEST_URL = "https://example.com/test-file.pdf"
 
 
-def test_stream_to_s3_happy_path(mock_s3_client: Any) -> None:
+def test_stream_to_s3_happy_path(mock_s3_client: S3Client) -> None:
     """File content from the HTTP response is stored correctly in S3."""
     content = b"hello world"
     mock_requests, _ = make_mock_requests(content=content)
@@ -359,7 +354,9 @@ def test_stream_to_s3_happy_path(mock_s3_client: Any) -> None:
 
 
 @pytest.mark.parametrize("content_type", [None, "application/json", "application/pdf", "text"])
-def test_stream_to_s3_sets_content_type_from_response_headers(mock_s3_client: Any, content_type: str | None) -> None:
+def test_stream_to_s3_sets_content_type_from_response_headers(
+    mock_s3_client: S3Client, content_type: str | None
+) -> None:
     """ContentType metadata on the S3 object matches the HTTP response header."""
     content_type_args = {}
     if content_type:
@@ -372,7 +369,7 @@ def test_stream_to_s3_sets_content_type_from_response_headers(mock_s3_client: An
     assert head["ContentType"] == content_type or "application/octet-stream"
 
 
-def test_stream_to_s3_raises_on_http_error_status(mock_s3_client: Any) -> None:
+def test_stream_to_s3_raises_on_http_error_status(mock_s3_client: S3Client) -> None:
     """An HTTP error status causes raise_for_status() to propagate an exception."""
     mock_requests, mock_response = make_mock_requests(status_code=404)
     mock_response.raise_for_status.side_effect = HTTPError("404 Not Found")
@@ -386,7 +383,7 @@ def test_stream_to_s3_raises_on_http_error_status(mock_s3_client: Any) -> None:
         mock_s3_client.head_object(Bucket=ALT_BUCKET, Key=UPLOAD_TEST_KEY)
 
 
-def test_stream_to_s3_raises_on_connection_error(mock_s3_client: Any) -> None:
+def test_stream_to_s3_raises_on_connection_error(mock_s3_client: S3Client) -> None:
     """A network-level failure raises a ConnectionError."""
     mock_requests, _ = make_mock_requests(status_code=404)
     mock_requests.get.side_effect = ConnError("Network unreachable")
@@ -399,7 +396,7 @@ def test_stream_to_s3_raises_on_connection_error(mock_s3_client: Any) -> None:
 
 
 # FIXME: don't upload if there is nothing there?
-def test_stream_to_s3_uploads_empty_file(mock_s3_client: Any) -> None:
+def test_stream_to_s3_uploads_empty_file(mock_s3_client: S3Client) -> None:
     """An empty HTTP response body results in an empty S3 object."""
     mock_requests, _ = make_mock_requests(content=b"")
 
@@ -409,7 +406,7 @@ def test_stream_to_s3_uploads_empty_file(mock_s3_client: Any) -> None:
     assert result["Body"].read() == b""
 
 
-def test_stream_to_s3_uploads_large_file(mock_s3_client: Any) -> None:
+def test_stream_to_s3_uploads_large_file(mock_s3_client: S3Client) -> None:
     """A large payload (>5MB) is uploaded correctly via multipart."""
     content = b"x" * (6 * 1024 * 1024)  # 6 MB
     mock_requests, _ = make_mock_requests(content=content)
@@ -430,7 +427,7 @@ def test_stream_to_s3_accepts_custom_requests_implementation() -> None:
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 @pytest.mark.s3
 def test_download_file_retrieves_correct_content(
-    mock_s3_client: Any, protocol: str, bucket: str, tmp_path: Path
+    mock_s3_client: S3Client, protocol: str, bucket: str, tmp_path: Path
 ) -> None:
     """Verify that download_file writes the correct file content to disk for each valid bucket."""
     content = b"some important content"
@@ -443,7 +440,7 @@ def test_download_file_retrieves_correct_content(
 @pytest.mark.parametrize("path_type", [str, Path])
 @pytest.mark.s3
 def test_download_file_use_str_or_path_for_local_file(
-    mock_s3_client: Any, tmp_path: Path, path_type: type[str] | type[Path]
+    mock_s3_client: S3Client, tmp_path: Path, path_type: type[str] | type[Path]
 ) -> None:
     """Verify that download_file can create a new directory if need be."""
     content = b"some cool file stuff"
@@ -458,7 +455,7 @@ def test_download_file_use_str_or_path_for_local_file(
 
 
 @pytest.mark.s3
-def test_download_file_save_to_new_dir(mock_s3_client: Any, tmp_path: Path) -> None:
+def test_download_file_save_to_new_dir(mock_s3_client: S3Client, tmp_path: Path) -> None:
     """Verify that download_file can create a new directory if need be."""
     content = b"some cool file stuff"
     bucket = BUCKETS[0]
@@ -473,7 +470,7 @@ def test_download_file_save_to_new_dir(mock_s3_client: Any, tmp_path: Path) -> N
 
 
 @pytest.mark.s3
-def test_download_file_clobbers_existing_file(mock_s3_client: Any, tmp_path: Path) -> None:
+def test_download_file_clobbers_existing_file(mock_s3_client: S3Client, tmp_path: Path) -> None:
     """Verify that download_file can create a new directory if need be."""
     bucket = BUCKETS[0]
     key = "to/the/door.txt"
@@ -493,7 +490,7 @@ def test_download_file_clobbers_existing_file(mock_s3_client: Any, tmp_path: Pat
 
 
 @pytest.mark.s3
-def test_download_file_does_not_clobber_existing_file_to_mkdir(mock_s3_client: Any, tmp_path: Path) -> None:
+def test_download_file_does_not_clobber_existing_file_to_mkdir(mock_s3_client: S3Client, tmp_path: Path) -> None:
     """Verify that download_file will not overwrite an existing file whilst trying to make a directory."""
     bucket = BUCKETS[0]
     key = "to/the/door.txt"
@@ -534,7 +531,7 @@ def test_download_file_does_not_exist(tmp_path: Path, caplog: pytest.LogCaptureF
 # upload_dir
 @pytest.mark.parametrize("bucket", [TEST_BUCKET, ALT_BUCKET])
 @pytest.mark.s3
-def test_upload_dir_uploads_recursively(mock_s3_client: Any, bucket: str, sample_dir: Path) -> None:
+def test_upload_dir_uploads_recursively(mock_s3_client: S3Client, bucket: str, sample_dir: Path) -> None:
     """Verify that upload_dir recurses into subdirectories and uploads nested files."""
     result = upload_dir(sample_dir, f"{bucket}/remote")
     assert result is True
@@ -545,7 +542,7 @@ def test_upload_dir_uploads_recursively(mock_s3_client: Any, bucket: str, sample
 @pytest.mark.parametrize("path_type", [str, Path])
 @pytest.mark.s3
 def test_upload_dir_accepts_str_and_path(
-    mock_s3_client: Any, sample_dir: Path, path_type: type[str] | type[Path]
+    mock_s3_client: S3Client, sample_dir: Path, path_type: type[str] | type[Path]
 ) -> None:
     """Verify that upload_dir accepts both str and Path objects for the local directory path."""
     bucket = TEST_BUCKET
@@ -571,21 +568,10 @@ def test_upload_dir_raises_on_empty_destination(sample_dir: Path) -> None:
         upload_dir(sample_dir, "")
 
 
-@pytest.fixture
-def mocked_s3_client_no_checksum(mock_s3_client: Any) -> Any:
-    """Yield the mocked S3 client with copy_object patched to strip ChecksumAlgorithm.
-
-    This works around the moto limitation of not supporting CRC64NVME checksums,
-    allowing copy_object calls that include ChecksumAlgorithm to succeed.
-    """
-    mock_s3_client.copy_object = strip_checksum_algorithm(mock_s3_client.copy_object)
-    return mock_s3_client
-
-
 # copy_object
 @pytest.mark.parametrize("destination", BUCKETS)
 @pytest.mark.s3
-def test_copy_object(mocked_s3_client_no_checksum: Any, destination: str) -> None:
+def test_copy_object(mocked_s3_client_no_checksum: S3Client, destination: str) -> None:
     """Verify that copy_object copies an object to a new key within the same bucket."""
     mocked_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key="src/file.txt", Body=b"copy me")
     assert object_exists(f"{TEST_BUCKET}/src/file.txt")
@@ -631,13 +617,13 @@ def test_copy_file_source_object_nonexistent() -> None:
 
 
 # copy_directory tests
-def put_objects(mock_s3_client: Any, bucket: str, keys: list[str], body: bytes = b"data") -> None:
+def put_objects(mock_s3_client: S3Client, bucket: str, keys: list[str], body: bytes = b"data") -> None:
     """Helper to seed objects into a bucket."""
     for key in keys:
         mock_s3_client.put_object(Bucket=bucket, Key=key, Body=body)
 
 
-def list_keys(mock_s3_client: Any, bucket: str, prefix: str = "") -> set[str]:
+def list_keys(mock_s3_client: S3Client, bucket: str, prefix: str = "") -> set[str]:
     """Helper to list all keys in a bucket under a prefix."""
     paginator = mock_s3_client.get_paginator("list_objects_v2")
     keys = []
@@ -650,7 +636,7 @@ def list_keys(mock_s3_client: Any, bucket: str, prefix: str = "") -> set[str]:
 @pytest.mark.parametrize("source_suffix", ["", "/"])
 @pytest.mark.parametrize("dest_suffix", ["", "/"])
 def test_copy_directory_copies_all_objects_to_dest(
-    mocked_s3_client_no_checksum: Any, source_suffix: str, dest_suffix: str
+    mocked_s3_client_no_checksum: S3Client, source_suffix: str, dest_suffix: str
 ) -> None:
     """Verify that all objects under the source prefix are present in the successes dict.
 
@@ -688,7 +674,7 @@ def test_copy_directory_copies_all_objects_to_dest(
 
 
 @pytest.mark.s3
-def test_copy_directory_copy_within_same_bucket(mock_s3_client: Any) -> None:
+def test_copy_directory_copy_within_same_bucket(mock_s3_client: S3Client) -> None:
     """Verify that copying between two prefixes within the same bucket works correctly."""
     populate_mock_s3(mock_s3_client, {TEST_BUCKET: ["foo/a.txt", "foo/b.txt"]})
 
@@ -715,7 +701,7 @@ def test_copy_directory_empty_directory_returns_empty_dicts() -> None:
 
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
-def test_copy_directory_does_not_copy_objects_outside_prefix(mock_s3_client: Any) -> None:
+def test_copy_directory_does_not_copy_objects_outside_prefix(mock_s3_client: S3Client) -> None:
     """Verify that objects whose keys share a prefix string but are not under the source directory.
 
     Example: 'foobar/' when copying 'foo/'.
@@ -744,7 +730,7 @@ def test_copy_directory_missing_source_bucket_returns_error() -> None:
 
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
-def test_copy_directory_missing_dest_bucket_records_errors(mock_s3_client: Any) -> None:
+def test_copy_directory_missing_dest_bucket_records_errors(mock_s3_client: S3Client) -> None:
     """Verify that when the destination bucket does not exist, the errors dict contains all objects under the original dir."""
     # FIXME: throw a bucket not exists error?
     populate_mock_s3(mock_s3_client, {TEST_BUCKET: ["foo/a.txt", "foo/b.txt"]})
@@ -762,7 +748,7 @@ def test_copy_directory_missing_dest_bucket_records_errors(mock_s3_client: Any) 
 @pytest.mark.parametrize("bucket", BUCKETS)
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 @pytest.mark.s3
-def test_delete_object_removes_object(mock_s3_client: Any, bucket: str, protocol: str) -> None:
+def test_delete_object_removes_object(mock_s3_client: S3Client, bucket: str, protocol: str) -> None:
     """Verify that delete_object removes the object from the specified bucket."""
     mock_s3_client.put_object(Bucket=bucket, Key="to/delete.txt", Body=b"bye")
     s3_path = f"{protocol}{bucket}/to/delete.txt"
@@ -781,7 +767,7 @@ def test_delete_object_removes_object(mock_s3_client: Any, bucket: str, protocol
 # upload_file with metadata
 @pytest.mark.parametrize("bucket", BUCKETS)
 @pytest.mark.s3
-def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: Any, sample_file: Path, bucket: str) -> None:
+def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: S3Client, sample_file: Path, bucket: str) -> None:
     """Verify that upload_file with metadata stores user metadata on the uploaded object."""
     metadata = {"md5": "abc123", "source": "ncbi"}
     result = upload_file(sample_file, f"{bucket}/uploads", user_metadata=metadata)
@@ -793,7 +779,7 @@ def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: Any, sample
 
 
 @pytest.mark.s3
-def test_upload_file_with_metadata_custom_object_name(mock_s3_client: Any, sample_file: Path) -> None:
+def test_upload_file_with_metadata_custom_object_name(mock_s3_client: S3Client, sample_file: Path) -> None:
     """Verify that the object_name parameter overrides the filename."""
     result = upload_file(sample_file, f"{TEST_BUCKET}/uploads", user_metadata={"k": "v"}, object_name="renamed.txt")
     assert result is True
@@ -802,7 +788,7 @@ def test_upload_file_with_metadata_custom_object_name(mock_s3_client: Any, sampl
 
 
 @pytest.mark.s3
-def test_upload_file_with_metadata_overwrites_existing(mock_s3_client: Any, sample_file: Path) -> None:
+def test_upload_file_with_metadata_overwrites_existing(mock_s3_client: S3Client, sample_file: Path) -> None:
     """Verify that upload_file with metadata uploads even when the object already exists."""
     mock_s3_client.put_object(Bucket=TEST_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
     result = upload_file(sample_file, f"{TEST_BUCKET}/uploads", user_metadata={"new": "true"})
@@ -830,7 +816,7 @@ def test_upload_file_with_metadata_accepts_str_and_path(sample_file: Path, path_
 
 # head_object
 @pytest.mark.s3
-def test_head_object_returns_info(mock_s3_client: Any) -> None:
+def test_head_object_returns_info(mock_s3_client: S3Client) -> None:
     """Verify that head_object returns size, metadata, and checksum fields."""
     mock_s3_client.put_object(Bucket=TEST_BUCKET, Key="info/file.txt", Body=b"hello", Metadata={"md5": "abc123"})
     result = head_object(f"{TEST_BUCKET}/info/file.txt")
@@ -849,7 +835,7 @@ def test_head_object_raises_for_missing() -> None:
 
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 @pytest.mark.s3
-def test_head_object_with_protocols(mock_s3_client: Any, protocol: str) -> None:
+def test_head_object_with_protocols(mock_s3_client: S3Client, protocol: str) -> None:
     """Verify that head_object handles all valid protocol prefixes."""
     mock_s3_client.put_object(Bucket=TEST_BUCKET, Key="proto/file.txt", Body=b"data")
     result = head_object(f"{protocol}{TEST_BUCKET}/proto/file.txt")
@@ -860,7 +846,7 @@ def test_head_object_with_protocols(mock_s3_client: Any, protocol: str) -> None:
 # copy_object
 @pytest.mark.parametrize("destination", BUCKETS)
 @pytest.mark.s3
-def test_copy_object_preserves_user_metadata(mocked_s3_client_no_checksum: Any, destination: str) -> None:
+def test_copy_object_preserves_user_metadata(mocked_s3_client_no_checksum: S3Client, destination: str) -> None:
     """copy_object preserves source user metadata (MetadataDirective=COPY default)."""
     mocked_s3_client_no_checksum.put_object(
         Bucket=TEST_BUCKET, Key="src/file.txt", Body=b"archive me", Metadata={"md5": "abc123"}
@@ -880,7 +866,7 @@ def test_copy_object_preserves_user_metadata(mocked_s3_client_no_checksum: Any, 
 
 
 @pytest.mark.s3
-def test_copy_object_preserves_content(mocked_s3_client_no_checksum: Any) -> None:
+def test_copy_object_preserves_content(mocked_s3_client_no_checksum: S3Client) -> None:
     """Verify that the content of the copied object matches the original."""
     mocked_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key="src/data.bin", Body=b"binary data")
     copy_object(
@@ -904,7 +890,7 @@ def test_delete_object_no_such_bucket() -> None:
 
 # delete_objects
 @pytest.mark.s3
-def test_delete_objects_removes_all(mock_s3_client: Any) -> None:
+def test_delete_objects_removes_all(mock_s3_client: S3Client) -> None:
     """delete_objects removes every listed key in a single call."""
     keys = ["bulk/a.txt", "bulk/b.txt", "bulk/c.txt"]
     for k in keys:
@@ -918,7 +904,7 @@ def test_delete_objects_removes_all(mock_s3_client: Any) -> None:
 
 
 @pytest.mark.s3
-def test_delete_objects_empty_list_is_noop(mock_s3_client: Any) -> None:
+def test_delete_objects_empty_list_is_noop(mock_s3_client: S3Client) -> None:
     """delete_objects with an empty list makes no API call and returns no errors."""
     mock_s3_client.put_object(Bucket=TEST_BUCKET, Key="keep/me.txt", Body=b"safe")
     errors = delete_objects(TEST_BUCKET, [])
@@ -927,321 +913,8 @@ def test_delete_objects_empty_list_is_noop(mock_s3_client: Any) -> None:
 
 
 @pytest.mark.s3
-def test_delete_objects_nonexistent_keys_no_error(mock_s3_client: Any) -> None:
+@pytest.mark.usefixtures("mock_s3_client")
+def test_delete_objects_nonexistent_keys_no_error() -> None:
     """Deleting keys that don't exist returns no errors (S3 delete is idempotent)."""
     errors = delete_objects(TEST_BUCKET, ["ghost/a.txt", "ghost/b.txt"])
     assert errors == []
-
-
-# CLI helper function tests
-
-TEST_PROTOCOLS = [
-    "",
-    "s3://",
-    "s3a://",
-]
-
-TEST_MB_PARAMS = [
-    pytest.param("one-bucket", "one-bucket", id="name only"),
-    pytest.param("two-bucket/", "two-bucket", id="trailing slash"),
-    pytest.param("red-bucket/key", "red-bucket", id="red-bucket"),
-    pytest.param("blue-bucket/foo/bar.txt", "blue-bucket", id="blue-bucket"),
-]
-
-ERROR_MB_USAGE = "Usage: s3_local.py mb s3://BUCKET"
-
-TEST_MB_ARGS_ERROR = [
-    pytest.param([], ERROR_MB_USAGE, id="no args"),
-    pytest.param(["foo", "bar"], ERROR_MB_USAGE, id="two args"),
-    pytest.param(["foo", "bar", "baz"], ERROR_MB_USAGE, id="three args"),
-    pytest.param([""], NO_PATH_FOUND, id="missing bucket"),
-    pytest.param(["/bucket"], START_WITH_BUCKET_NAME, id="preceding slash"),
-    pytest.param(["/"], START_WITH_BUCKET_NAME, id="root"),
-]
-
-
-@pytest.mark.s3
-@pytest.mark.parametrize("protocol", TEST_PROTOCOLS)
-@pytest.mark.parametrize(("path", "bucket"), TEST_MB_PARAMS)
-def test_cmd_mb_creates_bucket(mock_s3_client: Any, protocol: str, path: str, bucket: str) -> None:
-    """CLI mb helper creates bucket for valid paths."""
-    with patch("builtins.print") as mock_print:
-        cmd_mb([f"{protocol}{path}"])
-    mock_print.assert_called_once_with(f"Created bucket: {bucket}")
-    mock_s3_client.head_bucket(Bucket=bucket)
-
-
-@pytest.mark.s3
-@pytest.mark.parametrize("protocol", TEST_PROTOCOLS)
-@pytest.mark.parametrize(("path", "bucket"), TEST_MB_PARAMS)
-def test_cmd_mb_handles_existing_bucket(mock_s3_client: Any, protocol: str, path: str, bucket: str) -> None:
-    """CLI mb helper prints message when bucket already exists."""
-    args = [f"{protocol}{path}"]
-    with patch("builtins.print") as mock_print:
-        cmd_mb(args)
-        cmd_mb(args)
-    mock_print.assert_has_calls(
-        [
-            call(f"Created bucket: {bucket}"),
-            call(f"Bucket already exists: {bucket}"),
-        ]
-    )
-    mock_s3_client.head_bucket(Bucket=bucket)
-
-
-@pytest.mark.s3
-@pytest.mark.usefixtures("mock_s3_client")
-@pytest.mark.parametrize(("args", "err_msg"), TEST_MB_ARGS_ERROR)
-def test_cmd_mb_prints_error(args: list[str], err_msg: str) -> None:
-    """CLI mb helper prints usage on invalid argument list."""
-    with pytest.raises(SystemExit, match=err_msg):
-        cmd_mb(args)
-
-
-TEST_CP_PATHS = [
-    pytest.param("bucket/path/to/file.txt", "bucket", "path/to/file.txt", id="no prefix"),
-    pytest.param("s3://foo/bar/baz.qux", "foo", "bar/baz.qux", id="with prefix"),
-    pytest.param("bucket/root.txt", "bucket", "root.txt", id="no prefix root file"),
-    pytest.param("s3://foo/bar.baz", "foo", "bar.baz", id="with prefix root file"),
-]
-
-
-@pytest.mark.s3
-@pytest.mark.parametrize(("path", "bucket", "key"), TEST_CP_PATHS)
-def test_cmd_cp_copies_file(mock_s3_client: Any, sample_file: Path, path: str, bucket: str, key: str) -> None:
-    """CLI cp helper copies local file to store."""
-    mock_s3_client.create_bucket(Bucket=bucket)
-    with patch("builtins.print") as mock_print:
-        cmd_cp([str(sample_file), path])
-    mock_print.assert_has_calls(
-        [
-            call(f"  {key}"),
-            call(f"Uploaded 1 files to s3://{bucket}/{key}"),
-        ]
-    )
-    obj = mock_s3_client.get_object(Bucket=bucket, Key=key)
-    assert obj["Body"].read() == b"hello s3"
-
-
-TEST_CP_KEY_PREFIXES = [
-    pytest.param("bucket/path/to", "bucket", "path/to/", id="no prefix"),
-    pytest.param("bucket/path/to/", "bucket", "path/to/", id="no prefix trailing slash"),
-    pytest.param("s3://foo/bar", "foo", "bar/", id="with prefix"),
-    pytest.param("s3://foo/bar/", "foo", "bar/", id="with prefix trailing slash"),
-    pytest.param("bucket", "bucket", "", id="no prefix root"),
-    pytest.param("bucket/", "bucket", "", id="no prefix root trailing slash"),
-    pytest.param("s3://foo", "foo", "", id="with prefix root"),
-    pytest.param("s3://foo/", "foo", "", id="with prefix root trailing slash"),
-]
-
-
-@pytest.mark.s3
-@pytest.mark.parametrize(("path", "bucket", "prefix"), TEST_CP_KEY_PREFIXES)
-def test_cmd_cp_copies_dir(mock_s3_client: Any, sample_dir: Path, path: str, bucket: str, prefix: str) -> None:
-    """CLI cp helper copies local folder to store."""
-    mock_s3_client.create_bucket(Bucket=bucket)
-    with patch("builtins.print") as mock_print:
-        cmd_cp([str(sample_dir), path])
-    keys = {obj["Key"] for obj in mock_s3_client.list_objects_v2(Bucket=bucket)["Contents"]}
-    expected_paths = [Path(prefix) / rel_path if prefix else Path(rel_path) for rel_path in SAMPLE_FILES]
-    mock_print.assert_has_calls(
-        [
-            *[call(f"  {key}") for key in expected_paths],
-            call(f"Uploaded {len(keys)} files to s3://{Path(bucket) / prefix}/"),
-        ]
-    )
-    assert keys == {f"{Path(prefix) / f}" for f in SAMPLE_FILES}
-
-
-ERROR_CP_USAGE = "Usage: s3_local.py cp [LOCAL_DIR | LOCAL_FILE] s3://BUCKET[/PREFIX/]"
-
-TEST_CP_ARGS_ERROR = [
-    pytest.param([], ERROR_CP_USAGE, id="no args"),
-    pytest.param(["foo"], ERROR_CP_USAGE, id="one arg"),
-    pytest.param(["foo", "bar", "baz"], ERROR_CP_USAGE, id="three args"),
-    pytest.param(["local/file.txt", ""], NO_PATH_FOUND, id="local file; missing bucket"),
-    pytest.param(["local/folder", ""], NO_PATH_FOUND, id="local folder; missing bucket"),
-    pytest.param(["local/folder/", ""], NO_PATH_FOUND, id="local folder/;missing bucket"),
-    pytest.param(["local/file.txt", "/bucket"], START_WITH_BUCKET_NAME, id="local file; preceding slash"),
-    pytest.param(["local/folder", "/bucket"], START_WITH_BUCKET_NAME, id="local folder; preceding slash"),
-    pytest.param(["local/folder/", "/bucket"], START_WITH_BUCKET_NAME, id="local folder/; preceding slash"),
-    pytest.param(["local/file.txt", "/"], START_WITH_BUCKET_NAME, id="local file; root"),
-    pytest.param(["local/folder", "/"], START_WITH_BUCKET_NAME, id="local folder; root"),
-    pytest.param(["local/folder/", "/"], START_WITH_BUCKET_NAME, id="local folder/; root"),
-]
-
-
-@pytest.mark.s3
-@pytest.mark.usefixtures("mock_s3_client")
-@pytest.mark.parametrize(("args", "err_msg"), TEST_CP_ARGS_ERROR)
-def test_cmd_cp_prints_error(args: list[str], err_msg: str) -> None:
-    """CLI cp helper prints usage on invalid argument list."""
-    with pytest.raises(SystemExit, match=re.escape(err_msg)):
-        cmd_cp(args)
-
-
-LS_FILES = [
-    "key/prefix/file1.txt",
-    "key/prefix/file2.txt",
-    "key/prefix/sub/file3.txt",
-]
-
-TEST_LS_KEY_PREFIXES = [
-    pytest.param("some-bucket/key/prefix/", "some-bucket", id="trailing slash"),
-    pytest.param("other-bucket/key/prefix", "other-bucket", id="no trailing slash"),
-    pytest.param("this-bucket/", "this-bucket", id="bucket trailing slash"),
-    pytest.param("that-bucket", "that-bucket", id="bucket only"),
-    pytest.param("s3://s3-bucket/key/prefix/", "s3-bucket", id="s3 protocol trailing slash"),
-    pytest.param("s3a://s3a-bucket/key/prefix/", "s3a-bucket", id="s3a protocol trailing slash"),
-]
-
-ERROR_LS_USAGE = "Usage: s3_local.py ls s3://BUCKET[/PREFIX/] [--limit N]"
-
-TEST_LS_ARGS_ERROR = [
-    pytest.param([], ERROR_LS_USAGE, id="no args"),
-    pytest.param([""], NO_PATH_FOUND, id="empty path"),
-    pytest.param(["/bucket"], START_WITH_BUCKET_NAME, id="preceding slash"),
-    pytest.param(["/"], START_WITH_BUCKET_NAME, id="root"),
-]
-
-
-@pytest.mark.s3
-@pytest.mark.parametrize(("prefix", "bucket"), TEST_LS_KEY_PREFIXES)
-def test_cmd_ls_lists_keys(mock_s3_client: Any, prefix: str, bucket: str) -> None:
-    """CLI ls helper lists keys under the given prefix."""
-    mock_s3_client.create_bucket(Bucket=bucket)
-    for key in LS_FILES:
-        mock_s3_client.put_object(Bucket=bucket, Key=key, Body=b"a")
-    with patch("builtins.print") as mock_print:
-        cmd_ls([prefix])
-    printed_keys = {call.args[0].split()[-1] for call in mock_print.call_args_list}
-    assert printed_keys == set(LS_FILES)
-
-
-@pytest.mark.s3
-def test_cmd_ls_respects_limit(mock_s3_client: Any) -> None:
-    """CLI ls helper stops after --limit objects."""
-    mock_s3_client.create_bucket(Bucket="some-bucket")
-    for i in range(5):
-        mock_s3_client.put_object(Bucket="some-bucket", Key=f"key/file{i}.txt", Body=b"x")
-
-    with patch("builtins.print") as mock_print:
-        cmd_ls(["some-bucket/key", "--limit", "2"])
-
-    assert mock_print.call_count == 2  # noqa: PLR2004
-
-
-@pytest.mark.s3
-def test_cmd_ls_default_limit_is_20(mock_s3_client: Any) -> None:
-    """CLI ls helper defaults to a limit of 20 objects."""
-    bucket = "large-bucket"
-    mock_s3_client.create_bucket(Bucket=bucket)
-    for i in range(25):
-        mock_s3_client.put_object(Bucket=bucket, Key=f"key/file{i:02d}.txt", Body=b"x")
-
-    with patch("builtins.print") as mock_print:
-        cmd_ls([f"{bucket}/key"])
-
-    assert mock_print.call_count == 20  # noqa: PLR2004
-
-
-@pytest.mark.s3
-def test_cmd_ls_empty_prefix_returns_nothing(mock_s3_client: Any) -> None:
-    """CLI ls helper prints nothing when no objects match the prefix."""
-    bucket = "foo-bucket"
-    mock_s3_client.create_bucket(Bucket=bucket)
-    with patch("builtins.print") as mock_print:
-        cmd_ls([f"{bucket}/nonexistent/"])
-
-    mock_print.assert_not_called()
-
-
-@pytest.mark.s3
-@pytest.mark.usefixtures("mock_s3_client")
-@pytest.mark.parametrize(("args", "err_msg"), TEST_LS_ARGS_ERROR)
-def test_cmd_ls_prints_error(args: list[str], err_msg: str) -> None:
-    """CLI ls helper raises SystemExit with a useful message on invalid arguments."""
-    with pytest.raises(SystemExit, match=re.escape(err_msg)):
-        cmd_ls(args)
-
-
-# cmd_head
-
-ERROR_HEAD_USAGE = "Usage: s3_local.py head s3://BUCKET/KEY"
-
-TEST_HEAD_ARGS_ERROR = [
-    pytest.param([], ERROR_HEAD_USAGE, id="no args"),
-    pytest.param([""], NO_PATH_FOUND, id="empty path"),
-    pytest.param(["/bucket/key"], START_WITH_BUCKET_NAME, id="preceding slash"),
-    pytest.param(["bucket"], COULD_NOT_PARSE, id="bucket only"),
-    pytest.param(["bucket/"], COULD_NOT_PARSE, id="bucket trailing slash"),
-]
-
-
-@pytest.mark.s3
-def test_cmd_head_prints_metadata(mock_s3_client: Any) -> None:
-    """CLI head helper prints metadata for an existing object."""
-    bucket = "bar-bucket"
-    mock_s3_client.create_bucket(Bucket=bucket)
-    mock_s3_client.put_object(
-        Bucket=bucket,
-        Key="some/file.txt",
-        Body=b"data",
-        Metadata={"md5": "abc123", "source": "ncbi"},
-    )
-    with patch("builtins.print") as mock_print:
-        cmd_head([f"{bucket}/some/file.txt"])
-    mock_print.assert_any_call(f"Metadata for {bucket}/some/file.txt:")
-    # second call is the JSON dump — check both keys are present
-    json_output = mock_print.call_args_list[1].args[0]
-    parsed = json.loads(json_output)
-    assert parsed["md5"] == "abc123"
-    assert parsed["source"] == "ncbi"
-
-
-@pytest.mark.s3
-def test_cmd_head_prints_empty_metadata(mock_s3_client: Any) -> None:
-    """CLI head helper prints empty JSON object when no metadata is set."""
-    bucket = "baz-bucket"
-    mock_s3_client.create_bucket(Bucket=bucket)
-    mock_s3_client.put_object(Bucket=bucket, Key="bare/file.txt", Body=b"data")
-    with patch("builtins.print") as mock_print:
-        cmd_head([f"{bucket}/bare/file.txt"])
-
-    mock_print.assert_any_call(f"Metadata for {bucket}/bare/file.txt:")
-    json_output = mock_print.call_args_list[1].args[0]
-    assert json.loads(json_output) == {}
-
-
-@pytest.mark.s3
-def test_cmd_head_prints_not_found_for_missing_key(mock_s3_client: Any) -> None:
-    """CLI head helper prints a not-found message instead of raising for a 404."""
-    bucket = "empty-bucket"
-    mock_s3_client.create_bucket(Bucket=bucket)
-    with patch("builtins.print") as mock_print:
-        cmd_head([f"{bucket}/does/not/exist.txt"])
-
-    mock_print.assert_called_once_with(f"File not found in store: {bucket}/does/not/exist.txt")
-
-
-@pytest.mark.s3
-@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
-def test_cmd_head_handles_protocols(mock_s3_client: Any, protocol: str) -> None:
-    """CLI head helper accepts all valid S3 protocol prefixes."""
-    bucket = "proto-bucket"
-    mock_s3_client.create_bucket(Bucket=bucket)
-    mock_s3_client.put_object(Bucket=bucket, Key="proto/file.txt", Body=b"x")
-
-    with patch("builtins.print") as mock_print:
-        cmd_head([f"{protocol}{bucket}/proto/file.txt"])
-
-    mock_print.assert_any_call(f"Metadata for {bucket}/proto/file.txt:")
-
-
-@pytest.mark.s3
-@pytest.mark.usefixtures("mock_s3_client")
-@pytest.mark.parametrize(("args", "err_msg"), TEST_HEAD_ARGS_ERROR)
-def test_cmd_head_prints_error(args: list[str], err_msg: str) -> None:
-    """CLI head helper raises SystemExit with a useful message on invalid arguments."""
-    with pytest.raises(SystemExit, match=err_msg):
-        cmd_head(args)

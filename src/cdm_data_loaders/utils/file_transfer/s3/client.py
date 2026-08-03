@@ -1,27 +1,20 @@
 """S3 client creation and reset."""
 
-from logging import Logger, getLogger
 from typing import Final
 
 import boto3
-import botocore
-import botocore.client
 from botocore.config import Config
-from frozendict import frozendict
+from types_boto3_s3.client import S3Client
 
 # "legacy", "standard", "adaptive"
 AWS_CLIENT_RETRY_MODE: Final[str] = "adaptive"
 # how many times to retry, including the initial attempt
 AWS_CLIENT_TOTAL_MAX_ATTEMPTS: Final[int] = 10
 
-DEFAULT_EXTRA_ARGS: frozendict[str, str] = frozendict({"ChecksumAlgorithm": "CRC64NVME"})
-
-_s3_client: botocore.client.BaseClient | None = None
-
-logger: Logger = getLogger(__name__)
+_s3_client: S3Client | None = None
 
 
-def get_s3_client(args: dict[str, str | None] | None = None) -> botocore.client.BaseClient:
+def get_s3_client(args: dict[str, str | None] | None = None) -> S3Client:
     """Create an S3 client using the provided arguments.
 
     The client is created once and cached for subsequent calls.
@@ -41,7 +34,7 @@ def get_s3_client(args: dict[str, str | None] | None = None) -> botocore.client.
     :type args: dict[str, str] | None, optional
     :raises ValueError: if required arguments for creating the S3 client are missing
     :return: initialised s3 client
-    :rtype: botocore.client.BaseClient
+    :rtype: S3Client
     """
     global _s3_client  # noqa: PLW0603
     if _s3_client is not None:
