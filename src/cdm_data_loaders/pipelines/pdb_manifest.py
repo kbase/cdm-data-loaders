@@ -43,7 +43,7 @@ from cdm_data_loaders.pdb.constants import (
     PDBRecord,
 )
 from cdm_data_loaders.pipelines.core import run_cli
-from cdm_data_loaders.utils.s3 import get_s3_client
+from cdm_data_loaders.utils.file_transfer.s3 import client
 
 logger: Logger = getLogger(__name__)
 
@@ -205,8 +205,8 @@ def _generate_snapshot_from_s3_state(
     date: date,
 ) -> dict[str, PDBRecord]:
     """Bootstraps a holdings snapshot file based on the current store state."""
-    s3 = get_s3_client()
-    paginator = s3.get_paginator("list_objects_v2")
+    s3_client = client.get_s3_client()
+    paginator = s3_client.get_paginator("list_objects_v2")
     results: dict[str, PDBRecord] = {}
 
     for page in paginator.paginate(Bucket=str(bucket), Prefix=str(key_prefix)):
@@ -268,11 +268,11 @@ def _download_holdings_snapshot(
     key: PurePosixPath,
 ) -> dict[str, PDBRecord]:
     """Download and parse a holdings snapshot file from S3."""
-    s3 = get_s3_client()
+    s3_client = client.get_s3_client()
     with tempfile.NamedTemporaryFile(suffix=".json.gz", delete=False) as tmp:
         tmp_path = Path(tmp.name)
     try:
-        s3.download_file(Bucket=str(bucket), Key=str(key), Filename=str(tmp_path))
+        s3_client.download_file(Bucket=str(bucket), Key=str(key), Filename=str(tmp_path))
         return _load_holdings_snapshot(tmp_path)
     except ClientError:
         msg = (

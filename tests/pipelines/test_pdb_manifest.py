@@ -32,6 +32,7 @@ from cdm_data_loaders.pipelines.pdb_manifest import (
     _save_summary_file,
     run_manifest_generation,
 )
+from cdm_data_loaders.utils.file_transfer.s3 import client
 
 # ---------------------------------------------------------------------------
 # Shared test data
@@ -287,7 +288,7 @@ class TestGenerateSnapshotFromS3StateUnit:
     def test_empty_store_returns_empty_dict(self) -> None:
         """Empty S3 store produces an empty snapshot."""
         mock_s3 = self._build_mock_s3([[]])
-        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+        with patch.object(client, "get_s3_client", return_value=mock_s3):
             result = _generate_snapshot_from_s3_state(
                 PurePosixPath("bucket"), PurePosixPath("prefix"), date(2024, 1, 1)
             )
@@ -300,7 +301,7 @@ class TestGenerateSnapshotFromS3StateUnit:
             "prefix/pdb_00001def/pdb_00001def_data.cif.gz",
         ]
         mock_s3 = self._build_mock_s3([keys])
-        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+        with patch.object(client, "get_s3_client", return_value=mock_s3):
             result = _generate_snapshot_from_s3_state(
                 PurePosixPath("bucket"), PurePosixPath("prefix"), date(2024, 1, 1)
             )
@@ -314,7 +315,7 @@ class TestGenerateSnapshotFromS3StateUnit:
         ]
         mock_s3 = self._build_mock_s3([keys])
         bootstrap = date(2023, 6, 15)
-        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+        with patch.object(client, "get_s3_client", return_value=mock_s3):
             result = _generate_snapshot_from_s3_state(PurePosixPath("bucket"), PurePosixPath("prefix"), bootstrap)
         for rec in result.values():
             assert rec.last_modified == bootstrap.isoformat()
@@ -328,7 +329,7 @@ class TestGenerateSnapshotFromS3StateUnit:
             f"prefix/{pdb_id}/{pdb_id}_info.json",
         ]
         mock_s3 = self._build_mock_s3([keys])
-        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+        with patch.object(client, "get_s3_client", return_value=mock_s3):
             result = _generate_snapshot_from_s3_state(
                 PurePosixPath("bucket"), PurePosixPath("prefix"), date(2024, 1, 1)
             )
@@ -343,7 +344,7 @@ class TestGenerateSnapshotFromS3StateUnit:
             "prefix/pdb_00001abc/model.cif.gz",  # the only valid one
         ]
         mock_s3 = self._build_mock_s3([keys])
-        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+        with patch.object(client, "get_s3_client", return_value=mock_s3):
             result = _generate_snapshot_from_s3_state(
                 PurePosixPath("bucket"), PurePosixPath("prefix"), date(2024, 1, 1)
             )
@@ -358,7 +359,7 @@ class TestGenerateSnapshotFromS3StateUnit:
                 ["prefix/pdb_aaaaaaaa/model.cif.gz"],
             ]
         )
-        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+        with patch.object(client, "get_s3_client", return_value=mock_s3):
             result = _generate_snapshot_from_s3_state(
                 PurePosixPath("bucket"), PurePosixPath("prefix"), date(2024, 1, 1)
             )
@@ -367,7 +368,7 @@ class TestGenerateSnapshotFromS3StateUnit:
     def test_paginator_called_with_correct_bucket_and_prefix(self) -> None:
         """list_objects_v2 paginator receives the exact bucket name and prefix."""
         mock_s3 = self._build_mock_s3([[]])
-        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+        with patch.object(client, "get_s3_client", return_value=mock_s3):
             _generate_snapshot_from_s3_state(PurePosixPath("my-bucket"), PurePosixPath("a/b/c"), date(2024, 1, 1))
         mock_s3.get_paginator.assert_called_once_with("list_objects_v2")
         mock_s3.get_paginator.return_value.paginate.assert_called_once_with(Bucket="my-bucket", Prefix="a/b/c")
@@ -380,7 +381,7 @@ class TestGenerateSnapshotFromS3StateUnit:
                 ["prefix/pdb_00001abc/model.cif.gz"],
             ]
         )
-        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+        with patch.object(client, "get_s3_client", return_value=mock_s3):
             result = _generate_snapshot_from_s3_state(
                 PurePosixPath("bucket"), PurePosixPath("prefix"), date(2024, 1, 1)
             )
@@ -412,7 +413,7 @@ class TestDownloadHoldingsSnapshotUnit:
         """A successful download returns the correctly deserialised snapshot dict."""
         mock_s3 = MagicMock()
         mock_s3.download_file.side_effect = self._writing_side_effect(self._RECORDS)
-        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+        with patch.object(client, "get_s3_client", return_value=mock_s3):
             result = _download_holdings_snapshot(PurePosixPath("bucket"), PurePosixPath("path/snapshot.json.gz"))
         assert result == self._RECORDS
 
@@ -420,7 +421,7 @@ class TestDownloadHoldingsSnapshotUnit:
         """download_file is invoked with the exact bucket and key passed to the function."""
         mock_s3 = MagicMock()
         mock_s3.download_file.side_effect = self._writing_side_effect({})
-        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+        with patch.object(client, "get_s3_client", return_value=mock_s3):
             _download_holdings_snapshot(PurePosixPath("my-bucket"), PurePosixPath("some/key.json.gz"))
         mock_s3.download_file.assert_called_once_with(Bucket="my-bucket", Key="some/key.json.gz", Filename=ANY)
 
@@ -431,7 +432,7 @@ class TestDownloadHoldingsSnapshotUnit:
             {"Error": {"Code": "NoSuchKey", "Message": "Not found"}}, "GetObject"
         )
         with (
-            patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3),
+            patch.object(client, "get_s3_client", return_value=mock_s3),
             pytest.raises(ValueError, match="not found"),
         ):
             _download_holdings_snapshot(PurePosixPath("bucket"), PurePosixPath("missing/key.json.gz"))
@@ -441,7 +442,7 @@ class TestDownloadHoldingsSnapshotUnit:
         mock_s3 = MagicMock()
         mock_s3.download_file.side_effect = ClientError({"Error": {"Code": "NoSuchKey", "Message": ""}}, "GetObject")
         with (
-            patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3),
+            patch.object(client, "get_s3_client", return_value=mock_s3),
             pytest.raises(ValueError, match="Snapshot file") as exc_info,
         ):
             _download_holdings_snapshot(PurePosixPath("my-bucket"), PurePosixPath("path/to/snap.json.gz"))
@@ -459,7 +460,7 @@ class TestDownloadHoldingsSnapshotUnit:
             captured.append(kwargs["Filename"])
 
         mock_s3.download_file.side_effect = write_and_capture
-        with patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3):
+        with patch.object(client, "get_s3_client", return_value=mock_s3):
             _download_holdings_snapshot(PurePosixPath("b"), PurePosixPath("k.json.gz"))
 
         assert captured, "download_file was never called"
@@ -478,7 +479,7 @@ class TestDownloadHoldingsSnapshotUnit:
         mock_s3 = MagicMock()
         mock_s3.download_file.side_effect = ClientError({"Error": {"Code": "NoSuchKey", "Message": ""}}, "GetObject")
         with (
-            patch.object(pdb_manifest_mod, "get_s3_client", return_value=mock_s3),
+            patch.object(client, "get_s3_client", return_value=mock_s3),
             patch("cdm_data_loaders.pipelines.pdb_manifest.tempfile.NamedTemporaryFile", side_effect=recording_ntf),
             pytest.raises(ValueError, match="not found"),
         ):

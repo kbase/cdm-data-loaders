@@ -11,7 +11,6 @@ import pytest
 from moto import mock_aws
 from pydantic import ValidationError
 
-import cdm_data_loaders.utils.s3 as s3_mod
 from cdm_data_loaders.core.fields import INPUT_MOUNT, OUTPUT_MOUNT
 from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST
 from cdm_data_loaders.pipelines.ncbi_ftp_download import (
@@ -19,7 +18,8 @@ from cdm_data_loaders.pipelines.ncbi_ftp_download import (
     download_and_stage,
     download_batch,
 )
-from cdm_data_loaders.utils.s3 import reset_s3_client
+from cdm_data_loaders.utils.file_transfer.s3 import client
+from cdm_data_loaders.utils.file_transfer.s3.client import reset_s3_client
 from tests.conftest import _generate_dlt_config
 
 _MOCK_STATS = {
@@ -269,9 +269,9 @@ def _make_moto_s3(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN202
     monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
     monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
     boto3.DEFAULT_SESSION = None
-    client = boto3.client("s3", region_name="us-east-1")
-    client.create_bucket(Bucket=f"{_TEST_BUCKET}")
-    return client
+    s3_client = boto3.client("s3", region_name="us-east-1")
+    s3_client.create_bucket(Bucket=f"{_TEST_BUCKET}")
+    return s3_client
 
 
 # download_and_stage — manifest source
@@ -293,11 +293,11 @@ def test_download_and_stage_manifest_source(
 ) -> None:
     """Assembly paths from the manifest are processed regardless of source (S3 or local)."""
     reset_s3_client()
-    s3 = _make_moto_s3(monkeypatch)
+    s3_client = _make_moto_s3(monkeypatch)
 
     manifest_local: Path | None = None
     if manifest_s3_key is not None:
-        s3.put_object(Bucket=str(_TEST_BUCKET), Key=str(manifest_s3_key), Body=_MANIFEST_CONTENT.encode())
+        s3_client.put_object(Bucket=str(_TEST_BUCKET), Key=str(manifest_s3_key), Body=_MANIFEST_CONTENT.encode())
     else:
         manifest_local = tmp_path / "manifest.txt"
         manifest_local.write_text(_MANIFEST_CONTENT)
@@ -309,9 +309,8 @@ def test_download_and_stage_manifest_source(
         return _MOCK_STATS
 
     with (
-        patch.object(s3_mod, "get_s3_client", return_value=s3),
-        patch.object(s3_mod, "_s3_client", s3),
-        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
+        patch.object(client, "get_s3_client", return_value=s3_client),
+        patch.object(client, "_s3_client", s3_client),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
         patch(
             "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
@@ -365,19 +364,18 @@ def test_download_and_stage_exactly_one_source_required(
                 manifest_local_path=local_path,
             )
     else:
-        s3 = _make_moto_s3(monkeypatch)
+        s3_client = _make_moto_s3(monkeypatch)
         # For s3_only: seed the object; for local_only: create the file
         if s3_key is not None:
-            s3.put_object(Bucket=str(_TEST_BUCKET), Key=str(s3_key), Body=_MANIFEST_CONTENT.encode())
+            s3_client.put_object(Bucket=str(_TEST_BUCKET), Key=str(s3_key), Body=_MANIFEST_CONTENT.encode())
         if local_path is not None:
             real_local = tmp_path / "manifest.txt"
             real_local.write_text(_MANIFEST_CONTENT)
             local_path = real_local
 
         with (
-            patch.object(s3_mod, "get_s3_client", return_value=s3),
-            patch.object(s3_mod, "_s3_client", s3),
-            patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
+            patch.object(client, "get_s3_client", return_value=s3_client),
+            patch.object(client, "_s3_client", s3_client),
             patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
             patch(
                 "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
@@ -403,7 +401,7 @@ def test_download_and_stage_exactly_one_source_required(
 def test_download_and_stage_uploads_to_staging(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Files produced by download_assembly_to_local and download_report.json are all staged to S3."""
     reset_s3_client()
-    s3 = _make_moto_s3(monkeypatch)
+    s3_client = _make_moto_s3(monkeypatch)
 
     manifest_local = tmp_path / "manifest.txt"
     # Single assembly so the fake download writes exactly the files we expect
@@ -419,9 +417,8 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path, monkeypatch: pyte
         return {**_MOCK_STATS, "files_downloaded": 2}
 
     with (
-        patch.object(s3_mod, "get_s3_client", return_value=s3),
-        patch.object(s3_mod, "_s3_client", s3),
-        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
+        patch.object(client, "get_s3_client", return_value=s3_client),
+        patch.object(client, "_s3_client", s3_client),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
         patch(
             "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
@@ -436,7 +433,7 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path, monkeypatch: pyte
             threads=1,
         )
 
-    paginator = s3.get_paginator("list_objects_v2")
+    paginator = s3_client.get_paginator("list_objects_v2")
     uploaded_keys: set[PurePosixPath] = {
         PurePosixPath(obj["Key"])
         for page in paginator.paginate(Bucket=str(_TEST_BUCKET))
@@ -461,7 +458,7 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path, monkeypatch: pyte
 def test_download_and_stage_dry_run_skips_upload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """dry_run=True leaves S3 empty and returns staged_objects=0."""
     reset_s3_client()
-    s3 = _make_moto_s3(monkeypatch)
+    s3_client = _make_moto_s3(monkeypatch)
 
     manifest_local = tmp_path / "manifest.txt"
     manifest_local.write_text(_MANIFEST_CONTENT)
@@ -473,9 +470,8 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path, monkeypatch: py
         return _MOCK_STATS
 
     with (
-        patch.object(s3_mod, "get_s3_client", return_value=s3),
-        patch.object(s3_mod, "_s3_client", s3),
-        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
+        patch.object(client, "get_s3_client", return_value=s3_client),
+        patch.object(client, "_s3_client", s3_client),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
         patch(
             "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
@@ -490,7 +486,7 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path, monkeypatch: py
             threads=1,
         )
 
-    listed = s3.list_objects_v2(Bucket=str(_TEST_BUCKET))
+    listed = s3_client.list_objects_v2(Bucket=str(_TEST_BUCKET))
     assert listed.get("KeyCount", 0) == 0
     assert report["staged_objects"] == 0
     assert report["dry_run"] is True
@@ -512,15 +508,14 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path, monkeypatch: py
 def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int, monkeypatch: pytest.MonkeyPatch) -> None:
     """The limit parameter truncates the number of assemblies processed."""
     reset_s3_client()
-    s3 = _make_moto_s3(monkeypatch)
+    s3_client = _make_moto_s3(monkeypatch)
 
     manifest_local = tmp_path / "manifest.txt"
     manifest_local.write_text(_MANIFEST_CONTENT)
 
     with (
-        patch.object(s3_mod, "get_s3_client", return_value=s3),
-        patch.object(s3_mod, "_s3_client", s3),
-        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
+        patch.object(client, "get_s3_client", return_value=s3_client),
+        patch.object(client, "_s3_client", s3_client),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
         patch(
             "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
@@ -549,15 +544,14 @@ def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int, monkeypa
 def test_download_and_stage_report_shape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Return value contains all expected keys including staged_objects, staging_key_prefix, dry_run."""
     reset_s3_client()
-    s3 = _make_moto_s3(monkeypatch)
+    s3_client = _make_moto_s3(monkeypatch)
 
     manifest_local = tmp_path / "manifest.txt"
     manifest_local.write_text(_MANIFEST_CONTENT)
 
     with (
-        patch.object(s3_mod, "get_s3_client", return_value=s3),
-        patch.object(s3_mod, "_s3_client", s3),
-        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.get_s3_client", return_value=s3),
+        patch.object(client, "get_s3_client", return_value=s3_client),
+        patch.object(client, "_s3_client", s3_client),
         patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
         patch(
             "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
