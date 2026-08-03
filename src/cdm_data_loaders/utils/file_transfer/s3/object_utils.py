@@ -6,11 +6,11 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Final
 
-import tqdm
 from botocore.exceptions import ClientError
 from frozendict import frozendict
 
 from cdm_data_loaders.utils.file_transfer.s3 import client
+from cdm_data_loaders.utils.progress import SynchronizedCallback, make_progress_bar
 
 DEFAULT_EXTRA_ARGS: frozendict[str, str] = frozendict({"ChecksumAlgorithm": "CRC64NVME"})
 
@@ -180,24 +180,16 @@ def upload_file(
     # Upload the file
     logger.debug("uploading %s to %s", str(local_file_path), s3_path)
     try:
-        if show_progress:
-            file_size = local_file_path.stat().st_size
-            with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
-                s3.upload_file(
-                    Filename=str(local_file_path),
-                    Bucket=bucket,
-                    Key=key,
-                    Callback=pbar.update,
-                    ExtraArgs=extra_args,
-                )
-        else:
+        file_size = local_file_path.stat().st_size
+        with make_progress_bar(total=file_size, desc=str(local_file_path), disable=not show_progress) as pbar:
             s3.upload_file(
                 Filename=str(local_file_path),
                 Bucket=bucket,
                 Key=key,
+                Callback=SynchronizedCallback(pbar.update),
                 ExtraArgs=extra_args,
             )
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Error uploading to s3")
         return False
     return True
@@ -277,24 +269,13 @@ def download_file(
 
     extra_args = {"VersionId": version_id} if version_id is not None else None
 
-    # set ``unit_scale=True`` so tqdm uses SI unit prefixes
-    # ``unit="B"`` means it adds the string "B" as a suffix
-    # progress is reported as (e.g.) "14.5kB/s".
-    if show_progress:
-        with tqdm.tqdm(total=object_size, unit="B", unit_scale=True, desc=str(local_file_path)) as pbar:
-            s3.download_file(
-                Bucket=bucket,
-                Key=key,
-                ExtraArgs=extra_args,
-                Filename=str(local_file_path),
-                Callback=pbar.update,
-            )
-    else:
+    with make_progress_bar(total=object_size, desc=str(local_file_path), disable=not show_progress) as pbar:
         s3.download_file(
             Bucket=bucket,
             Key=key,
             ExtraArgs=extra_args,
             Filename=str(local_file_path),
+            Callback=SynchronizedCallback(pbar.update),
         )
 
 
