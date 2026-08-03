@@ -374,6 +374,19 @@ wheels = [
 ]
 
 [[package]]
+name = "beautifulsoup4"
+version = "4.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "soupsieve" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/43/65/318323f98dbee45d42dff61d8f047181bc6f2268a9068cfad035a46be5af/beautifulsoup4-4.15.0.tar.gz", hash = "sha256:288e3ca7d54b06f2ac191970bc275c1939cb46d450b255bf6718b04aa37ab4f7", size = 632571, upload-time = "2026-06-07T16:44:20.453Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/c6/92fcd42f1ba33e1184263f25bfabf3d27c383410470f169e4b8163bf9c17/beautifulsoup4-4.15.0-py3-none-any.whl", hash = "sha256:d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9", size = 109924, upload-time = "2026-06-07T16:44:21.566Z" },
+]
+
+[[package]]
 name = "berdl-notebook-utils"
 version = "0.0.1"
 source = { git = "https://github.com/KBaseDataLakehouse/spark_notebook.git?subdirectory=notebook_utils#8df9610dac44a88b8bd1aca47ab50871004e8e37" }
@@ -465,6 +478,18 @@ crt = [
 ]
 
 [[package]]
+name = "botocore-stubs"
+version = "1.43.14"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "types-awscrt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7f/81/79693e833291c00dc89ee610e5e915381b6f08233912e28df50106840780/botocore_stubs-1.43.14.tar.gz", hash = "sha256:9e3bc1fdd51da7473f0df726c82747a1b0ae913449d629659765c247fecc2039", size = 42738, upload-time = "2026-05-25T06:06:37.484Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/89/ca/f017727b11895908c5dedc829cf2ec35e0c4b2a26ba875db325fef2cefdf/botocore_stubs-1.43.14-py3-none-any.whl", hash = "sha256:fb98f1475c92fd718644e786b5c543a20f1b1f610e89e0a7191c3f1f429c75aa", size = 67093, upload-time = "2026-05-25T06:06:34.532Z" },
+]
+
+[[package]]
 name = "cacheout"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -487,6 +512,7 @@ name = "cdm-data-loaders"
 version = "0.1.10"
 source = { editable = "." }
 dependencies = [
+    { name = "beautifulsoup4" },
     { name = "bioregistry" },
     { name = "boto3", extra = ["crt"] },
     { name = "click" },
@@ -497,6 +523,7 @@ dependencies = [
     { name = "frozendict" },
     { name = "ipykernel" },
     { name = "lxml" },
+    { name = "pandas" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "tqdm" },
@@ -504,7 +531,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "cdm-task-service-client" },
     { name = "moto", extra = ["s3"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -512,6 +538,7 @@ dev = [
     { name = "pytest-env" },
     { name = "pytest-recording" },
     { name = "ruff" },
+    { name = "types-boto3", extra = ["s3"] },
 ]
 lakehouse = [
     { name = "berdl-notebook-utils" },
@@ -528,8 +555,9 @@ xml = [
 
 [package.metadata]
 requires-dist = [
+    { name = "beautifulsoup4", specifier = ">=4.15.0" },
     { name = "bioregistry", specifier = ">=0.13.58" },
-    { name = "boto3", extras = ["crt"], specifier = ">=1.42.55" },
+    { name = "boto3", extras = ["crt"], specifier = ">=1.43.0" },
     { name = "click", specifier = ">=8.4.1" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "delta-spark", specifier = ">=4.2.0" },
@@ -538,6 +566,7 @@ requires-dist = [
     { name = "frozendict", specifier = ">=2.4.7" },
     { name = "ipykernel", specifier = ">=7.2.0" },
     { name = "lxml", specifier = ">=6.1.0" },
+    { name = "pandas", specifier = ">=3.0.3" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pydantic-settings", specifier = ">=2.14.1" },
     { name = "tqdm", specifier = ">=4.67.3" },
@@ -545,7 +574,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "cdm-task-service-client", git = "https://github.com/kbase/cdm-task-service-client.git" },
     { name = "moto", extras = ["s3"], specifier = ">=5.2.1" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
@@ -553,6 +581,7 @@ dev = [
     { name = "pytest-env", specifier = ">=1.6.0" },
     { name = "pytest-recording", specifier = ">=0.13.4" },
     { name = "ruff", specifier = ">=0.15.14" },
+    { name = "types-boto3", extras = ["s3"], specifier = ">=1.43.62" },
 ]
 lakehouse = [
     { name = "berdl-notebook-utils", git = "https://github.com/KBaseDataLakehouse/spark_notebook.git?subdirectory=notebook_utils" },
@@ -2812,7 +2841,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess", marker = "(platform_python_implementation != 'PyPy' and sys_platform == 'win32') or (sys_platform != 'emscripten' and sys_platform != 'win32')" },
+    { name = "ptyprocess" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
@@ -4025,6 +4054,15 @@ wheels = [
 ]
 
 [[package]]
+name = "soupsieve"
+version = "2.9.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/38/e12680bbe6b4f8f3d17adcaf38d26850aa756c85cf4a80e79fc12a018fe8/soupsieve-2.9.1.tar.gz", hash = "sha256:c33e6605bbc71dd628b00c632d58ae607c22bade247e52553928f83bbb75b4ba", size = 122261, upload-time = "2026-07-21T16:57:17.452Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0f/2c/437fe806897c2d6cfdc3ee43a18da8bf8e568530a4ae9bac781541ca9896/soupsieve-2.9.1-py3-none-any.whl", hash = "sha256:4f4477399246b7a0c720a88ca2454b11cd6bb9ae4c9d170140786e916776c14c", size = 37404, upload-time = "2026-07-21T16:57:16.421Z" },
+]
+
+[[package]]
 name = "sqlalchemy"
 version = "2.0.51"
 source = { registry = "https://pypi.org/simple" }
@@ -4297,6 +4335,51 @@ wheels = [
 ]
 
 [[package]]
+name = "types-awscrt"
+version = "0.34.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3e/59/44409a8fc06b444ab1a6f71dcb29d49a6e17e02424345eb51b051bebb345/types_awscrt-0.34.1.tar.gz", hash = "sha256:559aa04250f6a419a617dfb788f3e10903aaf74700ef23e521b64a411b83b803", size = 19062, upload-time = "2026-06-05T04:40:10.689Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e4/b1/214b12162b452ed6acd230065e6c587cde6b96871e3ce6d653f40888f8df/types_awscrt-0.34.1-py3-none-any.whl", hash = "sha256:20c752b6031544d8f694803c35174aee129f1be5ddf886ae46d22f7ffd9b7d75", size = 45688, upload-time = "2026-06-05T04:40:09.198Z" },
+]
+
+[[package]]
+name = "types-boto3"
+version = "1.43.62"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore-stubs" },
+    { name = "types-s3transfer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f9/78/1997cef1f8e8e53153e70a0741eae5c37ae2516952beaa982e871de623b2/types_boto3-1.43.62.tar.gz", hash = "sha256:dcc8563c76ba8b778ea14519ae73b63e46be3597f3892872ea985e826082901b", size = 103771, upload-time = "2026-07-31T19:54:27.335Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3a/18/b2199fce17864916b78bcfe932f40fe684b133d614e8a14ea5ba22ac56de/types_boto3-1.43.62-py3-none-any.whl", hash = "sha256:e075d0a44420e905a16c684e9e240107c2b95273478259de3ec537ec11eb57cd", size = 70985, upload-time = "2026-07-31T19:54:23.496Z" },
+]
+
+[package.optional-dependencies]
+s3 = [
+    { name = "types-boto3-s3" },
+]
+
+[[package]]
+name = "types-boto3-s3"
+version = "1.43.50"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/b0/c44b0ef40cb0a6fa898ec40f218e65888779d2eba6230152c7f5823ff182/types_boto3_s3-1.43.50.tar.gz", hash = "sha256:9037c7203ad27ebaf84f191688bbac9d0cdf36207c57c7eef7cd8fd71b0b12ce", size = 78625, upload-time = "2026-07-16T19:56:19.769Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4a/b9/f1b4e1ec2cc705dc4bd7839a35801e0397963fae08ff130c9f780d4dea4e/types_boto3_s3-1.43.50-py3-none-any.whl", hash = "sha256:b2a3231aec1bd0e2ba0521c57a541a0cafae0bbb1f97538f382745b4db45cda6", size = 86005, upload-time = "2026-07-16T19:56:17.549Z" },
+]
+
+[[package]]
+name = "types-s3transfer"
+version = "0.16.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/64/42689150509eb3e6e82b33ee3d89045de1592488842ddf23c56957786d05/types_s3transfer-0.16.0.tar.gz", hash = "sha256:b4636472024c5e2b62278c5b759661efeb52a81851cde5f092f24100b1ecb443", size = 13557, upload-time = "2025-12-08T08:13:09.928Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/27/e88220fe6274eccd3bdf95d9382918716d312f6f6cef6a46332d1ee2feff/types_s3transfer-0.16.0-py3-none-any.whl", hash = "sha256:1c0cd111ecf6e21437cb410f5cddb631bfb2263b77ad973e79b9c6d0cb24e0ef", size = 19247, upload-time = "2025-12-08T08:13:08.426Z" },
+]
+
+[[package]]
 name = "typing-extensions"
 version = "4.15.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4412,8 +4495,8 @@ name = "uvicorn"
 version = "0.49.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "click", marker = "sys_platform != 'emscripten'" },
-    { name = "h11", marker = "sys_platform != 'emscripten'" },
+    { name = "click" },
+    { name = "h11" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c4/1f/fa18009dea8469069cca78a4e877a008ab78f08b064bfc9ab891579077ff/uvicorn-0.49.0.tar.gz", hash = "sha256:ebf4271aa580d9de97f93192d4595176df6e91f9aae919ca73e4fc07df1e66a3", size = 91284, upload-time = "2026-06-03T22:01:30.448Z" }
 wheels = [
