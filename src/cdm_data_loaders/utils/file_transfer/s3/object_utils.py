@@ -4,34 +4,30 @@ import json
 from logging import Logger, getLogger
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Final
 
-import botocore
-import botocore.client
 import tqdm
 from botocore.exceptions import ClientError
+from frozendict import frozendict
 
 from cdm_data_loaders.utils.file_transfer.s3 import client
 
-CDM_LAKE_BUCKET = "cdm-lake"
-DEFAULT_EXTRA_ARGS = {"ChecksumAlgorithm": "CRC64NVME"}
+DEFAULT_EXTRA_ARGS: frozendict[str, str] = frozendict({"ChecksumAlgorithm": "CRC64NVME"})
 
-VALID_S3_PREFIXES = ["s3://", "s3a://"]
-VALID_BUCKETS = [CDM_LAKE_BUCKET, "cts"]
+VALID_S3_PREFIXES: list[str] = ["s3://", "s3a://"]
 
-# "legacy", "standard", "adaptive"
-AWS_CLIENT_RETRY_MODE = "adaptive"
-# how many times to retry, including the initial attempt
-AWS_CLIENT_TOTAL_MAX_ATTEMPTS = 10
+CDM_LAKE_BUCKET: Final[str] = "cdm-lake"
+CTS_BUCKET: Final[str] = "cts"
+VALID_BUCKETS: list[str] = [CDM_LAKE_BUCKET, CTS_BUCKET]
 
-SUCCESS_RESPONSE = 200
+SUCCESS_RESPONSE: Final[int] = 200
 
-_s3_client: botocore.client.BaseClient | None = None
+NOT_FOUND_ERROR_CODES: frozenset[str] = frozenset({"404", "NoSuchKey", "NotFound", "NoSuchBucket"})
 
 logger: Logger = getLogger(__name__)
 
 
-def split_s3_path(s3_path: str, *, allow_bucket_only: bool = False) -> tuple[str | None, str]:
+def split_s3_path(s3_path: str, *, allow_bucket_only: bool = False) -> tuple[str, str | None]:
     """Convert a full s3 path (including bucket) into a bucket and key pair.
 
     Returns a tuple of bucket, key
@@ -41,7 +37,7 @@ def split_s3_path(s3_path: str, *, allow_bucket_only: bool = False) -> tuple[str
     :param allow_bucket_only: Allow parsing of a path that only includes a bucket (no key)
     :type allow_bucket_only: bool
     :return: tuple of (bucket, key)
-    :rtype: tuple[str | None, str]
+    :rtype: tuple[str, str | None]
     """
     if "://" in s3_path:
         # remove the protocol prefix
