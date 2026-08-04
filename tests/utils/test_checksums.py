@@ -9,9 +9,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Final
 
-from _pytest.mark.structures import ParameterSet
 import pytest
 import requests
+from _pytest.mark.structures import ParameterSet
 from awscrt.checksums import crc64nvme as _crc64nvme
 
 from cdm_data_loaders.utils.checksums import (
@@ -22,7 +22,6 @@ from cdm_data_loaders.utils.checksums import (
     HashingReader,
     compute_file_checksum,
     new_hasher,
-    resolve_checksum_fn,
     validate_checksum_fn,
 )
 from tests.conftest import DEFAULT_VCR_CONFIG
