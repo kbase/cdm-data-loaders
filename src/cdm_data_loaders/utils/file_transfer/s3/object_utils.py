@@ -4,7 +4,7 @@ from contextlib import suppress
 from logging import Logger, getLogger
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Final
+from typing import IO, Any, Final
 
 from botocore.exceptions import ClientError
 from frozendict import frozendict
