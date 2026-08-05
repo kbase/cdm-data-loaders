@@ -40,7 +40,11 @@ def get_s3_client(args: dict[str, str | None] | None = None) -> S3Client:
     if _s3_client is not None:
         return _s3_client
 
-    config = Config(retries={"total_max_attempts": AWS_CLIENT_TOTAL_MAX_ATTEMPTS, "mode": AWS_CLIENT_RETRY_MODE})
+    config = Config(
+        retries={"total_max_attempts": AWS_CLIENT_TOTAL_MAX_ATTEMPTS, "mode": AWS_CLIENT_RETRY_MODE},
+        request_checksum_calculation="when_supported",
+        response_checksum_validation="when_supported",
+    )
 
     if not args:
         args = {}
@@ -54,7 +58,7 @@ def get_s3_client(args: dict[str, str | None] | None = None) -> S3Client:
         raise ValueError(msg)
 
     # initialise using boto3's default config behaviour, plus any overrides from args
-    client = boto3.client("s3", config=config, **kwargs)
+    client = boto3.client("s3", config=config, **kwargs)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
     missing = []
     # boto3 will not raise an error on client creation if credentials are missing, so throw an error now

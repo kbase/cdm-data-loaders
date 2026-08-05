@@ -1,6 +1,6 @@
 """Utilities for s3 interaction."""
 
-import json
+from contextlib import suppress
 from logging import Logger, getLogger
 from pathlib import Path
 from types import ModuleType
@@ -10,6 +10,7 @@ from botocore.exceptions import ClientError
 from frozendict import frozendict
 
 from cdm_data_loaders.utils.file_transfer.s3 import client
+from cdm_data_loaders.utils.file_transfer.s3.transfer_config import build_transfer_config
 from cdm_data_loaders.utils.progress import SynchronizedCallback, make_progress_bar
 
 DEFAULT_EXTRA_ARGS: frozendict[str, str] = frozendict({"ChecksumAlgorithm": "CRC64NVME"})
@@ -79,7 +80,7 @@ def list_matching_objects(s3_path: str, *, max_keys: int = 1000) -> list[dict[st
     Retrieves all objects under the given prefix; collects all pages of results if there are more than
     1000 files (the max retrievable per `list_objects_v2` query) present.
 
-    :param s3_path: directory to be listed, INCLUDING the bucket name
+    :param s3_path: directory to be listed, including the bucket name
     :type s3_path: str
     :param max_keys: maximum number of keys to return. boto3 defaults to 1000 records max.
     :type max_keys: int
@@ -101,98 +102,221 @@ def list_matching_objects(s3_path: str, *, max_keys: int = 1000) -> list[dict[st
 def head_object(s3_path: str) -> dict[str, Any]:
     """Check whether an object exists on s3.
 
-    :param s3_path: path to the object on s3, INCLUDING the bucket name
+    :param s3_path: path to the object on s3, including the bucket name
     :type s3_path: str
     :return: response from the head_object request
     :rtype: dict[str, Any]
     """
     s3 = client.get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
-    return s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
+    return s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")  # type: ignore[call-arg]
+
+
+def get_existing_object_info(s3_path: str) -> dict[str, Any] | None:
+    """Fetch metadata for an object already in S3, if it exists.
+
+    :param s3_path: path to the object on s3, including the bucket name
+    :type s3_path: str
+    :raises ClientError: for any S3 error other than "object not found"
+    :return: metadata for the existing object, or None if no object exists at `bucket`/`key`
+    :rtype: dict[str, Any] | None
+    """
+    try:
+        response = head_object(s3_path)
+    except ClientError as exc:
+        # AWS service errors, client-side issues
+        logger.exception("Error checking for existing object: %s", s3_path)
+        error_code = exc.response.get("Error", {}).get("Code")
+        status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        if error_code in NOT_FOUND_ERROR_CODES or status_code == 404:  # noqa: PLR2004
+            return None
+        raise
+    except Exception:
+        # any other errors - e.g. invalid/missing args
+        logger.exception("Error checking for existing object: %s", s3_path)
+        raise
+
+    return response
 
 
 def object_exists(s3_path: str) -> bool:
     """Check whether an object exists on s3.
 
-    :param s3_path: path to the object on s3, INCLUDING the bucket name
+    :param s3_path: path to the object on s3, including the bucket name
     :type s3_path: str
     :return: True if the object exists, False otherwise
     :rtype: bool
     """
-    try:
-        head_object(s3_path)
-    except Exception as e:  # noqa: BLE001
-        error_string = str(e)
-        if not error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
-            logger.exception("Error performing head operation on s3 object")
-        return False
-    return True
+    return get_existing_object_info(s3_path) is not None
 
 
-def upload_file(
-    local_file_path: Path | str,
-    destination_dir: str,
-    object_name: str | None = None,
-    user_metadata: dict[str, str] | None = None,
-    *,
-    show_progress: bool = True,
-) -> bool:
-    """Upload an object to an S3 bucket.
+def check_existing_objects(s3_path: str, object_info: dict[str, Any]) -> bool:
+    """Check if an object exists in S3 and raise an error if it does.
 
-    When *user_metadata* is supplied the file is always uploaded (no existence check)
-    and the dict is attached as S3 user metadata.  When *user_metadata* is ``None``
-    (the default) the existing behaviour is preserved: the upload is skipped if
-    the object is already present.
-
-    :param local_file_path: File to upload
-    :type local_file_path: Path | str
-    :param destination_dir: path to the destination directory on s3, INCLUDING the bucket name and EXCLUDING the file name
-    :type destination_dir: str
-    :param object_name: S3 object name. If not specified, the name of the file from local_file_path is used.
-    :type object_name: str | None
-    :param user_metadata: user metadata key/value pairs to attach to the object; when provided the upload always runs
-    :type user_metadata: dict[str, str] | None
-    :param show_progress: whether to display a tqdm progress bar during upload, defaults to True
-    :type show_progress: bool, optional
-    :return: True if file was uploaded, else False
+    :param s3_path: path to the object on s3, including the bucket name
+    :type s3_path: str
+    :param object_info: information about the object to check
+    :type object_info: dict[str, Any]
+    :return: True if the object exists, False otherwise
     :rtype: bool
     """
-    if isinstance(local_file_path, str):
-        local_file_path = Path(local_file_path)
+    existing_object = None
 
-    if not destination_dir:
-        msg = "No destination directory supplied for the file"
-        raise ValueError(msg)
+    # suppress exceptions so that 404s and other errors are not triggered
+    with suppress(Exception):
+        existing_object = get_existing_object_info(s3_path)
 
-    if not object_name:
-        object_name = local_file_path.name
+    if existing_object is None:
+        return False
 
-    s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
-    if user_metadata is None and object_exists(s3_path):
-        logger.debug("File already present: %s", s3_path)
-        return True
+    # compare checksum, metadata, and other attributes if needed to determine if the object is the same or different
+    if object_info.get("Metadata") != existing_object["metadata"]:
+        logger.debug("Object metadata differs for %s", s3_path)
+        return False
 
+    # check the file sizes
+    if object_info.get("ContentLength") != existing_object["size"]:
+        logger.debug("Object size differs for %s", s3_path)
+        return False
+
+    # TODO: all data uploaded to s3 should have a checksum
+    checksum_data = {k: v.lower() for k, v in existing_object.items() if k.startswith("Checksum")}
+    # if checksum_data == object_info["checksum"]:
+    #     logger.debug("Object checksum matches for %s", s3_path)
+    #     return True
+
+    return False
+
+
+def upload_fileobj(  # noqa: PLR0913
+    fileobj: IO[bytes],
+    s3_path: str,
+    *,
+    file_path: Path | None = None,
+    file_size: int | None = 0,
+    user_metadata: dict[str, str] | None = None,
+    transfer_config_kwargs: dict[str, Any] | None = None,
+    skip_if_exists: bool = False,
+    show_progress: bool = True,
+) -> bool:
+    """Upload data from a binary file-like object to S3.
+
+    Can be used for file uploads via the :func:`upload_file` interface
+    or directly for binary data, e.g. data streamed via FTP/HTTP.
+
+    :param fileobj: a binary-mode file-like object supporting ``read()``
+    :type fileobj: IO[bytes]
+    :param s3_path: s3 destination path, including the bucket name
+    :type s3_path: str
+    :param file_path: if the input is a file, a Path object for the file (used for calculating checksums, size, etc.)
+    :type file_path: Path | None
+    :param file_size: size of the file in bytes
+    :type file_size: int | None, defaults to 0
+    :param user_metadata: user metadata key/value pairs to attach to the object
+    :type user_metadata: dict[str, str] | None
+    :param transfer_config_kwargs: keyword arguments for configuring the S3 transfer
+    :type transfer_config_kwargs: dict[str, Any] | None
+    :param skip_if_exists: whether to skip the upload if the object already exists
+    :type skip_if_exists: bool
+    :param show_progress: whether to display a tqdm progress bar during upload
+    :type show_progress: bool
+    :return: True if the upload succeeded, else False
+    :rtype: bool
+    """
     s3 = client.get_s3_client()
     (bucket, key) = split_s3_path(s3_path)
 
-    extra_args = {**DEFAULT_EXTRA_ARGS, **(({"Metadata": user_metadata}) if user_metadata is not None else {})}
+    if skip_if_exists:
+        logger.debug("To be implemented")
 
-    # Upload the file
-    logger.debug("uploading %s to %s", str(local_file_path), s3_path)
+    upload_args = {
+        "Fileobj": fileobj,
+        "Bucket": bucket,
+        "Key": key,
+        "ExtraArgs": {
+            **DEFAULT_EXTRA_ARGS,
+            **(({"Metadata": user_metadata}) if user_metadata is not None else {}),
+        },
+        "Config": build_transfer_config(file_size or 0, **(transfer_config_kwargs or {})),
+    }
+
+    if file_path:
+        logger.debug("uploading %s to %s", str(file_path), s3_path)
+    else:
+        logger.debug("uploading fileobj to %s", s3_path)
     try:
-        file_size = local_file_path.stat().st_size
-        with make_progress_bar(total=file_size, desc=str(local_file_path), disable=not show_progress) as pbar:
-            s3.upload_file(
-                Filename=str(local_file_path),
-                Bucket=bucket,
-                Key=key,
+        with make_progress_bar(total=file_size, desc=s3_path, disable=not show_progress) as pbar:
+            s3.upload_fileobj(
+                **upload_args,
                 Callback=SynchronizedCallback(pbar.update),
-                ExtraArgs=extra_args,
             )
     except Exception:
         logger.exception("Error uploading to s3")
         return False
     return True
+
+
+def upload_file(  # noqa: PLR0913
+    local_file_path: Path | str,
+    destination_dir: str,
+    object_name: str | None = None,
+    *,
+    user_metadata: dict[str, str] | None = None,
+    transfer_config_kwargs: dict[str, Any] | None = None,
+    skip_if_exists: bool = False,
+    show_progress: bool = True,
+) -> bool:
+    """Upload a local file to an S3 bucket.
+
+    Internally opens the file and delegates to :func:`upload_fileobj`.
+
+    :param local_file_path: File to upload
+    :type local_file_path: Path | str
+    :param destination_dir: path to the destination directory on s3, including the bucket name and EXCLUDING the file name
+    :type destination_dir: str
+    :param object_name: S3 object name. If not specified, the name of the file from local_file_path is used.
+    :type object_name: str | None
+    :param user_metadata: user metadata key/value pairs to attach to the object; when provided the upload always runs
+    :type user_metadata: dict[str, str] | None
+    :param transfer_config_kwargs: keyword arguments for configuring the S3 transfer
+    :type transfer_config_kwargs: dict[str, Any] | None
+    :param skip_if_exists: whether to skip the upload if the object already exists; not yet implemented
+    :type skip_if_exists: bool
+    :param show_progress: whether to display a tqdm progress bar during upload, defaults to True
+    :type show_progress: bool, optional
+    :return: True if file was uploaded, else False
+    :rtype: bool
+    """
+    if not local_file_path:
+        err_msg = "No local file path specified"
+        raise ValueError(err_msg)
+
+    if isinstance(local_file_path, str):
+        local_file_path = Path(local_file_path)
+
+    if not object_name:
+        object_name = local_file_path.name
+    if not object_name:
+        msg = "No object_name supplied for the upload"
+        raise ValueError(msg)
+
+    if not destination_dir:
+        msg = "No destination directory supplied for the file"
+        raise ValueError(msg)
+
+    s3_path = f"{destination_dir.removesuffix('/')}/{object_name}"
+
+    with local_file_path.open(mode="rb") as fh:
+        return upload_fileobj(
+            fh,
+            s3_path,
+            file_path=local_file_path,
+            file_size=local_file_path.stat().st_size,
+            user_metadata=user_metadata,
+            transfer_config_kwargs=transfer_config_kwargs,
+            skip_if_exists=skip_if_exists,
+            show_progress=show_progress,
+        )
 
 
 def stream_to_s3(url: str, s3_path: str, requests: ModuleType) -> str:
@@ -222,61 +346,6 @@ def stream_to_s3(url: str, s3_path: str, requests: ModuleType) -> str:
             },
         )
     return f"{bucket}/{key}"
-
-
-def download_file(
-    s3_path: str, local_file_path: str | Path, version_id: str | None = None, show_progress: bool = True
-) -> None:
-    """Download an object from s3.
-
-    WARNING: will overwrite existing files but will not overwrite a file whilst trying to make a directory
-
-    Will attempt to create the local directory if it does not exist.
-
-    :param s3_path: path to the file on s3, INCLUDING the bucket name
-    :type s3_path: str
-    :param local_file_path: local path (including file name) to save the downloaded file to
-    :type local_file_path: str | Path
-    :param version_id: version ID of the file to download, defaults to None
-    :type version_id: str | None, optional
-    """
-    local_file_path = Path(local_file_path)
-    # check whether the parent directory exists
-    parent_dir = local_file_path.parent
-    if not parent_dir.is_dir():
-        try:
-            parent_dir.mkdir(parents=True, exist_ok=False)
-        except Exception:
-            logger.exception("Could not save s3 file to %s", local_file_path)
-            raise
-
-    s3 = client.get_s3_client()
-    (bucket, key) = split_s3_path(s3_path)
-    kwargs = {"Bucket": bucket, "Key": key}
-    if version_id is not None:
-        kwargs["VersionId"] = version_id
-
-    # Get the object size
-    try:
-        object_size = s3.head_object(**kwargs)["ContentLength"]
-    except Exception as e:  # noqa: BLE001
-        error_string = str(e)
-        if error_string.startswith("An error occurred (404) when calling the HeadObject operation: Not Found"):
-            logger.exception("File not found: %s", s3_path)
-        else:
-            logger.exception("Error downloading %s", s3_path)
-        raise
-
-    extra_args = {"VersionId": version_id} if version_id is not None else None
-
-    with make_progress_bar(total=object_size, desc=str(local_file_path), disable=not show_progress) as pbar:
-        s3.download_file(
-            Bucket=bucket,
-            Key=key,
-            ExtraArgs=extra_args,
-            Filename=str(local_file_path),
-            Callback=SynchronizedCallback(pbar.update),
-        )
 
 
 def upload_dir(
@@ -320,7 +389,7 @@ def upload_dir(
 
     :param local_dir_path: local directory to upload
     :type local_dir_path: Path | str
-    :param destination_dir: remote directory to upload to, INCLUDING the bucket name
+    :param destination_dir: remote directory to upload to, including the bucket name
     :type destination_dir: str
     :param file_glob: glob for selecting files to upload
     :type file_glob: str | None
@@ -353,6 +422,62 @@ def upload_dir(
     return all_successful
 
 
+def download_file(
+    s3_path: str,
+    local_file_path: str | Path,
+    transfer_config_kwargs: dict[str, Any] | None = None,
+    show_progress: bool = True,  # noqa: FBT001, FBT002
+) -> None:
+    """Download an object from s3.
+
+    WARNING: will overwrite existing files but will not overwrite a file whilst trying to make a directory
+
+    Will attempt to create the local directory if it does not exist.
+
+    :param s3_path: path to the file on s3, including the bucket name
+    :type s3_path: str
+    :param local_file_path: local path (including file name) to save the downloaded file to
+    :type local_file_path: str | Path
+    :param transfer_config_kwargs: keyword arguments for configuring the S3 transfer
+    :type transfer_config_kwargs: dict[str, Any] | None
+    :param show_progress: whether to display a tqdm progress bar during upload, defaults to True
+    :type show_progress: bool, optional
+    """
+    local_file_path = Path(local_file_path)
+    # check whether the parent directory exists
+    parent_dir = local_file_path.parent
+    if not parent_dir.is_dir():
+        try:
+            parent_dir.mkdir(parents=True, exist_ok=False)
+        except Exception:
+            logger.exception("Could not save s3 file to %s", local_file_path)
+            raise
+
+    s3 = client.get_s3_client()
+    (bucket, key) = split_s3_path(s3_path)
+
+    download_args = {
+        "Filename": str(local_file_path),
+        "Bucket": bucket,
+        "Key": key,
+        "ExtraArgs": {"ChecksumMode": "ENABLED"},
+    }
+
+    # Get the object size
+    existing = get_existing_object_info(s3_path)
+    if existing is None:
+        msg = f"File not found: {s3_path}"
+        raise FileNotFoundError(msg)
+    object_size = existing.get("ContentLength", 0)
+    download_args["Config"] = build_transfer_config(object_size, **(transfer_config_kwargs or {}))
+
+    with make_progress_bar(total=object_size, desc=str(local_file_path), disable=not show_progress) as pbar:
+        s3.download_file(
+            **download_args,
+            Callback=SynchronizedCallback(pbar.update),
+        )
+
+
 def copy_object(
     current_s3_path: str,
     new_s3_path: str,
@@ -368,9 +493,9 @@ def copy_object(
     Errors (e.g, buckets or keys not existing, wrong credentials, etc.) are passed
     directly to the user without being caught.
 
-    :param current_s3_path: path to the file on s3, INCLUDING the bucket name
+    :param current_s3_path: path to the file on s3, including the bucket name
     :type current_s3_path: str
-    :param new_s3_path: the desired new file path on s3, INCLUDING the bucket name
+    :param new_s3_path: the desired new file path on s3, including the bucket name
     :type new_s3_path: str
     :return: dictionary containing response from the copy operation
     :rtype: dict[str, Any]
@@ -396,9 +521,9 @@ def copy_directory(current_s3_path: str, new_s3_path: str) -> tuple[dict[str, st
 
     If the source bucket does not exist, a NoSuchBucket error will be thrown.
 
-    :param current_s3_path: path to the directory on s3, INCLUDING the bucket name
+    :param current_s3_path: path to the directory on s3, including the bucket name
     :type current_s3_path: str
-    :param new_s3_path: the desired new directory path on s3, INCLUDING the bucket name
+    :param new_s3_path: the desired new directory path on s3, including the bucket name
     :type new_s3_path: str
     :return: a tuple of (successes, errors) where:
              - successes maps "bucket/source_key" -> "bucket/dest_key" for each
@@ -458,7 +583,7 @@ def delete_object(s3_path: str) -> dict[str, Any]:
     Errors (e.g, buckets or keys not existing, wrong credentials, etc.) are passed
     directly to the user without being caught.
 
-    :param s3_path: path to the file on s3, INCLUDING the bucket name
+    :param s3_path: path to the file on s3, including the bucket name
     :type s3_path: str
     :return: dictionary containing response
     :rtype: dict[str, Any]

@@ -3,14 +3,15 @@
 import io
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
+from boto3.s3.transfer import TransferConfig
 from botocore.exceptions import ClientError
-from requests.exceptions import ConnectionError as ConnError
-from requests.exceptions import HTTPError
 from types_boto3_s3.client import S3Client
 
+from cdm_data_loaders.utils.file_transfer.s3 import object_utils
 from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
     DEFAULT_EXTRA_ARGS,
     copy_directory,
@@ -18,13 +19,14 @@ from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
     delete_object,
     delete_objects,
     download_file,
+    get_existing_object_info,
     head_object,
     list_matching_objects,
     object_exists,
     split_s3_path,
-    stream_to_s3,
     upload_dir,
     upload_file,
+    upload_fileobj,
 )
 from tests.utils.file_transfer.s3.conftest import (
     ALT_BUCKET,
@@ -76,6 +78,29 @@ INVALID_PATH_ERRORS = {
     "s3a://path": COULD_NOT_PARSE,
     "s3a://path/": COULD_NOT_PARSE,
 }
+
+
+def make_mock_requests(
+    content: bytes = b"hello world",
+    status_code: int = 200,
+    content_type: str = "application/octet-stream",
+) -> tuple[MagicMock, MagicMock]:
+    """Build a mock requests module whose .get() returns a mock response."""
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_response.raw = io.BytesIO(content)
+    mock_response.raw.decode_content = True
+    mock_response.headers = {
+        "content-type": content_type,
+    }
+    mock_response.raise_for_status = MagicMock()
+    mock_response.__enter__ = lambda s: s
+    mock_response.__exit__ = MagicMock(return_value=False)
+
+    mock_requests = MagicMock()
+    mock_requests.get.return_value = mock_response
+
+    return mock_requests, mock_response
 
 
 @pytest.mark.parametrize("invalid_path", list(INVALID_PATH_ERRORS.keys()))
@@ -135,10 +160,146 @@ def test_split_s3_path_allow_bucket_only_success(valid_path: str) -> None:
     assert (bucket, path) == EXPECTED_ALLOW_BUCKET_ONLY[valid_path]
 
 
-# list_matching_objects
+# head_object
+@pytest.mark.s3
+def test_head_object_returns_info(mock_s3_client: S3Client) -> None:
+    """Verify that head_object returns size, metadata, and checksum fields."""
+    mock_s3_client.put_object(Bucket=TEST_BUCKET, Key="info/file.txt", Body=b"hello", Metadata={"md5": "abc123"})
+    result = head_object(f"{TEST_BUCKET}/info/file.txt")
+    assert result is not None
+    assert result["ContentLength"] == SIZE_HELLO
+    assert result["Metadata"]["md5"] == "abc123"
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_head_object_raises_for_missing() -> None:
+    """Verify that head_object returns None for a non-existent object."""
+    with pytest.raises(ClientError, match="404"):
+        head_object(f"{TEST_BUCKET}/does/not/exist.txt")
+
+
+@pytest.mark.s3
+@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
+def test_head_object_with_protocols(mock_s3_client: S3Client, protocol: str) -> None:
+    """Verify that head_object handles all valid protocol prefixes."""
+    mock_s3_client.put_object(Bucket=TEST_BUCKET, Key="proto/file.txt", Body=b"data")
+    result = head_object(f"{protocol}{TEST_BUCKET}/proto/file.txt")
+    assert result is not None
+    assert result["ContentLength"] == SIZE_DATA
+
+
+# get_existing_object_info
+@pytest.mark.s3
+@pytest.mark.parametrize("metadata", [{"md5": "abc123"}, {}, None])
+def test_get_existing_object_info_pass_returns_info_for_existing_object(
+    mock_s3_client: S3Client, metadata: dict[str, str] | None
+) -> None:
+    """Verify size, etag, and lowercased metadata are all populated for an existing object."""
+    kwargs = {"Bucket": TEST_BUCKET, "Key": "info/file.txt", "Body": b"hello"}
+    if metadata is not None:
+        kwargs["Metadata"] = metadata
+
+    mock_s3_client.put_object(**kwargs)
+    info = get_existing_object_info(f"{TEST_BUCKET}/info/file.txt")
+    assert info is not None
+    assert info["ContentLength"] == SIZE_HELLO
+    assert info["ETag"]
+    assert info["Metadata"] == (metadata or {})
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_get_existing_object_info_pass_returns_none_for_missing_object() -> None:
+    """Verify None is returned (not an exception) for a missing object."""
+    assert get_existing_object_info(f"{TEST_BUCKET}does/not/exist.txt") is None
+
+
+@pytest.mark.s3
+@pytest.mark.parametrize("error_code", ["404", "NoSuchKey", "NotFound", "NoSuchBucket"])
+def test_get_existing_object_info_pass_recognizes_all_not_found_error_codes(
+    mock_s3_client: S3Client, monkeypatch: pytest.MonkeyPatch, error_code: str
+) -> None:
+    """NOT_FOUND_ERROR_CODES are treated as 'not found', even with a non-404 HTTP status."""
+
+    def raise_not_found(**kwargs: Any) -> None:
+        raise ClientError(
+            {"Error": {"Code": error_code}, "ResponseMetadata": {"HTTPStatusCode": 400}},
+            "HeadObject",
+        )
+
+    monkeypatch.setattr(mock_s3_client, "head_object", raise_not_found)
+    assert get_existing_object_info(f"{TEST_BUCKET}some/key.txt") is None
+
+
+@pytest.mark.s3
+def test_get_existing_object_info_pass_recognizes_404_status_with_unknown_error_code(
+    mock_s3_client: S3Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 404 HTTP status is treated as 'not found' even if the error code itself isn't recognized."""
+
+    def raise_404_status(**kwargs: Any) -> None:
+        raise ClientError(
+            {"Error": {"Code": "SomeWeirdCode"}, "ResponseMetadata": {"HTTPStatusCode": 404}},
+            "HeadObject",
+        )
+
+    monkeypatch.setattr(mock_s3_client, "head_object", raise_404_status)
+    assert get_existing_object_info(f"{TEST_BUCKET}some/key.txt") is None
+
+
+@pytest.mark.s3
+def test_get_existing_object_info_fail_non_not_found_error_propagates(
+    mock_s3_client: S3Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ClientError that is neither a recognized not-found code nor a 404 status is re-raised."""
+
+    def raise_access_denied(**kwargs: Any) -> None:
+        raise ClientError(
+            {"Error": {"Code": "AccessDenied"}, "ResponseMetadata": {"HTTPStatusCode": 403}},
+            "HeadObject",
+        )
+
+    monkeypatch.setattr(mock_s3_client, "head_object", raise_access_denied)
+    with pytest.raises(ClientError, match="AccessDenied"):
+        get_existing_object_info(f"{TEST_BUCKET}some/key.txt")
+
+
+# object_exists
+@pytest.mark.s3
+@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
+def test_head_object_and_object_exists_true_and_false(mock_s3_client: S3Client, protocol: str) -> None:
+    """Verify that object_exists returns True for an object that exists in the bucket."""
+    populate_mock_s3(mock_s3_client, FILES_IN_BUCKETS)
+    for bucket, file_list in FILES_IN_BUCKETS.items():
+        for f in file_list:
+            output = head_object(f"{protocol}{bucket}/{f}")
+            assert output is not None
+            assert isinstance(output["ContentLength"], int)
+            assert object_exists(f"{protocol}{bucket}/{f}") is True
+
+        nonexistent_file = f"{protocol}{bucket}/a-file-i-just-made-up.txt"
+        assert object_exists(nonexistent_file) is False
+        with pytest.raises(ClientError, match="404"):
+            head_object(nonexistent_file)
+
+
+@pytest.mark.s3
+@pytest.mark.parametrize("s3_path", ["absent", "dir_one", "dir_one/", "dir_one/file1.tnt"])
 @pytest.mark.parametrize("bucket", BUCKETS)
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
+def test_object_exists_returns_false_when_absent(
+    mock_s3_client: S3Client, s3_path: str, protocol: str, bucket: str
+) -> None:
+    """Verify that object_exists returns False for an object that does not exist."""
+    populate_mock_s3(mock_s3_client, FILES_IN_BUCKETS)
+    assert object_exists(f"{protocol}{bucket}/{s3_path}") is False
+
+
+# list_matching_objects
 @pytest.mark.s3
+@pytest.mark.parametrize("bucket", BUCKETS)
+@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 def test_list_matching_objects_lists_objects(
     mock_s3_client: S3Client,
     bucket: str,
@@ -151,8 +312,8 @@ def test_list_matching_objects_lists_objects(
     assert keys == {f for f in FILES_IN_BUCKETS[bucket] if f.startswith("dir_one")}
 
 
-@pytest.mark.parametrize("dir_path", ["dir_one/sub_dir", "dir_one/sub_dir/", "dir_one/sub_dir/und"])
 @pytest.mark.s3
+@pytest.mark.parametrize("dir_path", ["dir_one/sub_dir", "dir_one/sub_dir/", "dir_one/sub_dir/und"])
 def test_list_matching_objects_filters_by_prefix(
     mock_s3_client: S3Client,
     dir_path: str,
@@ -167,8 +328,8 @@ def test_list_matching_objects_filters_by_prefix(
     assert keys == {f for f in FILES_IN_BUCKETS[bucket] if f.startswith(dir_path)}
 
 
-@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 @pytest.mark.s3
+@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 def test_list_matching_objects_empty_for_missing_prefix(
     mock_s3_client: S3Client,
     protocol: str,
@@ -200,8 +361,8 @@ EXPECTED_FILE_LIST = {
 
 
 # NOTE: These tests currently compose multiple fixtures explicitly for readability.
-@pytest.mark.parametrize("dir_path", EXPECTED_FILE_LIST.keys())
 @pytest.mark.s3
+@pytest.mark.parametrize("dir_path", EXPECTED_FILE_LIST.keys())
 def test_list_matching_objects_returns_more_than_1000_entries(
     mock_s3_client: S3Client,
     dir_path: str,
@@ -216,216 +377,467 @@ def test_list_matching_objects_returns_more_than_1000_entries(
     assert keys == set(EXPECTED_FILE_LIST[dir_path])
 
 
-# object_exists
-@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 @pytest.mark.s3
-def test_head_object_and_object_exists_true_and_false(mock_s3_client: S3Client, protocol: str) -> None:
-    """Verify that object_exists returns True for an object that exists in the bucket."""
-    populate_mock_s3(mock_s3_client, FILES_IN_BUCKETS)
-    for bucket, file_list in FILES_IN_BUCKETS.items():
-        for f in file_list:
-            output = head_object(f"{protocol}{bucket}/{f}")
-            assert output is not None
-            assert isinstance(output["ContentLength"], int)
-            assert object_exists(f"{protocol}{bucket}/{f}") is True
-
-        nonexistent_file = f"{protocol}{bucket}/a-file-i-just-made-up.txt"
-        assert object_exists(nonexistent_file) is False
-        with pytest.raises(ClientError, match="404"):
-            _ = head_object(nonexistent_file)
-
-
-@pytest.mark.parametrize("s3_path", ["absent", "dir_one", "dir_one/", "dir_one/file1.tnt"])
-@pytest.mark.parametrize("bucket", BUCKETS)
-@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
-@pytest.mark.s3
-def test_object_exists_returns_false_when_absent(
-    mock_s3_client: S3Client, s3_path: str, protocol: str, bucket: str
-) -> None:
-    """Verify that object_exists returns False for an object that does not exist."""
-    populate_mock_s3(mock_s3_client, FILES_IN_BUCKETS)
-    assert object_exists(f"{protocol}{bucket}/{s3_path}") is False
+def test_list_matching_objects_pass_respects_custom_max_keys(mock_s3_client: S3Client) -> None:
+    """A small custom max_keys value still results in complete results via pagination."""
+    populate_mock_s3(mock_s3_client, {TEST_BUCKET: FILES_IN_BUCKETS[TEST_BUCKET]})
+    contents = list_matching_objects(f"{TEST_BUCKET}/dir_one", max_keys=1)
+    keys = {obj["Key"] for obj in contents}
+    assert keys == {f for f in FILES_IN_BUCKETS[TEST_BUCKET] if f.startswith("dir_one")}
 
 
 # upload_file
+@pytest.mark.s3
 @pytest.mark.parametrize("destination_dir", ["uploads", "uploads/", "some/uploads"])
 @pytest.mark.parametrize("bucket", BUCKETS)
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
-@pytest.mark.s3
+@pytest.mark.parametrize("file_name", [None, "", "custom.txt"])
 def test_upload_file_succeeds(
-    mock_s3_client: S3Client, sample_file: Path, protocol: str, bucket: str, destination_dir: str
+    mock_s3_client: S3Client, sample_file: Path, protocol: str, bucket: str, destination_dir: str, file_name: str | None
 ) -> None:
     """Verify that a file is uploaded to the correct key in the specified bucket."""
-    result = upload_file(sample_file, f"{protocol}{bucket}/{destination_dir}")
+    upload_args = {
+        "local_file_path": sample_file,
+        "destination_dir": f"{protocol}{bucket}/{destination_dir}",
+    }
+    if file_name is not None:
+        upload_args["object_name"] = file_name
+
+    result = upload_file(**upload_args)
     assert result is True
-    obj = mock_s3_client.get_object(Bucket=bucket, Key=f"{destination_dir.removesuffix('/')}/{sample_file.name}")
+    expected_key = f"{destination_dir.removesuffix('/')}/{file_name or sample_file.name}"
+    obj = mock_s3_client.get_object(Bucket=bucket, Key=expected_key)
     assert obj["Body"].read() == b"hello s3"
 
 
 @pytest.mark.s3
-def test_upload_file_uses_custom_object_name(mock_s3_client: S3Client, sample_file: Path) -> None:
-    """Verify that the object_name argument overrides the source filename as the S3 key."""
-    result = upload_file(sample_file, f"{TEST_BUCKET}/uploads", object_name="custom.txt")
-    assert result is True
-    obj = mock_s3_client.get_object(Bucket=TEST_BUCKET, Key="uploads/custom.txt")
-    assert obj["Body"].read() == b"hello s3"
-
-
-@pytest.mark.s3
-def test_upload_file_skips_when_already_present(mock_s3_client: S3Client, sample_file: Path) -> None:
-    """Verify that uploading a file that already exists is skipped, returns True, and leaves the object unchanged."""
-    mock_s3_client.put_object(Bucket=TEST_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
-    result = upload_file(sample_file, f"{TEST_BUCKET}/uploads")
-    assert result is True
-    # The existing object must not have been overwritten
-    obj = mock_s3_client.get_object(Bucket=TEST_BUCKET, Key=f"uploads/{sample_file.name}")
-    assert obj["Body"].read() == b"old"
-
-
 @pytest.mark.usefixtures("mock_s3_client")
 @pytest.mark.parametrize("path_type", [str, Path])
-@pytest.mark.s3
 def test_upload_file_accepts_str_and_path(sample_file: Path, path_type: type[str] | type[Path]) -> None:
     """Verify that upload_file accepts both str and Path objects for the local file path."""
     result = upload_file(path_type(sample_file), f"{TEST_BUCKET}/uploads")
     assert result is True
 
 
-@pytest.mark.usefixtures("mock_s3_client")
 @pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+@pytest.mark.parametrize(
+    ("file_name", "error"),
+    [
+        (None, "No local file path specified"),
+        ("", "No local file path specified"),
+        # current working dir -- not a file
+        (".", "No object_name"),
+        # all the following are equivalent
+        (Path(), "No object_name"),
+        (Path(""), "No object_name"),  # noqa: PTH201
+        (Path("."), "No object_name"),  # noqa: PTH201
+    ],
+)
+def test_upload_file_fail_empty_object_name(file_name: str | Path | None, error: str) -> None:
+    """A local_file_path whose .name is empty (e.g. '.') and no explicit object_name raises ValueError."""
+    with pytest.raises(ValueError, match=error):
+        upload_file(file_name, f"{TEST_BUCKET}/uploads")  # pyright: ignore[reportArgumentType]
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
 def test_upload_file_error(sample_file: Path) -> None:
     """Verify that upload_file raises ValueError when no destination directory is provided."""
     with pytest.raises(ValueError, match="No destination directory"):
         upload_file(sample_file, "")
 
 
-# TODO: Missing tests
-# - Upload failure (S3 error) - returns False
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_file_fail_upload_error_returns_false(sample_file: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """A failure during the actual upload (e.g. destination bucket does not exist) returns False, not an exception."""
+    with caplog.at_level(logging.ERROR):
+        result = upload_file(sample_file, "nonexistent-bucket/uploads")
+    assert result is False
+    assert any("Error uploading to s3" in r.message for r in caplog.records)
 
 
-def make_mock_requests(
-    content: bytes = b"hello world",
-    status_code: int = 200,
-    content_type: str = "application/octet-stream",
-) -> tuple[MagicMock, MagicMock]:
-    """Build a mock requests module whose .get() returns a mock response."""
-    mock_response = MagicMock()
-    mock_response.status_code = status_code
-    mock_response.raw = io.BytesIO(content)
-    mock_response.raw.decode_content = True
-    mock_response.headers = {
-        "content-type": content_type,
-    }
-    mock_response.raise_for_status = MagicMock()
-    mock_response.__enter__ = lambda s: s
-    mock_response.__exit__ = MagicMock(return_value=False)
-
-    mock_requests = MagicMock()
-    mock_requests.get.return_value = mock_response
-
-    return mock_requests, mock_response
-
-
-UPLOAD_TEST_KEY = "uploads/test-file.pdf"
-UPLOAD_BUCKET_KEY = f"{ALT_BUCKET}/{UPLOAD_TEST_KEY}"
-TEST_URL = "https://example.com/test-file.pdf"
-
-
-def test_stream_to_s3_happy_path(mock_s3_client: S3Client) -> None:
-    """File content from the HTTP response is stored correctly in S3."""
-    content = b"hello world"
-    mock_requests, _ = make_mock_requests(content=content)
-
-    saved_path = stream_to_s3(TEST_URL, UPLOAD_BUCKET_KEY, mock_requests)
-
-    mock_requests.get.assert_called_once_with(TEST_URL, stream=True)
-
-    # s3 path including bucket returned
-    assert saved_path == UPLOAD_BUCKET_KEY
-
-    result = mock_s3_client.get_object(Bucket=ALT_BUCKET, Key=UPLOAD_TEST_KEY)
-    # check the content is correct
-    assert result["Body"].read() == content
-
-    # new file shows up in list_objects
-    objects = mock_s3_client.list_objects_v2(Bucket=ALT_BUCKET)["Contents"]
-    keys = [obj["Key"] for obj in objects]
-    assert UPLOAD_TEST_KEY in keys
-
-
-@pytest.mark.parametrize("content_type", [None, "application/json", "application/pdf", "text"])
-def test_stream_to_s3_sets_content_type_from_response_headers(
-    mock_s3_client: S3Client, content_type: str | None
+@pytest.mark.s3
+def test_upload_file_with_metadata_still_applies_default_extra_args(
+    mock_s3_client: S3Client, sample_file: Path
 ) -> None:
-    """ContentType metadata on the S3 object matches the HTTP response header."""
-    content_type_args = {}
-    if content_type:
-        content_type_args["content_type"] = content_type
-    mock_requests, _ = make_mock_requests(**content_type_args)
-
-    stream_to_s3(TEST_URL, UPLOAD_BUCKET_KEY, mock_requests)
-
-    head = mock_s3_client.head_object(Bucket=ALT_BUCKET, Key=UPLOAD_TEST_KEY)
-    assert head["ContentType"] == content_type or "application/octet-stream"
+    """DEFAULT_EXTRA_ARGS (e.g. ChecksumAlgorithm) is preserved even when user_metadata is also supplied."""
+    upload_file(sample_file, f"{TEST_BUCKET}/uploads", user_metadata={"k": "v"})
+    resp = mock_s3_client.head_object(Bucket=TEST_BUCKET, Key=f"uploads/{sample_file.name}", ChecksumMode="ENABLED")
+    assert "ChecksumCRC64NVME" in resp
+    assert resp["Metadata"]["k"] == "v"
 
 
-def test_stream_to_s3_raises_on_http_error_status(mock_s3_client: S3Client) -> None:
-    """An HTTP error status causes raise_for_status() to propagate an exception."""
-    mock_requests, mock_response = make_mock_requests(status_code=404)
-    mock_response.raise_for_status.side_effect = HTTPError("404 Not Found")
+# transfer_config_kwargs
+@pytest.mark.s3
+def test_upload_file_pass_transfer_config_kwargs_forwarded(
+    mock_s3_client: S3Client, sample_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify that transfer_config_kwargs passed to upload_file reach build_transfer_config."""
+    captured: dict[str, Any] = {}
 
-    with (
-        pytest.raises(HTTPError, match="404 Not Found"),
-    ):
-        stream_to_s3(TEST_URL, UPLOAD_BUCKET_KEY, mock_requests)
+    def fake_build_transfer_config(file_size: int, **kwargs: Any) -> TransferConfig:
+        captured["file_size"] = file_size
+        captured["kwargs"] = kwargs
+        return TransferConfig()
 
-    with pytest.raises(ClientError, match="Not Found"):
-        mock_s3_client.head_object(Bucket=ALT_BUCKET, Key=UPLOAD_TEST_KEY)
+    monkeypatch.setattr(object_utils, "build_transfer_config", fake_build_transfer_config)
 
+    result = upload_file(
+        sample_file,
+        f"{TEST_BUCKET}/uploads",
+        transfer_config_kwargs={"max_concurrency": 5, "use_threads": False},
+    )
 
-def test_stream_to_s3_raises_on_connection_error(mock_s3_client: S3Client) -> None:
-    """A network-level failure raises a ConnectionError."""
-    mock_requests, _ = make_mock_requests(status_code=404)
-    mock_requests.get.side_effect = ConnError("Network unreachable")
+    assert result is True
+    assert captured["kwargs"] == {"max_concurrency": 5, "use_threads": False}
+    assert captured["file_size"] == sample_file.stat().st_size
 
-    with pytest.raises(ConnError, match="Network unreachable"):
-        stream_to_s3(TEST_URL, UPLOAD_BUCKET_KEY, mock_requests)
-
-    with pytest.raises(ClientError, match="Not Found"):
-        mock_s3_client.head_object(Bucket=ALT_BUCKET, Key=UPLOAD_TEST_KEY)
-
-
-# FIXME: don't upload if there is nothing there?
-def test_stream_to_s3_uploads_empty_file(mock_s3_client: S3Client) -> None:
-    """An empty HTTP response body results in an empty S3 object."""
-    mock_requests, _ = make_mock_requests(content=b"")
-
-    stream_to_s3(TEST_URL, UPLOAD_BUCKET_KEY, mock_requests)
-
-    result = mock_s3_client.get_object(Bucket=ALT_BUCKET, Key=UPLOAD_TEST_KEY)
-    assert result["Body"].read() == b""
+    obj = mock_s3_client.get_object(Bucket=TEST_BUCKET, Key=f"uploads/{sample_file.name}")
+    assert obj["Body"].read() == b"hello s3"
 
 
-def test_stream_to_s3_uploads_large_file(mock_s3_client: S3Client) -> None:
-    """A large payload (>5MB) is uploaded correctly via multipart."""
-    content = b"x" * (6 * 1024 * 1024)  # 6 MB
-    mock_requests, _ = make_mock_requests(content=content)
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_file_pass_no_transfer_config_kwargs_uses_empty_dict(
+    sample_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When transfer_config_kwargs is not supplied, build_transfer_config still receives no extra kwargs."""
+    captured: dict[str, Any] = {}
 
-    stream_to_s3(TEST_URL, UPLOAD_BUCKET_KEY, mock_requests)
+    def fake_build_transfer_config(_: int, **kwargs: Any) -> TransferConfig:
+        captured["kwargs"] = kwargs
+        return TransferConfig()
 
-    result = mock_s3_client.get_object(Bucket=ALT_BUCKET, Key=UPLOAD_TEST_KEY)
-    assert result["Body"].read() == content
+    monkeypatch.setattr(object_utils, "build_transfer_config", fake_build_transfer_config)
+
+    result = upload_file(sample_file, f"{TEST_BUCKET}/uploads")
+
+    assert result is True
+    assert captured["kwargs"] == {}
 
 
-@pytest.mark.skip("TODO: add test(s)")
-def test_stream_to_s3_accepts_custom_requests_implementation() -> None:
-    """A subclassed or alternate requests module works as a drop-in."""
-    # TODO: add test here?
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_file_pass_show_progress_false_disables_progress_bar(sample_file: Path) -> None:
+    """Verify that show_progress=False disables the tqdm progress bar for uploads."""
+    captured_disable: list[bool] = []
+    original_make_progress_bar = object_utils.make_progress_bar
+
+    def spy_make_progress_bar(*, disable: bool, **kwargs: Any) -> Any:
+        captured_disable.append(disable)
+        return original_make_progress_bar(disable=disable, **kwargs)
+
+    with patch.object(object_utils, "make_progress_bar", side_effect=spy_make_progress_bar):
+        result = upload_file(sample_file, f"{TEST_BUCKET}/uploads", show_progress=False)
+
+    assert result is True
+    assert captured_disable == [True]
 
 
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_file_pass_show_progress_true_enables_progress_bar(sample_file: Path) -> None:
+    """Verify that show_progress=True (the default) enables the tqdm progress bar for uploads."""
+    captured_disable: list[bool] = []
+    original_make_progress_bar = object_utils.make_progress_bar
+
+    def spy_make_progress_bar(*, disable: bool, **kwargs: Any) -> Any:
+        captured_disable.append(disable)
+        return original_make_progress_bar(disable=disable, **kwargs)
+
+    with patch.object(object_utils, "make_progress_bar", side_effect=spy_make_progress_bar):
+        result = upload_file(sample_file, f"{TEST_BUCKET}/uploads", show_progress=True)
+
+    assert result is True
+    assert captured_disable == [False]
+
+
+@pytest.mark.s3
+def test_upload_file_overwrites_existing_object_by_default(mock_s3_client: S3Client, sample_file: Path) -> None:
+    """Since skip_if_exists is not yet implemented, upload_file always overwrites an existing object."""
+    mock_s3_client.put_object(Bucket=TEST_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
+    result = upload_file(sample_file, f"{TEST_BUCKET}/uploads")
+    assert result is True
+    obj = mock_s3_client.get_object(Bucket=TEST_BUCKET, Key=f"uploads/{sample_file.name}")
+    assert obj["Body"].read() == b"hello s3"
+
+
+@pytest.mark.s3
+@pytest.mark.xfail(reason="skip_if_exists is not yet implemented (TODO in upload_fileobj)", strict=True)
+def test_upload_file_skip_if_exists_skips_when_already_present(mock_s3_client: S3Client, sample_file: Path) -> None:
+    """Once implemented, skip_if_exists=True should skip the upload, leaving the existing object untouched.
+
+    Marked xfail(strict=True) so that this test starts *failing* (unexpected pass) the moment
+    skip_if_exists is actually implemented — a forcing function to come remove this marker.
+    """
+    mock_s3_client.put_object(Bucket=TEST_BUCKET, Key=f"uploads/{sample_file.name}", Body=b"old")
+    result = upload_file(sample_file, f"{TEST_BUCKET}/uploads", skip_if_exists=True)
+    assert result is True
+    obj = mock_s3_client.get_object(Bucket=TEST_BUCKET, Key=f"uploads/{sample_file.name}")
+    assert obj["Body"].read() == b"old"
+
+
+# upload_file => upload_fileobj
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_file_forwards_file_path_and_size_to_upload_fileobj(
+    sample_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify upload_file passes file_path and file_size through to upload_fileobj correctly."""
+    captured: dict[str, Any] = {}
+    original_upload_fileobj = object_utils.upload_fileobj
+
+    def spy_upload_fileobj(fileobj: Any, s3_path: str, **kwargs: Any) -> bool:
+        captured["s3_path"] = s3_path
+        captured["file_path"] = kwargs.get("file_path")
+        captured["file_size"] = kwargs.get("file_size")
+        return original_upload_fileobj(fileobj, s3_path, **kwargs)
+
+    monkeypatch.setattr(object_utils, "upload_fileobj", spy_upload_fileobj)
+    result = upload_file(sample_file, f"{TEST_BUCKET}/uploads")
+
+    assert result is True
+    assert captured["s3_path"] == f"{TEST_BUCKET}/uploads/{sample_file.name}"
+    assert captured["file_path"] == sample_file
+    assert captured["file_size"] == sample_file.stat().st_size
+
+
+# upload_fileobj (direct)
+@pytest.mark.s3
+@pytest.mark.parametrize("destination_dir", ["uploads", "uploads/", "some/uploads"])
 @pytest.mark.parametrize("bucket", BUCKETS)
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
+def test_upload_fileobj_succeeds(mock_s3_client: S3Client, protocol: str, bucket: str, destination_dir: str) -> None:
+    """Verify upload_fileobj uploads stream content to the correct key, with any valid protocol prefix."""
+    data = b"streamed bytes content"
+    key = f"{destination_dir.removesuffix('/')}/stream.bin"
+    s3_path = f"{protocol}{bucket}/{key}"
+    result = upload_fileobj(io.BytesIO(data), s3_path)
+    assert result is True
+    obj = mock_s3_client.get_object(Bucket=bucket, Key=key)
+    assert obj["Body"].read() == data
+
+
 @pytest.mark.s3
+def test_upload_fileobj_default_file_size_is_zero_when_unspecified(
+    mock_s3_client: S3Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When file_size is not supplied, build_transfer_config receives 0 (the declared default)."""
+    captured: dict[str, Any] = {}
+
+    def fake_build_transfer_config(file_size: int, **kwargs: Any) -> TransferConfig:
+        captured["file_size"] = file_size
+        return TransferConfig()
+
+    monkeypatch.setattr(object_utils, "build_transfer_config", fake_build_transfer_config)
+    result = upload_fileobj(io.BytesIO(b"data"), f"{TEST_BUCKET}/uploads/stream.bin")
+    assert result is True
+    assert captured["file_size"] == 0
+
+
+@pytest.mark.s3
+def test_upload_fileobj_explicit_file_size_used_for_progress_bar(mock_s3_client: S3Client) -> None:
+    """Passing file_size explicitly sizes the progress bar accordingly."""
+    data = b"12345"
+    captured_totals: list[int | None] = []
+    original_make_progress_bar = object_utils.make_progress_bar
+
+    def spy_make_progress_bar(*, total: int | None, **kwargs: Any) -> Any:
+        captured_totals.append(total)
+        return original_make_progress_bar(total=total, **kwargs)
+
+    with patch.object(object_utils, "make_progress_bar", side_effect=spy_make_progress_bar):
+        upload_fileobj(io.BytesIO(data), f"{TEST_BUCKET}/uploads/sized.bin", file_size=len(data))
+
+    assert captured_totals == [len(data)]
+
+
+@pytest.mark.s3
+def test_upload_fileobj_applies_default_extra_args_and_metadata(mock_s3_client: S3Client) -> None:
+    """DEFAULT_EXTRA_ARGS and user_metadata are both applied when calling upload_fileobj directly."""
+    upload_fileobj(io.BytesIO(b"payload"), f"{TEST_BUCKET}/uploads/meta.bin", user_metadata={"k": "v"})
+    resp = mock_s3_client.head_object(Bucket=TEST_BUCKET, Key="uploads/meta.bin", ChecksumMode="ENABLED")
+    assert "ChecksumCRC64NVME" in resp
+    assert resp["Metadata"]["k"] == "v"
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_fileobj_fail_upload_error_returns_false(caplog: pytest.LogCaptureFixture) -> None:
+    """A failure during the actual upload (e.g. destination bucket does not exist) returns False, not an exception."""
+    with caplog.at_level(logging.ERROR):
+        result = upload_fileobj(io.BytesIO(b"data"), "nonexistent-bucket/uploads/file.bin")
+    assert result is False
+    assert any("Error uploading to s3" in r.message for r in caplog.records)
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_fileobj_raises_for_invalid_s3_path() -> None:
+    """An s3_path that can't be split into bucket/key propagates the ValueError from split_s3_path."""
+    with pytest.raises(ValueError, match="Could not parse"):
+        upload_fileobj(io.BytesIO(b"data"), "no-slash-path")
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_fileobj_pass_transfer_config_kwargs_forwarded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify transfer_config_kwargs passed directly to upload_fileobj reach build_transfer_config."""
+    captured: dict[str, Any] = {}
+
+    def fake_build_transfer_config(file_size: int, **kwargs: Any) -> TransferConfig:
+        captured["file_size"] = file_size
+        captured["kwargs"] = kwargs
+        return TransferConfig()
+
+    monkeypatch.setattr(object_utils, "build_transfer_config", fake_build_transfer_config)
+    data = b"transfer config test"
+    result = upload_fileobj(
+        io.BytesIO(data),
+        f"{TEST_BUCKET}/uploads/tc.bin",
+        file_size=len(data),
+        transfer_config_kwargs={"max_concurrency": 2},
+    )
+    assert result is True
+    assert captured["kwargs"] == {"max_concurrency": 2}
+    assert captured["file_size"] == len(data)
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_fileobj_pass_show_progress_false_disables_progress_bar() -> None:
+    """Verify that show_progress=False disables the tqdm progress bar when calling upload_fileobj directly."""
+    captured_disable: list[bool] = []
+    original_make_progress_bar = object_utils.make_progress_bar
+
+    def spy_make_progress_bar(*, disable: bool, **kwargs: Any) -> Any:
+        captured_disable.append(disable)
+        return original_make_progress_bar(disable=disable, **kwargs)
+
+    with patch.object(object_utils, "make_progress_bar", side_effect=spy_make_progress_bar):
+        result = upload_fileobj(io.BytesIO(b"data"), f"{TEST_BUCKET}/uploads/np.bin", show_progress=False)
+
+    assert result is True
+    assert captured_disable == [True]
+
+
+@pytest.mark.s3
+def test_upload_fileobj_skip_if_exists_flag_currently_logs_placeholder_only(
+    mock_s3_client: S3Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Documents current stub behavior: skip_if_exists=True logs a TODO but does not skip the upload."""
+    with caplog.at_level(logging.DEBUG):
+        result = upload_fileobj(io.BytesIO(b"data"), f"{TEST_BUCKET}/uploads/skip.bin", skip_if_exists=True)
+    assert result is True
+    assert any("To be implemented" in r.message for r in caplog.records)
+    obj = mock_s3_client.get_object(Bucket=TEST_BUCKET, Key="uploads/skip.bin")
+    assert obj["Body"].read() == b"data"
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_fileobj_logs_file_path_when_provided(sample_file: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """The debug log includes the local file path when file_path is supplied."""
+    with caplog.at_level(logging.DEBUG), sample_file.open("rb") as fh:
+        upload_fileobj(fh, f"{TEST_BUCKET}/uploads/{sample_file.name}", file_path=sample_file)
+    assert any(f"uploading {sample_file} to" in r.message for r in caplog.records)
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_fileobj_logs_generic_message_without_file_path(caplog: pytest.LogCaptureFixture) -> None:
+    """The debug log uses the generic 'fileobj' message when file_path is not supplied."""
+    with caplog.at_level(logging.DEBUG):
+        upload_fileobj(io.BytesIO(b"data"), f"{TEST_BUCKET}/uploads/stream.bin")
+    assert any("uploading fileobj to" in r.message for r in caplog.records)
+
+
+# upload_dir
+@pytest.mark.s3
+@pytest.mark.parametrize("bucket", [TEST_BUCKET, ALT_BUCKET])
+def test_upload_dir_uploads_recursively(mock_s3_client: S3Client, bucket: str, sample_dir: Path) -> None:
+    """Verify that upload_dir recurses into subdirectories and uploads nested files."""
+    result = upload_dir(sample_dir, f"{bucket}/remote")
+    assert result is True
+    keys = {obj["Key"] for obj in mock_s3_client.list_objects_v2(Bucket=bucket)["Contents"]}
+    assert keys == {f"remote/{f}" for f in SAMPLE_FILES}
+
+
+@pytest.mark.s3
+@pytest.mark.parametrize("path_type", [str, Path])
+def test_upload_dir_accepts_str_and_path(
+    mock_s3_client: S3Client, sample_dir: Path, path_type: type[str] | type[Path]
+) -> None:
+    """Verify that upload_dir accepts both str and Path objects for the local directory path."""
+    bucket = TEST_BUCKET
+    result = upload_dir(path_type(sample_dir), f"{bucket}/remote")
+    assert result is True
+    keys = {obj["Key"] for obj in mock_s3_client.list_objects_v2(Bucket=bucket)["Contents"]}
+    assert keys == {f"remote/{f}" for f in SAMPLE_FILES}
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_dir_raises_on_empty_source() -> None:
+    """Verify that upload_dir raises ValueError when no source directory is provided."""
+    with pytest.raises(ValueError, match="No source directory"):
+        upload_dir("", f"{TEST_BUCKET}/remote")
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_dir_raises_on_empty_destination(sample_dir: Path) -> None:
+    """Verify that upload_dir raises ValueError when no destination directory is provided."""
+    with pytest.raises(ValueError, match="No destination directory"):
+        upload_dir(sample_dir, "")
+
+
+@pytest.mark.s3
+def test_upload_dir_pass_respects_custom_file_glob(mock_s3_client: S3Client, sample_dir: Path) -> None:
+    """A custom file_glob restricts which files get uploaded."""
+    result = upload_dir(sample_dir, f"{TEST_BUCKET}/remote", file_glob="dir_one/*.txt")
+    assert result is True
+    keys = {obj["Key"] for obj in mock_s3_client.list_objects_v2(Bucket=TEST_BUCKET)["Contents"]}
+    assert keys == {"remote/dir_one/file1.txt", "remote/dir_one/file2.txt"}
+
+
+@pytest.mark.s3
+def test_upload_dir_pass_empty_directory_returns_true_and_uploads_nothing(
+    mock_s3_client: S3Client, tmp_path: Path
+) -> None:
+    """An empty source directory (no matching files) returns True without uploading anything."""
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    result = upload_dir(empty_dir, f"{TEST_BUCKET}/remote")
+    assert result is True
+    assert "Contents" not in mock_s3_client.list_objects_v2(Bucket=TEST_BUCKET)
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_upload_dir_fail_partial_failure_returns_false(sample_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """If any individual file upload fails, upload_dir returns False even though other files succeeded."""
+    original_upload_file = object_utils.upload_file
+    call_count = {"n": 0}
+
+    def flaky_upload_file(*args: Any, **kwargs: Any) -> bool:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return False
+        return original_upload_file(*args, **kwargs)
+
+    monkeypatch.setattr(object_utils, "upload_file", flaky_upload_file)
+    result = object_utils.upload_dir(sample_dir, f"{TEST_BUCKET}/remote")
+    assert result is False
+    assert call_count["n"] == len(SAMPLE_FILES)
+
+
+# download_file
+@pytest.mark.s3
+@pytest.mark.parametrize("bucket", BUCKETS)
+@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 def test_download_file_retrieves_correct_content(
     mock_s3_client: S3Client, protocol: str, bucket: str, tmp_path: Path
 ) -> None:
@@ -437,8 +849,8 @@ def test_download_file_retrieves_correct_content(
     assert Path(local_file).read_bytes() == content
 
 
-@pytest.mark.parametrize("path_type", [str, Path])
 @pytest.mark.s3
+@pytest.mark.parametrize("path_type", [str, Path])
 def test_download_file_use_str_or_path_for_local_file(
     mock_s3_client: S3Client, tmp_path: Path, path_type: type[str] | type[Path]
 ) -> None:
@@ -505,72 +917,131 @@ def test_download_file_does_not_clobber_existing_file_to_mkdir(mock_s3_client: S
 
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
-def test_download_file_does_not_exist(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_download_file_does_not_exist(tmp_path: Path) -> None:
     """Ensure that attempting to download a file that does not exist raises an error."""
     bucket = BUCKETS[0]
     key = "to/the/door.txt"
     assert not object_exists(f"{bucket}/{key}")
 
     with pytest.raises(
-        ClientError,
-        match=r"An error occurred \(404\) when calling the HeadObject",
+        FileNotFoundError,
+        match=f"File not found: {bucket}/{key}",
     ):
         download_file(f"{bucket}/{key}", tmp_path / "file.txt")
 
-    last_log_message = caplog.records[-1]
-    assert "File not found" in last_log_message.message
-    assert last_log_message.levelno == logging.ERROR
 
-
-# TODO: Missing tests
-# - Non-404 S3 error during head
-# - Error during directory creation (other than FileExistsError)?
-# - version_id parameter behavior
-
-
-# upload_dir
-@pytest.mark.parametrize("bucket", [TEST_BUCKET, ALT_BUCKET])
 @pytest.mark.s3
-def test_upload_dir_uploads_recursively(mock_s3_client: S3Client, bucket: str, sample_dir: Path) -> None:
-    """Verify that upload_dir recurses into subdirectories and uploads nested files."""
-    result = upload_dir(sample_dir, f"{bucket}/remote")
-    assert result is True
-    keys = {obj["Key"] for obj in mock_s3_client.list_objects_v2(Bucket=bucket)["Contents"]}
-    assert keys == {f"remote/{f}" for f in SAMPLE_FILES}
-
-
-@pytest.mark.parametrize("path_type", [str, Path])
-@pytest.mark.s3
-def test_upload_dir_accepts_str_and_path(
-    mock_s3_client: S3Client, sample_dir: Path, path_type: type[str] | type[Path]
+def test_download_file_fail_non_404_error_propagates(
+    mock_s3_client: S3Client, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Verify that upload_dir accepts both str and Path objects for the local directory path."""
+    """A non-404 ClientError while checking object existence propagates rather than being treated as 'not found'."""
+
+    def raise_access_denied(**kwargs: Any) -> None:
+        raise ClientError(
+            {"Error": {"Code": "AccessDenied"}, "ResponseMetadata": {"HTTPStatusCode": 403}},
+            "HeadObject",
+        )
+
+    monkeypatch.setattr(mock_s3_client, "head_object", raise_access_denied)
+    with pytest.raises(ClientError, match="AccessDenied"):
+        download_file(f"{TEST_BUCKET}/some/key.txt", tmp_path / "file.txt")
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_download_file_fail_directory_creation_error_other_than_exists_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A directory-creation failure other than 'already exists' (e.g. permission denied) is logged and re-raised."""
+    err_msg = "Permission denied"
+
+    def raise_permission_error(self: Path, *args: Any, **kwargs: Any) -> None:
+        raise PermissionError(err_msg)
+
+    monkeypatch.setattr(Path, "mkdir", raise_permission_error)
+
+    with pytest.raises(PermissionError, match=err_msg):
+        download_file(f"{TEST_BUCKET}/some/key.txt", tmp_path / "newdir" / "file.txt")
+
+    assert any("Could not save s3 file" in r.message for r in caplog.records)
+
+
+@pytest.mark.s3
+def test_download_file_pass_transfer_config_kwargs_forwarded(
+    mock_s3_client: S3Client, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify that transfer_config_kwargs passed to download_file reach build_transfer_config."""
     bucket = TEST_BUCKET
-    result = upload_dir(path_type(sample_dir), f"{bucket}/remote")
-    assert result is True
-    keys = {obj["Key"] for obj in mock_s3_client.list_objects_v2(Bucket=bucket)["Contents"]}
-    assert keys == {f"remote/{f}" for f in SAMPLE_FILES}
+    key = "transfer/config.txt"
+    content = b"config test content"
+    mock_s3_client.put_object(Bucket=bucket, Key=key, Body=content, **DEFAULT_EXTRA_ARGS)
+
+    captured: dict[str, Any] = {}
+
+    def fake_build_transfer_config(file_size: int, **kwargs: Any) -> TransferConfig:
+        captured["file_size"] = file_size
+        captured["kwargs"] = kwargs
+        return TransferConfig()
+
+    monkeypatch.setattr(object_utils, "build_transfer_config", fake_build_transfer_config)
+
+    local_file = tmp_path / "config.txt"
+    download_file(
+        f"{bucket}/{key}",
+        local_file,
+        transfer_config_kwargs={"max_concurrency": 3},
+    )
+
+    assert local_file.read_bytes() == content
+    assert captured["kwargs"] == {"max_concurrency": 3}
+    assert captured["file_size"] == len(content)
 
 
-@pytest.mark.usefixtures("mock_s3_client")
 @pytest.mark.s3
-def test_upload_dir_raises_on_empty_source() -> None:
-    """Verify that upload_dir raises ValueError when no source directory is provided."""
-    with pytest.raises(ValueError, match="No source directory"):
-        upload_dir("", f"{TEST_BUCKET}/remote")
+def test_download_file_pass_no_transfer_config_kwargs_uses_empty_dict(
+    mock_s3_client: S3Client, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When transfer_config_kwargs is not supplied, build_transfer_config still receives no extra kwargs."""
+    bucket = TEST_BUCKET
+    key = "transfer/config2.txt"
+    mock_s3_client.put_object(Bucket=bucket, Key=key, Body=b"data", **DEFAULT_EXTRA_ARGS)
+
+    captured: dict[str, Any] = {}
+
+    def fake_build_transfer_config(_: int, **kwargs: Any) -> TransferConfig:
+        captured["kwargs"] = kwargs
+        return TransferConfig()
+
+    monkeypatch.setattr(object_utils, "build_transfer_config", fake_build_transfer_config)
+
+    download_file(f"{bucket}/{key}", tmp_path / "config2.txt")
+
+    assert captured["kwargs"] == {}
 
 
-@pytest.mark.usefixtures("mock_s3_client")
 @pytest.mark.s3
-def test_upload_dir_raises_on_empty_destination(sample_dir: Path) -> None:
-    """Verify that upload_dir raises ValueError when no destination directory is provided."""
-    with pytest.raises(ValueError, match="No destination directory"):
-        upload_dir(sample_dir, "")
+def test_download_file_pass_show_progress_false_disables_progress_bar(mock_s3_client: S3Client, tmp_path: Path) -> None:
+    """Verify that show_progress=False disables the tqdm progress bar for downloads."""
+    bucket = TEST_BUCKET
+    key = "progress/no_bar.txt"
+    mock_s3_client.put_object(Bucket=bucket, Key=key, Body=b"content", **DEFAULT_EXTRA_ARGS)
+
+    captured_disable: list[bool] = []
+    original_make_progress_bar = object_utils.make_progress_bar
+
+    def spy_make_progress_bar(*, disable: bool, **kwargs: Any) -> Any:
+        captured_disable.append(disable)
+        return original_make_progress_bar(disable=disable, **kwargs)
+
+    with patch.object(object_utils, "make_progress_bar", side_effect=spy_make_progress_bar):
+        download_file(f"{bucket}/{key}", tmp_path / "no_bar.txt", show_progress=False)
+
+    assert captured_disable == [True]
 
 
 # copy_object
-@pytest.mark.parametrize("destination", BUCKETS)
 @pytest.mark.s3
+@pytest.mark.parametrize("destination", BUCKETS)
 def test_copy_object(mocked_s3_client_no_checksum: S3Client, destination: str) -> None:
     """Verify that copy_object copies an object to a new key within the same bucket."""
     mocked_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key="src/file.txt", Body=b"copy me")
@@ -744,29 +1215,25 @@ def test_copy_directory_missing_dest_bucket_records_errors(mock_s3_client: S3Cli
     assert isinstance(errors[f"{TEST_BUCKET}/foo/a.txt"], Exception)
 
 
-# delete_object
-@pytest.mark.parametrize("bucket", BUCKETS)
-@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
 @pytest.mark.s3
-def test_delete_object_removes_object(mock_s3_client: S3Client, bucket: str, protocol: str) -> None:
-    """Verify that delete_object removes the object from the specified bucket."""
-    mock_s3_client.put_object(Bucket=bucket, Key="to/delete.txt", Body=b"bye")
-    s3_path = f"{protocol}{bucket}/to/delete.txt"
-    assert object_exists(s3_path) is True
+def test_copy_directory_records_error_for_non_200_response(
+    mock_s3_client: S3Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A copy_object call that returns (rather than raises) a non-200 status is recorded as an error."""
+    populate_mock_s3(mock_s3_client, {TEST_BUCKET: ["foo/a.txt"]})
 
-    resp = delete_object(s3_path)
-    assert object_exists(s3_path) is False
-    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_204
+    fake_response = {"ResponseMetadata": {"HTTPStatusCode": 500}}
+    monkeypatch.setattr(mock_s3_client, "copy_object", lambda **kwargs: fake_response)  # noqa: ARG005
 
-    # retry the deletion
-    resp = delete_object(s3_path)
-    assert object_exists(s3_path) is False
-    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_204
+    successes, errors = copy_directory(f"s3://{TEST_BUCKET}/foo", f"s3://{ALT_BUCKET}/bar")
+
+    assert successes == {}
+    assert errors == {f"{TEST_BUCKET}/foo/a.txt": fake_response}
 
 
 # upload_file with metadata
-@pytest.mark.parametrize("bucket", BUCKETS)
 @pytest.mark.s3
+@pytest.mark.parametrize("bucket", BUCKETS)
 def test_upload_file_with_metadata_attaches_metadata(mock_s3_client: S3Client, sample_file: Path, bucket: str) -> None:
     """Verify that upload_file with metadata stores user metadata on the uploaded object."""
     metadata = {"md5": "abc123", "source": "ncbi"}
@@ -797,55 +1264,26 @@ def test_upload_file_with_metadata_overwrites_existing(mock_s3_client: S3Client,
     assert obj["Body"].read() == b"hello s3"
 
 
-@pytest.mark.usefixtures("mock_s3_client")
 @pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
 def test_upload_file_with_metadata_raises_on_empty_destination(sample_file: Path) -> None:
     """Verify ValueError when destination_dir is empty."""
     with pytest.raises(ValueError, match="No destination directory"):
         upload_file(sample_file, "", user_metadata={"k": "v"})
 
 
+@pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
 @pytest.mark.parametrize("path_type", [str, Path])
-@pytest.mark.s3
 def test_upload_file_with_metadata_accepts_str_and_path(sample_file: Path, path_type: type[str] | type[Path]) -> None:
     """Verify that upload_file with metadata accepts both str and Path."""
     result = upload_file(path_type(sample_file), f"{TEST_BUCKET}/uploads", user_metadata={})
     assert result is True
 
 
-# head_object
-@pytest.mark.s3
-def test_head_object_returns_info(mock_s3_client: S3Client) -> None:
-    """Verify that head_object returns size, metadata, and checksum fields."""
-    mock_s3_client.put_object(Bucket=TEST_BUCKET, Key="info/file.txt", Body=b"hello", Metadata={"md5": "abc123"})
-    result = head_object(f"{TEST_BUCKET}/info/file.txt")
-    assert result is not None
-    assert result["ContentLength"] == SIZE_HELLO
-    assert result["Metadata"]["md5"] == "abc123"
-
-
-@pytest.mark.s3
-@pytest.mark.usefixtures("mock_s3_client")
-def test_head_object_raises_for_missing() -> None:
-    """Verify that head_object returns None for a non-existent object."""
-    with pytest.raises(ClientError, match="404"):
-        _ = head_object(f"{TEST_BUCKET}/does/not/exist.txt")
-
-
-@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
-@pytest.mark.s3
-def test_head_object_with_protocols(mock_s3_client: S3Client, protocol: str) -> None:
-    """Verify that head_object handles all valid protocol prefixes."""
-    mock_s3_client.put_object(Bucket=TEST_BUCKET, Key="proto/file.txt", Body=b"data")
-    result = head_object(f"{protocol}{TEST_BUCKET}/proto/file.txt")
-    assert result is not None
-    assert result["ContentLength"] == SIZE_DATA
-
-
 # copy_object
-@pytest.mark.parametrize("destination", BUCKETS)
 @pytest.mark.s3
+@pytest.mark.parametrize("destination", BUCKETS)
 def test_copy_object_preserves_user_metadata(mocked_s3_client_no_checksum: S3Client, destination: str) -> None:
     """copy_object preserves source user metadata (MetadataDirective=COPY default)."""
     mocked_s3_client_no_checksum.put_object(
@@ -877,18 +1315,113 @@ def test_copy_object_preserves_content(mocked_s3_client_no_checksum: S3Client) -
     assert obj["Body"].read() == b"binary data"
 
 
-# delete_object - bucket does not exist
+# delete_object
+@pytest.mark.s3
+@pytest.mark.parametrize("bucket", BUCKETS)
+@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
+def test_delete_object_removes_object(mock_s3_client: S3Client, bucket: str, protocol: str) -> None:
+    """Verify that delete_object removes the object from the specified bucket."""
+    mock_s3_client.put_object(Bucket=bucket, Key="to/delete.txt", Body=b"bye")
+    s3_path = f"{protocol}{bucket}/to/delete.txt"
+    assert object_exists(s3_path) is True
+
+    resp = delete_object(s3_path)
+    assert object_exists(s3_path) is False
+    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_204
+
+    # retry the deletion
+    resp = delete_object(s3_path)
+    assert object_exists(s3_path) is False
+    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_204
+
+
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
-def test_delete_object_no_such_bucket() -> None:
+def test_delete_object_pass_non_existent_file() -> None:
+    """Verify that delete_object does not raise an error when the file does not exist."""
+    test_file = f"{TEST_BUCKET}/nonexistent-file.txt"
+    assert object_exists(test_file) is False
+    resp = delete_object(test_file)
+    assert resp.get("ResponseMetadata", {}).get("HTTPStatusCode") == HTTP_204
+
+
+@pytest.mark.s3
+@pytest.mark.usefixtures("mock_s3_client")
+def test_delete_object_fail_no_such_bucket() -> None:
     """Verify that delete_object removes the object from the specified bucket."""
-    s3_path = "fake-bucket/to/delete.txt"
-    assert object_exists(s3_path) is False
-    with pytest.raises(Exception, match="The specified bucket does not exist"):
-        delete_object(s3_path)
+    test_file = "made-up-bucket/nonexistent-file.txt"
+    assert object_exists(test_file) is False
+    with pytest.raises(ClientError, match="The specified bucket does not exist"):
+        delete_object(test_file)
 
 
 # delete_objects
+@pytest.mark.s3
+def test_delete_objects_pass_splits_into_batches_of_1000(mock_s3_client: S3Client) -> None:
+    """More than 1000 keys are deleted via multiple batched API calls, each capped at 1000 objects."""
+    total_keys = 1005
+    keys = [f"batch/file_{i:04d}.txt" for i in range(total_keys)]
+    for k in keys:
+        mock_s3_client.put_object(Bucket=TEST_BUCKET, Key=k, Body=b"x")
+
+    original_delete_objects = mock_s3_client.delete_objects
+    call_sizes: list[int] = []
+
+    def spy_delete_objects(**kwargs: Any) -> Any:
+        call_sizes.append(len(kwargs["Delete"]["Objects"]))
+        return original_delete_objects(**kwargs)
+
+    mock_s3_client.delete_objects = spy_delete_objects
+
+    errors = delete_objects(TEST_BUCKET, keys)
+
+    assert errors == []
+    assert call_sizes == [1000, 5]
+    for k in keys:
+        assert object_exists(f"{TEST_BUCKET}/{k}") is False
+
+
+@pytest.mark.s3
+def test_delete_objects_pass_exact_multiple_of_batch_size(mock_s3_client: S3Client) -> None:
+    """Exactly 1000 keys results in a single batched delete_objects call."""
+    total_keys = 1000
+    keys = [f"exact_batch/file_{i:04d}.txt" for i in range(total_keys)]
+    for k in keys:
+        mock_s3_client.put_object(Bucket=TEST_BUCKET, Key=k, Body=b"x")
+
+    original_delete_objects = mock_s3_client.delete_objects
+    call_sizes: list[int] = []
+
+    def spy_delete_objects(**kwargs: Any) -> Any:
+        call_sizes.append(len(kwargs["Delete"]["Objects"]))
+        return original_delete_objects(**kwargs)
+
+    mock_s3_client.delete_objects = spy_delete_objects
+
+    errors = delete_objects(TEST_BUCKET, keys)
+
+    assert errors == []
+    assert call_sizes == [1000]
+    for k in keys:
+        assert object_exists(f"{TEST_BUCKET}/{k}") is False
+
+
+@pytest.mark.s3
+def test_delete_objects_pass_propagates_per_key_errors_from_response(mock_s3_client: S3Client) -> None:
+    """Per-key errors returned in the S3 response's Errors field are surfaced in the returned list."""
+    fake_error = {"Key": "bad/key.txt", "Code": "AccessDenied", "Message": "Access Denied"}
+    original_delete_objects = mock_s3_client.delete_objects
+
+    def mock_delete_objects(**kwargs: Any) -> Any:
+        resp = original_delete_objects(**kwargs)
+        resp["Errors"] = [fake_error]
+        return resp
+
+    mock_s3_client.delete_objects = mock_delete_objects
+    errors = delete_objects(TEST_BUCKET, ["some/key.txt"])
+    assert errors == [fake_error]
+
+
 @pytest.mark.s3
 def test_delete_objects_removes_all(mock_s3_client: S3Client) -> None:
     """delete_objects removes every listed key in a single call."""
