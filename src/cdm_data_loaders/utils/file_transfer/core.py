@@ -58,8 +58,7 @@ class DownloadCore:
         if not checksum_fn:
             checksum_fn = "sha256"
 
-        # shake hashing algorithms require a length for the hexdigest => too much faff, error out
-        validated_checksum_fn = validate_checksum_fn(checksum_fn)
+        validated_checksum_fn = validate_checksum_fn(checksum_fn, include_extras=False)
         destination = Path(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
 
