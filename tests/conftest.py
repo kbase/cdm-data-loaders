@@ -39,7 +39,6 @@ from cdm_data_loaders.audit.schema import (
 from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.readers.dsv import INVALID_DATA_FIELD
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
-from tests.s3_helpers import strip_checksum_algorithm
 
 SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 
@@ -634,15 +633,3 @@ def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[S3Client, Any]:
 
         reset_s3_client()
         assert s3_client._s3_client is None  # noqa: SLF001
-
-
-@pytest.fixture
-def mock_s3_client_no_checksum(mock_s3_client: S3Client) -> S3Client:
-    """Yield the mocked S3 client with copy_object patched to strip ChecksumAlgorithm.
-
-    This works around the moto limitation of not supporting CRC64NVME checksums,
-    allowing copy and upload calls that include ChecksumAlgorithm to succeed.
-    """
-    for function in ["copy", "copy_object", "upload_file", "upload_fileobj"]:
-        setattr(mock_s3_client, function, strip_checksum_algorithm(getattr(mock_s3_client, function)))
-    return mock_s3_client

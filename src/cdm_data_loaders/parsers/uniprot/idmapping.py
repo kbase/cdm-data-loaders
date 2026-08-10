@@ -36,7 +36,7 @@ from pyspark.sql.types import StringType, StructField
 from cdm_data_loaders.core.constants import CDM_LAKE_S3, INVALID_DATA_FIELD_NAME
 from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.readers.dsv import read
-from cdm_data_loaders.utils.file_transfer.s3.object_utils import list_matching_objects
+from cdm_data_loaders.utils.file_transfer.s3.object_utils import list_objects
 from cdm_data_loaders.utils.spark import APPEND, set_up_workspace, write_table
 from cdm_data_loaders.validation.dataframe_validator import DataFrameValidator, Validator
 from cdm_data_loaders.validation.df_nullable_fields import validate as check_nullable_fields
@@ -143,7 +143,7 @@ def cli(source: str, namespace: str, tenant_name: str | None) -> None:
     (spark, database_name) = set_up_workspace(APP_NAME, namespace, tenant_name)
 
     # TODO: other locations / local files?
-    bucket_list = list_matching_objects(source)
+    bucket_list = list_objects(source)
     for file in bucket_list:
         # file names are in the 'Key' value
         # 'tenant-general-warehouse/kbase/datasets/uniprot/id_mapping/id_mapping_part_001.tsv.gz'
