@@ -21,7 +21,7 @@ from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
     download_file,
     get_existing_object_info,
     head_object,
-    list_matching_objects,
+    list_objects,
     object_exists,
     split_s3_path,
     upload_dir,
@@ -296,32 +296,32 @@ def test_object_exists_returns_false_when_absent(
     assert object_exists(f"{protocol}{bucket}/{s3_path}") is False
 
 
-# list_matching_objects
+# list_objects
 @pytest.mark.s3
 @pytest.mark.parametrize("bucket", BUCKETS)
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
-def test_list_matching_objects_lists_objects(
+def test_list_objects_lists_objects(
     mock_s3_client: S3Client,
     bucket: str,
     protocol: str,
 ) -> None:
     """Verify that all objects under a given prefix are returned, regardless of whether the protocol is supplied."""
     populate_mock_s3(mock_s3_client, FILES_IN_BUCKETS)
-    contents = list_matching_objects(f"{protocol}{bucket}/dir_one")
+    contents = list_objects(f"{protocol}{bucket}/dir_one")
     keys = {obj["Key"] for obj in contents}
     assert keys == {f for f in FILES_IN_BUCKETS[bucket] if f.startswith("dir_one")}
 
 
 @pytest.mark.s3
 @pytest.mark.parametrize("dir_path", ["dir_one/sub_dir", "dir_one/sub_dir/", "dir_one/sub_dir/und"])
-def test_list_matching_objects_filters_by_prefix(
+def test_list_objects_filters_by_prefix(
     mock_s3_client: S3Client,
     dir_path: str,
 ) -> None:
     """Check that more specific queries, including those that have 'incomplete' dir/file names, return correct results."""
     bucket = TEST_BUCKET
     populate_mock_s3(mock_s3_client, {bucket: FILES_IN_BUCKETS[bucket]})
-    contents = list_matching_objects(f"{bucket}/{dir_path}")
+    contents = list_objects(f"{bucket}/{dir_path}")
     keys = {obj["Key"] for obj in contents}
     # make sure this is a subset of all the files in the bucket
     assert len(keys) < len(FILES_IN_BUCKETS[bucket])
@@ -330,14 +330,14 @@ def test_list_matching_objects_filters_by_prefix(
 
 @pytest.mark.s3
 @pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
-def test_list_matching_objects_empty_for_missing_prefix(
+def test_list_objects_empty_for_missing_prefix(
     mock_s3_client: S3Client,
     protocol: str,
 ) -> None:
     """Verify that an empty list is returned when no objects match the given prefix."""
     populate_mock_s3(mock_s3_client, FILES_IN_BUCKETS)
     for bucket in FILES_IN_BUCKETS:
-        contents = list_matching_objects(f"{protocol}{bucket}/nonexistent/")
+        contents = list_objects(f"{protocol}{bucket}/nonexistent/")
         assert contents == []
 
 
@@ -363,7 +363,7 @@ EXPECTED_FILE_LIST = {
 # NOTE: These tests currently compose multiple fixtures explicitly for readability.
 @pytest.mark.s3
 @pytest.mark.parametrize("dir_path", EXPECTED_FILE_LIST.keys())
-def test_list_matching_objects_returns_more_than_1000_entries(
+def test_list_objects_returns_more_than_1000_entries(
     mock_s3_client: S3Client,
     dir_path: str,
 ) -> None:
@@ -372,16 +372,16 @@ def test_list_matching_objects_returns_more_than_1000_entries(
     # this adds two extra dirs to TEST_BUCKET with 1005 files in each
     populate_mock_s3(mock_s3_client, LOTS_OF_FILES)
 
-    contents = list_matching_objects(f"{TEST_BUCKET}/{dir_path}")
+    contents = list_objects(f"{TEST_BUCKET}/{dir_path}")
     keys = {obj["Key"] for obj in contents}
     assert keys == set(EXPECTED_FILE_LIST[dir_path])
 
 
 @pytest.mark.s3
-def test_list_matching_objects_pass_respects_custom_max_keys(mock_s3_client: S3Client) -> None:
+def test_list_objects_pass_respects_custom_max_keys(mock_s3_client: S3Client) -> None:
     """A small custom max_keys value still results in complete results via pagination."""
     populate_mock_s3(mock_s3_client, {TEST_BUCKET: FILES_IN_BUCKETS[TEST_BUCKET]})
-    contents = list_matching_objects(f"{TEST_BUCKET}/dir_one", max_keys=1)
+    contents = list_objects(f"{TEST_BUCKET}/dir_one", max_keys=1)
     keys = {obj["Key"] for obj in contents}
     assert keys == {f for f in FILES_IN_BUCKETS[TEST_BUCKET] if f.startswith("dir_one")}
 
