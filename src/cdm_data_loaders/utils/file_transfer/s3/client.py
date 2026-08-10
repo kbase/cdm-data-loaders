@@ -9,9 +9,18 @@ from types_boto3_s3.client import S3Client
 # "legacy", "standard", "adaptive"
 AWS_CLIENT_RETRY_MODE: Final[str] = "adaptive"
 # how many times to retry, including the initial attempt
-AWS_CLIENT_TOTAL_MAX_ATTEMPTS: Final[int] = 10
+AWS_CLIENT_TOTAL_MAX_ATTEMPTS: Final[int] = 5
 
 _s3_client: S3Client | None = None
+
+
+def _client_config() -> Config:
+    """Configuration for S3 client."""
+    return Config(
+        retries={"total_max_attempts": AWS_CLIENT_TOTAL_MAX_ATTEMPTS, "mode": AWS_CLIENT_RETRY_MODE},
+        request_checksum_calculation="when_supported",
+        response_checksum_validation="when_supported",
+    )
 
 
 def get_s3_client(args: dict[str, str | None] | None = None) -> S3Client:
@@ -40,12 +49,6 @@ def get_s3_client(args: dict[str, str | None] | None = None) -> S3Client:
     if _s3_client is not None:
         return _s3_client
 
-    config = Config(
-        retries={"total_max_attempts": AWS_CLIENT_TOTAL_MAX_ATTEMPTS, "mode": AWS_CLIENT_RETRY_MODE},
-        request_checksum_calculation="when_supported",
-        response_checksum_validation="when_supported",
-    )
-
     if not args:
         args = {}
 
@@ -58,7 +61,7 @@ def get_s3_client(args: dict[str, str | None] | None = None) -> S3Client:
         raise ValueError(msg)
 
     # initialise using boto3's default config behaviour, plus any overrides from args
-    client = boto3.client("s3", config=config, **kwargs)  # pyright: ignore[reportArgumentType, reportCallIssue]
+    client = boto3.client("s3", config=_client_config(), **kwargs)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
     missing = []
     # boto3 will not raise an error on client creation if credentials are missing, so throw an error now

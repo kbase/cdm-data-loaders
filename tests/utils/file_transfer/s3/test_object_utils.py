@@ -28,9 +28,9 @@ from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
     upload_file,
     upload_fileobj,
 )
+from tests.conftest import BUCKETS
 from tests.utils.file_transfer.s3.conftest import (
     ALT_BUCKET,
-    BUCKETS,
     FILES_IN_BUCKETS,
     HTTP_200,
     HTTP_204,
@@ -1042,9 +1042,9 @@ def test_download_file_pass_show_progress_false_disables_progress_bar(mock_s3_cl
 # copy_object
 @pytest.mark.s3
 @pytest.mark.parametrize("destination", BUCKETS)
-def test_copy_object(mocked_s3_client_no_checksum: S3Client, destination: str) -> None:
+def test_copy_object(mock_s3_client: S3Client, destination: str) -> None:
     """Verify that copy_object copies an object to a new key within the same bucket."""
-    mocked_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key="src/file.txt", Body=b"copy me")
+    mock_s3_client.put_object(Bucket=TEST_BUCKET, Key="src/file.txt", Body=b"copy me")
     assert object_exists(f"{TEST_BUCKET}/src/file.txt")
     response = copy_object(f"{TEST_BUCKET}/src/file.txt", f"{destination}/dst/path/to/file.txt")
 
@@ -1052,7 +1052,7 @@ def test_copy_object(mocked_s3_client_no_checksum: S3Client, destination: str) -
     assert object_exists(f"{TEST_BUCKET}/src/file.txt")
     assert object_exists(f"{destination}/dst/path/to/file.txt")
 
-    obj = mocked_s3_client_no_checksum.get_object(Bucket=destination, Key="dst/path/to/file.txt")
+    obj = mock_s3_client.get_object(Bucket=destination, Key="dst/path/to/file.txt")
     assert obj["Body"].read() == b"copy me"
     assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_200
 
@@ -1107,13 +1107,12 @@ def list_keys(mock_s3_client: S3Client, bucket: str, prefix: str = "") -> set[st
 @pytest.mark.parametrize("source_suffix", ["", "/"])
 @pytest.mark.parametrize("dest_suffix", ["", "/"])
 def test_copy_directory_copies_all_objects_to_dest(
-    mocked_s3_client_no_checksum: S3Client, source_suffix: str, dest_suffix: str
+    mock_s3_client: S3Client, source_suffix: str, dest_suffix: str
 ) -> None:
     """Verify that all objects under the source prefix are present in the successes dict.
 
     Ensure that copy works correctly with or without a slash at the end of the directory name.
     """
-    mock_s3_client = mocked_s3_client_no_checksum
     populate_mock_s3(mock_s3_client, {TEST_BUCKET: FILES_IN_BUCKETS[TEST_BUCKET]})
     source_bucket_files = list_keys(mock_s3_client, TEST_BUCKET)
     assert set(source_bucket_files) == set(SAMPLE_FILES)
@@ -1284,11 +1283,9 @@ def test_upload_file_with_metadata_accepts_str_and_path(sample_file: Path, path_
 # copy_object
 @pytest.mark.s3
 @pytest.mark.parametrize("destination", BUCKETS)
-def test_copy_object_preserves_user_metadata(mocked_s3_client_no_checksum: S3Client, destination: str) -> None:
+def test_copy_object_preserves_user_metadata(mock_s3_client: S3Client, destination: str) -> None:
     """copy_object preserves source user metadata (MetadataDirective=COPY default)."""
-    mocked_s3_client_no_checksum.put_object(
-        Bucket=TEST_BUCKET, Key="src/file.txt", Body=b"archive me", Metadata={"md5": "abc123"}
-    )
+    mock_s3_client.put_object(Bucket=TEST_BUCKET, Key="src/file.txt", Body=b"archive me", Metadata={"md5": "abc123"})
     response = copy_object(
         f"{TEST_BUCKET}/src/file.txt",
         f"{destination}/archive/file.txt",
@@ -1296,7 +1293,7 @@ def test_copy_object_preserves_user_metadata(mocked_s3_client_no_checksum: S3Cli
     assert response["ResponseMetadata"]["HTTPStatusCode"] == HTTP_200
 
     # source user metadata is preserved (MetadataDirective=COPY)
-    resp = mocked_s3_client_no_checksum.head_object(Bucket=destination, Key="archive/file.txt")
+    resp = mock_s3_client.head_object(Bucket=destination, Key="archive/file.txt")
     assert resp["Metadata"].get("md5") == "abc123"
 
     # verify source still exists
@@ -1304,14 +1301,14 @@ def test_copy_object_preserves_user_metadata(mocked_s3_client_no_checksum: S3Cli
 
 
 @pytest.mark.s3
-def test_copy_object_preserves_content(mocked_s3_client_no_checksum: S3Client) -> None:
+def test_copy_object_preserves_content(mock_s3_client: S3Client) -> None:
     """Verify that the content of the copied object matches the original."""
-    mocked_s3_client_no_checksum.put_object(Bucket=TEST_BUCKET, Key="src/data.bin", Body=b"binary data")
+    mock_s3_client.put_object(Bucket=TEST_BUCKET, Key="src/data.bin", Body=b"binary data")
     copy_object(
         f"{TEST_BUCKET}/src/data.bin",
         f"{TEST_BUCKET}/dst/data.bin",
     )
-    obj = mocked_s3_client_no_checksum.get_object(Bucket=TEST_BUCKET, Key="dst/data.bin")
+    obj = mock_s3_client.get_object(Bucket=TEST_BUCKET, Key="dst/data.bin")
     assert obj["Body"].read() == b"binary data"
 
 

@@ -387,7 +387,7 @@ def test_verify_transfer_candidates_empty_input() -> None:
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects", return_value=["one key"])
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects", return_value=["one key"])
 def test_verify_transfer_candidates_unknown_accession_kept(
     mock_connect: MagicMock,
 ) -> None:
@@ -540,10 +540,10 @@ def _make_mock_list_object_return_value() -> list[dict[str, Any]]:
     ]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
-def test_scan_store_builds_summary(mock_list_matching_objects: MagicMock) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+def test_scan_store_builds_summary(mock_list_objects: MagicMock) -> None:
     """Synthetic summary is built correctly with provided release_date for all assemblies."""
-    mock_list_matching_objects.return_value = _make_mock_list_object_return_value()
+    mock_list_objects.return_value = _make_mock_list_object_return_value()
     assert scan_store_to_synthetic_summary(PurePosixPath("test-bucket"), PurePosixPath("prefix"), "2024/01/31") == {
         "GCF_000001215.4": AssemblyRecord(
             accession="GCF_000001215.4",
@@ -562,10 +562,10 @@ def test_scan_store_builds_summary(mock_list_matching_objects: MagicMock) -> Non
     }
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
-def test_scan_store_applies_release_date_to_all(mock_list_matching_objects: MagicMock) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+def test_scan_store_applies_release_date_to_all(mock_list_objects: MagicMock) -> None:
     """Provided release_date is used even when files have different LastModified dates."""
-    mock_list_matching_objects.return_value = [
+    mock_list_objects.return_value = [
         {
             "Key": "prefix/GCF_000001215.4_v1/file_newer.gz",
             "LastModified": datetime(2024, 3, 20, tzinfo=UTC),
@@ -583,18 +583,18 @@ def test_scan_store_applies_release_date_to_all(mock_list_matching_objects: Magi
     )
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
-def test_scan_store_raises_for_invalid_release_date(mock_list_matching_objects: MagicMock) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+def test_scan_store_raises_for_invalid_release_date(mock_list_objects: MagicMock) -> None:
     """Invalid release_date format is rejected."""
-    mock_list_matching_objects.return_value = _make_mock_list_object_return_value()
+    mock_list_objects.return_value = _make_mock_list_object_return_value()
     with pytest.raises(ValueError, match="Invalid release_date"):
         scan_store_to_synthetic_summary(PurePosixPath("test-bucket"), PurePosixPath("prefix"), "2024-03-31")
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
-def test_scan_store_invokes_progress_callback(mock_list_matching_objects: MagicMock) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+def test_scan_store_invokes_progress_callback(mock_list_objects: MagicMock) -> None:
     """Progress callback is called once per unique assembly discovered."""
-    mock_list_matching_objects.return_value = _make_mock_list_object_return_value()
+    mock_list_objects.return_value = _make_mock_list_object_return_value()
     calls: list[tuple[int, str]] = []
     scan_store_to_synthetic_summary(
         PurePosixPath("test-bucket"),
@@ -607,17 +607,17 @@ def test_scan_store_invokes_progress_callback(mock_list_matching_objects: MagicM
     assert calls[1][0] == 2  # noqa: PLR2004
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
-def test_scan_store_handles_empty_store(mock_list_matching_objects: MagicMock) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+def test_scan_store_handles_empty_store(mock_list_objects: MagicMock) -> None:
     """Empty store returns empty dict."""
-    mock_list_matching_objects.return_value = []
+    mock_list_objects.return_value = []
     assert scan_store_to_synthetic_summary(PurePosixPath("test-bucket"), PurePosixPath("prefix"), "2024/01/31") == {}
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
-def test_scan_store_skips_objects_without_accession(mock_list_matching_objects: MagicMock) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+def test_scan_store_skips_objects_without_accession(mock_list_objects: MagicMock) -> None:
     """Objects without valid accessions in the key are skipped."""
-    mock_list_matching_objects.return_value = [
+    mock_list_objects.return_value = [
         {
             "Key": PurePosixPath("prefix") / "some" / "random" / "file.txt",
             "LastModified": datetime(2024, 1, 1, tzinfo=UTC),
@@ -632,14 +632,14 @@ def test_scan_store_skips_objects_without_accession(mock_list_matching_objects: 
     assert "GCF_000001215.4" in result
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_matching_objects")
-def test_scan_store_assembly_dir_survives_round_trip(mock_list_matching_objects: MagicMock, tmp_path: Path) -> None:
+@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+def test_scan_store_assembly_dir_survives_round_trip(mock_list_objects: MagicMock, tmp_path: Path) -> None:
     """assembly_dir is preserved after save-to-file / parse-back round-trip.
 
     Regression: previously ftp_path was written as "" causing assembly_dir=""
     and compute_diff flagging every assembly as updated.
     """
-    mock_list_matching_objects.return_value = [
+    mock_list_objects.return_value = [
         {
             "Key": "prefix/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz",
             "LastModified": datetime(2024, 3, 10, tzinfo=UTC),
