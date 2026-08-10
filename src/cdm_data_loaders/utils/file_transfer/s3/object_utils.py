@@ -71,7 +71,7 @@ def split_s3_path(s3_path: str, *, allow_bucket_only: bool = False) -> tuple[str
     return (path_parts[0], path_parts[1])
 
 
-def list_matching_objects(s3_path: str, *, max_keys: int = 1000) -> list[dict[str, Any]]:
+def list_objects(s3_path: str, *, max_keys: int = 1000) -> list[dict[str, Any]]:
     """List the remote paths that start with ``s3_path``.
 
     Note: since s3 paths are basically cosmetic, this function returns all paths that start with
