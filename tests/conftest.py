@@ -8,9 +8,12 @@ from copy import deepcopy
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, Final
+from unittest.mock import patch
 
+import boto3
 import pytest
 from frozendict import frozendict
+from moto import mock_aws
 from pyspark.conf import SparkConf
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import (
@@ -23,7 +26,9 @@ from pyspark.sql.types import (
     StructField,
     StructType,
 )
+from types_boto3_s3.client import S3Client
 
+import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
 from cdm_data_loaders.audit.schema import (
     NAMESPACE,
     PIPELINE,
@@ -33,6 +38,7 @@ from cdm_data_loaders.audit.schema import (
 )
 from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.readers.dsv import INVALID_DATA_FIELD
+from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 
 SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 
@@ -40,7 +46,7 @@ TEST_NS: Final[str] = "test_ns"
 PIPELINE_RUN = frozendict({RUN_ID: "1234-5678-90", PIPELINE: "KeystoneXL", SOURCE: "/path/to/file"})
 ALT_PIPELINE_RUN = frozendict({RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL", SOURCE: "/path/to/dir"})
 
-CASSETTES_DIR = "tests/cassettes"
+CASSETTES_DIR: Final[str] = "tests/cassettes"
 
 DEFAULT_VCR_CONFIG = frozendict(
     {
@@ -584,3 +590,46 @@ def pipeline_run() -> PipelineRun:
 def alt_pipeline_run() -> PipelineRun:
     """Generate a different pipeline run."""
     return PipelineRun(**{**ALT_PIPELINE_RUN, NAMESPACE: TEST_NS})
+
+
+"""S3 Client mocks"""
+
+
+TEST_BUCKET: Final[str] = "test_bucket"
+ALT_BUCKET: Final[str] = "alt_bucket"
+BUCKETS = [TEST_BUCKET, ALT_BUCKET]
+
+
+@pytest.fixture
+def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[S3Client, Any]:
+    """Yield a mocked S3 client with both valid buckets created.
+
+    The function get_s3_client() is patched to ensure that all module functions use this client.
+
+    Resets the cached client before and after to prevent state leaking between tests.
+    """
+    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    boto3.DEFAULT_SESSION = None
+
+    with mock_aws():
+        reset_s3_client()
+        client: S3Client = boto3.client("s3", config=_client_config())
+
+        for bucket in BUCKETS:
+            client.create_bucket(Bucket=bucket)
+
+        # delete any existing client
+        reset_s3_client()
+        assert s3_client._s3_client is None  # noqa: SLF001
+
+        # patch in the client that we have just created
+        with patch.object(s3_client, "get_s3_client", return_value=client):
+            yield client
+
+        reset_s3_client()
+        assert s3_client._s3_client is None  # noqa: SLF001

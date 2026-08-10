@@ -29,7 +29,7 @@ from cdm_data_loaders.utils.file_transfer.s3 import client
 from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
     copy_object,
     delete_objects,
-    list_matching_objects,
+    list_objects,
     object_exists,
     upload_file,
 )
@@ -71,7 +71,7 @@ def promote_from_s3(  # noqa: PLR0913
     :return: report dict with counts
     """
     # Get list of objects under the staging prefix
-    staged_objects: list[dict[str, Any]] = list_matching_objects(f"{staging_bucket / staging_key_prefix}/")
+    staged_objects: list[dict[str, Any]] = list_objects(f"{staging_bucket / staging_key_prefix}/")
 
     # Separate data files from sidecars
     sidecars = {PurePosixPath(k["Key"]) for k in staged_objects if k["Key"].endswith((".crc64nvme", ".md5"))}
@@ -394,7 +394,7 @@ def _get_source_dest_pairs_for_accession(
     source_prefix = _get_accession_path_prefix(accession, lakehouse_key_prefix)
     if not source_prefix:
         return []
-    matching_objs: list[dict[str, Any]] = list_matching_objects(f"{lakehouse_bucket / source_prefix}")
+    matching_objs: list[dict[str, Any]] = list_objects(f"{lakehouse_bucket / source_prefix}")
     return [
         (
             PurePosixPath(obj["Key"]),

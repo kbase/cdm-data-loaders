@@ -1,18 +1,14 @@
 """Tests for s3 utils.py using moto to mock AWS S3."""
 
-from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Final
-from unittest.mock import patch
+from typing import Final
 
-import boto3
 import pytest
-from moto import mock_aws
 from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
 from cdm_data_loaders.utils.file_transfer.s3.client import reset_s3_client
-from tests.s3_helpers import strip_checksum_algorithm
+from tests.conftest import ALT_BUCKET, TEST_BUCKET
 
 HTTP_200: Final[int] = 200  # Status OK
 HTTP_204: Final[int] = 204  # Status no content
@@ -27,14 +23,10 @@ SAMPLE_FILES = [
     "dir_one/sub_dir/under_dir/file4.txt",
 ]
 
-TEST_BUCKET: Final[str] = "test_bucket"
-ALT_BUCKET: Final[str] = "alt_bucket"
-
 FILES_IN_BUCKETS = {
     TEST_BUCKET: SAMPLE_FILES,
     ALT_BUCKET: ["dir_one/file1.txt"],
 }
-BUCKETS = [TEST_BUCKET, ALT_BUCKET]
 
 
 # CLI helper function tests
@@ -66,51 +58,6 @@ TEST_MB_ARGS_ERROR = [
     pytest.param(["/bucket"], START_WITH_BUCKET_NAME, id="preceding slash"),
     pytest.param(["/"], START_WITH_BUCKET_NAME, id="root"),
 ]
-
-
-@pytest.fixture
-def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[S3Client, Any]:
-    """Yield a mocked S3 client with both valid buckets created.
-
-    The function get_s3_client() is patched to ensure that all module functions use this client.
-
-    Resets the cached client before and after to prevent state leaking between tests.
-    """
-    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
-    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
-    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
-    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
-    boto3.DEFAULT_SESSION = None
-
-    with mock_aws():
-        reset_s3_client()
-        client: S3Client = boto3.client("s3")
-        for bucket in FILES_IN_BUCKETS:
-            client.create_bucket(Bucket=bucket)
-
-        # delete any existing client
-        reset_s3_client()
-        assert s3_client._s3_client is None  # noqa: SLF001
-
-        # patch in the client that we have just created
-        with patch.object(s3_client, "get_s3_client", return_value=client):
-            yield client
-
-        reset_s3_client()
-        assert s3_client._s3_client is None  # noqa: SLF001
-
-
-@pytest.fixture
-def mocked_s3_client_no_checksum(mock_s3_client: S3Client) -> S3Client:
-    """Yield the mocked S3 client with copy_object patched to strip ChecksumAlgorithm.
-
-    This works around the moto limitation of not supporting CRC64NVME checksums,
-    allowing copy_object calls that include ChecksumAlgorithm to succeed.
-    """
-    mock_s3_client.copy_object = strip_checksum_algorithm(mock_s3_client.copy_object)
-    return mock_s3_client
 
 
 @pytest.fixture

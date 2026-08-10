@@ -33,6 +33,8 @@ from tenacity import (
 )
 
 from cdm_data_loaders.utils.file_transfer.core import (
+    HTTP_CLIENT_DEFAULTS,
+    RETRY_DEFAULTS,
     DownloadCore,
     DownloadError,
     NonRetryableDownloadError,
@@ -43,14 +45,7 @@ logger: Logger = getLogger(__name__)
 
 def get_httpx_client() -> httpx.Client:
     """Get a basic client for executing http requests."""
-    return httpx.Client(
-        timeout=httpx.Timeout(30.0),
-        limits=httpx.Limits(
-            max_connections=20,
-            max_keepalive_connections=10,
-        ),
-        follow_redirects=True,
-    )
+    return httpx.Client(**HTTP_CLIENT_DEFAULTS)
 
 
 class FileDownloader:
@@ -67,9 +62,9 @@ class FileDownloader:
     def __init__(
         self,
         client: httpx.Client | None = None,
-        max_attempts: int = 5,
-        min_backoff: int = 1,
-        max_backoff: int = 30,
+        max_attempts: int = RETRY_DEFAULTS["max_attempts"],
+        min_backoff: int = RETRY_DEFAULTS["min_backoff"],
+        max_backoff: int = RETRY_DEFAULTS["max_backoff"],
         chunk_size: int = 8192,
     ) -> None:
         """Initialise a synchronous download client.

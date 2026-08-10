@@ -21,7 +21,7 @@ from botocore.exceptions import ClientError
 
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
 from cdm_data_loaders.utils.file_transfer.s3 import client
-from cdm_data_loaders.utils.file_transfer.s3.client import reset_s3_client
+from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 
 # Maximum length of a bucket name per S3/DNS spec
 _MAX_BUCKET_LEN = 63
@@ -75,7 +75,7 @@ def ceph_s3_client() -> Generator[botocore.client.BaseClient]:
     Patches ``get_s3_client`` on every module that uses it so internal calls
     are transparently routed to CEPH.
     """
-    s3_client = boto3.client("s3")
+    s3_client = boto3.client("s3", config=_client_config())
 
     reset_s3_client()
     with (

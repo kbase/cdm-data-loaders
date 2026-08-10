@@ -167,7 +167,7 @@ async def test_extra_headers(
     assert last_log_msg.message.startswith(f"{DOWNLOAD_URL}: resource has not been modified")
 
 
-@pytest.mark.parametrize("checksum_fn", [None, *hashlib.algorithms_available])
+@pytest.mark.parametrize("checksum_fn", [None, *hashlib.algorithms_available, "crc64nvme"])
 @pytest.mark.parametrize("content", [b"Hello, world!", b"a" * 256])
 @pytest.mark.asyncio
 async def test_checksum_success(
@@ -179,8 +179,8 @@ async def test_checksum_success(
 ) -> None:
     """Test that a correct checksum does not throw an error."""
     checksum_fn_used = checksum_fn or "sha256"
-    if checksum_fn_used.startswith("shake"):
-        pytest.skip("shake algorithms not supported")
+    if checksum_fn_used.startswith("shake") or checksum_fn_used == "crc64nvme":
+        pytest.skip("shake and crc64nvme algorithms not supported")
 
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=content)
@@ -200,20 +200,20 @@ async def test_checksum_success(
     assert f"{DOWNLOAD_URL}: {checksum_fn_used} checksum matches" in [m.message for m in caplog.records]
 
 
-@pytest.mark.parametrize("checksum_fn", ["shake128", " shake256", "shake-n-vac"])
+@pytest.mark.parametrize("checksum_fn", ["shake128", " shake256", "shake-n-vac", "CRC64NVME", "crc64nvme"])
 def test_checksum_invalid_sync_downloader(checksum_fn: str, tmp_path: Path) -> None:
     """Ensure that invalid checksums throw an error."""
     downloader = FileDownloader()
-    with pytest.raises(ValueError, match=f"Hashing algorithm {checksum_fn} not supported"):
+    with pytest.raises(ValueError, match=f"Hashing algorithm {checksum_fn.lower()} not supported"):
         downloader.download(DOWNLOAD_URL, tmp_path, checksum_fn=checksum_fn)
 
 
-@pytest.mark.parametrize("checksum_fn", ["shake128", " shake256", "shake-n-vac"])
+@pytest.mark.parametrize("checksum_fn", ["shake128", " shake256", "shake-n-vac", "CRC64NVME", "crc64nvme"])
 @pytest.mark.asyncio
 async def test_checksum_invalid_async_downloader(checksum_fn: str, tmp_path: Path) -> None:
     """Ensure that invalid checksums throw an error."""
     downloader = AsyncFileDownloader()
-    with pytest.raises(ValueError, match=f"Hashing algorithm {checksum_fn} not supported"):
+    with pytest.raises(ValueError, match=f"Hashing algorithm {checksum_fn.lower()} not supported"):
         await downloader.download(DOWNLOAD_URL, tmp_path, checksum_fn=checksum_fn)
 
 
@@ -227,7 +227,7 @@ async def test_checksum_mismatch(tmp_path: Path, sample_content: bytes, download
     downloader = downloader_adapter.make_downloader(handler)
     destination = tmp_path / "file.txt"
 
-    with pytest.raises(ChecksumMismatchError):
+    with pytest.raises(ChecksumMismatchError, match="Checksum mismatch: expected=some_checksum_or_other, actual="):
         await downloader_adapter.download(
             downloader,
             DOWNLOAD_URL,

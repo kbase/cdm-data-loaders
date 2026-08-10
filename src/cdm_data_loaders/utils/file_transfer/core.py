@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from frozendict import frozendict
 
 from cdm_data_loaders.utils.checksums import validate_checksum_fn
 
@@ -23,6 +24,27 @@ class NonRetryableDownloadError(Exception):
 
 class ChecksumMismatchError(NonRetryableDownloadError):
     """Checksum validation failed."""
+
+
+HTTP_CLIENT_DEFAULTS = frozendict(
+    {
+        "timeout": httpx.Timeout(30.0),
+        "limits": httpx.Limits(
+            max_connections=20,
+            max_keepalive_connections=10,
+        ),
+        "follow_redirects": True,
+    }
+)
+
+
+RETRY_DEFAULTS = frozendict(
+    {
+        "max_attempts": 5,
+        "min_backoff": 1,
+        "max_backoff": 30,
+    }
+)
 
 
 class DownloadCore:
@@ -72,6 +94,7 @@ class DownloadCore:
         """Check the response from the server and act accordingly."""
         status = response.status_code
 
+        # not modified since last accessed
         if status == 304:  # noqa: PLR2004
             return False
 
