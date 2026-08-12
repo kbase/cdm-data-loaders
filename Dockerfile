@@ -6,7 +6,7 @@
 # Use a Python image with uv pre-installed
 FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim
 
-ARG QSV_VERSION="20.1.0"
+ARG QSV_VERSION="22.0.1"
 ARG XML_FILE_SPLITTER_VERSION="v0.1.2"
 ARG XSV_VALIDATOR_VERSION="v2026-07"
 
