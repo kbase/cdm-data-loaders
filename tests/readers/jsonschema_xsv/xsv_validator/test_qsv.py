@@ -184,6 +184,7 @@ def test_qsv_check_fail_qsv_version_unexpected_output(monkeypatch: pytest.Monkey
         qsv_check()
 
 
+@pytest.mark.usefixtures("qsv_cmd")
 def test_qsv_check_fail_qsv_version_throws_error(mock_qsv_run: Callable[..., MagicMock]) -> None:
     """Ensure that unexpected output from qsv version raises a runtime error."""
     mock_qsv_run(returncode=1, stderr="This wasn't supposed to happen")

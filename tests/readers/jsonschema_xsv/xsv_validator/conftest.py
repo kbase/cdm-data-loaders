@@ -46,8 +46,8 @@ def qsv_cmd() -> str:
 
     If the qsv binary is not available, all tests that rely on this fixture are skipped.
     """
-    cmd = os.environ.get("QSV_BIN", "./qsv")
-    if shutil.which(cmd) is None and not Path(cmd).is_file():
+    cmd = shutil.which("qsv") or os.environ.get("QSV_BIN", "./qsv")
+    if not Path(cmd).is_file():
         pytest.skip(f"qsv binary not found at {cmd!r}; set QSV_BIN to point at a real binary")
     return cmd
 
