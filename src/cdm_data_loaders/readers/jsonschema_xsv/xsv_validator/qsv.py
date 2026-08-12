@@ -1,8 +1,8 @@
 """Core qsv-interacting code for the xsv validator."""
 
+import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
 
 from pydantic import validate_call
 
@@ -18,6 +18,27 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     non_header_lines_present,
     prepend_header,
 )
+
+
+def qsv_check() -> str | None:
+    """Check whether the qsv binary is available and whether it is functioning as expected."""
+    # check for qsv
+    if qsv_cmd := shutil.which("qsv"):
+        err_msg = None
+        try:
+            # check qsv is functional
+            result = subprocess.run([qsv_cmd, "--version"], text=True, stderr=subprocess.PIPE, check=True)
+            if result.returncode == 0:
+                return qsv_cmd
+            err_msg = f"`qsv --version` exited with code {result.returncode}"
+            if result.stderr:
+                err_msg += f"; STDERR: {result.stderr.strip()}"
+        except Exception as e:
+            err_msg = f"Cannot perform validation with qsv: {e!s}"
+            raise RuntimeError(err_msg) from e
+    else:
+        err_msg = "Could not locate the qsv binary"
+    raise RuntimeError(err_msg)
 
 
 @validate_call

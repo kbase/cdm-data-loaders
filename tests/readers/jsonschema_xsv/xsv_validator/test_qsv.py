@@ -1,16 +1,17 @@
 """Tests for the xsv_validator.qsv module."""
 
 import csv
+import re
+import shutil
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Final, NamedTuple
 from unittest.mock import MagicMock
 
-from types import SimpleNamespace
-
-from pydantic import ValidationError
-
 import pytest
+from pydantic import ValidationError
 
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator import qsv
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
@@ -25,6 +26,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
 )
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import (
     clean_validate_file,
+    qsv_check,
     run_qsv_input,
     run_qsv_null_replacement,
     run_qsv_validate,
@@ -154,6 +156,49 @@ INVALID_NULL_REGEXES: Final[list[str]] = [
     "(unclosed",
     "*leading-quantifier",
 ]
+
+
+"""qsv_check"""
+
+
+@pytest.mark.usefixtures("qsv_cmd")
+def test_qsv_check_pass_qsv_found() -> None:
+    """Qsv can be used for validation if the binary can be found and it outputs the expected stuff."""
+    output = qsv_check()
+    assert output
+
+
+@pytest.mark.usefixtures("qsv_cmd")
+def test_qsv_check_fail_qsv_version_unexpected_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure that unexpected output from qsv version raises a runtime error."""
+    original_subprocess_fn = subprocess.run
+
+    def _patched(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str] | None:  # noqa: ANN003
+        corrupted_cmd = [*cmd[:2], "--some-invalid-flag", *cmd[2:]]
+        return original_subprocess_fn(corrupted_cmd, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", _patched)
+
+    err_regex = re.compile("Cannot perform validation with qsv: Command .*? returned non-zero exit status")
+    with pytest.raises(RuntimeError, match=err_regex):
+        qsv_check()
+
+
+def test_qsv_check_fail_qsv_version_throws_error(mock_qsv_run: Callable[..., MagicMock]) -> None:
+    """Ensure that unexpected output from qsv version raises a runtime error."""
+    mock_qsv_run(returncode=1, stderr="This wasn't supposed to happen")
+    with pytest.raises(
+        RuntimeError, match="`qsv --version` exited with code 1; STDERR: This wasn't supposed to happen"
+    ):
+        qsv_check()
+
+
+def test_qsv_check_fail_qsv_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure that running qsv_check when qsv is nowhere to be found results in a runtime error."""
+    monkeypatch.setattr(shutil, "which", lambda _: None)
+
+    with pytest.raises(RuntimeError, match="Could not locate the qsv binary"):
+        qsv_check()
 
 
 # oh crap, no QSV!
@@ -301,7 +346,7 @@ def test_run_qsv_input_mocked_qsv_pass_passes_correct_delimiter(
 
     run_qsv_input(args, input_file_name)
 
-    (cmd,), _kwargs = mock.call_args
+    (cmd,), _ = mock.call_args
     assert cmd[cmd.index("--delimiter") + 1] == delimiter
 
 
@@ -735,7 +780,7 @@ def test_run_qsv_null_replacement_mocked_qsv_pass_invokes_expected_command_with_
 
     output_file_name = f"{args.xsv_file_base_name}{NORM_SUFFIX}{args.ext}"
     mock.assert_called_once()
-    (cmd,), _kwargs = mock.call_args
+    (cmd,), _ = mock.call_args
     assert cmd == [
         FAKE_QSV_CMD,
         "replace",
@@ -770,7 +815,7 @@ def test_run_qsv_null_replacement_mocked_qsv_pass_passes_correct_delimiter(
 
     run_qsv_null_replacement(args, input_file_name)
 
-    (cmd,), _kwargs = mock.call_args
+    (cmd,), _ = mock.call_args
     assert cmd[cmd.index("--delimiter") + 1] == delimiter
 
 
@@ -1165,7 +1210,7 @@ def test_run_qsv_validate_mocked_qsv_pass_invokes_expected_command_second_pass_o
 
     run_qsv_validate(args, input_file_name, args.post_norm_schema, first_pass=False)
 
-    (cmd,), _kwargs = mock.call_args
+    (cmd,), _ = mock.call_args
     assert cmd == [
         FAKE_QSV_CMD,
         "validate",
@@ -1202,7 +1247,7 @@ def test_run_qsv_validate_mocked_qsv_pass_passes_correct_delimiter(
 
     run_qsv_validate(args, input_file_name, args.first_pass_schema, first_pass=True)
 
-    (cmd,), _kwargs = mock.call_args
+    (cmd,), _ = mock.call_args
     assert cmd[cmd.index("--delimiter") + 1] == delimiter
 
 
