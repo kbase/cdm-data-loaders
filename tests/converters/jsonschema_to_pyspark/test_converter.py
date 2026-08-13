@@ -1006,7 +1006,6 @@ def test_convert_e2e_pass_all_supported_types_produce_expected_structtype() -> N
     """A schema exercising every supported JSON Schema construct converts to the exact expected StructType."""
     schema = _all_types_schema()
     dereferenced = dereference_schema(schema)
-    dereferenced = schema
     result = JSONSchemaToPySpark().convert(dereferenced)
 
     expected = StructType(
