@@ -37,6 +37,7 @@ from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import (
     _metadata_keys_for,
     get_known_jsonschema_keywords,
 )
+from cdm_data_loaders.converters.jsonschema_to_pyspark.dereferencer import dereference_schema
 from tests.converters.jsonschema_to_pyspark.conftest import base_object_schema
 
 
@@ -1004,8 +1005,7 @@ def _all_types_schema() -> dict[str, Any]:
 def test_convert_e2e_pass_all_supported_types_produce_expected_structtype() -> None:
     """A schema exercising every supported JSON Schema construct converts to the exact expected StructType."""
     schema = _all_types_schema()
-    # dereferenced = dereference_schema(schema)
-    dereferenced = schema
+    dereferenced = dereference_schema(schema)
     result = JSONSchemaToPySpark().convert(dereferenced)
 
     expected = StructType(
