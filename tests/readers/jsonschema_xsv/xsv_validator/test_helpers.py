@@ -630,7 +630,19 @@ def test_validate_jsonschema_pass_missing_empty_required_list_is_fine_fine_fine(
     assert validate_jsonschema(schema_path) == {**SCHEMA_KEY_VALUE, **schema}
 
 
-def test_validate_jsonschema_pass_unresolvable_schema_uri_uses_latest_by_default(
+def test_validate_jsonschema_pass_validator_dgaf_about_unresolvable_schema_uri(
+    make_schema_file: Callable[..., Path],
+) -> None:
+    """A `$schema` value that doesn't correspond to a known JSON Schema draft does not throw an error.
+
+    The jsonschema module uses the most recent draft to validate against if the metaschema is invalid or absent.
+    """
+    schema = {"$schema": "https://not-a-real-schema.uri", "required": ["a"]}
+    schema_path = make_schema_file(schema)
+    assert validate_jsonschema(schema_path) == schema
+
+
+def test_validate_jsonschema_pass_validator_does_gaf_about_invalid_schema_uri(
     make_schema_file: Callable[..., Path],
 ) -> None:
     """A `$schema` value that doesn't correspond to a known JSON Schema draft does not throw an error.
@@ -639,11 +651,12 @@ def test_validate_jsonschema_pass_unresolvable_schema_uri_uses_latest_by_default
     """
     schema = {"$schema": "not-a-real-schema-uri", "required": ["a"]}
     schema_path = make_schema_file(schema)
-    assert validate_jsonschema(schema_path) == schema
+    with pytest.raises(jsonschema.exceptions.SchemaError, match="'not-a-real-schema-uri' is not a 'uri'"):
+        validate_jsonschema(schema_path)
 
 
 def test_validate_jsonschema_fail_invalid_schema_content_logs_and_raises_schema_error(
-    make_schema_file: Callable[..., Path], caplog
+    make_schema_file: Callable[..., Path], caplog: pytest.LogCaptureFixture
 ) -> None:
     """A schema with other invalid fields raises a SchemaError."""
     schema = {"$schema": VALID_SCHEMA_URI, "type": "not-a-real-type", "required": ["a"]}
@@ -883,17 +896,27 @@ def test_generate_first_pass_schema_pass_validator_dgaf_about_unresolvable_schem
     output_dir_path: Path, make_schema_file: Callable[[Any, str], Path]
 ) -> None:
     """An unrecognised `$schema` draft URI is ignored by the validator."""
-    schema = {"$schema": "not-a-real-schema-uri", "required": ["a"]}
+    schema = {"$schema": "https://not-a-real.schema-uri", "required": ["a"]}
     schema_path = make_schema_file(schema)
     output = generate_first_pass_schema(schema_path, output_dir_path)
     assert json.loads(output.read_bytes()) == {
-        "$schema": "not-a-real-schema-uri",
+        "$schema": "https://not-a-real.schema-uri",
         "required": ["a"],
         "type": "object",
         "properties": {
             "a": {"type": ["string", "null"]},
         },
     }
+
+
+def test_generate_first_pass_schema_pass_validator_does_gaf_about_non_uris(
+    output_dir_path: Path, make_schema_file: Callable[[Any, str], Path]
+) -> None:
+    """An unrecognised `$schema` draft URI is ignored by the validator."""
+    schema = {"$schema": "not-a-real-schema-uri", "required": ["a"]}
+    schema_path = make_schema_file(schema)
+    with pytest.raises(jsonschema.exceptions.SchemaError, match="'not-a-real-schema-uri' is not a 'uri'"):
+        generate_first_pass_schema(schema_path, output_dir_path)
 
 
 def test_generate_first_pass_schema_fail_invalid_schema_content_raises_schema_error(
