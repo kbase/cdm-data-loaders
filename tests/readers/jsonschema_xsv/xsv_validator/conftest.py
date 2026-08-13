@@ -52,16 +52,22 @@ def qsv_cmd() -> str:
     return cmd
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def first_pass_schema() -> Path:
     """Path to the first-pass JSON Schema fixture."""
     return SCHEMAS_DIR / "first_pass_schema.json"
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def post_norm_schema() -> Path:
     """Path to the post-normalisation JSON Schema fixture."""
     return SCHEMAS_DIR / "post_norm_schema.json"
+
+
+@pytest.fixture(scope="session")
+def derived_first_pass_schema() -> dict[str, Any]:
+    """First pass schema derived from post_norm_schema. Derivation performed manually."""
+    return json.loads((SCHEMAS_DIR / "derived_first_pass_schema.json").read_bytes())
 
 
 @pytest.fixture
@@ -86,10 +92,21 @@ def tmp_dir_path(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def output_dir_path(tmp_path: Path) -> Path:
-    """Temporary output directory used as CleanerValidatorArgs.output_dir_path."""
+    """Temporary output directory used as a base for qsv_output_dir_path and validated_file_dir_path."""
     d = tmp_path / "output"
     d.mkdir()
     return d
+
+
+@pytest.fixture
+def output_dir_path_derivatives(output_dir_path: Path) -> dict[str, Path]:
+    """Qsv_output and validated directories."""
+    (output_dir_path / "qsv_output").mkdir(exist_ok=True, parents=True)
+    (output_dir_path / "validated").mkdir(exist_ok=True, parents=True)
+    return {
+        "qsv_output_dir_path": output_dir_path / "qsv_output",
+        "validated_file_dir_path": output_dir_path / "validated",
+    }
 
 
 @pytest.fixture
@@ -189,7 +206,7 @@ def fake_args() -> SimpleNamespace:
 def _make_args_factory(
     qsv_cmd: str,
     tmp_dir_path: Path,
-    output_dir_path: Path,
+    output_dir_path_derivatives: dict[str, Path],
     first_pass_schema: Path,
     post_norm_schema: Path,
 ) -> Callable[..., CleanerValidatorArgs]:
@@ -205,8 +222,8 @@ def _make_args_factory(
         post_norm_schema_override: Path | None = None,
     ) -> CleanerValidatorArgs:
         header_file_path = generate_header(
-            tmp_dir_path,
             first_pass_schema,
+            tmp_dir_path,
             header_file_name=f"header-{ord(delimiter)}.txt",
             delimiter=delimiter,
         )
@@ -218,11 +235,11 @@ def _make_args_factory(
             first_pass_schema=first_pass_schema_override or first_pass_schema,
             post_norm_schema=post_norm_schema_override or post_norm_schema,
             tmp_dir_path=tmp_dir_path,
-            output_dir_path=output_dir_path,
             delimiter=delimiter,
             comment_char=comment_char,
             null_regex=null_regex,
             missing_header=missing_header,
+            **output_dir_path_derivatives,
         )
 
     return _make_args
@@ -231,7 +248,7 @@ def _make_args_factory(
 @pytest.fixture
 def make_args(
     tmp_dir_path: Path,
-    output_dir_path: Path,
+    output_dir_path_derivatives: dict[str, Path],
     first_pass_schema: Path,
     post_norm_schema: Path,
     qsv_cmd: str,
@@ -241,13 +258,13 @@ def make_args(
     `first_pass_schema`/`post_norm_schema` overrides only affect the schema path used by qsv
     validate commands; the header file is always generated from the known-good default schema.
     """
-    return _make_args_factory(qsv_cmd, tmp_dir_path, output_dir_path, first_pass_schema, post_norm_schema)
+    return _make_args_factory(qsv_cmd, tmp_dir_path, output_dir_path_derivatives, first_pass_schema, post_norm_schema)
 
 
 @pytest.fixture
 def make_mock_args(
     tmp_dir_path: Path,
-    output_dir_path: Path,
+    output_dir_path_derivatives: dict[str, Path],
     first_pass_schema: Path,
     post_norm_schema: Path,
 ) -> Callable[..., CleanerValidatorArgs]:
@@ -255,7 +272,9 @@ def make_mock_args(
 
     Use with `mock_qsv_run` for testing qsv commands with the qsv binary mocked out.
     """
-    return _make_args_factory(FAKE_QSV_CMD, tmp_dir_path, output_dir_path, first_pass_schema, post_norm_schema)
+    return _make_args_factory(
+        FAKE_QSV_CMD, tmp_dir_path, output_dir_path_derivatives, first_pass_schema, post_norm_schema
+    )
 
 
 def _touch(path: Path, content: str = "hello") -> Path:

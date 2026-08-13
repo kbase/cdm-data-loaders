@@ -4,10 +4,14 @@ import json
 import os
 import subprocess
 from functools import cached_property
+from logging import Logger, getLogger
 from pathlib import Path
 from shutil import copy, move
-from typing import Annotated, Final, Self
+from typing import Annotated, Any, Final, Self
 
+import jsonschema
+import jsonschema.exceptions
+import jsonschema.validators
 from pydantic import (
     BaseModel,
     DirectoryPath,
@@ -15,7 +19,6 @@ from pydantic import (
     FilePath,
     StringConstraints,
     computed_field,
-    model_validator,
     validate_call,
 )
 
@@ -32,6 +35,9 @@ HEADER_SUFFIX: Final[str] = "-header"
 CLEANED_SUFFIX: Final[str] = "-cleaned"
 NORM_SUFFIX: Final[str] = "-norm"
 VALID_SUFFIX: Final[str] = "-valid"
+
+
+logger: Logger = getLogger(__name__)
 
 
 class ErrorRecord(BaseModel):
@@ -79,8 +85,10 @@ class CleanerValidatorArgs(BaseModel):
     :type post_norm_schema: FilePath
     :param tmp_dir_path: temporary working directory
     :type tmp_dir_path: DirectoryPath
-    :param output_dir_path: directory to put the cleaned, validated files in
-    :type output_dir_path: DirectoryPath
+    :param qsv_output_dir_path: directory for qsv output from failed executions
+    :type qsv_output_dir_path: DirectoryPath
+    :param validated_file_dir_path: directory to put the cleaned, validated files in
+    :type validated_file_dir_path: DirectoryPath
     :param errors: list of errors accumulated during processing
     :type errors: list[ErrorRecord]
     :param delimiter: delimiter used in the xsv file, defaults to tab
@@ -107,7 +115,8 @@ class CleanerValidatorArgs(BaseModel):
     post_norm_schema: FilePath
 
     tmp_dir_path: DirectoryPath
-    output_dir_path: DirectoryPath
+    qsv_output_dir_path: DirectoryPath
+    validated_file_dir_path: DirectoryPath
 
     errors: list[ErrorRecord] = Field(default_factory=lambda _: [])
 
@@ -154,26 +163,6 @@ class CleanerValidatorArgs(BaseModel):
     def invalid_file_suffix(self) -> str:
         """Suffix added to validator output file containing valid lines."""
         return f"invalid{self.ext}"
-
-    @computed_field
-    @property
-    def qsv_output_dir_path(self) -> Path:
-        """Output directory for files produced by qsv that may be of use later."""
-        return self.output_dir_path / "qsv_output"
-
-    @computed_field
-    @property
-    def validated_file_dir_path(self) -> Path:
-        """Output directory for normalised, cleaned, validated files."""
-        return self.output_dir_path / "validated"
-
-    @model_validator(mode="after")
-    def create_derived_directories(self) -> Self:
-        """Generate the derived directories under self.output_dir."""
-        for d in [self.qsv_output_dir_path, self.validated_file_dir_path]:
-            d.mkdir(exist_ok=True, parents=True)
-
-        return self
 
 
 def copy_safely(src: Path, dst: Path, args: "CleanerValidatorArgs") -> bool:
@@ -238,10 +227,92 @@ def prepend_header(header_file_path: Path, xsv_file_path: Path, dest: Path) -> N
         out.write(xsv_file_path.read_bytes())
 
 
+def validate_jsonschema(schema_path: Path) -> dict[str, Any]:
+    """Ensure that a given data structure is a valid JSON schema.
+
+    :param schema: JSON schema, loaded as a python data structure
+    :type schema: dict[str, Any]
+    :raises jsonschema.exceptions.SchemaError: if the schema is invalid
+    :return: validated JSON Schema
+    :rtype: dict[str, Any]
+    """
+    schema = json.loads(schema_path.read_bytes())
+
+    if not isinstance(schema, dict):
+        err_msg = f"Error reading schema at {schema_path!s}: JSON Schema must be a dictionary"
+        raise TypeError(err_msg)
+    # $schema is not required by the JSON Schema metaschema, but our standards are a little higher here...
+    if "$schema" not in schema:
+        err_msg = f"Error reading schema at {schema_path!s}: JSON Schema is missing the $schema keyword"
+        raise ValueError(err_msg)
+
+    # retrieve the appropriate validator for the schema and ensure it is valid
+    # if the $schema value is invalid, jsonschema will use the most recent draft by default and emit a warning
+    validator = jsonschema.validators.validator_for(schema)
+    try:
+        validator.check_schema(schema)
+    except (jsonschema.exceptions.SchemaError, jsonschema.exceptions.ValidationError):
+        logger.exception("Error validating JSON Schema at %s", str(schema_path))
+        raise
+    return schema
+
+
+def _get_schema_required_cols(schema_path: Path) -> tuple[dict[str, Any], list[str]]:
+    """Retrieve the schema object and required top-level columns from a JSON schema file.
+
+    Validates the input schema when the schema is read in.
+
+    :param schema_path: path to the schema file
+    :type schema_path: Path
+    :raises ValueError: if there are no required columns in the schema
+    :return: schema, required cols
+    :rtype: tuple[dict[str, Any], list[str]]
+    """
+    schema = validate_jsonschema(schema_path)
+
+    required_cols = schema.get("required")
+    if not isinstance(required_cols, list) or not required_cols:
+        err_msg = f"Could not find any required cols in {schema_path!s}"
+        raise ValueError(err_msg)
+
+    return schema, required_cols
+
+
+@validate_call
+def generate_first_pass_schema(schema_path: FilePath, output_dir: DirectoryPath) -> Path:
+    """Given a full schema file, generate a schema to perform a loose first-pass validation with.
+
+    The first pass schema is used for verifying that the top-level columns are correct; no further checks
+    are performed.
+
+    :param schema_path: path to the schema file
+    :type schema_path: FilePath
+    :param output_dir: directory to save the generated schema in
+    :type output_dir: DirectoryPath
+    :return: path to the first pass schema file
+    :rtype: Path
+    """
+    schema, required_cols = _get_schema_required_cols(schema_path)
+    new_schema = {k: v for k, v in schema.items() if k in ["$schema", "$id", "title", "required"]}
+
+    new_schema["type"] = "object"
+    new_schema["properties"] = {req: {"type": ["string", "null"]} for req in required_cols}
+
+    # retrieve the appropriate validator for the schema and ensure it is valid
+    validator = jsonschema.validators.validator_for(new_schema)
+    validator.check_schema(new_schema)
+
+    # save to the output dir as <schema_name>.first-pass.json
+    first_pass_schema_path = output_dir / f"{schema_path.stem}.first-pass.json"
+    json.dump(new_schema, first_pass_schema_path.open("w"), indent=2, sort_keys=True)
+
+    return first_pass_schema_path
+
+
 @validate_call
 def generate_header(
-    target_dir: DirectoryPath,
     schema_path: FilePath,
+    target_dir: DirectoryPath,
     header_file_name: NonEmptyStr = "header.txt",
     delimiter: CharStr = "\t",
 ) -> Path:
@@ -251,10 +322,10 @@ def generate_header(
 
     The top level required properties are assumed to be the columns of the xSV file.
 
-    :param target_dir: directory in which to save the file
-    :type target_dir: DirectoryPath
     :param schema_path: path to the schema
     :type schema_path: Path
+    :param target_dir: directory in which to save the file
+    :type target_dir: DirectoryPath
     :param delimiter: delimiter to use for the headers, defaults to "\t"
     :type delimiter: CharStr, optional
     :param header_file_name: name for the header file, defaults to "header.txt"
@@ -264,16 +335,7 @@ def generate_header(
     :return: path to the newly-created header.txt file
     :rtype: Path
     """
-    schema = json.loads(schema_path.read_bytes())
-    if not isinstance(schema, dict):
-        err_msg = f"The JSON Schema at {schema_path!s} must be a dictionary"
-        raise TypeError(err_msg)
-
-    required_cols = schema.get("required")
-    if not isinstance(required_cols, list) or not required_cols:
-        err_msg = f"Could not find any required cols in {schema_path!s}"
-        raise ValueError(err_msg)
-
+    _, required_cols = _get_schema_required_cols(schema_path)
     header_file_path = target_dir / header_file_name
     header_file_path.write_text(delimiter.join(required_cols) + "\n")
     return header_file_path

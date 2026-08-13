@@ -19,6 +19,7 @@ dependencies = [
     "frictionless[aws]>=5.19.0",
     "frozendict>=2.4.7",
     "ipykernel>=7.2.0",
+    "jsonschema[format]>=4.26.0",
     "lxml>=6.1.0",
     "pandas>=3.0.3",
     "pydantic>=2.13.4",

@@ -1,12 +1,16 @@
 """Tests for the xsv validator helper (non-qsv-interacting) code."""
 
+import json
 import os
+import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Final
 
+import jsonschema
+import jsonschema.exceptions
 import pytest
 from _pytest.mark.structures import ParameterSet
 from pydantic import ValidationError
@@ -20,11 +24,13 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     CleanerValidatorArgs,
     ErrorRecord,
     copy_safely,
+    generate_first_pass_schema,
     generate_header,
     generate_qsv_validate_file_names,
     move_safely,
     non_header_lines_present,
     prepend_header,
+    validate_jsonschema,
 )
 from tests.readers.jsonschema_xsv.xsv_validator.conftest import (
     COLUMNS,
@@ -34,6 +40,26 @@ from tests.readers.jsonschema_xsv.xsv_validator.conftest import (
     _touch,
     build_xsv_content,
 )
+
+VALID_SCHEMA_URI: Final[str] = "https://json-schema.org/draft/2019-09/schema"
+SCHEMA_KEY_VALUE: dict[str, str] = {"$schema": VALID_SCHEMA_URI}
+
+INVALID_TOP_LEVEL_SCHEMA_LIST = [
+    pytest.param(["a", "b"], id="schema-is-a-list"),
+    pytest.param("just a string", id="schema-is-string"),
+    pytest.param(42, id="schema-is-a-number"),
+    pytest.param(None, id="schema-is-null"),
+    pytest.param(True, id="schema-is-bool"),
+]
+MISSING_EMPTY_REQUIRED_LIST = [
+    pytest.param({}, id="missing-required-key"),
+    pytest.param({"required": []}, id="empty-required-list"),
+]
+INVALID_REQUIRED_LIST = [
+    pytest.param({"required": "not-a-list"}, id="required-is-a-string"),
+    pytest.param({"required": None}, id="required-is-null"),
+    pytest.param({"required": {"a": 1}}, id="required-is-a-dict"),
+]
 
 """copy_safely and move_safely"""
 
@@ -124,7 +150,7 @@ def test_copy_safely_fail_records_error_and_returns_false(
     assert "No such file or directory" in error.message
 
 
-# non_header_lines_present
+"""non_header_lines_present"""
 
 
 NON_HEADER_LINES_CASES: list[ParameterSet] = [
@@ -150,11 +176,11 @@ def test_non_header_lines_present_pass_matches_expected_result(tmp_path: Path, c
 
 def test_non_header_lines_present_fail_missing_file(tmp_path: Path) -> None:
     """A missing file raises FileNotFoundError rather than being silently treated as empty."""
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(FileNotFoundError, match="No such file or directory:"):
         non_header_lines_present(tmp_path / "does-not-exist.txt")
 
 
-# prepend_header
+"""prepend_header"""
 
 
 def test_prepend_header_pass_concatenates_header_and_data(tmp_path: Path) -> None:
@@ -198,7 +224,7 @@ def test_prepend_header_fail_missing_header_file(tmp_path: Path) -> None:
     data_path = _touch(tmp_path / "data.txt", "d\n")
     dest = tmp_path / "combined.txt"
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(FileNotFoundError, match="No such file or directory:"):
         prepend_header(header_path, data_path, dest)
 
 
@@ -208,135 +234,11 @@ def test_prepend_header_fail_missing_data_file(tmp_path: Path) -> None:
     data_path = tmp_path / "missing-data.txt"
     dest = tmp_path / "combined.txt"
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(FileNotFoundError, match="No such file or directory:"):
         prepend_header(header_path, data_path, dest)
 
 
-# generate_header
-
-
-def test_generate_header_pass_uses_defaults(tmp_path: Path, make_schema_file: Callable[..., Path]) -> None:
-    """With no overrides, the header is written to `header.txt` using a tab delimiter."""
-    schema_path = make_schema_file({"required": COLUMNS})
-
-    result = generate_header(tmp_path, schema_path)
-
-    assert result == tmp_path / "header.txt"
-    assert result.read_text() == "\t".join(COLUMNS) + "\n"
-
-
-@pytest.mark.parametrize("delimiter", DELIMITERS)
-def test_generate_header_pass_with_various_delimiters(
-    tmp_path: Path, make_schema_file: Callable[..., Path], delimiter: str
-) -> None:
-    """Every delimiter supported by SEP_TO_EXT produces a correctly-joined header row."""
-    schema_path = make_schema_file({"required": COLUMNS})
-
-    result = generate_header(tmp_path, schema_path, delimiter=delimiter)
-
-    assert result.read_text() == delimiter.join(COLUMNS) + "\n"
-
-
-def test_generate_header_pass_with_custom_file_name(tmp_path: Path, make_schema_file: Callable[..., Path]) -> None:
-    """A custom header_file_name is respected in both the returned path and the file written."""
-    schema_path = make_schema_file({"required": COLUMNS})
-
-    result = generate_header(tmp_path, schema_path, header_file_name="custom-header.tsv")
-
-    assert result == tmp_path / "custom-header.tsv"
-    assert result.read_text() == "\t".join(COLUMNS) + "\n"
-
-
-def test_generate_header_pass_overwrites_existing_file(tmp_path: Path, make_schema_file: Callable[..., Path]) -> None:
-    """An existing header file at the target path is overwritten."""
-    schema_path = make_schema_file({"required": COLUMNS})
-    (tmp_path / "header.txt").write_text("stale content\n")
-
-    result = generate_header(tmp_path, schema_path)
-
-    assert result.read_text() == "\t".join(COLUMNS) + "\n"
-
-
-@pytest.mark.parametrize(
-    "schema",
-    [
-        pytest.param(["a", "b"], id="schema-is-a-list"),
-        pytest.param("just a string", id="schema-is-a-string"),
-        pytest.param(42, id="schema-is-a-number"),
-        pytest.param(None, id="schema-is-null"),
-    ],
-)
-def test_generate_header_fail_non_dict_schema_raises_type_error(
-    tmp_path: Path, make_schema_file: Callable[..., Path], schema: list | str | int | None
-) -> None:
-    """A schema whose top-level JSON value isn't a dict raises TypeError."""
-    schema_path = make_schema_file(schema)
-
-    with pytest.raises(TypeError):
-        generate_header(tmp_path, schema_path)
-
-
-@pytest.mark.parametrize(
-    "schema",
-    [
-        pytest.param({}, id="missing-required-key"),
-        pytest.param({"required": []}, id="empty-required-list"),
-        pytest.param({"required": "not-a-list"}, id="required-is-a-string"),
-        pytest.param({"required": None}, id="required-is-null"),
-        pytest.param({"required": {"a": 1}}, id="required-is-a-dict"),
-    ],
-)
-def test_generate_header_fail_missing_or_empty_required_raises_value_error(
-    tmp_path: Path, make_schema_file: Callable[..., Path], schema: dict[str, Any]
-) -> None:
-    """A schema with no non-empty `required` list raises ValueError."""
-    schema_path = make_schema_file(schema)
-
-    with pytest.raises(ValueError):  # noqa: PT011
-        generate_header(tmp_path, schema_path)
-
-
-def test_generate_header_fail_missing_schema_file(tmp_path: Path) -> None:
-    """A schema_path that doesn't point to an existing file fails FilePath validation."""
-    with pytest.raises(ValidationError):
-        generate_header(tmp_path, tmp_path / "does-not-exist.json")
-
-
-def test_generate_header_fail_missing_target_dir(tmp_path: Path, make_schema_file: Callable[..., Path]) -> None:
-    """A target_dir that doesn't exist fails DirectoryPath validation."""
-    schema_path = make_schema_file({"required": COLUMNS})
-    missing_dir = tmp_path / "no-such-dir"
-
-    with pytest.raises(ValidationError):
-        generate_header(missing_dir, schema_path)
-
-
-def test_generate_header_fail_empty_header_file_name(tmp_path: Path, make_schema_file: Callable[..., Path]) -> None:
-    """An empty header_file_name fails the NonEmptyStr constraint."""
-    schema_path = make_schema_file({"required": COLUMNS})
-
-    with pytest.raises(ValidationError):
-        generate_header(tmp_path, schema_path, header_file_name="")
-
-
-@pytest.mark.parametrize(
-    "delimiter",
-    [
-        pytest.param("", id="empty-delimiter"),
-        pytest.param(",;", id="multi-character-delimiter"),
-    ],
-)
-def test_generate_header_fail_invalid_delimiter_length(
-    tmp_path: Path, make_schema_file: Callable[..., Path], delimiter: str
-) -> None:
-    """A delimiter that isn't exactly one character fails the CharStr constraint."""
-    schema_path = make_schema_file({"required": COLUMNS})
-
-    with pytest.raises(ValidationError):
-        generate_header(tmp_path, schema_path, delimiter=delimiter)
-
-
-# generate_qsv_validate_file_names
+"""generate_qsv_validate_file_names"""
 
 
 def test_generate_qsv_validate_file_names_pass_default_first_pass_uses_first_pass_naming(
@@ -654,42 +556,412 @@ def test_cleaner_validator_args_valid_and_invalid_file_suffixes_are_derived_from
     assert args.invalid_file_suffix == f"invalid{args.ext}"
 
 
-def test_cleaner_validator_args_qsv_output_dir_path_and_validated_file_dir_path_are_subdirs_of_output_dir(
-    make_mock_args: Callable[..., CleanerValidatorArgs], write_source_file: WriteFile
+"""validate_jsonschema"""
+
+
+def test_validate_jsonschema_pass_valid_schema(make_schema_file: Callable[..., Path]) -> None:
+    """A well-formed schema, complete with $schema keyword, is returned unchanged."""
+    schema = {
+        "$schema": VALID_SCHEMA_URI,
+        "type": "object",
+        "required": ["a"],
+        "properties": {"a": {"type": "string"}},
+    }
+    schema_path = make_schema_file(schema)
+
+    result = validate_jsonschema(schema_path)
+    assert result == schema
+
+
+def test_validate_jsonschema_fail_missing_file(tmp_path: Path) -> None:
+    """A schema_path that doesn't exist on disk raises FileNotFoundError when read."""
+    with pytest.raises(FileNotFoundError):
+        validate_jsonschema(tmp_path / "does-not-exist.json")
+
+
+def test_validate_jsonschema_fail_invalid_json_content(tmp_path: Path) -> None:
+    """A file that isn't valid JSON raises a JSONDecodeError."""
+    bad_json_path = tmp_path / "not-json.json"
+    bad_json_path.write_text("{this is not: valid json,,,")
+
+    with pytest.raises(json.JSONDecodeError):
+        validate_jsonschema(bad_json_path)
+
+
+@pytest.mark.parametrize("schema", INVALID_TOP_LEVEL_SCHEMA_LIST)
+def test_validate_jsonschema_fail_non_dict_schema_or_invalid_schema_raises_error(
+    make_schema_file: Callable[..., Path], schema: list | str | int | None
 ) -> None:
-    """The two derived directory paths are computed as fixed-name subdirectories of output_dir_path."""
-    source = write_source_file(build_xsv_content(VALID_ROWS, header=COLUMNS), "data.tsv")
-    args = make_mock_args(source)
+    """A schema whose top-level JSON value isn't a dict raises TypeError."""
+    schema_path = make_schema_file(schema)
 
-    assert args.qsv_output_dir_path == args.output_dir_path / "qsv_output"
-    assert args.validated_file_dir_path == args.output_dir_path / "validated"
-
-
-"""CleanerValidatorArgs -- create_derived_directories"""
+    with pytest.raises(TypeError, match="JSON Schema must be a dictionary"):
+        validate_jsonschema(schema_path)
 
 
-def test_cleaner_validator_args_create_derived_directories_creates_both_dirs_on_construction(
-    make_mock_args: Callable[..., CleanerValidatorArgs], write_source_file: WriteFile
+@pytest.mark.parametrize("schema", INVALID_REQUIRED_LIST + MISSING_EMPTY_REQUIRED_LIST)
+def test_validate_jsonschema_fail_no_schema_keyword_missing_or_empty_required_raises_value_error(
+    make_schema_file: Callable[..., Path], schema: dict[str, Any]
 ) -> None:
-    """Constructing a CleanerValidatorArgs creates qsv_output_dir_path/validated_file_dir_path."""
-    source = write_source_file(build_xsv_content(VALID_ROWS, header=COLUMNS), "data.tsv")
-    args = make_mock_args(source)
+    """A schema with no `$schema` keyword raises a ValueError."""
+    schema_path = make_schema_file(schema)
 
-    assert args.qsv_output_dir_path.is_dir()
-    assert args.validated_file_dir_path.is_dir()
+    with pytest.raises(ValueError, match=r"JSON Schema is missing the \$schema keyword"):
+        validate_jsonschema(schema_path)
 
 
-def test_cleaner_validator_args_create_derived_directories_is_idempotent_when_dirs_already_exist(
-    make_mock_args: Callable[..., CleanerValidatorArgs], write_source_file: WriteFile
+@pytest.mark.parametrize("schema", INVALID_REQUIRED_LIST)
+def test_validate_jsonschema_fail_invalid_required_format_error(
+    make_schema_file: Callable[..., Path], schema: dict[str, Any]
 ) -> None:
-    """A second CleanerValidatorArgs built against the same output_dir_path doesn't fail if directories exist."""
-    source = write_source_file(build_xsv_content(VALID_ROWS, header=COLUMNS), "data.tsv")
-    first = make_mock_args(source)
-    assert first.qsv_output_dir_path.is_dir()
+    """A schema whose required field isn't a list of strings raises SchemaError."""
+    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, **schema})
 
-    # constructing again against the same tmp_dir_path/output_dir_path fixtures re-runs the validator
-    second = make_mock_args(source)
+    with pytest.raises(jsonschema.exceptions.SchemaError, match="is not of type 'array'"):
+        validate_jsonschema(schema_path)
 
-    assert second.qsv_output_dir_path.is_dir()
-    assert second.validated_file_dir_path.is_dir()
-    assert second.qsv_output_dir_path == first.qsv_output_dir_path
+
+@pytest.mark.parametrize("schema", MISSING_EMPTY_REQUIRED_LIST)
+def test_validate_jsonschema_pass_missing_empty_required_list_is_fine_fine_fine(
+    make_schema_file: Callable[..., Path], schema: dict[str, Any]
+) -> None:
+    """A schema whose required field is missing or empty validates just fine."""
+    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, **schema})
+    assert validate_jsonschema(schema_path) == {**SCHEMA_KEY_VALUE, **schema}
+
+
+def test_validate_jsonschema_pass_validator_dgaf_about_unresolvable_schema_uri(
+    make_schema_file: Callable[..., Path],
+) -> None:
+    """A `$schema` value that doesn't correspond to a known JSON Schema draft does not throw an error.
+
+    The jsonschema module uses the most recent draft to validate against if the metaschema is invalid or absent.
+    """
+    schema = {"$schema": "https://not-a-real-schema.uri", "required": ["a"]}
+    schema_path = make_schema_file(schema)
+    assert validate_jsonschema(schema_path) == schema
+
+
+def test_validate_jsonschema_pass_validator_does_gaf_about_invalid_schema_uri(
+    make_schema_file: Callable[..., Path],
+) -> None:
+    """A `$schema` value that doesn't correspond to a known JSON Schema draft does not throw an error.
+
+    The jsonschema module uses the most recent draft to validate against if the metaschema is invalid or absent.
+    """
+    schema = {"$schema": "not-a-real-schema-uri", "required": ["a"]}
+    schema_path = make_schema_file(schema)
+    with pytest.raises(jsonschema.exceptions.SchemaError, match="'not-a-real-schema-uri' is not a 'uri'"):
+        validate_jsonschema(schema_path)
+
+
+def test_validate_jsonschema_fail_invalid_schema_content_logs_and_raises_schema_error(
+    make_schema_file: Callable[..., Path], caplog: pytest.LogCaptureFixture
+) -> None:
+    """A schema with other invalid fields raises a SchemaError."""
+    schema = {"$schema": VALID_SCHEMA_URI, "type": "not-a-real-type", "required": ["a"]}
+    schema_path = make_schema_file(schema)
+
+    with pytest.raises(jsonschema.exceptions.SchemaError, match="is not valid under any of the given schemas"):
+        validate_jsonschema(schema_path)
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].message.startswith("Error validating JSON Schema at ")
+
+
+"""generate_header"""
+
+
+def test_generate_header_pass_uses_defaults(tmp_path: Path, make_schema_file: Callable[..., Path]) -> None:
+    """With no overrides, the header is written to `header.txt` using a tab delimiter."""
+    schema_path = make_schema_file({"$schema": VALID_SCHEMA_URI, "required": COLUMNS})
+
+    result = generate_header(schema_path, tmp_path)
+
+    assert result == tmp_path / "header.txt"
+    assert result.read_text() == "\t".join(COLUMNS) + "\n"
+
+
+@pytest.mark.parametrize("delimiter", DELIMITERS)
+def test_generate_header_pass_with_various_delimiters(
+    tmp_path: Path, make_schema_file: Callable[..., Path], delimiter: str
+) -> None:
+    """Every delimiter supported by SEP_TO_EXT produces a correctly-joined header row."""
+    schema_path = make_schema_file({"$schema": VALID_SCHEMA_URI, "required": COLUMNS})
+
+    result = generate_header(schema_path, tmp_path, delimiter=delimiter)
+
+    assert result.read_text() == delimiter.join(COLUMNS) + "\n"
+
+
+def test_generate_header_pass_with_custom_file_name(tmp_path: Path, make_schema_file: Callable[..., Path]) -> None:
+    """A custom header_file_name is respected in both the returned path and the file written."""
+    schema_path = make_schema_file({"$schema": VALID_SCHEMA_URI, "required": COLUMNS})
+
+    result = generate_header(schema_path, tmp_path, header_file_name="custom-header.tsv")
+
+    assert result == tmp_path / "custom-header.tsv"
+    assert result.read_text() == "\t".join(COLUMNS) + "\n"
+
+
+def test_generate_header_pass_overwrites_existing_file(tmp_path: Path, make_schema_file: Callable[..., Path]) -> None:
+    """An existing header file at the target path is overwritten."""
+    schema_path = make_schema_file({"$schema": VALID_SCHEMA_URI, "required": COLUMNS})
+    (tmp_path / "header.txt").write_text("stale content\n")
+
+    result = generate_header(schema_path, tmp_path)
+
+    assert result.read_text() == "\t".join(COLUMNS) + "\n"
+
+
+@pytest.mark.parametrize("schema", INVALID_TOP_LEVEL_SCHEMA_LIST)
+def test_generate_header_fail_non_dict_schema_raises_type_error(
+    tmp_path: Path, make_schema_file: Callable[..., Path], schema: list | str | int | None
+) -> None:
+    """A schema whose top-level JSON value isn't a dict raises TypeError."""
+    schema_path = make_schema_file(schema)
+    with pytest.raises(TypeError, match="JSON Schema must be a dictionary"):
+        generate_header(schema_path, tmp_path)
+
+
+@pytest.mark.parametrize("schema", INVALID_REQUIRED_LIST + MISSING_EMPTY_REQUIRED_LIST)
+def test_generate_header_fail_no_schema_keyword_missing_or_empty_required_raises_value_error(
+    tmp_path: Path, make_schema_file: Callable[..., Path], schema: dict[str, Any]
+) -> None:
+    """A schema with no `$schema` keyword raises a ValueError."""
+    schema_path = make_schema_file(schema)
+
+    with pytest.raises(ValueError, match=r"JSON Schema is missing the \$schema keyword"):
+        generate_header(schema_path, tmp_path)
+
+
+@pytest.mark.parametrize("schema", INVALID_REQUIRED_LIST)
+def test_generate_header_fail_invalid_required_raises_schema_error(
+    tmp_path: Path, make_schema_file: Callable[..., Path], schema: dict[str, Any]
+) -> None:
+    """A schema whose required field isn't a list of strings raises SchemaError."""
+    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, **schema})
+
+    with pytest.raises(jsonschema.exceptions.SchemaError, match="is not of type 'array'"):
+        generate_header(schema_path, tmp_path)
+
+
+@pytest.mark.parametrize("schema", MISSING_EMPTY_REQUIRED_LIST)
+def test_generate_header_fail_missing_or_empty_required_raises_value_error(
+    tmp_path: Path, make_schema_file: Callable[..., Path], schema: dict[str, Any]
+) -> None:
+    """A schema whose required field isn't a list of strings raises SchemaError."""
+    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, **schema})
+
+    with pytest.raises(ValueError, match="Could not find any required cols in"):
+        generate_header(schema_path, tmp_path)
+
+
+def test_generate_header_fail_missing_schema_file(tmp_path: Path) -> None:
+    """A schema_path that doesn't point to an existing file fails FilePath validation."""
+    with pytest.raises(ValidationError, match="Path does not point to a file"):
+        generate_header(tmp_path / "does-not-exist.json", tmp_path)
+
+
+def test_generate_header_fail_missing_target_dir(tmp_path: Path, make_schema_file: Callable[..., Path]) -> None:
+    """A target_dir that doesn't exist fails DirectoryPath validation."""
+    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, "required": COLUMNS})
+    missing_dir = tmp_path / "no-such-dir"
+
+    with pytest.raises(ValidationError, match="Path does not point to a directory"):
+        generate_header(schema_path, missing_dir)
+
+
+def test_generate_header_fail_empty_header_file_name(tmp_path: Path, make_schema_file: Callable[..., Path]) -> None:
+    """An empty header_file_name fails the NonEmptyStr constraint."""
+    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, "required": COLUMNS})
+
+    with pytest.raises(ValidationError, match="String should have at least 1 character"):
+        generate_header(schema_path, tmp_path, header_file_name="")
+
+
+@pytest.mark.parametrize(
+    "delimiter",
+    [
+        pytest.param("", id="empty-delimiter"),
+        pytest.param(",;", id="multi-character-delimiter"),
+    ],
+)
+def test_generate_header_fail_invalid_delimiter_length(
+    tmp_path: Path, make_schema_file: Callable[..., Path], delimiter: str
+) -> None:
+    """A delimiter that isn't exactly one character fails the CharStr constraint."""
+    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, "required": COLUMNS})
+    err_msg = re.compile("String should have at (mo|lea)st 1 character")
+    with pytest.raises(ValidationError, match=err_msg):
+        generate_header(schema_path, tmp_path, delimiter=delimiter)
+
+
+"""generate_first_pass_schema"""
+
+
+def test_generate_first_pass_schema_pass_happy_path(
+    output_dir_path: Path, post_norm_schema: Path, derived_first_pass_schema: dict[str, Any]
+) -> None:
+    """A first pass schema can be generated from an existing schema file."""
+    output = generate_first_pass_schema(post_norm_schema, output_dir_path)
+    assert json.loads(output.read_bytes()) == derived_first_pass_schema
+
+
+def test_generate_first_pass_schema_pass_overwrites_existing_file(
+    output_dir_path: Path, post_norm_schema: Path, derived_first_pass_schema: dict[str, Any]
+) -> None:
+    """An existing schema file at the target path is overwritten."""
+    file_contents = b"some content"
+    existing_file = output_dir_path / f"{post_norm_schema.stem}.first-pass.json"
+    existing_file.write_bytes(file_contents)
+    assert existing_file.exists()
+    assert existing_file.read_bytes() == file_contents
+
+    output = generate_first_pass_schema(post_norm_schema, output_dir_path)
+    assert json.loads(output.read_bytes()) == derived_first_pass_schema
+
+
+@pytest.mark.parametrize("schema", INVALID_TOP_LEVEL_SCHEMA_LIST)
+def test_generate_first_pass_schema_fail_non_dict_schema_raises_type_error(
+    tmp_path: Path, make_schema_file: Callable[..., Path], schema: list | str | int | None
+) -> None:
+    """A schema whose top-level JSON value isn't a dict raises TypeError."""
+    schema_path = make_schema_file(schema)
+    with pytest.raises(TypeError, match="JSON Schema must be a dictionary"):
+        generate_first_pass_schema(schema_path, tmp_path)
+
+
+@pytest.mark.parametrize("schema", INVALID_REQUIRED_LIST + MISSING_EMPTY_REQUIRED_LIST)
+def test_generate_first_pass_schema_fail_no_schema_keyword_missing_or_empty_required_raises_value_error(
+    tmp_path: Path, make_schema_file: Callable[..., Path], schema: dict[str, Any]
+) -> None:
+    """A schema with no `$schema` keyword raises a ValueError."""
+    schema_path = make_schema_file(schema)
+
+    with pytest.raises(ValueError, match=r"JSON Schema is missing the \$schema keyword"):
+        generate_first_pass_schema(schema_path, tmp_path)
+
+
+@pytest.mark.parametrize("schema", INVALID_REQUIRED_LIST)
+def test_generate_first_pass_schema_fail_invalid_required_raises_schema_error(
+    tmp_path: Path, make_schema_file: Callable[..., Path], schema: dict[str, Any]
+) -> None:
+    """A schema whose required field isn't a list of strings raises SchemaError."""
+    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, **schema})
+
+    with pytest.raises(jsonschema.exceptions.SchemaError, match="is not of type 'array'"):
+        generate_first_pass_schema(schema_path, tmp_path)
+
+
+@pytest.mark.parametrize("schema", MISSING_EMPTY_REQUIRED_LIST)
+def test_generate_first_pass_schema_fail_missing_or_empty_required_raises_value_error(
+    tmp_path: Path, make_schema_file: Callable[..., Path], schema: dict[str, Any]
+) -> None:
+    """A schema whose required field isn't a list of strings raises SchemaError."""
+    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, **schema})
+
+    with pytest.raises(ValueError, match="Could not find any required cols in"):
+        generate_first_pass_schema(schema_path, tmp_path)
+
+
+def test_generate_first_pass_schema_fail_missing_schema_file(tmp_path: Path) -> None:
+    """A schema_path that doesn't point to an existing file fails FilePath validation."""
+    with pytest.raises(ValidationError, match="Path does not point to a file"):
+        generate_first_pass_schema(tmp_path / "does-not-exist.json", tmp_path)
+
+
+def test_generate_first_pass_schema_fail_missing_target_dir(tmp_path: Path, post_norm_schema: Path) -> None:
+    """A target_dir that doesn't exist fails DirectoryPath validation."""
+    with pytest.raises(ValidationError, match="Path does not point to a directory"):
+        generate_first_pass_schema(post_norm_schema, tmp_path / "no-such-dir")
+
+
+def test_generate_first_pass_schema_pass_bare_minimum(
+    tmp_path: Path, make_schema_file: Callable[[Any, str], Path]
+) -> None:
+    """Test that a schema can be generated from the very barest of bare minimum JSON schema."""
+    bare_minimum = {"required": ["this", "that"], **SCHEMA_KEY_VALUE}
+    type_dict = {"type": ["string", "null"]}
+    schema_path = make_schema_file(bare_minimum)
+    output = generate_first_pass_schema(schema_path, tmp_path)
+    assert json.loads(output.read_bytes()) == {
+        **bare_minimum,
+        "type": "object",
+        "properties": {"this": type_dict, "that": type_dict},
+    }
+
+
+def test_generate_first_pass_schema_pass_validator_dgaf_about_unresolvable_schema_uri(
+    output_dir_path: Path, make_schema_file: Callable[[Any, str], Path]
+) -> None:
+    """An unrecognised `$schema` draft URI is ignored by the validator."""
+    schema = {"$schema": "https://not-a-real.schema-uri", "required": ["a"]}
+    schema_path = make_schema_file(schema)
+    output = generate_first_pass_schema(schema_path, output_dir_path)
+    assert json.loads(output.read_bytes()) == {
+        "$schema": "https://not-a-real.schema-uri",
+        "required": ["a"],
+        "type": "object",
+        "properties": {
+            "a": {"type": ["string", "null"]},
+        },
+    }
+
+
+def test_generate_first_pass_schema_pass_validator_does_gaf_about_non_uris(
+    output_dir_path: Path, make_schema_file: Callable[[Any, str], Path]
+) -> None:
+    """An unrecognised `$schema` draft URI is ignored by the validator."""
+    schema = {"$schema": "not-a-real-schema-uri", "required": ["a"]}
+    schema_path = make_schema_file(schema)
+    with pytest.raises(jsonschema.exceptions.SchemaError, match="'not-a-real-schema-uri' is not a 'uri'"):
+        generate_first_pass_schema(schema_path, output_dir_path)
+
+
+def test_generate_first_pass_schema_fail_invalid_schema_content_raises_schema_error(
+    output_dir_path: Path, make_schema_file: Callable[[Any, str], Path]
+) -> None:
+    """A structurally invalid schema fails with a SchemaError."""
+    schema = {"$schema": VALID_SCHEMA_URI, "type": "not-a-real-type", "required": ["a"]}
+    schema_path = make_schema_file(schema)
+
+    with pytest.raises(
+        jsonschema.exceptions.SchemaError, match="'not-a-real-type' is not valid under any of the given schemas"
+    ):
+        generate_first_pass_schema(schema_path, output_dir_path)
+
+
+def test_generate_first_pass_schema_pass_retains_only_allowed_top_level_keys(
+    output_dir_path: Path, make_schema_file: Callable[[Any, str], Path]
+) -> None:
+    """Only $schema, $id, title, and required are copied from the original schema."""
+    schema = {
+        "$schema": VALID_SCHEMA_URI,
+        "$id": "https://example.com/schemas/my-schema.json",
+        "title": "My Schema",
+        "description": "This should not appear in the first-pass schema",
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["a", "b"],
+        "properties": {
+            "a": {"type": "string"},
+            "b": {"type": "integer"},
+        },
+    }
+    schema_path = make_schema_file(schema)
+
+    output = generate_first_pass_schema(schema_path, output_dir_path)
+    result = json.loads(output.read_bytes())
+
+    assert result == {
+        "$schema": VALID_SCHEMA_URI,
+        "$id": "https://example.com/schemas/my-schema.json",
+        "title": "My Schema",
+        "type": "object",
+        "required": ["a", "b"],
+        "properties": {
+            "a": {"type": ["string", "null"]},
+            "b": {"type": ["string", "null"]},
+        },
+    }
