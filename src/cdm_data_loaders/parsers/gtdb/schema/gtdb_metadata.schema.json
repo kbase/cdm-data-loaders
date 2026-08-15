@@ -11,7 +11,7 @@
       "type": [
         "string"
       ],
-      "pattern": "^(RS_GCF|GB_GCA)_[0-9]{9,}\\.[0-9]+$$"
+      "pattern": "^(RS_GCF|GB_GCA)_[0-9]{9}\\.[0-9]+$$"
     },
     "ambiguous_bases": {
       "description": "Number of ambiguous bases. Data from CheckM.",
@@ -1032,5 +1032,9 @@
     "trna_aa_count",
     "trna_count",
     "trna_selenocysteine_count"
-  ]
+  ],
+  "x-xsv-config": {
+    "x-has-header": true,
+    "x-delimiter": "\t"
+  }
 }

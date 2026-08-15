@@ -11,7 +11,7 @@
       "type": [
         "string"
       ],
-      "pattern": "^(GB_GCA|RS_GCF)_[0-9]+\\.[0-9]+$"
+      "pattern": "^(GB_GCA|RS_GCF)_[0-9]{9}\\.[0-9]+$"
     },
     "gtdb_id": {
       "description": "gtdb_id column from ar53_taxonomy.tsv",
@@ -25,5 +25,9 @@
   "required": [
     "ncbi_id",
     "gtdb_id"
-  ]
+  ],
+  "x-xsv-config": {
+    "x-has-header": true,
+    "x-delimiter": "\t"
+  }
 }

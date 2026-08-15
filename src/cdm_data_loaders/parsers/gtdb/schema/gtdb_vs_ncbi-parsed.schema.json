@@ -1,0 +1,67 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "JSON Schema for gtdb_vs_ncbi files",
+    "description": "Schema for sheets derived from the gtdb_vs_ncbi_*.xlsx files provided by GTDB. These files represent the correspondence between GTDB and NCBI taxa, ordered by degree of polyphyly.",
+    "type": "object",
+    "properties": {
+        "gtdb_taxon": {
+            "description": "Name of the GTDB taxonomic group",
+            "type": "string",
+            "pattern": "^[a-z]__.+"
+        },
+        "n_genomes": {
+            "description": "number of genomes associated with the named taxonomic group",
+            "type": "integer"
+        },
+        "n_ncbi_taxa": {
+            "description": "number of genomes associated with the named taxonomic group",
+            "type": "integer"
+        },
+        "ncbi_taxon_list": {
+            "properties": {
+                "gtdb_taxon": {
+                    "description": "Name of the NCBI taxonomic group",
+                    "type": "string",
+                    "pattern": "^[a-z]_.+"
+                },
+                "score": {
+                    "description": "Score in percent to two dp.",
+                    "type": "number"
+                }
+            },
+            "required": [
+                "ncbi_taxon",
+                "score"
+            ]
+        },
+        "rank": {
+            "description": "Taxonomic rank of the named group",
+            "type": "string",
+            "enum": [
+                "class",
+                "family",
+                "genus",
+                "order",
+                "phylum",
+                "species"
+            ]
+        },
+        "release": {
+            "description": "GTDB release ID",
+            "type": "string",
+            "pattern": "[0-9]{3}\\.[0-9]"
+        }
+    },
+    "required": [
+        "gtdb_taxon",
+        "n_genomes",
+        "n_ncbi_taxa",
+        "ncbi_taxon_list",
+        "rank",
+        "release"
+    ],
+    "x-xsv-config": {
+        "x-has-header": true,
+        "x-delimiter": "\t"
+    }
+}
