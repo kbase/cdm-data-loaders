@@ -13,7 +13,6 @@ from pydantic_settings import CliApp
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import ENTRY_XML_TAG
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines import uniprot_kb as uniprot_module
-from cdm_data_loaders.pipelines.cts_defaults import ARG_ALIASES
 from cdm_data_loaders.pipelines.uniprot_kb import (
     UNIPROT_LOG_INTERVAL,
     UniProtSettings,
@@ -21,12 +20,15 @@ from cdm_data_loaders.pipelines.uniprot_kb import (
     parse_uniprot,
     run_uniprot_pipeline,
 )
-from tests.pipelines.conftest import (
+from tests.core.conftest import (
     TEST_BATCH_FILE_SETTINGS,
     TEST_BATCH_FILE_SETTINGS_RECONCILED,
     check_settings,
-    make_batcher,
     make_settings_autofill_config,
+)
+from tests.pipelines.conftest import (
+    ARG_ALIASES,
+    make_batcher,
 )
 
 # TODO: add a test to ensure that parse_uniprot_entry is called with the appropriate args. Requires mocking the file batcher and stream_xml_file_resource functions.

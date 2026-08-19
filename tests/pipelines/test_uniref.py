@@ -14,21 +14,22 @@ from pydantic_settings import CliApp
 from cdm_data_loaders.parsers.uniprot.uniref import ENTRY_XML_TAG, UNIREF_VARIANTS
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines import uniref as uniref_module
-from cdm_data_loaders.pipelines.cts_defaults import ARG_ALIASES
 from cdm_data_loaders.pipelines.uniref import (
     UNIREF_LOG_INTERVAL,
-    UNIREF_VARIANT_ALIASES,
     UnirefSettings,
     cli,
     parse_uniref,
     run_uniref_pipeline,
 )
-from tests.pipelines.conftest import (
+from tests.core.conftest import (
     TEST_BATCH_FILE_SETTINGS,
     TEST_BATCH_FILE_SETTINGS_RECONCILED,
     check_settings,
-    make_batcher,
     make_settings_autofill_config,
+)
+from tests.pipelines.conftest import (
+    ARG_ALIASES,
+    make_batcher,
 )
 
 # TODO: add a test to ensure that parse_uniref_entry is called with the appropriate args. Requires mocking the file batcher and stream_xml_file_resource functions.
@@ -78,7 +79,7 @@ def test_settings_valid_variants_accepted(variant: str) -> None:
 
 
 @pytest.mark.parametrize("value", UNIREF_VARIANTS)
-@pytest.mark.parametrize("uniref_variant", UNIREF_VARIANT_ALIASES)
+@pytest.mark.parametrize("uniref_variant", ARG_ALIASES["uniref_variant"])
 def test_cli_valid_variants_accepted(uniref_variant: str, dlt_config: dict[str, Any], value: str) -> None:
     """Ensure that each valid uniref_variant value is accepted without error when passed via CLI."""
     s = CliApp.run(UnirefSettings, dlt_config=dlt_config, cli_args=[uniref_variant, value])
@@ -97,7 +98,7 @@ def test_invalid_variant_raises(value: str) -> None:
 
 
 @pytest.mark.parametrize("value", ["25", "75", "uniref50", "", "ALL"])
-@pytest.mark.parametrize("uniref_variant", UNIREF_VARIANT_ALIASES)
+@pytest.mark.parametrize("uniref_variant", ARG_ALIASES["uniref_variant"])
 def test_cli_invalid_variant_via_cli_raises(value: str, uniref_variant: str, dlt_config: dict[str, Any]) -> None:
     """Ensure that an invalid uniref_variant passed via CLI raises an error."""
     # with pytest.raises(ValidationError, match="Value error, uniref_variant must be one of"):
@@ -127,7 +128,7 @@ def test_cli_missing_required_uniref_variant_raises(dlt_config: dict[str, Any]) 
 
 
 @pytest.mark.parametrize("value", ["25", "75", "uniref50", "", "ALL"])
-@pytest.mark.parametrize("uniref_variant", UNIREF_VARIANT_ALIASES)
+@pytest.mark.parametrize("uniref_variant", ARG_ALIASES["uniref_variant"])
 def test_cli_invalid_variant_and_destination_via_cli_raises(
     value: str, uniref_variant: str, dlt_config: dict[str, Any]
 ) -> None:
@@ -161,7 +162,7 @@ def test_make_settings_all_params_set() -> None:
 @pytest.mark.parametrize("log_config_file", ARG_ALIASES["log_config_file"])
 @pytest.mark.parametrize("output", ARG_ALIASES["output"])
 @pytest.mark.parametrize("start_at", ARG_ALIASES["start_at"])
-@pytest.mark.parametrize("uniref_variant", UNIREF_VARIANT_ALIASES)
+@pytest.mark.parametrize("uniref_variant", ARG_ALIASES["uniref_variant"])
 @pytest.mark.parametrize("use_destination", ARG_ALIASES["use_destination"])
 @pytest.mark.parametrize(
     "use_output_dir_for_pipeline_metadata",

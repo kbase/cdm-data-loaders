@@ -19,9 +19,10 @@ from typing import Any
 
 import tqdm
 from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from cdm_data_loaders.core.fields import INPUT_MOUNT, OUTPUT_MOUNT
+from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.ncbi_ftp.assembly import (
     FTP_HOST,
     build_accession_path,
@@ -29,9 +30,9 @@ from cdm_data_loaders.ncbi_ftp.assembly import (
     parse_assembly_path,
 )
 from cdm_data_loaders.pipelines.core import run_cli
-from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_SETTINGS_CONFIG_DICT, INPUT_MOUNT, OUTPUT_MOUNT
+from cdm_data_loaders.utils.file_transfer.s3.client import get_s3_client
+from cdm_data_loaders.utils.file_transfer.s3.object_utils import upload_file
 from cdm_data_loaders.utils.ftp_client import ThreadLocalFTP
-from cdm_data_loaders.utils.s3 import get_s3_client, upload_file
 
 logger: Logger = getLogger(__name__)
 
@@ -39,10 +40,8 @@ logger: Logger = getLogger(__name__)
 DEFAULT_STAGING_KEY_PREFIX: PurePosixPath = PurePosixPath("staging")
 
 
-class DownloadSettings(BaseSettings):
+class DownloadSettings(CtsSettings):
     """Configuration for the NCBI FTP assembly download pipeline."""
-
-    model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT)
 
     manifest: Path = Field(
         default=Path(INPUT_MOUNT) / "transfer_manifest.txt",

@@ -5,12 +5,15 @@ import logging
 import shutil
 from collections.abc import Generator
 from copy import deepcopy
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, Final
+from unittest.mock import patch
 
+import boto3
 import pytest
-from berdl_notebook_utils.setup_spark_session import generate_spark_conf
 from frozendict import frozendict
+from moto import mock_aws
 from pyspark.conf import SparkConf
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import (
@@ -23,7 +26,9 @@ from pyspark.sql.types import (
     StructField,
     StructType,
 )
+from types_boto3_s3.client import S3Client
 
+import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
 from cdm_data_loaders.audit.schema import (
     NAMESPACE,
     PIPELINE,
@@ -33,14 +38,82 @@ from cdm_data_loaders.audit.schema import (
 )
 from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.readers.dsv import INVALID_DATA_FIELD
-from cdm_data_loaders.utils.cdm_logger import get_cdm_logger
+from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 
 SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
-
 
 TEST_NS: Final[str] = "test_ns"
 PIPELINE_RUN = frozendict({RUN_ID: "1234-5678-90", PIPELINE: "KeystoneXL", SOURCE: "/path/to/file"})
 ALT_PIPELINE_RUN = frozendict({RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL", SOURCE: "/path/to/dir"})
+
+CASSETTES_DIR: Final[str] = "tests/cassettes"
+
+DEFAULT_VCR_CONFIG = frozendict(
+    {
+        "cassette_library_dir": CASSETTES_DIR,
+        "record_mode": "once",  # record on first run, replay thereafter
+        "serializer": "yaml",
+        "match_on": ["method", "scheme", "host", "path", "query"],
+        # strip the NCBI API key from cassettes
+        "filter_query_parameters": ["api_key"],
+        "filter_headers": ["api_key"],
+        "decode_compressed_response": True,
+        "allow_playback_repeats": True,
+    }
+)
+
+_notebook_utils_available: bool | None = None
+
+
+def _find_notebook_utils() -> bool:
+    """Check whether the current environment has the KBase Lakehouse notebook_utils lib available.
+
+    :return: True if they are available
+    :rtype: bool
+    """
+    global _notebook_utils_available  # noqa: PLW0603
+    if _notebook_utils_available is not None:
+        return _notebook_utils_available
+
+    # set to false by default
+    _notebook_utils_available = False
+    try:
+        sss = find_spec("berdl_notebook_utils.setup_spark_session")
+        db = find_spec("berdl_notebook_utils.spark.database")
+        if sss is not None and db is not None:
+            _notebook_utils_available = True
+    except Exception:
+        logging.getLogger(__name__).exception("Notebook utils not available: requires_notebook_utils tests will fail")
+
+    return _notebook_utils_available
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Set up tests to skip anything where dependencies are missing.
+
+    :param item: test item
+    :type item: pytest.Item
+    """
+    if "requires_spark" not in item.keywords:
+        return
+
+    # notebook utils are available: we're fine
+    if _find_notebook_utils():
+        return
+
+    # the raw string passed to -m
+    markexpr = item.config.option.markexpr
+    # tests matching any "not" markers will already have been filtered out
+    # markexpr will contain "requires_spark" when -m requires_spark is used
+    # N.b. this blatantly ignores more complex situations, like "not(marker or marker)"
+    if markexpr and "requires_spark" in markexpr and "not requires_spark" not in markexpr:
+        pytest.fail(
+            "Test is marked requires_spark, but Spark is not available in this environment.",
+            pytrace=False,
+        )
+    else:
+        # no markexpr or unrelated -m expression: skip silently
+        pytest.skip("Test is marked requires_spark, but Spark is not available in this environment.")
 
 
 @pytest.fixture(autouse=True)
@@ -58,7 +131,14 @@ def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
 @pytest.fixture
 def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
     """Generate a spark session with spark.sql.warehouse.dir set to the pytest temporary directory."""
-    config = generate_spark_conf("test_delta_app", local=True, use_delta_lake=True)
+    logger = logging.getLogger(__name__)
+    try:
+        from berdl_notebook_utils.setup_spark_session import generate_spark_conf  # pyright: ignore[reportMissingImports]  # noqa: I001, PLC0415
+    except ModuleNotFoundError:
+        logger.exception("berdl_notebook_utils not available: cannot create a spark session")
+        raise
+
+    config = generate_spark_conf("test_delta_app", local=True)
     test_config = {
         "spark.sql.shuffle.partitions": 5,
         "spark.default.parallelism": 9,
@@ -75,13 +155,15 @@ def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
     config.update(test_config)
     config[SAVE_DIR] = str(tmp_path)
     spark_conf = SparkConf().setAll(list(config.items()))
+    logger.info("starting spark session...")
     spark = SparkSession.builder.config(conf=spark_conf).getOrCreate()
     save_dir = spark.conf.get(SAVE_DIR).removeprefix("file:")  # pyright: ignore[reportOptionalMemberAccess]
     if save_dir != str(tmp_path):
-        logging.getLogger(__name__).error("spark dir: %s; save dir: %s", tmp_path, save_dir)
+        logger.error("spark dir: %s; save dir: %s", tmp_path, save_dir)
     yield spark
     spark.catalog.clearCache()
     spark.stop()
+    logger.info("stopping spark session...")
     shutil.rmtree(save_dir)
 
 
@@ -114,6 +196,38 @@ def json_test_strings() -> dict[str, Any]:
         "array_of_objects": '[{"key": "value"}]',
         "object": '{"key": "value"}',
     }
+
+
+CONFIG_BUCKET = frozendict({"local_fs": "/output_dir", "s3": "s3://some/s3/bucket"})
+
+TEST_DLT_CONFIG = frozendict(
+    {
+        "destination.local_fs.bucket_url": CONFIG_BUCKET["local_fs"],
+        "destination.local_fs.destination_type": "filesystem",
+        "destination.s3.bucket_url": CONFIG_BUCKET["s3"],
+        "destination.s3.destination_type": "filesystem",
+        "normalize.data_writer.disable_compression": False,
+    }
+)
+
+
+def _generate_dlt_config() -> dict[str, Any]:
+    """Return a fresh DLT config dict (same shape as the conftest fixture)."""
+    return {
+        "destination": {
+            "local_fs": {"bucket_url": CONFIG_BUCKET["local_fs"]},
+            "s3": {"bucket_url": CONFIG_BUCKET["s3"]},
+        },
+        "destination.local_fs.bucket_url": CONFIG_BUCKET["local_fs"],
+        "destination.s3.bucket_url": CONFIG_BUCKET["s3"],
+        "normalize.data_writer.disable_compression": False,
+    }
+
+
+@pytest.fixture
+def dlt_config() -> dict[str, Any]:
+    """DLT config for testing purposes."""
+    return _generate_dlt_config()
 
 
 @pytest.fixture
@@ -476,3 +590,46 @@ def pipeline_run() -> PipelineRun:
 def alt_pipeline_run() -> PipelineRun:
     """Generate a different pipeline run."""
     return PipelineRun(**{**ALT_PIPELINE_RUN, NAMESPACE: TEST_NS})
+
+
+"""S3 Client mocks"""
+
+
+TEST_BUCKET: Final[str] = "test_bucket"
+ALT_BUCKET: Final[str] = "alt_bucket"
+BUCKETS = [TEST_BUCKET, ALT_BUCKET]
+
+
+@pytest.fixture
+def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[S3Client, Any]:
+    """Yield a mocked S3 client with both valid buckets created.
+
+    The function get_s3_client() is patched to ensure that all module functions use this client.
+
+    Resets the cached client before and after to prevent state leaking between tests.
+    """
+    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    boto3.DEFAULT_SESSION = None
+
+    with mock_aws():
+        reset_s3_client()
+        client: S3Client = boto3.client("s3", config=_client_config())
+
+        for bucket in BUCKETS:
+            client.create_bucket(Bucket=bucket)
+
+        # delete any existing client
+        reset_s3_client()
+        assert s3_client._s3_client is None  # noqa: SLF001
+
+        # patch in the client that we have just created
+        with patch.object(s3_client, "get_s3_client", return_value=client):
+            yield client
+
+        reset_s3_client()
+        assert s3_client._s3_client is None  # noqa: SLF001

@@ -7,7 +7,9 @@ SCRIPT_DIR="$(dirname "$(dirname "$(readlink -f "$0")")")"
 cd "$SCRIPT_DIR"
 
 # use the system packages in this virtual environment
-uv venv --system-site-packages
+uv venv --system-site-packages docker_env
+
+source docker_env/bin/activate
 
 # run the tests using the active venv and with the dev dependencies installed.
-uv run --active --frozen --group dev pytest -m "not requires_ceph" --cov=src --cov-report=xml
+uv run --active --frozen --group dev pytest -m "not requires_ceph and not requires_xsv" --cov=src --cov-report=xml

@@ -25,8 +25,9 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     write_transfer_manifest,
     write_updated_manifest,
 )
-from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX
 from cdm_data_loaders.utils.ftp_client import connect_ftp, ftp_retrieve_text
+
+DEFAULT_LAKEHOUSE_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
 
 # Use a high-numbered prefix range that typically has only a handful of
 # assemblies, keeping FTP traffic minimal.

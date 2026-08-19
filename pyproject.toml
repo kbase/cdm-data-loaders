@@ -9,8 +9,9 @@ authors = [
 ]
 
 dependencies = [
+    "beautifulsoup4>=4.15.0",
     "bioregistry>=0.13.58",
-    "boto3[crt]>=1.42.55",
+    "boto3[crt]>=1.43.0",
     "click>=8.4.1",
     "defusedxml>=0.7.1",
     "delta-spark>=4.2.0",
@@ -18,7 +19,9 @@ dependencies = [
     "frictionless[aws]>=5.19.0",
     "frozendict>=2.4.7",
     "ipykernel>=7.2.0",
+    "jsonschema[format]>=4.26.0",
     "lxml>=6.1.0",
+    "pandas>=3.0.3",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
     "tqdm>=4.67.3",
@@ -26,15 +29,15 @@ dependencies = [
 
 [project.scripts]
 all_the_bacteria = "cdm_data_loaders.pipelines.all_the_bacteria:cli"
+ncbi_ftp_promote = "cdm_data_loaders.pipelines.ncbi_ftp_promote:cli"
 ncbi_ftp_sync = "cdm_data_loaders.pipelines.ncbi_ftp_download:cli"
 ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"
+pdb_manifest = "cdm_data_loaders.pipelines.pdb_manifest:cli"
 uniprot = "cdm_data_loaders.pipelines.uniprot_kb:cli"
 uniref = "cdm_data_loaders.pipelines.uniref:cli"
 
 [dependency-groups]
 dev = [
-    "berdl-notebook-utils>=0.0.1",
-    "cdm-task-service-client>=0.2.1",
     "moto[s3]>=5.2.1",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
@@ -42,6 +45,11 @@ dev = [
     "pytest-env>=1.6.0",
     "pytest-recording>=0.13.4",
     "ruff>=0.15.14",
+    "types-boto3[s3]>=1.43.62",
+]
+lakehouse = [
+    "berdl-notebook-utils",
+    "cdm-task-service-client>=0.2.1",
 ]
 models = [
     "genson>=1.3.0",
@@ -190,7 +198,7 @@ max-complexity = 15
 convention = "google"
 
 [build-system]
-requires = ["uv_build>=0.11.18,<0.20.0"]
+requires = ["uv_build>=0.12.0,<0.20.0"]
 build-backend = "uv_build"
 
 [tool.pytest]
@@ -199,7 +207,7 @@ log_cli = true
 log_cli_level = "INFO"
 log_level = "INFO"
 addopts = ["-v"]
-markers = ["requires_spark: must be run in an environment where spark is available", "s3: tests that mock s3 interactions", "slow_test: does what it says on the tin", "requires_ceph: end-to-end tests requiring a running CEPH instance and network access", "external_request: tests that make real network requests to external services (e.g. NCBI FTP)"]
+markers = ["requires_spark: must be run in an environment where spark is available", "s3: tests that mock s3 interactions", "slow_test: does what it says on the tin", "requires_ceph: end-to-end tests requiring a running CEPH instance and network access", "external_request: tests that make real network requests to external services (e.g. NCBI FTP)", "requires_xsv: tests that use the xsv-validate.sh tool"]
 
 # environment settings for running tests
 [tool.pytest_env]

@@ -12,7 +12,8 @@ from dlt.extract.items import DataItemWithMeta
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
-from cdm_data_loaders.pipelines.cts_defaults import DEFAULT_PIPELINE_BATCH_SIZE, BatchedFileInputSettings, CtsSettings
+from cdm_data_loaders.core.fields import DEFAULT_PIPELINE_BATCH_SIZE
+from cdm_data_loaders.core.settings import BatchedFileInputSettings, CtsSettings
 from cdm_data_loaders.utils.batcher import NumericFileSequenceBatcher
 from cdm_data_loaders.utils.cdm_logger import init_logger
 from cdm_data_loaders.utils.xml_utils import stream_xml_file

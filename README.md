@@ -149,10 +149,10 @@ To run all tests (requires a running Spark instance and a running CEPH test cont
 > uv run pytest
 ```
 
-To run only tests that do not require Spark or CEPH, run
+To run only tests that do not require Spark, CEPH, or xsv-validate.sh, run
 
 ```sh
-> uv run pytest -m "not requires_spark and not requires_ceph"
+> uv run pytest -m "not requires_spark and not requires_ceph and not requires_xsv"
 ```
 
 To generate coverage for the tests, run

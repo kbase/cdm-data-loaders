@@ -22,9 +22,11 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
     build_descriptor_key,
     create_descriptor,
 )
-from cdm_data_loaders.ncbi_ftp.promote import DEFAULT_LAKEHOUSE_KEY_PREFIX, _archive_assemblies, promote_from_s3
+from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies, promote_from_s3
 
 from .conftest import get_object_metadata, list_all_keys, seed_lakehouse
+
+DEFAULT_LAKEHOUSE_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
 
 # Fake assembly details used across tests
 ACCESSION_A = "GCF_900000001.1"
