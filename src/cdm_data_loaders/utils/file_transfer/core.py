@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from frozendict import frozendict
+
+from cdm_data_loaders.utils.checksums import validate_checksum_fn
 
 logger: Logger = getLogger(__name__)
 
@@ -21,6 +24,27 @@ class NonRetryableDownloadError(Exception):
 
 class ChecksumMismatchError(NonRetryableDownloadError):
     """Checksum validation failed."""
+
+
+HTTP_CLIENT_DEFAULTS = frozendict(
+    {
+        "timeout": httpx.Timeout(30.0),
+        "limits": httpx.Limits(
+            max_connections=20,
+            max_keepalive_connections=10,
+        ),
+        "follow_redirects": True,
+    }
+)
+
+
+RETRY_DEFAULTS = frozendict(
+    {
+        "max_attempts": 5,
+        "min_backoff": 1,
+        "max_backoff": 30,
+    }
+)
 
 
 class DownloadCore:
@@ -56,25 +80,21 @@ class DownloadCore:
         if not checksum_fn:
             checksum_fn = "sha256"
 
-        # shake hashing algorithms require a length for the hexdigest => too much faff, error out
-        if checksum_fn not in hashlib.algorithms_available or checksum_fn.startswith("shake"):
-            err_msg = f"Hashing algorithm {checksum_fn} not supported."
-            logger.error(err_msg)
-            raise ValueError(err_msg)
-
+        validated_checksum_fn = validate_checksum_fn(checksum_fn, include_extras=False)
         destination = Path(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
 
         if not extra_headers:
             extra_headers = {}
 
-        return (destination, checksum_fn, extra_headers)
+        return (destination, validated_checksum_fn, extra_headers)
 
     @staticmethod
     def validate_response(response: httpx.Response) -> bool:
         """Check the response from the server and act accordingly."""
         status = response.status_code
 
+        # not modified since last accessed
         if status == 304:  # noqa: PLR2004
             return False
 

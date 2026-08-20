@@ -5,7 +5,9 @@ Provides structured logging with contextual metadata for CDM data import pipelin
 import json
 import logging
 import logging.config
+import sys
 from pathlib import Path
+from types import TracebackType
 from typing import Any
 
 import yaml
@@ -104,3 +106,16 @@ def configure_root_logger_from_dlt() -> None:
         # clear the dlt logger handlers and let everything be handled by the root logger instead.
         dlt_logger.handlers.clear()
         ROOT_LOGGER_CONFIGURED = True
+
+
+def log_exception(exc_type: type[BaseException], exc_value: BaseException, exc_traceback: TracebackType | None) -> None:
+    """Log uncaught exceptions using the exception handler."""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+
+    logger = logging.getLogger()
+    logger.exception("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+
+
+sys.excepthook = log_exception

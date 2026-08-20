@@ -7,12 +7,10 @@ Marked ``requires_ceph`` (if a running CEPH test store is required) and
 
 import json
 from pathlib import Path, PurePosixPath
-from unittest.mock import patch
 
 import pytest
 from botocore.client import BaseClient
 
-import cdm_data_loaders.utils.s3 as s3_utils
 from cdm_data_loaders.ncbi_ftp.manifest import (
     compute_diff,
     download_assembly_summary,
@@ -148,15 +146,14 @@ def test_download_and_stage_e2e(
         Body=manifest_path.read_bytes(),
     )
 
-    with patch.object(s3_utils, "get_s3_client", return_value=ceph_s3_client):
-        report = download_and_stage(
-            bucket=test_bucket,
-            staging_key_prefix=staging_prefix,
-            manifest_s3_key=manifest_s3_key,
-            threads=1,
-            limit=1,
-            dry_run=False,
-        )
+    report = download_and_stage(
+        bucket=test_bucket,
+        staging_key_prefix=staging_prefix,
+        manifest_s3_key=manifest_s3_key,
+        threads=1,
+        limit=1,
+        dry_run=False,
+    )
 
     assert report["succeeded"] >= 1
     assert report["failed"] == 0

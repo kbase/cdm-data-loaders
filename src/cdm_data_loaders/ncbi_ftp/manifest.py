@@ -29,8 +29,11 @@ from cdm_data_loaders.ncbi_ftp.assembly import (
     parse_md5_checksums_file,
 )
 from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX
+from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
+    head_object,
+    list_objects,
+)
 from cdm_data_loaders.utils.ftp_client import FTP, connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
-from cdm_data_loaders.utils.s3 import head_object, list_matching_objects
 
 logger: Logger = getLogger(__name__)
 
@@ -351,7 +354,7 @@ def scan_store_to_synthetic_summary(
     processed_count = 0
 
     try:
-        objs = list_matching_objects(str(bucket / key_prefix))
+        objs = list_objects(str(bucket / key_prefix))
 
         for obj in objs:
             try:
@@ -510,7 +513,7 @@ def verify_transfer_candidates(  # noqa: PLR0913
             s3_prefix = key_prefix / s3_rel
 
             # Quick check: does *anything* exist under this prefix?
-            resp = list_matching_objects(str(bucket / s3_prefix), max_keys=1)
+            resp = list_objects(str(bucket / s3_prefix), max_keys=1)
             if not resp:
                 # Nothing in the store — definitely needs downloading
                 confirmed.append(acc)

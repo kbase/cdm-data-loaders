@@ -25,11 +25,11 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
     create_descriptor,
     upload_descriptor,
 )
-from cdm_data_loaders.utils.s3 import (
+from cdm_data_loaders.utils.file_transfer.s3 import client
+from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
     copy_object,
     delete_objects,
-    get_s3_client,
-    list_matching_objects,
+    list_objects,
     object_exists,
     upload_file,
 )
@@ -71,7 +71,7 @@ def promote_from_s3(  # noqa: PLR0913
     :return: report dict with counts
     """
     # Get list of objects under the staging prefix
-    staged_objects: list[dict[str, Any]] = list_matching_objects(f"{staging_bucket / staging_key_prefix}/")
+    staged_objects: list[dict[str, Any]] = list_objects(f"{staging_bucket / staging_key_prefix}/")
 
     # Separate data files from sidecars
     sidecars = {PurePosixPath(k["Key"]) for k in staged_objects if k["Key"].endswith((".crc64nvme", ".md5"))}
@@ -174,7 +174,7 @@ def _promote_file(  # noqa: PLR0913
     :param sidecars: set of S3 keys for sidecar files (to check for MD5 metadata)
     :return: ``(resource_dict, staged_key)`` on success; raises on failure.
     """
-    s3 = get_s3_client()
+    s3 = client.get_s3_client()
     rel_path = staged_key.relative_to(staging_prefix)
     final_key = lakehouse_key_prefix / rel_path
     final_key_path = PurePosixPath(final_key)
@@ -394,7 +394,7 @@ def _get_source_dest_pairs_for_accession(
     source_prefix = _get_accession_path_prefix(accession, lakehouse_key_prefix)
     if not source_prefix:
         return []
-    matching_objs: list[dict[str, Any]] = list_matching_objects(f"{lakehouse_bucket / source_prefix}")
+    matching_objs: list[dict[str, Any]] = list_objects(f"{lakehouse_bucket / source_prefix}")
     return [
         (
             PurePosixPath(obj["Key"]),
@@ -560,7 +560,7 @@ def _trim_manifest(
     :param staging_bucket: S3 bucket containing the transfer manifest
     :param promoted_accessions: set of accessions that were successfully promoted
     """
-    s3 = get_s3_client()
+    s3 = client.get_s3_client()
 
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as tmp:
         tmp_path = tmp.name

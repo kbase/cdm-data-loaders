@@ -7,12 +7,10 @@ Tests in ``TestSnapshotCeph`` and ``TestGenerateSnapshotFromS3State`` require
 a running CEPH test store and are marked ``requires_ceph`` + ``slow_test``.
 """
 
-from collections.abc import Generator
 from datetime import date
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from typing import ClassVar, cast
-from unittest.mock import patch
 
 import botocore.client
 import pytest
@@ -41,20 +39,6 @@ _FAKE_IDS = [
     "pdb_00001def",
     "pdb_aaaaaaaa",
 ]
-
-
-# ---------------------------------------------------------------------------
-# Local fixture - patch pdb_manifest's get_s3_client to use CEPH client
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def pdb_ceph_client(
-    ceph_s3_client: botocore.client.BaseClient,
-) -> Generator[botocore.client.BaseClient]:
-    """Extend ceph_s3_client by also patching get_s3_client inside pdb_manifest."""
-    with patch.object(pdb_manifest_mod, "get_s3_client", return_value=ceph_s3_client):
-        yield ceph_s3_client
 
 
 def _seed_fake_pdb_objects(
@@ -126,7 +110,7 @@ class TestSnapshotCeph:
 
     def test_save_and_download_snapshot(
         self,
-        pdb_ceph_client: botocore.client.BaseClient,
+        ceph_s3_client: botocore.client.BaseClient,
         test_bucket: PurePosixPath,
         tmp_path: Path,
     ) -> None:
@@ -140,7 +124,7 @@ class TestSnapshotCeph:
 
         # Save locally then upload to CEPH
         _save_holdings_snapshot(records, local_file)
-        pdb_ceph_client.upload_file(
+        ceph_s3_client.upload_file(
             Filename=str(local_file),
             Bucket=str(test_bucket),
             Key=str(snapshot_key),
@@ -155,7 +139,7 @@ class TestSnapshotCeph:
 
     def test_empty_snapshot_round_trip(
         self,
-        pdb_ceph_client: botocore.client.BaseClient,
+        ceph_s3_client: botocore.client.BaseClient,
         test_bucket: PurePosixPath,
         tmp_path: Path,
     ) -> None:
@@ -163,7 +147,7 @@ class TestSnapshotCeph:
         snapshot_key = PurePosixPath("snapshots") / "empty_snapshot.json.gz"
         local_file = tmp_path / "empty.json.gz"
         _save_holdings_snapshot({}, local_file)
-        pdb_ceph_client.upload_file(
+        ceph_s3_client.upload_file(
             Filename=str(local_file),
             Bucket=str(test_bucket),
             Key=str(snapshot_key),
@@ -184,11 +168,11 @@ class TestGenerateSnapshotFromS3State:
 
     def test_finds_all_seeded_ids(
         self,
-        pdb_ceph_client: botocore.client.BaseClient,
+        ceph_s3_client: botocore.client.BaseClient,
         test_bucket: PurePosixPath,
     ) -> None:
         """Tests bootstrapped snapshot includes in-store ids."""
-        _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, _FAKE_IDS)
+        _seed_fake_pdb_objects(ceph_s3_client, test_bucket, _FAKE_IDS)
         bootstrap_date = date(2024, 1, 1)
 
         result = _generate_snapshot_from_s3_state(
@@ -201,11 +185,11 @@ class TestGenerateSnapshotFromS3State:
 
     def test_all_records_use_bootstrap_date(
         self,
-        pdb_ceph_client: botocore.client.BaseClient,
+        ceph_s3_client: botocore.client.BaseClient,
         test_bucket: PurePosixPath,
     ) -> None:
         """Ensures the provided snapshot date is properly set."""
-        _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, _FAKE_IDS)
+        _seed_fake_pdb_objects(ceph_s3_client, test_bucket, _FAKE_IDS)
         bootstrap_date = date(2024, 1, 1)
 
         result = _generate_snapshot_from_s3_state(
@@ -220,14 +204,14 @@ class TestGenerateSnapshotFromS3State:
 
     def test_deduplicates_multiple_objects_per_id(
         self,
-        pdb_ceph_client: botocore.client.BaseClient,
+        ceph_s3_client: botocore.client.BaseClient,
         test_bucket: PurePosixPath,
     ) -> None:
         """Multiple S3 objects sharing the same PDB ID produce a single snapshot entry."""
         pdb_id = "pdb_00001abc"
         for suffix in ("model.cif.gz", "data.cif.gz", "info.json"):
             key = str(_PDB_KEY_PREFIX / pdb_id / f"{pdb_id}_{suffix}")
-            pdb_ceph_client.put_object(Bucket=str(test_bucket), Key=key, Body=b"x")
+            ceph_s3_client.put_object(Bucket=str(test_bucket), Key=key, Body=b"x")
 
         result = _generate_snapshot_from_s3_state(
             bucket=test_bucket,
@@ -298,7 +282,7 @@ class TestRunManifestGenerationE2E:
     def _read_manifest(self, tmp_path: Path, filename: str) -> list[str]:
         return (tmp_path / filename).read_text().splitlines()
 
-    @pytest.mark.usefixtures("pdb_ceph_client")
+    @pytest.mark.usefixtures("ceph_s3_client")
     def test_skip_diff_all_current_records_are_new(
         self,
         test_bucket: PurePosixPath,
@@ -316,14 +300,14 @@ class TestRunManifestGenerationE2E:
 
     def test_bootstrap_date_uses_s3_state_as_previous(
         self,
-        pdb_ceph_client: botocore.client.BaseClient,
+        ceph_s3_client: botocore.client.BaseClient,
         test_bucket: PurePosixPath,
         tmp_path: Path,
     ) -> None:
         """With bootstrap_date, the S3 store determines the previous snapshot."""
         # pdb_00001def: in S3, bootstrap date older than current: updated.
         # pdb_00009999: in S3 but not in current holdings: removed.
-        _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, ["pdb_00001def", "pdb_00009999"])
+        _seed_fake_pdb_objects(ceph_s3_client, test_bucket, ["pdb_00001def", "pdb_00009999"])
         bootstrap_date = date(2020, 1, 1)
 
         config = self._make_config(test_bucket, tmp_path, bootstrap_date=bootstrap_date)
@@ -341,7 +325,7 @@ class TestRunManifestGenerationE2E:
 
     def test_with_existing_snapshot_incremental_diff(
         self,
-        pdb_ceph_client: botocore.client.BaseClient,
+        ceph_s3_client: botocore.client.BaseClient,
         test_bucket: PurePosixPath,
         tmp_path: Path,
     ) -> None:
@@ -355,7 +339,7 @@ class TestRunManifestGenerationE2E:
         local_snapshot = tmp_path / "input_snapshot.json.gz"
         _save_holdings_snapshot(previous, local_snapshot)
         snapshot_key = _SNAPSHOT_PREFIX / _SNAPSHOT_FILENAME
-        pdb_ceph_client.upload_file(
+        ceph_s3_client.upload_file(
             Filename=str(local_snapshot),
             Bucket=str(test_bucket),
             Key=str(snapshot_key),
@@ -378,7 +362,7 @@ class TestRunManifestGenerationE2E:
         assert self._read_manifest(tmp_path, "removed_manifest.txt") == ["pdb_00009999"]
         assert self._read_manifest(tmp_path, "missing_dates.txt") == ["pdb_aaaaaaaa"]
 
-    @pytest.mark.usefixtures("pdb_ceph_client")
+    @pytest.mark.usefixtures("ceph_s3_client")
     @pytest.mark.parametrize(
         ("regex_filter", "expected_transfer", "expected_missing"),
         [
@@ -434,7 +418,7 @@ class TestSnapshotManifestRoundTripCeph:
     These tests verify the full contract between ``_generate_snapshot_from_s3_state``,
     ``_save_holdings_snapshot``, ``_download_holdings_snapshot``, and
     ``run_manifest_generation``.  PDB HTTP calls are mocked; all S3 interactions
-    use the real CEPH test store via ``pdb_ceph_client``.
+    use the real CEPH test store via ``ceph_s3_client``.
     """
 
     # A date well in the past so we can easily manufacture "newer" dates in holdings.
@@ -515,14 +499,14 @@ class TestSnapshotManifestRoundTripCeph:
 
     def test_no_changes_when_store_matches_holdings(
         self,
-        pdb_ceph_client: botocore.client.BaseClient,
+        ceph_s3_client: botocore.client.BaseClient,
         test_bucket: PurePosixPath,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """When the snapshot exactly matches the current holdings, all manifests are empty."""
-        _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, _ROUNDTRIP_IDS)
-        self._build_and_upload_snapshot(pdb_ceph_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap.json.gz")
+        _seed_fake_pdb_objects(ceph_s3_client, test_bucket, _ROUNDTRIP_IDS)
+        self._build_and_upload_snapshot(ceph_s3_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap.json.gz")
 
         # Holdings current = same IDs; last-modified dates match the bootstrap date.
         current = {id_: PDBRecord(id=id_) for id_ in _ROUNDTRIP_IDS}
@@ -540,7 +524,7 @@ class TestSnapshotManifestRoundTripCeph:
 
     def test_records_removed_from_store_reappear_in_transfer_manifest(
         self,
-        pdb_ceph_client: botocore.client.BaseClient,
+        ceph_s3_client: botocore.client.BaseClient,
         test_bucket: PurePosixPath,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -561,18 +545,18 @@ class TestSnapshotManifestRoundTripCeph:
         self._mock_holdings(monkeypatch, current, last_modified)
 
         # First run: baseline:nothing should appear in any manifest
-        _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, _ROUNDTRIP_IDS)
-        self._build_and_upload_snapshot(pdb_ceph_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap1.json.gz")
+        _seed_fake_pdb_objects(ceph_s3_client, test_bucket, _ROUNDTRIP_IDS)
+        self._build_and_upload_snapshot(ceph_s3_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap1.json.gz")
         run_manifest_generation(self._make_config(test_bucket, tmp_path / "run1"))
         assert self._read_manifest(tmp_path / "run1", "transfer_manifest.txt") == []
 
         # Remove some records from the store
         for pdb_id in removed_ids:
             key = str(_PDB_KEY_PREFIX / pdb_id / f"{pdb_id}_model.cif.gz")
-            pdb_ceph_client.delete_object(Bucket=str(test_bucket), Key=key)
+            ceph_s3_client.delete_object(Bucket=str(test_bucket), Key=key)
 
         # Second run: removed IDs are absent from new snapshot: should appear in transfer_manifest.txt
-        self._build_and_upload_snapshot(pdb_ceph_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap2.json.gz")
+        self._build_and_upload_snapshot(ceph_s3_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap2.json.gz")
         run_manifest_generation(self._make_config(test_bucket, tmp_path / "run2"))
 
         transfer = sorted(self._read_manifest(tmp_path / "run2", "transfer_manifest.txt"))
@@ -582,15 +566,15 @@ class TestSnapshotManifestRoundTripCeph:
 
     def test_holdings_newer_date_triggers_updated_manifest(
         self,
-        pdb_ceph_client: botocore.client.BaseClient,
+        ceph_s3_client: botocore.client.BaseClient,
         test_bucket: PurePosixPath,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Records whose holdings last-modified date is newer than the snapshot appear in updated_manifest."""
         ids = ["pdb_00001abc", "pdb_00001def"]
-        _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, ids)
-        self._build_and_upload_snapshot(pdb_ceph_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap.json.gz")
+        _seed_fake_pdb_objects(ceph_s3_client, test_bucket, ids)
+        self._build_and_upload_snapshot(ceph_s3_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap.json.gz")
 
         # pdb_00001abc has a newer date in holdings: should appear in updated
         # pdb_00001def has the same date as the snapshot: should not appear in updated
@@ -610,7 +594,7 @@ class TestSnapshotManifestRoundTripCeph:
 
     def test_id_absent_from_holdings_appears_in_removed_manifest(
         self,
-        pdb_ceph_client: botocore.client.BaseClient,
+        ceph_s3_client: botocore.client.BaseClient,
         test_bucket: PurePosixPath,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -620,8 +604,8 @@ class TestSnapshotManifestRoundTripCeph:
         dropped_from_holdings = ["pdb_aaaaaaaa"]
 
         # Seed all IDs so the snapshot contains all three.
-        _seed_fake_pdb_objects(pdb_ceph_client, test_bucket, _ROUNDTRIP_IDS)
-        self._build_and_upload_snapshot(pdb_ceph_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap.json.gz")
+        _seed_fake_pdb_objects(ceph_s3_client, test_bucket, _ROUNDTRIP_IDS)
+        self._build_and_upload_snapshot(ceph_s3_client, test_bucket, self._BOOTSTRAP_DATE, tmp_path / "snap.json.gz")
 
         # Holdings no longer lists pdb_aaaaaaaa as current.
         current = {id_: PDBRecord(id=id_) for id_ in kept_in_holdings}

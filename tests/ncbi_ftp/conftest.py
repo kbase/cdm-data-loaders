@@ -1,23 +1,16 @@
 """Shared fixtures for ncbi_ftp tests."""
 
-from collections.abc import Generator
 from pathlib import PurePosixPath
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import boto3
-import botocore.client
 import pytest
-from moto import mock_aws
 
 import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
-import cdm_data_loaders.ncbi_ftp.promote as promote_mod
-import cdm_data_loaders.utils.s3 as s3_utils
-from cdm_data_loaders.utils.s3 import CDM_LAKE_BUCKET, reset_s3_client
-from tests.s3_helpers import strip_checksum_algorithm
+from tests.conftest import TEST_BUCKET as TEST_BUCKET_STR
 
 AWS_REGION = "us-east-1"
-TEST_BUCKET: PurePosixPath = PurePosixPath(CDM_LAKE_BUCKET)
+TEST_BUCKET: PurePosixPath = PurePosixPath(TEST_BUCKET_STR)
 
 
 # Minimal assembly_summary_refseq.txt content (tab-separated, 20+ columns)
@@ -62,44 +55,12 @@ _MD5_CHECKSUMS_TXT = (
 
 
 @pytest.fixture
-def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[botocore.client.BaseClient]:
-    """Yield a mocked S3 client with the CDM Lake bucket created."""
-    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
-    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
-    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
-    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
-    boto3.DEFAULT_SESSION = None
-
-    with mock_aws():
-        client = boto3.client("s3", region_name=AWS_REGION)
-        client.create_bucket(Bucket=str(TEST_BUCKET))
-
-        reset_s3_client()
-        with (
-            patch.object(s3_utils, "get_s3_client", return_value=client),
-            patch.object(promote_mod, "get_s3_client", return_value=client),
-        ):
-            yield client
-        reset_s3_client()
-
-
-@pytest.fixture
-def mock_s3_client_no_checksum(mock_s3_client: botocore.client.BaseClient) -> botocore.client.BaseClient:
-    """Mocked S3 client with copy_object and upload_file patched to strip ChecksumAlgorithm."""
-    mock_s3_client.copy_object = strip_checksum_algorithm(mock_s3_client.copy_object)  # type: ignore[method-assign]
-    mock_s3_client.upload_file = strip_checksum_algorithm(mock_s3_client.upload_file)  # type: ignore[method-assign]
-    return mock_s3_client
-
-
-@pytest.fixture
 def manifest_transfer_mocks(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     """Mocked manifest transfer functions for retrieving MD5 checksum text and listing matching S3 objects."""
     mock_retrieve = MagicMock(return_value=_MD5_CHECKSUMS_TXT)
     mock_list = MagicMock(return_value=["one key"])
 
     monkeypatch.setattr(manifest_mod, "ftp_retrieve_text", mock_retrieve)
-    monkeypatch.setattr(manifest_mod, "list_matching_objects", mock_list)
+    monkeypatch.setattr(manifest_mod, "list_objects", mock_list)
 
     return SimpleNamespace(retrieve=mock_retrieve, list=mock_list)
