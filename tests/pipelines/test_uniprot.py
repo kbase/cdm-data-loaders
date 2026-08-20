@@ -31,8 +31,6 @@ from tests.pipelines.conftest import (
     make_batcher,
 )
 
-# TODO: add a test to ensure that parse_uniprot_entry is called with the appropriate args. Requires mocking the file batcher and stream_xml_file_resource functions.
-
 
 @pytest.fixture(autouse=True)
 def patch_dlt_config(dlt_config: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
@@ -173,8 +171,8 @@ def test_run_uniprot_pipeline_sets_core_run_pipeline_args_correctly(
 
 
 def test_parse_uniprot_resource(test_settings: UniProtSettings) -> None:
-    """Ensure that parse_uniprot calls stream_xml_file_resource with the namespaced UniProt XML tag."""
-    with patch.object(uniprot_module, "stream_xml_file_resource") as mock_stream:
+    """Ensure that parse_uniprot calls process_xml_file_batches with the namespaced UniProt XML tag."""
+    with patch.object(uniprot_module, "process_xml_file_batches") as mock_stream:
         mock_stream.return_value = iter([])
         list(parse_uniprot(test_settings))
 

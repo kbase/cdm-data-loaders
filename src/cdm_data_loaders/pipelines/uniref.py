@@ -1,6 +1,7 @@
 """DLT pipeline to import UniRef data."""
 
 from collections.abc import Generator
+from datetime import UTC, datetime
 from typing import Annotated, Any, Final
 
 import dlt
@@ -18,8 +19,8 @@ from cdm_data_loaders.parsers.uniprot.uniref import ENTRY_XML_TAG, UNIREF_VARIAN
 from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
-    stream_xml_file_resource,
 )
+from cdm_data_loaders.readers.xml import process_xml_file_batches
 
 APP_NAME: Final[str] = "uniref_importer"
 UNIREF_LOG_INTERVAL: Final[int] = 10000
@@ -69,10 +70,12 @@ def parse_uniref(settings: UnirefSettings) -> Generator[DataItemWithMeta, Any]:
     :param settings: config for running the pipeline.
     :type settings: UnirefSettings
     """
-    yield from stream_xml_file_resource(
+    # a single timestamp is used to mark every entity parsed in this run
+    timestamp = datetime.now(UTC)
+    yield from process_xml_file_batches(
         settings=settings,
         xml_tag=ENTRY_XML_TAG,
-        parse_fn=lambda entry, timestamp, file_path: parse_uniref_entry(
+        parse_fn=lambda entry, file_path: parse_uniref_entry(
             entry=entry, timestamp=timestamp, file_path=file_path, uniref_variant=f"UniRef {settings.uniref_variant}"
         ),
         log_interval=UNIREF_LOG_INTERVAL,

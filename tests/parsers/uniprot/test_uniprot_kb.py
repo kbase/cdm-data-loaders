@@ -2,22 +2,28 @@
 
 import datetime
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 from lxml.etree import XMLParser, fromstring
 
+import cdm_data_loaders.parsers.uniprot.uniprot_kb as uniprot_kb_module
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import (
     CONTENT,
     DB,
     DESCRIPTION,
     ENTITY_ID,
+    ENTRY_XML_TAG,
     HTTPS_NS,
     KEY,
     NAME,
     NCBI_TAXON,
     XREF,
+    build_datasource_record,
+    dump_comment_xml,
     dump_evidence_xml,
+    dump_xml_element,
     parse_cross_references,
     parse_identifiers,
     parse_names,
@@ -26,6 +32,7 @@ from cdm_data_loaders.parsers.uniprot.uniprot_kb import (
     parse_references,
     parse_uniprot_entry,
 )
+from cdm_data_loaders.readers.xml import stream_xml_file
 
 TEST_ID = "uniprot:P01Q23"
 FILE_PATH = "/path/to/file"
@@ -362,7 +369,7 @@ def test_parse_identifiers(xml: str, expected: list[dict[str, Any]]) -> None:
         ),
     ],
 )
-def test_parse_evidence(xml: str, expected: dict[str, str]) -> None:
+def test_parse_evidence(xml: str, expected: list[dict[str, str]]) -> None:
     """Test the parsing of evidence data."""
     xml_str = entry_wrap(xml)
     parsed_evidence = dump_evidence_xml(fromstring(xml_str, parser=XMLParser(remove_blank_text=True)), TEST_ID)
@@ -872,7 +879,6 @@ def test_parse_organism(xml: str, expected: list[dict[str, str]]) -> None:
                 ]
             },
         ),
-        # TODO: put together a full example!
     ],
 )
 @pytest.mark.parametrize("args_style", ["positional", "kwargs"])
@@ -893,3 +899,366 @@ def test_parse_uniprot_entry(args_style: str, xml: str, expected: dict[str, list
         )
 
     assert parsed_entry == expected
+
+
+def test_build_datasource_record() -> None:
+    """Test that the datasource provenance record is built correctly."""
+    xml_url = "https://ftp.uniprot.org/uniprot_sprot.xml.gz"
+    before = datetime.datetime.now(datetime.UTC)
+    record = build_datasource_record(xml_url)
+    after = datetime.datetime.now(datetime.UTC)
+
+    expected_version = 115
+    assert record[NAME] == "UniProt import"
+    assert record["source"] == "UniProt"
+    assert record["url"] == xml_url
+    assert record["version"] == expected_version
+
+    # the accessed timestamp should be a valid ISO-8601 string within the call window
+    accessed = datetime.datetime.fromisoformat(record["accessed"])
+    assert before <= accessed <= after
+
+
+@pytest.mark.parametrize(
+    ("xml", "expected"),
+    [
+        # no comments present
+        ("", []),
+        # single simple comment
+        (
+            """
+    <comment type="function">
+      <text>Catalyzes a reaction.</text>
+    </comment>""",
+            [{CONTENT: '<comment type="function"><text>Catalyzes a reaction.</text></comment>'}],
+        ),
+        # multiple comments of differing types
+        (
+            """
+    <comment type="function">
+      <text evidence="1">Does something important.</text>
+    </comment>
+    <comment type="catalytic activity">
+      <reaction>
+        <text>A = B</text>
+        <dbReference type="Rhea" id="RHEA:16933"/>
+      </reaction>
+    </comment>""",
+            [
+                {CONTENT: '<comment type="function"><text evidence="1">Does something important.</text></comment>'},
+                {
+                    CONTENT: '<comment type="catalytic activity"><reaction><text>A = B</text>'
+                    '<dbReference type="Rhea" id="RHEA:16933"/></reaction></comment>'
+                },
+            ],
+        ),
+    ],
+)
+def test_dump_comment_xml(xml: str, expected: list[dict[str, str]]) -> None:
+    """Test the dumping of comment elements as XML strings."""
+    xml_str = entry_wrap(xml)
+    parsed_comments = dump_comment_xml(fromstring(xml_str, parser=XMLParser(remove_blank_text=True)), TEST_ID)
+    assert parsed_comments == [{ENTITY_ID: TEST_ID, **e} for e in expected]
+
+
+@pytest.mark.parametrize(
+    ("xml", "expected"),
+    [
+        # the uniprot namespace declaration is stripped
+        (
+            f"<entry xmlns='{HTTPS_NS}'><name>A4_HUMAN</name></entry>",
+            "<entry><name>A4_HUMAN</name></entry>",
+        ),
+        # the xsi namespace declaration is stripped
+        (
+            f'<entry xmlns="{HTTPS_NS}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+            "<accession>P12345</accession></entry>",
+            "<entry><accession>P12345</accession></entry>",
+        ),
+        # self-closing element
+        (f"<entry xmlns='{HTTPS_NS}'/>", "<entry/>"),
+    ],
+)
+def test_dump_xml_element(xml: str, expected: str) -> None:
+    """Test that namespace declarations are stripped when dumping XML to a string."""
+    dumped = dump_xml_element(fromstring(xml, parser=XMLParser(remove_blank_text=True)))
+    assert dumped == expected
+
+
+def test_parse_cross_references_multiple_molecules(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that a dbReference with multiple molecules logs a warning and uses the first molecule."""
+    xml = entry_wrap(
+        """
+    <accession>P99999</accession>
+    <dbReference type="Ensembl" id="ENST00000000001.1">
+      <molecule id="P99999-1"/>
+      <molecule id="P99999-2"/>
+      <property type="protein sequence ID" value="ENSP00000000001.1"/>
+    </dbReference>"""
+    )
+    with caplog.at_level("WARNING"):
+        result = parse_cross_references(fromstring(xml))
+
+    # the description suffix uses the first molecule id
+    assert result == [
+        {
+            DB: "ensembl",
+            XREF: "ENST00000000001.1",
+            DESCRIPTION: "Ensembl transcript ID for UniProt:P99999-1",
+        },
+        {
+            DB: "ensembl",
+            XREF: "ENSP00000000001.1",
+            DESCRIPTION: "Ensembl protein sequence ID for UniProt:P99999-1",
+        },
+    ]
+    assert any("Found many molecules for entry P99999" in rec.message for rec in caplog.records)
+
+
+# reference whose citation dbReferences are all outside the priority order
+REF_TEXT[7] = """
+    <reference key="7">
+      <citation type="journal article" date="2020" name="Some Journal">
+        <title>A paper with only an unknown ref type.</title>
+        <authorList>
+          <person name="Nobody N."/>
+        </authorList>
+        <dbReference type="SomeUnknownDB" id="XYZ123"/>
+      </citation>
+      <scope>SEQUENCE</scope>
+    </reference>"""
+
+# reference with multiple priority types -- DOI should win over pubmed
+REF_TEXT[8] = """
+    <reference key="8">
+      <citation type="journal article" date="2021" name="Another Journal">
+        <title>A paper with both a pubmed and a DOI.</title>
+        <authorList>
+          <person name="Someone S."/>
+        </authorList>
+        <dbReference type="PubMed" id="99999999"/>
+        <dbReference type="DOI" id="10.9999/example"/>
+      </citation>
+      <scope>SEQUENCE</scope>
+    </reference>"""
+
+# reference where pmid wins because there is no doi/pmcid
+REF_TEXT[9] = """
+    <reference key="9">
+      <citation type="journal article" date="2022" name="Yet Another Journal">
+        <title>A paper with only a pubmed id.</title>
+        <authorList>
+          <person name="Author A."/>
+        </authorList>
+        <dbReference type="PubMed" id="12121212"/>
+      </citation>
+      <scope>SEQUENCE</scope>
+    </reference>"""
+
+
+def test_parse_references_no_priority_ref_type(caplog: pytest.LogCaptureFixture) -> None:
+    """A reference whose citation dbReferences are all non-priority yields no publication and warns twice."""
+    xml_str = entry_wrap(REF_TEXT[7])
+    with caplog.at_level("WARNING"):
+        parsed = parse_references(fromstring(xml_str, parser=XMLParser(remove_blank_text=True)))
+
+    assert parsed["publication"] == []
+    # the raw XML is still retained
+    assert len(parsed["all_xml"]) == 1
+    assert parsed["all_xml"][0][KEY] == "7"
+    # warns about the unexpected type and about not finding a priority ref type
+    messages = " ".join(rec.message for rec in caplog.records)
+    assert "Unexpected dbxref types in publications" in messages
+    assert "Could not find priority ref type" in messages
+
+
+@pytest.mark.parametrize(
+    ("key", "expected_publication_id"),
+    [
+        (8, "DOI:10.9999/example"),  # DOI beats PubMed
+        (9, "PMID:12121212"),  # PMID used when no DOI/PMCID present
+    ],
+)
+def test_parse_references_priority_order(key: int, expected_publication_id: str) -> None:
+    """Test that publication IDs are selected according to the priority ordering."""
+    xml_str = entry_wrap(REF_TEXT[key])
+    parsed = parse_references(fromstring(xml_str, parser=XMLParser(remove_blank_text=True)))
+    assert parsed["publication"] == [{"publication_id": expected_publication_id}]
+
+
+FULL_ENTRY_XML = """
+    <accession>P12345</accession>
+    <accession>Q67890</accession>
+    <name>TEST_ENTRY</name>
+    <protein>
+      <recommendedName>
+        <fullName>Test protein</fullName>
+      </recommendedName>
+    </protein>
+    <gene>
+      <name type="primary">testGene</name>
+    </gene>
+    <organism>
+      <name type="scientific">Test organism</name>
+      <dbReference type="NCBI Taxonomy" id="9606"/>
+    </organism>
+    <reference key="1">
+      <citation type="journal article" date="2020" name="Test Journal">
+        <title>A test paper.</title>
+        <authorList>
+          <person name="Tester T."/>
+        </authorList>
+        <dbReference type="PubMed" id="12345678"/>
+      </citation>
+      <scope>SEQUENCE</scope>
+    </reference>
+    <comment type="function">
+      <text>A test function.</text>
+    </comment>
+    <dbReference type="GeneID" id="1636"/>
+    <evidence type="ECO:0000255" key="1"/>
+    <proteinExistence type="evidence at protein level"/>
+    <sequence length="5" mass="500" checksum="ABCDEF0123456789" modified="2020-01-01" version="1">ACGTA</sequence>"""
+
+
+def test_parse_uniprot_entry_full() -> None:
+    """Test the happy path of parse_uniprot_entry with a complete entry."""
+    xml_str = f'<entry created="2000-05-30" modified="2020-01-01" version="3" dataset="Swiss-Prot" xmlns="{HTTPS_NS}">{FULL_ENTRY_XML}</entry>'
+    timestamp = datetime.datetime.now(tz=datetime.UTC)
+    result = parse_uniprot_entry(
+        fromstring(xml_str, parser=XMLParser(remove_blank_text=True)),
+        timestamp,
+        FILE_PATH,
+    )
+
+    # no parse error
+    assert "_parse_error" not in result
+
+    uniprot_id = "uniprot:P12345"
+
+    # entity table
+    assert result["entity"] == [
+        {
+            ENTITY_ID: uniprot_id,
+            "entity_type": "protein",
+            "data_source_entity_id": "P12345",
+            "data_source_created": "2000-05-30",
+            "data_source_modified": "2020-01-01",
+            "data_source_entity_version": "3",
+            "data_source_id": None,
+            "created": None,
+            "data_source": "UniProt/Swiss-Prot",
+            "updated": timestamp,
+        }
+    ]
+
+    # identifiers: accessions + cross references + organism, all tagged with the entity id
+    assert {(i[DB], i[XREF]) for i in result["identifier"]} == {
+        ("UniProt", "P12345"),
+        ("UniProt", "Q67890"),
+        ("GeneID", "1636"),
+        (NCBI_TAXON, "9606"),
+    }
+    assert all(i[ENTITY_ID] == uniprot_id for i in result["identifier"])
+
+    # names
+    assert {n[NAME] for n in result["name"]} == {"TEST_ENTRY", "Test protein", "testGene"}
+    assert all(n[ENTITY_ID] == uniprot_id for n in result["name"])
+
+    # protein
+    assert result["protein"] == [
+        {
+            "protein_id": uniprot_id,
+            "evidence_for_existence": "evidence at protein level",
+            "length": 5,
+            "hash": "ABCDEF0123456789",
+            "sequence": "ACGTA",
+        }
+    ]
+
+    # publications
+    assert result["entity_x_publication"] == [{ENTITY_ID: uniprot_id, "publication_id": "PMID:12345678"}]
+
+    # source-file linkage
+    assert result["entity_x_source_file"] == [
+        {ENTITY_ID: uniprot_id, "data_source": "UniProt/Swiss-Prot", "source_file": FILE_PATH}
+    ]
+
+    # non-schema XML dump tables
+    assert len(result["_comment_xml"]) == 1
+    assert result["_comment_xml"][0][ENTITY_ID] == uniprot_id
+    assert len(result["_evidence_xml"]) == 1
+    assert result["_evidence_xml"][0][ENTITY_ID] == uniprot_id
+    assert len(result["_reference_xml"]) == 1
+    assert result["_reference_xml"][0][ENTITY_ID] == uniprot_id
+
+
+def test_parse_uniprot_entry_unexpected_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unexpected exception during parsing is caught and reported as a _parse_error."""
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        msg = "boom"
+        raise ValueError(msg)
+
+    # a valid accession is present, so parsing proceeds past the early "no accession" return,
+    # then blows up inside parse_names, exercising the generic exception handler.
+    monkeypatch.setattr(uniprot_kb_module, "parse_names", _boom)
+
+    xml_str = f'<entry dataset="Swiss-Prot" xmlns="{HTTPS_NS}"><accession>P12345</accession></entry>'
+    result = parse_uniprot_entry(
+        fromstring(xml_str, parser=XMLParser(remove_blank_text=True)),
+        datetime.datetime.now(tz=datetime.UTC),
+        FILE_PATH,
+    )
+
+    assert list(result.keys()) == ["_parse_error"]
+    error = result["_parse_error"][0]
+    assert error["error"] == "boom"
+    assert error["source_file"] == FILE_PATH
+    assert "P12345" in error["xml"]
+
+
+FIXTURE_CHUNK = Path("tests/fixtures/chunk_5/chunk_00001.xml")
+
+
+@pytest.mark.skipif(not FIXTURE_CHUNK.exists(), reason="UniProt XML fixture not available")
+def test_parse_uniprot_entry_integration() -> None:
+    """Integration test: stream real UniProt entries from a fixture file and parse each one.
+
+    Exercises the parser end-to-end against genuine UniProt XML (as produced upstream),
+    ensuring every entry parses without error and produces the expected schema tables.
+    """
+    timestamp = datetime.datetime.now(tz=datetime.UTC)
+    entry_count = 0
+    # NOTE: stream_xml_file clears each element right after yielding it, so entries must be
+    # parsed inside the streaming loop rather than collected into a list first.
+    for entry in stream_xml_file(FIXTURE_CHUNK, ENTRY_XML_TAG):
+        entry_count += 1
+        parsed = parse_uniprot_entry(entry, timestamp, str(FIXTURE_CHUNK))
+
+        # every real entry should parse cleanly
+        assert "_parse_error" not in parsed, f"unexpected parse error: {parsed.get('_parse_error')}"
+
+        # core schema tables must always be present and well formed
+        assert len(parsed["entity"]) == 1
+        entity = parsed["entity"][0]
+        entity_id = entity[ENTITY_ID]
+        assert entity_id.startswith("uniprot:")
+        assert entity["entity_type"] == "protein"
+        assert entity["data_source"].startswith("UniProt/")
+        assert entity["updated"] == timestamp
+
+        # protein row present and tied to the entity
+        assert len(parsed["protein"]) == 1
+        assert parsed["protein"][0]["protein_id"] == entity_id
+
+        # identifiers should at minimum contain the UniProt accession
+        assert any(i[DB] == "UniProt" for i in parsed["identifier"])
+        assert all(i[ENTITY_ID] == entity_id for i in parsed["identifier"])
+
+        # source-file linkage present
+        assert parsed["entity_x_source_file"] == [
+            {ENTITY_ID: entity_id, "data_source": entity["data_source"], "source_file": str(FIXTURE_CHUNK)}
+        ]
+
+    assert entry_count > 0, "expected at least one entry in the fixture"
