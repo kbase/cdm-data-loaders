@@ -134,43 +134,45 @@ def xml_to_dict_parse_fn(table_name: str) -> Callable[..., dict[str, list[dict[s
     return parse_fn
 
 
-def parse_head_matter(fh, ns_dict: dict[str, str]) -> dict[str, str]:
-    """Parse the head matter of an XML file and return the data source information.
+def parse_head_matter(file_path: str | Path) -> dict[str, str]:
+    """Parse the namespace declarations from the head matter of an XML file.
 
-    :param fh: open file handle / data source
-    :type fh:
-    :raises ValueError: if the expected namespace is not found
-    :raises ValueError:
-    :return: data source information
+    Reads the beginning of an XML document (gzipped or plain) and collects all XML
+    namespace declarations (``xmlns`` / ``xmlns:prefix`` attributes) that are in scope
+    on the root element. Parsing stops as soon as the root element is fully opened, so
+    the whole document is never loaded into memory.
+
+    The returned mapping uses namespace prefixes as keys and namespace URIs as values.
+    The default (unprefixed) namespace is stored under the empty-string key ``""``.
+
+    :param file_path: path to the XML file; the file can be gzipped or not.
+    :type file_path: str | Path
+    :raises FileNotFoundError: if the file does not exist.
+    :raises lxml.etree.XMLSyntaxError: if the file is empty or malformed.
+    :return: mapping of namespace prefix to namespace URI.
     :rtype: dict[str, str]
     """
-    ns = {}
-    data_src = {}
-    ctx = iterparse(fh, events=("start-ns", "end-ns", "start", "end"))
-    for event, elem in ctx:
-        if event == "start-ns":
-            # output will be namespaces
-            ns[elem[0]] = elem[1]
-            continue
+    if isinstance(file_path, Path):
+        file_path = str(file_path)
+    logger.debug("Parsing head matter from %s", file_path)
 
-        if event == "end-ns":
-            continue
+    open_fn = open
+    if file_path.endswith(".gz"):
+        open_fn = gzip.open
 
-        if event == "start" and elem.tag.endswith("entry"):
-            # we're done here
+    namespaces: dict[str, str] = {}
+    with open_fn(file_path, "rb") as fh:
+        ctx = iterparse(fh, events=("start-ns", "start"))
+        for event, elem in ctx:
+            if event == "start-ns":
+                # elem is a (prefix, uri) tuple; the default namespace has an empty prefix.
+                prefix, uri = elem
+                namespaces[prefix] = uri
+                continue
+
+            # The first "start" event corresponds to the root element; by this point every
+            # namespace declared on the root has already been emitted as a "start-ns" event.
             break
-        elem.clear()
 
-    if "" not in ns:
-        msg = "No default namespace found!"
-        raise ValueError(msg)
-
-    if ns[""] != ns_dict["ns"]:
-        if ns[""] in ns_dict.values():
-            logger.warning("xmlns set to '%s'", ns[""])
-            ns_dict["ns"] = ns[""]
-        else:
-            msg = f"Unexpected default namespace: got '{ns['']}', expected '{ns_dict['ns']}'"
-            raise ValueError(msg)
-
-    return data_src
+    logger.debug("Found %d namespace declaration(s) in %s", len(namespaces), file_path)
+    return namespaces

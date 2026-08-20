@@ -4,39 +4,29 @@
 # https://github.com/astral-sh/uv-docker-example
 
 # Use a Python image with uv pre-installed
-FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim
+FROM ghcr.io/astral-sh/uv:python3.14-trixie
 
 ARG QSV_VERSION="22.0.1"
-ARG XML_FILE_SPLITTER_VERSION="v0.1.2"
-ARG XSV_VALIDATOR_VERSION="v2026-07"
+ARG XML_FILE_SPLITTER_VERSION="v0.1.3"
 
 # Set environment variable to noninteractive to prevent prompts during apt operations
 ENV DEBIAN_FRONTEND=noninteractive
 
 # add tini and git
-RUN apt-get update -y && apt-get install -y --no-install-recommends tini git ca-certificates wget unzip libwayland-client0 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y && apt-get install -y --no-install-recommends tini git ca-certificates wget unzip parallel libxml2-utils libwayland-client0 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp
 
-# download and install the xml_file_splitter, xsv-validator, and qsv binaries, and copy them to /usr/local/bin
+# download and install the xml_file_splitter and qsv binaries, and copy them to /usr/local/bin
 RUN ARCH=$(uname -m) && \
     wget https://github.com/ialarmedalien/xml_file_splitter/releases/download/${XML_FILE_SPLITTER_VERSION}/xml_file_splitter-${ARCH}-unknown-linux-gnu.tar.gz && \
     tar -xvf xml_file_splitter-${ARCH}-unknown-linux-gnu.tar.gz && \
     mv xml_file_splitter-${ARCH}-unknown-linux-gnu/xml_file_splitter /usr/local/bin/ && \
-    # xsv-validator, only need the script
-    wget https://github.com/cohere-llc/xsv-validator/archive/refs/tags/${XSV_VALIDATOR_VERSION}.tar.gz && \
-    mkdir /tmp/xsv-validator && tar -xvf ${XSV_VALIDATOR_VERSION}.tar.gz --strip-components=1 -C /tmp/xsv-validator/ && \
-    mv /tmp/xsv-validator/xsv-validate.sh /usr/local/bin/ && \
-    chmod +x /usr/local/bin/xsv-validate.sh && \
-    rm -fr /tmp/* && \
     # qsv release -- only need the `qsv` binary from it
     wget https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-${ARCH}-unknown-linux-gnu.zip && \
     unzip qsv-${QSV_VERSION}-${ARCH}-unknown-linux-gnu.zip -d /tmp/qsv && \
     mv /tmp/qsv/qsv /usr/local/bin/ && \
     rm -rf /tmp/*
-
-# check install of xsv-validate
-RUN xsv-validate.sh --help
 
 # Setup a non-root user
 RUN groupadd --system --gid 999 nonroot \
@@ -70,6 +60,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Installing separately from its dependencies allows optimal layer caching
 COPY --chown=nonroot:nonroot .dlt /app/.dlt
 COPY --chown=nonroot:nonroot docs /app/docs
+COPY --chown=nonroot:nonroot notebooks /app/notebooks
 COPY --chown=nonroot:nonroot scripts /app/scripts
 COPY --chown=nonroot:nonroot src /app/src
 COPY --chown=nonroot:nonroot tests /app/tests
@@ -83,7 +74,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
 
-RUN chmod +x ./scripts/entrypoint.sh
+RUN chmod +x ./scripts/*.sh
 
 # make sure that the nonroot user owns the app directory
 RUN chown nonroot:nonroot /app
