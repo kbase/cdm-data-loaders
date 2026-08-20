@@ -15,16 +15,21 @@ dependencies = [
     "click>=8.4.1",
     "defusedxml>=0.7.1",
     "delta-spark>=4.2.0",
-    "dlt[deltalake,duckdb,filesystem,hub,parquet,pyiceberg]>=1.27.2",
+    "dlt[deltalake,duckdb,filesystem,parquet,pyiceberg]>=1.30.0",
     "frictionless[aws]>=5.19.0",
     "frozendict>=2.4.7",
+    "httpx>=0.28.1",
     "ipykernel>=7.2.0",
     "jsonschema[format]>=4.26.0",
     "lxml>=6.1.0",
+    "openpyxl>=3.1.5",
     "pandas>=3.0.3",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
+    "pyiceberg>=0.11.1",
     "tqdm>=4.67.3",
+    "xmlschema>=4.3.1",
+    "xmltodict>=1.0.4",
 ]
 
 [project.scripts]
@@ -56,7 +61,6 @@ models = [
     "json2python-models>=0.3.1",
 ]
 xml = [
-    "xmlschema>=4.3.1",
     "xsdata[cli,lxml]>=26.2",
 ]
 
