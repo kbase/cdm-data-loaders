@@ -1,4 +1,4 @@
-"""Tests for utils.ftp_client module — mock ftplib for keepalive, retry, thread-local."""
+"""Tests for utils.file_transfer.ftp_client module — mock ftplib for keepalive, retry, thread-local."""
 
 import socket
 import time
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cdm_data_loaders.utils.ftp_client import (
+from cdm_data_loaders.utils.file_transfer.ftp_client import (
     ThreadLocalFTP,
     _set_keepalive,
     connect_ftp,
@@ -51,7 +51,7 @@ class TestSetKeepalive:
 class TestConnectFtp:
     """Test connect_ftp creates and configures an FTP connection."""
 
-    @patch("cdm_data_loaders.utils.ftp_client.FTP")
+    @patch("cdm_data_loaders.utils.file_transfer.ftp_client.FTP")
     def test_connect_and_login(self, mock_ftp_cls: MagicMock) -> None:
         """Verify FTP object is created, login called, and returned."""
         mock_ftp = MagicMock()
@@ -177,7 +177,7 @@ class TestFtpRetrieveText:
 class TestThreadLocalFTP:
     """Test thread-local FTP connection management."""
 
-    @patch("cdm_data_loaders.utils.ftp_client.connect_ftp")
+    @patch("cdm_data_loaders.utils.file_transfer.ftp_client.connect_ftp")
     def test_get_returns_same_connection(self, mock_connect: MagicMock) -> None:
         """Verify get() returns the same FTP connection on repeated calls."""
         mock_ftp = MagicMock()
@@ -188,7 +188,7 @@ class TestThreadLocalFTP:
         assert ftp1 is ftp2
         mock_connect.assert_called_once()
 
-    @patch("cdm_data_loaders.utils.ftp_client.connect_ftp")
+    @patch("cdm_data_loaders.utils.file_transfer.ftp_client.connect_ftp")
     def test_close_all(self, mock_connect: MagicMock) -> None:
         """Verify close_all() quits the FTP connection."""
         mock_ftp = MagicMock()

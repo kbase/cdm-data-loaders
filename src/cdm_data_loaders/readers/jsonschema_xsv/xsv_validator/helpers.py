@@ -93,9 +93,9 @@ class CleanerValidatorArgs(BaseModel):
     :type errors: list[ErrorRecord]
     :param delimiter: delimiter used in the xsv file, defaults to tab
     :type delimiter: CharStr, optional
-    :param comment_char: comment character used in the xsv file, defaults to "#"
+    :param comment_char: comment character used in the xsv file, defaults to `#`
     :type comment_char: CharStr, optional
-    :param quote: quote character used in the xsv file; if unset, qsv will assume it is "
+    :param quote: quote character used in the xsv file; if unset, qsv will assume it is `"`
     :type quote: CharStr, optional
     :param escape: the escape character used in the xsv file. If not specified, qsv escapes quotes by doubling them. Default None
     :type escape: NonEmptyStr, optional
