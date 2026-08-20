@@ -7,8 +7,6 @@ from frozendict import frozendict
 from pydantic import AliasChoices, Field
 from pydantic_settings import CliSuppress
 
-from cdm_data_loaders.utils.batcher import MIN_START_AT
-
 INPUT_MOUNT: Final[str] = "/input_dir"
 OUTPUT_MOUNT: Final[str] = "/output_dir"
 
@@ -18,6 +16,7 @@ VALID_DESTINATIONS: list[str] = ["local_fs", "s3"]
 DEV_MODE = "dev_mode"
 INPUT_DIR = "input_dir"
 LOG_CONFIG_FILE = "log_config_file"
+MIN_START_AT: Final[int] = 1
 OUTPUT = "output"
 START_AT = "start_at"
 USE_DESTINATION = "use_destination"

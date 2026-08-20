@@ -15,7 +15,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from typing import Any, Literal, Final
+from typing import Any, Final, Literal
 
 from referencing import Registry, Resource
 from referencing._core import Resolver
@@ -274,7 +274,7 @@ def _merge_all_of(schema: dict[str, Any], ctx: DereferenceContext) -> dict[str, 
     return merged
 
 
-def _dereference(schema: dict[str, Any] | bool, ctx: DereferenceContext) -> dict[str, Any] | bool:
+def _dereference(schema: dict[str, Any] | bool, ctx: DereferenceContext) -> dict[str, Any] | bool:  # noqa: FBT001
     """Recursively resolve `$ref`/`allOf` at every level of `schema`.
 
     :param schema: the schema fragment (or boolean schema) to dereference
