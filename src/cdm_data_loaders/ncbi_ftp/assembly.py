@@ -14,7 +14,7 @@ from typing import Any
 
 from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX, FTP_HOST
 from cdm_data_loaders.utils.checksums import compute_file_checksum
-from cdm_data_loaders.utils.ftp_client import connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
+from cdm_data_loaders.utils.file_transfer.ftp_client import connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
 
 logger: Logger = getLogger(__name__)
 

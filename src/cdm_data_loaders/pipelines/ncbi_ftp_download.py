@@ -30,9 +30,9 @@ from cdm_data_loaders.ncbi_ftp.assembly import (
     parse_assembly_path,
 )
 from cdm_data_loaders.pipelines.core import run_cli
+from cdm_data_loaders.utils.file_transfer.ftp_client import ThreadLocalFTP
 from cdm_data_loaders.utils.file_transfer.s3.client import get_s3_client
 from cdm_data_loaders.utils.file_transfer.s3.object_utils import upload_file
-from cdm_data_loaders.utils.ftp_client import ThreadLocalFTP
 
 logger: Logger = getLogger(__name__)
 

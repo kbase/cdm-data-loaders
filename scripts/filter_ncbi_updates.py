@@ -142,7 +142,7 @@ def infer_source(assembly_id: str) -> Source:
 
 
 def load_ftp_mod_times(path: Path) -> pd.DataFrame:
-    """Load and fully parse the raw ftp_mod_times.txt into a tidy DataFrame."""
+    """Load and fully parse the raw ftp_mod_times.txt(.gz) into a tidy DataFrame."""
     raw = pd.read_csv(
         path,
         sep="\t",
