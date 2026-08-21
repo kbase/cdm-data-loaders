@@ -2,20 +2,26 @@
 
 import datetime
 import logging
+from pathlib import Path
 from typing import Any
 
 import pytest
-from lxml.etree import fromstring
+from lxml.etree import XMLParser, fromstring
 
 from cdm_data_loaders.parsers.uniprot.uniref import (
+    ENTRY_XML_TAG,
     UNIREF_URL,
+    dump_xml_element,
     extract_cluster,
     extract_cross_refs,
+    generate_dbxref,
     parse_uniref_entry,
 )
+from cdm_data_loaders.readers.xml import stream_xml_file
 
 NOW = datetime.datetime.now(tz=datetime.UTC)
 PROTOCOL = "uniref_9000"
+FILE_PATH = "/path/to/file"
 
 
 def entry_wrap(xml: str) -> str:
@@ -632,3 +638,132 @@ def test_parse_whole_uniref_entry(entry: dict[str, Any]) -> None:
             **{k: entry["exp"]["entity"][0][k] for k in ["entity_id", "data_source"]},
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("db", "acc", "expected"),
+    [
+        # known prefixes are translated
+        ("UniProtKB ID", "TITIN_MOUSE", "uniprot_name:TITIN_MOUSE"),
+        ("UniProtKB accession", "A2ASS6", "uniprot:A2ASS6"),
+        ("UniParc ID", "UPI0000D77B45", "uniparc:UPI0000D77B45"),
+        ("UniRef90 ID", "UniRef90_A2ASS6", "uniref:UniRef90_A2ASS6"),
+        ("UniRef50 ID", "UniRef50_A2ASS6", "uniref:UniRef50_A2ASS6"),
+        ("UniRef100 ID", "UniRef100_A2ASS6", "uniref:UniRef100_A2ASS6"),
+        ("NCBI taxonomy", "10090", "NCBITaxon:10090"),
+        # unknown prefixes fall through unchanged
+        ("SomeUnknownDB", "XYZ123", "SomeUnknownDB:XYZ123"),
+    ],
+)
+def test_generate_dbxref(db: str, acc: str, expected: str) -> None:
+    """Test that dbxrefs use the BioRegistry-style prefixes, falling back to the raw db name."""
+    assert generate_dbxref(db, acc) == expected
+
+
+@pytest.mark.parametrize(
+    ("xml", "expected"),
+    [
+        # the http uniref namespace declaration is stripped
+        (
+            f"<entry xmlns='{UNIREF_URL}'><name>Cluster: x</name></entry>",
+            "<entry><name>Cluster: x</name></entry>",
+        ),
+        # the https variant of the namespace is also stripped
+        (
+            "<entry xmlns='https://uniprot.org/uniref'><name>Cluster: y</name></entry>",
+            "<entry><name>Cluster: y</name></entry>",
+        ),
+        # the xsi namespace declaration is stripped too
+        (
+            f'<entry xmlns="{UNIREF_URL}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+            "<name>Cluster: z</name></entry>",
+            "<entry><name>Cluster: z</name></entry>",
+        ),
+        # self-closing element
+        (f"<entry xmlns='{UNIREF_URL}'/>", "<entry/>"),
+    ],
+)
+def test_dump_xml_element(xml: str, expected: str) -> None:
+    """Test that namespace declarations are stripped when dumping XML to a string."""
+    dumped = dump_xml_element(fromstring(xml, parser=XMLParser(remove_blank_text=True)))
+    assert dumped == expected
+
+
+def test_extract_cluster_no_id() -> None:
+    """An entry with no id attribute yields empty cluster and entity dicts."""
+    xml = f"<entry xmlns='{UNIREF_URL}'><name>Cluster: no id</name></entry>"
+    assert extract_cluster(fromstring(xml)) == ({}, {})
+
+
+def test_parse_uniref_entry_no_cluster_id() -> None:
+    """An entry with no id attribute is reported as a _parse_error rather than parsed."""
+    xml = f"<entry xmlns='{UNIREF_URL}'><name>Cluster: no id</name></entry>"
+    result = parse_uniref_entry(
+        fromstring(xml, parser=XMLParser(remove_blank_text=True)),
+        NOW,
+        FILE_PATH,
+        PROTOCOL,
+    )
+
+    assert list(result.keys()) == ["_parse_error"]
+    error = result["_parse_error"][0]
+    assert error["error"] == "No cluster ID found in entry"
+    assert error["source_file"] == FILE_PATH
+    # the raw XML (namespace-stripped) is retained for later inspection
+    assert error["xml"] == "<entry><name>Cluster: no id</name></entry>"
+
+
+FIXTURE_CHUNK = Path("tests/fixtures/uniref/uniref_chunk_00001.xml")
+
+
+@pytest.mark.skipif(not FIXTURE_CHUNK.exists(), reason="UniRef XML fixture not available")
+def test_parse_uniref_entry_integration() -> None:
+    """Integration test: stream real UniRef entries from a fixture file and parse each one.
+
+    Exercises the parser end-to-end against genuine UniRef XML (as produced upstream),
+    ensuring every entry parses without error and produces the expected schema tables.
+    """
+    # NOTE: stream_xml_file clears each element right after yielding it, so entries must be
+    # parsed inside the streaming loop rather than collected into a list first.
+    entry_count = 0
+    seen_cluster_ids: set[str] = set()
+    for entry in stream_xml_file(FIXTURE_CHUNK, ENTRY_XML_TAG):
+        entry_count += 1
+        parsed = parse_uniref_entry(entry, NOW, str(FIXTURE_CHUNK), PROTOCOL)
+
+        # every real entry should parse cleanly
+        assert "_parse_error" not in parsed, f"unexpected parse error: {parsed.get('_parse_error')}"
+
+        # cluster + entity rows present and consistent
+        assert len(parsed["cluster"]) == 1
+        assert len(parsed["entity"]) == 1
+        cluster = parsed["cluster"][0]
+        entity = parsed["entity"][0]
+        cluster_id = cluster["cluster_id"]
+        seen_cluster_ids.add(cluster_id)
+
+        assert cluster_id.startswith("uniref:")
+        assert cluster["cluster_type"] == "Protein"
+        assert cluster["protocol"] == PROTOCOL
+        assert entity["entity_id"] == cluster_id
+        assert entity["entity_type"] == "Cluster"
+        assert entity["data_source"] == "UniRef"
+        assert entity["updated"] == NOW
+
+        # at least the representative member is present, and all members reference this cluster
+        assert parsed["clustermember"], f"no cluster members for {cluster_id}"
+        assert any(m["is_representative"] for m in parsed["clustermember"])
+        assert all(m["cluster_id"] == cluster_id for m in parsed["clustermember"])
+
+        # source-file linkage present
+        assert parsed["entity_x_source_file"] == [
+            {"entity_id": cluster_id, "data_source": "UniRef", "source_file": str(FIXTURE_CHUNK)}
+        ]
+
+    assert entry_count > 0, "expected at least one entry in the fixture"
+    # the three distinct clusters in the fixture should each be parsed exactly once
+    assert seen_cluster_ids == {
+        "uniref:UniRef50_A0AB34IYJ6",
+        "uniref:UniRef50_A0A410P257",
+        "uniref:UniRef50_UPI00358F51CD",
+    }

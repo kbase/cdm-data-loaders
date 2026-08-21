@@ -1,6 +1,7 @@
 """DLT pipeline to import UniProt data."""
 
 from collections.abc import Generator
+from datetime import UTC, datetime
 from typing import Any, Final
 
 import dlt
@@ -12,8 +13,8 @@ from cdm_data_loaders.parsers.uniprot.uniprot_kb import ENTRY_XML_TAG, parse_uni
 from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
-    stream_xml_file_resource,
 )
+from cdm_data_loaders.readers.xml import process_xml_file_batches
 
 APP_NAME: Final[str] = "uniprot_kb_importer"
 UNIPROT_LOG_INTERVAL: Final[int] = 1000
@@ -30,11 +31,17 @@ class UniProtSettings(BatchedFileInputSettings):
 
 @dlt.resource(name="parse_uniprot", file_format="parquet", parallelized=True)
 def parse_uniprot(settings: UniProtSettings) -> Generator[DataItemWithMeta, Any]:
-    """Parse the information from UniProt files, batch by batch."""
-    yield from stream_xml_file_resource(
+    """Parse the information from UniProt files, batch by batch.
+
+    :param settings: config for running the pipeline.
+    :type settings: UniProtSettings
+    """
+    # a single timestamp is used to mark every entity parsed in this run
+    timestamp = datetime.now(UTC)
+    yield from process_xml_file_batches(
         settings=settings,
         xml_tag=ENTRY_XML_TAG,
-        parse_fn=parse_uniprot_entry,
+        parse_fn=lambda entry, file_path: parse_uniprot_entry(entry=entry, timestamp=timestamp, file_path=file_path),
         log_interval=UNIPROT_LOG_INTERVAL,
     )
 

@@ -32,9 +32,6 @@ from tests.pipelines.conftest import (
     make_batcher,
 )
 
-# TODO: add a test to ensure that parse_uniref_entry is called with the appropriate args. Requires mocking the file batcher and stream_xml_file_resource functions.
-
-
 START_AT_VALUE = 25
 START_AT_STRING = "25"
 
@@ -177,7 +174,7 @@ def test_cli_app_run_alt_settings(
     uniref_variant: str,
     use_destination: str,
     use_output_dir_for_pipeline_metadata: str,
-    dlt_config,
+    dlt_config: dict[str, Any],
 ) -> None:
     """Test all the variants of the UnirefSettings fields."""
     cli_args = [
@@ -272,8 +269,8 @@ def test_run_uniref_pipeline_sets_core_run_pipeline_args_correctly(
 
 
 def test_parse_uniref_resource(test_settings: UnirefSettings) -> None:
-    """Ensure that parse_uniref calls stream_xml_file_resource with the namespaced UniRef XML tag."""
-    with patch.object(uniref_module, "stream_xml_file_resource") as mock_stream:
+    """Ensure that parse_uniref calls process_xml_file_batches with the namespaced UniRef XML tag."""
+    with patch.object(uniref_module, "process_xml_file_batches") as mock_stream:
         mock_stream.return_value = iter([])
         list(parse_uniref(test_settings))
 
