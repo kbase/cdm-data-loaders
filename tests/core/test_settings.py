@@ -9,7 +9,6 @@ from pydantic import ValidationError
 from pydantic_settings import CliApp
 
 from cdm_data_loaders.core.fields import (
-    ALIASES,
     DEV_MODE,
     INPUT_DIR,
     OUTPUT,
@@ -30,11 +29,11 @@ from tests.core.conftest import (
     TEST_CTS_SETTINGS,
     TEST_CTS_SETTINGS_RECONCILED,
     check_settings,
-    generate_cli_arguments,
     make_settings,
     make_settings_autofill_config,
     parametrize_validation_aliases,
 )
+from tests.helpers import make_cli_arg
 
 SETTINGS_CLASSES = [CtsSettings, BatchedFileInputSettings]
 
@@ -48,8 +47,9 @@ PIPE = "pipeline_dir"
 
 
 # argument aliases for the fields, used for CLI parsing
-ARG_ALIASES: frozendict[str, list[str]] = generate_cli_arguments(ALIASES)
-
+ARG_ALIASES: frozendict[str, list[str]] = frozendict(
+    {k: v.validation_alias.choices for k, v in BatchedFileInputSettings.model_fields.items()}
+)
 
 # manually specify to avoid recapitulating logic
 OUTPUT_PATHS: dict[str, dict[str, Any]] = {
@@ -305,7 +305,7 @@ def test_cli_app_run_valid_destinations_accepted(
     use_destination: str, settings_cls: type[CtsSettings], destination_arg: str
 ) -> None:
     """Test valid destinations using the command line."""
-    s = CliApp.run(settings_cls, cli_args=[destination_arg, use_destination])
+    s = CliApp.run(settings_cls, cli_args=[make_cli_arg(destination_arg), use_destination])
     assert s.use_destination == use_destination
 
 
@@ -320,7 +320,7 @@ def test_cli_app_run_invalid_destinations_raises(
 ) -> None:
     """Test invalid destinations using the command line."""
     with pytest.raises(ValidationError, match="use_destination must be one of"):
-        CliApp.run(settings_cls, cli_args=[destination_arg, use_destination])
+        CliApp.run(settings_cls, cli_args=[make_cli_arg(destination_arg), use_destination])
 
 
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
@@ -332,7 +332,7 @@ def test_cli_app_run_destination_has_no_bucket_url(
     dlt_config = {"destination": {"local_fs": None}}
     monkeypatch.setattr(dlt, "config", dlt_config)
     with pytest.raises(ValueError, match="No bucket_url specified for destination local_fs"):
-        CliApp.run(settings_cls, cli_args=[destination_arg, "local_fs"])
+        CliApp.run(settings_cls, cli_args=[make_cli_arg(destination_arg), "local_fs"])
 
 
 # boolean fields
@@ -368,7 +368,7 @@ def test_cli_app_run_boolean_variants_accepted(
     input_arg: str, value: bool, input_arg_name: str, settings_cls: type[CtsSettings]
 ) -> None:
     """Ensure that each invalid boolean value is throws an error."""
-    s = CliApp.run(settings_cls, cli_args=[input_arg_name, str(input_arg)])
+    s = CliApp.run(settings_cls, cli_args=[make_cli_arg(input_arg_name), str(input_arg)])
     if input_arg_name in ARG_ALIASES[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA]:
         assert s.use_output_dir_for_pipeline_metadata == value
     elif input_arg_name in ARG_ALIASES[DEV_MODE]:
@@ -387,7 +387,7 @@ def test_cli_app_run_invalid_boolean_values_raises(
 ) -> None:
     """Ensure that each invalid boolean value is throws an error."""
     with pytest.raises(ValidationError, match="Input should be a valid boolean"):
-        CliApp.run(settings_cls, cli_args=[input_arg_name, str(value)])
+        CliApp.run(settings_cls, cli_args=[make_cli_arg(input_arg_name), str(value)])
 
 
 # input and output path coercion
