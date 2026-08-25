@@ -26,6 +26,7 @@ from tests.core.conftest import (
     make_settings_autofill_config,
     parametrize_validation_aliases,
 )
+from tests.helpers import make_cli_arg
 
 # Directory of real UniProt XML fixtures (chunk_00001.xml ... chunk_00004.xml),
 # named so they match the NumericFileSequenceBatcher file-sequence regex.
@@ -73,7 +74,7 @@ def test_uniprot_settings_cliapp_aliases(validation_alias: str, field_name: str)
     settings = CliApp.run(
         model_cls=UniProtSettings,
         cli_args=[
-            f"{'--' if len(validation_alias) > 1 else '-'}{validation_alias}",
+            make_cli_arg(validation_alias),
             str(TEST_SETTINGS[field_name]),
         ],
     )

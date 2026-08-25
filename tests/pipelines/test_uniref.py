@@ -11,11 +11,9 @@ from frozendict import frozendict
 from pydantic import ValidationError
 from pydantic_settings import CliApp
 
-from cdm_data_loaders.core.fields import LOG_INTERVAL
 from cdm_data_loaders.parsers.uniprot.uniref import ENTRY_XML_TAG, UNIREF_VARIANTS
 from cdm_data_loaders.pipelines import uniref as uniref_module
 from cdm_data_loaders.pipelines.uniref import (
-    UNIREF_LOG_INTERVAL,
     VARIANT,
     UnirefSettings,
     cli,
@@ -29,6 +27,7 @@ from tests.core.conftest import (
     make_settings_autofill_config,
     parametrize_validation_aliases,
 )
+from tests.helpers import make_cli_arg
 
 START_AT_VALUE = 25
 START_AT_STRING = "25"
@@ -78,7 +77,7 @@ def test_cli_valid_variants_accepted(uniref_variant_value: str, variant: str) ->
     """Ensure that each valid uniref variant value is accepted without error when passed via CLI."""
     s = CliApp.run(
         UnirefSettings,
-        cli_args=[f"{'--' if len(variant) > 1 else '-'}{variant}", uniref_variant_value],
+        cli_args=[make_cli_arg(variant), uniref_variant_value],
     )
     assert isinstance(s, UnirefSettings)
     assert s.variant == uniref_variant_value
@@ -102,7 +101,7 @@ def test_cli_invalid_variant_via_cli_raises(
 ) -> None:
     """Ensure that an invalid uniref variant passed via CLI raises an error."""
     with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        CliApp.run(UnirefSettings, cli_args=[f"{'--' if len(variant) > 1 else '-'}{variant}", value])
+        CliApp.run(UnirefSettings, cli_args=[make_cli_arg(variant), value])
 
     exc_message = str(exc_info.value)
     assert "Value error, UniRef variant must be one of" in exc_message
@@ -120,7 +119,7 @@ def test_missing_required_uniref_variant_raises() -> None:
 def test_cli_missing_required_uniref_variant_raises() -> None:
     """Ensure that omitting the required uniref variant argument raises an error."""
     with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        CliApp.run(UnirefSettings, cli_args=[])
+        CliApp.run(UnirefSettings)
 
     exc_message = str(exc_info.value)
     assert "Field required" in exc_message
@@ -137,7 +136,7 @@ def test_cli_invalid_variant_and_destination_via_cli_raises(value: str, variant:
         CliApp.run(
             UnirefSettings,
             cli_args=[
-                f"{'--' if len(variant) > 1 else '-'}{variant}",
+                make_cli_arg(variant),
                 value,
                 "--use_destination",
                 "some invalid destination",
@@ -178,7 +177,7 @@ def test_uniref_settings_cliapp_aliases(validation_alias: str, field_name: str) 
         cli_args=[
             "--variant",
             "90",
-            f"{'--' if len(validation_alias) > 1 else '-'}{validation_alias}",
+            make_cli_arg(validation_alias),
             str(TEST_SETTINGS[field_name]),
         ],
     )
@@ -192,7 +191,7 @@ def test_cli_passes_settings_class_to_run_cli() -> None:
 
     mock_run_cli.assert_called_once()
     assert mock_run_cli.call_args[0] == (UnirefSettings, run_uniref_pipeline)
-    assert mock_run_cli.call_args.kwargs["settings_kwargs"] == {"log_interval": UNIREF_LOG_INTERVAL}
+    assert mock_run_cli.call_args.kwargs == {}
 
 
 def test_cli_calls_run_uniref_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -205,7 +204,7 @@ def test_cli_calls_run_uniref_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(uniref_module, "run_uniref_pipeline", mock_run_uniref_pipeline)
 
     cli()
-    mock_settings_cls.assert_called_once_with(**{LOG_INTERVAL: UNIREF_LOG_INTERVAL})
+    mock_settings_cls.assert_called_once_with()
     mock_run_uniref_pipeline.assert_called_once_with(mock_settings_instance)
 
 
@@ -425,7 +424,7 @@ def test_integration_cli_uniref_pipeline_output_validated(
     cli()
 
     # UnirefSettings was constructed with the dlt config coming from core
-    uniref_module.UnirefSettings.assert_called_once_with(**{LOG_INTERVAL: UNIREF_LOG_INTERVAL})
+    uniref_module.UnirefSettings.assert_called_once_with()
 
     load_info = captured["load_info"]
     pipeline = captured["pipeline"]

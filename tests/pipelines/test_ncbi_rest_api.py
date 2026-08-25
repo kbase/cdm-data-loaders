@@ -13,7 +13,6 @@ from pydantic import ValidationError
 from pydantic_settings import CliApp
 from requests import HTTPError
 
-from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines import ncbi_rest_api as ncbi_module
 from cdm_data_loaders.pipelines.ncbi_rest_api import (
     ANNOTATION,
@@ -40,6 +39,7 @@ from tests.core.conftest import (
     make_settings_autofill_config,
     parametrize_validation_aliases,
 )
+from tests.helpers import make_cli_arg
 
 
 @pytest.fixture(autouse=True)
@@ -255,7 +255,7 @@ def test_ncbi_rest_api_settings_cliapp_aliases(validation_alias: str, field_name
     settings = CliApp.run(
         model_cls=NcbiRestApiSettings,
         cli_args=[
-            f"{'--' if len(validation_alias) > 1 else '-'}{validation_alias}",
+            make_cli_arg(validation_alias),
             str(TEST_NCBI_SETTINGS[field_name]),
         ],
     )
