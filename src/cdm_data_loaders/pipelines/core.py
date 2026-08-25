@@ -1,22 +1,17 @@
 """Common reusable pipeline elements."""
 
-import datetime
 import os
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from logging import Logger, getLogger
 from typing import Any, Final
 
 import dlt
 from dlt.common.runtime.slack import send_slack_message
-from dlt.extract.items import DataItemWithMeta
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
-from cdm_data_loaders.core.fields import DEFAULT_PIPELINE_BATCH_SIZE
-from cdm_data_loaders.core.settings import BatchedFileInputSettings, CtsSettings
-from cdm_data_loaders.utils.batcher import NumericFileSequenceBatcher
+from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.utils.cdm_logger import init_logger
-from cdm_data_loaders.utils.xml_utils import stream_xml_file
 
 WEBHOOK_NOT_CONFIGURED: Final[str] = "Slack webhook not configured"
 NO_MESSAGE: Final[str] = "No message supplied"
@@ -66,22 +61,26 @@ def sync_configs(settings: CtsSettings, dlt_config: Any) -> None:
 
 def dump_settings(settings: CtsSettings) -> None:
     """Dump the pipeline settings to the logger."""
-    settings_minus_dlt_config = settings.model_dump(exclude={"dlt_config"})
     logger.info("Pipeline settings:")
-    logger.info(settings_minus_dlt_config)
+    logger.info(settings.model_dump())
 
 
-def run_cli(settings_cls: type[CtsSettings], pipeline_fn: Callable[[Any], None]) -> None:
+def run_cli(
+    settings_cls: type[CtsSettings],
+    pipeline_fn: Callable[[Any], None],
+    settings_kwargs: dict[str, Any] | None = None,
+) -> None:
     """Generic CLI entry point for any pipeline.
 
     :param settings_cls: the Settings class to instantiate
     :param pipeline_fn: the run_pipeline function to call with the config
+    :param settings_kwargs: any extra non-cli/env var settings to be added
     """
     # piece together env vars
     construct_env_var()
     # instantiate the config
     try:
-        settings = settings_cls(dlt_config=dlt.config)
+        settings = settings_cls(**(settings_kwargs or {}))
         sync_configs(settings, dlt.config)
         init_logger(settings)
     except (SettingsError, ValidationError, ValueError):
@@ -148,40 +147,3 @@ def run_pipeline(
     logger.info("Work complete!")
     if slack_hook:
         send_slack_message_carefully(slack_hook, "Pipeline completed successfully!")
-
-
-def stream_xml_file_resource(
-    settings: BatchedFileInputSettings,
-    xml_tag: str,
-    parse_fn: Callable,
-    log_interval: int = 1000,
-) -> Generator[DataItemWithMeta, Any]:
-    """Core generator shared by XML-based dlt pipeline resources.
-
-    :param settings: pipeline config with input_dir and start_at
-    :type settings: BatchedFileInputSettings
-    :param xml_tag: XML element tag to stream
-    :type xml_tag: str
-    :param parse_fn: callable(entry, timestamp, file_path) -> dict[str, rows]
-    :type parse_fn: Callable
-    :param log_interval: log a progress message every N entries
-    :type log_interval: int
-    """
-    timestamp = datetime.datetime.now(tz=datetime.UTC)
-    batch_params: dict[str, Any] = {}
-    if settings.start_at:
-        batch_params["start_at"] = settings.start_at
-
-    batcher = NumericFileSequenceBatcher(
-        directory=settings.input_dir, batch_size=DEFAULT_PIPELINE_BATCH_SIZE, **batch_params
-    )
-    while files := batcher.get_batch():
-        logger.debug("Files to be processed:%s", "".join("- " + str(f) + "\n" for f in files))
-        for file_path in files:
-            logger.info("Reading from %s", str(file_path))
-            for n_entries, entry in enumerate(stream_xml_file(file_path, xml_tag)):
-                parsed_entry = parse_fn(entry=entry, timestamp=timestamp, file_path=file_path)
-                for table, rows in parsed_entry.items():
-                    yield dlt.mark.with_table_name(rows, table)
-                if (n_entries + 1) % log_interval == 0:
-                    logger.info("Processed %d entries", n_entries + 1)

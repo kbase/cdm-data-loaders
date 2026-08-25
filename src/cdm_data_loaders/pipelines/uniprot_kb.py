@@ -2,10 +2,11 @@
 
 from collections.abc import Generator
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import Annotated, Any, Final
 
 import dlt
 from dlt.extract.items import DataItemWithMeta
+from pydantic import Field, PositiveInt
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, BatchedFileInputSettings
@@ -28,6 +29,14 @@ class UniProtSettings(BatchedFileInputSettings):
         cli_prog_name="uniprot",
     )
 
+    log_interval: Annotated[
+        PositiveInt,
+        Field(
+            default=UNIPROT_LOG_INTERVAL,
+            description="How often (in number of processed entries) to emit a progress log message. Must be a positive integer.",
+        ),
+    ]
+
 
 @dlt.resource(name="parse_uniprot", file_format="parquet", parallelized=True)
 def parse_uniprot(settings: UniProtSettings) -> Generator[DataItemWithMeta, Any]:
@@ -42,7 +51,6 @@ def parse_uniprot(settings: UniProtSettings) -> Generator[DataItemWithMeta, Any]
         settings=settings,
         xml_tag=ENTRY_XML_TAG,
         parse_fn=lambda entry, file_path: parse_uniprot_entry(entry=entry, timestamp=timestamp, file_path=file_path),
-        log_interval=UNIPROT_LOG_INTERVAL,
     )
 
 
@@ -60,7 +68,10 @@ def run_uniprot_pipeline(settings: UniProtSettings) -> None:
 
 def cli() -> None:
     """CLI interface for the UniProt KB importer pipeline."""
-    run_cli(UniProtSettings, run_uniprot_pipeline)
+    run_cli(
+        UniProtSettings,
+        run_uniprot_pipeline,
+    )
 
 
 if __name__ == "__main__":

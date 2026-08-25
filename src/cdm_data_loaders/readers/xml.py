@@ -4,7 +4,7 @@ import gzip
 from collections.abc import Callable, Generator
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 import dlt
 import xmltodict
@@ -13,9 +13,6 @@ from lxml.etree import Element, iterparse, tostring
 
 from cdm_data_loaders.core.settings import BatchedFileInputSettings
 from cdm_data_loaders.utils.batcher import get_file_batches
-
-DEFAULT_BUFFER_SIZE: Final[int] = 100
-DEFAULT_LOG_INTERVAL: Final[int] = 1000
 
 logger: Logger = getLogger(__name__)
 
@@ -45,32 +42,24 @@ def stream_xml_file(file_path: str | Path, element_with_ns: str) -> Generator[El
 
 
 def process_xml_file(
-    file_path: Path,
+    settings: BatchedFileInputSettings,
     xml_tag: str,
     parse_fn: Callable,
-    buffer_size: int = 100,
-    log_interval: int = 1000,
+    file_path: Path,
 ) -> Generator[DataItemWithMeta, Any]:
     """Core generator shared by XML-based dlt pipeline resources.
 
-    :param file_path: path to the XML file to be processed
-    :type file_path: Path
+    :param settings: pipeline config with input_dir and start_at
+    :type settings: BatchedFileInputSettings
     :param xml_tag: XML element tag to stream
     :type xml_tag: str
     :param parse_fn: callable(entry, timestamp, file_path) -> dict[str, rows]
     :type parse_fn: Callable
-    :param buffer_size: number of elements to amass before yielding data, defaults to 100
-    :type buffer_size: int, optional
-    :param log_interval: log a progress message every N entries
-    :type log_interval: int
+    :param file_path: path to the XML file to be processed
+    :type file_path: Path
     :yield: table-tagged rows
     :rtype: Generator[DataItemWithMeta, Any]
     """
-    if buffer_size <= 0:
-        buffer_size = DEFAULT_BUFFER_SIZE
-    if log_interval <= 0:
-        log_interval = DEFAULT_LOG_INTERVAL
-
     logger.info("Reading from %s", str(file_path))
     n_entries = -1
     dict_buffer: dict[str, list[Any]] = {}
@@ -80,12 +69,12 @@ def process_xml_file(
             if table not in dict_buffer:
                 dict_buffer[table] = []
             dict_buffer[table].extend(rows)
-            if len(dict_buffer[table]) >= buffer_size:
+            if len(dict_buffer[table]) >= settings.buffer_size:
                 yield dlt.mark.with_table_name(dict_buffer[table], table)
                 dict_buffer[table] = []
-        if (n_entries + 1) % log_interval == 0:
+        if (n_entries + 1) % settings.log_interval == 0:
             logger.debug("Processed %d entries", n_entries + 1)
-    if (n_entries + 1) % log_interval != 0:
+    if (n_entries + 1) % settings.log_interval != 0:
         logger.debug("Processed %d entries from %s", n_entries + 1, file_path.name)
 
     for table, rows in dict_buffer.items():
@@ -97,8 +86,6 @@ def process_xml_file_batches(
     settings: BatchedFileInputSettings,
     xml_tag: str,
     parse_fn: Callable,
-    buffer_size: int = 100,
-    log_interval: int = 1000,
 ) -> Generator[DataItemWithMeta, Any]:
     """Generator that uses the NumericFileSequenceBatcher to generate a list of XML files to process.
 
@@ -108,13 +95,14 @@ def process_xml_file_batches(
     :type xml_tag: str
     :param parse_fn: function for parsing the XML
     :type parse_fn: Callable
-    :param log_interval: log a progress message every N entries (implemented in parse_fn)
-    :type log_interval: int
     """
     for files in get_file_batches(settings):
         for file_path in files:
             yield from process_xml_file(
-                file_path, xml_tag, parse_fn, buffer_size=buffer_size, log_interval=log_interval
+                settings=settings,
+                xml_tag=xml_tag,
+                parse_fn=parse_fn,
+                file_path=file_path,
             )
 
 

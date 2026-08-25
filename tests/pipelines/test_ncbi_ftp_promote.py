@@ -24,7 +24,7 @@ def make_settings(**kwargs: str | int | bool | Path | PurePosixPath | None) -> P
     """Generate a validated PromoteSettings object with a required staging_path default."""
     settings_ctor = cast("Any", PromoteSettings)
     kwargs.setdefault("staging_path", _DEFAULT_STAGING_PATH)
-    return settings_ctor(_cli_parse_args=[], dlt_config=_generate_dlt_config(), **kwargs)
+    return settings_ctor(_cli_parse_args=[], **kwargs)
 
 
 # Settings defaults

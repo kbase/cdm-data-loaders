@@ -10,13 +10,10 @@ This module centralizes common operations:
 - Deduplicating lists
 """
 
-import gzip
-from collections.abc import Generator
 from logging import Logger, getLogger
-from pathlib import Path
 from typing import Any
 
-from lxml.etree import Element, iterparse
+from lxml.etree import Element
 
 logger: Logger = getLogger(__name__)
 
@@ -115,80 +112,8 @@ def parse_db_references(elem: Element, ns: dict[str, str], pub_types=("PubMed", 
     return publications, others
 
 
-# ============================================================
-# Dict Cleaning
-# ============================================================
-
-
 def clean_dict(d: dict[str, Any]) -> dict[str, Any]:
     """
     Remove keys whose value is None or empty list.
     """
     return {k: v for k, v in d.items() if v not in (None, [], {})}
-
-
-def stream_xml_file(file_path: str | Path, element_with_ns: str) -> Generator[Element, Any]:
-    """Stream XML elements from a file.
-
-    :param file_path: path to the XML file; file can be gzipped or not.
-    :type file_path: str | Path
-    :param element_with_ns: name of the element (including namespace, in braces) to return; e.g. f"{{{UNIPROT_NS}}}entry"
-    :type element_with_ns: str
-    :yield: elements from the file
-    :rtype: Generator[Element, Any]
-    """
-    if isinstance(file_path, Path):
-        file_path = str(file_path)
-    logger.info("Streaming XML from %s", file_path)
-    open_fn = open
-    if file_path.endswith(".gz"):
-        open_fn = gzip.open
-
-    with open_fn(file_path, "rb") as f:
-        # with open(filepath, "rb") as f:
-        for _, elem in iterparse(f, tag=(element_with_ns), remove_blank_text=True):
-            logger.debug(elem)
-            yield elem
-            elem.clear()
-
-
-def parse_head_matter(fh, ns_dict) -> dict[str, str]:
-    """Parse the head matter of an XML file and return the data source information.
-
-    :param fh: open file handle / data source
-    :type fh:
-    :raises ValueError: if the expected UniRef namespace is not found
-    :raises ValueError:
-    :return: data source information
-    :rtype: dict[str, str]
-    """
-    ns = {}
-    data_src = {}
-    ctx = iterparse(fh, events=("start-ns", "end-ns", "start", "end"))
-    for event, elem in ctx:
-        if event == "start-ns":
-            # output will be namespaces
-            ns[elem[0]] = elem[1]
-            continue
-
-        if event == "end-ns":
-            continue
-
-        if event == "start" and elem.tag.endswith("entry"):
-            # we're done here
-            break
-        elem.clear()
-
-    if "" not in ns:
-        msg = "No default namespace found!"
-        raise ValueError(msg)
-
-    if ns[""] != ns_dict["ns"]:
-        if ns[""] in ns_dict.values():
-            logger.warning("xmlns set to '%s'", ns[""])
-            ns_dict["ns"] = ns[""]
-        else:
-            msg = f"Unexpected default namespace: got '{ns['']}', expected '{ns_dict['ns']}'"
-            raise ValueError(msg)
-
-    return data_src

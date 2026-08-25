@@ -32,3 +32,8 @@ def assertDataFrameEqual(result_rows: list[Row], expected_rows: list[Row]) -> No
         assert row in expected_dict
     for row in expected_dict:
         assert row in results_dict
+
+
+def make_cli_arg(arg: str) -> str:
+    """Generate the appropriate CLI form for an argument."""
+    return f"{'--' if len(arg) > 1 else '-'}{arg}"

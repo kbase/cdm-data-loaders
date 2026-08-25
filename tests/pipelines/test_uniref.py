@@ -1,21 +1,20 @@
 """Tests for the UniRef DLT pipeline."""
 
-import datetime
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import dlt
 import pytest
 from frozendict import frozendict
 from pydantic import ValidationError
 from pydantic_settings import CliApp
 
 from cdm_data_loaders.parsers.uniprot.uniref import ENTRY_XML_TAG, UNIREF_VARIANTS
-from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines import uniref as uniref_module
 from cdm_data_loaders.pipelines.uniref import (
-    UNIREF_LOG_INTERVAL,
+    VARIANT,
     UnirefSettings,
     cli,
     parse_uniref,
@@ -26,88 +25,90 @@ from tests.core.conftest import (
     TEST_BATCH_FILE_SETTINGS_RECONCILED,
     check_settings,
     make_settings_autofill_config,
+    parametrize_validation_aliases,
 )
-from tests.pipelines.conftest import (
-    ARG_ALIASES,
-    make_batcher,
-)
+from tests.helpers import make_cli_arg
 
 START_AT_VALUE = 25
 START_AT_STRING = "25"
 
 TEST_DEFAULT_UNIREF_VARIANT = "50"
 
+# Directory of real UniRef XML fixtures (uniref_chunk_00001.xml ...), named so
+# they match the NumericFileSequenceBatcher file-sequence regex.
+UNIREF_FIXTURE_DIR = Path(__file__).parents[1] / "fixtures" / "uniref"
+
 
 TEST_SETTINGS = frozendict(
-    **TEST_BATCH_FILE_SETTINGS,
-    uniref_variant=TEST_DEFAULT_UNIREF_VARIANT,
+    {**TEST_BATCH_FILE_SETTINGS, VARIANT: TEST_DEFAULT_UNIREF_VARIANT},
 )
 
 TEST_SETTINGS_RECONCILED = frozendict(
-    **TEST_BATCH_FILE_SETTINGS_RECONCILED,
-    uniref_variant=TEST_DEFAULT_UNIREF_VARIANT,
+    {**TEST_BATCH_FILE_SETTINGS_RECONCILED, VARIANT: TEST_DEFAULT_UNIREF_VARIANT},
 )
 
-
-@pytest.fixture(autouse=True)
-def patch_dlt_config(dlt_config: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
-    """Monkeypatch the dlt config in all tests."""
-    monkeypatch.setattr(core.dlt, "config", dlt_config)
+UNIREF_VARIANT_ALIASES = UnirefSettings.model_fields[VARIANT].validation_alias.choices
 
 
 @pytest.fixture(params=UNIREF_VARIANTS)
-def variant(request: pytest.FixtureRequest) -> str:
+def uniref_variant_value(request: pytest.FixtureRequest) -> str:
     """Parametrized fixture over all valid uniref variants."""
     return request.param
 
 
 @pytest.fixture
-def test_settings(variant: str) -> UnirefSettings:
+def test_settings(uniref_variant_value: str) -> UnirefSettings:
     """A valid UnirefSettings object for each uniref variant."""
-    return make_settings_autofill_config(UnirefSettings, uniref_variant=variant, input_dir="/fake/input")  # type: ignore[reportReturnType]
+    return make_settings_autofill_config(UnirefSettings, {VARIANT: uniref_variant_value, "input_dir": "/fake/input"})  # type: ignore[reportReturnType]
 
 
-@pytest.mark.parametrize("variant", UNIREF_VARIANTS)
-def test_settings_valid_variants_accepted(variant: str) -> None:
-    """Ensure that each valid uniref_variant value is accepted without error."""
-    s = make_settings_autofill_config(UnirefSettings, uniref_variant=variant)
+@pytest.mark.parametrize("uniref_variant_value", UNIREF_VARIANTS)
+@pytest.mark.parametrize(VARIANT, UNIREF_VARIANT_ALIASES)
+def test_settings_valid_variants_accepted(uniref_variant_value: str, variant: str) -> None:
+    """Ensure that each valid variant value is accepted without error."""
+    s = make_settings_autofill_config(UnirefSettings, {variant: uniref_variant_value})
     assert isinstance(s, UnirefSettings)
-    assert s.uniref_variant == variant
+    assert s.variant == uniref_variant_value
 
 
-@pytest.mark.parametrize("value", UNIREF_VARIANTS)
-@pytest.mark.parametrize("uniref_variant", ARG_ALIASES["uniref_variant"])
-def test_cli_valid_variants_accepted(uniref_variant: str, dlt_config: dict[str, Any], value: str) -> None:
-    """Ensure that each valid uniref_variant value is accepted without error when passed via CLI."""
-    s = CliApp.run(UnirefSettings, dlt_config=dlt_config, cli_args=[uniref_variant, value])
+@pytest.mark.parametrize("uniref_variant_value", UNIREF_VARIANTS)
+@pytest.mark.parametrize(VARIANT, UNIREF_VARIANT_ALIASES)
+def test_cli_valid_variants_accepted(uniref_variant_value: str, variant: str) -> None:
+    """Ensure that each valid uniref variant value is accepted without error when passed via CLI."""
+    s = CliApp.run(
+        UnirefSettings,
+        cli_args=[make_cli_arg(variant), uniref_variant_value],
+    )
     assert isinstance(s, UnirefSettings)
-    assert s.uniref_variant == value
+    assert s.variant == uniref_variant_value
 
 
 @pytest.mark.parametrize("value", ["25", "75", "uniref50", "", "ALL"])
 def test_invalid_variant_raises(value: str) -> None:
-    """Ensure that an unrecognised uniref_variant raises a ValidationError."""
+    """Ensure that an unrecognised uniref variant raises a ValidationError."""
     with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        make_settings_autofill_config(UnirefSettings, uniref_variant=value)
+        make_settings_autofill_config(UnirefSettings, {VARIANT: value})
 
     exc_message = str(exc_info.value)
-    assert "uniref_variant must be one of" in exc_message
+    assert "UniRef variant must be one of" in exc_message
 
 
 @pytest.mark.parametrize("value", ["25", "75", "uniref50", "", "ALL"])
-@pytest.mark.parametrize("uniref_variant", ARG_ALIASES["uniref_variant"])
-def test_cli_invalid_variant_via_cli_raises(value: str, uniref_variant: str, dlt_config: dict[str, Any]) -> None:
-    """Ensure that an invalid uniref_variant passed via CLI raises an error."""
-    # with pytest.raises(ValidationError, match="Value error, uniref_variant must be one of"):
+@pytest.mark.parametrize(VARIANT, UNIREF_VARIANT_ALIASES)
+def test_cli_invalid_variant_via_cli_raises(
+    value: str,
+    variant: str,
+) -> None:
+    """Ensure that an invalid uniref variant passed via CLI raises an error."""
     with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        CliApp.run(UnirefSettings, dlt_config=dlt_config, cli_args=[uniref_variant, value])
+        CliApp.run(UnirefSettings, cli_args=[make_cli_arg(variant), value])
 
     exc_message = str(exc_info.value)
-    assert "Value error, uniref_variant must be one of" in exc_message
+    assert "Value error, UniRef variant must be one of" in exc_message
 
 
 def test_missing_required_uniref_variant_raises() -> None:
-    """Ensure that omitting the required uniref_variant argument raises a ValidationError."""
+    """Ensure that omitting the required uniref variant argument raises a ValidationError."""
     with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
         make_settings_autofill_config(UnirefSettings)
 
@@ -115,34 +116,36 @@ def test_missing_required_uniref_variant_raises() -> None:
     assert "Field required" in exc_message
 
 
-def test_cli_missing_required_uniref_variant_raises(dlt_config: dict[str, Any]) -> None:
-    """Ensure that omitting the required uniref_variant argument raises an error."""
+def test_cli_missing_required_uniref_variant_raises() -> None:
+    """Ensure that omitting the required uniref variant argument raises an error."""
     with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        CliApp.run(UnirefSettings, dlt_config=dlt_config, cli_args=[])
+        CliApp.run(UnirefSettings)
 
     exc_message = str(exc_info.value)
     assert "Field required" in exc_message
 
 
 @pytest.mark.parametrize("value", ["25", "75", "uniref50", "", "ALL"])
-@pytest.mark.parametrize("uniref_variant", ARG_ALIASES["uniref_variant"])
-def test_cli_invalid_variant_and_destination_via_cli_raises(
-    value: str, uniref_variant: str, dlt_config: dict[str, Any]
-) -> None:
-    """Ensure that invalid uniref_variant and use_destination passed via CLI raises an error with both errors.
+@pytest.mark.parametrize(VARIANT, UNIREF_VARIANT_ALIASES)
+def test_cli_invalid_variant_and_destination_via_cli_raises(value: str, variant: str) -> None:
+    """Ensure that invalid uniref variant and use_destination passed via CLI raises an error with both errors.
 
     N.b. Pydantic only reports the first error!!!
     """
     with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
         CliApp.run(
             UnirefSettings,
-            dlt_config=dlt_config,
-            cli_args=[uniref_variant, value, "--use_destination", "some invalid destination"],
+            cli_args=[
+                make_cli_arg(variant),
+                value,
+                "--use_destination",
+                "some invalid destination",
+            ],
         )
 
     # Check that both errors are present in the exception message
     exc_message = str(exc_info.value)
-    assert "Value error, uniref_variant must be one of" in exc_message
+    assert "Value error, UniRef variant must be one of" in exc_message
 
 
 def test_make_settings_all_params_set() -> None:
@@ -150,70 +153,48 @@ def test_make_settings_all_params_set() -> None:
 
     Note that TEST_SETTINGS includes a value for pipeline_dir.
     """
-    s = make_settings_autofill_config(UnirefSettings, **TEST_SETTINGS)
+    s = make_settings_autofill_config(UnirefSettings, TEST_SETTINGS)
     check_settings(s, TEST_SETTINGS_RECONCILED)
 
 
-@pytest.mark.parametrize("dev_mode", ARG_ALIASES["dev_mode"])
-@pytest.mark.parametrize("input_dir", ARG_ALIASES["input_dir"])
-@pytest.mark.parametrize("log_config_file", ARG_ALIASES["log_config_file"])
-@pytest.mark.parametrize("output", ARG_ALIASES["output"])
-@pytest.mark.parametrize("start_at", ARG_ALIASES["start_at"])
-@pytest.mark.parametrize("uniref_variant", ARG_ALIASES["uniref_variant"])
-@pytest.mark.parametrize("use_destination", ARG_ALIASES["use_destination"])
-@pytest.mark.parametrize(
-    "use_output_dir_for_pipeline_metadata",
-    ARG_ALIASES["use_output_dir_for_pipeline_metadata"],
-)
-def test_cli_app_run_alt_settings(
-    dev_mode: str,
-    input_dir: str,
-    log_config_file: str,
-    output: str,
-    start_at: str,
-    uniref_variant: str,
-    use_destination: str,
-    use_output_dir_for_pipeline_metadata: str,
-    dlt_config: dict[str, Any],
-) -> None:
-    """Test all the variants of the UnirefSettings fields."""
-    cli_args = [
-        dev_mode,
-        TEST_SETTINGS["dev_mode"],
-        input_dir,
-        TEST_SETTINGS["input_dir"],
-        log_config_file,
-        TEST_SETTINGS["log_config_file"],
-        output,
-        TEST_SETTINGS["output"],
-        start_at,
-        TEST_SETTINGS["start_at"],
-        uniref_variant,
-        TEST_SETTINGS["uniref_variant"],
-        use_destination,
-        TEST_SETTINGS["use_destination"],
-        use_output_dir_for_pipeline_metadata,
-        TEST_SETTINGS["use_output_dir_for_pipeline_metadata"],
-    ]
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """Dynamically generate tests for every alias of each user-settable field in a settings object."""
+    parametrize_validation_aliases(metafunc, UnirefSettings)
 
-    s = CliApp.run(
-        UnirefSettings,
-        dlt_config=dlt_config,
-        cli_args=cli_args,
+
+def test_uniref_settings(validation_alias: str, field_name: str) -> None:
+    """Test all fields and aliases in the UnirefSettings class."""
+    settings = make_settings_autofill_config(
+        UnirefSettings, {"variant": "90", validation_alias: TEST_SETTINGS[field_name]}
     )
-    check_settings(s, TEST_SETTINGS_RECONCILED)
+    assert getattr(settings, field_name) == TEST_SETTINGS_RECONCILED[field_name]
+
+
+def test_uniref_settings_cliapp_aliases(validation_alias: str, field_name: str) -> None:
+    """Test the UnirefSettings aliases for a given model field name, initialised using CliApp.run."""
+    settings = CliApp.run(
+        model_cls=UnirefSettings,
+        cli_args=[
+            "--variant",
+            "90",
+            make_cli_arg(validation_alias),
+            str(TEST_SETTINGS[field_name]),
+        ],
+    )
+    assert getattr(settings, field_name) == TEST_SETTINGS_RECONCILED[field_name]
 
 
 def test_cli_passes_settings_class_to_run_cli() -> None:
-    """Ensure that cli() calls run_cli with UnirefSettings as the settings class."""
+    """Ensure that cli() calls run_cli with UnirefSettings and the UniRef log_interval default."""
     with patch.object(uniref_module, "run_cli") as mock_run_cli:
         cli()
 
     mock_run_cli.assert_called_once()
     assert mock_run_cli.call_args[0] == (UnirefSettings, run_uniref_pipeline)
+    assert mock_run_cli.call_args.kwargs == {}
 
 
-def test_cli_calls_run_uniref_pipeline(monkeypatch: pytest.MonkeyPatch, dlt_config: dict[str, Any]) -> None:
+def test_cli_calls_run_uniref_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure that cli() calls run_uniref_pipeline with the settings."""
     mock_settings_instance = MagicMock()
     mock_settings_cls = MagicMock(return_value=mock_settings_instance)
@@ -223,7 +204,7 @@ def test_cli_calls_run_uniref_pipeline(monkeypatch: pytest.MonkeyPatch, dlt_conf
     monkeypatch.setattr(uniref_module, "run_uniref_pipeline", mock_run_uniref_pipeline)
 
     cli()
-    mock_settings_cls.assert_called_once_with(dlt_config=dlt_config)
+    mock_settings_cls.assert_called_once_with()
     mock_run_uniref_pipeline.assert_called_once_with(mock_settings_instance)
 
 
@@ -237,7 +218,7 @@ def test_run_uniref_pipeline_args_set_correctly(test_settings: UnirefSettings) -
     _, kwargs = mock_run_pipeline.call_args
     assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs"}
     assert kwargs["pipeline_kwargs"] == {
-        "pipeline_name": f"uniref_{test_settings.uniref_variant}",
+        "pipeline_name": f"uniref_{test_settings.variant}",
         "dataset_name": "uniprot_kb",
     }
     assert kwargs["settings"] == test_settings
@@ -262,7 +243,7 @@ def test_run_uniref_pipeline_sets_core_run_pipeline_args_correctly(
     mock_dlt.destination.assert_called_once_with(test_settings.use_destination)
     mock_dlt.pipeline.assert_called_once_with(
         destination=mock_dlt.destination.return_value,
-        pipeline_name=f"uniref_{test_settings.uniref_variant}",
+        pipeline_name=f"uniref_{test_settings.variant}",
         dataset_name="uniprot_kb",
     )
     mock_dlt.pipeline.return_value.run.assert_called_once_with(expected_resource)
@@ -276,80 +257,183 @@ def test_parse_uniref_resource(test_settings: UnirefSettings) -> None:
 
     assert mock_stream.call_count == 1
     kwargs = mock_stream.call_args.kwargs
-    assert kwargs.keys() == {"settings", "xml_tag", "parse_fn", "log_interval"}
+    assert kwargs.keys() == {"settings", "xml_tag", "parse_fn"}
     assert kwargs["xml_tag"] == ENTRY_XML_TAG
-    assert kwargs["log_interval"] == UNIREF_LOG_INTERVAL
     assert kwargs["settings"] == test_settings
     assert isinstance(kwargs["parse_fn"], Callable)
 
 
-@pytest.mark.skip("FIXME: not working -- due to parallelization?")
+# Integration test for the UniRef pipeline
+#
+# Rather than mocking dlt (which is brittle -- the internals of where
+# ``dlt.mark.with_table_name`` is called have moved between modules), we follow
+# the pattern used elsewhere in this repo (see
+# ``tests/readers/jsonschema_xsv/test_source.py``) and run the *real*
+# ``parse_uniref`` resource through a real, local DuckDB pipeline. This
+# exercises extraction, XML streaming/parsing, table-name marking and dlt
+# normalisation all together, and lets us query the loaded data back out.
+
+
+@pytest.fixture
+def duckdb_uniref_settings(tmp_path: Path) -> UnirefSettings:
+    """Provide UnirefSettings pointing at the real UniRef XML fixtures.
+
+    ``input_dir`` points at the fixture directory containing
+    ``uniref_chunk_0000N.xml`` files, and ``output`` is a local directory inside
+    ``tmp_path`` so the run is fully isolated. The ``variant`` is fixed to
+    a valid value ("50") for the integration run.
+    """
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    return make_settings_autofill_config(  # type: ignore[reportReturnType]
+        UnirefSettings,
+        {
+            VARIANT: TEST_DEFAULT_UNIREF_VARIANT,
+            "input_dir": str(UNIREF_FIXTURE_DIR),
+            "output": str(output_dir),
+            "use_destination": "local_fs",
+            "use_output_dir_for_pipeline_metadata": False,
+        },
+    )
+
+
+def _run_uniref_duckdb_pipeline(settings: UnirefSettings, tmp_path: Path) -> tuple[Any, Any]:
+    """Run ``parse_uniref`` through a real DuckDB pipeline and return (pipeline, load_info)."""
+    pipeline = dlt.pipeline(
+        pipeline_name="test_uniref_pipeline",
+        destination="duckdb",
+        dataset_name="test_uniref",
+        pipelines_dir=str(tmp_path / "pipelines"),
+    )
+    load_info = pipeline.run(parse_uniref(settings))
+    return pipeline, load_info
+
+
+def test_integration_uniref_pipeline_loads_into_duckdb(
+    duckdb_uniref_settings: UnirefSettings,
+    tmp_path: Path,
+) -> None:
+    """Full integration test: parse the real fixture files into a DuckDB destination.
+
+    Confirms that the pipeline runs end-to-end without failed jobs and that the
+    expected CDM tables are populated with data queried back out of DuckDB.
+    """
+    pipeline, load_info = _run_uniref_duckdb_pipeline(duckdb_uniref_settings, tmp_path)
+
+    assert not load_info.has_failed_jobs
+
+    # the parser emits an "entity" row per UniRef cluster; the fixtures contain
+    # several clusters across the chunk files, so this table must not be empty.
+    with (
+        pipeline.sql_client() as client,
+        client.execute_query("SELECT COUNT(*) FROM entity") as cur,
+    ):
+        (entity_count,) = cur.fetchone()
+
+    assert entity_count > 0
+
+    # every entity must have a "uniref:"-prefixed entity_id and be a Cluster.
+    with (
+        pipeline.sql_client() as client,
+        client.execute_query("SELECT entity_id, entity_type FROM entity") as cur,
+    ):
+        rows = cur.fetchall()
+
+    assert all(entity_id.startswith("uniref:") for entity_id, _ in rows)
+    assert all(entity_type == "Cluster" for _, entity_type in rows)
+
+
+def test_integration_uniref_pipeline_populates_related_tables(
+    duckdb_uniref_settings: UnirefSettings,
+    tmp_path: Path,
+) -> None:
+    """The pipeline should populate the related CDM tables produced by the parser."""
+    pipeline, load_info = _run_uniref_duckdb_pipeline(duckdb_uniref_settings, tmp_path)
+
+    assert not load_info.has_failed_jobs
+
+    # tables that the parser always emits at least one row for, per entry
+    for table_name in ("entity", "cluster", "clustermember", "entity_x_source_file"):
+        with (
+            pipeline.sql_client() as client,
+            client.execute_query(f"SELECT COUNT(*) FROM {table_name}") as cur,  # noqa: S608
+        ):
+            (count,) = cur.fetchone()
+        assert count > 0, f"expected rows in table '{table_name}'"
+
+    # every cluster must carry the injected "UniRef <variant>" protocol label
+    with (
+        pipeline.sql_client() as client,
+        client.execute_query("SELECT DISTINCT protocol FROM cluster") as cur,
+    ):
+        protocols = {row[0] for row in cur.fetchall()}
+
+    assert protocols == {f"UniRef {duckdb_uniref_settings.variant}"}
+
+    # entity_x_source_file must reference the fixture files we loaded from
+    with (
+        pipeline.sql_client() as client,
+        client.execute_query("SELECT DISTINCT source_file FROM entity_x_source_file") as cur,
+    ):
+        source_files = {row[0] for row in cur.fetchall()}
+
+    assert source_files
+    assert all(sf.endswith(".xml") for sf in source_files)
+
+
 def test_integration_cli_uniref_pipeline_output_validated(
-    test_settings: UnirefSettings,  # parametrized over UNIREF_VARIANTS via the existing fixture
-    fake_files: list[Path],
-    mock_dlt: MagicMock,
-    patched_io: tuple[MagicMock, MagicMock],
+    duckdb_uniref_settings: UnirefSettings,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Ensure that the full flow from cli() through launching the pipeline to yielding results is working correctly."""
-    mock_batcher_cls, mock_stream = patched_io
-    mock_batcher_cls.return_value = make_batcher(fake_files)
+    """Exercise the real ``cli()`` wiring end-to-end against a DuckDB destination.
 
-    def fake_stream_xml_file(file_path: Path, tag: str) -> list[dict[str, Any]]:
-        """Fake streaming an XML file."""
-        assert file_path in fake_files
-        assert tag == ENTRY_XML_TAG
-        return [{"stream_xml_file": file_path, "xml_tag": tag}]
+    ``cli()`` builds a ``UnirefSettings`` from the dlt config / CLI args and then
+    runs the pipeline via ``run_uniref_pipeline`` -> ``core.run_pipeline``. We
+    stub out ``UnirefSettings`` construction to return our fixture-backed
+    settings, and redirect ``core.run_pipeline`` to a real DuckDB pipeline so the
+    full flow (settings -> resource -> pipeline.run -> loaded data) is validated.
+    """
+    monkeypatch.setattr(uniref_module, "UnirefSettings", MagicMock(return_value=duckdb_uniref_settings))
 
-    def fake_parse_uniref_entry(
-        entry: dict[str, Any],
-        timestamp: datetime.datetime,
-        file_path: Path,
-        uniref_variant: str,
-    ) -> dict[str, list[Any]]:
-        """Replacement for parse_uniref_entry; validates the injected label."""
-        assert isinstance(timestamp, datetime.datetime)
-        assert uniref_variant == f"UniRef {test_settings.uniref_variant}"
-        assert entry == {"stream_xml_file": file_path, "xml_tag": ENTRY_XML_TAG}
-        return {"entry": [entry], "file_path": [file_path]}
+    captured: dict[str, Any] = {}
 
-    def fake_pipeline_run(resource, **kwargs) -> list:  # noqa: ANN001, ANN003
-        """Fake pipeline run that drains the resource generator to trigger all assertions."""
-        assert isinstance(resource, Callable)  # after draining the generator, resource should be a list
-        # the resource should be the output of parse_uniref
-        assert resource.name == "parse_uniref"
-        assert kwargs == {}
-        return list(resource)
+    def fake_run_pipeline(
+        *,
+        settings: UnirefSettings,
+        resource: Any,  # noqa: ANN401
+        pipeline_kwargs: dict[str, Any],
+    ) -> None:
+        """Replacement for core.run_pipeline that runs the resource through DuckDB."""
+        assert settings is duckdb_uniref_settings
+        assert pipeline_kwargs == {
+            "pipeline_name": f"uniref_{duckdb_uniref_settings.variant}",
+            "dataset_name": "uniprot_kb",
+        }
+        pipeline = dlt.pipeline(
+            pipeline_name="test_uniref_cli_pipeline",
+            destination="duckdb",
+            dataset_name="test_uniref_cli",
+            pipelines_dir=str(tmp_path / "pipelines"),
+        )
+        captured["load_info"] = pipeline.run(resource)
+        captured["pipeline"] = pipeline
 
-    mock_stream.side_effect = fake_stream_xml_file
-    monkeypatch.setattr(uniref_module, "parse_uniref_entry", fake_parse_uniref_entry)
+    monkeypatch.setattr(uniref_module, "run_pipeline", fake_run_pipeline)
 
-    # make pipeline.run drain the generator so all assertions fire
-    mock_dlt.pipeline.return_value.run.side_effect = fake_pipeline_run
-
-    # exercise the real cli() wiring with UnirefSettings construction mocked out
-    monkeypatch.setattr(uniref_module, "UnirefSettings", MagicMock(return_value=test_settings))
-
-    # RUN!
     cli()
 
-    mock_dlt.pipeline.assert_called_once_with(
-        pipeline_name=f"uniref_{test_settings.uniref_variant}",
-        use_destination=mock_dlt.use_destination.return_value,
-        dataset_name="uniprot_kb",
-        dev_mode=False,
-    )
-    mock_dlt.use_destination.assert_called_once_with(test_settings.use_destination)
-    mock_dlt.pipeline.return_value.run.assert_called_once()
+    # UnirefSettings was constructed with the dlt config coming from core
+    uniref_module.UnirefSettings.assert_called_once_with()
 
-    # verify with_table_name received the right rows and table names for every file, in order
-    call_args_list = [list(c.args) for c in mock_dlt.mark.with_table_name.call_args_list]
-    expected = []
-    for f in fake_files:
-        expected.extend(
-            [
-                [[{"stream_xml_file": f, "xml_tag": ENTRY_XML_TAG}], "entry"],
-                [[f], "file_path"],
-            ]
-        )
-    assert call_args_list == expected
+    load_info = captured["load_info"]
+    pipeline = captured["pipeline"]
+    assert not load_info.has_failed_jobs
+
+    with (
+        pipeline.sql_client() as client,
+        client.execute_query("SELECT COUNT(*) FROM entity") as cur,
+    ):
+        (entity_count,) = cur.fetchone()
+
+    assert entity_count > 0

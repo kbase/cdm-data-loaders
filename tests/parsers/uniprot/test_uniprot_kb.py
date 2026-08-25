@@ -20,7 +20,6 @@ from cdm_data_loaders.parsers.uniprot.uniprot_kb import (
     NAME,
     NCBI_TAXON,
     XREF,
-    build_datasource_record,
     dump_comment_xml,
     dump_evidence_xml,
     dump_xml_element,
@@ -899,24 +898,6 @@ def test_parse_uniprot_entry(args_style: str, xml: str, expected: dict[str, list
         )
 
     assert parsed_entry == expected
-
-
-def test_build_datasource_record() -> None:
-    """Test that the datasource provenance record is built correctly."""
-    xml_url = "https://ftp.uniprot.org/uniprot_sprot.xml.gz"
-    before = datetime.datetime.now(datetime.UTC)
-    record = build_datasource_record(xml_url)
-    after = datetime.datetime.now(datetime.UTC)
-
-    expected_version = 115
-    assert record[NAME] == "UniProt import"
-    assert record["source"] == "UniProt"
-    assert record["url"] == xml_url
-    assert record["version"] == expected_version
-
-    # the accessed timestamp should be a valid ISO-8601 string within the call window
-    accessed = datetime.datetime.fromisoformat(record["accessed"])
-    assert before <= accessed <= after
 
 
 @pytest.mark.parametrize(

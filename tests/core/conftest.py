@@ -1,17 +1,20 @@
 """Shared fixtures for pipelines tests."""
 
-from pathlib import Path
 from typing import Any, Final
 
 import dlt
 import dlt.common.configuration.accessors
+import pytest
 from frozendict import frozendict
+from pydantic import AliasChoices
 from pydantic_settings import BaseSettings
 
 from cdm_data_loaders.core.fields import (
+    BUFFER_SIZE,
     DEV_MODE,
     INPUT_DIR,
     LOG_CONFIG_FILE,
+    LOG_INTERVAL,
     OUTPUT,
     START_AT,
     USE_DESTINATION,
@@ -22,7 +25,7 @@ from cdm_data_loaders.core.settings import (
     DEFAULT_CTS_SETTINGS,
     CtsSettings,
 )
-from tests.conftest import _generate_dlt_config, TEST_DLT_CONFIG
+from tests.conftest import TEST_DLT_CONFIG
 
 CASSETTES_DIR = "tests/cassettes"
 
@@ -74,11 +77,15 @@ TEST_CTS_SETTINGS_RECONCILED = frozendict(
 TEST_BATCH_FILE_SETTINGS = frozendict(
     **TEST_CTS_SETTINGS,
     start_at=START_AT_STRING,
+    log_interval=5000,
+    buffer_size=25,
 )
 
 TEST_BATCH_FILE_SETTINGS_RECONCILED = frozendict(
     {
         **TEST_CTS_SETTINGS_RECONCILED,
+        BUFFER_SIZE: 25,
+        LOG_INTERVAL: 5000,
         START_AT: START_AT_VALUE,
         "pipeline_dir": "/some/dir/.dlt_conf",
         "raw_data_dir": "/some/dir/raw_data",
@@ -87,15 +94,15 @@ TEST_BATCH_FILE_SETTINGS_RECONCILED = frozendict(
 
 
 def generate_cli_arguments(
-    alias_dict: dict[str, list[str]] | frozendict[str, list[str]],
-    *args: dict[str, list[str]] | frozendict[str, list[str]],
+    alias_dict: dict[str, AliasChoices] | frozendict[str, AliasChoices],
+    *args: dict[str, AliasChoices] | frozendict[str, AliasChoices],
 ) -> frozendict[str, list[str]]:
     """Generate the corresponding command line arguments from a list of aliases.
 
     :param alias_dict: dictionary of arguments and list of valid aliases
-    :type alias_dict: dict[str, list[str]] | frozendict[str, list[str]]
+    :type alias_dict: dict[str, AliasChoices] | frozendict[str, AliasChoices]
     :param args: more alias_dicts
-    :type args: dict[str, list[str]] | frozendict[str, list[str]]
+    :type args: dict[str, AliasChoices] | frozendict[str, AliasChoices]
     :return: dictionary of args and list of valid cmd line args
     :rtype: frozendict[str, list[str]]
     """
@@ -104,43 +111,65 @@ def generate_cli_arguments(
         all_aliases = {**all_aliases, **a}
 
     return frozendict(
-        {k: [f"-{item}" if len(item) == 1 else f"--{item}" for item in v] for k, v in all_aliases.items()}
+        {k: [f"-{item}" if len(str(item)) == 1 else f"--{item}" for item in v.choices] for k, v in all_aliases.items()}
     )
 
 
 def make_settings(
     settings_cls: type[CtsSettings],
     dlt_config: dict[str, Any] | None = None,
-    **kwargs: str | int | Path | dict[str, Any] | dlt.common.configuration.accessors._ConfigAccessor,
-) -> BaseSettings:  # CtsSettings | BatchedFileInputSettings | NcbiRestApiSettings | AtbSettings:
+    kwargs: dict[str, Any] | frozendict[str, Any] | None = None,
+) -> CtsSettings:  # CtsSettings | BatchedFileInputSettings | NcbiRestApiSettings | AtbSettings:
     """Generate a validated Settings object."""
-    return settings_cls(**{"dlt_config": dlt_config, **kwargs})
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(dlt, "config", dlt_config)
+        return settings_cls(**(kwargs or {}))  # pyright: ignore[reportArgumentType]
 
 
 def make_settings_autofill_config(
     settings_cls: type[CtsSettings],
-    **kwargs: str | int | Path | dict[str, Any] | bool | dlt.common.configuration.accessors._ConfigAccessor | None,
+    kwargs: dict[str, Any] | frozendict[str, Any] | None = None,
 ) -> (
-    BaseSettings
+    CtsSettings
 ):  # CtsSettings | BatchedFileInputSettings | NcbiRestApiSettings | AtbSettings | UniProtSettings | UnirefSettings:
     """Generate a validated Settings object, supplying the dlt_config if necessary."""
-    if not kwargs:
-        kwargs = {}
-    if "dlt_config" not in kwargs:
-        kwargs["dlt_config"] = _generate_dlt_config()
-    return settings_cls.model_validate(kwargs)
+    return settings_cls(**(kwargs or {}))  # pyright: ignore[reportArgumentType]
 
 
 def check_settings(
     settings_object: CtsSettings,
-    expected: dict[str, Any] | frozendict,
+    expected: dict[str, Any] | frozendict[str, Any],
 ) -> None:
     """Check that the settings object has the expected values."""
-    assert settings_object.dlt_config is not None
-    assert settings_object.model_dump(exclude={"dlt_config"}) == expected
+    assert settings_object._dlt_config is not None  # noqa: SLF001
+    assert settings_object.model_dump() == expected
 
     # make sure we have both raw_data_dir and pipeline_dir
     assert "raw_data_dir" in expected
     assert "pipeline_dir" in expected
     for attr, value in expected.items():
         assert getattr(settings_object, attr) == value
+
+
+"""Settings tests"""
+
+
+def parametrize_validation_aliases(
+    metafunc: pytest.Metafunc, settings_cls: type[BaseSettings], parameter: str = "validation_alias"
+) -> None:
+    """Dynamically generate tests for every alias of each user-settable field in a settings object."""
+    if not {parameter, "field_name"}.issubset(metafunc.fixturenames):
+        return
+    test_cases = []
+    for field_name in settings_cls.model_fields:
+        validation_alias = settings_cls.model_fields[field_name].validation_alias
+        if isinstance(validation_alias, AliasChoices):
+            test_cases.extend((alias, field_name) for alias in validation_alias.choices)
+        elif isinstance(validation_alias, str):
+            test_cases.append((validation_alias, field_name))
+
+    metafunc.parametrize(
+        (parameter, "field_name"),
+        test_cases,
+        ids=[f"{settings_cls.__name__}-{a}" for a, fn in test_cases],
+    )

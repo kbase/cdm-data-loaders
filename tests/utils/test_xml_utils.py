@@ -49,19 +49,6 @@ def test_clean_dict_removes_nones_and_empty() -> None:
     assert cleaned == {"a": 1, "e": "ok"}
 
 
-# # TODO: add gzipped file
-# @pytest.mark.parametrize("file", ["example.xml", "uniref_100.xml"])
-# def test_parse_head_matter(test_data_dir: Path, file: str) -> None:
-#     """Test the extraction of metadata from the head of an xml file."""
-#     example_uniref_file = test_data_dir / "uniprot" / "uniref" / file
-#     data_src = parse_head_matter(example_uniref_file)
-#     assert data_src == {
-#         "version": "2025_04",
-#         "date_published": "2025-10-08",
-#         "name": "UniRef50",
-#     }
-
-
 class FakeSparkDF:
     """A fake DataFrame returned by spark.read.format().load().select()."""
 

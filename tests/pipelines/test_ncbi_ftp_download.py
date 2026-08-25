@@ -44,7 +44,7 @@ _EXPECTED_ATTEMPTED = 2
 def make_settings(**kwargs: str | int | bool | Path | PurePosixPath) -> DownloadSettings:
     """Generate a validated DownloadSettings object."""
     settings_ctor = cast("Any", DownloadSettings)
-    return settings_ctor(_cli_parse_args=[], dlt_config=_generate_dlt_config(), **kwargs)
+    return settings_ctor(_cli_parse_args=[], **kwargs)
 
 
 # Settings defaults
@@ -184,7 +184,10 @@ class TestDownloadBatch:
         output.mkdir()
 
         mock_stats = {"accession": "test", "files_downloaded": 3}
-        with patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local", return_value=mock_stats):
+        with patch(
+            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            return_value=mock_stats,
+        ):
             report = download_batch(
                 manifest_path=manifest,
                 output_dir=output,
@@ -207,7 +210,10 @@ class TestDownloadBatch:
         output.mkdir()
 
         mock_stats = {"accession": "test", "files_downloaded": 1}
-        with patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local", return_value=mock_stats):
+        with patch(
+            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            return_value=mock_stats,
+        ):
             report = download_batch(
                 manifest_path=manifest,
                 output_dir=output,
@@ -224,7 +230,10 @@ class TestDownloadBatch:
         output.mkdir()
 
         mock_stats = {"accession": "GCF_000001215.4", "files_downloaded": 5}
-        with patch("cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local", return_value=mock_stats):
+        with patch(
+            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            return_value=mock_stats,
+        ):
             download_batch(manifest_path=manifest, output_dir=output, threads=1)
 
         report_file = output / "download_report.json"
@@ -565,7 +574,14 @@ def test_download_and_stage_report_shape(tmp_path: Path, monkeypatch: pytest.Mon
             dry_run=True,
         )
 
-    for key in ("timestamp", "total_attempted", "succeeded", "failed", "failures", "assembly_stats"):
+    for key in (
+        "timestamp",
+        "total_attempted",
+        "succeeded",
+        "failed",
+        "failures",
+        "assembly_stats",
+    ):
         assert key in report
     assert report["staged_objects"] == 0
     assert report["staging_key_prefix"] == _STAGING_PREFIX

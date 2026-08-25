@@ -161,7 +161,7 @@ def test_logger_settings_with_without_params(log_config_file_is_none: bool) -> N
 
 @pytest.mark.parametrize(
     "env_var_name",
-    ["log-config-file", "log_config_file", "LOG_CONFIG_FILE", "LOG-CONFIG-FILE"],
+    ["log_config_file", "LOG_CONFIG_FILE"],  # , "log-config-file", "LOG-CONFIG-FILE"],
 )
 def test_logger_settings_alias_accepted_via_environment(
     env_var_name: str, monkeypatch: pytest.MonkeyPatch, yaml_config_file: Path

@@ -1,28 +1,34 @@
 """Common defaults for running pipelines on the KBase CTS."""
 
-from typing import Any, Self
+from typing import Self
 
+import dlt
 from frozendict import frozendict
-from pydantic import computed_field, field_validator, model_validator
+from pydantic import AliasGenerator, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cdm_data_loaders.core.fields import (
+    BUFFER_SIZE,
     DEFAULTS,
     DEV_MODE,
     INPUT_DIR,
     LOG_CONFIG_FILE,
+    LOG_INTERVAL,
     OUTPUT,
     START_AT,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
+    BufferSize,
     DevMode,
     DltConfig,
     InputDir,
     LogConfigFile,
+    LogInterval,
     Output,
     StartAt,
     UseDestination,
     UseOutputDirForPipelineMetadata,
+    generate_aliases,
 )
 
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
@@ -31,6 +37,7 @@ DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
         "cli_exit_on_error": False,
         "cli_ignore_unknown_args": True,
         "str_strip_whitespace": True,
+        "alias_generator": AliasGenerator(validation_alias=generate_aliases),
     }
 )
 
@@ -50,10 +57,7 @@ DEFAULT_CTS_SETTINGS = frozendict(
 )
 
 DEFAULT_BATCH_FILE_SETTINGS = frozendict(
-    {
-        **DEFAULT_CTS_SETTINGS,
-        START_AT: DEFAULTS[START_AT],
-    }
+    {**DEFAULT_CTS_SETTINGS, **{k: DEFAULTS[k] for k in [BUFFER_SIZE, LOG_INTERVAL, START_AT]}}
 )
 
 
@@ -64,7 +68,7 @@ class LoggerSettings(BaseSettings):
 
 
 class CtsSettings(LoggerSettings):
-    """Configuration for running a basic import pipeline."""
+    """Configuration for running a basic DLT pipeline."""
 
     model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT)
 
@@ -73,13 +77,24 @@ class CtsSettings(LoggerSettings):
     output: Output
     use_destination: UseDestination
     use_output_dir_for_pipeline_metadata: UseOutputDirForPipelineMetadata
-    dlt_config: DltConfig
+
+    _dlt_config: DltConfig
+
+    @model_validator(mode="after")
+    def init_dlt_config(self) -> Self:
+        """Initialise the _dlt_config private attribute."""
+        self._dlt_config = dlt.config
+        return self
 
     @model_validator(mode="after")
     def reconcile_with_dlt_config(self) -> Self:
         """Update dlt.config based on the current state of the settings."""
+        if self._dlt_config is None:
+            err_msg = "dlt_config must be defined"
+            raise ValueError(err_msg)
+
         # validate destination
-        all_destinations = self.dlt_config.get("destination") or {}  # type: ignore[reportArgumentType]
+        all_destinations = self._dlt_config.get("destination") or {}  # type: ignore[reportArgumentType]
         if not all_destinations:
             err_msg = "No valid destinations found in dlt configuration."
             raise ValueError(err_msg)
@@ -89,11 +104,11 @@ class CtsSettings(LoggerSettings):
             raise ValueError(err_msg)
 
         if not self.output:
-            if not self.dlt_config.get(f"destination.{self.use_destination}.bucket_url"):  # type: ignore[reportArgumentType]
+            if not self._dlt_config.get(f"destination.{self.use_destination}.bucket_url"):  # type: ignore[reportArgumentType]
                 err_msg = f"No bucket_url specified for destination {self.use_destination}"
                 raise ValueError(err_msg)
 
-            self.output = self.dlt_config[f"destination.{self.use_destination}.bucket_url"]
+            self.output = self._dlt_config[f"destination.{self.use_destination}.bucket_url"]
             if self.output != "/":
                 self.output.rstrip("/")
 
@@ -117,16 +132,6 @@ class CtsSettings(LoggerSettings):
             raise ValueError(err_msg)
 
         return self
-
-    @field_validator("dlt_config", mode="before")
-    @classmethod
-    def validate_dlt_config(cls, dlt_config: Any) -> Any:
-        """Perform some rudimentary validation on the incoming dlt config."""
-        if dlt_config is None:
-            err_msg = "dlt_config must be defined"
-            raise ValueError(err_msg)
-
-        return dlt_config
 
     @field_validator("input_dir", "output", mode="after")
     @classmethod
@@ -161,3 +166,5 @@ class BatchedFileInputSettings(CtsSettings):
     """Settings object for an importer that deals with batches of files."""
 
     start_at: StartAt
+    buffer_size: BufferSize
+    log_interval: LogInterval

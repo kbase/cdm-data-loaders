@@ -11,6 +11,7 @@ from typing import Any, Final
 from unittest.mock import patch
 
 import boto3
+import dlt
 import pytest
 from frozendict import frozendict
 from moto import mock_aws
@@ -231,6 +232,14 @@ def dlt_config() -> dict[str, Any]:
 
 
 @pytest.fixture
+def patch_dlt_config(dlt_config: dict[str, Any]) -> Generator[Any]:
+    """Monkeypatch `dlt.config` to the test dlt config."""
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(dlt, "config", dlt_config)
+        yield
+
+
+@pytest.fixture
 def empty_df_schema() -> list[StructField]:
     """List of fields corresponding to the empty dataframe."""
     return [
@@ -422,7 +431,11 @@ def annotated_df_data() -> list[dict[str, Any]]:
                 "col4": None,
                 "col5": "col5",
                 "__invalid_data__": None,
-                "errors_in_record": ["missing_required: col2", "missing_required: col3", "missing_required: col4"],
+                "errors_in_record": [
+                    "missing_required: col2",
+                    "missing_required: col3",
+                    "missing_required: col4",
+                ],
             },
             {
                 "col1": None,
