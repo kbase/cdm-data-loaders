@@ -1,17 +1,16 @@
 """Tests for the UniProt DLT pipeline."""
 
-import datetime
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import dlt
 import pytest
 from frozendict import frozendict
 from pydantic_settings import CliApp
 
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import ENTRY_XML_TAG
-from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines import uniprot_kb as uniprot_module
 from cdm_data_loaders.pipelines.uniprot_kb import (
     UNIPROT_LOG_INTERVAL,
@@ -25,17 +24,12 @@ from tests.core.conftest import (
     TEST_BATCH_FILE_SETTINGS_RECONCILED,
     check_settings,
     make_settings_autofill_config,
-)
-from tests.pipelines.conftest import (
-    ARG_ALIASES,
-    make_batcher,
+    parametrize_validation_aliases,
 )
 
-
-@pytest.fixture(autouse=True)
-def patch_dlt_config(dlt_config: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
-    """Monkeypatch the dlt config in all tests."""
-    monkeypatch.setattr(core.dlt, "config", dlt_config)
+# Directory of real UniProt XML fixtures (chunk_00001.xml ... chunk_00004.xml),
+# named so they match the NumericFileSequenceBatcher file-sequence regex.
+UNIPROT_FIXTURE_DIR = Path(__file__).parents[1] / "fixtures" / "chunk_4"
 
 
 @pytest.fixture
@@ -45,79 +39,62 @@ def test_settings() -> UniProtSettings:
 
 
 TEST_SETTINGS = frozendict(
-    **TEST_BATCH_FILE_SETTINGS,
+    {**TEST_BATCH_FILE_SETTINGS, "log_interval": UNIPROT_LOG_INTERVAL},
 )
 
 TEST_SETTINGS_RECONCILED = frozendict(
-    **TEST_BATCH_FILE_SETTINGS_RECONCILED,
+    {**TEST_BATCH_FILE_SETTINGS_RECONCILED, "log_interval": UNIPROT_LOG_INTERVAL}
 )
 
 
-def test_make_settings_all_params_set() -> None:
+def test_uniprot_settings_all_params_set() -> None:
     """Ensure that settings are set correctly when all args are specified.
 
     Note that TEST_SETTINGS includes a value for pipeline_dir.
     """
-    s = make_settings_autofill_config(UniProtSettings, **TEST_SETTINGS)  # type: ignore[reportReturnType]
+    s = make_settings_autofill_config(UniProtSettings, TEST_SETTINGS)  # type: ignore[reportReturnType]
     check_settings(s, TEST_SETTINGS_RECONCILED)
 
 
-@pytest.mark.parametrize("dev_mode", ARG_ALIASES["dev_mode"])
-@pytest.mark.parametrize("input_dir", ARG_ALIASES["input_dir"])
-@pytest.mark.parametrize("log_config_file", ARG_ALIASES["log_config_file"])
-@pytest.mark.parametrize("output", ARG_ALIASES["output"])
-@pytest.mark.parametrize("start_at", ARG_ALIASES["start_at"])
-@pytest.mark.parametrize("use_destination", ARG_ALIASES["use_destination"])
-@pytest.mark.parametrize(
-    "use_output_dir_for_pipeline_metadata",
-    ARG_ALIASES["use_output_dir_for_pipeline_metadata"],
-)
-def test_cli_app_run_alt_settings(
-    dev_mode: str,
-    input_dir: str,
-    log_config_file: str,
-    output: str,
-    start_at: str,
-    use_destination: str,
-    use_output_dir_for_pipeline_metadata: str,
-    dlt_config: dict[str, Any],
-) -> None:
-    """Test all the variants of the UniProtSettings fields."""
-    cli_args = [
-        dev_mode,
-        TEST_SETTINGS["dev_mode"],
-        input_dir,
-        TEST_SETTINGS["input_dir"],
-        log_config_file,
-        TEST_SETTINGS["log_config_file"],
-        output,
-        TEST_SETTINGS["output"],
-        start_at,
-        TEST_SETTINGS["start_at"],
-        use_destination,
-        TEST_SETTINGS["use_destination"],
-        use_output_dir_for_pipeline_metadata,
-        TEST_SETTINGS["use_output_dir_for_pipeline_metadata"],
-    ]
+# model_fields
 
-    s = CliApp.run(
-        UniProtSettings,
-        dlt_config=dlt_config,
-        cli_args=cli_args,
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """Dynamically generate tests for every alias of each user-settable field in a settings object."""
+    parametrize_validation_aliases(metafunc, UniProtSettings)
+
+
+def test_uniprot_settings(validation_alias: str, field_name: str) -> None:
+    """Test all fields and aliases in the UniProtSettings class."""
+    settings = make_settings_autofill_config(
+        UniProtSettings, {validation_alias: TEST_SETTINGS[field_name]}
     )
-    check_settings(s, TEST_SETTINGS_RECONCILED)
+    assert getattr(settings, field_name) == TEST_SETTINGS_RECONCILED[field_name]
+
+
+def test_uniprot_settings_cliapp_aliases(validation_alias: str, field_name: str) -> None:
+    """Test the UniProtSettings aliases for a given model field name, initialised using CliApp.run."""
+    settings = CliApp.run(
+        model_cls=UniProtSettings,
+        cli_args=[
+            f"{'--' if len(validation_alias) > 1 else '-'}{validation_alias}",
+            str(TEST_SETTINGS[field_name]),
+        ],
+    )
+    assert getattr(settings, field_name) == TEST_SETTINGS_RECONCILED[field_name]
 
 
 def test_cli_passes_settings_class_to_run_cli() -> None:
-    """Ensure that cli() calls run_cli with UniProtSettings as the settings class."""
+    """Ensure that cli() calls run_cli with UniProtSettings and the UniProt log_interval default."""
     with patch.object(uniprot_module, "run_cli") as mock_run_cli:
         cli()
 
     mock_run_cli.assert_called_once()
     assert mock_run_cli.call_args[0] == (UniProtSettings, run_uniprot_pipeline)
+    assert mock_run_cli.call_args.kwargs == {}
 
 
-def test_cli_calls_run_uniprot_pipeline(monkeypatch: pytest.MonkeyPatch, dlt_config: dict[str, Any]) -> None:
+def test_cli_calls_run_uniprot_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure that cli() calls run_uniprot_pipeline with the test_settings."""
     mock_settings_instance = MagicMock()
     mock_settings_cls = MagicMock(return_value=mock_settings_instance)
@@ -128,7 +105,7 @@ def test_cli_calls_run_uniprot_pipeline(monkeypatch: pytest.MonkeyPatch, dlt_con
 
     cli()
 
-    mock_settings_cls.assert_called_once_with(dlt_config=dlt_config)
+    mock_settings_cls.assert_called_once_with()
     mock_run_uniprot_pipeline.assert_called_once_with(mock_settings_instance)
 
 
@@ -141,7 +118,10 @@ def test_run_uniprot_pipeline_args_set_correctly(test_settings: UniProtSettings)
     assert mock_run_pipeline.call_count == 1
     _, kwargs = mock_run_pipeline.call_args
     assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs"}
-    assert kwargs["pipeline_kwargs"] == {"pipeline_name": "uniprot_kb", "dataset_name": "uniprot_kb"}
+    assert kwargs["pipeline_kwargs"] == {
+        "pipeline_name": "uniprot_kb",
+        "dataset_name": "uniprot_kb",
+    }
     assert kwargs["settings"] == test_settings
     assert isinstance(kwargs["resource"], Callable)
 
@@ -178,67 +158,167 @@ def test_parse_uniprot_resource(test_settings: UniProtSettings) -> None:
 
     assert mock_stream.call_count == 1
     kwargs = mock_stream.call_args.kwargs
-    assert kwargs.keys() == {"settings", "xml_tag", "parse_fn", "log_interval"}
+    assert kwargs.keys() == {"settings", "xml_tag", "parse_fn"}
     assert kwargs["xml_tag"] == ENTRY_XML_TAG
-    assert kwargs["log_interval"] == UNIPROT_LOG_INTERVAL
     assert kwargs["settings"] == test_settings
     assert isinstance(kwargs["parse_fn"], Callable)
 
 
-@pytest.mark.skip("FIXME: not working -- due to parallelization?")
+# Integration tests for the UniProt pipeline
+@pytest.fixture
+def duckdb_uniprot_settings_args(tmp_path: Path) -> frozendict:
+    """Arguments for initialising a UniProtSettings object."""
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    return frozendict(
+        {
+            "input_dir": str(UNIPROT_FIXTURE_DIR),
+            "output": str(output_dir),
+            "use_destination": "local_fs",
+            "use_output_dir_for_pipeline_metadata": False,
+        }
+    )
+
+
+# These use a local duckdb instance to exercise the full UniProt pipeline.
+@pytest.fixture
+def duckdb_uniprot_settings(duckdb_uniprot_settings_args: frozendict) -> UniProtSettings:
+    """Provide UniProtSettings pointing at the real UniProt XML fixtures.
+
+    ``input_dir`` points at the fixture directory containing ``chunk_0000N.xml``
+    files, and ``output`` is a local directory inside ``tmp_path`` so the run is
+    fully isolated.
+    """
+    return make_settings_autofill_config(UniProtSettings, duckdb_uniprot_settings_args)  # pyright: ignore[reportReturnType]
+
+
+def _run_uniprot_duckdb_pipeline(settings: UniProtSettings, tmp_path: Path) -> tuple[Any, Any]:
+    """Run ``parse_uniprot`` through a real DuckDB pipeline and return (pipeline, load_info)."""
+    pipeline = dlt.pipeline(
+        pipeline_name="test_uniprot_pipeline",
+        destination="duckdb",
+        dataset_name="test_uniprot",
+        pipelines_dir=str(tmp_path / "pipelines"),
+    )
+    load_info = pipeline.run(parse_uniprot(settings))
+    return pipeline, load_info
+
+
+def test_integration_uniprot_pipeline_loads_into_duckdb(
+    duckdb_uniprot_settings: UniProtSettings,
+    tmp_path: Path,
+) -> None:
+    """Full integration test: parse the real fixture files into a DuckDB destination.
+
+    Confirms that the pipeline runs end-to-end without failed jobs and that the
+    expected CDM tables are populated with data queried back out of DuckDB.
+    """
+    pipeline, load_info = _run_uniprot_duckdb_pipeline(duckdb_uniprot_settings, tmp_path)
+
+    assert not load_info.has_failed_jobs
+
+    # the parser emits an "entity" row per UniProt entry; the fixtures contain
+    # several entries across the chunk files, so this table must not be empty.
+    with (
+        pipeline.sql_client() as client,
+        client.execute_query("SELECT COUNT(*) FROM entity") as cur,
+    ):
+        (entity_count,) = cur.fetchone()
+
+    assert entity_count > 0
+
+    # every entity must have a "uniprot:"-prefixed entity_id and be a protein.
+    with (
+        pipeline.sql_client() as client,
+        client.execute_query("SELECT entity_id, entity_type FROM entity") as cur,
+    ):
+        rows = cur.fetchall()
+
+    assert all(entity_id.startswith("uniprot:") for entity_id, _ in rows)
+    assert all(entity_type == "protein" for _, entity_type in rows)
+
+
+def test_integration_uniprot_pipeline_populates_related_tables(
+    duckdb_uniprot_settings: UniProtSettings,
+    tmp_path: Path,
+) -> None:
+    """The pipeline should populate the related CDM tables produced by the parser."""
+    pipeline, load_info = _run_uniprot_duckdb_pipeline(duckdb_uniprot_settings, tmp_path)
+
+    assert not load_info.has_failed_jobs
+
+    # tables that the parser always emits at least one row for, per entry
+    for table_name in ("entity", "identifier", "name", "protein", "entity_x_source_file"):
+        with (
+            pipeline.sql_client() as client,
+            client.execute_query(f"SELECT COUNT(*) FROM {table_name}") as cur,  # noqa: S608
+        ):
+            (count,) = cur.fetchone()
+        assert count > 0, f"expected rows in table '{table_name}'"
+
+    # entity_x_source_file must reference the fixture files we loaded from
+    with (
+        pipeline.sql_client() as client,
+        client.execute_query("SELECT DISTINCT source_file FROM entity_x_source_file") as cur,
+    ):
+        source_files = {row[0] for row in cur.fetchall()}
+
+    assert source_files
+    assert all(sf.endswith(".xml") for sf in source_files)
+
+
 def test_integration_cli_uniprot_pipeline_output_validated(
-    test_settings: UniProtSettings,  # the uniprot_kb UniProtSettings fixture
-    fake_files: list[Path],
-    mock_dlt: MagicMock,
-    patched_io: tuple[MagicMock, MagicMock],
+    duckdb_uniprot_settings: UniProtSettings,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Ensure that the full flow from cli() through launching the pipeline to yielding results is working correctly."""
-    mock_batcher_cls, mock_stream = patched_io
-    mock_batcher_cls.return_value = make_batcher(fake_files)
+    """Exercise the real ``cli()`` wiring end-to-end against a DuckDB destination.
 
-    def fake_stream_xml_file(file_path: Path, tag: str) -> list[dict[str, Any]]:
-        assert file_path in fake_files
-        assert tag == ENTRY_XML_TAG
-        return [{"stream_xml_file": file_path, "xml_tag": tag}]
+    ``cli()`` builds a ``UniProtSettings`` from the dlt config / CLI args and then
+    runs the pipeline via ``run_uniprot_pipeline`` -> ``core.run_pipeline``. We
+    stub out ``UniProtSettings`` construction to return our fixture-backed
+    settings, and redirect ``core.run_pipeline`` to a real DuckDB pipeline so the
+    full flow (settings -> resource -> pipeline.run -> loaded data) is validated.
+    """
+    monkeypatch.setattr(
+        uniprot_module, "UniProtSettings", MagicMock(return_value=duckdb_uniprot_settings)
+    )
 
-    def fake_parse_uniprot_entry(
-        entry: dict[str, Any],
-        timestamp: datetime.datetime,
-        file_path: Path,
-    ) -> dict[str, list[Any]]:
-        """Replacement for parse_uniprot_entry; validates there is no injected label argument."""
-        assert isinstance(timestamp, datetime.datetime)
-        assert entry == {"stream_xml_file": file_path, "xml_tag": ENTRY_XML_TAG}
-        return {"entry": [entry], "file_path": [file_path]}
+    captured: dict[str, Any] = {}
 
-    mock_stream.side_effect = fake_stream_xml_file
-    monkeypatch.setattr(uniprot_module, "parse_uniprot_entry", fake_parse_uniprot_entry)
+    def fake_run_pipeline(
+        *,
+        settings: UniProtSettings,
+        resource: Any,  # noqa: ANN401
+        pipeline_kwargs: dict[str, Any],
+    ) -> None:
+        """Replacement for core.run_pipeline that runs the resource through DuckDB."""
+        assert settings is duckdb_uniprot_settings
+        assert pipeline_kwargs == {"pipeline_name": "uniprot_kb", "dataset_name": "uniprot_kb"}
+        pipeline = dlt.pipeline(
+            pipeline_name="test_uniprot_cli_pipeline",
+            destination="duckdb",
+            dataset_name="test_uniprot_cli",
+            pipelines_dir=str(tmp_path / "pipelines"),
+        )
+        captured["load_info"] = pipeline.run(resource)
+        captured["pipeline"] = pipeline
 
-    # make pipeline.run actually drain the generator so all assertions fire
-    mock_dlt.pipeline.return_value.run.side_effect = lambda resource, **_: list(resource)
+    monkeypatch.setattr(uniprot_module, "run_pipeline", fake_run_pipeline)
 
-    # exercise the real cli() wiring with UniProtSettings construction mocked out
-    monkeypatch.setattr(uniprot_module, "UniProtSettings", MagicMock(return_value=test_settings))
     cli()
 
-    mock_dlt.pipeline.assert_called_once_with(
-        pipeline_name="uniprot_kb",
-        destination=mock_dlt.destination.return_value,
-        dataset_name="uniprot_kb",
-        dev_mode=False,
-    )
-    mock_dlt.destination.assert_called_once_with(test_settings.use_destination)
-    mock_dlt.pipeline.return_value.run.assert_called_once()
+    uniprot_module.UniProtSettings.assert_called_once_with()
 
-    # verify with_table_name received the right rows and table names for every file, in order
-    call_args_list = [list(c.args) for c in mock_dlt.mark.with_table_name.call_args_list]
-    expected = []
-    for f in fake_files:
-        expected.extend(
-            [
-                [[{"stream_xml_file": f, "xml_tag": ENTRY_XML_TAG}], "entry"],
-                [[f], "file_path"],
-            ]
-        )
-    assert call_args_list == expected
+    load_info = captured["load_info"]
+    pipeline = captured["pipeline"]
+    assert not load_info.has_failed_jobs
+
+    with (
+        pipeline.sql_client() as client,
+        client.execute_query("SELECT COUNT(*) FROM entity") as cur,
+    ):
+        (entity_count,) = cur.fetchone()
+
+    assert entity_count > 0

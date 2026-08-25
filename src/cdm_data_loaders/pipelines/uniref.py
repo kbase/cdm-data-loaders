@@ -6,16 +6,18 @@ from typing import Annotated, Any, Final
 
 import dlt
 from dlt.extract.items import DataItemWithMeta
-from frozendict import frozendict
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import Field, PositiveInt, field_validator
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.core.fields import generate_aliases
 from cdm_data_loaders.core.settings import (
     DEFAULT_SETTINGS_CONFIG_DICT,
     BatchedFileInputSettings,
 )
-from cdm_data_loaders.parsers.uniprot.uniref import ENTRY_XML_TAG, UNIREF_VARIANTS, parse_uniref_entry
+from cdm_data_loaders.parsers.uniprot.uniref import (
+    ENTRY_XML_TAG,
+    UNIREF_VARIANTS,
+    parse_uniref_entry,
+)
 from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
@@ -24,10 +26,7 @@ from cdm_data_loaders.readers.xml import process_xml_file_batches
 
 APP_NAME: Final[str] = "uniref_importer"
 UNIREF_LOG_INTERVAL: Final[int] = 10000
-
-
-UNIREF_VARIANT: Final[str] = "uniref_variant"
-ALIASES = frozendict({UNIREF_VARIANT: generate_aliases(UNIREF_VARIANT)})
+VARIANT: Final[str] = "variant"
 
 
 class UnirefSettings(BatchedFileInputSettings):
@@ -38,15 +37,22 @@ class UnirefSettings(BatchedFileInputSettings):
         cli_prog_name="uniref",
     )
 
-    uniref_variant: Annotated[
+    variant: Annotated[
         str,
         Field(
             description=f"Which UniRef variant to import. Choices: {UNIREF_VARIANTS}",
-            validation_alias=AliasChoices(*ALIASES[UNIREF_VARIANT]),
         ),
     ]
 
-    @field_validator("uniref_variant")
+    log_interval: Annotated[
+        PositiveInt,
+        Field(
+            default=UNIREF_LOG_INTERVAL,
+            description="How often (in number of processed entries) to emit a progress log message. Must be a positive integer.",
+        ),
+    ]
+
+    @field_validator("variant")
     @classmethod
     def validate_uniref_variant(cls, v: str) -> str:
         """Validate the uniref variant against valid choices.
@@ -58,7 +64,7 @@ class UnirefSettings(BatchedFileInputSettings):
         :rtype: str
         """
         if v not in UNIREF_VARIANTS:
-            err_msg = f"uniref_variant must be one of {UNIREF_VARIANTS}, got '{v}'"
+            err_msg = f"UniRef variant must be one of {UNIREF_VARIANTS}, got '{v}'"
             raise ValueError(err_msg)
         return v
 
@@ -76,9 +82,11 @@ def parse_uniref(settings: UnirefSettings) -> Generator[DataItemWithMeta, Any]:
         settings=settings,
         xml_tag=ENTRY_XML_TAG,
         parse_fn=lambda entry, file_path: parse_uniref_entry(
-            entry=entry, timestamp=timestamp, file_path=file_path, uniref_variant=f"UniRef {settings.uniref_variant}"
+            entry=entry,
+            timestamp=timestamp,
+            file_path=file_path,
+            uniref_variant=f"UniRef {settings.variant}",
         ),
-        log_interval=UNIREF_LOG_INTERVAL,
     )
 
 
@@ -92,7 +100,7 @@ def run_uniref_pipeline(settings: UnirefSettings) -> None:
         settings=settings,
         resource=parse_uniref(settings),
         pipeline_kwargs={
-            "pipeline_name": f"uniref_{settings.uniref_variant}",
+            "pipeline_name": f"uniref_{settings.variant}",
             "dataset_name": "uniprot_kb",
         },
     )
@@ -100,7 +108,10 @@ def run_uniref_pipeline(settings: UnirefSettings) -> None:
 
 def cli() -> None:
     """CLI interface for the UniRef importer pipeline."""
-    run_cli(UnirefSettings, run_uniref_pipeline)
+    run_cli(
+        UnirefSettings,
+        run_uniref_pipeline,
+    )
 
 
 if __name__ == "__main__":

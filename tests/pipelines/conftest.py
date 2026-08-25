@@ -6,25 +6,12 @@ from typing import Any, Final
 from unittest.mock import MagicMock
 
 import pytest
-from frozendict import frozendict
 
-from cdm_data_loaders.core.fields import (
-    ALIASES,
-)
 from cdm_data_loaders.pipelines import core
-from cdm_data_loaders.pipelines.all_the_bacteria import ALIASES as ATB_ALIASES
-from cdm_data_loaders.pipelines.ncbi_rest_api import ALIASES as NCBI_REST_API_ALIASES
-from cdm_data_loaders.pipelines.uniref import ALIASES as UNIREF_ALIASES
-from tests.core.conftest import generate_cli_arguments
 
 START_AT_VALUE: Final[int] = 50
 START_AT_STRING: Final[str] = "50"
 TEST_LOG_CONFIG_FILE: Final[str] = "log_conf.json"
-
-
-ARG_ALIASES: frozendict[str, list[str]] = generate_cli_arguments(
-    ALIASES, ATB_ALIASES, UNIREF_ALIASES, NCBI_REST_API_ALIASES
-)
 
 
 def make_batcher(files: list[Path], batch_size: int = 5) -> MagicMock:
@@ -45,6 +32,20 @@ def fake_files() -> list[Path]:
 def mock_init_logger(monkeypatch: pytest.MonkeyPatch) -> None:
     """Mock the init_logger call in core to prevent the logger from trying to initialise itself every time."""
     monkeypatch.setattr(core, "init_logger", MagicMock())
+
+
+@pytest.fixture(autouse=True)
+def mock_send_slack_message(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Patch send_slack_message in core to prevent undue slack notifications."""
+    slack_mock = MagicMock()
+    monkeypatch.setattr(core, "send_slack_message", slack_mock)
+    return slack_mock
+
+
+@pytest.fixture(autouse=True)
+def patch_dlt_config(dlt_config: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Monkeypatch the dlt config in all tests."""
+    monkeypatch.setattr(core.dlt, "config", dlt_config)
 
 
 @pytest.fixture

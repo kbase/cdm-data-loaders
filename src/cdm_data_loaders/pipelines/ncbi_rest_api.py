@@ -59,8 +59,6 @@ REST_CLIENT_HOOKS = {}
 BATCH_SIZE: Final[str] = "batch_size"
 QUERY_TYPE: Final[str] = "query_type"
 
-ALIASES = frozendict({k: generate_aliases(k) for k in [BATCH_SIZE, QUERY_TYPE]})
-
 
 class NcbiRestApiSettings(CtsSettings):
     """Configuration for running the NCBI REST API import pipeline."""
@@ -70,7 +68,6 @@ class NcbiRestApiSettings(CtsSettings):
     batch_size: int = Field(
         default=MAX_IDS_PER_QUERY,
         description="Number of IDs to send in each request to the NCBI REST API.",
-        validation_alias=AliasChoices(*ALIASES[BATCH_SIZE]),
         ge=1,
         le=MAX_IDS_PER_QUERY,
     )
@@ -78,7 +75,6 @@ class NcbiRestApiSettings(CtsSettings):
     query_type: str | None = Field(
         default=None,
         description="The type of query to perform, dataset or annotation. By default, both are performed.",
-        validation_alias=AliasChoices(*ALIASES[QUERY_TYPE]),
         pattern=QUERY_TYPE_REGEX,
     )
 

@@ -1,6 +1,7 @@
 """Tests for the fields module in cdm_data_loaders.core.fields."""
 
 import pytest
+from pydantic import AliasChoices
 
 from cdm_data_loaders.core.fields import generate_aliases
 from tests.core.conftest import generate_cli_arguments
@@ -21,7 +22,7 @@ from tests.core.conftest import generate_cli_arguments
 )
 def test_generate_aliases(field_name: str, expected_aliases: list[str]) -> None:
     """Test the generate_aliases function."""
-    assert generate_aliases(field_name) == expected_aliases
+    assert generate_aliases(field_name) == AliasChoices(*expected_aliases)
 
 
 @pytest.mark.parametrize(
@@ -33,18 +34,21 @@ def test_generate_aliases(field_name: str, expected_aliases: list[str]) -> None:
         ("dev_mode", ["dev_mode", "dev-mode"]),
         # field with no underscores, no short aliases
         ("verbose", ["verbose"]),
-        # ifield with underscores, short alias is generated
+        # field with underscores, short alias is generated
         ("non_existent_field", ["non_existent_field", "non-existent-field"]),
     ],
 )
 def test_generate_aliases_no_short_aliases(field_name: str, expected_aliases: list[str]) -> None:
     """Test the generate_aliases function."""
-    assert generate_aliases(field_name, short_aliases=False) == expected_aliases
+    assert generate_aliases(field_name, short_aliases=False) == AliasChoices(*expected_aliases)
 
 
 def test_generate_cli_arguments() -> None:
     """Test the generate_cli_arguments function."""
-    aliases = {k: generate_aliases(k) for k in ["use_destination", "dev_mode", "verbose", "non_existent_field"]}
+    aliases = {
+        k: generate_aliases(k)
+        for k in ["use_destination", "dev_mode", "verbose", "non_existent_field"]
+    }
 
     assert generate_cli_arguments(aliases) == {
         # field with a short alias
@@ -79,7 +83,10 @@ def test_generate_cli_arguments_no_short_aliases() -> None:
 
 def test_generate_cli_arguments_multiple_args() -> None:
     """Test the generate_cli_arguments function, multiple dictionaries."""
-    aliases = [{k: generate_aliases(k)} for k in ["use_destination", "dev_mode", "verbose", "non_existent_field"]]
+    aliases = [
+        {k: generate_aliases(k)}
+        for k in ["use_destination", "dev_mode", "verbose", "non_existent_field"]
+    ]
 
     assert generate_cli_arguments(*aliases) == {
         # field with a short alias

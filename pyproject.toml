@@ -27,6 +27,7 @@ dependencies = [
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
     "pyiceberg>=0.11.1",
+    "smart-open>=8.0.1",
     "tqdm>=4.67.3",
     "xmlschema>=4.3.1",
     "xmltodict>=1.0.4",
@@ -67,7 +68,7 @@ xml = [
 [project.optional-dependencies]
 
 [tool.ruff]
-line-length = 120
+line-length = 100
 target-version = "py313"
 # Exclude a variety of commonly ignored directories.
 exclude = [
@@ -211,7 +212,15 @@ log_cli = true
 log_cli_level = "INFO"
 log_level = "INFO"
 addopts = ["-v"]
-markers = ["requires_spark: must be run in an environment where spark is available", "s3: tests that mock s3 interactions", "slow_test: does what it says on the tin", "requires_ceph: end-to-end tests requiring a running CEPH instance and network access", "external_request: tests that make real network requests to external services (e.g. NCBI FTP)", "requires_xsv: tests that use the xsv-validate.sh tool"]
+markers = [
+    "requires_spark: must be run in an environment where spark is available",
+    "s3: tests that mock s3 interactions",
+    "slow_test: does what it says on the tin",
+    "requires_ceph: end-to-end tests requiring a running CEPH instance and network access",
+    "external_request: tests that make real network requests to external services (e.g. NCBI FTP)",
+    "requires_xsv: tests that use the xsv-validate.sh tool",
+    "settings_cls(cls): the pydantic-settings class under test for alias parametrization",    
+]
 
 # environment settings for running tests
 [tool.pytest_env]

@@ -11,6 +11,7 @@ from typing import Any, Final
 from unittest.mock import patch
 
 import boto3
+import dlt
 import pytest
 from frozendict import frozendict
 from moto import mock_aws
@@ -44,7 +45,9 @@ SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 
 TEST_NS: Final[str] = "test_ns"
 PIPELINE_RUN = frozendict({RUN_ID: "1234-5678-90", PIPELINE: "KeystoneXL", SOURCE: "/path/to/file"})
-ALT_PIPELINE_RUN = frozendict({RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL", SOURCE: "/path/to/dir"})
+ALT_PIPELINE_RUN = frozendict(
+    {RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL", SOURCE: "/path/to/dir"}
+)
 
 CASSETTES_DIR: Final[str] = "tests/cassettes"
 
@@ -83,7 +86,9 @@ def _find_notebook_utils() -> bool:
         if sss is not None and db is not None:
             _notebook_utils_available = True
     except Exception:
-        logging.getLogger(__name__).exception("Notebook utils not available: requires_notebook_utils tests will fail")
+        logging.getLogger(__name__).exception(
+            "Notebook utils not available: requires_notebook_utils tests will fail"
+        )
 
     return _notebook_utils_available
 
@@ -113,7 +118,9 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         )
     else:
         # no markexpr or unrelated -m expression: skip silently
-        pytest.skip("Test is marked requires_spark, but Spark is not available in this environment.")
+        pytest.skip(
+            "Test is marked requires_spark, but Spark is not available in this environment."
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -231,6 +238,14 @@ def dlt_config() -> dict[str, Any]:
 
 
 @pytest.fixture
+def patch_dlt_config(dlt_config: dict[str, Any]) -> Generator[Any]:
+    """Monkeypatch `dlt.config` to the test dlt config."""
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(dlt, "config", dlt_config)
+        yield
+
+
+@pytest.fixture
 def empty_df_schema() -> list[StructField]:
     """List of fields corresponding to the empty dataframe."""
     return [
@@ -305,7 +320,10 @@ def invalid_csv_missing_required_annots() -> list[list[str]]:
     :rtype: list[list[str]]
     """
     valid_invalid_fields = [[1, 0, 0, 0, 1], [0, 0, 1, 1, 1], [1, 1, 1, 0, 0], [0, 0, 0, 0, 0]]
-    return [[f"missing_required: col{n + 1}" for n in range(5) if not row[n]] for row in valid_invalid_fields]
+    return [
+        [f"missing_required: col{n + 1}" for n in range(5) if not row[n]]
+        for row in valid_invalid_fields
+    ]
 
 
 @pytest.fixture(scope="session")
@@ -371,7 +389,9 @@ def annotated_df_schema(csv_schema: list[StructField]) -> StructType:
     for r in actual_csv_schema:
         r.nullable = True
 
-    return StructType([*actual_csv_schema, INVALID_DATA_FIELD, StructField(ROW_ERRORS, ArrayType(StringType()))])
+    return StructType(
+        [*actual_csv_schema, INVALID_DATA_FIELD, StructField(ROW_ERRORS, ArrayType(StringType()))]
+    )
 
 
 @pytest.fixture(scope="session")
@@ -422,7 +442,11 @@ def annotated_df_data() -> list[dict[str, Any]]:
                 "col4": None,
                 "col5": "col5",
                 "__invalid_data__": None,
-                "errors_in_record": ["missing_required: col2", "missing_required: col3", "missing_required: col4"],
+                "errors_in_record": [
+                    "missing_required: col2",
+                    "missing_required: col3",
+                    "missing_required: col4",
+                ],
             },
             {
                 "col1": None,
