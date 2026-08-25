@@ -197,9 +197,7 @@ def test_download_atb_index_tsv_vcr_destination_s3(test_s3_settings: AtbSettings
         s3_path=f"{test_s3_settings.raw_data_dir}/{ALL_ATB_FILE_NAME}",
         requests=mock_requests,
     )
-    mock_download_client.download.assert_called_once_with(
-        url=download_url, destination=Path(ALL_ATB_FILE_NAME)
-    )
+    mock_download_client.download.assert_called_once_with(url=download_url, destination=Path(ALL_ATB_FILE_NAME))
     assert output_file == Path(ALL_ATB_FILE_NAME)
 
 
@@ -211,9 +209,7 @@ def test_download_atb_index_tsv_error_404(test_settings: AtbSettings) -> None:
 
 
 @pytest.mark.default_cassette("test_download_atb_index_tsv_vcr.yaml")
-def test_download_atb_index_s3_error_boom(
-    test_s3_settings: AtbSettings, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_download_atb_index_s3_error_boom(test_s3_settings: AtbSettings, caplog: pytest.LogCaptureFixture) -> None:
     """Ensure that an error in the s3 upload causes things to die unpleasantly."""
     mock_download_client = MagicMock()
     mock_stream_to_s3 = MagicMock(side_effect=ValueError("ZOMG!"))
@@ -303,9 +299,7 @@ def test_get_file_download_links_use_pattern_file(tmp_path: Path, pattern_lines:
     assert filtered_files[0] == expected_files
 
 
-def test_get_file_download_links_invalid_file(
-    test_settings: AtbSettings, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_get_file_download_links_invalid_file(test_settings: AtbSettings, caplog: pytest.LogCaptureFixture) -> None:
     """Ensure that the correct fields are present in the ATB TSV file and throw an error if not."""
     file_path = Path("tests") / "data" / "atb" / "invalid_atb_files.tsv"
     with pytest.raises(RuntimeError, match="Missing required ATB file index TSV headers"):
@@ -396,9 +390,7 @@ def test_osf_file_downloader_success(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Ensure that the osf_file_downloader function correctly calls the download client for each file."""
-    settings = request.getfixturevalue(
-        "test_s3_settings" if use_destination == "s3" else "test_settings"
-    )
+    settings = request.getfixturevalue("test_s3_settings" if use_destination == "s3" else "test_settings")
 
     atb_file_list = [{k: v for k, v in f.items() if k != "path"} for f in atb_input]
 
@@ -517,9 +509,7 @@ def test_osf_file_downloader_error_handling(
     request: pytest.FixtureRequest,
 ) -> None:
     """Ensure that errors during file download are handled correctly."""
-    settings = request.getfixturevalue(
-        "test_s3_settings" if use_destination == "s3" else "test_settings"
-    )
+    settings = request.getfixturevalue("test_s3_settings" if use_destination == "s3" else "test_settings")
 
     def file_downloader_boom(**args) -> None:  # noqa: ANN003
         if "url" in args:
@@ -683,6 +673,4 @@ def test_run_atb_pipeline_pipeline_dir_present_or_absent(
     if dev_mode:
         pipeline_kwargs["dev_mode"] = True
 
-    assert mock_dlt.pipeline.call_args_list == [
-        call(destination=mock_dlt.destination.return_value, **pipeline_kwargs)
-    ]
+    assert mock_dlt.pipeline.call_args_list == [call(destination=mock_dlt.destination.return_value, **pipeline_kwargs)]

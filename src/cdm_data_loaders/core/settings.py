@@ -4,7 +4,7 @@ from typing import Self
 
 import dlt
 from frozendict import frozendict
-from pydantic import AliasChoices, AliasGenerator, computed_field, field_validator, model_validator
+from pydantic import AliasGenerator, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cdm_data_loaders.core.fields import (
@@ -37,9 +37,7 @@ DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
         "cli_exit_on_error": False,
         "cli_ignore_unknown_args": True,
         "str_strip_whitespace": True,
-        "alias_generator": AliasGenerator(
-            validation_alias=lambda field_name: generate_aliases(field_name)
-        ),
+        "alias_generator": AliasGenerator(validation_alias=generate_aliases),
     }
 )
 

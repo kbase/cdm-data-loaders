@@ -13,12 +13,21 @@ from dlt.extract.items import DataItemWithMeta, TableNameMeta
 from lxml.etree import Element, XMLSyntaxError, tostring
 
 import cdm_data_loaders.readers.xml as xml_module
+from cdm_data_loaders.core.fields import DEFAULTS, BUFFER_SIZE, LOG_INTERVAL
 from cdm_data_loaders.core.settings import BatchedFileInputSettings
-from cdm_data_loaders.readers.xml import process_xml_file, process_xml_file_batches, xml_to_dict_parse_fn
+from cdm_data_loaders.readers.xml import (
+    process_xml_file,
+    process_xml_file_batches,
+    xml_to_dict_parse_fn,
+)
 
 ParseFn = Callable[..., dict[str, list[dict[str, Any]]]]
 
 UNIPROT_NS: Final[str] = "http://uniprot.org/uniprot"
+
+# Arbitrary non-default values used to prove settings are forwarded to process_xml_file.
+CUSTOM_LOG_INTERVAL: Final[int] = 7
+CUSTOM_BATCH_LOG_INTERVAL: Final[int] = 50
 
 PEOPLE_XML_2: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
 <people>
@@ -190,15 +199,26 @@ def _table_and_data(items: Iterable[DataItemWithMeta]) -> list[tuple[str, Any]]:
     return result
 
 
-def fake_settings() -> BatchedFileInputSettings:
-    """Build a MagicMock stand-in for BatchedFileInputSettings, since only identity matters here."""
-    return MagicMock(spec=BatchedFileInputSettings)
+def fake_settings(
+    buffer_size: int = DEFAULTS[BUFFER_SIZE],
+    log_interval: int = DEFAULTS[LOG_INTERVAL],
+) -> BatchedFileInputSettings:
+    """Build a MagicMock stand-in for BatchedFileInputSettings.
+
+    ``process_xml_file`` reads ``buffer_size`` and ``log_interval`` off the settings
+    object, so these are exposed as real integers (rather than nested mocks) to make
+    the arithmetic in the function under test behave correctly.
+    """
+    settings = MagicMock(spec=BatchedFileInputSettings)
+    settings.buffer_size = buffer_size
+    settings.log_interval = log_interval
+    return settings
 
 
 def test_process_xml_file_pass_single_table_single_entry(tmp_path: Path) -> None:
     """Verify a single matching element is parsed into one correctly table-tagged row."""
     file_path = _write_xml(tmp_path, "one.xml", PEOPLE_XML_2)
-    items = list(process_xml_file(file_path, "person", parse_person_entry))
+    items = list(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=file_path))
     assert len(items) == 1
     parsed = _table_and_data(items)
     assert parsed[0][0] == "people"
@@ -208,7 +228,7 @@ def test_process_xml_file_pass_single_table_single_entry(tmp_path: Path) -> None
 def test_process_xml_file_pass_multiple_entries(tmp_path: Path) -> None:
     """Verify all entries in a multi-entry XML file are streamed and parsed in document order."""
     file_path = _write_xml(tmp_path, "five.xml", PEOPLE_XML_5)
-    items = list(process_xml_file(file_path, "person", parse_person_entry))
+    items = list(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=file_path))
     parsed = _table_and_data(items)
     assert parsed[0][0] == "people"
     assert parsed[0][1] == [{"source_file": str(file_path), **p_data} for p_data in PEOPLE_PARSED]
@@ -221,7 +241,9 @@ def test_process_xml_file_pass_xml_to_dict_parse_fn_implements_xmltodict(tmp_pat
     file_path = _write_xml(tmp_path, filename, PEOPLE_XML_2, gzip_compress=gzip_compress)
 
     expected_rows = [xmltodict.parse(tostring(entry)) for entry in xml_module.stream_xml_file(file_path, "person")]
-    tagged = _table_and_data(process_xml_file(file_path, "person", xml_to_dict_parse_fn("xmltodict")))
+    tagged = _table_and_data(
+        process_xml_file(fake_settings(), "person", xml_to_dict_parse_fn("xmltodict"), file_path=file_path)
+    )
 
     assert tagged == [("xmltodict", expected_rows)]
 
@@ -233,17 +255,26 @@ def test_process_xml_file_pass_xml_to_dict_parse_fn_implements_xmltodict(tmp_pat
         pytest.param(2, [2, 2, 1], id="two-row-batches-with-remainder"),
         pytest.param(3, [3, 2], id="three-row-batches-with-remainder"),
         pytest.param(10, [5], id="larger-than-input"),
-        pytest.param(0, [5], id="zero-uses-default"),
-        pytest.param(-1, [5], id="negative-uses-default"),
     ],
 )
 def test_process_xml_file_pass_buffer_size_controls_batching(
     tmp_path: Path, buffer_size: int, expected_batch_sizes: list[int]
 ) -> None:
-    """Verify rows are yielded in batches of at most `buffer_size`, with a final partial batch."""
+    """Verify rows are yielded in batches of at most `buffer_size`, with a final partial batch.
+
+    ``buffer_size`` is now supplied via the settings object and constrained to be a
+    positive integer by ``BatchedFileInputSettings``.
+    """
     file_path = _write_xml(tmp_path, "five.xml", PEOPLE_XML_5)
 
-    items = _table_and_data(process_xml_file(file_path, "person", parse_person_entry, buffer_size=buffer_size))
+    items = _table_and_data(
+        process_xml_file(
+            fake_settings(buffer_size=buffer_size),
+            "person",
+            parse_person_entry,
+            file_path=file_path,
+        )
+    )
 
     assert [len(rows) for _, rows in items] == expected_batch_sizes
     assert [row["id"] for _, rows in items for row in rows] == [str(index) for index in range(1, 6)]
@@ -252,7 +283,7 @@ def test_process_xml_file_pass_buffer_size_controls_batching(
 def test_process_xml_file_pass_multiple_tables_per_entry(tmp_path: Path) -> None:
     """Verify a parse_fn returning multiple tables yields one buffered item per table."""
     file_path = _write_xml(tmp_path, "two.xml", PEOPLE_XML_2)
-    items = list(process_xml_file(file_path, "person", parse_person_multi_table))
+    items = list(process_xml_file(fake_settings(), "person", parse_person_multi_table, file_path=file_path))
     tagged = _table_and_data(items)
     assert [table for table, _ in tagged] == ["people", "emails"]
     assert [row["id"] for row in tagged[0][1]] == ["1", "2"]
@@ -264,8 +295,8 @@ def test_process_xml_file_pass_gzip_file(tmp_path: Path) -> None:
     plain_path = _write_xml(tmp_path, "plain.xml", PEOPLE_XML_2)
     gz_path = _write_xml(tmp_path, "compressed.xml.gz", PEOPLE_XML_2, gzip_compress=True)
 
-    plain_items = _table_and_data(process_xml_file(plain_path, "person", parse_person_entry))
-    gz_items = _table_and_data(process_xml_file(gz_path, "person", parse_person_entry))
+    plain_items = _table_and_data(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=plain_path))
+    gz_items = _table_and_data(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=gz_path))
 
     plain_ids = [row["id"] for _, rows in plain_items for row in rows]
     gz_ids = [row["id"] for _, rows in gz_items for row in rows]
@@ -276,7 +307,7 @@ def test_process_xml_file_pass_namespaced_tag(tmp_path: Path) -> None:
     """Verify namespace-qualified tags (e.g. UniProt-style {ns}entry) are matched and parsed."""
     file_path = _write_xml(tmp_path, "uniprot.xml", UNIPROT_XML_2)
     xml_tag = f"{{{UNIPROT_NS}}}entry"
-    items = _table_and_data(process_xml_file(file_path, xml_tag, parse_uniprot_entry))
+    items = _table_and_data(process_xml_file(fake_settings(), xml_tag, parse_uniprot_entry, file_path=file_path))
     accessions = [row["accession"] for _, rows in items for row in rows]
     assert accessions == ["P12345", "Q67890"]
 
@@ -284,21 +315,23 @@ def test_process_xml_file_pass_namespaced_tag(tmp_path: Path) -> None:
 def test_process_xml_file_pass_partial_empty_parse_results(tmp_path: Path) -> None:
     """Verify entries for which parse_fn returns an empty dict contribute nothing, and surviving rows are exact."""
     file_path = _write_xml(tmp_path, "missing_email.xml", PEOPLE_XML_2_ONE_MISSING_EMAIL)
-    items = _table_and_data(process_xml_file(file_path, "person", parse_person_skip_missing_email))
+    items = _table_and_data(
+        process_xml_file(fake_settings(), "person", parse_person_skip_missing_email, file_path=file_path)
+    )
     assert items == [("people", [{"id": "1", "email": "a@example.com"}])]
 
 
 def test_process_xml_file_pass_no_matching_elements(tmp_path: Path) -> None:
     """Verify a well-formed XML file with no elements matching xml_tag yields nothing, without error."""
     file_path = _write_xml(tmp_path, "empty.xml", PEOPLE_XML_EMPTY)
-    items = list(process_xml_file(file_path, "person", parse_person_entry))
+    items = list(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=file_path))
     assert items == []
 
 
 def test_process_xml_file_pass_file_path_passed_through(tmp_path: Path) -> None:
     """Verify the correct file_path is forwarded to parse_fn for every entry."""
     file_path = _write_xml(tmp_path, "two.xml", PEOPLE_XML_2)
-    items = _table_and_data(process_xml_file(file_path, "person", parse_person_entry))
+    items = _table_and_data(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=file_path))
     for _, rows in items:
         assert rows[0]["source_file"] == str(file_path)
 
@@ -307,7 +340,7 @@ def test_process_xml_file_pass_logs_reading_info_message_once(tmp_path: Path, ca
     """Verify the INFO-level 'Reading from <path>' message is logged exactly once with the correct path."""
     caplog.set_level(logging.INFO)
     file_path = _write_xml(tmp_path, "two.xml", PEOPLE_XML_2)
-    list(process_xml_file(file_path, "person", parse_person_entry))
+    list(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=file_path))
 
     info_records = [r for r in caplog.records if r.levelno == logging.INFO]
     assert len(info_records) == 1
@@ -321,7 +354,7 @@ def test_process_xml_file_pass_no_matching_elements_logs_no_progress(
     """Verify no elements matching xml_tag also means no 'Processed' progress log is emitted (final-if is False)."""
     caplog.set_level(logging.DEBUG)
     file_path = _write_xml(tmp_path, "empty.xml", PEOPLE_XML_EMPTY)
-    items = list(process_xml_file(file_path, "person", parse_person_entry))
+    items = list(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=file_path))
 
     assert items == []
     progress_records = [r for r in caplog.records if r.msg.startswith("Processed")]
@@ -335,8 +368,6 @@ def test_process_xml_file_pass_no_matching_elements_logs_no_progress(
         pytest.param(5, [5], None, id="divides_evenly_equal_to_count"),
         pytest.param(2, [2, 4], 5, id="remainder_leaves_trailing_entries"),
         pytest.param(10, [], 5, id="interval_larger_than_entry_count"),
-        pytest.param(-1, [], 5, id="negative_interval_reset_to_default"),
-        pytest.param(0, [], 5, id="zero_interval_reset_to_default"),
     ],
 )
 def test_process_xml_file_pass_log_interval_boundary(
@@ -346,10 +377,21 @@ def test_process_xml_file_pass_log_interval_boundary(
     expected_interim_counts: list[int],
     expected_final_count: int | None,
 ) -> None:
-    """Verify the exact entry counts logged at each interim checkpoint and in the trailing summary, not just their number."""
+    """Verify the exact entry counts logged at each interim checkpoint and in the trailing summary, not just their number.
+
+    ``log_interval`` is supplied via the settings object and constrained to be a
+    positive integer by ``BatchedFileInputSettings``.
+    """
     caplog.set_level(logging.DEBUG)
     file_path = _write_xml(tmp_path, "five.xml", PEOPLE_XML_5)
-    list(process_xml_file(file_path, "person", parse_person_entry, log_interval=log_interval))
+    list(
+        process_xml_file(
+            fake_settings(log_interval=log_interval),
+            "person",
+            parse_person_entry,
+            file_path=file_path,
+        )
+    )
 
     interim_counts = [r.args[0] for r in caplog.records if r.msg == "Processed %d entries"]
     final_records = [r for r in caplog.records if r.msg == "Processed %d entries from %s"]
@@ -366,21 +408,23 @@ def test_process_xml_file_fail_missing_file(tmp_path: Path) -> None:
     """Verify a nonexistent file path raises FileNotFoundError when the generator is consumed."""
     missing_path = tmp_path / "does_not_exist.xml"
     with pytest.raises(FileNotFoundError, match="No such file or directory"):
-        list(process_xml_file(missing_path, "person", parse_person_entry))
+        list(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=missing_path))
 
 
 def test_process_xml_file_fail_malformed_xml(tmp_path: Path) -> None:
     """Verify malformed (not well-formed) XML raises lxml's XMLSyntaxError during streaming."""
     file_path = _write_xml(tmp_path, "malformed.xml", PEOPLE_XML_MALFORMED)
     with pytest.raises(XMLSyntaxError, match="Opening and ending tag mismatch"):
-        list(process_xml_file(file_path, "person", parse_person_entry))
+        list(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=file_path))
 
 
 def test_process_xml_file_fail_parse_fn_raises_mid_stream(tmp_path: Path) -> None:
     """Verify an exception raised before the final buffer flush propagates without yielding buffered rows."""
     file_path = _write_xml(tmp_path, "five.xml", PEOPLE_XML_5)
     failing_parse_fn = make_failing_parse_fn(fail_on_call=3)
-    generator: Generator[DataItemWithMeta, Any] = process_xml_file(file_path, "person", failing_parse_fn)
+    generator: Generator[DataItemWithMeta, Any] = process_xml_file(
+        fake_settings(), "person", failing_parse_fn, file_path=file_path
+    )
 
     collected: list[DataItemWithMeta] = []
     with pytest.raises(ValueError, match="boom on call 3"):  # noqa: PT012
@@ -394,7 +438,7 @@ def test_process_xml_file_fail_parse_fn_returns_non_dict(tmp_path: Path) -> None
     """Verify a parse_fn violating its dict[str, rows] contract raises AttributeError on .items()."""
     file_path = _write_xml(tmp_path, "two.xml", PEOPLE_XML_2)
     with pytest.raises(AttributeError, match="'list' object has no attribute 'items'"):
-        list(process_xml_file(file_path, "person", parse_returns_non_dict))
+        list(process_xml_file(fake_settings(), "person", parse_returns_non_dict, file_path=file_path))
 
 
 """process_xml_file_batches"""
@@ -444,38 +488,44 @@ def test_process_xml_file_batches_pass_batch_with_empty_file_list(
     assert ids == ["1", "2"]
 
 
-@pytest.mark.parametrize("buffer_size", [1, 2, 0, -1])
-def test_process_xml_file_batches_pass_processing_options_forwarded(
+@pytest.mark.parametrize("buffer_size", [1, 2, 50])
+def test_process_xml_file_batches_pass_settings_forwarded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, buffer_size: int
 ) -> None:
-    """Verify processing options are forwarded unchanged to process_xml_file for each file."""
+    """Verify the settings object (carrying buffer_size/log_interval) is forwarded to process_xml_file."""
     file_path = _write_xml(tmp_path, "two.xml", PEOPLE_XML_2)
+    settings = fake_settings(buffer_size=buffer_size, log_interval=CUSTOM_LOG_INTERVAL)
     monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[file_path]]))
     spy = MagicMock(wraps=xml_module.process_xml_file)
     monkeypatch.setattr(xml_module, "process_xml_file", spy)
 
-    list(
-        process_xml_file_batches(fake_settings(), "person", parse_person_entry, buffer_size=buffer_size, log_interval=7)
-    )
+    list(process_xml_file_batches(settings, "person", parse_person_entry))
 
     spy.assert_called_once()
-    assert spy.call_args.kwargs.get("log_interval") == 7
-    assert spy.call_args.kwargs.get("buffer_size") == buffer_size
+    forwarded_settings = spy.call_args.kwargs.get("settings")
+    assert forwarded_settings is not None
+    assert forwarded_settings is settings
+    assert forwarded_settings.log_interval == CUSTOM_LOG_INTERVAL
+    assert forwarded_settings.buffer_size == buffer_size
 
 
-def test_process_xml_file_batches_pass_default_log_interval_forwarded(
+def test_process_xml_file_batches_pass_default_settings_forwarded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify the default log_interval (1000) is forwarded to process_xml_file when the caller doesn't override it."""
+    """Verify the default buffer_size/log_interval on the settings object reach process_xml_file."""
     file_path = _write_xml(tmp_path, "two.xml", PEOPLE_XML_2)
+    settings = fake_settings()
     monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[file_path]]))
     spy = MagicMock(wraps=xml_module.process_xml_file)
     monkeypatch.setattr(xml_module, "process_xml_file", spy)
 
-    list(process_xml_file_batches(fake_settings(), "person", parse_person_entry))
+    list(process_xml_file_batches(settings, "person", parse_person_entry))
 
-    assert spy.call_args.kwargs.get("log_interval") == 1000
-    assert spy.call_args.kwargs.get("buffer_size") == 100
+    forwarded_settings = spy.call_args.kwargs.get("settings")
+    assert forwarded_settings is not None
+    assert forwarded_settings is settings
+    assert forwarded_settings.log_interval == DEFAULTS[LOG_INTERVAL]
+    assert forwarded_settings.buffer_size == DEFAULTS[BUFFER_SIZE]
 
 
 def test_process_xml_file_batches_pass_process_xml_file_not_called_for_empty_batches(
@@ -490,7 +540,7 @@ def test_process_xml_file_batches_pass_process_xml_file_not_called_for_empty_bat
     list(process_xml_file_batches(fake_settings(), "tag", MagicMock()))
 
     process_file_mock.assert_called_once()
-    assert process_file_mock.call_args.args[0] == file_path
+    assert process_file_mock.call_args.kwargs.get("file_path") == file_path
 
 
 def test_process_xml_file_batches_fail_missing_file_mid_batch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -507,12 +557,24 @@ def test_process_xml_file_batches_fail_missing_file_mid_batch(tmp_path: Path, mo
     tagged = _table_and_data(collected)
     assert [table for table, _ in tagged] == ["people"]
     assert tagged[0][1] == [
-        {"source_file": str(good_path), "id": "1", "name": "Anne Example", "email": "a@example.com"},
-        {"source_file": str(good_path), "id": "2", "name": "Belinda Carlisle", "email": "b@example.com"},
+        {
+            "source_file": str(good_path),
+            "id": "1",
+            "name": "Anne Example",
+            "email": "a@example.com",
+        },
+        {
+            "source_file": str(good_path),
+            "id": "2",
+            "name": "Belinda Carlisle",
+            "email": "b@example.com",
+        },
     ]
 
 
-def test_process_xml_file_batches_fail_get_file_batches_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_process_xml_file_batches_fail_get_file_batches_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Verify an exception raised by get_file_batches itself propagates out of the generator."""
 
     def _raising_get_file_batches(_settings: BatchedFileInputSettings) -> Iterator[list[Path]]:
@@ -524,30 +586,36 @@ def test_process_xml_file_batches_fail_get_file_batches_raises(monkeypatch: pyte
         list(process_xml_file_batches(fake_settings(), "person", parse_person_entry))
 
 
-def test_process_xml_file_pass_calls_stream_xml_file_with_correct_args(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_process_xml_file_pass_calls_stream_xml_file_with_correct_args(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Verify process_xml_file invokes stream_xml_file exactly once with (file_path, xml_tag)."""
     stream_mock = MagicMock(return_value=iter([]))
     monkeypatch.setattr(xml_module, "stream_xml_file", stream_mock)
     file_path = Path("dummy.xml")
 
-    list(process_xml_file(file_path, "tag", MagicMock()))
+    list(process_xml_file(fake_settings(), "tag", MagicMock(), file_path=file_path))
 
     stream_mock.assert_called_once_with(file_path, "tag")
 
 
-def test_process_xml_file_pass_calls_parse_fn_with_expected_keyword_args(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_process_xml_file_pass_calls_parse_fn_with_expected_keyword_args(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Verify parse_fn is invoked once per streamed entry with entry/file_path as kwargs."""
     fake_entry = MagicMock(spec=Element)
     monkeypatch.setattr(xml_module, "stream_xml_file", lambda _, __: iter([fake_entry]))
     parse_fn = MagicMock(return_value={})
     file_path = Path("dummy.xml")
 
-    list(process_xml_file(file_path, "tag", parse_fn))
+    list(process_xml_file(fake_settings(), "tag", parse_fn, file_path=file_path))
 
     parse_fn.assert_called_once_with(entry=fake_entry, file_path=file_path)
 
 
-def test_process_xml_file_pass_wraps_each_table_with_dlt_mark(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_process_xml_file_pass_wraps_each_table_with_dlt_mark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Verify each (table, rows) pair from parse_fn's return dict is forwarded to dlt.mark.with_table_name."""
     fake_entry = MagicMock(spec=Element)
     monkeypatch.setattr(xml_module, "stream_xml_file", lambda fp, tag: iter([fake_entry]))
@@ -557,7 +625,7 @@ def test_process_xml_file_pass_wraps_each_table_with_dlt_mark(monkeypatch: pytes
     mark_mock = MagicMock(side_effect=lambda rows, table: DataItemWithMeta(TableNameMeta(table), rows))
     monkeypatch.setattr(xml_module.dlt.mark, "with_table_name", mark_mock)
 
-    items = list(process_xml_file(Path("f.xml"), "tag", parse_fn))
+    items = list(process_xml_file(fake_settings(), "tag", parse_fn, file_path=Path("f.xml")))
 
     mark_mock.assert_any_call(rows_people, "people")
     mark_mock.assert_any_call(rows_emails, "emails")
@@ -568,18 +636,22 @@ def test_process_xml_file_pass_wraps_each_table_with_dlt_mark(monkeypatch: pytes
     assert items[1].data == rows_emails
 
 
-def test_process_xml_file_pass_skips_parse_fn_when_no_entries(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_process_xml_file_pass_skips_parse_fn_when_no_entries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Verify parse_fn is never invoked, and no items are yielded, when stream_xml_file yields no elements."""
     monkeypatch.setattr(xml_module, "stream_xml_file", lambda _fp, _tag: iter([]))
     parse_fn = MagicMock()
 
-    items = list(process_xml_file(Path("f.xml"), "tag", parse_fn))
+    items = list(process_xml_file(fake_settings(), "tag", parse_fn, file_path=Path("f.xml")))
 
     parse_fn.assert_not_called()
     assert items == []
 
 
-def test_process_xml_file_fail_propagates_stream_xml_file_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_process_xml_file_fail_propagates_stream_xml_file_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Verify the first entry is parsed correctly before an exception raised mid-iteration by stream_xml_file propagates."""
     fake_entry = MagicMock(spec=Element)
 
@@ -594,7 +666,7 @@ def test_process_xml_file_fail_propagates_stream_xml_file_error(monkeypatch: pyt
 
     collected: list[DataItemWithMeta] = []
     with pytest.raises(OSError, match="disk read error"):  # noqa: PT012
-        for item in process_xml_file(file_path, "tag", parse_fn):
+        for item in process_xml_file(fake_settings(), "tag", parse_fn, file_path=file_path):
             collected.append(item)  # noqa: PERF402
 
     parse_fn.assert_called_once_with(entry=fake_entry, file_path=file_path)
@@ -621,18 +693,24 @@ def test_process_xml_file_batches_pass_calls_process_xml_file_per_file_in_order(
 ) -> None:
     """Verify process_xml_file is called once per file across all batches, in order, with forwarded args."""
     file_a, file_b, file_c = Path("a.xml"), Path("b.xml"), Path("c.xml")
+    settings = fake_settings(log_interval=CUSTOM_BATCH_LOG_INTERVAL)
     monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[file_a, file_b], [file_c]]))
     process_file_mock = MagicMock(side_effect=lambda *_, **__: iter([]))
     monkeypatch.setattr(xml_module, "process_xml_file", process_file_mock)
     parse_fn = MagicMock()
 
-    list(process_xml_file_batches(fake_settings(), "tag", parse_fn, log_interval=50))
+    list(process_xml_file_batches(settings, "tag", parse_fn))
 
-    assert [call.args[0] for call in process_file_mock.call_args_list] == [file_a, file_b, file_c]
+    assert [call.kwargs.get("file_path") for call in process_file_mock.call_args_list] == [
+        file_a,
+        file_b,
+        file_c,
+    ]
     for call in process_file_mock.call_args_list:
-        assert call.args[1] == "tag"
-        assert call.args[2] is parse_fn
-        assert call.kwargs.get("log_interval") == 50
+        assert call.kwargs.get("xml_tag") == "tag"
+        assert call.kwargs.get("parse_fn") is parse_fn
+        assert call.kwargs.get("settings") is settings
+        assert call.kwargs.get("settings").log_interval == CUSTOM_BATCH_LOG_INTERVAL
 
 
 def test_process_xml_file_batches_pass_yields_items_from_process_xml_file_unchanged(

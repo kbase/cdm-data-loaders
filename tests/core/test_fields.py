@@ -45,10 +45,7 @@ def test_generate_aliases_no_short_aliases(field_name: str, expected_aliases: li
 
 def test_generate_cli_arguments() -> None:
     """Test the generate_cli_arguments function."""
-    aliases = {
-        k: generate_aliases(k)
-        for k in ["use_destination", "dev_mode", "verbose", "non_existent_field"]
-    }
+    aliases = {k: generate_aliases(k) for k in ["use_destination", "dev_mode", "verbose", "non_existent_field"]}
 
     assert generate_cli_arguments(aliases) == {
         # field with a short alias
@@ -83,10 +80,7 @@ def test_generate_cli_arguments_no_short_aliases() -> None:
 
 def test_generate_cli_arguments_multiple_args() -> None:
     """Test the generate_cli_arguments function, multiple dictionaries."""
-    aliases = [
-        {k: generate_aliases(k)}
-        for k in ["use_destination", "dev_mode", "verbose", "non_existent_field"]
-    ]
+    aliases = [{k: generate_aliases(k)} for k in ["use_destination", "dev_mode", "verbose", "non_existent_field"]]
 
     assert generate_cli_arguments(*aliases) == {
         # field with a short alias

@@ -49,9 +49,7 @@ def construct_env_var() -> None:
     t_var = os.environ.get("VARIABLE_T")
     char_str = os.environ.get("CHAR_STR")
     if all([b_var, t_var, char_str]):
-        os.environ["RUNTIME__SLACK_INCOMING_HOOK"] = (
-            f"https://hooks.slack.com/services/{b_var}/{t_var}/{char_str}/"
-        )
+        os.environ["RUNTIME__SLACK_INCOMING_HOOK"] = f"https://hooks.slack.com/services/{b_var}/{t_var}/{char_str}/"
 
 
 def sync_configs(settings: CtsSettings, dlt_config: Any) -> None:

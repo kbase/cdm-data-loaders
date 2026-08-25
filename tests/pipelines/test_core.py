@@ -151,9 +151,7 @@ def test_construct_env_var_overwrites_existing_hook() -> None:
         clear=True,
     ):
         assert construct_env_var() is None
-        assert (
-            os.environ["RUNTIME__SLACK_INCOMING_HOOK"] == "https://hooks.slack.com/services/B/T/C/"
-        )
+        assert os.environ["RUNTIME__SLACK_INCOMING_HOOK"] == "https://hooks.slack.com/services/B/T/C/"
 
 
 # send slack message carefully
@@ -204,9 +202,7 @@ def test_send_slack_message_carefully_markdown_params(
         mock_send_slack_message.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, False)  # noqa: FBT003
 
 
-def test_send_slack_message_fail_error_oh_no(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_send_slack_message_fail_error_oh_no(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     """Ensure that errors are caught and don't crash the whole goddamn ship of fools."""
     slack_mock = MagicMock(side_effect=ValueError("Oh no! An error!"))
     monkeypatch.setattr(core, "send_slack_message", slack_mock)
@@ -217,9 +213,7 @@ def test_send_slack_message_fail_error_oh_no(
 
 
 # sync_configs
-def test_sync_configs_mutates_dlt_config_in_place(
-    dlt_config: dict[str, Any], test_cts_settings: CtsSettings
-) -> None:
+def test_sync_configs_mutates_dlt_config_in_place(dlt_config: dict[str, Any], test_cts_settings: CtsSettings) -> None:
     """sync_configs mutates the supplied dlt_config dict in-place."""
     original_id = id(dlt_config)
     sync_configs(test_cts_settings, dlt_config)
@@ -230,9 +224,7 @@ def test_sync_configs_with_mock_dlt_config_object(test_cts_settings: CtsSettings
     """sync_configs works with any mapping that supports __setitem__."""
     mock_cfg = MagicMock()
     sync_configs(test_cts_settings, mock_cfg)
-    mock_cfg.__setitem__.assert_any_call(
-        "normalize.data_writer.disable_compression", test_cts_settings.dev_mode
-    )
+    mock_cfg.__setitem__.assert_any_call("normalize.data_writer.disable_compression", test_cts_settings.dev_mode)
     mock_cfg.__setitem__.assert_any_call(
         f"destination.{test_cts_settings.use_destination}.bucket_url",
         test_cts_settings.output,
@@ -435,9 +427,7 @@ def test_run_cli_no_slack_env_var_when_vars_missing(
 # dlt.config state after successful run
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize("dev_mode", [True, False])
-@pytest.mark.parametrize(
-    ("use_destination", "output"), [("local_fs", "/some/path"), ("s3", "s3://bucket/whatever")]
-)
+@pytest.mark.parametrize(("use_destination", "output"), [("local_fs", "/some/path"), ("s3", "s3://bucket/whatever")])
 def test_run_cli_dlt_config_updated_after_success(
     dlt_config: dict[str, Any],
     settings_cls: type[CtsSettings],
@@ -463,15 +453,11 @@ def test_run_cli_dlt_config_updated_after_success(
 
 
 # run_pipeline tests
-def test_run_pipeline_minimal(
-    test_bfi_settings: BatchedFileInputSettings, mock_dlt: MagicMock
-) -> None:
+def test_run_pipeline_minimal(test_bfi_settings: BatchedFileInputSettings, mock_dlt: MagicMock) -> None:
     """Ensure pipeline.run is called with correct args in the simplest case."""
     fake_resource = MagicMock()
     run_pipeline(test_bfi_settings, fake_resource)
-    assert_pipeline_run_correctly(
-        mock_dlt, fake_resource, test_bfi_settings.use_destination, {}, {}, {}
-    )
+    assert_pipeline_run_correctly(mock_dlt, fake_resource, test_bfi_settings.use_destination, {}, {}, {})
 
 
 @pytest.mark.parametrize("destination_kwargs", [None, {}, {"max_table_nesting": 0}])
@@ -484,9 +470,7 @@ def test_run_pipeline_destination_pipeline_pipeline_run_kwargs_set(
     pipeline_run_kwargs: dict[str, Any] | None,
 ) -> None:
     """Ensure a non-empty output sets the correct dlt.config bucket_url key."""
-    settings = make_batched_settings(
-        input_dir="/i", output="/custom/output", use_destination="local_fs"
-    )
+    settings = make_batched_settings(input_dir="/i", output="/custom/output", use_destination="local_fs")
     fake_resource = MagicMock()
     run_pipeline(
         settings,
@@ -579,9 +563,7 @@ def test_run_pipeline_slack_configured(
 
 def test_run_pipeline_sets_pipelines_dir_when_pipeline_dir_set(mock_dlt: MagicMock) -> None:
     """pipelines_dir is injected into pipeline_kwargs when config.pipeline_dir is set."""
-    settings = make_batched_settings(
-        input_dir="/i", output="/out", use_output_dir_for_pipeline_metadata=True
-    )
+    settings = make_batched_settings(input_dir="/i", output="/out", use_output_dir_for_pipeline_metadata=True)
     assert settings.pipeline_dir is not None
 
     run_pipeline(settings, MagicMock())

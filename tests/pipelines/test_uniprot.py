@@ -42,9 +42,7 @@ TEST_SETTINGS = frozendict(
     {**TEST_BATCH_FILE_SETTINGS, "log_interval": UNIPROT_LOG_INTERVAL},
 )
 
-TEST_SETTINGS_RECONCILED = frozendict(
-    {**TEST_BATCH_FILE_SETTINGS_RECONCILED, "log_interval": UNIPROT_LOG_INTERVAL}
-)
+TEST_SETTINGS_RECONCILED = frozendict({**TEST_BATCH_FILE_SETTINGS_RECONCILED, "log_interval": UNIPROT_LOG_INTERVAL})
 
 
 def test_uniprot_settings_all_params_set() -> None:
@@ -66,9 +64,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 
 def test_uniprot_settings(validation_alias: str, field_name: str) -> None:
     """Test all fields and aliases in the UniProtSettings class."""
-    settings = make_settings_autofill_config(
-        UniProtSettings, {validation_alias: TEST_SETTINGS[field_name]}
-    )
+    settings = make_settings_autofill_config(UniProtSettings, {validation_alias: TEST_SETTINGS[field_name]})
     assert getattr(settings, field_name) == TEST_SETTINGS_RECONCILED[field_name]
 
 
@@ -281,9 +277,7 @@ def test_integration_cli_uniprot_pipeline_output_validated(
     settings, and redirect ``core.run_pipeline`` to a real DuckDB pipeline so the
     full flow (settings -> resource -> pipeline.run -> loaded data) is validated.
     """
-    monkeypatch.setattr(
-        uniprot_module, "UniProtSettings", MagicMock(return_value=duckdb_uniprot_settings)
-    )
+    monkeypatch.setattr(uniprot_module, "UniProtSettings", MagicMock(return_value=duckdb_uniprot_settings))
 
     captured: dict[str, Any] = {}
 

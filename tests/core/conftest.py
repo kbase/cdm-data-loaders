@@ -51,9 +51,7 @@ DEFAULT_CTS_SETTINGS_RECONCILED = frozendict(
     }
 )
 
-DEFAULT_BATCH_FILE_SETTINGS_RECONCILED = frozendict(
-    {**DEFAULT_BATCH_FILE_SETTINGS, **DEFAULT_CTS_SETTINGS_RECONCILED}
-)
+DEFAULT_BATCH_FILE_SETTINGS_RECONCILED = frozendict({**DEFAULT_BATCH_FILE_SETTINGS, **DEFAULT_CTS_SETTINGS_RECONCILED})
 
 TEST_CTS_SETTINGS = frozendict(
     {
@@ -113,10 +111,7 @@ def generate_cli_arguments(
         all_aliases = {**all_aliases, **a}
 
     return frozendict(
-        {
-            k: [f"-{item}" if len(str(item)) == 1 else f"--{item}" for item in v.choices]
-            for k, v in all_aliases.items()
-        }
+        {k: [f"-{item}" if len(str(item)) == 1 else f"--{item}" for item in v.choices] for k, v in all_aliases.items()}
     )
 
 
@@ -134,7 +129,9 @@ def make_settings(
 def make_settings_autofill_config(
     settings_cls: type[CtsSettings],
     kwargs: dict[str, Any] | frozendict[str, Any] | None = None,
-) -> CtsSettings:  # CtsSettings | BatchedFileInputSettings | NcbiRestApiSettings | AtbSettings | UniProtSettings | UnirefSettings:
+) -> (
+    CtsSettings
+):  # CtsSettings | BatchedFileInputSettings | NcbiRestApiSettings | AtbSettings | UniProtSettings | UnirefSettings:
     """Generate a validated Settings object, supplying the dlt_config if necessary."""
     return settings_cls(**(kwargs or {}))  # pyright: ignore[reportArgumentType]
 

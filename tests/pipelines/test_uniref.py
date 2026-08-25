@@ -60,9 +60,7 @@ def uniref_variant_value(request: pytest.FixtureRequest) -> str:
 @pytest.fixture
 def test_settings(uniref_variant_value: str) -> UnirefSettings:
     """A valid UnirefSettings object for each uniref variant."""
-    return make_settings_autofill_config(
-        UnirefSettings, {VARIANT: uniref_variant_value, "input_dir": "/fake/input"}
-    )  # type: ignore[reportReturnType]
+    return make_settings_autofill_config(UnirefSettings, {VARIANT: uniref_variant_value, "input_dir": "/fake/input"})  # type: ignore[reportReturnType]
 
 
 @pytest.mark.parametrize("uniref_variant_value", UNIREF_VARIANTS)
@@ -104,9 +102,7 @@ def test_cli_invalid_variant_via_cli_raises(
 ) -> None:
     """Ensure that an invalid uniref variant passed via CLI raises an error."""
     with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        CliApp.run(
-            UnirefSettings, cli_args=[f"{'--' if len(variant) > 1 else '-'}{variant}", value]
-        )
+        CliApp.run(UnirefSettings, cli_args=[f"{'--' if len(variant) > 1 else '-'}{variant}", value])
 
     exc_message = str(exc_info.value)
     assert "Value error, UniRef variant must be one of" in exc_message
@@ -399,9 +395,7 @@ def test_integration_cli_uniref_pipeline_output_validated(
     settings, and redirect ``core.run_pipeline`` to a real DuckDB pipeline so the
     full flow (settings -> resource -> pipeline.run -> loaded data) is validated.
     """
-    monkeypatch.setattr(
-        uniref_module, "UnirefSettings", MagicMock(return_value=duckdb_uniref_settings)
-    )
+    monkeypatch.setattr(uniref_module, "UnirefSettings", MagicMock(return_value=duckdb_uniref_settings))
 
     captured: dict[str, Any] = {}
 

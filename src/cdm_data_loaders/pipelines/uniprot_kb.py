@@ -50,9 +50,7 @@ def parse_uniprot(settings: UniProtSettings) -> Generator[DataItemWithMeta, Any]
     yield from process_xml_file_batches(
         settings=settings,
         xml_tag=ENTRY_XML_TAG,
-        parse_fn=lambda entry, file_path: parse_uniprot_entry(
-            entry=entry, timestamp=timestamp, file_path=file_path
-        ),
+        parse_fn=lambda entry, file_path: parse_uniprot_entry(entry=entry, timestamp=timestamp, file_path=file_path),
     )
 
 

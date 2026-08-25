@@ -170,9 +170,7 @@ class TestDownloadBatch:
     def _mock_ftp_pool(self) -> Generator[None]:
         """Prevent real FTP connections from the ThreadLocalFTP pool."""
         mock_pool = MagicMock()
-        with patch(
-            "cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP", return_value=mock_pool
-        ):
+        with patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP", return_value=mock_pool):
             yield
 
     def test_reads_manifest_and_calls_download(self, tmp_path: Path) -> None:
@@ -227,9 +225,7 @@ class TestDownloadBatch:
     def test_writes_report_json(self, tmp_path: Path) -> None:
         """Verify download_report.json is written to the output directory."""
         manifest = tmp_path / "manifest.txt"
-        manifest.write_text(
-            "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n"
-        )
+        manifest.write_text("/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n")
         output = tmp_path / "output"
         output.mkdir()
 
@@ -249,9 +245,7 @@ class TestDownloadBatch:
     def test_handles_download_failure(self, tmp_path: Path) -> None:
         """Verify failed downloads are counted and do not crash the batch."""
         manifest = tmp_path / "manifest.txt"
-        manifest.write_text(
-            "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n"
-        )
+        manifest.write_text("/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n")
         output = tmp_path / "output"
         output.mkdir()
 
@@ -312,9 +306,7 @@ def test_download_and_stage_manifest_source(
 
     manifest_local: Path | None = None
     if manifest_s3_key is not None:
-        s3_client.put_object(
-            Bucket=str(_TEST_BUCKET), Key=str(manifest_s3_key), Body=_MANIFEST_CONTENT.encode()
-        )
+        s3_client.put_object(Bucket=str(_TEST_BUCKET), Key=str(manifest_s3_key), Body=_MANIFEST_CONTENT.encode())
     else:
         manifest_local = tmp_path / "manifest.txt"
         manifest_local.write_text(_MANIFEST_CONTENT)
@@ -343,9 +335,7 @@ def test_download_and_stage_manifest_source(
             threads=1,
         )
 
-    expected_paths: list[Path] = [
-        Path(line) for line in _MANIFEST_CONTENT.splitlines() if line.strip()
-    ]
+    expected_paths: list[Path] = [Path(line) for line in _MANIFEST_CONTENT.splitlines() if line.strip()]
     assert sorted(called_paths) == sorted(expected_paths)
 
     reset_s3_client()
@@ -357,9 +347,7 @@ def test_download_and_stage_manifest_source(
 @pytest.mark.parametrize(
     ("s3_key", "local_path", "should_raise"),
     [
-        pytest.param(
-            PurePosixPath("s3") / "key", Path("local") / "path", True, id="both_provided_raises"
-        ),
+        pytest.param(PurePosixPath("s3") / "key", Path("local") / "path", True, id="both_provided_raises"),
         pytest.param(None, None, True, id="neither_provided_raises"),
         pytest.param(PurePosixPath("s3") / "key", None, False, id="s3_only_ok"),
         pytest.param(None, Path("local") / "path", False, id="local_only_ok"),
@@ -388,9 +376,7 @@ def test_download_and_stage_exactly_one_source_required(
         s3_client = _make_moto_s3(monkeypatch)
         # For s3_only: seed the object; for local_only: create the file
         if s3_key is not None:
-            s3_client.put_object(
-                Bucket=str(_TEST_BUCKET), Key=str(s3_key), Body=_MANIFEST_CONTENT.encode()
-            )
+            s3_client.put_object(Bucket=str(_TEST_BUCKET), Key=str(s3_key), Body=_MANIFEST_CONTENT.encode())
         if local_path is not None:
             real_local = tmp_path / "manifest.txt"
             real_local.write_text(_MANIFEST_CONTENT)
@@ -421,18 +407,14 @@ def test_download_and_stage_exactly_one_source_required(
 
 
 @mock_aws
-def test_download_and_stage_uploads_to_staging(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_download_and_stage_uploads_to_staging(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Files produced by download_assembly_to_local and download_report.json are all staged to S3."""
     reset_s3_client()
     s3_client = _make_moto_s3(monkeypatch)
 
     manifest_local = tmp_path / "manifest.txt"
     # Single assembly so the fake download writes exactly the files we expect
-    manifest_local.write_text(
-        "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n"
-    )
+    manifest_local.write_text("/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n")
 
     assembly_rel = "raw_data/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT"
 
@@ -482,9 +464,7 @@ def test_download_and_stage_uploads_to_staging(
 
 
 @mock_aws
-def test_download_and_stage_dry_run_skips_upload(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_download_and_stage_dry_run_skips_upload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """dry_run=True leaves S3 empty and returns staged_objects=0."""
     reset_s3_client()
     s3_client = _make_moto_s3(monkeypatch)
@@ -534,9 +514,7 @@ def test_download_and_stage_dry_run_skips_upload(
     ],
 )
 @mock_aws
-def test_download_and_stage_limit_forwarded(
-    tmp_path: Path, limit: int, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int, monkeypatch: pytest.MonkeyPatch) -> None:
     """The limit parameter truncates the number of assemblies processed."""
     reset_s3_client()
     s3_client = _make_moto_s3(monkeypatch)

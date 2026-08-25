@@ -145,9 +145,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 
 @pytest.mark.settings_cls.with_args(CtsSettings)
 @pytest.mark.usefixtures("patch_dlt_config")
-def test_cts_settings_aliases(
-    request: pytest.FixtureRequest, validation_alias: str, field_name: str
-) -> None:
+def test_cts_settings_aliases(request: pytest.FixtureRequest, validation_alias: str, field_name: str) -> None:
     """Test the CtsSettings aliases for a given field name."""
     settings_cls = request.node.get_closest_marker("settings_cls").args[0]
     settings: CtsSettings = make_settings_autofill_config(
@@ -158,22 +156,16 @@ def test_cts_settings_aliases(
 
 @pytest.mark.settings_cls.with_args(BatchedFileInputSettings)
 @pytest.mark.usefixtures("patch_dlt_config")
-def test_batch_file_settings_aliases(
-    request: pytest.FixtureRequest, validation_alias: str, field_name: str
-) -> None:
+def test_batch_file_settings_aliases(request: pytest.FixtureRequest, validation_alias: str, field_name: str) -> None:
     """Test the BatchedFileInputSettings aliases for a given field name."""
     settings_cls = request.node.get_closest_marker("settings_cls").args[0]
-    settings = make_settings_autofill_config(
-        settings_cls, {validation_alias: TEST_BATCH_FILE_SETTINGS[field_name]}
-    )
+    settings = make_settings_autofill_config(settings_cls, {validation_alias: TEST_BATCH_FILE_SETTINGS[field_name]})
     assert getattr(settings, field_name) == TEST_BATCH_FILE_SETTINGS_RECONCILED[field_name]
 
 
 @pytest.mark.settings_cls.with_args(CtsSettings)
 @pytest.mark.usefixtures("patch_dlt_config")
-def test_cts_settings_cliapp_aliases(
-    request: pytest.FixtureRequest, validation_alias: str, field_name: str
-) -> None:
+def test_cts_settings_cliapp_aliases(request: pytest.FixtureRequest, validation_alias: str, field_name: str) -> None:
     """Test the CtsSettings aliases for a given model field name, initialised using CliApp.run."""
     settings_cls = request.node.get_closest_marker("settings_cls").args[0]
     settings = CliApp.run(
@@ -231,9 +223,7 @@ def test_cli_app_run_default_settings(settings_cls: type[CtsSettings]) -> None:
     """Ensure the CTS settings are set up correctly, CLI version."""
     s = CliApp.run(settings_cls)
     expected = (
-        DEFAULT_CTS_SETTINGS_RECONCILED
-        if settings_cls == CtsSettings
-        else DEFAULT_BATCH_FILE_SETTINGS_RECONCILED
+        DEFAULT_CTS_SETTINGS_RECONCILED if settings_cls == CtsSettings else DEFAULT_BATCH_FILE_SETTINGS_RECONCILED
     )
     check_settings(s, expected)
 
@@ -280,9 +270,7 @@ def test_cli_app_run_dlt_config_errors(
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(USE_DESTINATION, VALID_DESTINATIONS)
 @pytest.mark.usefixtures("patch_dlt_config")
-def test_settings_valid_destinations_accepted(
-    use_destination: str, settings_cls: type[CtsSettings]
-) -> None:
+def test_settings_valid_destinations_accepted(use_destination: str, settings_cls: type[CtsSettings]) -> None:
     """Test valid destinations against the settings class."""
     s = make_settings_autofill_config(settings_cls, {USE_DESTINATION: use_destination})
     assert s.use_destination == use_destination
@@ -291,13 +279,9 @@ def test_settings_valid_destinations_accepted(
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(USE_DESTINATION, INVALID_DESTINATIONS)
 @pytest.mark.usefixtures("patch_dlt_config")
-def test_settings_invalid_destination_raises(
-    use_destination: str, settings_cls: type[CtsSettings]
-) -> None:
+def test_settings_invalid_destination_raises(use_destination: str, settings_cls: type[CtsSettings]) -> None:
     """Ensure that an unrecognised use_destination raises a ValidationError."""
-    with pytest.raises(
-        ValidationError, match=r"use_destination must be one of \['local_fs', 's3'\]"
-    ):
+    with pytest.raises(ValidationError, match=r"use_destination must be one of \['local_fs', 's3'\]"):
         make_settings_autofill_config(settings_cls, {USE_DESTINATION: use_destination})
 
 
@@ -499,9 +483,7 @@ def test_settings_generate_pipeline_raw_data_dirs(
         **DEFAULT_CTS_SETTINGS_RECONCILED,
         USE_DESTINATION: use_destination,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: use_output_dir_for_pipeline_metadata,
-        OUTPUT: DESTINATION_TO_OUTPUT[use_destination]
-        if output == ""
-        else OUTPUT_PATHS[output][OUT],
+        OUTPUT: DESTINATION_TO_OUTPUT[use_destination] if output == "" else OUTPUT_PATHS[output][OUT],
     }
     if settings_cls == BatchedFileInputSettings:
         expected = {**DEFAULT_BATCH_FILE_SETTINGS_RECONCILED, **expected}
@@ -509,17 +491,13 @@ def test_settings_generate_pipeline_raw_data_dirs(
     if (OUTPUT_PATHS[expected[OUTPUT]][S3] and use_destination == "local_fs") or (
         OUTPUT_PATHS[expected[OUTPUT]][S3] is False and use_destination == "s3"
     ):
-        with pytest.raises(
-            ValueError, match="Mismatch between output location and use_destination"
-        ):
+        with pytest.raises(ValueError, match="Mismatch between output location and use_destination"):
             make_settings_autofill_config(settings_cls, make_settings_args)
         return
 
     if use_output_dir_for_pipeline_metadata and OUTPUT_PATHS[expected[OUTPUT]][S3] is True:
         # can't have pipeline dir on s3
-        with pytest.raises(
-            ValueError, match="It is not currently possible to have the pipeline directory on s3"
-        ):
+        with pytest.raises(ValueError, match="It is not currently possible to have the pipeline directory on s3"):
             make_settings_autofill_config(settings_cls, make_settings_args)
         return
 
@@ -528,7 +506,5 @@ def test_settings_generate_pipeline_raw_data_dirs(
     # get the pipeline and raw data dirs from OUTPUT_PATHS
     expected["raw_data_dir"] = OUTPUT_PATHS[expected[OUTPUT]][RAW]
     # No pipeline_dir if use_output_dir_for_pipeline_metadata is not set
-    expected["pipeline_dir"] = (
-        OUTPUT_PATHS[expected[OUTPUT]][PIPE] if use_output_dir_for_pipeline_metadata else None
-    )
+    expected["pipeline_dir"] = OUTPUT_PATHS[expected[OUTPUT]][PIPE] if use_output_dir_for_pipeline_metadata else None
     check_settings(s, expected)
