@@ -14,7 +14,7 @@ from pydantic_settings import SettingsError
 
 from cdm_data_loaders.core.fields import (
     DEV_MODE,
-    OUTPUT,
+    OUTPUT_DIR,
     USE_DESTINATION,
     VALID_DESTINATIONS,
 )
@@ -55,8 +55,8 @@ def empty_dlt_config() -> dict[str, Any]:
 
 @pytest.fixture
 def test_bfi_settings(tmp_path: Path) -> BatchedFileInputSettings:
-    """Minimal valid BatchedFileInputSettings (no start_at, no output)."""
-    return make_batched_settings(input_dir="/fake/input", output=str(tmp_path))
+    """Minimal valid BatchedFileInputSettings (no start_at, no output_dir)."""
+    return make_batched_settings(input_dir="/fake/input", output_dir=str(tmp_path))
 
 
 @pytest.fixture
@@ -73,7 +73,7 @@ def test_cts_settings() -> CtsSettings:
                 "input_dir": "/path/to/dir",
                 "use_destination": "local_fs",
                 "start_at": 15,
-                "output": "/some/dir",
+                "output_dir": "/some/dir",
             },
             id="alt",
         ),
@@ -88,8 +88,8 @@ def config(request: pytest.FixtureRequest) -> BatchedFileInputSettings:
     params=[
         pytest.param(lambda: LoggerSettings.model_validate({}), id="no-relevant-attrs"),
         pytest.param(
-            lambda: InputOutputSettings.model_validate({"input_dir": "/fake/input", "output": "/fake/output"}),
-            id="output-only-no-destination",
+            lambda: InputOutputSettings.model_validate({"input_dir": "/fake/input", "output_dir": "/fake/output"}),
+            id="output_dir-only-no-destination",
         ),
     ]
 )
@@ -257,30 +257,30 @@ def test_sync_configs_with_mock_dlt_config_object(test_cts_settings: CtsSettings
     mock_cfg.__setitem__.assert_any_call("normalize.data_writer.disable_compression", test_cts_settings.dev_mode)
     mock_cfg.__setitem__.assert_any_call(
         f"destination.{test_cts_settings.use_destination}.bucket_url",
-        test_cts_settings.output,
+        test_cts_settings.output_dir,
     )
 
 
 @pytest.mark.parametrize("use_destination", VALID_DESTINATIONS)
 @pytest.mark.parametrize("dev_mode", [True, False])
-@pytest.mark.parametrize("output", ["/some/path", "s3://bucket/whatever"])
+@pytest.mark.parametrize("output_dir", ["/some/path", "s3://bucket/whatever"])
 def test_sync_configs_both_keys_set_in_single_call(
     dlt_config: dict[str, Any],
     test_cts_settings: CtsSettings,
     dev_mode: bool,
     use_destination: str,
-    output: str,
+    output_dir: str,
 ) -> None:
     """Test that sync_configs changes the disable_compression and bucket_url values."""
     original_dlt_config = deepcopy(dlt_config)
     test_cts_settings.dev_mode = dev_mode
     test_cts_settings.use_destination = use_destination
-    test_cts_settings.output = output
+    test_cts_settings.output_dir = output_dir
     sync_configs(test_cts_settings, dlt_config)
     assert dlt_config == {
         **original_dlt_config,
         "normalize.data_writer.disable_compression": dev_mode,
-        f"destination.{use_destination}.bucket_url": output,
+        f"destination.{use_destination}.bucket_url": output_dir,
     }
 
 
@@ -288,7 +288,9 @@ def test_sync_configs_attrs_missing_as_expected(
     settings_missing_sync_attrs: LoggerSettings | InputOutputSettings,
 ) -> None:
     """Sanity-check the fixture: confirm which attributes are genuinely absent."""
-    assert hasattr(settings_missing_sync_attrs, OUTPUT) == isinstance(settings_missing_sync_attrs, InputOutputSettings)
+    assert hasattr(settings_missing_sync_attrs, OUTPUT_DIR) == isinstance(
+        settings_missing_sync_attrs, InputOutputSettings
+    )
     assert not hasattr(settings_missing_sync_attrs, DEV_MODE)
     assert not hasattr(settings_missing_sync_attrs, USE_DESTINATION)
 
@@ -299,7 +301,7 @@ def test_sync_configs_no_op_when_relevant_attrs_missing(
     """sync_configs must not write any keys when the settings object lacks the attrs it needs.
 
     This covers both the case where dev_mode/output/use_destination are all absent, and the case
-    where output is present but use_destination is not (so the bucket_url key must still be skipped).
+    where output_dir is present but use_destination is not (so the bucket_url key must still be skipped).
     """
     sync_configs(settings_missing_sync_attrs, empty_dlt_config)  # pyright: ignore[reportArgumentType]
     assert empty_dlt_config == {}
@@ -318,13 +320,13 @@ def test_sync_configs_no_op_with_mock_config_when_relevant_attrs_missing(
 def test_sync_configs_sets_both_keys_from_a_de_novo_dlt_config(
     settings_cls: type[CtsSettings], empty_dlt_config: dict[str, Any]
 ) -> None:
-    """When dev_mode/output/use_destination are all present, sync_configs sets exactly those two keys.
+    """When dev_mode/output_dir/use_destination are all present, sync_configs sets exactly those two keys.
 
     ``empty_dlt_config`` starts out completely empty, distinct from the pre-populated ``dlt_config``
     fixture used (via the autouse patch) to validate ``settings_cls`` on construction. This confirms
     sync_configs's own behaviour depends only on its arguments, not on any leftover config state.
     """
-    settings = settings_cls(dev_mode=True, output="/some/output", use_destination="local_fs")  # pyright: ignore[reportCallIssue]
+    settings = settings_cls(dev_mode=True, output_dir="/some/output", use_destination="local_fs")  # pyright: ignore[reportCallIssue]
 
     sync_configs(settings, empty_dlt_config)
 
@@ -518,10 +520,10 @@ def test_settings_classes_missing_sync_attrs_sanity_check() -> None:
     io_settings = InputOutputSettings()  # pyright: ignore[reportCallIssue]
 
     assert not hasattr(logger_settings, DEV_MODE)
-    assert not hasattr(logger_settings, OUTPUT)
+    assert not hasattr(logger_settings, OUTPUT_DIR)
     assert not hasattr(logger_settings, USE_DESTINATION)
 
-    assert hasattr(io_settings, OUTPUT)
+    assert hasattr(io_settings, OUTPUT_DIR)
     assert not hasattr(io_settings, DEV_MODE)
     assert not hasattr(io_settings, USE_DESTINATION)
 
@@ -558,7 +560,7 @@ def test_run_cli_sync_configs_no_op_on_de_novo_config_when_attrs_missing(
     dlt.config is replaced here with a brand new, empty dict - as if no environment variables or
     config files had ever contributed to it - confirming that sync_configs's hasattr guards correctly
     prevent any spurious key creation (or AttributeError) when exercised through the real CLI entry
-    point, for settings classes that don't carry all of dev_mode/output/use_destination.
+    point, for settings classes that don't carry all of dev_mode/output_dir/use_destination.
     """
     empty_dlt_config: dict[str, Any] = {}
     monkeypatch.setattr(core.dlt, "config", empty_dlt_config)
@@ -575,19 +577,21 @@ def test_run_cli_sync_configs_no_op_on_de_novo_config_when_attrs_missing(
 # dlt.config state after successful run
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize("dev_mode", [True, False])
-@pytest.mark.parametrize(("use_destination", "output"), [("local_fs", "/some/path"), ("s3", "s3://bucket/whatever")])
+@pytest.mark.parametrize(
+    ("use_destination", "output_dir"), [("local_fs", "/some/path"), ("s3", "s3://bucket/whatever")]
+)
 def test_run_cli_dlt_config_updated_after_success(
     dlt_config: dict[str, Any],
     settings_cls: type[CtsSettings],
     dev_mode: bool,
     use_destination: str,
-    output: str,
+    output_dir: str,
 ) -> None:
     """Test that sync_configs changes the disable_compression and bucket_url values."""
     original_dlt_config = deepcopy(dlt_config)
-    settings = settings_cls(dev_mode=dev_mode, output=output, use_destination=use_destination)  # pyright: ignore[reportCallIssue]
+    settings = settings_cls(dev_mode=dev_mode, output_dir=output_dir, use_destination=use_destination)  # pyright: ignore[reportCallIssue]
     assert settings.dev_mode == dev_mode
-    assert settings.output == output
+    assert settings.output_dir == output_dir
     assert settings.use_destination == use_destination
     settings_cls_mock = MagicMock(return_value=settings)
 
@@ -596,7 +600,7 @@ def test_run_cli_dlt_config_updated_after_success(
     assert dlt_config == {
         **original_dlt_config,
         "normalize.data_writer.disable_compression": dev_mode,
-        f"destination.{use_destination}.bucket_url": output,
+        f"destination.{use_destination}.bucket_url": output_dir,
     }
 
 
@@ -617,8 +621,8 @@ def test_run_pipeline_destination_pipeline_pipeline_run_kwargs_set(
     pipeline_kwargs: dict[str, Any] | None,
     pipeline_run_kwargs: dict[str, Any] | None,
 ) -> None:
-    """Ensure a non-empty output sets the correct dlt.config bucket_url key."""
-    settings = make_batched_settings(input_dir="/i", output="/custom/output", use_destination="local_fs")
+    """Ensure a non-empty output_dir sets the correct dlt.config bucket_url key."""
+    settings = make_batched_settings(input_dir="/i", output_dir="/custom/output", use_destination="local_fs")
     fake_resource = MagicMock()
     run_pipeline(
         settings,
@@ -711,7 +715,7 @@ def test_run_pipeline_slack_configured(
 
 def test_run_pipeline_sets_pipelines_dir_when_pipeline_dir_set(mock_dlt: MagicMock) -> None:
     """pipelines_dir is injected into pipeline_kwargs when config.pipeline_dir is set."""
-    settings = make_batched_settings(input_dir="/i", output="/out", use_output_dir_for_pipeline_metadata=True)
+    settings = make_batched_settings(input_dir="/i", output_dir="/out", use_output_dir_for_pipeline_metadata=True)
     assert settings.pipeline_dir is not None
 
     run_pipeline(settings, MagicMock())
@@ -732,7 +736,7 @@ def test_run_pipeline_no_pipelines_dir_when_pipeline_dir_none(
 
 def test_run_pipeline_sets_dev_mode_in_pipeline_kwargs_when_true(mock_dlt: MagicMock) -> None:
     """dev_mode=True is forwarded to dlt.pipeline()."""
-    settings = make_batched_settings(input_dir="/i", output="/out", dev_mode=True)
+    settings = make_batched_settings(input_dir="/i", output_dir="/out", dev_mode=True)
     run_pipeline(settings, MagicMock())
     pipeline_call_kwargs = mock_dlt.pipeline.call_args.kwargs
     assert pipeline_call_kwargs.get("dev_mode") is True

@@ -78,8 +78,8 @@ class AtbSettings(CtsSettings):
         Set to the output directory / "raw_data" / version.
         """
         if self.use_destination == "local_fs":
-            return str(Path(self.output) / "raw_data" / self.version)
-        return f"{self.output}/raw_data/{self.version}"
+            return str(Path(self.output_dir) / "raw_data" / self.version)
+        return f"{self.output_dir}/raw_data/{self.version}"
 
     @computed_field
     @property

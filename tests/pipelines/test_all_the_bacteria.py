@@ -12,7 +12,7 @@ from frozendict import frozendict
 from requests.exceptions import HTTPError
 
 from cdm_data_loaders.core.fields import VALID_DESTINATIONS
-from cdm_data_loaders.pipelines import all_the_bacteria, core
+from cdm_data_loaders.pipelines import all_the_bacteria
 from cdm_data_loaders.pipelines.all_the_bacteria import (
     ALL_ATB_FILE_NAME,
     DATASET_NAME,
@@ -42,13 +42,13 @@ def vcr_config() -> dict[str, Any]:
 
 
 @pytest.fixture
-def test_settings(tmp_path: Path, patch_dlt_config) -> AtbSettings:
+def test_settings(tmp_path: Path) -> AtbSettings:
     """Generate a fake settings for testing."""
-    return AtbSettings(output=str(tmp_path))  # pyright: ignore[reportCallIssue]
+    return AtbSettings(output_dir=str(tmp_path))  # pyright: ignore[reportCallIssue]
 
 
 @pytest.fixture
-def test_s3_settings(patch_dlt_config) -> AtbSettings:
+def test_s3_settings() -> AtbSettings:
     """Generate fake settings that use s3."""
     return AtbSettings(use_destination="s3")  # pyright: ignore[reportCallIssue]
 
@@ -248,7 +248,7 @@ def test_download_atv_index_tsv_error_missing_key(test_settings: AtbSettings) ->
 def test_download_atv_index_cannot_create_dir() -> None:
     """Ensure that the output raw_data_dir directory can be saved to."""
     with pytest.raises(OSError, match=r"(Read-only file system|Permission denied)"):
-        download_atb_index_tsv(AtbSettings(output="/path/to/file"))
+        download_atb_index_tsv(AtbSettings(output_dir="/path/to/file"))
 
 
 @pytest.mark.vcr
@@ -647,7 +647,7 @@ def test_run_atb_pipeline_pipeline_dir_present_or_absent(
 ) -> None:
     """Check that the appropriate args are passed as pipeline_kwargs."""
     settings = AtbSettings(
-        output="/my/output",
+        output_dir="/my/output",
         use_destination=VALID_DESTINATIONS[0],
         use_output_dir_for_pipeline_metadata=use_output_dir_for_pipeline_metadata,
         dev_mode=dev_mode,

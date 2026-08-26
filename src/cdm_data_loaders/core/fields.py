@@ -19,7 +19,7 @@ DLT_CONFIG = "dlt_config"
 INPUT_DIR = "input_dir"
 LOG_CONFIG_FILE = "log_config_file"
 LOG_INTERVAL = "log_interval"
-OUTPUT = "output"
+OUTPUT_DIR = "output_dir"
 START_AT = "start_at"
 USE_DESTINATION = "use_destination"
 USE_OUTPUT_DIR_FOR_PIPELINE_METADATA = "use_output_dir_for_pipeline_metadata"
@@ -36,7 +36,7 @@ DEFAULTS = frozendict(
         LOG_CONFIG_FILE: None,
         LOG_INTERVAL: 1000,
         # N.b. this gets replaced by destination.local_fs.bucket_url in CtsSettings and derivatives
-        OUTPUT: "",
+        OUTPUT_DIR: "",
         START_AT: MIN_START_AT,
         USE_DESTINATION: "local_fs",
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: False,
@@ -115,12 +115,12 @@ LogInterval = Annotated[
         validation_alias=generate_aliases(LOG_INTERVAL),
     ),
 ]
-Output = Annotated[
+OutputDir = Annotated[
     str,
     Field(
-        default=DEFAULTS[OUTPUT],
+        default=DEFAULTS[OUTPUT_DIR],
         description="Location to save imported data to, if different from the default supplied by the destination config",
-        validation_alias=generate_aliases(OUTPUT, "o"),
+        validation_alias=generate_aliases(OUTPUT_DIR, "o"),
     ),
 ]
 StartAt = Annotated[
@@ -135,7 +135,7 @@ UseDestination = Annotated[
     str,
     Field(
         default=DEFAULTS[USE_DESTINATION],
-        description=f"DLT destination configuration to use for data output. Data to be saved to s3 should use the destination 's3'; to save data locally, use the destination 'local_fs'. The output directory can be specified using the 'output' field. Choices: {VALID_DESTINATIONS}",
+        description=f"DLT destination configuration to use for data output. Data to be saved to s3 should use the destination 's3'; to save data locally, use the destination 'local_fs'. The output directory can be specified using the 'output_dir' field. Choices: {VALID_DESTINATIONS}",
         validation_alias=generate_aliases(USE_DESTINATION, "d"),
     ),
 ]
