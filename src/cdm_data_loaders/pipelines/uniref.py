@@ -9,6 +9,7 @@ from dlt.extract.items import DataItemWithMeta
 from pydantic import Field, PositiveInt, field_validator
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.fields import LOG_INTERVAL, generate_aliases
 from cdm_data_loaders.core.settings import (
     DEFAULT_SETTINGS_CONFIG_DICT,
     BatchedFileInputSettings,
@@ -41,6 +42,7 @@ class UnirefSettings(BatchedFileInputSettings):
         str,
         Field(
             description=f"Which UniRef variant to import. Choices: {UNIREF_VARIANTS}",
+            validation_alias=generate_aliases(VARIANT, "v"),
         ),
     ]
 
@@ -49,6 +51,7 @@ class UnirefSettings(BatchedFileInputSettings):
         Field(
             default=UNIREF_LOG_INTERVAL,
             description="How often (in number of processed entries) to emit a progress log message. Must be a positive integer.",
+            validation_alias=generate_aliases(LOG_INTERVAL),
         ),
     ]
 

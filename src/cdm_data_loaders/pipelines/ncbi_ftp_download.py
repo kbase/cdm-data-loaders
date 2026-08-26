@@ -22,7 +22,7 @@ from pydantic import AliasChoices, Field
 from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from cdm_data_loaders.core.fields import INPUT_MOUNT, OUTPUT_MOUNT
-from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.core.settings import LoggerSettings
 from cdm_data_loaders.ncbi_ftp.assembly import (
     FTP_HOST,
     build_accession_path,
@@ -40,7 +40,7 @@ logger: Logger = getLogger(__name__)
 DEFAULT_STAGING_KEY_PREFIX: PurePosixPath = PurePosixPath("staging")
 
 
-class DownloadSettings(CtsSettings):
+class DownloadSettings(LoggerSettings):
     """Configuration for the NCBI FTP assembly download pipeline."""
 
     manifest: Path = Field(
@@ -231,7 +231,7 @@ def run_download(config: DownloadSettings) -> None:
 
 def cli() -> None:
     """CLI entry point for ``ncbi_ftp_sync``."""
-    run_cli(DownloadSettings, run_download)
+    run_cli(DownloadSettings, run_download)  # pyright: ignore[reportArgumentType]
 
 
 # Notebook / interactive entry point

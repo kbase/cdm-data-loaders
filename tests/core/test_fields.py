@@ -4,91 +4,60 @@ import pytest
 from pydantic import AliasChoices
 
 from cdm_data_loaders.core.fields import generate_aliases
-from tests.core.conftest import generate_cli_arguments
 
 
 @pytest.mark.parametrize(
-    ("field_name", "expected_aliases"),
+    ("field_name", "short_alias", "expected_aliases"),
     [
         # field with a short alias
-        ("use_destination", ["d", "use_destination", "use-destination"]),
+        ("use_destination", "d", ["d", "use_destination", "use-destination"]),
         # field with no short alias
-        ("dev_mode", ["dev_mode", "dev-mode"]),
-        # field with no underscores, no short aliases - short alias is generated
-        ("verbose", ["v", "verbose"]),
-        # field with underscores, short alias is generated
-        ("non_existent_field", ["n", "non_existent_field", "non-existent-field"]),
+        ("dev_mode", None, ["dev_mode", "dev-mode"]),
+        # field with no underscores, no short alias
+        ("verbose", None, ["verbose"]),
+        # field with underscores and short alias
+        ("non_existent_field", "n", ["n", "non_existent_field", "non-existent-field"]),
+        # short alias is an empty string
+        ("verbose", "", ["verbose"]),
+        # field with hyphens and short alias -- not allowed by pydantic but whatevs
+        ("hyphens-are-fun", "h", ["h", "hyphens-are-fun"]),
     ],
 )
-def test_generate_aliases(field_name: str, expected_aliases: list[str]) -> None:
+def test_generate_aliases(field_name: str, short_alias: str | None, expected_aliases: list[str]) -> None:
     """Test the generate_aliases function."""
-    assert generate_aliases(field_name) == AliasChoices(*expected_aliases)
+    assert generate_aliases(field_name, short_alias=short_alias) == AliasChoices(*expected_aliases)
+
+
+@pytest.mark.parametrize("field_name", [None, ""])
+@pytest.mark.parametrize("short_name", [None, "", "short_name"])
+def test_generate_aliases_invalid_input(field_name: str | None, short_name: str | None) -> None:
+    """Test generate_aliases with invalid input."""
+    with pytest.raises(ValueError, match="No field_name supplied"):
+        generate_aliases(field_name, short_name)  # pyright: ignore[reportArgumentType]
 
 
 @pytest.mark.parametrize(
-    ("field_name", "expected_aliases"),
+    ("field_name", "short_alias", "expected_aliases"),
     [
         # field with a short alias
-        ("use_destination", ["use_destination", "use-destination"]),
+        ("a", "b", ["b", "a"]),
         # field with no short alias
-        ("dev_mode", ["dev_mode", "dev-mode"]),
-        # field with no underscores, no short aliases
-        ("verbose", ["verbose"]),
-        # field with underscores, short alias is generated
-        ("non_existent_field", ["non_existent_field", "non-existent-field"]),
+        ("a", None, ["a"]),
+        # short alias is an empty string
+        ("a", "", ["a"]),
+        # short alias duplicates field name
+        ("a", "a", ["a"]),
+        # non-single character short alias
     ],
 )
-def test_generate_aliases_no_short_aliases(field_name: str, expected_aliases: list[str]) -> None:
-    """Test the generate_aliases function."""
-    assert generate_aliases(field_name, short_aliases=False) == AliasChoices(*expected_aliases)
+@pytest.mark.parametrize("values", [("a", "b"), ("ax", "bx"), ("axolotl", "benefit")])
+def test_generate_aliases_duplicate_aliases(
+    field_name: str, short_alias: str | None, expected_aliases: list[str], values: tuple[str, str]
+) -> None:
+    """Ensure that duplicate aliases are not created by accident."""
+    for f in [field_name, short_alias, *expected_aliases]:
+        if not f:
+            continue
+        f = f.replace("a", values[0]).replace("b", values[1])
 
-
-def test_generate_cli_arguments() -> None:
-    """Test the generate_cli_arguments function."""
-    aliases = {k: generate_aliases(k) for k in ["use_destination", "dev_mode", "verbose", "non_existent_field"]}
-
-    assert generate_cli_arguments(aliases) == {
-        # field with a short alias
-        "use_destination": ["-d", "--use_destination", "--use-destination"],
-        # field with no short alias
-        "dev_mode": ["--dev_mode", "--dev-mode"],
-        # field with no underscores, no short aliases - short alias is generated
-        "verbose": ["-v", "--verbose"],
-        # field with underscores, short alias is generated
-        "non_existent_field": ["-n", "--non_existent_field", "--non-existent-field"],
-    }
-
-
-def test_generate_cli_arguments_no_short_aliases() -> None:
-    """Test the generate_cli_arguments function, no short aliases."""
-    aliases = {
-        k: generate_aliases(k, short_aliases=False)
-        for k in ["use_destination", "dev_mode", "verbose", "non_existent_field"]
-    }
-
-    assert generate_cli_arguments(aliases) == {
-        # field with a short alias
-        "use_destination": ["--use_destination", "--use-destination"],
-        # field with no short alias
-        "dev_mode": ["--dev_mode", "--dev-mode"],
-        # field with no underscores, no short aliases - short alias is generated
-        "verbose": ["--verbose"],
-        # field with underscores, short alias is generated
-        "non_existent_field": ["--non_existent_field", "--non-existent-field"],
-    }
-
-
-def test_generate_cli_arguments_multiple_args() -> None:
-    """Test the generate_cli_arguments function, multiple dictionaries."""
-    aliases = [{k: generate_aliases(k)} for k in ["use_destination", "dev_mode", "verbose", "non_existent_field"]]
-
-    assert generate_cli_arguments(*aliases) == {
-        # field with a short alias
-        "use_destination": ["-d", "--use_destination", "--use-destination"],
-        # field with no short alias
-        "dev_mode": ["--dev_mode", "--dev-mode"],
-        # field with no underscores, no short aliases - short alias is generated
-        "verbose": ["-v", "--verbose"],
-        # field with underscores, short alias is generated
-        "non_existent_field": ["-n", "--non_existent_field", "--non-existent-field"],
-    }
+    assert generate_aliases(field_name, short_alias=short_alias) == AliasChoices(*expected_aliases)

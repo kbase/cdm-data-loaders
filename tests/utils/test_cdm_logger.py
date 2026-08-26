@@ -2,9 +2,10 @@
 
 import json
 import logging
+from collections.abc import Generator
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -50,6 +51,7 @@ def mock_config_root_logger() -> Generator[MagicMock, Any]:
 
 @pytest.fixture
 def mock_dlt_logger(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Create a mock DLT logger with everyone's fave mocker, MagicMock."""
     dlt_mock = MagicMock()
     dlt_mock.propagate = False
     dlt_mock.handlers = [1, 2, 3, 4]
@@ -66,8 +68,10 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def empty_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_env: None) -> None:
+def empty_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Remove LOG_CONFIG_FILE env vars and chdir to an empty temporary directory with no config file."""
+    monkeypatch.delenv("LOG_CONFIG_FILE", raising=False)
+    monkeypatch.delenv("LOG-CONFIG-FILE", raising=False)
     monkeypatch.chdir(tmp_path)
 
 
@@ -155,13 +159,13 @@ def test_logger_settings_with_log_config_file(yaml_config_file: Path) -> None:
 @pytest.mark.parametrize("log_config_file_is_none", [True, False])
 def test_logger_settings_with_without_params(log_config_file_is_none: bool) -> None:
     """LoggerSettings.log_config_file is None when no value is provided."""
-    settings = LoggerSettings(log_config_file=None) if log_config_file_is_none else LoggerSettings()
+    settings = LoggerSettings(log_config_file=None) if log_config_file_is_none else LoggerSettings()  # pyright: ignore[reportCallIssue]
     assert settings.log_config_file is None
 
 
 @pytest.mark.parametrize(
     "env_var_name",
-    ["log_config_file", "LOG_CONFIG_FILE"],  # , "log-config-file", "LOG-CONFIG-FILE"],
+    ["log_config_file", "LOG_CONFIG_FILE", "log-config-file", "LOG-CONFIG-FILE"],
 )
 def test_logger_settings_alias_accepted_via_environment(
     env_var_name: str, monkeypatch: pytest.MonkeyPatch, yaml_config_file: Path
@@ -232,7 +236,9 @@ def test_configure_root_logger_from_dlt_does_not_reconfigure_on_subsequent_calls
     mock_config_root_logger.assert_called_once()
 
 
-def test_configure_root_logger_skips_when_guard_already_set(mock_config_root_logger: MagicMock, monkeypatch) -> None:
+def test_configure_root_logger_skips_when_guard_already_set(
+    mock_config_root_logger: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """When ROOT_LOGGER_CONFIGURED is already True, config_root_logger is never called."""
     monkeypatch.setattr(cdm_logger_module, "ROOT_LOGGER_CONFIGURED", True)
 
@@ -244,7 +250,7 @@ def test_configure_root_logger_skips_when_guard_already_set(mock_config_root_log
 # get_cdm_logger
 def test_get_cdm_logger_calls_init_logger_with_args() -> None:
     """get_cdm_logger should call init_logger to ensure logging is initialised."""
-    settings = LoggerSettings()
+    settings = LoggerSettings()  # pyright: ignore[reportCallIssue]
 
     with patch("cdm_data_loaders.utils.cdm_logger.init_logger") as mock_init:
         logger = get_cdm_logger("test.logger", settings=settings)
@@ -264,9 +270,8 @@ def test_get_cdm_logger_without_settings_passes_none_to_init_logger() -> None:
     assert logger.name == "another.logger"
 
 
-def test_get_cdm_logger_returns_logger_with_correct_name(
-    settings_with_yaml: LoggerSettings, mock_config_root_logger: MagicMock
-) -> None:
+@pytest.mark.usefixtures("mock_config_root_logger")
+def test_get_cdm_logger_returns_logger_with_correct_name(settings_with_yaml: LoggerSettings) -> None:
     """The returned object is a Logger whose name matches the argument passed in."""
     result = get_cdm_logger("my.service", settings=settings_with_yaml)
 
@@ -274,8 +279,9 @@ def test_get_cdm_logger_returns_logger_with_correct_name(
     assert result.name == "my.service"
 
 
+@pytest.mark.usefixtures("mock_config_root_logger")
 def test_get_cdm_logger_uses_yaml_config_when_provided(
-    settings_with_yaml: LoggerSettings, mock_config_root_logger: MagicMock
+    settings_with_yaml: LoggerSettings,
 ) -> None:
     """When settings point to a YAML file, dictConfig receives the parsed YAML content."""
     with patch("cdm_data_loaders.utils.cdm_logger.logging.config.dictConfig") as mock_dict_config:
@@ -286,8 +292,9 @@ def test_get_cdm_logger_uses_yaml_config_when_provided(
     assert applied_config["loggers"]["root"]["level"] == "DEBUG"
 
 
+@pytest.mark.usefixtures("mock_config_root_logger")
 def test_get_cdm_logger_uses_json_config_when_provided(
-    settings_with_json: LoggerSettings, mock_config_root_logger: MagicMock
+    settings_with_json: LoggerSettings,
 ) -> None:
     """When settings point to a JSON file, dictConfig receives the parsed JSON content."""
     with patch("cdm_data_loaders.utils.cdm_logger.logging.config.dictConfig") as mock_dict_config:
@@ -297,9 +304,8 @@ def test_get_cdm_logger_uses_json_config_when_provided(
     assert applied_config["loggers"]["root"]["level"] == "WARNING"
 
 
-def test_get_cdm_logger_falls_back_to_builtin_config_when_no_settings(
-    mock_config_root_logger: MagicMock, caplog: pytest.LogCaptureFixture
-) -> None:
+@pytest.mark.usefixtures("mock_config_root_logger")
+def test_get_cdm_logger_falls_back_to_builtin_config_when_no_settings(caplog: pytest.LogCaptureFixture) -> None:
     """Passing settings=None applies the built-in INFO config and emits a warning."""
     with (
         patch("cdm_data_loaders.utils.cdm_logger.logging.config.dictConfig") as mock_dict_config,
@@ -312,8 +318,9 @@ def test_get_cdm_logger_falls_back_to_builtin_config_when_no_settings(
     assert any("Falling back to built-in config" in m for m in caplog.messages)
 
 
+@pytest.mark.usefixtures("mock_config_root_logger")
 def test_get_cdm_logger_falls_back_to_builtin_config_when_log_config_file_is_none(
-    settings_without_config: LoggerSettings, mock_config_root_logger: MagicMock, caplog: pytest.LogCaptureFixture
+    settings_without_config: LoggerSettings, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Settings with log_config_file=None applies the built-in INFO config and emits a warning."""
     with (
@@ -327,8 +334,9 @@ def test_get_cdm_logger_falls_back_to_builtin_config_when_log_config_file_is_non
     assert any("Falling back to built-in config" in m for m in caplog.messages)
 
 
+@pytest.mark.usefixtures("mock_config_root_logger")
 def test_get_cdm_logger_disable_existing_loggers_always_set_false(
-    settings_with_yaml: LoggerSettings, mock_config_root_logger: MagicMock
+    settings_with_yaml: LoggerSettings,
 ) -> None:
     """disable_existing_loggers is always injected as False to prevent silently killing pre-existing loggers."""
     with patch("cdm_data_loaders.utils.cdm_logger.logging.config.dictConfig") as mock_dict_config:
@@ -338,8 +346,9 @@ def test_get_cdm_logger_disable_existing_loggers_always_set_false(
     assert applied_config["disable_existing_loggers"] is False
 
 
+@pytest.mark.usefixtures("mock_config_root_logger")
 def test_get_cdm_logger_calls_configure_root_logger_from_dlt(
-    settings_with_yaml: LoggerSettings, mock_config_root_logger: MagicMock
+    settings_with_yaml: LoggerSettings,
 ) -> None:
     """get_cdm_logger always delegates to configure_root_logger_from_dlt after applying config."""
     with patch("cdm_data_loaders.utils.cdm_logger.configure_root_logger_from_dlt") as mock_configure:

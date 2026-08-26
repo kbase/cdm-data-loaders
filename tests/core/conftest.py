@@ -93,28 +93,6 @@ TEST_BATCH_FILE_SETTINGS_RECONCILED = frozendict(
 )
 
 
-def generate_cli_arguments(
-    alias_dict: dict[str, AliasChoices] | frozendict[str, AliasChoices],
-    *args: dict[str, AliasChoices] | frozendict[str, AliasChoices],
-) -> frozendict[str, list[str]]:
-    """Generate the corresponding command line arguments from a list of aliases.
-
-    :param alias_dict: dictionary of arguments and list of valid aliases
-    :type alias_dict: dict[str, AliasChoices] | frozendict[str, AliasChoices]
-    :param args: more alias_dicts
-    :type args: dict[str, AliasChoices] | frozendict[str, AliasChoices]
-    :return: dictionary of args and list of valid cmd line args
-    :rtype: frozendict[str, list[str]]
-    """
-    all_aliases = {**alias_dict}
-    for a in args:
-        all_aliases = {**all_aliases, **a}
-
-    return frozendict(
-        {k: [f"-{item}" if len(str(item)) == 1 else f"--{item}" for item in v.choices] for k, v in all_aliases.items()}
-    )
-
-
 def make_settings(
     settings_cls: type[CtsSettings],
     dlt_config: dict[str, Any] | None = None,

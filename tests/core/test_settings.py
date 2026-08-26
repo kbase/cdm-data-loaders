@@ -5,9 +5,9 @@ from typing import Any
 import dlt
 import pytest
 from frozendict import frozendict
-from pydantic import ValidationError
+from pydantic import AliasChoices, AliasPath, Field, ValidationError
 from pydantic_settings import CliApp
-
+from argparse import ArgumentError
 from cdm_data_loaders.core.fields import (
     DEV_MODE,
     INPUT_DIR,
@@ -15,10 +15,13 @@ from cdm_data_loaders.core.fields import (
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
     VALID_DESTINATIONS,
+    generate_aliases,
 )
 from cdm_data_loaders.core.settings import (
     BatchedFileInputSettings,
+    CdmDataLoadersBase,
     CtsSettings,
+    InputOutputSettings,
 )
 from tests.core.conftest import (
     DEFAULT_BATCH_FILE_SETTINGS_RECONCILED,
@@ -133,6 +136,326 @@ TRUE_FALSE_VALUES = [
     (False, False),
     (True, True),
 ]
+
+
+# CdmDataLoadersBase.check_aliases.
+
+
+# Baseline: no aliases at all
+def test_check_aliases_no_additional_fields() -> None:
+    """A subclass that adds no fields beyond the base does not raise."""
+
+    class EmptySettings(CdmDataLoadersBase):
+        pass
+
+    EmptySettings()
+
+
+def test_check_aliases_fields_with_no_validation_alias() -> None:
+    """Fields with no validation_alias are distinguished by field name only."""
+
+    class PlainSettings(CdmDataLoadersBase):
+        field_a: str = "a"
+        field_b: str = "b"
+
+    PlainSettings()
+
+
+"""
+Alias type / collision matrix
+
+Each case builds a two-field class with the given validation_alias values
+and asserts whether a collision is or is not detected.
+"""
+
+ALIAS_TYPE_MATRIX_CASES = [
+    pytest.param(None, None, False, None, id="none-none"),
+    pytest.param(None, "x", False, None, id="none-vs-distinct-string"),
+    pytest.param("x", "y", False, None, id="distinct-strings"),
+    pytest.param("shared", "shared", True, "\nshared: field_a, field_b", id="identical-strings"),
+    pytest.param("field_a", None, False, None, id="self-referential-alias-no-collision"),
+    pytest.param(None, "field_a", True, "\nfield_a: field_a, field_b", id="alias-equals-other-fields-name"),
+    pytest.param(AliasChoices("x", "y"), AliasChoices("z", "w"), False, None, id="distinct-aliaschoices"),
+    pytest.param(
+        AliasChoices("shared", "y"),
+        AliasChoices("shared", "z"),
+        True,
+        "\nshared: field_a, field_b",
+        id="shared-within-aliaschoices",
+    ),
+    pytest.param(
+        "shared",
+        AliasChoices("shared", "z"),
+        True,
+        "\nshared: field_a, field_b",
+        id="string-vs-aliaschoices-shared",
+    ),
+    pytest.param(
+        AliasPath("nested", 0),
+        AliasPath("nested", 0),
+        True,
+        "\nAliasPath\['nested', 0\]: field_a, field_b",
+        id="identical-aliaspath",
+    ),
+    pytest.param(AliasPath("nested", 0), AliasPath("nested", 1), False, None, id="distinct-aliaspath-index"),
+    pytest.param(AliasPath("a", 0), AliasPath("b", 0), False, None, id="distinct-aliaspath-root"),
+    pytest.param(
+        AliasChoices("w", AliasPath("nested", 0)),
+        AliasChoices("q", AliasPath("nested", 0)),
+        True,
+        r"\nAliasPath\['nested', 0\]: field_a, field_b",
+        id="identical-aliaspath-within-aliaschoices",
+    ),
+    pytest.param(
+        AliasPath("nested", 0),
+        AliasChoices("q", AliasPath("nested", 0)),
+        True,
+        "\nAliasPath\['nested', 0\]: field_a, field_b",
+        id="bare-aliaspath-vs-aliaspath-in-aliaschoices",
+    ),
+    pytest.param(
+        AliasPath("nested", 0), AliasPath("nested", "0"), False, None, id="aliaspath-int-vs-str-index-not-equal"
+    ),
+]
+
+
+@pytest.mark.parametrize(("alias_a", "alias_b", "should_collide", "err_msg"), ALIAS_TYPE_MATRIX_CASES)
+def test_check_aliases_alias_type_matrix(alias_a: Any, alias_b: Any, should_collide: bool, err_msg: str | None) -> None:
+    """Exercise each combination of alias types across two fields."""
+
+    class TwoFieldSettings(CdmDataLoadersBase):
+        field_a: str = Field(default="a", validation_alias=alias_a)
+        field_b: str = Field(default="b", validation_alias=alias_b)
+
+    if should_collide:
+        with pytest.raises(ValueError, match=err_msg):
+            TwoFieldSettings()
+    else:
+        # Should not raise
+        TwoFieldSettings()
+
+
+def test_check_aliases_pydantic_raises_argparse_error() -> None:
+    """Conflicting AliasPaths and validation aliases cause an argparse error."""
+
+    class TwoFieldSettings(CdmDataLoadersBase):
+        field_a: str = Field(default="a", validation_alias=AliasPath("nested", 0))
+        field_b: str = Field(default="b", validation_alias="nested")
+
+    with pytest.raises(ArgumentError, match="argument --nested: conflicting option string: --nested"):
+        TwoFieldSettings()
+
+
+def test_check_aliases_own_name_within_aliaschoices_no_false_positive() -> None:
+    """A field's own name appearing as one of several entries in its AliasChoices is A-OK."""
+
+    class ValidSettings(CdmDataLoadersBase):
+        field_a: str = Field(default="a", validation_alias=AliasChoices("field_a", "extra"))
+        field_b: str = "b"
+
+    ValidSettings()
+
+
+# Intra-field duplication (single field, repeated alias values)
+def test_check_aliases_duplicate_string_alias_within_same_field() -> None:
+    """A field repeating the same string alias twice in its own AliasChoices does not raise."""
+
+    class QuestionableSettings(CdmDataLoadersBase):
+        field_a: str = Field(default="a", validation_alias=AliasChoices("dup", "dup"))
+
+    QuestionableSettings()
+
+
+def test_check_aliases_duplicate_aliaspath_within_same_field() -> None:
+    """A field repeating an AliasPath with an identical path twice in its own AliasChoices does not raise."""
+
+    class QuestionableSettings(CdmDataLoadersBase):
+        field_a: str = Field(
+            default="a",
+            validation_alias=AliasChoices(AliasPath("nested", 0), AliasPath("nested", 0)),
+        )
+
+    # Should not raise
+    QuestionableSettings()
+
+
+# Multi-field, multi-collision scenarios
+def test_check_aliases_three_way_string_collision() -> None:
+    """A shared alias across three fields lists all three field names.
+
+    Field names are emitted in alphabetical order.
+    """
+
+    class InvalidSettings(CdmDataLoadersBase):
+        field_c: str = Field(default="c", validation_alias="shared")
+        field_b: str = Field(default="b", validation_alias="shared")
+        field_a: str = Field(default="a", validation_alias="shared")
+
+    # field names are emitted in alphabetical order
+    with pytest.raises(ValueError, match=r"shared: field_a, field_b, field_c"):
+        InvalidSettings()
+
+
+def test_check_aliases_multiple_independent_collisions_reported() -> None:
+    """A field with two aliases that collide with aliases for other fields shows up twice in the error message.
+
+    Errors are sorted alphabetically by alias.
+    """
+
+    class InvalidSettings(CdmDataLoadersBase):
+        field_a: str = Field(default="a", validation_alias=AliasChoices("alias_z", "alias_x"))
+        field_b: str = Field(default="b", validation_alias="alias_z")
+        field_c: str = Field(default="c", validation_alias="alias_x")
+
+    with pytest.raises(ValueError, match="alias_x: field_a, field_c\nalias_z: field_a, field_b"):
+        InvalidSettings()
+
+
+def test_check_aliases_aliaspath_error_message_format() -> None:
+    """The error message renders a colliding AliasPath key using its path list."""
+
+    class InvalidSettings(CdmDataLoadersBase):
+        field_a: str = Field(default="a", validation_alias=AliasPath("nested", 0))
+        field_b: str = Field(default="b", validation_alias=AliasPath("nested", 0))
+
+    with pytest.raises(
+        ValueError, match=r"The following aliases are used more than once:\nAliasPath\['nested', 0\]: field_a, field_b"
+    ):
+        InvalidSettings()
+
+
+# Inheritance
+def test_check_aliases_inherited_field_collision() -> None:
+    """A subclass field whose alias matches a field name inherited from a parent class is caught."""
+
+    class BaseFieldSettings(CdmDataLoadersBase):
+        field_a: str = "a"
+
+    class ChildFieldSettings(BaseFieldSettings):
+        field_b: str = Field(default="b", validation_alias="field_a")
+
+    with pytest.raises(ValueError, match=r"field_a: field_a, field_b"):
+        ChildFieldSettings()
+
+
+def test_check_aliases_inherited_field_no_collision() -> None:
+    """A subclass field with a distinct alias does not collide with an inherited field."""
+
+    class BaseFieldSettings(CdmDataLoadersBase):
+        field_a: str = "a"
+
+    class ChildFieldSettings(BaseFieldSettings):
+        field_b: str = Field(default="b", validation_alias="unrelated")
+
+    ChildFieldSettings()
+
+
+# alias=... keyword and serialization_alias
+def test_check_aliases_alias_keyword_fallback_collision() -> None:
+    """Fields using `alias=...` are checked.
+
+    Pydantic assigns `validation_alias` from `alias` when `validation_alias` is not set explicitly.
+    """
+
+    class InvalidSettings(CdmDataLoadersBase):
+        field_a: str = Field(default="a", alias="shared")
+        field_b: str = Field(default="b", alias="shared")
+
+    with pytest.raises(ValueError, match=r"shared: field_a, field_b"):
+        InvalidSettings()
+
+
+def test_check_aliases_serialization_alias_ignored() -> None:
+    """Colliding serialization_alias values are not flagged, since only validation_alias affects input parsing."""
+
+    class ValidSettings(CdmDataLoadersBase):
+        field_a: str = Field(default="a", serialization_alias="shared")
+        field_b: str = Field(default="b", serialization_alias="shared")
+
+    ValidSettings()
+
+
+# Direct classmethod invocation (bypassing full model construction)
+def test_check_aliases_direct_call_returns_data_unchanged() -> None:
+    """check_aliases returns the input data unmodified when there is no collision."""
+    data = {"input_dir": "/tmp"}
+    result = CdmDataLoadersBase.check_aliases(data)  # pyright: ignore[reportCallIssue]
+    assert result is data
+
+
+def test_check_aliases_direct_call_error_message_exact() -> None:
+    """Calling check_aliases directly raises a plain ValueError with the constructed message."""
+
+    class InvalidSettings(CdmDataLoadersBase):
+        field_a: str = Field(default="a", validation_alias="shared")
+        field_b: str = Field(default="b", validation_alias="shared")
+
+    with pytest.raises(ValueError, match="The following aliases are used more than once:\nshared: field_a, field_b"):
+        InvalidSettings.check_aliases({})  # pyright: ignore[reportCallIssue]
+
+
+# Integration with generate_aliases
+def test_check_aliases_generate_aliases_short_flag_collision() -> None:
+    """Two fields using generate_aliases with the same short_alias collide."""
+
+    class InvalidSettings(CdmDataLoadersBase):
+        foo_field: str = Field(default="a", validation_alias=generate_aliases("foo_field", "x"))
+        bar_field: str = Field(default="b", validation_alias=generate_aliases("bar_field", "x"))
+
+    with pytest.raises(ValueError, match=r"x: bar_field, foo_field"):
+        InvalidSettings()
+
+
+def test_check_aliases_generate_aliases_distinct_short_flags_no_collision() -> None:
+    """Two fields using generate_aliases with distinct short_alias values do not collide."""
+
+    class ValidSettings(CdmDataLoadersBase):
+        foo_field: str = Field(default="a", validation_alias=generate_aliases("foo_field", "f"))
+        bar_field: str = Field(default="b", validation_alias=generate_aliases("bar_field", "b"))
+
+    # Should not raise
+    ValidSettings()
+
+
+# Integration: production settings classes
+@pytest.mark.parametrize("settings_cls", [InputOutputSettings, CtsSettings, BatchedFileInputSettings])
+def test_check_aliases_production_classes_no_collisions(settings_cls: type[CdmDataLoadersBase]) -> None:
+    """The real settings classes' generated aliases produce no collisions."""
+    # Should not raise
+    settings_cls.check_aliases({})  # pyright: ignore[reportCallIssue]
+
+
+# InputOutputSettings
+def test_input_output_settings_validate_dir_path() -> None:
+    """Test that InputOutputSettings correctly strips trailing slashes."""
+
+    class TestIO(InputOutputSettings):
+        log_config_file: str = "log.json"  # pyright: ignore[reportIncompatibleVariableOverride]
+        input_dir: str = "/input/"
+        output: str = "/output//"
+
+    s = TestIO()
+    assert s.input_dir == "/input"
+    assert s.output == "/output"
+    assert s.log_config_file == "log.json"
+
+    t = InputOutputSettings(input_dir="/input/", output="/output//", log_config_file="log.json")
+    for attr in ["input_dir", "output", "log_config_file"]:
+        assert getattr(s, attr) == getattr(t, attr)
+
+
+def test_input_output_settings_preserve_root() -> None:
+    """Test that InputOutputSettings preserves the root directory slash."""
+
+    class TestIO(InputOutputSettings):
+        log_config_file: str = "log.json"  # pyright: ignore[reportIncompatibleVariableOverride]
+        input_dir: str = "/"
+        output: str = "/"
+
+    s = TestIO()
+    assert s.input_dir == "/"
+    assert s.output == "/"
+    assert s.log_config_file == "log.json"
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
