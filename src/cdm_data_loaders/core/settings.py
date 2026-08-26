@@ -1,10 +1,12 @@
 """Common defaults for running pipelines on the KBase CTS."""
 
-from typing import Self
+import logging
+from collections.abc import Hashable
+from typing import Any, Self
 
 import dlt
 from frozendict import frozendict
-from pydantic import AliasGenerator, computed_field, field_validator, model_validator
+from pydantic import AliasChoices, AliasPath, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cdm_data_loaders.core.fields import (
@@ -28,18 +30,9 @@ from cdm_data_loaders.core.fields import (
     StartAt,
     UseDestination,
     UseOutputDirForPipelineMetadata,
-    generate_aliases,
 )
 
-DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
-    {
-        "cli_parse_args": True,
-        "cli_exit_on_error": False,
-        "cli_ignore_unknown_args": True,
-        "str_strip_whitespace": True,
-        "alias_generator": AliasGenerator(validation_alias=generate_aliases),
-    }
-)
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_CTS_SETTINGS = frozendict(
@@ -61,20 +54,103 @@ DEFAULT_BATCH_FILE_SETTINGS = frozendict(
 )
 
 
-class LoggerSettings(BaseSettings):
+DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
+    {
+        "cli_parse_args": True,
+        "cli_exit_on_error": False,
+        "cli_ignore_unknown_args": True,
+        "str_strip_whitespace": True,
+    }
+)
+
+
+def _alias_key(alias: str | AliasPath) -> Hashable:
+    """Convert a validation alias into a hashable, structurally comparable key.
+
+    A plain string alias is returned unchanged. An AliasPath is converted to a
+    tuple of its `path` elements, which is hashable and equal to the tuple
+    produced by any other AliasPath with an identical `path`. A tuple key is
+    never equal to a string key, so string aliases and AliasPath aliases cannot
+    be mistaken for one another.
+    """
+    if isinstance(alias, AliasPath):
+        return tuple(alias.path)
+    return alias
+
+
+def _format_alias_key(key: Hashable) -> str:
+    """Render an alias key for inclusion in the collision error message."""
+    if isinstance(key, tuple):
+        return f"AliasPath{list(key)}"
+    return str(key)
+
+
+class CdmDataLoadersBase(BaseSettings):
+    """Base for all CDM Data Loaders settings classes.
+
+    - Sets up some basic CLI parsing defaults
+    - Adds a class method to check for conflicting aliases
+    """
+
+    model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT)
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_aliases(cls, data: Any) -> Any:  # noqa: ANN401
+        """Ensure there is no overlap in the aliases used, including AliasPath aliases.
+
+        AliasPath aliases are compared by their `path` attribute. Two AliasPath
+        instances are treated as the same alias if and only if their `path` values
+        are equal. A plain string alias is never treated as equal to an AliasPath
+        alias.
+        """
+        all_aliases: dict[Hashable, list[str]] = {}
+        for field_name, field_info in cls.model_fields.items():
+            name_alias_set: set[Hashable] = {field_name}
+            validation_alias = field_info.validation_alias
+            if validation_alias is not None:
+                if isinstance(validation_alias, AliasChoices):
+                    name_alias_set.update(_alias_key(va) for va in validation_alias.choices)
+                else:
+                    name_alias_set.add(_alias_key(validation_alias))
+
+            for alias in name_alias_set:
+                all_aliases.setdefault(alias, []).append(field_name)
+
+        field_collisions = {k: v for k, v in all_aliases.items() if len(v) > 1}
+        if field_collisions:
+            err_msg = "The following aliases are used more than once:\n" + "\n".join(
+                sorted([f"{_format_alias_key(k)}: {', '.join(sorted(v))}" for k, v in field_collisions.items()])
+            )
+            raise ValueError(err_msg)
+        return data
+
+
+class LoggerSettings(CdmDataLoadersBase):
     """Configuration for a class with a logger config."""
 
     log_config_file: LogConfigFile
 
 
-class CtsSettings(LoggerSettings):
-    """Configuration for running a basic DLT pipeline."""
+class InputOutputSettings(LoggerSettings):
+    """Configuration with basic input and output settings."""
 
-    model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT)
-
-    dev_mode: DevMode
     input_dir: InputDir
     output: Output
+
+    @field_validator("input_dir", "output", mode="after")
+    @classmethod
+    def validate_dir_path(cls, value: str) -> str:
+        """Remove any trailing slashes from directory paths."""
+        if value == "/":
+            return value
+        return value.rstrip("/")
+
+
+class CtsSettings(InputOutputSettings):
+    """Configuration for running a basic DLT pipeline."""
+
+    dev_mode: DevMode
     use_destination: UseDestination
     use_output_dir_for_pipeline_metadata: UseOutputDirForPipelineMetadata
 
@@ -132,14 +208,6 @@ class CtsSettings(LoggerSettings):
             raise ValueError(err_msg)
 
         return self
-
-    @field_validator("input_dir", "output", mode="after")
-    @classmethod
-    def validate_dir_path(cls, value: str) -> str:
-        """Remove any trailing slashes from directory paths."""
-        if value == "/":
-            return value
-        return value.rstrip("/")
 
     @computed_field
     @property

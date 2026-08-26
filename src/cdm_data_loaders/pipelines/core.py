@@ -10,7 +10,8 @@ from dlt.common.runtime.slack import send_slack_message
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
-from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.core.fields import DEV_MODE, OUTPUT, USE_DESTINATION
+from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
 from cdm_data_loaders.utils.cdm_logger import init_logger
 
 WEBHOOK_NOT_CONFIGURED: Final[str] = "Slack webhook not configured"
@@ -52,21 +53,23 @@ def construct_env_var() -> None:
         os.environ["RUNTIME__SLACK_INCOMING_HOOK"] = f"https://hooks.slack.com/services/{b_var}/{t_var}/{char_str}/"
 
 
-def sync_configs(settings: CtsSettings, dlt_config: Any) -> None:
+def sync_configs(settings: LoggerSettings, dlt_config: Any) -> None:  # noqa: ANN401
     """Sync the dlt config with the config derived from the CLI settings."""
-    dlt_config["normalize.data_writer.disable_compression"] = settings.dev_mode
-    # make sure that the destination bucket_url is set correctly
-    dlt_config[f"destination.{settings.use_destination}.bucket_url"] = settings.output
+    if hasattr(settings, DEV_MODE):
+        dlt_config["normalize.data_writer.disable_compression"] = settings.dev_mode  # pyright: ignore[reportAttributeAccessIssue]
+    if hasattr(settings, OUTPUT) and hasattr(settings, USE_DESTINATION):
+        # make sure that the destination bucket_url is set correctly
+        dlt_config[f"destination.{settings.use_destination}.bucket_url"] = settings.output  # pyright: ignore[reportAttributeAccessIssue]
 
 
-def dump_settings(settings: CtsSettings) -> None:
+def dump_settings(settings: LoggerSettings) -> None:
     """Dump the pipeline settings to the logger."""
     logger.info("Pipeline settings:")
     logger.info(settings.model_dump())
 
 
 def run_cli(
-    settings_cls: type[CtsSettings],
+    settings_cls: type[LoggerSettings],
     pipeline_fn: Callable[[Any], None],
     settings_kwargs: dict[str, Any] | None = None,
 ) -> None:

@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 from pydantic import AliasChoices, Field
 from pydantic_settings import CliImplicitFlag
 
-from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.core.settings import LoggerSettings
 from cdm_data_loaders.ncbi_ftp.promote import promote_from_s3
 from cdm_data_loaders.pipelines.core import run_cli
 
@@ -23,7 +23,7 @@ ESTIMATED_FILES_PER_ASSEMBLY: int = 21
 logger = logging.getLogger("dlt")
 
 
-class PromoteSettings(CtsSettings):
+class PromoteSettings(LoggerSettings):
     """Configuration for the NCBI FTP file promotion pipeline."""
 
     staging_bucket: PurePosixPath = Field(

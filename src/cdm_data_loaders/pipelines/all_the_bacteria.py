@@ -24,6 +24,7 @@ from dlt.sources.helpers.rest_client.client import RESTClient
 from pydantic import Field, computed_field
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.fields import generate_aliases
 from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.pipelines.core import (
     run_cli,
@@ -60,11 +61,13 @@ class AtbSettings(CtsSettings):
     version: str = Field(
         default=ATB_VERSION,
         description="Name of the current AllTheBacteria version",
+        validation_alias=generate_aliases(ATB_VERSION, short_alias="v"),
     )
 
     pattern_file: str | None = Field(
         default=None,
         description="Path, relative to the input dir, of a file containing patterns to match when downloading ATB files",
+        validation_alias=generate_aliases(PATTERN_FILE),
     )
 
     @computed_field

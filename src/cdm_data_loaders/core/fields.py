@@ -2,10 +2,10 @@
 
 from typing import Annotated, Any, Final
 
+import dlt
 import dlt.common.configuration.accessors
 from frozendict import frozendict
 from pydantic import AliasChoices, Field, PositiveInt
-from pydantic_settings import CliSuppress
 
 INPUT_MOUNT: Final[str] = "/input_dir"
 OUTPUT_MOUNT: Final[str] = "/output_dir"
@@ -35,7 +35,7 @@ DEFAULTS = frozendict(
         INPUT_DIR: INPUT_MOUNT,
         LOG_CONFIG_FILE: None,
         LOG_INTERVAL: 1000,
-        # N.b. this gets replaced by destination.local_fs.bucket_url
+        # N.b. this gets replaced by destination.local_fs.bucket_url in CtsSettings and derivatives
         OUTPUT: "",
         START_AT: MIN_START_AT,
         USE_DESTINATION: "local_fs",
@@ -45,60 +45,37 @@ DEFAULTS = frozendict(
 
 DEFAULT_PIPELINE_BATCH_SIZE: Final[int] = 50
 
-# short aliases for the fields, used for CLI parsing
-SHORT_ALIASES = frozendict(
-    {
-        BUFFER_SIZE: [],
-        DEV_MODE: [],
-        LOG_CONFIG_FILE: [],
-        LOG_INTERVAL: [],
-        USE_DESTINATION: ["d"],
-        USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: ["p"],
-    }
-)
 
-
-def generate_aliases(field_name: str, short_aliases: bool = True) -> AliasChoices:  # noqa: FBT001, FBT002
+def generate_aliases(field_name: str, short_alias: str | None = None) -> AliasChoices:
     """Generate a list of aliases for a given field name.
 
     :param field_name: The name of the field for which to generate aliases.
     :type field_name: str
     :param short_aliases: Whether to include short aliases.
     :type short_aliases: bool
-    :return: A list of aliases for the field.
-    :rtype: list[str]
+    :return: A non-redundant list of aliases for the field in an AliasChoices object.
+    :rtype: AliasChoices
     """
+    if not field_name:
+        err_msg = "No field_name supplied"
+        raise ValueError(err_msg)
+
     field_names = [field_name]
     if "_" in field_name:
         field_names.append(field_name.replace("_", "-"))
 
-    if short_aliases:
-        return AliasChoices(*[*SHORT_ALIASES.get(field_name, [field_name[0]]), *field_names])
+    if short_alias and short_alias not in field_names:
+        field_names = [short_alias, *field_names]
+
     return AliasChoices(*field_names)
 
-
-ALIASES = frozendict(
-    {
-        k: generate_aliases(k)
-        for k in [
-            BUFFER_SIZE,
-            DEV_MODE,
-            INPUT_DIR,
-            LOG_CONFIG_FILE,
-            LOG_INTERVAL,
-            OUTPUT,
-            START_AT,
-            USE_DESTINATION,
-            USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
-        ]
-    }
-)
 
 BufferSize = Annotated[
     PositiveInt,
     Field(
         default=DEFAULTS[BUFFER_SIZE],
         description="Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer.",
+        validation_alias=generate_aliases(BUFFER_SIZE),
     ),
 ]
 DevMode = Annotated[
@@ -106,11 +83,12 @@ DevMode = Annotated[
     Field(
         default=DEFAULTS[DEV_MODE],
         description="Whether to run the pipeline in dev mode, which saves raw API responses to disk and disables compression for easier debugging.",
+        validation_alias=generate_aliases(DEV_MODE),
     ),
 ]
 # this should really just be _Accessor but leaving the dict version in for ease of testing
 DltConfig = Annotated[
-    CliSuppress[dlt.common.configuration.accessors._Accessor | dict[str, Any]],  # noqa: SLF001
+    dlt.common.configuration.accessors._Accessor | dict[str, Any],  # noqa: SLF001
     Field(description="DLT configuration for the pipeline.", default_factory=lambda: dlt.config),
 ]
 InputDir = Annotated[
@@ -118,6 +96,7 @@ InputDir = Annotated[
     Field(
         default=DEFAULTS[INPUT_DIR],
         description="Location of directory containing file(s) to import",
+        validation_alias=generate_aliases(INPUT_DIR, "i"),
     ),
 ]
 LogConfigFile = Annotated[
@@ -125,6 +104,7 @@ LogConfigFile = Annotated[
     Field(
         default=DEFAULTS[LOG_CONFIG_FILE],
         description="Location of configuration file for the logger",
+        validation_alias=generate_aliases(LOG_CONFIG_FILE),
     ),
 ]
 LogInterval = Annotated[
@@ -132,6 +112,7 @@ LogInterval = Annotated[
     Field(
         default=DEFAULTS[LOG_INTERVAL],
         description="How often (in number of processed entries) to emit a progress log message. Must be a positive integer.",
+        validation_alias=generate_aliases(LOG_INTERVAL),
     ),
 ]
 Output = Annotated[
@@ -139,6 +120,7 @@ Output = Annotated[
     Field(
         default=DEFAULTS[OUTPUT],
         description="Location to save imported data to, if different from the default supplied by the destination config",
+        validation_alias=generate_aliases(OUTPUT, "o"),
     ),
 ]
 StartAt = Annotated[
@@ -146,6 +128,7 @@ StartAt = Annotated[
     Field(
         default=DEFAULTS[START_AT],
         description="File to start import at",
+        validation_alias=generate_aliases(START_AT, "s"),
     ),
 ]
 UseDestination = Annotated[
@@ -153,6 +136,7 @@ UseDestination = Annotated[
     Field(
         default=DEFAULTS[USE_DESTINATION],
         description=f"DLT destination configuration to use for data output. Data to be saved to s3 should use the destination 's3'; to save data locally, use the destination 'local_fs'. The output directory can be specified using the 'output' field. Choices: {VALID_DESTINATIONS}",
+        validation_alias=generate_aliases(USE_DESTINATION, "d"),
     ),
 ]
 UseOutputDirForPipelineMetadata = Annotated[
@@ -160,5 +144,6 @@ UseOutputDirForPipelineMetadata = Annotated[
     Field(
         default=DEFAULTS[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA],
         description="If true, use the output directory for pipeline metadata. Note: pipeline metadata cannot be stored in an S3 bucket, so this option should only be used when the destination is 'local_fs'.",
+        validation_alias=generate_aliases(USE_OUTPUT_DIR_FOR_PIPELINE_METADATA, "p"),
     ),
 ]

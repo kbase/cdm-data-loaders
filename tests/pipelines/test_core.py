@@ -13,11 +13,16 @@ from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
 from cdm_data_loaders.core.fields import (
+    DEV_MODE,
+    OUTPUT,
+    USE_DESTINATION,
     VALID_DESTINATIONS,
 )
 from cdm_data_loaders.core.settings import (
     BatchedFileInputSettings,
     CtsSettings,
+    InputOutputSettings,
+    LoggerSettings,
 )
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import (
@@ -35,6 +40,17 @@ from tests.core.test_settings import SETTINGS_CLASSES, TEST_CTS_SETTINGS
 def make_batched_settings(**kwargs: str | int) -> BatchedFileInputSettings:
     """Generate a validated BatchedFileInputSettings object with a valid dlt config."""
     return BatchedFileInputSettings.model_validate(kwargs)
+
+
+@pytest.fixture
+def empty_dlt_config() -> dict[str, Any]:
+    """A completely empty dlt config dict.
+
+    Represents dlt.config before any environment variables or config files have contributed
+    values, so that sync_configs tests can confirm behaviour is driven purely by the settings
+    object and not by any pre-existing config state.
+    """
+    return {}
 
 
 @pytest.fixture
@@ -66,6 +82,20 @@ def test_cts_settings() -> CtsSettings:
 def config(request: pytest.FixtureRequest) -> BatchedFileInputSettings:
     """Parametrized fixture providing default and non-default settings."""
     return make_batched_settings(**request.param)
+
+
+@pytest.fixture(
+    params=[
+        pytest.param(lambda: LoggerSettings.model_validate({}), id="no-relevant-attrs"),
+        pytest.param(
+            lambda: InputOutputSettings.model_validate({"input_dir": "/fake/input", "output": "/fake/output"}),
+            id="output-only-no-destination",
+        ),
+    ]
+)
+def settings_missing_sync_attrs(request: pytest.FixtureRequest) -> LoggerSettings | InputOutputSettings:
+    """Settings instances missing one or more attribute that sync_configs checks for via hasattr."""
+    return request.param()
 
 
 def assert_pipeline_run_correctly(
@@ -254,6 +284,56 @@ def test_sync_configs_both_keys_set_in_single_call(
     }
 
 
+def test_sync_configs_attrs_missing_as_expected(
+    settings_missing_sync_attrs: LoggerSettings | InputOutputSettings,
+) -> None:
+    """Sanity-check the fixture: confirm which attributes are genuinely absent."""
+    assert hasattr(settings_missing_sync_attrs, OUTPUT) == isinstance(settings_missing_sync_attrs, InputOutputSettings)
+    assert not hasattr(settings_missing_sync_attrs, DEV_MODE)
+    assert not hasattr(settings_missing_sync_attrs, USE_DESTINATION)
+
+
+def test_sync_configs_no_op_when_relevant_attrs_missing(
+    settings_missing_sync_attrs: LoggerSettings | InputOutputSettings, empty_dlt_config: dict[str, Any]
+) -> None:
+    """sync_configs must not write any keys when the settings object lacks the attrs it needs.
+
+    This covers both the case where dev_mode/output/use_destination are all absent, and the case
+    where output is present but use_destination is not (so the bucket_url key must still be skipped).
+    """
+    sync_configs(settings_missing_sync_attrs, empty_dlt_config)  # pyright: ignore[reportArgumentType]
+    assert empty_dlt_config == {}
+
+
+def test_sync_configs_no_op_with_mock_config_when_relevant_attrs_missing(
+    settings_missing_sync_attrs: LoggerSettings | InputOutputSettings,
+) -> None:
+    """As above, but verified via a MagicMock config to confirm __setitem__ is never even attempted."""
+    mock_cfg = MagicMock()
+    sync_configs(settings_missing_sync_attrs, mock_cfg)  # pyright: ignore[reportArgumentType]
+    mock_cfg.__setitem__.assert_not_called()
+
+
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+def test_sync_configs_sets_both_keys_from_a_de_novo_dlt_config(
+    settings_cls: type[CtsSettings], empty_dlt_config: dict[str, Any]
+) -> None:
+    """When dev_mode/output/use_destination are all present, sync_configs sets exactly those two keys.
+
+    ``empty_dlt_config`` starts out completely empty, distinct from the pre-populated ``dlt_config``
+    fixture used (via the autouse patch) to validate ``settings_cls`` on construction. This confirms
+    sync_configs's own behaviour depends only on its arguments, not on any leftover config state.
+    """
+    settings = settings_cls(dev_mode=True, output="/some/output", use_destination="local_fs")  # pyright: ignore[reportCallIssue]
+
+    sync_configs(settings, empty_dlt_config)
+
+    assert empty_dlt_config == {
+        "normalize.data_writer.disable_compression": True,
+        "destination.local_fs.bucket_url": "/some/output",
+    }
+
+
 # tests for run_cli()
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 def test_run_cli_calls_settings_cls_with_dlt_config(
@@ -422,6 +502,74 @@ def test_run_cli_no_slack_env_var_when_vars_missing(
     run_cli(CtsSettings, MagicMock())
 
     assert "RUNTIME__SLACK_INCOMING_HOOK" not in os.environ
+
+
+# run_cli + sync_configs interaction: hasattr guards
+SETTINGS_CLASSES_MISSING_SYNC_ATTRS: Final[list[type[LoggerSettings]]] = [LoggerSettings, InputOutputSettings]
+
+
+def test_settings_classes_missing_sync_attrs_sanity_check() -> None:
+    """Sanity-check that LoggerSettings/InputOutputSettings genuinely lack the attrs sync_configs checks.
+
+    LoggerSettings has none of dev_mode/output/use_destination; InputOutputSettings has output but not
+    dev_mode or use_destination, so the bucket_url branch (which requires both) should still be skipped.
+    """
+    logger_settings = LoggerSettings()  # pyright: ignore[reportCallIssue]
+    io_settings = InputOutputSettings()  # pyright: ignore[reportCallIssue]
+
+    assert not hasattr(logger_settings, DEV_MODE)
+    assert not hasattr(logger_settings, OUTPUT)
+    assert not hasattr(logger_settings, USE_DESTINATION)
+
+    assert hasattr(io_settings, OUTPUT)
+    assert not hasattr(io_settings, DEV_MODE)
+    assert not hasattr(io_settings, USE_DESTINATION)
+
+
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES_MISSING_SYNC_ATTRS)
+def test_run_cli_calls_sync_configs_even_when_attrs_missing(settings_cls: type[LoggerSettings]) -> None:
+    """run_cli still calls sync_configs for settings classes lacking dev_mode/use_destination.
+
+    Mirrors test_run_cli_function_calls_args: confirms sync_configs is invoked with the instantiated
+    settings object and dlt.config regardless of which attributes that object actually has - the
+    hasattr guards live inside sync_configs itself, not in run_cli, so the call should always happen.
+    """
+    instantiated_cls = settings_cls()  # pyright: ignore[reportCallIssue]
+    pipeline_fn_mock = MagicMock()
+    settings_cls_mock = MagicMock(return_value=instantiated_cls)
+
+    with (
+        patch("cdm_data_loaders.pipelines.core.construct_env_var") as mock_env_var,
+        patch("cdm_data_loaders.pipelines.core.sync_configs") as mock_sync,
+    ):
+        run_cli(settings_cls_mock, pipeline_fn_mock)  # type: ignore[reportArgumentType]
+
+    mock_env_var.assert_called_once_with()
+    mock_sync.assert_called_once_with(instantiated_cls, dlt.config)
+    pipeline_fn_mock.assert_called_once_with(instantiated_cls)
+
+
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES_MISSING_SYNC_ATTRS)
+def test_run_cli_sync_configs_no_op_on_de_novo_config_when_attrs_missing(
+    settings_cls: type[LoggerSettings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end: running the full run_cli path against a de novo dlt.config leaves it untouched.
+
+    dlt.config is replaced here with a brand new, empty dict - as if no environment variables or
+    config files had ever contributed to it - confirming that sync_configs's hasattr guards correctly
+    prevent any spurious key creation (or AttributeError) when exercised through the real CLI entry
+    point, for settings classes that don't carry all of dev_mode/output/use_destination.
+    """
+    empty_dlt_config: dict[str, Any] = {}
+    monkeypatch.setattr(core.dlt, "config", empty_dlt_config)
+    pipeline_fn_mock = MagicMock()
+
+    run_cli(settings_cls, pipeline_fn_mock)  # type: ignore[reportArgumentType]
+
+    assert empty_dlt_config == {}
+    pipeline_fn_mock.assert_called_once()
+    called_settings = pipeline_fn_mock.call_args.args[0]
+    assert isinstance(called_settings, settings_cls)
 
 
 # dlt.config state after successful run

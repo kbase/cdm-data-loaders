@@ -23,8 +23,7 @@ from dlt.sources.helpers.rest_client.client import RESTClient
 from dlt.sources.helpers.rest_client.paginators import (
     JSONResponseCursorPaginator,
 )
-from frozendict import frozendict
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import SettingsConfigDict
 from requests.exceptions import HTTPError
 
@@ -70,12 +69,14 @@ class NcbiRestApiSettings(CtsSettings):
         description="Number of IDs to send in each request to the NCBI REST API.",
         ge=1,
         le=MAX_IDS_PER_QUERY,
+        validation_alias=generate_aliases(BATCH_SIZE, short_alias="b"),
     )
 
     query_type: str | None = Field(
         default=None,
         description="The type of query to perform, dataset or annotation. By default, both are performed.",
         pattern=QUERY_TYPE_REGEX,
+        validation_alias=generate_aliases(QUERY_TYPE, short_alias="q"),
     )
 
     @field_validator("query_type", mode="before")
