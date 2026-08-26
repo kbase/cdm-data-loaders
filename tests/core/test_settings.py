@@ -11,7 +11,7 @@ from argparse import ArgumentError
 from cdm_data_loaders.core.fields import (
     DEV_MODE,
     INPUT_DIR,
-    OUTPUT,
+    OUTPUT_DIR,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
     VALID_DESTINATIONS,
@@ -44,7 +44,7 @@ INVALID_DESTINATIONS = ["gcs", "filesystem", "", "LocalFs", "S3"]
 INVALID_BOOLEAN_VALUES = ["what", "yep", "nope", "2", -1, "", " ", "wtf", None]
 
 S3 = "is_s3"
-OUT = OUTPUT
+OUT = OUTPUT_DIR
 RAW = "raw_data_dir"
 PIPE = "pipeline_dir"
 
@@ -432,15 +432,15 @@ def test_input_output_settings_validate_dir_path() -> None:
     class TestIO(InputOutputSettings):
         log_config_file: str = "log.json"  # pyright: ignore[reportIncompatibleVariableOverride]
         input_dir: str = "/input/"
-        output: str = "/output//"
+        output_dir: str = "/output//"
 
     s = TestIO()
     assert s.input_dir == "/input"
-    assert s.output == "/output"
+    assert s.output_dir == "/output"
     assert s.log_config_file == "log.json"
 
-    t = InputOutputSettings(input_dir="/input/", output="/output//", log_config_file="log.json")
-    for attr in ["input_dir", "output", "log_config_file"]:
+    t = InputOutputSettings(input_dir="/input/", output_dir="/output//", log_config_file="log.json")
+    for attr in ["input_dir", "output_dir", "log_config_file"]:
         assert getattr(s, attr) == getattr(t, attr)
 
 
@@ -450,11 +450,11 @@ def test_input_output_settings_preserve_root() -> None:
     class TestIO(InputOutputSettings):
         log_config_file: str = "log.json"  # pyright: ignore[reportIncompatibleVariableOverride]
         input_dir: str = "/"
-        output: str = "/"
+        output_dir: str = "/"
 
     s = TestIO()
     assert s.input_dir == "/"
-    assert s.output == "/"
+    assert s.output_dir == "/"
     assert s.log_config_file == "log.json"
 
 
@@ -725,7 +725,7 @@ def test_cli_app_run_invalid_boolean_values_raises(
         ("", ""),
     ],
 )
-@pytest.mark.parametrize("field_name", [INPUT_DIR, OUTPUT])
+@pytest.mark.parametrize("field_name", [INPUT_DIR, OUTPUT_DIR])
 @pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_trailing_slash_stripped(
     settings_cls: type[CtsSettings],
@@ -735,8 +735,8 @@ def test_settings_trailing_slash_stripped(
 ) -> None:
     """Ensure that validate_dir_path removes trailing slashes but leaves directory slashes intact."""
     s = make_settings_autofill_config(settings_cls, {field_name: raw})
-    # output gets filled in with the default if it is falsy
-    if field_name == OUTPUT and raw == "":
+    # output_dir gets filled in with the default if it is falsy
+    if field_name == OUTPUT_DIR and raw == "":
         expected = "/output_dir"
     assert getattr(s, field_name) == expected
 
@@ -770,15 +770,15 @@ def test_settings_reconcile_with_dlt_config_output_resolved_from_dlt_config_buck
     use_destination: str,
     dlt_config: dict[str, Any],
 ) -> None:
-    """When output is empty, it is populated from dlt config's bucket_url."""
-    s = make_settings_autofill_config(settings_cls, {OUTPUT: "", USE_DESTINATION: use_destination})
-    assert s.output == dlt_config[f"destination.{use_destination}.bucket_url"]
+    """When output_dir is empty, it is populated from dlt config's bucket_url."""
+    s = make_settings_autofill_config(settings_cls, {OUTPUT_DIR: "", USE_DESTINATION: use_destination})
+    assert s.output_dir == dlt_config[f"destination.{use_destination}.bucket_url"]
 
 
-# properties derived from self.output: pipeline_dir and raw_data_dir
+# properties derived from self.output_dir: pipeline_dir and raw_data_dir
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(
-    OUTPUT,
+    OUTPUT_DIR,
     list(OUTPUT_PATHS.keys()),
 )
 @pytest.mark.parametrize(USE_OUTPUT_DIR_FOR_PIPELINE_METADATA, [True, False])
@@ -786,18 +786,18 @@ def test_settings_reconcile_with_dlt_config_output_resolved_from_dlt_config_buck
 @pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_generate_pipeline_raw_data_dirs(
     settings_cls: type[CtsSettings],
-    output: str,
+    output_dir: str,
     use_output_dir_for_pipeline_metadata: bool,
     use_destination: str,
 ) -> None:
     """Ensure that the correct paths are generated for pipeline and raw data directories.
 
-    Ensure that the destination set in `use_destination` concurs with any output path set.
+    Ensure that the destination set in `use_destination` concurs with any output_dir path set.
 
-    Ensure that pipeline directories cannot be set if the output is set to s3.
+    Ensure that pipeline directories cannot be set if the output_dir is set to s3.
     """
     make_settings_args = {
-        OUTPUT: output,
+        OUTPUT_DIR: output_dir,
         USE_DESTINATION: use_destination,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: use_output_dir_for_pipeline_metadata,
     }
@@ -806,19 +806,19 @@ def test_settings_generate_pipeline_raw_data_dirs(
         **DEFAULT_CTS_SETTINGS_RECONCILED,
         USE_DESTINATION: use_destination,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: use_output_dir_for_pipeline_metadata,
-        OUTPUT: DESTINATION_TO_OUTPUT[use_destination] if output == "" else OUTPUT_PATHS[output][OUT],
+        OUTPUT_DIR: DESTINATION_TO_OUTPUT[use_destination] if output_dir == "" else OUTPUT_PATHS[output_dir][OUT],
     }
     if settings_cls == BatchedFileInputSettings:
         expected = {**DEFAULT_BATCH_FILE_SETTINGS_RECONCILED, **expected}
 
-    if (OUTPUT_PATHS[expected[OUTPUT]][S3] and use_destination == "local_fs") or (
-        OUTPUT_PATHS[expected[OUTPUT]][S3] is False and use_destination == "s3"
+    if (OUTPUT_PATHS[expected[OUTPUT_DIR]][S3] and use_destination == "local_fs") or (
+        OUTPUT_PATHS[expected[OUTPUT_DIR]][S3] is False and use_destination == "s3"
     ):
         with pytest.raises(ValueError, match="Mismatch between output location and use_destination"):
             make_settings_autofill_config(settings_cls, make_settings_args)
         return
 
-    if use_output_dir_for_pipeline_metadata and OUTPUT_PATHS[expected[OUTPUT]][S3] is True:
+    if use_output_dir_for_pipeline_metadata and OUTPUT_PATHS[expected[OUTPUT_DIR]][S3] is True:
         # can't have pipeline dir on s3
         with pytest.raises(ValueError, match="It is not currently possible to have the pipeline directory on s3"):
             make_settings_autofill_config(settings_cls, make_settings_args)
@@ -827,7 +827,9 @@ def test_settings_generate_pipeline_raw_data_dirs(
     s = make_settings_autofill_config(settings_cls, make_settings_args)
 
     # get the pipeline and raw data dirs from OUTPUT_PATHS
-    expected["raw_data_dir"] = OUTPUT_PATHS[expected[OUTPUT]][RAW]
+    expected["raw_data_dir"] = OUTPUT_PATHS[expected[OUTPUT_DIR]][RAW]
     # No pipeline_dir if use_output_dir_for_pipeline_metadata is not set
-    expected["pipeline_dir"] = OUTPUT_PATHS[expected[OUTPUT]][PIPE] if use_output_dir_for_pipeline_metadata else None
+    expected["pipeline_dir"] = (
+        OUTPUT_PATHS[expected[OUTPUT_DIR]][PIPE] if use_output_dir_for_pipeline_metadata else None
+    )
     check_settings(s, expected)

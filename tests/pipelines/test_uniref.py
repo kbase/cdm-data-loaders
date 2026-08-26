@@ -279,7 +279,7 @@ def duckdb_uniref_settings(tmp_path: Path) -> UnirefSettings:
     """Provide UnirefSettings pointing at the real UniRef XML fixtures.
 
     ``input_dir`` points at the fixture directory containing
-    ``uniref_chunk_0000N.xml`` files, and ``output`` is a local directory inside
+    ``uniref_chunk_0000N.xml`` files, and ``output_dir`` is a local directory inside
     ``tmp_path`` so the run is fully isolated. The ``variant`` is fixed to
     a valid value ("50") for the integration run.
     """
@@ -290,7 +290,7 @@ def duckdb_uniref_settings(tmp_path: Path) -> UnirefSettings:
         {
             VARIANT: TEST_DEFAULT_UNIREF_VARIANT,
             "input_dir": str(UNIREF_FIXTURE_DIR),
-            "output": str(output_dir),
+            "output_dir": str(output_dir),
             "use_destination": "local_fs",
             "use_output_dir_for_pipeline_metadata": False,
         },

@@ -10,7 +10,7 @@ from dlt.common.runtime.slack import send_slack_message
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
-from cdm_data_loaders.core.fields import DEV_MODE, OUTPUT, USE_DESTINATION
+from cdm_data_loaders.core.fields import DEV_MODE, OUTPUT_DIR, USE_DESTINATION
 from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
 from cdm_data_loaders.utils.cdm_logger import init_logger
 
@@ -57,9 +57,9 @@ def sync_configs(settings: LoggerSettings, dlt_config: Any) -> None:  # noqa: AN
     """Sync the dlt config with the config derived from the CLI settings."""
     if hasattr(settings, DEV_MODE):
         dlt_config["normalize.data_writer.disable_compression"] = settings.dev_mode  # pyright: ignore[reportAttributeAccessIssue]
-    if hasattr(settings, OUTPUT) and hasattr(settings, USE_DESTINATION):
+    if hasattr(settings, OUTPUT_DIR) and hasattr(settings, USE_DESTINATION):
         # make sure that the destination bucket_url is set correctly
-        dlt_config[f"destination.{settings.use_destination}.bucket_url"] = settings.output  # pyright: ignore[reportAttributeAccessIssue]
+        dlt_config[f"destination.{settings.use_destination}.bucket_url"] = settings.output_dir  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def dump_settings(settings: LoggerSettings) -> None:
@@ -106,7 +106,7 @@ def run_pipeline(
 ) -> None:
     """Execute a dlt pipeline.
 
-    :param settings: pipeline config with output and destination
+    :param settings: pipeline config with output_dir and destination
     :type settings: BatchedFileInputSettings
     :param resource: dlt resource to run
     :type resource: Any

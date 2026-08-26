@@ -16,7 +16,7 @@ from cdm_data_loaders.core.fields import (
     INPUT_DIR,
     LOG_CONFIG_FILE,
     LOG_INTERVAL,
-    OUTPUT,
+    OUTPUT_DIR,
     START_AT,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
@@ -26,7 +26,7 @@ from cdm_data_loaders.core.fields import (
     InputDir,
     LogConfigFile,
     LogInterval,
-    Output,
+    OutputDir,
     StartAt,
     UseDestination,
     UseOutputDirForPipelineMetadata,
@@ -42,7 +42,7 @@ DEFAULT_CTS_SETTINGS = frozendict(
             DEV_MODE,
             INPUT_DIR,
             LOG_CONFIG_FILE,
-            OUTPUT,
+            OUTPUT_DIR,
             USE_DESTINATION,
             USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
         ]
@@ -136,9 +136,9 @@ class InputOutputSettings(LoggerSettings):
     """Configuration with basic input and output settings."""
 
     input_dir: InputDir
-    output: Output
+    output_dir: OutputDir
 
-    @field_validator("input_dir", "output", mode="after")
+    @field_validator("input_dir", "output_dir", mode="after")
     @classmethod
     def validate_dir_path(cls, value: str) -> str:
         """Remove any trailing slashes from directory paths."""
@@ -179,28 +179,28 @@ class CtsSettings(InputOutputSettings):
             err_msg = f"use_destination must be one of {sorted(all_destinations)}, got '{self.use_destination}'"
             raise ValueError(err_msg)
 
-        if not self.output:
+        if not self.output_dir:
             if not self._dlt_config.get(f"destination.{self.use_destination}.bucket_url"):  # type: ignore[reportArgumentType]
                 err_msg = f"No bucket_url specified for destination {self.use_destination}"
                 raise ValueError(err_msg)
 
-            self.output = self._dlt_config[f"destination.{self.use_destination}.bucket_url"]
-            if self.output != "/":
-                self.output.rstrip("/")
+            self.output_dir = self._dlt_config[f"destination.{self.use_destination}.bucket_url"]
+            if self.output_dir != "/":
+                self.output_dir.rstrip("/")
 
         # N.b. this should never happen
-        if not self.output:
-            err_msg = "No output specified!"
+        if not self.output_dir:
+            err_msg = "No output_dir specified!"
             raise ValueError(err_msg)
 
         # ensure that the use_destination value does not conflict with whether or not pipeline data should be saved
         destination_is_s3 = False
-        if self.output.startswith("s3://") or self.output.startswith("s3a://"):
+        if self.output_dir.startswith("s3://") or self.output_dir.startswith("s3a://"):
             destination_is_s3 = True
 
         # self.use_destination should be "s3" if the output is an s3 url and vice versa
         if bool(self.use_destination == "s3") != destination_is_s3:
-            err_msg = "Mismatch between output location and use_destination. To ensure internal settings functions work correctly, set use_destination to 's3' for writing files to s3, and 'local_fs' for writing files locally. The output directory can be configured using the 'output' parameter."
+            err_msg = "Mismatch between output location and use_destination. To ensure internal settings functions work correctly, set use_destination to 's3' for writing files to s3, and 'local_fs' for writing files locally. The output directory can be configured using the 'output_dir' parameter."
             raise ValueError(err_msg)
 
         if self.use_output_dir_for_pipeline_metadata and destination_is_s3:
@@ -216,7 +216,7 @@ class CtsSettings(InputOutputSettings):
 
         If not set, defaults to a 'raw_data' directory within the output directory after reconciling with dlt config.
         """
-        return f"{self.output}{'' if self.output in ('', '/') else '/'}raw_data"
+        return f"{self.output_dir}{'' if self.output_dir in ('', '/') else '/'}raw_data"
 
     @computed_field
     @property
@@ -226,7 +226,7 @@ class CtsSettings(InputOutputSettings):
         If use_output_dir_for_pipeline_metadata is true, this defaults to a `.dlt_conf` directory within the output directory.
         """
         if self.use_output_dir_for_pipeline_metadata:
-            return f"{self.output}{'' if self.output in ('', '/') else '/'}.dlt_conf"
+            return f"{self.output_dir}{'' if self.output_dir in ('', '/') else '/'}.dlt_conf"
         return None
 
 

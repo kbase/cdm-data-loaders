@@ -348,7 +348,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
 
     base_settings: dict[str, str | bool] = {
         "input_dir": "tests/data/ncbi_rest_api/input",
-        "output": "/some/dir",
+        "output_dir": "/some/dir",
     }
     if dev_mode is not None:
         base_settings["dev_mode"] = dev_mode
@@ -363,7 +363,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
             "dev_mode": bool(dev_mode),
             "input_dir": "tests/data/ncbi_rest_api/input",
             "log_config_file": None,
-            "output": "/some/dir",
+            "output_dir": "/some/dir",
             "pipeline_dir": "/some/dir/.dlt_conf" if use_pipeline_dir else None,
             "raw_data_dir": "/some/dir/raw_data",
             "use_destination": "local_fs",
@@ -389,7 +389,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
     else:
         assert "dev_mode" not in mock_dlt.pipeline.call_args.kwargs
     if use_pipeline_dir:  # truthy
-        assert mock_dlt.pipeline.call_args.kwargs["pipelines_dir"] == f"{settings.output}/.dlt_conf"  # type: ignore[reportArgumentType]
+        assert mock_dlt.pipeline.call_args.kwargs["pipelines_dir"] == f"{settings.output_dir}/.dlt_conf"  # type: ignore[reportArgumentType]
     else:
         assert "pipelines_dir" not in mock_dlt.pipeline.call_args.kwargs
 
@@ -650,7 +650,7 @@ def test_get_assembly_report_parser_with_cassette(tmp_path: Path) -> None:
     with patch("dlt.mark"):
         settings: NcbiRestApiSettings = make_settings_autofill_config(
             NcbiRestApiSettings,
-            {"input_dir": "tests/data/ncbi_rest_api/input", "output": str(tmp_path)},
+            {"input_dir": "tests/data/ncbi_rest_api/input", "output_dir": str(tmp_path)},
         )  # type: ignore[reportAssignmentType]
         run_ncbi_pipeline(settings)
 

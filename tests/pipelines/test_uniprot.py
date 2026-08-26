@@ -165,13 +165,13 @@ def test_parse_uniprot_resource(test_settings: UniProtSettings) -> None:
 @pytest.fixture
 def duckdb_uniprot_settings_args(tmp_path: Path) -> frozendict:
     """Arguments for initialising a UniProtSettings object."""
-    output_dir = tmp_path / "output"
+    output_dir = tmp_path / "output_dir"
     output_dir.mkdir()
 
     return frozendict(
         {
             "input_dir": str(UNIPROT_FIXTURE_DIR),
-            "output": str(output_dir),
+            "output_dir": str(output_dir),
             "use_destination": "local_fs",
             "use_output_dir_for_pipeline_metadata": False,
         }
@@ -184,7 +184,7 @@ def duckdb_uniprot_settings(duckdb_uniprot_settings_args: frozendict) -> UniProt
     """Provide UniProtSettings pointing at the real UniProt XML fixtures.
 
     ``input_dir`` points at the fixture directory containing ``chunk_0000N.xml``
-    files, and ``output`` is a local directory inside ``tmp_path`` so the run is
+    files, and ``output_dir`` is a local directory inside ``tmp_path`` so the run is
     fully isolated.
     """
     return make_settings_autofill_config(UniProtSettings, duckdb_uniprot_settings_args)  # pyright: ignore[reportReturnType]

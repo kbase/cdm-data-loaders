@@ -15,7 +15,7 @@ from cdm_data_loaders.core.fields import (
     INPUT_DIR,
     LOG_CONFIG_FILE,
     LOG_INTERVAL,
-    OUTPUT,
+    OUTPUT_DIR,
     START_AT,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
@@ -45,7 +45,7 @@ DESTINATION_OUTPUT: Final[str] = DESTINATION_TO_OUTPUT[DEFAULT_CTS_SETTINGS["use
 DEFAULT_CTS_SETTINGS_RECONCILED = frozendict(
     {
         **DEFAULT_CTS_SETTINGS,
-        OUTPUT: DESTINATION_OUTPUT,
+        OUTPUT_DIR: DESTINATION_OUTPUT,
         "raw_data_dir": f"{DESTINATION_OUTPUT}/raw_data",
         "pipeline_dir": None,
     }
@@ -58,7 +58,7 @@ TEST_CTS_SETTINGS = frozendict(
         DEV_MODE: "false",
         INPUT_DIR: "/dir/path",
         LOG_CONFIG_FILE: "some/path",
-        OUTPUT: "/some/dir",
+        OUTPUT_DIR: "/some/dir",
         USE_DESTINATION: "local_fs",
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: "true",
     }
