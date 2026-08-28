@@ -26,6 +26,21 @@ from cdm_data_loaders.pipelines.all_the_bacteria import (
 )
 from cdm_data_loaders.utils.file_transfer.core import NonRetryableDownloadError
 from tests.conftest import CASSETTES_DIR
+from tests.core.conftest import (
+    TEST_CTS_SETTINGS,
+    TEST_CTS_SETTINGS_RECONCILED,
+)
+from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes
+
+TEST_SETTINGS = frozendict(**TEST_CTS_SETTINGS, version="1.2.3")
+
+TEST_SETTINGS_RECONCILED = frozendict(**TEST_CTS_SETTINGS_RECONCILED, version="1.2.3", pattern_file=None)
+
+TEST_SETTINGS_V1 = frozendict(**TEST_CTS_SETTINGS, version=1, pattern_file="some/path/or/other.txt")
+
+TEST_SETTINGS_RECONCILED_V1 = frozendict(
+    **TEST_CTS_SETTINGS_RECONCILED, version="1", pattern_file="some/path/or/other.txt"
+)
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +58,7 @@ def vcr_config() -> dict[str, Any]:
 
 @pytest.fixture
 def test_settings(tmp_path: Path) -> AtbSettings:
-    """Generate a fake settings for testing."""
+    """Generate fake settings for testing."""
     return AtbSettings(output_dir=str(tmp_path))  # pyright: ignore[reportCallIssue]
 
 
@@ -62,6 +77,32 @@ def pattern_file(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return p
+
+
+# model_fields
+def test_no_cli_param_clashes() -> None:
+    """Ensure that the settings object does not have any internal alias collisions."""
+    assert_no_cli_clashes(AtbSettings)
+
+
+@pytest.mark.parametrize(
+    ("settings", "reconciled"),
+    [
+        (TEST_SETTINGS, TEST_SETTINGS_RECONCILED),
+        (TEST_SETTINGS_V1, TEST_SETTINGS_RECONCILED_V1),
+    ],
+)
+@pytest.mark.parametrize("field_name", list(TEST_SETTINGS))
+def test_cli_fields_parse_correctly(
+    field_name: str, settings: frozendict[str, Any], reconciled: frozendict[str, Any]
+) -> None:
+    """Ensure that all fields and variants are parsed correctly."""
+    assert_cli_field_roundtrips(
+        AtbSettings,
+        field_name,
+        settings[field_name],
+        reconciled[field_name],
+    )
 
 
 def test_cli_calls_run_atb_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:

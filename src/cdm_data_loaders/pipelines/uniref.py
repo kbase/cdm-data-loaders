@@ -6,11 +6,12 @@ from typing import Annotated, Any, Final
 
 import dlt
 from dlt.extract.items import DataItemWithMeta
-from pydantic import Field, PositiveInt, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.core.fields import LOG_INTERVAL, generate_aliases
+from cdm_data_loaders.core.fields import START_AT, LogInterval
 from cdm_data_loaders.core.settings import (
+    CLI_SHORTCUTS,
     DEFAULT_SETTINGS_CONFIG_DICT,
     BatchedFileInputSettings,
 )
@@ -36,22 +37,20 @@ class UnirefSettings(BatchedFileInputSettings):
     model_config = SettingsConfigDict(
         **DEFAULT_SETTINGS_CONFIG_DICT,
         cli_prog_name="uniref",
+        cli_shortcuts={**CLI_SHORTCUTS, START_AT: "s", "variant": "v"},
     )
 
     variant: Annotated[
         str,
         Field(
             description=f"Which UniRef variant to import. Choices: {UNIREF_VARIANTS}",
-            validation_alias=generate_aliases(VARIANT, "v"),
         ),
     ]
 
     log_interval: Annotated[
-        PositiveInt,
+        LogInterval,
         Field(
             default=UNIREF_LOG_INTERVAL,
-            description="How often (in number of processed entries) to emit a progress log message. Must be a positive integer.",
-            validation_alias=generate_aliases(LOG_INTERVAL),
         ),
     ]
 

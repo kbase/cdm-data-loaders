@@ -3,11 +3,8 @@
 from typing import Any, Final
 
 import dlt
-import dlt.common.configuration.accessors
 import pytest
 from frozendict import frozendict
-from pydantic import AliasChoices
-from pydantic_settings import BaseSettings
 
 from cdm_data_loaders.core.fields import (
     BUFFER_SIZE,
@@ -127,27 +124,3 @@ def check_settings(
     assert "pipeline_dir" in expected
     for attr, value in expected.items():
         assert getattr(settings_object, attr) == value
-
-
-"""Settings tests"""
-
-
-def parametrize_validation_aliases(
-    metafunc: pytest.Metafunc, settings_cls: type[BaseSettings], parameter: str = "validation_alias"
-) -> None:
-    """Dynamically generate tests for every alias of each user-settable field in a settings object."""
-    if not {parameter, "field_name"}.issubset(metafunc.fixturenames):
-        return
-    test_cases = []
-    for field_name in settings_cls.model_fields:
-        validation_alias = settings_cls.model_fields[field_name].validation_alias
-        if isinstance(validation_alias, AliasChoices):
-            test_cases.extend((alias, field_name) for alias in validation_alias.choices)
-        elif isinstance(validation_alias, str):
-            test_cases.append((validation_alias, field_name))
-
-    metafunc.parametrize(
-        (parameter, "field_name"),
-        test_cases,
-        ids=[f"{settings_cls.__name__}-{a}" for a, fn in test_cases],
-    )

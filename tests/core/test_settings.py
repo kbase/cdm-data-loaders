@@ -1,13 +1,14 @@
 """Tests for the Settings objects used by DLT pipelines."""
 
-from typing import Any
+from pathlib import Path
+from typing import Any, Self
 
 import dlt
 import pytest
 from frozendict import frozendict
-from pydantic import AliasChoices, AliasPath, Field, ValidationError
-from pydantic_settings import CliApp
-from argparse import ArgumentError
+from pydantic import ValidationError
+from pydantic_settings import CliApp, SettingsConfigDict, SettingsError
+
 from cdm_data_loaders.core.fields import (
     DEV_MODE,
     INPUT_DIR,
@@ -15,13 +16,15 @@ from cdm_data_loaders.core.fields import (
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
     VALID_DESTINATIONS,
-    generate_aliases,
 )
 from cdm_data_loaders.core.settings import (
+    CLI_SHORTCUTS,
+    DEFAULT_SETTINGS_CONFIG_DICT,
     BatchedFileInputSettings,
     CdmDataLoadersBase,
     CtsSettings,
     InputOutputSettings,
+    LoggerSettings,
 )
 from tests.core.conftest import (
     DEFAULT_BATCH_FILE_SETTINGS_RECONCILED,
@@ -34,25 +37,75 @@ from tests.core.conftest import (
     check_settings,
     make_settings,
     make_settings_autofill_config,
-    parametrize_validation_aliases,
 )
-from tests.helpers import make_cli_arg
+from tests.helpers import build_cli_arg_specs, make_cli_arg
+
+
+def _raw_values(settings_cls: type[CtsSettings]) -> frozendict[str, Any] | dict[str, Any]:
+    return TEST_BATCH_FILE_SETTINGS if settings_cls is BatchedFileInputSettings else TEST_CTS_SETTINGS
+
+
+def _reconciled_values(settings_cls: type[CtsSettings]) -> frozendict[str, Any] | dict[str, Any]:
+    return (
+        TEST_BATCH_FILE_SETTINGS_RECONCILED
+        if settings_cls is BatchedFileInputSettings
+        else TEST_CTS_SETTINGS_RECONCILED
+    )
+
 
 SETTINGS_CLASSES = [CtsSettings, BatchedFileInputSettings]
 
 INVALID_DESTINATIONS = ["gcs", "filesystem", "", "LocalFs", "S3"]
 INVALID_BOOLEAN_VALUES = ["what", "yep", "nope", "2", -1, "", " ", "wtf", None]
 
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """Dynamically parametrize CLI-alias tests from the real argparse parser.
+
+    `@pytest.mark.settings_cls.with_args(*classes)` selects which settings classes to
+    run against. `@pytest.mark.cli_fields.with_args(*field_names)` optionally restricts
+    to a subset of fields (e.g. just the boolean or destination fields); without it,
+    every CLI-exposed field on the class is used.
+    """
+    settings_marker = metafunc.definition.get_closest_marker("settings_cls")
+    if settings_marker is None:
+        return
+    settings_classes = settings_marker.args
+
+    field_marker = metafunc.definition.get_closest_marker("cli_fields")
+
+    wants_option = {"settings_cls", "field_name", "cli_option"}.issubset(metafunc.fixturenames)
+    wants_field_only = not wants_option and {"settings_cls", "field_name"}.issubset(metafunc.fixturenames)
+    if not (wants_option or wants_field_only):
+        return
+
+    argvalues: list[tuple[Any, ...]] = []
+    ids: list[str] = []
+    for settings_cls in settings_classes:
+        specs = build_cli_arg_specs(settings_cls)
+        field_names = field_marker.args if field_marker else tuple(specs)
+        for field_name in field_names:
+            if field_name not in specs:
+                continue  # this settings class doesn't define that field
+            if wants_option:
+                for option in specs[field_name].option_strings:
+                    argvalues.append((settings_cls, field_name, option))
+                    ids.append(f"{settings_cls.__name__}-{field_name}-{option}")
+            else:
+                argvalues.append((settings_cls, field_name))
+                ids.append(f"{settings_cls.__name__}-{field_name}")
+
+    if wants_option:
+        metafunc.parametrize(("settings_cls", "field_name", "cli_option"), argvalues, ids=ids)
+    else:
+        metafunc.parametrize(("settings_cls", "field_name"), argvalues, ids=ids)
+
+
 S3 = "is_s3"
 OUT = OUTPUT_DIR
 RAW = "raw_data_dir"
 PIPE = "pipeline_dir"
 
-
-# argument aliases for the fields, used for CLI parsing
-ARG_ALIASES: frozendict[str, list[str]] = frozendict(
-    {k: v.validation_alias.choices for k, v in BatchedFileInputSettings.model_fields.items()}
-)
 
 # manually specify to avoid recapitulating logic
 OUTPUT_PATHS: dict[str, dict[str, Any]] = {
@@ -138,9 +191,6 @@ TRUE_FALSE_VALUES = [
 ]
 
 
-# CdmDataLoadersBase.check_aliases.
-
-
 # Baseline: no aliases at all
 def test_check_aliases_no_additional_fields() -> None:
     """A subclass that adds no fields beyond the base does not raise."""
@@ -151,278 +201,213 @@ def test_check_aliases_no_additional_fields() -> None:
     EmptySettings()
 
 
-def test_check_aliases_fields_with_no_validation_alias() -> None:
-    """Fields with no validation_alias are distinguished by field name only."""
+def test_check_aliases_fields_with_no_alias() -> None:
+    """Fields with no alias are distinguished by field name only."""
 
     class PlainSettings(CdmDataLoadersBase):
         field_a: str = "a"
         field_b: str = "b"
 
-    PlainSettings()
+        def cli_cmd(self) -> Self:
+            return self
+
+    ps = PlainSettings(field_a="whatever", field_b="something")
+    assert ps.field_a == "whatever"
+    assert ps.field_b == "something"
+
+    ps_from_cmd_line = CliApp.run(PlainSettings, cli_args=["--field-a", "whatever", "--field-b", "something"])
+    assert ps == ps_from_cmd_line
 
 
-"""
-Alias type / collision matrix
+@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
+@pytest.mark.usefixtures("patch_dlt_config")
+def test_settings_cli_alias_parses_expected_value(
+    settings_cls: type[CtsSettings], field_name: str, cli_option: str
+) -> None:
+    """Every registered CLI flag for a field parses to the expected value.
 
-Each case builds a two-field class with the given validation_alias values
-and asserts whether a collision is or is not detected.
-"""
-
-ALIAS_TYPE_MATRIX_CASES = [
-    pytest.param(None, None, False, None, id="none-none"),
-    pytest.param(None, "x", False, None, id="none-vs-distinct-string"),
-    pytest.param("x", "y", False, None, id="distinct-strings"),
-    pytest.param("shared", "shared", True, "\nshared: field_a, field_b", id="identical-strings"),
-    pytest.param("field_a", None, False, None, id="self-referential-alias-no-collision"),
-    pytest.param(None, "field_a", True, "\nfield_a: field_a, field_b", id="alias-equals-other-fields-name"),
-    pytest.param(AliasChoices("x", "y"), AliasChoices("z", "w"), False, None, id="distinct-aliaschoices"),
-    pytest.param(
-        AliasChoices("shared", "y"),
-        AliasChoices("shared", "z"),
-        True,
-        "\nshared: field_a, field_b",
-        id="shared-within-aliaschoices",
-    ),
-    pytest.param(
-        "shared",
-        AliasChoices("shared", "z"),
-        True,
-        "\nshared: field_a, field_b",
-        id="string-vs-aliaschoices-shared",
-    ),
-    pytest.param(
-        AliasPath("nested", 0),
-        AliasPath("nested", 0),
-        True,
-        "\nAliasPath\['nested', 0\]: field_a, field_b",
-        id="identical-aliaspath",
-    ),
-    pytest.param(AliasPath("nested", 0), AliasPath("nested", 1), False, None, id="distinct-aliaspath-index"),
-    pytest.param(AliasPath("a", 0), AliasPath("b", 0), False, None, id="distinct-aliaspath-root"),
-    pytest.param(
-        AliasChoices("w", AliasPath("nested", 0)),
-        AliasChoices("q", AliasPath("nested", 0)),
-        True,
-        r"\nAliasPath\['nested', 0\]: field_a, field_b",
-        id="identical-aliaspath-within-aliaschoices",
-    ),
-    pytest.param(
-        AliasPath("nested", 0),
-        AliasChoices("q", AliasPath("nested", 0)),
-        True,
-        "\nAliasPath\['nested', 0\]: field_a, field_b",
-        id="bare-aliaspath-vs-aliaspath-in-aliaschoices",
-    ),
-    pytest.param(
-        AliasPath("nested", 0), AliasPath("nested", "0"), False, None, id="aliaspath-int-vs-str-index-not-equal"
-    ),
-]
+    Includes cli_shortcuts, kebab-case versions, validation aliases, etc.
+    """
+    value = str(_raw_values(settings_cls)[field_name])
+    settings = CliApp.run(settings_cls, cli_args=[cli_option, value])
+    assert getattr(settings, field_name) == _reconciled_values(settings_cls)[field_name]
 
 
-@pytest.mark.parametrize(("alias_a", "alias_b", "should_collide", "err_msg"), ALIAS_TYPE_MATRIX_CASES)
-def test_check_aliases_alias_type_matrix(alias_a: Any, alias_b: Any, should_collide: bool, err_msg: str | None) -> None:
-    """Exercise each combination of alias types across two fields."""
+@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
+@pytest.mark.usefixtures("patch_dlt_config")
+def test_settings_all_cli_aliases_equivalent(settings_cls: type[CtsSettings], field_name: str) -> None:
+    """All CLI flags registered for a single field must produce identical settings objects.
 
-    class TwoFieldSettings(CdmDataLoadersBase):
-        field_a: str = Field(default="a", validation_alias=alias_a)
-        field_b: str = Field(default="b", validation_alias=alias_b)
+    E.g. `--input-dir foo` and `-i foo` (if `-i` is a configured shortcut) must be
+    indistinguishable to the resulting settings instance.
+    """
+    specs = build_cli_arg_specs(settings_cls)
+    option_strings = specs[field_name].option_strings
+    if len(option_strings) < 2:
+        pytest.skip(f"{settings_cls.__name__}.{field_name} has only one registered CLI flag")
 
-    if should_collide:
-        with pytest.raises(ValueError, match=err_msg):
-            TwoFieldSettings()
-    else:
-        # Should not raise
-        TwoFieldSettings()
-
-
-def test_check_aliases_pydantic_raises_argparse_error() -> None:
-    """Conflicting AliasPaths and validation aliases cause an argparse error."""
-
-    class TwoFieldSettings(CdmDataLoadersBase):
-        field_a: str = Field(default="a", validation_alias=AliasPath("nested", 0))
-        field_b: str = Field(default="b", validation_alias="nested")
-
-    with pytest.raises(ArgumentError, match="argument --nested: conflicting option string: --nested"):
-        TwoFieldSettings()
+    value = str(_raw_values(settings_cls)[field_name])
+    results = [CliApp.run(settings_cls, cli_args=[option, value]) for option in option_strings]
+    assert all(r == results[0] for r in results), (
+        f"{settings_cls.__name__}.{field_name}: flags {option_strings} produced different results: {results}"
+    )
 
 
-def test_check_aliases_own_name_within_aliaschoices_no_false_positive() -> None:
-    """A field's own name appearing as one of several entries in its AliasChoices is A-OK."""
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+def test_configured_cli_shortcuts_are_registered(settings_cls: type[CtsSettings]) -> None:
+    """Every shortcut declared in CLI_SHORTCUTS must actually show up on the CLI parser.
 
-    class ValidSettings(CdmDataLoadersBase):
-        field_a: str = Field(default="a", validation_alias=AliasChoices("field_a", "extra"))
-        field_b: str = "b"
+    Guards against a `cli_shortcuts` target that doesn't match the (possibly
+    kebab-cased) argument name pydantic-settings registers -- which would otherwise
+    silently produce a documented shortcut nobody can use.
+    """
+    specs = build_cli_arg_specs(settings_cls)
+    for field_name, shortcuts in CLI_SHORTCUTS.items():
+        if field_name not in specs:
+            continue
+        for shortcut in [shortcuts] if isinstance(shortcuts, str) else shortcuts:
+            expected_flag = make_cli_arg(shortcut)
+            assert expected_flag in specs[field_name].option_strings, (
+                f"shortcut {shortcut!r} for {settings_cls.__name__}.{field_name} was not registered "
+                f"(got {specs[field_name].option_strings}); check the cli_shortcuts target matches "
+                "the post-kebab-case argument name"
+            )
 
-    ValidSettings()
+
+@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
+@pytest.mark.usefixtures("patch_dlt_config")
+def test_settings_env_var_parses_expected_value(
+    monkeypatch: pytest.MonkeyPatch, settings_cls: type[CtsSettings], field_name: str
+) -> None:
+    """Every field can be populated via its env-prefixed environment variable."""
+    env_prefix = settings_cls.model_config.get("env_prefix", "")
+    monkeypatch.setenv(f"{env_prefix}{field_name}".upper(), str(_raw_values(settings_cls)[field_name]))
+    settings = make_settings_autofill_config(settings_cls, {})
+    assert getattr(settings, field_name) == _reconciled_values(settings_cls)[field_name]
 
 
-# Intra-field duplication (single field, repeated alias values)
-def test_check_aliases_duplicate_string_alias_within_same_field() -> None:
-    """A field repeating the same string alias twice in its own AliasChoices does not raise."""
+@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
+@pytest.mark.usefixtures("patch_dlt_config")
+def test_settings_env_var_overrides_dlt_config(
+    monkeypatch: pytest.MonkeyPatch, settings_cls: type[CtsSettings], field_name: str
+) -> None:
+    """Environment variables should take precedence over dlt.config."""
+    if field_name != OUTPUT_DIR:
+        return
 
-    class QuestionableSettings(CdmDataLoadersBase):
-        field_a: str = Field(default="a", validation_alias=AliasChoices("dup", "dup"))
+    env_prefix = settings_cls.model_config.get("env_prefix", "")
+    override_value = "/env/override/path"
+    monkeypatch.setenv(f"{env_prefix}{field_name}".upper(), override_value)
 
-    QuestionableSettings()
+    settings = make_settings_autofill_config(settings_cls, {})
+    assert settings.output_dir == override_value
 
 
-def test_check_aliases_duplicate_aliaspath_within_same_field() -> None:
-    """A field repeating an AliasPath with an identical path twice in its own AliasChoices does not raise."""
+# holy crap, that ain't right
+def test_check_aliases_shortcut_matches_field_name_raises() -> None:
+    """A shortcut identical to another field's real name is rejected."""
+    with pytest.raises(SettingsError, match="' is claimed by both '"):
 
-    class QuestionableSettings(CdmDataLoadersBase):
-        field_a: str = Field(
-            default="a",
-            validation_alias=AliasChoices(AliasPath("nested", 0), AliasPath("nested", 0)),
+        class ShortcutMatchesFieldName(CdmDataLoadersBase):
+            alpha: str = "a"
+            beta: str = "b"
+
+            model_config = SettingsConfigDict(
+                **DEFAULT_SETTINGS_CONFIG_DICT,
+                cli_shortcuts={"alpha": "beta"},
+            )
+
+
+def test_check_aliases_duplicate_shortcut_raises() -> None:
+    """Two fields cannot be assigned the same shortcut."""
+    with pytest.raises(SettingsError, match="' is claimed by both '"):
+
+        class DuplicateShortcuts(CdmDataLoadersBase):
+            alpha: str = "a"
+            beta: str = "b"
+
+            model_config = SettingsConfigDict(
+                **DEFAULT_SETTINGS_CONFIG_DICT,
+                cli_shortcuts={"alpha": "x", "beta": "x"},
+            )
+
+
+def test_check_aliases_self_referential_shortcut_is_allowed() -> None:
+    """A shortcut that maps a field to its own kebab-case name is a harmless no-op."""
+
+    class SelfShortcut(CdmDataLoadersBase):
+        output_dir: str = "/tmp"
+
+        model_config = SettingsConfigDict(
+            **DEFAULT_SETTINGS_CONFIG_DICT,
+            cli_shortcuts={"output_dir": "output-dir"},
         )
 
-    # Should not raise
-    QuestionableSettings()
+    SelfShortcut()
 
 
-# Multi-field, multi-collision scenarios
-def test_check_aliases_three_way_string_collision() -> None:
-    """A shared alias across three fields lists all three field names.
+def test_check_aliases_kebab_case_collision_raises() -> None:
+    """A field's kebab-cased CLI name cannot collide with another field's shortcut."""
+    with pytest.raises(SettingsError, match="'log-config-file' is claimed by both 'log_config_file' and 'other'"):
 
-    Field names are emitted in alphabetical order.
+        class KebabCollision(CdmDataLoadersBase):
+            log_config_file: str = "log.json"
+            other: str = "x"
+
+            model_config = SettingsConfigDict(
+                **DEFAULT_SETTINGS_CONFIG_DICT,
+                cli_shortcuts={"other": "log-config-file"},
+            )
+
+
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+def test_settings_classes_have_no_cli_collisions(settings_cls: type[CtsSettings]) -> None:
+    """Building the real parser for each production settings class must not raise an error.
+
+    This is a regression guard against accidentally reusing a shortcut or alias.
     """
-
-    class InvalidSettings(CdmDataLoadersBase):
-        field_c: str = Field(default="c", validation_alias="shared")
-        field_b: str = Field(default="b", validation_alias="shared")
-        field_a: str = Field(default="a", validation_alias="shared")
-
-    # field names are emitted in alphabetical order
-    with pytest.raises(ValueError, match=r"shared: field_a, field_b, field_c"):
-        InvalidSettings()
+    # already ran at class-definition time; call again to be explicit
+    settings_cls.check_aliases()
+    # raises ArgumentError on any collision
+    build_cli_arg_specs(settings_cls)
 
 
-def test_check_aliases_multiple_independent_collisions_reported() -> None:
-    """A field with two aliases that collide with aliases for other fields shows up twice in the error message.
+# CLI App: ignore extra properties
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+@pytest.mark.usefixtures("patch_dlt_config")
+def test_cli_app_run_invalid_params_ignored(settings_cls: type[CtsSettings]) -> None:
+    """Test that invalid parameter values are ignored."""
+    s = CliApp.run(
+        settings_cls,
+        cli_args=[
+            "--some_random_arg",
+            "some value",
+            "-q",
+            "answer",
+        ],
+    )
+    output = s.model_dump()
 
-    Errors are sorted alphabetically by alias.
-    """
-
-    class InvalidSettings(CdmDataLoadersBase):
-        field_a: str = Field(default="a", validation_alias=AliasChoices("alias_z", "alias_x"))
-        field_b: str = Field(default="b", validation_alias="alias_z")
-        field_c: str = Field(default="c", validation_alias="alias_x")
-
-    with pytest.raises(ValueError, match="alias_x: field_a, field_c\nalias_z: field_a, field_b"):
-        InvalidSettings()
-
-
-def test_check_aliases_aliaspath_error_message_format() -> None:
-    """The error message renders a colliding AliasPath key using its path list."""
-
-    class InvalidSettings(CdmDataLoadersBase):
-        field_a: str = Field(default="a", validation_alias=AliasPath("nested", 0))
-        field_b: str = Field(default="b", validation_alias=AliasPath("nested", 0))
-
-    with pytest.raises(
-        ValueError, match=r"The following aliases are used more than once:\nAliasPath\['nested', 0\]: field_a, field_b"
-    ):
-        InvalidSettings()
+    assert "some value" not in output.values()
+    assert "answer" not in output.values()
 
 
-# Inheritance
-def test_check_aliases_inherited_field_collision() -> None:
-    """A subclass field whose alias matches a field name inherited from a parent class is caught."""
-
-    class BaseFieldSettings(CdmDataLoadersBase):
-        field_a: str = "a"
-
-    class ChildFieldSettings(BaseFieldSettings):
-        field_b: str = Field(default="b", validation_alias="field_a")
-
-    with pytest.raises(ValueError, match=r"field_a: field_a, field_b"):
-        ChildFieldSettings()
+# LoggerSettings
 
 
-def test_check_aliases_inherited_field_no_collision() -> None:
-    """A subclass field with a distinct alias does not collide with an inherited field."""
-
-    class BaseFieldSettings(CdmDataLoadersBase):
-        field_a: str = "a"
-
-    class ChildFieldSettings(BaseFieldSettings):
-        field_b: str = Field(default="b", validation_alias="unrelated")
-
-    ChildFieldSettings()
-
-
-# alias=... keyword and serialization_alias
-def test_check_aliases_alias_keyword_fallback_collision() -> None:
-    """Fields using `alias=...` are checked.
-
-    Pydantic assigns `validation_alias` from `alias` when `validation_alias` is not set explicitly.
-    """
-
-    class InvalidSettings(CdmDataLoadersBase):
-        field_a: str = Field(default="a", alias="shared")
-        field_b: str = Field(default="b", alias="shared")
-
-    with pytest.raises(ValueError, match=r"shared: field_a, field_b"):
-        InvalidSettings()
-
-
-def test_check_aliases_serialization_alias_ignored() -> None:
-    """Colliding serialization_alias values are not flagged, since only validation_alias affects input parsing."""
-
-    class ValidSettings(CdmDataLoadersBase):
-        field_a: str = Field(default="a", serialization_alias="shared")
-        field_b: str = Field(default="b", serialization_alias="shared")
-
-    ValidSettings()
-
-
-# Direct classmethod invocation (bypassing full model construction)
-def test_check_aliases_direct_call_returns_data_unchanged() -> None:
-    """check_aliases returns the input data unmodified when there is no collision."""
-    data = {"input_dir": "/tmp"}
-    result = CdmDataLoadersBase.check_aliases(data)  # pyright: ignore[reportCallIssue]
-    assert result is data
-
-
-def test_check_aliases_direct_call_error_message_exact() -> None:
-    """Calling check_aliases directly raises a plain ValueError with the constructed message."""
-
-    class InvalidSettings(CdmDataLoadersBase):
-        field_a: str = Field(default="a", validation_alias="shared")
-        field_b: str = Field(default="b", validation_alias="shared")
-
-    with pytest.raises(ValueError, match="The following aliases are used more than once:\nshared: field_a, field_b"):
-        InvalidSettings.check_aliases({})  # pyright: ignore[reportCallIssue]
-
-
-# Integration with generate_aliases
-def test_check_aliases_generate_aliases_short_flag_collision() -> None:
-    """Two fields using generate_aliases with the same short_alias collide."""
-
-    class InvalidSettings(CdmDataLoadersBase):
-        foo_field: str = Field(default="a", validation_alias=generate_aliases("foo_field", "x"))
-        bar_field: str = Field(default="b", validation_alias=generate_aliases("bar_field", "x"))
-
-    with pytest.raises(ValueError, match=r"x: bar_field, foo_field"):
-        InvalidSettings()
-
-
-def test_check_aliases_generate_aliases_distinct_short_flags_no_collision() -> None:
-    """Two fields using generate_aliases with distinct short_alias values do not collide."""
-
-    class ValidSettings(CdmDataLoadersBase):
-        foo_field: str = Field(default="a", validation_alias=generate_aliases("foo_field", "f"))
-        bar_field: str = Field(default="b", validation_alias=generate_aliases("bar_field", "b"))
-
-    # Should not raise
-    ValidSettings()
-
-
-# Integration: production settings classes
-@pytest.mark.parametrize("settings_cls", [InputOutputSettings, CtsSettings, BatchedFileInputSettings])
-def test_check_aliases_production_classes_no_collisions(settings_cls: type[CdmDataLoadersBase]) -> None:
-    """The real settings classes' generated aliases produce no collisions."""
-    # Should not raise
-    settings_cls.check_aliases({})  # pyright: ignore[reportCallIssue]
+@pytest.mark.parametrize(
+    "env_var_name",
+    ["CDL_log_config_file", "CDL_LOG_CONFIG_FILE"],
+)
+def test_logger_settings_alias_accepted_via_environment(
+    env_var_name: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Both hyphenated and underscored environment variable aliases are resolved to log_config_file."""
+    config_file = tmp_path / "log_conf.json"
+    config_file.write_text("{}")
+    monkeypatch.setenv(env_var_name, str(config_file))
+    settings = LoggerSettings()  # pyright: ignore[reportCallIssue]
+    assert settings.log_config_file == str(config_file)
 
 
 # InputOutputSettings
@@ -456,67 +441,6 @@ def test_input_output_settings_preserve_root() -> None:
     assert s.input_dir == "/"
     assert s.output_dir == "/"
     assert s.log_config_file == "log.json"
-
-
-def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
-    """Dynamically generate tests for every alias of each user-settable field in a settings object."""
-    marker = metafunc.definition.get_closest_marker("settings_cls")
-    if marker is None:
-        return
-    parametrize_validation_aliases(metafunc, marker.args[0])
-
-
-@pytest.mark.settings_cls.with_args(CtsSettings)
-@pytest.mark.usefixtures("patch_dlt_config")
-def test_cts_settings_aliases(request: pytest.FixtureRequest, validation_alias: str, field_name: str) -> None:
-    """Test the CtsSettings aliases for a given field name."""
-    settings_cls = request.node.get_closest_marker("settings_cls").args[0]
-    settings: CtsSettings = make_settings_autofill_config(
-        settings_cls, {validation_alias: TEST_CTS_SETTINGS[field_name]}
-    )
-    assert getattr(settings, field_name) == TEST_CTS_SETTINGS_RECONCILED[field_name]
-
-
-@pytest.mark.settings_cls.with_args(BatchedFileInputSettings)
-@pytest.mark.usefixtures("patch_dlt_config")
-def test_batch_file_settings_aliases(request: pytest.FixtureRequest, validation_alias: str, field_name: str) -> None:
-    """Test the BatchedFileInputSettings aliases for a given field name."""
-    settings_cls = request.node.get_closest_marker("settings_cls").args[0]
-    settings = make_settings_autofill_config(settings_cls, {validation_alias: TEST_BATCH_FILE_SETTINGS[field_name]})
-    assert getattr(settings, field_name) == TEST_BATCH_FILE_SETTINGS_RECONCILED[field_name]
-
-
-@pytest.mark.settings_cls.with_args(CtsSettings)
-@pytest.mark.usefixtures("patch_dlt_config")
-def test_cts_settings_cliapp_aliases(request: pytest.FixtureRequest, validation_alias: str, field_name: str) -> None:
-    """Test the CtsSettings aliases for a given model field name, initialised using CliApp.run."""
-    settings_cls = request.node.get_closest_marker("settings_cls").args[0]
-    settings = CliApp.run(
-        model_cls=settings_cls,
-        cli_args=[
-            f"{'--' if len(validation_alias) > 1 else '-'}{validation_alias}",
-            str(TEST_CTS_SETTINGS[field_name]),
-        ],
-    )
-    assert getattr(settings, field_name) == TEST_CTS_SETTINGS_RECONCILED[field_name]
-
-
-@pytest.mark.settings_cls.with_args(BatchedFileInputSettings)
-@pytest.mark.usefixtures("patch_dlt_config")
-def test_batch_file_settings_cliapp_aliases(
-    request: pytest.FixtureRequest, validation_alias: str, field_name: str
-) -> None:
-    """Test the BatchedFileInputSettings aliases for a given model field name, initialised using CliApp.run."""
-    settings_cls = request.node.get_closest_marker("settings_cls").args[0]
-
-    settings = CliApp.run(
-        model_cls=settings_cls,
-        cli_args=[
-            f"{'--' if len(validation_alias) > 1 else '-'}{validation_alias}",
-            str(TEST_BATCH_FILE_SETTINGS[field_name]),
-        ],
-    )
-    assert getattr(settings, field_name) == TEST_BATCH_FILE_SETTINGS_RECONCILED[field_name]
 
 
 # Generic settings tests
@@ -591,6 +515,30 @@ def test_cli_app_run_dlt_config_errors(
 
 # destination tests
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+@pytest.mark.parametrize(
+    ("use_destination", "output_dir", "should_raise"),
+    [
+        ("local_fs", "s3://bucket/path", True),
+        ("s3", "/local/path", True),
+        ("local_fs", "/local/path", False),
+        ("s3", "s3://bucket/path", False),
+    ],
+)
+@pytest.mark.usefixtures("patch_dlt_config")
+def test_settings_destination_output_mismatch(
+    settings_cls: type[CtsSettings], use_destination: str, output_dir: str, should_raise: bool
+) -> None:
+    """Mismatch between use_destination and output_dir should raise ValueError."""
+    if should_raise:
+        with pytest.raises(ValueError, match="Mismatch between output location and use_destination"):
+            make_settings_autofill_config(settings_cls, {USE_DESTINATION: use_destination, OUTPUT_DIR: output_dir})
+    else:
+        s = make_settings_autofill_config(settings_cls, {USE_DESTINATION: use_destination, OUTPUT_DIR: output_dir})
+        assert s.use_destination == use_destination
+        assert s.output_dir == output_dir
+
+
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(USE_DESTINATION, VALID_DESTINATIONS)
 @pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_valid_destinations_accepted(use_destination: str, settings_cls: type[CtsSettings]) -> None:
@@ -619,43 +567,40 @@ def test_settings_destination_has_no_bucket_url(settings_cls: type[CtsSettings])
         )
 
 
-# destination tests, CLI versions
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
+@pytest.mark.cli_fields.with_args(DEV_MODE, USE_OUTPUT_DIR_FOR_PIPELINE_METADATA)
+@pytest.mark.parametrize(("raw_value", "expected"), TRUE_FALSE_VALUES)
+@pytest.mark.usefixtures("patch_dlt_config")
+def test_settings_boolean_cli_variants_accepted(
+    settings_cls: type[CtsSettings], field_name: str, cli_option: str, raw_value: Any, expected: bool
+) -> None:
+    """Booleans can be correctly parsed from CLI args."""
+    settings = CliApp.run(settings_cls, cli_args=[cli_option, str(raw_value)])
+    assert getattr(settings, field_name) == expected
+
+
+@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
+@pytest.mark.cli_fields.with_args(DEV_MODE, USE_OUTPUT_DIR_FOR_PIPELINE_METADATA)
+@pytest.mark.parametrize("bad_value", INVALID_BOOLEAN_VALUES)
+@pytest.mark.usefixtures("patch_dlt_config", "field_name")
+def test_settings_boolean_cli_variants_rejected(
+    settings_cls: type[CtsSettings], cli_option: str, bad_value: Any
+) -> None:
+    """Invalid booleans are rejected appropriately on the CLI."""
+    with pytest.raises(ValidationError, match="Input should be a valid boolean"):
+        CliApp.run(settings_cls, cli_args=[cli_option, str(bad_value)])
+
+
+@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
+@pytest.mark.cli_fields.with_args(USE_DESTINATION)
 @pytest.mark.parametrize(USE_DESTINATION, VALID_DESTINATIONS)
-@pytest.mark.parametrize("destination_arg", ARG_ALIASES[USE_DESTINATION])
-@pytest.mark.usefixtures("patch_dlt_config")
-def test_cli_app_run_valid_destinations_accepted(
-    use_destination: str, settings_cls: type[CtsSettings], destination_arg: str
+@pytest.mark.usefixtures("patch_dlt_config", "field_name")
+def test_settings_cli_valid_destinations_accepted(
+    settings_cls: type[CtsSettings], cli_option: str, use_destination: str
 ) -> None:
-    """Test valid destinations using the command line."""
-    s = CliApp.run(settings_cls, cli_args=[make_cli_arg(destination_arg), use_destination])
-    assert s.use_destination == use_destination
-
-
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize(USE_DESTINATION, INVALID_DESTINATIONS)
-@pytest.mark.parametrize("destination_arg", ARG_ALIASES[USE_DESTINATION])
-@pytest.mark.usefixtures("patch_dlt_config")
-def test_cli_app_run_invalid_destinations_raises(
-    use_destination: str,
-    settings_cls: type[CtsSettings],
-    destination_arg: str,
-) -> None:
-    """Test invalid destinations using the command line."""
-    with pytest.raises(ValidationError, match="use_destination must be one of"):
-        CliApp.run(settings_cls, cli_args=[make_cli_arg(destination_arg), use_destination])
-
-
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize("destination_arg", ARG_ALIASES[USE_DESTINATION])
-def test_cli_app_run_destination_has_no_bucket_url(
-    settings_cls: type[CtsSettings], destination_arg: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Ensure that destinations have a bucket_url."""
-    dlt_config = {"destination": {"local_fs": None}}
-    monkeypatch.setattr(dlt, "config", dlt_config)
-    with pytest.raises(ValueError, match="No bucket_url specified for destination local_fs"):
-        CliApp.run(settings_cls, cli_args=[make_cli_arg(destination_arg), "local_fs"])
+    """Valid destinations are accepted through the CLI."""
+    settings = CliApp.run(settings_cls, cli_args=[cli_option, use_destination])
+    assert settings.use_destination == use_destination
 
 
 # boolean fields
@@ -683,34 +628,28 @@ def test_settings_invalid_boolean_variants_raises(
         make_settings_autofill_config(settings_cls, {input_arg_name: value})  # type: ignore[reportArgumentType]
 
 
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize(("input_arg", "value"), TRUE_FALSE_VALUES)
-@pytest.mark.parametrize("input_arg_name", [USE_OUTPUT_DIR_FOR_PIPELINE_METADATA, DEV_MODE])
-@pytest.mark.usefixtures("patch_dlt_config")
-def test_cli_app_run_boolean_variants_accepted(
-    input_arg: str, value: bool, input_arg_name: str, settings_cls: type[CtsSettings]
+@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
+@pytest.mark.cli_fields.with_args(USE_DESTINATION)
+@pytest.mark.parametrize(USE_DESTINATION, INVALID_DESTINATIONS)
+@pytest.mark.usefixtures("patch_dlt_config", "field_name")
+def test_settings_cli_invalid_destinations_raises(
+    settings_cls: type[CtsSettings], cli_option: str, use_destination: str
 ) -> None:
-    """Ensure that each invalid boolean value is throws an error."""
-    s = CliApp.run(settings_cls, cli_args=[make_cli_arg(input_arg_name), str(input_arg)])
-    if input_arg_name in ARG_ALIASES[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA]:
-        assert s.use_output_dir_for_pipeline_metadata == value
-    elif input_arg_name in ARG_ALIASES[DEV_MODE]:
-        assert s.dev_mode == value
+    """Invalid destinations are rejected on the CLI."""
+    with pytest.raises(ValidationError, match="use_destination must be one of"):
+        CliApp.run(settings_cls, cli_args=[cli_option, use_destination])
 
 
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize("value", INVALID_BOOLEAN_VALUES)
-@pytest.mark.parametrize(
-    "input_arg_name",
-    [*ARG_ALIASES[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA], *ARG_ALIASES[DEV_MODE]],
-)
-@pytest.mark.usefixtures("patch_dlt_config")
-def test_cli_app_run_invalid_boolean_values_raises(
-    value: bool, input_arg_name: str, settings_cls: type[CtsSettings]
+@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
+@pytest.mark.cli_fields.with_args(USE_DESTINATION)
+@pytest.mark.usefixtures("field_name")
+def test_settings_cli_destination_has_no_bucket_url(
+    settings_cls: type[CtsSettings], cli_option: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Ensure that each invalid boolean value is throws an error."""
-    with pytest.raises(ValidationError, match="Input should be a valid boolean"):
-        CliApp.run(settings_cls, cli_args=[make_cli_arg(input_arg_name), str(value)])
+    """Incomplete configs are rejected."""
+    monkeypatch.setattr(dlt, "config", {"destination": {"local_fs": None}})
+    with pytest.raises(ValueError, match="No bucket_url specified for destination local_fs"):
+        CliApp.run(settings_cls, cli_args=[cli_option, "local_fs"])
 
 
 # input and output path coercion
@@ -721,6 +660,7 @@ def test_cli_app_run_invalid_boolean_values_raises(
         ("/some/path/", "/some/path"),
         ("/some/path//", "/some/path"),
         ("/some/path", "/some/path"),
+        ("///", "/"),
         ("/", "/"),
         ("", ""),
     ],
@@ -739,26 +679,6 @@ def test_settings_trailing_slash_stripped(
     if field_name == OUTPUT_DIR and raw == "":
         expected = "/output_dir"
     assert getattr(s, field_name) == expected
-
-
-# CLI App: ignore extra properties
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.usefixtures("patch_dlt_config")
-def test_cli_app_run_invalid_params_ignored(settings_cls: type[CtsSettings]) -> None:
-    """Test that invalid parameter values are ignored."""
-    s = CliApp.run(
-        settings_cls,
-        cli_args=[
-            "--some_random_arg",
-            "some value",
-            "-q",
-            "answer",
-        ],
-    )
-    output = s.model_dump()
-
-    assert "some value" not in output.values()
-    assert "answer" not in output.values()
 
 
 # values set during reconcile_with_dlt_config

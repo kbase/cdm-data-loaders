@@ -15,17 +15,16 @@ import re
 from collections.abc import Generator
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any, Final
+from typing import Annotated, Any, Final
 
 import dlt
 from dlt.extract.items import DataItemWithMeta
 from dlt.sources.helpers import requests
 from dlt.sources.helpers.rest_client.client import RESTClient
-from pydantic import Field, computed_field
+from pydantic import Field, StringConstraints, computed_field
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.core.fields import generate_aliases
-from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
+from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
@@ -34,6 +33,8 @@ from cdm_data_loaders.utils.file_transfer.s3.streamer import stream_to_s3
 from cdm_data_loaders.utils.file_transfer.sync_client import FileDownloader
 
 logger: Logger = getLogger(__name__)
+
+NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 
 
 DATASET_NAME = "all_the_bacteria"
@@ -56,18 +57,20 @@ REQUIRED_ATB_FIELDNAMES = {"project", "filename", "url", "md5"}
 class AtbSettings(CtsSettings):
     """Configuration for running the AllTheBacteria import pipeline."""
 
-    model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT, cli_prog_name="all_the_bacteria")
-
-    version: str = Field(
-        default=ATB_VERSION,
-        description="Name of the current AllTheBacteria version",
-        validation_alias=generate_aliases(ATB_VERSION, short_alias="v"),
+    model_config = SettingsConfigDict(
+        **DEFAULT_SETTINGS_CONFIG_DICT,
+        cli_prog_name="all_the_bacteria",
+        cli_shortcuts={VERSION: "v", **CLI_SHORTCUTS},
     )
 
-    pattern_file: str | None = Field(
+    version: NonEmptyStr = Field(
+        default=ATB_VERSION,
+        description="Name of the current AllTheBacteria version",
+    )
+
+    pattern_file: NonEmptyStr | None = Field(
         default=None,
         description="Path, relative to the input dir, of a file containing patterns to match when downloading ATB files",
-        validation_alias=generate_aliases(PATTERN_FILE),
     )
 
     @computed_field
