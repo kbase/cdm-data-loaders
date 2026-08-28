@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 import dlt
 import pytest
 from frozendict import frozendict
-from pydantic_settings import CliApp
 
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import ENTRY_XML_TAG
 from cdm_data_loaders.pipelines import uniprot_kb as uniprot_module
@@ -24,9 +23,8 @@ from tests.core.conftest import (
     TEST_BATCH_FILE_SETTINGS_RECONCILED,
     check_settings,
     make_settings_autofill_config,
-    parametrize_validation_aliases,
 )
-from tests.helpers import make_cli_arg
+from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes
 
 # Directory of real UniProt XML fixtures (chunk_00001.xml ... chunk_00004.xml),
 # named so they match the NumericFileSequenceBatcher file-sequence regex.
@@ -56,29 +54,17 @@ def test_uniprot_settings_all_params_set() -> None:
 
 
 # model_fields
+def test_no_cli_param_clashes() -> None:
+    """Ensure that the settings object does not have any internal alias collisions."""
+    assert_no_cli_clashes(UniProtSettings)
 
 
-def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
-    """Dynamically generate tests for every alias of each user-settable field in a settings object."""
-    parametrize_validation_aliases(metafunc, UniProtSettings)
-
-
-def test_uniprot_settings(validation_alias: str, field_name: str) -> None:
-    """Test all fields and aliases in the UniProtSettings class."""
-    settings = make_settings_autofill_config(UniProtSettings, {validation_alias: TEST_SETTINGS[field_name]})
-    assert getattr(settings, field_name) == TEST_SETTINGS_RECONCILED[field_name]
-
-
-def test_uniprot_settings_cliapp_aliases(validation_alias: str, field_name: str) -> None:
-    """Test the UniProtSettings aliases for a given model field name, initialised using CliApp.run."""
-    settings = CliApp.run(
-        model_cls=UniProtSettings,
-        cli_args=[
-            make_cli_arg(validation_alias),
-            str(TEST_SETTINGS[field_name]),
-        ],
+@pytest.mark.parametrize("field_name", list(TEST_SETTINGS))
+def test_cli_fields_parse_correctly(field_name: str) -> None:
+    """Ensure that all fields and variants are parsed correctly."""
+    assert_cli_field_roundtrips(
+        UniProtSettings, field_name, TEST_SETTINGS[field_name], TEST_SETTINGS_RECONCILED[field_name]
     )
-    assert getattr(settings, field_name) == TEST_SETTINGS_RECONCILED[field_name]
 
 
 def test_cli_passes_settings_class_to_run_cli() -> None:

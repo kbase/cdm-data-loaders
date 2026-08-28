@@ -1,13 +1,13 @@
 """Common defaults for running pipelines on the KBase CTS."""
 
 import logging
-from collections.abc import Hashable
+from collections.abc import Hashable, Mapping
 from typing import Any, Self
 
 import dlt
 from frozendict import frozendict
-from pydantic import AliasChoices, AliasPath, computed_field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasPath, computed_field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 
 from cdm_data_loaders.core.fields import (
     BUFFER_SIZE,
@@ -56,10 +56,21 @@ DEFAULT_BATCH_FILE_SETTINGS = frozendict(
 
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
     {
-        "cli_parse_args": True,
         "cli_exit_on_error": False,
         "cli_ignore_unknown_args": True,
+        "cli_kebab_case": True,
+        "cli_parse_args": True,
+        "env_prefix": "CDL_",
         "str_strip_whitespace": True,
+    }
+)
+
+CLI_SHORTCUTS = frozendict(
+    {
+        INPUT_DIR.replace("_", "-"): "i",
+        OUTPUT_DIR.replace("_", "-"): "o",
+        USE_DESTINATION.replace("_", "-"): "d",
+        USE_OUTPUT_DIR_FOR_PIPELINE_METADATA.replace("_", "-"): "p",
     }
 )
 
@@ -94,36 +105,40 @@ class CdmDataLoadersBase(BaseSettings):
 
     model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT)
 
-    @model_validator(mode="before")
     @classmethod
-    def check_aliases(cls, data: Any) -> Any:  # noqa: ANN401
-        """Ensure there is no overlap in the aliases used, including AliasPath aliases.
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        """Validate the subclass's cli shortcuts and aliases."""
+        super().__pydantic_init_subclass__(**kwargs)
+        cls.check_aliases()
 
-        AliasPath aliases are compared by their `path` attribute. Two AliasPath
-        instances are treated as the same alias if and only if their `path` values
-        are equal. A plain string alias is never treated as equal to an AliasPath
-        alias.
+    @classmethod
+    def check_aliases(cls) -> None:
+        """Raise `SettingsError` if any two fields would resolve to the same CLI flag.
+
+        Each field implicitly claims two CLI names: its own name and its kebab-case
+        form (e.g. `log_config_file` claims both `log_config_file` and
+        `log-config-file`). Each `cli_shortcuts` entry additionally claims its
+        shortcut names on behalf of its target field. If any name ends up claimed by
+        two different fields, pydantic-settings would silently drop the second
+        registration instead of erroring, so we raise here instead.
         """
-        all_aliases: dict[Hashable, list[str]] = {}
-        for field_name, field_info in cls.model_fields.items():
-            name_alias_set: set[Hashable] = {field_name}
-            validation_alias = field_info.validation_alias
-            if validation_alias is not None:
-                if isinstance(validation_alias, AliasChoices):
-                    name_alias_set.update(_alias_key(va) for va in validation_alias.choices)
-                else:
-                    name_alias_set.add(_alias_key(validation_alias))
+        owners: dict[str, str] = {}
 
-            for alias in name_alias_set:
-                all_aliases.setdefault(alias, []).append(field_name)
+        def claim(name: str, owner: str) -> None:
+            other = owners.setdefault(name, owner)
+            if other != owner:
+                both = [f"{thing!r}" for thing in (other, owner)]
+                err_msg = f"{cls.__name__}: CLI name {name!r} is claimed by both {' and '.join(sorted(both))}"
+                raise SettingsError(err_msg)
 
-        field_collisions = {k: v for k, v in all_aliases.items() if len(v) > 1}
-        if field_collisions:
-            err_msg = "The following aliases are used more than once:\n" + "\n".join(
-                sorted([f"{_format_alias_key(k)}: {', '.join(sorted(v))}" for k, v in field_collisions.items()])
-            )
-            raise ValueError(err_msg)
-        return data
+        for field_name in cls.model_fields:
+            claim(field_name, field_name)
+            claim(field_name.replace("_", "-"), field_name)
+
+        cli_shortcuts: Mapping[str, str | list[str]] = cls.model_config.get("cli_shortcuts") or {}
+        for target, shortcuts in cli_shortcuts.items():
+            for shortcut in [shortcuts] if isinstance(shortcuts, str) else shortcuts:
+                claim(shortcut, target)
 
 
 class LoggerSettings(CdmDataLoadersBase):
@@ -135,20 +150,32 @@ class LoggerSettings(CdmDataLoadersBase):
 class InputOutputSettings(LoggerSettings):
     """Configuration with basic input and output settings."""
 
+    model_config = SettingsConfigDict(
+        **DEFAULT_SETTINGS_CONFIG_DICT,
+        cli_shortcuts={k.replace("_", "-"): v for k, v in CLI_SHORTCUTS.items() if k in [INPUT_DIR, OUTPUT_DIR]},
+    )
+
     input_dir: InputDir
     output_dir: OutputDir
 
-    @field_validator("input_dir", "output_dir", mode="after")
+    @field_validator(INPUT_DIR, OUTPUT_DIR, mode="after")
     @classmethod
     def validate_dir_path(cls, value: str) -> str:
         """Remove any trailing slashes from directory paths."""
         if value == "/":
             return value
+        if len(value) and not len(value.rstrip("/")):
+            return "/"
         return value.rstrip("/")
 
 
 class CtsSettings(InputOutputSettings):
     """Configuration for running a basic DLT pipeline."""
+
+    model_config = SettingsConfigDict(
+        **DEFAULT_SETTINGS_CONFIG_DICT,
+        cli_shortcuts=CLI_SHORTCUTS,
+    )
 
     dev_mode: DevMode
     use_destination: UseDestination
@@ -232,6 +259,10 @@ class CtsSettings(InputOutputSettings):
 
 class BatchedFileInputSettings(CtsSettings):
     """Settings object for an importer that deals with batches of files."""
+
+    model_config = SettingsConfigDict(
+        **DEFAULT_SETTINGS_CONFIG_DICT, cli_shortcuts={**CLI_SHORTCUTS, START_AT.replace("_", "-"): "s"}
+    )
 
     start_at: StartAt
     buffer_size: BufferSize

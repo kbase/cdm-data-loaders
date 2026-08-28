@@ -27,8 +27,7 @@ from pydantic import Field, field_validator
 from pydantic_settings import SettingsConfigDict
 from requests.exceptions import HTTPError
 
-from cdm_data_loaders.core.fields import generate_aliases
-from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
+from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
@@ -62,24 +61,26 @@ QUERY_TYPE: Final[str] = "query_type"
 class NcbiRestApiSettings(CtsSettings):
     """Configuration for running the NCBI REST API import pipeline."""
 
-    model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT, cli_prog_name="ncbi_rest_api")
+    model_config = SettingsConfigDict(
+        **DEFAULT_SETTINGS_CONFIG_DICT,
+        cli_prog_name="ncbi_rest_api",
+        cli_shortcuts={**CLI_SHORTCUTS, BATCH_SIZE: "b", QUERY_TYPE: "q"},
+    )
 
     batch_size: int = Field(
         default=MAX_IDS_PER_QUERY,
         description="Number of IDs to send in each request to the NCBI REST API.",
         ge=1,
         le=MAX_IDS_PER_QUERY,
-        validation_alias=generate_aliases(BATCH_SIZE, short_alias="b"),
     )
 
     query_type: str | None = Field(
         default=None,
         description="The type of query to perform, dataset or annotation. By default, both are performed.",
         pattern=QUERY_TYPE_REGEX,
-        validation_alias=generate_aliases(QUERY_TYPE, short_alias="q"),
     )
 
-    @field_validator("query_type", mode="before")
+    @field_validator(QUERY_TYPE, mode="before")
     @classmethod
     def trim_lc_query_type(cls, v: str | None) -> str | None:
         """Prepare the query_type parameter for validation.

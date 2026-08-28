@@ -6,11 +6,11 @@ from typing import Annotated, Any, Final
 
 import dlt
 from dlt.extract.items import DataItemWithMeta
-from pydantic import Field, PositiveInt
+from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.core.fields import LOG_INTERVAL, generate_aliases
-from cdm_data_loaders.core.settings import DEFAULT_SETTINGS_CONFIG_DICT, BatchedFileInputSettings
+from cdm_data_loaders.core.fields import START_AT, LogInterval
+from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, BatchedFileInputSettings
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import ENTRY_XML_TAG, parse_uniprot_entry
 from cdm_data_loaders.pipelines.core import (
     run_cli,
@@ -26,16 +26,13 @@ class UniProtSettings(BatchedFileInputSettings):
     """Configuration for running the UniProt KB import pipeline."""
 
     model_config = SettingsConfigDict(
-        **DEFAULT_SETTINGS_CONFIG_DICT,
-        cli_prog_name="uniprot",
+        **DEFAULT_SETTINGS_CONFIG_DICT, cli_prog_name="uniprot", cli_shortcuts={**CLI_SHORTCUTS, START_AT: "s"}
     )
 
     log_interval: Annotated[
-        PositiveInt,
+        LogInterval,
         Field(
             default=UNIPROT_LOG_INTERVAL,
-            description="How often (in number of processed entries) to emit a progress log message. Must be a positive integer.",
-            validation_alias=generate_aliases(LOG_INTERVAL),
         ),
     ]
 

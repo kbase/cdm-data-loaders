@@ -163,19 +163,6 @@ def test_logger_settings_with_without_params(log_config_file_is_none: bool) -> N
     assert settings.log_config_file is None
 
 
-@pytest.mark.parametrize(
-    "env_var_name",
-    ["log_config_file", "LOG_CONFIG_FILE", "log-config-file", "LOG-CONFIG-FILE"],
-)
-def test_logger_settings_alias_accepted_via_environment(
-    env_var_name: str, monkeypatch: pytest.MonkeyPatch, yaml_config_file: Path
-) -> None:
-    """Both hyphenated and underscored environment variable aliases are resolved to log_config_file."""
-    monkeypatch.setenv(env_var_name, str(yaml_config_file))
-    settings = LoggerSettings()  # pyright: ignore[reportCallIssue]
-    assert settings.log_config_file == str(yaml_config_file)
-
-
 # _load_config_from_path
 
 

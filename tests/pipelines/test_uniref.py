@@ -25,9 +25,8 @@ from tests.core.conftest import (
     TEST_BATCH_FILE_SETTINGS_RECONCILED,
     check_settings,
     make_settings_autofill_config,
-    parametrize_validation_aliases,
 )
-from tests.helpers import make_cli_arg
+from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes, make_cli_arg
 
 START_AT_VALUE = 25
 START_AT_STRING = "25"
@@ -47,7 +46,7 @@ TEST_SETTINGS_RECONCILED = frozendict(
     {**TEST_BATCH_FILE_SETTINGS_RECONCILED, VARIANT: TEST_DEFAULT_UNIREF_VARIANT},
 )
 
-UNIREF_VARIANT_ALIASES = UnirefSettings.model_fields[VARIANT].validation_alias.choices
+UNIREF_VARIANT_ALIASES = ["v", "variant"]
 
 
 @pytest.fixture(params=UNIREF_VARIANTS)
@@ -62,11 +61,37 @@ def test_settings(uniref_variant_value: str) -> UnirefSettings:
     return make_settings_autofill_config(UnirefSettings, {VARIANT: uniref_variant_value, "input_dir": "/fake/input"})  # type: ignore[reportReturnType]
 
 
+def test_uniref_settings_all_params_set() -> None:
+    """Ensure that settings are set correctly when all args are specified.
+
+    Note that TEST_SETTINGS includes a value for pipeline_dir.
+    """
+    s = make_settings_autofill_config(UnirefSettings, TEST_SETTINGS)  # type: ignore[reportReturnType]
+    check_settings(s, TEST_SETTINGS_RECONCILED)
+
+
+# model_fields
+def test_no_cli_param_clashes() -> None:
+    """Ensure that the settings object does not have any internal alias collisions."""
+    assert_no_cli_clashes(UnirefSettings)
+
+
+@pytest.mark.parametrize("field_name", list(TEST_SETTINGS))
+def test_cli_fields_parse_correctly(field_name: str) -> None:
+    """Ensure that all fields and variants are parsed correctly."""
+    assert_cli_field_roundtrips(
+        UnirefSettings,
+        field_name,
+        TEST_SETTINGS[field_name],
+        TEST_SETTINGS_RECONCILED[field_name],
+        {VARIANT: TEST_SETTINGS[VARIANT]},
+    )
+
+
 @pytest.mark.parametrize("uniref_variant_value", UNIREF_VARIANTS)
-@pytest.mark.parametrize(VARIANT, UNIREF_VARIANT_ALIASES)
-def test_settings_valid_variants_accepted(uniref_variant_value: str, variant: str) -> None:
+def test_settings_valid_variants_accepted(uniref_variant_value: str) -> None:
     """Ensure that each valid variant value is accepted without error."""
-    s = make_settings_autofill_config(UnirefSettings, {variant: uniref_variant_value})
+    s = make_settings_autofill_config(UnirefSettings, {VARIANT: uniref_variant_value})
     assert isinstance(s, UnirefSettings)
     assert s.variant == uniref_variant_value
 
@@ -146,42 +171,6 @@ def test_cli_invalid_variant_and_destination_via_cli_raises(value: str, variant:
     # Check that both errors are present in the exception message
     exc_message = str(exc_info.value)
     assert "Value error, UniRef variant must be one of" in exc_message
-
-
-def test_make_settings_all_params_set() -> None:
-    """Ensure that settings are set correctly when all args are specified.
-
-    Note that TEST_SETTINGS includes a value for pipeline_dir.
-    """
-    s = make_settings_autofill_config(UnirefSettings, TEST_SETTINGS)
-    check_settings(s, TEST_SETTINGS_RECONCILED)
-
-
-def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
-    """Dynamically generate tests for every alias of each user-settable field in a settings object."""
-    parametrize_validation_aliases(metafunc, UnirefSettings)
-
-
-def test_uniref_settings(validation_alias: str, field_name: str) -> None:
-    """Test all fields and aliases in the UnirefSettings class."""
-    settings = make_settings_autofill_config(
-        UnirefSettings, {"variant": "90", validation_alias: TEST_SETTINGS[field_name]}
-    )
-    assert getattr(settings, field_name) == TEST_SETTINGS_RECONCILED[field_name]
-
-
-def test_uniref_settings_cliapp_aliases(validation_alias: str, field_name: str) -> None:
-    """Test the UnirefSettings aliases for a given model field name, initialised using CliApp.run."""
-    settings = CliApp.run(
-        model_cls=UnirefSettings,
-        cli_args=[
-            "--variant",
-            "90",
-            make_cli_arg(validation_alias),
-            str(TEST_SETTINGS[field_name]),
-        ],
-    )
-    assert getattr(settings, field_name) == TEST_SETTINGS_RECONCILED[field_name]
 
 
 def test_cli_passes_settings_class_to_run_cli() -> None:
