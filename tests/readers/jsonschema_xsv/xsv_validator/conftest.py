@@ -18,6 +18,9 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     HEADER_SUFFIX,
     SEP_TO_EXT,
     CleanerValidatorArgs,
+)
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
+    ValidatedSchema,
     generate_header,
 )
 
@@ -46,28 +49,46 @@ def qsv_cmd() -> str:
 
     If the qsv binary is not available, all tests that rely on this fixture are skipped.
     """
-    cmd = shutil.which("qsv") or os.environ.get("QSV_BIN", "./qsv")
-    if not Path(cmd).is_file():
+    cmd = shutil.which("qsv") or os.environ.get("QSV_BIN")
+    if not cmd or not Path(cmd).is_file():
         pytest.skip(f"qsv binary not found at {cmd!r}; set QSV_BIN to point at a real binary")
     return cmd
 
 
 @pytest.fixture(scope="session")
-def first_pass_schema() -> Path:
+def first_pass_schema_path() -> Path:
     """Path to the first-pass JSON Schema fixture."""
     return SCHEMAS_DIR / "first_pass_schema.json"
 
 
 @pytest.fixture(scope="session")
-def post_norm_schema() -> Path:
+def first_pass_validated_schema(first_pass_schema_path: Path) -> ValidatedSchema:
+    """ValidatedSchema object for the first pass schema."""
+    return ValidatedSchema(jsonschema=json.loads(first_pass_schema_path.read_bytes()))
+
+
+@pytest.fixture(scope="session")
+def post_norm_schema_path() -> Path:
     """Path to the post-normalisation JSON Schema fixture."""
     return SCHEMAS_DIR / "post_norm_schema.json"
 
 
 @pytest.fixture(scope="session")
-def derived_first_pass_schema() -> dict[str, Any]:
+def post_norm_validated_schema(post_norm_schema_path: Path) -> ValidatedSchema:
+    """ValidatedSchema object for the post-norm schema."""
+    return ValidatedSchema(jsonschema=json.loads(post_norm_schema_path.read_bytes()))
+
+
+@pytest.fixture(scope="session")
+def derived_first_pass_schema_path() -> Path:
     """First pass schema derived from post_norm_schema. Derivation performed manually."""
-    return json.loads((SCHEMAS_DIR / "derived_first_pass_schema.json").read_bytes())
+    return SCHEMAS_DIR / "derived_first_pass_schema.json"
+
+
+@pytest.fixture(scope="session")
+def derived_first_pass_schema(derived_first_pass_schema_path: Path) -> dict[str, Any]:
+    """Content of the schema at derived_first_pass_schema_path."""
+    return json.loads(derived_first_pass_schema_path.read_bytes())
 
 
 @pytest.fixture
@@ -207,8 +228,8 @@ def _make_args_factory(
     qsv_cmd: str,
     tmp_dir_path: Path,
     output_dir_path_derivatives: dict[str, Path],
-    first_pass_schema: Path,
-    post_norm_schema: Path,
+    first_pass_schema: ValidatedSchema,
+    post_norm_schema: ValidatedSchema,
 ) -> Callable[..., CleanerValidatorArgs]:
     """Build a `_make_args` factory closed over a fixed `qsv_cmd`."""
 
@@ -218,11 +239,12 @@ def _make_args_factory(
         comment_char: str = "#",
         null_regex: str | None = None,
         missing_header: bool = False,
-        first_pass_schema_override: Path | None = None,
-        post_norm_schema_override: Path | None = None,
+        first_pass_schema_override: ValidatedSchema | None = None,
+        post_norm_schema_override: ValidatedSchema | None = None,
     ) -> CleanerValidatorArgs:
+        # generate_header expects a (first pass) ValidatedSchema object
         header_file_path = generate_header(
-            first_pass_schema,
+            first_pass_schema_override or first_pass_schema,
             tmp_dir_path,
             header_file_name=f"header-{ord(delimiter)}.txt",
             delimiter=delimiter,
@@ -249,8 +271,8 @@ def _make_args_factory(
 def make_args(
     tmp_dir_path: Path,
     output_dir_path_derivatives: dict[str, Path],
-    first_pass_schema: Path,
-    post_norm_schema: Path,
+    first_pass_validated_schema: ValidatedSchema,
+    post_norm_validated_schema: ValidatedSchema,
     qsv_cmd: str,
 ) -> Callable[..., CleanerValidatorArgs]:
     """Factory fixture that builds a CleanerValidatorArgs, generating a matching header on the fly.
@@ -258,22 +280,24 @@ def make_args(
     `first_pass_schema`/`post_norm_schema` overrides only affect the schema path used by qsv
     validate commands; the header file is always generated from the known-good default schema.
     """
-    return _make_args_factory(qsv_cmd, tmp_dir_path, output_dir_path_derivatives, first_pass_schema, post_norm_schema)
+    return _make_args_factory(
+        qsv_cmd, tmp_dir_path, output_dir_path_derivatives, first_pass_validated_schema, post_norm_validated_schema
+    )
 
 
 @pytest.fixture
 def make_mock_args(
     tmp_dir_path: Path,
     output_dir_path_derivatives: dict[str, Path],
-    first_pass_schema: Path,
-    post_norm_schema: Path,
+    first_pass_validated_schema: ValidatedSchema,
+    post_norm_validated_schema: ValidatedSchema,
 ) -> Callable[..., CleanerValidatorArgs]:
     """Generate a set of CleanerValidatorArgs with an invalid qsv path.
 
     Use with `mock_qsv_run` for testing qsv commands with the qsv binary mocked out.
     """
     return _make_args_factory(
-        FAKE_QSV_CMD, tmp_dir_path, output_dir_path_derivatives, first_pass_schema, post_norm_schema
+        FAKE_QSV_CMD, tmp_dir_path, output_dir_path_derivatives, first_pass_validated_schema, post_norm_validated_schema
     )
 
 

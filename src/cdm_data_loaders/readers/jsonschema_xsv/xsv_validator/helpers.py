@@ -1,17 +1,14 @@
 """Helpers for the qsv validator."""
 
-import json
 import os
 import subprocess
+from dataclasses import dataclass
 from functools import cached_property
 from logging import Logger, getLogger
 from pathlib import Path
 from shutil import copy, move
-from typing import Annotated, Any, Final, Self
+from typing import Annotated, Final, Self
 
-import jsonschema
-import jsonschema.exceptions
-import jsonschema.validators
 from pydantic import (
     BaseModel,
     DirectoryPath,
@@ -19,8 +16,9 @@ from pydantic import (
     FilePath,
     StringConstraints,
     computed_field,
-    validate_call,
 )
+
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 CharStr = Annotated[str, StringConstraints(min_length=1, max_length=1)]
@@ -79,10 +77,12 @@ class CleanerValidatorArgs(BaseModel):
     :type xsv_file_path: FilePath
     :param header_file_path: path to the generated header file
     :type header_file_path: FilePath
+
     :param first_pass_schema: schema for initial validation of the data
-    :type first_pass_schema: FilePath
+    :type first_pass_schema: ValidatedSchema
     :param post_norm_schema: schema for validating data after cleaning and normalisation
-    :type post_norm_schema: FilePath
+    :type post_norm_schema: ValidatedSchema
+
     :param tmp_dir_path: temporary working directory
     :type tmp_dir_path: DirectoryPath
     :param qsv_output_dir_path: directory for qsv output from failed executions
@@ -111,8 +111,9 @@ class CleanerValidatorArgs(BaseModel):
 
     xsv_file_path: FilePath
     header_file_path: FilePath
-    first_pass_schema: FilePath
-    post_norm_schema: FilePath
+
+    first_pass_schema: ValidatedSchema
+    post_norm_schema: ValidatedSchema
 
     tmp_dir_path: DirectoryPath
     qsv_output_dir_path: DirectoryPath
@@ -227,125 +228,22 @@ def prepend_header(header_file_path: Path, xsv_file_path: Path, dest: Path) -> N
         out.write(xsv_file_path.read_bytes())
 
 
-def validate_jsonschema(schema_path: Path) -> dict[str, Any]:
-    """Ensure that a given data structure is a valid JSON schema.
+@dataclass
+class FileNames:
+    """Dataclass for storing derived file names."""
 
-    :param schema: JSON schema, loaded as a python data structure
-    :type schema: dict[str, Any]
-    :raises jsonschema.exceptions.SchemaError: if the schema is invalid
-    :return: validated JSON Schema
-    :rtype: dict[str, Any]
-    """
-    schema = json.loads(schema_path.read_bytes())
-
-    if not isinstance(schema, dict):
-        err_msg = f"Error reading schema at {schema_path!s}: JSON Schema must be a dictionary"
-        raise TypeError(err_msg)
-    # $schema is not required by the JSON Schema metaschema, but our standards are a little higher here...
-    if "$schema" not in schema:
-        err_msg = f"Error reading schema at {schema_path!s}: JSON Schema is missing the $schema keyword"
-        raise ValueError(err_msg)
-
-    # retrieve the appropriate validator for the schema and ensure it is valid
-    # if the $schema value is invalid, jsonschema will use the most recent draft by default and emit a warning
-    validator = jsonschema.validators.validator_for(schema)
-    try:
-        validator.check_schema(schema)
-    except (jsonschema.exceptions.SchemaError, jsonschema.exceptions.ValidationError):
-        logger.exception("Error validating JSON Schema at %s", str(schema_path))
-        raise
-    return schema
-
-
-def _get_schema_required_cols(schema_path: Path) -> tuple[dict[str, Any], list[str]]:
-    """Retrieve the schema object and required top-level columns from a JSON schema file.
-
-    Validates the input schema when the schema is read in.
-
-    :param schema_path: path to the schema file
-    :type schema_path: Path
-    :raises ValueError: if there are no required columns in the schema
-    :return: schema, required cols
-    :rtype: tuple[dict[str, Any], list[str]]
-    """
-    schema = validate_jsonschema(schema_path)
-
-    required_cols = schema.get("required")
-    if not isinstance(required_cols, list) or not required_cols:
-        err_msg = f"Could not find any required cols in {schema_path!s}"
-        raise ValueError(err_msg)
-
-    return schema, required_cols
-
-
-@validate_call
-def generate_first_pass_schema(schema_path: FilePath, output_dir: DirectoryPath) -> Path:
-    """Given a full schema file, generate a schema to perform a loose first-pass validation with.
-
-    The first pass schema is used for verifying that the top-level columns are correct; no further checks
-    are performed.
-
-    :param schema_path: path to the schema file
-    :type schema_path: FilePath
-    :param output_dir: directory to save the generated schema in
-    :type output_dir: DirectoryPath
-    :return: path to the first pass schema file
-    :rtype: Path
-    """
-    schema, required_cols = _get_schema_required_cols(schema_path)
-    new_schema = {k: v for k, v in schema.items() if k in ["$schema", "$id", "title", "required"]}
-
-    new_schema["type"] = "object"
-    new_schema["properties"] = {req: {"type": ["string", "null"]} for req in required_cols}
-
-    # retrieve the appropriate validator for the schema and ensure it is valid
-    validator = jsonschema.validators.validator_for(new_schema)
-    validator.check_schema(new_schema)
-
-    # save to the output dir as <schema_name>.first-pass.json
-    first_pass_schema_path = output_dir / f"{schema_path.stem}.first-pass.json"
-    json.dump(new_schema, first_pass_schema_path.open("w"), indent=2, sort_keys=True)
-
-    return first_pass_schema_path
-
-
-@validate_call
-def generate_header(
-    schema_path: FilePath,
-    target_dir: DirectoryPath,
-    header_file_name: NonEmptyStr = "header.txt",
-    delimiter: CharStr = "\t",
-) -> Path:
-    r"""Generate a header file for an xSV file from a JSON Schema.
-
-    If no file name is supplied, the header file is saved as `header.txt`.
-
-    The top level required properties are assumed to be the columns of the xSV file.
-
-    :param schema_path: path to the schema
-    :type schema_path: Path
-    :param target_dir: directory in which to save the file
-    :type target_dir: DirectoryPath
-    :param delimiter: delimiter to use for the headers, defaults to "\t"
-    :type delimiter: CharStr, optional
-    :param header_file_name: name for the header file, defaults to "header.txt"
-    :type header_file_name: str, optional
-    :raises TypeError: if the schema is not in the correct format (dictionary)
-    :raises ValueError: if the schema file has no `required` cols
-    :return: path to the newly-created header.txt file
-    :rtype: Path
-    """
-    _, required_cols = _get_schema_required_cols(schema_path)
-    header_file_path = target_dir / header_file_name
-    header_file_path.write_text(delimiter.join(required_cols) + "\n")
-    return header_file_path
+    valid_output: Path
+    errors: Path
+    valid_lines: Path
+    invalid_lines: Path
+    schema: Path
 
 
 def generate_qsv_validate_file_names(
     args: CleanerValidatorArgs,
     input_file_name: str,
     first_pass: bool = True,  # noqa: FBT001, FBT002
-) -> tuple[Path, Path, Path, Path]:
+) -> FileNames:
     """Compute the file names run_qsv_validate generates from a file with validation errors.
 
     :param args: arguments
@@ -354,19 +252,18 @@ def generate_qsv_validate_file_names(
     :type input_file_name: str
     :param first_pass: whether or not this is the first validation pass, defaults to True
     :type first_pass: bool, optional
-    :return: (valid_output_file, errors_file, valid_lines_file, invalid_lines_file)
-    :rtype: tuple[Path, Path, Path, Path]
+    :return: dataclass containing derived paths (valid_output, errors, valid_lines, invalid_lines, schema)
+    :rtype: FileNames
     """
-    # file name for validated lines: {file_base_name}-header-valid.ext
-    valid_output_file_name = (
-        f"{args.xsv_file_base_name}-first-pass{VALID_SUFFIX}{args.ext}"
-        if first_pass
-        else f"{args.xsv_file_base_name}-normalised-validated{VALID_SUFFIX}{args.ext}"
+    # file name stem for validated lines and schema: {file_base_name}-header-valid.ext
+    output_file_stem = (
+        f"{args.xsv_file_base_name}-first-pass" if first_pass else f"{args.xsv_file_base_name}-normalised-validated"
     )
 
-    valid_output_file = args.tmp_dir_path / valid_output_file_name
-    errors_file = args.tmp_dir_path / f"{input_file_name}{VALIDATION_ERRORS}"
-    valid_lines_file = args.tmp_dir_path / f"{input_file_name}.{args.valid_file_suffix}"
-    invalid_lines_file = args.tmp_dir_path / f"{input_file_name}.{args.invalid_file_suffix}"
-
-    return (valid_output_file, errors_file, valid_lines_file, invalid_lines_file)
+    return FileNames(
+        valid_output=args.tmp_dir_path / f"{output_file_stem}{VALID_SUFFIX}{args.ext}",
+        errors=args.tmp_dir_path / f"{input_file_name}{VALIDATION_ERRORS}",
+        valid_lines=args.tmp_dir_path / f"{input_file_name}.{args.valid_file_suffix}",
+        invalid_lines=args.tmp_dir_path / f"{input_file_name}.{args.invalid_file_suffix}",
+        schema=args.tmp_dir_path / f"{output_file_stem}.jsonschema.json",
+    )
