@@ -4,6 +4,7 @@
 Includes optional gzip compression and manifest files for tracking and resuming after a crash.
 """
 
+import fnmatch
 import gzip
 import json
 import logging
@@ -508,8 +509,8 @@ def _read_records_safely(path: Path) -> tuple[list[Any], int]:
     elif inner_suffix == ".jsonl":
         try:
             with opener(path, mode="rt", encoding="utf-8") as fh:
-                for line_no, line in enumerate(fh, start=1):
-                    line = line.strip()
+                for line_no, raw_line in enumerate(fh, start=1):
+                    line = raw_line.strip()
                     if not line:
                         continue
                     try:
@@ -530,6 +531,28 @@ def _read_records_safely(path: Path) -> tuple[list[Any], int]:
         n_errors += 1
 
     return records, n_errors
+
+
+def filter_by_glob(
+    files: list[Path],
+    pattern: str | None,
+    *,
+    match_full_path: bool = False,
+) -> list[Path]:
+    """Filter a list of files by a shell-style glob pattern (fnmatch
+    syntax: '*' matches any sequence of characters, '?' matches exactly
+    one character, '[seq]' matches any character in seq, '[!seq]'
+    matches any character not in seq).
+
+    If pattern is None, all files are returned unchanged. By default the
+    pattern is matched against just the filename (path.name); pass
+    match_full_path=True to match against the full path string instead,
+    e.g. for patterns spanning a directory component when using
+    recursive discovery.
+    """
+    if pattern is None:
+        return files
+    return [f for f in files if fnmatch.fnmatchcase(str(f) if match_full_path else f.name, pattern)]
 
 
 def consolidate_input_files(

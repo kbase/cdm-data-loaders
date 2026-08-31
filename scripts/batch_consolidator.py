@@ -64,6 +64,16 @@ class Settings(LoggerSettings):
         default=False,
         description="Instead of building files, re-validate existing output files against their manifest and exit.",
     )
+    file_glob: str | None = Field(
+        default=None,
+        description="Optional shell-style glob pattern (fnmatch syntax: * ? "
+        "[seq] [!seq]) to further restrict which files are consolidated, "
+        "matched against the filename only. This is applied in addition "
+        "to, not instead of, the recognized .json/.jsonl/.jsonl.gz suffix "
+        "check -- e.g. 'DSCF*' selects any recognized input file whose "
+        "name starts with 'DSCF', regardless of which of those suffixes "
+        "it has.",
+    )
 
     @field_validator("input_dir")
     @classmethod
@@ -94,16 +104,23 @@ def run_batch_consolidation(settings: Settings) -> None:
     settings.output_dir.mkdir(parents=True, exist_ok=True)
     fc.cleanup_orphaned_tmp_files(settings.output_dir)
 
-    files = fc.discover_input_files(settings.input_dir, settings.recursive)  # was: discover_json_files(...)
+    files = fc.discover_input_files(settings.input_dir, settings.recursive)
+    files = fc.filter_by_glob(files, settings.file_glob)
+
     if not files:
-        logger.warning("No .json/.jsonl file(s) found under %s", settings.input_dir)
+        logger.warning(
+            "No matching input file(s) found under %s%s",
+            settings.input_dir,
+            f" (glob: {settings.file_glob!r})" if settings.file_glob else "",
+        )
         return
 
     batches = make_batches(files, settings.batch_size)
     logger.info(
-        "Found %d input file(s) under %s; split into %d batch(es) of up to %d",
+        "Found %d input file(s) under %s%s; split into %d batch(es) of up to %d",
         len(files),
         settings.input_dir,
+        f" matching glob {settings.file_glob!r}" if settings.file_glob else "",
         len(batches),
         settings.batch_size,
     )
@@ -113,7 +130,7 @@ def run_batch_consolidation(settings: Settings) -> None:
         output_name = batch_output_name(batch_index, len(batches), settings.base_name)
         jobs.append(
             partial(
-                fc.consolidate_input_files,  # was: cc.consolidate_json_files
+                fc.consolidate_input_files,
                 batch_files,
                 settings.output_dir,
                 output_name,
