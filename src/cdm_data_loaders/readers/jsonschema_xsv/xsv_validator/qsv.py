@@ -1,5 +1,7 @@
 """Core qsv-interacting code for the xsv validator."""
 
+import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -18,12 +20,14 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     non_header_lines_present,
     prepend_header,
 )
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
 
 
 def qsv_check() -> str | None:
     """Check whether the qsv binary is available and whether it is functioning as expected."""
     # check for qsv
-    if qsv_cmd := shutil.which("qsv"):
+    qsv_cmd = shutil.which("qsv") or os.environ.get("QSV_BIN")
+    if qsv_cmd:
         err_msg = None
         try:
             # check qsv is functional
@@ -230,17 +234,17 @@ def run_qsv_null_replacement(args: CleanerValidatorArgs, input_file_name: str) -
 def run_qsv_validate(
     args: CleanerValidatorArgs,
     input_file_name: str,
-    schema: Path,
+    schema: ValidatedSchema,
     first_pass: bool = True,  # noqa: FBT001, FBT002
 ) -> str | None:
-    """Run the first pass of the validator over the file input_file_name.
+    """Run the validator over the file input_file_name.
 
     :param args: args for the cleaner validator
     :type args: CleanerValidatorArgs
     :param input_file_name: name of the input file
     :type input_file_name: str
-    :param schema: Path to the schema file to use for validation
-    :type schema: Path
+    :param schema: ValidatedSchema object to use for validation
+    :type schema: ValidatedSchema
     :param first_pass: if True, this runs the first pass validator, which does not check format
     :type first_pass: bool, defaults to True
     :return: name of the output file if all went ok; otherwise None
@@ -252,9 +256,10 @@ def run_qsv_validate(
         return None
 
     # generate the full paths for the derived files
-    (valid_output_file, errors_file, valid_lines_file, invalid_lines_file) = generate_qsv_validate_file_names(
-        args, input_file_name, first_pass=first_pass
-    )
+    files = generate_qsv_validate_file_names(args, input_file_name, first_pass=first_pass)
+
+    # save the schema to a temp file
+    files.schema.write_text(json.dumps(schema.jsonschema))
 
     cmd = [
         args.qsv_cmd,
@@ -272,19 +277,19 @@ def run_qsv_validate(
         "--invalid",
         args.invalid_file_suffix,
         "--valid-output",
-        str(valid_output_file),
+        str(files.valid_output),
         # file to validate
         str(args.tmp_dir_path / input_file_name),
         # the schema
-        str(schema),
+        str(files.schema),
     ]
     result = _run_qsv_step([c for c in cmd if c], args)
     if result is None:
         return None
 
     # check whether the output was all valid -- if so, --valid-output will have been produced
-    if valid_output_file.is_file():
-        return valid_output_file.name
+    if files.valid_output.is_file():
+        return files.valid_output.name
 
     # otherwise, the return code will have useful info, so save STDERR as an error message
     if result.returncode != 0:
@@ -297,9 +302,9 @@ def run_qsv_validate(
     # comments are automatically removed and do not appear in .valid or .invalid files
     # headers appear in the valid_lines_file
 
-    valid_lines_found = valid_lines_file.exists() and non_header_lines_present(valid_lines_file)
+    valid_lines_found = files.valid_lines.exists() and non_header_lines_present(files.valid_lines)
 
-    for f in [errors_file, invalid_lines_file]:
+    for f in [files.errors, files.invalid_lines]:
         if f.is_file():
             # copy to the output directory for later consumption
             copy_safely(f, args.qsv_output_dir_path / f.name, args)
@@ -308,9 +313,9 @@ def run_qsv_validate(
     # return the new file name
     if valid_lines_found:
         # copy to the output folder
-        copy_safely(valid_lines_file, args.qsv_output_dir_path / valid_lines_file.name, args)
+        copy_safely(files.valid_lines, args.qsv_output_dir_path / files.valid_lines.name, args)
         # rename the existing file for use as the output file
-        if move_safely(valid_lines_file, valid_output_file, args):
-            return valid_output_file.name
+        if move_safely(files.valid_lines, files.valid_output, args):
+            return files.valid_output.name
 
     return None

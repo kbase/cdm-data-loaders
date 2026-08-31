@@ -14,13 +14,7 @@
             "type": [
                 "string"
             ],
-            "pattern": "^[12][0-9]{3}/[01][0-9]/[0-3][0-9]$",
-            "x-transform-list": [
-                {
-                    "x-source": "some_field",
-                    "x-transform": "split_prefix"
-                }
-            ]
+            "pattern": "^[12][0-9]{3}/[01][0-9]/[0-3][0-9]$"
         }
     },
     "required": [
@@ -31,17 +25,6 @@
     "type": "object",
     "x-xsv-config": {
         "x-has-header": false,
-        "x-delimiter": "\t",
-        "x-comment-char": "#",
-        "x-quote": "\"",
-        "x-escape": "\\",
-        "x-null-regex": "",
-        "x-null-cols": [],
-        "x-quote-style": [
-            "all",
-            "necessary",
-            "nonnumeric",
-            "never"
-        ]
+        "x-delimiter": "\t"
     }
 }
