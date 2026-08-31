@@ -10,7 +10,7 @@ from functools import partial
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import DirectoryPath, Field, field_validator
+from pydantic import DirectoryPath, Field, field_validator, model_validator
 from pydantic_settings import CliImplicitFlag, SettingsConfigDict
 
 import cdm_data_loaders.utils.file_consolidator as fc
@@ -73,11 +73,10 @@ class Settings(LoggerSettings):
             raise ValueError(msg)
         return v
 
-
-def discover_json_files(input_dir: Path, recursive: bool) -> list[Path]:
-    """Find and sort all .json files under input_dir."""
-    pattern = "**/*.json" if recursive else "*.json"
-    return sorted(input_dir.glob(pattern))
+    @model_validator(mode="after")
+    def _check_dirs_unrelated(self) -> "Settings":
+        fc.check_dirs_unrelated({"input_dir": self.input_dir, "output_dir": self.output_dir})
+        return self
 
 
 def make_batches(files: list[Path], batch_size: int) -> list[list[Path]]:
@@ -92,22 +91,17 @@ def batch_output_name(batch_index: int, n_batches: int, base_name: str = "batch_
 
 
 def run_batch_consolidation(settings: Settings) -> None:
-    """Run the file consolidation itself.
-
-    :param settings: settings object
-    :type settings: Settings
-    """
     settings.output_dir.mkdir(parents=True, exist_ok=True)
     fc.cleanup_orphaned_tmp_files(settings.output_dir)
 
-    files = discover_json_files(settings.input_dir, settings.recursive)
+    files = fc.discover_input_files(settings.input_dir, settings.recursive)  # was: discover_json_files(...)
     if not files:
-        logger.warning("No .json files found under %s", settings.input_dir)
+        logger.warning("No .json/.jsonl file(s) found under %s", settings.input_dir)
         return
 
     batches = make_batches(files, settings.batch_size)
     logger.info(
-        "Found %d .json file(s) under %s; split into %d batch(es) of up to %d",
+        "Found %d input file(s) under %s; split into %d batch(es) of up to %d",
         len(files),
         settings.input_dir,
         len(batches),
@@ -119,7 +113,7 @@ def run_batch_consolidation(settings: Settings) -> None:
         output_name = batch_output_name(batch_index, len(batches), settings.base_name)
         jobs.append(
             partial(
-                fc.consolidate_json_files,
+                fc.consolidate_input_files,  # was: cc.consolidate_json_files
                 batch_files,
                 settings.output_dir,
                 output_name,

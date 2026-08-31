@@ -36,11 +36,12 @@ BASE_DIR: Final[dict[str, Path]] = {
 NCBI_ASSEMBLY_ID_REGEX = re.compile(pattern=r"^(GC[AF]_\d{3})(\d{3})(\d{3})\.(\d+)$")
 PARENT_DIR_REGEX = re.compile(r"^GC[AF]_\d{3}$")
 CHILD_DIR_REGEX = re.compile(r"^\d{3}$")
+ASSEMBLY_INPUT_SUFFIXES: tuple[str, ...] = (".json", ".jsonl")
 
 
-def gen_output_path(output_dir: Path, assembly_id: str) -> Path:
+def gen_output_path(output_dir: Path, assembly_id: str, suffix: str = ".json") -> Path:
     """Generate an appropriate output path for the assembly."""
-    assembly_file_name = f"{assembly_id}.json"
+    assembly_file_name = f"{assembly_id}{suffix}"
     match = NCBI_ASSEMBLY_ID_REGEX.match(assembly_id)
     if not match:
         msg = f"assembly_id '{assembly_id}' does not match expected pattern"
@@ -125,14 +126,42 @@ class Settings(LoggerSettings):
             self.output_dir = BASE_DIR[self.target_dataset] / "annotation_report"
         return self
 
+    @model_validator(mode="after")
+    def _check_dirs_unrelated(self) -> "Settings":
+        jsonl_dir = BASE_DIR[self.target_dataset] / "annotation_report_jsonl"
+        target_dir = BASE_DIR[self.target_dataset] / f"{self.target_dataset}_ids"
+        fc.check_dirs_unrelated(
+            {
+                "output_dir": self.output_dir,
+                "annotation_report_jsonl_dir": jsonl_dir,
+                "target_dir": target_dir,
+            }
+        )
+        return self
+
 
 # Core script logic
+def find_existing_assembly_path(output_dir: Path, assembly_id: str) -> Path | None:
+    """Return whichever per-assembly file (.json or .jsonl) exists on
+    disk for this assembly_id, or None if neither does. The parent
+    directory is identical regardless of which suffix is used, since it's
+    derived from the assembly ID's digits, not the file extension.
+    """
+    for suffix in ASSEMBLY_INPUT_SUFFIXES:
+        candidate = gen_output_path(output_dir, assembly_id, suffix=suffix)
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def find_redo_ids_and_incomplete_dirs(
     target_dir: Path,
     output_dir: Path,
     redo_file: Path,
 ) -> set[Path]:
-    """Scan ID files, atomically write missing assembly IDs to the redo file, and return the set of leaf (child) output dirs missing files."""
+    """Scan ID files, atomically write missing assembly IDs to the redo
+    file, and return the set of leaf (child) output dirs missing files.
+    """
     incomplete_dirs: set[Path] = set()
     missing_ids: list[str] = []
 
@@ -142,10 +171,10 @@ def find_redo_ids_and_incomplete_dirs(
                 assembly_id = line.strip()
                 if not assembly_id:
                     continue
-                out_path = gen_output_path(output_dir, assembly_id)
-                if not out_path.exists():
+
+                if find_existing_assembly_path(output_dir, assembly_id) is None:
                     missing_ids.append(assembly_id)
-                    incomplete_dirs.add(out_path.parent)
+                    incomplete_dirs.add(gen_output_path(output_dir, assembly_id).parent)
 
     fd, tmp_name = tempfile.mkstemp(dir=redo_file.parent, prefix=redo_file.name, suffix=fc.TMP_SUFFIX)
     tmp_path = Path(tmp_name)
@@ -213,12 +242,12 @@ def build_1k_level(
         if child_dir in incomplete_dirs:
             n_skipped_incomplete += 1
             continue
-        json_files = sorted(child_dir.glob("*.json"))
+        input_files = fc.discover_input_files(child_dir)  # was: sorted(child_dir.glob("*.json"))
         output_name = group_output_name(parent_dir, group_key, GROUP_LEVELS["1K"])
         jobs.append(
             partial(
-                fc.consolidate_json_files,
-                json_files,
+                fc.consolidate_input_files,  # was: cc.consolidate_json_files
+                input_files,
                 level_dir,
                 output_name,
                 gzip_output=gzip_output,
@@ -226,7 +255,6 @@ def build_1k_level(
                 extra_manifest_fields={"child_dirs": [str(child_dir)]},
             )
         )
-
     fc.run_and_collect_manifest(jobs, level_dir, max_workers)
 
     if n_skipped_incomplete:

@@ -1,12 +1,7 @@
 # consolidation_core.py
-"""Reusable core functionality for consolidating JSON files into JSON
-Lines output, with crash-safe atomic writes, optional gzip compression,
-and manifest-based resumability.
+"""Reusable core functionality for consolidating JSON and JSON Lines files into JSONL files.
 
-This module has no knowledge of any particular directory layout or naming
-scheme -- callers decide which files belong in which output batch/group.
-This module only handles reading, writing, atomicity, gzip, and manifest
-bookkeeping.
+Includes optional gzip compression and manifest files for tracking and resuming after a crash.
 """
 
 import gzip
@@ -29,6 +24,64 @@ logger = logging.getLogger(__name__)
 
 TMP_SUFFIX = ".tmp"
 MANIFEST_NAME = "manifest.json"
+
+
+class RelatedDirectoriesError(ValueError):
+    """Raised when two directories that must be independent (e.g. an
+    input directory and an output directory) turn out to be the same
+    directory, or one nested inside the other.
+    """
+
+
+def _is_relative_to(path: Path, other: Path) -> bool:
+    try:
+        path.relative_to(other)
+    except ValueError:
+        return False
+    return True
+
+
+def check_dirs_unrelated(dirs: dict[str, Path]) -> None:
+    """Verify that none of the given directories are the same as, or nested within, any of the others.
+
+    `dirs` maps a human-readable label to a path, e.g.
+    {"input_dir": Path("/data/in"), "output_dir": Path("/data/out")}.
+    Paths are resolved (symlinks followed, relative components collapsed)
+    before comparison so that e.g. "./out" and "/abs/path/out" are
+    correctly recognized as identical. Paths need not exist yet.
+
+    This exists primarily to prevent a script from later reading its own
+    freshly-written output as new input on a subsequent run -- which,
+    given these scripts now recognize .jsonl files as valid input, could
+    otherwise cause unbounded, ever-growing output on repeated runs.
+    """
+    resolved = {label: Path(p).resolve() for label, p in dirs.items()}
+    labels = list(resolved)
+
+    for i in range(len(labels)):
+        for j in range(i + 1, len(labels)):
+            label_a, label_b = labels[i], labels[j]
+            path_a, path_b = resolved[label_a], resolved[label_b]
+
+            if path_a == path_b:
+                err_msg = f"{label_a} and {label_b} resolve to the same directory ({path_a}); they must be distinct."
+                raise RelatedDirectoriesError(err_msg)
+
+            if _is_relative_to(path_b, path_a):
+                err_msg = (
+                    f"{label_b} ({path_b}) is nested inside {label_a} ({path_a}); "
+                    "this risks the script consuming its own output as input "
+                    "on a future run."
+                )
+                raise RelatedDirectoriesError(err_msg)
+
+            if _is_relative_to(path_a, path_b):
+                err_msg = (
+                    f"{label_a} ({path_a}) is nested inside {label_b} ({path_b}); "
+                    "this risks the script consuming its own output as input "
+                    "on a future run."
+                )
+                raise RelatedDirectoriesError(err_msg)
 
 
 def output_suffix(gzip_output: bool) -> str:
@@ -400,6 +453,147 @@ def verify_level(level_dir: Path, *, gzip_output: bool = False) -> None:
         n_missing,
         len(manifest),
     )
+
+
+# Suffixes recognized as consolidation input, in the order they're globbed.
+# ".json" -> file contains exactly one JSON object.
+# ".jsonl" / ".jsonl.gz" -> file contains one JSON object per non-blank line.
+INPUT_SUFFIXES: tuple[str, ...] = (".json", ".jsonl", ".jsonl.gz")
+
+
+def discover_input_files(directory: Path, recursive: bool = False) -> list[Path]:
+    """Find and sort all recognized input files (.json / .jsonl / .jsonl.gz)
+    under `directory`.
+    """
+    files: list[Path] = []
+    for suffix in INPUT_SUFFIXES:
+        pattern = f"**/*{suffix}" if recursive else f"*{suffix}"
+        files.extend(directory.glob(pattern))
+    return sorted(files)
+
+
+def _classify_input_file(path: Path) -> tuple[str, bool]:
+    """Return (inner_suffix, is_gzipped) for an input file, e.g.
+    ('.jsonl', True) for 'foo.jsonl.gz', ('.json', False) for 'foo.json'.
+    """
+    if path.suffix.lower() == ".gz":
+        if len(path.suffixes) < 2:
+            return ("", True)
+        return (path.suffixes[-2].lower(), True)
+    return (path.suffix.lower(), False)
+
+
+def _read_records_safely(path: Path) -> tuple[list[Any], int]:
+    """Read all JSON records from a single input file, parsed according
+    to its suffix. Errors are tolerated at the finest granularity
+    available: a single bad line in a .jsonl file is skipped without
+    losing the rest of that file's valid records, whereas a .json file
+    is all-or-nothing (it holds exactly one record).
+
+    Returns (records, n_errors).
+    """
+    records: list[Any] = []
+    n_errors = 0
+    inner_suffix, is_gz = _classify_input_file(path)
+    opener = gzip.open if is_gz else open
+
+    if inner_suffix == ".json":
+        try:
+            with opener(path, mode="rt", encoding="utf-8") as fh:
+                records.append(json.load(fh))
+        except (json.JSONDecodeError, OSError):
+            logger.exception("Failed to load %s; skipping", path)
+            n_errors += 1
+
+    elif inner_suffix == ".jsonl":
+        try:
+            with opener(path, mode="rt", encoding="utf-8") as fh:
+                for line_no, line in enumerate(fh, start=1):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        logger.exception(
+                            "Failed to parse line %d of %s; skipping line",
+                            line_no,
+                            path,
+                        )
+                        n_errors += 1
+        except OSError:
+            logger.exception("Failed to open %s; skipping", path)
+            n_errors += 1
+
+    else:
+        logger.error("Unrecognized input file suffix for %s; skipping", path)
+        n_errors += 1
+
+    return records, n_errors
+
+
+def consolidate_input_files(
+    input_files: list[Path],
+    output_dir: Path,
+    output_name: str,
+    *,
+    gzip_output: bool = False,
+    force: bool = False,
+    extra_manifest_fields: Optional[dict] = None,
+) -> ConsolidationResult:
+    """Read a list of input files -- each either a single-object .json
+    file or a multi-record .jsonl/.jsonl.gz file -- and write all of
+    their records out as a single JSON Lines file, atomically, with
+    optional gzip compression.
+
+    (Renamed from consolidate_json_files: it now accepts a mix of .json
+    and .jsonl input files rather than assuming one JSON object per file.)
+    """
+    suffix = output_suffix(gzip_output)
+    filename = f"{output_name}{suffix}"
+    final_path = output_dir / filename
+
+    if not force and final_path.exists():
+        return ConsolidationResult(status=f"skip (already complete): {filename}", skipped=True)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=output_dir, suffix=TMP_SUFFIX)
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+
+    n_records = 0
+    n_errors = 0
+    try:
+        write_fh = (
+            gzip.open(tmp_path, mode="wt", encoding="utf-8")
+            if gzip_output
+            else tmp_path.open(mode="w", encoding="utf-8")
+        )
+        with write_fh as out_fh:
+            for input_file in sorted(input_files):
+                records, file_errors = _read_records_safely(input_file)
+                n_errors += file_errors
+                for record in records:
+                    out_fh.write(json.dumps(record) + "\n")
+                    n_records += 1
+
+        atomic_replace(tmp_path, final_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    entry = ConsolidatedEntry(
+        n_records=n_records,
+        n_errors=n_errors,
+        **(extra_manifest_fields or {}),
+    )
+
+    status = f"built {filename} ({n_records} records"
+    if n_errors:
+        status += f", {n_errors} error(s)"
+    status += ")"
+
+    return ConsolidationResult(status=status, filename=filename, entry=entry)
 
 
 # Optional S3 upload
