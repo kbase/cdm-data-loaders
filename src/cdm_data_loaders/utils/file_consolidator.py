@@ -539,7 +539,7 @@ def consolidate_input_files(
     *,
     gzip_output: bool = False,
     force: bool = False,
-    extra_manifest_fields: Optional[dict] = None,
+    extra_manifest_fields: dict[str, Any] | None = None,
 ) -> ConsolidationResult:
     """Read a list of input files -- each either a single-object .json
     file or a multi-record .jsonl/.jsonl.gz file -- and write all of
