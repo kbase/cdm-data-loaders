@@ -1,0 +1,5 @@
+{"ticket_id": 1, "customer_id": 101, "subject": "Login issue", "status": "open", "created_at": "2026-08-01T09:15:00Z", "updated_at": "2026-08-01T09:15:00Z"}
+{"ticket_id": 2, "customer_id": 102, "subject": "Billing question", "status": "open", "created_at": "2026-08-01T10:02:00Z", "updated_at": "2026-08-01T10:02:00Z"}
+{"ticket_id": 3, "customer_id": 103, "subject": "Feature request", "status": "open", "created_at": "2026-08-01T11:30:00Z", "updated_at": "2026-08-01T11:30:00Z"}
+{"ticket_id": 4, "customer_id": 104, "subject": "Password reset", "status": "closed", "created_at": "2026-08-01T12:45:00Z", "updated_at": "2026-08-01T13:00:00Z"}
+{"ticket_id": 5, "customer_id": 105, "subject": "API rate limit", "status": "open", "created_at": "2026-08-01T14:20:00Z", "updated_at": "2026-08-01T14:20:00Z"}

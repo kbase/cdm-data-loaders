@@ -1,0 +1,4 @@
+{"ticket_id": 1, "customer_id": 101, "subject": "Login issue", "status": "in_progress", "created_at": "2026-08-01T09:15:00Z", "updated_at": "2026-09-01T08:00:00Z", "priority": "high", "assignee": {"agent_id": 9001, "agent_name": "Priya N."}}
+{"ticket_id": 2, "customer_id": 102, "subject": "Billing question", "status": "closed", "created_at": "2026-08-01T10:02:00Z", "updated_at": "2026-09-01T08:05:00Z", "priority": "low", "assignee": {"agent_id": 9002, "agent_name": "Marcus T."}}
+{"ticket_id": 6, "customer_id": 106, "subject": "SSO integration", "status": "open", "created_at": "2026-09-01T09:00:00Z", "updated_at": "2026-09-01T09:00:00Z", "priority": "medium", "assignee": null}
+{"ticket_id": 7, "customer_id": 107, "subject": "Data export bug", "status": "open", "created_at": "2026-09-01T09:30:00Z", "updated_at": "2026-09-01T09:30:00Z", "priority": "high", "assignee": {"agent_id": 9001, "agent_name": "Priya N."}}
