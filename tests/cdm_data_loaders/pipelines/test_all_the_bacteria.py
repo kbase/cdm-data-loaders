@@ -184,7 +184,7 @@ def test_load_patterns_no_file_returns_none(tmp_path: Path) -> None:
 
 
 def test_load_patterns_touched_file_returns_none(tmp_path: Path) -> None:
-    """Ensure that loading an empty file returns None."""
+    """Ensure that loading a zero-byte (touched) file returns None."""
     p = tmp_path / "patterns.txt"
     p.touch()
     pattern = load_patterns(p)
@@ -641,7 +641,7 @@ def test_run_atb_pipeline_bind_order(
     mock_file_downloader = MagicMock()
     mock_file_downloader.bind.side_effect = lambda *_: call_order.append("file_downloader.bind")
 
-    def track_run_pipeline(**_: Any) -> None:
+    def track_run_pipeline(**_: Any) -> None:  # noqa: ANN401
         call_order.append("run_pipeline")
 
     monkeypatch.setattr(all_the_bacteria, "atb_file_list", mock_atb_file_list)
