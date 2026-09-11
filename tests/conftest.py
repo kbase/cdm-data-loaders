@@ -40,6 +40,7 @@ from cdm_data_loaders.audit.schema import (
 from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.readers.dsv import INVALID_DATA_FIELD
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
+from tests.dlt_config_isolation import isolated_dlt_config
 
 SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 
@@ -233,12 +234,43 @@ def dlt_config() -> dict[str, Any]:
     return _generate_dlt_config()
 
 
-@pytest.fixture
-def patch_dlt_config(dlt_config: dict[str, Any]) -> Generator[Any]:
-    """Monkeypatch `dlt.config` to the test dlt config."""
-    with pytest.MonkeyPatch.context() as m:
-        m.setattr(dlt, "config", dlt_config)
+@pytest.fixture(autouse=True)
+def _isolated_dlt_config() -> Generator[None]:
+    """Isolate every test's dlt config/secrets provider chain, seeded with the standard test config.
+
+    Autouse and function-scoped, so no test -- unit, integration, or end-to-end, anywhere in the
+    tree -- can permanently mutate the real dlt.config/dlt.secrets provider chain (e.g. via
+    `dlt.config[key] = value`), regardless of whether it explicitly asks for isolation. `dlt.config`
+    remains the real dlt accessor throughout, so a real `dlt.pipeline()`/`dlt.destination()` run
+    still resolves values exactly as it would in production.
+
+    Tests that need a different ambient config should pass `dlt_config=` explicitly to a settings
+    object (bypassing the Container entirely), or wrap a scope in `isolated_dlt_config(...)`
+    directly for a custom seed.
+    """
+    with isolated_dlt_config(_generate_dlt_config()):
         yield
+
+
+@pytest.fixture
+def dlt_destination_config(tmp_path: Path) -> Generator[str]:
+    """Register 'local_fs' as a filesystem destination in dlt.config, using a fresh path under tmp_path.
+
+    CtsSettings requires use_destination to name a destination already present in dlt.config.
+    Each test gets its own bucket path, so no test depends on state set by another test. The
+    override is scoped to this fixture's lifetime via dlt.config.values() and reverted on
+    teardown, and the underlying provider chain is the autouse in-memory one, so nothing can
+    leak into the process-wide config.
+    """
+    bucket = tmp_path / "bucket"
+    bucket.mkdir()
+    with dlt.config.values(
+        {
+            "destination.local_fs.destination_type": "filesystem",
+            "destination.local_fs.bucket_url": str(bucket),
+        }
+    ):
+        yield "local_fs"
 
 
 @pytest.fixture

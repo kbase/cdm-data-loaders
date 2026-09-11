@@ -223,6 +223,16 @@ markers = [
 
 # environment settings for running tests
 [tool.pytest_env]
+# aws config settings
+AWS_CONFIG_FILE = "/dev/null"  # ensure tests don't pick up creds from a real config file
+AWS_DEFAULT_REGION = "us-east-1"
+# default to use containerized S3 test store
+AWS_ENDPOINT_URL = { value = "http://localhost:9000", skip_if_set = true }
+AWS_ENDPOINT_URL_S3 = { unset = true }
+S3_ENDPOINT_URL = "http://localhost:9000"
+AWS_ACCESS_KEY_ID = "test_access_key"
+AWS_SECRET_ACCESS_KEY = "test_access_secret"
+# required for KBase Lakehouse env
 USER = "fake_user"
 KBASE_AUTH_TOKEN = "test-token-123"
 CDM_TASK_SERVICE_URL = "http://localhost:8080"
@@ -232,15 +242,6 @@ BERDL_HIVE_METASTORE_URI = "thrift://localhost:9083"
 SPARK_CLUSTER_MANAGER_API_URL = "http://localhost:8000"
 GOVERNANCE_API_URL = "http://localhost:8000"
 DATALAKE_MCP_SERVER_URL = "http://localhost:8080"
-S3_ENDPOINT_URL = "http://localhost:9000"
-# aws config settings
-AWS_CONFIG_FILE = "/dev/null"  # ensure tests don't pick up creds from a real config file
-AWS_DEFAULT_REGION = "us-east-1"
-# default to use containerized S3 test store
-AWS_ENDPOINT_URL = { value = "http://localhost:9000", skip_if_set = true }
-AWS_ENDPOINT_URL_S3 = { unset = true }
-AWS_ACCESS_KEY_ID = "test_access_key"
-AWS_SECRET_ACCESS_KEY = "test_access_secret"
 
 [tool.uv.sources]
 cdm-schema = { git = "https://github.com/kbase/cdm-schema.git" }

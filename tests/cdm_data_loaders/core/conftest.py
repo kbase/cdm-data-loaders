@@ -2,8 +2,6 @@
 
 from typing import Any, Final
 
-import dlt
-import pytest
 from frozendict import frozendict
 
 from cdm_data_loaders.core.fields import (
@@ -93,10 +91,8 @@ def make_settings(
     dlt_config: dict[str, Any] | None = None,
     kwargs: dict[str, Any] | frozendict[str, Any] | None = None,
 ) -> CtsSettings:  # CtsSettings | BatchedFileInputSettings | NcbiRestApiSettings | AtbSettings:
-    """Generate a validated Settings object."""
-    with pytest.MonkeyPatch.context() as m:
-        m.setattr(dlt, "config", dlt_config)
-        return settings_cls(**(kwargs or {}))  # pyright: ignore[reportArgumentType]
+    """Generate a validated Settings object with an explicit dlt_config (None included)."""
+    return settings_cls(dlt_config=dlt_config, **(kwargs or {}))  # pyright: ignore[reportArgumentType]
 
 
 def make_settings_autofill_config(
@@ -114,7 +110,7 @@ def check_settings(
     expected: dict[str, Any] | frozendict[str, Any],
 ) -> None:
     """Check that the settings object has the expected values."""
-    assert settings_object._dlt_config is not None  # noqa: SLF001
+    assert settings_object.dlt_config is not None
     assert settings_object.model_dump() == expected
 
     # make sure we have both raw_data_dir and pipeline_dir

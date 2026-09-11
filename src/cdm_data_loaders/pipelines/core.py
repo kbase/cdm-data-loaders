@@ -72,19 +72,16 @@ def run_cli(
     settings_cls: type[LoggerSettings],
     pipeline_fn: Callable[[Any], None],
     settings_kwargs: dict[str, Any] | None = None,
-) -> None:
+) -> dict[str, Any] | None:
     """Generic CLI entry point for any pipeline.
 
     :param settings_cls: the Settings class to instantiate
     :param pipeline_fn: the run_pipeline function to call with the config
     :param settings_kwargs: any extra non-cli/env var settings to be added
     """
-    # piece together env vars
-    construct_env_var()
     # instantiate the config
     try:
         settings = settings_cls(**(settings_kwargs or {}))
-        sync_configs(settings, dlt.config)
         init_logger(settings)
     except (SettingsError, ValidationError, ValueError):
         logger.exception("Error initialising config")
@@ -94,7 +91,7 @@ def run_cli(
         raise
 
     dump_settings(settings)
-    pipeline_fn(settings)
+    return pipeline_fn(settings)
 
 
 def run_pipeline(
@@ -103,7 +100,7 @@ def run_pipeline(
     destination_kwargs: dict[str, Any] | None = None,
     pipeline_kwargs: dict[str, Any] | None = None,
     pipeline_run_kwargs: dict[str, Any] | None = None,
-) -> None:
+) -> dict[str, Any] | None:
     """Execute a dlt pipeline.
 
     :param settings: pipeline config with output_dir and destination
@@ -117,6 +114,10 @@ def run_pipeline(
     :param pipeline_run_kwargs: keyword arguments for the dlt pipeline run
     :type pipeline_run_kwargs: dict[str, Any] | None
     """
+    # piece together env vars
+    construct_env_var()
+    sync_configs(settings, dlt.config)
+
     if not pipeline_kwargs:
         pipeline_kwargs = {}
 
@@ -144,9 +145,11 @@ def run_pipeline(
         logger.exception(err_msg)
         if slack_hook:
             send_slack_message_carefully(slack_hook, err_msg)
-        return
+        return None
 
     logger.info(load_info)
     logger.info("Work complete!")
     if slack_hook:
         send_slack_message_carefully(slack_hook, "Pipeline completed successfully!")
+
+    return load_info

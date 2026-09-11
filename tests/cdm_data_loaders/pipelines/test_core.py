@@ -35,6 +35,7 @@ from cdm_data_loaders.pipelines.core import (
     sync_configs,
 )
 from tests.cdm_data_loaders.core.test_settings import SETTINGS_CLASSES, TEST_CTS_SETTINGS
+from tests.dlt_config_isolation import dlt_config_unset, isolated_dlt_config
 
 
 def make_batched_settings(**kwargs: str | int) -> BatchedFileInputSettings:
@@ -358,25 +359,24 @@ def test_run_cli_calls_settings_cls_with_dlt_config(
     # The object passed to sync_configs must be a fully initialised instance
     for attr in settings_cls.model_fields:
         assert hasattr(captured_config, attr)
-    assert captured_config._dlt_config == dlt_config  # noqa: SLF001
+    # no dlt_config override was supplied, so it falls back to the ambient dlt.config -- isolated
+    # for this test, but still the real dlt accessor, not a plain dict
+    assert captured_config.dlt_config is dlt.config
+    assert (
+        captured_config.dlt_config["destination.local_fs.bucket_url"] == dlt_config["destination.local_fs.bucket_url"]
+    )
 
 
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 def test_run_cli_function_calls_args(settings_cls: type[CtsSettings]) -> None:
-    """Ensure run_cli calls sync_configs with the instantiated config and dlt.config."""
+    """Ensure run_cli instantiates the settings class and dispatches to pipeline_fn with the result."""
     instantiated_cls = settings_cls()  # pyright: ignore[reportCallIssue]
     pipeline_fn_mock = MagicMock()
     settings_cls_mock = MagicMock(return_value=instantiated_cls)
 
-    with (
-        patch("cdm_data_loaders.pipelines.core.construct_env_var") as mock_env_var,
-        patch("cdm_data_loaders.pipelines.core.sync_configs") as mock_sync,
-    ):
-        run_cli(settings_cls_mock, pipeline_fn_mock)  # type: ignore[reportArgumentType]
+    run_cli(settings_cls_mock, pipeline_fn_mock)  # type: ignore[reportArgumentType]
 
-    mock_env_var.assert_called_once_with()
     settings_cls_mock.assert_called_once_with()
-    mock_sync.assert_called_once_with(instantiated_cls, dlt.config)
     pipeline_fn_mock.assert_called_once_with(instantiated_cls)
 
 
@@ -415,14 +415,13 @@ def test_run_cli_reraises_validation_errors(
     error: type[Exception],
     err_msg: str,
     caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Ensure that errors in instantiating the configuration are re-raised.
 
     See also the cts_defaults test ``test_cli_app_run_dlt_config_errors``.
     """
-    monkeypatch.setattr(core.dlt, "config", bad_dlt_config)
-    with pytest.raises(error, match=err_msg):
+    isolation = dlt_config_unset() if bad_dlt_config is None else isolated_dlt_config(bad_dlt_config)
+    with isolation, pytest.raises(error, match=err_msg):
         run_cli(settings_cls, MagicMock())
 
     log_records = caplog.records
@@ -440,7 +439,6 @@ def test_run_cli_reraises_unexpected_exception(
     mock_pipeline_fn = MagicMock()
     with (
         patch.object(settings_cls, "__init__", side_effect=boom),
-        patch("cdm_data_loaders.pipelines.core.sync_configs") as mock_sync,
         pytest.raises(RuntimeError, match="disk on fire"),
     ):
         run_cli(settings_cls, mock_pipeline_fn)
@@ -449,11 +447,10 @@ def test_run_cli_reraises_unexpected_exception(
     assert log_records[-1].levelno == logging.ERROR
     assert log_records[-1].message == "Unexpected error setting up config"
 
-    mock_sync.assert_not_called()
     mock_pipeline_fn.assert_not_called()
 
 
-# sync_configs not called on error
+# pipeline_fn not called on error
 @pytest.mark.parametrize(
     "exc",
     [
@@ -462,7 +459,7 @@ def test_run_cli_reraises_unexpected_exception(
     ],
 )
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-def test_run_cli_sync_configs_not_called_on_settings_instantiation_error(
+def test_run_cli_pipeline_fn_not_called_on_settings_instantiation_error(
     exc: Exception,
     settings_cls: type[CtsSettings],
 ) -> None:
@@ -470,138 +467,110 @@ def test_run_cli_sync_configs_not_called_on_settings_instantiation_error(
     mock_pipeline_fn = MagicMock()
     with (
         patch.object(settings_cls, "__init__", side_effect=exc),
-        patch("cdm_data_loaders.pipelines.core.sync_configs") as mock_sync,
         pytest.raises(type(exc)),
     ):
         run_cli(settings_cls, mock_pipeline_fn)
 
-    mock_sync.assert_not_called()
-    mock_sync.assert_not_called()
     mock_pipeline_fn.assert_not_called()
 
 
-def test_run_cli_uses_slack_env_var_if_set(
-    monkeypatch: pytest.MonkeyPatch,
+# run_pipeline bootstrap: construct_env_var and sync_configs
+#
+# construct_env_var and sync_configs moved from run_cli into run_pipeline, so run_cli no longer touches
+# dlt.config or Slack env vars at all - see test_run_cli_function_calls_args above. The hasattr-guard
+# behaviour of sync_configs itself, for settings classes lacking dev_mode, output_dir or use_destination,
+# is already covered directly against sync_configs in the sync_configs section above; it cannot be
+# re-verified through run_pipeline because run_pipeline unconditionally reads
+# settings.pipeline_dir, settings.dev_mode and settings.use_destination, so it requires a full
+# CtsSettings-shaped object.
+def test_run_pipeline_calls_construct_env_var_and_sync_configs(
+    test_bfi_settings: BatchedFileInputSettings, mock_dlt: MagicMock
 ) -> None:
-    """RUNTIME__SLACK_INCOMING_HOOK built by construct_env_var is visible during run_cli."""
-    monkeypatch.setenv("VARIABLE_B", "BBB")
-    monkeypatch.setenv("VARIABLE_T", "TTT")
-    monkeypatch.setenv("CHAR_STR", "CCC")
-
-    run_cli(CtsSettings, MagicMock())
-
-    expected = "https://hooks.slack.com/services/BBB/TTT/CCC/"
-    assert os.environ.get("RUNTIME__SLACK_INCOMING_HOOK") == expected
-
-
-def test_run_cli_no_slack_env_var_when_vars_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """RUNTIME__SLACK_INCOMING_HOOK is not set when source vars are absent."""
-    for var in ("VARIABLE_B", "VARIABLE_T", "CHAR_STR", "RUNTIME__SLACK_INCOMING_HOOK"):
-        monkeypatch.delenv(var, raising=False)
-
-    run_cli(CtsSettings, MagicMock())
-
-    assert "RUNTIME__SLACK_INCOMING_HOOK" not in os.environ
-
-
-# run_cli + sync_configs interaction: hasattr guards
-SETTINGS_CLASSES_MISSING_SYNC_ATTRS: Final[list[type[LoggerSettings]]] = [LoggerSettings, InputOutputSettings]
-
-
-def test_settings_classes_missing_sync_attrs_sanity_check() -> None:
-    """Sanity-check that LoggerSettings/InputOutputSettings genuinely lack the attrs sync_configs checks.
-
-    LoggerSettings has none of dev_mode/output/use_destination; InputOutputSettings has output but not
-    dev_mode or use_destination, so the bucket_url branch (which requires both) should still be skipped.
-    """
-    logger_settings = LoggerSettings()  # pyright: ignore[reportCallIssue]
-    io_settings = InputOutputSettings()  # pyright: ignore[reportCallIssue]
-
-    assert not hasattr(logger_settings, DEV_MODE)
-    assert not hasattr(logger_settings, OUTPUT_DIR)
-    assert not hasattr(logger_settings, USE_DESTINATION)
-
-    assert hasattr(io_settings, OUTPUT_DIR)
-    assert not hasattr(io_settings, DEV_MODE)
-    assert not hasattr(io_settings, USE_DESTINATION)
-
-
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES_MISSING_SYNC_ATTRS)
-def test_run_cli_calls_sync_configs_even_when_attrs_missing(settings_cls: type[LoggerSettings]) -> None:
-    """run_cli still calls sync_configs for settings classes lacking dev_mode/use_destination.
-
-    Mirrors test_run_cli_function_calls_args: confirms sync_configs is invoked with the instantiated
-    settings object and dlt.config regardless of which attributes that object actually has - the
-    hasattr guards live inside sync_configs itself, not in run_cli, so the call should always happen.
-    """
-    instantiated_cls = settings_cls()  # pyright: ignore[reportCallIssue]
-    pipeline_fn_mock = MagicMock()
-    settings_cls_mock = MagicMock(return_value=instantiated_cls)
-
+    """run_pipeline calls construct_env_var() and sync_configs(settings, dlt.config)."""
     with (
         patch("cdm_data_loaders.pipelines.core.construct_env_var") as mock_env_var,
         patch("cdm_data_loaders.pipelines.core.sync_configs") as mock_sync,
     ):
-        run_cli(settings_cls_mock, pipeline_fn_mock)  # type: ignore[reportArgumentType]
+        run_pipeline(test_bfi_settings, MagicMock())
 
     mock_env_var.assert_called_once_with()
-    mock_sync.assert_called_once_with(instantiated_cls, dlt.config)
-    pipeline_fn_mock.assert_called_once_with(instantiated_cls)
+    mock_sync.assert_called_once_with(test_bfi_settings, mock_dlt.config)
 
 
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES_MISSING_SYNC_ATTRS)
-def test_run_cli_sync_configs_no_op_on_de_novo_config_when_attrs_missing(
-    settings_cls: type[LoggerSettings], monkeypatch: pytest.MonkeyPatch
+def test_run_pipeline_bootstrap_runs_before_destination_is_built(
+    test_bfi_settings: BatchedFileInputSettings, mock_dlt: MagicMock
 ) -> None:
-    """End-to-end: running the full run_cli path against a de novo dlt.config leaves it untouched.
+    """construct_env_var/sync_configs run before dlt.destination()/dlt.pipeline() are constructed."""
+    call_order: list[str] = []
+    with (
+        patch(
+            "cdm_data_loaders.pipelines.core.construct_env_var",
+            side_effect=lambda: call_order.append("construct_env_var"),
+        ),
+        patch(
+            "cdm_data_loaders.pipelines.core.sync_configs",
+            side_effect=lambda *_: call_order.append("sync_configs"),
+        ),
+    ):
+        mock_dlt.destination.side_effect = lambda *_, **__: call_order.append("dlt.destination") or MagicMock()
+        run_pipeline(test_bfi_settings, MagicMock())
 
-    dlt.config is replaced here with a brand new, empty dict - as if no environment variables or
-    config files had ever contributed to it - confirming that sync_configs's hasattr guards correctly
-    prevent any spurious key creation (or AttributeError) when exercised through the real CLI entry
-    point, for settings classes that don't carry all of dev_mode/output_dir/use_destination.
-    """
-    empty_dlt_config: dict[str, Any] = {}
-    monkeypatch.setattr(core.dlt, "config", empty_dlt_config)
-    pipeline_fn_mock = MagicMock()
-
-    run_cli(settings_cls, pipeline_fn_mock)  # type: ignore[reportArgumentType]
-
-    assert empty_dlt_config == {}
-    pipeline_fn_mock.assert_called_once()
-    called_settings = pipeline_fn_mock.call_args.args[0]
-    assert isinstance(called_settings, settings_cls)
+    assert call_order == ["construct_env_var", "sync_configs", "dlt.destination"]
 
 
-# dlt.config state after successful run
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize("dev_mode", [True, False])
 @pytest.mark.parametrize(
     ("use_destination", "output_dir"), [("local_fs", "/some/path"), ("s3", "s3://bucket/whatever")]
 )
-def test_run_cli_dlt_config_updated_after_success(
+def test_run_pipeline_dlt_config_updated_after_success(
     dlt_config: dict[str, Any],
+    mock_dlt: MagicMock,
     settings_cls: type[CtsSettings],
     dev_mode: bool,
     use_destination: str,
     output_dir: str,
 ) -> None:
-    """Test that sync_configs changes the disable_compression and bucket_url values."""
+    """run_pipeline's sync_configs call changes the disable_compression and bucket_url values."""
     original_dlt_config = deepcopy(dlt_config)
     settings = settings_cls(dev_mode=dev_mode, output_dir=output_dir, use_destination=use_destination)  # pyright: ignore[reportCallIssue]
-    assert settings.dev_mode == dev_mode
-    assert settings.output_dir == output_dir
-    assert settings.use_destination == use_destination
-    settings_cls_mock = MagicMock(return_value=settings)
 
-    run_cli(settings_cls_mock, MagicMock())  # type: ignore[reportArgumentType]
+    run_pipeline(settings, MagicMock())
 
+    mock_dlt.pipeline.return_value.run.assert_called_once()
     assert dlt_config == {
         **original_dlt_config,
         "normalize.data_writer.disable_compression": dev_mode,
         f"destination.{use_destination}.bucket_url": output_dir,
     }
+
+
+def test_run_pipeline_uses_slack_env_var_if_set(
+    test_bfi_settings: BatchedFileInputSettings, mock_dlt: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RUNTIME__SLACK_INCOMING_HOOK built by construct_env_var is visible during run_pipeline."""
+    monkeypatch.setenv("VARIABLE_B", "BBB")
+    monkeypatch.setenv("VARIABLE_T", "TTT")
+    monkeypatch.setenv("CHAR_STR", "CCC")
+
+    run_pipeline(test_bfi_settings, MagicMock())
+
+    expected = "https://hooks.slack.com/services/BBB/TTT/CCC/"
+    assert os.environ.get("RUNTIME__SLACK_INCOMING_HOOK") == expected
+    mock_dlt.pipeline.return_value.run.assert_called_once()
+
+
+def test_run_pipeline_no_slack_env_var_when_vars_missing(
+    test_bfi_settings: BatchedFileInputSettings, mock_dlt: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RUNTIME__SLACK_INCOMING_HOOK is not set when source vars are absent."""
+    for var in ("VARIABLE_B", "VARIABLE_T", "CHAR_STR", "RUNTIME__SLACK_INCOMING_HOOK"):
+        monkeypatch.delenv(var, raising=False)
+
+    run_pipeline(test_bfi_settings, MagicMock())
+
+    assert "RUNTIME__SLACK_INCOMING_HOOK" not in os.environ
+    mock_dlt.pipeline.return_value.run.assert_called_once()
 
 
 # run_pipeline tests
