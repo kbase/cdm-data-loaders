@@ -22,10 +22,6 @@ from tests.cdm_data_loaders.core.conftest import (
 )
 from tests.conftest import TEST_DATA_DIR
 
-# Directory of real UniProt XML fixtures (chunk_00001.xml ... chunk_00004.xml),
-# named so they match the NumericFileSequenceBatcher file-sequence regex.
-UNIPROT_FIXTURE_DIR = Path("tests") / "data" / "uniprot" / "uniprot_kb" / "chunk_4"
-
 
 @pytest.fixture
 def test_settings() -> UniProtSettings:
@@ -39,7 +35,8 @@ TEST_SETTINGS = frozendict(
 
 TEST_SETTINGS_RECONCILED = frozendict({**TEST_BATCH_FILE_SETTINGS_RECONCILED, "log_interval": UNIPROT_LOG_INTERVAL})
 
-
+# Directory of real UniProt XML fixtures (chunk_00001.xml ... chunk_00004.xml),
+# named so they match the NumericFileSequenceBatcher file-sequence regex.
 UNIPROT_FIXTURE_DIR = TEST_DATA_DIR / "uniprot" / "uniprot_kb" / "chunk_4"
 
 

@@ -1,6 +1,9 @@
-./data/
+not_for_github/
 
 .DS_Store
+
+# git worktree
+.history
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
