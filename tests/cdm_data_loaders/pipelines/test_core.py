@@ -45,12 +45,7 @@ def make_batched_settings(**kwargs: str | int) -> BatchedFileInputSettings:
 
 @pytest.fixture
 def empty_dlt_config() -> dict[str, Any]:
-    """A completely empty dlt config dict.
-
-    Represents dlt.config before any environment variables or config files have contributed
-    values, so that sync_configs tests can confirm behaviour is driven purely by the settings
-    object and not by any pre-existing config state.
-    """
+    """A completely empty dlt config dict."""
     return {}
 
 
@@ -321,12 +316,7 @@ def test_sync_configs_no_op_with_mock_config_when_relevant_attrs_missing(
 def test_sync_configs_sets_both_keys_from_a_de_novo_dlt_config(
     settings_cls: type[CtsSettings], empty_dlt_config: dict[str, Any]
 ) -> None:
-    """When dev_mode/output_dir/use_destination are all present, sync_configs sets exactly those two keys.
-
-    ``empty_dlt_config`` starts out completely empty, distinct from the pre-populated ``dlt_config``
-    fixture used (via the autouse patch) to validate ``settings_cls`` on construction. This confirms
-    sync_configs's own behaviour depends only on its arguments, not on any leftover config state.
-    """
+    """When dev_mode/output_dir/use_destination are all present, sync_configs sets exactly two keys."""
     settings = settings_cls(dev_mode=True, output_dir="/some/output", use_destination="local_fs")  # pyright: ignore[reportCallIssue]
 
     sync_configs(settings, empty_dlt_config)
@@ -475,14 +465,6 @@ def test_run_cli_pipeline_fn_not_called_on_settings_instantiation_error(
 
 
 # run_pipeline bootstrap: construct_env_var and sync_configs
-#
-# construct_env_var and sync_configs moved from run_cli into run_pipeline, so run_cli no longer touches
-# dlt.config or Slack env vars at all - see test_run_cli_function_calls_args above. The hasattr-guard
-# behaviour of sync_configs itself, for settings classes lacking dev_mode, output_dir or use_destination,
-# is already covered directly against sync_configs in the sync_configs section above; it cannot be
-# re-verified through run_pipeline because run_pipeline unconditionally reads
-# settings.pipeline_dir, settings.dev_mode and settings.use_destination, so it requires a full
-# CtsSettings-shaped object.
 def test_run_pipeline_calls_construct_env_var_and_sync_configs(
     test_bfi_settings: BatchedFileInputSettings, mock_dlt: MagicMock
 ) -> None:
