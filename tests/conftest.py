@@ -2,7 +2,9 @@
 
 import datetime
 import logging
+import os
 import shutil
+import sys
 from collections.abc import Generator
 from copy import deepcopy
 from importlib.util import find_spec
@@ -235,18 +237,23 @@ def dlt_config() -> dict[str, Any]:
 
 
 @pytest.fixture(autouse=True)
+def _isolated_cli_and_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
+    """Isolate sys.argv and CDL_* environment variables from the ambient process for every test.
+
+    Prevents pollution of CLI arg parsing tests by the args/env vars used by the calling process.
+    """
+    monkeypatch.setattr(sys, "argv", ["pytest"])
+    for env_key in [key for key in os.environ if key.lower().startswith("cdl_")]:
+        monkeypatch.delenv(env_key, raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolated_dlt_config() -> Generator[None]:
     """Isolate every test's dlt config/secrets provider chain, seeded with the standard test config.
 
-    Autouse and function-scoped, so no test -- unit, integration, or end-to-end, anywhere in the
-    tree -- can permanently mutate the real dlt.config/dlt.secrets provider chain (e.g. via
-    `dlt.config[key] = value`), regardless of whether it explicitly asks for isolation. `dlt.config`
-    remains the real dlt accessor throughout, so a real `dlt.pipeline()`/`dlt.destination()` run
-    still resolves values exactly as it would in production.
-
-    Tests that need a different ambient config should pass `dlt_config=` explicitly to a settings
-    object (bypassing the Container entirely), or wrap a scope in `isolated_dlt_config(...)`
-    directly for a custom seed.
+    Prevents mutation of the global dlt.config during tests. dlt.config can be set explicitly by
+    passing dlt_config=... to a Settings object or using `isolated_dlt_config(...)`.
     """
     with isolated_dlt_config(_generate_dlt_config()):
         yield
@@ -254,14 +261,7 @@ def _isolated_dlt_config() -> Generator[None]:
 
 @pytest.fixture
 def dlt_destination_config(tmp_path: Path) -> Generator[str]:
-    """Register 'local_fs' as a filesystem destination in dlt.config, using a fresh path under tmp_path.
-
-    CtsSettings requires use_destination to name a destination already present in dlt.config.
-    Each test gets its own bucket path, so no test depends on state set by another test. The
-    override is scoped to this fixture's lifetime via dlt.config.values() and reverted on
-    teardown, and the underlying provider chain is the autouse in-memory one, so nothing can
-    leak into the process-wide config.
-    """
+    """Set the 'local_fs' destination to tmp_path in dlt.config."""
     bucket = tmp_path / "bucket"
     bucket.mkdir()
     with dlt.config.values(
