@@ -39,6 +39,13 @@ def build_cli_arg_specs(settings_cls: type[BaseSettings]) -> dict[str, CliArgSpe
     for action in parser._actions:  # noqa: SLF001 -- argparse has no public introspection API
         if not action.option_strings or action.dest == "help" or action.dest.endswith(":subcommand"):
             continue
+        field_info = settings_cls.model_fields.get(action.dest)
+        if field_info is not None and field_info.exclude:
+            # pydantic-settings always registers a real argparse action per field -- there is no
+            # way to omit one outright -- so Field(exclude=True) fields (e.g. CtsSettings.dlt_config)
+            # still show up here unless filtered explicitly. Such fields aren't real user-facing CLI
+            # options (see DltConfig in cdm_data_loaders.core.fields), so exclude them from the specs.
+            continue
         specs[action.dest] = CliArgSpec(
             field_name=action.dest,
             option_strings=tuple(action.option_strings),

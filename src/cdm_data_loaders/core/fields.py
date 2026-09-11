@@ -6,6 +6,7 @@ import dlt
 import dlt.common.configuration.accessors
 from frozendict import frozendict
 from pydantic import Field, PositiveInt
+from pydantic_settings import CLI_SUPPRESS
 
 INPUT_MOUNT: Final[str] = "/input_dir"
 OUTPUT_MOUNT: Final[str] = "/output_dir"
@@ -71,9 +72,20 @@ DevMode = Annotated[
     ),
 ]
 # this should really just be _Accessor but leaving the dict version in for ease of testing
+#
+# Publicly settable on CtsSettings so tests (and other callers) can inject an isolated dlt
+# config instead of relying on the live dlt.config singleton. Excluded from model_dump() and
+# suppressed from CLI help/argparse output (see build_cli_arg_specs in tests/helpers.py, which
+# filters on field_info.exclude) since it is not a value a CLI user should ever set directly.
 DltConfig = Annotated[
-    dlt.common.configuration.accessors._Accessor | dict[str, Any],  # noqa: SLF001
-    Field(description="DLT configuration for the pipeline.", default_factory=lambda: dlt.config),
+    dlt.common.configuration.accessors._Accessor | dict[str, Any] | None,  # noqa: SLF001
+    Field(
+        description="DLT configuration for the pipeline.",
+        default_factory=lambda: dlt.config,
+        exclude=True,
+        repr=False,
+    ),
+    CLI_SUPPRESS,
 ]
 InputDir = Annotated[
     str,

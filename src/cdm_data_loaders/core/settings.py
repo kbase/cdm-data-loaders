@@ -4,7 +4,6 @@ import logging
 from collections.abc import Hashable, Mapping
 from typing import Any, Self
 
-import dlt
 from frozendict import frozendict
 from pydantic import AliasPath, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
@@ -56,6 +55,8 @@ DEFAULT_BATCH_FILE_SETTINGS = frozendict(
 
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
     {
+        # required for the DltConfig field type
+        "arbitrary_types_allowed": True,
         "cli_exit_on_error": False,
         "cli_ignore_unknown_args": True,
         "cli_kebab_case": True,
@@ -181,23 +182,17 @@ class CtsSettings(InputOutputSettings):
     use_destination: UseDestination
     use_output_dir_for_pipeline_metadata: UseOutputDirForPipelineMetadata
 
-    _dlt_config: DltConfig
-
-    @model_validator(mode="after")
-    def init_dlt_config(self) -> Self:
-        """Initialise the _dlt_config private attribute."""
-        self._dlt_config = dlt.config
-        return self
+    dlt_config: DltConfig
 
     @model_validator(mode="after")
     def reconcile_with_dlt_config(self) -> Self:
         """Update dlt.config based on the current state of the settings."""
-        if self._dlt_config is None:
+        if self.dlt_config is None:
             err_msg = "dlt_config must be defined"
             raise ValueError(err_msg)
 
         # validate destination
-        all_destinations = self._dlt_config.get("destination") or {}  # type: ignore[reportArgumentType]
+        all_destinations = self.dlt_config.get("destination") or {}  # type: ignore[reportArgumentType]
         if not all_destinations:
             err_msg = "No valid destinations found in dlt configuration."
             raise ValueError(err_msg)
@@ -207,11 +202,11 @@ class CtsSettings(InputOutputSettings):
             raise ValueError(err_msg)
 
         if not self.output_dir:
-            if not self._dlt_config.get(f"destination.{self.use_destination}.bucket_url"):  # type: ignore[reportArgumentType]
+            if not self.dlt_config.get(f"destination.{self.use_destination}.bucket_url"):  # type: ignore[reportArgumentType]
                 err_msg = f"No bucket_url specified for destination {self.use_destination}"
                 raise ValueError(err_msg)
 
-            self.output_dir = self._dlt_config[f"destination.{self.use_destination}.bucket_url"]
+            self.output_dir = self.dlt_config[f"destination.{self.use_destination}.bucket_url"]
             if self.output_dir != "/":
                 self.output_dir.rstrip("/")
 

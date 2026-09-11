@@ -42,12 +42,6 @@ def mock_send_slack_message(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return slack_mock
 
 
-@pytest.fixture(autouse=True)
-def patch_dlt_config(dlt_config: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
-    """Monkeypatch the dlt config in all tests."""
-    monkeypatch.setattr(core.dlt, "config", dlt_config)
-
-
 @pytest.fixture
 def mock_dlt(monkeypatch: pytest.MonkeyPatch, dlt_config: dict[str, Any]) -> MagicMock:
     """Patch dlt in core, wiring pipeline.return_value to a fresh MagicMock."""
@@ -58,24 +52,3 @@ def mock_dlt(monkeypatch: pytest.MonkeyPatch, dlt_config: dict[str, Any]) -> Mag
     dlt_mock.config = dlt_config
     monkeypatch.setattr(core, "dlt", dlt_mock)
     return dlt_mock
-
-
-@pytest.fixture
-def patched_io(monkeypatch: pytest.MonkeyPatch) -> tuple[MagicMock, MagicMock]:
-    """Patch NumericFileSequenceBatcher and stream_xml_file inside core; return (mock_batcher_cls, mock_stream)."""
-    mock_batcher_cls = MagicMock()
-    mock_stream = MagicMock(return_value=[])
-    monkeypatch.setattr(core, "NumericFileSequenceBatcher", mock_batcher_cls)
-    monkeypatch.setattr(core, "stream_xml_file", mock_stream)
-    return mock_batcher_cls, mock_stream
-
-
-@pytest.fixture
-def patched_io_empty_batcher(monkeypatch: pytest.MonkeyPatch) -> tuple[MagicMock, MagicMock]:
-    """Like patched_io but NumericFileSequenceBatcher immediately returns an empty batch."""
-    mock_batcher_cls = MagicMock()
-    mock_stream = MagicMock(return_value=[])
-    mock_batcher_cls.return_value = make_batcher([])
-    monkeypatch.setattr(core, "NumericFileSequenceBatcher", mock_batcher_cls)
-    monkeypatch.setattr(core, "stream_xml_file", mock_stream)
-    return mock_batcher_cls, mock_stream

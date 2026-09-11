@@ -3,7 +3,6 @@
 from pathlib import Path
 from typing import Any, Self
 
-import dlt
 import pytest
 from frozendict import frozendict
 from pydantic import ValidationError
@@ -38,6 +37,7 @@ from tests.cdm_data_loaders.core.conftest import (
     make_settings,
     make_settings_autofill_config,
 )
+from tests.dlt_config_isolation import dlt_config_unset, isolated_dlt_config
 from tests.helpers import build_cli_arg_specs, make_cli_arg
 
 
@@ -220,7 +220,6 @@ def test_check_aliases_fields_with_no_alias() -> None:
 
 
 @pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_cli_alias_parses_expected_value(
     settings_cls: type[CtsSettings], field_name: str, cli_option: str
 ) -> None:
@@ -234,7 +233,6 @@ def test_settings_cli_alias_parses_expected_value(
 
 
 @pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_all_cli_aliases_equivalent(settings_cls: type[CtsSettings], field_name: str) -> None:
     """All CLI flags registered for a single field must produce identical settings objects.
 
@@ -275,7 +273,6 @@ def test_configured_cli_shortcuts_are_registered(settings_cls: type[CtsSettings]
 
 
 @pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_env_var_parses_expected_value(
     monkeypatch: pytest.MonkeyPatch, settings_cls: type[CtsSettings], field_name: str
 ) -> None:
@@ -287,7 +284,6 @@ def test_settings_env_var_parses_expected_value(
 
 
 @pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_env_var_overrides_dlt_config(
     monkeypatch: pytest.MonkeyPatch, settings_cls: type[CtsSettings], field_name: str
 ) -> None:
@@ -374,7 +370,6 @@ def test_settings_classes_have_no_cli_collisions(settings_cls: type[CtsSettings]
 
 # CLI App: ignore extra properties
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_cli_app_run_invalid_params_ignored(settings_cls: type[CtsSettings]) -> None:
     """Test that invalid parameter values are ignored."""
     s = CliApp.run(
@@ -455,7 +450,6 @@ def test_input_output_settings_preserve_root() -> None:
         (BatchedFileInputSettings, TEST_BATCH_FILE_SETTINGS, TEST_BATCH_FILE_SETTINGS_RECONCILED),
     ],
 )
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_all_settings_specified(
     settings_cls: type[CtsSettings], args: dict[str, Any], expected: dict[str, Any]
 ) -> None:
@@ -465,7 +459,6 @@ def test_settings_all_settings_specified(
 
 
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_cli_app_run_default_settings(settings_cls: type[CtsSettings]) -> None:
     """Ensure the CTS settings are set up correctly, CLI version."""
     s = CliApp.run(settings_cls)
@@ -495,21 +488,26 @@ def test_settings_no_destinations_set(
 # same thing but via CliApp.run
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(
-    ("dlt_config", "error", "err_msg"),
+    ("dlt_config_value", "error", "err_msg"),
     [
         (None, ValidationError, "dlt_config must be defined"),
         ({}, ValueError, "No valid destinations found in dlt configuration"),
         ({"destination": {}}, ValueError, "No valid destinations found in dlt configuration"),
     ],
 )
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_cli_app_run_dlt_config_errors(
     settings_cls: type[CtsSettings],
+    dlt_config_value: dict[str, Any] | None,
     error: type[Exception],
     err_msg: str,
 ) -> None:
-    """Test all the variants of the Settings fields."""
-    with pytest.raises(error, match=err_msg):
+    """Test all the variants of the Settings fields.
+
+    dlt_config_value=None simulates dlt.config itself being entirely unset; the other cases
+    simulate an ambient dlt.config that exists but has no usable destinations.
+    """
+    isolation = dlt_config_unset() if dlt_config_value is None else isolated_dlt_config(dlt_config_value)
+    with isolation, pytest.raises(error, match=err_msg):
         CliApp.run(settings_cls)
 
 
@@ -524,7 +522,6 @@ def test_cli_app_run_dlt_config_errors(
         ("s3", "s3://bucket/path", False),
     ],
 )
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_destination_output_mismatch(
     settings_cls: type[CtsSettings], use_destination: str, output_dir: str, should_raise: bool
 ) -> None:
@@ -540,7 +537,6 @@ def test_settings_destination_output_mismatch(
 
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(USE_DESTINATION, VALID_DESTINATIONS)
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_valid_destinations_accepted(use_destination: str, settings_cls: type[CtsSettings]) -> None:
     """Test valid destinations against the settings class."""
     s = make_settings_autofill_config(settings_cls, {USE_DESTINATION: use_destination})
@@ -549,7 +545,6 @@ def test_settings_valid_destinations_accepted(use_destination: str, settings_cls
 
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(USE_DESTINATION, INVALID_DESTINATIONS)
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_invalid_destination_raises(use_destination: str, settings_cls: type[CtsSettings]) -> None:
     """Ensure that an unrecognised use_destination raises a ValidationError."""
     with pytest.raises(ValidationError, match=r"use_destination must be one of \['local_fs', 's3'\]"):
@@ -570,7 +565,6 @@ def test_settings_destination_has_no_bucket_url(settings_cls: type[CtsSettings])
 @pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
 @pytest.mark.cli_fields.with_args(DEV_MODE, USE_OUTPUT_DIR_FOR_PIPELINE_METADATA)
 @pytest.mark.parametrize(("raw_value", "expected"), TRUE_FALSE_VALUES)
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_boolean_cli_variants_accepted(
     settings_cls: type[CtsSettings], field_name: str, cli_option: str, raw_value: Any, expected: bool
 ) -> None:
@@ -582,7 +576,7 @@ def test_settings_boolean_cli_variants_accepted(
 @pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
 @pytest.mark.cli_fields.with_args(DEV_MODE, USE_OUTPUT_DIR_FOR_PIPELINE_METADATA)
 @pytest.mark.parametrize("bad_value", INVALID_BOOLEAN_VALUES)
-@pytest.mark.usefixtures("patch_dlt_config", "field_name")
+@pytest.mark.usefixtures("field_name")
 def test_settings_boolean_cli_variants_rejected(
     settings_cls: type[CtsSettings], cli_option: str, bad_value: Any
 ) -> None:
@@ -594,7 +588,7 @@ def test_settings_boolean_cli_variants_rejected(
 @pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
 @pytest.mark.cli_fields.with_args(USE_DESTINATION)
 @pytest.mark.parametrize(USE_DESTINATION, VALID_DESTINATIONS)
-@pytest.mark.usefixtures("patch_dlt_config", "field_name")
+@pytest.mark.usefixtures("field_name")
 def test_settings_cli_valid_destinations_accepted(
     settings_cls: type[CtsSettings], cli_option: str, use_destination: str
 ) -> None:
@@ -607,7 +601,6 @@ def test_settings_cli_valid_destinations_accepted(
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(("input_arg", "value"), TRUE_FALSE_VALUES)
 @pytest.mark.parametrize("input_arg_name", [USE_OUTPUT_DIR_FOR_PIPELINE_METADATA, DEV_MODE])
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_boolean_variants_accepted(
     input_arg: str, value: bool, input_arg_name: str, settings_cls: type[CtsSettings]
 ) -> None:
@@ -619,7 +612,6 @@ def test_settings_boolean_variants_accepted(
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize("value", INVALID_BOOLEAN_VALUES)
 @pytest.mark.parametrize("input_arg_name", [USE_OUTPUT_DIR_FOR_PIPELINE_METADATA, DEV_MODE])
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_invalid_boolean_variants_raises(
     value: bool, input_arg_name: str, settings_cls: type[CtsSettings]
 ) -> None:
@@ -631,7 +623,7 @@ def test_settings_invalid_boolean_variants_raises(
 @pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
 @pytest.mark.cli_fields.with_args(USE_DESTINATION)
 @pytest.mark.parametrize(USE_DESTINATION, INVALID_DESTINATIONS)
-@pytest.mark.usefixtures("patch_dlt_config", "field_name")
+@pytest.mark.usefixtures("field_name")
 def test_settings_cli_invalid_destinations_raises(
     settings_cls: type[CtsSettings], cli_option: str, use_destination: str
 ) -> None:
@@ -643,12 +635,12 @@ def test_settings_cli_invalid_destinations_raises(
 @pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
 @pytest.mark.cli_fields.with_args(USE_DESTINATION)
 @pytest.mark.usefixtures("field_name")
-def test_settings_cli_destination_has_no_bucket_url(
-    settings_cls: type[CtsSettings], cli_option: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_settings_cli_destination_has_no_bucket_url(settings_cls: type[CtsSettings], cli_option: str) -> None:
     """Incomplete configs are rejected."""
-    monkeypatch.setattr(dlt, "config", {"destination": {"local_fs": None}})
-    with pytest.raises(ValueError, match="No bucket_url specified for destination local_fs"):
+    with (
+        isolated_dlt_config({"destination": {"local_fs": None}}),
+        pytest.raises(ValueError, match="No bucket_url specified for destination local_fs"),
+    ):
         CliApp.run(settings_cls, cli_args=[cli_option, "local_fs"])
 
 
@@ -666,7 +658,6 @@ def test_settings_cli_destination_has_no_bucket_url(
     ],
 )
 @pytest.mark.parametrize("field_name", [INPUT_DIR, OUTPUT_DIR])
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_trailing_slash_stripped(
     settings_cls: type[CtsSettings],
     raw: str,
@@ -684,7 +675,6 @@ def test_settings_trailing_slash_stripped(
 # values set during reconcile_with_dlt_config
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(USE_DESTINATION, VALID_DESTINATIONS)
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_reconcile_with_dlt_config_output_resolved_from_dlt_config_bucket_url(
     settings_cls: type[CtsSettings],
     use_destination: str,
@@ -703,7 +693,6 @@ def test_settings_reconcile_with_dlt_config_output_resolved_from_dlt_config_buck
 )
 @pytest.mark.parametrize(USE_OUTPUT_DIR_FOR_PIPELINE_METADATA, [True, False])
 @pytest.mark.parametrize(USE_DESTINATION, VALID_DESTINATIONS)
-@pytest.mark.usefixtures("patch_dlt_config")
 def test_settings_generate_pipeline_raw_data_dirs(
     settings_cls: type[CtsSettings],
     output_dir: str,

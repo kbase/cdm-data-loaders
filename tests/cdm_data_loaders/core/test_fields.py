@@ -1,7 +1,6 @@
 """Parametrized tests for the reusable Annotated field types in fields.py."""
 
 from typing import Any
-from unittest.mock import MagicMock
 
 import dlt
 import pytest
@@ -190,16 +189,14 @@ def test_dlt_config_accepts_real_dlt_accessor() -> None:
     assert model.dlt_config is dlt.config
 
 
-def test_dlt_config_default_factory_produces_dlt_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    """DltConfig's default_factory produces dlt.config when no value is supplied."""
-    dlt_conf = MagicMock()
-    monkeypatch.setattr(dlt, "config", dlt_conf)
+def test_dlt_config_default_factory_produces_dlt_config() -> None:
+    """DltConfig's default_factory produces the live dlt.config accessor when no value is supplied."""
 
     class _WithDefault(BaseModel):
         model_config = ConfigDict(arbitrary_types_allowed=True)
         dlt_config: DltConfig
 
-    assert _WithDefault().dlt_config is dlt_conf  # pyright: ignore[reportCallIssue]
+    assert _WithDefault().dlt_config is dlt.config  # pyright: ignore[reportCallIssue]
 
 
 def test_dlt_config_model_dump_does_not_raise() -> None:
