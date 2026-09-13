@@ -35,8 +35,7 @@ TEST_SETTINGS = frozendict(
 
 TEST_SETTINGS_RECONCILED = frozendict({**TEST_BATCH_FILE_SETTINGS_RECONCILED, "log_interval": UNIPROT_LOG_INTERVAL})
 
-# Directory of real UniProt XML fixtures (chunk_00001.xml ... chunk_00004.xml),
-# named so they match the NumericFileSequenceBatcher file-sequence regex.
+
 UNIPROT_FIXTURE_DIR = TEST_DATA_DIR / "uniprot" / "uniprot_kb" / "chunk_4"
 
 

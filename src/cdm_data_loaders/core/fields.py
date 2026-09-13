@@ -1,11 +1,11 @@
 """Common defaults for running pipelines on the KBase CTS."""
 
-from typing import Annotated, Any, Final
+from typing import Annotated, Final
 
 import dlt
 import dlt.common.configuration.accessors
 from frozendict import frozendict
-from pydantic import Field, PositiveInt
+from pydantic import Field, PositiveInt, StringConstraints
 from pydantic_settings import CLI_SUPPRESS
 
 INPUT_MOUNT: Final[str] = "/input_dir"
@@ -16,13 +16,16 @@ VALID_DESTINATIONS: Final[list[str]] = ["local_fs", "s3"]
 # Common fields
 BATCH_SIZE: Final[str] = "batch_size"
 BUFFER_SIZE: Final[str] = "buffer_size"
+DATASET_NAME: Final[str] = "dataset_name"
 DEV_MODE: Final[str] = "dev_mode"
 DLT_CONFIG: Final[str] = "dlt_config"
+FILE_GLOB: Final[str] = "file_glob"
 INPUT_DIR: Final[str] = "input_dir"
 LOG_CONFIG_FILE: Final[str] = "log_config_file"
 LOG_INTERVAL: Final[str] = "log_interval"
 OUTPUT_DIR: Final[str] = "output_dir"
 START_AT: Final[str] = "start_at"
+TABLE_NAME: Final[str] = "table_name"
 USE_DESTINATION: Final[str] = "use_destination"
 USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: Final[str] = "use_output_dir_for_pipeline_metadata"
 
@@ -35,6 +38,7 @@ DEFAULTS = frozendict(
         BATCH_SIZE: 1000,
         BUFFER_SIZE: 100,
         DEV_MODE: False,
+        FILE_GLOB: "*",
         INPUT_DIR: INPUT_MOUNT,
         LOG_CONFIG_FILE: None,
         LOG_INTERVAL: 1000,
@@ -48,6 +52,7 @@ DEFAULTS = frozendict(
 
 DEFAULT_PIPELINE_BATCH_SIZE: Final[int] = 50
 
+NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 
 BatchSize = Annotated[
     PositiveInt,
@@ -56,7 +61,6 @@ BatchSize = Annotated[
         description="Number of items per batch",
     ),
 ]
-
 BufferSize = Annotated[
     PositiveInt,
     Field(
@@ -64,6 +68,7 @@ BufferSize = Annotated[
         description="Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer.",
     ),
 ]
+DatasetName = Annotated[NonEmptyStr, Field(description="The name of the dataset being produced")]
 DevMode = Annotated[
     bool,
     Field(
@@ -71,22 +76,19 @@ DevMode = Annotated[
         description="Whether to run the pipeline in dev mode, which saves raw API responses to disk and disables compression for easier debugging.",
     ),
 ]
-# this should really just be _Accessor but leaving the dict version in for ease of testing
-#
-# Publicly settable on CtsSettings so tests (and other callers) can inject an isolated dlt
-# config instead of relying on the live dlt.config singleton. Excluded from model_dump() and
-# suppressed from CLI help/argparse output (see build_cli_arg_specs in tests/helpers.py, which
-# filters on field_info.exclude) since it is not a value a CLI user should ever set directly.
+# suppressed from CLI help/argparse output as CLI users should never set this directly
 DltConfig = Annotated[
-    dlt.common.configuration.accessors._Accessor | dict[str, Any] | None,  # noqa: SLF001
+    dlt.common.configuration.accessors._Accessor | None,  # noqa: SLF001
     Field(
         description="DLT configuration for the pipeline.",
         default_factory=lambda: dlt.config,
+        # exclude from model_dump()
         exclude=True,
         repr=False,
     ),
     CLI_SUPPRESS,
 ]
+FileGlob = Annotated[str, Field(default=DEFAULTS[FILE_GLOB], description="File glob")]
 InputDir = Annotated[
     str,
     Field(
@@ -122,6 +124,7 @@ StartAt = Annotated[
         description="File to start import at",
     ),
 ]
+TableName = Annotated[str, Field(description="The name of the table to export parsed data to")]
 UseDestination = Annotated[
     str,
     Field(

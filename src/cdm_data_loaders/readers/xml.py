@@ -6,13 +6,13 @@ from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
-import dlt
 import xmltodict
 from dlt.extract.items import DataItemWithMeta
 from lxml.etree import Element, iterparse, tostring
 
 from cdm_data_loaders.core.settings import BatchedFileInputSettings
 from cdm_data_loaders.utils.batcher import get_file_batches
+from cdm_data_loaders.utils.buffer import DictBuffer
 
 logger: Logger = getLogger(__name__)
 
@@ -21,18 +21,16 @@ def stream_xml_file(file_path: str | Path, element_with_ns: str) -> Generator[El
     """Stream XML elements from a file.
 
     :param file_path: path to the XML file; file can be gzipped or not.
-    :type file_path: str | Path
+    :type  file_path: str | Path
     :param element_with_ns: name of the element (including namespace, in braces) to return; e.g. f"{{{UNIPROT_NS}}}entry"
-    :type element_with_ns: str
+    :type  element_with_ns: str
     :yield: elements from the file
     :rtype: Generator[Element, Any]
     """
     if isinstance(file_path, Path):
         file_path = str(file_path)
     logger.debug("Streaming XML from %s", file_path)
-    open_fn = open
-    if file_path.endswith(".gz"):
-        open_fn = gzip.open
+    open_fn = gzip.open if file_path.endswith(".gz") else open
 
     with open_fn(file_path, "rb") as f:
         for _, elem in iterparse(f, tag=(element_with_ns), remove_blank_text=True):
@@ -50,36 +48,28 @@ def process_xml_file(
     """Core generator shared by XML-based dlt pipeline resources.
 
     :param settings: pipeline config with input_dir and start_at
-    :type settings: BatchedFileInputSettings
+    :type  settings: BatchedFileInputSettings
     :param xml_tag: XML element tag to stream
-    :type xml_tag: str
+    :type  xml_tag: str
     :param parse_fn: callable(entry, timestamp, file_path) -> dict[str, rows]
-    :type parse_fn: Callable
+    :type  parse_fn: Callable
     :param file_path: path to the XML file to be processed
-    :type file_path: Path
+    :type  file_path: Path
     :yield: table-tagged rows
     :rtype: Generator[DataItemWithMeta, Any]
     """
     logger.info("Reading from %s", str(file_path))
     n_entries = -1
-    dict_buffer: dict[str, list[Any]] = {}
+    buffer = DictBuffer(max_items=settings.buffer_size)
     for n_entries, entry in enumerate(stream_xml_file(file_path, xml_tag)):
         parsed_entry = parse_fn(entry=entry, file_path=file_path)
-        for table, rows in parsed_entry.items():
-            if table not in dict_buffer:
-                dict_buffer[table] = []
-            dict_buffer[table].extend(rows)
-            if len(dict_buffer[table]) >= settings.buffer_size:
-                yield dlt.mark.with_table_name(dict_buffer[table], table)
-                dict_buffer[table] = []
+        yield from buffer.add_items(parsed_entry)
         if (n_entries + 1) % settings.log_interval == 0:
             logger.debug("Processed %d entries", n_entries + 1)
     if (n_entries + 1) % settings.log_interval != 0:
         logger.debug("Processed %d entries from %s", n_entries + 1, file_path.name)
 
-    for table, rows in dict_buffer.items():
-        if rows:
-            yield dlt.mark.with_table_name(rows, table)
+    yield from buffer.flush()
 
 
 def process_xml_file_batches(

@@ -76,27 +76,6 @@ CLI_SHORTCUTS = frozendict(
 )
 
 
-def _alias_key(alias: str | AliasPath) -> Hashable:
-    """Convert a validation alias into a hashable, structurally comparable key.
-
-    A plain string alias is returned unchanged. An AliasPath is converted to a
-    tuple of its `path` elements, which is hashable and equal to the tuple
-    produced by any other AliasPath with an identical `path`. A tuple key is
-    never equal to a string key, so string aliases and AliasPath aliases cannot
-    be mistaken for one another.
-    """
-    if isinstance(alias, AliasPath):
-        return tuple(alias.path)
-    return alias
-
-
-def _format_alias_key(key: Hashable) -> str:
-    """Render an alias key for inclusion in the collision error message."""
-    if isinstance(key, tuple):
-        return f"AliasPath{list(key)}"
-    return str(key)
-
-
 class CdmDataLoadersBase(BaseSettings):
     """Base for all CDM Data Loaders settings classes.
 
@@ -179,10 +158,9 @@ class CtsSettings(InputOutputSettings):
     )
 
     dev_mode: DevMode
+    dlt_config: DltConfig
     use_destination: UseDestination
     use_output_dir_for_pipeline_metadata: UseOutputDirForPipelineMetadata
-
-    dlt_config: DltConfig
 
     @model_validator(mode="after")
     def reconcile_with_dlt_config(self) -> Self:

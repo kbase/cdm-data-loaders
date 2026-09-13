@@ -28,6 +28,8 @@ class NumericFileSequenceBatcher(BaseModel):
 
     Assumes that file names only contain alphanumeric characters, underscore, and extension(s).
 
+    Re-scans the directory each time the next batch is requested.
+
     :param directory:   directory to retrieve files from; strings will be coerced to Paths
     :type  directory:   Path, required
     :param batch_size:  number of files to return per invocation, defaults to 1
@@ -99,7 +101,7 @@ def get_file_batches(settings: BatchedFileInputSettings) -> Generator[list[Path]
     """Yield successive batches of files to process, driven by a NumericFileSequenceBatcher.
 
     :param settings: pipeline config with input_dir and start_at
-    :type settings: BatchedFileInputSettings
+    :type  settings: BatchedFileInputSettings
     :yield: batches of file paths
     :rtype: Generator[list[Path], Any]
     """

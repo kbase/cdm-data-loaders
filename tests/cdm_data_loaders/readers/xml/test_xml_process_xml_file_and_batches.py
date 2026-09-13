@@ -13,6 +13,7 @@ from dlt.extract.items import DataItemWithMeta, TableNameMeta
 from lxml.etree import Element, XMLSyntaxError, tostring
 
 import cdm_data_loaders.readers.xml as xml_module
+import cdm_data_loaders.utils.buffer as buffer_module
 from cdm_data_loaders.core.fields import BUFFER_SIZE, DEFAULTS, LOG_INTERVAL
 from cdm_data_loaders.core.settings import BatchedFileInputSettings
 from cdm_data_loaders.readers.xml import (
@@ -623,7 +624,7 @@ def test_process_xml_file_pass_wraps_each_table_with_dlt_mark(
     rows_emails = [{"email": "a@example.com"}]
     parse_fn = MagicMock(return_value={"people": rows_people, "emails": rows_emails})
     mark_mock = MagicMock(side_effect=lambda rows, table: DataItemWithMeta(TableNameMeta(table), rows))
-    monkeypatch.setattr(xml_module.dlt.mark, "with_table_name", mark_mock)
+    monkeypatch.setattr(buffer_module.dlt.mark, "with_table_name", mark_mock)
 
     items = list(process_xml_file(fake_settings(), "tag", parse_fn, file_path=Path("f.xml")))
 
