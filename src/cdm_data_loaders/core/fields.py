@@ -1,6 +1,6 @@
 """Common defaults for running pipelines on the KBase CTS."""
 
-from typing import Annotated, Final
+from typing import Annotated, Any, Final
 
 import dlt
 import dlt.common.configuration.accessors
@@ -76,9 +76,10 @@ DevMode = Annotated[
         description="Whether to run the pipeline in dev mode, which saves raw API responses to disk and disables compression for easier debugging.",
     ),
 ]
-# suppressed from CLI help/argparse output as CLI users should never set this directly
+# this should really just be _Accessor but leaving the dict version in for ease of testing
+# suppressed from CLI help/argparse output as it is not a value a user should ever set directly.
 DltConfig = Annotated[
-    dlt.common.configuration.accessors._Accessor | None,  # noqa: SLF001
+    dlt.common.configuration.accessors._Accessor | dict[str, Any] | None,  # noqa: SLF001
     Field(
         description="DLT configuration for the pipeline.",
         default_factory=lambda: dlt.config,

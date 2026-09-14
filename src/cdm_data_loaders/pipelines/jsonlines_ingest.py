@@ -31,7 +31,6 @@ Write disposition is `append` or `replace` only. No merge is performed.
 """
 
 import json
-import re
 from collections.abc import Callable, Generator, Iterator
 from importlib import import_module
 from logging import Logger, getLogger
@@ -56,8 +55,6 @@ PIPELINE_NAME: Final[str] = "jsonlines_ingest"
 
 ENTITY_MODELS_MODULE: Final[str] = "entity_models_module"
 TABLE_NAMES: Final[str] = "table_names"
-
-WRITE_DISPOSITION_REGEX: Final[re.Pattern[str]] = re.compile(r"^(append|replace)$")
 DEFAULT_FILE_GLOB: Final[str] = "*.jsonl*"
 GZIP_SUFFIX: Final[str] = ".gz"
 

@@ -7,13 +7,10 @@ hand back full pages when a table's buffer reaches its size limit.
 
 from collections import defaultdict
 from collections.abc import Generator
-from logging import Logger, getLogger
 from typing import Any
 
 import dlt
 from dlt.extract.items import DataItemWithMeta
-
-logger: Logger = getLogger(__name__)
 
 DEFAULT_BUFFER_MAX_ITEMS = 1000
 
