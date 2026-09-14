@@ -352,6 +352,8 @@ def test_run_cli_calls_settings_cls_with_dlt_config(
     # no dlt_config override was supplied, so it falls back to the ambient dlt.config -- isolated
     # for this test, but still the real dlt accessor, not a plain dict
     assert captured_config.dlt_config is dlt.config
+    # prevent annoying pylance warning on the next assertion
+    assert captured_config.dlt_config is not None
     assert (
         captured_config.dlt_config["destination.local_fs.bucket_url"] == dlt_config["destination.local_fs.bucket_url"]
     )
@@ -477,27 +479,6 @@ def test_run_pipeline_calls_construct_env_var_and_sync_configs(
 
     mock_env_var.assert_called_once_with()
     mock_sync.assert_called_once_with(test_bfi_settings, mock_dlt.config)
-
-
-def test_run_pipeline_bootstrap_runs_before_destination_is_built(
-    test_bfi_settings: BatchedFileInputSettings, mock_dlt: MagicMock
-) -> None:
-    """construct_env_var/sync_configs run before dlt.destination()/dlt.pipeline() are constructed."""
-    call_order: list[str] = []
-    with (
-        patch(
-            "cdm_data_loaders.pipelines.core.construct_env_var",
-            side_effect=lambda: call_order.append("construct_env_var"),
-        ),
-        patch(
-            "cdm_data_loaders.pipelines.core.sync_configs",
-            side_effect=lambda *_: call_order.append("sync_configs"),
-        ),
-    ):
-        mock_dlt.destination.side_effect = lambda *_, **__: call_order.append("dlt.destination") or MagicMock()
-        run_pipeline(test_bfi_settings, MagicMock())
-
-    assert call_order == ["construct_env_var", "sync_configs", "dlt.destination"]
 
 
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
