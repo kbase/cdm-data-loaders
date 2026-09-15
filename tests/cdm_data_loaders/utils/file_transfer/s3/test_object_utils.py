@@ -455,7 +455,7 @@ def test_upload_file_fail_upload_error_returns_false(sample_file: Path, caplog: 
     with caplog.at_level(logging.ERROR):
         result = upload_file(sample_file, "nonexistent-bucket/uploads")
     assert result is False
-    assert any("Error uploading to s3" in r.message for r in caplog.records)
+    assert any("Error uploading to s3" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.s3
@@ -670,7 +670,7 @@ def test_upload_fileobj_fail_upload_error_returns_false(caplog: pytest.LogCaptur
     with caplog.at_level(logging.ERROR):
         result = upload_fileobj(io.BytesIO(b"data"), "nonexistent-bucket/uploads/file.bin")
     assert result is False
-    assert any("Error uploading to s3" in r.message for r in caplog.records)
+    assert any("Error uploading to s3" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.s3
@@ -731,7 +731,7 @@ def test_upload_fileobj_skip_if_exists_flag_currently_logs_placeholder_only(
     with caplog.at_level(logging.DEBUG):
         result = upload_fileobj(io.BytesIO(b"data"), f"{TEST_BUCKET}/uploads/skip.bin", skip_if_exists=True)
     assert result is True
-    assert any("To be implemented" in r.message for r in caplog.records)
+    assert any("To be implemented" in r.getMessage() for r in caplog.records)
     obj = mock_s3_client.get_object(Bucket=TEST_BUCKET, Key="uploads/skip.bin")
     assert obj["Body"].read() == b"data"
 
@@ -742,7 +742,7 @@ def test_upload_fileobj_logs_file_path_when_provided(sample_file: Path, caplog: 
     """The debug log includes the local file path when file_path is supplied."""
     with caplog.at_level(logging.DEBUG), sample_file.open("rb") as fh:
         upload_fileobj(fh, f"{TEST_BUCKET}/uploads/{sample_file.name}", file_path=sample_file)
-    assert any(f"uploading {sample_file} to" in r.message for r in caplog.records)
+    assert any(f"uploading {sample_file} to" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.s3
@@ -751,7 +751,7 @@ def test_upload_fileobj_logs_generic_message_without_file_path(caplog: pytest.Lo
     """The debug log uses the generic 'fileobj' message when file_path is not supplied."""
     with caplog.at_level(logging.DEBUG):
         upload_fileobj(io.BytesIO(b"data"), f"{TEST_BUCKET}/uploads/stream.bin")
-    assert any("uploading fileobj to" in r.message for r in caplog.records)
+    assert any("uploading fileobj to" in r.getMessage() for r in caplog.records)
 
 
 # upload_dir
@@ -963,7 +963,7 @@ def test_download_file_fail_directory_creation_error_other_than_exists_propagate
     with pytest.raises(PermissionError, match=err_msg):
         download_file(f"{TEST_BUCKET}/some/key.txt", tmp_path / "newdir" / "file.txt")
 
-    assert any("Could not save s3 file" in r.message for r in caplog.records)
+    assert any("Could not save s3 file" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.s3

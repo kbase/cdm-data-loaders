@@ -112,7 +112,7 @@ async def test_download_validate_response(
         last_log_msg = caplog.records[-1]
         assert last_log_msg.levelno == logging.ERROR
         assert (
-            last_log_msg.message
+            last_log_msg.getMessage()
             == f"{DOWNLOAD_URL}: {msg} error: {status} {status_text}; retry{' not ' if msg == 'Client' else ' '}possible"
         )
         return
@@ -127,10 +127,10 @@ async def test_download_validate_response(
 
     if status == 304:  # noqa: PLR2004
         assert result is None
-        assert last_log_msg.message.startswith(f"{DOWNLOAD_URL}: resource has not been modified")
+        assert last_log_msg.getMessage().startswith(f"{DOWNLOAD_URL}: resource has not been modified")
     else:
         assert result == destination
-        assert last_log_msg.message == f"{DOWNLOAD_URL}: download successful"
+        assert last_log_msg.getMessage() == f"{DOWNLOAD_URL}: download successful"
 
 
 @pytest.mark.asyncio
@@ -164,7 +164,7 @@ async def test_extra_headers(
     assert result is None
     last_log_msg = caplog.records[-1]
     assert last_log_msg.levelno == logging.INFO
-    assert last_log_msg.message.startswith(f"{DOWNLOAD_URL}: resource has not been modified")
+    assert last_log_msg.getMessage().startswith(f"{DOWNLOAD_URL}: resource has not been modified")
 
 
 @pytest.mark.parametrize("checksum_fn", [None, *hashlib.algorithms_available, "crc64nvme"])
@@ -197,7 +197,7 @@ async def test_checksum_success(
     )
     assert result == destination
     assert destination.read_bytes() == content
-    assert f"{DOWNLOAD_URL}: {checksum_fn_used} checksum matches" in [m.message for m in caplog.records]
+    assert f"{DOWNLOAD_URL}: {checksum_fn_used} checksum matches" in [m.getMessage() for m in caplog.records]
 
 
 @pytest.mark.parametrize("checksum_fn", ["shake128", " shake256", "shake-n-vac", "CRC64NVME", "crc64nvme"])
@@ -292,7 +292,7 @@ async def test_timeout_and_server_error_retries(
         assert calls["n"] == successful_attempt
 
     # check the logs: we should have messages for each error/timeout until the successful download
-    retry_possible_msgs = [r for r in caplog.records if r.message.endswith("retry possible")]
+    retry_possible_msgs = [r for r in caplog.records if r.getMessage().endswith("retry possible")]
     if max_attempts < successful_attempt:
         assert len(retry_possible_msgs) == max_attempts
     else:

@@ -249,7 +249,7 @@ def test_extract_cross_refs_param(
     if warning:
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.WARNING
-        assert caplog.records[0].message == warning
+        assert caplog.records[0].getMessage() == warning
     else:
         assert not caplog.records
 

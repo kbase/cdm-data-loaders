@@ -3,7 +3,7 @@ disable_compression = "false"
 
 [runtime]
 http_show_error_body = "true"
-log_level = "INFO"
+log_level = "WARNING"
 log_format = "JSON"
 
 # REST Client retries

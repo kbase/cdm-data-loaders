@@ -1,11 +1,10 @@
 """Common defaults for running pipelines on the KBase CTS."""
 
 import logging
-from collections.abc import Hashable, Mapping
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
 
 from frozendict import frozendict
-from pydantic import AliasPath, computed_field, field_validator, model_validator
+from pydantic import computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 
 from cdm_data_loaders.core.fields import (
@@ -30,6 +29,9 @@ from cdm_data_loaders.core.fields import (
     UseDestination,
     UseOutputDirForPipelineMetadata,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 logger = logging.getLogger(__name__)
 

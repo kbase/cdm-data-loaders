@@ -126,12 +126,22 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
     """Fiddle with the loggers used in the tests for a better experience."""
     vcr_logger = logging.getLogger("vcr")
-    vcr_logger.setLevel("ERROR")
+    vcr_logger.setLevel(logging.ERROR)
     # turn on log propagation for the dlt logger
     dlt_logger = logging.getLogger("dlt")
     dlt_logger.propagate = True
     caplog.set_level(logging.INFO)
     caplog.clear()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_cli_and_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
+    """Clear sys.argv and the environment to prevent test-to-test pollution."""
+    monkeypatch.setattr(sys, "argv", ["pytest"])
+
+    current_env = deepcopy(os.environ)
+    with patch.dict(os.environ, {k: v for k, v in current_env.items() if not k.lower().startswith("cdl_")}, clear=True):
+        yield
 
 
 @pytest.fixture
@@ -234,18 +244,6 @@ def _generate_dlt_config() -> dict[str, Any]:
 def dlt_config() -> dict[str, Any]:
     """DLT config for testing purposes."""
     return _generate_dlt_config()
-
-
-@pytest.fixture(autouse=True)
-def _isolated_cli_and_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
-    """Isolate sys.argv and CDL_* environment variables from the ambient process for every test.
-
-    Prevents pollution of CLI arg parsing tests by the args/env vars used by the calling process.
-    """
-    monkeypatch.setattr(sys, "argv", ["pytest"])
-    for env_key in [key for key in os.environ if key.lower().startswith("cdl_")]:
-        monkeypatch.delenv(env_key, raising=False)
-    yield
 
 
 @pytest.fixture(autouse=True)

@@ -530,7 +530,7 @@ def test_get_batch_exits_early_with_no_matching_files(
     assert cursor.get_batch() == []
     assert len(caplog.records) == 1
     assert caplog.records[-1].levelno == logging.WARNING
-    assert caplog.records[-1].message == f"No matching files found in {tmp_path!s}"
+    assert caplog.records[-1].getMessage() == f"No matching files found in {tmp_path!s}"
 
 
 # Dynamic / live-directory behaviour

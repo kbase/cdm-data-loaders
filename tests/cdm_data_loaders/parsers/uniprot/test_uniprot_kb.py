@@ -993,7 +993,7 @@ def test_parse_cross_references_multiple_molecules(caplog: pytest.LogCaptureFixt
             DESCRIPTION: "Ensembl protein sequence ID for UniProt:P99999-1",
         },
     ]
-    assert any("Found many molecules for entry P99999" in rec.message for rec in caplog.records)
+    assert any("Found many molecules for entry P99999" in rec.getMessage() for rec in caplog.records)
 
 
 # reference whose citation dbReferences are all outside the priority order
@@ -1048,7 +1048,7 @@ def test_parse_references_no_priority_ref_type(caplog: pytest.LogCaptureFixture)
     assert len(parsed["all_xml"]) == 1
     assert parsed["all_xml"][0][KEY] == "7"
     # warns about the unexpected type and about not finding a priority ref type
-    messages = " ".join(rec.message for rec in caplog.records)
+    messages = " ".join(rec.getMessage() for rec in caplog.records)
     assert "Unexpected dbxref types in publications" in messages
     assert "Could not find priority ref type" in messages
 

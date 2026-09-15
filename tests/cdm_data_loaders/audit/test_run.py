@@ -41,7 +41,7 @@ def check_no_record_log_message(
     """
     assert caplog_message.levelno == logging.WARNING
     assert (
-        caplog_message.message
+        caplog_message.getMessage()
         == f"{run.pipeline} {run.run_id}: cannot update '{table_name}' to status {status} because no record exists."
     )
 
@@ -104,7 +104,7 @@ def test_complete_run(
         check_no_record_log_message(pipeline_run, RUN, STATUS_SUCCESS, caplog.records[0])
 
     assert caplog.records[-1].levelno == logging.INFO
-    assert caplog.records[-1].message == f"{pipeline} {PIPELINE_RUN[RUN_ID]}: run completed"
+    assert caplog.records[-1].getMessage() == f"{pipeline} {PIPELINE_RUN[RUN_ID]}: run completed"
 
 
 @pytest.mark.requires_spark
@@ -156,6 +156,8 @@ def test_fail_run(
         check_no_record_log_message(pipeline_run, RUN, STATUS_ERROR, caplog.records[0])
 
     assert caplog.records[-1].levelno == logging.ERROR
-    assert caplog.records[-1].message.startswith(
-        f"{pipeline} {PIPELINE_RUN[RUN_ID]}: run failed with RuntimeError('ZOMGWTELF! ZOMGWTELF! "
+    assert (
+        caplog.records[-1]
+        .getMessage()
+        .startswith(f"{pipeline} {PIPELINE_RUN[RUN_ID]}: run failed with RuntimeError('ZOMGWTELF! ZOMGWTELF! ")
     )
