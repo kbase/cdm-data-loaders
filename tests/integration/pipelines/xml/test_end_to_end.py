@@ -8,11 +8,13 @@ from typing import Any
 import dlt
 import pytest
 
-from cdm_data_loaders.pipelines.xml_to_dict_ingest import (
-    PIPELINE_NAME,
-    XmlToDictIngestSettings,
+from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
     cli,
     run_xml_ingest_pipeline,
+)
+from cdm_data_loaders.pipelines.xml_to_dict.settings import (
+    PIPELINE_NAME,
+    XmlToDictSettings,
 )
 
 SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
@@ -25,7 +27,7 @@ SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
 
 
 def test_run_xml_ingest_pipeline_pass_writes_expected_parquet(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
     fresh_xml_to_dict_reader: Callable[[], Any],
 ) -> None:
     """Running the pipeline on xml files loads one row per matching element into the configured table."""
@@ -49,7 +51,7 @@ def test_run_xml_ingest_pipeline_pass_writes_expected_parquet(
 
 
 def test_run_xml_ingest_pipeline_pass_gzip_files_are_loaded(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
     fresh_xml_to_dict_reader: Callable[[], Any],
     write_gzip_xml_file: Callable[[Path, str, str], Path],
 ) -> None:
@@ -75,7 +77,7 @@ def test_run_xml_ingest_pipeline_pass_gzip_files_are_loaded(
 
 
 def test_run_xml_ingest_pipeline_pass_custom_table_name_is_respected(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
     fresh_xml_to_dict_reader: Callable[[], Any],
 ) -> None:
     """Rows land in the table named by table_name, not in a name derived from the xml tag."""
@@ -99,7 +101,7 @@ def test_run_xml_ingest_pipeline_pass_custom_table_name_is_respected(
 
 
 def test_run_xml_ingest_pipeline_pass_no_matching_files_yields_no_data_table(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
     fresh_xml_to_dict_reader: Callable[[], Any],
 ) -> None:
     """An input dir with no matching xml files does not fail the run and creates no data table."""

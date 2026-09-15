@@ -6,7 +6,7 @@ from typing import Any
 
 from dlt.sources.filesystem import filesystem
 
-from cdm_data_loaders.pipelines.jsonlines_ingest import _read_jsonl_lines
+from cdm_data_loaders.pipelines.jsonlines.pipeline import _read_jsonl_lines
 
 
 def read_dir(directory: Path, file_glob: str = "*.jsonl*", buffer_size: int = 100) -> list[dict[str, Any]]:

@@ -10,13 +10,12 @@ from uuid import uuid4
 import dlt
 import pytest
 
-import cdm_data_loaders.pipelines.xml_to_dict_ingest as xml_to_dict_ingest_module
-from cdm_data_loaders.pipelines.xml_to_dict_ingest import (
-    PIPELINE_NAME,
-    XmlToDictIngestSettings,
+import cdm_data_loaders.pipelines.xml_to_dict.pipeline as xml_to_dict_ingest_module
+from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
     cli,
     run_xml_ingest_pipeline,
 )
+from cdm_data_loaders.pipelines.xml_to_dict.settings import PIPELINE_NAME, XmlToDictSettings
 
 SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
 <library>
@@ -27,7 +26,7 @@ SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
 
 
 def test_run_xml_ingest_pipeline_pass_sets_core_run_pipeline_args_correctly(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
     fresh_xml_to_dict_reader: Callable[[], Any],
 ) -> None:
     """run_xml_ingest_pipeline binds the reader and delegates to run_pipeline with the correct args."""
@@ -51,7 +50,7 @@ def test_run_xml_ingest_pipeline_pass_sets_core_run_pipeline_args_correctly(
 
 
 def test_run_xml_ingest_pipeline_pass_binds_reader_before_run_pipeline(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
     fresh_xml_to_dict_reader: Callable[[], Any],
 ) -> None:
     """The module-level transformer is bound to settings before run_pipeline is called."""
@@ -68,7 +67,7 @@ def test_run_xml_ingest_pipeline_pass_binds_reader_before_run_pipeline(
 
 
 def test_run_xml_ingest_pipeline_pass_resource_is_reader_piped_into_source(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
     fresh_xml_to_dict_reader: Callable[[], Any],
 ) -> None:
     """The resource passed to run_pipeline combines the filesystem source with the bound reader."""
@@ -89,7 +88,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
 ) -> None:
     """cli() reads command-line arguments and runs the pipeline via run_xml_ingest_pipeline.
 
-    The real XmlToDictIngestSettings parses argv (seeded by the autouse dlt
+    The real XmlToDictSettings parses argv (seeded by the autouse dlt
     config isolation fixture), and core.run_pipeline is redirected to a real
     DuckDB pipeline so the full flow is validated.
     """

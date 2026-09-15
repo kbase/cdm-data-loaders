@@ -11,105 +11,11 @@ from dlt.extract.items import DataItemWithMeta
 from lxml.etree import Element, iterparse, tostring
 
 from cdm_data_loaders.core.settings import BatchedFileInputSettings
+from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
 from cdm_data_loaders.utils.batcher import get_file_batches
-from cdm_data_loaders.utils.buffer import DictBuffer
+from cdm_data_loaders.utils.buffer import DictBuffer, ListBuffer
 
 logger: Logger = getLogger(__name__)
-
-
-def stream_xml_file(file_path: str | Path, element_with_ns: str) -> Generator[Element, Any]:
-    """Stream XML elements from a file.
-
-    :param file_path: path to the XML file; file can be gzipped or not.
-    :type  file_path: str | Path
-    :param element_with_ns: name of the element (including namespace, in braces) to return; e.g. f"{{{UNIPROT_NS}}}entry"
-    :type  element_with_ns: str
-    :yield: elements from the file
-    :rtype: Generator[Element, Any]
-    """
-    if isinstance(file_path, Path):
-        file_path = str(file_path)
-    logger.debug("Streaming XML from %s", file_path)
-    open_fn = gzip.open if file_path.endswith(".gz") else open
-
-    with open_fn(file_path, "rb") as f:
-        for _, elem in iterparse(f, tag=(element_with_ns), remove_blank_text=True):
-            logger.debug(elem)
-            yield elem
-            elem.clear()
-
-
-def process_xml_file(
-    settings: BatchedFileInputSettings,
-    xml_tag: str,
-    parse_fn: Callable,
-    file_path: Path,
-) -> Generator[DataItemWithMeta, Any]:
-    """Core generator shared by XML-based dlt pipeline resources.
-
-    :param settings: pipeline config with input_dir and start_at
-    :type  settings: BatchedFileInputSettings
-    :param xml_tag: XML element tag to stream
-    :type  xml_tag: str
-    :param parse_fn: callable(entry, timestamp, file_path) -> dict[str, rows]
-    :type  parse_fn: Callable
-    :param file_path: path to the XML file to be processed
-    :type  file_path: Path
-    :yield: table-tagged rows
-    :rtype: Generator[DataItemWithMeta, Any]
-    """
-    logger.info("Reading from %s", str(file_path))
-    n_entries = -1
-    buffer = DictBuffer(max_items=settings.buffer_size)
-    for n_entries, entry in enumerate(stream_xml_file(file_path, xml_tag)):
-        parsed_entry = parse_fn(entry=entry, file_path=file_path)
-        yield from buffer.add_items(parsed_entry)
-        if (n_entries + 1) % settings.log_interval == 0:
-            logger.debug("Processed %d entries", n_entries + 1)
-    if (n_entries + 1) % settings.log_interval != 0:
-        logger.debug("Processed %d entries from %s", n_entries + 1, file_path.name)
-
-    yield from buffer.flush()
-
-
-def process_xml_file_batches(
-    settings: BatchedFileInputSettings,
-    xml_tag: str,
-    parse_fn: Callable,
-) -> Generator[DataItemWithMeta, Any]:
-    """Generator that uses the NumericFileSequenceBatcher to generate a list of XML files to process.
-
-    :param settings: pipeline config with input_dir and start_at
-    :type settings: BatchedFileInputSettings
-    :param xml_tag: XML element tag to stream
-    :type xml_tag: str
-    :param parse_fn: function for parsing the XML
-    :type parse_fn: Callable
-    """
-    for files in get_file_batches(settings):
-        for file_path in files:
-            yield from process_xml_file(
-                settings=settings,
-                xml_tag=xml_tag,
-                parse_fn=parse_fn,
-                file_path=file_path,
-            )
-
-
-def xml_to_dict_parse_fn(table_name: str) -> Callable[..., dict[str, list[dict[str, Any]]]]:
-    """XML parsing function that executes xmltodict on each element in an XML file.
-
-    :param table_name: table to export parsed data to
-    :type table_name: str
-    :return: parse function
-    :rtype: Callable[..., dict[str, list[dict[str, Any]]]]
-    """
-
-    def parse_fn(entry: Element, file_path: Path) -> dict[str, list[dict[str, Any]]]:  # noqa: ARG001
-        """A parse_fn that runs xmltodict on the given XML entity."""
-        return {table_name: [xmltodict.parse(tostring(entry))]}
-
-    return parse_fn
 
 
 def parse_head_matter(file_path: str | Path) -> dict[str, str]:
@@ -154,3 +60,118 @@ def parse_head_matter(file_path: str | Path) -> dict[str, str]:
 
     logger.debug("Found %d namespace declaration(s) in %s", len(namespaces), file_path)
     return namespaces
+
+
+def stream_xml_file(file_path: str | Path, element_with_ns: str) -> Generator[Element, Any]:
+    """Stream XML elements from a file.
+
+    :param file_path: path to the XML file; file can be gzipped or not.
+    :type  file_path: str | Path
+    :param element_with_ns: name of the element (including namespace, in braces) to return; e.g. f"{{{UNIPROT_NS}}}entry"
+    :type  element_with_ns: str
+    :yield: elements from the file
+    :rtype: Generator[Element, Any]
+    """
+    if isinstance(file_path, Path):
+        file_path = str(file_path)
+    logger.debug("Streaming XML from %s", file_path)
+    open_fn = gzip.open if file_path.endswith(".gz") else open
+
+    with open_fn(file_path, "rb") as f:
+        for _, elem in iterparse(f, tag=(element_with_ns), remove_blank_text=True):
+            logger.debug(elem)
+            yield elem
+            elem.clear()
+
+
+def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: Path) -> Generator[DataItemWithMeta]:
+    """Generator for converting XML to dictionary form.
+
+    Note: each incoming element produces a single dictionary as output.
+
+    Use process_xml_file for parsing functions that return data spread across several tables.
+
+    :param settings: pipeline config, including xml_tag, table_name, and buffer_size
+    :type settings: XmlToDictSettings
+    :param file_path: file path, as a string
+    :type file_item: FileItemDict
+    :yield: pages of dictionary items
+    :rtype: Generator[DataItemWithMeta]
+    """
+    logger.info("Reading from %s", str(file_path))
+    n_entries = -1
+    buffer = ListBuffer(table_name=settings.table_name, max_items=settings.buffer_size)
+    for n_entries, element in enumerate(stream_xml_file(file_path, settings.xml_tag)):
+        parsed_element = xmltodict.parse(tostring(element))
+        if parsed_element:
+            yield from buffer.add_item(parsed_element)
+
+        if (n_entries + 1) % settings.log_interval == 0:
+            logger.debug("Processed %d entries", n_entries + 1)
+
+    if n_entries >= 0 and (n_entries + 1) % settings.log_interval != 0:
+        logger.debug("Processed %d entries from %s", n_entries + 1, file_path.name)
+
+    yield from buffer.flush()
+
+
+def process_xml_file(
+    settings: BatchedFileInputSettings,
+    xml_tag: str,
+    parse_fn: Callable,
+    file_path: Path,
+) -> Generator[DataItemWithMeta, Any]:
+    """Core generator shared by XML-based dlt pipeline resources.
+
+    This processor is expected to return a dictionary of table names and lists of rows, unlike the
+    xml_to_dict parser, which creates a single dictionary for each element.
+
+    :param settings: pipeline config with input_dir and start_at
+    :type  settings: BatchedFileInputSettings
+    :param xml_tag: XML element tag to stream
+    :type  xml_tag: str
+    :param parse_fn: callable(element, timestamp, file_path) -> dict[str, rows]
+    :type  parse_fn: Callable
+    :param file_path: path to the XML file to be processed
+    :type  file_path: Path
+    :yield: table-tagged rows
+    :rtype: Generator[DataItemWithMeta, Any]
+    """
+    logger.info("Reading from %s", str(file_path))
+    n_entries = -1
+    buffer = DictBuffer(max_items=settings.buffer_size)
+    for n_entries, element in enumerate(stream_xml_file(file_path, xml_tag)):
+        parsed_element = parse_fn(entry=element, file_path=file_path)
+        yield from buffer.add_items(parsed_element)
+
+        if (n_entries + 1) % settings.log_interval == 0:
+            logger.debug("Processed %d entries", n_entries + 1)
+
+    if (n_entries + 1) % settings.log_interval != 0:
+        logger.debug("Processed %d entries from %s", n_entries + 1, file_path.name)
+
+    yield from buffer.flush()
+
+
+def process_xml_file_batches(
+    settings: BatchedFileInputSettings,
+    xml_tag: str,
+    parse_fn: Callable,
+) -> Generator[DataItemWithMeta, Any]:
+    """Generator that uses the NumericFileSequenceBatcher to generate a list of XML files to process.
+
+    :param settings: pipeline config with input_dir and start_at
+    :type settings: BatchedFileInputSettings
+    :param xml_tag: XML element tag to stream
+    :type xml_tag: str
+    :param parse_fn: function for parsing the XML
+    :type parse_fn: Callable
+    """
+    for files in get_file_batches(settings):
+        for file_path in files:
+            yield from process_xml_file(
+                settings=settings,
+                xml_tag=xml_tag,
+                parse_fn=parse_fn,
+                file_path=file_path,
+            )

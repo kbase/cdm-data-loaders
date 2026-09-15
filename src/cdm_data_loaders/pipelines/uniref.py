@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Final
 
 import dlt
+from dlt.common.pipeline import LoadInfo
 from dlt.extract.items import DataItemWithMeta
 from pydantic import Field, field_validator
 from pydantic_settings import SettingsConfigDict
@@ -92,13 +93,13 @@ def parse_uniref(settings: UnirefSettings) -> Generator[DataItemWithMeta, Any]:
     )
 
 
-def run_uniref_pipeline(settings: UnirefSettings) -> None:
+def run_uniref_pipeline(settings: UnirefSettings) -> LoadInfo | None:
     """Execute the Uniref pipeline.
 
     :param settings: config for running the pipeline.
     :type settings: UnirefSettings
     """
-    run_pipeline(
+    return run_pipeline(
         settings=settings,
         resource=parse_uniref(settings),
         pipeline_kwargs={
@@ -108,9 +109,9 @@ def run_uniref_pipeline(settings: UnirefSettings) -> None:
     )
 
 
-def cli() -> None:
+def cli() -> LoadInfo | None:
     """CLI interface for the UniRef importer pipeline."""
-    run_cli(
+    return run_cli(
         UnirefSettings,
         run_uniref_pipeline,
     )

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Final
 
 import dlt
+from dlt.common.pipeline import LoadInfo
 from dlt.extract.items import DataItemWithMeta
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
@@ -53,9 +54,9 @@ def parse_uniprot(settings: UniProtSettings) -> Generator[DataItemWithMeta, Any]
     )
 
 
-def run_uniprot_pipeline(settings: UniProtSettings) -> None:
+def run_uniprot_pipeline(settings: UniProtSettings) -> LoadInfo | None:
     """Execute the UniProt KB pipeline."""
-    run_pipeline(
+    return run_pipeline(
         settings=settings,
         resource=parse_uniprot(settings),
         pipeline_kwargs={
@@ -65,9 +66,9 @@ def run_uniprot_pipeline(settings: UniProtSettings) -> None:
     )
 
 
-def cli() -> None:
+def cli() -> LoadInfo | None:
     """CLI interface for the UniProt KB importer pipeline."""
-    run_cli(
+    return run_cli(
         UniProtSettings,
         run_uniprot_pipeline,
     )

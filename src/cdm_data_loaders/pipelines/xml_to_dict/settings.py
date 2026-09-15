@@ -1,0 +1,50 @@
+"""Settings class for the XML to dictionary pipeline for the KBase CTS."""
+
+from typing import Annotated, Final
+
+from pydantic import Field
+from pydantic_settings import SettingsConfigDict
+
+from cdm_data_loaders.core.fields import (
+    DEFAULT_XML_FILE_GLOB,
+    FILE_GLOB,
+    BufferSize,
+    DatasetName,
+    FileGlob,
+    LogInterval,
+    TableName,
+)
+from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
+
+PIPELINE_NAME: Final[str] = "xml_to_dict_ingest"
+
+
+class XmlToDictSettings(CtsSettings):
+    """Settings for the XML ingestion pipeline."""
+
+    model_config = SettingsConfigDict(
+        **DEFAULT_SETTINGS_CONFIG_DICT,
+        cli_prog_name=PIPELINE_NAME,
+        cli_shortcuts={
+            **CLI_SHORTCUTS,
+            FILE_GLOB.replace("_", "-"): "g",
+        },
+    )
+
+    buffer_size: BufferSize
+    dataset_name: DatasetName
+    file_glob: Annotated[
+        FileGlob,
+        Field(
+            default=DEFAULT_XML_FILE_GLOB,
+            description="Glob pattern for XML files inside each entity's input subdirectory.",
+        ),
+    ]
+    log_interval: LogInterval
+    table_name: TableName
+    xml_tag: Annotated[
+        str,
+        Field(
+            description="XML tag to capture the contents of",
+        ),
+    ]
