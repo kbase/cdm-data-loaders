@@ -7,10 +7,11 @@ from typing import Any
 import dlt
 from pydantic import BaseModel
 
-from cdm_data_loaders.pipelines.jsonlines_ingest import JsonlIngestSettings, build_entity_resource
+from cdm_data_loaders.pipelines.jsonlines.pipeline import build_entity_resource
+from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
 
 
-def run_pipeline(table_name: str, model: type[BaseModel], settings: JsonlIngestSettings) -> Any:
+def run_pipeline(table_name: str, model: type[BaseModel], settings: JsonlPydanticIngestSettings) -> Any:
     """Run one entity resource through a local dlt pipeline. Return the resulting dataset."""
     resource = build_entity_resource(table_name, model, settings)
 
@@ -26,7 +27,7 @@ def run_pipeline(table_name: str, model: type[BaseModel], settings: JsonlIngestS
 
 def test_build_entity_resource_pass_happy_path_all_valid(
     scenario_input_dir: Callable[[str], str],
-    settings_factory: Callable[..., JsonlIngestSettings],
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
     widget_model: type[BaseModel],
     tmp_path: Path,
 ) -> None:
@@ -42,7 +43,7 @@ def test_build_entity_resource_pass_happy_path_all_valid(
 
 def test_build_entity_resource_pass_mixed_batch_split_correctly(
     scenario_input_dir: Callable[[str], str],
-    settings_factory: Callable[..., JsonlIngestSettings],
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
     widget_model: type[BaseModel],
     tmp_path: Path,
 ) -> None:
@@ -59,7 +60,7 @@ def test_build_entity_resource_pass_mixed_batch_split_correctly(
 
 def test_build_entity_resource_fail_all_invalid_main_table_absent_or_empty(
     scenario_input_dir: Callable[[str], str],
-    settings_factory: Callable[..., JsonlIngestSettings],
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
     widget_model: type[BaseModel],
     tmp_path: Path,
 ) -> None:
@@ -74,7 +75,7 @@ def test_build_entity_resource_fail_all_invalid_main_table_absent_or_empty(
 
 
 def test_build_entity_resource_pass_empty_input_directory_yields_no_tables(
-    tmp_path: Path, settings_factory: Callable[..., JsonlIngestSettings], widget_model: type[BaseModel]
+    tmp_path: Path, settings_factory: Callable[..., JsonlPydanticIngestSettings], widget_model: type[BaseModel]
 ) -> None:
     """An entity subdirectory with no matching files produces no tables."""
     input_dir = tmp_path / "empty_input"
@@ -88,7 +89,7 @@ def test_build_entity_resource_pass_empty_input_directory_yields_no_tables(
 
 
 def test_build_entity_resource_pass_missing_entity_directory_yields_no_tables(
-    tmp_path: Path, settings_factory: Callable[..., JsonlIngestSettings], widget_model: type[BaseModel]
+    tmp_path: Path, settings_factory: Callable[..., JsonlPydanticIngestSettings], widget_model: type[BaseModel]
 ) -> None:
     """A missing entity subdirectory produces no tables and does not raise."""
     input_dir = tmp_path / "input_without_widget_dir"

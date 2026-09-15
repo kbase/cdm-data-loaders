@@ -35,80 +35,29 @@ from collections.abc import Callable, Generator, Iterator
 from importlib import import_module
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Annotated, Any, Final
+from typing import Any, Final
 
 import dlt
+from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 from dlt.sources.filesystem import filesystem
-from pydantic import BaseModel, Field, ValidationError, field_validator
-from pydantic_settings import SettingsConfigDict
+from jsonschema import FormatChecker
+from jsonschema.validators import Draft202012Validator
+from pydantic import BaseModel, ValidationError
 
-from cdm_data_loaders.core.fields import FILE_GLOB, BufferSize, DatasetName, FileGlob
-from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
+from cdm_data_loaders.core.fields import GZIP_SUFFIX
 from cdm_data_loaders.pipelines.core import run_cli, run_pipeline
+from cdm_data_loaders.pipelines.jsonlines.settings import PIPELINE_NAME, JsonlPydanticIngestSettings
 from cdm_data_loaders.utils.buffer import ListBuffer
 
 logger: Logger = getLogger(__name__)
-
-PIPELINE_NAME: Final[str] = "jsonlines_ingest"
-
-ENTITY_MODELS_MODULE: Final[str] = "entity_models_module"
-TABLE_NAMES: Final[str] = "table_names"
-DEFAULT_FILE_GLOB: Final[str] = "*.jsonl*"
-GZIP_SUFFIX: Final[str] = ".gz"
 
 SCHEMA_CONTRACT: Final[dict[str, str]] = {
     "tables": "evolve",
     "columns": "evolve",
     "data_type": "discard_row",
 }
-
-
-class JsonlIngestSettings(CtsSettings):
-    """Settings for the JSONL validate-and-load pipeline."""
-
-    model_config = SettingsConfigDict(
-        **DEFAULT_SETTINGS_CONFIG_DICT,
-        cli_prog_name=PIPELINE_NAME,
-        cli_shortcuts={
-            **CLI_SHORTCUTS,
-            ENTITY_MODELS_MODULE.replace("_", "-"): "m",
-            TABLE_NAMES.replace("_", "-"): "t",
-            FILE_GLOB.replace("_", "-"): "g",
-        },
-    )
-    buffer_size: BufferSize
-    dataset_name: DatasetName
-    entity_models_module: Annotated[
-        str,
-        Field(
-            description=(
-                "Dotted import path to a module that defines "
-                "`ENTITY_MODELS: dict[str, type[BaseModel]]`. Each key is a table name and a "
-                "subdirectory of `input_dir`. Each value is the Pydantic model for that table."
-            ),
-        ),
-    ]
-    file_glob: Annotated[
-        FileGlob,
-        Field(
-            default=DEFAULT_FILE_GLOB,
-            description="Glob pattern for JSONL files inside each entity's input subdirectory.",
-        ),
-    ]
-    table_names: list[str] | None = Field(
-        default=None,
-        description="Table names to process. Defaults to every table in entity_models_module.",
-    )
-
-    @field_validator(TABLE_NAMES, mode="before")
-    @classmethod
-    def split_table_names(cls, v: str | list[str] | None) -> list[str] | None:
-        """Split a comma-separated string into a list. Pass lists and None through unchanged."""
-        if v is None or isinstance(v, list):
-            return v
-        return [name.strip() for name in v.split(",") if name.strip()] or None
 
 
 def load_entity_models(module_path: str) -> dict[str, type[BaseModel]]:
@@ -180,9 +129,7 @@ def _read_jsonl_lines(items: Iterator[FileItemDict], buffer_size: int) -> Genera
 
 
 def _make_validator(
-    table_name: str,
-    model: type[BaseModel],
-    buffer_size: int,
+    table_name: str, buffer_size: int, model: type[BaseModel], schema: dict[str, Any] | None = None
 ) -> Callable[[list[dict[str, Any]]], Generator[Any, Any, Any]]:
     """Build a function that validates pages of records and routes them to tables.
 
@@ -206,6 +153,8 @@ def _make_validator(
     :rtype: Callable[[list[dict[str, Any]]], Generator[Any, Any, Any]]
     """
     rejected_table = f"{table_name}_rejected"
+    if schema:
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
 
     def _validate(page: list[dict[str, Any]]) -> Generator[Any, Any, Any]:
         valid_buffer = ListBuffer(table_name=table_name, max_items=buffer_size)
@@ -245,7 +194,7 @@ def _make_validator(
     return _validate
 
 
-def build_entity_resource(table_name: str, model: type[BaseModel], settings: JsonlIngestSettings) -> Any:  # noqa: ANN401
+def build_entity_resource(table_name: str, model: type[BaseModel], settings: JsonlPydanticIngestSettings) -> Any:  # noqa: ANN401
     """Build the resource that reads, validates, and routes one entity's records.
 
     Reads files matching `settings.file_glob` from
@@ -258,14 +207,14 @@ def build_entity_resource(table_name: str, model: type[BaseModel], settings: Jso
     :param model: Pydantic model used to validate this entity's records
     :type model: type[BaseModel]
     :param settings: pipeline settings
-    :type settings: JsonlIngestSettings
+    :type settings: JsonlPydanticIngestSettings
     :return: resource yielding validated and rejected records for this entity
     :rtype: Any
     """
     entity_dir = Path(settings.input_dir) / table_name
 
     if entity_dir.is_dir():
-        files = filesystem(bucket_url=str(entity_dir), file_glob=settings.file_glob)
+        files = filesystem(bucket_url=str(entity_dir), file_glob=settings.file_glob, files_per_page=10)
     else:
         logger.warning("Entity directory does not exist, skipping: %s", entity_dir)
         files = dlt.resource([], name=f"{table_name}_files")
@@ -275,11 +224,12 @@ def build_entity_resource(table_name: str, model: type[BaseModel], settings: Jso
         data_from=files,
         name=f"{table_name}_raw",
         max_table_nesting=0,
+        parallelized=True,
     )
     raw.bind(settings.buffer_size)
 
     validated = dlt.transformer(
-        _make_validator(table_name, model, settings.buffer_size),
+        _make_validator(table_name, settings.buffer_size, model=model),
         data_from=raw,
         name=f"{table_name}_validated",
         max_table_nesting=0,
@@ -289,11 +239,11 @@ def build_entity_resource(table_name: str, model: type[BaseModel], settings: Jso
     return validated
 
 
-def run_jsonlines_ingest_pipeline(settings: JsonlIngestSettings) -> None:
+def run_jsonlines_ingest_pipeline(settings: JsonlPydanticIngestSettings) -> LoadInfo | None:
     """Run the JSONL validate-and-load pipeline for every requested table.
 
     :param settings: pipeline configuration
-    :type settings: JsonlIngestSettings
+    :type settings: JsonlPydanticIngestSettings
     :raises ValueError: if settings.table_names includes a name not in ENTITY_MODELS
     """
     entity_models = load_entity_models(settings.entity_models_module)
@@ -310,7 +260,7 @@ def run_jsonlines_ingest_pipeline(settings: JsonlIngestSettings) -> None:
         "pipeline_name": PIPELINE_NAME,
         "dataset_name": settings.dataset_name or PIPELINE_NAME,
     }
-    run_pipeline(
+    return run_pipeline(
         settings=settings,
         resource=resources,
         destination_kwargs={"max_table_nesting": 0},
@@ -321,9 +271,9 @@ def run_jsonlines_ingest_pipeline(settings: JsonlIngestSettings) -> None:
     )
 
 
-def cli() -> None:
+def cli() -> LoadInfo | None:
     """Command-line entry point for the JSONL validate-and-load pipeline."""
-    run_cli(JsonlIngestSettings, run_jsonlines_ingest_pipeline)
+    return run_cli(JsonlPydanticIngestSettings, run_jsonlines_ingest_pipeline)
 
 
 if __name__ == "__main__":

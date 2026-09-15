@@ -7,7 +7,7 @@ from collections.abc import Callable
 import pytest
 from pydantic import BaseModel
 
-from cdm_data_loaders.pipelines.jsonlines_ingest import load_entity_models
+from cdm_data_loaders.pipelines.jsonlines.pipeline import load_entity_models
 
 
 def test_load_entity_models_pass_returns_registered_mapping(

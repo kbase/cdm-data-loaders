@@ -7,25 +7,23 @@ from pathlib import Path
 import dlt
 import pytest
 
-from cdm_data_loaders.pipelines.jsonlines_ingest import (
-    JsonlIngestSettings,
+from cdm_data_loaders.pipelines.jsonlines.pipeline import (
     cli,
     load_entity_models,
     run_jsonlines_ingest_pipeline,
 )
+from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
 
 
 def test_run_jsonlines_ingest_pipeline_pass_writes_expected_parquet(
     scenario_input_dir: Callable[[str], str],
-    settings_factory: Callable[..., JsonlIngestSettings],
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
 ) -> None:
     """Running the pipeline on a mixed batch puts the correct rows in both output tables."""
     settings = settings_factory(input_dir=scenario_input_dir("mixed"))
 
-    run_jsonlines_ingest_pipeline(settings)
-
-    pipeline = dlt.pipeline(pipeline_name="jsonlines_ingest", destination="local_fs", dev_mode=False)
-    dataset = pipeline.dataset()
+    load_info = run_jsonlines_ingest_pipeline(settings)
+    dataset = load_info.pipeline.dataset()
     assert sorted(dataset.widget.df()["widget_id"].tolist()) == ["a", "c"]
     assert len(dataset.widget_rejected.df()) == 2
 
@@ -34,7 +32,7 @@ def test_run_jsonlines_ingest_pipeline_pass_writes_expected_parquet(
 
 
 def test_run_jsonlines_ingest_pipeline_fail_unknown_table_name_raises(
-    settings_factory: Callable[..., JsonlIngestSettings],
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
 ) -> None:
     """A table name in table_names that is not in the entity model registry raises ValueError."""
     settings = settings_factory(table_names=["not_a_real_table"])
@@ -44,7 +42,7 @@ def test_run_jsonlines_ingest_pipeline_fail_unknown_table_name_raises(
 
 
 def test_run_jsonlines_ingest_pipeline_pass_table_names_none_processes_every_registered_table(
-    settings_factory: Callable[..., JsonlIngestSettings],
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
 ) -> None:
     """table_names=None resolves to every entity in entity_models_module."""
     settings = settings_factory()

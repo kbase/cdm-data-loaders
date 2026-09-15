@@ -11,6 +11,11 @@ from pydantic_settings import CLI_SUPPRESS
 INPUT_MOUNT: Final[str] = "/input_dir"
 OUTPUT_MOUNT: Final[str] = "/output_dir"
 
+DEFAULT_JSONL_FILE_GLOB: Final[str] = "*.jsonl*"
+DEFAULT_XML_FILE_GLOB: Final[str] = "*.xml*"
+GZIP_SUFFIX: Final[str] = ".gz"
+
+
 VALID_DESTINATIONS: Final[list[str]] = ["local_fs", "s3"]
 
 # Common fields

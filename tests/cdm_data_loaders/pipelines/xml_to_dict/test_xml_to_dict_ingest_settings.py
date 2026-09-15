@@ -1,4 +1,4 @@
-"""Tests for XmlToDictIngestSettings field validation and defaults."""
+"""Tests for XmlToDictSettings field validation and defaults."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -7,10 +7,10 @@ import pytest
 from pydantic import ValidationError
 
 from cdm_data_loaders.core.fields import DEFAULTS
-from cdm_data_loaders.pipelines.xml_to_dict_ingest import XmlToDictIngestSettings
+from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
 
 
-def test_xml_to_dict_ingest_settings_pass_defaults(settings_factory: Callable[..., XmlToDictIngestSettings]) -> None:
+def test_xml_to_dict_ingest_settings_pass_defaults(settings_factory: Callable[..., XmlToDictSettings]) -> None:
     """file_glob defaults to '*.xml*'. buffer_size and log_interval default to the common CTS defaults."""
     settings = settings_factory()
     assert settings.file_glob == "*.xml*"
@@ -19,14 +19,14 @@ def test_xml_to_dict_ingest_settings_pass_defaults(settings_factory: Callable[..
 
 
 def test_xml_to_dict_ingest_settings_pass_custom_file_glob(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """file_glob accepts a custom glob pattern."""
     assert settings_factory(file_glob="*.rdf").file_glob == "*.rdf"
 
 
 def test_xml_to_dict_ingest_settings_pass_custom_xml_tag(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """xml_tag accepts any tag name."""
     settings = settings_factory(xml_tag="entry")
@@ -34,7 +34,7 @@ def test_xml_to_dict_ingest_settings_pass_custom_xml_tag(
 
 
 def test_xml_to_dict_ingest_settings_fail_missing_xml_tag(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """Omitting xml_tag raises ValidationError."""
     with pytest.raises(ValidationError):
@@ -42,7 +42,7 @@ def test_xml_to_dict_ingest_settings_fail_missing_xml_tag(
 
 
 def test_xml_to_dict_ingest_settings_fail_missing_table_name(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """Omitting table_name raises ValidationError."""
     with pytest.raises(ValidationError):
@@ -50,7 +50,7 @@ def test_xml_to_dict_ingest_settings_fail_missing_table_name(
 
 
 def test_xml_to_dict_ingest_settings_fail_missing_dataset_name(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """Omitting dataset_name raises ValidationError."""
     with pytest.raises(ValidationError):
@@ -58,7 +58,7 @@ def test_xml_to_dict_ingest_settings_fail_missing_dataset_name(
 
 
 def test_xml_to_dict_ingest_settings_fail_non_positive_buffer_size(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """buffer_size must be a positive integer."""
     with pytest.raises(ValidationError):
@@ -66,7 +66,7 @@ def test_xml_to_dict_ingest_settings_fail_non_positive_buffer_size(
 
 
 def test_xml_to_dict_ingest_settings_fail_non_positive_log_interval(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """log_interval must be a positive integer."""
     with pytest.raises(ValidationError):
@@ -74,7 +74,7 @@ def test_xml_to_dict_ingest_settings_fail_non_positive_log_interval(
 
 
 def test_xml_to_dict_ingest_settings_fail_local_destination_with_s3_output_dir(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """use_destination='local_fs' with an s3:// output_dir raises ValidationError.
 
@@ -86,7 +86,7 @@ def test_xml_to_dict_ingest_settings_fail_local_destination_with_s3_output_dir(
 
 
 def test_xml_to_dict_ingest_settings_fail_local_destination_with_s3_flag(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """use_destination='s3' with a local output_dir raises ValidationError."""
     with pytest.raises(ValidationError, match="Mismatch between output location and use_destination"):
@@ -94,7 +94,7 @@ def test_xml_to_dict_ingest_settings_fail_local_destination_with_s3_flag(
 
 
 def test_xml_to_dict_ingest_settings_pass_unknown_use_destination_rejected(
-    settings_factory: Callable[..., XmlToDictIngestSettings],
+    settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """use_destination not present in the dlt config raises ValidationError."""
     with pytest.raises(ValidationError, match="use_destination must be one of"):
@@ -129,6 +129,6 @@ def test_xml_to_dict_ingest_settings_pass_xml_tag_shortcut(tmp_path: Path, monke
     ]
     monkeypatch.setattr("sys.argv", argv)
 
-    settings = XmlToDictIngestSettings()
+    settings = XmlToDictSettings()  # pyright: ignore[reportCallIssue]
     assert settings.file_glob == "*.xml.gz"
     assert settings.xml_tag == "entry"

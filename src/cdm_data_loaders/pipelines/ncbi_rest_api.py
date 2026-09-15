@@ -16,6 +16,7 @@ from typing import Any, Final
 from urllib.parse import parse_qs, urlparse
 
 import dlt
+from dlt.common.pipeline import LoadInfo
 from dlt.extract.items import DataItemWithMeta
 from dlt.sources.helpers.requests import Response
 from dlt.sources.helpers.rest_client.auth import APIKeyAuth
@@ -364,7 +365,7 @@ def assembly_report_parser(
     return assemble_assembly_reports(assembly_reports)
 
 
-def run_ncbi_pipeline(settings: NcbiRestApiSettings) -> None:
+def run_ncbi_pipeline(settings: NcbiRestApiSettings) -> LoadInfo | None:
     """Run the NCBI datasets API pipeline.
 
     :param settings: configuration for the pipeline
@@ -380,7 +381,7 @@ def run_ncbi_pipeline(settings: NcbiRestApiSettings) -> None:
         "dataset_name": DATASET_NAME,
     }
 
-    run_pipeline(
+    return run_pipeline(
         settings=settings,
         resource=[assembly_report_parser],
         destination_kwargs={"max_table_nesting": 0},
@@ -389,9 +390,9 @@ def run_ncbi_pipeline(settings: NcbiRestApiSettings) -> None:
     )
 
 
-def cli() -> None:
+def cli() -> LoadInfo | None:
     """CLI interface for the NCBI REST API importer pipeline."""
-    run_cli(NcbiRestApiSettings, run_ncbi_pipeline)
+    return run_cli(NcbiRestApiSettings, run_ncbi_pipeline)
 
 
 if __name__ == "__main__":

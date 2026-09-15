@@ -9,11 +9,11 @@ from typing import Any, Final
 import dlt
 import pytest
 
-import cdm_data_loaders.pipelines.xml_to_dict_ingest as xml_to_dict_ingest_module
-from cdm_data_loaders.pipelines.xml_to_dict_ingest import (
-    XmlToDictIngestSettings,
+import cdm_data_loaders.pipelines.xml_to_dict.pipeline as xml_to_dict_ingest_module
+from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
     xml_to_dict_reader,
 )
+from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
 
 SIMPLE_LIBRARY_XML: Final[str] = """<?xml version="1.0"?>
 <library>
@@ -70,10 +70,10 @@ def fresh_xml_to_dict_reader(monkeypatch: pytest.MonkeyPatch) -> Callable[[], An
 
 
 @pytest.fixture
-def settings_factory(tmp_path: Path) -> Callable[..., XmlToDictIngestSettings]:
-    """Return a factory that builds a valid XmlToDictIngestSettings, with fields open to override."""
+def settings_factory(tmp_path: Path) -> Callable[..., XmlToDictSettings]:
+    """Return a factory that builds a valid XmlToDictSettings, with fields open to override."""
 
-    def _factory(**overrides: Any) -> XmlToDictIngestSettings:  # noqa: ANN401
+    def _factory(**overrides: Any) -> XmlToDictSettings:  # noqa: ANN401
         log_config_file = tmp_path / "logging.json"
         log_config_file.write_text('{"version": 1}')
         input_dir = tmp_path / "input"
@@ -96,7 +96,7 @@ def settings_factory(tmp_path: Path) -> Callable[..., XmlToDictIngestSettings]:
             "file_glob": "*.xml*",
         }
         kwargs.update(overrides)
-        return XmlToDictIngestSettings(**kwargs)
+        return XmlToDictSettings(**kwargs)
 
     return _factory
 

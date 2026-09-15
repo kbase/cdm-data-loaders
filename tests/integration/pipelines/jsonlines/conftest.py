@@ -11,7 +11,7 @@ from uuid import uuid4
 import pytest
 from pydantic import BaseModel, Field
 
-from cdm_data_loaders.pipelines.jsonlines_ingest import JsonlIngestSettings
+from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
 
 
 class Widget(BaseModel):
@@ -61,12 +61,12 @@ def entity_models_module(
 @pytest.fixture
 def settings_factory(
     tmp_path: Path, dlt_destination_config: str, entity_models_module: str
-) -> Callable[..., JsonlIngestSettings]:
-    """Return a factory that builds a valid JsonlIngestSettings, with fields open to override."""
+) -> Callable[..., JsonlPydanticIngestSettings]:
+    """Return a factory that builds a valid JsonlPydanticIngestSettings, with fields open to override."""
 
-    def _factory(**overrides: Any) -> JsonlIngestSettings:  # noqa: ANN401
-        log_config_file = tmp_path / "logging.conf"
-        log_config_file.touch()
+    def _factory(**overrides: Any) -> JsonlPydanticIngestSettings:
+        log_config_file = tmp_path / "logging.json"
+        log_config_file.write_text('{"version": 1}')
         input_dir = tmp_path / "input"
         input_dir.mkdir(exist_ok=True)
         output_dir = tmp_path / "output"
@@ -74,7 +74,7 @@ def settings_factory(
 
         kwargs: dict[str, Any] = {
             "dataset_name": "test_dataset",
-            "dev_mode": True,
+            "dev_mode": False,
             "entity_models_module": entity_models_module,
             "input_dir": str(input_dir),
             "log_config_file": str(log_config_file),
@@ -83,7 +83,7 @@ def settings_factory(
             "use_output_dir_for_pipeline_metadata": False,
         }
         kwargs.update(overrides)
-        return JsonlIngestSettings(**kwargs)
+        return JsonlPydanticIngestSettings(**kwargs)
 
     return _factory
 

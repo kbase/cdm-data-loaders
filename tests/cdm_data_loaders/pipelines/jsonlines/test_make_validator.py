@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from dlt.extract.items import DataItemWithMeta, TableNameMeta
 
-from cdm_data_loaders.pipelines.jsonlines_ingest import _make_validator
+from cdm_data_loaders.pipelines.jsonlines.pipeline import _make_validator
 
 
 def make_item(
@@ -34,7 +34,7 @@ def run_validator(validator: Callable[[list[dict[str, Any]]], Any], item: dict[s
 
 def test_make_validator_pass_valid_record_routed_to_main_table(widget_model: Any) -> None:
     """A record that passes validation goes to the main table, dumped from the validated model."""
-    validator = _make_validator("widget", widget_model, buffer_size=10)
+    validator = _make_validator("widget", model=widget_model, buffer_size=10)
     item = make_item(record={"widget_id": "a", "count": 5}, raw_line='{"widget_id": "a", "count": 5}')
 
     results = run_validator(validator, item)
@@ -48,7 +48,7 @@ def test_make_validator_pass_valid_record_routed_to_main_table(widget_model: Any
 
 def test_make_validator_fail_json_parse_error_routed_to_rejected_without_model_validation(widget_model: Any) -> None:
     """A record with a parse_error goes to <table>_rejected. The model is not called."""
-    validator = _make_validator("widget", widget_model, buffer_size=10)
+    validator = _make_validator("widget", model=widget_model, buffer_size=10)
     item = make_item(record=None, raw_line="{not json", parse_error="Expecting value: line 1 column 1 (char 0)")
 
     results = run_validator(validator, item)
@@ -79,7 +79,7 @@ def test_make_validator_fail_pydantic_validation_error_routed_to_rejected(
     widget_model: Any, record: dict[str, Any]
 ) -> None:
     """A record that parses as JSON but fails model validation goes to <table>_rejected, with error detail."""
-    validator = _make_validator("widget", widget_model, buffer_size=10)
+    validator = _make_validator("widget", model=widget_model, buffer_size=10)
     item = make_item(record=record, raw_line=json.dumps(record))
 
     results = run_validator(validator, item)
@@ -98,7 +98,7 @@ def test_make_validator_fail_pydantic_validation_error_routed_to_rejected(
 
 def test_make_validator_pass_mixed_batch_routes_each_record_independently(widget_model: Any) -> None:
     """A mixed batch routes each record on its own. Valid and invalid records do not affect each other."""
-    validator = _make_validator("widget", widget_model, buffer_size=10)
+    validator = _make_validator("widget", model=widget_model, buffer_size=10)
     items = [
         make_item(record={"widget_id": "a", "count": 1}, raw_line='{"widget_id": "a", "count": 1}', line_no=1),
         make_item(record={"widget_id": "b", "count": -1}, raw_line='{"widget_id": "b", "count": -1}', line_no=2),
@@ -119,7 +119,7 @@ def test_make_validator_pass_mixed_batch_routes_each_record_independently(widget
 
 def test_make_validator_fail_all_invalid_none_reach_main_table(widget_model: Any) -> None:
     """When every record in a batch is invalid, none reach the main table."""
-    validator = _make_validator("widget", widget_model, buffer_size=10)
+    validator = _make_validator("widget", model=widget_model, buffer_size=10)
     items = [
         make_item(record={"count": 1}, raw_line='{"count": 1}', line_no=1),
         make_item(record={"widget_id": "b", "count": -5}, raw_line='{"widget_id": "b", "count": -5}', line_no=2),
@@ -135,7 +135,7 @@ def test_make_validator_fail_all_invalid_none_reach_main_table(widget_model: Any
 
 def test_make_validator_pass_buffer_size_controls_batching(widget_model: Any) -> None:
     """buffer_size controls how many rows land in each yielded page per table."""
-    validator = _make_validator("widget", widget_model, buffer_size=2)
+    validator = _make_validator("widget", model=widget_model, buffer_size=2)
     items = [
         make_item(record={"widget_id": f"w{i}", "count": 1}, raw_line=f'{{"count": {i}}}', line_no=i + 1)
         for i in range(5)

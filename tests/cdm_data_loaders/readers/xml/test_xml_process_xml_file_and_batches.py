@@ -16,10 +16,11 @@ import cdm_data_loaders.readers.xml as xml_module
 import cdm_data_loaders.utils.buffer as buffer_module
 from cdm_data_loaders.core.fields import BUFFER_SIZE, DEFAULTS, LOG_INTERVAL
 from cdm_data_loaders.core.settings import BatchedFileInputSettings
+from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
 from cdm_data_loaders.readers.xml import (
     process_xml_file,
     process_xml_file_batches,
-    xml_to_dict_parse_fn,
+    process_xml_file_to_dict,
 )
 
 ParseFn = Callable[..., dict[str, list[dict[str, Any]]]]
@@ -203,14 +204,15 @@ def _table_and_data(items: Iterable[DataItemWithMeta]) -> list[tuple[str, Any]]:
 def fake_settings(
     buffer_size: int = DEFAULTS[BUFFER_SIZE],
     log_interval: int = DEFAULTS[LOG_INTERVAL],
-) -> BatchedFileInputSettings:
-    """Build a MagicMock stand-in for BatchedFileInputSettings.
+    settings_class: type = BatchedFileInputSettings,
+) -> BatchedFileInputSettings | XmlToDictSettings:
+    """Build a MagicMock stand-in for BatchedFileInputSettings, XmlToDictSettings, etc.
 
     ``process_xml_file`` reads ``buffer_size`` and ``log_interval`` off the settings
     object, so these are exposed as real integers (rather than nested mocks) to make
     the arithmetic in the function under test behave correctly.
     """
-    settings = MagicMock(spec=BatchedFileInputSettings)
+    settings = MagicMock(spec=settings_class)
     settings.buffer_size = buffer_size
     settings.log_interval = log_interval
     return settings
@@ -236,17 +238,18 @@ def test_process_xml_file_pass_multiple_entries(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("gzip_compress", [False, True], ids=["plain", "gzip"])
-def test_process_xml_file_pass_xml_to_dict_parse_fn_implements_xmltodict(tmp_path: Path, gzip_compress: bool) -> None:
-    """Verify xml_to_dict_parse_fn matches direct xmltodict parsing of each streamed entry."""
+def test_process_xml_file_pass_to_dict_implements_xmltodict(tmp_path: Path, gzip_compress: bool) -> None:
+    """Verify process_xml_file_to_dict matches direct xmltodict parsing of each streamed entry."""
     filename = "people.xml.gz" if gzip_compress else "people.xml"
     file_path = _write_xml(tmp_path, filename, PEOPLE_XML_2, gzip_compress=gzip_compress)
 
     expected_rows = [xmltodict.parse(tostring(entry)) for entry in xml_module.stream_xml_file(file_path, "person")]
-    tagged = _table_and_data(
-        process_xml_file(fake_settings(), "person", xml_to_dict_parse_fn("xmltodict"), file_path=file_path)
-    )
+    settings: XmlToDictSettings = fake_settings(settings_class=XmlToDictSettings)
+    settings.table_name = "some_table"
+    settings.xml_tag = "person"
+    tagged = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
 
-    assert tagged == [("xmltodict", expected_rows)]
+    assert tagged == [("some_table", expected_rows)]
 
 
 @pytest.mark.parametrize(
