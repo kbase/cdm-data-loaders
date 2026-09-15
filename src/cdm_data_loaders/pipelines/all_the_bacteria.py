@@ -13,15 +13,17 @@ all_atb_files.tsv: https://osf.io/xv7q9/files/r6gcp (or Rg6cp, casing varies)
 import csv
 import re
 from collections.abc import Generator
+from functools import cached_property
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, Self
 
 import dlt
+import dlt.sources.helpers.requests
+from dlt.common.pipeline import LoadInfo
 from dlt.extract.items import DataItemWithMeta
-from dlt.sources.helpers import requests
 from dlt.sources.helpers.rest_client.client import RESTClient
-from pydantic import Field, StringConstraints, computed_field
+from pydantic import Field, StringConstraints, computed_field, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
@@ -73,8 +75,16 @@ class AtbSettings(CtsSettings):
         description="Path, relative to the input dir, of a file containing patterns to match when downloading ATB files",
     )
 
+    @model_validator(mode="after")
+    def post_init_checks(self) -> Self:
+        """Ensure that the raw data dir can be created."""
+        # check that the patterns are OK
+        _ = self.pattern_matches
+
+        return self
+
     @computed_field
-    @property
+    @cached_property
     def raw_data_dir(self) -> str:
         """Directory in which to save the raw data files that are downloaded.
 
@@ -85,7 +95,7 @@ class AtbSettings(CtsSettings):
         return f"{self.output_dir}/raw_data/{self.version}"
 
     @computed_field
-    @property
+    @cached_property
     def pattern_matches(self) -> re.Pattern:
         """The regular expression pattern to be used to select files for download.
 
@@ -96,8 +106,11 @@ class AtbSettings(CtsSettings):
         if self.pattern_file:
             pattern_file = Path(self.input_dir) / self.pattern_file
             regex = load_patterns(pattern_file)
-            if regex is not None:
-                return regex
+            if regex is None:
+                err_msg = f"No patterns found in {pattern_file!s}"
+                raise ValueError(err_msg)
+            # return the compiled regexes from the file
+            return regex
         # return the default
         return PROJECT_PART_REGEX
 
@@ -132,6 +145,10 @@ def download_atb_index_tsv(settings: AtbSettings) -> Path:
     :return: path to the downloaded file
     :rtype: Path
     """
+    if settings.use_destination == "local_fs":
+        # make sure that the directory structure to save the file in can be written to
+        Path(settings.raw_data_dir).mkdir(parents=True, exist_ok=True)
+
     # get the all_atb_files.tsv file info from the OSF API and retrieve the download link
     osf_client = RESTClient(
         base_url="https://api.osf.io/v2/",
@@ -153,7 +170,7 @@ def download_atb_index_tsv(settings: AtbSettings) -> Path:
         # download to a local temp file and also copy the file to s3
         save_path = f"{settings.raw_data_dir}/{ALL_ATB_FILE_NAME}"
         try:
-            stream_to_s3(url=all_files_tsv_download, s3_path=save_path, requests=requests)
+            stream_to_s3(url=all_files_tsv_download, s3_path=save_path, requests=dlt.sources.helpers.requests)
         except Exception:
             logger.exception("Could not transfer %s to s3", ALL_ATB_FILE_NAME)
             raise
@@ -161,10 +178,7 @@ def download_atb_index_tsv(settings: AtbSettings) -> Path:
         # save a local copy of the file to current dir
         atb_files_tsv = Path(ALL_ATB_FILE_NAME)
     else:
-        # make sure that the directory structure to save the file in can be written to
-        raw_data_dir = Path(settings.raw_data_dir)
-        raw_data_dir.mkdir(parents=True, exist_ok=True)
-        atb_files_tsv = raw_data_dir / ALL_ATB_FILE_NAME
+        atb_files_tsv = Path(settings.raw_data_dir) / ALL_ATB_FILE_NAME
 
     # download the file listing and save it
     FileDownloader().download(url=all_files_tsv_download, destination=atb_files_tsv)
@@ -221,7 +235,7 @@ def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any
                 if project_part:
                     project_part = f"{project_part}/"
                 save_path = f"{settings.raw_data_dir}/{project_part}{f['filename']}"
-                stream_to_s3(url=f["url"], s3_path=save_path, requests=requests)
+                stream_to_s3(url=f["url"], s3_path=save_path, requests=dlt.sources.helpers.requests)
                 logger.debug("Successfully transferred file from %s to %s", f["url"], save_path)
             else:
                 save_path = Path(settings.raw_data_dir) / project_part / f["filename"]
@@ -262,7 +276,7 @@ def file_downloader(
     return osf_file_downloader(settings, atb_file_list)
 
 
-def run_atb_pipeline(settings: AtbSettings) -> None:
+def run_atb_pipeline(settings: AtbSettings) -> LoadInfo | None:
     """Run the AllTheBacteria pipeline.
 
     :param settings: configuration for the pipeline
@@ -276,7 +290,7 @@ def run_atb_pipeline(settings: AtbSettings) -> None:
         "dataset_name": DATASET_NAME,
     }
 
-    run_pipeline(
+    return run_pipeline(
         settings=settings,
         resource=file_downloader,
         destination_kwargs={"max_table_nesting": 0},
@@ -285,9 +299,9 @@ def run_atb_pipeline(settings: AtbSettings) -> None:
     )
 
 
-def cli() -> None:
+def cli() -> LoadInfo | None:
     """CLI interface for the AllTheBacteria importer pipeline."""
-    run_cli(AtbSettings, run_atb_pipeline)
+    return run_cli(AtbSettings, run_atb_pipeline)
 
 
 if __name__ == "__main__":

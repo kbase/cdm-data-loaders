@@ -71,7 +71,7 @@ def dump_settings(settings: LoggerSettings) -> None:
 
 def run_cli(
     settings_cls: type[LoggerSettings],
-    pipeline_fn: Callable[[Any], None],
+    pipeline_fn: Callable[[Any], LoadInfo | None],
     settings_kwargs: dict[str, Any] | None = None,
 ) -> LoadInfo | None:
     """Generic CLI entry point for any pipeline.
@@ -79,7 +79,7 @@ def run_cli(
     :param settings_cls: the Settings class to instantiate
     :type  settings_cls: type[LoggerSettings]
     :param pipeline_fn: the run_pipeline function to call with the config
-    :type  pipeline_fn: Callable[[Any], None]
+    :type  pipeline_fn: Callable[[Any], LoadInfo | None]
     :param settings_kwargs: any extra non-cli/env var settings to be added
     :type  settings_kwargs: dict[str, Any] | None, optional
     :return: pipeline load information

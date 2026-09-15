@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, call, patch
 
+import dlt.sources.helpers.requests
 import pytest
 from frozendict import frozendict
 from requests.exceptions import HTTPError
@@ -209,19 +210,13 @@ def test_download_atb_index_tsv_vcr(test_settings: AtbSettings) -> None:
     assert output_file.parent == raw_data_dir
 
 
+@pytest.mark.vcr
 @pytest.mark.default_cassette("test_download_atb_index_tsv_vcr.yaml")
 def test_download_atb_index_tsv_vcr_destination_s3(test_s3_settings: AtbSettings) -> None:
     """Ensure that the download_atb_index function fetches the correct file."""
-    mock_download_client = MagicMock()
     mock_stream_to_s3 = MagicMock()
-    mock_requests = MagicMock()
     with (
-        patch(
-            "cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader",
-            return_value=mock_download_client,
-        ),
         patch("cdm_data_loaders.pipelines.all_the_bacteria.stream_to_s3", mock_stream_to_s3),
-        patch("cdm_data_loaders.pipelines.all_the_bacteria.requests", mock_requests),
     ):
         output_file = download_atb_index_tsv(test_s3_settings)
 
@@ -229,9 +224,8 @@ def test_download_atb_index_tsv_vcr_destination_s3(test_s3_settings: AtbSettings
     mock_stream_to_s3.assert_called_once_with(
         url=download_url,
         s3_path=f"{test_s3_settings.raw_data_dir}/{ALL_ATB_FILE_NAME}",
-        requests=mock_requests,
+        requests=dlt.sources.helpers.requests,
     )
-    mock_download_client.download.assert_called_once_with(url=download_url, destination=Path(ALL_ATB_FILE_NAME))
     assert output_file == Path(ALL_ATB_FILE_NAME)
 
 
@@ -242,19 +236,13 @@ def test_download_atb_index_tsv_error_404(test_settings: AtbSettings) -> None:
         download_atb_index_tsv(test_settings)
 
 
+@pytest.mark.vcr
 @pytest.mark.default_cassette("test_download_atb_index_tsv_vcr.yaml")
 def test_download_atb_index_s3_error_boom(test_s3_settings: AtbSettings, caplog: pytest.LogCaptureFixture) -> None:
     """Ensure that an error in the s3 upload causes things to die unpleasantly."""
-    mock_download_client = MagicMock()
     mock_stream_to_s3 = MagicMock(side_effect=ValueError("ZOMG!"))
-    mock_requests = MagicMock()
     with (
-        patch(
-            "cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader",
-            return_value=mock_download_client,
-        ),
         patch("cdm_data_loaders.pipelines.all_the_bacteria.stream_to_s3", mock_stream_to_s3),
-        patch("cdm_data_loaders.pipelines.all_the_bacteria.requests", mock_requests),
         pytest.raises(ValueError, match="ZOMG!"),
     ):
         download_atb_index_tsv(test_s3_settings)
@@ -263,10 +251,8 @@ def test_download_atb_index_s3_error_boom(test_s3_settings: AtbSettings, caplog:
     mock_stream_to_s3.assert_called_once_with(
         url=download_url,
         s3_path=f"{test_s3_settings.raw_data_dir}/{ALL_ATB_FILE_NAME}",
-        requests=mock_requests,
+        requests=dlt.sources.helpers.requests,
     )
-    mock_download_client.assert_not_called()
-    mock_download_client.download.assert_not_called()
     last_log_record = caplog.records.pop()
     assert last_log_record.levelno == logging.ERROR
     assert last_log_record.getMessage() == f"Could not transfer {ALL_ATB_FILE_NAME} to s3"
@@ -281,8 +267,9 @@ def test_download_atv_index_tsv_error_missing_key(test_settings: AtbSettings) ->
 
 def test_download_atv_index_cannot_create_dir() -> None:
     """Ensure that the output raw_data_dir directory can be saved to."""
+    # N.b. error message is OS specific -- may not work on Windows
     with pytest.raises(OSError, match=r"(Read-only file system|Permission denied)"):
-        download_atb_index_tsv(AtbSettings(output_dir="/path/to/file"))
+        download_atb_index_tsv(AtbSettings(output_dir="/path/to/file"))  # pyright: ignore[reportCallIssue]
 
 
 @pytest.mark.vcr
@@ -321,7 +308,7 @@ def test_get_file_download_links_use_pattern_file(tmp_path: Path, pattern_lines:
     p = tmp_path / "patterns.txt"
     p.write_text(f"{pattern_lines}\n", encoding="utf-8")
 
-    settings = AtbSettings(input_dir=str(tmp_path), pattern_file="patterns.txt")
+    settings = AtbSettings(input_dir=str(tmp_path), output_dir=str(tmp_path), pattern_file="patterns.txt")
     file_path = Path("tests") / "data" / "atb" / "all_atb_files.tsv"
     filtered_files = list(get_file_download_links(settings, file_path))
     # load the expected results
@@ -444,7 +431,7 @@ def test_osf_file_downloader_success(
             return_value=mock_download_client,
         ),
         patch("cdm_data_loaders.pipelines.all_the_bacteria.stream_to_s3", mock_stream_to_s3),
-        patch("cdm_data_loaders.pipelines.all_the_bacteria.requests", mock_requests),
+        patch("dlt.sources.helpers.requests", mock_requests),
     ):
         # get the output from the generator
         output = list(osf_file_downloader(settings, atb_file_list))
@@ -567,7 +554,7 @@ def test_osf_file_downloader_error_handling(
             return_value=mock_download_client,
         ),
         patch("cdm_data_loaders.pipelines.all_the_bacteria.stream_to_s3", mock_stream_to_s3),
-        patch("cdm_data_loaders.pipelines.all_the_bacteria.requests", mock_requests),
+        patch("dlt.sources.helpers.requests", mock_requests),
     ):
         list(osf_file_downloader(settings, atb_file_list))
 
@@ -607,14 +594,14 @@ def test_run_atb_pipeline(
     """run_atb_pipeline binds settings and delegates to run_pipeline with correct args."""
     mock_atb_file_list = MagicMock()
     mock_file_downloader = MagicMock()
-    mock_run_pipeline = MagicMock()
+    mock_run_pipeline = MagicMock(return_value="load info")
 
     monkeypatch.setattr(all_the_bacteria, "atb_file_list", mock_atb_file_list)
     monkeypatch.setattr(all_the_bacteria, "file_downloader", mock_file_downloader)
     monkeypatch.setattr(all_the_bacteria, "run_pipeline", mock_run_pipeline)
 
     output = run_atb_pipeline(test_settings)
-    assert output is None
+    assert output == "load info"
 
     mock_atb_file_list.bind.assert_called_once_with(test_settings)
     mock_file_downloader.bind.assert_called_once_with(test_settings)
@@ -634,7 +621,7 @@ def test_run_atb_pipeline_bind_order(
     test_settings: AtbSettings,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Both resources are bound before run_pipeline is called."""
+    """Ensure the resources have the settings bound before run_pipeline is called."""
     call_order: list[str] = []
 
     mock_atb_file_list = MagicMock()
@@ -687,7 +674,7 @@ def test_run_atb_pipeline_pipeline_dir_present_or_absent(
         use_destination=VALID_DESTINATIONS[0],
         use_output_dir_for_pipeline_metadata=use_output_dir_for_pipeline_metadata,
         dev_mode=dev_mode,
-    )
+    )  # pyright: ignore[reportCallIssue]
     mock_file_downloader = MagicMock(name="file_downloader")
     if use_output_dir_for_pipeline_metadata:
         assert settings.pipeline_dir == "/my/output/.dlt_conf"
