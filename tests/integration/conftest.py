@@ -113,7 +113,7 @@ def check_existing_bucket(s3: S3Client, bucket: str) -> None:
     except s3.exceptions.NoSuchBucket:
         s3.create_bucket(Bucket=bucket)
     except ClientError as e:
-        if e.response["Error"]["Code"] in ("404", "NoSuchBucket"):
+        if e.response.get("Error", {}).get("Code") in ("404", "NoSuchBucket"):
             s3.create_bucket(Bucket=bucket)
         else:
             raise

@@ -154,12 +154,12 @@ def test_update_checkpoint_status(
     if is_saved_table:
         assert caplog.records[-1].levelno == logging.INFO
         assert (
-            caplog.records[-1].message
+            caplog.records[-1].getMessage()
             == f"{pipeline} 1234-5678-90: checkpoint successfully updated to status {STATUS_ERROR}"
         )
     else:
         assert caplog.records[-1].levelno == logging.WARNING
         assert (
-            caplog.records[-1].message
+            caplog.records[-1].getMessage()
             == f"{pipeline} 1234-5678-90: cannot update 'checkpoint' to status ERROR because no record exists."
         )

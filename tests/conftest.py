@@ -238,14 +238,12 @@ def dlt_config() -> dict[str, Any]:
 
 @pytest.fixture(autouse=True)
 def _isolated_cli_and_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
-    """Isolate sys.argv and CDL_* environment variables from the ambient process for every test.
-
-    Prevents pollution of CLI arg parsing tests by the args/env vars used by the calling process.
-    """
+    """Clear sys.argv and the environment to prevent test-to-test pollution."""
     monkeypatch.setattr(sys, "argv", ["pytest"])
-    for env_key in [key for key in os.environ if key.lower().startswith("cdl_")]:
-        monkeypatch.delenv(env_key, raising=False)
-    yield
+
+    current_env = deepcopy(os.environ)
+    with patch.dict(os.environ, {k: v for k, v in current_env.items() if not k.lower().startswith("cdl_")}, clear=True):
+        yield
 
 
 @pytest.fixture(autouse=True)

@@ -45,7 +45,7 @@ def test_read_wrong_schema_format(schema_fields: Any, caplog: pytest.LogCaptureF
 
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.ERROR
-    assert caplog.records[0].message == err_msg
+    assert caplog.records[0].getMessage() == err_msg
 
 
 @pytest.mark.requires_spark
@@ -59,7 +59,7 @@ def test_read_errors(spark: SparkSession, delimiter: str | None, fmt: str, caplo
 
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.ERROR
-    assert caplog.records[0].message == f"Failed to load {fmt} from /path/to/nowhere"
+    assert caplog.records[0].getMessage() == f"Failed to load {fmt} from /path/to/nowhere"
 
 
 @pytest.mark.requires_spark
@@ -126,7 +126,7 @@ def test_csv_read_modes(
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.INFO
     assert (
-        caplog.records[0].message
+        caplog.records[0].getMessage()
         == f"Loaded {n_rows * 5 if csv_lines == ALL_LINES else n_rows} CSV records from {csv_lines_path!s}"
     )
 

@@ -75,7 +75,7 @@ def test_write_metrics(
     assert len(caplog.records) == 1
     assert caplog.records[-1].levelno == logging.INFO
     assert (
-        caplog.records[-1].message
+        caplog.records[-1].getMessage()
         == f"{pipeline_run.pipeline} {pipeline_run.run_id}: ingest metrics written to '{METRICS}' table."
     )
 
@@ -90,6 +90,6 @@ def test_write_metrics_empty_df(
     assert len(caplog.records) == 1
     assert caplog.records[-1].levelno == logging.INFO
     assert (
-        caplog.records[-1].message
+        caplog.records[-1].getMessage()
         == f"{pipeline_run.pipeline} {pipeline_run.run_id}: nothing to write to '{METRICS}' audit table."
     )

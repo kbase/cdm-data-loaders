@@ -269,7 +269,7 @@ def test_download_atb_index_s3_error_boom(test_s3_settings: AtbSettings, caplog:
     mock_download_client.download.assert_not_called()
     last_log_record = caplog.records.pop()
     assert last_log_record.levelno == logging.ERROR
-    assert last_log_record.message == f"Could not transfer {ALL_ATB_FILE_NAME} to s3"
+    assert last_log_record.getMessage() == f"Could not transfer {ALL_ATB_FILE_NAME} to s3"
 
 
 @pytest.mark.vcr
@@ -340,11 +340,13 @@ def test_get_file_download_links_invalid_file(test_settings: AtbSettings, caplog
         list(get_file_download_links(test_settings, file_path))
     records = caplog.records
     assert records[-1].levelno == logging.ERROR
-    assert records[-1].message.startswith(
-        "Missing required ATB file index TSV headers: ['filename', 'md5', 'project', 'url']"
+    assert (
+        records[-1]
+        .getMessage()
+        .startswith("Missing required ATB file index TSV headers: ['filename', 'md5', 'project', 'url']")
     )
     assert records[-2].levelno == logging.WARNING
-    assert records[-2].message.startswith("ATB file index TSV headers have changed.")
+    assert records[-2].getMessage().startswith("ATB file index TSV headers have changed.")
 
 
 def test_get_file_download_links_empty_file(
@@ -357,7 +359,7 @@ def test_get_file_download_links_empty_file(
         list(get_file_download_links(test_settings, file_path))
     records = caplog.records
     assert records[-1].levelno == logging.ERROR
-    assert records[-1].message == f"No valid TSV data found in {file_path!s}"
+    assert records[-1].getMessage() == f"No valid TSV data found in {file_path!s}"
 
 
 def test_get_file_download_links_no_file(test_settings: AtbSettings) -> None:
@@ -594,7 +596,7 @@ def test_osf_file_downloader_error_handling(
         else:
             assert "path" not in item
 
-    log_messages = [r.message for r in caplog.records]
+    log_messages = [r.getMessage() for r in caplog.records]
     assert expected_exceptions == log_messages
 
 

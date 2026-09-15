@@ -27,6 +27,7 @@ dependencies = [
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
     "pyiceberg>=0.11.1",
+    "pytest-randomly>=5.0.0",
     "smart-open>=8.0.1",
     "tqdm>=4.67.3",
     "xmlschema>=4.3.1",
@@ -207,8 +208,8 @@ build-backend = "uv_build"
 [tool.pytest]
 pythonpath = ["src"]
 log_cli = true
-log_cli_level = "INFO"
-log_level = "INFO"
+log_cli_level = "WARNING"
+log_level = "WARNING"
 addopts = ["-v"]
 markers = [
     "requires_spark: must be run in an environment where spark is available",

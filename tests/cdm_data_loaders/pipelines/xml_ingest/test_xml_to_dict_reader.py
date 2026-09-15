@@ -230,6 +230,6 @@ def test_xml_to_dict_reader_pass_logs_reading_and_processed_messages(
 
     read_dir(directory, settings_factory(buffer_size=2))
 
-    messages = [record.message for record in caplog.records]
+    messages = [record.getMessage() for record in caplog.records]
     assert any(message.startswith("Reading from") for message in messages)
     assert any(message.startswith("Processed 3 entries") for message in messages)

@@ -149,6 +149,6 @@ def test_get_files(
     if msg:
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.WARNING
-        assert caplog.records[0].message == msg
+        assert caplog.records[0].getMessage() == msg
     else:
         assert not caplog.records

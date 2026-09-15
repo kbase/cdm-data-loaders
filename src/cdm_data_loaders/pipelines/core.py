@@ -6,6 +6,7 @@ from logging import Logger, getLogger
 from typing import Any, Final
 
 import dlt
+from dlt.common.pipeline import LoadInfo
 from dlt.common.runtime.slack import send_slack_message
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
@@ -72,12 +73,17 @@ def run_cli(
     settings_cls: type[LoggerSettings],
     pipeline_fn: Callable[[Any], None],
     settings_kwargs: dict[str, Any] | None = None,
-) -> dict[str, Any] | None:
+) -> LoadInfo | None:
     """Generic CLI entry point for any pipeline.
 
     :param settings_cls: the Settings class to instantiate
+    :type  settings_cls: type[LoggerSettings]
     :param pipeline_fn: the run_pipeline function to call with the config
+    :type  pipeline_fn: Callable[[Any], None]
     :param settings_kwargs: any extra non-cli/env var settings to be added
+    :type  settings_kwargs: dict[str, Any] | None, optional
+    :return: pipeline load information
+    :rtype: LoadInfo | None
     """
     # instantiate the config
     try:
@@ -100,7 +106,7 @@ def run_pipeline(
     destination_kwargs: dict[str, Any] | None = None,
     pipeline_kwargs: dict[str, Any] | None = None,
     pipeline_run_kwargs: dict[str, Any] | None = None,
-) -> dict[str, Any] | None:
+) -> LoadInfo | None:
     """Execute a dlt pipeline.
 
     :param settings: pipeline config with output_dir and destination
@@ -113,6 +119,8 @@ def run_pipeline(
     :type pipeline_kwargs: dict[str, Any] | None
     :param pipeline_run_kwargs: keyword arguments for the dlt pipeline run
     :type pipeline_run_kwargs: dict[str, Any] | None
+    :return: a load info object, if successful; otherwise None
+    :rtype: LoadInfo | None
     """
     # piece together env vars
     construct_env_var()

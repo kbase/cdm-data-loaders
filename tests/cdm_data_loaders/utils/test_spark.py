@@ -243,7 +243,7 @@ def test_write_table_no_data(
     assert len(caplog.records) == 1
     for record in caplog.records:
         assert record.levelno == logging.WARNING
-        assert record.message == "No data to write to what.ever"
+        assert record.getMessage() == "No data to write to what.ever"
 
 
 @pytest.mark.parametrize("mode", ["some", "mode", 123, None, "whatever"])
@@ -256,7 +256,7 @@ def test_write_table_invalid_write_mode(mode: str, caplog: pytest.LogCaptureFixt
     assert len(caplog.records) == 1
     for record in caplog.records:
         assert record.levelno == logging.ERROR
-        assert record.message == error_msg
+        assert record.getMessage() == error_msg
 
 
 def check_query_output(spark: SparkSession, catalog_db_table: str, expected: list[dict[str, Any]]) -> None:
@@ -274,10 +274,10 @@ def check_logger_output_successful_write(
 ) -> None:
     """Check that the logger has emitted the appropriate messages on a successful db write."""
     first_message = records[0]
-    assert f"Writing table {catalog_db_table} in mode {mode} (rows={rows})" in first_message.message
+    assert f"Writing table {catalog_db_table} in mode {mode} (rows={rows})" in first_message.getMessage()
     assert first_message.levelno == logging.INFO
     last_message = records[-1]
-    assert f"Saved managed table {catalog_db_table} (rows={rows})" in last_message.message
+    assert f"Saved managed table {catalog_db_table} (rows={rows})" in last_message.getMessage()
     assert last_message.levelno == logging.INFO
 
 
@@ -286,10 +286,10 @@ def check_logger_output_successful_location_write(
 ) -> None:
     """Check that the logger has emitted the appropriate messages on a successful db write."""
     first_message = records[0]
-    assert f"Writing table {catalog_db_table} in mode {mode} (rows={rows})" in first_message.message
+    assert f"Writing table {catalog_db_table} in mode {mode} (rows={rows})" in first_message.getMessage()
     assert first_message.levelno == logging.INFO
     last_message = records[-1]
-    assert f"Saved external table {catalog_db_table} (rows={rows}) to " in last_message.message
+    assert f"Saved external table {catalog_db_table} (rows={rows}) to " in last_message.getMessage()
     assert last_message.levelno == logging.INFO
 
 
@@ -460,7 +460,7 @@ def test_write_table_ignore_error(
     last_logger_message = caplog.records[-1]
     assert last_logger_message.levelno == logging.WARNING
     assert (
-        last_logger_message.message
+        last_logger_message.getMessage()
         == f"Database table {catalog_db_table} already exists and writer is set to {mode} mode, so no data would be written. Aborting."
     )
     # check the db contents
@@ -493,7 +493,7 @@ def test_write_table_raise_error(
         )
     last_log_record = caplog.records[-1]
     assert last_log_record.levelno == logging.ERROR
-    assert last_log_record.message == f"Error writing managed table {catalog_db_table}"
+    assert last_log_record.getMessage() == f"Error writing managed table {catalog_db_table}"
 
 
 @pytest.mark.requires_spark
@@ -518,7 +518,7 @@ def test_write_table_uninited_namespace(
         )
 
     assert caplog.records[-1].levelno == logging.ERROR
-    assert caplog.records[-1].message.startswith(err_msg)
+    assert caplog.records[-1].getMessage().startswith(err_msg)
 
 
 @pytest.mark.skip("Not yet implemented")
@@ -545,7 +545,7 @@ def test_write_table_existing_proposed_path_warning(
         mode=mode,
     )
     assert caplog.records[0].levelno == logging.WARNING
-    assert caplog.records[0].message.startswith(err_msg)
+    assert caplog.records[0].getMessage().startswith(err_msg)
 
 
 # END write_table tests. PHEW!
@@ -564,7 +564,7 @@ def test_preview_or_skip_existing(
 
     preview_or_skip(spark, catalog_db, table)
 
-    assert caplog.records[0].message == f"Preview for {catalog_db_table}:"
+    assert caplog.records[0].getMessage() == f"Preview for {catalog_db_table}:"
     captured = capsys.readouterr().out
     # N.b. this may be fragile if formatting of "show" statements changes
     for k, v in DEFAULT_SAMPLE_DATA.items():
@@ -580,4 +580,4 @@ def test_preview_or_skip_missing(spark: SparkSession, caplog: pytest.LogCaptureF
     preview_or_skip(spark, db, table)
 
     last_log_message = caplog.records[-1]
-    assert last_log_message.message == f"Table {db}.{table} not found. Skipping preview."
+    assert last_log_message.getMessage() == f"Table {db}.{table} not found. Skipping preview."

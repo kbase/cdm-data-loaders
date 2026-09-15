@@ -191,7 +191,7 @@ def test_validate_jsonschema_fail_invalid_schema_content_logs_and_raises_schema_
         validate_jsonschema(schema_path)
 
     assert len(caplog.records) == 1
-    assert caplog.records[0].message.startswith("Error validating JSON Schema")
+    assert caplog.records[0].getMessage().startswith("Error validating JSON Schema")
 
 
 @pytest.mark.parametrize(
@@ -206,7 +206,7 @@ def test_validate_jsonschema_fixtures_are_valid_schemas(fixture_name: str, reque
 """get_schema_parsing_metadata"""
 
 
-def test_get_schema_parsing_metadata_pass_transforms_keys(tmp_path: Path) -> None:
+def test_get_schema_parsing_metadata_pass_transforms_keys() -> None:
     """Keys prefixed with "x-" are stripped of the prefix and hyphens become underscores."""
     vs = ValidatedSchema(
         jsonschema={
@@ -223,7 +223,6 @@ def test_get_schema_parsing_metadata_pass_transforms_keys(tmp_path: Path) -> Non
                 "x-null-cols": ["a", "b"],
             },
         },
-        path=tmp_path / "schema.json",
     )
 
     result = get_schema_parsing_metadata(vs)
@@ -240,22 +239,20 @@ def test_get_schema_parsing_metadata_pass_transforms_keys(tmp_path: Path) -> Non
     }
 
 
-def test_get_schema_parsing_metadata_fail_no_xsv_config_key(tmp_path: Path) -> None:
+def test_get_schema_parsing_metadata_fail_no_xsv_config_key() -> None:
     """A schema with no x-xsv-config key raises ValueError."""
     vs = ValidatedSchema(
         jsonschema={"$schema": VALID_SCHEMA_URI, "required": ["a"]},
-        path=tmp_path / "schema.json",
     )
 
     with pytest.raises(ValueError, match="No xsv config information found in schema"):
         get_schema_parsing_metadata(vs)
 
 
-def test_get_schema_parsing_metadata_fail_empty_xsv_config(tmp_path: Path) -> None:
+def test_get_schema_parsing_metadata_fail_empty_xsv_config() -> None:
     """A schema with an empty x-xsv-config object raises ValueError."""
     vs = ValidatedSchema(
         jsonschema={"$schema": VALID_SCHEMA_URI, "required": ["a"], "x-xsv-config": {}},
-        path=tmp_path / "schema.json",
     )
 
     with pytest.raises(ValueError, match="No xsv config information found in schema"):

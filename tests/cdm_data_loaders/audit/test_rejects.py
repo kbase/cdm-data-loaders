@@ -80,7 +80,7 @@ def test_write_rejects(
     assert len(caplog.records) == 1
     assert caplog.records[-1].levelno == logging.INFO
     assert (
-        caplog.records[-1].message
+        caplog.records[-1].getMessage()
         == f"{pipeline_run.pipeline} {pipeline_run.run_id}: invalid rows written to '{REJECTS}' audit table."
     )
 
@@ -113,7 +113,7 @@ def test_write_rejects_no_rejects(
     assert len(caplog.records) == 1
     assert caplog.records[-1].levelno == logging.INFO
     assert (
-        caplog.records[-1].message
+        caplog.records[-1].getMessage()
         == f"{pipeline_run.pipeline} {pipeline_run.run_id}: nothing to write to '{REJECTS}' audit table."
     )
 
@@ -135,7 +135,7 @@ def test_write_rejects_no_row_errors(
 
     assert len(caplog.records) == 1
     assert caplog.records[-1].levelno == logging.ERROR
-    assert caplog.records[-1].message == err_msg
+    assert caplog.records[-1].getMessage() == err_msg
 
 
 @pytest.mark.requires_spark
@@ -151,6 +151,6 @@ def test_write_rejects_empty_df(
     assert len(caplog.records) == 1
     assert caplog.records[-1].levelno == logging.INFO
     assert (
-        caplog.records[-1].message
+        caplog.records[-1].getMessage()
         == f"{pipeline_run.pipeline} {pipeline_run.run_id}: nothing to write to '{REJECTS}' audit table."
     )

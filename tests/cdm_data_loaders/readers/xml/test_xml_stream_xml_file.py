@@ -184,11 +184,11 @@ def test_stream_xml_file_pass_logs_debug_message_per_yielded_element(
     list(stream_xml_file(path, "book"))
 
     assert len(caplog.records) == n_expected_records
-    assert caplog.records[0].message.startswith("Streaming XML from")
+    assert caplog.records[0].getMessage().startswith("Streaming XML from")
     log_levels = {r.levelno for r in caplog.records}
     assert log_levels == {logging.DEBUG}
     for rec in caplog.records[1:]:
-        assert rec.message.startswith("<Element book at")
+        assert rec.getMessage().startswith("<Element book at")
 
 
 def test_stream_xml_file_fail_missing_file_raises_file_not_found_error(tmp_path: Path) -> None:

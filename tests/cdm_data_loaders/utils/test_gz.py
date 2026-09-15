@@ -53,7 +53,7 @@ def test_compress_file_creates_gzip(temporary_file: Path, caplog: pytest.LogCapt
 
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.INFO
-    assert f"Created output file {gz_path!s}" in caplog.records[0].message
+    assert f"Created output file {gz_path!s}" in caplog.records[0].getMessage()
 
 
 def test_compress_file_skips_existing_gzip(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -74,7 +74,7 @@ def test_compress_file_skips_existing_gzip(tmp_path: Path, caplog: pytest.LogCap
 
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.INFO
-    assert f"Found existing file {file_path!s}.gz: skipping gz operation" in caplog.records[0].message
+    assert f"Found existing file {file_path!s}.gz: skipping gz operation" in caplog.records[0].getMessage()
 
 
 def test_compress_files_multiple(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -100,10 +100,10 @@ def test_compress_files_multiple(tmp_path: Path, caplog: pytest.LogCaptureFixtur
     assert len(caplog.records) == n_files + 2
     for r in caplog.records:
         assert r.levelno == logging.INFO
-    assert "Found 3 file(s) to compress" in caplog.records[0].message
+    assert "Found 3 file(s) to compress" in caplog.records[0].getMessage()
     for r in caplog.records[1:4]:
-        assert f"Created output file {tmp_path!s}/file" in r.message
-    assert caplog.records[-1].message == "Work complete!"
+        assert f"Created output file {tmp_path!s}/file" in r.getMessage()
+    assert caplog.records[-1].getMessage() == "Work complete!"
 
 
 def test_compress_files_no_matches(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -114,7 +114,7 @@ def test_compress_files_no_matches(tmp_path: Path, caplog: pytest.LogCaptureFixt
 
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.INFO
-    assert "Found 0 file(s) to compress" in caplog.records[0].message
+    assert "Found 0 file(s) to compress" in caplog.records[0].getMessage()
 
 
 def test_compress_files_accepts_str_path(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -131,7 +131,7 @@ def test_compress_files_accepts_str_path(tmp_path: Path, caplog: pytest.LogCaptu
     assert read_gz(gz) == b"payload"
     # Logger should still contain the expected messages
     assert len(caplog.records) == 3
-    msgs = [rec.message for rec in caplog.records]
+    msgs = [rec.getMessage() for rec in caplog.records]
     assert msgs[0] == "Found 1 file(s) to compress"
     assert f"Created output file {f!s}.gz" in msgs[1]
     assert msgs[-1] == "Work complete!"
@@ -165,7 +165,7 @@ def test_decompress_file_creates_file(
 
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.INFO
-    assert f"Created output file {decompressed_file!s}" in caplog.records[0].message
+    assert f"Created output file {decompressed_file!s}" in caplog.records[0].getMessage()
 
 
 @pytest.mark.parametrize("file_name", ["data", "data.tar", "not_a_gz", "file.gz.bak"])
@@ -177,7 +177,7 @@ def test_decompress_file_skips_non_gz_file(tmp_path: Path, file_name: str, caplo
 
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.INFO
-    assert f"File {file_path!s} does not end with .gz: skipping decompression" in caplog.records[0].message
+    assert f"File {file_path!s} does not end with .gz: skipping decompression" in caplog.records[0].getMessage()
 
 
 def test_decompress_file_skips_directory(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -191,7 +191,7 @@ def test_decompress_file_skips_directory(tmp_path: Path, caplog: pytest.LogCaptu
 
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.WARNING
-    assert f"{file_path!s} is not a file: skipping decompression" in caplog.records[0].message
+    assert f"{file_path!s} is not a file: skipping decompression" in caplog.records[0].getMessage()
 
 
 def test_decompress_file_skips_missing_file(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -201,7 +201,7 @@ def test_decompress_file_skips_missing_file(tmp_path: Path, caplog: pytest.LogCa
 
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.WARNING
-    assert f"File {missing_file!s} does not exist: skipping decompression" in caplog.records[0].message
+    assert f"File {missing_file!s} does not exist: skipping decompression" in caplog.records[0].getMessage()
 
 
 @pytest.mark.parametrize("file_name", ["data", "data.tar", "not_a_gz", "file.gz.bak"])
@@ -230,7 +230,7 @@ def test_decompress_file_skips_existing_decompressed_file(
 
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.INFO
-    assert f"Found existing file {file_path!s}: skipping decompression" in caplog.records[0].message
+    assert f"Found existing file {file_path!s}: skipping decompression" in caplog.records[0].getMessage()
 
 
 @pytest.mark.skip("CliRunner conflicts with logging, causing a ValueError")
