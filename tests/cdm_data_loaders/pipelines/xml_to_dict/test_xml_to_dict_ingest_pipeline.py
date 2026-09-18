@@ -11,6 +11,7 @@ import dlt
 import pytest
 
 import cdm_data_loaders.pipelines.xml_to_dict.pipeline as xml_to_dict_ingest_module
+from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
     cli,
     run_xml_ingest_pipeline,
@@ -25,12 +26,14 @@ SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
 """
 
 
+@pytest.mark.parametrize("loader_file_format", LoaderFileFormatEnum.__members__.values())
 def test_run_xml_ingest_pipeline_pass_sets_core_run_pipeline_args_correctly(
     settings_factory: Callable[..., XmlToDictSettings],
     fresh_xml_to_dict_reader: Callable[[], Any],
+    loader_file_format: str,
 ) -> None:
     """run_xml_ingest_pipeline binds the reader and delegates to run_pipeline with the correct args."""
-    settings = settings_factory()
+    settings = settings_factory(loader_file_format=loader_file_format)
     fresh_xml_to_dict_reader()
 
     with patch.object(xml_to_dict_ingest_module, "run_pipeline") as mock_run_pipeline:
@@ -45,7 +48,7 @@ def test_run_xml_ingest_pipeline_pass_sets_core_run_pipeline_args_correctly(
         "pipeline_name": PIPELINE_NAME,
         "dataset_name": settings.dataset_name,
     }
-    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": "parquet"}
+    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": loader_file_format}
     assert isinstance(kwargs["resource"], object)
 
 

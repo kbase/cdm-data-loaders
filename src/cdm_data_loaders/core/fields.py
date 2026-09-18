@@ -25,7 +25,7 @@ LOCAL_FS: Final[str] = "local_fs"
 S3: Final[str] = "s3"
 
 
-VALID_DESTINATIONS: Final[list[str]] = [LOCAL_FS, "s3"]
+VALID_DESTINATIONS: Final[list[str]] = [LOCAL_FS, S3]
 
 # Common fields
 BATCH_SIZE: Final[str] = "batch_size"
@@ -38,6 +38,7 @@ INPUT_DIR: Final[str] = "input_dir"
 LOADER_FILE_FORMAT: Final[str] = "loader_file_format"
 LOG_CONFIG_FILE: Final[str] = "log_config_file"
 LOG_INTERVAL: Final[str] = "log_interval"
+MAX_TABLE_NESTING: Final[str] = "max_table_nesting"
 OUTPUT_DIR: Final[str] = "output_dir"
 START_AT: Final[str] = "start_at"
 TABLE_NAME: Final[str] = "table_name"
@@ -58,6 +59,7 @@ DEFAULTS = frozendict(
         LOADER_FILE_FORMAT: PARQUET,
         LOG_CONFIG_FILE: None,
         LOG_INTERVAL: 1000,
+        MAX_TABLE_NESTING: 0,
         # N.b. this gets replaced by destination.local_fs.bucket_url in CtsSettings and derivatives
         OUTPUT_DIR: "",
         START_AT: MIN_START_AT,
@@ -69,13 +71,6 @@ DEFAULTS = frozendict(
 DEFAULT_PIPELINE_BATCH_SIZE: Final[int] = 50
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
-
-
-class LoaderFileFormatEnum(StrEnum):
-    """Valid values for loader file format."""
-
-    PARQUET = PARQUET
-    JSONL = JSONL
 
 
 BatchSize = Annotated[
@@ -121,9 +116,21 @@ InputDir = Annotated[
         description="Location of directory containing file(s) to import",
     ),
 ]
-LoaderFileFormat: Annotated[
-    NonEmptyStr,
-    Field(default=DEFAULTS[LOADER_FILE_FORMAT], description="Format to save the output to the destination as"),
+
+
+class LoaderFileFormatEnum(StrEnum):
+    """Valid values for loader file format."""
+
+    JSONL = JSONL
+    PARQUET = PARQUET
+
+
+LoaderFileFormat = Annotated[
+    LoaderFileFormatEnum,
+    Field(
+        default=DEFAULTS[LOADER_FILE_FORMAT],
+        description=f"Format to save the output to the destination as. Choices: {[member.value for member in LoaderFileFormatEnum.__members__.values()]}",
+    ),
 ]
 LogConfigFile = Annotated[
     NonEmptyStr | None,
@@ -137,6 +144,14 @@ LogInterval = Annotated[
     Field(
         default=DEFAULTS[LOG_INTERVAL],
         description="How often (in number of processed entries) to emit a progress log message. Must be a positive integer.",
+    ),
+]
+MaxTableNesting = Annotated[
+    int,
+    Field(
+        gt=-1,
+        description="Maximum level of nesting of output datasets. For infinite nesting, set to 0.",
+        default=DEFAULTS[MAX_TABLE_NESTING],
     ),
 ]
 OutputDir = Annotated[

@@ -1,16 +1,22 @@
 """Shared fixtures for xml_ingest pipeline integration tests."""
 
 import gzip
+import json
 from collections.abc import Callable
 from itertools import count
 from pathlib import Path
 from typing import Any, Final
 
 import dlt
+import duckdb
 import pytest
+import xmltodict
+from dlt.common.pipeline import LoadInfo
+from frozendict import frozendict
 
 import cdm_data_loaders.pipelines.xml_to_dict.pipeline as xml_to_dict_ingest_module
 from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
+    run_xml_ingest_pipeline,
     xml_to_dict_reader,
 )
 from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
@@ -22,6 +28,24 @@ SIMPLE_LIBRARY_XML: Final[str] = """<?xml version="1.0"?>
     <book id="3"><title>The Tommyknockers</title></book>
 </library>
 """
+
+
+REFERENCE_NS: Final[str] = "http://uniprot.org/uniref"
+REFERENCE_TAG: Final[str] = f"{{{REFERENCE_NS}}}entry"
+
+REFERENCE_FIXTURE_DIR: Final[Path] = Path("tests") / "data" / "uniprot" / "uniref"
+N_REFERENCE_ENTRIES: Final[int] = 100
+
+
+DEFAULT_XMLTODICT_SETTINGS: frozendict = frozendict(
+    {
+        "buffer_size": 10,
+        "dev_mode": False,
+        "file_glob": "*.xml*",
+        "log_interval": 1000,
+        "use_output_dir_for_pipeline_metadata": False,
+    }
+)
 
 
 @pytest.fixture
@@ -48,34 +72,39 @@ def fresh_xml_to_dict_reader(monkeypatch: pytest.MonkeyPatch) -> Callable[[], An
     return _factory
 
 
+def make_settings(tmp_path: Path, dlt_destination_config: str, **overrides: Any) -> dict[str, Any]:
+
+    log_config_file = overrides.get("log_config_file", tmp_path / "logging.conf")
+    log_config_file.touch()
+    output_dir = overrides.get("output_dir", tmp_path / "output")
+    output_dir.mkdir(exist_ok=True)
+    input_dir = overrides.get("input_dir", tmp_path / "input")
+
+    kwargs: dict[str, Any] = {
+        **DEFAULT_XMLTODICT_SETTINGS,
+        "dataset_name": "xml_test_dataset",
+        "input_dir": str(input_dir),
+        "log_config_file": str(log_config_file),
+        "output_dir": str(output_dir),
+        "table_name": "book",
+        "use_destination": dlt_destination_config,
+        "xml_tag": "book",
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
 @pytest.fixture
 def settings_factory(tmp_path: Path, dlt_destination_config: str) -> Callable[..., XmlToDictSettings]:
     """Return a factory that builds a valid XmlToDictSettings, with fields open to override."""
 
     def _factory(**overrides: Any) -> XmlToDictSettings:
-        log_config_file = tmp_path / "logging.conf"
-        log_config_file.touch()
-        input_dir = tmp_path / "input"
+        settings_dict = make_settings(tmp_path, dlt_destination_config, **overrides)
+        # ensure that the input dir exists
+        input_dir = Path(settings_dict["input_dir"])
         input_dir.mkdir(exist_ok=True)
-        output_dir = tmp_path / "output"
-        output_dir.mkdir(exist_ok=True)
 
-        kwargs: dict[str, Any] = {
-            "log_config_file": str(log_config_file),
-            "input_dir": str(input_dir),
-            "output_dir": str(output_dir),
-            "dev_mode": False,
-            "use_destination": dlt_destination_config,
-            "use_output_dir_for_pipeline_metadata": False,
-            "buffer_size": 100,
-            "log_interval": 1000,
-            "dataset_name": "xml_test_dataset",
-            "table_name": "book",
-            "xml_tag": "book",
-            "file_glob": "*.xml*",
-        }
-        kwargs.update(overrides)
-        return XmlToDictSettings(**kwargs)
+        return XmlToDictSettings(**settings_dict)
 
     return _factory
 
@@ -104,3 +133,132 @@ def write_gzip_xml_file() -> Callable[[Path, str, str], Path]:
         return file_path
 
     return _write
+
+
+@pytest.fixture(scope="session")
+def reference_data_dir() -> Path:
+    """Path to the uniref fixture directory."""
+    return REFERENCE_FIXTURE_DIR
+
+
+def build_reference_entries(jsonl_path: Path) -> list[dict[str, Any]]:
+    """Read the reference JSONL into a list of canonical nested entry dicts."""
+    with jsonl_path.open(encoding="utf-8") as fh:
+        return [json.loads(line)["entry"] for line in fh if line.strip()]
+
+
+def write_reference_jsonl(source_xml: Path, jsonl_path: Path) -> int:
+    """Parse the UniRef XML with xmltodict and write the reference JSONL.
+
+    The top-level element is ignored; one JSON object per entry element is written,
+    wrapped as {"entry": ...} so that nested content is preserved verbatim.
+    """
+    with gzip.open(source_xml, "rb") as fh:
+        document = xmltodict.parse(fh.read())
+
+    entries = document["UniRef50"]["entry"]
+    with jsonl_path.open("w", encoding="utf-8") as out:
+        for entry in entries:
+            out.write(json.dumps({"entry": entry}, ensure_ascii=False) + "\n")
+    return len(entries)
+
+
+@pytest.fixture(scope="session")
+def reference_jsonl(reference_data_dir: Path) -> Path:
+    """Generate the reference JSONL from the chunk_100_el source, if not present."""
+    jsonl_path = reference_data_dir / "jsonl" / "uniref_100.jsonl"
+    if not jsonl_path.exists():
+        source_xml = reference_data_dir / "chunk_100_el" / "uniref_100_part_01.xml.gz"
+        n_entries = write_reference_jsonl(source_xml, jsonl_path)
+        assert n_entries == N_REFERENCE_ENTRIES
+
+    return jsonl_path
+
+
+@pytest.fixture(scope="session")
+def reference_entries(reference_jsonl: Path) -> list[dict[str, Any]]:
+    """The canonical nested entry dicts read back from the reference JSONL."""
+    ref_json = build_reference_entries(reference_jsonl)
+    assert isinstance(ref_json, list)
+    for entry in ref_json:
+        for key in ("@id", "name", "property", "representativeMember"):
+            assert key in entry
+        assert entry.get("@id") is not None
+        assert entry.get("@id").startswith("UniRef50_")
+    assert len(ref_json) == N_REFERENCE_ENTRIES
+    return ref_json
+
+
+@pytest.fixture(scope="session")
+def sorted_reference_entries(reference_entries: list[dict[str, Any]]) -> list[str]:
+    """Sorted entries for the uniref reference dataset."""
+    return sorted(json.dumps(entry, sort_keys=True, default=str) for entry in reference_entries)
+
+
+@pytest.fixture(scope="session")
+def reference_dataset(reference_jsonl: Path) -> duckdb.DuckDBPyConnection:
+    """Load the reference JSONL into an in-memory DuckDB connection with nested structures.
+
+    read_json_auto infers native STRUCT/STRUCT[] types for the nested content;
+    `member` infers as JSON because its shape varies across entries.
+    """
+    connection = duckdb.connect()
+    jsonl_path = str(reference_jsonl)
+    connection.execute(
+        "CREATE TABLE reference AS SELECT * FROM read_json_auto(?, sample_size=200)",
+        [jsonl_path],
+    )
+    return connection
+
+
+@pytest.fixture
+def run_xmltodict_pipeline(
+    tmp_path: Path,
+    reference_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    dlt_destination_config: str,
+) -> Callable[..., Any]:
+    """Return a factory that runs the xml_to_dict pipeline on a chunk dir with full isolation.
+
+    Each run gets a unique output_dir and dataset_name under tmp_path, and a fresh
+    module-level xml_to_dict_reader transformer, so parallel-safe repeated runs
+    never collide or accumulate rows.
+    """
+    original_reader = xml_to_dict_reader
+    run_counter = count()
+
+    def _factory(chunk_dir: str, **overrides: Any) -> tuple[LoadInfo | None, Path]:
+        run_index = next(run_counter)
+
+        fresh_reader = dlt.transformer(
+            original_reader.__wrapped__,
+            name=f"xml_to_dict_reader_{run_index}",
+            parallelized=True,
+        )
+        monkeypatch.setattr(xml_to_dict_ingest_module, "xml_to_dict_reader", fresh_reader)
+
+        output_dir = tmp_path / f"output_{run_index}"
+        output_dir.mkdir()
+        dataset_name = f"reference_run_{run_index}"
+        log_config_file = tmp_path / f"logging_{run_index}.conf"
+        log_config_file.touch()
+        kwargs = {
+            "buffer_size": 10,  # overrides.get("buffer_size", 10),
+            "dataset_name": dataset_name,
+            "dev_mode": False,
+            "file_glob": "*.xml*",
+            "input_dir": str(reference_data_dir / chunk_dir),
+            "log_config_file": str(log_config_file),
+            "log_interval": 1000,  # overrides.get("log_interval", 1000),
+            "output_dir": str(output_dir),
+            "table_name": "entry",
+            "use_destination": dlt_destination_config,
+            "use_output_dir_for_pipeline_metadata": False,
+            "xml_tag": REFERENCE_TAG,
+        }
+        kwargs.update(overrides)
+        settings = XmlToDictSettings(**kwargs)
+        load_info: LoadInfo | None = run_xml_ingest_pipeline(settings)
+        return (load_info, output_dir)
+
+    return _factory

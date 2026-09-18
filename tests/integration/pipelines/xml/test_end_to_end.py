@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import Any
 
 import dlt
+from pandas import DataFrame
 import pytest
-
+from dlt.common.pipeline import LoadInfo
+from cdm_data_loaders.core.fields import LoaderFileFormatEnum, JSONL, PARQUET
 from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
     cli,
     run_xml_ingest_pipeline,
@@ -24,30 +26,37 @@ SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
     <book id="3"><title>The Tommyknockers</title></book>
 </library>
 """
+DEFAULT_DLT_TABLES = {"_dlt_version", "_dlt_loads", "_dlt_pipeline_state"}
 
 
-def test_run_xml_ingest_pipeline_pass_writes_expected_parquet(
+def check_book_list_results(load_info: LoadInfo | None, table_name: str | None = None) -> DataFrame:
+    """Check over the output of parsing SIMPLE_LIBRARY_XML."""
+    assert load_info is not None
+    assert load_info.has_failed_jobs is False
+    dataset = load_info.pipeline.dataset()
+    table_name = table_name or "book"
+    assert set(dataset.tables) == {table_name, *DEFAULT_DLT_TABLES}
+    book_df = dataset.table(table_name).df()
+    assert set(book_df.columns.tolist()) >= {"book__aid", "book__title", "_dlt_id", "_dlt_load_id"}
+    return book_df
+
+
+@pytest.mark.parametrize("loader_file_format", LoaderFileFormatEnum.__members__.values())
+def test_run_xml_ingest_pipeline_pass_writes_expected_output(
     settings_factory: Callable[..., XmlToDictSettings],
     fresh_xml_to_dict_reader: Callable[[], Any],
+    loader_file_format: str,
 ) -> None:
     """Running the pipeline on xml files loads one row per matching element into the configured table."""
-    settings = settings_factory()
+    settings = settings_factory(loader_file_format=loader_file_format)
     input_dir = Path(settings.input_dir)
     input_dir.mkdir(exist_ok=True)
     (input_dir / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
     fresh_xml_to_dict_reader()
 
-    run_xml_ingest_pipeline(settings)
-
-    pipeline = dlt.pipeline(
-        pipeline_name=PIPELINE_NAME,
-        destination=settings.use_destination,
-        dev_mode=False,
-    )
-    dataset = pipeline.dataset()
-    frame = dataset.book.df()
-    assert sorted(frame["book__aid"].tolist()) == ["1", "2", "3"]
-    assert set(frame.columns.tolist()) >= {"book__aid", "book__title", "_dlt_id", "_dlt_load_id"}
+    load_info = run_xml_ingest_pipeline(settings)
+    book_df = check_book_list_results(load_info)
+    assert sorted(book_df["book__aid"].tolist()) == ["1", "2", "3"]
 
 
 def test_run_xml_ingest_pipeline_pass_gzip_files_are_loaded(
@@ -63,17 +72,10 @@ def test_run_xml_ingest_pipeline_pass_gzip_files_are_loaded(
     write_gzip_xml_file(input_dir, "library.xml.gz", SIMPLE_LIBRARY_XML)
     fresh_xml_to_dict_reader()
 
-    run_xml_ingest_pipeline(settings)
-
-    pipeline = dlt.pipeline(
-        pipeline_name=PIPELINE_NAME,
-        destination=settings.use_destination,
-        dev_mode=False,
-    )
-    dataset = pipeline.dataset()
-    frame = dataset.book.df()
+    load_info = run_xml_ingest_pipeline(settings)
+    book_df = check_book_list_results(load_info)
     # one copy of the three books from the plain file, one from the gzipped copy
-    assert sorted(frame["book__aid"].tolist()) == ["1", "1", "2", "2", "3", "3"]
+    assert sorted(book_df["book__aid"].tolist()) == ["1", "1", "2", "2", "3", "3"]
 
 
 def test_run_xml_ingest_pipeline_pass_custom_table_name_is_respected(
@@ -87,17 +89,10 @@ def test_run_xml_ingest_pipeline_pass_custom_table_name_is_respected(
     (input_dir / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
     fresh_xml_to_dict_reader()
 
-    run_xml_ingest_pipeline(settings)
-
-    pipeline = dlt.pipeline(
-        pipeline_name=PIPELINE_NAME,
-        destination=settings.use_destination,
-        dev_mode=False,
-    )
-    dataset = pipeline.dataset()
-    frame = dataset.library_entries.df()
+    load_info = run_xml_ingest_pipeline(settings)
+    book_df = check_book_list_results(load_info, "library_entries")
     # the record dict is keyed by the xml tag, so the flattened column prefix is `book`
-    assert sorted(frame["book__aid"].tolist()) == ["1", "2", "3"]
+    assert sorted(book_df["book__aid"].tolist()) == ["1", "2", "3"]
 
 
 def test_run_xml_ingest_pipeline_pass_no_matching_files_yields_no_data_table(
@@ -109,16 +104,12 @@ def test_run_xml_ingest_pipeline_pass_no_matching_files_yields_no_data_table(
     Path(settings.input_dir).mkdir(exist_ok=True)
     fresh_xml_to_dict_reader()
 
-    run_xml_ingest_pipeline(settings)
-
-    pipeline = dlt.pipeline(
-        pipeline_name=PIPELINE_NAME,
-        destination=settings.use_destination,
-        dev_mode=False,
-    )
-    dataset = pipeline.dataset()
+    load_info = run_xml_ingest_pipeline(settings)
+    assert load_info is not None
+    assert load_info.has_failed_jobs is False
+    dataset = load_info.pipeline.dataset()
     # only dlt's own metadata tables exist; the data table is never created
-    assert "book" not in dataset.tables
+    assert set(dataset.tables) == DEFAULT_DLT_TABLES
 
 
 def test_cli_pass_runs_end_to_end_from_command_line_arguments(
@@ -160,9 +151,6 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     ]
     monkeypatch.setattr(sys, "argv", argv)
 
-    cli()
-
-    pipeline = dlt.pipeline(pipeline_name=PIPELINE_NAME)
-    dataset = pipeline.dataset()
-    frame = dataset.book.df()
-    assert sorted(frame["book__aid"].tolist()) == ["1", "2", "3"]
+    load_info = cli()
+    book_df = check_book_list_results(load_info)
+    assert sorted(book_df["book__aid"].tolist()) == ["1", "2", "3"]
