@@ -10,6 +10,7 @@ import dlt
 import pytest
 
 import cdm_data_loaders.pipelines.xml_to_dict.pipeline as xml_to_dict_ingest_module
+from cdm_data_loaders.core.fields import LOCAL_FS
 from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
     xml_to_dict_reader,
 )
@@ -86,7 +87,7 @@ def settings_factory(tmp_path: Path) -> Callable[..., XmlToDictSettings]:
             "input_dir": str(input_dir),
             "output_dir": str(output_dir),
             "dev_mode": True,
-            "use_destination": "local_fs",
+            "use_destination": LOCAL_FS,
             "use_output_dir_for_pipeline_metadata": False,
             "buffer_size": 100,
             "log_interval": 1000,

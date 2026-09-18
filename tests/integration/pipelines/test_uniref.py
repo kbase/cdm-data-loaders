@@ -8,9 +8,10 @@ import dlt
 import pytest
 from frozendict import frozendict
 
-from cdm_data_loaders.parsers.uniprot.uniref import UNIREF_VARIANTS
+from cdm_data_loaders.core.fields import LOCAL_FS
 from cdm_data_loaders.pipelines import uniref as uniref_module
 from cdm_data_loaders.pipelines.uniref import (
+    UNIREF_VARIANTS,
     VARIANT,
     UnirefSettings,
     cli,
@@ -27,7 +28,7 @@ START_AT_STRING = "25"
 
 TEST_DEFAULT_UNIREF_VARIANT = "50"
 
-UNIREF_FIXTURE_DIR = Path("tests") / "data" / "uniprot" / "uniref"
+UNIREF_FIXTURE_DIR = Path("tests") / "data" / "uniprot" / "uniref" / "integration"
 
 
 TEST_SETTINGS = frozendict(
@@ -63,7 +64,7 @@ def duckdb_uniref_settings(tmp_path: Path) -> UnirefSettings:
             VARIANT: TEST_DEFAULT_UNIREF_VARIANT,
             "input_dir": str(UNIREF_FIXTURE_DIR),
             "output_dir": str(output_dir),
-            "use_destination": "local_fs",
+            "use_destination": LOCAL_FS,
             "use_output_dir_for_pipeline_metadata": False,
         },
     )

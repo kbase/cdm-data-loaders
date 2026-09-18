@@ -42,8 +42,6 @@ from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 from dlt.sources.filesystem import filesystem
-from jsonschema import FormatChecker
-from jsonschema.validators import Draft202012Validator
 from pydantic import BaseModel, ValidationError
 
 from cdm_data_loaders.core.fields import GZIP_SUFFIX
@@ -129,7 +127,7 @@ def _read_jsonl_lines(items: Iterator[FileItemDict], buffer_size: int) -> Genera
 
 
 def _make_validator(
-    table_name: str, buffer_size: int, model: type[BaseModel], schema: dict[str, Any] | None = None
+    table_name: str, buffer_size: int, model: type[BaseModel]
 ) -> Callable[[list[dict[str, Any]]], Generator[Any, Any, Any]]:
     """Build a function that validates pages of records and routes them to tables.
 
@@ -153,8 +151,6 @@ def _make_validator(
     :rtype: Callable[[list[dict[str, Any]]], Generator[Any, Any, Any]]
     """
     rejected_table = f"{table_name}_rejected"
-    if schema:
-        validator = Draft202012Validator(schema, format_checker=FormatChecker())
 
     def _validate(page: list[dict[str, Any]]) -> Generator[Any, Any, Any]:
         valid_buffer = ListBuffer(table_name=table_name, max_items=buffer_size)

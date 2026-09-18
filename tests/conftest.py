@@ -39,6 +39,7 @@ from cdm_data_loaders.audit.schema import (
     RUN_ID,
     SOURCE,
 )
+from cdm_data_loaders.core.fields import LOCAL_FS, S3
 from cdm_data_loaders.core.pipeline_run import PipelineRun
 from cdm_data_loaders.readers.dsv import INVALID_DATA_FIELD
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
@@ -214,13 +215,13 @@ def json_test_strings() -> dict[str, Any]:
     }
 
 
-CONFIG_BUCKET = frozendict({"local_fs": "/output_dir", "s3": "s3://some/s3/bucket"})
+CONFIG_BUCKET = frozendict({LOCAL_FS: "/output_dir", S3: "s3://some/s3/bucket"})
 
 TEST_DLT_CONFIG = frozendict(
     {
-        "destination.local_fs.bucket_url": CONFIG_BUCKET["local_fs"],
+        "destination.local_fs.bucket_url": CONFIG_BUCKET[LOCAL_FS],
         "destination.local_fs.destination_type": "filesystem",
-        "destination.s3.bucket_url": CONFIG_BUCKET["s3"],
+        "destination.s3.bucket_url": CONFIG_BUCKET[S3],
         "destination.s3.destination_type": "filesystem",
         "normalize.data_writer.disable_compression": False,
     }
@@ -231,11 +232,11 @@ def _generate_dlt_config() -> dict[str, Any]:
     """Return a fresh DLT config dict (same shape as the conftest fixture)."""
     return {
         "destination": {
-            "local_fs": {"bucket_url": CONFIG_BUCKET["local_fs"]},
-            "s3": {"bucket_url": CONFIG_BUCKET["s3"]},
+            LOCAL_FS: {"bucket_url": CONFIG_BUCKET[LOCAL_FS]},
+            S3: {"bucket_url": CONFIG_BUCKET[S3]},
         },
-        "destination.local_fs.bucket_url": CONFIG_BUCKET["local_fs"],
-        "destination.s3.bucket_url": CONFIG_BUCKET["s3"],
+        "destination.local_fs.bucket_url": CONFIG_BUCKET[LOCAL_FS],
+        "destination.s3.bucket_url": CONFIG_BUCKET[S3],
         "normalize.data_writer.disable_compression": False,
     }
 
@@ -268,7 +269,7 @@ def dlt_destination_config(tmp_path: Path) -> Generator[str]:
             "destination.local_fs.bucket_url": str(bucket),
         }
     ):
-        yield "local_fs"
+        yield LOCAL_FS
 
 
 @pytest.fixture
@@ -663,7 +664,7 @@ def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[S3Client]:
 
     with mock_aws():
         reset_s3_client()
-        client: S3Client = boto3.client("s3", config=_client_config())
+        client: S3Client = boto3.client(S3, config=_client_config())
 
         for bucket in BUCKETS:
             client.create_bucket(Bucket=bucket)

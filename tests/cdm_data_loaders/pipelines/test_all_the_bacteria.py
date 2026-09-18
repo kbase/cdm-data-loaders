@@ -12,7 +12,7 @@ import pytest
 from frozendict import frozendict
 from requests.exceptions import HTTPError
 
-from cdm_data_loaders.core.fields import VALID_DESTINATIONS
+from cdm_data_loaders.core.fields import S3, VALID_DESTINATIONS
 from cdm_data_loaders.pipelines import all_the_bacteria
 from cdm_data_loaders.pipelines.all_the_bacteria import (
     ALL_ATB_FILE_NAME,
@@ -30,6 +30,7 @@ from tests.cdm_data_loaders.core.conftest import (
     TEST_CTS_SETTINGS,
     TEST_CTS_SETTINGS_RECONCILED,
 )
+from tests.cdm_data_loaders.pipelines.conftest import TEST_LOG_CONFIG_FILE
 from tests.conftest import DEFAULT_VCR_CONFIG
 from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes
 
@@ -59,7 +60,7 @@ def test_settings(tmp_path: Path) -> AtbSettings:
 @pytest.fixture
 def test_s3_settings() -> AtbSettings:
     """Generate fake settings that use s3."""
-    return AtbSettings(use_destination="s3")  # pyright: ignore[reportCallIssue]
+    return AtbSettings(use_destination=S3)  # pyright: ignore[reportCallIssue]
 
 
 @pytest.fixture
@@ -102,6 +103,7 @@ def test_cli_fields_parse_correctly(
 def test_cli_calls_run_atb_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure that cli() calls run_atb_pipeline with the settings."""
     mock_settings_instance = MagicMock()
+    mock_settings_instance.log_config_file = str(TEST_LOG_CONFIG_FILE)
     mock_settings_cls = MagicMock(return_value=mock_settings_instance)
     mock_run_atb_pipeline = MagicMock()
 
@@ -288,7 +290,6 @@ def test_get_file_download_links(test_settings: AtbSettings) -> None:
     with expected.open() as fh:
         reader = csv.DictReader(fh, delimiter="\t")
         expected_files = list(reader)
-    assert len(filtered_files[0]) > 1
     assert filtered_files[0] == expected_files
 
 
@@ -413,7 +414,7 @@ def test_osf_file_downloader_success(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Ensure that the osf_file_downloader function correctly calls the download client for each file."""
-    settings = request.getfixturevalue("test_s3_settings" if use_destination == "s3" else "test_settings")
+    settings = request.getfixturevalue("test_s3_settings" if use_destination == S3 else "test_settings")
 
     atb_file_list = [{k: v for k, v in f.items() if k != "path"} for f in atb_input]
 
@@ -437,7 +438,7 @@ def test_osf_file_downloader_success(
         output = list(osf_file_downloader(settings, atb_file_list))
 
     # should have a separate call for each file downloaded
-    if use_destination == "s3":
+    if use_destination == S3:
         mock_download_client.download.assert_not_called()
         call_args = [c.kwargs for c in mock_stream_to_s3.call_args_list]
         assert call_args == [
@@ -532,7 +533,7 @@ def test_osf_file_downloader_error_handling(
     request: pytest.FixtureRequest,
 ) -> None:
     """Ensure that errors during file download are handled correctly."""
-    settings = request.getfixturevalue("test_s3_settings" if use_destination == "s3" else "test_settings")
+    settings = request.getfixturevalue("test_s3_settings" if use_destination == S3 else "test_settings")
 
     def file_downloader_boom(**args) -> None:  # noqa: ANN003
         if "url" in args:
@@ -558,7 +559,7 @@ def test_osf_file_downloader_error_handling(
     ):
         list(osf_file_downloader(settings, atb_file_list))
 
-    if use_destination == "s3":
+    if use_destination == S3:
         mock_download_client.download.assert_not_called()
         call_args = [c.kwargs for c in mock_stream_to_s3.call_args_list]
         assert call_args == [

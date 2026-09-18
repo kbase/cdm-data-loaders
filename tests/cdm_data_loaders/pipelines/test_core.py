@@ -18,7 +18,9 @@ from pydantic_settings import SettingsError
 
 from cdm_data_loaders.core.fields import (
     DEV_MODE,
+    LOCAL_FS,
     OUTPUT_DIR,
+    S3,
     USE_DESTINATION,
     VALID_DESTINATIONS,
 )
@@ -119,7 +121,7 @@ def test_cts_settings() -> CtsSettings:
         pytest.param(
             {
                 "input_dir": "/path/to/dir",
-                "use_destination": "local_fs",
+                "use_destination": LOCAL_FS,
                 "start_at": 15,
                 "output_dir": "/some/dir",
             },
@@ -351,7 +353,7 @@ def test_sync_configs_no_op_with_mock_config_when_relevant_attrs_missing(
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 def test_sync_configs_sets_both_keys_from_a_de_novo_dlt_config(settings_cls: type[CtsSettings]) -> None:
     """When dev_mode/output_dir/use_destination are all present, sync_configs sets exactly two keys."""
-    settings = settings_cls(dev_mode=True, output_dir="/some/output", use_destination="local_fs")  # pyright: ignore[reportCallIssue]
+    settings = settings_cls(dev_mode=True, output_dir="/some/output", use_destination=LOCAL_FS)  # pyright: ignore[reportCallIssue]
     empty_dlt_config = {}
     sync_configs(settings, empty_dlt_config)
 
@@ -533,9 +535,7 @@ def test_run_pipeline_calls_construct_env_var_and_sync_configs(
 
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize("dev_mode", [True, False])
-@pytest.mark.parametrize(
-    ("use_destination", "output_dir"), [("local_fs", "/some/path"), ("s3", "s3://bucket/whatever")]
-)
+@pytest.mark.parametrize(("use_destination", "output_dir"), [(LOCAL_FS, "/some/path"), (S3, "s3://bucket/whatever")])
 def test_run_pipeline_dlt_config_updated_after_success(
     dlt_config: dict[str, Any],
     mock_dlt: MagicMock,
@@ -699,7 +699,7 @@ def test_run_pipeline_dev_mode_true_loads_into_fresh_dataset(dlt_test_settings: 
     settings = make_batched_settings(
         input_dir=str(Path(dlt_test_settings.input_dir)),
         output_dir=str(Path(dlt_test_settings.output_dir)),
-        use_destination="local_fs",
+        use_destination=LOCAL_FS,
         use_output_dir_for_pipeline_metadata=True,
         dev_mode=True,
     )

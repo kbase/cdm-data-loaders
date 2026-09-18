@@ -7,6 +7,7 @@ from typing import Any
 import dlt
 from pydantic import BaseModel
 
+from cdm_data_loaders.core.fields import LOCAL_FS
 from cdm_data_loaders.pipelines.jsonlines.pipeline import build_entity_resource
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
 
@@ -17,7 +18,7 @@ def run_pipeline(table_name: str, model: type[BaseModel], settings: JsonlPydanti
 
     pipeline = dlt.pipeline(
         pipeline_name=f"test_{table_name}",
-        destination=dlt.destination("local_fs"),
+        destination=dlt.destination(LOCAL_FS),
         dataset_name=f"test_{table_name}_dataset",
         dev_mode=True,
     )
