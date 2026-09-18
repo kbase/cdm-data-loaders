@@ -8,9 +8,11 @@ from cdm_data_loaders.core.fields import (
     BUFFER_SIZE,
     DEV_MODE,
     INPUT_DIR,
+    LOCAL_FS,
     LOG_CONFIG_FILE,
     LOG_INTERVAL,
     OUTPUT_DIR,
+    S3,
     START_AT,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
@@ -28,8 +30,8 @@ TEST_LOG_CONFIG_FILE: Final[str] = "log_conf.json"
 
 DESTINATION_TO_OUTPUT = frozendict(
     {
-        "local_fs": TEST_DLT_CONFIG["destination.local_fs.bucket_url"],
-        "s3": TEST_DLT_CONFIG["destination.s3.bucket_url"],
+        LOCAL_FS: TEST_DLT_CONFIG["destination.local_fs.bucket_url"],
+        S3: TEST_DLT_CONFIG["destination.s3.bucket_url"],
     }
 )
 
@@ -52,7 +54,7 @@ TEST_CTS_SETTINGS = frozendict(
         INPUT_DIR: "/dir/path",
         LOG_CONFIG_FILE: "some/path",
         OUTPUT_DIR: "/some/dir",
-        USE_DESTINATION: "local_fs",
+        USE_DESTINATION: LOCAL_FS,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: "true",
     }
 )

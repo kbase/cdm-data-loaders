@@ -15,6 +15,7 @@ from cdm_data_loaders.core.fields import (
     LOG_CONFIG_FILE,
     LOG_INTERVAL,
     OUTPUT_DIR,
+    S3,
     START_AT,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
@@ -201,7 +202,7 @@ class CtsSettings(InputOutputSettings):
             destination_is_s3 = True
 
         # self.use_destination should be "s3" if the output is an s3 url and vice versa
-        if bool(self.use_destination == "s3") != destination_is_s3:
+        if bool(self.use_destination == S3) != destination_is_s3:
             err_msg = "Mismatch between output location and use_destination. To ensure internal settings functions work correctly, set use_destination to 's3' for writing files to s3, and 'local_fs' for writing files locally. The output directory can be configured using the 'output_dir' parameter."
             raise ValueError(err_msg)
 

@@ -2,6 +2,7 @@
 
 from collections.abc import Generator
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Annotated, Any, Final
 
 import dlt
@@ -18,7 +19,6 @@ from cdm_data_loaders.core.settings import (
 )
 from cdm_data_loaders.parsers.uniprot.uniref import (
     ENTRY_XML_TAG,
-    UNIREF_VARIANTS,
     parse_uniref_entry,
 )
 from cdm_data_loaders.pipelines.core import (
@@ -30,6 +30,20 @@ from cdm_data_loaders.readers.xml import process_xml_file_batches
 APP_NAME: Final[str] = "uniref_importer"
 UNIREF_LOG_INTERVAL: Final[int] = 10000
 VARIANT: Final[str] = "variant"
+FIFTY: Final[str] = "50"
+NINETY: Final[str] = "90"
+HUNDRED: Final[str] = "100"
+
+
+class UnirefVariantEnum(StrEnum):
+    """Valid values for the Uniref variant."""
+
+    FIFTY = FIFTY
+    NINETY = NINETY
+    HUNDRED = HUNDRED
+
+
+UNIREF_VARIANTS: Final[list[str]] = [member.value for member in UnirefVariantEnum.__members__.values()]
 
 
 class UnirefSettings(BatchedFileInputSettings):
@@ -42,7 +56,7 @@ class UnirefSettings(BatchedFileInputSettings):
     )
 
     variant: Annotated[
-        str,
+        UnirefVariantEnum,
         Field(
             description=f"Which UniRef variant to import. Choices: {UNIREF_VARIANTS}",
         ),

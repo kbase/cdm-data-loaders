@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from cdm_data_loaders.core.fields import DEFAULTS
+from cdm_data_loaders.core.fields import DEFAULTS, S3
 from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
 
 
@@ -90,7 +90,7 @@ def test_xml_to_dict_ingest_settings_fail_local_destination_with_s3_flag(
 ) -> None:
     """use_destination='s3' with a local output_dir raises ValidationError."""
     with pytest.raises(ValidationError, match="Mismatch between output location and use_destination"):
-        settings_factory(use_destination="s3")
+        settings_factory(use_destination=S3)
 
 
 def test_xml_to_dict_ingest_settings_pass_unknown_use_destination_rejected(

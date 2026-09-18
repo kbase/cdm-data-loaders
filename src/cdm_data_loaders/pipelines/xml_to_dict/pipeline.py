@@ -35,20 +35,6 @@ def xml_to_dict_reader(items: Iterator[FileItemDict], settings: XmlToDictSetting
     """
     for file_item in items:
         yield from process_xml_file_to_dict(settings, file_path=Path(file_item.local_file_path))
-        # logger.info("Reading from %s", file_item["relative_path"])
-        # n_entries = -1
-        # buffer = ListBuffer(table_name=settings.table_name, max_items=settings.buffer_size)
-        # for n_entries, entry in enumerate(stream_xml_file(file_item.local_file_path, settings.xml_tag)):
-        #     parsed = xmltodict.parse(tostring(entry))
-        #     if parsed:
-        #         yield from buffer.add_item(parsed)
-
-        #     if (n_entries + 1) % settings.log_interval == 0:
-        #         logger.debug("Processed %d entries", n_entries + 1)
-        # if n_entries >= 0 and (n_entries + 1) % settings.log_interval != 0:
-        #     logger.debug("Processed %d entries from %s", n_entries + 1, file_item["relative_path"])
-
-        # yield from buffer.flush()
 
 
 def run_xml_ingest_pipeline(settings: XmlToDictSettings) -> LoadInfo | None:
@@ -57,11 +43,6 @@ def run_xml_ingest_pipeline(settings: XmlToDictSettings) -> LoadInfo | None:
     :param settings: pipeline configuration
     :type  settings: XmlToDictSettings
     """
-    pipeline_kwargs = {
-        "pipeline_name": PIPELINE_NAME,
-        "dataset_name": settings.dataset_name,
-    }
-
     xml_to_dict_reader.bind(settings)
 
     files = filesystem(bucket_url=settings.input_dir, file_glob=settings.file_glob)
@@ -69,10 +50,13 @@ def run_xml_ingest_pipeline(settings: XmlToDictSettings) -> LoadInfo | None:
     return run_pipeline(
         settings=settings,
         resource=files | xml_to_dict_reader,
-        destination_kwargs={"max_table_nesting": 0},
-        pipeline_kwargs=pipeline_kwargs,
+        destination_kwargs={"max_table_nesting": settings.max_table_nesting},
+        pipeline_kwargs={
+            "pipeline_name": PIPELINE_NAME,
+            "dataset_name": settings.dataset_name,
+        },
         pipeline_run_kwargs={
-            "loader_file_format": "parquet",
+            "loader_file_format": settings.loader_file_format,
         },
     )
 

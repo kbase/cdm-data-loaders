@@ -1,5 +1,6 @@
 """Common defaults for running pipelines on the KBase CTS."""
 
+from enum import StrEnum
 from typing import Annotated, Any, Final
 
 import dlt
@@ -15,8 +16,16 @@ DEFAULT_JSONL_FILE_GLOB: Final[str] = "*.jsonl*"
 DEFAULT_XML_FILE_GLOB: Final[str] = "*.xml*"
 GZIP_SUFFIX: Final[str] = ".gz"
 
+# output file formats
+JSONL: Final[str] = "jsonl"
+PARQUET: Final[str] = "parquet"
 
-VALID_DESTINATIONS: Final[list[str]] = ["local_fs", "s3"]
+# destinations
+LOCAL_FS: Final[str] = "local_fs"
+S3: Final[str] = "s3"
+
+
+VALID_DESTINATIONS: Final[list[str]] = [LOCAL_FS, "s3"]
 
 # Common fields
 BATCH_SIZE: Final[str] = "batch_size"
@@ -26,6 +35,7 @@ DEV_MODE: Final[str] = "dev_mode"
 DLT_CONFIG: Final[str] = "dlt_config"
 FILE_GLOB: Final[str] = "file_glob"
 INPUT_DIR: Final[str] = "input_dir"
+LOADER_FILE_FORMAT: Final[str] = "loader_file_format"
 LOG_CONFIG_FILE: Final[str] = "log_config_file"
 LOG_INTERVAL: Final[str] = "log_interval"
 OUTPUT_DIR: Final[str] = "output_dir"
@@ -45,12 +55,13 @@ DEFAULTS = frozendict(
         DEV_MODE: False,
         FILE_GLOB: "*",
         INPUT_DIR: INPUT_MOUNT,
+        LOADER_FILE_FORMAT: PARQUET,
         LOG_CONFIG_FILE: None,
         LOG_INTERVAL: 1000,
         # N.b. this gets replaced by destination.local_fs.bucket_url in CtsSettings and derivatives
         OUTPUT_DIR: "",
         START_AT: MIN_START_AT,
-        USE_DESTINATION: "local_fs",
+        USE_DESTINATION: LOCAL_FS,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: False,
     }
 )
@@ -58,6 +69,14 @@ DEFAULTS = frozendict(
 DEFAULT_PIPELINE_BATCH_SIZE: Final[int] = 50
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
+
+
+class LoaderFileFormatEnum(StrEnum):
+    """Valid values for loader file format."""
+
+    PARQUET = PARQUET
+    JSONL = JSONL
+
 
 BatchSize = Annotated[
     PositiveInt,
@@ -96,14 +115,18 @@ DltConfig = Annotated[
 ]
 FileGlob = Annotated[str, Field(default=DEFAULTS[FILE_GLOB], description="File glob")]
 InputDir = Annotated[
-    str,
+    NonEmptyStr,
     Field(
         default=DEFAULTS[INPUT_DIR],
         description="Location of directory containing file(s) to import",
     ),
 ]
+LoaderFileFormat: Annotated[
+    NonEmptyStr,
+    Field(default=DEFAULTS[LOADER_FILE_FORMAT], description="Format to save the output to the destination as"),
+]
 LogConfigFile = Annotated[
-    str | None,
+    NonEmptyStr | None,
     Field(
         default=DEFAULTS[LOG_CONFIG_FILE],
         description="Location of configuration file for the logger",
@@ -132,7 +155,7 @@ StartAt = Annotated[
 ]
 TableName = Annotated[str, Field(description="The name of the table to export parsed data to")]
 UseDestination = Annotated[
-    str,
+    NonEmptyStr,
     Field(
         default=DEFAULTS[USE_DESTINATION],
         description=f"DLT destination configuration to use for data output. Data to be saved to s3 should use the destination 's3'; to save data locally, use the destination 'local_fs'. The output directory can be specified using the 'output_dir' field. Choices: {VALID_DESTINATIONS}",

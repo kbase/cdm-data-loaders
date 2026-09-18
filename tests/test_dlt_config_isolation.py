@@ -6,6 +6,7 @@ import dlt
 from dlt.common.configuration.container import Container
 from dlt.common.pipeline import PipelineContext
 
+from cdm_data_loaders.core.fields import LOCAL_FS, S3
 from tests.conftest import _generate_dlt_config
 from tests.dlt_config_isolation import deactivated_pipeline, dlt_config_unset, isolated_dlt_config
 
@@ -15,7 +16,7 @@ SEED_CONFIG_KEY: str = "destination.local_fs.bucket_url"
 def test_isolated_dlt_config_scopes_seeded_values() -> None:
     """A nested isolated_dlt_config resolves its own seed and restores the outer chain on exit."""
     seed_bucket_url: str = _generate_dlt_config()[SEED_CONFIG_KEY]
-    with isolated_dlt_config({"destination": {"local_fs": {"bucket_url": "/isolated/nested"}}}):
+    with isolated_dlt_config({"destination": {LOCAL_FS: {"bucket_url": "/isolated/nested"}}}):
         assert dlt.config.get(SEED_CONFIG_KEY) == "/isolated/nested"
     assert dlt.config.get(SEED_CONFIG_KEY) == seed_bucket_url
 
@@ -31,7 +32,7 @@ def test_isolated_dlt_config_restores_chain_after_direct_mutation() -> None:
 
 def test_isolated_dlt_config_seeds_and_restores_secrets() -> None:
     """The isolated chain resolves seeded secrets and drops them on exit."""
-    with isolated_dlt_config(secrets={"destination": {"s3": {"credentials": {"access_key_id": "test-key"}}}}):
+    with isolated_dlt_config(secrets={"destination": {S3: {"credentials": {"access_key_id": "test-key"}}}}):
         assert dlt.secrets.get("destination.s3.credentials.access_key_id") == "test-key"
     assert dlt.secrets.get("destination.s3.credentials.access_key_id") is None
 

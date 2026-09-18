@@ -26,6 +26,7 @@ from dlt.sources.helpers.rest_client.client import RESTClient
 from pydantic import Field, StringConstraints, computed_field, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.fields import LOCAL_FS, S3
 from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.pipelines.core import (
     run_cli,
@@ -90,7 +91,7 @@ class AtbSettings(CtsSettings):
 
         Set to the output directory / "raw_data" / version.
         """
-        if self.use_destination == "local_fs":
+        if self.use_destination == LOCAL_FS:
             return str(Path(self.output_dir) / "raw_data" / self.version)
         return f"{self.output_dir}/raw_data/{self.version}"
 
@@ -145,7 +146,7 @@ def download_atb_index_tsv(settings: AtbSettings) -> Path:
     :return: path to the downloaded file
     :rtype: Path
     """
-    if settings.use_destination == "local_fs":
+    if settings.use_destination == LOCAL_FS:
         # make sure that the directory structure to save the file in can be written to
         Path(settings.raw_data_dir).mkdir(parents=True, exist_ok=True)
 
@@ -166,7 +167,7 @@ def download_atb_index_tsv(settings: AtbSettings) -> Path:
         err_msg = f"Could not find download URL in response from 'https://api.osf.io/v2/files/{ALL_FILES_TSV_FILE_ID}/'"
         raise RuntimeError(err_msg)
 
-    if settings.use_destination == "s3":
+    if settings.use_destination == S3:
         # download to a local temp file and also copy the file to s3
         save_path = f"{settings.raw_data_dir}/{ALL_ATB_FILE_NAME}"
         try:
@@ -231,7 +232,7 @@ def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any
     for f in atb_file_list:
         try:
             project_part = f["project"].removeprefix("AllTheBacteria").removeprefix("/").rstrip("/")
-            if settings.use_destination == "s3":
+            if settings.use_destination == S3:
                 if project_part:
                     project_part = f"{project_part}/"
                 save_path = f"{settings.raw_data_dir}/{project_part}{f['filename']}"

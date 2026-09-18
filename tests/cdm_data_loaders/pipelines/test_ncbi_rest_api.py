@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from pydantic_settings import CliApp
 from requests import HTTPError
 
+from cdm_data_loaders.core.fields import LOCAL_FS
 from cdm_data_loaders.pipelines import ncbi_rest_api as ncbi_module
 from cdm_data_loaders.pipelines.ncbi_rest_api import (
     ANNOTATION,
@@ -357,7 +358,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
             "output_dir": "/some/dir",
             "pipeline_dir": "/some/dir/.dlt_conf" if use_pipeline_dir else None,
             "raw_data_dir": "/some/dir/raw_data",
-            "use_destination": "local_fs",
+            "use_destination": LOCAL_FS,
             "use_output_dir_for_pipeline_metadata": bool(use_pipeline_dir),
             "batch_size": MAX_IDS_PER_QUERY,
             "query_type": None,
@@ -369,7 +370,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
     mock_dlt.destination.assert_called_once_with(settings.use_destination, max_table_nesting=0)
     mock_dlt.destination.assert_called_once()
     assert mock_dlt.destination.call_args_list[0].kwargs == {"max_table_nesting": 0}
-    assert mock_dlt.destination.call_args_list[0].args == ("local_fs",)
+    assert mock_dlt.destination.call_args_list[0].args == (LOCAL_FS,)
 
     mock_dlt.pipeline.assert_called_once()
     assert mock_dlt.pipeline.call_args.kwargs["destination"] == mock_dlt.destination.return_value

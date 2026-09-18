@@ -12,10 +12,12 @@ from cdm_data_loaders.core.fields import (
     DEFAULTS,
     DEV_MODE,
     INPUT_DIR,
+    LOCAL_FS,
     LOG_CONFIG_FILE,
     LOG_INTERVAL,
     MIN_START_AT,
     OUTPUT_DIR,
+    S3,
     START_AT,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
@@ -57,7 +59,6 @@ VALID_CASES: list[tuple[str, Any]] = [
     ("dev_mode", True),
     ("dev_mode", False),
     ("input_dir", "/input_dir"),
-    ("input_dir", ""),
     ("log_config_file", None),
     ("log_config_file", "/etc/logging.conf"),
     ("log_interval", 1),
@@ -66,8 +67,8 @@ VALID_CASES: list[tuple[str, Any]] = [
     ("output_dir", ""),
     ("start_at", 1),
     ("start_at", 42),
-    ("use_destination", "local_fs"),
-    ("use_destination", "s3"),
+    ("use_destination", LOCAL_FS),
+    ("use_destination", S3),
     ("use_output_dir_for_pipeline_metadata", True),
     ("use_output_dir_for_pipeline_metadata", False),
 ]
@@ -79,6 +80,7 @@ INVALID_CASES: list[Any] = [
     ("buffer_size", 0),
     ("buffer_size", -1),
     ("dev_mode", "not-a-bool"),
+    ("input_dir", ""),
     ("input_dir", 123),
     ("log_config_file", 123),
     ("log_interval", 0),
@@ -221,7 +223,7 @@ def test_defaults_mapping_is_immutable() -> None:
 
 def test_valid_destinations_contains_expected_values() -> None:
     """VALID_DESTINATIONS currently contains exactly 'local_fs' and 's3'."""
-    assert VALID_DESTINATIONS == ["local_fs", "s3"]
+    assert VALID_DESTINATIONS == [LOCAL_FS, S3]
 
 
 def test_valid_destinations_is_a_plain_mutable_list() -> None:

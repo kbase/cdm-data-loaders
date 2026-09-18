@@ -7,13 +7,23 @@
 FROM ghcr.io/astral-sh/uv:python3.14-trixie
 
 ARG QSV_VERSION="22.0.1"
-ARG XML_FILE_SPLITTER_VERSION="v0.1.3"
+ARG XML_FILE_SPLITTER_VERSION="v0.1.4"
 
 # Set environment variable to noninteractive to prevent prompts during apt operations
 ENV DEBIAN_FRONTEND=noninteractive
 
 # add tini and git
-RUN apt-get update -y && apt-get install -y --no-install-recommends tini git ca-certificates wget unzip parallel libxml2-utils libwayland-client0 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    git \
+    libwayland-client0 \
+    libxml2-utils \
+    parallel \
+    rclone \
+    tini \
+    unzip \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp
 

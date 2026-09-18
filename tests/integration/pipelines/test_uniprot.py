@@ -8,6 +8,7 @@ import dlt
 import pytest
 from frozendict import frozendict
 
+from cdm_data_loaders.core.fields import LOCAL_FS
 from cdm_data_loaders.pipelines import uniprot_kb as uniprot_module
 from cdm_data_loaders.pipelines.uniprot_kb import (
     UNIPROT_LOG_INTERVAL,
@@ -50,7 +51,7 @@ def duckdb_uniprot_settings_args(tmp_path: Path) -> frozendict:
         {
             "input_dir": str(UNIPROT_FIXTURE_DIR),
             "output_dir": str(output_dir),
-            "use_destination": "local_fs",
+            "use_destination": LOCAL_FS,
             "use_output_dir_for_pipeline_metadata": False,
         }
     )

@@ -19,19 +19,26 @@ from cdm_data_loaders.core.fields import NonEmptyStr
 DEFAULT_BUFFER_MAX_ITEMS = 1000
 
 
+type Buffers = Annotated[dict[NonEmptyStr, list[Any]], Field(description="Buffer implementation")]
+
+type MaxItems = Annotated[PositiveInt, Field(description="Maximum number of items per buffer")]
+
+type TableNames = Annotated[list[NonEmptyStr], Field(description="Names of the tables to be stored in the buffer")]
+
+type TableToSchemaMap = Annotated[
+    dict[NonEmptyStr, pa.Schema], Field(min_length=1, description="Mapping of table names to schemas")
+]
+
+
 class BufferCore(BaseModel):
     """Accumulates rows per table and yields them as pages to dlt."""
 
     model_config = ConfigDict(extra="forbid")
 
-    max_items: Annotated[
-        PositiveInt, Field(default=DEFAULT_BUFFER_MAX_ITEMS, description="Maximum number of items per buffer")
-    ]
-    table_names: Annotated[
-        list[NonEmptyStr] | None, Field(default=None, description="Names of the tables to be stored in the buffer")
-    ]
+    _table_names: TableNames = PrivateAttr(default_factory=list)
+    _buffers: Buffers = PrivateAttr(default_factory=dict)
 
-    _buffers: dict[str, list[Any]] = PrivateAttr(default_factory=dict)
+    max_items: MaxItems = Field(default=DEFAULT_BUFFER_MAX_ITEMS)
 
     @model_validator(mode="after")
     def set_up_buffers(self) -> Self:
@@ -40,8 +47,8 @@ class BufferCore(BaseModel):
         return self
 
     def _init_buffers(self) -> None:
-        if self.table_names:
-            self._buffers: dict[str, list[Any]] = {name: [] for name in self.table_names}
+        if self._table_names:
+            self._buffers: dict[str, list[Any]] = {name: [] for name in self._table_names}
         else:
             self._buffers = defaultdict(list)
 
@@ -79,7 +86,6 @@ class ListBuffer(BufferCore):
     @model_validator(mode="after")
     def set_up_table_names(self) -> Self:
         """Initialise the private table-name list and buffers."""
-        self.table_names = [self.table_name]
         self._init_buffers()
         return self
 
@@ -93,14 +99,10 @@ class ArrowBufferCore(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
-    max_items: Annotated[
-        PositiveInt, Field(default=DEFAULT_BUFFER_MAX_ITEMS, description="Maximum number of items per buffer")
-    ]
-    table_to_schema_map: Annotated[
-        dict[NonEmptyStr, pa.Schema], Field(min_length=1, description="mapping of table names to schemas")
-    ]
+    _buffers: Buffers = PrivateAttr(default_factory=dict)
 
-    _buffers: dict[str, list[Any]] = PrivateAttr(default_factory=dict)
+    max_items: MaxItems = Field(default=DEFAULT_BUFFER_MAX_ITEMS)
+    table_to_schema_map: TableToSchemaMap
 
     @model_validator(mode="after")
     def set_up_buffers(self) -> Self:
@@ -154,11 +156,8 @@ class ArrowDictBuffer(ArrowBufferCore):
 class ArrowListBuffer(ArrowBufferCore):
     """A single-table pyarrow buffer for routing one row at a time. Results are yielded as pyarrow tables."""
 
-    table_to_schema_map: Annotated[
-        dict[NonEmptyStr, pa.Schema], Field(min_length=1, max_length=1, description="mapping of table names to schemas")
-    ]
-
     _table_name: NonEmptyStr = PrivateAttr()
+    table_to_schema_map: TableToSchemaMap = Field(min_length=1, max_length=1)
 
     @model_validator(mode="after")
     def set_up_table_name(self) -> Self:

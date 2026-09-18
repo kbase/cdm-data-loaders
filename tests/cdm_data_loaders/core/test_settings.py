@@ -1,7 +1,7 @@
 """Tests for the Settings objects used by DLT pipelines."""
 
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Final, Self
 
 import pytest
 from frozendict import frozendict
@@ -11,7 +11,9 @@ from pydantic_settings import CliApp, SettingsConfigDict, SettingsError
 from cdm_data_loaders.core.fields import (
     DEV_MODE,
     INPUT_DIR,
+    LOCAL_FS,
     OUTPUT_DIR,
+    S3,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
     VALID_DESTINATIONS,
@@ -101,64 +103,64 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         metafunc.parametrize(("settings_cls", "field_name"), argvalues, ids=ids)
 
 
-S3 = "is_s3"
-OUT = OUTPUT_DIR
-RAW = "raw_data_dir"
-PIPE = "pipeline_dir"
+IS_S3: Final[str] = "is_s3"
+OUT: Final[str] = OUTPUT_DIR
+RAW: Final[str] = "raw_data_dir"
+PIPE: Final[str] = "pipeline_dir"
 
 
 # manually specify to avoid recapitulating logic
 OUTPUT_PATHS: dict[str, dict[str, Any]] = {
-    "": {S3: False, OUT: "", RAW: "raw_data", PIPE: ".dlt_conf"},
-    "/": {S3: False, OUT: "/", RAW: "/raw_data", PIPE: "/.dlt_conf"},
+    "": {IS_S3: False, OUT: "", RAW: "raw_data", PIPE: ".dlt_conf"},
+    "/": {IS_S3: False, OUT: "/", RAW: "/raw_data", PIPE: "/.dlt_conf"},
     # from destination.local_fs
     "/output_dir": {
-        S3: False,
+        IS_S3: False,
         OUT: "/output_dir",
         RAW: "/output_dir/raw_data",
         PIPE: "/output_dir/.dlt_conf",
     },
     "/output/dir": {
-        S3: False,
+        IS_S3: False,
         OUT: "/output/dir",
         RAW: "/output/dir/raw_data",
         PIPE: "/output/dir/.dlt_conf",
     },
     "s3/some/path/": {
-        S3: False,
+        IS_S3: False,
         OUT: "s3/some/path",
         RAW: "s3/some/path/raw_data",
         PIPE: "s3/some/path/.dlt_conf",
     },
     # normalised form of the above
     "s3/some/path": {
-        S3: False,
+        IS_S3: False,
         OUT: "s3/some/path",
         RAW: "s3/some/path/raw_data",
         PIPE: "s3/some/path/.dlt_conf",
     },
     "s3a://bucket/key": {
-        S3: True,
+        IS_S3: True,
         OUT: "s3a://bucket/key",
         RAW: "s3a://bucket/key/raw_data",
         PIPE: None,
     },
     "s3://test/bucket/": {
-        S3: True,
+        IS_S3: True,
         OUT: "s3://test/bucket",
         RAW: "s3://test/bucket/raw_data",
         PIPE: None,
     },
     # normalised from above
     "s3://test/bucket": {
-        S3: True,
+        IS_S3: True,
         OUT: "s3://test/bucket",
         RAW: "s3://test/bucket/raw_data",
         PIPE: None,
     },
     # from destination.s3
     "s3://some/s3/bucket": {
-        S3: True,
+        IS_S3: True,
         OUT: "s3://some/s3/bucket",
         RAW: "s3://some/s3/bucket/raw_data",
         PIPE: None,
@@ -516,10 +518,10 @@ def test_cli_app_run_dlt_config_errors(
 @pytest.mark.parametrize(
     ("use_destination", "output_dir", "should_raise"),
     [
-        ("local_fs", "s3://bucket/path", True),
-        ("s3", "/local/path", True),
-        ("local_fs", "/local/path", False),
-        ("s3", "s3://bucket/path", False),
+        (LOCAL_FS, "s3://bucket/path", True),
+        (S3, "/local/path", True),
+        (LOCAL_FS, "/local/path", False),
+        (S3, "s3://bucket/path", False),
     ],
 )
 def test_settings_destination_output_mismatch(
@@ -547,7 +549,12 @@ def test_settings_valid_destinations_accepted(use_destination: str, settings_cls
 @pytest.mark.parametrize(USE_DESTINATION, INVALID_DESTINATIONS)
 def test_settings_invalid_destination_raises(use_destination: str, settings_cls: type[CtsSettings]) -> None:
     """Ensure that an unrecognised use_destination raises a ValidationError."""
-    with pytest.raises(ValidationError, match=r"use_destination must be one of \['local_fs', 's3'\]"):
+    err_msg = (
+        r"use_destination must be one of \['local_fs', 's3'\]"
+        if use_destination
+        else "String should have at least 1 character"
+    )
+    with pytest.raises(ValidationError, match=err_msg):
         make_settings_autofill_config(settings_cls, {USE_DESTINATION: use_destination})
 
 
@@ -557,8 +564,8 @@ def test_settings_destination_has_no_bucket_url(settings_cls: type[CtsSettings])
     with pytest.raises(ValueError, match="No bucket_url specified for destination local_fs"):
         make_settings(
             settings_cls,
-            dlt_config={"destination": {"local_fs": None}},
-            kwargs={USE_DESTINATION: "local_fs"},
+            dlt_config={"destination": {LOCAL_FS: None}},
+            kwargs={USE_DESTINATION: LOCAL_FS},
         )
 
 
@@ -628,7 +635,8 @@ def test_settings_cli_invalid_destinations_raises(
     settings_cls: type[CtsSettings], cli_option: str, use_destination: str
 ) -> None:
     """Invalid destinations are rejected on the CLI."""
-    with pytest.raises(ValidationError, match="use_destination must be one of"):
+    err_msg = "use_destination must be one of" if use_destination else "String should have at least 1 character"
+    with pytest.raises(ValidationError, match=err_msg):
         CliApp.run(settings_cls, cli_args=[cli_option, use_destination])
 
 
@@ -638,10 +646,10 @@ def test_settings_cli_invalid_destinations_raises(
 def test_settings_cli_destination_has_no_bucket_url(settings_cls: type[CtsSettings], cli_option: str) -> None:
     """Incomplete configs are rejected."""
     with (
-        isolated_dlt_config({"destination": {"local_fs": None}}),
+        isolated_dlt_config({"destination": {LOCAL_FS: None}}),
         pytest.raises(ValueError, match="No bucket_url specified for destination local_fs"),
     ):
-        CliApp.run(settings_cls, cli_args=[cli_option, "local_fs"])
+        CliApp.run(settings_cls, cli_args=[cli_option, LOCAL_FS])
 
 
 # input and output path coercion
@@ -665,6 +673,11 @@ def test_settings_trailing_slash_stripped(
     field_name: str,
 ) -> None:
     """Ensure that validate_dir_path removes trailing slashes but leaves directory slashes intact."""
+    if field_name == "input_dir" and raw == "":
+        with pytest.raises(ValidationError, match="String should have at least 1 character"):
+            make_settings_autofill_config(settings_cls, {field_name: raw})
+        return
+
     s = make_settings_autofill_config(settings_cls, {field_name: raw})
     # output_dir gets filled in with the default if it is falsy
     if field_name == OUTPUT_DIR and raw == "":
@@ -720,14 +733,14 @@ def test_settings_generate_pipeline_raw_data_dirs(
     if settings_cls == BatchedFileInputSettings:
         expected = {**DEFAULT_BATCH_FILE_SETTINGS_RECONCILED, **expected}
 
-    if (OUTPUT_PATHS[expected[OUTPUT_DIR]][S3] and use_destination == "local_fs") or (
-        OUTPUT_PATHS[expected[OUTPUT_DIR]][S3] is False and use_destination == "s3"
+    if (OUTPUT_PATHS[expected[OUTPUT_DIR]][IS_S3] and use_destination == LOCAL_FS) or (
+        OUTPUT_PATHS[expected[OUTPUT_DIR]][IS_S3] is False and use_destination == S3
     ):
         with pytest.raises(ValueError, match="Mismatch between output location and use_destination"):
             make_settings_autofill_config(settings_cls, make_settings_args)
         return
 
-    if use_output_dir_for_pipeline_metadata and OUTPUT_PATHS[expected[OUTPUT_DIR]][S3] is True:
+    if use_output_dir_for_pipeline_metadata and OUTPUT_PATHS[expected[OUTPUT_DIR]][IS_S3] is True:
         # can't have pipeline dir on s3
         with pytest.raises(ValueError, match="It is not currently possible to have the pipeline directory on s3"):
             make_settings_autofill_config(settings_cls, make_settings_args)
