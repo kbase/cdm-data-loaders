@@ -15,7 +15,6 @@ from cdm_data_loaders.core.fields import (
     LoaderFileFormatEnum,
     LogInterval,
     NonEmptyStr,
-    PreserveTableNesting,
     TableName,
 )
 from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
@@ -36,8 +35,6 @@ class XmlToDictSettings(CtsSettings):
             FILE_GLOB.replace("_", "-"): "g",
         },
     )
-
-    preserve_table_nesting: PreserveTableNesting
 
     buffer_size: BufferSize
     dataset_name: DatasetName

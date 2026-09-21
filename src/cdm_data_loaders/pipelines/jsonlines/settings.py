@@ -14,8 +14,8 @@ from cdm_data_loaders.core.fields import (
     DatasetName,
     FileGlob,
     LoaderFileFormat,
-    PreserveTableNesting,
     NonEmptyStr,
+    PreserveTableNesting,
 )
 from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 
