@@ -18,9 +18,11 @@ from cdm_data_loaders.core.fields import BUFFER_SIZE, DEFAULTS, LOG_INTERVAL
 from cdm_data_loaders.core.settings import BatchedFileInputSettings
 from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
 from cdm_data_loaders.readers.xml import (
+    DEFAULT_XMLTODICT_ARGS,
     process_xml_file,
     process_xml_file_batches,
     process_xml_file_to_dict,
+    process_xml_file_with_xmltodict,
 )
 
 ParseFn = Callable[..., dict[str, list[dict[str, Any]]]]
@@ -240,16 +242,49 @@ def test_process_xml_file_pass_multiple_entries(tmp_path: Path) -> None:
 @pytest.mark.parametrize("gzip_compress", [False, True], ids=["plain", "gzip"])
 def test_process_xml_file_pass_to_dict_implements_xmltodict(tmp_path: Path, gzip_compress: bool) -> None:
     """Verify process_xml_file_to_dict matches direct xmltodict parsing of each streamed entry."""
-    filename = "people.xml.gz" if gzip_compress else "people.xml"
-    file_path = _write_xml(tmp_path, filename, PEOPLE_XML_2, gzip_compress=gzip_compress)
+    filename = "uniprot.xml.gz" if gzip_compress else "uniprot.xml"
+    file_path = _write_xml(tmp_path, filename, UNIPROT_XML_2, gzip_compress=gzip_compress)
+    xml_tag = f"{{{UNIPROT_NS}}}entry"
 
-    expected_rows = [xmltodict.parse(tostring(entry)) for entry in xml_module.stream_xml_file(file_path, "person")]
+    expected_rows = [
+        {"entry": {key: value for key, value in parsed_entry["entry"].items() if not key.startswith("_xmlns")}}
+        for entry in xml_module.stream_xml_file(file_path, xml_tag)
+        if (parsed_entry := xmltodict.parse(tostring(entry), **DEFAULT_XMLTODICT_ARGS))
+    ]
     settings: XmlToDictSettings = fake_settings(settings_class=XmlToDictSettings)
     settings.table_name = "some_table"
-    settings.xml_tag = "person"
+    settings.xml_tag = xml_tag
     tagged = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
 
     assert tagged == [("some_table", expected_rows)]
+
+
+@pytest.mark.parametrize(
+    ("xml_content", "xml_tag", "filename", "gzip_compress", "buffer_size"),
+    [
+        pytest.param(PEOPLE_XML_2, "person", "people.xml", False, 100, id="plain-non-entry-elements"),
+        pytest.param(UNIPROT_XML_2, f"{{{UNIPROT_NS}}}entry", "uniprot.xml", False, 1, id="namespaced-entry-elements"),
+        pytest.param(UNIPROT_XML_2, f"{{{UNIPROT_NS}}}entry", "uniprot.xml.gz", True, 2, id="gzip-namespaced-elements"),
+    ],
+)
+def test_process_xml_file_with_xmltodict_pass_matches_streaming_reader(
+    tmp_path: Path,
+    xml_content: str,
+    xml_tag: str,
+    filename: str,
+    gzip_compress: bool,
+    buffer_size: int,
+) -> None:
+    """Verify direct xmltodict parsing returns the streaming reader's exact table-tagged pages."""
+    file_path = _write_xml(tmp_path, filename, xml_content, gzip_compress=gzip_compress)
+    settings: XmlToDictSettings = fake_settings(buffer_size=buffer_size, settings_class=XmlToDictSettings)
+    settings.table_name = "some_table"
+    settings.xml_tag = xml_tag
+
+    expected = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
+    actual = _table_and_data(process_xml_file_with_xmltodict(settings, file_path=file_path))
+
+    assert actual == expected
 
 
 @pytest.mark.parametrize(

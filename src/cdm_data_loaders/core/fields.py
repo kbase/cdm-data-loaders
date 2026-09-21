@@ -40,6 +40,7 @@ LOG_CONFIG_FILE: Final[str] = "log_config_file"
 LOG_INTERVAL: Final[str] = "log_interval"
 MAX_TABLE_NESTING: Final[str] = "max_table_nesting"
 OUTPUT_DIR: Final[str] = "output_dir"
+PRESERVE_TABLE_NESTING: Final[str] = "preserve_table_nesting"
 START_AT: Final[str] = "start_at"
 TABLE_NAME: Final[str] = "table_name"
 USE_DESTINATION: Final[str] = "use_destination"
@@ -62,6 +63,7 @@ DEFAULTS = frozendict(
         MAX_TABLE_NESTING: 0,
         # N.b. this gets replaced by destination.local_fs.bucket_url in CtsSettings and derivatives
         OUTPUT_DIR: "",
+        PRESERVE_TABLE_NESTING: False,
         START_AT: MIN_START_AT,
         USE_DESTINATION: LOCAL_FS,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: False,
@@ -159,6 +161,13 @@ OutputDir = Annotated[
     Field(
         default=DEFAULTS[OUTPUT_DIR],
         description="Location to save imported data to, if different from the default supplied by the destination config",
+    ),
+]
+PreserveTableNesting = Annotated[
+    bool,
+    Field(
+        default=DEFAULTS[PRESERVE_TABLE_NESTING],
+        description="Whether or not nested data should be flattened out into separate tables",
     ),
 ]
 StartAt = Annotated[

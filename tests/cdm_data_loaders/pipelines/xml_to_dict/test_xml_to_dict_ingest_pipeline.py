@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
+from dlt.extract import DltResource
 
 import dlt
 import pytest
@@ -41,15 +42,14 @@ def test_run_xml_ingest_pipeline_pass_sets_core_run_pipeline_args_correctly(
 
     assert mock_run_pipeline.call_count == 1
     _, kwargs = mock_run_pipeline.call_args
-    assert kwargs.keys() == {"settings", "resource", "destination_kwargs", "pipeline_kwargs", "pipeline_run_kwargs"}
+    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
     assert kwargs["settings"] == settings
-    assert kwargs["destination_kwargs"] == {"max_table_nesting": 0}
     assert kwargs["pipeline_kwargs"] == {
         "pipeline_name": PIPELINE_NAME,
         "dataset_name": settings.dataset_name,
     }
     assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": loader_file_format}
-    assert isinstance(kwargs["resource"], object)
+    assert isinstance(kwargs["resource"], DltResource)
 
 
 def test_run_xml_ingest_pipeline_pass_binds_reader_before_run_pipeline(

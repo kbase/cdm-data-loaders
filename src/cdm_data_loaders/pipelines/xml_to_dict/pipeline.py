@@ -9,8 +9,10 @@ import dlt
 from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
+from dlt.extract import DltResource
 from dlt.sources.filesystem import filesystem
 
+from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.pipelines.core import run_cli, run_pipeline
 from cdm_data_loaders.pipelines.xml_to_dict.settings import PIPELINE_NAME, XmlToDictSettings
 from cdm_data_loaders.readers.xml import process_xml_file_to_dict
@@ -47,16 +49,19 @@ def run_xml_ingest_pipeline(settings: XmlToDictSettings) -> LoadInfo | None:
 
     files = filesystem(bucket_url=settings.input_dir, file_glob=settings.file_glob)
 
+    xml_to_dict_resource: DltResource = files | xml_to_dict_reader
+    if settings.preserve_table_nesting and settings.loader_file_format == LoaderFileFormatEnum.JSONL:
+        xml_to_dict_resource.max_table_nesting = 0
+
     return run_pipeline(
         settings=settings,
-        resource=files | xml_to_dict_reader,
-        destination_kwargs={"max_table_nesting": settings.max_table_nesting},
+        resource=xml_to_dict_resource,
         pipeline_kwargs={
             "pipeline_name": PIPELINE_NAME,
             "dataset_name": settings.dataset_name,
         },
         pipeline_run_kwargs={
-            "loader_file_format": settings.loader_file_format,
+            "loader_file_format": str(settings.loader_file_format),
         },
     )
 

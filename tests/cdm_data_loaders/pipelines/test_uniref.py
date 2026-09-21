@@ -24,7 +24,7 @@ from tests.cdm_data_loaders.core.conftest import (
     check_settings,
     make_settings_autofill_config,
 )
-from tests.conftest import TEST_DATA_DIR
+from tests.cdm_data_loaders.pipelines.conftest import TEST_LOG_CONFIG_FILE
 from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes, make_cli_arg
 
 START_AT_VALUE = 25
@@ -181,6 +181,7 @@ def test_cli_passes_settings_class_to_run_cli() -> None:
 def test_cli_calls_run_uniref_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure that cli() calls run_uniref_pipeline with the settings."""
     mock_settings_instance = MagicMock()
+    mock_settings_instance.log_config_file = str(TEST_LOG_CONFIG_FILE)
     mock_settings_cls = MagicMock(return_value=mock_settings_instance)
     mock_run_uniref_pipeline = MagicMock()
 

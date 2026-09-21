@@ -1,13 +1,16 @@
 """Common reusable XML pipeline elements."""
 
 import gzip
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Mapping
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any
+from queue import Empty, Full, Queue
+from threading import Event, Thread
+from typing import Any, cast
 
 import xmltodict
 from dlt.extract.items import DataItemWithMeta
+from frozendict import frozendict
 from lxml.etree import Element, iterparse, tostring
 
 from cdm_data_loaders.core.settings import BatchedFileInputSettings
@@ -16,6 +19,13 @@ from cdm_data_loaders.utils.batcher import get_file_batches
 from cdm_data_loaders.utils.buffer import DictBuffer, ListBuffer
 
 logger: Logger = getLogger(__name__)
+
+DEFAULT_XMLTODICT_ARGS = frozendict({"attr_prefix": "_"})
+
+type XmlToDictValue = str | dict[str, "XmlToDictValue"] | list["XmlToDictValue"] | None
+type XmlToDictResult = DataItemWithMeta | BaseException | None
+
+XMLTODICT_QUEUE_POLL_SECONDS = 0.1
 
 
 def parse_head_matter(file_path: str | Path) -> dict[str, str]:
@@ -102,10 +112,11 @@ def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: Path) -> Ge
     n_entries = -1
     buffer = ListBuffer(table_name=settings.table_name, max_items=settings.buffer_size)
     for n_entries, element in enumerate(stream_xml_file(file_path, settings.xml_tag)):
-        parsed_element = xmltodict.parse(tostring(element))
+        parsed_element = xmltodict.parse(tostring(element), **DEFAULT_XMLTODICT_ARGS)
         if parsed_element:
+            for k, v in parsed_element.items():
+                parsed_element[k] = {kv: val for kv, val in v.items() if not kv.startswith("_xmlns")}
             yield from buffer.add_item(parsed_element)
-
         if (n_entries + 1) % settings.log_interval == 0:
             logger.debug("Processed %d entries", n_entries + 1)
 
@@ -113,6 +124,142 @@ def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: Path) -> Ge
         logger.debug("Processed %d entries from %s", n_entries + 1, file_path.name)
 
     yield from buffer.flush()
+
+
+def _xmltodict_tag_name(xml_tag: str) -> str:
+    """Convert an lxml expanded tag name to xmltodict's namespace-aware form."""
+    if xml_tag.startswith("{"):
+        return xml_tag.removeprefix("{")
+    return xml_tag
+
+
+def _xml_tag_local_name(xml_tag: str) -> str:
+    """Return the local name from either an expanded or unqualified XML tag."""
+    return xml_tag.rsplit("}", maxsplit=1)[-1]
+
+
+def _strip_xmltodict_namespaces(parsed_value: XmlToDictValue) -> XmlToDictValue:
+    """Remove namespace URIs from xmltodict's namespace-aware keys."""
+    if isinstance(parsed_value, Mapping):
+        return {
+            key.rsplit("}", maxsplit=1)[-1]: _strip_xmltodict_namespaces(value) for key, value in parsed_value.items()
+        }
+    if isinstance(parsed_value, list):
+        return [_strip_xmltodict_namespaces(item) for item in parsed_value]
+    return parsed_value
+
+
+def _publish_xmltodict_result(result_queue: Queue[XmlToDictResult], cancelled: Event, result: XmlToDictResult) -> bool:
+    """Put a parse result on the queue unless downstream iteration has stopped."""
+    while not cancelled.is_set():
+        try:
+            result_queue.put(result, timeout=XMLTODICT_QUEUE_POLL_SECONDS)
+        except Full:
+            continue
+        return True
+    return False
+
+
+def _parse_xmltodict_file(
+    settings: XmlToDictSettings,
+    file_path: Path,
+    result_queue: Queue[XmlToDictResult],
+    cancelled: Event,
+) -> None:
+    """Parse XML entries and publish complete buffered pages in document order."""
+    buffer = ListBuffer(table_name=settings.table_name, max_items=settings.buffer_size)
+    xmltodict_tag = _xmltodict_tag_name(settings.xml_tag)
+    n_entries = 0
+
+    def publish(result: XmlToDictResult) -> bool:
+        """Publish a page, error, or completion sentinel from the parser worker."""
+        return _publish_xmltodict_result(result_queue, cancelled, result)
+
+    def handle_item(path: Any, item: Any) -> bool:  # noqa: ANN401
+        """Buffer a matching root-child element and continue streaming."""
+        nonlocal n_entries
+        if path[-1][0] != xmltodict_tag:
+            return not cancelled.is_set()
+
+        parsed_entry = (
+            cast("dict[str, XmlToDictValue]", _strip_xmltodict_namespaces(item))
+            if _xml_tag_local_name(settings.xml_tag) == "entry"
+            else {}
+        )
+        for page in buffer.add_item(
+            {"entry": {key: value for key, value in parsed_entry.items() if not key.startswith("_xmlns")}}
+        ):
+            if not publish(page):
+                return False
+
+        n_entries += 1
+        if n_entries % settings.log_interval == 0:
+            logger.debug("Processed %d entries", n_entries)
+        return not cancelled.is_set()
+
+    try:
+        open_fn = gzip.open if file_path.name.endswith(".gz") else open
+        with open_fn(file_path, "rb") as file_handle:
+            xmltodict.parse(
+                file_handle,
+                **DEFAULT_XMLTODICT_ARGS,
+                process_namespaces=True,
+                namespace_separator="}",
+                item_depth=2,
+                item_callback=handle_item,
+            )
+
+        if n_entries and n_entries % settings.log_interval != 0:
+            logger.debug("Processed %d entries from %s", n_entries, file_path.name)
+        for page in buffer.flush():
+            if not publish(page):
+                return
+    except BaseException as error:  # noqa: BLE001
+        if not cancelled.is_set():
+            publish(error)
+    finally:
+        publish(None)
+
+
+def process_xml_file_with_xmltodict(settings: XmlToDictSettings, file_path: Path) -> Generator[DataItemWithMeta]:
+    """Convert configured XML elements to dictionary form with xmltodict alone.
+
+    Expects the configured elements to be direct children of the document root. It
+    parses completed child elements through xmltodict's streaming callback.
+
+    :param settings: pipeline config, including xml_tag, table_name, and buffer_size.
+    :type settings: XmlToDictSettings
+    :param file_path: path to the XML file, optionally gzip-compressed.
+    :type file_path: Path
+    :yield: pages of dictionary items.
+    :rtype: Generator[DataItemWithMeta]
+    """
+    logger.info("Reading from %s", str(file_path))
+    result_queue: Queue[XmlToDictResult] = Queue(maxsize=1)
+    cancelled = Event()
+    worker = Thread(
+        target=_parse_xmltodict_file,
+        args=(settings, file_path, result_queue, cancelled),
+        name=f"xmltodict-{file_path.name}",
+        daemon=True,
+    )
+    worker.start()
+    try:
+        while True:
+            try:
+                result = result_queue.get(timeout=XMLTODICT_QUEUE_POLL_SECONDS)
+            except Empty:
+                if not worker.is_alive():
+                    break
+                continue
+            if result is None:
+                break
+            if isinstance(result, BaseException):
+                raise result
+            yield result
+    finally:
+        cancelled.set()
+        worker.join()
 
 
 def process_xml_file(

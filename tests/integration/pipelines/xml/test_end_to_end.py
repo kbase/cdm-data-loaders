@@ -37,7 +37,7 @@ def check_book_list_results(load_info: LoadInfo | None, table_name: str | None =
     table_name = table_name or "book"
     assert set(dataset.tables) == {table_name, *DEFAULT_DLT_TABLES}
     book_df = dataset.table(table_name).df()
-    assert set(book_df.columns.tolist()) >= {"book__aid", "book__title", "_dlt_id", "_dlt_load_id"}
+    assert set(book_df.columns.tolist()) >= {"book___id", "book__title", "_dlt_id", "_dlt_load_id"}
     return book_df
 
 
@@ -56,7 +56,7 @@ def test_run_xml_ingest_pipeline_pass_writes_expected_output(
 
     load_info = run_xml_ingest_pipeline(settings)
     book_df = check_book_list_results(load_info)
-    assert sorted(book_df["book__aid"].tolist()) == ["1", "2", "3"]
+    assert sorted(book_df["book___id"].tolist()) == ["1", "2", "3"]
 
 
 def test_run_xml_ingest_pipeline_pass_gzip_files_are_loaded(
@@ -75,7 +75,7 @@ def test_run_xml_ingest_pipeline_pass_gzip_files_are_loaded(
     load_info = run_xml_ingest_pipeline(settings)
     book_df = check_book_list_results(load_info)
     # one copy of the three books from the plain file, one from the gzipped copy
-    assert sorted(book_df["book__aid"].tolist()) == ["1", "1", "2", "2", "3", "3"]
+    assert sorted(book_df["book___id"].tolist()) == ["1", "1", "2", "2", "3", "3"]
 
 
 def test_run_xml_ingest_pipeline_pass_custom_table_name_is_respected(
@@ -92,7 +92,7 @@ def test_run_xml_ingest_pipeline_pass_custom_table_name_is_respected(
     load_info = run_xml_ingest_pipeline(settings)
     book_df = check_book_list_results(load_info, "library_entries")
     # the record dict is keyed by the xml tag, so the flattened column prefix is `book`
-    assert sorted(book_df["book__aid"].tolist()) == ["1", "2", "3"]
+    assert sorted(book_df["book___id"].tolist()) == ["1", "2", "3"]
 
 
 def test_run_xml_ingest_pipeline_pass_no_matching_files_yields_no_data_table(
@@ -153,4 +153,4 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
 
     load_info = cli()
     book_df = check_book_list_results(load_info)
-    assert sorted(book_df["book__aid"].tolist()) == ["1", "2", "3"]
+    assert sorted(book_df["book___id"].tolist()) == ["1", "2", "3"]
