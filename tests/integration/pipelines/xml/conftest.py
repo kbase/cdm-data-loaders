@@ -13,8 +13,7 @@ import pytest
 import xmltodict
 from dlt.common.pipeline import LoadInfo
 from frozendict import frozendict
-from lxml.etree import Element, iterparse, tostring
-from cdm_data_loaders.readers.xml import stream_xml_file
+
 import cdm_data_loaders.pipelines.xml_to_dict.pipeline as xml_to_dict_ingest_module
 from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
     run_xml_ingest_pipeline,
@@ -64,7 +63,7 @@ def fresh_xml_to_dict_reader(monkeypatch: pytest.MonkeyPatch) -> Callable[[], An
 
     def _factory() -> Any:
         fresh = dlt.transformer(
-            original.__wrapped__,
+            original.__wrapped__,  # pyright: ignore[reportAttributeAccessIssue]
             name=f"xml_to_dict_reader_{next(counter)}",
             parallelized=True,
         )
@@ -75,7 +74,7 @@ def fresh_xml_to_dict_reader(monkeypatch: pytest.MonkeyPatch) -> Callable[[], An
 
 
 def make_settings(tmp_path: Path, dlt_destination_config: str, **overrides: Any) -> dict[str, Any]:
-
+    """Generate a dict of settings for the XmlToDict ingestion route."""
     log_config_file = overrides.get("log_config_file", tmp_path / "logging.conf")
     log_config_file.touch()
     output_dir = overrides.get("output_dir", tmp_path / "output")
@@ -149,11 +148,6 @@ def import_jsonl_data(jsonl_path: Path) -> list[dict[str, Any]]:
         return [json.loads(line) for line in fh if line.strip()]
 
 
-def list_force(path, key, value) -> bool:
-    print({"path": path, "key": key, "value": value})
-    return False
-
-
 def write_reference_xml_as_jsonl(source_xml: Path, jsonl_path: Path) -> int:
     """Parse the UniRef XML with xmltodict and write the reference JSONL.
 
@@ -162,11 +156,6 @@ def write_reference_xml_as_jsonl(source_xml: Path, jsonl_path: Path) -> int:
     """
     with gzip.open(source_xml, "rb") as fh:
         document = xmltodict.parse(fh.read(), **DEFAULT_XMLTODICT_ARGS)
-
-    parsed_elements = [
-        xmltodict.parse(tostring(element), **DEFAULT_XMLTODICT_ARGS)
-        for element in stream_xml_file(source_xml, "{http://uniprot.org/uniref}entry")
-    ]
 
     entries = document["UniRef50"]["entry"]
     with jsonl_path.open("w", encoding="utf-8") as out:
@@ -245,7 +234,7 @@ def run_xmltodict_pipeline(
         run_index = next(run_counter)
 
         fresh_reader = dlt.transformer(
-            original_reader.__wrapped__,
+            original_reader.__wrapped__,  # pyright: ignore[reportAttributeAccessIssue]
             name=f"xml_to_dict_reader_{run_index}",
             parallelized=True,
         )
