@@ -1,5 +1,6 @@
 """Tests for XmlToDictSettings field validation and defaults."""
 
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 
@@ -8,6 +9,18 @@ from pydantic import ValidationError
 
 from cdm_data_loaders.core.fields import DEFAULTS, S3
 from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
+
+# All schema-driven tests below use tests/data/xsd/uniref_like.xsd, which is already exercised
+# (and its list_paths/single_paths independently verified) by test_xsd.py:
+# test_find_list_and_single_child_paths_pass_uniref_like_schema.
+UNIREF_LIKE_XSD: str = "uniref_like.xsd"
+
+
+def _copy_xsd_fixture(test_data_dir: Path, input_dir: Path, filename: str) -> str:
+    """Copy an XSD fixture from tests/data/xsd into input_dir; return its relative filename."""
+    input_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy(test_data_dir / "xsd" / filename, input_dir / filename)
+    return filename
 
 
 def test_xml_to_dict_ingest_settings_pass_defaults(settings_factory: Callable[..., XmlToDictSettings]) -> None:
@@ -99,6 +112,110 @@ def test_xml_to_dict_ingest_settings_pass_unknown_use_destination_rejected(
     """use_destination not present in the dlt config raises ValidationError."""
     with pytest.raises(ValidationError, match="use_destination must be one of"):
         settings_factory(use_destination="not_a_destination")
+
+
+def test_xml_to_dict_ingest_settings_pass_xmltodict_args_empty_without_xsd_file(
+    settings_factory: Callable[..., XmlToDictSettings],
+) -> None:
+    """Without xsd_file (the default), xmltodict_args contributes no extra xmltodict.parse() kwargs."""
+    settings = settings_factory()
+    assert settings.xsd_file is None
+    assert settings.xmltodict_args == {}
+
+
+def test_xml_to_dict_ingest_settings_pass_xmltodict_args_has_force_list_callable_when_xsd_file_set(
+    tmp_path: Path, test_data_dir: Path, settings_factory: Callable[..., XmlToDictSettings]
+) -> None:
+    """With xsd_file set, xmltodict_args exposes exactly one force_list callable kwarg."""
+    xsd_file = _copy_xsd_fixture(test_data_dir, tmp_path / "input", UNIREF_LIKE_XSD)
+    settings = settings_factory(xsd_file=xsd_file)
+
+    assert settings.xmltodict_args.keys() == {"force_list"}
+    assert callable(settings.xmltodict_args["force_list"])
+
+
+def test_xml_to_dict_ingest_settings_pass_xmltodict_args_is_cached(
+    tmp_path: Path, test_data_dir: Path, settings_factory: Callable[..., XmlToDictSettings]
+) -> None:
+    """xmltodict_args is a cached_property: repeated access returns the same dict, not a rebuild."""
+    xsd_file = _copy_xsd_fixture(test_data_dir, tmp_path / "input", UNIREF_LIKE_XSD)
+    settings = settings_factory(xsd_file=xsd_file)
+
+    assert settings.xmltodict_args is settings.xmltodict_args
+
+
+def test_xml_to_dict_ingest_settings_fail_xsd_file_not_found_raises_runtime_error(
+    settings_factory: Callable[..., XmlToDictSettings],
+) -> None:
+    """A xsd_file that does not exist under input_dir raises RuntimeError, not the underlying OSError."""
+    with pytest.raises(RuntimeError, match="Could not generate parent-child relationships for schema"):
+        settings_factory(xsd_file="does_not_exist.xsd")
+
+
+@pytest.fixture
+def force_list_from_uniref_like_xsd(
+    tmp_path: Path, test_data_dir: Path, settings_factory: Callable[..., XmlToDictSettings]
+) -> Callable[..., bool]:
+    """Build a real XmlToDictSettings from uniref_like.xsd and return its force_list callable."""
+    xsd_file = _copy_xsd_fixture(test_data_dir, tmp_path / "input", UNIREF_LIKE_XSD)
+    settings = settings_factory(xsd_file=xsd_file)
+    return settings.xmltodict_args["force_list"]
+
+
+@pytest.mark.parametrize(
+    ("path", "key", "expected"),
+    [
+        pytest.param([], "UniRef50", False, id="document-root-is-never-forced-into-a-list"),
+        pytest.param([("UniRef50", None)], "entry", True, id="direct-child-of-root-list-path"),
+        pytest.param([("UniRef50", None), ("entry", None)], "property", True, id="two-levels-deep-list-path"),
+        pytest.param(
+            [("UniRef50", None), ("entry", None)],
+            "representativeMember",
+            False,
+            id="two-levels-deep-single-path",
+        ),
+        pytest.param(
+            [("UniRef50", None), ("entry", None), ("representativeMember", None)],
+            "dbReference",
+            False,
+            id="three-levels-deep-single-path-uses-immediate-parent-not-full-ancestor-chain",
+        ),
+        pytest.param(
+            [("UniRef50", None), ("entry", None), ("representativeMember", None), ("dbReference", None)],
+            "property",
+            True,
+            id="four-levels-deep-list-path-uses-immediate-parent-not-full-ancestor-chain",
+        ),
+        pytest.param(
+            [("UniRef50", None)],
+            "totallyUnmodelledChild",
+            True,
+            id="child-not-covered-by-schema-defaults-to-list",
+        ),
+    ],
+)
+def test_xml_to_dict_ingest_settings_pass_force_list_classifies_by_immediate_parent(
+    force_list_from_uniref_like_xsd: Callable[..., bool],
+    path: list[tuple[str, dict[str, str] | None]],
+    key: str,
+    expected: bool,
+) -> None:
+    """force_list classifies every (parent, key) pair correctly, using only the immediate parent.
+
+    xmltodict calls force_list(path, key, value) with `path` set to the full ancestor chain (a
+    list of (name, attrs) tuples) down to and including the immediate parent -- not just the
+    parent's own name -- and with an empty path for the top-level parsed element itself. A
+    correct implementation must:
+
+    - Extract the immediate parent's name from the end of that chain, not compare the whole
+      chain (which would never match at any nesting depth beyond the root's direct children,
+      since find_list_and_single_child_paths stores plain (parent_name, child_name) pairs).
+    - Never force the top-level element into a list, since a parsed document only ever has one
+      root.
+    - Not raise: the ancestor chain is a list, so comparing it directly (unconverted) against a
+      set of (parent, key) string pairs raises `TypeError: unhashable type: 'list'`.
+    """
+    assert force_list_from_uniref_like_xsd(path, key, "some-value") is expected
 
 
 def test_xml_to_dict_ingest_settings_pass_xml_tag_shortcut(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
