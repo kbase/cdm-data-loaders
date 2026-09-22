@@ -65,7 +65,7 @@ def test_xml_ingest_pass_diff_format_same_results(run_xmltodict_pipeline: Callab
     assert_datasets_equal(load_info_and_dir)
 
 
-@pytest.mark.xfail("not yet implemented")
+@pytest.mark.xfail(reason="not yet implemented")
 @pytest.mark.parametrize("loader_file_format", LoaderFileFormatEnum.__members__.values())
 def test_xml_ingest_pass_nesting_levels(
     run_xmltodict_pipeline: Callable[..., Any],
@@ -149,9 +149,12 @@ def test_xml_ingest_pass_no_data_lost_across_worker_configs(
     assert_dataset_matches_reference(load_info_and_dir, sorted_reference_xml_entries)
 
 
+# @pytest.mark.xfail(reason="To be fixed")
 # @pytest.mark.parametrize("loader_file_format", LoaderFileFormatEnum.__members__.values())
 # def test_xml_ingest_pass_reconstructed_matches_duckdb_reference(
-#     run_xmltodict_pipeline: Callable[..., Any], reference_xml_dataset: duckdb.DuckDBPyConnection, loader_file_format: str
+#     run_xmltodict_pipeline: Callable[..., Any],
+#     reference_xml_dataset: duckdb.DuckDBPyConnection,
+#     loader_file_format: str,
 # ) -> None:
 #     """Reconstructed pipeline entries equal the entries loaded from the DuckDB reference."""
 #     (load_info, output_dir) = run_and_read(
