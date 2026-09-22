@@ -12,9 +12,15 @@ from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from tests.integration.pipelines.helpers import (
     BUFFER_SIZES,
     WORKER_CONFIGS,
+    _sorted_json,
     assert_dataset_matches_reference,
     assert_datasets_equal,
     run_and_read,
+)
+from tests.integration.pipelines.xml.xmltodict_reference_helpers import (
+    read_pipeline_tables,
+    reconstruct_entries,
+    reference_entries_from_duckdb,
 )
 
 CHUNK_DIRS = ("chunk_5_el", "chunk_20_el", "chunk_100_el")
@@ -149,19 +155,18 @@ def test_xml_ingest_pass_no_data_lost_across_worker_configs(
     assert_dataset_matches_reference(load_info_and_dir, sorted_reference_xml_entries)
 
 
-# @pytest.mark.xfail(reason="To be fixed")
-# @pytest.mark.parametrize("loader_file_format", LoaderFileFormatEnum.__members__.values())
-# def test_xml_ingest_pass_reconstructed_matches_duckdb_reference(
-#     run_xmltodict_pipeline: Callable[..., Any],
-#     reference_xml_dataset: duckdb.DuckDBPyConnection,
-#     loader_file_format: str,
-# ) -> None:
-#     """Reconstructed pipeline entries equal the entries loaded from the DuckDB reference."""
-#     (load_info, output_dir) = run_and_read(
-#         run_xmltodict_pipeline, "chunk_100_el", loader_file_format=loader_file_format
-#     )
-#     tables = read_pipeline_tables(output_dir / load_info.dataset_name, loader_file_format)
-#     reconstructed = reconstruct_entries(tables)
-#     from_duckdb = reference_xml_entries_from_duckdb(reference_xml_dataset)
-#     assert len(from_duckdb) == EXPECTED_ENTRY_COUNT
-#     assert _sorted_json(reconstructed) == _sorted_json(from_duckdb)
+@pytest.mark.parametrize("loader_file_format", LoaderFileFormatEnum.__members__.values())
+def test_xml_ingest_pass_reconstructed_matches_duckdb_reference(
+    run_xmltodict_pipeline: Callable[..., Any],
+    reference_xml_dataset: duckdb.DuckDBPyConnection,
+    loader_file_format: str,
+) -> None:
+    """Reconstructed pipeline entries equal the entries loaded from the DuckDB reference."""
+    (load_info, output_dir) = run_and_read(
+        run_xmltodict_pipeline, "chunk_100_el", loader_file_format=loader_file_format
+    )
+    tables = read_pipeline_tables(output_dir / load_info.dataset_name, loader_file_format)
+    reconstructed = reconstruct_entries(tables)
+    from_duckdb = reference_entries_from_duckdb(reference_xml_dataset)
+    assert len(from_duckdb) == EXPECTED_ENTRY_COUNT
+    assert _sorted_json(reconstructed) == _sorted_json(from_duckdb)
