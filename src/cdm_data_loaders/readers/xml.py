@@ -8,6 +8,7 @@ from typing import Any
 
 import xmltodict
 from dlt.extract.items import DataItemWithMeta
+from frozendict import frozendict
 from lxml.etree import Element, iterparse, tostring
 
 from cdm_data_loaders.core.settings import BatchedFileInputSettings
@@ -16,6 +17,13 @@ from cdm_data_loaders.utils.batcher import get_file_batches
 from cdm_data_loaders.utils.buffer import DictBuffer, ListBuffer
 
 logger: Logger = getLogger(__name__)
+
+DEFAULT_XMLTODICT_ARGS = frozendict({"attr_prefix": "_"})
+
+type XmlToDictValue = str | dict[str, "XmlToDictValue"] | list["XmlToDictValue"] | None
+type XmlToDictResult = DataItemWithMeta | BaseException | None
+
+XMLTODICT_QUEUE_POLL_SECONDS = 0.1
 
 
 def parse_head_matter(file_path: str | Path) -> dict[str, str]:
@@ -102,10 +110,11 @@ def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: Path) -> Ge
     n_entries = -1
     buffer = ListBuffer(table_name=settings.table_name, max_items=settings.buffer_size)
     for n_entries, element in enumerate(stream_xml_file(file_path, settings.xml_tag)):
-        parsed_element = xmltodict.parse(tostring(element))
+        parsed_element = xmltodict.parse(tostring(element), **DEFAULT_XMLTODICT_ARGS)
         if parsed_element:
+            for k, v in parsed_element.items():
+                parsed_element[k] = {kv: val for kv, val in v.items() if not kv.startswith("_xmlns")}
             yield from buffer.add_item(parsed_element)
-
         if (n_entries + 1) % settings.log_interval == 0:
             logger.debug("Processed %d entries", n_entries + 1)
 

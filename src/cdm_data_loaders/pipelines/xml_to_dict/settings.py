@@ -2,21 +2,18 @@
 
 from typing import Annotated, Final
 
-from pydantic import Field, PrivateAttr
+from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import (
     DEFAULT_XML_FILE_GLOB,
-    DEFAULTS,
     FILE_GLOB,
-    MAX_TABLE_NESTING,
     BufferSize,
     DatasetName,
     FileGlob,
     LoaderFileFormat,
     LoaderFileFormatEnum,
     LogInterval,
-    MaxTableNesting,
     NonEmptyStr,
     TableName,
 )
@@ -39,8 +36,6 @@ class XmlToDictSettings(CtsSettings):
         },
     )
 
-    _max_table_nesting: MaxTableNesting = PrivateAttr(default=DEFAULTS[MAX_TABLE_NESTING])
-
     buffer_size: BufferSize
     dataset_name: DatasetName
     file_glob: Annotated[
@@ -59,8 +54,3 @@ class XmlToDictSettings(CtsSettings):
             description="XML tag to capture the contents of",
         ),
     ]
-
-    @property
-    def max_table_nesting(self) -> int:
-        """Max table nesting value."""
-        return self._max_table_nesting

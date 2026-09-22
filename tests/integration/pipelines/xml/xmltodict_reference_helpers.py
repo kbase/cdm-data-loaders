@@ -96,21 +96,41 @@ def rows_as_multiset(tables: dict[str, list[dict[str, Any]]], table_name: str) -
     )
 
 
-def reconstruct_entries(tables: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    """Rebuild nested entry dicts from the pipeline's flattened parquet tables.
+def parse_json_string(value: Any) -> Any:
+    """Parse a string holding a JSON object or array; pass any other value through.
 
-    The main `entry` table holds scalar columns; child tables hold list contents,
+    Parquet output with max_table_nesting=0 stores nested content as JSON strings,
+    while jsonl output keeps it as parsed structures.
+    """
+    if isinstance(value, str) and value[:1] in ("{", "["):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
+
+
+def reconstruct_entries(tables: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Rebuild nested dicts from the pipeline's flattened output tables.
+
+    The main table holds scalar columns; child tables hold list contents,
     linked by _dlt_parent_id and ordered by _dlt_list_idx. A child table's parent
     may be a main entry row or another nested row, so the walk follows parentage
     rather than table-name prefixes.
     """
-    main_rows = tables.get("entry", [])
+    top_tables = [t for t in tables if "__" not in t]
+    if not top_tables or len(top_tables) > 1:
+        err_msg = "Could not find an appropriate top-level table for dataset"
+        raise ValueError(err_msg)
+    top_table = top_tables[0]
+
+    main_rows = tables.get(top_table, [])
     if not main_rows:
         return []
 
     parent_index: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
     for table_name, rows in tables.items():
-        if table_name == "entry" or table_name.startswith("_dlt"):
+        if table_name == top_table or table_name.startswith("_dlt"):
             continue
         for row in rows:
             parent_index[row["_dlt_parent_id"]].append((table_name, row))
@@ -121,8 +141,8 @@ def reconstruct_entries(tables: dict[str, list[dict[str, Any]]]) -> list[dict[st
         for column, value in strip_metadata_columns(row).items():
             if column in XMLNS_COLUMNS or value is None:
                 continue
-            set_nested(entry, denormalize_path(column.removeprefix("entry__")), value)
-        _attach_nested_rows(entry, row["_dlt_id"], parent_index, [], depth_limit=3)
+            set_nested(entry, denormalize_path(column.removeprefix(f"{top_table}__")), parse_json_string(value))
+        _attach_nested_rows(entry, row["_dlt_id"], parent_index, [], depth_limit=100, top_table=top_table)
         entries.append(entry)
     return entries
 
@@ -133,6 +153,7 @@ def _attach_nested_rows(
     parent_index: dict[str, list[tuple[str, dict[str, Any]]]],
     parent_root_path: list[str],
     depth_limit: int,
+    top_table: str,
 ) -> None:
     """Attach child-table rows (and their own children, recursively) to a target dict.
 
@@ -147,7 +168,7 @@ def _attach_nested_rows(
 
     for table_name, rows in grouped.items():
         rows.sort(key=lambda r: r["_dlt_list_idx"])
-        full_path = _child_table_path(table_name)
+        full_path = _child_table_path(table_name, top_table)
         relative_path = full_path[len(parent_root_path) :] if parent_root_path else full_path
         children = []
         for row in rows:
@@ -155,27 +176,27 @@ def _attach_nested_rows(
             for column, raw in strip_metadata_columns(row).items():
                 if raw is None:
                     continue
-                set_nested(child, denormalize_path(column), raw)
-            _attach_nested_rows(child, row["_dlt_id"], parent_index, full_path, depth_limit - 1)
+                set_nested(child, denormalize_path(column), parse_json_string(raw))
+            _attach_nested_rows(child, row["_dlt_id"], parent_index, full_path, depth_limit - 1, top_table)
             children.append(child)
         set_nested(target, relative_path, children)
 
 
-def _child_table_path(table_name: str) -> list[str]:
+def _child_table_path(table_name: str, top_table: str) -> list[str]:
     """Derive the xml key path for a child table from its dlt name.
 
     Table names are prefixed with the parent chain (entry__entry__property); the
     leading fragments repeat the root table name and are dropped.
     """
     fragments = denormalize_path(table_name)
-    while len(fragments) > 1 and fragments[0] == "entry":
+    while len(fragments) > 1 and fragments[0] == top_table:
         fragments = fragments[1:]
     return fragments
 
 
 def reference_entries_from_duckdb(connection: duckdb.DuckDBPyConnection) -> list[dict[str, Any]]:
     """Extract reference entries from DuckDB as canonical nested Python dicts."""
-    rows = connection.execute("SELECT entry FROM reference ORDER BY entry['@id']").fetchall()
+    rows = connection.execute("SELECT entry FROM reference ORDER BY entry['_id']").fetchall()
     return [_normalize_reference_entry(entry) for (entry,) in rows]
 
 

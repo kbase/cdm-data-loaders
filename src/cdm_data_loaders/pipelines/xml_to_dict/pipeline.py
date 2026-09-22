@@ -3,7 +3,7 @@
 from collections.abc import Generator, Iterator
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import dlt
 from dlt.common.pipeline import LoadInfo
@@ -14,6 +14,9 @@ from dlt.sources.filesystem import filesystem
 from cdm_data_loaders.pipelines.core import run_cli, run_pipeline
 from cdm_data_loaders.pipelines.xml_to_dict.settings import PIPELINE_NAME, XmlToDictSettings
 from cdm_data_loaders.readers.xml import process_xml_file_to_dict
+
+if TYPE_CHECKING:
+    from dlt.extract import DltResource
 
 logger: Logger = getLogger(__name__)
 
@@ -47,16 +50,17 @@ def run_xml_ingest_pipeline(settings: XmlToDictSettings) -> LoadInfo | None:
 
     files = filesystem(bucket_url=settings.input_dir, file_glob=settings.file_glob)
 
+    xml_to_dict_resource: DltResource = files | xml_to_dict_reader
+
     return run_pipeline(
         settings=settings,
-        resource=files | xml_to_dict_reader,
-        destination_kwargs={"max_table_nesting": settings.max_table_nesting},
+        resource=xml_to_dict_resource,
         pipeline_kwargs={
             "pipeline_name": PIPELINE_NAME,
             "dataset_name": settings.dataset_name,
         },
         pipeline_run_kwargs={
-            "loader_file_format": settings.loader_file_format,
+            "loader_file_format": str(settings.loader_file_format),
         },
     )
 
