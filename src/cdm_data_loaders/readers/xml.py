@@ -108,11 +108,13 @@ def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: Path) -> Ge
     """
     logger.info("Reading from %s", str(file_path))
     n_entries = -1
+
     buffer = ListBuffer(table_name=settings.table_name, max_items=settings.buffer_size)
     for n_entries, element in enumerate(stream_xml_file(file_path, settings.xml_tag)):
-        parsed_element = xmltodict.parse(tostring(element), **DEFAULT_XMLTODICT_ARGS)
+        parsed_element = xmltodict.parse(tostring(element), **DEFAULT_XMLTODICT_ARGS, **settings.xmltodict_args)
         if parsed_element:
             for k, v in parsed_element.items():
+                # remove the xmlns declarations
                 parsed_element[k] = {kv: val for kv, val in v.items() if not kv.startswith("_xmlns")}
             yield from buffer.add_item(parsed_element)
         if (n_entries + 1) % settings.log_interval == 0:

@@ -1,4 +1,4 @@
-"""Tests for `process_xml_file`, `process_xml_file_batches`, and `xml_to_dict_parse_fn` from cdm_data_loaders.readers.xml."""
+"""Tests for `process_xml_file`, `process_xml_file_batches`, and `process_xml_file_to_dict` from cdm_data_loaders.readers.xml."""
 
 import gzip
 import logging
@@ -73,6 +73,12 @@ PEOPLE_PARSED = [
     {"id": "3", "name": "Carol Singer", "email": "c@example.com"},
     {"id": "4", "name": "Debbie Downer", "email": "d@example.com"},
     {"id": "5", "name": "Ex Ample", "email": "e@example.com"},
+]
+
+# The same PEOPLE_XML_5 entries in the raw xmltodict shape process_xml_file_to_dict produces: one
+# {xml_tag: {...}} dict per entry, with attr_prefix="_" turning the "id" attribute into "_id".
+PEOPLE_XML_TO_DICT_PARSED = [
+    {"person": {"_id": p["id"], "name": p["name"], "email": p["email"]}} for p in PEOPLE_PARSED
 ]
 
 
@@ -219,6 +225,21 @@ def fake_settings(
     return settings
 
 
+def fake_xml_to_dict_settings(
+    table_name: str = "people",
+    xml_tag: str = "person",
+    buffer_size: int = DEFAULTS[BUFFER_SIZE],
+    log_interval: int = DEFAULTS[LOG_INTERVAL],
+) -> XmlToDictSettings:
+    """Build a MagicMock XmlToDictSettings with table_name/xml_tag set, for process_xml_file_to_dict tests."""
+    settings: XmlToDictSettings = fake_settings(  # pyright: ignore[reportAssignmentType]
+        buffer_size=buffer_size, log_interval=log_interval, settings_class=XmlToDictSettings
+    )
+    settings.table_name = table_name
+    settings.xml_tag = xml_tag
+    return settings
+
+
 def test_process_xml_file_pass_single_table_single_entry(tmp_path: Path) -> None:
     """Verify a single matching element is parsed into one correctly table-tagged row."""
     file_path = _write_xml(tmp_path, "one.xml", PEOPLE_XML_2)
@@ -236,26 +257,6 @@ def test_process_xml_file_pass_multiple_entries(tmp_path: Path) -> None:
     parsed = _table_and_data(items)
     assert parsed[0][0] == "people"
     assert parsed[0][1] == [{"source_file": str(file_path), **p_data} for p_data in PEOPLE_PARSED]
-
-
-@pytest.mark.parametrize("gzip_compress", [False, True], ids=["plain", "gzip"])
-def test_process_xml_file_pass_to_dict_implements_xmltodict(tmp_path: Path, gzip_compress: bool) -> None:
-    """Verify process_xml_file_to_dict matches direct xmltodict parsing of each streamed entry."""
-    filename = "uniprot.xml.gz" if gzip_compress else "uniprot.xml"
-    file_path = _write_xml(tmp_path, filename, UNIPROT_XML_2, gzip_compress=gzip_compress)
-    xml_tag = f"{{{UNIPROT_NS}}}entry"
-
-    expected_rows = [
-        {"entry": {key: value for key, value in parsed_entry["entry"].items() if not key.startswith("_xmlns")}}
-        for entry in xml_module.stream_xml_file(file_path, xml_tag)
-        if (parsed_entry := xmltodict.parse(tostring(entry), **DEFAULT_XMLTODICT_ARGS))
-    ]
-    settings: XmlToDictSettings = fake_settings(settings_class=XmlToDictSettings)  # pyright: ignore[reportAssignmentType]
-    settings.table_name = "some_table"
-    settings.xml_tag = xml_tag
-    tagged = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
-
-    assert tagged == [("some_table", expected_rows)]
 
 
 @pytest.mark.parametrize(
@@ -454,6 +455,283 @@ def test_process_xml_file_fail_parse_fn_returns_non_dict(tmp_path: Path) -> None
         list(process_xml_file(fake_settings(), "person", parse_returns_non_dict, file_path=file_path))  # pyright: ignore[reportArgumentType]
 
 
+"""process_xml_file_to_dict"""
+
+
+@pytest.mark.parametrize("gzip_compress", [False, True], ids=["plain", "gzip"])
+def test_process_xml_file_to_dict_pass_matches_xmltodict_reference(tmp_path: Path, gzip_compress: bool) -> None:
+    """Verify process_xml_file_to_dict matches direct xmltodict parsing of each streamed entry."""
+    filename = "uniprot.xml.gz" if gzip_compress else "uniprot.xml"
+    file_path = _write_xml(tmp_path, filename, UNIPROT_XML_2, gzip_compress=gzip_compress)
+    xml_tag = f"{{{UNIPROT_NS}}}entry"
+
+    raw_entries = [
+        xmltodict.parse(tostring(entry), **DEFAULT_XMLTODICT_ARGS)["entry"]
+        for entry in xml_module.stream_xml_file(file_path, xml_tag)
+    ]
+    # sanity check that the fixture actually exercises xmlns stripping, so a no-op filter
+    # wouldn't slip through unnoticed.
+    assert any(key.startswith("_xmlns") for entry in raw_entries for key in entry)
+    expected_rows = [{"entry": {k: v for k, v in entry.items() if not k.startswith("_xmlns")}} for entry in raw_entries]
+
+    settings = fake_xml_to_dict_settings(table_name="some_table", xml_tag=xml_tag)
+    tagged = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
+
+    assert tagged == [("some_table", expected_rows)]
+
+
+def test_process_xml_file_to_dict_pass_strips_only_xmlns_prefixed_keys(tmp_path: Path) -> None:
+    """Verify the exact, hand-specified result: xmlns/xmlns:xsi attrs removed, other underscore-prefixed keys kept."""
+    namespace = "http://example.com/ns"
+    xml_with_xmlns_and_lookalike = (
+        '<?xml version="1.0"?>\n'
+        f'<person xmlns="{namespace}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+        'id="1" xsinil="true"><name>Anne Example</name></person>\n'
+    )
+    file_path = _write_xml(tmp_path, "namespaced.xml", xml_with_xmlns_and_lookalike)
+    settings = fake_xml_to_dict_settings(xml_tag=f"{{{namespace}}}person")
+
+    items = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
+
+    # "_xmlns" and "_xmlns:xsi" (the real namespace declarations) are stripped; "_id" and the
+    # underscore-prefixed-but-unrelated "_xsinil" (from a plain, non-namespace "xsinil" attribute)
+    # are both left alone.
+    assert items == [
+        (
+            "people",
+            [{"person": {"_id": "1", "_xsinil": "true", "name": "Anne Example"}}],
+        )
+    ]
+
+
+def test_process_xml_file_to_dict_pass_custom_table_name_and_xml_tag_are_respected(tmp_path: Path) -> None:
+    """Verify rows land under settings.table_name, matched by settings.xml_tag, not any hardcoded name."""
+    file_path = _write_xml(tmp_path, "two.xml", PEOPLE_XML_2)
+    settings = fake_xml_to_dict_settings(table_name="library_entries", xml_tag="person")
+
+    tagged = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
+
+    assert [table_name for table_name, _ in tagged] == ["library_entries"]
+    assert tagged[0][1] == PEOPLE_XML_TO_DICT_PARSED[:2]
+
+
+@pytest.mark.parametrize(
+    ("buffer_size", "expected_batch_sizes"),
+    [
+        pytest.param(1, [1, 1, 1, 1, 1], id="one-row-batches"),
+        pytest.param(2, [2, 2, 1], id="two-row-batches-with-remainder"),
+        pytest.param(3, [3, 2], id="three-row-batches-with-remainder"),
+        pytest.param(10, [5], id="larger-than-input"),
+    ],
+)
+def test_process_xml_file_to_dict_pass_buffer_size_controls_batching(
+    tmp_path: Path, buffer_size: int, expected_batch_sizes: list[int]
+) -> None:
+    """Verify rows are yielded in batches of at most `buffer_size`, with a final partial batch."""
+    file_path = _write_xml(tmp_path, "five.xml", PEOPLE_XML_5)
+    settings = fake_xml_to_dict_settings(buffer_size=buffer_size)
+
+    items = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
+
+    assert [len(rows) for _, rows in items] == expected_batch_sizes
+    assert [row for _, rows in items for row in rows] == PEOPLE_XML_TO_DICT_PARSED
+    assert {table_name for table_name, _ in items} == {"people"}
+
+
+def test_process_xml_file_to_dict_pass_no_matching_elements_yields_nothing_and_logs_no_progress(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Verify a well-formed file with no elements matching xml_tag yields nothing and logs no progress."""
+    caplog.set_level(logging.DEBUG)
+    file_path = _write_xml(tmp_path, "empty.xml", PEOPLE_XML_EMPTY)
+    settings = fake_xml_to_dict_settings()
+
+    items = list(process_xml_file_to_dict(settings, file_path=file_path))
+
+    assert items == []
+    assert [r for r in caplog.records if r.msg.startswith("Processed")] == []
+
+
+def test_process_xml_file_to_dict_pass_logs_reading_info_message_once(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Verify the INFO-level 'Reading from <path>' message is logged exactly once with the correct path."""
+    caplog.set_level(logging.INFO)
+    file_path = _write_xml(tmp_path, "five.xml", PEOPLE_XML_5)
+    settings = fake_xml_to_dict_settings()
+
+    list(process_xml_file_to_dict(settings, file_path=file_path))
+
+    info_records = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert len(info_records) == 1
+    assert info_records[0].msg == "Reading from %s"
+    assert info_records[0].args == (str(file_path),)
+
+
+@pytest.mark.parametrize(
+    ("log_interval", "expected_interim_counts", "expected_final_count"),
+    [
+        pytest.param(1, [1, 2, 3, 4, 5], None, id="divides_evenly_every_entry"),
+        pytest.param(5, [5], None, id="divides_evenly_equal_to_count"),
+        pytest.param(2, [2, 4], 5, id="remainder_leaves_trailing_entries"),
+        pytest.param(10, [], 5, id="interval_larger_than_entry_count"),
+    ],
+)
+def test_process_xml_file_to_dict_pass_log_interval_boundary(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    log_interval: int,
+    expected_interim_counts: list[int],
+    expected_final_count: int | None,
+) -> None:
+    """Verify the exact entry counts logged at each interim checkpoint and in the trailing summary."""
+    caplog.set_level(logging.DEBUG)
+    file_path = _write_xml(tmp_path, "five.xml", PEOPLE_XML_5)
+    settings = fake_xml_to_dict_settings(log_interval=log_interval)
+
+    list(process_xml_file_to_dict(settings, file_path=file_path))
+
+    interim_counts = [r.args[0] for r in caplog.records if r.msg == "Processed %d entries"]
+    final_records = [r for r in caplog.records if r.msg == "Processed %d entries from %s"]
+
+    assert interim_counts == expected_interim_counts
+    if expected_final_count is None:
+        assert final_records == []
+    else:
+        assert len(final_records) == 1
+        assert final_records[0].args == (expected_final_count, file_path.name)
+
+
+def test_process_xml_file_to_dict_pass_gzip_file(tmp_path: Path) -> None:
+    """Verify gzip-compressed XML input (.gz suffix) is transparently decompressed and parsed."""
+    plain_path = _write_xml(tmp_path, "plain.xml", PEOPLE_XML_5)
+    gz_path = _write_xml(tmp_path, "compressed.xml.gz", PEOPLE_XML_5, gzip_compress=True)
+    settings = fake_xml_to_dict_settings()
+
+    plain_items = _table_and_data(process_xml_file_to_dict(settings, file_path=plain_path))
+    gz_items = _table_and_data(process_xml_file_to_dict(fake_xml_to_dict_settings(), file_path=gz_path))
+
+    plain_rows = [row for _, rows in plain_items for row in rows]
+    gz_rows = [row for _, rows in gz_items for row in rows]
+    assert gz_rows == plain_rows == PEOPLE_XML_TO_DICT_PARSED
+
+
+def test_process_xml_file_to_dict_fail_missing_file(tmp_path: Path) -> None:
+    """Verify a nonexistent file path raises FileNotFoundError when the generator is consumed."""
+    missing_path = tmp_path / "does_not_exist.xml"
+    settings = fake_xml_to_dict_settings()
+    with pytest.raises(FileNotFoundError, match="No such file or directory"):
+        list(process_xml_file_to_dict(settings, file_path=missing_path))
+
+
+def test_process_xml_file_to_dict_fail_malformed_xml(tmp_path: Path) -> None:
+    """Verify malformed (not well-formed) XML raises lxml's XMLSyntaxError during streaming."""
+    file_path = _write_xml(tmp_path, "malformed.xml", PEOPLE_XML_MALFORMED)
+    settings = fake_xml_to_dict_settings()
+    with pytest.raises(XMLSyntaxError, match="Opening and ending tag mismatch"):
+        list(process_xml_file_to_dict(settings, file_path=file_path))
+
+
+# The <entry> subtree below matches tests/data/xsd/uniref_like.xsd: "property" may repeat under
+# both "entry" and "dbReference" (list_paths), while "representativeMember" and "dbReference" may
+# each occur at most once (single_paths) -- see test_xsd.py's
+# test_find_list_and_single_child_paths_pass_uniref_like_schema for the fully-verified path sets.
+# Every list-typed child below occurs exactly once in the data, so only schema knowledge (not
+# occurrence count) can tell process_xml_file_to_dict it must still become a list.
+UNIREF_LIKE_ENTRY_XML: Final[str] = """<?xml version="1.0"?>
+<UniRef50>
+    <entry>
+        <property type="member count" value="1"/>
+        <representativeMember>
+            <dbReference>
+                <property type="isSeed" value="true"/>
+            </dbReference>
+        </representativeMember>
+    </entry>
+</UniRef50>
+"""
+
+
+def _build_real_xml_to_dict_settings(
+    tmp_path: Path, test_data_dir: Path, xsd_filename: str | None
+) -> XmlToDictSettings:
+    """Build a real (non-mock) XmlToDictSettings, optionally with an xsd_file copied from tests/data/xsd.
+
+    A real settings object is required here, rather than fake_xml_to_dict_settings, because
+    xmltodict_args is a computed property with real schema-derived logic to exercise: a mock
+    would either need that same logic re-implemented by hand (proving nothing about the actual
+    implementation) or would unpack to `{}` by default, silently skipping the feature entirely.
+    """
+    input_dir = tmp_path / "input"
+    input_dir.mkdir(exist_ok=True)
+    log_config_file = tmp_path / "logging.json"
+    log_config_file.write_text('{"version": 1}', encoding="utf-8")
+
+    xsd_file = None
+    if xsd_filename is not None:
+        xsd_content = (test_data_dir / "xsd" / xsd_filename).read_text(encoding="utf-8")
+        (input_dir / xsd_filename).write_text(xsd_content, encoding="utf-8")
+        xsd_file = xsd_filename
+
+    return XmlToDictSettings(
+        input_dir=str(input_dir),
+        log_config_file=str(log_config_file),
+        dataset_name="xsd_test_dataset",
+        table_name="entry",
+        xml_tag="entry",
+        xsd_file=xsd_file,
+        buffer_size=100,
+        log_interval=1000,
+    )  # pyright: ignore[reportCallIssue]
+
+
+@pytest.mark.parametrize(
+    ("xsd_filename", "expected_entry"),
+    [
+        pytest.param(
+            "uniref_like.xsd",
+            {
+                "property": [{"_type": "member count", "_value": "1"}],
+                "representativeMember": {
+                    "dbReference": {"property": [{"_type": "isSeed", "_value": "true"}]},
+                },
+            },
+            id="with-xsd-file-forces-repeatable-schema-children-into-lists",
+        ),
+        pytest.param(
+            None,
+            {
+                "property": {"_type": "member count", "_value": "1"},
+                "representativeMember": {
+                    "dbReference": {"property": {"_type": "isSeed", "_value": "true"}},
+                },
+            },
+            id="without-xsd-file-keeps-xmltodicts-default-single-occurrence-dicts",
+        ),
+    ],
+)
+def test_process_xml_file_to_dict_pass_force_list_shapes_children_by_schema_occurs(
+    tmp_path: Path,
+    test_data_dir: Path,
+    xsd_filename: str | None,
+    expected_entry: dict[str, Any],
+) -> None:
+    """Verify children the schema allows to repeat become lists even with a single occurrence.
+
+    With xsd_file set, every child the schema allows to repeat must be a list, regardless of how
+    many times it actually occurs in this particular document, while children the schema allows
+    only once stay plain dicts -- at every nesting depth. Without xsd_file, xmltodict's ordinary
+    behaviour applies instead: a lone occurrence is never turned into a list, whether or not the
+    schema would allow more.
+    """
+    file_path = _write_xml(tmp_path, "entry.xml", UNIREF_LIKE_ENTRY_XML)
+    settings = _build_real_xml_to_dict_settings(tmp_path, test_data_dir, xsd_filename)
+
+    items = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
+
+    assert items == [("entry", [{"entry": expected_entry}])]
+
+
 """process_xml_file_batches"""
 
 
@@ -631,7 +909,7 @@ def test_process_xml_file_pass_wraps_each_table_with_dlt_mark(
 ) -> None:
     """Verify each (table, rows) pair from parse_fn's return dict is forwarded to dlt.mark.with_table_name."""
     fake_entry = MagicMock(spec=Element)
-    monkeypatch.setattr(xml_module, "stream_xml_file", lambda fp, tag: iter([fake_entry]))
+    monkeypatch.setattr(xml_module, "stream_xml_file", lambda *_: iter([fake_entry]))
     rows_people = [{"id": 1}]
     rows_emails = [{"email": "a@example.com"}]
     parse_fn = MagicMock(return_value={"people": rows_people, "emails": rows_emails})
