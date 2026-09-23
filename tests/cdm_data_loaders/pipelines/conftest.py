@@ -1,5 +1,7 @@
 """Shared fixtures for pipelines tests."""
 
+import logging
+from collections.abc import Generator
 from itertools import batched
 from pathlib import Path
 from typing import Any, Final
@@ -7,7 +9,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from cdm_data_loaders.core.settings import LoggerSettings
 from cdm_data_loaders.pipelines import core
+from cdm_data_loaders.utils import cdm_logger
 
 START_AT_VALUE: Final[int] = 50
 START_AT_STRING: Final[str] = "50"
@@ -29,9 +33,39 @@ def fake_files() -> list[Path]:
 
 
 @pytest.fixture(autouse=True)
-def mock_init_logger(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Mock the init_logger call in core to prevent the logger from trying to initialise itself every time."""
-    monkeypatch.setattr(core, "init_logger", MagicMock())
+def real_init_logger() -> Generator[None]:
+    """Run the real ``core.init_logger`` against a simple test-data config file.
+
+    Snapshot the process-wide logging state before the test and restore it
+    afterwards, so ``dictConfig`` / dlt's ``config_root_logger`` cannot leak
+    handlers, levels, or the ``ROOT_LOGGER_CONFIGURED`` global between tests.
+    """
+    root_logger = logging.getLogger()
+    dlt_logger = logging.getLogger("dlt")
+    saved = {
+        "level": root_logger.level,
+        "handlers": list(root_logger.handlers),
+        "filters": list(root_logger.filters),
+        "disabled": root_logger.disabled,
+        "dlt_propagate": dlt_logger.propagate,
+        "dlt_handlers": list(dlt_logger.handlers),
+        "root_logger_configured": cdm_logger.ROOT_LOGGER_CONFIGURED,
+    }
+
+    core.init_logger(LoggerSettings(log_config_file=str(TEST_LOG_CONFIG_FILE)))
+    yield
+
+    # restore global logger state
+    for handler in root_logger.handlers:
+        if handler not in saved["handlers"]:
+            handler.close()
+    root_logger.handlers = saved["handlers"]
+    root_logger.setLevel(saved["level"])
+    root_logger.filters = saved["filters"]
+    root_logger.disabled = saved["disabled"]
+    dlt_logger.propagate = saved["dlt_propagate"]
+    dlt_logger.handlers = saved["dlt_handlers"]
+    cdm_logger.ROOT_LOGGER_CONFIGURED = saved["root_logger_configured"]
 
 
 @pytest.fixture(autouse=True)
