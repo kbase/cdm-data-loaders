@@ -242,7 +242,7 @@ exercise frozen models, extension contracts, branches, tuples, filtering, cycles
 Facades, emitters and row reconstruction remain unchanged. See the implemented specification
 for validation results, limitations and direct-IR emitter guidance.
 
-## Phase 4: emitters
+## Phase 4: completed - direct IR emitters
 
 - `converters/emitters/json_schema.py`: `JsonSchemaEmitter(preserve_unknown_hints=...)`.
   Child-table mode is resolved by the reader. Renders `TypedNode` trees to draft 2020-12: nullable ->
@@ -261,6 +261,15 @@ reader preservation does not imply unsupported JSON keywords survive target conv
 
 Exit criteria: direct reader/emitter compositions match legacy structured outputs on the
 corpus. Facades remain unchanged until phase 5. Do not claim general JSON/YAML byte identity.
+
+Implemented all three emitters without calling the old converters or rebuilding their inputs.
+The integrated converter and pure XML-helper run passed 1,510 tests. Each emitter has full
+statement coverage; combined statement/branch coverage is 99% for JSON Schema and dlt and
+100% for PySpark. Targeted Ruff and editor diagnostics pass. No Spark engine was started.
+Native dlt round trips preserve retained fields, not fields removed by reader filtering.
+The JSON Schema emitter retains finite Decimal values; serialization must not coerce them
+through floats. Legacy structured outputs, including source-specific approximations, remain
+the facade compatibility contract.
 
 ## Phase 5: facades and cleanup
 

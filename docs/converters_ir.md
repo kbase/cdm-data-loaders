@@ -1,8 +1,8 @@
 # Converter IR and Reader Contract
 
-Phase 3 adds immutable source readers and a structural intermediate representation (IR).
-No emitter is implemented and none of the four converter facades is rewired.
-The existing converters remain the compatibility reference, not the definition of source truth.
+Phases 3 and 4 add immutable readers, a structural intermediate representation (IR), and
+three emitters. The four converter facades are not yet rewired. Their existing behavior
+remains the compatibility reference, not the definition of source truth.
 
 ## Public Modules
 
@@ -16,6 +16,9 @@ All paths below are under `src/cdm_data_loaders/converters/`.
 | `readers/json_schema.py` | `JsonSchemaReader` |
 | `readers/dlt.py` | `DltReader` |
 | `readers/iceberg.py` | `IcebergReader`, `iceberg_value` |
+| `emitters/json_schema.py` | `JsonSchemaEmitter`, `decimal_pattern` |
+| `emitters/dlt.py` | `DltEmitter` |
+| `emitters/pyspark.py` | `PySparkEmitter`, `ConversionContext`, metadata helpers |
 
 The IR, value helpers and extension registry import no dlt, PyIceberg or PySpark modules.
 The XSV contract imports only the existing custom metaschema module, not Spark readers.
