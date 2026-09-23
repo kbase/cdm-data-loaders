@@ -1,6 +1,7 @@
 """Unit and integration tests for dlt_to_jsonschema.converter."""
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from jsonschema import Draft202012Validator
 
 from cdm_data_loaders.converters.dlt_to_jsonschema.converter import (
     JSON_SCHEMA_DIALECT,
+    TYPE_MAP,
     DltToJSONSchema,
     DltToJSONSchemaError,
 )
@@ -154,6 +156,38 @@ def test_convert_column_types_pass(
     schema = base_stored_schema({"t": {"columns": {"col": {"name": "col", "data_type": data_type, "nullable": False}}}})
     docs = converter.convert(schema)
     assert docs["t"]["properties"]["col"] == expected
+
+
+@pytest.mark.parametrize("data_type", ["decimal", "timestamp", "wei"], ids=["decimal", "timestamp", "wei"])
+def test_convert_pass_type_map_metadata_isolation(converter: DltToJSONSchema, data_type: str) -> None:
+    """Keep templates, sibling columns, repeated calls and returned metadata independent."""
+    template = deepcopy(TYPE_MAP[data_type])
+    hints = {"precision": 18, "scale": 4, "primary_key": True}
+    plain_column = {"name": "plain", "data_type": data_type, "nullable": False}
+    plain_schema = {"table": {"columns": {"plain": plain_column}}}
+    schema = {
+        "table": {
+            "columns": {
+                "hinted": {**plain_column, "name": "hinted", **hints},
+                "plain": plain_column,
+            }
+        }
+    }
+    original_schema = deepcopy(schema)
+    try:
+        properties = converter.convert(schema)["table"]["properties"]
+        expected_hinted = {**template, "x-dlt": {"data_type": data_type, **hints}}
+        assert properties == {"hinted": expected_hinted, "plain": template}
+        assert TYPE_MAP[data_type] == template
+        assert schema == original_schema
+        properties["hinted"]["x-dlt"]["scale"] = 2
+        assert properties["plain"] == template
+        assert converter.convert(plain_schema)["table"]["properties"] == {"plain": template}
+        assert DltToJSONSchema().convert(plain_schema)["table"]["properties"] == {"plain": template}
+        assert TYPE_MAP[data_type] == template
+    finally:
+        TYPE_MAP[data_type].clear()
+        TYPE_MAP[data_type].update(template)
 
 
 def test_convert_incomplete_column_accepts_anything(converter: DltToJSONSchema) -> None:

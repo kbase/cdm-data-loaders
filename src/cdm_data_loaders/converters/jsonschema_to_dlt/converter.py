@@ -13,10 +13,7 @@ and fully dereferenced: no `$ref` or `allOf` keys may remain anywhere in the doc
 `jsonschema_to_dlt.dereferencing.dereference_schema()` first if your schema uses either.
 """
 
-import json
 import logging
-from decimal import Decimal
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 import yaml
@@ -30,7 +27,18 @@ from dlt.common.schema.typing import (
 from dlt.common.schema.utils import new_column, new_table
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import _infer_implicit_type
+from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.guards import (
+    reject_unresolved_references,
+    require_object_root,
+    require_schema_keyword,
+)
+from cdm_data_loaders.converters.core.inference import (
+    decimal_places,
+    infer_implicit_type,
+    json_type_from_enum,
+)
+from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
 
 if TYPE_CHECKING:
     from dlt.common.schema import Schema
@@ -48,35 +56,27 @@ DATE_FORMATS: Final[frozenset[str]] = frozenset({"date"})
 TIME_FORMATS: Final[frozenset[str]] = frozenset({"time"})
 BINARY_FORMATS: Final[frozenset[str]] = frozenset({"byte", "binary", "base64"})
 
+_decimal_places = decimal_places
+_infer_implicit_type = infer_implicit_type
 
-class JSONSchemaToDltError(ValueError):
+
+def _data_type_from_enum(values: list[Any]) -> TDataType:
+    """Map an enum's inferred JSON type to a dlt scalar type."""
+    type_map: dict[str, TDataType] = {
+        "boolean": "bool",
+        "integer": "bigint",
+        "number": "double",
+        "string": "text",
+    }
+    return type_map[json_type_from_enum(values)]
+
+
+class JSONSchemaToDltError(ConversionError):
     """Raised when a JSON Schema construct cannot be converted."""
 
 
 class InvalidJSONSchemaError(JSONSchemaToDltError):
     """Raised when the input document is not a valid JSON Schema."""
-
-
-def _decimal_places(value: float) -> int:
-    """Number of digits after the decimal point needed to represent `value` exactly."""
-    exponent = Decimal(str(value)).as_tuple().exponent
-    if isinstance(exponent, int):
-        return max(-exponent, 0)
-    return 0
-
-
-def _data_type_from_enum(values: list[Any]) -> TDataType:
-    """Map an `enum` value list to the narrowest dlt data type covering all values."""
-    if not values:
-        return "text"
-    if all(isinstance(v, bool) for v in values):
-        return "bool"
-    # bool is a subtype of int, so exclude bools before checking ints
-    if all(isinstance(v, int) and not isinstance(v, bool) for v in values):
-        return "bigint"
-    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
-        return "double"
-    return "text"
 
 
 class JSONSchemaToDlt(BaseModel):
@@ -146,17 +146,8 @@ class JSONSchemaToDlt(BaseModel):
         :raises JSONSchemaToDltError: if the schema's root type isn't 'object' or still
             contains unresolved `$ref`/`allOf`
         """
-        if not schema.get("$schema"):
-            err_msg = (
-                "Input JSON Schema is missing a '$schema' keyword. JSONSchemaToDlt requires schemas "
-                "to explicitly declare their dialect via '$schema'; it will not assume a default."
-            )
-            raise InvalidJSONSchemaError(err_msg)
-
-        if schema.get("type") not in (None, "object"):
-            err_msg = f"Root schema must be of type 'object' to map to a dlt table, got: {schema.get('type')!r}"
-            raise JSONSchemaToDltError(err_msg)
-
+        require_schema_keyword(schema, InvalidJSONSchemaError, converter_name="JSONSchemaToDlt")
+        require_object_root(schema, JSONSchemaToDltError, target="a dlt table")
         self._reject_unresolved_references(schema)
 
         tables: dict[str, TTableSchema] = {}
@@ -185,7 +176,7 @@ class JSONSchemaToDlt(BaseModel):
         :return: a dict loadable with `dlt.Schema.from_dict(...)`
         :rtype: TStoredSchema
         """
-        return self.convert(json.loads(schema_str))
+        return self.convert(load_schema_text(schema_str))
 
     def convert_from_file(self, path: str) -> TStoredSchema:
         """Convert a JSON Schema document from a JSON or YAML file.
@@ -195,8 +186,7 @@ class JSONSchemaToDlt(BaseModel):
         :return: a dict loadable with `dlt.Schema.from_dict(...)`
         :rtype: TStoredSchema
         """
-        loader = json.loads if path.endswith(".json") else yaml.safe_load
-        return self.convert(loader(Path(path).read_bytes()))
+        return self.convert(load_schema_file(path))
 
     def to_yaml(self, schema: dict[str, Any]) -> str:
         """Convert a schema and serialize the resulting stored schema as YAML.
@@ -271,21 +261,12 @@ class JSONSchemaToDlt(BaseModel):
         :type schema: dict[str, Any]
         :raises JSONSchemaToDltError: if `schema` still contains `$ref` or `allOf`
         """
-        if "$ref" in schema:
-            err_msg = (
-                f"Encountered an unresolved $ref {schema['$ref']!r}. JSONSchemaToDlt requires a fully "
-                "dereferenced schema -- this includes references to external JSON Schema documents. Use "
-                "`jsonschema_to_dlt.dereferencing.dereference_schema()` to resolve all $refs before "
-                "calling `convert()`."
-            )
-            raise JSONSchemaToDltError(err_msg)
-        if "allOf" in schema:
-            err_msg = (
-                "Encountered an unmerged 'allOf'. JSONSchemaToDlt requires a fully dereferenced schema "
-                "with 'allOf' already merged. Use `jsonschema_to_dlt.dereferencing.dereference_schema()` "
-                "before calling `convert()`."
-            )
-            raise JSONSchemaToDltError(err_msg)
+        reject_unresolved_references(
+            schema,
+            JSONSchemaToDltError,
+            converter_name="JSONSchemaToDlt",
+            dereference_function="jsonschema_to_dlt.dereferencing.dereference_schema",
+        )
 
     def _convert_object_table(
         self,
@@ -411,7 +392,7 @@ class JSONSchemaToDlt(BaseModel):
 
         Single-non-null type unions resolve to that type; multi-type unions collapse to `text`
         with a warning (dlt has no union types); `enum`-only and type-less schemas infer from
-        their keywords, matching the PySpark converter's behavior.
+        their keywords. Combiners override declared types, but not inferred types.
 
         :param schema: the schema fragment
         :type schema: dict[str, Any]
@@ -431,9 +412,9 @@ class JSONSchemaToDlt(BaseModel):
                 return "text"
 
         if json_type is None and "enum" in schema:
-            return self._json_type_from_dlt_type(_data_type_from_enum(schema["enum"]))
+            return json_type_from_enum(schema["enum"])
 
-        if json_type is None and (inferred := _infer_implicit_type(schema)) is not None:
+        if json_type is None and (inferred := infer_implicit_type(schema)) is not None:
             return inferred
 
         if json_type in (None, "object", "array") or "oneOf" in schema or "anyOf" in schema:
@@ -460,11 +441,7 @@ class JSONSchemaToDlt(BaseModel):
         :return: the equivalent JSON Schema type name
         :rtype: str
         """
-        return {
-            "bool": "boolean",
-            "bigint": "integer",
-            "double": "number",
-        }.get(data_type, "string")
+        return {"bool": "boolean", "bigint": "integer", "double": "number"}.get(data_type, "string")
 
     def _map_scalar_type(self, schema: dict[str, Any], json_type: str | None) -> TDataType:
         """Map a resolved JSON Schema type (with its format/bounds keywords) to a dlt data type.

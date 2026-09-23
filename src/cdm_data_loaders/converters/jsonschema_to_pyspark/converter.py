@@ -7,15 +7,11 @@ This module assumes the input schema has already been validated against the appr
 and fully dereferenced, i.e. there are no remaining `$ref` or `allOf` keys anywhere in the document.
 """
 
-import json
 import logging
 from dataclasses import dataclass, field
-from decimal import Decimal
 from functools import cache
-from pathlib import Path
 from typing import Any, Final
 
-import yaml
 from frozendict import frozendict
 from jsonschema import Draft7Validator
 from jsonschema.validators import validator_for
@@ -36,6 +32,20 @@ from pyspark.sql.types import (
     StructType,
     TimestampType,
 )
+
+from cdm_data_loaders.converters.core import inference
+from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.guards import (
+    reject_unresolved_references,
+    require_object_root,
+    require_schema_keyword,
+)
+from cdm_data_loaders.converters.core.inference import (
+    decimal_places,
+    infer_implicit_type,
+    json_type_from_enum,
+)
+from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
 
 logger = logging.getLogger(__name__)
 
@@ -123,78 +133,13 @@ STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS: frozenset[str] = frozenset(
 )
 
 
-# Keywords whose mere presence in a `type`-less schema implies a specific
-# JSON Schema type -- per the spec, `type` is optional, and a schema that
-# omits it is still constrained by whichever type-specific keywords it uses.
-IMPLICIT_OBJECT_KEYWORDS: Final[frozenset[str]] = frozenset(
-    {
-        "properties",
-        "patternProperties",
-        "additionalProperties",
-        "unevaluatedProperties",
-        "required",
-        "propertyNames",
-        "minProperties",
-        "maxProperties",
-        "dependentSchemas",
-        "dependentRequired",
-        "dependencies",
-    }
-)
-IMPLICIT_ARRAY_KEYWORDS: Final[frozenset[str]] = frozenset(
-    {
-        "items",
-        "prefixItems",
-        "additionalItems",
-        "unevaluatedItems",
-        "contains",
-        "minItems",
-        "maxItems",
-        "uniqueItems",
-        "minContains",
-        "maxContains",
-    }
-)
-IMPLICIT_STRING_KEYWORDS: Final[frozenset[str]] = frozenset(
-    {
-        "pattern",
-        "minLength",
-        "maxLength",
-        "format",
-        "contentEncoding",
-        "contentMediaType",
-        "contentSchema",
-    }
-)
-IMPLICIT_NUMBER_KEYWORDS: Final[frozenset[str]] = frozenset(
-    {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"}
-)
+IMPLICIT_OBJECT_KEYWORDS = inference.IMPLICIT_OBJECT_KEYWORDS
+IMPLICIT_ARRAY_KEYWORDS = inference.IMPLICIT_ARRAY_KEYWORDS
+IMPLICIT_STRING_KEYWORDS = inference.IMPLICIT_STRING_KEYWORDS
+IMPLICIT_NUMBER_KEYWORDS = inference.IMPLICIT_NUMBER_KEYWORDS
 
-
-def _infer_implicit_type(schema: dict[str, Any]) -> str | None:
-    """Infer an implicit JSON Schema `type` for a schema that omits `type` entirely.
-
-    Omitting `type` is valid JSON Schema -- the schema is still constrained by
-    whichever type-specific keywords it declares (e.g. a schema with only
-    `properties` is implicitly object-shaped). Checked in order: object,
-    array, string, number. `integer` is never inferred, since numeric
-    keywords (`minimum`, `multipleOf`, etc.) apply equally to `integer` and
-    `number`, and `number` is the non-narrowing, safer approximation.
-
-    :param schema: the schema fragment to inspect (already known to lack a `type` keyword)
-    :type schema: dict[str, Any]
-    :return: an inferred JSON Schema type name, or None if no type-specific keyword is present
-    :rtype: str | None
-    """
-    if schema.keys() & IMPLICIT_OBJECT_KEYWORDS:
-        return "object"
-    if schema.keys() & IMPLICIT_ARRAY_KEYWORDS:
-        return "array"
-    if schema.keys() & IMPLICIT_STRING_KEYWORDS:
-        return "string"
-    if schema.keys() & IMPLICIT_NUMBER_KEYWORDS:
-        return "number"
-    return None
+_infer_implicit_type = infer_implicit_type
+_decimal_places = decimal_places
 
 
 def get_known_jsonschema_keywords(validator_cls: type) -> set[str]:
@@ -243,42 +188,17 @@ def _metadata_keys_for(validator_cls: type) -> frozenset[str]:
     return frozenset(known - STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS)
 
 
-def _decimal_places(value: float) -> int:
-    """Number of digits after the decimal point needed to represent `value` exactly.
-
-    :param value: the numeric value to inspect (typically a JSON Schema `multipleOf`)
-    :type value: float
-    :return: number of fractional digits needed to represent `value` exactly
-    :rtype: int
-    """
-    exponent = Decimal(str(value)).as_tuple().exponent
-    if isinstance(exponent, int):
-        return max(-exponent, 0)
-    # exponent is 'n'/'N'/'F' for NaN/Infinity -- not valid here
-    return 0
-
-
 def _infer_type_from_enum(values: list[Any]) -> DataType:
-    """Infer the PySpark type of an `enum` keyword's value list.
-
-    :param values: enum values
-    :type values: list[Any]
-    :return: the inferred type of the enum
-    :rtype: DataType
-    """
-    if not values:
-        return StringType()
-    if all(isinstance(v, bool) for v in values):
-        return BooleanType()
-    # booleans are a subtype of int (wtf?!), so this exclusion is required
-    if all(isinstance(v, int) and not isinstance(v, bool) for v in values):
-        return LongType()
-    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
-        return DoubleType()
-    return StringType()
+    """Map an enum's inferred JSON type to a PySpark scalar type."""
+    return {
+        "boolean": BooleanType(),
+        "integer": LongType(),
+        "number": DoubleType(),
+        "string": StringType(),
+    }[json_type_from_enum(values)]
 
 
-class JSONSchemaToPySparkError(ValueError):
+class JSONSchemaToPySparkError(ConversionError):
     """Raised when a JSON Schema construct cannot be converted."""
 
 
@@ -441,13 +361,7 @@ class JSONSchemaToPySpark(BaseModel):
         :raises JSONSchemaToPySparkError: if the schema's root type isn't 'object', if it still
             contains unresolved `$ref`/`allOf`, or if it doesn't resolve to a StructType
         """
-        if not schema.get("$schema"):
-            err_msg = (
-                "Input JSON Schema is missing a '$schema' keyword. JSONSchemaToPySpark requires schemas "
-                "to explicitly declare their dialect via '$schema'; it will not assume a default."
-            )
-            raise InvalidJSONSchemaError(err_msg)
-
+        require_schema_keyword(schema, InvalidJSONSchemaError, converter_name="JSONSchemaToPySpark")
         validator_cls = validator_for(schema)
         ctx = self._build_context(validator_cls)
 
@@ -459,9 +373,7 @@ class JSONSchemaToPySpark(BaseModel):
                 validator_cls.__name__,
             )
 
-        if schema.get("type") not in (None, "object"):
-            err_msg = f"Root schema must be of type 'object' to map to a StructType, got: {schema.get('type')!r}"
-            raise JSONSchemaToPySparkError(err_msg)
+        require_object_root(schema, JSONSchemaToPySparkError, target="a StructType")
 
         data_type = self._convert_type(schema, ctx)
         if isinstance(data_type, StructType):
@@ -483,7 +395,7 @@ class JSONSchemaToPySpark(BaseModel):
         :return: pyspark version of the schema
         :rtype: StructType
         """
-        return self.convert(json.loads(schema_str))
+        return self.convert(load_schema_text(schema_str))
 
     def convert_from_file(self, path: str) -> StructType:
         """Import a JSON Schema from a file and convert it to a PySpark structure.
@@ -493,9 +405,7 @@ class JSONSchemaToPySpark(BaseModel):
         :return: pyspark version of the schema
         :rtype: StructType
         """
-        loader = json.loads if path.endswith(".json") else yaml.safe_load
-
-        return self.convert(loader(Path(path).read_bytes()))
+        return self.convert(load_schema_file(path))
 
     # dereferencing guard
     @staticmethod
@@ -513,21 +423,12 @@ class JSONSchemaToPySpark(BaseModel):
         :rtype: None
         :raises JSONSchemaToPySparkError: if `schema` still contains `$ref` or `allOf`
         """
-        if "$ref" in schema:
-            err_msg = (
-                f"Encountered an unresolved $ref {schema['$ref']!r}. JSONSchemaToPySpark requires a fully "
-                "dereferenced schema -- this includes references to external JSON Schema documents. Use "
-                "`jsonschema_to_pyspark.dereferencing.dereference_schema()` to resolve all $refs before "
-                "calling `convert()`."
-            )
-            raise JSONSchemaToPySparkError(err_msg)
-        if "allOf" in schema:
-            err_msg = (
-                "Encountered an unmerged 'allOf'. JSONSchemaToPySpark requires a fully dereferenced schema "
-                "with 'allOf' already merged. Use `jsonschema_to_pyspark.dereferencing.dereference_schema()` "
-                "before calling `convert()`."
-            )
-            raise JSONSchemaToPySparkError(err_msg)
+        reject_unresolved_references(
+            schema,
+            JSONSchemaToPySparkError,
+            converter_name="JSONSchemaToPySpark",
+            dereference_function="jsonschema_to_pyspark.dereferencing.dereference_schema",
+        )
 
     def _build_metadata(self, schema: dict[str, Any], ctx: ConversionContext) -> dict[str, Any]:
         """Build a StructField.metadata dict for `schema`.
@@ -632,8 +533,10 @@ class JSONSchemaToPySpark(BaseModel):
         )
         raise JSONSchemaToPySparkError(msg)
 
-    def _dispatch_type(self, schema: dict[str, Any], ctx: ConversionContext) -> DataType:  # noqa: C901
+    def _dispatch_type(self, schema: dict[str, Any], ctx: ConversionContext) -> DataType:  # noqa: C901, PLR0911, PLR0912
         """Route a schema fragment to the appropriate per-`type` conversion method.
+
+        Recognized declared or inferred types take precedence over combiners.
 
         :param schema: the schema fragment to convert
         :type schema: dict[str, Any]

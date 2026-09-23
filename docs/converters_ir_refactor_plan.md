@@ -28,9 +28,9 @@ Package layout after the refactor (existing direction subpackages remain as publ
 ```
 src/cdm_data_loaders/converters/
   core/                         shared, direction-agnostic logic (phase 1)
-    errors.py                   ConversionError base + existing subclasses re-exported
+    errors.py                   ConversionError base; subclasses stay direction-specific
     guards.py                   $schema / $ref / allOf / root-type assertions
-    inference.py                resolve_json_type, _infer_implicit_type, enum walk, _decimal_places
+    inference.py                implicit-type inference, JSON enum inference, decimal scale
     io.py                       parse/serialize helpers for str/file entry points
   ir.py                         TypedNode model (phase 3)
   dlt_normalization.py          unflatten + parents-first flatten + shared child-path
@@ -171,8 +171,8 @@ without changing any public behavior.
 
 New files:
 
-- `converters/core/errors.py`: `ConversionError(ValueError)`; `InvalidJSONSchemaError` and the
-  direction-specific errors move here and re-export from their current module paths.
+- `converters/core/errors.py`: `ConversionError(ValueError)`; direction-specific errors inherit
+  this base while retaining their definitions and identities in their existing modules.
 - `converters/core/guards.py`:
   - `require_schema_keyword(schema)` -- rejects missing top-level `$schema` (message text kept
     identical; both tests match on it).
@@ -181,21 +181,27 @@ New files:
 - `converters/core/inference.py`:
   - `_infer_implicit_type` and the `IMPLICIT_*_KEYWORDS` sets, moved out of
     `jsonschema_to_pyspark.converter` (ownership fix: these are JSON-Schema-generic).
-  - `resolve_json_type(schema, *, warn) -> str` -- the shared union-null-strip / enum-inference /
-    implicit-inference / first-branch-`oneOf`-`anyOf` walk. Parameterized warning behavior rather
-    than duplicated branches.
-  - `data_type_from_enum(values) -> TDataType` (the bool -> int -> float -> string walk, one copy).
+  - `json_type_from_enum(values)` -- the bool -> int -> float -> string walk, returning JSON
+    type names. Target-specific wrappers map these names to dlt and PySpark types.
   - `decimal_places(value) -> int`.
-- `converters/core/io.py`: `parse_source(source, fmt)` for the `convert_from_string` /
-  `convert_from_file` boilerplate (`json.loads` for `.json`, `yaml.safe_load` otherwise).
+- `converters/core/io.py`: `load_schema_text` defaults to JSON-only parsing. Reverse conversion
+  explicitly enables YAML fallback. `load_schema_file` uses JSON for `.json` and YAML otherwise.
 
-Changed files: `jsonschema_to_dlt/converter.py` and `jsonschema_to_pyspark/converter.py` import
-from `core/`; `_infer_implicit_type` stays importable from
-`jsonschema_to_pyspark.converter` (re-export) since `jsonschema_to_dlt` and its tests import it
-from there.
+Type dispatch remains direction-specific. dlt lets combiners override declared types, but not
+enum or implicit inference; PySpark dispatches recognized declared or inferred types first.
+dlt falls back to text for unknown constructs and boolean combiner branches. PySpark can reject
+these with `treat_unknown_as_string=False`. Both prefer `oneOf` over `anyOf` and use the first
+branch. Warnings remain on each converter's module logger; no logging callback is injected.
+Core imports neither dlt nor PySpark.
 
-Tests: new `tests/cdm_data_loaders/converters/core/` unit tests for `resolve_json_type` and the
-guards (parametrized, human-readable ids); existing converter tests must pass unchanged.
+Changed files: both forward converters and `dlt_to_jsonschema/converter.py` use core helpers.
+Private helper imports and PySpark's implicit keyword exports remain available as aliases or
+target-specific wrappers. Reverse conversion deep-copies `TYPE_MAP` entries to isolate nested
+`x-dlt` metadata across columns and conversion calls.
+
+Tests: new `tests/cdm_data_loaders/converters/core/` tests cover each helper, error identity,
+private exports, parsing policies, combiner precedence, and strict fallback. A reverse-converter
+regression covers nested metadata isolation. Tests are typed and parametrized with readable ids.
 
 Exit criteria: `uv run pytest tests/cdm_data_loaders/converters -m "not requires_spark and not
 requires_ceph"` green; `uv run ruff check src tests && uv run ruff format src tests` clean.

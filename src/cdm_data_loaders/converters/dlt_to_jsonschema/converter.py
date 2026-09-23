@@ -10,14 +10,15 @@ Nullable columns are rendered as `anyOf: [<type>, {"type": "null"}]` per the rep
 iceberg-to-jsonschema conventions; dlt's `_dlt_*` internal columns are dropped by default.
 """
 
-import json
 import logging
-from pathlib import Path
+from copy import deepcopy
 from typing import Any, Final, Literal
 
-import yaml
 from dlt.common.schema.typing import TTableSchema
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ TYPE_MAP: Final[dict[str, dict[str, Any]]] = {
 }
 
 
-class DltToJSONSchemaError(ValueError):
+class DltToJSONSchemaError(ConversionError):
     """Raised when a dlt schema construct cannot be converted."""
 
 
@@ -152,11 +153,7 @@ class DltToJSONSchema(BaseModel):
         :return: mapping of root table name -> draft 2020-12 JSON Schema document
         :rtype: dict[str, dict[str, Any]]
         """
-        try:
-            parsed = json.loads(schema_str)
-        except json.JSONDecodeError:
-            parsed = yaml.safe_load(schema_str)
-        return self.convert(parsed)
+        return self.convert(load_schema_text(schema_str, allow_yaml=True))
 
     def convert_from_file(self, path: str) -> dict[str, dict[str, Any]]:
         """Convert a dlt schema from a JSON or YAML file.
@@ -166,8 +163,7 @@ class DltToJSONSchema(BaseModel):
         :return: mapping of root table name -> draft 2020-12 JSON Schema document
         :rtype: dict[str, dict[str, Any]]
         """
-        loader = json.loads if path.endswith(".json") else yaml.safe_load
-        return self.convert(loader(Path(path).read_bytes()))
+        return self.convert(load_schema_file(path))
 
     def _extract_tables(self, schema: dict[str, Any]) -> dict[str, TTableSchema]:
         """Extract the tables dict from a stored schema or a plain tables mapping.
@@ -419,7 +415,7 @@ class DltToJSONSchema(BaseModel):
             # incomplete column (no data type yet): accept anything
             node: dict[str, Any] = {}
         elif data_type in TYPE_MAP:
-            node = dict(TYPE_MAP[data_type])
+            node = deepcopy(TYPE_MAP[data_type])
         else:
             err_msg = f"Column {col_name!r} has unknown dlt data_type {data_type!r}."
             raise DltToJSONSchemaError(err_msg)
