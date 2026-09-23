@@ -140,7 +140,7 @@ def test_xml_to_dict_ingest_settings_pass_xmltodict_args_is_cached(
     """xmltodict_args is a cached_property: repeated access returns the same dict, not a rebuild."""
     xsd_file = _copy_xsd_fixture(test_data_dir, tmp_path / "input", UNIREF_LIKE_XSD)
     settings = settings_factory(xsd_file=xsd_file)
-
+    # FIXME: what is this shit?
     assert settings.xmltodict_args is settings.xmltodict_args
 
 
