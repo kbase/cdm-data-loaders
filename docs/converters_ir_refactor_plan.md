@@ -32,10 +32,10 @@ src/cdm_data_loaders/converters/
     guards.py                   $schema / $ref / allOf / root-type assertions
     inference.py                implicit-type inference, JSON enum inference, decimal scale
     io.py                       parse/serialize helpers for str/file entry points
+    paths.py                    generic set_nested dictionary assignment (phase 2)
   ir.py                         TypedNode model (phase 3)
-  dlt_normalization.py          unflatten + parents-first flatten + shared child-path
-                                primitives (phase 2; also consumed by test-side
-                                row-level reconstruction)
+  dlt_normalization.py          typed raw-table tree, unflatten, parents-first flatten,
+                                schema child keys and name joining (phase 2)
   readers/
     json_schema.py              dereferenced JSON Schema -> IR
     dlt.py                      TStoredSchema -> IR (uses dlt_normalization)
@@ -138,9 +138,9 @@ Known starting points (found in the initial survey; the inventory phase extends 
 
 | Location                                                         | What it does                                                                                                                                                       | Reuse relevance                                                                                                                                           |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/integration/pipelines/xml/xmltodict_reference_helpers.py` | `reconstruct_entries` rebuilds nested dicts from flattened output tables, following `_dlt_parent_id` / `_dlt_list_idx` row linkage rather than table-name prefixes | Data-driven twin of the schema-driven `unflatten_tables` (phase 2); the row-linkage walk is the ground-truth reconstruction semantics my dlt notes record |
+| `tests/integration/pipelines/xml/xmltodict_reference_helpers.py` | `reconstruct_entries` attaches rows using `_dlt_parent_id` / `_dlt_list_idx`; XML property paths denormalize names and strip repeated root fragments | Schema normalization instead follows explicit table `parent` entries; only generic dictionary assignment is shared |
 | `tests/integration/pipelines/helpers.py`                         | imports `reconstruct_entries` for `assert_dataset_matches_reference`                                                                                               | Already shared beyond xmltodict; a move to shared code must keep this import working                                                                      |
-| `scripts/output_tests_core.py`                                   | Diagnostic reading of parquet/jsonl pipeline output (rglob, magic-byte gzip detection, JSON-string parsing of nested content)                                      | Fragment-level overlap with the test-side readers; candidate for consolidation only if it is cheap                                                        |
+| `scripts/output_tests_core.py`                                   | Diagnostic inspection of Iceberg/Parquet output, parquet rglob, and JSON-string parsing of nested content; no gzip implementation | Distinct from the test-side JSONL reader and its gzip magic-byte detection; leave as diagnostic tooling |
 | `scripts/output_tests_{iceberg,parquet,pyarrow_*}.py`            | Variants of the same output-inspection tooling                                                                                                                     | Same as above; survey for duplication breadth                                                                                                             |
 
 Inventory method: grep for the primitive names (`reconstruct`, `parent_id`, `list_idx`,
@@ -155,13 +155,14 @@ The inventory is complete. Recorded decisions:
 
 | Primitive | Locations found | Decision |
 | --- | --- | --- |
-| Row-level reconstruction (`reconstruct_entries`, `_attach_nested_rows`, `set_nested`, `_child_table_path`) | `tests/integration/pipelines/xml/xmltodict_reference_helpers.py`; consumed by `tests/integration/pipelines/helpers.py` and the xmltodict reference tests | Phase 2 extracts the schema-independent primitives (`child_table_path`, `set_nested`) into `dlt_normalization.py`; the row-linkage walk stays test-side |
-| Child-table naming (`NESTED_TABLE_SEPARATOR`, `parent__key`) | `dlt_to_jsonschema._child_key`, `jsonschema_to_dlt` inline naming (3 sites), `xmltodict_reference_helpers._child_table_path` | Consolidate into `dlt_normalization.py` as one `child_key(parent, child)` helper (phase 2) |
+| Row-level reconstruction (`reconstruct_entries`, `_attach_nested_rows`, `set_nested`, `_child_table_path`) | `tests/integration/pipelines/xml/xmltodict_reference_helpers.py`; consumed by `tests/integration/pipelines/helpers.py` and the xmltodict reference tests | Phase 2 extracts only `set_nested` into `core/paths.py`, imported at the old helper path. Row linkage and XML-specific `_child_table_path` stay test-side unchanged |
+| Schema child-table naming (`NESTED_TABLE_SEPARATOR`, `parent__key`) | `dlt_to_jsonschema._child_key`, `jsonschema_to_dlt` inline naming (3 sites) | Phase 2 shares `child_key(parent, child)` and `child_table_name(parent, key)`. Explicit `parent` fields determine schema hierarchy; remove exactly one declared-parent prefix, with no XML denormalization |
 | Parents-first table ordering | `jsonschema_to_dlt._tables_parents_first` | Moves to `dlt_normalization.py` (phase 2) |
 | Enum narrowest-type walk | `jsonschema_to_dlt._data_type_from_enum` (tested), `jsonschema_to_pyspark._infer_type_from_enum` (tested) | Consolidate into `core/inference.py` (phase 1), keeping both module paths importable for their existing tests |
 | Implicit-type inference | `jsonschema_to_pyspark._infer_implicit_type` + keyword sets; imported by `jsonschema_to_dlt` | Move to `core/inference.py` (phase 1), re-export from `jsonschema_to_pyspark.converter` |
 | Decimal helper | `jsonschema_to_dlt._decimal_places`, `jsonschema_to_pyspark._decimal_places` (identical) | Consolidate into `core/inference.py` (phase 1) |
-| Gzip magic-byte detection, JSON-string parsing | `xmltodict_reference_helpers` only (single site) | Leave: one site, no duplication |
+| Gzip magic-byte detection | `xmltodict_reference_helpers.read_pipeline_tables` | Leave: the output-inspection scripts have no gzip implementation |
+| JSON-string parsing | `xmltodict_reference_helpers.parse_json_string` and `scripts/output_tests_core.py` inspection functions | Leave: row reconstruction and diagnostic printing have different contracts |
 | Output-inspection diagnostics (rglob parquet, print tooling) | `scripts/output_tests_*.py` (5 files) | Leave: diagnostic scripts, not library code |
 
 ## Phase 1: extract the shared JSON-Schema core
@@ -206,42 +207,83 @@ regression covers nested metadata isolation. Tests are typed and parametrized wi
 Exit criteria: `uv run pytest tests/cdm_data_loaders/converters -m "not requires_spark and not
 requires_ceph"` green; `uv run ruff check src tests && uv run ruff format src tests` clean.
 
-## Phase 2: dlt normalization as a standalone module
+## Phase 2: completed - standalone dlt normalization
 
-Goal: split `dlt_to_jsonschema`'s folding logic (and `jsonschema_to_dlt._tables_parents_first`)
-into independently testable pure functions over `TStoredSchema`.
+`converters/dlt_normalization.py` provides a neutral, lossless table forest. It operates on
+the `tables` mapping, not the surrounding stored-schema envelope. Public API:
 
-New file `converters/dlt_normalization.py`:
+```python
+@dataclass(frozen=True, slots=True)
+class DltTableNode:
+    name: str
+    parent: str | None
+    key: str
+    table: TTableSchema
+    children: dict[str, "DltTableNode"] = field(default_factory=dict)
 
-- `unflatten_tables(tables) -> dict[str, Any]` -- folds `parent`-linked child tables into a
-  nested structure. Moves in: `_validate_parents`, `_child_key`, `_is_scalar_value_table`
-  detection, and the `_convert_child` recursion from `dlt_to_jsonschema`. Scalar `value` child
-  tables become `{"type": "array", "items": <col>}` nodes in the nested form.
-- `flatten_nodes(root_name, nested) -> dict[str, TTableSchema]` -- the inverse, parents-first.
-  Moves in `_tables_parents_first` from `jsonschema_to_dlt` plus child-table naming
-  (`parent__key` via `NESTED_TABLE_SEPARATOR`).
-- Shared child-path primitives, extracted so the row-level reconstruction in
-  `xmltodict_reference_helpers.reconstruct_entries` can consume the same functions instead of
-  maintaining its own copies: `child_table_path(table_name, top_table)` (the
-  `_child_table_path` fragment-stripping walk) and `set_nested(target, path, value)`. The
-  test-side helper differs in linkage semantics (`_dlt_parent_id`/`_dlt_list_idx` vs schema
-  `parent` entries) and name unmangling, so it keeps its own walk but calls these primitives.
-- `DltNormalizationError(ValueError)` for dangling parents and cycles.
+def unflatten_tables(tables: Mapping[str, TTableSchema]) -> dict[str, DltTableNode]: ...
+def flatten_nodes(roots: Mapping[str, DltTableNode]) -> dict[str, TTableSchema]: ...
+def tables_parents_first(tables: Mapping[str, TTableSchema]) -> list[TTableSchema]: ...
+def child_key(parent_name: str, child_name: str) -> str: ...
+def child_table_name(parent_name: str, key: str) -> str: ...
+```
 
-`dlt_to_jsonschema` is then rewired: `convert()` = `unflatten_tables` -> walk the nested tree.
-Its remaining unique part is the column-to-JSON-Schema mapping (`TYPE_MAP`, nullable `anyOf`
-wrapping, hint collection), which stays in place until phase 4.
+- Table mapping keys identify nodes. Raw `name` metadata is preserved even when it differs.
+  Roots use their full mapping name as their property key. Explicit `parent` entries alone
+  determine hierarchy; names containing `__` do not imply a parent.
+- `child_key` removes exactly one `<declared-parent>__` prefix, or retains the full child
+  name when absent. It does not split paths, decode XML names, or remove repeated roots.
+  `child_table_name` joins two literal fragments with `__`, including empty fragments.
+- Root and sibling order follow input declaration order. Flattening uses depth-first,
+  parents-first order and preserves all table/column metadata, including missing fields,
+  internal columns, variants, and scalar `value` columns. Empty input returns empty output.
+  Unflatten/flatten round trips preserve definitions, not arbitrary child-before-parent order.
+- Input, independent calls, each table's payload, and flattened copies are isolated through
+  deep copies. Node identity fields are frozen; owned table and children mappings are mutable.
+  Traversals are iterative and tested beyond Python's recursion limit.
+- `DltNormalizationError(ConversionError)` rejects malformed structural fields, dangling
+  parents, all cycles (including disconnected components), and duplicate sibling keys.
+  Flattening also rejects inconsistent node keys/parents, duplicate names, and node cycles.
+  Rootless cycles retain `No root tables found` in the diagnostic.
 
-Tests: `tests/cdm_data_loaders/converters/test_dlt_normalization.py` -- unit tests for
-`unflatten_tables` (happy path, dangling parent, scalar-value table, deep nesting) and
-`flatten_nodes` (parents-first ordering, max depth); a round-trip test
-`unflatten -> flatten == original` on fixture schemas. Data fixtures under
-`tests/data/converters/` rather than inline dicts where they get large. If the test-side
-reconstruction helpers move into shared code, their existing consumers
-(`tests/integration/pipelines/helpers.py`, `test_xmltodict_reference_tests.py`) keep working via
-re-export from the old import path.
+`DltToJSONSchema.convert()` now normalizes once and traverses node children without scanning
+the full tables mapping per node. It translates normalization errors to `DltToJSONSchemaError`.
+Scalar-value classification, internal/variant filtering, object-vs-array policy, required
+fields, nullable wrapping, and column hint mapping remain converter policy.
+`JSONSchemaToDlt.to_schema()` calls shared parents-first ordering; all three child-name sites
+use the join helper. Unused private graph helpers were removed.
 
-Exit criteria: same as phase 1, plus `dlt_to_jsonschema` tests green against the rewired path.
+Only generic dictionary assignment is shared with XML row reconstruction:
+
+```python
+def set_nested(target: dict[str, Any], path: Sequence[str], value: object) -> None: ...
+```
+
+It lives in `core/paths.py` and remains importable from `xmltodict_reference_helpers`.
+Paths must be nonempty sequences of string keys, not bare strings. Missing dicts are created;
+non-dict intermediate collisions raise `NestedPathError(ConversionError)` without mutation.
+Existing leaves are replaced; empty string keys remain valid; assigned values are not copied.
+The row helper's `_child_table_path` retains XML denormalization and repeated-root stripping.
+Its `_dlt_parent_id`/`_dlt_list_idx` walk remains distinct from schema `parent` handling.
+
+Tests cover precise forests and round trips, missing metadata, multiple roots, malformed
+tables, disconnected cycles, naming exceptions, isolation, deep graphs, and generic path
+errors. The raw fixture is `tests/data/converters/dlt_normalization/tables.json`. Pure XML
+helper tests live in `tests/integration/pipelines/xml/test_reference_helpers.py` and require
+no Spark, CEPH, network, or pipeline fixtures. Cycle/malformed-table and invalid-path
+regressions were run failing before their fixes.
+
+Validation commands:
+
+```sh
+uv run pytest tests/cdm_data_loaders/converters -m 'not requires_spark and not requires_ceph and not external_request'
+uv run pytest tests/cdm_data_loaders/converters/test_dlt_normalization.py tests/cdm_data_loaders/converters/core/test_paths.py tests/integration/pipelines/xml/test_reference_helpers.py -m 'not requires_spark and not requires_ceph and not external_request'
+```
+
+Verified: 647 converter tests passed; 69 direct helper tests passed. Both new production
+modules have 100% statement and branch coverage in focused helper tests. Targeted Ruff check,
+separate formatting, editor diagnostics, and diff whitespace checks passed. No extension
+validation or remaining IR-phase design changes are part of Phase 2.
 
 ## Phase 3: the IR and readers
 

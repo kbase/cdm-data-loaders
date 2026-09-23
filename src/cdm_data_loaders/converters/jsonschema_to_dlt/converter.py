@@ -39,6 +39,7 @@ from cdm_data_loaders.converters.core.inference import (
     json_type_from_enum,
 )
 from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
+from cdm_data_loaders.converters.dlt_normalization import child_table_name, tables_parents_first
 
 if TYPE_CHECKING:
     from dlt.common.schema import Schema
@@ -46,9 +47,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SCHEMA_ENGINE_VERSION: Final[int] = 11
-
-# dlt's child-table path separator, used by the relational normalizer
-NESTED_TABLE_SEPARATOR: Final[str] = "__"
 
 # JSON Schema 'format' values that map to dlt temporal/binary types; everything else -> text
 DATETIME_FORMATS: Final[frozenset[str]] = frozenset({"date-time", "datetime", "timestamp"})
@@ -223,35 +221,9 @@ class JSONSchemaToDlt(BaseModel):
         stored = self.convert(schema)
         live_schema = Schema(stored["name"])
         # parents must merge before children or update_table raises ParentTableNotFoundException
-        for table in self._tables_parents_first(stored["tables"]):
+        for table in tables_parents_first(stored["tables"]):
             live_schema.update_table(table, normalize_identifiers=False)
         return live_schema
-
-    @staticmethod
-    def _tables_parents_first(tables: dict[str, TTableSchema]) -> list[TTableSchema]:
-        """Order tables so that every parent precedes its children.
-
-        :param tables: dict of table name -> TTableSchema
-        :type tables: dict[str, TTableSchema]
-        :return: tables ordered parents-first, root tables in declaration order
-        :rtype: list[TTableSchema]
-        """
-        ordered: list[TTableSchema] = []
-        emitted: set[str] = set()
-
-        def emit(table: TTableSchema) -> None:
-            name = table["name"]
-            if name in emitted:
-                return
-            parent_name = table.get("parent")
-            if parent_name and parent_name in tables:
-                emit(tables[parent_name])
-            emitted.add(name)
-            ordered.append(table)
-
-        for table in tables.values():
-            emit(table)
-        return ordered
 
     @staticmethod
     def _reject_unresolved_references(schema: dict[str, Any]) -> None:
@@ -309,7 +281,7 @@ class JSONSchemaToDlt(BaseModel):
             json_type = self._resolve_type(prop_schema)
 
             if json_type == "object" and not self.skip_nested_types and depth < self.max_nesting:
-                child_name = f"{table_name}{NESTED_TABLE_SEPARATOR}{prop_name}"
+                child_name = child_table_name(table_name, prop_name)
                 self._convert_object_table(
                     schema=prop_schema,
                     table_name=child_name,
@@ -319,7 +291,7 @@ class JSONSchemaToDlt(BaseModel):
                 )
             elif json_type == "array" and not self.skip_nested_types and self._array_items_are_objects(prop_schema):
                 items_schema = self._single_items_schema(prop_schema)
-                child_name = f"{table_name}{NESTED_TABLE_SEPARATOR}{prop_name}"
+                child_name = child_table_name(table_name, prop_name)
                 self._convert_object_table(
                     schema=items_schema,
                     table_name=child_name,
@@ -331,7 +303,7 @@ class JSONSchemaToDlt(BaseModel):
                 if self.flatten_scalars and (items_schema := self._single_items_schema(prop_schema)):
                     # dlt's normalizer puts list elements in a child table with a `value` column
                     scalar_type = self._scalar_data_type(items_schema)
-                    child_name = f"{table_name}{NESTED_TABLE_SEPARATOR}{prop_name}"
+                    child_name = child_table_name(table_name, prop_name)
                     tables[child_name] = new_table(
                         table_name=child_name,
                         parent_table_name=table_name,

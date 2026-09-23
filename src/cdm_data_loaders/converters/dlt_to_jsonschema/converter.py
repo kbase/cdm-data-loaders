@@ -19,13 +19,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
+from cdm_data_loaders.converters.dlt_normalization import DltNormalizationError, DltTableNode, unflatten_tables
 
 logger = logging.getLogger(__name__)
 
 JSON_SCHEMA_DIALECT: Final[str] = "https://json-schema.org/draft/2020-12/schema"
-
-# dlt's child-table path separator, used by the relational normalizer
-NESTED_TABLE_SEPARATOR: Final[str] = "__"
 
 # dlt internal column prefix; these loader-added columns have no JSON Schema equivalent
 DLT_INTERNAL_PREFIX: Final[str] = "_dlt_"
@@ -133,17 +131,11 @@ class DltToJSONSchema(BaseModel):
         :raises DltToJSONSchemaError: if the input has no `tables` key and no table-shaped values
         """
         tables = self._extract_tables(schema)
-        self._validate_parents(tables)
-
-        root_names = [name for name, table in tables.items() if not self._is_nested(table)]
-        if not root_names:
-            err_msg = "No root tables found: every table has a 'parent' entry."
-            raise DltToJSONSchemaError(err_msg)
-
-        documents: dict[str, dict[str, Any]] = {}
-        for root_name in root_names:
-            documents[root_name] = self._convert_root_table(root_name, tables)
-        return documents
+        try:
+            roots = unflatten_tables(tables)
+        except DltNormalizationError as error:
+            raise DltToJSONSchemaError(str(error)) from error
+        return {name: self._convert_root_table(node) for name, node in roots.items()}
 
     def convert_from_string(self, schema_str: str) -> dict[str, dict[str, Any]]:
         """Convert a dlt schema supplied as a JSON or YAML string.
@@ -189,67 +181,11 @@ class DltToJSONSchema(BaseModel):
             raise DltToJSONSchemaError(err_msg)
         return tables
 
-    def _validate_parents(self, tables: dict[str, TTableSchema]) -> None:
-        """Check that every nested table's parent exists.
-
-        :param tables: mapping of table name -> TTableSchema
-        :type tables: dict[str, TTableSchema]
-        :raises DltToJSONSchemaError: if a parent reference is dangling
-        """
-        for name, table in tables.items():
-            parent = table.get("parent")
-            if parent and parent not in tables:
-                err_msg = f"Table {name!r} references parent {parent!r}, which does not exist."
-                raise DltToJSONSchemaError(err_msg)
-
-    @staticmethod
-    def _is_nested(table: TTableSchema) -> bool:
-        """Check whether a table is a dlt nested (child) table.
-
-        :param table: the table schema
-        :type table: TTableSchema
-        :return: True if the table declares a parent
-        :rtype: bool
-        """
-        return bool(table.get("parent"))
-
-    @staticmethod
-    def _child_key(parent_name: str, child_name: str) -> str:
-        """Derive the property key for a child table given its parent's name.
-
-        dlt names child tables `<parent>__<key>`; the key is the name suffix after
-        the parent prefix. Falls back to the full child name when the prefix is absent.
-
-        :param parent_name: the parent table's name
-        :type parent_name: str
-        :param child_name: the child table's name
-        :type child_name: str
-        :return: the property key for the child within the parent's properties
-        :rtype: str
-        """
-        prefix = f"{parent_name}{NESTED_TABLE_SEPARATOR}"
-        if child_name.startswith(prefix):
-            return child_name[len(prefix) :]
-        return child_name
-
-    def _convert_root_table(self, root_name: str, tables: dict[str, TTableSchema]) -> dict[str, Any]:
-        """Convert a root table and its nested children into a JSON Schema document.
-
-        :param root_name: the root table's name
-        :type root_name: str
-        :param tables: mapping of table name -> TTableSchema
-        :type tables: dict[str, TTableSchema]
-        :return: a draft 2020-12 JSON Schema document
-        :rtype: dict[str, Any]
-        """
-        root_table = tables[root_name]
-        children = {
-            name: self._child_key(root_name, name)
-            for name, table in tables.items()
-            if self._is_nested(table) and table.get("parent") == root_name
-        }
-
-        document = self._convert_table_object(root_table, tables, children)
+    def _convert_root_table(self, node: DltTableNode) -> dict[str, Any]:
+        """Convert a root node and its descendants into a JSON Schema document."""
+        root_name = node.name
+        root_table = node.table
+        document = self._convert_table_object(node)
         document["$schema"] = JSON_SCHEMA_DIALECT
         document["$id"] = f"urn:dlt:{root_name}"
         if "description" in root_table:
@@ -259,23 +195,9 @@ class DltToJSONSchema(BaseModel):
             document.setdefault("title", root_name)
         return document
 
-    def _convert_table_object(
-        self,
-        table: TTableSchema,
-        tables: dict[str, TTableSchema],
-        children: dict[str, str],
-    ) -> dict[str, Any]:
-        """Convert a table's columns into an object schema, folding in nested child tables.
-
-        :param table: the table schema
-        :type table: TTableSchema
-        :param tables: mapping of table name -> TTableSchema
-        :type tables: dict[str, TTableSchema]
-        :param children: mapping of child table name -> property key for this table
-        :type children: dict[str, str]
-        :return: an object schema with `properties` and `required`
-        :rtype: dict[str, Any]
-        """
+    def _convert_table_object(self, node: DltTableNode) -> dict[str, Any]:
+        """Convert a node's columns and children into object properties."""
+        table = node.table
         properties: dict[str, Any] = {}
         required: list[str] = []
 
@@ -286,10 +208,9 @@ class DltToJSONSchema(BaseModel):
                 required.append(col_name)
             properties[col_name] = self._convert_column(col_name, col, nullable=col.get("nullable", True))
 
-        for child_name, prop_key in children.items():
-            child_table = tables[child_name]
-            properties[prop_key] = self._convert_child(child_name, child_table, tables)
-            if self._child_all_required(child_table):
+        for prop_key, child in node.children.items():
+            properties[prop_key] = self._convert_child(child)
+            if self._child_all_required(child.table):
                 required.append(prop_key)
 
         result: dict[str, Any] = {"type": "object", "properties": properties, "additionalProperties": False}
@@ -338,38 +259,17 @@ class DltToJSONSchema(BaseModel):
             for col_name, col in child_table.get("columns", {}).items()
         )
 
-    def _convert_child(
-        self, child_name: str, child_table: TTableSchema, tables: dict[str, TTableSchema]
-    ) -> dict[str, Any]:
-        """Convert a nested child table into a property schema for its parent.
-
-        A child table with a single `value` column (dlt's scalar-list representation)
-        becomes an array of that value type; an object-shaped child becomes an object
-        property with its own nested children folded in recursively.
-
-        :param child_name: the child table's name
-        :type child_name: str
-        :param child_table: the child table schema
-        :type child_table: TTableSchema
-        :param tables: mapping of table name -> TTableSchema
-        :type tables: dict[str, TTableSchema]
-        :return: the property schema for the child
-        :rtype: dict[str, Any]
-        """
-        grandchildren = {
-            name: self._child_key(child_name, name)
-            for name, table in tables.items()
-            if self._is_nested(table) and table.get("parent") == child_name
-        }
-
-        if self._is_scalar_value_table(child_table, grandchildren):
+    def _convert_child(self, node: DltTableNode) -> dict[str, Any]:
+        """Render a child as an object or array according to converter policy."""
+        child_table = node.table
+        if self._is_scalar_value_table(node):
             value_col = child_table["columns"]["value"]
             child_schema: dict[str, Any] = {
                 "type": "array",
                 "items": self._convert_column("value", value_col, nullable=value_col.get("nullable", True)),
             }
         else:
-            object_schema = self._convert_table_object(child_table, tables, grandchildren)
+            object_schema = self._convert_table_object(node)
             if self.child_table_mode == "array":
                 child_schema = {"type": "array", "items": object_schema}
             else:
@@ -379,19 +279,11 @@ class DltToJSONSchema(BaseModel):
             child_schema["description"] = child_table["description"]
         return child_schema
 
-    def _is_scalar_value_table(self, child_table: TTableSchema, grandchildren: dict[str, str]) -> bool:
-        """Check whether a child table represents dlt's scalar-list shape (single `value` column).
-
-        :param child_table: the child table schema
-        :type child_table: TTableSchema
-        :param grandchildren: mapping of the child's own nested table names -> property keys
-        :type grandchildren: dict[str, str]
-        :return: True if the child has exactly one data column named `value` and no nested children
-        :rtype: bool
-        """
-        if grandchildren:
+    def _is_scalar_value_table(self, node: DltTableNode) -> bool:
+        """Check for a single visible value column with no child tables."""
+        if node.children:
             return False
-        data_columns = [name for name in child_table.get("columns", {}) if not self._skip_column(name)]
+        data_columns = [name for name in node.table.get("columns", {}) if not self._skip_column(name)]
         return data_columns == ["value"]
 
     def _convert_column(self, col_name: str, col: dict[str, Any], *, nullable: bool = True) -> dict[str, Any]:

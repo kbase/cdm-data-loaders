@@ -63,6 +63,27 @@ def test_convert_fail_dangling_parent(converter: DltToJSONSchema) -> None:
         converter.convert(schema)
 
 
+@pytest.mark.parametrize(
+    ("tables", "message"),
+    [
+        ({"root": {"columns": {}}, "loop": {"parent": "loop", "columns": {}}}, "Cycle"),
+        (
+            {"root": {"columns": {}}, "first": {"parent": "second"}, "second": {"parent": "first"}},
+            "Cycle",
+        ),
+        ({"root": None}, "must be a mapping"),
+        ({"root": {"parent": []}}, "parent must be"),
+        ({"root": {"columns": None}}, "columns must be a mapping"),
+        ({"root": {"columns": {"broken": None}}}, "must be a mapping"),
+    ],
+    ids=["disconnected-self-cycle", "disconnected-cycle", "null-table", "list-parent", "null-columns", "null-column"],
+)
+def test_convert_fail_invalid_table_graph(converter: DltToJSONSchema, tables: dict[str, Any], message: str) -> None:
+    """Reject disconnected cycles and malformed tables with the converter's error type."""
+    with pytest.raises(DltToJSONSchemaError, match=message):
+        converter.convert(base_stored_schema(tables))
+
+
 def test_convert_fail_unknown_data_type(converter: DltToJSONSchema) -> None:
     """A column with an unknown data_type raises."""
     schema = base_stored_schema({"t": {"columns": {"col": {"name": "col", "data_type": "hypercube"}}}})
