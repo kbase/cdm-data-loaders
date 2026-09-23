@@ -1,13 +1,49 @@
 """Target-independent schema model contracts."""
 
+from collections.abc import Callable
 from dataclasses import FrozenInstanceError
 from decimal import Decimal
-from typing import Any
+from functools import partial
+from typing import Any, Final
 
 import pytest
 
+from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.ir import Field, NodeHints, Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.ir_values import freeze_mapping, freeze_value, mutable_value
+
+_METADATA_POSITIONS: Final = [
+    pytest.param(partial(TypedNode, type="any"), "constraints", id="type-constraints"),
+    pytest.param(partial(TypedNode, type="any"), "annotations", id="type-annotations"),
+    pytest.param(partial(Field, "value", TypedNode(type="any")), "annotations", id="field-annotations"),
+    pytest.param(partial(SchemaDocument, TypedNode(type="any")), "annotations", id="document-annotations"),
+]
+
+
+@pytest.mark.parametrize(("constructor", "keyword"), _METADATA_POSITIONS)
+@pytest.mark.parametrize(
+    ("namespace", "value"),
+    [("x-pii", "bad"), ("x-unregistered", "bad"), ("x-pii", True)],
+    ids=["invalid-known", "unknown", "valid-known"],
+)
+def test_ir_metadata_fail_extension_namespace(
+    constructor: Callable[..., TypedNode | Field | SchemaDocument], keyword: str, namespace: str, value: str | bool
+) -> None:
+    """Schema-level extension keys must use the validated extensions mapping."""
+    with pytest.raises(ConversionError, match=rf"{namespace}.*extensions"):
+        constructor(**{keyword: {namespace: value}})
+
+
+@pytest.mark.parametrize(("constructor", "keyword"), _METADATA_POSITIONS)
+def test_ir_metadata_pass_literal_extension_keys(
+    constructor: Callable[..., TypedNode | Field | SchemaDocument], keyword: str
+) -> None:
+    """Literal data and unknown non-extension schema keywords remain unrestricted."""
+    literal = {"x-pii": "bad", "nested": [{"x-unregistered": True}]}
+    metadata = {"examples": [literal], "enum": [literal], "const": literal, "default": literal, "custom": literal}
+    model = constructor(**{keyword: metadata}, extensions={"x-pii": True})
+    assert mutable_value(getattr(model, keyword)) == metadata
+    assert dict(model.extensions) == {"x-pii": True}
 
 
 def test_schema_document_pass_owned_values_and_presence() -> None:

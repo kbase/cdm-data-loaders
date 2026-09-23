@@ -2,6 +2,8 @@
 
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+from decimal import Decimal
+from fractions import Fraction
 from typing import Any, Final
 
 from frozendict import frozendict
@@ -15,6 +17,20 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema imp
 
 class ExtensionError(ConversionError):
     """An extension namespace or payload violates its registered contract."""
+
+
+def _validation_value(value: Value) -> object:
+    """Copy validation inputs with exact arithmetic and unchanged numeric types."""
+    if isinstance(value, Mapping):
+        return {key: _validation_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_validation_value(item) for item in value]
+    if isinstance(value, float):
+        number = Fraction(str(value))
+        return number.numerator if number.denominator == 1 else number
+    if isinstance(value, Decimal):
+        return Fraction(value)
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +86,7 @@ class ExtensionRegistry:
                 msg = f"Unregistered extension namespace: {namespace}"
                 raise ExtensionError(msg)
             try:
-                Draft202012Validator(mutable_value(specs[namespace].schema)).validate(mutable_value(value))
+                Draft202012Validator(_validation_value(specs[namespace].schema)).validate(_validation_value(value))
             except ValidationError as error:
                 msg = f"Invalid {namespace} at {list(error.path)}: {error.message}"
                 raise ExtensionError(msg) from error

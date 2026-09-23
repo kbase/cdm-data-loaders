@@ -49,6 +49,10 @@ _FORMATS: Final[dict[str, TDataType]] = {
     "binary": "binary",
     "base64": "binary",
 }
+DATETIME_FORMATS: Final = frozenset(name for name, kind in _FORMATS.items() if kind == "timestamp")
+DATE_FORMATS: Final = frozenset(name for name, kind in _FORMATS.items() if kind == "date")
+TIME_FORMATS: Final = frozenset(name for name, kind in _FORMATS.items() if kind == "time")
+BINARY_FORMATS: Final = frozenset(name for name, kind in _FORMATS.items() if kind == "binary")
 _LOGICAL: Final[dict[str, TDataType]] = {
     "decimal": "decimal",
     "wei": "wei",

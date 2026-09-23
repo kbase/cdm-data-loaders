@@ -146,8 +146,8 @@ def test_convert_type_pass_combiner_precedence(
         }
         assert spark_converter.convert(schema)["value"].dataType == spark_type
     warning_modules = {record.name for record in caplog.records if "Approximating" in record.message}
-    assert (dlt_module.__name__ in warning_modules) == dlt_warns
-    assert (spark_module.__name__ in warning_modules) == spark_warns
+    assert ("cdm_data_loaders.converters.emitters.dlt" in warning_modules) == dlt_warns
+    assert ("cdm_data_loaders.converters.emitters.pyspark" in warning_modules) == spark_warns
 
 
 @pytest.mark.parametrize(

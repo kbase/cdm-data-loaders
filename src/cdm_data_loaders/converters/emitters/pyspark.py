@@ -137,6 +137,16 @@ class ConversionContext:
         return self.extra_metadata_keywords - self.allowed_extra_metadata_keywords
 
 
+def merge_format_map(value: object) -> object:
+    """Validate format overrides and merge them into the built-in mapping."""
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) or not isinstance(item, DataType) for key, item in value.items()):
+            msg = "format_map must map strings to PySpark DataType instances"
+            raise ValueError(msg)
+        return frozendict({**DEFAULT_FORMAT_MAP, **value})
+    return value
+
+
 class PySparkEmitterError(ConversionError):
     """A typed schema cannot be represented by the configured Spark policy."""
 
@@ -153,13 +163,8 @@ class PySparkEmitter(BaseModel):
     @field_validator("format_map", mode="before")
     @classmethod
     def _merge_with_builtin_format_map(cls, value: object) -> object:
-        """Merge format overrides into the built-in mapping."""
-        if isinstance(value, Mapping):
-            if any(not isinstance(key, str) or not isinstance(item, DataType) for key, item in value.items()):
-                msg = "format_map must map strings to PySpark DataType instances"
-                raise ValueError(msg)
-            return frozendict({**DEFAULT_FORMAT_MAP, **value})
-        return value
+        """Merge nonempty format overrides into the built-in mapping."""
+        return merge_format_map(value) if value else value
 
     def build_context(self, validator_cls: type) -> ConversionContext:
         """Build draft-specific metadata policy and report invalid requested keywords."""
@@ -180,8 +185,9 @@ class PySparkEmitter(BaseModel):
         if isinstance(result, StructType):
             return result
         msg = (
-            "Root schema did not resolve to a StructType. Objects with only dynamic keys produce MapType; "
-            "PySpark requires a StructType at the top level of the table schema."
+            "Root JSON Schema did not resolve to a StructType.\nThis can happen if it has no "
+            "'properties' but does have 'patternProperties' or 'additionalProperties', which map to "
+            "MapType instead. PySpark requires a StructType at the top level of the table schema."
         )
         raise PySparkEmitterError(msg)
 

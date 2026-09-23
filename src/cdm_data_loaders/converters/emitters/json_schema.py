@@ -107,6 +107,24 @@ class JsonSchemaEmitter:
             result["title"] = document.name
         return result
 
+    def emit_node(self, node: TypedNode) -> dict[str, Any] | bool:
+        """Emit a standalone node using its source's rendering policy."""
+        source = node.provenance.source if node.provenance is not None else None
+        if source == "iceberg":
+            return self._iceberg_node(node)
+        if source == "dlt":
+            return self._dlt_node(node)
+        return self._json_node(node)
+
+    def emit_field(self, field: Field) -> dict[str, Any] | bool:
+        """Emit a field, retaining source-specific metadata placement."""
+        source = field.node.provenance.source if field.node.provenance is not None else None
+        if source == "iceberg":
+            return self._iceberg_field(field)
+        if source == "dlt":
+            return self._dlt_node(field.node)
+        return self._json_field(field)
+
     def _json_document(self, document: SchemaDocument) -> dict[str, Any]:
         """Emit structural JSON facts without changing the source dialect."""
         result = _schema_object(schema=self._json_node(document.root))

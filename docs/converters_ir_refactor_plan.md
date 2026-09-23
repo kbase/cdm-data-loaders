@@ -69,7 +69,8 @@ Extensions use an immutable registry of exact namespace names and JSON validatio
 Only namespace names require `x-`; internal keys are ordinary names, arrays/null are allowed
 by their schemas, and key spelling is never transformed. Unknown namespaces and payload
 keys fail unless explicitly registered. `x-xsv-config` reuses the exact existing schema.
-This is deliberately stricter than unchanged pre-phase-5 facades. Logging uses module loggers.
+This is deliberately stricter than the pre-phase-5 facades. Phase 5 applies the same contract
+to every facade. Logging uses reader/emitter module loggers.
 
 ## Phase 0: inventory existing code for reusable logic
 
@@ -135,7 +136,8 @@ Type dispatch remains direction-specific. dlt lets combiners override declared t
 enum or implicit inference; PySpark dispatches recognized declared or inferred types first.
 dlt falls back to text for unknown constructs and boolean combiner branches. PySpark can reject
 these with `treat_unknown_as_string=False`. Both prefer `oneOf` over `anyOf` and use the first
-branch. Warnings remain on each converter's module logger; no logging callback is injected.
+branch. At the phase-1 boundary, warnings remained on each converter's module logger;
+phase 5 moves them to the owning reader/emitter logger. No logging callback is injected.
 Core imports neither dlt nor PySpark.
 
 Changed files: both forward converters and `dlt_to_jsonschema/converter.py` use core helpers.
@@ -189,7 +191,7 @@ def child_table_name(parent_name: str, key: str) -> str: ...
   Flattening also rejects inconsistent node keys/parents, duplicate names, and node cycles.
   Rootless cycles retain `No root tables found` in the diagnostic.
 
-`DltToJSONSchema.convert()` now normalizes once and traverses node children without scanning
+At the phase-2 boundary, `DltToJSONSchema.convert()` normalized once and traversed node children without scanning
 the full tables mapping per node. It translates normalization errors to `DltToJSONSchemaError`.
 Scalar-value classification, internal/variant filtering, object-vs-array policy, required
 fields, nullable wrapping, and column hint mapping remain converter policy.
@@ -239,7 +241,8 @@ Seven legacy cases in `tests/data/converters/ir/legacy_outputs.json` capture all
 before rewiring: stored dlt dictionaries, Spark `jsonValue()` and JSON Schema documents.
 The corpus tests exact structured legacy outputs independently of reader facts. New tests
 exercise frozen models, extension contracts, branches, tuples, filtering, cycles and metadata.
-Facades, emitters and row reconstruction remain unchanged. See the implemented specification
+At the phase-3 boundary, facades and row reconstruction were unchanged and emitters were not
+yet implemented. See the implemented specification
 for validation results, limitations and direct-IR emitter guidance.
 
 ## Phase 4: completed - direct IR emitters
@@ -260,7 +263,7 @@ Round-trip invariants apply only modulo explicitly supported behavior and source
 reader preservation does not imply unsupported JSON keywords survive target conversion.
 
 Exit criteria: direct reader/emitter compositions match legacy structured outputs on the
-corpus. Facades remain unchanged until phase 5. Do not claim general JSON/YAML byte identity.
+corpus. Facades were unchanged at the phase-4 boundary. Do not claim general JSON/YAML byte identity.
 
 Implemented all three emitters without calling the old converters or rebuilding their inputs.
 The integrated converter and pure XML-helper run passed 1,510 tests. Each emitter has full
@@ -271,25 +274,62 @@ The JSON Schema emitter retains finite Decimal values; serialization must not co
 through floats. Legacy structured outputs, including source-specific approximations, remain
 the facade compatibility contract.
 
-## Phase 5: facades and cleanup
+## Phase 5: completed - facades and cleanup
 
-- Rewrite the four public classes as thin compositions (reader -> IR -> emitter), keeping their
-  names, constructor fields, and module paths. `convert_from_string` / `convert_from_file` come
-  from `core.io`. `pyiceberg_to_jsonschema` keeps its module-function API
-  (`table_to_json_schema`) delegating to `IcebergReader` + `JsonSchemaEmitter`; the existing
-  `dump_catalog_schemas` post-conversion `x-iceberg` stamping is unaffected because the emitter
-  still produces the `x-iceberg` block at the root.
-- Delete the now-dead private methods from the monoliths; keep `_infer_implicit_type` re-exported
-  from `jsonschema_to_pyspark.converter` for the one known importer.
-- No deprecation shims: the public names never change, so there is nothing to deprecate. A later
-  PR may add new compositions (e.g. `dlt_to_pyspark`) now that they are one-liners.
+- All four converter modules are thin reader -> IR -> emitter compositions. Public class names,
+  default configuration fields, functions and catch identities remain at their existing paths.
+  No old traversal, dispatch map, monolith superclass, or IR-to-raw-to-monolith detour remains.
+- `JSONSchemaToDlt.to_schema` and `to_yaml` delegate to the emitter. Forward string parsing
+  remains JSON-only; reverse dlt accepts JSON/YAML. Root guard messages and missing-dialect
+  subclasses remain direction-specific. Unknown dlt type diagnostics are preserved.
+- Fragment APIs on JSON/Iceberg readers and JSON/PySpark emitters support public Iceberg
+  functions and tested PySpark private bridges. Metadata helpers/constants belong to emitters,
+  with aliases at old paths; `decimal_pattern` is the same function at both module paths.
+- Immutable `extension_registry` configuration requires explicit namespace and payload schemas.
+  No permissive schema inference or filtering-before-validation was added. Invalid payloads
+  preserve chained `ExtensionError` diagnostics. The old string-valued `x-pii` fixture now
+  explicitly replaces that contract, preserving its original expected metadata.
+- Defensive JSON reading rejects unresolved references in schema branches previously ignored
+  by target dispatch. Logging now belongs to the reader/emitter modules. These are intentional
+  compatibility exceptions, documented with registration and logging examples in the API guide.
+- Catalog `table_to_json_schema` and `generated_at` stamping remain valid. Row reconstruction
+  and dereferencing implementations are untouched.
+- New end-to-end tests cover fixed captured goldens, direct dlt-to-Spark precision, supported
+  JSON/dlt/JSON round trips, explicit registration, exact root diagnostics and fragment APIs.
+  Existing emitter-vs-facade tautologies now assert independent expected structures. The
+  phase-3 golden file is unchanged.
+
+### Phase branch mapping
+
+| Step | Phase | Branch | PR base |
+| --- | --- | --- | --- |
+| 1 | Baseline | `converter_chaos_step_1` | `converter_chaos` |
+| 2 | Phase 0: inventory | `converter_chaos_step_2` | `converter_chaos_step_1` |
+| 3 | Phase 1: shared core | `converter_chaos_step_3` | `converter_chaos_step_2` |
+| 4 | Phase 2: normalization | `converter_chaos_step_4` | `converter_chaos_step_3` |
+| 5 | Phase 3: IR/readers | `converter_chaos_step_5` | `converter_chaos_step_4` |
+| 6 | Phase 4: emitters | `converter_chaos_step_6` | `converter_chaos_step_5` |
+| 7 | Phase 5: facades | `converter_chaos_step_7` | `converter_chaos_step_6` |
+
+Baseline commit `74831d3` also contains unrelated changes that were already staged:
+`.gitignore`, four pipeline test files, and XML fixture deletions. Review that commit's scope
+before opening its PR. Subsequent phase commits contain only their explicit converter paths.
+
+Final validation: 1,757 converters, XML-helper and pure XSV tests passed; 26 external-binary
+cases were deselected. Five existing unknown-metaschema deprecation warnings remain.
+Review regressions cover extension keys hidden in IR annotations, mixed Decimal/float
+extension constraints, and explicit empty Spark format maps. All four facades reached 100%
+statement/branch coverage in the focused coverage run; six reader/emitter branch alternatives
+remained uncovered. Ruff check and format checks pass across 64 Python files. See the API
+guide for commands and the intentionally excluded service/JVM validation.
 
 ## Sequencing, scope, and non-goals
 
 Each phase is an independently mergeable PR with the suite green at its boundary. Phase 0 is a
 read-only survey whose output is the reuse-decision table; phases 1 and 2 are safe, immediate
 deduplication and could ship on their own even if the IR work stalls; phases 3-5 are the
-architectural payoff. Non-goals: no new target formats, no output changes, no
+architectural payoff. Non-goals: no new target formats, no output changes for registered,
+supported inputs (apart from the documented validation/logging changes), no
 dlt/iceberg dependency upgrades, no changes to the dereferencer's behavior.
 
 ## Conventions and constraints

@@ -47,7 +47,6 @@ from cdm_data_loaders.converters.emitters.pyspark import (
 )
 from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionError, ExtensionSpec
 from cdm_data_loaders.converters.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import JSONSchemaToPySpark
 from cdm_data_loaders.converters.readers.dlt import DltReader
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
@@ -259,7 +258,7 @@ def test_emit_pass_metadata() -> None:
     ],
 )
 def test_emit_pass_json_dispatch(schema: dict[str, Any], expected: DataType, strict: bool) -> None:
-    """Typed dispatch matches fixed expected schemas and the compatible JSON converter."""
+    """Typed dispatch matches fixed expected schemas."""
     document = _document(schema)
     emitter = PySparkEmitter(treat_unknown_as_string=not strict)
     actual = emitter.emit(document)
@@ -267,8 +266,6 @@ def test_emit_pass_json_dispatch(schema: dict[str, Any], expected: DataType, str
         "type": "struct",
         "fields": [{"name": "value", "type": expected.jsonValue(), "nullable": True, "metadata": {}}],
     }
-    reference = JSONSchemaToPySpark(treat_unknown_as_string=not strict)
-    assert actual.jsonValue() == reference.convert({"$schema": DIALECT, "properties": {"value": schema}}).jsonValue()
 
 
 @pytest.mark.parametrize("strict", [False, True], ids=["fallback-policy", "strict-policy"])
@@ -425,7 +422,9 @@ def test_emit_node_pass_formats(format_name: str, expected: DataType) -> None:
 
 
 @pytest.mark.parametrize(
-    "overrides", [{}, UserDict({}), {"date-time": StringType()}], ids=["empty", "mapping", "override"]
+    "overrides",
+    [{"date-time": StringType()}, UserDict({"date-time": StringType()})],
+    ids=["dict-override", "mapping-override"],
 )
 def test_pyspark_emitter_pass_merged_frozen_formats(overrides: dict[str, DataType] | UserDict[str, DataType]) -> None:
     """Format overrides are copied and merged while the emitter's configuration remains frozen."""

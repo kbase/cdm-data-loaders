@@ -16,7 +16,6 @@ from pyiceberg.types import BinaryType, DecimalType, ListType, NestedField, Time
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.ir import Field, NodeHints, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.jsonschema_to_dlt.converter import JSONSchemaToDlt
 from cdm_data_loaders.converters.readers.dlt import DltReader
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
@@ -66,9 +65,64 @@ def test_emit_pass_legacy_structure_and_dispatch(options: dict[str, Any]) -> Non
         },
     )
     document = JsonSchemaReader().read(source)
-    assert DltEmitter(schema_name="test_source", **options).emit(document) == JSONSchemaToDlt(
-        schema_name="test_source", **options
-    ).convert(source)
+    columns = {
+        "flag": {"name": "flag", "data_type": "text", "nullable": False},
+        "missing": {"name": "missing", "data_type": "json", "nullable": True},
+        "enum_first": {"name": "enum_first", "data_type": "bigint", "nullable": True},
+        "implicit_first": {"name": "implicit_first", "data_type": "double", "nullable": True},
+        "outer_number": {"name": "outer_number", "data_type": "decimal", "nullable": True},
+        "outer_format": {"name": "outer_format", "data_type": "date", "nullable": True},
+    }
+    tables = {
+        "test_source": {
+            "name": "test_source",
+            "description": "root",
+            "columns": columns,
+            "write_disposition": options.get("write_disposition", "append"),
+            "resource": "test_source",
+        }
+    }
+    if options.get("skip_nested_types"):
+        columns.update(
+            {
+                "tags": {"name": "tags", "data_type": "json", "nullable": False},
+                "outer_object": {"name": "outer_object", "data_type": "json", "nullable": True},
+                "deep": {"name": "deep", "data_type": "json", "nullable": True},
+            }
+        )
+    else:
+        child_columns = {
+            "test_source__outer_object": {"outer": {"name": "outer", "data_type": "bigint", "nullable": True}},
+            "test_source__deep": {},
+            "test_source__deep__array": {"leaf": {"name": "leaf", "data_type": "bigint", "nullable": True}},
+        }
+        if options.get("max_nesting") == 1:
+            child_columns["test_source__deep"]["object"] = {"name": "object", "data_type": "json", "nullable": True}
+        else:
+            child_columns["test_source__deep__object"] = {
+                "leaf": {"name": "leaf", "data_type": "bigint", "nullable": True}
+            }
+        if options.get("flatten_scalars") is False:
+            columns["tags"] = {"name": "tags", "data_type": "json", "nullable": False}
+            child_columns["test_source__deep"]["scalars"] = {"name": "scalars", "data_type": "json", "nullable": True}
+        else:
+            child_columns["test_source__tags"] = {"value": {"name": "value", "data_type": "bigint", "nullable": True}}
+            child_columns["test_source__deep__scalars"] = {
+                "value": {"name": "value", "data_type": "bool", "nullable": True}
+            }
+        tables.update(
+            {
+                name: {"name": name, "parent": name.rsplit("__", 1)[0], "columns": values}
+                for name, values in child_columns.items()
+            }
+        )
+    assert DltEmitter(schema_name="test_source", **options).emit(document) == {
+        "name": "test_source",
+        "version": 1,
+        "previous_hashes": [],
+        "engine_version": 11,
+        "tables": tables,
+    }
 
 
 @pytest.mark.parametrize("case_id", ["json-dlt-nested", "json-dlt-union-dynamic"], ids=["nested", "union-dynamic"])
@@ -80,56 +134,56 @@ def test_emit_pass_captured_goldens(case_id: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "prop",
+    ("prop", "expected_type", "child"),
     [
-        True,
-        False,
-        {},
-        {"type": "null"},
-        {"type": "boolean"},
-        {"type": "integer", "minimum": -5, "maximum": 100},
-        {"type": "number"},
-        {"type": "number", "multipleOf": 5},
-        {"type": "number", "multipleOf": "invalid"},
-        {"type": "string"},
-        {"type": "string", "format": "date-time"},
-        {"type": "string", "format": "datetime"},
-        {"type": "string", "format": "timestamp"},
-        {"type": "string", "format": "date"},
-        {"type": "string", "format": "time"},
-        {"type": "string", "format": "byte"},
-        {"type": "string", "format": "binary"},
-        {"type": "string", "format": "base64"},
-        {"type": "string", "format": "uuid"},
-        {"type": "unrecognized"},
-        {"type": ["null"]},
-        {"type": []},
-        {"type": ["null", "integer"]},
-        {"type": ["string", "integer"], "oneOf": [{"type": "boolean"}]},
-        {"enum": []},
-        {"enum": [True, False]},
-        {"enum": [1, 2]},
-        {"enum": [1, 2.5]},
-        {"enum": [1, "mixed"]},
-        {"enum": [None]},
-        {"pattern": "^x"},
-        {"minimum": 1},
-        {"anyOf": [{"type": "number", "multipleOf": 0.1}]},
-        {"type": "integer", "anyOf": [{"type": "string"}]},
-        {"oneOf": [{"type": "boolean"}], "anyOf": [{"type": "integer"}]},
-        {"oneOf": [], "anyOf": [{"type": "boolean"}]},
-        {"anyOf": [False, {"type": "integer"}]},
-        {"anyOf": [True, {"type": "integer"}]},
-        {"type": "object", "oneOf": [{"type": "integer"}]},
-        {"type": "array", "oneOf": [{"type": "integer"}]},
-        {"type": "array", "items": {}},
-        {"type": "array", "items": False},
-        {"type": "array", "items": []},
-        {"type": "array", "items": [{"type": "integer"}, {"type": "string"}]},
-        {"type": "array", "items": {"type": "integer"}, "prefixItems": []},
-        {"type": "array", "prefixItems": [{"type": "boolean"}, {"type": "string"}]},
-        {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}},
-        {"type": "object", "additionalProperties": {"type": "integer"}},
+        (True, "text", False),
+        (False, "text", False),
+        ({}, "text", False),
+        ({"type": "null"}, "text", False),
+        ({"type": "boolean"}, "bool", False),
+        ({"type": "integer", "minimum": -5, "maximum": 100}, "bigint", False),
+        ({"type": "number"}, "double", False),
+        ({"type": "number", "multipleOf": 5}, "decimal", False),
+        ({"type": "number", "multipleOf": "invalid"}, "double", False),
+        ({"type": "string"}, "text", False),
+        ({"type": "string", "format": "date-time"}, "timestamp", False),
+        ({"type": "string", "format": "datetime"}, "timestamp", False),
+        ({"type": "string", "format": "timestamp"}, "timestamp", False),
+        ({"type": "string", "format": "date"}, "date", False),
+        ({"type": "string", "format": "time"}, "time", False),
+        ({"type": "string", "format": "byte"}, "binary", False),
+        ({"type": "string", "format": "binary"}, "binary", False),
+        ({"type": "string", "format": "base64"}, "binary", False),
+        ({"type": "string", "format": "uuid"}, "text", False),
+        ({"type": "unrecognized"}, "text", False),
+        ({"type": ["null"]}, "text", False),
+        ({"type": []}, "text", False),
+        ({"type": ["null", "integer"]}, "bigint", False),
+        ({"type": ["string", "integer"], "oneOf": [{"type": "boolean"}]}, "text", False),
+        ({"enum": []}, "text", False),
+        ({"enum": [True, False]}, "bool", False),
+        ({"enum": [1, 2]}, "bigint", False),
+        ({"enum": [1, 2.5]}, "double", False),
+        ({"enum": [1, "mixed"]}, "text", False),
+        ({"enum": [None]}, "text", False),
+        ({"pattern": "^x"}, "text", False),
+        ({"minimum": 1}, "double", False),
+        ({"anyOf": [{"type": "number", "multipleOf": 0.1}]}, "double", False),
+        ({"type": "integer", "anyOf": [{"type": "string"}]}, "text", False),
+        ({"oneOf": [{"type": "boolean"}], "anyOf": [{"type": "integer"}]}, "bool", False),
+        ({"oneOf": [], "anyOf": [{"type": "boolean"}]}, "bool", False),
+        ({"anyOf": [False, {"type": "integer"}]}, "text", False),
+        ({"anyOf": [True, {"type": "integer"}]}, "text", False),
+        ({"type": "object", "oneOf": [{"type": "integer"}]}, "bigint", False),
+        ({"type": "array", "oneOf": [{"type": "integer"}]}, "bigint", False),
+        ({"type": "array", "items": {}}, "json", False),
+        ({"type": "array", "items": False}, "json", False),
+        ({"type": "array", "items": []}, "json", False),
+        ({"type": "array", "items": [{"type": "integer"}, {"type": "string"}]}, "bigint", True),
+        ({"type": "array", "items": {"type": "integer"}, "prefixItems": []}, "json", False),
+        ({"type": "array", "prefixItems": [{"type": "boolean"}, {"type": "string"}]}, "bool", True),
+        ({"type": "array", "items": {"type": "array", "items": {"type": "integer"}}}, "json", True),
+        ({"type": "object", "additionalProperties": {"type": "integer"}}, None, True),
     ],
     ids=[
         "true-schema",
@@ -183,12 +237,28 @@ def test_emit_pass_captured_goldens(case_id: str) -> None:
     ],
 )
 @pytest.mark.parametrize("required", [False, True], ids=["optional", "required"])
-def test_emit_pass_legacy_property_cases(prop: dict[str, Any] | bool, required: bool) -> None:
+def test_emit_pass_legacy_property_cases(
+    prop: dict[str, Any] | bool, expected_type: str | None, child: bool, required: bool
+) -> None:
     """Scalar, tuple, enum and combiner cases preserve legacy property semantics."""
     source = base_object_schema(properties={"col": prop}, required=["col"] if required else [])
-    assert DltEmitter(schema_name="records").emit(JsonSchemaReader().read(source)) == JSONSchemaToDlt(
-        schema_name="records"
-    ).convert(source)
+    columns = {} if child else {"col": {"name": "col", "data_type": expected_type, "nullable": not required}}
+    tables = {"records": {"name": "records", "columns": columns, "write_disposition": "append", "resource": "records"}}
+    if child:
+        tables["records__col"] = {
+            "name": "records__col",
+            "parent": "records",
+            "columns": {"value": {"name": "value", "data_type": expected_type, "nullable": True}}
+            if expected_type
+            else {},
+        }
+    assert DltEmitter(schema_name="records").emit(JsonSchemaReader().read(source)) == {
+        "name": "records",
+        "version": 1,
+        "engine_version": 11,
+        "previous_hashes": [],
+        "tables": tables,
+    }
 
 
 @pytest.mark.parametrize("mode", ["object", "array"], ids=["object-children", "array-children"])

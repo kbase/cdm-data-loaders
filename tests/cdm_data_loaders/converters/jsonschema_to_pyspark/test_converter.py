@@ -3,6 +3,7 @@
 # ruff: noqa: SLF001
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
+from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
 from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import (
     ConversionContext,
     InvalidJSONSchemaError,
@@ -149,7 +151,7 @@ def test_convert_from_string_fail_invalid_json(converter: JSONSchemaToPySpark) -
     [(".json", json.dumps), (".yaml", yaml.safe_dump)],
 )
 def test_convert_from_file_pass_supported_extensions(
-    converter: JSONSchemaToPySpark, tmp_path: Path, suffix: str, dumper: Any
+    converter: JSONSchemaToPySpark, tmp_path: Path, suffix: str, dumper: Callable[[dict[str, Any]], str]
 ) -> None:
     """convert_from_file() loads both .json and non-.json (YAML) files correctly."""
     schema = base_object_schema(properties={"id": {"type": "integer"}})
@@ -255,18 +257,20 @@ def test_build_metadata_pass_excludes_structural_keywords_even_as_allowed_extra(
 @pytest.mark.parametrize(
     ("extra_keywords", "schema_extra_key", "should_appear"),
     [
-        ({"pattern"}, "pattern", True),  # known standard keyword -> allowed
-        ({"x-pii"}, "x-pii", True),  # vendor 'x-' prefix -> allowed
-        ({"totally-made-up"}, "totally-made-up", False),  # neither -> filtered out
+        ({"pattern"}, "pattern", True),
+        ({"x-pii"}, "x-pii", True),
+        ({"totally-made-up"}, "totally-made-up", False),
     ],
+    ids=["standard", "registered-extension", "unknown-keyword"],
 )
 def test_build_metadata_pass_extra_metadata_keywords_filtering(
     extra_keywords: set[str],
     schema_extra_key: str,
     should_appear: bool,
 ) -> None:
-    """_build_metadata() only honours ctx.allowed_extra_metadata_keywords (standard keywords or 'x-' prefixed)."""
-    converter = JSONSchemaToPySpark(extra_metadata_keywords=extra_keywords)  # pyright: ignore[reportArgumentType]
+    """Metadata selection retains explicitly registered extension values and standard keywords."""
+    registry = DEFAULT_EXTENSIONS.register(ExtensionSpec("x-pii", {"type": "string"}), replace=True)
+    converter = JSONSchemaToPySpark(extra_metadata_keywords=frozenset(extra_keywords), extension_registry=registry)
     ctx = converter._build_context(Draft202012Validator)
     schema = {"type": "string", schema_extra_key: "some-value"}
     metadata = converter._build_metadata(schema, ctx)

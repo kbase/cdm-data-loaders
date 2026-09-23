@@ -66,14 +66,17 @@ class JsonSchemaReader:
     """Read validated object-compatible documents using an explicit extension registry."""
 
     extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
+    error_type: type[ConversionError] = ConversionError
+    converter_name: str = "JsonSchemaReader"
+    dereference_function: str = "dereference_schema"
 
     def read(self, source: Mapping[str, Any]) -> SchemaDocument:
         """Read a document; validation and reference resolution are upstream steps."""
         if not isinstance(source, Mapping):
             msg = "A JSON Schema document must be an object"
-            raise ConversionError(msg)
+            raise self.error_type(msg)
         schema = dict(source)
-        require_schema_keyword(schema, ConversionError, converter_name="JsonSchemaReader")
+        require_schema_keyword(schema, self.error_type, converter_name=self.converter_name)
         declaration = schema.get("type")
         if (
             declaration is not None
@@ -81,7 +84,7 @@ class JsonSchemaReader:
             and not (isinstance(declaration, list) and "object" in declaration)
         ):
             msg = "Root schema must be object-compatible"
-            raise ConversionError(msg)
+            raise self.error_type(msg)
         node = self._node(schema, ())
         return SchemaDocument(
             root=node,
@@ -92,6 +95,10 @@ class JsonSchemaReader:
             provenance=Provenance("json-schema"),
         )
 
+    def read_node(self, source: Mapping[str, Any] | bool) -> TypedNode:  # noqa: FBT001
+        """Read a schema fragment without document-level dialect or root guards."""
+        return self._node(source, ())
+
     def _node(self, schema: object, path: tuple[str | int, ...]) -> TypedNode:
         """Traverse only schema-valued keywords, leaving literal data untouched."""
         provenance = Provenance("json-schema", path)
@@ -99,11 +106,16 @@ class JsonSchemaReader:
             return TypedNode(type="any" if schema else "never", nullable=schema, provenance=provenance)
         if not isinstance(schema, Mapping):
             msg = f"Expected a schema object or boolean at {path}"
-            raise ConversionError(msg)
-        reject_unresolved_references(dict(schema), ConversionError, converter_name="JsonSchemaReader")
+            raise self.error_type(msg)
+        reject_unresolved_references(
+            dict(schema),
+            self.error_type,
+            converter_name=self.converter_name,
+            dereference_function=self.dereference_function,
+        )
         if "$dynamicRef" in schema or "$recursiveRef" in schema:
             msg = f"Unresolved dynamic reference at {path}"
-            raise ConversionError(msg)
+            raise self.error_type(msg)
         declaration = schema.get("type")
         inferred = infer_implicit_type(dict(schema))
         kind = declaration if isinstance(declaration, str) and declaration in _TYPES else "unknown"

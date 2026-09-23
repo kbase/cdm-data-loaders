@@ -11,6 +11,7 @@ from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, Extension
 from cdm_data_loaders.converters.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
 
 logger = logging.getLogger(__name__)
+DLT_INTERNAL_PREFIX: Final = "_dlt_"
 _TYPES: Final[dict[str, NodeType]] = {
     "text": "string",
     "bigint": "integer",
@@ -49,9 +50,18 @@ class DltReader:
         if not isinstance(source, Mapping):
             msg = "Expected a dlt stored schema or tables mapping"
             raise ConversionError(msg)
-        tables = source.get("tables", source)
-        if not isinstance(tables, Mapping) or not tables:
-            msg = "The schema contains no tables"
+        if "tables" in source and isinstance(source["tables"], Mapping):
+            tables = source["tables"]
+        elif all(isinstance(value, Mapping) and ("columns" in value or "parent" in value) for value in source.values()):
+            tables = source
+        else:
+            msg = (
+                "Input must be a dlt stored schema (with a 'tables' dict) or a "
+                "{table_name: TTableSchema} mapping; no tables found."
+            )
+            raise ConversionError(msg)
+        if not tables:
+            msg = "The schema contains no tables."
             raise ConversionError(msg)
         roots = unflatten_tables(tables)
         envelope = {key: value for key, value in source.items() if key != "tables"} if "tables" in source else {}
@@ -79,7 +89,7 @@ class DltReader:
         return {
             name: column
             for name, column in table.table.get("columns", {}).items()
-            if (self.include_dlt_columns or not name.startswith("_dlt_"))
+            if (self.include_dlt_columns or not name.startswith(DLT_INTERNAL_PREFIX))
             and (self.include_variant_columns or "__v_" not in name)
         }
 

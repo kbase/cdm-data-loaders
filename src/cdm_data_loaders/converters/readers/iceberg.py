@@ -81,6 +81,7 @@ class IcebergReader:
     """Read physical/logical types separately from JSON rendering conventions."""
 
     extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
+    mapping_target: str = "IR"
 
     def read(self, source: Schema) -> SchemaDocument:
         """Build a structural root from an Iceberg Schema."""
@@ -129,6 +130,14 @@ class IcebergReader:
             extensions=Extensions({"x-iceberg": iceberg}, self.extension_registry),
             provenance=Provenance("iceberg", identifier, _metadata(metadata.model_dump(mode="python", by_alias=True))),
         )
+
+    def read_node(self, source: IcebergType) -> TypedNode:
+        """Read a type without fabricating a schema document."""
+        return self._type(source, ())
+
+    def read_field(self, source: NestedField) -> Field:
+        """Read a standalone field with its name as the provenance path."""
+        return self._field(source, (source.name,))
 
     def _field(self, source: NestedField, path: tuple[str | int, ...]) -> Field:
         """Keep field defaults and descriptions outside the nullable type node."""
@@ -215,5 +224,5 @@ class IcebergReader:
                     self.extension_registry,
                 ),
             )
-        msg = f"No IR mapping for Iceberg type: {source}"
+        msg = f"No {self.mapping_target} mapping for Iceberg type: {source}"
         raise NotImplementedError(msg)

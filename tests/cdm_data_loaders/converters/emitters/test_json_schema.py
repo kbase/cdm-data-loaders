@@ -39,7 +39,6 @@ from cdm_data_loaders.converters.dlt_to_jsonschema.converter import DltToJSONSch
 from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter, decimal_pattern
 from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionError, Extensions, ExtensionSpec
 from cdm_data_loaders.converters.ir import Field, NodeHints, Provenance, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.pyiceberg_to_jsonschema.converter import convert_struct, table_to_json_schema
 from cdm_data_loaders.converters.pyiceberg_to_jsonschema.converter import decimal_pattern as legacy_decimal_pattern
 from cdm_data_loaders.converters.readers.dlt import DltReader
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader
@@ -52,6 +51,21 @@ CASES: Final[list[dict[str, Any]]] = [
     for case in json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     if case["route"] in {"dlt-json", "iceberg-json"}
 ]
+
+DLT_EXPECTED: Final[dict[str | None, dict[str, Any]]] = {
+    None: {},
+    "json": {},
+    "text": {"type": "string"},
+    "bigint": {"type": "integer"},
+    "double": {"type": "number"},
+    "bool": {"type": "boolean"},
+    "decimal": {"type": "string", "pattern": r"^-?\d+(\.\d+)?$", "x-dlt": {"data_type": "decimal"}},
+    "timestamp": {"type": "string", "format": "date-time", "x-dlt": {"data_type": "timestamp"}},
+    "date": {"type": "string", "format": "date"},
+    "time": {"type": "string", "format": "time"},
+    "binary": {"type": "string", "contentEncoding": "base64"},
+    "wei": {"type": "integer", "x-dlt": {"data_type": "wei"}},
+}
 
 
 @pytest.mark.parametrize(
@@ -86,10 +100,26 @@ def test_emit_pass_dlt_scalar_compatibility(data_type: str | None, nullable: boo
         }
     }
     document = DltReader().read(source)["records"]
-    assert (
-        JsonSchemaEmitter(preserve_unknown_hints=preserve).emit(document)
-        == DltToJSONSchema(preserve_unknown_hints=preserve).convert(source)["records"]
-    )
+    plain = deepcopy(DLT_EXPECTED[data_type])
+    hinted = deepcopy(plain)
+    hinted.setdefault("x-dlt", {}).update({"precision": None, "scale": 2})
+    hinted["description"] = None
+    if preserve:
+        hinted["x-dlt"]["primary_key"] = True
+    expected = {
+        "$schema": JSON_SCHEMA_DIALECT,
+        "$id": "urn:dlt:records",
+        "title": "records",
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "plain": {"anyOf": [plain, {"type": "null"}]} if nullable and plain else plain,
+            "hinted": {"anyOf": [hinted, {"type": "null"}]} if nullable else hinted,
+        },
+    }
+    if nullable is False:
+        expected["required"] = ["plain", "hinted"]
+    assert JsonSchemaEmitter(preserve_unknown_hints=preserve).emit(document) == expected
 
 
 @pytest.mark.parametrize("case", CASES, ids=[case["id"] for case in CASES])
@@ -108,23 +138,54 @@ def test_emit_pass_fixed_corpus(case: dict[str, Any]) -> None:
 
 
 @pytest.mark.parametrize(
-    "field_type",
+    ("field_type", "scalar"),
     [
-        BooleanType(),
-        IntegerType(),
-        LongType(),
-        FloatType(),
-        DoubleType(),
-        StringType(),
-        DateType(),
-        TimeType(),
-        UUIDType(),
-        TimestampType(),
-        TimestamptzType(),
-        DecimalType(10, 2),
-        DecimalType(2, 2),
-        DecimalType(10, 0),
-        FixedType(16),
+        (BooleanType(), {"type": "boolean"}),
+        (IntegerType(), {"type": "integer", "minimum": -2147483648, "maximum": 2147483647}),
+        (LongType(), {"type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807}),
+        (FloatType(), {"type": "number"}),
+        (DoubleType(), {"type": "number"}),
+        (StringType(), {"type": "string"}),
+        (DateType(), {"type": "string", "format": "date"}),
+        (TimeType(), {"type": "string", "format": "time"}),
+        (UUIDType(), {"type": "string", "format": "uuid"}),
+        (
+            TimestampType(),
+            {
+                "type": "string",
+                "description": "ISO 8601 timestamp with no timezone attached.",
+                "x-iceberg": {"logical_type": "timestamp-without-tz"},
+            },
+        ),
+        (TimestamptzType(), {"type": "string", "format": "date-time"}),
+        (
+            DecimalType(10, 2),
+            {
+                "type": "string",
+                "pattern": r"^-?\d{1,8}(\.\d{1,2})?$",
+                "x-iceberg": {"logical_type": "decimal", "precision": 10, "scale": 2},
+            },
+        ),
+        (
+            DecimalType(2, 2),
+            {
+                "type": "string",
+                "pattern": r"^-?0(\.\d{1,2})?$",
+                "x-iceberg": {"logical_type": "decimal", "precision": 2, "scale": 2},
+            },
+        ),
+        (
+            DecimalType(10, 0),
+            {
+                "type": "string",
+                "pattern": r"^-?\d{1,10}$",
+                "x-iceberg": {"logical_type": "decimal", "precision": 10, "scale": 0},
+            },
+        ),
+        (
+            FixedType(16),
+            {"type": "string", "contentEncoding": "base64", "x-iceberg": {"logical_type": "fixed", "length": 16}},
+        ),
     ],
     ids=[
         "boolean",
@@ -147,15 +208,23 @@ def test_emit_pass_fixed_corpus(case: dict[str, Any]) -> None:
 @pytest.mark.parametrize("required", [True, False], ids=["required", "optional"])
 @pytest.mark.parametrize("description", [None, "", "field documentation"], ids=["no-doc", "empty-doc", "doc"])
 def test_emit_pass_iceberg_scalar_compatibility(
-    field_type: IcebergType, required: bool, description: str | None
+    field_type: IcebergType, scalar: dict[str, Any], required: bool, description: str | None
 ) -> None:
     """Scalar types and field descriptions retain exact metadata and null-wrapper placement."""
     schema = Schema(NestedField(1, "value", field_type, required=required, doc=description))
+    value = deepcopy(scalar) if required else {"anyOf": [deepcopy(scalar), {"type": "null"}]}
+    value.setdefault("x-iceberg", {}).update({"field_id": 1, "required": required})
+    if description:
+        value["description"] = description
     expected = {
-        **convert_struct(schema.fields),
+        "type": "object",
+        "properties": {"value": value},
+        "additionalProperties": False,
         "$schema": JSON_SCHEMA_DIALECT,
         "x-iceberg": {"schema_id": schema.schema_id, "identifier_field_ids": []},
     }
+    if required:
+        expected["required"] = ["value"]
     assert JsonSchemaEmitter().emit(IcebergReader().read(schema)) == expected
 
 
@@ -192,9 +261,71 @@ def test_emit_pass_iceberg_nested_compatibility(
     )
     identifier = ("namespace", "records")
     table = make_table(identifier, schema, properties={"comment": description or ""})
-    assert JsonSchemaEmitter().emit(IcebergReader().read_table(table, identifier)) == table_to_json_schema(
-        table, identifier
-    )
+    timestamp = {
+        "type": "string",
+        "description": "ISO 8601 timestamp with no timezone attached.",
+        "x-iceberg": {"logical_type": "timestamp-without-tz"},
+    }
+    amount = {
+        "type": "string",
+        "pattern": r"^-?\d{1,6}(\.\d{1,3})?$",
+        "x-iceberg": {"logical_type": "decimal", "precision": 9, "scale": 3},
+    }
+    amount = amount if required else {"anyOf": [amount, {"type": "null"}]}
+    amount.setdefault("x-iceberg", {}).update({"field_id": 6, "required": required})
+    if description:
+        amount["description"] = description
+    value = {"type": "object", "properties": {"amount": amount}, "additionalProperties": False}
+    if required:
+        value["required"] = ["amount"]
+    properties = {
+        "list": {
+            "type": "array",
+            "items": timestamp if elements_required else {"anyOf": [timestamp, {"type": "null"}]},
+        },
+        "map": {
+            "type": "array",
+            "description": "Iceberg map rendered as key/value pairs (JSON object keys must be strings).",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647},
+                    "value": value if elements_required else {"anyOf": [value, {"type": "null"}]},
+                },
+                "required": ["key", "value"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    for name, field_id in (("list", 1), ("map", 2)):
+        if not required:
+            properties[name] = {"anyOf": [properties[name], {"type": "null"}]}
+        properties[name]["x-iceberg"] = {"field_id": field_id, "required": required}
+        if description:
+            properties[name]["description"] = description
+    expected = {
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": False,
+        "$schema": JSON_SCHEMA_DIALECT,
+        "$id": "urn:iceberg:namespace.records",
+        "title": "records",
+        "x-iceberg": {
+            "identifier": ["namespace", "records"],
+            "schema_id": table.schema().schema_id,
+            "format_version": table.metadata.format_version,
+            "current_snapshot_id": None,
+            "location": "file:///tmp/namespace/records",
+            "properties": {"comment": description or ""},
+            "partition_spec": [],
+            "identifier_field_ids": [],
+        },
+    }
+    if required:
+        expected["required"] = ["list", "map"]
+    if description:
+        expected["description"] = description
+    assert JsonSchemaEmitter().emit(IcebergReader().read_table(table, identifier)) == expected
 
 
 @pytest.mark.parametrize(
@@ -367,11 +498,59 @@ def test_emit_pass_dlt_nested_compatibility(
         include_dlt_columns=include_internal,
         include_variant_columns=include_variants,
     ).read(source)
-    expected = DltToJSONSchema(
-        child_table_mode=mode,
-        include_dlt_columns=include_internal,
-        include_variant_columns=include_variants,
-    ).convert(source)
+    values = {"type": "array", "items": {}, "description": "values"}
+    if include_internal:
+        values_object = {
+            "type": "object",
+            "properties": {"value": {}, "_dlt_id": {"type": "string"}},
+            "required": ["_dlt_id"],
+            "additionalProperties": False,
+        }
+        values = {"type": "array", "items": values_object} if mode == "array" else values_object
+        values["description"] = "values"
+    child = {
+        "type": "object",
+        "properties": {"name": {"type": "string", "description": "name"}, "values": values},
+        "required": ["name", "values"] if include_internal else ["name"],
+        "additionalProperties": False,
+    }
+    child = {"type": "array", "items": child} if mode == "array" else child
+    child["description"] = None
+    descendant = {
+        "type": "object",
+        "properties": {"required": {"type": "array", "items": {"type": "boolean"}}},
+        "required": ["required"],
+        "additionalProperties": False,
+    }
+    properties = {"child": child}
+    required = ["child"]
+    for name, include in (("_dlt_id", include_internal), ("extra__v_text", include_variants)):
+        if include:
+            properties[name] = {"type": "string"}
+            required.append(name)
+    properties["descendant"] = {"type": "array", "items": descendant} if mode == "array" else descendant
+    required.append("child")
+    expected = {
+        "root": {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": False,
+            "description": "root",
+            "$schema": JSON_SCHEMA_DIALECT,
+            "$id": "urn:dlt:root",
+            "title": "root",
+        },
+        "empty": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+            "description": "",
+            "$schema": JSON_SCHEMA_DIALECT,
+            "$id": "urn:dlt:empty",
+            "title": "empty",
+        },
+    }
     actual = {name: JsonSchemaEmitter().emit(document) for name, document in documents.items()}
     assert actual == expected
     assert actual["root"]["required"].count("child") == len(("column", "child-table"))
@@ -409,12 +588,30 @@ def test_emit_pass_dlt_hint_combinations(hints: dict[str, Any], data_type: str |
     """Absent and null hints remain distinct without leaking source column keys."""
     source = {"records": {"columns": {"value": {"data_type": data_type, **hints}}}}
     document = DltReader().read(source)["records"]
-    assert (
-        JsonSchemaEmitter(preserve_unknown_hints=preserve).emit(document)
-        == DltToJSONSchema(
-            preserve_unknown_hints=preserve,
-        ).convert(source)["records"]
+    value = deepcopy(DLT_EXPECTED[data_type])
+    precision = {
+        "absent": {},
+        "precision": {"precision": hints.get("precision")},
+        "scale": {"precision": hints.get("precision"), "scale": hints.get("scale")},
+    }
+    precision_key = (
+        "scale" if hints.get("scale") is not None else "precision" if hints.get("precision") is not None else "absent"
     )
+    if precision[precision_key]:
+        value.setdefault("x-dlt", {}).update(precision[precision_key])
+    if "description" in hints:
+        value["description"] = hints["description"]
+    if preserve and "timezone" in hints:
+        value.setdefault("x-dlt", {}).update({"timezone": False, "unique": False})
+    expected = {
+        "type": "object",
+        "properties": {"value": {"anyOf": [value, {"type": "null"}]} if value else {}},
+        "additionalProperties": False,
+        "$schema": JSON_SCHEMA_DIALECT,
+        "$id": "urn:dlt:records",
+        "title": "records",
+    }
+    assert JsonSchemaEmitter(preserve_unknown_hints=preserve).emit(document) == expected
 
 
 @pytest.mark.parametrize("required", [True, False], ids=["required", "optional"])
@@ -430,8 +627,21 @@ def test_emit_pass_iceberg_decimal_defaults(required: bool, default: Decimal | N
     )
     document = IcebergReader().read(schema)
     result = JsonSchemaEmitter().emit(document)
+    scalar = {
+        "type": "string",
+        "pattern": r"^-?\d{1,19}(\.\d{1,19})?$",
+        "x-iceberg": {"logical_type": "decimal", "precision": 38, "scale": 19},
+    }
+    value = scalar if required else {"anyOf": [scalar, {"type": "null"}]}
+    metadata = {"field_id": 1, "required": required}
+    if default is not None:
+        metadata.update({"initial_default": default, "write_default": default})
+    value.setdefault("x-iceberg", {}).update(metadata)
     assert result == {
-        **convert_struct(schema.fields),
+        "type": "object",
+        "properties": {"amount": value},
+        "additionalProperties": False,
+        **({"required": ["amount"]} if required else {}),
         "$schema": JSON_SCHEMA_DIALECT,
         "x-iceberg": {"schema_id": schema.schema_id, "identifier_field_ids": []},
     }
@@ -448,7 +658,27 @@ def test_emit_pass_registered_dlt_extensions(preserve: bool) -> None:
     source = {"records": {"columns": {"value": {"data_type": "timestamp", "x-vendor-hint": [1, 2]}}}}
     document = DltReader(extension_registry=registry).read(source)["records"]
     emitter = JsonSchemaEmitter(preserve_unknown_hints=preserve)
-    expected = DltToJSONSchema(preserve_unknown_hints=preserve).convert(source)["records"]
+    hints = {"data_type": "timestamp"}
+    if preserve:
+        hints["x-vendor-hint"] = [1, 2]
+    expected = {
+        "type": "object",
+        "properties": {
+            "value": {
+                "anyOf": [
+                    {"type": "string", "format": "date-time", "x-dlt": hints},
+                    {"type": "null"},
+                ]
+            }
+        },
+        "additionalProperties": False,
+        "$schema": JSON_SCHEMA_DIALECT,
+        "$id": "urn:dlt:records",
+        "title": "records",
+    }
+    assert DltToJSONSchema(preserve_unknown_hints=preserve, extension_registry=registry).convert(source) == {
+        "records": expected,
+    }
     result = emitter.emit(document)
     assert result == expected
     result["properties"]["value"]["anyOf"][0]["x-dlt"]["x-vendor-hint"] = [3]
@@ -532,9 +762,10 @@ def test_json_schema_emitter_fail_nonboolean_policy(policy: object) -> None:
 
 @pytest.mark.parametrize("precision", [1, 2, 10, 38], ids=["one-digit", "two-digits", "ten-digits", "max-precision"])
 def test_decimal_pattern_pass_legacy_equivalence(precision: int) -> None:
-    """Every valid scale produces the unchanged decimal pattern."""
-    for scale in range(precision + 1):
-        assert decimal_pattern(precision, scale) == legacy_decimal_pattern(precision, scale)
+    """The public decimal helper is an alias and boundary patterns remain fixed."""
+    assert decimal_pattern is legacy_decimal_pattern
+    assert decimal_pattern(precision, 0) == rf"^-?\d{{1,{precision}}}$"
+    assert decimal_pattern(precision, precision) == rf"^-?0(\.\d{{1,{precision}}})?$"
 
 
 def test_emit_pass_typed_tree_over_provenance() -> None:
@@ -558,7 +789,18 @@ def test_emit_pass_sibling_and_call_isolation(logical: str) -> None:
     original = deepcopy(source)
     document = DltReader().read(source)["records"]
     emitter = JsonSchemaEmitter()
-    expected = DltToJSONSchema().convert(source)["records"]
+    plain = deepcopy(DLT_EXPECTED[logical])
+    hinted = deepcopy(plain)
+    hinted["x-dlt"].update({"precision": None, "scale": 2, "primary_key": True})
+    expected = {
+        "type": "object",
+        "properties": {"hinted": hinted, "plain": plain},
+        "required": ["hinted", "plain"],
+        "additionalProperties": False,
+        "$schema": JSON_SCHEMA_DIALECT,
+        "$id": "urn:dlt:records",
+        "title": "records",
+    }
     result = emitter.emit(document)
     result["properties"]["hinted"]["x-dlt"]["data_type"] = "changed"
     assert result["properties"]["plain"] == expected["properties"]["plain"]

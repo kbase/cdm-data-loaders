@@ -6,6 +6,7 @@ from typing import Literal, Protocol
 
 from frozendict import frozendict
 
+from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.extensions import validated_extensions
 from cdm_data_loaders.converters.ir_values import Value, freeze_mapping
 
@@ -110,7 +111,7 @@ class TypedNode:
             object.__setattr__(self, "required_names", _string_tuple(self.required_names))
         self._own_children()
         for name in ("constraints", "annotations"):
-            object.__setattr__(self, name, freeze_mapping(getattr(self, name)))
+            object.__setattr__(self, name, _schema_metadata(getattr(self, name)))
         object.__setattr__(self, "extensions", validated_extensions(self.extensions))
 
     def _validate_types(self) -> None:
@@ -167,6 +168,16 @@ class TypedNode:
         )
 
 
+def _schema_metadata(values: Mapping[str, Value]) -> Mapping[str, Value]:
+    """Own schema metadata without accepting alternate extension declarations."""
+    owned = freeze_mapping(values)
+    for name in owned:
+        if name.startswith("x-"):
+            msg = f"Extension namespace {name} must use extensions"
+            raise ConversionError(msg)
+    return owned
+
+
 def _string_tuple(values: tuple[str, ...]) -> tuple[str, ...]:
     """Own ordered string declarations without accepting a scalar string."""
     if not isinstance(values, (list, tuple)) or any(not isinstance(value, str) for value in values):
@@ -215,7 +226,7 @@ class Field:
             msg = "Fields require a string name, node and boolean required flag"
             raise TypeError(msg)
         _validate_provenance(self.provenance)
-        object.__setattr__(self, "annotations", freeze_mapping(self.annotations))
+        object.__setattr__(self, "annotations", _schema_metadata(self.annotations))
         object.__setattr__(self, "extensions", validated_extensions(self.extensions))
 
 
@@ -241,7 +252,7 @@ class SchemaDocument:
             if getattr(self, name) is not None and not isinstance(getattr(self, name), str):
                 msg = f"{name} must be a string or None"
                 raise TypeError(msg)
-        object.__setattr__(self, "annotations", freeze_mapping(self.annotations))
+            object.__setattr__(self, "annotations", _schema_metadata(self.annotations))
         object.__setattr__(self, "extensions", validated_extensions(self.extensions))
 
 
