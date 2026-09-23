@@ -53,80 +53,23 @@ src/cdm_data_loaders/converters/
 
 ## The IR
 
-A single pydantic model, frozen, mirroring the repo's existing conventions. The `hints` slot
-formalizes what the current code smuggles through `x-dlt` / `x-iceberg` blocks.
+Phase 3's implemented specification and complete public signatures are in
+[converters_ir.md](converters_ir.md). Frozen dataclasses separate `SchemaDocument`,
+`TypedNode` and `Field`; all metadata is deeply owned and immutable. Presence and value
+nullability are independent. Declared types, union lists, inference, ordered branches,
+schema-valued children and literal constraints remain available without choosing target policy.
 
-```python
-NodeType = Literal["object", "map", "array", "string", "integer", "number",
-                   "boolean", "null", "any", "never"]
+`any`, `never`, `null` and `unknown` are distinct. Iceberg maps differ from JSON dynamic
+objects. Decimal precision/scale are numeric source facts; string patterns belong to emitters.
+dlt timestamps are not inherently timezone-naive, and bigint precision can represent width.
+The old converters' discarded hints are legacy lossiness, not source-format limitations.
+dlt child-table object/array ambiguity is resolved and recorded at the reader boundary.
 
-class NodeHints(BaseModel):
-    format: str | None = None          # date, date-time, time, uuid, ...
-    pattern: str | None = None         # decimal pattern from precision/scale
-    enum: tuple[Any, ...] | None = None
-    precision: int | None = None
-    scale: int | None = None
-    logical_type: str | None = None    # dlt 'timestamp'/'decimal'/'wei', iceberg 'fixed', ...
-    extensions: dict[str, Any] = {}    # validated x-* keyed vendor data (see below)
-
-class TypedNode(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    name: str
-    type: NodeType
-    nullable: bool = True
-    required: bool = False
-    description: str | None = None
-    hints: NodeHints = Field(default_factory=NodeHints)
-    children: tuple[TypedNode, ...] = ()   # object properties, declaration order
-    items: TypedNode | None = None         # array element type
-    key_type: TypedNode | None = None      # map key (iceberg MapType)
-    value_type: TypedNode | None = None    # map value (iceberg MapType / PySpark MapType)
-```
-
-Type vocabulary decisions:
-
-- Base types are JSON-Schema-ish (`string`, `integer`, `number`, `boolean`) because two of the
-  three emitters are JSON-Schema-descended; dlt/iceberg refinements live in `hints.logical_type`.
-- `any` and `never` are first-class, corresponding to JSON Schema's boolean `true`/`false`
-  schemas. Emitters decide their own fallback (`treat_unknown_as_string` stays a PySpark-emitter
-  option); the IR no longer pretends they are strings.
-- `map` is separate from `object`: PySpark MapType and iceberg MapType are dynamic-key
-  structures that the JSON-Schema emitter renders as arrays of key/value pairs (the existing
-  `pyiceberg_to_jsonschema` convention).
-- Keeping `enum` values in the IR is a deliberate improvement: both current converters use enum
-  values only for type inference and then discard them. Emitters may now re-emit them; default
-  behavior stays unchanged until the emitters opt in.
-
-Known lossiness (recorded here so tests encode it rather than discover it):
-
-- dlt's stored schema cannot distinguish a nested dict from a list of objects; both flatten to
-  child tables. `DltReader` records `logical_type`-adjacent evidence in `hints.extensions`
-  (e.g. `{"x-dlt": {"child_table": true}}`) and the JSON-Schema emitter's `child_table_mode`
-  option decides object-vs-array, exactly as today. No IR can recover information the source
-  format never recorded.
-- dlt `timestamp` is timezone-naive; iceberg `Timestamptz` is aware. `hints.logical_type`
-  distinguishes them; the draft 2020-12 emitter renders both as `format: date-time` strings
-  (current behavior).
-- dlt has one integer type (`bigint`); int32-vs-int64 width hints from the PySpark side are not
-  representable and are dropped (current behavior).
-- `max_nesting`, `skip_nested_types`, `flatten_scalars` (JSONSchemaToDlt) become DltEmitter
-  options with identical defaults.
-
-Extension-key validation (decision settled): `NodeHints.extensions` is a validated `x-*` keyed
-mapping, reusing the repo's existing validated-extension idiom:
-
-- `readers/jsonschema_xsv/xsv_validator/custom_metaschema.py` defines the pattern: a typed
-  sub-schema for the extension block with `additionalProperties: False`, per-key typed
-  properties, and a required-key `anyOf`. The IR's `extensions` gets the equivalent treatment:
-  keys must start with `x-`, and values are either scalars or nested `x-*`-keyed mappings,
-  mirroring the `{"x-dlt": {...}}` / `{"x-iceberg": {...}}` blocks the current converters emit.
-- `readers/jsonschema_xsv/xsv_validator/schema_utils.py` provides the consumer-side key
-  transformation to reuse: `k.replace("x-", "").replace("-", "_")`, the same convention
-  `get_schema_parsing_metadata` uses to turn `x-has-header` into `has_header`.
-- A pydantic field validator on `NodeHints.extensions` enforces the key pattern and rejects
-  values colliding with first-class `NodeHints` fields, so malformed vendor data fails loudly at
-  reader construction rather than silently at emit time.
+Extensions use an immutable registry of exact namespace names and JSON validation schemas.
+Only namespace names require `x-`; internal keys are ordinary names, arrays/null are allowed
+by their schemas, and key spelling is never transformed. Unknown namespaces and payload
+keys fail unless explicitly registered. `x-xsv-config` reuses the exact existing schema.
+This is deliberately stricter than unchanged pre-phase-5 facades. Logging uses module loggers.
 
 ## Phase 0: inventory existing code for reusable logic
 
@@ -285,36 +228,24 @@ modules have 100% statement and branch coverage in focused helper tests. Targete
 separate formatting, editor diagnostics, and diff whitespace checks passed. No extension
 validation or remaining IR-phase design changes are part of Phase 2.
 
-## Phase 3: the IR and readers
+## Phase 3: completed - IR, extension contracts and readers
 
-Goal: introduce `ir.py` and convert three sources into it.
+Added `ir.py`, `ir_values.py`, `extensions.py` and three reader modules. JSON reading is
+schema-aware, not a generic scan of literal data. dlt uses `unflatten_tables` and retains
+source metadata alongside real typed children. Iceberg supports Schema and loaded Table
+envelopes with separate field/type/root metadata scopes and exact Decimal handling.
 
-- `converters/ir.py`: `NodeType`, `NodeHints`, `TypedNode` as specified above.
-- `converters/readers/json_schema.py`: `JsonSchemaReader(treat_unknown_as_string=...)`. Input is
-  a dereferenced document (the dereferencer stays the prep step; the reader runs the phase-1
-  guards defensively). Walks properties/required, recurses into objects and arrays-of-objects,
-  produces `TypedNode` trees. `true` -> `type="any"`, `false` -> `type="never"`.
-- `converters/readers/dlt.py`: `DltReader(include_dlt_columns=..., include_variant_columns=...)`.
-  Filters `_dlt_*` and variant columns (moved from `DltToJSONSchema._skip_column`), then maps
-  `TYPE_MAP` dtypes to IR types + hints (`decimal` -> `string` + precision/scale + pattern,
-  `timestamp` -> `string` + `logical_type: timestamp`, `binary` -> `string` + base64 hint, `wei`
-  -> `integer` + `logical_type: wei`).
-- `converters/readers/iceberg.py`: `IcebergReader()`. Moves the iceberg-type-to-node mapping
-  from `pyiceberg_to_jsonschema` (`TYPE_CONVERTER` walk), preserving precision/scale pattern
-  generation and the timestamp-without-tz logical type.
-
-Tests: per-reader unit tests plus an equivalence test per existing converter: for a corpus of
-fixture schemas, `reader(x)` must reproduce the same decisions the current monolith makes
-(type, nullability, child structure). Fixtures: the existing test data for the three converters,
-extended where coverage is thin (map types, scalar-value child tables, boolean schemas).
-
-Exit criteria: equivalence tests green; no emitter changes yet (the monoliths still produce the
-outputs).
+Seven legacy cases in `tests/data/converters/ir/legacy_outputs.json` capture all four routes
+before rewiring: stored dlt dictionaries, Spark `jsonValue()` and JSON Schema documents.
+The corpus tests exact structured legacy outputs independently of reader facts. New tests
+exercise frozen models, extension contracts, branches, tuples, filtering, cycles and metadata.
+Facades, emitters and row reconstruction remain unchanged. See the implemented specification
+for validation results, limitations and direct-IR emitter guidance.
 
 ## Phase 4: emitters
 
-- `converters/emitters/json_schema.py`: `JsonSchemaEmitter(child_table_mode=...,
-  preserve_unknown_hints=...)`. Renders `TypedNode` trees to draft 2020-12: nullable ->
+- `converters/emitters/json_schema.py`: `JsonSchemaEmitter(preserve_unknown_hints=...)`.
+  Child-table mode is resolved by the reader. Renders `TypedNode` trees to draft 2020-12: nullable ->
   `anyOf: [<type>, {"type": "null"}]`, hints -> `x-dlt`/`x-iceberg` blocks, root-level `$schema`
   / `$id` / `title`. Consumed by both `dlt_to_jsonschema` and `pyiceberg_to_jsonschema` facades.
 - `converters/emitters/dlt.py`: `DltEmitter(schema_name=..., skip_nested_types=..., max_nesting=...,
@@ -324,13 +255,12 @@ outputs).
   extra_metadata_keywords=...)`. Renders StructType/StructField metadata exactly as
   `_build_metadata` does today (title under `jsonschema`, description as `comment`).
 
-Tests: golden-output equivalence against the current monoliths' outputs for the full fixture
-corpus (write goldens from current behavior in the phase-3 PR so drift is reviewable). Round-trip
-invariants: `dlt -> IR -> dlt` stable modulo the recorded lossiness; `json -> IR -> json` stable
-for schemas that use no unsupported constructs.
+Tests: compare emitter outputs to the fixed phase-3 corpus and existing precise tests.
+Round-trip invariants apply only modulo explicitly supported behavior and source lossiness;
+reader preservation does not imply unsupported JSON keywords survive target conversion.
 
-Exit criteria: all four facades produce byte-identical JSON/YAML/`TStoredSchema`/`StructType`
-outputs to the pre-refactor code on the fixture corpus.
+Exit criteria: direct reader/emitter compositions match legacy structured outputs on the
+corpus. Facades remain unchanged until phase 5. Do not claim general JSON/YAML byte identity.
 
 ## Phase 5: facades and cleanup
 
@@ -368,9 +298,9 @@ dlt/iceberg dependency upgrades, no changes to the dereferencer's behavior.
 
 Settled (2026-09):
 
-- `NodeHints.extensions` is a validated `x-*` keyed mapping, not a pass-through dict. The
-  validation approach and the reused `custom_metaschema.py` / `schema_utils.py` patterns are
-  specified under "Extension-key validation" above.
+- Extensions on nodes, fields and documents are schema-validated immutable mappings.
+  Namespaces and payload keys have distinct contracts; no `schema_utils.py` key rewriting
+  is used. Custom namespaces need explicit schemas in the reader's registry.
 - Warning behavior stays on module-level `logging` rather than an injectable callback:
   logging is for communicating with the user, the current converters already emit these messages
   through `logger.warning`, and no current consumer needs to intercept them. An injectable would
