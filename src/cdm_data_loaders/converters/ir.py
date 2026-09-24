@@ -252,7 +252,7 @@ class SchemaDocument:
             if getattr(self, name) is not None and not isinstance(getattr(self, name), str):
                 msg = f"{name} must be a string or None"
                 raise TypeError(msg)
-            object.__setattr__(self, "annotations", _schema_metadata(self.annotations))
+        object.__setattr__(self, "annotations", _schema_metadata(self.annotations))
         object.__setattr__(self, "extensions", validated_extensions(self.extensions))
 
 

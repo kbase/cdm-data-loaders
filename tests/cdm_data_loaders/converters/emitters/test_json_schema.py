@@ -732,7 +732,7 @@ def test_emit_fail_unknown_dlt_type() -> None:
 )
 def test_emit_fail_unsupported_iceberg_types(field_type: IcebergType) -> None:
     """Binary emission and unsupported nanosecond types retain explicit unsupported errors."""
-    with pytest.raises(NotImplementedError, match=r"No (JSON Schema|IR) mapping for Iceberg type"):
+    with pytest.raises(ConversionError, match=r"No (JSON Schema|IR) mapping for Iceberg type"):
         JsonSchemaEmitter().emit(IcebergReader().read(Schema(NestedField(1, "value", field_type))))
 
 
@@ -741,15 +741,23 @@ def test_emit_fail_unsupported_iceberg_types(field_type: IcebergType) -> None:
     [
         TypedNode("unknown"),
         TypedNode("map"),
+        TypedNode("map", provenance=Provenance("iceberg")),
         TypedNode("number", hints=NodeHints(logical_type="decimal"), provenance=Provenance("iceberg")),
         TypedNode("string", hints=NodeHints(logical_type="fixed"), provenance=Provenance("iceberg")),
         TypedNode("unknown", hints=NodeHints(logical_type="timestamp_ns"), provenance=Provenance("iceberg")),
     ],
-    ids=["unknown", "incomplete-map", "incomplete-decimal", "incomplete-fixed", "iceberg-nano"],
+    ids=[
+        "unknown",
+        "incomplete-map",
+        "incomplete-iceberg-map",
+        "incomplete-decimal",
+        "incomplete-fixed",
+        "iceberg-nano",
+    ],
 )
 def test_emit_fail_incomplete_type_facts(node: TypedNode) -> None:
     """Missing required logical facts and unknown types are not silently guessed."""
-    with pytest.raises((ConversionError, NotImplementedError)):
+    with pytest.raises(ConversionError):
         JsonSchemaEmitter().emit(SchemaDocument(node))
 
 

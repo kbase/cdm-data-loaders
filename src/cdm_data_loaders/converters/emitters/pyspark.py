@@ -364,8 +364,12 @@ class PySparkEmitter(BaseModel):
     def _emit_number(node: TypedNode) -> DataType:
         """Derive decimal scale from numeric JSON multipleOf values."""
         multiple = node.constraints.get("multipleOf")
-        if isinstance(multiple, (int, float)):
-            return DecimalType(38, decimal_places(multiple))
+        if isinstance(multiple, (int, float, Decimal)):
+            scale = decimal_places(multiple)
+            if scale > MAX_DECIMAL_PRECISION:
+                msg = f"Unsupported Spark decimal precision/scale: ({MAX_DECIMAL_PRECISION}, {scale})"
+                raise PySparkEmitterError(msg)
+            return DecimalType(MAX_DECIMAL_PRECISION, scale)
         return DoubleType()
 
     @staticmethod

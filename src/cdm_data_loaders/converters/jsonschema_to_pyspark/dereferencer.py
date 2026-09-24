@@ -167,7 +167,7 @@ def _should_apply_ref_siblings(ctx: DereferenceContext, has_siblings: bool) -> b
 def _resolve_ref_and_all_of(schema: dict[str, Any], ctx: DereferenceContext) -> dict[str, Any]:
     """Resolve `allOf` and `$ref` references at a single schema level.
 
-    Does *not* descend into nested sub-schemas (e.g. `properties` values) — see `_dereference` instead0.
+    Does *not* descend into nested sub-schemas (e.g. `properties` values) — see `_dereference` instead.
 
     :param schema: the schema fragment to resolve at this level
     :type schema: dict[str, Any]
@@ -241,12 +241,15 @@ def _resolve_ref_and_all_of(schema: dict[str, Any], ctx: DereferenceContext) -> 
 def _merge_all_of(schema: dict[str, Any], ctx: DereferenceContext) -> dict[str, Any]:
     """Merge an `allOf` keyword's branches into a single flattened schema.
 
+    `properties`/`required`/`patternProperties` are unioned across all `allOf`
+    branches and any sibling declaration of the same keywords; other sibling
+    keywords take final precedence over their `allOf`-branch counterparts.
+
     :param schema: the schema fragment containing the `allOf` keyword to merge
     :type schema: dict[str, Any]
     :param ctx: the active dereference context
     :type ctx: DereferenceContext
-    :return: the schema with `allOf` merged away, `properties`/`required`/`patternProperties`
-        unioned across branches, and sibling keywords taking final precedence
+    :return: the schema with `allOf` merged away
     :rtype: dict[str, Any]
     """
     merged: dict[str, Any] = {}
@@ -261,15 +264,21 @@ def _merge_all_of(schema: dict[str, Any], ctx: DereferenceContext) -> dict[str, 
         merged_pattern_properties.update(resolved_sub.get("patternProperties", {}))
         merged.update(resolved_sub)  # last-write-wins for scalar keywords
 
+    # Keywords declared alongside `allOf` itself take final precedence, but
+    # properties/required/patternProperties still union with the allOf branches
+    # rather than replacing them outright.
+    sibling_schema = {k: v for k, v in schema.items() if k != "allOf"}
+    merged_properties.update(sibling_schema.get("properties", {}))
+    merged_required.extend(sibling_schema.get("required", []))
+    merged_pattern_properties.update(sibling_schema.get("patternProperties", {}))
+    merged.update(sibling_schema)
+
     if merged_properties:
         merged["properties"] = merged_properties
     if merged_required:
         merged["required"] = list(dict.fromkeys(merged_required))  # de-dup, keep order
     if merged_pattern_properties:
         merged["patternProperties"] = merged_pattern_properties
-
-    # Keywords declared alongside `allOf` itself take final precedence.
-    merged.update({k: v for k, v in schema.items() if k != "allOf"})
 
     return merged
 

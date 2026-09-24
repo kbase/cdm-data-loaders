@@ -31,6 +31,7 @@ from pyiceberg.types import (
     UUIDType,
 )
 
+from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
 from cdm_data_loaders.converters.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.ir_values import Value, freeze_value
@@ -87,7 +88,7 @@ class IcebergReader:
         """Build a structural root from an Iceberg Schema."""
         if not isinstance(source, Schema):
             msg = "IcebergReader.read requires a Schema"
-            raise TypeError(msg)
+            raise ConversionError(msg)
         return SchemaDocument(
             root=self._type(source.as_struct(), ()),
             extensions=Extensions(
@@ -106,7 +107,7 @@ class IcebergReader:
         """Capture a loaded table envelope using only in-memory metadata accessors."""
         if not identifier or any(not isinstance(part, str) or not part for part in identifier):
             msg = "An Iceberg table identifier must contain nonempty strings"
-            raise ValueError(msg)
+            raise ConversionError(msg)
         document = self.read(table.schema())
         metadata = table.metadata
         iceberg = {
@@ -225,4 +226,4 @@ class IcebergReader:
                 ),
             )
         msg = f"No {self.mapping_target} mapping for Iceberg type: {source}"
-        raise NotImplementedError(msg)
+        raise ConversionError(msg)

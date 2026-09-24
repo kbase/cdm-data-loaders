@@ -651,6 +651,21 @@ def test_merge_all_of_pass_sibling_keywords_take_final_precedence() -> None:
     assert result["title"] == "from sibling"
 
 
+def test_merge_all_of_pass_sibling_properties_union_with_allof_branches() -> None:
+    """_merge_all_of() unions sibling 'properties'/'required'/'patternProperties' with allOf branches, not replaces them."""
+    schema = {
+        "allOf": [{"properties": {"base": {"type": "string"}}, "required": ["base"]}],
+        "properties": {"extra": {"type": "integer"}},
+        "required": ["extra"],
+        "patternProperties": {"^x-": {}},
+    }
+    ctx = _make_ctx(schema)
+    result = _merge_all_of(schema, ctx)
+    assert set(result["properties"]) == {"base", "extra"}
+    assert result["required"] == ["base", "extra"]
+    assert "^x-" in result["patternProperties"]
+
+
 """_dereference"""
 
 

@@ -6,6 +6,7 @@ Draft 2020-12 validator.
 """
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from pyiceberg import catalog as pyiceberg_catalog
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
+    BinaryType,
     DateType,
     DecimalType,
     DoubleType,
@@ -140,3 +142,55 @@ def test_end_to_end_dump_catalog_schemas_writes_valid_docs(
             assert key in JSON_SCHEMA_KEYWORDS or key.startswith("x-"), f"non-standard key without x- prefix: {key}"
         for key in iter_extension_keys(doc):
             assert key == to_snake_case(key), f"extension key is not snake case: {key}"
+
+
+def test_dump_catalog_schemas_pass_empty_catalog(catalog_env: Path) -> None:
+    """An empty catalog (no namespaces) writes no files and raises nothing."""
+    load_catalog(CATALOG_NAME)
+    out_dir = catalog_env / "schemas"
+    settings = IcebergToJsonSchemaSettings(catalog=CATALOG_NAME, output_dir=str(out_dir))  # pyright: ignore[reportCallIssue]
+    dump_catalog_schemas(settings)
+    assert list(out_dir.iterdir()) == []
+
+
+def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
+    catalog_env: Path, simple_schema: Schema, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A table that fails to convert is logged and skipped; other tables still succeed."""
+    unsupported_schema = Schema(NestedField(1, "value", BinaryType(), required=True))
+    catalog = load_catalog(CATALOG_NAME)
+    catalog.create_namespace("ns")
+    catalog.create_table(("ns", "good"), schema=simple_schema)
+    catalog.create_table(("ns", "bad"), schema=unsupported_schema)
+
+    out_dir = catalog_env / "schemas"
+    settings = IcebergToJsonSchemaSettings(catalog=CATALOG_NAME, output_dir=str(out_dir))  # pyright: ignore[reportCallIssue]
+    with caplog.at_level(logging.WARNING):
+        dump_catalog_schemas(settings)
+
+    assert [f.name for f in sorted(out_dir.iterdir())] == ["ns.good.schema.json"]
+    assert "Failed to convert table" in caplog.text
+    assert "('ns', 'bad')" in caplog.text
+    assert "1 table(s) skipped" in caplog.text
+
+
+def test_dump_catalog_schemas_pass_overwrites_existing_file_with_warning(
+    catalog_env: Path, simple_schema: Schema, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A pre-existing output file for a table is overwritten, with a warning logged first."""
+    catalog = load_catalog(CATALOG_NAME)
+    catalog.create_namespace("ns")
+    catalog.create_table(("ns", "simple"), schema=simple_schema)
+
+    out_dir = catalog_env / "schemas"
+    out_dir.mkdir(parents=True)
+    stale_file = out_dir / "ns.simple.schema.json"
+    stale_file.write_text("stale")
+
+    settings = IcebergToJsonSchemaSettings(catalog=CATALOG_NAME, output_dir=str(out_dir))  # pyright: ignore[reportCallIssue]
+    with caplog.at_level(logging.WARNING):
+        dump_catalog_schemas(settings)
+
+    assert "Overwriting existing schema file" in caplog.text
+    written = json.loads(stale_file.read_text())
+    assert written["title"] == "simple"

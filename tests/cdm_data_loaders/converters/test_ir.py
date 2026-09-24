@@ -5,9 +5,11 @@ from dataclasses import FrozenInstanceError
 from decimal import Decimal
 from functools import partial
 from typing import Any, Final
+from unittest.mock import patch
 
 import pytest
 
+from cdm_data_loaders.converters import ir
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.ir import Field, NodeHints, Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.ir_values import freeze_mapping, freeze_value, mutable_value
@@ -58,6 +60,14 @@ def test_schema_document_pass_owned_values_and_presence() -> None:
         node.constraints["const"] = 1
     with pytest.raises(FrozenInstanceError):
         node.type = "string"
+
+
+def test_schema_document_pass_post_init_freezes_annotations_once() -> None:
+    """__post_init__ freezes document annotations exactly once, not once per identity field."""
+    root = TypedNode(type="any")
+    with patch("cdm_data_loaders.converters.ir._schema_metadata", wraps=ir._schema_metadata) as spy:  # noqa: SLF001
+        SchemaDocument(root=root, name="n", dialect="d", identifier="i", annotations={"a": 1})
+    assert spy.call_count == 1
 
 
 @pytest.mark.parametrize(

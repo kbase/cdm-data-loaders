@@ -114,8 +114,13 @@ def test_convert_pass_root_schema_without_type_keyword_infers_object(converter: 
     assert result == StructType([StructField("a", StringType(), nullable=True, metadata={})])
 
 
-def test_convert_pass_nullable_object_root_type_accepted(converter: JSONSchemaToPySpark) -> None:
-    """convert() accepts a root schema whose 'type' is a list consisting solely of 'object'/'null'-style is rejected as non-'object'."""
+def test_convert_fail_list_form_object_root_type_rejected(converter: JSONSchemaToPySpark) -> None:
+    """convert() rejects a list-form root 'type' (e.g. ['object', 'null']) even though it contains 'object'.
+
+    `JsonSchemaReader.read()` itself accepts this nullable-root form when used
+    directly, but the facade's `require_object_root` guard is intentionally
+    stricter and runs first, so this form is only usable via the reader.
+    """
     schema = base_object_schema(type=["object", "null"])
     with pytest.raises(JSONSchemaToPySparkError, match="must be of type 'object'"):
         converter.convert(schema)

@@ -253,7 +253,7 @@ def test_emit_pass_metadata() -> None:
         pytest.param({"type": "number", "multipleOf": 1e-9}, DecimalType(38, 9), id="exponent-multiple"),
         pytest.param({"type": "number", "multipleOf": "0.01"}, DoubleType(), id="nonnumeric-multiple"),
         pytest.param(
-            {"type": "number", "multipleOf": Decimal("0.0100")}, DoubleType(), id="decimal-multiple-compatibility"
+            {"type": "number", "multipleOf": Decimal("0.0100")}, DecimalType(38, 4), id="decimal-multiple-parity"
         ),
     ],
 )
@@ -615,6 +615,19 @@ def test_emit_node_fail_unrepresentable_decimal(precision: int, scale: int) -> N
     node = TypedNode(type="number", hints=NodeHints(logical_type="decimal", precision=precision, scale=scale))
     with pytest.raises(PySparkEmitterError, match="Unsupported Spark decimal precision/scale"):
         PySparkEmitter().emit_node(node)
+
+
+def test_emit_pass_json_multiple_of_scale_within_limit_uses_decimal() -> None:
+    """A 'multipleOf' scale within Spark's precision limit produces a matching DecimalType."""
+    document = _document({"multipleOf": Decimal("1e-38")})
+    assert PySparkEmitter().emit(document).fields[0].dataType == DecimalType(38, 38)
+
+
+def test_emit_fail_json_multiple_of_scale_exceeds_decimal_limit() -> None:
+    """A 'multipleOf' whose implied scale exceeds Spark's 38-digit limit raises instead of degrading."""
+    document = _document({"multipleOf": Decimal("1e-39")})
+    with pytest.raises(PySparkEmitterError, match="Unsupported Spark decimal precision/scale"):
+        PySparkEmitter().emit(document)
 
 
 @pytest.mark.parametrize("missing", ["key", "value"], ids=["missing-key", "missing-value"])

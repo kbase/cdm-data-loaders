@@ -31,6 +31,7 @@ from pyiceberg.types import (
     UUIDType,
 )
 
+from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader, iceberg_value
 from tests.cdm_data_loaders.converters.pyiceberg_to_jsonschema.conftest import make_table
 
@@ -133,10 +134,10 @@ def test_read_table_pass_envelope_without_io() -> None:
 
 
 def test_read_fail_invalid_source_and_identifier() -> None:
-    """Invalid source objects and empty identifiers fail at the public boundary."""
-    with pytest.raises(TypeError):
+    """Invalid source objects and empty identifiers fail at the public boundary with ConversionError."""
+    with pytest.raises(ConversionError):
         IcebergReader().read({})
-    with pytest.raises(ValueError, match="identifier"):
+    with pytest.raises(ConversionError, match="identifier"):
         IcebergReader().read_table(make_table(("ns", "table"), Schema()), ())
     assert IcebergReader().read(Schema()).root.properties == ()
 
@@ -161,7 +162,7 @@ def test_iceberg_value_pass_precise_serialization(value: object, expected: objec
 
 def test_read_fail_unsupported_type_and_metadata() -> None:
     """Unmapped Iceberg types and arbitrary Python defaults are not guessed."""
-    with pytest.raises(NotImplementedError, match="No IR mapping"):
+    with pytest.raises(ConversionError, match="No IR mapping"):
         IcebergReader().read(Schema(NestedField(1, "unknown", UnknownType())))
     with pytest.raises(TypeError, match="Unsupported"):
         iceberg_value(object())

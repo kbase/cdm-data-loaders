@@ -29,6 +29,17 @@ def test_load_schema_text_fail_json_only(text: str) -> None:
         load_schema_text(text)
 
 
+@pytest.mark.parametrize(
+    ("text", "allow_yaml"),
+    [("[1, 2, 3]", False), ("- 1\n- 2\n", True), ("", True), ('"just a string"', False)],
+    ids=["json-list", "yaml-list", "empty-yaml-is-none", "json-scalar"],
+)
+def test_load_schema_text_fail_non_dict_top_level(text: str, allow_yaml: bool) -> None:
+    """Reject a parsed document whose top level is not an object."""
+    with pytest.raises(TypeError, match="must be a JSON/YAML object"):
+        load_schema_text(text, allow_yaml=allow_yaml)
+
+
 def test_load_schema_text_fail_invalid_yaml() -> None:
     """Propagate YAML syntax errors after JSON parsing fails."""
     with pytest.raises(yaml.YAMLError):
@@ -75,6 +86,19 @@ def test_load_schema_file_fail_invalid_format(
     path = tmp_path / filename
     path.write_text(text, encoding="utf-8")
     with pytest.raises(error):
+        load_schema_file(path)
+
+
+@pytest.mark.parametrize(
+    ("filename", "text"),
+    [("schema.json", "[1, 2, 3]"), ("schema.yaml", "- 1\n- 2\n")],
+    ids=["json-list", "yaml-list"],
+)
+def test_load_schema_file_fail_non_dict_top_level(tmp_path: Path, filename: str, text: str) -> None:
+    """Reject a file whose parsed top level is not an object."""
+    path = tmp_path / filename
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(TypeError, match="must be a JSON/YAML object"):
         load_schema_file(path)
 
 

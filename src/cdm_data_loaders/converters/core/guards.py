@@ -27,7 +27,13 @@ def require_schema_keyword(
 
 
 def require_object_root(schema: dict[str, Any], error: type[ConversionError], target: str) -> None:
-    """Reject a schema whose declared root type isn't 'object'.
+    """Reject a schema whose declared root type isn't literally 'object' or absent.
+
+    This is intentionally stricter than `readers.json_schema.JsonSchemaReader`,
+    which also accepts a list-form root type (e.g. `["object", "null"]`) when
+    used directly. Facade converters call this guard first, so a nullable
+    root type is only reachable through direct reader use, not through
+    `convert()`.
 
     :param schema: the input JSON Schema document
     :type schema: dict[str, Any]

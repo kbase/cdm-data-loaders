@@ -27,6 +27,7 @@ from pyiceberg.types import (
     UUIDType,
 )
 
+from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.pyiceberg_to_jsonschema.converter import (
     JSON_SCHEMA_DIALECT,
     convert_field,
@@ -149,8 +150,8 @@ def test_convert_type_pass_scalars_are_valid_draft_2020_12(
 
 
 def test_convert_type_fail_unknown_type() -> None:
-    """An unknown Iceberg type raises NotImplementedError."""
-    with pytest.raises(NotImplementedError, match="No JSON Schema mapping"):
+    """An unknown Iceberg type raises ConversionError."""
+    with pytest.raises(ConversionError, match="No JSON Schema mapping"):
         convert_type(object())  # pyright: ignore[reportArgumentType]
 
 

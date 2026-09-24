@@ -94,7 +94,13 @@ class DltReader:
         }
 
     def _table(self, table: DltTableNode) -> TypedNode:
-        """Build real child nodes while retaining isolated source table metadata."""
+        """Build real child nodes while retaining isolated source table metadata.
+
+        A child table's name always wins over a same-named scalar column
+        (dlt's own naming can produce this when a column is later normalized
+        into a nested table); the scalar column's `required` flag still
+        contributes to the resulting field's `required` flag.
+        """
         columns = self._columns(table)
         properties = {name: self._column(name, column, table.name) for name, column in columns.items()}
         required_names = [name for name, column in columns.items() if column.get("nullable", True) is False]

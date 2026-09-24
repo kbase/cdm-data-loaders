@@ -316,7 +316,7 @@ class JsonSchemaEmitter:
         logical = hints.logical_type
         if logical not in _ICEBERG_LOGICAL_TYPES:
             msg = f"No JSON Schema mapping for Iceberg type: {logical or node.type}"
-            raise NotImplementedError(msg)
+            raise ConversionError(msg)
         result: dict[str, Any] = {"type": node.type}
         if node.type == "integer" and hints.bit_width:
             bound = 2 ** (hints.bit_width - 1)
