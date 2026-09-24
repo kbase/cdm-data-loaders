@@ -3,7 +3,7 @@
 import os
 from collections.abc import Callable
 from logging import Logger, getLogger
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import dlt
 from dlt.common.pipeline import LoadInfo
@@ -11,12 +11,16 @@ from dlt.common.runtime.slack import send_slack_message
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
-from cdm_data_loaders.core.fields import DEV_MODE, OUTPUT_DIR, USE_DESTINATION
+from cdm_data_loaders.core.fields import DEV_MODE, JSONL, OUTPUT_DIR, USE_DESTINATION
 from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
 from cdm_data_loaders.utils.cdm_logger import init_logger
 
+if TYPE_CHECKING:
+    from dlt.extract import DltResource
+
 WEBHOOK_NOT_CONFIGURED: Final[str] = "Slack webhook not configured"
 NO_MESSAGE: Final[str] = "No message supplied"
+LOAD_INFO_TABLE_NAME: Final[str] = "_dlt_load_info"
 
 
 logger: Logger = getLogger(__name__)
@@ -147,7 +151,12 @@ def run_pipeline(
         logger.info("No Slack alerts will be sent: %s", WEBHOOK_NOT_CONFIGURED)
 
     try:
-        load_info = pipeline.run(resource, **(pipeline_run_kwargs or {}))
+        load_info: LoadInfo | None = pipeline.run(resource, **(pipeline_run_kwargs or {}))
+        if load_info:
+            load_info_resource: DltResource = dlt.resource(
+                [load_info.asdict()], name=LOAD_INFO_TABLE_NAME, max_table_nesting=0
+            )
+            pipeline.run(load_info_resource, loader_file_format=JSONL)
     except Exception as e:
         err_msg = f"Pipeline failed: {e!s}"
         logger.exception(err_msg)

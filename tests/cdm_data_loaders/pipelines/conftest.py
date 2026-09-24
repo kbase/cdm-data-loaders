@@ -11,7 +11,7 @@ from cdm_data_loaders.pipelines import core
 
 START_AT_VALUE: Final[int] = 50
 START_AT_STRING: Final[str] = "50"
-TEST_LOG_CONFIG_FILE: Final[str] = "log_conf.json"
+TEST_LOG_CONFIG_FILE: Final[Path] = Path("tests") / "data" / "pipelines" / "log_config.json"
 
 
 def make_batcher(files: list[Path], batch_size: int = 5) -> MagicMock:

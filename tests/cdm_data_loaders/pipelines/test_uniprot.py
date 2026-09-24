@@ -21,7 +21,7 @@ from tests.cdm_data_loaders.core.conftest import (
     check_settings,
     make_settings_autofill_config,
 )
-from tests.conftest import TEST_DATA_DIR
+from tests.cdm_data_loaders.pipelines.conftest import TEST_LOG_CONFIG_FILE
 from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes
 
 
@@ -74,6 +74,7 @@ def test_cli_passes_settings_class_to_run_cli() -> None:
 def test_cli_calls_run_uniprot_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure that cli() calls run_uniprot_pipeline with the test_settings."""
     mock_settings_instance = MagicMock()
+    mock_settings_instance.log_config_file = str(TEST_LOG_CONFIG_FILE)
     mock_settings_cls = MagicMock(return_value=mock_settings_instance)
     mock_run_uniprot_pipeline = MagicMock()
 
@@ -124,7 +125,11 @@ def test_run_uniprot_pipeline_sets_core_run_pipeline_args_correctly(
         pipeline_name="uniprot_kb",
         dataset_name="uniprot_kb",
     )
-    mock_dlt.pipeline.return_value.run.assert_called_once_with(expected_resource)
+    first_run, load_info_save_run = mock_dlt.pipeline.return_value.run.call_args_list
+    assert first_run.args == (expected_resource,)
+    assert first_run.kwargs == {}
+    assert load_info_save_run.args[0] is not None
+    assert load_info_save_run.kwargs == {"loader_file_format": "jsonl"}
 
 
 def test_parse_uniprot_resource(test_settings: UniProtSettings) -> None:
