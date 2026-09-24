@@ -38,6 +38,7 @@ from tests.cdm_data_loaders.core.conftest import (
     check_settings,
     make_settings_autofill_config,
 )
+from tests.cdm_data_loaders.pipelines.conftest import TEST_LOG_CONFIG_FILE
 from tests.conftest import DEFAULT_VCR_CONFIG
 from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes
 
@@ -266,6 +267,7 @@ def test_cli_passes_settings_class_to_run_cli() -> None:
 def test_cli_calls_run_ncbi_pipeline(monkeypatch: pytest.MonkeyPatch, dlt_config: dict[str, Any]) -> None:
     """Ensure that cli() calls run_ncbi_pipeline with the settings."""
     mock_settings_instance = MagicMock()
+    mock_settings_instance.log_config_file = str(TEST_LOG_CONFIG_FILE)
     mock_settings_cls = MagicMock(return_value=mock_settings_instance)
     mock_run_ncbi_pipeline = MagicMock()
 
@@ -385,7 +387,11 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
     else:
         assert "pipelines_dir" not in mock_dlt.pipeline.call_args.kwargs
 
-    mock_dlt.pipeline.return_value.run.assert_called_once_with([mock_assembly_report_parser])
+    first_run, load_info_save_run = mock_dlt.pipeline.return_value.run.call_args_list
+    assert first_run.args == ([mock_assembly_report_parser],)
+    assert first_run.kwargs == {}
+    assert load_info_save_run.args[0] is not None
+    assert load_info_save_run.kwargs == {"loader_file_format": "jsonl"}
 
 
 @pytest.mark.default_cassette("test_get_assembly_reports.yaml")

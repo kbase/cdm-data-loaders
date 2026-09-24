@@ -5,19 +5,17 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import dlt
-from pandas import DataFrame
 import pytest
 from dlt.common.pipeline import LoadInfo
-from cdm_data_loaders.core.fields import LoaderFileFormatEnum, JSONL, PARQUET
+from pandas import DataFrame
+
+from cdm_data_loaders.core.fields import LoaderFileFormatEnum
+from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
     cli,
     run_xml_ingest_pipeline,
 )
-from cdm_data_loaders.pipelines.xml_to_dict.settings import (
-    PIPELINE_NAME,
-    XmlToDictSettings,
-)
+from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
 
 SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
 <library>
@@ -26,7 +24,7 @@ SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
     <book id="3"><title>The Tommyknockers</title></book>
 </library>
 """
-DEFAULT_DLT_TABLES = {"_dlt_version", "_dlt_loads", "_dlt_pipeline_state"}
+DEFAULT_DLT_TABLES = {"_dlt_version", "_dlt_loads", "_dlt_pipeline_state", LOAD_INFO_TABLE_NAME}
 
 
 def check_book_list_results(load_info: LoadInfo | None, table_name: str | None = None) -> DataFrame:

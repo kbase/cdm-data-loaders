@@ -32,6 +32,7 @@ from cdm_data_loaders.core.settings import (
 )
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import (
+    LOAD_INFO_TABLE_NAME,
     NO_MESSAGE,
     WEBHOOK_NOT_CONFIGURED,
     construct_env_var,
@@ -550,7 +551,7 @@ def test_run_pipeline_dlt_config_updated_after_success(
 
     run_pipeline(settings, MagicMock())
 
-    mock_dlt.pipeline.return_value.run.assert_called_once()
+    assert mock_dlt.pipeline.return_value.run.call_count == 2
     assert dlt_config == {
         **original_dlt_config,
         "normalize.data_writer.disable_compression": dev_mode,
@@ -741,3 +742,226 @@ def test_run_pipeline_passes_kwargs_to_real_pipeline(
         assert load_info.pipeline.pipeline_name == TINY_PIPELINE_NAME
         assert load_info.dataset_name == "core_test_dataset"
     assert read_output_jsonl_records(dlt_test_settings) == TINY_RESOURCE_DATA
+
+
+# load_info saved as part of the dataset
+def read_load_info_jsonl_rows(settings: BatchedFileInputSettings) -> list[dict[str, Any]]:
+    """Read every row of the _dlt_load_info table written to the settings output directory."""
+    rows: list[dict[str, Any]] = []
+    for jsonl_file in sorted(Path(settings.output_dir).glob("**/_dlt_load_info/*.jsonl*")):
+        if jsonl_file.name.endswith(".gz"):
+            with gzip.open(jsonl_file, "rt") as f:
+                content = f.read()
+        else:
+            content = jsonl_file.read_text()
+        rows.extend(loads(record) for record in content.splitlines() if record)
+    return rows
+
+
+def test_run_pipeline_saves_load_info_to_dataset(dlt_test_settings: BatchedFileInputSettings) -> None:
+    """The pipeline's load_info is saved as a _dlt_load_info table in the same dataset."""
+    load_info = run_pipeline(dlt_test_settings, tiny_resource())
+
+    assert load_info is not None
+    assert not load_info.has_failed_jobs
+    rows = read_load_info_jsonl_rows(dlt_test_settings)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["dataset_name"] == load_info.dataset_name
+    assert row["destination_name"] == dlt_test_settings.use_destination
+    assert row["first_run"] is not None
+    assert row["load_packages"]
+    assert isinstance(row["load_packages"][0], dict)
+    assert "load_id" in row["load_packages"][0]
+    assert set(row["pipeline"]) == {"pipeline_name"}
+
+
+def test_run_pipeline_load_info_saved_to_same_dataset(dlt_test_settings: BatchedFileInputSettings) -> None:
+    """The _dlt_load_info table lands in the same dataset directory as the resource tables."""
+    load_info = run_pipeline(dlt_test_settings, tiny_resource())
+
+    assert load_info is not None
+    dataset_dir = Path(dlt_test_settings.output_dir) / load_info.dataset_name
+    assert (dataset_dir / TINY_TABLE_NAME).is_dir()
+    assert (dataset_dir / "_dlt_load_info").is_dir()
+    assert read_output_jsonl_records(dlt_test_settings) == TINY_RESOURCE_DATA
+    assert read_load_info_jsonl_rows(dlt_test_settings)
+
+
+def test_run_pipeline_load_info_flat_structure(dlt_test_settings: BatchedFileInputSettings) -> None:
+    """max_table_nesting=0 keeps nested structures as json columns; no child tables."""
+    load_info = run_pipeline(dlt_test_settings, tiny_resource())
+
+    assert load_info is not None
+    dataset_dir = Path(dlt_test_settings.output_dir) / load_info.dataset_name
+    assert list(dataset_dir.glob("_dlt_load_info__*")) == []
+    rows = read_load_info_jsonl_rows(dlt_test_settings)
+    assert len(rows) == 1
+    row = rows[0]
+    for nested in ("load_packages", "outputs", "job_metrics"):
+        assert isinstance(row[nested], list)
+        assert row[nested], f"{nested} must not be normalized into a child table"
+        assert all(isinstance(item, dict) for item in row[nested])
+
+
+def read_tiny_load_ids(settings: BatchedFileInputSettings) -> set[str]:
+    """The _dlt_load_id values of the entity rows written to the settings output directory."""
+    load_ids: set[str] = set()
+    for jsonl_file in sorted(Path(settings.output_dir).glob(f"**/{TINY_TABLE_NAME}/*.jsonl*")):
+        if jsonl_file.name.endswith(".gz"):
+            with gzip.open(jsonl_file, "rt") as f:
+                content = f.read()
+        else:
+            content = jsonl_file.read_text()
+        load_ids.update(loads(record)["_dlt_load_id"] for record in content.splitlines() if record)
+    return load_ids
+
+
+def test_run_pipeline_load_info_runs_accumulate(dlt_test_settings: BatchedFileInputSettings) -> None:
+    """Each pipeline run appends its own load_info row; earlier rows are preserved."""
+    first = run_pipeline(dlt_test_settings, tiny_resource())
+    assert first is not None
+
+    second = run_pipeline(dlt_test_settings, tiny_resource())
+    assert second is not None
+
+    rows = read_load_info_jsonl_rows(dlt_test_settings)
+    assert len(rows) == 2
+    saved_load_ids = {tuple(row["loads_ids"]) for row in rows}
+    assert len(saved_load_ids) == 2
+    # each accumulated row references one of the entity data loads
+    assert saved_load_ids == {(load_id,) for load_id in read_tiny_load_ids(dlt_test_settings)}
+
+
+def test_run_pipeline_load_info_in_dev_mode(dlt_test_settings: BatchedFileInputSettings) -> None:
+    """dev_mode runs save the load_info into the same suffixed dataset as the resource data."""
+    settings = make_batched_settings(
+        input_dir=str(Path(dlt_test_settings.input_dir)),
+        output_dir=str(Path(dlt_test_settings.output_dir)),
+        use_destination=LOCAL_FS,
+        use_output_dir_for_pipeline_metadata=True,
+        dev_mode=True,
+    )
+    load_info = run_pipeline(settings, tiny_resource())
+
+    assert load_info is not None
+    assert load_info.dataset_name != "dlt_pipeline_dataset"
+    dataset_dir = Path(settings.output_dir) / load_info.dataset_name
+    assert (dataset_dir / TINY_TABLE_NAME).is_dir()
+    rows = read_load_info_jsonl_rows(settings)
+    assert len(rows) == 1
+    assert rows[0]["dataset_name"] == load_info.dataset_name
+
+
+def test_run_pipeline_load_info_named_pipeline_and_dataset(dlt_test_settings: BatchedFileInputSettings) -> None:
+    """A named pipeline/dataset save lands in the named dataset with a load_info row."""
+    load_info = run_pipeline(
+        dlt_test_settings,
+        tiny_resource(),
+        pipeline_kwargs={"pipeline_name": TINY_PIPELINE_NAME, "dataset_name": "core_test_dataset"},
+    )
+
+    assert load_info is not None
+    rows = read_load_info_jsonl_rows(dlt_test_settings)
+    assert len(rows) == 1
+    assert rows[0]["dataset_name"] == "core_test_dataset"
+    assert rows[0]["pipeline"] == {"pipeline_name": TINY_PIPELINE_NAME}
+    dataset_dir = Path(dlt_test_settings.output_dir) / "core_test_dataset"
+    assert (dataset_dir / "_dlt_load_info").is_dir()
+
+
+def test_run_pipeline_load_info_row_references_entity_load(
+    dlt_test_settings: BatchedFileInputSettings,
+) -> None:
+    """The saved row's loads_ids points at the entity data load, not the save load."""
+    load_info = run_pipeline(dlt_test_settings, tiny_resource())
+
+    assert load_info is not None
+    rows = read_load_info_jsonl_rows(dlt_test_settings)
+    assert len(rows) == 1
+    row = rows[0]
+    # loads_ids is the original payload; _dlt_load_id is the save run's own load id
+    assert row["loads_ids"]
+    assert row["loads_ids"] != [row["_dlt_load_id"]]
+
+
+def test_run_pipeline_load_info_returns_original_import_result(
+    dlt_test_settings: BatchedFileInputSettings,
+) -> None:
+    """run_pipeline returns the original resource load, not the load_info save load."""
+    load_info = run_pipeline(dlt_test_settings, tiny_resource())
+
+    assert load_info is not None
+    assert not load_info.has_failed_jobs
+    rows = read_load_info_jsonl_rows(dlt_test_settings)
+    assert len(rows) == 1
+    assert load_info.loads_ids != [rows[0]["_dlt_load_id"]]
+    assert load_info.loads_ids == rows[0]["loads_ids"]
+    assert load_info.dataset_name == rows[0]["dataset_name"]
+
+
+def test_run_pipeline_load_info_save_resource_error_returns_none(
+    dlt_test_settings: BatchedFileInputSettings,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An error saving the load_info is caught: run_pipeline logs and returns None."""
+    # dlt.resource on the module under test raises when the load_info save step
+    # builds its resource: the entity data has already been loaded by then
+    real_resource = core.dlt.resource
+
+    def resource_boom(*args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("name") == LOAD_INFO_TABLE_NAME:
+            err_msg = "load info save failed"
+            raise RuntimeError(err_msg)
+        return real_resource(*args, **kwargs)
+
+    monkeypatch = pytest.MonkeyPatch()
+    with monkeypatch.context() as patch_context:
+        patch_context.setattr(core.dlt, "resource", resource_boom)
+        load_info = run_pipeline(dlt_test_settings, tiny_resource())
+    monkeypatch.undo()
+
+    assert load_info is None
+    assert caplog.records[-1].levelno == logging.ERROR
+    assert caplog.records[-1].getMessage().startswith("Pipeline failed: ")
+    assert "load info save failed" in caplog.records[-1].getMessage()
+    for record in caplog.records:
+        assert not record.getMessage().startswith("Work complete")
+
+
+def test_run_pipeline_load_info_save_pipeline_run_error_returns_none(
+    dlt_test_settings: BatchedFileInputSettings,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failure in the save pipeline's run() is caught: run_pipeline logs and returns None."""
+    mock_pipeline = MagicMock()
+    mock_pipeline.runtime_config.slack_incoming_hook = None
+    entity_load_info = MagicMock()
+    entity_load_info.has_failed_jobs = False
+    entity_load_info.loads_ids = ["1.0"]
+    entity_load_info.asdict.return_value = {"loads_ids": ["1.0"]}
+    mock_pipeline.run.side_effect = [entity_load_info, RuntimeError("save pipeline boom")]
+    with patch.object(core.dlt, "pipeline", return_value=mock_pipeline):
+        load_info = run_pipeline(dlt_test_settings, tiny_resource())
+
+    assert load_info is None
+    assert caplog.records[-1].levelno == logging.ERROR
+    assert caplog.records[-1].getMessage().startswith("Pipeline failed: ")
+    assert "save pipeline boom" in caplog.records[-1].getMessage()
+    for record in caplog.records:
+        assert not record.getMessage().startswith("Work complete")
+
+
+def test_run_pipeline_load_info_save_run_mock_shape(
+    dlt_test_settings: BatchedFileInputSettings,
+    mock_dlt: MagicMock,
+) -> None:
+    """The save run reuses the same pipeline object and passes a named flat resource."""
+    run_pipeline(dlt_test_settings, tiny_resource())
+
+    assert mock_dlt.pipeline.call_count == 1
+    assert mock_dlt.pipeline.return_value.run.call_count == 2
+    first_call, save_call = mock_dlt.pipeline.return_value.run.call_args_list
+    assert first_call.args[0] is not None
+    assert save_call.args[0] is not None
+    assert save_call.kwargs == {"loader_file_format": "jsonl"}

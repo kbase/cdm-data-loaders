@@ -309,7 +309,7 @@ def test_get_file_download_links_use_pattern_file(tmp_path: Path, pattern_lines:
     p = tmp_path / "patterns.txt"
     p.write_text(f"{pattern_lines}\n", encoding="utf-8")
 
-    settings = AtbSettings(input_dir=str(tmp_path), output_dir=str(tmp_path), pattern_file="patterns.txt")
+    settings = AtbSettings(input_dir=str(tmp_path), output_dir=str(tmp_path), pattern_file="patterns.txt")  # pyright: ignore[reportCallIssue]
     file_path = Path("tests") / "data" / "atb" / "all_atb_files.tsv"
     filtered_files = list(get_file_download_links(settings, file_path))
     # load the expected results
@@ -684,6 +684,9 @@ def test_run_atb_pipeline_pipeline_dir_present_or_absent(
 
     monkeypatch.setattr(all_the_bacteria, "atb_file_list", MagicMock())
     monkeypatch.setattr(all_the_bacteria, "file_downloader", mock_file_downloader)
+    mock_pipeline = mock_dlt.pipeline.return_value
+    # don't run the second pipeline to save the LoadInfo
+    mock_pipeline.run.return_value = None
 
     run_atb_pipeline(settings)
 
