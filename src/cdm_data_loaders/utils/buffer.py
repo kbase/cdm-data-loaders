@@ -42,18 +42,40 @@ class BufferCore(BaseModel):
 
     @model_validator(mode="after")
     def set_up_buffers(self) -> Self:
-        """Initialise the buffers."""
+        """Set up the buffers after successfully instantiating the Buffer instance."""
         self._init_buffers()
         return self
 
     def _init_buffers(self) -> None:
+        """Initialise the buffers."""
         if self._table_names:
             self._buffers: dict[str, list[Any]] = {name: [] for name in self._table_names}
         else:
             self._buffers = defaultdict(list)
 
+    def _add_item(self, table_name: str, item_to_add: Any) -> Generator[DataItemWithMeta, Any]:  # noqa: ANN401
+        """Add an item to a table. Yield a page if the table reaches max_items.
+
+        :param table_name: name of the table to add the item to
+        :type  table_name: str
+        :param item_to_add: the item
+        :type  item_to_add: Any
+        :yield: generator that yields collected rows to the appropriate dlt table
+        :rtype: Generator[DataItemWithMeta, Any]
+        """
+        self._buffers[table_name].append(item_to_add)
+        if len(self._buffers[table_name]) >= self.max_items:
+            yield dlt.mark.with_table_name(self._buffers[table_name], table_name)
+            self._buffers[table_name] = []
+
     def _add_items(self, items_to_add: dict[str, list[Any]]) -> Generator[DataItemWithMeta, Any]:
-        """Add rows to per-table buffers. Yield a page for any table that reaches max_items."""
+        """Add items to per-table buffers. Yield a page for any table that reaches max_items.
+
+        :param items_to_add: dictionary of lists of items to add to per-table buffers, indexed by table name
+        :type  items_to_add: dict[str, list[Any]]
+        :yield: generator that yields collected rows to the appropriate dlt table(s)
+        :rtype: Generator[DataItemWithMeta, Any]
+        """
         for table_name, contents in items_to_add.items():
             if not contents:
                 continue
@@ -73,8 +95,26 @@ class BufferCore(BaseModel):
 class DictBuffer(BufferCore):
     """A buffer for parsed results keyed by table name, e.g. from a parse_fn returning dict[str, rows]."""
 
+    def add_item(self, table_name: str, item_to_add: Any) -> Generator[DataItemWithMeta, Any]:  # noqa: ANN401
+        """Add an item to a table. Yield a page if the table reaches max_items.
+
+        :param table_name: name of the table to add the item to
+        :type  table_name: str
+        :param item_to_add: the item
+        :type  item_to_add: Any
+        :yield: generator that yields collected rows to the appropriate dlt table
+        :rtype: Generator[DataItemWithMeta, Any]
+        """
+        yield from super()._add_item(table_name, item_to_add)
+
     def add_items(self, items_to_add: dict[str, list[Any]]) -> Generator[DataItemWithMeta, Any]:
-        """Add rows for one or more tables. Yield a page per table that reaches max_items."""
+        """Add items to per-table buffers. Yield a page for any table that reaches max_items.
+
+        :param items_to_add: dictionary of lists of items to add to per-table buffers, indexed by table name
+        :type  items_to_add: dict[str, list[Any]]
+        :yield: generator that yields collected rows to the appropriate dlt table(s)
+        :rtype: Generator[DataItemWithMeta, Any]
+        """
         yield from super()._add_items(items_to_add)
 
 
@@ -85,13 +125,19 @@ class ListBuffer(BufferCore):
 
     @model_validator(mode="after")
     def set_up_table_names(self) -> Self:
-        """Initialise the private table-name list and buffers."""
+        """Set up the buffers after successfully instantiating the Buffer instance."""
         self._init_buffers()
         return self
 
     def add_item(self, item_to_add: Any) -> Generator[DataItemWithMeta, Any]:  # noqa: ANN401
-        """Add one row. Yield a page when the buffer reaches max_items."""
-        yield from super()._add_items({self.table_name: [item_to_add]})
+        """Add an item to the table. Yield a page if the table reaches max_items.
+
+        :param item_to_add: the item
+        :type  item_to_add: Any
+        :yield: generator that yields collected rows to the appropriate dlt table
+        :rtype: Generator[DataItemWithMeta, Any]
+        """
+        yield from super()._add_item(self.table_name, item_to_add)
 
 
 class ArrowBufferCore(BaseModel):
@@ -106,7 +152,7 @@ class ArrowBufferCore(BaseModel):
 
     @model_validator(mode="after")
     def set_up_buffers(self) -> Self:
-        """Initialise the buffers."""
+        """Set up the buffers after successfully instantiating the Buffer instance."""
         self._init_buffers()
         return self
 
@@ -118,8 +164,30 @@ class ArrowBufferCore(BaseModel):
 
         self._buffers: dict[str, list[Any]] = {name: [] for name in self.table_to_schema_map}
 
+    def _add_item(self, table_name: str, item_to_add: Any) -> Generator[DataItemWithMeta, Any]:  # noqa: ANN401
+        """Add an item to a table. Yield a page if the table reaches max_items.
+
+        :param table_name: name of the table to add the item to
+        :type  table_name: str
+        :param item_to_add: the item
+        :type  item_to_add: Any
+        :yield: generator that yields collected rows to the appropriate dlt table
+        :rtype: Generator[DataItemWithMeta, Any]
+        """
+        if table_name not in self._buffers:
+            err_msg = f"Cannot add data for {table_name} table: no schema supplied"
+            raise ValueError(err_msg)
+
+        self._buffers[table_name].append(item_to_add)
+        if len(self._buffers[table_name]) >= self.max_items:
+            yield dlt.mark.with_table_name(
+                pa.Table.from_pylist(self._buffers[table_name], schema=self.table_to_schema_map[table_name]),
+                table_name,
+            )
+            self._buffers[table_name] = []
+
     def _add_items(self, items_to_add: dict[str, list[Any]]) -> Generator[DataItemWithMeta, Any]:
-        """Add rows to per-table buffers. Yield a page for any table that reaches max_items."""
+        """Add items to per-table buffers. Yield a page for any table that reaches max_items."""
         for table_name, contents in items_to_add.items():
             if not contents:
                 continue
@@ -148,8 +216,26 @@ class ArrowBufferCore(BaseModel):
 class ArrowDictBuffer(ArrowBufferCore):
     """A pyarrow buffer for parsed results keyed by table name. Results are yielded as pyarrow tables."""
 
+    def add_item(self, table_name: str, item_to_add: Any) -> Generator[DataItemWithMeta, Any]:  # noqa: ANN401
+        """Add an item to a table. Yield a page if the table reaches max_items.
+
+        :param table_name: name of the table to add the item to
+        :type  table_name: str
+        :param item_to_add: the item
+        :type  item_to_add: Any
+        :yield: generator that yields collected rows to the appropriate dlt table
+        :rtype: Generator[DataItemWithMeta, Any]
+        """
+        yield from super()._add_item(table_name, item_to_add)
+
     def add_items(self, items_to_add: dict[str, list[Any]]) -> Generator[DataItemWithMeta, Any]:
-        """Add rows for one or more tables. Yield a page per table that reaches max_items."""
+        """Add items to per-table buffers. Yield a page for any table that reaches max_items.
+
+        :param items_to_add: dictionary of lists of items to add to per-table buffers, indexed by table name
+        :type  items_to_add: dict[str, list[Any]]
+        :yield: generator that yields collected rows to the appropriate dlt table(s)
+        :rtype: Generator[DataItemWithMeta, Any]
+        """
         yield from super()._add_items(items_to_add)
 
 
@@ -161,7 +247,7 @@ class ArrowListBuffer(ArrowBufferCore):
 
     @model_validator(mode="after")
     def set_up_table_name(self) -> Self:
-        """Initialise the private table-name list and buffers."""
+        """Set up the buffers after successfully instantiating the Buffer instance."""
         if len(self.table_to_schema_map) != 1:
             err_msg = "ArrowListBuffers can only be used for a single table and schema"
             raise ValueError(err_msg)
@@ -169,5 +255,11 @@ class ArrowListBuffer(ArrowBufferCore):
         return self
 
     def add_item(self, item_to_add: Any) -> Generator[DataItemWithMeta, Any]:  # noqa: ANN401
-        """Add one row. Yield a page when the buffer reaches max_items."""
+        """Add an item to the table. Yield a page if the table reaches max_items.
+
+        :param item_to_add: the item
+        :type  item_to_add: Any
+        :yield: generator that yields collected rows to the appropriate dlt table
+        :rtype: Generator[DataItemWithMeta, Any]
+        """
         yield from super()._add_items({self._table_name: [item_to_add]})

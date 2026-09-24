@@ -30,11 +30,6 @@ SCHEMA_MAP: Final[dict[str, pa.Schema]] = {
 }
 
 
-def row(n: int) -> dict[str, Any]:
-    """Build a simple row dict."""
-    return {"n": n}
-
-
 def name_row(n: int) -> dict[str, Any]:
     """Build a row dict matching the people schema."""
     return {"name": str(n)}
@@ -162,6 +157,54 @@ def test_arrow_list_buffer_fail_too_many_mappings() -> None:
 
 
 # buffer functions
+@pytest.mark.parametrize("cls", [DictBuffer, ArrowDictBuffer])
+def test_dict_buffer_add_item_pass_yields_page_at_max_items(cls: DictBuffer | ArrowDictBuffer) -> None:
+    """A single item addition yields a page when max_items is reached."""
+    args = {}
+    if cls == ArrowDictBuffer:
+        args["table_to_schema_map"] = SCHEMA_MAP
+    buffer = cls(max_items=3, **args)  # pyright: ignore[reportCallIssue]
+
+    # Add 2 items - no yield
+    assert list(buffer.add_item(PEOPLE, name_row(1))) == []
+    assert list(buffer.add_item(PEOPLE, name_row(2))) == []
+
+    # Add 3rd item - yields page
+    pages = list(buffer.add_item(PEOPLE, name_row(3)))
+    assert len(pages) == 1
+    assert tagged(pages) == [(PEOPLE, [name_row(1), name_row(2), name_row(3)])]
+
+    # Buffer should be empty
+    assert list(buffer.flush()) == []
+
+
+@pytest.mark.parametrize("cls", [DictBuffer, ArrowDictBuffer])
+def test_dict_buffer_core_item_pass_routes_to_different_tables(cls: DictBuffer | ArrowDictBuffer) -> None:
+    """add_item correctly separates rows into different table buffers."""
+    args = {}
+    if cls == ArrowDictBuffer:
+        args["table_to_schema_map"] = SCHEMA_MAP
+    buffer = cls(max_items=2, **args)  # pyright: ignore[reportCallIssue]
+
+    assert list(buffer.add_item(PEOPLE, name_row(1))) == []
+    assert list(buffer.add_item(EMAILS, number_row(1))) == []
+
+    # Fill people buffer
+    pages_people = list(buffer.add_item(PEOPLE, name_row(2)))
+    assert tagged(pages_people) == [(PEOPLE, [name_row(1), name_row(2)])]
+
+    # Fill emails buffer
+    pages_emails = list(buffer.add_item(EMAILS, number_row(2)))
+    assert tagged(pages_emails) == [(EMAILS, [number_row(1), number_row(2)])]
+
+
+def test_list_buffer_add_item_pass_delegates_to_core() -> None:
+    """ListBuffer.add_item uses the core logic with its fixed table_name."""
+    buffer = ListBuffer(table_name=PEOPLE, max_items=2)
+
+    assert list(buffer.add_item(name_row(1))) == []
+    pages = list(buffer.add_item(name_row(2)))
+    assert tagged(pages) == [(PEOPLE, [name_row(1), name_row(2)])]
 
 
 def test_arrow_dict_buffer_pass_flush_yields_remaining_rows() -> None:
@@ -408,9 +451,9 @@ def test_list_buffer_pass_buffer_scope_is_call_local() -> None:
     buffer = ListBuffer(table_name="widget", max_items=max_items)  # pyright: ignore[reportCallIssue]
     emitted: list[Any] = []
     for n in range(10):
-        emitted.extend(buffer.add_item(row(n)))
+        emitted.extend(buffer.add_item(name_row(n)))
     emitted.extend(buffer.flush())
 
     values = [page.data for page in emitted]
-    assert [v for page in values for v in page] == [row(n) for n in range(10)]
+    assert [v for page in values for v in page] == [name_row(n) for n in range(10)]
     assert [len(page) for page in values] == [3, 3, 3, 1]
