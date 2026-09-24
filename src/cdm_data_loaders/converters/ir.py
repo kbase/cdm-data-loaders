@@ -167,6 +167,14 @@ class TypedNode:
             frozendict({name: _node_mapping(children) for name, children in self.schema_maps.items()}),
         )
 
+    def aggregate_metadata(self, field: "Field" | None = None) -> Mapping[str, Value]:
+        """Merge constraints, annotations, and extensions into a single mapping."""
+        all_meta = {**self.constraints, **self.annotations, **self.extensions}
+        if field is not None:
+            all_meta.update(field.annotations)
+            all_meta.update(field.extensions)
+        return all_meta
+
 
 def _schema_metadata(values: Mapping[str, Value]) -> Mapping[str, Value]:
     """Own schema metadata without accepting alternate extension declarations."""

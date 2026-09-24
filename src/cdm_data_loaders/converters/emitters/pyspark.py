@@ -158,6 +158,7 @@ class PySparkEmitter(BaseModel):
 
     format_map: frozendict[str, DataType] = Field(default_factory=lambda: DEFAULT_FORMAT_MAP)
     treat_unknown_as_string: bool = True
+    emit_unions_as_json: bool = False
     extra_metadata_keywords: frozenset[str] = Field(default_factory=frozenset)
 
     @field_validator("format_map", mode="before")
@@ -215,10 +216,7 @@ class PySparkEmitter(BaseModel):
         self, node: TypedNode, ctx: ConversionContext, field: SchemaField | None = None
     ) -> dict[str, object]:
         """Copy selected field metadata into independent mutable containers."""
-        values = {**node.constraints, **node.annotations, **node.extensions}
-        if field is not None:
-            values.update(field.annotations)
-            values.update(field.extensions)
+        values = node.aggregate_metadata(field)
         selected = DEFAULT_METADATA_KEYWORDS | ctx.allowed_extra_metadata_keywords
         jsonschema = {key: mutable_value(values[key]) for key in selected if key in values}
         metadata: dict[str, object] = {}
@@ -226,6 +224,12 @@ class PySparkEmitter(BaseModel):
             metadata["jsonschema"] = jsonschema
         if "description" in values:
             metadata["comment"] = mutable_value(values["description"])
+        if self.emit_unions_as_json:
+            declaration = node.declared_type
+            if isinstance(declaration, tuple):
+                non_null = [kind for kind in declaration if kind != "null"]
+                if len(non_null) > 1:
+                    metadata["original_union"] = list(non_null)
         return metadata
 
     def _type_name(self, node: TypedNode) -> str:
@@ -240,7 +244,10 @@ class PySparkEmitter(BaseModel):
             if not self.treat_unknown_as_string:
                 msg = f"Unsupported multi-type union: {list(declaration)!r}"
                 raise PySparkEmitterError(msg)
-            logger.warning("Collapsing multi-type union %r to StringType.", list(declaration))
+            if self.emit_unions_as_json:
+                logger.info("Emitting multi-type union %r as JSON string.", list(declaration))
+            else:
+                logger.warning("Collapsing multi-type union %r to StringType.", list(declaration))
             return "collapsed-union"
         if declaration is not None:
             return declaration
