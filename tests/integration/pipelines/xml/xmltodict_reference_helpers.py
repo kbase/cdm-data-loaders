@@ -10,7 +10,6 @@ from typing import Any, Final
 import duckdb
 import pyarrow.parquet as pq
 
-from cdm_data_loaders.converters.core.paths import set_nested
 from cdm_data_loaders.core.fields import PARQUET
 
 DLT_METADATA_PREFIX: Final[str] = "_dlt"
@@ -81,6 +80,13 @@ def denormalize_identifier(name: str) -> str:
 def denormalize_path(path: str) -> list[str]:
     """Split a dlt name into xml key fragments, unmangling each one."""
     return [denormalize_identifier(fragment) for fragment in path.split("__")]
+
+
+def set_nested(target: dict[str, Any], path: list[str], value: Any) -> None:
+    """Set a value at a nested path, creating intermediate dicts as needed."""
+    for fragment in path[:-1]:
+        target = target.setdefault(fragment, {})
+    target[path[-1]] = value
 
 
 def rows_as_multiset(tables: dict[str, list[dict[str, Any]]], table_name: str) -> list[str]:

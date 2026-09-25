@@ -200,9 +200,6 @@ ignore = [
 # Flag errors (`C901`) whenever the complexity level exceeds 15.
 max-complexity = 15
 
-# [tool.ruff.lint.pydocstyle]
-# convention = "google" ## should be sphynx!
-
 [build-system]
 requires = ["uv_build>=0.12.0,<0.20.0"]
 build-backend = "uv_build"
