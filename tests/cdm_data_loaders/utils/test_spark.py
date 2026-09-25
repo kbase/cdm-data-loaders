@@ -534,7 +534,7 @@ def test_write_table_existing_proposed_path_warning(
     save_dir = tmp_path / "save" / "some" / "data" / "here"
 
     # set up a save directory for the table
-    spark.sql(f"CREATE TABLE IF NOT EXISTS {table} USING DELTA LOCATION '{save_dir!s}'")
+    spark.sql(f"CREATE TABLE IF NOT EXISTS {table} USING LOCATION '{save_dir!s}'")
 
     df = spark.createDataFrame([DEFAULT_SAMPLE_DATA])
     write_table(

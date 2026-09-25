@@ -176,7 +176,7 @@ def write_table(
 
     merge_or_overwrite_schema = "mergeSchema" if mode == APPEND else "overwriteSchema"
     # use to(schema) to ensure that the schema is saved with the dataframe
-    writer = sdf.to(sdf.schema).write.format("delta").mode(mode).option(merge_or_overwrite_schema, "true")
+    writer = sdf.to(sdf.schema).write.format("parquet").mode(mode).option(merge_or_overwrite_schema, "true")
 
     logger.info("Writing table %s in mode %s (rows=%d)", catalog_db_table, mode, sdf.count())
     logger.debug(sdf.printSchema())
@@ -200,7 +200,7 @@ def write_table_to_file(
     try:
         writer.save(data_dir)
         # Register/create an external table using LOCATION
-        spark.sql(f"CREATE TABLE IF NOT EXISTS {catalog_db_table} USING DELTA LOCATION '{data_dir}'")
+        spark.sql(f"CREATE TABLE IF NOT EXISTS {catalog_db_table} USING LOCATION '{data_dir}'")
         logger.info("Saved external table %s (rows=%d) to %s", catalog_db_table, sdf.count(), data_dir)
     except Exception:
         logger.exception("Error writing external table %s", catalog_db_table)
