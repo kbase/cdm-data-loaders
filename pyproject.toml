@@ -10,12 +10,10 @@ authors = [
 
 dependencies = [
     "beautifulsoup4>=4.15.0",
-    "bioregistry>=0.13.58",
     "boto3[crt]>=1.43.0",
     "click>=8.4.1",
     "defusedxml>=0.7.1",
-    "delta-spark>=4.2.0",
-    "dlt[deltalake,duckdb,filesystem,parquet,pyiceberg]>=1.30.0",
+    "dlt[duckdb,filesystem,parquet,pyiceberg]>=1.30.0",
     "frictionless[aws]>=5.19.0",
     "frozendict>=2.4.7",
     "httpx>=0.28.1",
@@ -27,9 +25,9 @@ dependencies = [
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
     "pyiceberg[pandas,pyarrow,pyiceberg-core,snappy]>=0.11.1",
-    "schema2pyarrow>=1.2.0",
+    "pyspark>=4.2.0",
     "smart-open>=8.0.1",
-    "tqdm>=4.67.3",
+    "tqdm>=4.68.3",
     "xml2db>=0.14.0",
     "xmlschema>=4.3.1",
     "xmltodict>=1.0.4",
@@ -186,22 +184,20 @@ ignore = [
 "*.ipynb" = ["T201"] # ignore printing in notebooks
 "**/__init__.py" = ["D104"] # no docstrings for __init__ files
 "scripts/**/*.py" = ["T201"] # ignore printing in scripts
+# D401: imperative mode for docstrings
 # S101: use of assert
 # T201: print statements
 # FBT001, FBT002: booleans as args
 # ANN401: type annotations
 # ARG002: unused mock args
 # PLR0913: too many arguments
-"tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002", "PLR0913"]
-"tests/integration/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002", "ANN401"]
+"tests/**/*.py" = ["D401", "S101", "T201", "FBT001", "FBT002", "ARG002", "PLR0913"]
+"tests/integration/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002"]
 "tests/utils/test_s3.py" = ["ANN401"]
 
 [tool.ruff.lint.mccabe]
 # Flag errors (`C901`) whenever the complexity level exceeds 15.
 max-complexity = 15
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
 
 [build-system]
 requires = ["uv_build>=0.12.0,<0.20.0"]
