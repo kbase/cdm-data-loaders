@@ -173,6 +173,9 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+# JS
+node_modules/
+
 
 # codacy stuff
 .github/instructions/codacy.instructions.md
