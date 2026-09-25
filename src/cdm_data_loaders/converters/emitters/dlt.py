@@ -304,14 +304,7 @@ class DltEmitter(BaseModel):
                 )
         elif kind == "array" and (item := _single_item(node)) is not None:
             if _resolve_type(item) == "object":
-                if depth < self.max_nesting:
-                    child = self._table(item, name, parent, depth + 1, native=native)
-                else:
-                    logger.warning(
-                        "Schema nesting limit (%d) reached at %r; ignoring array-object child.",
-                        self.max_nesting,
-                        prop.name,
-                    )
+                child = self._table(item, name, parent, depth + 1, native=native)
             elif self.flatten_scalars:
                 value = (
                     new_column("value", _scalar_type(item))

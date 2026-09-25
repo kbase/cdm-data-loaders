@@ -125,7 +125,7 @@ def test_convert_from_string_fail_forward_yaml(
         "combiner-only",
     ],
 )
-def test_convert_type_pass_combiner_precedence(
+def test_convert_type_pass_combiner_precedence(  # noqa: PLR0917
     combiner: str,
     fragment: dict[str, Any],
     dlt_type: str,
@@ -145,7 +145,7 @@ def test_convert_type_pass_combiner_precedence(
             "nullable": True,
         }
         assert spark_converter.convert(schema)["value"].dataType == spark_type
-    warning_modules = {record.name for record in caplog.records if "Approximating" in record.message}
+    warning_modules = {record.name for record in caplog.records if "Approximating" in record.getMessage()}
     assert ("cdm_data_loaders.converters.emitters.dlt" in warning_modules) == dlt_warns
     assert ("cdm_data_loaders.converters.emitters.pyspark" in warning_modules) == spark_warns
 

@@ -52,7 +52,7 @@ class LinkMLEmitter:
         document_name = document.name or title if isinstance(title, str) else document.name
         schema_name = self._identifier(self.schema_name or document_name or "schema")
         root_name = self._unique_name(document_name or "Root")
-        self._emit_class(root_name, document.root)
+        self._emit_class(root_name, document.root, include_description=False)
         identifier = document.identifier or f"urn:linkml:{schema_name}"
         result: dict[str, Any] = {
             "id": identifier,
@@ -68,11 +68,11 @@ class LinkMLEmitter:
             result["enums"] = self._enums
         return result
 
-    def _emit_class(self, class_name: str, node: TypedNode) -> None:
+    def _emit_class(self, class_name: str, node: TypedNode, *, include_description: bool = True) -> None:
         """Emit an object node as a class with local attribute definitions."""
         attributes = {field.name: self._emit_attribute(field, class_name) for field in node.properties}
         definition: dict[str, Any] = {"attributes": attributes}
-        if node.annotations.get("description") is not None:
+        if include_description and node.annotations.get("description") is not None:
             definition["description"] = mutable_value(node.annotations["description"])
         self._classes[class_name] = definition
 
