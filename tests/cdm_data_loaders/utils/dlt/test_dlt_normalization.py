@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.dlt_normalization import (
+from cdm_data_loaders.utils.dlt.dlt_normalization import (
     DltNormalizationError,
     DltTableNode,
     child_key,
@@ -63,7 +63,7 @@ def test_child_table_name_pass_literal_join(parent: str, key: str, expected: str
 
 def test_unflatten_tables_pass_precise_forest_roundtrip() -> None:
     """Preserve every raw field while following explicit parents in declaration order."""
-    tables = json.loads(Path("tests/data/converters/dlt_normalization/tables.json").read_text(encoding="utf-8"))
+    tables = json.loads(Path("tests/data/dlt_normalization/tables.json").read_text(encoding="utf-8"))
     original = deepcopy(tables)
     roots = unflatten_tables(tables)
     leaf = DltTableNode("unrelated__leaf", "unrelated", "leaf", tables["unrelated__leaf"])
