@@ -9,10 +9,10 @@ from unittest.mock import patch
 
 import pytest
 
-from cdm_data_loaders.converters import ir
+from cdm_data_loaders.converters.core import ir
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.ir import Field, NodeHints, Provenance, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.ir_values import freeze_mapping, freeze_value, mutable_value
+from cdm_data_loaders.converters.core.ir import Field, NodeHints, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.ir_values import freeze_mapping, freeze_value, mutable_value
 
 _METADATA_POSITIONS: Final = [
     pytest.param(partial(TypedNode, type="any"), "constraints", id="type-constraints"),
@@ -65,7 +65,7 @@ def test_schema_document_pass_owned_values_and_presence() -> None:
 def test_schema_document_pass_post_init_freezes_annotations_once() -> None:
     """__post_init__ freezes document annotations exactly once, not once per identity field."""
     root = TypedNode(type="any")
-    with patch("cdm_data_loaders.converters.ir._schema_metadata", wraps=ir._schema_metadata) as spy:  # noqa: SLF001
+    with patch("cdm_data_loaders.converters.core.ir._schema_metadata", wraps=ir._schema_metadata) as spy:  # noqa: SLF001
         SchemaDocument(root=root, name="n", dialect="d", identifier="i", annotations={"a": 1})
     assert spy.call_count == 1
 

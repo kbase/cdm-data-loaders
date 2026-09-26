@@ -14,12 +14,12 @@ from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.types import BinaryType, DecimalType, ListType, NestedField, TimestampType, TimestamptzType
 
 from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.ir import Field, NodeHints, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
-from cdm_data_loaders.converters.ir import Field, NodeHints, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.readers.dlt import DltReader
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
-from tests.cdm_data_loaders.converters.jsonschema_to_dlt.conftest import base_object_schema
+from tests.cdm_data_loaders.converters.conftest import base_object_schema
 
 
 @pytest.mark.parametrize(

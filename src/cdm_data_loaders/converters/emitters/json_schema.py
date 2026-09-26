@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.ir import Field, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.ir_values import Value, mutable_value
+from cdm_data_loaders.converters.core.ir import Field, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
 
 JSON_SCHEMA_DIALECT: Final = "https://json-schema.org/draft/2020-12/schema"
 _DLT_TYPES: Final[dict[str, dict[str, Any]]] = {

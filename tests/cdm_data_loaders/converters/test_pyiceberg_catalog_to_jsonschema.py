@@ -30,11 +30,11 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.config import Config
 
-from cdm_data_loaders.converters.pyiceberg_to_jsonschema.catalog_converter import (
+from cdm_data_loaders.converters.pyiceberg_catalog_to_jsonschema import (
     IcebergToJsonSchemaSettings,
     dump_catalog_schemas,
 )
-from tests.cdm_data_loaders.converters.pyiceberg_to_jsonschema.conftest import (
+from tests.cdm_data_loaders.converters.conftest import (
     JSON_SCHEMA_KEYWORDS,
     iter_extension_keys,
     iter_schema_keywords,

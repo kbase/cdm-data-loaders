@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from typing import Any, Final, cast
 
 from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
 from cdm_data_loaders.converters.core.guards import reject_unresolved_references, require_schema_keyword
 from cdm_data_loaders.converters.core.inference import infer_implicit_type
-from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
-from cdm_data_loaders.converters.ir import Field, NodeType, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.ir import Field, NodeType, Provenance, SchemaDocument, TypedNode
 
 _TYPES: Final = frozenset({"object", "array", "string", "integer", "number", "boolean", "null"})
 _ANNOTATIONS: Final = frozenset(

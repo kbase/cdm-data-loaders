@@ -6,7 +6,7 @@ from math import isfinite
 
 from frozendict import frozendict
 
-type Value = None | bool | int | float | Decimal | str | tuple[Value, ...] | Mapping[str, Value]
+type Value = bool | int | float | Decimal | str | tuple[Value, ...] | Mapping[str, Value] | None
 
 
 def freeze_value(value: object) -> Value:

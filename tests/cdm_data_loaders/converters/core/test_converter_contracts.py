@@ -7,14 +7,14 @@ from typing import Any
 import pytest
 from pyspark.sql.types import ArrayType, DataType, DoubleType, LongType, NullType, StringType, StructType
 
+from cdm_data_loaders.converters import dlt_to_jsonschema as reverse_module
+from cdm_data_loaders.converters import jsonschema_to_dlt as dlt_module
+from cdm_data_loaders.converters import jsonschema_to_pyspark as spark_module
 from cdm_data_loaders.converters.core import ConversionError, inference
-from cdm_data_loaders.converters.dlt_to_jsonschema import converter as reverse_module
-from cdm_data_loaders.converters.jsonschema_to_dlt import converter as dlt_module
-from cdm_data_loaders.converters.jsonschema_to_dlt.converter import _decimal_places as dlt_decimal_places
-from cdm_data_loaders.converters.jsonschema_to_dlt.converter import _infer_implicit_type as dlt_infer_implicit_type
-from cdm_data_loaders.converters.jsonschema_to_pyspark import converter as spark_module
-from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import _decimal_places as spark_decimal_places
-from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import (
+from cdm_data_loaders.converters.jsonschema_to_dlt import _decimal_places as dlt_decimal_places
+from cdm_data_loaders.converters.jsonschema_to_dlt import _infer_implicit_type as dlt_infer_implicit_type
+from cdm_data_loaders.converters.jsonschema_to_pyspark import _decimal_places as spark_decimal_places
+from cdm_data_loaders.converters.jsonschema_to_pyspark import (
     _infer_implicit_type as spark_infer_implicit_type,
 )
 

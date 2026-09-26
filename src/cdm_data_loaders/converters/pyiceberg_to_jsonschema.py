@@ -5,8 +5,8 @@ from typing import Any, cast
 from pyiceberg.table import Table
 from pyiceberg.types import IcebergType, NestedField, StructType
 
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter, decimal_pattern
-from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader
 
 __all__ = [

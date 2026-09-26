@@ -33,7 +33,7 @@ from pyiceberg.types import (
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader, iceberg_value
-from tests.cdm_data_loaders.converters.pyiceberg_to_jsonschema.conftest import make_table
+from tests.cdm_data_loaders.converters.conftest import make_table
 
 
 @pytest.mark.parametrize(

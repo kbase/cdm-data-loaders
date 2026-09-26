@@ -11,7 +11,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.ir_values import Value, freeze_mapping, freeze_value, mutable_value
+from cdm_data_loaders.converters.core.ir_values import Value, freeze_mapping, freeze_value, mutable_value
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema import X_XSV_CONFIG_SCHEMA
 
 

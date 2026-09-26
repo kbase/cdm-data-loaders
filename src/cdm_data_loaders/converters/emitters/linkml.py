@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.ir import Field as SchemaField
-from cdm_data_loaders.converters.ir import SchemaDocument, TypedNode
-from cdm_data_loaders.converters.ir_values import mutable_value
+from cdm_data_loaders.converters.core.ir import Field as SchemaField
+from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.ir_values import mutable_value
 
 _LINKML_PREFIX: Final = "https://w3id.org/linkml/"
 _IDENTIFIER_PATTERN: Final = re.compile(r"[^A-Za-z0-9_]")

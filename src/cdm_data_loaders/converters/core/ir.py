@@ -7,8 +7,8 @@ from typing import Literal, Protocol
 from frozendict import frozendict
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.extensions import validated_extensions
-from cdm_data_loaders.converters.ir_values import Value, freeze_mapping
+from cdm_data_loaders.converters.core.extensions import validated_extensions
+from cdm_data_loaders.converters.core.ir_values import Value, freeze_mapping
 
 type NodeType = Literal[
     "object", "map", "array", "string", "integer", "number", "boolean", "null", "any", "never", "unknown"
@@ -22,7 +22,7 @@ class Provenance:
 
     source: Source
     path: tuple[str | int, ...] = ()
-    metadata: Mapping[str, Value] = field(default_factory=frozendict)
+    metadata: Mapping[str, Value] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType]
 
     def __post_init__(self) -> None:
         """Isolate source paths and metadata."""
@@ -80,17 +80,17 @@ class TypedNode:
     required_names: tuple[str, ...] | None = None
     items: "TypedNode | tuple[TypedNode, ...] | None" = None
     prefix_items: tuple["TypedNode", ...] | None = None
-    pattern_properties: Mapping[str, "TypedNode"] = field(default_factory=frozendict)
+    pattern_properties: Mapping[str, "TypedNode"] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType] # pyright: ignore[reportAssignmentType]
     additional_properties: "TypedNode | None" = None
     any_of: tuple["TypedNode", ...] | None = None
     one_of: tuple["TypedNode", ...] | None = None
-    schema_keywords: Mapping[str, "TypedNode"] = field(default_factory=frozendict)
-    schema_maps: Mapping[str, Mapping[str, "TypedNode"]] = field(default_factory=frozendict)
+    schema_keywords: Mapping[str, "TypedNode"] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType]
+    schema_maps: Mapping[str, Mapping[str, "TypedNode"]] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType]
     key_type: "TypedNode | None" = None
     value_type: "TypedNode | None" = None
-    constraints: Mapping[str, Value] = field(default_factory=frozendict)
-    annotations: Mapping[str, Value] = field(default_factory=frozendict)
-    extensions: Mapping[str, Value] = field(default_factory=frozendict)
+    constraints: Mapping[str, Value] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType]
+    annotations: Mapping[str, Value] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType]
+    extensions: Mapping[str, Value] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType]
     provenance: Provenance | None = None
     source_keywords: tuple[str, ...] = ()
 
@@ -224,8 +224,8 @@ class Field:
     name: str
     node: TypedNode
     required: bool = False
-    annotations: Mapping[str, Value] = field(default_factory=frozendict)
-    extensions: Mapping[str, Value] = field(default_factory=frozendict)
+    annotations: Mapping[str, Value] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType]
+    extensions: Mapping[str, Value] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType]
     provenance: Provenance | None = None
 
     def __post_init__(self) -> None:
@@ -246,8 +246,8 @@ class SchemaDocument:
     name: str | None = None
     dialect: str | None = None
     identifier: str | None = None
-    annotations: Mapping[str, Value] = field(default_factory=frozendict)
-    extensions: Mapping[str, Value] = field(default_factory=frozendict)
+    annotations: Mapping[str, Value] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType]
+    extensions: Mapping[str, Value] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType]
     provenance: Provenance | None = None
 
     def __post_init__(self) -> None:

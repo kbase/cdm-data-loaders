@@ -1,4 +1,4 @@
-"""Unit tests for jsonschema_to_pyspark.converter."""
+"""Unit tests for jsonschema_to_pyspark."""
 
 # ruff: noqa: SLF001
 import json
@@ -27,8 +27,8 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
-from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
-from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import (
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
+from cdm_data_loaders.converters.jsonschema_to_pyspark import (
     ConversionContext,
     InvalidJSONSchemaError,
     JSONSchemaToPySpark,
@@ -39,54 +39,56 @@ from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import (
     _metadata_keys_for,
     get_known_jsonschema_keywords,
 )
-from cdm_data_loaders.converters.jsonschema_to_pyspark.dereferencer import dereference_schema
-from tests.cdm_data_loaders.converters.jsonschema_to_pyspark.conftest import base_object_schema
+from cdm_data_loaders.utils.jsonschema.dereferencer import dereference_schema
+from tests.cdm_data_loaders.converters.conftest import base_object_schema
 
 
-def test_json_schema_to_pyspark_fail_instance_is_frozen(converter: JSONSchemaToPySpark) -> None:
+def test_json_schema_to_pyspark_fail_instance_is_frozen(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
     """Assigning to a JSONSchemaToPySpark instance attribute raises ValidationError (frozen model)."""
     with pytest.raises(ValidationError, match="Instance is frozen"):
-        converter.treat_unknown_as_string = False
+        jsonschema_to_pyspark_converter.treat_unknown_as_string = False
 
 
 """convert"""
 
 
-def test_convert_fail_missing_schema_keyword(converter: JSONSchemaToPySpark) -> None:
+def test_convert_fail_missing_schema_keyword(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
     """convert() rejects a schema with no top-level '$schema' keyword."""
     schema = {"type": "object", "properties": {}}
     with pytest.raises(InvalidJSONSchemaError, match="missing a '\\$schema'"):
-        converter.convert(schema)
+        jsonschema_to_pyspark_converter.convert(schema)
 
 
 @pytest.mark.parametrize(
     "root_type",
     ["string", "array", "integer", "number", "boolean", "null"],
 )
-def test_convert_fail_non_object_root_type(converter: JSONSchemaToPySpark, root_type: str) -> None:
+def test_convert_fail_non_object_root_type(
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, root_type: str
+) -> None:
     """convert() rejects any root schema whose declared 'type' isn't 'object'."""
     schema = base_object_schema(type=root_type)
     with pytest.raises(JSONSchemaToPySparkError, match="must be of type 'object'"):
-        converter.convert(schema)
+        jsonschema_to_pyspark_converter.convert(schema)
 
 
-def test_convert_fail_unresolved_ref_at_root(converter: JSONSchemaToPySpark) -> None:
+def test_convert_fail_unresolved_ref_at_root(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
     """convert() refuses a root schema containing an un-dereferenced $ref."""
     schema = base_object_schema(**{"$ref": "#/$defs/Foo"})
     del schema["type"]
     with pytest.raises(JSONSchemaToPySparkError, match="unresolved \\$ref"):
-        converter.convert(schema)
+        jsonschema_to_pyspark_converter.convert(schema)
 
 
-def test_convert_fail_root_resolves_to_maptype(converter: JSONSchemaToPySpark) -> None:
+def test_convert_fail_root_resolves_to_maptype(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
     """convert() rejects a root schema that has no 'properties' and resolves to a MapType."""
     schema = base_object_schema(patternProperties={"^x-": {"type": "string"}})
     del schema["properties"]
     with pytest.raises(JSONSchemaToPySparkError, match="did not resolve to a StructType"):
-        converter.convert(schema)
+        jsonschema_to_pyspark_converter.convert(schema)
 
 
-def test_convert_pass_simple_object(converter: JSONSchemaToPySpark) -> None:
+def test_convert_pass_simple_object(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
     """convert() produces a StructType with correct nullability and empty metadata for a flat object schema."""
     schema = base_object_schema(
         properties={
@@ -95,7 +97,7 @@ def test_convert_pass_simple_object(converter: JSONSchemaToPySpark) -> None:
         },
         required=["name"],
     )
-    result = converter.convert(schema)
+    result = jsonschema_to_pyspark_converter.convert(schema)
     assert result == StructType(
         [
             StructField("name", StringType(), nullable=False, metadata={}),
@@ -104,17 +106,19 @@ def test_convert_pass_simple_object(converter: JSONSchemaToPySpark) -> None:
     )
 
 
-def test_convert_pass_root_schema_without_type_keyword_infers_object(converter: JSONSchemaToPySpark) -> None:
+def test_convert_pass_root_schema_without_type_keyword_infers_object(
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark,
+) -> None:
     """convert() succeeds for a root schema that omits 'type' entirely but declares 'properties' (valid JSON Schema)."""
     schema = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {"a": {"type": "string"}},
     }
-    result = converter.convert(schema)
+    result = jsonschema_to_pyspark_converter.convert(schema)
     assert result == StructType([StructField("a", StringType(), nullable=True, metadata={})])
 
 
-def test_convert_fail_list_form_object_root_type_rejected(converter: JSONSchemaToPySpark) -> None:
+def test_convert_fail_list_form_object_root_type_rejected(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
     """convert() rejects a list-form root 'type' (e.g. ['object', 'null']) even though it contains 'object'.
 
     `JsonSchemaReader.read()` itself accepts this nullable-root form when used
@@ -123,7 +127,7 @@ def test_convert_fail_list_form_object_root_type_rejected(converter: JSONSchemaT
     """
     schema = base_object_schema(type=["object", "null"])
     with pytest.raises(JSONSchemaToPySparkError, match="must be of type 'object'"):
-        converter.convert(schema)
+        jsonschema_to_pyspark_converter.convert(schema)
 
 
 # ConversionContext.metadata_keys
@@ -138,17 +142,17 @@ def test_conversion_context_pass_metadata_keys_delegates_to_metadata_keys_for() 
 """convert_from_string / convert_from_file"""
 
 
-def test_convert_from_string_pass_valid_json(converter: JSONSchemaToPySpark) -> None:
+def test_convert_from_string_pass_valid_json(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
     """convert_from_string() parses JSON text and converts it identically to convert()."""
     schema = base_object_schema(properties={"id": {"type": "integer"}})
-    result = converter.convert_from_string(json.dumps(schema))
-    assert result == converter.convert(schema)
+    result = jsonschema_to_pyspark_converter.convert_from_string(json.dumps(schema))
+    assert result == jsonschema_to_pyspark_converter.convert(schema)
 
 
-def test_convert_from_string_fail_invalid_json(converter: JSONSchemaToPySpark) -> None:
+def test_convert_from_string_fail_invalid_json(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
     """convert_from_string() propagates a JSONDecodeError for malformed JSON text."""
     with pytest.raises(json.JSONDecodeError):
-        converter.convert_from_string("{not valid json")
+        jsonschema_to_pyspark_converter.convert_from_string("{not valid json")
 
 
 @pytest.mark.parametrize(
@@ -156,21 +160,26 @@ def test_convert_from_string_fail_invalid_json(converter: JSONSchemaToPySpark) -
     [(".json", json.dumps), (".yaml", yaml.safe_dump)],
 )
 def test_convert_from_file_pass_supported_extensions(
-    converter: JSONSchemaToPySpark, tmp_path: Path, suffix: str, dumper: Callable[[dict[str, Any]], str]
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark,
+    tmp_path: Path,
+    suffix: str,
+    dumper: Callable[[dict[str, Any]], str],
 ) -> None:
     """convert_from_file() loads both .json and non-.json (YAML) files correctly."""
     schema = base_object_schema(properties={"id": {"type": "integer"}})
     path = tmp_path / f"schema{suffix}"
     path.write_text(dumper(schema))
-    result = converter.convert_from_file(str(path))
-    assert result == converter.convert(schema)
+    result = jsonschema_to_pyspark_converter.convert_from_file(str(path))
+    assert result == jsonschema_to_pyspark_converter.convert(schema)
 
 
-def test_convert_from_file_fail_missing_file(converter: JSONSchemaToPySpark, tmp_path: Path) -> None:
+def test_convert_from_file_fail_missing_file(
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, tmp_path: Path
+) -> None:
     """convert_from_file() raises FileNotFoundError for a nonexistent path."""
     missing = tmp_path / "does_not_exist.json"
     with pytest.raises(FileNotFoundError):
-        converter.convert_from_file(str(missing))
+        jsonschema_to_pyspark_converter.convert_from_file(str(missing))
 
 
 """_reject_unresolved_references"""
@@ -206,10 +215,10 @@ def test_reject_unresolved_references_fail_ref_checked_before_all_of() -> None:
 
 @pytest.mark.parametrize("bool_schema", [True, False])
 def test_convert_boolean_schema_pass_falls_back_to_string_by_default(
-    converter: JSONSchemaToPySpark, bool_schema: bool
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, bool_schema: bool
 ) -> None:
     """_convert_boolean_schema() maps both `true` and `false` schemas to StringType when treat_unknown_as_string=True."""
-    assert converter._convert_boolean_schema(bool_schema) == StringType()
+    assert jsonschema_to_pyspark_converter._convert_boolean_schema(bool_schema) == StringType()
 
 
 @pytest.mark.parametrize("bool_schema", [True, False])
@@ -225,26 +234,26 @@ def test_convert_boolean_schema_fail_raises_when_disallowed(
 
 
 def test_build_metadata_pass_description_becomes_comment_only(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_build_metadata() surfaces 'description' only as top-level 'comment', not inside 'jsonschema'."""
-    metadata = converter._build_metadata({"type": "string", "description": "A name"}, ctx)
+    metadata = jsonschema_to_pyspark_converter._build_metadata({"type": "string", "description": "A name"}, ctx)
     assert metadata == {"comment": "A name"}
 
 
 def test_build_metadata_pass_title_goes_into_jsonschema_dict(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_build_metadata() copies 'title' into the nested 'jsonschema' metadata dict."""
-    metadata = converter._build_metadata({"type": "string", "title": "Name"}, ctx)
+    metadata = jsonschema_to_pyspark_converter._build_metadata({"type": "string", "title": "Name"}, ctx)
     assert metadata == {"jsonschema": {"title": "Name"}}
 
 
 def test_build_metadata_pass_no_matching_keywords_returns_empty_dict(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_build_metadata() returns an entirely empty dict when there's no title/description/extra data."""
-    metadata = converter._build_metadata({"type": "string", "pattern": "^a"}, ctx)
+    metadata = jsonschema_to_pyspark_converter._build_metadata({"type": "string", "pattern": "^a"}, ctx)
     assert metadata == {}
 
 
@@ -286,10 +295,12 @@ def test_build_metadata_pass_extra_metadata_keywords_filtering(
 
 
 def test_build_metadata_pass_title_and_description_together(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_build_metadata() combines 'title' (nested) and 'description' (top-level comment) when both are present."""
-    metadata = converter._build_metadata({"type": "string", "title": "Name", "description": "desc"}, ctx)
+    metadata = jsonschema_to_pyspark_converter._build_metadata(
+        {"type": "string", "title": "Name", "description": "desc"}, ctx
+    )
     assert metadata == {"jsonschema": {"title": "Name"}, "comment": "desc"}
 
 
@@ -298,10 +309,10 @@ def test_build_metadata_pass_title_and_description_together(
 
 @pytest.mark.parametrize("bool_schema", [True, False])
 def test_convert_type_pass_boolean_schema_is_stringtype(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext, bool_schema: bool
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext, bool_schema: bool
 ) -> None:
     """_convert_type() maps JSON Schema boolean schemas (true/false) to StringType by default."""
-    assert converter._convert_type(bool_schema, ctx) == StringType()
+    assert jsonschema_to_pyspark_converter._convert_type(bool_schema, ctx) == StringType()
 
 
 @pytest.mark.parametrize("bool_schema", [True, False])
@@ -313,18 +324,20 @@ def test_convert_type_fail_boolean_schema_when_disallowed(
         strict_converter._convert_type(bool_schema, strict_ctx)
 
 
-def test_convert_type_fail_unresolved_ref(converter: JSONSchemaToPySpark, ctx: ConversionContext) -> None:
+def test_convert_type_fail_unresolved_ref(
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
+) -> None:
     """_convert_type() raises when handed a schema still containing $ref."""
     with pytest.raises(JSONSchemaToPySparkError, match="unresolved \\$ref"):
-        converter._convert_type({"$ref": "#/$defs/Foo"}, ctx)
+        jsonschema_to_pyspark_converter._convert_type({"$ref": "#/$defs/Foo"}, ctx)
 
 
 @pytest.mark.parametrize("bool_schema", [True, False])
 def test_convert_property_pass_boolean_schema_returns_string_and_empty_metadata(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext, bool_schema: bool
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext, bool_schema: bool
 ) -> None:
     """_convert_property() maps boolean schemas to (StringType, {}) with no metadata by default."""
-    data_type, metadata = converter._convert_property(bool_schema, ctx)
+    data_type, metadata = jsonschema_to_pyspark_converter._convert_property(bool_schema, ctx)
     assert data_type == StringType()
     assert metadata == {}
 
@@ -339,10 +352,12 @@ def test_convert_property_fail_boolean_schema_when_disallowed(
 
 
 def test_convert_property_pass_returns_type_and_metadata(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_convert_property() returns both the converted DataType and built metadata."""
-    data_type, metadata = converter._convert_property({"type": "string", "description": "desc"}, ctx)
+    data_type, metadata = jsonschema_to_pyspark_converter._convert_property(
+        {"type": "string", "description": "desc"}, ctx
+    )
     assert data_type == StringType()
     assert metadata == {"comment": "desc"}
 
@@ -363,29 +378,31 @@ def test_convert_property_pass_returns_type_and_metadata(
     ],
 )
 def test_dispatch_type_pass_scalar_and_container_types(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext, schema: dict[str, Any], expected: type
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext, schema: dict[str, Any], expected: type
 ) -> None:
     """_dispatch_type() routes each JSON Schema 'type' value to the correct PySpark DataType."""
-    assert converter._dispatch_type(schema, ctx) == expected
+    assert jsonschema_to_pyspark_converter._dispatch_type(schema, ctx) == expected
 
 
 def test_dispatch_type_pass_multi_type_union_single_non_null_type(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_dispatch_type() collapses a ['string', 'null'] union to StringType."""
-    assert converter._dispatch_type({"type": ["string", "null"]}, ctx) == StringType()
+    assert jsonschema_to_pyspark_converter._dispatch_type({"type": ["string", "null"]}, ctx) == StringType()
 
 
-def test_dispatch_type_pass_multi_type_union_all_null(converter: JSONSchemaToPySpark, ctx: ConversionContext) -> None:
+def test_dispatch_type_pass_multi_type_union_all_null(
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
+) -> None:
     """_dispatch_type() maps a type list containing only 'null' to NullType."""
-    assert converter._dispatch_type({"type": ["null"]}, ctx) == NullType()
+    assert jsonschema_to_pyspark_converter._dispatch_type({"type": ["null"]}, ctx) == NullType()
 
 
 def test_dispatch_type_pass_multi_type_union_collapses_to_string_by_default(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_dispatch_type() collapses a multi-non-null-type union to StringType when treat_unknown_as_string=True."""
-    assert converter._dispatch_type({"type": ["string", "integer"]}, ctx) == StringType()
+    assert jsonschema_to_pyspark_converter._dispatch_type({"type": ["string", "integer"]}, ctx) == StringType()
 
 
 def test_dispatch_type_fail_multi_type_union_when_disallowed(
@@ -407,26 +424,26 @@ def test_dispatch_type_fail_multi_type_union_when_disallowed(
     ],
 )
 def test_dispatch_type_pass_typeless_enum_infers_type(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext, enum_values: list[Any], expected: type
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext, enum_values: list[Any], expected: type
 ) -> None:
     """_dispatch_type() infers a DataType from 'enum' values when no 'type' keyword is present."""
-    assert converter._dispatch_type({"enum": enum_values}, ctx) == expected
+    assert jsonschema_to_pyspark_converter._dispatch_type({"enum": enum_values}, ctx) == expected
 
 
 @pytest.mark.parametrize("combiner", ["oneOf", "anyOf"])
 def test_dispatch_type_pass_combiner_uses_first_branch(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext, combiner: str
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext, combiner: str
 ) -> None:
     """_dispatch_type() approximates 'oneOf'/'anyOf' by converting only the first branch."""
     schema = {combiner: [{"type": "integer"}, {"type": "string"}]}
-    assert converter._dispatch_type(schema, ctx) == LongType()
+    assert jsonschema_to_pyspark_converter._dispatch_type(schema, ctx) == LongType()
 
 
 def test_dispatch_type_pass_unknown_construct_falls_back_to_string(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_dispatch_type() falls back to StringType for unrecognized schemas when treat_unknown_as_string=True."""
-    assert converter._dispatch_type({"not": {"type": "string"}}, ctx) == StringType()
+    assert jsonschema_to_pyspark_converter._dispatch_type({"not": {"type": "string"}}, ctx) == StringType()
 
 
 def test_dispatch_type_fail_unknown_construct_when_disallowed(
@@ -439,22 +456,25 @@ def test_dispatch_type_fail_unknown_construct_when_disallowed(
 
 @pytest.mark.parametrize("ignored_keyword", ["not", "if", "then", "else"])
 def test_dispatch_type_pass_ignored_conditional_keyword_logs_warning(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext, ignored_keyword: str, caplog: pytest.LogCaptureFixture
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark,
+    ctx: ConversionContext,
+    ignored_keyword: str,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """_dispatch_type() logs a warning for each unsupported conditional keyword ('not'/'if'/'then'/'else') it ignores."""
     schema = {ignored_keyword: {"type": "string"}}
     with caplog.at_level(logging.WARNING):
-        result = converter._dispatch_type(schema, ctx)
+        result = jsonschema_to_pyspark_converter._dispatch_type(schema, ctx)
     assert result == StringType()
     assert ignored_keyword in caplog.text
 
 
 @pytest.mark.parametrize("combiner", ["oneOf", "anyOf"])
 def test_dispatch_type_pass_empty_combiner_list_falls_through_to_unknown_handling(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext, combiner: str
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext, combiner: str
 ) -> None:
     """_dispatch_type() treats an empty 'oneOf'/'anyOf' list as absent, falling through to the unknown-construct fallback."""
-    assert converter._dispatch_type({combiner: []}, ctx) == StringType()
+    assert jsonschema_to_pyspark_converter._dispatch_type({combiner: []}, ctx) == StringType()
 
 
 @pytest.mark.parametrize("combiner", ["oneOf", "anyOf"])
@@ -470,7 +490,7 @@ def test_dispatch_type_fail_empty_combiner_list_when_disallowed(
 
 
 def test_dispatch_type_pass_if_then_else_silently_ignored_when_type_present(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext, caplog: pytest.LogCaptureFixture
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext, caplog: pytest.LogCaptureFixture
 ) -> None:
     """_dispatch_type() drops 'if'/'then'/'else' with no warning when a recognized 'type' is also present."""
     schema = {
@@ -481,25 +501,28 @@ def test_dispatch_type_pass_if_then_else_silently_ignored_when_type_present(
         "properties": {"country": {"type": "string"}},
     }
     with caplog.at_level(logging.WARNING):
-        result = converter._dispatch_type(schema, ctx)
+        result = jsonschema_to_pyspark_converter._dispatch_type(schema, ctx)
     assert isinstance(result, StructType)
     assert "if" not in caplog.text
 
 
 def test_dispatch_type_pass_not_silently_ignored_when_type_present(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext, caplog: pytest.LogCaptureFixture
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext, caplog: pytest.LogCaptureFixture
 ) -> None:
     """_dispatch_type() drops 'not' with no warning when a recognized 'type' is also present."""
     schema = {"type": "string", "not": {"enum": ["forbidden"]}}
     with caplog.at_level(logging.WARNING):
-        result = converter._dispatch_type(schema, ctx)
+        result = jsonschema_to_pyspark_converter._dispatch_type(schema, ctx)
     assert result == StringType()
     assert "not" not in caplog.text.lower() or "unsupported conditional keyword" not in caplog.text
 
 
 @pytest.mark.parametrize("combiner", ["oneOf", "anyOf"])
 def test_dispatch_type_pass_combiner_silently_ignored_when_type_present(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext, combiner: str, caplog: pytest.LogCaptureFixture
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark,
+    ctx: ConversionContext,
+    combiner: str,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """_dispatch_type() drops 'oneOf'/'anyOf' entirely if `type` value is present.
 
@@ -511,7 +534,7 @@ def test_dispatch_type_pass_combiner_silently_ignored_when_type_present(
         combiner: [{"type": "integer"}],
     }
     with caplog.at_level(logging.WARNING):
-        result = converter._dispatch_type(schema, ctx)
+        result = jsonschema_to_pyspark_converter._dispatch_type(schema, ctx)
     assert isinstance(result, StructType)
     assert result.fieldNames() == ["a"]
     assert "Approximating" not in caplog.text
@@ -519,51 +542,51 @@ def test_dispatch_type_pass_combiner_silently_ignored_when_type_present(
 
 # _dispatch type with _infer_implicit_type
 def test_dispatch_type_pass_infers_object_when_type_omitted(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_dispatch_type() infers 'object' and produces a StructType for a schema with 'properties' but no 'type'."""
     schema = {"properties": {"a": {"type": "string"}}, "required": ["a"]}
-    result = converter._dispatch_type(schema, ctx)
+    result = jsonschema_to_pyspark_converter._dispatch_type(schema, ctx)
     assert result == StructType([StructField("a", StringType(), nullable=False, metadata={})])
 
 
 def test_dispatch_type_pass_infers_array_when_type_omitted(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_dispatch_type() infers 'array' and produces an ArrayType for a schema with 'items' but no 'type'."""
-    result = converter._dispatch_type({"items": {"type": "integer"}}, ctx)
+    result = jsonschema_to_pyspark_converter._dispatch_type({"items": {"type": "integer"}}, ctx)
     assert result == ArrayType(LongType(), containsNull=True)
 
 
 def test_dispatch_type_pass_infers_string_when_type_omitted(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_dispatch_type() infers 'string' and honours 'format' for a schema with string keywords but no 'type'."""
-    result = converter._dispatch_type({"format": "date"}, ctx)
+    result = jsonschema_to_pyspark_converter._dispatch_type({"format": "date"}, ctx)
     assert result == DateType()
 
 
 def test_dispatch_type_pass_infers_number_when_type_omitted(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_dispatch_type() infers 'number' and produces a DecimalType for a schema with 'multipleOf' but no 'type'."""
-    result = converter._dispatch_type({"multipleOf": 0.01}, ctx)
+    result = jsonschema_to_pyspark_converter._dispatch_type({"multipleOf": 0.01}, ctx)
     assert result == DecimalType(38, 2)
 
 
 def test_dispatch_type_pass_enum_still_takes_priority_over_implicit_inference(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_dispatch_type() still infers type from 'enum' first, even if other type-specific keywords are also present."""
     schema = {"enum": [1, 2, 3], "minimum": 0}  # would otherwise imply 'number' -> DoubleType
-    assert converter._dispatch_type(schema, ctx) == LongType()
+    assert jsonschema_to_pyspark_converter._dispatch_type(schema, ctx) == LongType()
 
 
 def test_dispatch_type_pass_no_inferrable_keywords_falls_back_to_string(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_dispatch_type() still falls back to StringType for a genuinely unconstrained, type-less schema."""
-    assert converter._dispatch_type({"description": "anything goes"}, ctx) == StringType()
+    assert jsonschema_to_pyspark_converter._dispatch_type({"description": "anything goes"}, ctx) == StringType()
 
 
 def test_dispatch_type_fail_no_inferrable_keywords_when_disallowed(
@@ -578,7 +601,7 @@ def test_dispatch_type_fail_no_inferrable_keywords_when_disallowed(
 
 
 def test_convert_object_pass_properties_and_required_control_nullability(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_convert_object() marks properties listed in 'required' as non-nullable, others nullable."""
     schema = {
@@ -586,40 +609,40 @@ def test_convert_object_pass_properties_and_required_control_nullability(
         "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
         "required": ["a"],
     }
-    result = converter._convert_object(schema, ctx)
+    result = jsonschema_to_pyspark_converter._convert_object(schema, ctx)
     assert result == StructType(
         [StructField("a", StringType(), nullable=False), StructField("b", StringType(), nullable=True)]
     )
 
 
 def test_convert_object_pass_pattern_properties_maps_to_maptype(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_convert_object() maps an object with only 'patternProperties' to a MapType."""
     schema = {"type": "object", "patternProperties": {"^x-": {"type": "integer"}}}
-    result = converter._convert_object(schema, ctx)
+    result = jsonschema_to_pyspark_converter._convert_object(schema, ctx)
     assert result == MapType(StringType(), LongType(), valueContainsNull=True)
 
 
 def test_convert_object_pass_additional_properties_schema_maps_to_maptype(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_convert_object() maps an object with schema-valued 'additionalProperties' to a MapType."""
     schema = {"type": "object", "additionalProperties": {"type": "string"}}
-    result = converter._convert_object(schema, ctx)
+    result = jsonschema_to_pyspark_converter._convert_object(schema, ctx)
     assert result == MapType(StringType(), StringType(), valueContainsNull=True)
 
 
 def test_convert_object_pass_no_properties_returns_empty_structtype(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_convert_object() falls back to an empty StructType for a fully open object schema."""
-    result = converter._convert_object({"type": "object"}, ctx)
+    result = jsonschema_to_pyspark_converter._convert_object({"type": "object"}, ctx)
     assert result == StructType([])
 
 
 def test_convert_object_pass_properties_take_precedence_over_pattern_properties(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_convert_object() prefers fixed 'properties' over 'patternProperties' when both are present."""
     schema = {
@@ -627,69 +650,71 @@ def test_convert_object_pass_properties_take_precedence_over_pattern_properties(
         "properties": {"a": {"type": "string"}},
         "patternProperties": {"^x-": {"type": "integer"}},
     }
-    result = converter._convert_object(schema, ctx)
+    result = jsonschema_to_pyspark_converter._convert_object(schema, ctx)
     assert isinstance(result, StructType)
     assert result.fieldNames() == ["a"]
 
 
 @pytest.mark.parametrize("additional_properties", [True, False])
 def test_convert_object_pass_boolean_additional_properties_falls_back_to_empty_structtype(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext, additional_properties: bool
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext, additional_properties: bool
 ) -> None:
     """_convert_object() treats boolean (not schema-valued) 'additionalProperties' as no dynamic-value schema."""
     schema = {"type": "object", "additionalProperties": additional_properties}
-    result = converter._convert_object(schema, ctx)
+    result = jsonschema_to_pyspark_converter._convert_object(schema, ctx)
     assert result == StructType([])
 
 
 """_convert_array"""
 
 
-def test_convert_array_pass_simple_items(converter: JSONSchemaToPySpark, ctx: ConversionContext) -> None:
+def test_convert_array_pass_simple_items(
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
+) -> None:
     """_convert_array() converts a homogeneous 'items' schema to the matching ArrayType."""
-    result = converter._convert_array({"type": "array", "items": {"type": "string"}}, ctx)
+    result = jsonschema_to_pyspark_converter._convert_array({"type": "array", "items": {"type": "string"}}, ctx)
     assert result == ArrayType(StringType(), containsNull=True)
 
 
 def test_convert_array_pass_prefix_items_uses_first_slot(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_convert_array() uses only the first 'prefixItems' schema as the element type."""
     schema = {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "string"}]}
-    result = converter._convert_array(schema, ctx)
+    result = jsonschema_to_pyspark_converter._convert_array(schema, ctx)
     assert result == ArrayType(LongType(), containsNull=True)
 
 
 def test_convert_array_pass_tuple_style_items_uses_first_element(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_convert_array() uses only the first schema of a Draft-07 tuple-style 'items' list."""
     schema = {"type": "array", "items": [{"type": "boolean"}, {"type": "string"}]}
-    result = converter._convert_array(schema, ctx)
+    result = jsonschema_to_pyspark_converter._convert_array(schema, ctx)
     assert result == ArrayType(BooleanType(), containsNull=True)
 
 
 def test_convert_array_pass_missing_items_defaults_to_string_element(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_convert_array() defaults the element type to StringType when 'items' is absent."""
-    result = converter._convert_array({"type": "array"}, ctx)
+    result = jsonschema_to_pyspark_converter._convert_array({"type": "array"}, ctx)
     assert result == ArrayType(StringType(), containsNull=True)
 
 
 def test_convert_array_pass_empty_prefix_items_defaults_to_string_element(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_convert_array() defaults to StringType element when 'prefixItems' is an empty list."""
-    result = converter._convert_array({"type": "array", "prefixItems": []}, ctx)
+    result = jsonschema_to_pyspark_converter._convert_array({"type": "array", "prefixItems": []}, ctx)
     assert result == ArrayType(StringType(), containsNull=True)
 
 
 def test_convert_array_pass_empty_tuple_style_items_defaults_to_string_element(
-    converter: JSONSchemaToPySpark, ctx: ConversionContext
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, ctx: ConversionContext
 ) -> None:
     """_convert_array() defaults to StringType element when tuple-style 'items' is an empty list."""
-    result = converter._convert_array({"type": "array", "items": []}, ctx)
+    result = jsonschema_to_pyspark_converter._convert_array({"type": "array", "items": []}, ctx)
     assert result == ArrayType(StringType(), containsNull=True)
 
 
@@ -706,20 +731,25 @@ def test_convert_array_pass_empty_tuple_style_items_defaults_to_string_element(
     ],
 )
 def test_convert_string_pass_known_format_maps_to_expected_type(
-    converter: JSONSchemaToPySpark, fmt: str, expected: type
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, fmt: str, expected: type
 ) -> None:
     """_convert_string() maps known 'format' values per DEFAULT_FORMAT_MAP."""
-    assert converter._convert_string({"type": "string", "format": fmt}) == expected
+    assert jsonschema_to_pyspark_converter._convert_string({"type": "string", "format": fmt}) == expected
 
 
-def test_convert_string_pass_unknown_format_defaults_to_string(converter: JSONSchemaToPySpark) -> None:
+def test_convert_string_pass_unknown_format_defaults_to_string(
+    jsonschema_to_pyspark_converter: JSONSchemaToPySpark,
+) -> None:
     """_convert_string() falls back to StringType for a 'format' value not in format_map."""
-    assert converter._convert_string({"type": "string", "format": "not-a-real-format"}) == StringType()
+    assert (
+        jsonschema_to_pyspark_converter._convert_string({"type": "string", "format": "not-a-real-format"})
+        == StringType()
+    )
 
 
-def test_convert_string_pass_no_format_returns_string(converter: JSONSchemaToPySpark) -> None:
+def test_convert_string_pass_no_format_returns_string(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
     """_convert_string() returns StringType when no 'format' keyword is present."""
-    assert converter._convert_string({"type": "string"}) == StringType()
+    assert jsonschema_to_pyspark_converter._convert_string({"type": "string"}) == StringType()
 
 
 def test_convert_string_pass_custom_format_map_override_takes_precedence() -> None:

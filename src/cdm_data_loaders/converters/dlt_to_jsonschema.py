@@ -5,10 +5,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, InstanceOf
 
 from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
 from cdm_data_loaders.converters.emitters.json_schema import _DLT_TYPES as TYPE_MAP
 from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter
-from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.readers.dlt import DLT_INTERNAL_PREFIX, DltReader
 
 __all__ = ["DLT_INTERNAL_PREFIX", "JSON_SCHEMA_DIALECT", "TYPE_MAP", "DltToJSONSchema", "DltToJSONSchemaError"]
