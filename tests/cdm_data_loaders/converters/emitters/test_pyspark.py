@@ -103,6 +103,25 @@ def test_emit_pass_field_presence_controls_nullable() -> None:
     }
 
 
+def test_emit_pass_json_round_trip() -> None:
+    """Serialized emitted schemas deserialize through PySpark's native parser."""
+    document = JsonSchemaReader().read(
+        {
+            "$schema": DIALECT,
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "metadata": {"type": "object", "additionalProperties": {"type": "string"}},
+            },
+            "required": ["id"],
+        }
+    )
+    emitted = PySparkEmitter().emit(document)
+
+    assert StructType.fromJson(emitted.jsonValue()) == emitted
+
+
 @pytest.mark.parametrize("schema", [True, False], ids=["any-schema", "never-schema"])
 def test_emit_node_fail_strict_boolean_schema(schema: bool) -> None:
     """Direct boolean schemas remain unsupported in strict mode."""

@@ -1,6 +1,10 @@
 """LinkML schema emission from typed converter documents."""
 
+from pathlib import Path
+
 import pytest
+import yaml
+from linkml.linter.linter import Linter
 
 from cdm_data_loaders.converters.emitters.linkml import LinkMLEmitter, LinkMLEmitterError
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
@@ -53,6 +57,25 @@ def test_emit_pass_nested_enum_array_constraints() -> None:
         },
         "enums": {"record_status_enum": {"permissible_values": {"active": None, "retired": None}}},
     }
+
+
+def test_emit_pass_linkml_metamodel_validation(tmp_path: Path) -> None:
+    """Emitted schemas conform to the LinkML metamodel."""
+    document = JsonSchemaReader().read(
+        {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer", "minimum": 1},
+                "status": {"enum": ["active", "retired"]},
+            },
+            "required": ["id"],
+        }
+    )
+    schema_path = tmp_path / "record.yaml"
+    schema_path.write_text(yaml.safe_dump(LinkMLEmitter().emit(document)), encoding="utf-8")
+
+    assert list(Linter.validate_schema(str(schema_path))) == []
 
 
 @pytest.mark.parametrize(

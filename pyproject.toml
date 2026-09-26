@@ -46,6 +46,7 @@ uniref = "cdm_data_loaders.pipelines.uniref:cli"
 
 [dependency-groups]
 dev = [
+    "linkml>=1.9.5",
     "moto[s3]>=5.2.1",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
