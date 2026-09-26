@@ -10,8 +10,8 @@ from cdm_data_loaders.converters.core.guards import (
     require_object_root,
     require_schema_keyword,
 )
-from cdm_data_loaders.converters.jsonschema_to_dlt.converter import JSONSchemaToDlt, JSONSchemaToDltError
-from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import JSONSchemaToPySpark, JSONSchemaToPySparkError
+from cdm_data_loaders.converters.jsonschema_to_dlt import JSONSchemaToDlt, JSONSchemaToDltError
+from cdm_data_loaders.converters.jsonschema_to_pyspark import JSONSchemaToPySpark, JSONSchemaToPySparkError
 
 
 @pytest.mark.parametrize("error", [JSONSchemaToDltError, JSONSchemaToPySparkError], ids=["dlt", "pyspark"])

@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionError
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError
 from cdm_data_loaders.converters.readers.dlt import DltReader
 
 

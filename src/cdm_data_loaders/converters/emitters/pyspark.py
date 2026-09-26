@@ -33,9 +33,9 @@ from pyspark.sql.types import (
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.inference import decimal_places, json_type_from_enum
-from cdm_data_loaders.converters.ir import Field as SchemaField
-from cdm_data_loaders.converters.ir import SchemaDocument, TypedNode
-from cdm_data_loaders.converters.ir_values import mutable_value
+from cdm_data_loaders.converters.core.ir import Field as SchemaField
+from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.ir_values import mutable_value
 
 logger = logging.getLogger(__name__)
 

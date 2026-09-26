@@ -6,9 +6,9 @@ from dataclasses import dataclass, replace
 from typing import Any, Final, Literal
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.dlt_normalization import DltTableNode, unflatten_tables
-from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
-from cdm_data_loaders.converters.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
+from cdm_data_loaders.converters.core.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.utils.dlt.dlt_normalization import DltTableNode, unflatten_tables
 
 logger = logging.getLogger(__name__)
 DLT_INTERNAL_PREFIX: Final = "_dlt_"

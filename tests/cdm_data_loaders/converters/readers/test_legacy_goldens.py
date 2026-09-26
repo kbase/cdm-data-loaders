@@ -7,14 +7,14 @@ from typing import Any
 import pytest
 from pyiceberg.schema import Schema
 
-from cdm_data_loaders.converters.dlt_to_jsonschema.converter import DltToJSONSchema
-from cdm_data_loaders.converters.jsonschema_to_dlt.converter import JSONSchemaToDlt
-from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import JSONSchemaToPySpark
-from cdm_data_loaders.converters.pyiceberg_to_jsonschema.converter import table_to_json_schema
+from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema
+from cdm_data_loaders.converters.jsonschema_to_dlt import JSONSchemaToDlt
+from cdm_data_loaders.converters.jsonschema_to_pyspark import JSONSchemaToPySpark
+from cdm_data_loaders.converters.pyiceberg_to_jsonschema import table_to_json_schema
 from cdm_data_loaders.converters.readers.dlt import DltReader
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
-from tests.cdm_data_loaders.converters.pyiceberg_to_jsonschema.conftest import make_table
+from tests.cdm_data_loaders.converters.conftest import make_table
 
 GOLDEN_PATH = Path(__file__).parents[3] / "data" / "converters" / "ir" / "legacy_outputs.json"
 CASES: list[dict[str, Any]] = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))

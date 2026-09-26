@@ -7,15 +7,15 @@ from typing import Any
 import pytest
 from jsonschema.exceptions import SchemaError, ValidationError
 
-from cdm_data_loaders.converters.extensions import (
+from cdm_data_loaders.converters.core.extensions import (
     DEFAULT_EXTENSIONS,
     ExtensionError,
     ExtensionRegistry,
     Extensions,
     ExtensionSpec,
 )
-from cdm_data_loaders.converters.ir import TypedNode
-from cdm_data_loaders.converters.ir_values import Value, freeze_value
+from cdm_data_loaders.converters.core.ir import TypedNode
+from cdm_data_loaders.converters.core.ir_values import Value, freeze_value
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema import X_XSV_CONFIG_SCHEMA
 
 

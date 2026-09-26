@@ -10,7 +10,7 @@ from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 from pyiceberg.catalog import load_catalog
 
-from cdm_data_loaders.converters.pyiceberg_to_jsonschema.converter import table_to_json_schema
+from cdm_data_loaders.converters.pyiceberg_to_jsonschema import table_to_json_schema
 from cdm_data_loaders.core.fields import (
     OUTPUT_DIR,
     NonEmptyStr,

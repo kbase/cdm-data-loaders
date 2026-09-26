@@ -1,4 +1,4 @@
-"""Unit and integration tests for jsonschema_to_dlt.converter."""
+"""Unit and integration tests for jsonschema_to_dlt."""
 
 import logging
 from pathlib import Path
@@ -11,7 +11,7 @@ from dlt.common.schema import Schema
 from dlt.common.schema.utils import is_nested_table
 from pydantic import ValidationError
 
-from cdm_data_loaders.converters.jsonschema_to_dlt.converter import (
+from cdm_data_loaders.converters.jsonschema_to_dlt import (
     SCHEMA_ENGINE_VERSION,
     InvalidJSONSchemaError,
     JSONSchemaToDlt,
@@ -19,14 +19,14 @@ from cdm_data_loaders.converters.jsonschema_to_dlt.converter import (
     _data_type_from_enum,
     _decimal_places,
 )
-from cdm_data_loaders.converters.jsonschema_to_pyspark.dereferencer import dereference_schema
-from tests.cdm_data_loaders.converters.jsonschema_to_dlt.conftest import base_object_schema
+from cdm_data_loaders.utils.jsonschema.dereferencer import dereference_schema
+from tests.cdm_data_loaders.converters.conftest import base_object_schema
 
 
-def test_json_schema_to_dlt_fail_instance_is_frozen(converter: JSONSchemaToDlt) -> None:
+def test_json_schema_to_dlt_fail_instance_is_frozen(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """Assigning to a JSONSchemaToDlt instance attribute raises ValidationError (frozen model)."""
     with pytest.raises(ValidationError, match="Instance is frozen"):
-        converter.skip_nested_types = True
+        jsonschema_to_dlt_converter.skip_nested_types = True
 
 
 @pytest.mark.parametrize(
@@ -63,45 +63,45 @@ def test_decimal_places_values() -> None:
 """convert"""
 
 
-def test_convert_fail_missing_schema_keyword(converter: JSONSchemaToDlt) -> None:
+def test_convert_fail_missing_schema_keyword(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """convert() rejects a schema with no top-level '$schema' keyword."""
     schema = {"type": "object", "properties": {}}
     with pytest.raises(InvalidJSONSchemaError, match="missing a '\\$schema'"):
-        converter.convert(schema)
+        jsonschema_to_dlt_converter.convert(schema)
 
 
 @pytest.mark.parametrize(
     "root_type",
     ["string", "array", "integer", "number", "boolean", "null"],
 )
-def test_convert_fail_non_object_root_type(converter: JSONSchemaToDlt, root_type: str) -> None:
+def test_convert_fail_non_object_root_type(jsonschema_to_dlt_converter: JSONSchemaToDlt, root_type: str) -> None:
     """convert() rejects any root schema whose declared 'type' isn't 'object'."""
     schema = base_object_schema(type=root_type)
     with pytest.raises(JSONSchemaToDltError, match="must be of type 'object'"):
-        converter.convert(schema)
+        jsonschema_to_dlt_converter.convert(schema)
 
 
-def test_convert_fail_unresolved_ref(converter: JSONSchemaToDlt) -> None:
+def test_convert_fail_unresolved_ref(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """convert() refuses a schema containing an un-dereferenced $ref."""
     schema = base_object_schema(
         properties={"a": {"$ref": "#/$defs/Foo"}},
     )
     with pytest.raises(JSONSchemaToDltError, match="unresolved \\$ref"):
-        converter.convert(schema)
+        jsonschema_to_dlt_converter.convert(schema)
 
 
-def test_convert_fail_unmerged_allof(converter: JSONSchemaToDlt) -> None:
+def test_convert_fail_unmerged_allof(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """convert() refuses a schema containing an unmerged allOf."""
     schema = base_object_schema(
         properties={"a": {"allOf": [{"type": "string"}]}},
     )
     with pytest.raises(JSONSchemaToDltError, match="unmerged 'allOf'"):
-        converter.convert(schema)
+        jsonschema_to_dlt_converter.convert(schema)
 
 
-def test_convert_pass_empty_object_schema(converter: JSONSchemaToDlt) -> None:
+def test_convert_pass_empty_object_schema(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """An empty object schema converts to a single root table with no columns."""
-    stored = converter.convert(base_object_schema())
+    stored = jsonschema_to_dlt_converter.convert(base_object_schema())
     assert stored["name"] == "test_source"
     assert stored["engine_version"] == SCHEMA_ENGINE_VERSION
     assert sorted(stored["tables"].keys()) == ["test_source"]
@@ -167,13 +167,13 @@ def test_convert_pass_empty_object_schema(converter: JSONSchemaToDlt) -> None:
     ],
 )
 def test_convert_scalar_column_types_pass(
-    converter: JSONSchemaToDlt,
+    jsonschema_to_dlt_converter: JSONSchemaToDlt,
     prop_schema: dict[str, Any] | bool,
     expected_type: TDataType,
 ) -> None:
     """Scalar property schemas map to the expected dlt data type on a flat table."""
     schema = base_object_schema(properties={"col": prop_schema})
-    stored = converter.convert(schema)
+    stored = jsonschema_to_dlt_converter.convert(schema)
     assert stored["tables"]["test_source"]["columns"]["col"]["data_type"] == expected_type
 
 
@@ -195,7 +195,7 @@ def test_convert_scalar_column_type_fail_unknown_type_strict(
     ids=["required", "optional"],
 )
 def test_convert_nullability_from_required(
-    converter: JSONSchemaToDlt,
+    jsonschema_to_dlt_converter: JSONSchemaToDlt,
     required: list[str],
     expected_nullable: bool,
 ) -> None:
@@ -204,14 +204,14 @@ def test_convert_nullability_from_required(
         required=required,
         properties={"col": {"type": "string"}},
     )
-    stored = converter.convert(schema)
+    stored = jsonschema_to_dlt_converter.convert(schema)
     assert stored["tables"]["test_source"]["columns"]["col"]["nullable"] is expected_nullable
 
 
 """nested structures"""
 
 
-def test_convert_nested_object_becomes_child_table(converter: JSONSchemaToDlt) -> None:
+def test_convert_nested_object_becomes_child_table(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """A nested object becomes a dlt child table with parent linkage and __ naming."""
     schema = base_object_schema(
         properties={
@@ -221,7 +221,7 @@ def test_convert_nested_object_becomes_child_table(converter: JSONSchemaToDlt) -
             }
         }
     )
-    stored = converter.convert(schema)
+    stored = jsonschema_to_dlt_converter.convert(schema)
     assert sorted(stored["tables"].keys()) == ["test_source", "test_source__address"]
     child = stored["tables"]["test_source__address"]
     assert is_nested_table(child)
@@ -229,7 +229,7 @@ def test_convert_nested_object_becomes_child_table(converter: JSONSchemaToDlt) -
     assert child["columns"]["city"]["data_type"] == "text"
 
 
-def test_convert_deeply_nested_objects_chain_child_tables(converter: JSONSchemaToDlt) -> None:
+def test_convert_deeply_nested_objects_chain_child_tables(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """Objects nested more than one level deep chain child tables with full path names."""
     schema = base_object_schema(
         properties={
@@ -244,7 +244,7 @@ def test_convert_deeply_nested_objects_chain_child_tables(converter: JSONSchemaT
             }
         }
     )
-    stored = converter.convert(schema)
+    stored = jsonschema_to_dlt_converter.convert(schema)
     assert sorted(stored["tables"].keys()) == [
         "test_source",
         "test_source__address",
@@ -254,7 +254,7 @@ def test_convert_deeply_nested_objects_chain_child_tables(converter: JSONSchemaT
     assert stored["tables"]["test_source__address__geo"]["columns"]["lat"]["data_type"] == "double"
 
 
-def test_convert_array_of_objects_becomes_child_table(converter: JSONSchemaToDlt) -> None:
+def test_convert_array_of_objects_becomes_child_table(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """An array of objects becomes a dlt child table with the object's columns."""
     schema = base_object_schema(
         properties={
@@ -267,17 +267,17 @@ def test_convert_array_of_objects_becomes_child_table(converter: JSONSchemaToDlt
             }
         }
     )
-    stored = converter.convert(schema)
+    stored = jsonschema_to_dlt_converter.convert(schema)
     assert sorted(stored["tables"].keys()) == ["test_source", "test_source__orders"]
     child = stored["tables"]["test_source__orders"]
     assert child["parent"] == "test_source"
     assert child["columns"]["total"]["data_type"] == "double"
 
 
-def test_convert_array_of_scalars_becomes_value_child_table(converter: JSONSchemaToDlt) -> None:
+def test_convert_array_of_scalars_becomes_value_child_table(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """An array of scalars becomes a child table with a single `value` column (dlt normalizer behavior)."""
     schema = base_object_schema(properties={"tags": {"type": "array", "items": {"type": "string"}}})
-    stored = converter.convert(schema)
+    stored = jsonschema_to_dlt_converter.convert(schema)
     assert sorted(stored["tables"].keys()) == ["test_source", "test_source__tags"]
     child = stored["tables"]["test_source__tags"]
     assert child["parent"] == "test_source"
@@ -295,20 +295,20 @@ def test_convert_array_of_scalars_becomes_value_child_table(converter: JSONSchem
     ids=["tuple-items-first-wins", "tuple-items-single", "single-items"],
 )
 def test_convert_array_tuple_style_items_use_first_schema(
-    converter: JSONSchemaToDlt,
+    jsonschema_to_dlt_converter: JSONSchemaToDlt,
     items_schema: list[dict[str, Any]] | dict[str, Any],
     expected_type: TDataType,
 ) -> None:
     """Tuple-style items and prefixItems use the first element's schema for the value column."""
     schema = base_object_schema(properties={"tags": {"type": "array", "items": items_schema}})
-    stored = converter.convert(schema)
+    stored = jsonschema_to_dlt_converter.convert(schema)
     assert stored["tables"]["test_source__tags"]["columns"]["value"]["data_type"] == expected_type
 
 
-def test_convert_array_without_items_becomes_json_column(converter: JSONSchemaToDlt) -> None:
+def test_convert_array_without_items_becomes_json_column(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """An array schema with no `items` has no element type and stays a json column on the parent table."""
     schema = base_object_schema(properties={"tags": {"type": "array"}})
-    stored = converter.convert(schema)
+    stored = jsonschema_to_dlt_converter.convert(schema)
     assert sorted(stored["tables"].keys()) == ["test_source"]
     assert stored["tables"]["test_source"]["columns"]["tags"]["data_type"] == "json"
 
@@ -397,13 +397,13 @@ def test_convert_max_nesting_root_level_bounded() -> None:
 """metadata and descriptions"""
 
 
-def test_convert_pass_description_and_table_description(converter: JSONSchemaToDlt) -> None:
+def test_convert_pass_description_and_table_description(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """Descriptions propagate from the root schema to the table and from properties to columns."""
     schema = base_object_schema(
         description="root description",
         properties={"col": {"type": "string", "description": "column description"}},
     )
-    stored = converter.convert(schema)
+    stored = jsonschema_to_dlt_converter.convert(schema)
     table = stored["tables"]["test_source"]
     assert table["description"] == "root description"
     assert table["columns"]["col"]["description"] == "column description"
@@ -425,54 +425,54 @@ def test_convert_pass_write_disposition_applied_to_root_tables() -> None:
 """entry points"""
 
 
-def test_convert_from_string_pass(converter: JSONSchemaToDlt) -> None:
+def test_convert_from_string_pass(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """convert_from_string parses a JSON string and converts it."""
     schema_str = '{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {"a": {"type": "string"}}}'
-    stored = converter.convert_from_string(schema_str)
+    stored = jsonschema_to_dlt_converter.convert_from_string(schema_str)
     assert stored["tables"]["test_source"]["columns"]["a"]["data_type"] == "text"
 
 
-def test_convert_from_file_pass_json(converter: JSONSchemaToDlt, tmp_path: Path) -> None:
+def test_convert_from_file_pass_json(jsonschema_to_dlt_converter: JSONSchemaToDlt, tmp_path: Path) -> None:
     """convert_from_file reads a .json schema file."""
     path = tmp_path / "schema.json"
     path.write_text(
         '{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {"a": {"type": "integer"}}}'
     )
-    stored = converter.convert_from_file(str(path))
+    stored = jsonschema_to_dlt_converter.convert_from_file(str(path))
     assert stored["tables"]["test_source"]["columns"]["a"]["data_type"] == "bigint"
 
 
-def test_convert_from_file_pass_yaml(converter: JSONSchemaToDlt, tmp_path: Path) -> None:
+def test_convert_from_file_pass_yaml(jsonschema_to_dlt_converter: JSONSchemaToDlt, tmp_path: Path) -> None:
     """convert_from_file reads a .yaml schema file."""
     schema = base_object_schema(properties={"a": {"type": "boolean"}})
     path = tmp_path / "schema.yaml"
     path.write_text(yaml.dump(schema))
-    stored = converter.convert_from_file(str(path))
+    stored = jsonschema_to_dlt_converter.convert_from_file(str(path))
     assert stored["tables"]["test_source"]["columns"]["a"]["data_type"] == "bool"
 
 
-def test_convert_from_file_fail_missing_file(converter: JSONSchemaToDlt, tmp_path: Path) -> None:
+def test_convert_from_file_fail_missing_file(jsonschema_to_dlt_converter: JSONSchemaToDlt, tmp_path: Path) -> None:
     """convert_from_file raises FileNotFoundError for a nonexistent path."""
     with pytest.raises(FileNotFoundError):
-        converter.convert_from_file(str(tmp_path / "nope.json"))
+        jsonschema_to_dlt_converter.convert_from_file(str(tmp_path / "nope.json"))
 
 
 """to_yaml and live Schema integration"""
 
 
-def test_to_yaml_pass_round_trips_through_yaml(converter: JSONSchemaToDlt) -> None:
+def test_to_yaml_pass_round_trips_through_yaml(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """to_yaml emits YAML that parses back to the same stored schema tables."""
     schema = base_object_schema(
         required=["id"],
         properties={"id": {"type": "integer"}, "name": {"type": "string"}},
     )
-    yaml_text = converter.to_yaml(schema)
+    yaml_text = jsonschema_to_dlt_converter.to_yaml(schema)
     parsed: dict[str, Any] = yaml.safe_load(yaml_text)
     assert sorted(parsed["tables"].keys()) == ["test_source"]
     assert parsed["tables"]["test_source"]["columns"]["id"]["data_type"] == "bigint"
 
 
-def test_to_schema_pass_builds_live_dlt_schema(converter: JSONSchemaToDlt) -> None:
+def test_to_schema_pass_builds_live_dlt_schema(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """to_schema returns a live dlt Schema containing the converted tables plus internal tables."""
     schema = base_object_schema(
         required=["id"],
@@ -482,7 +482,7 @@ def test_to_schema_pass_builds_live_dlt_schema(converter: JSONSchemaToDlt) -> No
             "tags": {"type": "array", "items": {"type": "string"}},
         },
     )
-    live = converter.to_schema(schema)
+    live = jsonschema_to_dlt_converter.to_schema(schema)
     assert isinstance(live, Schema)
     assert live.name == "test_source"
     table_names = {t["name"] for t in live.data_tables()}
@@ -494,7 +494,7 @@ def test_to_schema_pass_builds_live_dlt_schema(converter: JSONSchemaToDlt) -> No
     assert columns["test_source__tags"]["value"]["data_type"] == "text"
 
 
-def test_to_schema_pass_deep_nesting_parents_first(converter: JSONSchemaToDlt) -> None:
+def test_to_schema_pass_deep_nesting_parents_first(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """to_schema handles multi-level chains; parents merge before children."""
     schema = base_object_schema(
         required=["c"],
@@ -511,7 +511,7 @@ def test_to_schema_pass_deep_nesting_parents_first(converter: JSONSchemaToDlt) -
             }
         },
     )
-    live = converter.to_schema(schema)
+    live = jsonschema_to_dlt_converter.to_schema(schema)
     table_names = {t["name"] for t in live.data_tables()}
     # dlt's data_tables() hides zero-column tables: the column-less root/intermediate
     # tables in this chain are omitted, only leaf tables with columns are listed
@@ -523,20 +523,20 @@ def test_to_schema_pass_deep_nesting_parents_first(converter: JSONSchemaToDlt) -
     assert geo_columns["c"]["nullable"] is False
 
 
-def test_to_schema_pass_yaml_export_round_trips(converter: JSONSchemaToDlt) -> None:
+def test_to_schema_pass_yaml_export_round_trips(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """A live Schema built by to_schema serializes with to_pretty_yaml and reloads."""
     schema = base_object_schema(properties={"id": {"type": "integer"}})
-    live = converter.to_schema(schema)
+    live = jsonschema_to_dlt_converter.to_schema(schema)
     yaml_text = live.to_pretty_yaml()
     reloaded = Schema.from_dict(yaml.safe_load(yaml_text))
     assert reloaded.name == "test_source"
     assert {t["name"] for t in reloaded.data_tables()} >= {"test_source"}
 
 
-def test_to_schema_fail_missing_schema_keyword(converter: JSONSchemaToDlt) -> None:
+def test_to_schema_fail_missing_schema_keyword(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """to_schema enforces the same $schema requirement as convert()."""
     with pytest.raises(InvalidJSONSchemaError, match="missing a '\\$schema'"):
-        converter.to_schema({"type": "object", "properties": {}})
+        jsonschema_to_dlt_converter.to_schema({"type": "object", "properties": {}})
 
 
 """integration with the dereferencer"""
@@ -556,19 +556,21 @@ def test_convert_pass_after_dereferencing(caplog: pytest.LogCaptureFixture) -> N
     assert stored["tables"]["test_source__address"]["columns"]["city"]["data_type"] == "text"
 
 
-def test_convert_pass_schema_with_oneof_after_dereference(converter: JSONSchemaToDlt) -> None:
+def test_convert_pass_schema_with_oneof_after_dereference(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
     """oneOf-only properties fall back to text with a warning (no union types in dlt)."""
     schema = base_object_schema(
         properties={"col": {"oneOf": [{"type": "string"}, {"type": "integer"}]}},
     )
-    stored = converter.convert(schema)
+    stored = jsonschema_to_dlt_converter.convert(schema)
     assert stored["tables"]["test_source"]["columns"]["col"]["data_type"] == "text"
 
 
-def test_convert_pass_boolean_schema_property(converter: JSONSchemaToDlt, caplog: pytest.LogCaptureFixture) -> None:
+def test_convert_pass_boolean_schema_property(
+    jsonschema_to_dlt_converter: JSONSchemaToDlt, caplog: pytest.LogCaptureFixture
+) -> None:
     """A boolean schema property (true/false) maps to text with a warning."""
     schema = base_object_schema(properties={"col": True})
     with caplog.at_level(logging.WARNING):
-        stored = converter.convert(schema)
+        stored = jsonschema_to_dlt_converter.convert(schema)
     assert stored["tables"]["test_source"]["columns"]["col"]["data_type"] == "text"
-    assert any("no type" in r.message for r in caplog.records)
+    assert any("no type" in r.getMessage() for r in caplog.records)

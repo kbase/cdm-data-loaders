@@ -32,9 +32,9 @@ from pyiceberg.types import (
 )
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
-from cdm_data_loaders.converters.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.ir_values import Value, freeze_value
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
+from cdm_data_loaders.converters.core.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.ir_values import Value, freeze_value
 
 
 def iceberg_value(value: object) -> Value:

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, InstanceOf, field_validator
 from pyspark.sql.types import ArrayType, DataType, StructType
 
 from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.core.guards import (
     reject_unresolved_references,
     require_object_root,
@@ -35,7 +36,6 @@ from cdm_data_loaders.converters.emitters.pyspark import (
 )
 from cdm_data_loaders.converters.emitters.pyspark import infer_type_from_enum as _infer_type_from_enum
 from cdm_data_loaders.converters.emitters.pyspark import metadata_keys_for as _metadata_keys_for
-from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 
 __all__ = [

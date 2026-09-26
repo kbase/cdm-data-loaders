@@ -7,7 +7,7 @@ from frozendict import frozendict
 from referencing import Registry, Resource, Specification
 from referencing.jsonschema import DRAFT7, DRAFT201909, DRAFT202012
 
-from cdm_data_loaders.converters.jsonschema_to_pyspark.dereferencer import (
+from cdm_data_loaders.utils.jsonschema.dereferencer import (
     DereferenceContext,
     DereferencingError,
     RefSiblingMode,

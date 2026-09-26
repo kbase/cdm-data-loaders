@@ -35,15 +35,15 @@ from pyiceberg.types import (
 )
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.dlt_to_jsonschema.converter import DltToJSONSchema
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, Extensions, ExtensionSpec
+from cdm_data_loaders.converters.core.ir import Field, NodeHints, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema
 from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter, decimal_pattern
-from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionError, Extensions, ExtensionSpec
-from cdm_data_loaders.converters.ir import Field, NodeHints, Provenance, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.pyiceberg_to_jsonschema.converter import decimal_pattern as legacy_decimal_pattern
+from cdm_data_loaders.converters.pyiceberg_to_jsonschema import decimal_pattern as legacy_decimal_pattern
 from cdm_data_loaders.converters.readers.dlt import DltReader
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
-from tests.cdm_data_loaders.converters.pyiceberg_to_jsonschema.conftest import make_table
+from tests.cdm_data_loaders.converters.conftest import make_table
 
 GOLDEN_PATH: Final = Path(__file__).parents[3] / "data" / "converters" / "ir" / "legacy_outputs.json"
 CASES: Final[list[dict[str, Any]]] = [

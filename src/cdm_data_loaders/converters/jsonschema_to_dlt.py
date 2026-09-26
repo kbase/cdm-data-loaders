@@ -7,6 +7,7 @@ from dlt.common.schema.typing import TStoredSchema
 from pydantic import BaseModel, ConfigDict, Field, InstanceOf, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.core.guards import (
     reject_unresolved_references,
     require_object_root,
@@ -15,6 +16,7 @@ from cdm_data_loaders.converters.core.guards import (
 from cdm_data_loaders.converters.core.inference import decimal_places as _decimal_places
 from cdm_data_loaders.converters.core.inference import infer_implicit_type as _infer_implicit_type
 from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
+from cdm_data_loaders.converters.core.ir import SchemaDocument
 from cdm_data_loaders.converters.emitters.dlt import (
     BINARY_FORMATS,
     DATE_FORMATS,
@@ -24,8 +26,6 @@ from cdm_data_loaders.converters.emitters.dlt import (
     DltEmitter,
     _scalar_type,
 )
-from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
-from cdm_data_loaders.converters.ir import SchemaDocument
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 
 if TYPE_CHECKING:

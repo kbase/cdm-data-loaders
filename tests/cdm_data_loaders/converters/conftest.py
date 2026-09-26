@@ -1,16 +1,21 @@
-"""Shared fixtures for the pyiceberg_to_jsonschema test suite."""
+"""Shared fixtures and helpers for the converters test suite."""
 
 import re
 from collections.abc import Iterator
-from typing import Final
+from typing import Any, Final
 
 import pytest
+from jsonschema import Draft7Validator, Draft202012Validator
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import SortOrder
 from pyiceberg.types import LongType, NestedField, StringType
+
+from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema
+from cdm_data_loaders.converters.jsonschema_to_dlt import JSONSchemaToDlt
+from cdm_data_loaders.converters.jsonschema_to_pyspark import ConversionContext, JSONSchemaToPySpark
 
 JSON_SCHEMA_KEYWORDS: Final = frozenset(
     {
@@ -31,6 +36,82 @@ JSON_SCHEMA_KEYWORDS: Final = frozenset(
         "contentEncoding",
     }
 )
+
+
+@pytest.fixture
+def dlt_to_jsonschema_converter() -> DltToJSONSchema:
+    """A DltToJSONSchema instance configured with all default settings."""
+    return DltToJSONSchema()
+
+
+@pytest.fixture
+def jsonschema_to_dlt_converter() -> JSONSchemaToDlt:
+    """A JSONSchemaToDlt instance configured with all default settings."""
+    return JSONSchemaToDlt(schema_name="test_source")
+
+
+@pytest.fixture
+def nested_json_converter() -> JSONSchemaToDlt:
+    """A JSONSchemaToDlt instance that keeps nested structures as json columns."""
+    return JSONSchemaToDlt(schema_name="test_source", skip_nested_types=True)
+
+
+@pytest.fixture
+def jsonschema_to_pyspark_converter() -> JSONSchemaToPySpark:
+    """A JSONSchemaToPySpark instance configured with all default settings."""
+    return JSONSchemaToPySpark()
+
+
+@pytest.fixture
+def strict_converter() -> JSONSchemaToPySpark:
+    """A JSONSchemaToPySpark instance that raises instead of falling back to StringType."""
+    return JSONSchemaToPySpark(treat_unknown_as_string=False)
+
+
+@pytest.fixture
+def ctx(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> ConversionContext:
+    """A default `jsonschema_to_pyspark_converter` fixture (Draft 2020-12, no extra metadata keywords)."""
+    return jsonschema_to_pyspark_converter._build_context(Draft202012Validator)  # noqa: SLF001
+
+
+@pytest.fixture
+def strict_ctx(strict_converter: JSONSchemaToPySpark) -> ConversionContext:
+    """Strict ConversionContext fixture: (Draft 2020-12, no extra keywords, treat_unknown_as_string=False.
+
+    For use with the `strict_converter` fixture.
+    """
+    return strict_converter._build_context(Draft202012Validator)  # noqa: SLF001
+
+
+@pytest.fixture
+def draft7_ctx(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> ConversionContext:
+    """A ConversionContext using the Draft-07 validator class."""
+    return jsonschema_to_pyspark_converter._build_context(validator_cls=Draft7Validator)  # noqa: SLF001
+
+
+def base_stored_schema(tables: dict[str, Any]) -> dict[str, Any]:
+    """Build a minimal stored-schema dict wrapping the given tables."""
+    return {"name": "test_source", "tables": tables}
+
+
+def base_table(**overrides: Any) -> dict[str, Any]:  # noqa: ANN401
+    """Build a minimal TTableSchema with a single non-nullable text column, applying overrides."""
+    table: dict[str, Any] = {
+        "columns": {"col": {"name": "col", "data_type": "text", "nullable": False}},
+    }
+    table.update(overrides)
+    return table
+
+
+def base_object_schema(**overrides: Any) -> dict[str, Any]:  # noqa: ANN401
+    """Build a minimal valid root object schema, applying keyword overrides."""
+    schema: dict[str, Any] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+    }
+    schema.update(overrides)
+    return schema
 
 
 def make_table(
