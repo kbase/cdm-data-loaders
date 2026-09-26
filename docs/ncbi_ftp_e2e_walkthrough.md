@@ -155,11 +155,13 @@ after Cell 1 (Imports) with:
 from cdm_data_loaders.utils.file_transfer.s3.client import get_s3_client, reset_s3_client
 
 reset_s3_client()
-get_s3_client({
-    "endpoint_url": "http://localhost:9000",
-    "aws_access_key_id": "test_access_key",
-    "aws_secret_access_key": "test_access_secret",
-})
+get_s3_client(
+    {
+        "endpoint_url": "http://localhost:9000",
+        "aws_access_key_id": "test_access_key",
+        "aws_secret_access_key": "test_access_secret",
+    }
+)
 ```
 
 If all three S3 variables are `None` (purely local testing), this cell can

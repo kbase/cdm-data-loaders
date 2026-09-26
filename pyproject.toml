@@ -46,6 +46,7 @@ uniref = "cdm_data_loaders.pipelines.uniref:cli"
 
 [dependency-groups]
 dev = [
+    "linkml>=1.9.5",
     "moto[s3]>=5.2.1",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
@@ -173,7 +174,7 @@ ignore = [
     # D203: one-blank-line-before-class (conflicts with D211)
     "D203",
     # D212: multi-line-summary-first-line (conflicts with D213)
-    "D212",
+    "D213",
     # E203: whitespace before ',', ';', or ':'
     "E203",
     # E501: line length (specified elsewhere)
@@ -186,22 +187,20 @@ ignore = [
 "*.ipynb" = ["T201"] # ignore printing in notebooks
 "**/__init__.py" = ["D104"] # no docstrings for __init__ files
 "scripts/**/*.py" = ["T201"] # ignore printing in scripts
+# D401: docstrings in imperative mode
 # S101: use of assert
 # T201: print statements
 # FBT001, FBT002: booleans as args
 # ANN401: type annotations
 # ARG002: unused mock args
 # PLR0913: too many arguments
-"tests/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002", "PLR0913"]
+"tests/**/*.py" = ["D401", "S101", "T201", "FBT001", "FBT002", "ARG002", "PLR0913", ]
 "tests/integration/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002", "ANN401"]
 "tests/utils/test_s3.py" = ["ANN401"]
 
 [tool.ruff.lint.mccabe]
 # Flag errors (`C901`) whenever the complexity level exceeds 15.
 max-complexity = 15
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
 
 [build-system]
 requires = ["uv_build>=0.12.0,<0.20.0"]
