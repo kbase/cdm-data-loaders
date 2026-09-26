@@ -189,23 +189,33 @@ Explicit registration example:
 from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
 from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import JSONSchemaToPySpark
 
-registry = DEFAULT_EXTENSIONS.register(ExtensionSpec("x-vendor", {
-    "type": "object",
-    "properties": {"classification": {"enum": ["public", "internal"]}},
-    "required": ["classification"],
-    "additionalProperties": False,
-}))
+registry = DEFAULT_EXTENSIONS.register(
+    ExtensionSpec(
+        "x-vendor",
+        {
+            "type": "object",
+            "properties": {"classification": {"enum": ["public", "internal"]}},
+            "required": ["classification"],
+            "additionalProperties": False,
+        },
+    )
+)
 converter = JSONSchemaToPySpark(
     extension_registry=registry,
     extra_metadata_keywords=frozenset({"x-vendor"}),
 )
-schema = converter.convert({
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "type": "object",
-    "properties": {"name": {
-        "type": "string", "x-vendor": {"classification": "public"},
-    }},
-})
+schema = converter.convert(
+    {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "x-vendor": {"classification": "public"},
+            }
+        },
+    }
+)
 ```
 
 Custom column hints require `registry.extend_payload("x-dlt", {"x-owner":
@@ -361,9 +371,15 @@ Direct dlt-to-PySpark composition needs no JSON intermediate or Spark session:
 from cdm_data_loaders.converters.readers.dlt import DltReader
 from cdm_data_loaders.converters.emitters.pyspark import PySparkEmitter
 
-documents = DltReader().read({"records": {"columns": {
-    "amount": {"data_type": "decimal", "precision": 20, "scale": 8, "nullable": False},
-}}})
+documents = DltReader().read(
+    {
+        "records": {
+            "columns": {
+                "amount": {"data_type": "decimal", "precision": 20, "scale": 8, "nullable": False},
+            }
+        }
+    }
+)
 spark_schema = PySparkEmitter().emit(documents["records"])
 ```
 
