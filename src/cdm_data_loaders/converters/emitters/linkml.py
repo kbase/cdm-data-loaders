@@ -68,6 +68,14 @@ class LinkMLEmitter:
             result["enums"] = self._enums
         return result
 
+    def emit_node(self, node: TypedNode) -> dict[str, Any]:
+        """Emit a single node expression."""
+        return self._node_expression(node, "Node", "node")
+
+    def emit_field(self, field: SchemaField) -> dict[str, Any]:
+        """Emit a single field attribute."""
+        return self._emit_attribute(field, "Field")
+
     def _emit_class(self, class_name: str, node: TypedNode, *, include_description: bool = True) -> None:
         """Emit an object node as a class with local attribute definitions."""
         attributes = {field.name: self._emit_attribute(field, class_name) for field in node.properties}
@@ -100,6 +108,23 @@ class LinkMLEmitter:
                 raise LinkMLEmitterError(msg)
             result = self._node_expression(node.items, owner_name, field_name)
             result["multivalued"] = True
+            return result
+        if node.type == "map":
+            if not isinstance(node.key_type, TypedNode) or not isinstance(node.value_type, TypedNode):
+                msg = f"LinkML emission requires key and value schemas for map field {field_name!r}"
+                raise LinkMLEmitterError(msg)
+            map_class_name = self._unique_name(f"{owner_name}_{field_name}_map")
+            map_node = TypedNode(
+                type="object",
+                nullable=False,
+                properties=(
+                    SchemaField("key", node.key_type, required=True),
+                    SchemaField("value", node.value_type, required=False),
+                ),
+                provenance=node.provenance,
+            )
+            self._emit_class(map_class_name, map_node)
+            result = {"range": map_class_name, "multivalued": True}
             return result
         if node.type == "object":
             class_name = self._unique_name(f"{owner_name}_{field_name}")
