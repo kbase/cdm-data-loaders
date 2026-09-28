@@ -3,6 +3,8 @@
 from decimal import Decimal
 from typing import Any, Final, Literal
 
+from cdm_data_loaders.converters.core.ir import TypedNode
+
 IMPLICIT_OBJECT_KEYWORDS: Final[frozenset[str]] = frozenset(
     {
         "properties",
@@ -84,3 +86,49 @@ def decimal_places(value: float | Decimal) -> int:
     if isinstance(exponent, int):
         return max(-exponent, 0)
     return 0
+
+
+def decimal_pattern(precision: int, scale: int) -> str:
+    """Build the decimal string pattern from integer precision and scale."""
+    digits_before = precision - scale
+    if scale > 0:
+        if digits_before == 0:
+            return rf"^-?0(\.\d{{1,{scale}}})?$"
+        return rf"^-?\d{{1,{digits_before}}}(\.\d{{1,{scale}}})?$"
+    return rf"^-?\d{{1,{digits_before}}}$"
+
+
+def resolve_union_type(node: TypedNode, fallback: str = "text") -> str:
+    """Collapse a union or combiner into a single best-fit scalar type.
+
+    Precedence:
+    1. Explicit declared_type (if single non-null)
+    2. enum-based inference
+    3. inferred_type
+    4. first branch of oneOf
+    5. first branch of anyOf
+    6. fallback
+    """
+    declaration = node.declared_type
+    if isinstance(declaration, tuple):
+        non_null = tuple(kind for kind in declaration if kind != "null")
+        if len(non_null) == 1:
+            return non_null[0]
+
+    if "enum" in node.constraints:
+        enum_values = node.constraints["enum"]
+        if isinstance(enum_values, tuple):
+            return json_type_from_enum(list(enum_values))
+
+    if node.inferred_type is not None:
+        return node.inferred_type
+
+    for branches in (node.one_of, node.any_of):
+        if branches:
+            # Recurse into the first branch to see if it's a simple type
+            # This is a simplification; real logic might need to check if the branch is a scalar
+            first = branches[0]
+            if first.type not in {"object", "array", "map"}:
+                return first.type
+
+    return declaration if isinstance(declaration, str) else fallback

@@ -6,17 +6,8 @@ from pyiceberg.table import Table
 from pyiceberg.types import IcebergType, NestedField, StructType
 
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
-from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter, decimal_pattern
+from cdm_data_loaders.converters.emitters.json_schema import JsonSchemaEmitter
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader
-
-__all__ = [
-    "JSON_SCHEMA_DIALECT",
-    "convert_field",
-    "convert_struct",
-    "convert_type",
-    "decimal_pattern",
-    "table_to_json_schema",
-]
 
 
 def convert_type(

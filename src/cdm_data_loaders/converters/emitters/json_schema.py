@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.inference import decimal_pattern
 from cdm_data_loaders.converters.core.ir import Field, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
 
@@ -42,16 +43,6 @@ _ICEBERG_LOGICAL_TYPES: Final = frozenset(
     }
 )
 _ICEBERG_ELEMENT_KEYS: Final = frozenset({"element_id", "element_required", "key_id", "value_id", "value_required"})
-
-
-def decimal_pattern(precision: int, scale: int) -> str:
-    """Build the decimal string pattern from integer precision and scale."""
-    digits_before = precision - scale
-    if scale > 0:
-        if digits_before == 0:
-            return rf"^-?0(\.\d{{1,{scale}}})?$"
-        return rf"^-?\d{{1,{digits_before}}}(\.\d{{1,{scale}}})?$"
-    return rf"^-?\d{{1,{digits_before}}}$"
 
 
 def _values(values: Mapping[str, Value]) -> dict[str, Any]:

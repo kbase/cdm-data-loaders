@@ -10,10 +10,13 @@ from cdm_data_loaders.converters.core.inference import (
     IMPLICIT_NUMBER_KEYWORDS,
     IMPLICIT_OBJECT_KEYWORDS,
     IMPLICIT_STRING_KEYWORDS,
+    decimal_pattern,
     decimal_places,
     infer_implicit_type,
     json_type_from_enum,
+    resolve_union_type,
 )
+from cdm_data_loaders.converters.core.ir import TypedNode
 
 
 @pytest.mark.parametrize(
@@ -142,3 +145,45 @@ def test_json_type_from_enum_pass_scalar_inference(values: list[Any], expected: 
 def test_decimal_places_pass_scale(value: float | Decimal, expected: int) -> None:
     """Count decimal scale without converting exact decimals through binary floats."""
     assert decimal_places(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("precision", "scale", "expected"),
+    [
+        (10, 2, r"^-?\d{1,8}(\.\d{1,2})?$"),
+        (2, 2, r"^-?0(\.\d{1,2})?$"),
+        (10, 0, r"^-?\d{1,10}$"),
+    ],
+    ids=["standard", "zero-before-decimal", "no-scale"],
+)
+def test_decimal_pattern_pass_regex(precision: int, scale: int, expected: str) -> None:
+    """Build precise regex patterns for decimal constraints."""
+    assert decimal_pattern(precision, scale) == expected
+
+
+@pytest.mark.parametrize(
+    ("node", "fallback", "expected"),
+    [
+        (TypedNode(type="string"), "text", "string"),
+        (TypedNode(type="integer", declared_type=("integer", "null")), "text", "integer"),
+        (TypedNode(type="unknown", constraints={"enum": (1, 2)}), "text", "integer"),
+        (TypedNode(type="unknown", inferred_type="number"), "text", "number"),
+        (TypedNode(type="unknown", one_of=(TypedNode(type="boolean"),)), "text", "boolean"),
+        (TypedNode(type="unknown", any_of=(TypedNode(type="integer"),)), "text", "integer"),
+        (TypedNode(type="unknown"), "text", "text"),
+        (TypedNode(type="unknown"), "json", "json"),
+    ],
+    ids=[
+        "explicit",
+        "nullable-union",
+        "enum",
+        "inferred",
+        "one-of",
+        "any-of",
+        "fallback-text",
+        "fallback-custom",
+    ],
+)
+def test_resolve_union_type_pass_precedence(node: TypedNode, fallback: str, expected: str) -> None:
+    """Resolve a single type from multiple possibilities using fixed precedence."""
+    assert resolve_union_type(node, fallback) == expected
