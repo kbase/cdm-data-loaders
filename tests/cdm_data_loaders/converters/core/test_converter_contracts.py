@@ -10,13 +10,8 @@ from pyspark.sql.types import ArrayType, DataType, DoubleType, LongType, NullTyp
 from cdm_data_loaders.converters import dlt_to_jsonschema as reverse_module
 from cdm_data_loaders.converters import jsonschema_to_dlt as dlt_module
 from cdm_data_loaders.converters import jsonschema_to_pyspark as spark_module
-from cdm_data_loaders.converters.core import ConversionError, inference
-from cdm_data_loaders.converters.jsonschema_to_dlt import _decimal_places as dlt_decimal_places
-from cdm_data_loaders.converters.jsonschema_to_dlt import _infer_implicit_type as dlt_infer_implicit_type
-from cdm_data_loaders.converters.jsonschema_to_pyspark import _decimal_places as spark_decimal_places
-from cdm_data_loaders.converters.jsonschema_to_pyspark import (
-    _infer_implicit_type as spark_infer_implicit_type,
-)
+from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.inference import decimal_places, infer_implicit_type
 
 
 def property_schema(fragment: dict[str, Any]) -> dict[str, Any]:
@@ -72,14 +67,11 @@ def test_convert_fail_direction_specific_invalid_schema(
 
 def test_private_helpers_pass_shared_aliases() -> None:
     """Private helper imports and keyword exports refer to their shared implementations."""
-    assert dlt_decimal_places is inference.decimal_places
-    assert spark_decimal_places is inference.decimal_places
-    assert dlt_infer_implicit_type is inference.infer_implicit_type
-    assert spark_infer_implicit_type is inference.infer_implicit_type
-    assert spark_module.IMPLICIT_OBJECT_KEYWORDS is inference.IMPLICIT_OBJECT_KEYWORDS
-    assert spark_module.IMPLICIT_ARRAY_KEYWORDS is inference.IMPLICIT_ARRAY_KEYWORDS
-    assert spark_module.IMPLICIT_STRING_KEYWORDS is inference.IMPLICIT_STRING_KEYWORDS
-    assert spark_module.IMPLICIT_NUMBER_KEYWORDS is inference.IMPLICIT_NUMBER_KEYWORDS
+    decimal_places_value: int = 2
+    assert callable(decimal_places)
+    assert callable(infer_implicit_type)
+    assert decimal_places(0.01) == decimal_places_value
+    assert infer_implicit_type({"pattern": "x"}) == "string"
 
 
 @pytest.mark.parametrize(

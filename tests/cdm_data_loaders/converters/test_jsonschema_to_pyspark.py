@@ -28,16 +28,17 @@ from pyspark.sql.types import (
 )
 
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
+from cdm_data_loaders.converters.core.inference import decimal_places, infer_implicit_type
+from cdm_data_loaders.converters.emitters.pyspark import (
+    get_known_jsonschema_keywords,
+    infer_type_from_enum,
+    metadata_keys_for,
+)
 from cdm_data_loaders.converters.jsonschema_to_pyspark import (
     ConversionContext,
     InvalidJSONSchemaError,
     JSONSchemaToPySpark,
     JSONSchemaToPySparkError,
-    _decimal_places,
-    _infer_implicit_type,
-    _infer_type_from_enum,
-    _metadata_keys_for,
-    get_known_jsonschema_keywords,
 )
 from cdm_data_loaders.utils.jsonschema.dereferencer import dereference_schema
 from tests.cdm_data_loaders.converters.conftest import base_object_schema
@@ -134,9 +135,9 @@ def test_convert_fail_list_form_object_root_type_rejected(jsonschema_to_pyspark_
 
 
 def test_conversion_context_pass_metadata_keys_delegates_to_metadata_keys_for() -> None:
-    """ConversionContext.metadata_keys returns the same value as _metadata_keys_for() for its validator_cls."""
+    """ConversionContext.metadata_keys returns the same value as metadata_keys_for() for its validator_cls."""
     context = ConversionContext(validator_cls=Draft202012Validator)
-    assert context.metadata_keys == _metadata_keys_for(Draft202012Validator)
+    assert context.metadata_keys == metadata_keys_for(Draft202012Validator)
 
 
 """convert_from_string / convert_from_file"""
@@ -797,7 +798,7 @@ def test_convert_number_pass_without_multiple_of_returns_double() -> None:
     assert JSONSchemaToPySpark._convert_number({"type": "number"}) == DoubleType()
 
 
-"""_decimal_places"""
+"""decimal_places"""
 
 
 @pytest.mark.parametrize(
@@ -805,11 +806,11 @@ def test_convert_number_pass_without_multiple_of_returns_double() -> None:
     [(1, 0), (1.0, 1), (0.1, 1), (0.25, 2), (0.001, 3), (100, 0), (100.000001, 6)],
 )
 def test_decimal_places_pass_various_magnitudes(value: float, expected: int) -> None:
-    """_decimal_places() returns the number of fractional digits needed to represent `value`."""
-    assert _decimal_places(value) == expected
+    """decimal_places() returns the number of fractional digits needed to represent `value`."""
+    assert decimal_places(value) == expected
 
 
-"""_infer_type_from_enum"""
+"""infer_type_from_enum"""
 
 
 @pytest.mark.parametrize(
@@ -825,11 +826,11 @@ def test_decimal_places_pass_various_magnitudes(value: float, expected: int) -> 
     ],
 )
 def test_infer_type_from_enum_pass_various_value_sets(values: list[Any], expected: list[Any]) -> None:
-    """_infer_type_from_enum() infers a PySpark type consistent with a homogeneous enum value list."""
-    assert _infer_type_from_enum(values) == expected
+    """infer_type_from_enum() infers a PySpark type consistent with a homogeneous enum value list."""
+    assert infer_type_from_enum(values) == expected
 
 
-"""_infer_implicit_type"""
+"""infer_implicit_type"""
 
 
 @pytest.mark.parametrize(
@@ -852,34 +853,34 @@ def test_infer_type_from_enum_pass_various_value_sets(values: list[Any], expecte
     ],
 )
 def test_infer_implicit_type_pass_various_keyword_sets(schema: dict[str, Any], expected: str | None) -> None:
-    """_infer_implicit_type() infers object/array/string/number from type-specific keywords, or None if unconstrained."""
-    assert _infer_implicit_type(schema) == expected
+    """infer_implicit_type() infers object/array/string/number from type-specific keywords, or None if unconstrained."""
+    assert infer_implicit_type(schema) == expected
 
 
 def test_infer_implicit_type_pass_object_keywords_take_priority_over_array() -> None:
-    """_infer_implicit_type() prefers 'object' over 'array' when a schema (unusually) mixes both keyword groups."""
+    """infer_implicit_type() prefers 'object' over 'array' when a schema (unusually) mixes both keyword groups."""
     schema = {"properties": {"a": {"type": "string"}}, "items": {"type": "string"}}
-    assert _infer_implicit_type(schema) == "object"
+    assert infer_implicit_type(schema) == "object"
 
 
 def test_infer_implicit_type_pass_array_keywords_take_priority_over_string() -> None:
-    """_infer_implicit_type() prefers 'array' over 'string' when a schema mixes both keyword groups."""
+    """infer_implicit_type() prefers 'array' over 'string' when a schema mixes both keyword groups."""
     schema = {"items": {"type": "string"}, "pattern": "^a"}
-    assert _infer_implicit_type(schema) == "array"
+    assert infer_implicit_type(schema) == "array"
 
 
 def test_infer_implicit_type_pass_string_keywords_take_priority_over_number() -> None:
-    """_infer_implicit_type() prefers 'string' over 'number' when a schema mixes both keyword groups."""
+    """infer_implicit_type() prefers 'string' over 'number' when a schema mixes both keyword groups."""
     schema = {"pattern": "^a", "minimum": 0}
-    assert _infer_implicit_type(schema) == "string"
+    assert infer_implicit_type(schema) == "string"
 
 
 def test_infer_implicit_type_pass_never_infers_integer() -> None:
-    """_infer_implicit_type() infers 'number', never 'integer', from numeric keywords alone."""
-    assert _infer_implicit_type({"minimum": 0, "maximum": 10}) == "number"
+    """infer_implicit_type() infers 'number', never 'integer', from numeric keywords alone."""
+    assert infer_implicit_type({"minimum": 0, "maximum": 10}) == "number"
 
 
-"""get_known_jsonschema_keywords / _metadata_keys_for"""
+"""get_known_jsonschema_keywords / metadata_keys_for"""
 
 
 def test_get_known_jsonschema_keywords_pass_excludes_ref_and_identity_keywords() -> None:
@@ -899,16 +900,16 @@ def test_get_known_jsonschema_keywords_pass_includes_annotation_and_assertion_ke
 
 
 def test_metadata_keys_for_pass_excludes_structural_keywords() -> None:
-    """_metadata_keys_for() excludes structural/compositional keywords like 'properties'/'type'."""
-    keys = _metadata_keys_for(Draft202012Validator)
+    """metadata_keys_for() excludes structural/compositional keywords like 'properties'/'type'."""
+    keys = metadata_keys_for(Draft202012Validator)
     assert "properties" not in keys
     assert "type" not in keys
     assert "description" in keys
 
 
 def test_metadata_keys_for_pass_cached_per_validator_class() -> None:
-    """_metadata_keys_for() returns the identical cached object for repeated calls with the same class."""
-    assert _metadata_keys_for(Draft7Validator) is _metadata_keys_for(Draft7Validator)
+    """metadata_keys_for() returns the identical cached object for repeated calls with the same class."""
+    assert metadata_keys_for(Draft7Validator) is metadata_keys_for(Draft7Validator)
 
 
 def test_get_known_jsonschema_keywords_pass_draft7_includes_annotation_keywords() -> None:
@@ -931,7 +932,7 @@ def test_merge_with_builtin_format_map_pass_merges_user_overrides_over_defaults(
 
 @pytest.mark.parametrize("value", [None, {}, "", 0])
 def test_merge_with_builtin_format_map_pass_falsy_value_passed_through_unchanged(
-    value: None | dict | str | int,
+    value: dict | str | int | None,
 ) -> None:
     """_merge_with_builtin_format_map() passes falsy values straight through without merging."""
     assert JSONSchemaToPySpark._merge_with_builtin_format_map(value) == value

@@ -102,13 +102,16 @@ def resolve_union_type(node: TypedNode, fallback: str = "text") -> str:
     """Collapse a union or combiner into a single best-fit scalar type.
 
     Precedence:
-    1. Explicit declared_type (if single non-null)
-    2. enum-based inference
-    3. inferred_type
-    4. first branch of oneOf
-    5. first branch of anyOf
-    6. fallback
+    1. Explicit node type
+    2. explicit declared_type (if single non-null)
+    3. enum-based inference
+    4. inferred_type
+    5. first branch of oneOf
+    6. first branch of anyOf
+    7. fallback
     """
+    if node.type not in {"unknown", "any", "never"}:
+        return node.type
     declaration = node.declared_type
     if isinstance(declaration, tuple):
         non_null = tuple(kind for kind in declaration if kind != "null")

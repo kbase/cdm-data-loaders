@@ -39,7 +39,6 @@ from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, Exte
 from cdm_data_loaders.converters.core.ir import Field, NodeHints, Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema
 from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter, decimal_pattern
-from cdm_data_loaders.converters.pyiceberg_to_jsonschema import decimal_pattern as legacy_decimal_pattern
 from cdm_data_loaders.converters.readers.dlt import DltReader
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
@@ -769,9 +768,8 @@ def test_json_schema_emitter_fail_nonboolean_policy(policy: object) -> None:
 
 
 @pytest.mark.parametrize("precision", [1, 2, 10, 38], ids=["one-digit", "two-digits", "ten-digits", "max-precision"])
-def test_decimal_pattern_pass_legacy_equivalence(precision: int) -> None:
-    """The public decimal helper is an alias and boundary patterns remain fixed."""
-    assert decimal_pattern is legacy_decimal_pattern
+def test_decimal_pattern_pass_fixed_patterns(precision: int) -> None:
+    """The public decimal helper produces consistent boundary patterns."""
     assert decimal_pattern(precision, 0) == rf"^-?\d{{1,{precision}}}$"
     assert decimal_pattern(precision, precision) == rf"^-?0(\.\d{{1,{precision}}})?$"
 

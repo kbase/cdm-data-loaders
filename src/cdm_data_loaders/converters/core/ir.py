@@ -249,6 +249,7 @@ class SchemaDocument:
     annotations: Mapping[str, Value] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType]
     extensions: Mapping[str, Value] = field(default_factory=frozendict)  # pyright: ignore[reportAssignmentType]
     provenance: Provenance | None = None
+    jsonschema_validator_cls: type | None = None
 
     def __post_init__(self) -> None:
         """Validate the root and isolate document metadata."""

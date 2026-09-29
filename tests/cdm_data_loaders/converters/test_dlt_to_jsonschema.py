@@ -9,12 +9,9 @@ import pytest
 import yaml
 from jsonschema import Draft202012Validator
 
-from cdm_data_loaders.converters.dlt_to_jsonschema import (
-    JSON_SCHEMA_DIALECT,
-    TYPE_MAP,
-    DltToJSONSchema,
-    DltToJSONSchemaError,
-)
+from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema, DltToJSONSchemaError
+from cdm_data_loaders.converters.emitters.json_schema import DLT_TYPES as TYPE_MAP
+from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT
 from cdm_data_loaders.converters.jsonschema_to_dlt import JSONSchemaToDlt
 from tests.cdm_data_loaders.converters.conftest import (
     base_stored_schema,

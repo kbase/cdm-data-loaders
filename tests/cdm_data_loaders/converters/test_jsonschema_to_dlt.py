@@ -11,13 +11,13 @@ from dlt.common.schema import Schema
 from dlt.common.schema.utils import is_nested_table
 from pydantic import ValidationError
 
+from cdm_data_loaders.converters.core.inference import decimal_places
+from cdm_data_loaders.converters.emitters.dlt import SCHEMA_ENGINE_VERSION
 from cdm_data_loaders.converters.jsonschema_to_dlt import (
-    SCHEMA_ENGINE_VERSION,
     InvalidJSONSchemaError,
     JSONSchemaToDlt,
     JSONSchemaToDltError,
     _data_type_from_enum,
-    _decimal_places,
 )
 from cdm_data_loaders.utils.jsonschema.dereferencer import dereference_schema
 from tests.cdm_data_loaders.converters.conftest import base_object_schema
@@ -52,12 +52,12 @@ def test_data_type_from_enum_values() -> None:
 
 
 def test_decimal_places_values() -> None:
-    """_decimal_places counts fractional digits of a multipleOf value exactly."""
+    """decimal_places counts fractional digits of a multipleOf value exactly."""
     two_places = 2
-    assert _decimal_places(0.01) == two_places
-    assert _decimal_places(1) == 0
-    assert _decimal_places(0.5) == 1
-    assert _decimal_places(100) == 0
+    assert decimal_places(0.01) == two_places
+    assert decimal_places(1) == 0
+    assert decimal_places(0.5) == 1
+    assert decimal_places(100) == 0
 
 
 """convert"""

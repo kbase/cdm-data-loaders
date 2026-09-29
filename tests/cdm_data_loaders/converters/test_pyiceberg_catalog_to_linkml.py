@@ -6,9 +6,13 @@ dump_catalog_schemas and validates the emitted documents.
 
 import json
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from linkml.linter.linter import Linter
+from linkml_runtime.linkml_model.meta import ClassDefinition, SchemaDefinition, SlotDefinition
+from linkml_runtime.loaders import yaml_loader
 from pyiceberg import catalog as pyiceberg_catalog
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
@@ -31,13 +35,8 @@ from cdm_data_loaders.converters.pyiceberg_catalog_to_linkml import (
     IcebergToLinkMLSettings,
     dump_catalog_schemas,
 )
-from tests.cdm_data_loaders.converters.conftest import (
-    iter_extension_keys,
-    iter_schema_keywords,
-    to_snake_case,
-)
 
-CATALOG_NAME = "testcat_linkml"
+CATALOG_NAME = "testcatlinkml"
 
 
 @pytest.fixture
@@ -83,10 +82,8 @@ def wide_schema() -> Schema:
     )
 
 
-def test_end_to_end_dump_catalog_schemas_writes_docs(
-    catalog_env: Path, simple_schema: Schema, wide_schema: Schema
-) -> None:
-    """dump_catalog_schemas loads the catalog by name and writes one valid schema doc per table."""
+def test_dump_catalog_schemas_pass_yaml_models(catalog_env: Path, simple_schema: Schema, wide_schema: Schema) -> None:
+    """Write YAML schemas with valid LinkML models and a shared timezone-aware timestamp."""
     catalog = load_catalog(CATALOG_NAME)
     catalog.create_namespace("ns")
     catalog.create_table(("ns", "simple"), schema=simple_schema)
@@ -99,35 +96,49 @@ def test_end_to_end_dump_catalog_schemas_writes_docs(
     files = sorted(out_dir.iterdir())
     assert [f.name for f in files] == ["ns.simple.schema.yaml", "ns.wide.schema.yaml"]
 
-    simple_doc = json.loads((out_dir / "ns.simple.schema.yaml").read_text())
-    assert simple_doc["name"] == "simple"
-    assert simple_doc["id"] == "urn:linkml:simple"
-    assert "classes" in simple_doc
-    assert "simple" in simple_doc["classes"]
-    assert simple_doc["x-iceberg"]["generated_at"]
+    simple_doc = yaml_loader.load(str(files[0]), target_class=SchemaDefinition)
+    assert simple_doc.name == "simple"
+    assert simple_doc.id == "urn:iceberg:ns.simple"
+    assert simple_doc.classes == {
+        "simple": ClassDefinition(
+            name="simple",
+            attributes={
+                "id": SlotDefinition(name="id", range="integer", required=True, description="primary key"),
+                "name": SlotDefinition(name="name", range="string", description="display name"),
+            },
+        )
+    }
 
-    wide_doc = json.loads((out_dir / "ns.wide.schema.yaml").read_text())
-    assert "wide" in wide_doc["classes"]
-    # Check map conversion (should have created a map class)
-    # LinkML emitter creates names like {owner}_{field}_map
-    # Root is "wide", field is "attrs" -> wide_attrs_map
-    assert any("attrs_map" in cls_name for cls_name in wide_doc["classes"])
+    wide_doc = yaml_loader.load(str(files[1]), target_class=SchemaDefinition)
+    assert set(wide_doc.classes) == {"wide", "wide_attrs_map", "wide_address"}
+    assert wide_doc.classes["wide"].attributes == {
+        "id": SlotDefinition(name="id", range="integer", required=True, description="primary key"),
+        "name": SlotDefinition(name="name", range="string", required=True),
+        "count": SlotDefinition(name="count", range="integer"),
+        "ratio": SlotDefinition(name="ratio", range="float"),
+        "as_of": SlotDefinition(name="as_of", range="datetime"),
+        "born_on": SlotDefinition(name="born_on", range="date"),
+        "rate": SlotDefinition(name="rate", range="decimal"),
+        "tags": SlotDefinition(name="tags", range="string", multivalued=True),
+        "attrs": SlotDefinition(name="attrs", range="wide_attrs_map", multivalued=True),
+        "address": SlotDefinition(name="address", range="wide_address"),
+    }
+    assert wide_doc.classes["wide_attrs_map"].attributes == {
+        "key": SlotDefinition(name="key", range="string", required=True),
+        "value": SlotDefinition(name="value", range="float"),
+    }
+    assert wide_doc.classes["wide_address"].attributes == {
+        "street": SlotDefinition(name="street", range="string", required=True),
+        "city": SlotDefinition(name="city", range="string"),
+    }
+    generated_at = simple_doc.annotations["generated_at"].value
+    assert wide_doc.annotations["generated_at"].value == generated_at
+    assert datetime.fromisoformat(generated_at).tzinfo == UTC
 
-    for doc in (simple_doc, wide_doc):
-        # Since we are dumping to JSON for the CLI output, we check the keys
-        for key in iter_schema_keywords(doc):
-            assert key.startswith("x-") or key in {
-                "id",
-                "name",
-                "prefixes",
-                "default_prefix",
-                "imports",
-                "classes",
-                "enums",
-                "description",
-            }, f"non-standard key without x- prefix: {key}"
-        for key in iter_extension_keys(doc):
-            assert key == to_snake_case(key), f"extension key is not snake case: {key}"
+    for schema_path in files:
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(schema_path.read_text(encoding="utf-8"))
+        assert list(Linter.validate_schema(str(schema_path))) == []
 
 
 def test_dump_catalog_schemas_pass_empty_catalog(catalog_env: Path) -> None:
@@ -143,12 +154,11 @@ def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
     catalog_env: Path, simple_schema: Schema, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A table that fails to convert is logged and skipped; other tables still succeed."""
-    # LinkML supports most things, but let's assume we force a failure if we could.
-    # For now, we just test the infrastructure of skipping.
     catalog = load_catalog(CATALOG_NAME)
     catalog.create_namespace("ns")
+    bad_table = catalog.create_table(("ns", "bad"), schema=simple_schema)
+    bad_table.io.delete(bad_table.metadata_location)
     catalog.create_table(("ns", "good"), schema=simple_schema)
-    # To simulate a failure, we could monkeypatch the converter.
 
     out_dir = catalog_env / "schemas"
     settings = IcebergToLinkMLSettings(catalog=CATALOG_NAME, output_dir=str(out_dir))  # pyright: ignore[reportCallIssue]
@@ -156,6 +166,8 @@ def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
         dump_catalog_schemas(settings)
 
     assert [f.name for f in sorted(out_dir.iterdir())] == ["ns.good.schema.yaml"]
+    assert "Failed to convert table ('ns', 'bad'); skipping" in caplog.text
+    assert "Completed with 1 table(s) skipped due to conversion failures" in caplog.text
 
 
 def test_dump_catalog_schemas_pass_overwrites_existing_file_with_warning(
@@ -176,5 +188,5 @@ def test_dump_catalog_schemas_pass_overwrites_existing_file_with_warning(
         dump_catalog_schemas(settings)
 
     assert "Overwriting existing schema file" in caplog.text
-    written = json.loads(stale_file.read_text())
-    assert written["name"] == "simple"
+    written = yaml_loader.load(str(stale_file), target_class=SchemaDefinition)
+    assert written.name == "simple"

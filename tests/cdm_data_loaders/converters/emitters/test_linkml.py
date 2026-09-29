@@ -3,9 +3,12 @@
 from pathlib import Path
 
 import pytest
-import yaml
 from linkml.linter.linter import Linter
+from linkml_runtime.dumpers import yaml_dumper
+from linkml_runtime.linkml_model.meta import ClassDefinition, EnumDefinition, SchemaDefinition, SlotDefinition
+from linkml_runtime.loaders import yaml_loader
 
+from cdm_data_loaders.converters.core.ir import Field, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.emitters.linkml import LinkMLEmitter, LinkMLEmitterError
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 
@@ -20,7 +23,7 @@ def test_emit_pass_nested_enum_array_constraints() -> None:
             "description": "A record.",
             "type": "object",
             "properties": {
-                "id": {"type": "integer", "minimum": 1},
+                "id": {"type": "integer", "minimum": 1, "maximum": 10},
                 "status": {"enum": ["active", "retired"]},
                 "tags": {"type": "array", "items": {"type": "string", "pattern": "^[a-z]+$"}},
                 "address": {
@@ -34,17 +37,22 @@ def test_emit_pass_nested_enum_array_constraints() -> None:
         }
     )
 
-    assert LinkMLEmitter().emit(document) == {
-        "id": "https://example.org/record",
-        "name": "record",
-        "prefixes": {"record": "https://example.org/record#", "linkml": "https://w3id.org/linkml/"},
-        "default_prefix": "record",
-        "imports": ["linkml:types"],
-        "description": "A record.",
-        "classes": {
+    result = LinkMLEmitter().emit(document)
+    assert isinstance(result, SchemaDefinition)
+    assert isinstance(result.classes["record"], ClassDefinition)
+    assert isinstance(result.classes["record"].attributes["id"], SlotDefinition)
+    assert isinstance(result.enums["record_status_enum"], EnumDefinition)
+    assert result == SchemaDefinition(
+        id="https://example.org/record",
+        name="record",
+        prefixes={"record": "https://example.org/record#", "linkml": "https://w3id.org/linkml/"},
+        default_prefix="record",
+        imports=["linkml:types"],
+        description="A record.",
+        classes={
             "record": {
                 "attributes": {
-                    "id": {"range": "integer", "minimum_value": 1, "required": True},
+                    "id": {"range": "integer", "minimum_value": 1, "maximum_value": 10, "required": True},
                     "status": {"range": "record_status_enum", "required": True},
                     "tags": {"range": "string", "pattern": "^[a-z]+$", "multivalued": True},
                     "address": {"range": "record_address", "description": "Mailing address."},
@@ -55,8 +63,9 @@ def test_emit_pass_nested_enum_array_constraints() -> None:
                 "description": "Mailing address.",
             },
         },
-        "enums": {"record_status_enum": {"permissible_values": {"active": None, "retired": None}}},
-    }
+        enums={"record_status_enum": {"permissible_values": {"active": None, "retired": None}}},
+    )
+    assert yaml_loader.loads(yaml_dumper.dumps(result), target_class=SchemaDefinition) == result
 
 
 def test_emit_pass_linkml_metamodel_validation(tmp_path: Path) -> None:
@@ -73,7 +82,7 @@ def test_emit_pass_linkml_metamodel_validation(tmp_path: Path) -> None:
         }
     )
     schema_path = tmp_path / "record.yaml"
-    schema_path.write_text(yaml.safe_dump(LinkMLEmitter().emit(document)), encoding="utf-8")
+    schema_path.write_text(yaml_dumper.dumps(LinkMLEmitter().emit(document)), encoding="utf-8")
 
     assert list(Linter.validate_schema(str(schema_path))) == []
 
@@ -83,11 +92,13 @@ def test_emit_pass_linkml_metamodel_validation(tmp_path: Path) -> None:
     [
         {"type": ["string", "integer"]},
         {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+        {"oneOf": [{"type": "string"}, {"type": "integer"}]},
         {"type": "array", "items": [{"type": "string"}, {"type": "integer"}]},
         {"enum": [1, 2]},
         {"type": "null"},
+        {"type": "string", "minLength": 1},
     ],
-    ids=["union-type", "any-of", "tuple-array", "numeric-enum", "null"],
+    ids=["union-type", "any-of", "one-of", "tuple-array", "numeric-enum", "null", "unsupported-constraint"],
 )
 def test_emit_fail_unsupported_node(property_schema: dict[str, object]) -> None:
     """Unsupported JSON Schema constructs fail rather than silently changing their meaning."""
@@ -101,3 +112,87 @@ def test_emit_fail_unsupported_node(property_schema: dict[str, object]) -> None:
 
     with pytest.raises(LinkMLEmitterError):
         LinkMLEmitter().emit(document)
+
+
+def test_emit_fail_non_object_root() -> None:
+    """Reject documents without an object root."""
+    with pytest.raises(LinkMLEmitterError, match="requires an object root"):
+        LinkMLEmitter().emit(SchemaDocument(root=TypedNode(type="string")))
+
+
+@pytest.mark.parametrize(
+    "node",
+    [
+        TypedNode(type="map"),
+        TypedNode(type="map", key_type=TypedNode(type="string")),
+        TypedNode(type="map", value_type=TypedNode(type="integer")),
+        TypedNode(type="string", constraints={"enum": "active"}),
+    ],
+    ids=["missing-map-types", "missing-map-value", "missing-map-key", "non-sequence-enum"],
+)
+def test_emit_node_fail_incomplete_schema(node: TypedNode) -> None:
+    """Reject incomplete map definitions and non-sequence enum constraints."""
+    with pytest.raises(LinkMLEmitterError):
+        LinkMLEmitter().emit_node(node)
+
+
+@pytest.mark.parametrize(
+    ("title", "override", "expected_name", "expected_class"),
+    [
+        (None, None, "schema", "Root"),
+        ("123 report", None, "_123_report", "_123_report"),
+        ("!!!", None, "schema", "schema"),
+        ("record", "custom schema", "custom_schema", "record"),
+    ],
+    ids=["unnamed", "leading-digit", "punctuation-only", "schema-name-override"],
+)
+def test_emit_pass_names(title: str | None, override: str | None, expected_name: str, expected_class: str) -> None:
+    """Normalize schema and class names while retaining valid empty schemas."""
+    document = SchemaDocument(root=TypedNode(type="object"), annotations={"title": title})
+    result = LinkMLEmitter(schema_name=override).emit(document)
+
+    assert result.name == expected_name
+    assert result.id == f"urn:linkml:{expected_name}"
+    assert result.default_prefix == expected_name
+    assert result.classes == {expected_class: ClassDefinition(name=expected_class)}
+    assert result.enums == {}
+
+
+def test_emit_pass_unique_names_and_reuse() -> None:
+    """Repeated emission keeps previous models intact and resets generated names."""
+    document = SchemaDocument(
+        name="record",
+        root=TypedNode(
+            type="object",
+            properties=(
+                Field("a-b", TypedNode(type="object")),
+                Field("a_b", TypedNode(type="object")),
+                Field("status", TypedNode(type="string", constraints={"enum": ("active", "retired")})),
+            ),
+        ),
+    )
+    emitter = LinkMLEmitter()
+    first = emitter.emit(document)
+    original_yaml = yaml_dumper.dumps(first)
+    second = emitter.emit(SchemaDocument(name="other", root=TypedNode(type="object")))
+
+    assert set(first.classes) == {"record", "record_a_b", "record_a_b_2"}
+    assert first.classes["record"].attributes["a-b"].range == "record_a_b"
+    assert first.classes["record"].attributes["a_b"].range == "record_a_b_2"
+    assert set(first.enums) == {"record_status_enum"}
+    assert second.classes == {"other": ClassDefinition(name="other")}
+    assert second.enums == {}
+    assert yaml_dumper.dumps(first) == original_yaml
+    assert emitter.emit(document) == first
+
+
+def test_emit_field_pass_description_precedence() -> None:
+    """Field descriptions override node descriptions in official slot models."""
+    result = LinkMLEmitter().emit_field(
+        Field(
+            "label",
+            TypedNode(type="string", annotations={"description": "Node description."}),
+            annotations={"description": "Field description."},
+        )
+    )
+    assert result == SlotDefinition(name="label", range="string", description="Field description.")

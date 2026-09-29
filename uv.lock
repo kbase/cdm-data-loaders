@@ -6,10 +6,9 @@ resolution-markers = [
     "python_full_version >= '3.14' and platform_python_implementation == 'PyPy' and sys_platform == 'win32'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
     "python_full_version >= '3.14' and platform_python_implementation == 'PyPy' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version < '3.14' and platform_python_implementation != 'PyPy' and sys_platform != 'emscripten'",
-    "python_full_version < '3.14' and platform_python_implementation == 'PyPy' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
-    "python_full_version < '3.14' and platform_python_implementation == 'PyPy' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
 [[package]]
@@ -557,13 +556,14 @@ dependencies = [
     { name = "httpx" },
     { name = "ipykernel" },
     { name = "jsonschema", extra = ["format"] },
+    { name = "linkml" },
+    { name = "linkml-runtime" },
     { name = "lxml" },
     { name = "openpyxl" },
     { name = "pandas" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyiceberg", extra = ["pandas", "pyarrow", "pyiceberg-core", "snappy"] },
-    { name = "schema2pyarrow" },
     { name = "smart-open" },
     { name = "tqdm" },
     { name = "xml2db" },
@@ -610,13 +610,14 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "ipykernel", specifier = ">=7.2.0" },
     { name = "jsonschema", extras = ["format"], specifier = ">=4.26.0" },
+    { name = "linkml", specifier = ">=1.11.1" },
+    { name = "linkml-runtime", specifier = ">=1.11.1" },
     { name = "lxml", specifier = ">=6.1.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas", specifier = ">=3.0.3" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pydantic-settings", specifier = ">=2.14.1" },
     { name = "pyiceberg", extras = ["pandas", "pyarrow", "pyiceberg-core", "snappy"], specifier = ">=0.11.1" },
-    { name = "schema2pyarrow", specifier = ">=1.2.0" },
     { name = "smart-open", specifier = ">=8.0.1" },
     { name = "tqdm", specifier = ">=4.67.3" },
     { name = "xml2db", specifier = ">=0.14.0" },
@@ -3396,11 +3397,11 @@ wheels = [
 
 [[package]]
 name = "platformdirs"
-version = "4.11.14"
+version = "4.11.15"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/72/72/2075f80b8de9992872715444e7088ec3b6eea2bc0e99521e1d6e562e382d/platformdirs-4.11.14.tar.gz", hash = "sha256:0e706ec0a73a4ec023d11496153a4b6607a672f4b5027c23c3aefa9c9288c523", size = 45301, upload-time = "2026-09-25T17:24:00.877Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5f/e0/7c20b5d0e0f147c40a934e8f9e9f717bd6e3e372c4d58ca5c2fcce2b1652/platformdirs-4.11.15.tar.gz", hash = "sha256:d7419e973b2b740d428200130f80c0e79304d1c71081001db911e15b26a3a6d4", size = 46059, upload-time = "2026-09-26T02:04:58.142Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/dc/40/03f2c094178624d155b8d27a9b0c5ab1e39efa6cc9074b599e8c671b9db1/platformdirs-4.11.14-py3-none-any.whl", hash = "sha256:c1b1a1eab4f4d1b0eb81754593f1c38de88e84ebe6f93bf6714706a6759074b1", size = 26700, upload-time = "2026-09-25T17:23:59.443Z" },
+    { url = "https://files.pythonhosted.org/packages/84/83/246d3052d043683cc5f400ab5748bd07a99fbdf311dc771cfad7e3f9e7e0/platformdirs-4.11.15-py3-none-any.whl", hash = "sha256:84508421c77d3c6462e71dd8c0d2776c2ace0e94eb006dc4fd383bc1dcf5a176", size = 26689, upload-time = "2026-09-26T02:04:56.71Z" },
 ]
 
 [[package]]
@@ -4648,20 +4649,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/76/43/35e4d8aa320bffe8287fe8f65f578fa2d2db0a64212f0e710dce58267854/s3transfer-0.19.2.tar.gz", hash = "sha256:ba0309fd86be3c27dbf78cdd813c13c5e1df16e5874b99d2535ebbdfb9892993", size = 165592, upload-time = "2026-07-22T19:30:44.432Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bc/e7/5c595c75e9f41a44f30e526eda465ea0b4eec93470e074e4a111b253f13a/s3transfer-0.19.2-py3-none-any.whl", hash = "sha256:d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25", size = 90216, upload-time = "2026-07-22T19:30:43.251Z" },
-]
-
-[[package]]
-name = "schema2pyarrow"
-version = "1.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pyarrow" },
-    { name = "pyyaml" },
-    { name = "typer" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/4d/c2/08190e9eb6f243f5c389e92df9f1ea6ab12cd1368a335a400b55639d00e5/schema2pyarrow-1.2.0.tar.gz", hash = "sha256:08812726c1732479731f12c34514a47f22502a4a72dfd808fe1d36ca0ef6ea1e", size = 19738, upload-time = "2026-01-27T14:25:38.682Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fc/39/54f218ab49eed8665ac4e9645b03bf859dcb1b7838a53e4f3ecdb3f655b5/schema2pyarrow-1.2.0-py3-none-any.whl", hash = "sha256:874c1f2d5abe68853f401cd2c4320276d7c28de86725cd60ddab3ea9d3cd47b9", size = 9810, upload-time = "2026-01-27T14:25:37.302Z" },
 ]
 
 [[package]]

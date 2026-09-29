@@ -521,12 +521,13 @@ def test_conversion_context_pass_keyword_policy(validator: type) -> None:
     assert context.metadata_keys == frozenset(known - STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS)
     assert context.allowed_extra_metadata_keywords == frozenset({"pattern", "x-custom"})
     assert context.invalid_extra_metadata_keywords == frozenset({"type", "$id", "typo"})
+    # ensure that exactly the same object is returned (i.e. that the caching functionality is working)
     assert metadata_keys_for(validator) is metadata_keys_for(validator)
 
 
 @pytest.mark.parametrize("dialect", ["http://json-schema.org/draft-07/schema#", DIALECT], ids=["draft7", "draft2020"])
 def test_emit_pass_invalid_metadata_warns_once(dialect: str, caplog: pytest.LogCaptureFixture) -> None:
-    """Invalid requested metadata is filtered once per document using its declared dialect."""
+    """Use the reader's detected draft even when the document's dialect label is removed."""
     document = JsonSchemaReader().read(
         {
             "$schema": dialect,
@@ -534,7 +535,7 @@ def test_emit_pass_invalid_metadata_warns_once(dialect: str, caplog: pytest.LogC
         }
     )
     emitter = PySparkEmitter(extra_metadata_keywords=frozenset({"typo", "type", "properties", "$id", "pattern"}))
-    result = emitter.emit(document)
+    result = emitter.emit(replace(document, dialect=None))
     assert result["nested"].dataType["value"].metadata == {"jsonschema": {"pattern": "a"}}
     assert caplog.text.count("Ignoring invalid extra_metadata_keywords") == 1
     assert ("Draft7Validator" if "draft-07" in dialect else "Draft202012Validator") in caplog.text

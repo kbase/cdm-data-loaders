@@ -4,14 +4,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final, cast
 
+from jsonschema.validators import validator_for
+
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
 from cdm_data_loaders.converters.core.guards import reject_unresolved_references, require_schema_keyword
 from cdm_data_loaders.converters.core.inference import infer_implicit_type
 from cdm_data_loaders.converters.core.ir import Field, NodeType, Provenance, SchemaDocument, TypedNode
 
-_TYPES: Final = frozenset({"object", "array", "string", "integer", "number", "boolean", "null"})
-_ANNOTATIONS: Final = frozenset(
+TYPES: Final = frozenset({"object", "array", "string", "integer", "number", "boolean", "null"})
+ANNOTATIONS: Final = frozenset(
     {
         "$schema",
         "$id",
@@ -28,7 +30,7 @@ _ANNOTATIONS: Final = frozenset(
         "deprecated",
     }
 )
-_SCHEMA_KEYS: Final = frozenset(
+SCHEMA_KEYS: Final = frozenset(
     {
         "additionalItems",
         "unevaluatedItems",
@@ -42,10 +44,10 @@ _SCHEMA_KEYS: Final = frozenset(
         "contentSchema",
     }
 )
-_SCHEMA_MAPS: Final = frozenset({"$defs", "definitions", "dependentSchemas"})
-_STRUCTURE: Final = (
-    _SCHEMA_KEYS
-    | _SCHEMA_MAPS
+SCHEMA_MAPS: Final = frozenset({"$defs", "definitions", "dependentSchemas"})
+STRUCTURE: Final = (
+    SCHEMA_KEYS
+    | SCHEMA_MAPS
     | {
         "type",
         "properties",
@@ -93,6 +95,7 @@ class JsonSchemaReader:
             annotations=node.annotations,
             extensions=node.extensions,
             provenance=Provenance("json-schema"),
+            jsonschema_validator_cls=validator_for(schema),
         )
 
     def read_node(self, source: Mapping[str, Any] | bool) -> TypedNode:  # noqa: FBT001
@@ -118,14 +121,14 @@ class JsonSchemaReader:
             raise self.error_type(msg)
         declaration = schema.get("type")
         inferred = infer_implicit_type(dict(schema))
-        kind = declaration if isinstance(declaration, str) and declaration in _TYPES else "unknown"
+        kind = declaration if isinstance(declaration, str) and declaration in TYPES else "unknown"
         nullable = None
         if declaration is not None:
             nullable = "null" in declaration if isinstance(declaration, list) else declaration == "null"
         constraints = {
             key: value
             for key, value in schema.items()
-            if key not in _STRUCTURE and key not in _ANNOTATIONS and not key.startswith("x-")
+            if key not in STRUCTURE and key not in ANNOTATIONS and not key.startswith("x-")
         }
         dependencies = schema.get("dependencies", {})
         literal_dependencies = {key: value for key, value in dependencies.items() if isinstance(value, list)}
@@ -133,7 +136,7 @@ class JsonSchemaReader:
             constraints["dependencies"] = literal_dependencies
         schema_maps = {
             key: {name: self._node(child, (*path, key, name)) for name, child in schema[key].items()}
-            for key in _SCHEMA_MAPS
+            for key in SCHEMA_MAPS
             if key in schema
         }
         if "dependencies" in schema:
@@ -171,10 +174,10 @@ class JsonSchemaReader:
             else None,
             any_of=self._branches(schema, "anyOf", path),
             one_of=self._branches(schema, "oneOf", path),
-            schema_keywords={key: self._node(schema[key], (*path, key)) for key in _SCHEMA_KEYS if key in schema},
+            schema_keywords={key: self._node(schema[key], (*path, key)) for key in SCHEMA_KEYS if key in schema},
             schema_maps=schema_maps,
             constraints=constraints,
-            annotations={key: value for key, value in schema.items() if key in _ANNOTATIONS},
+            annotations={key: value for key, value in schema.items() if key in ANNOTATIONS},
             extensions=Extensions(
                 {key: value for key, value in schema.items() if key.startswith("x-")},
                 self.extension_registry,

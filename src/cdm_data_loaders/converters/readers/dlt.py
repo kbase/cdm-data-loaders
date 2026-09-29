@@ -12,7 +12,7 @@ from cdm_data_loaders.utils.dlt.dlt_normalization import DltTableNode, unflatten
 
 logger = logging.getLogger(__name__)
 DLT_INTERNAL_PREFIX: Final = "_dlt_"
-_TYPES: Final[dict[str, NodeType]] = {
+TYPES: Final[dict[str, NodeType]] = {
     "text": "string",
     "bigint": "integer",
     "double": "number",
@@ -137,7 +137,7 @@ class DltReader:
     def _column(self, name: str, column: Mapping[str, Any], table_name: str) -> Field:
         """Preserve source type and hints without adopting JSON target encodings."""
         data_type = column.get("data_type")
-        kind = _TYPES.get(data_type, "any" if data_type is None else "unknown")
+        kind = TYPES.get(data_type, "any" if data_type is None else "unknown")
         if kind == "unknown":
             logger.warning("Unknown dlt data_type %r at %s.%s retained in IR", data_type, table_name, name)
         provenance = Provenance("dlt", ("tables", table_name, "columns", name), column)

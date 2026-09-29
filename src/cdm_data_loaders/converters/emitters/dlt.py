@@ -29,8 +29,8 @@ from cdm_data_loaders.utils.dlt.dlt_normalization import (
 logger = logging.getLogger(__name__)
 
 SCHEMA_ENGINE_VERSION: Final = 11
-_TABLE_PATH_LENGTH: Final = 2
-_SCALARS: Final[dict[str, TDataType]] = {
+TABLE_PATH_LENGTH: Final = 2
+SCALARS: Final[dict[str, TDataType]] = {
     "null": "text",
     "boolean": "bool",
     "integer": "bigint",
@@ -39,7 +39,7 @@ _SCALARS: Final[dict[str, TDataType]] = {
     "map": "json",
     "any": "json",
 }
-_FORMATS: Final[dict[str, TDataType]] = {
+FORMATS: Final[dict[str, TDataType]] = {
     "date-time": "timestamp",
     "datetime": "timestamp",
     "timestamp": "timestamp",
@@ -49,11 +49,11 @@ _FORMATS: Final[dict[str, TDataType]] = {
     "binary": "binary",
     "base64": "binary",
 }
-DATETIME_FORMATS: Final = frozenset(name for name, kind in _FORMATS.items() if kind == "timestamp")
-DATE_FORMATS: Final = frozenset(name for name, kind in _FORMATS.items() if kind == "date")
-TIME_FORMATS: Final = frozenset(name for name, kind in _FORMATS.items() if kind == "time")
-BINARY_FORMATS: Final = frozenset(name for name, kind in _FORMATS.items() if kind == "binary")
-_LOGICAL: Final[dict[str, TDataType]] = {
+# DATETIME_FORMATS: Final = frozenset(name for name, kind in _FORMATS.items() if kind == "timestamp")
+# DATE_FORMATS: Final = frozenset(name for name, kind in _FORMATS.items() if kind == "date")
+# TIME_FORMATS: Final = frozenset(name for name, kind in _FORMATS.items() if kind == "time")
+BINARY_FORMATS: Final = frozenset(name for name, kind in FORMATS.items() if kind == "binary")
+LOGICAL: Final[dict[str, TDataType]] = {
     "decimal": "decimal",
     "wei": "wei",
     "timestamp": "timestamp",
@@ -64,13 +64,13 @@ _LOGICAL: Final[dict[str, TDataType]] = {
     "binary": "binary",
     "fixed": "binary",
 }
-_COLUMN_FACTS: Final = frozenset({"name", "data_type", "nullable", "description", "precision", "scale", "timezone"})
+COLUMN_FACTS: Final = frozenset({"name", "data_type", "nullable", "description", "precision", "scale", "timezone"})
 
 
 def _dlt_table_metadata(node: TypedNode) -> Mapping[str, Value] | None:
     """Return scoped table hints, excluding column provenance."""
     provenance = node.provenance
-    if provenance is not None and provenance.source == "dlt" and len(provenance.path) == _TABLE_PATH_LENGTH:
+    if provenance is not None and provenance.source == "dlt" and len(provenance.path) == TABLE_PATH_LENGTH:
         return provenance.metadata
     return None
 
@@ -112,7 +112,7 @@ def _restore_column(column: TColumnSchema, node: TypedNode) -> TColumnSchema:
     metadata = node.extensions.get("x-dlt")
     if not isinstance(metadata, Mapping):
         return column
-    restored = {key: mutable_value(value) for key, value in metadata.items() if key not in _COLUMN_FACTS}
+    restored = {key: mutable_value(value) for key, value in metadata.items() if key not in COLUMN_FACTS}
     restored.update(column)
     if "name" not in metadata:
         restored.pop("name", None)
@@ -178,8 +178,8 @@ def _scalar_type(node: TypedNode) -> TDataType:
     """Map the selected type using the outer node's scalar constraints."""
     kind = _resolve_type(node)
     logical = node.hints.logical_type
-    if not _is_json(node) and logical in _LOGICAL:
-        return _LOGICAL[logical]
+    if not _is_json(node) and logical in LOGICAL:
+        return LOGICAL[logical]
     if not _is_json(node) and kind in {"unknown", "never"}:
         msg = f"No dlt mapping for node type {kind!r} with logical type {logical!r}"
         raise ConversionError(msg)
@@ -187,8 +187,8 @@ def _scalar_type(node: TypedNode) -> TDataType:
         return "decimal" if isinstance(node.constraints.get("multipleOf"), (int, float, Decimal)) else "double"
     if kind == "string":
         fmt = node.constraints.get("format")
-        return _FORMATS.get(fmt, "text") if isinstance(fmt, str) else "text"
-    return _SCALARS.get(kind, "text")
+        return FORMATS.get(fmt, "text") if isinstance(fmt, str) else "text"
+    return SCALARS.get(kind, "text")
 
 
 class DltEmitter(BaseModel):

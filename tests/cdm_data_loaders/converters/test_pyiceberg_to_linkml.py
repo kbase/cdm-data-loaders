@@ -1,6 +1,10 @@
 """Unit tests for pyiceberg_to_linkml."""
 
 import pytest
+from linkml_runtime.dumpers import yaml_dumper
+from linkml_runtime.linkml_model.meta import SchemaDefinition, SlotDefinition
+from linkml_runtime.loaders import yaml_loader
+from pyiceberg.schema import Schema
 from pyiceberg.types import (
     BooleanType,
     DateType,
@@ -8,19 +12,18 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    IcebergType,
     IntegerType,
     ListType,
     LongType,
     MapType,
     NestedField,
     StringType,
-    StructType,
     TimestampType,
     TimestamptzType,
     TimeType,
     UUIDType,
 )
-from pyiceberg.schema import Schema
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.pyiceberg_to_linkml import (
@@ -50,10 +53,10 @@ from tests.cdm_data_loaders.converters.conftest import make_table
         pytest.param(FixedType(16), "string", id="fixed"),
     ],
 )
-def test_convert_type_pass_known_scalars(field_type: object, expected_range: str) -> None:
+def test_convert_type_pass_known_scalars(field_type: IcebergType, expected_range: str) -> None:
     """Every scalar Iceberg type maps to its expected LinkML range."""
     result = convert_type(field_type)
-    assert result["range"] == expected_range
+    assert result == SlotDefinition(name="node", range=expected_range)
 
 
 def test_convert_type_fail_unknown_type() -> None:
@@ -62,52 +65,39 @@ def test_convert_type_fail_unknown_type() -> None:
         convert_type(object())  # pyright: ignore[reportArgumentType]
 
 
-def test_convert_type_pass_required_list() -> None:
-    """A required-element list maps to a multivalued slot."""
-    node = convert_type(ListType(element_id=2, element=StringType(), element_required=True))
-    assert node["range"] == "string"
-    assert node["multivalued"] is True
-
-
-def test_convert_type_pass_optional_element_list() -> None:
-    """An optional-element list also maps to a multivalued slot."""
-    node = convert_type(ListType(element_id=2, element=StringType(), element_required=False))
-    assert node["range"] == "string"
-    assert node["multivalued"] is True
+@pytest.mark.parametrize("required", [True, False], ids=["required-elements", "optional-elements"])
+def test_convert_type_pass_list(required: bool) -> None:
+    """Lists map to official multivalued slot definitions."""
+    node = convert_type(ListType(element_id=2, element=StringType(), element_required=required))
+    assert node == SlotDefinition(name="node", range="string", multivalued=True)
 
 
 def test_convert_type_pass_required_value_map() -> None:
     """A map maps to a custom class with key/value attributes."""
-    node = convert_type(
+    result = convert_type(
         MapType(key_id=2, key_type=StringType(), value_id=3, value_type=LongType(), value_required=True)
     )
-    # LinkML emitter handles maps by treating them as objects/classes if using the internal IR
-    # but in our current emitter, it doesn't explicitly handle "map" as a primitive.
-    # Let's check what it actually produces based on current LinkMLEmitter implementation.
-    # Since IcebergReader.read maps MapType to a TypedNode(type="map"),
-    # and LinkMLEmitter._node_expression doesn't handle "map", it should actually raise an error
-    # unless we updated the emitter. Let's verify this in a real test run.
-    pass
+    assert result == SlotDefinition(name="node", range="Node_node_map", multivalued=True)
 
 
-def test_convert_field_pass_required() -> None:
-    """A required field has required=True."""
-    field = NestedField(1, "name", StringType(), required=True)
+@pytest.mark.parametrize("required", [True, False], ids=["required-field", "optional-field"])
+def test_convert_field_pass_cardinality_description(required: bool) -> None:
+    """Fields preserve names, requiredness, and descriptions in slot models."""
+    field = NestedField(1, "name", StringType(), required=required, doc="Display name.")
     result = convert_field(field)
-    assert result["required"] is True
-    assert result["range"] == "string"
+    assert result == SlotDefinition(
+        name="name", range="string", required=True if required else None, description="Display name."
+    )
 
 
-def test_convert_field_pass_optional() -> None:
-    """An optional field has required=False (or omitted)."""
-    field = NestedField(1, "name", StringType(), required=False)
-    result = convert_field(field)
-    assert result.get("required") is not True
-    assert result["range"] == "string"
+def test_convert_struct_pass_class_range() -> None:
+    """Struct conversion returns a slot referencing the generated class."""
+    result = convert_struct((NestedField(1, "name", StringType()),))
+    assert result == SlotDefinition(name="node", range="Node_node")
 
 
 def test_table_to_linkml_pass_simple() -> None:
-    """A simple table produces a valid LinkML mapping."""
+    """A simple table produces a LinkML model that round-trips through YAML."""
     schema = Schema(
         identifier_field_ids=[],
         fields=(NestedField(1, "id", StringType(), required=True),),
@@ -117,8 +107,9 @@ def test_table_to_linkml_pass_simple() -> None:
         identifier=("namespace", "table"),
     )
     result = table_to_linkml(table, ("namespace", "table"))
-    assert result["name"] == "table"
-    assert "classes" in result
-    assert "table" in result["classes"]
-    assert "id" in result["classes"]["table"]["attributes"]
-    assert result["classes"]["table"]["attributes"]["id"]["range"] == "string"
+    assert isinstance(result, SchemaDefinition)
+    assert result.name == "table"
+    assert result.id == "urn:iceberg:namespace.table"
+    assert set(result.classes) == {"table"}
+    assert result.classes["table"].attributes == {"id": SlotDefinition(name="id", range="string", required=True)}
+    assert yaml_loader.loads(yaml_dumper.dumps(result), target_class=SchemaDefinition) == result

@@ -1,11 +1,12 @@
 """CLI interface for creating a dump of table schemas from an Iceberg catalog."""
 
-import json
 from datetime import UTC, datetime
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import Annotated, Final
 
+from linkml_runtime.dumpers import yaml_dumper
+from linkml_runtime.linkml_model.meta import Annotation
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 from pyiceberg.catalog import load_catalog
@@ -48,6 +49,9 @@ def dump_catalog_schemas(settings: IcebergToLinkMLSettings) -> None:
     identically on every table in a single run (it reflects the run, not each
     table's individual read time). An existing output file for a table is
     overwritten, with a warning logged first.
+
+    :param settings: Catalog name and output directory.
+    :returns: None.
     """
     catalog = load_catalog(settings.catalog)
     out_path = Path(settings.output_dir)
@@ -62,25 +66,19 @@ def dump_catalog_schemas(settings: IcebergToLinkMLSettings) -> None:
             try:
                 table = catalog.load_table(identifier)
                 schema_doc = table_to_linkml(table, identifier)
+                schema_doc.annotations["generated_at"] = Annotation(tag="generated_at", value=generated_at)
+                schema_yaml = yaml_dumper.dumps(schema_doc)
             except Exception:
                 failures += 1
                 logger.exception("Failed to convert table %s; skipping", identifier)
                 continue
-
-            # Note: LinkML results are dicts, we add the generated_at to extensions if present
-            # or just top level if we want it to be a generic property.
-            # Since it's a schema dump, we'll put it in the top level for consistency with JS.
-            schema_doc["x-iceberg"] = {"generated_at": generated_at}
 
             file_name = ".".join(identifier) + ".schema.yaml"
             out_file = out_path / file_name
             if out_file.exists():
                 logger.warning("Overwriting existing schema file %s", out_file)
 
-            # Use json.dumps as LinkML emitter returns a dict.
-            # Usually LinkML is YAML, but for a simple dump, JSON is a valid subset of YAML.
-            # If the user explicitly wanted YAML, we'd need pyyaml.
-            out_file.write_text(json.dumps(schema_doc, indent=2))
+            out_file.write_text(schema_yaml, encoding="utf-8")
             logger.info("Wrote schema for table %s to %s", identifier, out_file)
 
     if failures:

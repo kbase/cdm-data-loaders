@@ -8,8 +8,7 @@ from functools import cache
 from typing import Final
 
 from frozendict import frozendict
-from jsonschema import Draft7Validator
-from jsonschema.validators import validator_for
+from jsonschema import Draft7Validator, Draft202012Validator
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pyspark.sql.types import (
     ArrayType,
@@ -182,7 +181,7 @@ class PySparkEmitter(BaseModel):
 
     def emit(self, document: SchemaDocument) -> StructType:
         """Emit a table schema, requiring the result to be a struct."""
-        validator_cls = validator_for({"$schema": document.dialect} if document.dialect else {})
+        validator_cls = document.jsonschema_validator_cls or Draft202012Validator
         result = self.emit_node(document.root, self.build_context(validator_cls))
         if isinstance(result, StructType):
             return result
@@ -196,7 +195,7 @@ class PySparkEmitter(BaseModel):
     def emit_node(self, node: TypedNode, ctx: ConversionContext | None = None, depth: int = 0) -> DataType:
         """Emit a scalar or container node without a table-root restriction."""
         if ctx is None:
-            ctx = self.build_context(validator_for({}))
+            ctx = self.build_context(Draft202012Validator)
         logical = self._emit_logical(node)
         if logical is not None:
             return logical
@@ -327,14 +326,18 @@ class PySparkEmitter(BaseModel):
         )
         return StructType([])
 
-    def _emit_map(self, node: TypedNode, ctx: ConversionContext) -> MapType:
+    def _emit_map(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> MapType:
         """Emit a map with independently typed keys and values."""
         if node.key_type is None or node.value_type is None:
             msg = "Map nodes require both key_type and value_type"
             raise PySparkEmitterError(msg)
-        return MapType(self.emit_node(node.key_type, ctx), self.emit_node(node.value_type, ctx), valueContainsNull=True)
+        return MapType(
+            self.emit_node(node.key_type, ctx, depth + 1),
+            self.emit_node(node.value_type, ctx, depth + 1),
+            valueContainsNull=True,
+        )
 
-    def _emit_array(self, node: TypedNode, ctx: ConversionContext) -> ArrayType:
+    def _emit_array(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> ArrayType:
         """Emit homogeneous arrays, approximating tuple schemas by their first slot."""
         element = node.items
         if node.prefix_items is not None:
@@ -352,7 +355,7 @@ class PySparkEmitter(BaseModel):
         if element is None or _empty_array_element(element):
             element_type = StringType()
         else:
-            element_type = self.emit_node(element, ctx)
+            element_type = self.emit_node(element, ctx, depth + 1)
         return ArrayType(element_type, containsNull=True)
 
     def _emit_string(self, node: TypedNode) -> DataType:

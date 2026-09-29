@@ -61,7 +61,7 @@ def _metadata(value: Mapping[str, object]) -> Mapping[str, Value]:
     return {key: iceberg_value(item) for key, item in value.items()}
 
 
-_PRIMITIVES: Final[dict[type[IcebergType], tuple[NodeType, str, int | None, bool | None]]] = {
+PRIMITIVES: Final[dict[type[IcebergType], tuple[NodeType, str, int | None, bool | None]]] = {
     BooleanType: ("boolean", "boolean", None, None),
     IntegerType: ("integer", "int", 32, None),
     LongType: ("integer", "long", 64, None),
@@ -158,8 +158,8 @@ class IcebergReader:
     def _type(self, source: IcebergType, path: tuple[str | int, ...]) -> TypedNode:
         """Translate supported Iceberg types into genuine typed child trees."""
         provenance = Provenance("iceberg", path)
-        if type(source) in _PRIMITIVES:
-            kind, logical, width, timezone = _PRIMITIVES[type(source)]
+        if type(source) in PRIMITIVES:
+            kind, logical, width, timezone = PRIMITIVES[type(source)]
             return TypedNode(
                 type=kind,
                 nullable=False,
