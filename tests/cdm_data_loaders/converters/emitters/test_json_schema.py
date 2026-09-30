@@ -327,6 +327,55 @@ def test_emit_pass_iceberg_nested_compatibility(
     assert JsonSchemaEmitter().emit(IcebergReader().read_table(table, identifier)) == expected
 
 
+def test_emit_into_pass_adds_table_under_defs() -> None:
+    """A table document is added to a namespace document's $defs, keyed by its name."""
+    schema = Schema(NestedField(1, "id", LongType(), required=True))
+    identifier = ("namespace", "records")
+    table = make_table(identifier, schema)
+    document = IcebergReader().read_table(table, identifier)
+    namespace_doc: dict[str, Any] = {
+        "$schema": JSON_SCHEMA_DIALECT,
+        "$id": "urn:iceberg:namespace",
+        "title": "namespace",
+    }
+
+    result = JsonSchemaEmitter().emit_into(document, namespace_doc)
+
+    expected_entry = JsonSchemaEmitter().emit(document)
+    del expected_entry["$schema"]
+
+    assert result is namespace_doc
+    assert set(namespace_doc["$defs"]) == {"records"}
+    assert "$schema" not in namespace_doc["$defs"]["records"]
+    assert namespace_doc["$defs"]["records"] == expected_entry
+
+
+def test_emit_into_pass_preserves_existing_entries() -> None:
+    """Adding a second table keeps the first table's entry under $defs."""
+    schema = Schema(NestedField(1, "id", LongType(), required=True))
+    first_table = make_table(("namespace", "first"), schema)
+    second_table = make_table(("namespace", "second"), schema)
+    namespace_doc: dict[str, Any] = {
+        "$schema": JSON_SCHEMA_DIALECT,
+        "$id": "urn:iceberg:namespace",
+        "title": "namespace",
+    }
+    emitter = JsonSchemaEmitter()
+
+    emitter.emit_into(IcebergReader().read_table(first_table, ("namespace", "first")), namespace_doc)
+    emitter.emit_into(IcebergReader().read_table(second_table, ("namespace", "second")), namespace_doc)
+
+    assert set(namespace_doc["$defs"]) == {"first", "second"}
+
+
+def test_emit_into_fail_unnamed_document() -> None:
+    """A document without a name cannot be added to a namespace document."""
+    schema = Schema(NestedField(1, "id", LongType(), required=True))
+    document = IcebergReader().read(schema)
+    with pytest.raises(ConversionError, match="named document"):
+        JsonSchemaEmitter().emit_into(document, {})
+
+
 @pytest.mark.parametrize(
     "schema",
     [

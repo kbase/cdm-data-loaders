@@ -397,3 +397,29 @@ def test_table_to_json_schema_pass_extension_keys_are_snake_case() -> None:
     doc = table_to_json_schema(table, ("ns", "tbl"))
     for key in iter_extension_keys(doc):
         assert key == to_snake_case(key), f"extension key is not snake case: {key}"
+
+
+def test_table_to_json_schema_pass_namespace_schema_adds_table_under_defs() -> None:
+    """Passing a namespace document adds the table's schema under $defs and returns that document."""
+    table = make_table(("ns", "tbl"), Schema(NestedField(1, "id", LongType(), required=True)))
+    namespace_doc = {"$schema": JSON_SCHEMA_DIALECT, "$id": "urn:iceberg:ns", "title": "ns"}
+
+    result = table_to_json_schema(table, ("ns", "tbl"), schema=namespace_doc)
+
+    assert result is namespace_doc
+    assert set(namespace_doc["$defs"]) == {"tbl"}
+    assert "$schema" not in namespace_doc["$defs"]["tbl"]
+    assert namespace_doc["$defs"]["tbl"]["title"] == "tbl"
+
+
+def test_table_to_json_schema_pass_namespace_schema_keeps_prior_tables() -> None:
+    """A second call with the same namespace document keeps earlier tables' entries."""
+    schema = Schema(NestedField(1, "id", LongType(), required=True))
+    first_table = make_table(("ns", "first"), schema)
+    second_table = make_table(("ns", "second"), schema)
+    namespace_doc = {"$schema": JSON_SCHEMA_DIALECT, "$id": "urn:iceberg:ns", "title": "ns"}
+
+    table_to_json_schema(first_table, ("ns", "first"), schema=namespace_doc)
+    table_to_json_schema(second_table, ("ns", "second"), schema=namespace_doc)
+
+    assert set(namespace_doc["$defs"]) == {"first", "second"}
