@@ -21,6 +21,7 @@ JSON_SCHEMA_KEYWORDS: Final = frozenset(
     {
         "$schema",
         "$id",
+        "$defs",
         "title",
         "description",
         "type",
@@ -144,7 +145,7 @@ def iter_schema_keywords(node: dict) -> Iterator[str]:
     """Yield every schema keyword key in a schema document, descending into subschemas."""
     for key, value in node.items():
         yield key
-        if key == "properties" and isinstance(value, dict):
+        if key in {"properties", "$defs"} and isinstance(value, dict):
             for subschema in value.values():
                 yield from iter_schema_keywords(subschema)
         elif key == "items" and isinstance(value, dict):

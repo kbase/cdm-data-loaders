@@ -4,12 +4,13 @@ import json
 from datetime import UTC, datetime
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Annotated, Final
+from typing import Annotated, Any, Final
 
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 from pyiceberg.catalog import load_catalog
 
+from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT
 from cdm_data_loaders.converters.pyiceberg_to_jsonschema import table_to_json_schema
 from cdm_data_loaders.core.fields import (
     OUTPUT_DIR,
@@ -38,6 +39,16 @@ class IcebergToJsonSchemaSettings(LoggerSettings):
 
     catalog: Annotated[NonEmptyStr, Field(description="Name of the catalog to retrieve schemas from")]
     output_dir: OutputDir
+    group_by_namespace: bool = Field(default=False, description="Export one JSON Schema per namespace")
+
+
+def _write_schema(schema_doc: dict[str, Any], out_file: Path, generated_at: str) -> None:
+    """Write a timestamped schema, warning before replacing an existing file."""
+    schema_doc.setdefault("x-iceberg", {})["generated_at"] = generated_at
+    if out_file.exists():
+        logger.warning("Overwriting existing schema file %s", out_file)
+    out_file.write_text(json.dumps(schema_doc, indent=2))
+    logger.info("Wrote schema to %s", out_file)
 
 
 def dump_catalog_schemas(settings: IcebergToJsonSchemaSettings) -> None:
@@ -47,7 +58,11 @@ def dump_catalog_schemas(settings: IcebergToJsonSchemaSettings) -> None:
     abort the dump of the remaining tables. `generated_at` is stamped
     identically on every table in a single run (it reflects the run, not each
     table's individual read time). An existing output file for a table is
-    overwritten, with a warning logged first.
+    overwritten, with a warning logged first. With ``group_by_namespace``,
+    each nonempty namespace produces one file whose ``$defs`` holds its table schemas.
+
+    :param settings: Catalog name and output directory.
+    :returns: None.
     """
     catalog = load_catalog(settings.catalog)
     out_path = Path(settings.output_dir)
@@ -58,22 +73,26 @@ def dump_catalog_schemas(settings: IcebergToJsonSchemaSettings) -> None:
     logger.info("Dumping schemas for %d namespace(s) from catalog %r", len(namespaces), settings.catalog)
     failures = 0
     for namespace in namespaces:
-        for identifier in catalog.list_tables(namespace):
+        namespace_name = ".".join(namespace)
+        namespace_schema: dict[str, Any] | None = (
+            {"$schema": JSON_SCHEMA_DIALECT, "$id": f"urn:iceberg:{namespace_name}", "title": namespace_name}
+            if settings.group_by_namespace
+            else None
+        )
+        for identifier in sorted(catalog.list_tables(namespace)):
             try:
                 table = catalog.load_table(identifier)
-                schema_doc = table_to_json_schema(table, identifier)
+                schema_doc = table_to_json_schema(table, identifier, schema=namespace_schema)
             except Exception:
                 failures += 1
                 logger.exception("Failed to convert table %s; skipping", identifier)
                 continue
-            schema_doc["x-iceberg"]["generated_at"] = generated_at
 
-            file_name = ".".join(identifier) + ".schema.json"
-            out_file = out_path / file_name
-            if out_file.exists():
-                logger.warning("Overwriting existing schema file %s", out_file)
-            out_file.write_text(json.dumps(schema_doc, indent=2))
-            logger.info("Wrote schema for table %s to %s", identifier, out_file)
+            if namespace_schema is None:
+                _write_schema(schema_doc, out_path / (".".join(identifier) + ".schema.json"), generated_at)
+
+        if namespace_schema is not None and namespace_schema.get("$defs"):
+            _write_schema(namespace_schema, out_path / (namespace_name + ".schema.json"), generated_at)
 
     if failures:
         logger.warning("Completed with %d table(s) skipped due to conversion failures", failures)

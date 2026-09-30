@@ -40,9 +40,20 @@ def convert_struct(
 
 
 def table_to_json_schema(
-    table: Table, identifier: tuple[str, ...], *, extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
+    table: Table,
+    identifier: tuple[str, ...],
+    *,
+    extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS,
+    schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Read loaded table metadata and emit a JSON Schema document without I/O."""
-    return JsonSchemaEmitter().emit(
-        IcebergReader(extension_registry, mapping_target="JSON Schema").read_table(table, identifier)
-    )
+    """Read loaded table metadata and emit a JSON Schema document without I/O.
+
+    :param table: Loaded Iceberg table.
+    :param identifier: Namespace and table name.
+    :param extension_registry: Registry for Iceberg extensions.
+    :param schema: Optional namespace document to add the table's schema into, preserving existing entries.
+    :returns: JSON Schema document, or the destination namespace document when ``schema`` is given.
+    """
+    document = IcebergReader(extension_registry, mapping_target="JSON Schema").read_table(table, identifier)
+    emitter = JsonSchemaEmitter()
+    return emitter.emit(document) if schema is None else emitter.emit_into(document, schema)

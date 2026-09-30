@@ -98,6 +98,21 @@ class JsonSchemaEmitter:
             result["title"] = document.name
         return result
 
+    def emit_into(self, document: SchemaDocument, schema: dict[str, Any]) -> dict[str, Any]:
+        """Add a document's schema to a namespace document's ``$defs`` without overwriting existing entries.
+
+        :param document: Named, table-rooted document to convert.
+        :param schema: Destination namespace document, updated only after successful conversion.
+        :returns: The destination namespace document.
+        """
+        if document.name is None:
+            msg = "A namespaced JSON Schema entry requires a named document"
+            raise ConversionError(msg)
+        table_schema = self.emit(document)
+        table_schema.pop("$schema", None)
+        schema.setdefault("$defs", {})[document.name] = table_schema
+        return schema
+
     def emit_node(self, node: TypedNode) -> dict[str, Any] | bool:
         """Emit a standalone node using its source's rendering policy."""
         source = node.provenance.source if node.provenance is not None else None
