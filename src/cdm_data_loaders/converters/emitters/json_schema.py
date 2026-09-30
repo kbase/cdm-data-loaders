@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.inference import decimal_pattern
 from cdm_data_loaders.converters.core.ir import Field, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
 
 JSON_SCHEMA_DIALECT: Final = "https://json-schema.org/draft/2020-12/schema"
-_DLT_TYPES: Final[dict[str, dict[str, Any]]] = {
+DLT_TYPES: Final[dict[str, dict[str, Any]]] = {
     "text": {"type": "string"},
     "bigint": {"type": "integer"},
     "double": {"type": "number"},
@@ -23,8 +24,8 @@ _DLT_TYPES: Final[dict[str, dict[str, Any]]] = {
     "json": {},
     "wei": {"type": "integer", "x-dlt": {"data_type": "wei"}},
 }
-_DLT_KNOWN: Final = frozenset({"name", "data_type", "nullable", "description", "precision", "scale"})
-_ICEBERG_LOGICAL_TYPES: Final = frozenset(
+DLT_KNOWN: Final = frozenset({"name", "data_type", "nullable", "description", "precision", "scale"})
+ICEBERG_LOGICAL_TYPES: Final = frozenset(
     {
         "boolean",
         "int",
@@ -41,17 +42,7 @@ _ICEBERG_LOGICAL_TYPES: Final = frozenset(
         "fixed",
     }
 )
-_ICEBERG_ELEMENT_KEYS: Final = frozenset({"element_id", "element_required", "key_id", "value_id", "value_required"})
-
-
-def decimal_pattern(precision: int, scale: int) -> str:
-    """Build the decimal string pattern from integer precision and scale."""
-    digits_before = precision - scale
-    if scale > 0:
-        if digits_before == 0:
-            return rf"^-?0(\.\d{{1,{scale}}})?$"
-        return rf"^-?\d{{1,{digits_before}}}(\.\d{{1,{scale}}})?$"
-    return rf"^-?\d{{1,{digits_before}}}$"
+ICEBERG_ELEMENT_KEYS: Final = frozenset({"element_id", "element_required", "key_id", "value_id", "value_required"})
 
 
 def _values(values: Mapping[str, Value]) -> dict[str, Any]:
@@ -242,12 +233,12 @@ class JsonSchemaEmitter:
     def _dlt_scalar(self, node: TypedNode) -> dict[str, Any]:
         """Select logical templates and keep column metadata inside null unions."""
         logical = node.hints.logical_type
-        if node.type == "unknown" or (logical is not None and logical not in _DLT_TYPES):
+        if node.type == "unknown" or (logical is not None and logical not in DLT_TYPES):
             path = node.provenance.path if node.provenance is not None else ()
             name = path[-1] if path else "<unknown>"
             msg = f"Column {name!r} has unknown dlt data_type {logical!r}."
             raise ConversionError(msg)
-        result = deepcopy(_DLT_TYPES[logical]) if logical is not None else {}
+        result = deepcopy(DLT_TYPES[logical]) if logical is not None else {}
         if node.hints.precision is not None or node.hints.scale is not None:
             hints = result.setdefault("x-dlt", {})
             hints["precision"] = node.hints.precision
@@ -258,7 +249,7 @@ class JsonSchemaEmitter:
         metadata = _values(node.extensions)
         source_hints = metadata.pop("x-dlt", {})
         if self.preserve_unknown_hints:
-            hints = {key: value for key, value in source_hints.items() if key not in _DLT_KNOWN and value is not None}
+            hints = {key: value for key, value in source_hints.items() if key not in DLT_KNOWN and value is not None}
             if hints:
                 result.setdefault("x-dlt", {}).update(hints)
         result.update(metadata)
@@ -271,7 +262,7 @@ class JsonSchemaEmitter:
         result.update(_values(node.annotations))
         extensions = _values(node.extensions)
         metadata = extensions.pop("x-iceberg", {})
-        metadata = {key: value for key, value in metadata.items() if key not in _ICEBERG_ELEMENT_KEYS}
+        metadata = {key: value for key, value in metadata.items() if key not in ICEBERG_ELEMENT_KEYS}
         if metadata:
             result.setdefault("x-iceberg", {}).update(metadata)
         result.update(extensions)
@@ -314,7 +305,7 @@ class JsonSchemaEmitter:
         """Apply physical bounds and source logical encodings to scalar nodes."""
         hints = node.hints
         logical = hints.logical_type
-        if logical not in _ICEBERG_LOGICAL_TYPES:
+        if logical not in ICEBERG_LOGICAL_TYPES:
             msg = f"No JSON Schema mapping for Iceberg type: {logical or node.type}"
             raise ConversionError(msg)
         result: dict[str, Any] = {"type": node.type}

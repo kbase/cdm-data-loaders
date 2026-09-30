@@ -103,6 +103,39 @@ def test_emit_pass_field_presence_controls_nullable() -> None:
     }
 
 
+def test_emit_pass_nesting_limit(caplog: pytest.LogCaptureFixture) -> None:
+    """Deeply nested objects are collapsed to StringType when max_nesting is reached."""
+
+    def make_deep_node(depth: int) -> TypedNode:
+        if depth <= 0:
+            return TypedNode(type="string")
+        return TypedNode(
+            type="object",
+            properties=(Field("child", make_deep_node(depth - 1), required=True),),
+        )
+
+    depth = 15
+    node = make_deep_node(depth)
+    document = SchemaDocument(root=node, name="deep")
+
+    emitter = PySparkEmitter(max_nesting=10)
+    with caplog.at_level(logging.WARNING):
+        result = emitter.emit(document)
+
+    # The 11th level should be collapsed to StringType
+    # Result is StructType. Fields are recursively processed.
+    # We check the deep structure.
+    # Since it's a chain of Structs, the 11th StructField should have StringType.
+
+    current_type = result
+    for _i in range(10):
+        assert isinstance(current_type, StructType)
+        current_type = current_type.fields[0].dataType
+
+    assert current_type == StringType()
+    assert "Max nesting limit (10) reached" in caplog.text
+
+
 def test_emit_pass_json_round_trip() -> None:
     """Serialized emitted schemas deserialize through PySpark's native parser."""
     document = JsonSchemaReader().read(
@@ -488,12 +521,13 @@ def test_conversion_context_pass_keyword_policy(validator: type) -> None:
     assert context.metadata_keys == frozenset(known - STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS)
     assert context.allowed_extra_metadata_keywords == frozenset({"pattern", "x-custom"})
     assert context.invalid_extra_metadata_keywords == frozenset({"type", "$id", "typo"})
+    # ensure that exactly the same object is returned (i.e. that the caching functionality is working)
     assert metadata_keys_for(validator) is metadata_keys_for(validator)
 
 
 @pytest.mark.parametrize("dialect", ["http://json-schema.org/draft-07/schema#", DIALECT], ids=["draft7", "draft2020"])
 def test_emit_pass_invalid_metadata_warns_once(dialect: str, caplog: pytest.LogCaptureFixture) -> None:
-    """Invalid requested metadata is filtered once per document using its declared dialect."""
+    """Use the reader's detected draft even when the document's dialect label is removed."""
     document = JsonSchemaReader().read(
         {
             "$schema": dialect,
@@ -501,7 +535,7 @@ def test_emit_pass_invalid_metadata_warns_once(dialect: str, caplog: pytest.LogC
         }
     )
     emitter = PySparkEmitter(extra_metadata_keywords=frozenset({"typo", "type", "properties", "$id", "pattern"}))
-    result = emitter.emit(document)
+    result = emitter.emit(replace(document, dialect=None))
     assert result["nested"].dataType["value"].metadata == {"jsonschema": {"pattern": "a"}}
     assert caplog.text.count("Ignoring invalid extra_metadata_keywords") == 1
     assert ("Draft7Validator" if "draft-07" in dialect else "Draft202012Validator") in caplog.text

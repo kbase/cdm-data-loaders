@@ -13,16 +13,9 @@ from cdm_data_loaders.converters.core.guards import (
     require_object_root,
     require_schema_keyword,
 )
-from cdm_data_loaders.converters.core.inference import decimal_places as _decimal_places
-from cdm_data_loaders.converters.core.inference import infer_implicit_type as _infer_implicit_type
 from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
 from cdm_data_loaders.converters.core.ir import SchemaDocument
 from cdm_data_loaders.converters.emitters.dlt import (
-    BINARY_FORMATS,
-    DATE_FORMATS,
-    DATETIME_FORMATS,
-    SCHEMA_ENGINE_VERSION,
-    TIME_FORMATS,
     DltEmitter,
     _scalar_type,
 )
@@ -31,21 +24,8 @@ from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 if TYPE_CHECKING:
     from dlt.common.schema import Schema
 
-__all__ = [
-    "BINARY_FORMATS",
-    "DATETIME_FORMATS",
-    "DATE_FORMATS",
-    "SCHEMA_ENGINE_VERSION",
-    "TIME_FORMATS",
-    "InvalidJSONSchemaError",
-    "JSONSchemaToDlt",
-    "JSONSchemaToDltError",
-    "_data_type_from_enum",
-    "_decimal_places",
-    "_infer_implicit_type",
-]
 
-
+# FIXME: dead code
 def _data_type_from_enum(values: list[Any]) -> TDataType:
     """Infer an enum's dlt type using the shared node conversion."""
     return _scalar_type(JsonSchemaReader().read_node({"enum": values}))

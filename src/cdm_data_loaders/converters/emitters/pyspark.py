@@ -8,8 +8,7 @@ from functools import cache
 from typing import Final
 
 from frozendict import frozendict
-from jsonschema import Draft7Validator
-from jsonschema.validators import validator_for
+from jsonschema import Draft7Validator, Draft202012Validator
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pyspark.sql.types import (
     ArrayType,
@@ -160,6 +159,7 @@ class PySparkEmitter(BaseModel):
     treat_unknown_as_string: bool = True
     emit_unions_as_json: bool = False
     extra_metadata_keywords: frozenset[str] = Field(default_factory=frozenset)
+    max_nesting: int = Field(default=10, ge=1)
 
     @field_validator("format_map", mode="before")
     @classmethod
@@ -181,7 +181,7 @@ class PySparkEmitter(BaseModel):
 
     def emit(self, document: SchemaDocument) -> StructType:
         """Emit a table schema, requiring the result to be a struct."""
-        validator_cls = validator_for({"$schema": document.dialect} if document.dialect else {})
+        validator_cls = document.jsonschema_validator_cls or Draft202012Validator
         result = self.emit_node(document.root, self.build_context(validator_cls))
         if isinstance(result, StructType):
             return result
@@ -192,16 +192,18 @@ class PySparkEmitter(BaseModel):
         )
         raise PySparkEmitterError(msg)
 
-    def emit_node(self, node: TypedNode, ctx: ConversionContext | None = None) -> DataType:
+    def emit_node(self, node: TypedNode, ctx: ConversionContext | None = None, depth: int = 0) -> DataType:
         """Emit a scalar or container node without a table-root restriction."""
         if ctx is None:
-            ctx = self.build_context(validator_for({}))
+            ctx = self.build_context(Draft202012Validator)
         logical = self._emit_logical(node)
         if logical is not None:
             return logical
         kind = self._type_name(node)
         if kind in {"object", "array", "map"}:
-            return {"object": self._emit_object, "array": self._emit_array, "map": self._emit_map}[kind](node, ctx)
+            return {"object": self._emit_object, "array": self._emit_array, "map": self._emit_map}[kind](
+                node, ctx, depth
+            )
         scalars = {"boolean": BooleanType(), "null": NullType(), "collapsed-union": StringType()}
         if kind in scalars:
             return scalars[kind]
@@ -282,8 +284,12 @@ class PySparkEmitter(BaseModel):
         logger.warning("%s Falling back to StringType.", message)
         return StringType()
 
-    def _emit_object(self, node: TypedNode, ctx: ConversionContext) -> DataType:
+    def _emit_object(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> DataType:
         """Emit fixed fields, a dynamic map, or an empty struct."""
+        if depth >= self.max_nesting:
+            logger.warning("Max nesting limit (%d) reached; collapsing object to StringType.", self.max_nesting)
+            return StringType()
+
         additional = node.additional_properties
         schema_additional = additional is not None and additional.type not in {"any", "never"}
         if node.properties:
@@ -297,7 +303,7 @@ class PySparkEmitter(BaseModel):
                 [
                     StructField(
                         prop.name,
-                        self.emit_node(prop.node, ctx),
+                        self.emit_node(prop.node, ctx, depth + 1),
                         nullable=not prop.required,
                         metadata=self.build_metadata(prop.node, ctx, prop),
                     )
@@ -313,21 +319,25 @@ class PySparkEmitter(BaseModel):
                 )
             value_node = next(iter(node.pattern_properties.values()))
         if value_node is not None:
-            return MapType(StringType(), self.emit_node(value_node, ctx), valueContainsNull=True)
+            return MapType(StringType(), self.emit_node(value_node, ctx, depth + 1), valueContainsNull=True)
         logger.warning(
             "Object schema has no 'properties', 'patternProperties', or schema-valued "
             "'additionalProperties'; converting to an empty StructType()."
         )
         return StructType([])
 
-    def _emit_map(self, node: TypedNode, ctx: ConversionContext) -> MapType:
+    def _emit_map(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> MapType:
         """Emit a map with independently typed keys and values."""
         if node.key_type is None or node.value_type is None:
             msg = "Map nodes require both key_type and value_type"
             raise PySparkEmitterError(msg)
-        return MapType(self.emit_node(node.key_type, ctx), self.emit_node(node.value_type, ctx), valueContainsNull=True)
+        return MapType(
+            self.emit_node(node.key_type, ctx, depth + 1),
+            self.emit_node(node.value_type, ctx, depth + 1),
+            valueContainsNull=True,
+        )
 
-    def _emit_array(self, node: TypedNode, ctx: ConversionContext) -> ArrayType:
+    def _emit_array(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> ArrayType:
         """Emit homogeneous arrays, approximating tuple schemas by their first slot."""
         element = node.items
         if node.prefix_items is not None:
@@ -345,7 +355,7 @@ class PySparkEmitter(BaseModel):
         if element is None or _empty_array_element(element):
             element_type = StringType()
         else:
-            element_type = self.emit_node(element, ctx)
+            element_type = self.emit_node(element, ctx, depth + 1)
         return ArrayType(element_type, containsNull=True)
 
     def _emit_string(self, node: TypedNode) -> DataType:

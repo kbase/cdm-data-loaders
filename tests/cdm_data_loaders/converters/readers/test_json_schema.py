@@ -4,6 +4,14 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from jsonschema import (
+    Draft3Validator,
+    Draft4Validator,
+    Draft6Validator,
+    Draft7Validator,
+    Draft201909Validator,
+    Draft202012Validator,
+)
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
@@ -11,6 +19,25 @@ from cdm_data_loaders.converters.core.ir import Field, Provenance, TypedNode
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
+
+
+@pytest.mark.parametrize(
+    ("dialect", "validator_cls"),
+    [
+        ("http://json-schema.org/draft-03/schema#", Draft3Validator),
+        ("http://json-schema.org/draft-04/schema#", Draft4Validator),
+        ("http://json-schema.org/draft-06/schema#", Draft6Validator),
+        ("http://json-schema.org/draft-07/schema#", Draft7Validator),
+        ("https://json-schema.org/draft/2019-09/schema", Draft201909Validator),
+        (DIALECT, Draft202012Validator),
+    ],
+    ids=["draft3", "draft4", "draft6", "draft7", "draft2019", "draft2020"],
+)
+def test_read_pass_detected_validator(dialect: str, validator_cls: type) -> None:
+    """Retain the detected validator alongside the original dialect URI."""
+    document = JsonSchemaReader().read({"$schema": dialect, "type": "object"})
+    assert document.dialect == dialect
+    assert document.jsonschema_validator_cls is validator_cls
 
 
 def test_read_pass_exact_tree() -> None:
