@@ -220,7 +220,6 @@ markers = [
     "slow_test: does what it says on the tin",
     "requires_ceph: end-to-end tests requiring a running CEPH instance and network access",
     "external_request: tests that make real network requests to external services (e.g. NCBI FTP)",
-    "requires_xsv: tests that use the xsv-validate.sh tool",
     "settings_cls(cls): the pydantic-settings class under test for alias parametrization",   
     "cli_fields: used for restricting cli-related tests to a subset of fields"
 ]

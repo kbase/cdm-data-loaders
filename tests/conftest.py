@@ -1,6 +1,5 @@
 """Global configuration settings for tests."""
 
-import datetime
 import logging
 import os
 import shutil
@@ -20,7 +19,6 @@ from moto import mock_aws
 from pyspark.conf import SparkConf
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import (
-    ArrayType,
     BooleanType,
     DateType,
     FloatType,
@@ -32,28 +30,16 @@ from pyspark.sql.types import (
 from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
-from cdm_data_loaders.audit.schema import (
-    NAMESPACE,
-    PIPELINE,
-    ROW_ERRORS,
-    RUN_ID,
-    SOURCE,
-)
 from cdm_data_loaders.core.fields import LOCAL_FS, S3
-from cdm_data_loaders.core.pipeline_run import PipelineRun
-from cdm_data_loaders.readers.dsv import INVALID_DATA_FIELD
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
 
 SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 
-TEST_NS: Final[str] = "test_ns"
-PIPELINE_RUN = frozendict({RUN_ID: "1234-5678-90", PIPELINE: "KeystoneXL", SOURCE: "/path/to/file"})
-ALT_PIPELINE_RUN = frozendict({RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL", SOURCE: "/path/to/dir"})
-
 BASE_DIR: Final[Path] = Path("tests").parent
 TEST_DATA_DIR: Final[Path] = Path("tests") / "data"
 CASSETTES_DIR: Final[Path] = Path("tests") / "cassettes"
+
 
 DEFAULT_VCR_CONFIG = frozendict(
     {
@@ -404,238 +390,6 @@ def all_lines(test_data_dir: Path) -> Path:
 def all_lines_tsv(test_data_dir: Path) -> Path:
     """All the CSV lines in a single fixture!"""
     return test_data_dir / "dsv" / "all_lines.tsv"
-
-
-@pytest.fixture
-def annotated_df_schema(csv_schema: list[StructField]) -> StructType:
-    """The schema for the annotated dataframe produced by validating one of the CSV files above."""
-    actual_csv_schema = list(csv_schema)
-    for r in actual_csv_schema:
-        r.nullable = True
-
-    return StructType([*actual_csv_schema, INVALID_DATA_FIELD, StructField(ROW_ERRORS, ArrayType(StringType()))])
-
-
-@pytest.fixture(scope="session")
-def annotated_df_data() -> list[dict[str, Any]]:
-    """The output of running all_lines (above) through the dsv parser and df_nullable_fields validator."""
-    return deepcopy(
-        [
-            {
-                "col1": 1,
-                "col2": datetime.date(2025, 3, 1),
-                "col3": 1.2345000505447388,
-                "col4": True,
-                "col5": "EcoCyc:EG10986-MONOMER",
-                "__invalid_data__": None,
-                "errors_in_record": [],
-            },
-            {
-                "col1": 2,
-                "col2": datetime.date(2025, 2, 1),
-                "col3": 0.20000000298023224,
-                "col4": False,
-                "col5": "MetaCyc:EG10986-MONOMER",
-                "__invalid_data__": None,
-                "errors_in_record": [],
-            },
-            {
-                "col1": 3,
-                "col2": datetime.date(2025, 8, 1),
-                "col3": 23.0,
-                "col4": True,
-                "col5": "4261555",
-                "__invalid_data__": None,
-                "errors_in_record": [],
-            },
-            {
-                "col1": 4,
-                "col2": datetime.date(1, 1, 1),
-                "col3": 0.1234000027179718,
-                "col4": False,
-                "col5": "col5",
-                "__invalid_data__": None,
-                "errors_in_record": [],
-            },
-            {
-                "col1": 1,
-                "col2": None,
-                "col3": None,
-                "col4": None,
-                "col5": "col5",
-                "__invalid_data__": None,
-                "errors_in_record": [
-                    "missing_required: col2",
-                    "missing_required: col3",
-                    "missing_required: col4",
-                ],
-            },
-            {
-                "col1": None,
-                "col2": None,
-                "col3": 2.3450000286102295,
-                "col4": True,
-                "col5": "col5",
-                "__invalid_data__": None,
-                "errors_in_record": ["missing_required: col1", "missing_required: col2"],
-            },
-            {
-                "col1": 3,
-                "col2": datetime.date(2025, 5, 31),
-                "col3": 23.450000762939453,
-                "col4": None,
-                "col5": None,
-                "__invalid_data__": None,
-                "errors_in_record": ["missing_required: col4", "missing_required: col5"],
-            },
-            {
-                "col1": None,
-                "col2": None,
-                "col3": None,
-                "col4": None,
-                "col5": None,
-                "__invalid_data__": None,
-                "errors_in_record": [
-                    "missing_required: col1",
-                    "missing_required: col2",
-                    "missing_required: col3",
-                    "missing_required: col4",
-                    "missing_required: col5",
-                ],
-            },
-            {
-                "col1": None,
-                "col2": None,
-                "col3": None,
-                "col4": None,
-                "col5": None,
-                "__invalid_data__": ",,,,,",
-                "errors_in_record": ["parse_error"],
-            },
-            {
-                "col1": 2,
-                "col2": datetime.date(2025, 7, 10),
-                "col3": None,
-                "col4": True,
-                "col5": None,
-                "__invalid_data__": "2,20250710,col3,True,,col6",
-                "errors_in_record": ["parse_error"],
-            },
-            {
-                "col1": 3,
-                "col2": datetime.date(2025, 1, 1),
-                "col3": None,
-                "col4": None,
-                "col5": None,
-                "__invalid_data__": "3,20250101,,,,",
-                "errors_in_record": ["parse_error"],
-            },
-            {
-                "col1": None,
-                "col2": None,
-                "col3": None,
-                "col4": None,
-                "col5": None,
-                "__invalid_data__": ",,,,,col6",
-                "errors_in_record": ["parse_error"],
-            },
-            {
-                "col1": 1,
-                "col2": None,
-                "col3": None,
-                "col4": None,
-                "col5": None,
-                "__invalid_data__": "1",
-                "errors_in_record": ["parse_error"],
-            },
-            {
-                "col1": 2,
-                "col2": datetime.date(2025, 5, 2),
-                "col3": 0.2345000058412552,
-                "col4": None,
-                "col5": None,
-                "__invalid_data__": "2,20250502,0.2345",
-                "errors_in_record": ["parse_error"],
-            },
-            {
-                "col1": 3,
-                "col2": None,
-                "col3": 23.559999465942383,
-                "col4": False,
-                "col5": None,
-                "__invalid_data__": "3,,23.56,False",
-                "errors_in_record": ["parse_error"],
-            },
-            {
-                "col1": None,
-                "col2": None,
-                "col3": None,
-                "col4": None,
-                "col5": None,
-                "__invalid_data__": ",,,",
-                "errors_in_record": ["parse_error"],
-            },
-            {
-                "col1": 1,
-                "col2": None,
-                "col3": 3.0,
-                "col4": None,
-                "col5": "5",
-                "__invalid_data__": "1,2,3,4,5",
-                "errors_in_record": ["parse_error"],
-            },
-            {
-                "col1": None,
-                "col2": None,
-                "col3": 3.450000047683716,
-                "col4": None,
-                "col5": "5",
-                "__invalid_data__": "1.234,2.3456,3.45,4.5,5",
-                "errors_in_record": ["parse_error"],
-            },
-            {
-                "col1": None,
-                "col2": None,
-                "col3": None,
-                "col4": False,
-                "col5": "true",
-                "__invalid_data__": "true,false,true,false,true",
-                "errors_in_record": ["parse_error"],
-            },
-            {
-                "col1": 200202,
-                "col2": datetime.date(20, 2, 2),
-                "col3": 200202.0,
-                "col4": None,
-                "col5": "00200202",
-                "__invalid_data__": "00200202,00200202,00200202,00200202,00200202",
-                "errors_in_record": ["parse_error"],
-            },
-        ]
-    )
-
-
-@pytest.fixture(scope="session")
-def annotated_df_errors(annotated_df_data: list[dict[str, Any]]) -> set[str]:
-    """Unique errors found in annotated_df_data."""
-    list_of_errors = []
-    for r in annotated_df_data:
-        list_of_errors.extend(r[ROW_ERRORS])
-
-    return set(list_of_errors)
-
-
-# Audit-related stuff
-@pytest.fixture(scope="package")
-def pipeline_run() -> PipelineRun:
-    """Generate a pipeline run."""
-    return PipelineRun(**{**PIPELINE_RUN, NAMESPACE: TEST_NS})
-
-
-@pytest.fixture(scope="package")
-def alt_pipeline_run() -> PipelineRun:
-    """Generate a different pipeline run."""
-    return PipelineRun(**{**ALT_PIPELINE_RUN, NAMESPACE: TEST_NS})
 
 
 """S3 Client mocks"""
