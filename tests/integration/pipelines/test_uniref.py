@@ -1,4 +1,8 @@
-"""Tests for the UniRef DLT pipeline."""
+"""Tests for the UniRef DLT pipeline.
+
+The fixture file contains three clusters; exact per-table counts below are
+derived from that fixture. Every test runs once per valid UniRef variant.
+"""
 
 from pathlib import Path
 from typing import Any
@@ -17,35 +21,23 @@ from cdm_data_loaders.pipelines.uniref import (
     cli,
     parse_uniref,
 )
-from tests.cdm_data_loaders.core.conftest import (
-    TEST_BATCH_FILE_SETTINGS,
-    TEST_BATCH_FILE_SETTINGS_RECONCILED,
-    make_settings_autofill_config,
-)
-
-START_AT_VALUE = 25
-START_AT_STRING = "25"
+from tests.cdm_data_loaders.core.conftest import make_settings_autofill_config
+from tests.conftest import TEST_DATA_DIR
 
 TEST_DEFAULT_UNIREF_VARIANT = "50"
 
-UNIREF_FIXTURE_DIR = Path("tests") / "data" / "uniprot" / "uniref" / "integration"
+UNIREF_FIXTURE_DIR = TEST_DATA_DIR / "uniprot" / "uniref" / "integration"
+UNIREF_FIXTURE_FILE = "uniref_chunk_00001.xml"
+UNIREF_CLUSTER_COUNT = 3
 
-
-TEST_SETTINGS = frozendict(
-    {**TEST_BATCH_FILE_SETTINGS, VARIANT: TEST_DEFAULT_UNIREF_VARIANT},
+EXPECTED_ROW_COUNTS = frozendict(
+    {
+        "entity": UNIREF_CLUSTER_COUNT,
+        "cluster": UNIREF_CLUSTER_COUNT,
+        "clustermember": 4,
+        "entity_x_source_file": UNIREF_CLUSTER_COUNT,
+    }
 )
-
-TEST_SETTINGS_RECONCILED = frozendict(
-    {**TEST_BATCH_FILE_SETTINGS_RECONCILED, VARIANT: TEST_DEFAULT_UNIREF_VARIANT},
-)
-
-UNIREF_VARIANT_ALIASES = ["v", "variant"]
-
-
-@pytest.fixture(params=UNIREF_VARIANTS)
-def uniref_variant_value(request: pytest.FixtureRequest) -> str:
-    """Parametrized fixture over all valid uniref variants."""
-    return request.param
 
 
 # Integration test for the UniRef pipeline
@@ -53,15 +45,15 @@ def uniref_variant_value(request: pytest.FixtureRequest) -> str:
 # Data output goes to a local DuckDB destination.
 
 
-@pytest.fixture
-def duckdb_uniref_settings(tmp_path: Path) -> UnirefSettings:
-    """Provide UnirefSettings pointing at the real UniRef XML fixtures."""
+@pytest.fixture(params=UNIREF_VARIANTS)
+def duckdb_uniref_settings(tmp_path: Path, request: pytest.FixtureRequest) -> UnirefSettings:
+    """Provide UnirefSettings pointing at the real UniRef XML fixtures, one per variant."""
     output_dir = tmp_path / "output"
     output_dir.mkdir()
-    return make_settings_autofill_config(  # type: ignore[reportReturnType]
+    return make_settings_autofill_config(  # pyright: ignore[reportReturnType]
         UnirefSettings,
         {
-            VARIANT: TEST_DEFAULT_UNIREF_VARIANT,
+            VARIANT: request.param,
             "input_dir": str(UNIREF_FIXTURE_DIR),
             "output_dir": str(output_dir),
             "use_destination": LOCAL_FS,
@@ -70,16 +62,30 @@ def duckdb_uniref_settings(tmp_path: Path) -> UnirefSettings:
     )
 
 
-def _run_uniref_duckdb_pipeline(settings: UnirefSettings, tmp_path: Path) -> tuple[Any, Any]:
-    """Run ``parse_uniref`` through a real DuckDB pipeline and return (pipeline, load_info)."""
+def _run_uniref_duckdb_pipeline(settings: UnirefSettings, tmp_path: Path, name: str) -> tuple[Any, Any]:
+    """Run ``parse_uniref`` through a real DuckDB pipeline and return (pipeline, load_info).
+
+    dlt writes the duckdb destination file into the working directory and appends
+    on re-runs, so each test gets its own database file and pipeline name under
+    tmp_path to stay isolated from other tests and parametrized cases.
+    """
     pipeline = dlt.pipeline(
-        pipeline_name="test_uniref_pipeline",
-        destination="duckdb",
+        pipeline_name=f"test_uniref_pipeline_{name}",
+        destination=dlt.destinations.duckdb(str(tmp_path / f"{name}.duckdb")),
         dataset_name="test_uniref",
         pipelines_dir=str(tmp_path / "pipelines"),
     )
     load_info = pipeline.run(parse_uniref(settings))
     return pipeline, load_info
+
+
+def _fetch_all(pipeline: Any, query: str) -> list[tuple[Any, ...]]:
+    """Run a query against the pipeline's DuckDB destination and return all rows."""
+    with (
+        pipeline.sql_client() as client,
+        client.execute_query(query) as cur,
+    ):
+        return list(cur.fetchall())
 
 
 def test_integration_uniref_pipeline_loads_into_duckdb(
@@ -89,69 +95,39 @@ def test_integration_uniref_pipeline_loads_into_duckdb(
     """Full integration test: parse the real fixture files into a DuckDB destination.
 
     Confirms that the pipeline runs end-to-end without failed jobs and that the
-    expected CDM tables are populated with data queried back out of DuckDB.
+    expected CDM tables are populated with the exact expected row counts.
     """
-    pipeline, load_info = _run_uniref_duckdb_pipeline(duckdb_uniref_settings, tmp_path)
+    pipeline, load_info = _run_uniref_duckdb_pipeline(duckdb_uniref_settings, tmp_path, "loads")
 
     assert not load_info.has_failed_jobs
 
-    # the parser emits an "entity" row per UniRef cluster; the fixtures contain
-    # several clusters across the chunk files, so this table must not be empty.
-    with (
-        pipeline.sql_client() as client,
-        client.execute_query("SELECT COUNT(*) FROM entity") as cur,
-    ):
-        (entity_count,) = cur.fetchone()
-
-    assert entity_count > 0
-
-    # every entity must have a "uniref:"-prefixed entity_id and be a Cluster.
-    with (
-        pipeline.sql_client() as client,
-        client.execute_query("SELECT entity_id, entity_type FROM entity") as cur,
-    ):
-        rows = cur.fetchall()
-
-    assert all(entity_id.startswith("uniref:") for entity_id, _ in rows)
-    assert all(entity_type == "Cluster" for _, entity_type in rows)
+    for table_name, expected_count in EXPECTED_ROW_COUNTS.items():
+        ((count,),) = _fetch_all(pipeline, f"SELECT COUNT(*) FROM {table_name}")  # noqa: S608
+        assert count == expected_count, f"expected {expected_count} rows in '{table_name}', got {count}"
 
 
-def test_integration_uniref_pipeline_populates_related_tables(
+def test_integration_uniref_pipeline_entity_and_cluster_content(
     duckdb_uniref_settings: UnirefSettings,
     tmp_path: Path,
 ) -> None:
-    """The pipeline should populate the related CDM tables produced by the parser."""
-    pipeline, load_info = _run_uniref_duckdb_pipeline(duckdb_uniref_settings, tmp_path)
+    """Entity rows are UniRef clusters and every cluster carries the injected protocol label."""
+    pipeline, load_info = _run_uniref_duckdb_pipeline(duckdb_uniref_settings, tmp_path, "content")
 
     assert not load_info.has_failed_jobs
 
-    # tables that the parser always emits at least one row for, per entry
-    for table_name in ("entity", "cluster", "clustermember", "entity_x_source_file"):
-        with (
-            pipeline.sql_client() as client,
-            client.execute_query(f"SELECT COUNT(*) FROM {table_name}") as cur,  # noqa: S608
-        ):
-            (count,) = cur.fetchone()
-        assert count > 0, f"expected rows in table '{table_name}'"
+    # every entity must have a "uniref:"-prefixed entity_id and be a Cluster.
+    rows = _fetch_all(pipeline, "SELECT entity_id, entity_type FROM entity")
+    assert len(rows) == UNIREF_CLUSTER_COUNT
+    assert all(entity_id.startswith("uniref:") for entity_id, _ in rows)
+    assert all(entity_type == "Cluster" for _, entity_type in rows)
 
     # every cluster must carry the injected "UniRef <variant>" protocol label
-    with (
-        pipeline.sql_client() as client,
-        client.execute_query("SELECT DISTINCT protocol FROM cluster") as cur,
-    ):
-        protocols = {row[0] for row in cur.fetchall()}
-
+    protocols = {row[0] for row in _fetch_all(pipeline, "SELECT DISTINCT protocol FROM cluster")}
     assert protocols == {f"UniRef {duckdb_uniref_settings.variant}"}
 
-    # entity_x_source_file must reference the fixture files we loaded from
-    with (
-        pipeline.sql_client() as client,
-        client.execute_query("SELECT DISTINCT source_file FROM entity_x_source_file") as cur,
-    ):
-        source_files = {row[0] for row in cur.fetchall()}
-
-    assert source_files
-    assert all(sf.endswith(".xml") for sf in source_files)
+    # entity_x_source_file must reference exactly the fixture file we loaded from
+    source_files = {row[0] for row in _fetch_all(pipeline, "SELECT DISTINCT source_file FROM entity_x_source_file")}
+    assert source_files == {str(UNIREF_FIXTURE_DIR / UNIREF_FIXTURE_FILE)}
 
 
 def test_integration_cli_uniref_pipeline_output_validated(
@@ -177,8 +153,8 @@ def test_integration_cli_uniref_pipeline_output_validated(
             "dataset_name": "uniprot_kb",
         }
         pipeline = dlt.pipeline(
-            pipeline_name="test_uniref_cli_pipeline",
-            destination="duckdb",
+            pipeline_name=f"test_uniref_cli_pipeline_{duckdb_uniref_settings.variant}",
+            destination=dlt.destinations.duckdb(str(tmp_path / "cli.duckdb")),
             dataset_name="test_uniref_cli",
             pipelines_dir=str(tmp_path / "pipelines"),
         )
@@ -196,10 +172,5 @@ def test_integration_cli_uniref_pipeline_output_validated(
     pipeline = captured["pipeline"]
     assert not load_info.has_failed_jobs
 
-    with (
-        pipeline.sql_client() as client,
-        client.execute_query("SELECT COUNT(*) FROM entity") as cur,
-    ):
-        (entity_count,) = cur.fetchone()
-
-    assert entity_count > 0
+    ((entity_count,),) = _fetch_all(pipeline, "SELECT COUNT(*) FROM entity")
+    assert entity_count == UNIREF_CLUSTER_COUNT

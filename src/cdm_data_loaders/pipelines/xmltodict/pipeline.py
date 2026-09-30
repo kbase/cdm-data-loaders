@@ -9,10 +9,9 @@ import dlt
 from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
-from dlt.sources.filesystem import filesystem
 
-from cdm_data_loaders.pipelines.core import run_cli, run_pipeline
-from cdm_data_loaders.pipelines.xml_to_dict.settings import PIPELINE_NAME, XmlToDictSettings
+from cdm_data_loaders.pipelines.core import filesystem_source, run_cli, run_pipeline
+from cdm_data_loaders.pipelines.xmltodict.settings import PIPELINE_NAME, XmlToDictSettings
 from cdm_data_loaders.readers.xml import process_xml_file_to_dict
 
 if TYPE_CHECKING:
@@ -27,13 +26,14 @@ SCHEMA_CONTRACT: Final[dict[str, str]] = {
 }
 
 
-@dlt.transformer(name="xml_to_dict_reader", parallelized=True)
-def xml_to_dict_reader(items: Iterator[FileItemDict], settings: XmlToDictSettings) -> Generator[TDataItems, Any, Any]:
+def _read_items(items: Iterator[FileItemDict], settings: XmlToDictSettings) -> Generator[TDataItems, Any, Any]:
     """Read each file in items. Yields one dict per `xml_tag` element.
 
     :param items: file items to read
     :type  items: Iterator[FileItemDict]
-    :yield: one dict per line
+    :param settings: pipeline config, including xml_tag and xsd-derived paths
+    :type  settings: XmlToDictSettings
+    :yield: one dict per matched element
     :rtype: Generator[TDataItems, Any, Any]
     """
     for file_item in items:
@@ -46,15 +46,15 @@ def run_xml_ingest_pipeline(settings: XmlToDictSettings) -> LoadInfo | None:
     :param settings: pipeline configuration
     :type  settings: XmlToDictSettings
     """
-    xml_to_dict_reader.bind(settings)
+    reader = dlt.transformer(_read_items, name="xmltodict_reader", parallelized=True)
 
-    files = filesystem(bucket_url=settings.input_dir, file_glob=settings.file_glob)
+    files = filesystem_source(bucket_url=settings.input_dir, file_glob=settings.file_glob)
 
-    xml_to_dict_resource: DltResource = files | xml_to_dict_reader
+    xmltodict_resource: DltResource = files | reader(settings)
 
     return run_pipeline(
         settings=settings,
-        resource=xml_to_dict_resource,
+        resource=xmltodict_resource,
         pipeline_kwargs={
             "pipeline_name": PIPELINE_NAME,
             "dataset_name": settings.dataset_name,

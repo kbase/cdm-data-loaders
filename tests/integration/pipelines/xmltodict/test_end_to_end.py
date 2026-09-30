@@ -1,30 +1,20 @@
-"""End-to-end tests for the xml_to_dict_ingest pipeline."""
+"""End-to-end tests for the xmltodict_ingest pipeline."""
 
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import pytest
 from dlt.common.pipeline import LoadInfo
 from pandas import DataFrame
 
-from cdm_data_loaders.core.fields import LoaderFileFormatEnum
-from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
-from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
+from cdm_data_loaders.pipelines.xmltodict.pipeline import (
     cli,
     run_xml_ingest_pipeline,
 )
-from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
-
-SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
-<library>
-    <book id="1"><title>The Shining</title></book>
-    <book id="2"><title>The Stand</title></book>
-    <book id="3"><title>The Tommyknockers</title></book>
-</library>
-"""
-DEFAULT_DLT_TABLES = {"_dlt_version", "_dlt_loads", "_dlt_pipeline_state", LOAD_INFO_TABLE_NAME}
+from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
+from tests.integration.pipelines.conftest import DEFAULT_DLT_TABLES, SIMPLE_LIBRARY_XML
+from tests.integration.pipelines.helpers import LOADER_FILE_FORMATS
 
 
 def check_book_list_results(load_info: LoadInfo | None, table_name: str | None = None) -> DataFrame:
@@ -39,10 +29,9 @@ def check_book_list_results(load_info: LoadInfo | None, table_name: str | None =
     return book_df
 
 
-@pytest.mark.parametrize("loader_file_format", LoaderFileFormatEnum.__members__.values())
+@pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS)
 def test_run_xml_ingest_pipeline_pass_writes_expected_output(
     settings_factory: Callable[..., XmlToDictSettings],
-    fresh_xml_to_dict_reader: Callable[[], Any],
     loader_file_format: str,
 ) -> None:
     """Running the pipeline on xml files loads one row per matching element into the configured table."""
@@ -50,7 +39,6 @@ def test_run_xml_ingest_pipeline_pass_writes_expected_output(
     input_dir = Path(settings.input_dir)
     input_dir.mkdir(exist_ok=True)
     (input_dir / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
-    fresh_xml_to_dict_reader()
 
     load_info = run_xml_ingest_pipeline(settings)
     book_df = check_book_list_results(load_info)
@@ -59,16 +47,14 @@ def test_run_xml_ingest_pipeline_pass_writes_expected_output(
 
 def test_run_xml_ingest_pipeline_pass_gzip_files_are_loaded(
     settings_factory: Callable[..., XmlToDictSettings],
-    fresh_xml_to_dict_reader: Callable[[], Any],
-    write_gzip_xml_file: Callable[[Path, str, str], Path],
+    write_gzip_file: Callable[[Path, str, str], Path],
 ) -> None:
     """Gzip-compressed xml files matching the glob are decompressed and loaded."""
     settings = settings_factory()
     input_dir = Path(settings.input_dir)
     input_dir.mkdir(exist_ok=True)
     (input_dir / "plain.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
-    write_gzip_xml_file(input_dir, "library.xml.gz", SIMPLE_LIBRARY_XML)
-    fresh_xml_to_dict_reader()
+    write_gzip_file(input_dir, "library.xml.gz", SIMPLE_LIBRARY_XML)
 
     load_info = run_xml_ingest_pipeline(settings)
     book_df = check_book_list_results(load_info)
@@ -76,31 +62,12 @@ def test_run_xml_ingest_pipeline_pass_gzip_files_are_loaded(
     assert sorted(book_df["book___id"].tolist()) == ["1", "1", "2", "2", "3", "3"]
 
 
-def test_run_xml_ingest_pipeline_pass_custom_table_name_is_respected(
-    settings_factory: Callable[..., XmlToDictSettings],
-    fresh_xml_to_dict_reader: Callable[[], Any],
-) -> None:
-    """Rows land in the table named by table_name, not in a name derived from the xml tag."""
-    settings = settings_factory(table_name="library_entries")
-    input_dir = Path(settings.input_dir)
-    input_dir.mkdir(exist_ok=True)
-    (input_dir / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
-    fresh_xml_to_dict_reader()
-
-    load_info = run_xml_ingest_pipeline(settings)
-    book_df = check_book_list_results(load_info, "library_entries")
-    # the record dict is keyed by the xml tag, so the flattened column prefix is `book`
-    assert sorted(book_df["book___id"].tolist()) == ["1", "2", "3"]
-
-
 def test_run_xml_ingest_pipeline_pass_no_matching_files_yields_no_data_table(
     settings_factory: Callable[..., XmlToDictSettings],
-    fresh_xml_to_dict_reader: Callable[[], Any],
 ) -> None:
     """An input dir with no matching xml files does not fail the run and creates no data table."""
     settings = settings_factory()
     Path(settings.input_dir).mkdir(exist_ok=True)
-    fresh_xml_to_dict_reader()
 
     load_info = run_xml_ingest_pipeline(settings)
     assert load_info is not None
@@ -110,8 +77,22 @@ def test_run_xml_ingest_pipeline_pass_no_matching_files_yields_no_data_table(
     assert set(dataset.tables) == DEFAULT_DLT_TABLES
 
 
+def test_run_xml_ingest_pipeline_pass_custom_table_name_is_respected(
+    settings_factory: Callable[..., XmlToDictSettings],
+) -> None:
+    """Rows land in the table named by table_name, not in a name derived from the xml tag."""
+    settings = settings_factory(table_name="library_entries")
+    input_dir = Path(settings.input_dir)
+    input_dir.mkdir(exist_ok=True)
+    (input_dir / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+
+    load_info = run_xml_ingest_pipeline(settings)
+    book_df = check_book_list_results(load_info, "library_entries")
+    # the record dict is keyed by the xml tag, so the flattened column prefix is `book`
+    assert sorted(book_df["book___id"].tolist()) == ["1", "2", "3"]
+
+
 def test_cli_pass_runs_end_to_end_from_command_line_arguments(
-    fresh_xml_to_dict_reader: Callable[[], Any],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     dlt_destination_config: str,
@@ -124,10 +105,9 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     output_dir.mkdir()
     log_config_file = tmp_path / "logging.json"
     log_config_file.write_text('{"version": 1}')
-    fresh_xml_to_dict_reader()
 
     argv = [
-        "xml_to_dict_ingest",
+        "xmltodict_ingest",
         "--input-dir",
         str(input_dir),
         "--output-dir",

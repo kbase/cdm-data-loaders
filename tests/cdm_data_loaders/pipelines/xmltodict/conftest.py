@@ -2,19 +2,13 @@
 
 import gzip
 from collections.abc import Callable
-from itertools import count
 from pathlib import Path
 from typing import Any, Final
 
-import dlt
 import pytest
 
-import cdm_data_loaders.pipelines.xml_to_dict.pipeline as xml_to_dict_ingest_module
 from cdm_data_loaders.core.fields import LOCAL_FS
-from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
-    xml_to_dict_reader,
-)
-from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
+from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 
 SIMPLE_LIBRARY_XML: Final[str] = """<?xml version="1.0"?>
 <library>
@@ -44,30 +38,6 @@ NESTED_CONTENT_XML: Final[str] = """<?xml version="1.0"?>
 MALFORMED_XML: Final[str] = '<library><book id="1"><title>Broken</title></library>'
 
 EXPECTED_BOOK_IDS: Final[list[str]] = ["1", "2", "3"]
-
-
-@pytest.fixture
-def fresh_xml_to_dict_reader(monkeypatch: pytest.MonkeyPatch) -> Callable[[], Any]:
-    """Return a factory that rebuilds the module-level xml_to_dict_reader transformer.
-
-    run_xml_ingest_pipeline binds the module-level transformer in place, so a
-    second pipeline run in the same test session would raise TypeError. Each
-    call replaces the module attribute with a fresh transformer built from the
-    original wrapped function and restores it after the test.
-    """
-    original = xml_to_dict_reader
-    counter = count()
-
-    def _factory() -> Any:  # noqa: ANN401
-        fresh = dlt.transformer(
-            original.__wrapped__,
-            name=f"xml_to_dict_reader_{next(counter)}",
-            parallelized=True,
-        )
-        monkeypatch.setattr(xml_to_dict_ingest_module, "xml_to_dict_reader", fresh)
-        return fresh
-
-    return _factory
 
 
 @pytest.fixture

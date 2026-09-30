@@ -5,38 +5,18 @@ import json
 from collections.abc import Callable
 from itertools import count
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
-import dlt
 import duckdb
 import pytest
 import xmltodict
 from dlt.common.pipeline import LoadInfo
 from frozendict import frozendict
 
-import cdm_data_loaders.pipelines.xml_to_dict.pipeline as xml_to_dict_ingest_module
-from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
-    run_xml_ingest_pipeline,
-    xml_to_dict_reader,
-)
-from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
+from cdm_data_loaders.pipelines.xmltodict.pipeline import run_xml_ingest_pipeline
+from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.readers.xml import DEFAULT_XMLTODICT_ARGS
-
-SIMPLE_LIBRARY_XML: Final[str] = """<?xml version="1.0"?>
-<library>
-    <book id="1"><title>The Shining</title></book>
-    <book id="2"><title>The Stand</title></book>
-    <book id="3"><title>The Tommyknockers</title></book>
-</library>
-"""
-
-
-REFERENCE_XML_NS: Final[str] = "http://uniprot.org/uniref"
-REFERENCE_XML_TAG: Final[str] = f"{{{REFERENCE_XML_NS}}}entry"
-
-REFERENCE_XML_FIXTURE_DIR: Final[Path] = Path("tests") / "data" / "uniprot" / "uniref"
-N_REFERENCE_XML_ENTRIES: Final[int] = 100
-
+from tests.conftest import N_REFERENCE_XML_ENTRIES, REFERENCE_XML_FIXTURE_DIR, REFERENCE_XML_TAG
 
 DEFAULT_XMLTODICT_SETTINGS: frozendict = frozendict(
     {
@@ -47,30 +27,6 @@ DEFAULT_XMLTODICT_SETTINGS: frozendict = frozendict(
         "use_output_dir_for_pipeline_metadata": False,
     }
 )
-
-
-@pytest.fixture
-def fresh_xml_to_dict_reader(monkeypatch: pytest.MonkeyPatch) -> Callable[[], Any]:
-    """Return a factory that rebuilds the module-level xml_to_dict_reader transformer.
-
-    run_xml_ingest_pipeline binds the module-level transformer in place, so a
-    second pipeline run in the same test session would raise TypeError. Each
-    call replaces the module attribute with a fresh transformer built from the
-    original wrapped function and restores it after the test.
-    """
-    original = xml_to_dict_reader
-    counter = count()
-
-    def _factory() -> Any:
-        fresh = dlt.transformer(
-            original.__wrapped__,  # pyright: ignore[reportAttributeAccessIssue]
-            name=f"xml_to_dict_reader_{next(counter)}",
-            parallelized=True,
-        )
-        monkeypatch.setattr(xml_to_dict_ingest_module, "xml_to_dict_reader", fresh)
-        return fresh
-
-    return _factory
 
 
 def make_settings(tmp_path: Path, dlt_destination_config: str, **overrides: Any) -> dict[str, Any]:
@@ -120,20 +76,6 @@ def scenario_input_dir(test_data_dir: Path) -> Callable[[str], str]:
         return str(path)
 
     return _resolve
-
-
-@pytest.fixture
-def write_gzip_xml_file() -> Callable[[Path, str, str], Path]:
-    """Return a function that writes XML content to a gzip-compressed file."""
-
-    def _write(directory: Path, filename: str, content: str) -> Path:
-        directory.mkdir(parents=True, exist_ok=True)
-        file_path = directory / filename
-        with gzip.open(file_path, "wb") as f:
-            f.write(content.encode("utf-8"))
-        return file_path
-
-    return _write
 
 
 @pytest.fixture(scope="session")
@@ -218,27 +160,17 @@ def reference_xml_dataset(reference_xml_as_jsonl: Path) -> duckdb.DuckDBPyConnec
 def run_xmltodict_pipeline(
     tmp_path: Path,
     reference_xml_data_dir: Path,
-    monkeypatch: pytest.MonkeyPatch,
     dlt_destination_config: str,
 ) -> Callable[..., Any]:
-    """Return a factory that runs the xml_to_dict pipeline on a chunk dir with full isolation.
+    """Return a factory that runs the xmltodict pipeline on a chunk dir with full isolation.
 
-    Each run gets a unique output_dir and dataset_name under tmp_path, and a fresh
-    module-level xml_to_dict_reader transformer, so parallel-safe repeated runs
-    never collide or accumulate rows.
+    Each run gets a unique output_dir and dataset_name under tmp_path, so
+    parallel-safe repeated runs never collide or accumulate rows.
     """
-    original_reader = xml_to_dict_reader
     run_counter = count()
 
     def _factory(chunk_dir: str, **overrides: Any) -> tuple[LoadInfo | None, Path]:
         run_index = next(run_counter)
-
-        fresh_reader = dlt.transformer(
-            original_reader.__wrapped__,  # pyright: ignore[reportAttributeAccessIssue]
-            name=f"xml_to_dict_reader_{run_index}",
-            parallelized=True,
-        )
-        monkeypatch.setattr(xml_to_dict_ingest_module, "xml_to_dict_reader", fresh_reader)
 
         output_dir = tmp_path / f"output_{run_index}"
         output_dir.mkdir()

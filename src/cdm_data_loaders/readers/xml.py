@@ -1,6 +1,5 @@
-"""Common reusable XML pipeline elements."""
+"""Common reusable XML pipeline elements for the xmltodict-based pipelines."""
 
-import gzip
 from collections.abc import Callable, Generator
 from logging import Logger, getLogger
 from pathlib import Path
@@ -8,17 +7,17 @@ from typing import Any
 
 import xmltodict
 from dlt.extract.items import DataItemWithMeta
-from frozendict import frozendict
 from lxml.etree import Element, iterparse, tostring
 
 from cdm_data_loaders.core.settings import BatchedFileInputSettings
-from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
+from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.utils.batcher import get_file_batches
 from cdm_data_loaders.utils.buffer import DictBuffer, ListBuffer
+from cdm_data_loaders.utils.gz import open_maybe_gzip
 
 logger: Logger = getLogger(__name__)
 
-DEFAULT_XMLTODICT_ARGS = frozendict({"attr_prefix": "_"})
+DEFAULT_XMLTODICT_ARGS = {"attr_prefix": "_"}
 
 type XmlToDictValue = str | dict[str, "XmlToDictValue"] | list["XmlToDictValue"] | None
 type XmlToDictResult = DataItemWithMeta | BaseException | None
@@ -44,16 +43,10 @@ def parse_head_matter(file_path: str | Path) -> dict[str, str]:
     :return: mapping of namespace prefix to namespace URI.
     :rtype: dict[str, str]
     """
-    if isinstance(file_path, Path):
-        file_path = str(file_path)
     logger.debug("Parsing head matter from %s", file_path)
 
-    open_fn = open
-    if file_path.endswith(".gz"):
-        open_fn = gzip.open
-
     namespaces: dict[str, str] = {}
-    with open_fn(file_path, "rb") as fh:
+    with open_maybe_gzip(file_path) as fh:
         ctx = iterparse(fh, events=("start-ns", "start"))
         for event, elem in ctx:
             if event == "start-ns":
@@ -80,20 +73,29 @@ def stream_xml_file(file_path: str | Path, element_with_ns: str) -> Generator[El
     :yield: elements from the file
     :rtype: Generator[Element, Any]
     """
-    if isinstance(file_path, Path):
-        file_path = str(file_path)
     logger.debug("Streaming XML from %s", file_path)
-    open_fn = gzip.open if file_path.endswith(".gz") else open
 
-    with open_fn(file_path, "rb") as f:
+    with open_maybe_gzip(file_path) as f:
         for _, elem in iterparse(f, tag=(element_with_ns), remove_blank_text=True):
             logger.debug(elem)
             yield elem
             elem.clear()
 
 
+def _log_interval_progress(n_entries: int, file_path: Path, log_interval: int) -> None:
+    """Log processed-entry counts every log_interval elements, including a final count."""
+    if (n_entries + 1) % log_interval == 0:
+        logger.debug("Processed %d entries", n_entries + 1)
+
+
+def _log_interval_final(n_entries: int, file_path: Path, log_interval: int) -> None:
+    """Log the trailing entry count if the final checkpoint was not an interval boundary."""
+    if n_entries >= 0 and (n_entries + 1) % log_interval != 0:
+        logger.debug("Processed %d entries from %s", n_entries + 1, file_path.name)
+
+
 def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: Path) -> Generator[DataItemWithMeta]:
-    """Generator for converting XML to dictionary form.
+    """Convert XML to dictionary form.
 
     Note: each incoming element produces a single dictionary as output.
 
@@ -117,12 +119,9 @@ def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: Path) -> Ge
                 # remove the xmlns declarations
                 parsed_element[k] = {kv: val for kv, val in v.items() if not kv.startswith("_xmlns")}
             yield from buffer.add_item(parsed_element)
-        if (n_entries + 1) % settings.log_interval == 0:
-            logger.debug("Processed %d entries", n_entries + 1)
+        _log_interval_progress(n_entries, file_path, settings.log_interval)
 
-    if n_entries >= 0 and (n_entries + 1) % settings.log_interval != 0:
-        logger.debug("Processed %d entries from %s", n_entries + 1, file_path.name)
-
+    _log_interval_final(n_entries, file_path, settings.log_interval)
     yield from buffer.flush()
 
 
@@ -135,7 +134,7 @@ def process_xml_file(
     """Core generator shared by XML-based dlt pipeline resources.
 
     This processor is expected to return a dictionary of table names and lists of rows, unlike the
-    xml_to_dict parser, which creates a single dictionary for each element.
+    xmltodict parser, which creates a single dictionary for each element.
 
     :param settings: pipeline config with input_dir and start_at
     :type  settings: BatchedFileInputSettings
@@ -155,12 +154,9 @@ def process_xml_file(
         parsed_element = parse_fn(entry=element, file_path=file_path)
         yield from buffer.add_items(parsed_element)
 
-        if (n_entries + 1) % settings.log_interval == 0:
-            logger.debug("Processed %d entries", n_entries + 1)
+        _log_interval_progress(n_entries, file_path, settings.log_interval)
 
-    if (n_entries + 1) % settings.log_interval != 0:
-        logger.debug("Processed %d entries from %s", n_entries + 1, file_path.name)
-
+    _log_interval_final(n_entries, file_path, settings.log_interval)
     yield from buffer.flush()
 
 
@@ -169,7 +165,7 @@ def process_xml_file_batches(
     xml_tag: str,
     parse_fn: Callable,
 ) -> Generator[DataItemWithMeta, Any]:
-    """Generator that uses the NumericFileSequenceBatcher to generate a list of XML files to process.
+    """Generate a list of XML files to process using the NumericFileSequenceBatcher.
 
     :param settings: pipeline config with input_dir and start_at
     :type settings: BatchedFileInputSettings

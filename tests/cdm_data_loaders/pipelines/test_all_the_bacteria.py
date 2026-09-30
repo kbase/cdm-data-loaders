@@ -524,7 +524,7 @@ def test_osf_file_downloader_success(
     ],
 )
 @pytest.mark.parametrize("use_destination", VALID_DESTINATIONS)
-def test_osf_file_downloader_error_handling(
+def test_osf_file_downloader_error_handling(  # noqa: PLR0917
     atb_file_list: list[dict[str, Any]],
     expected_exceptions: list[str],
     expected_paths: dict[str, bool],

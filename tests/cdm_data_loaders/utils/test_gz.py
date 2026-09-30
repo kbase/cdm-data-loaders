@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from cdm_data_loaders.utils.gz import compress_file, compress_files, decompress_file, main
+from cdm_data_loaders.utils.gz import compress_file, compress_files, decompress_file, main, open_maybe_gzip
 
 TEMP_FILE_CONTENT = b"Hello, world!\nThis is a test."
 
@@ -33,6 +33,23 @@ def read_gz(path: Path) -> bytes:
     """Utility function to read a ``.gz`` file and return its decompressed bytes."""
     with gzip.open(path, "rb") as f:
         return f.read()
+
+
+@pytest.mark.parametrize("file_path", ["temporary_file", "temporary_gz"])
+@pytest.mark.parametrize("str_or_path", [str, Path])
+def test_open_maybe_gzip_pass_reads_files(file_path: str, str_or_path: type, request: pytest.FixtureRequest) -> None:
+    """Test that both plain and gzipped files can be read, and string or Path file paths are accepted."""
+    file_path = request.getfixturevalue(file_path)
+    with open_maybe_gzip(str_or_path(file_path)) as fh:
+        assert fh.read() == TEMP_FILE_CONTENT
+
+
+@pytest.mark.parametrize("mode", ["w", "rt", "wb", "rb+", "a+b"])
+def test_open_maybe_gzip_fail_rejects_non_read_mode(temporary_file: Path, mode: str) -> None:
+    """Only binary read modes are supported."""
+    err_msg = f"open_maybe_gzip incorrectly accepts {mode} mode"
+    with pytest.raises(ValueError, match="only supports binary reads"), open_maybe_gzip(temporary_file, mode=mode):
+        raise AssertionError(err_msg)
 
 
 def test_compress_file_creates_gzip(temporary_file: Path, caplog: pytest.LogCaptureFixture) -> None:

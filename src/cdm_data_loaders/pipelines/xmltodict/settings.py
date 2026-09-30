@@ -15,7 +15,6 @@ from cdm_data_loaders.core.fields import (
     DatasetName,
     FileGlob,
     LoaderFileFormat,
-    LoaderFileFormatEnum,
     LogInterval,
     NonEmptyStr,
     TableName,
@@ -23,9 +22,7 @@ from cdm_data_loaders.core.fields import (
 from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
 from cdm_data_loaders.readers.xsd import find_list_and_single_child_paths, load_schema
 
-PIPELINE_NAME: Final[str] = "xml_to_dict_ingest"
-DEFAULT_LOADER_FILE_FORMAT: Final[str] = LoaderFileFormatEnum.JSONL
-VALID_LOADER_FILE_FORMATS: Final[list[str]] = [member.value for member in LoaderFileFormatEnum.__members__.values()]
+PIPELINE_NAME: Final[str] = "xmltodict_ingest"
 
 logger: Logger = getLogger(__name__)
 
@@ -55,7 +52,7 @@ class XmlToDictSettings(CtsSettings):
             description="Glob pattern for XML files inside each entity's input subdirectory.",
         ),
     ]
-    loader_file_format: LoaderFileFormat = Field(default=DEFAULT_LOADER_FILE_FORMAT)
+    loader_file_format: LoaderFileFormat
     log_interval: LogInterval
     table_name: TableName
     xml_tag: Annotated[

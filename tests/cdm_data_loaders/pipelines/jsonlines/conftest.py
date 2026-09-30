@@ -1,6 +1,5 @@
 """Shared fixtures for jsonlines_ingest pipeline tests."""
 
-import gzip
 import sys
 import types
 from collections.abc import Callable, Generator
@@ -11,7 +10,7 @@ from uuid import uuid4
 import pytest
 from pydantic import BaseModel, Field
 
-from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
+from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings, JsonlPydanticIngestSettings
 
 
 class Widget(BaseModel):
@@ -89,6 +88,34 @@ def settings_factory(
 
 
 @pytest.fixture
+def extract_settings_factory(tmp_path: Path, dlt_destination_config: str) -> Callable[..., JsonlExtractSettings]:
+    """Return a factory that builds a valid JsonlExtractSettings, with fields open to override."""
+
+    def _factory(**overrides: Any) -> JsonlExtractSettings:  # noqa: ANN401
+        log_config_file = tmp_path / "logging.conf"
+        log_config_file.touch()
+        input_dir = tmp_path / "input"
+        input_dir.mkdir(exist_ok=True)
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(exist_ok=True)
+
+        kwargs: dict[str, Any] = {
+            "dataset_name": "test_dataset",
+            "dev_mode": True,
+            "input_dir": str(input_dir),
+            "log_config_file": str(log_config_file),
+            "output_dir": str(output_dir),
+            "table_name": "widget",
+            "use_destination": dlt_destination_config,
+            "use_output_dir_for_pipeline_metadata": False,
+        }
+        kwargs.update(overrides)
+        return JsonlExtractSettings(**kwargs)
+
+    return _factory
+
+
+@pytest.fixture
 def scenario_input_dir(test_data_dir: Path) -> Callable[[str], str]:
     """Return a function that maps a scenario name to its data directory."""
 
@@ -101,15 +128,10 @@ def scenario_input_dir(test_data_dir: Path) -> Callable[[str], str]:
 
 
 @pytest.fixture
-def write_gzip_jsonl_file() -> Callable[[Path, str, list[str]], Path]:
+def write_gzip_jsonl_file(write_gzip_file: Callable[[Path, str, str], Path]) -> Callable[[Path, str, list[str]], Path]:
     """Return a function that writes a list of JSON lines to a gzip-compressed file."""
 
     def _write(directory: Path, filename: str, lines: list[str]) -> Path:
-        directory.mkdir(parents=True, exist_ok=True)
-        file_path = directory / filename
-        content = ("\n".join(lines) + "\n").encode("utf-8")
-        with gzip.open(file_path, "wb") as f:
-            f.write(content)
-        return file_path
+        return write_gzip_file(directory, filename, "\n".join(lines) + "\n")
 
     return _write

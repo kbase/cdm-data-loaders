@@ -20,6 +20,14 @@ GZIP_SUFFIX: Final[str] = ".gz"
 JSONL: Final[str] = "jsonl"
 PARQUET: Final[str] = "parquet"
 
+
+class LoaderFileFormatEnum(StrEnum):
+    """Valid values for loader file format."""
+
+    JSONL = JSONL
+    PARQUET = PARQUET
+
+
 # destinations
 LOCAL_FS: Final[str] = "local_fs"
 S3: Final[str] = "s3"
@@ -74,6 +82,7 @@ DEFAULT_PIPELINE_BATCH_SIZE: Final[int] = 50
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 
+# Common fields
 
 BatchSize = Annotated[
     PositiveInt,
@@ -102,15 +111,15 @@ DevMode = Annotated[
 DltConfig = Annotated[
     dlt.common.configuration.accessors._Accessor | dict[str, Any] | None,  # noqa: SLF001
     Field(
-        description="DLT configuration for the pipeline.",
         default_factory=lambda: dlt.config,
+        description="DLT configuration for the pipeline.",
         # exclude from model_dump()
         exclude=True,
         repr=False,
     ),
     CLI_SUPPRESS,
 ]
-FileGlob = Annotated[str, Field(default=DEFAULTS[FILE_GLOB], description="File glob")]
+FileGlob = Annotated[str, Field(default=DEFAULTS[FILE_GLOB], description="File glob for input files")]
 InputDir = Annotated[
     NonEmptyStr,
     Field(
@@ -118,15 +127,6 @@ InputDir = Annotated[
         description="Location of directory containing file(s) to import",
     ),
 ]
-
-
-class LoaderFileFormatEnum(StrEnum):
-    """Valid values for loader file format."""
-
-    JSONL = JSONL
-    PARQUET = PARQUET
-
-
 LoaderFileFormat = Annotated[
     LoaderFileFormatEnum,
     Field(
@@ -151,9 +151,9 @@ LogInterval = Annotated[
 MaxTableNesting = Annotated[
     int,
     Field(
-        gt=-1,
-        description="Maximum level of nesting of output datasets. For infinite nesting, set to 0.",
         default=DEFAULTS[MAX_TABLE_NESTING],
+        description="Maximum level of nesting of output datasets. For infinite nesting, set to 0.",
+        gt=-1,
     ),
 ]
 OutputDir = Annotated[

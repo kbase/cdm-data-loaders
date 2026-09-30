@@ -1,4 +1,4 @@
-"""Tests for _make_validator: the valid/invalid routing logic."""
+"""Tests for make_page_router: the valid/invalid routing logic."""
 
 import json
 from collections.abc import Callable
@@ -6,21 +6,22 @@ from typing import Any
 
 import pytest
 from dlt.extract.items import DataItemWithMeta, TableNameMeta
+from pydantic import ValidationError
 
-from cdm_data_loaders.pipelines.jsonlines.pipeline import _make_validator
+from cdm_data_loaders.pipelines.jsonlines.base import make_page_router
 
 
 def make_item(
     record: dict[str, Any] | None = None,
-    raw_line: str = "",
+    raw_record: str = "",
     parse_error: str | None = None,
     source_file: str = "file.jsonl",
     line_no: int = 1,
 ) -> dict[str, Any]:
-    """Build a line record matching _read_jsonl_lines' output shape."""
+    """Build a line record matching read_jsonl_pages' output shape."""
     return {
         "record": record,
-        "raw_line": raw_line,
+        "raw_record": raw_record,
         "parse_error": parse_error,
         "source_file": source_file,
         "line_no": line_no,
@@ -32,10 +33,28 @@ def run_validator(validator: Callable[[list[dict[str, Any]]], Any], item: dict[s
     return list(validator([item]))
 
 
-def test_make_validator_pass_valid_record_routed_to_main_table(widget_model: Any) -> None:
+def make_router(model: Any, **kwargs: Any) -> Callable[[list[dict[str, Any]]], Any]:
+    """Build a router for the widget table using a model, mirroring the pydantic pipeline."""
+
+    def _resolve_error(record: dict[str, Any]) -> str | None:
+        try:
+            model.model_validate(record)
+        except ValidationError as error:
+            return json.dumps(error.errors(), default=str)
+        return None
+
+    return make_page_router(
+        "widget",
+        kwargs.get("buffer_size", 10),
+        _resolve_error,
+        **{key: value for key, value in kwargs.items() if key != "buffer_size"},
+    )
+
+
+def test_make_page_router_pass_valid_record_routed_to_main_table(widget_model: Any) -> None:
     """A record that passes validation goes to the main table, dumped from the validated model."""
-    validator = _make_validator("widget", model=widget_model, buffer_size=10)
-    item = make_item(record={"widget_id": "a", "count": 5}, raw_line='{"widget_id": "a", "count": 5}')
+    validator = make_router(widget_model)
+    item = make_item(record={"widget_id": "a", "count": 5}, raw_record='{"widget_id": "a", "count": 5}')
 
     results = run_validator(validator, item)
 
@@ -46,10 +65,10 @@ def test_make_validator_pass_valid_record_routed_to_main_table(widget_model: Any
     assert result.data == [{"widget_id": "a", "count": 5}]
 
 
-def test_make_validator_fail_json_parse_error_routed_to_rejected_without_model_validation(widget_model: Any) -> None:
+def test_make_page_router_fail_json_parse_error_routed_to_rejected_without_model_validation(widget_model: Any) -> None:
     """A record with a parse_error goes to <table>_rejected. The model is not called."""
-    validator = _make_validator("widget", model=widget_model, buffer_size=10)
-    item = make_item(record=None, raw_line="{not json", parse_error="Expecting value: line 1 column 1 (char 0)")
+    validator = make_router(widget_model, include_record=True)
+    item = make_item(record=None, raw_record="{not json", parse_error="Expecting value: line 1 column 1 (char 0)")
 
     results = run_validator(validator, item)
 
@@ -58,10 +77,11 @@ def test_make_validator_fail_json_parse_error_routed_to_rejected_without_model_v
     assert result.meta.table_name == "widget_rejected"
     assert result.data == [
         {
-            "source_file": "file.jsonl",
-            "line_no": 1,
             "error_detail": "Expecting value: line 1 column 1 (char 0)",
+            "line_no": 1,
             "raw_record": "{not json",
+            "record": None,
+            "source_file": "file.jsonl",
         }
     ]
 
@@ -75,12 +95,12 @@ def test_make_validator_fail_json_parse_error_routed_to_rejected_without_model_v
         pytest.param({"widget_id": "", "count": 1}, id="widget_id_below_min_length_boundary"),
     ],
 )
-def test_make_validator_fail_pydantic_validation_error_routed_to_rejected(
+def test_make_page_router_fail_pydantic_validation_error_routed_to_rejected(
     widget_model: Any, record: dict[str, Any]
 ) -> None:
     """A record that parses as JSON but fails model validation goes to <table>_rejected, with error detail."""
-    validator = _make_validator("widget", model=widget_model, buffer_size=10)
-    item = make_item(record=record, raw_line=json.dumps(record))
+    validator = make_router(widget_model)
+    item = make_item(record=record, raw_record=json.dumps(record))
 
     results = run_validator(validator, item)
 
@@ -96,14 +116,14 @@ def test_make_validator_fail_pydantic_validation_error_routed_to_rejected(
     assert all({"loc", "msg", "type"} <= set(error.keys()) for error in error_detail)
 
 
-def test_make_validator_pass_mixed_batch_routes_each_record_independently(widget_model: Any) -> None:
+def test_make_page_router_pass_mixed_batch_routes_each_record_independently(widget_model: Any) -> None:
     """A mixed batch routes each record on its own. Valid and invalid records do not affect each other."""
-    validator = _make_validator("widget", model=widget_model, buffer_size=10)
+    validator = make_router(widget_model)
     items = [
-        make_item(record={"widget_id": "a", "count": 1}, raw_line='{"widget_id": "a", "count": 1}', line_no=1),
-        make_item(record={"widget_id": "b", "count": -1}, raw_line='{"widget_id": "b", "count": -1}', line_no=2),
-        make_item(record={"widget_id": "c", "count": 3}, raw_line='{"widget_id": "c", "count": 3}', line_no=3),
-        make_item(record=None, raw_line="{bad", parse_error="boom", line_no=4),
+        make_item(record={"widget_id": "a", "count": 1}, raw_record='{"widget_id": "a", "count": 1}', line_no=1),
+        make_item(record={"widget_id": "b", "count": -1}, raw_record='{"widget_id": "b", "count": -1}', line_no=2),
+        make_item(record={"widget_id": "c", "count": 3}, raw_record='{"widget_id": "c", "count": 3}', line_no=3),
+        make_item(record=None, raw_record="{bad", parse_error="boom", line_no=4),
     ]
 
     results = list(validator(items))
@@ -117,13 +137,13 @@ def test_make_validator_pass_mixed_batch_routes_each_record_independently(widget
     assert {row["line_no"] for row in rejected_rows[0].data} == {2, 4}
 
 
-def test_make_validator_fail_all_invalid_none_reach_main_table(widget_model: Any) -> None:
+def test_make_page_router_fail_all_invalid_none_reach_main_table(widget_model: Any) -> None:
     """When every record in a batch is invalid, none reach the main table."""
-    validator = _make_validator("widget", model=widget_model, buffer_size=10)
+    validator = make_router(widget_model)
     items = [
-        make_item(record={"count": 1}, raw_line='{"count": 1}', line_no=1),
-        make_item(record={"widget_id": "b", "count": -5}, raw_line='{"widget_id": "b", "count": -5}', line_no=2),
-        make_item(record=None, raw_line="not json at all", parse_error="bad json", line_no=3),
+        make_item(record={"count": 1}, raw_record='{"count": 1}', line_no=1),
+        make_item(record={"widget_id": "b", "count": -5}, raw_record='{"widget_id": "b", "count": -5}', line_no=2),
+        make_item(record=None, raw_record="not json at all", parse_error="bad json", line_no=3),
     ]
 
     results = list(validator(items))
@@ -133,11 +153,11 @@ def test_make_validator_fail_all_invalid_none_reach_main_table(widget_model: Any
     assert len(results[0].data) == 3
 
 
-def test_make_validator_pass_buffer_size_controls_batching(widget_model: Any) -> None:
+def test_make_page_router_pass_buffer_size_controls_batching(widget_model: Any) -> None:
     """buffer_size controls how many rows land in each yielded page per table."""
-    validator = _make_validator("widget", model=widget_model, buffer_size=2)
+    validator = make_router(widget_model, buffer_size=2)
     items = [
-        make_item(record={"widget_id": f"w{i}", "count": 1}, raw_line=f'{{"count": {i}}}', line_no=i + 1)
+        make_item(record={"widget_id": f"w{i}", "count": 1}, raw_record=f'{{"count": {i}}}', line_no=i + 1)
         for i in range(5)
     ]
 
