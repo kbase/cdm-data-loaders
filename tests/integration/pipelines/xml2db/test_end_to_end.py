@@ -48,7 +48,13 @@ def test_run_xml2db_ingest_pipeline_pass_gzip_files_are_loaded(
     settings_factory: Callable[..., Xml2DbSettings],
     write_gzip_file: Callable[[Path, str, str], Path],
 ) -> None:
-    """Gzip-compressed xml files matching the glob are decompressed and loaded."""
+    """Gzip-compressed xml files matching the glob are decompressed and loaded.
+
+    Both files contain the same three books. `book` is a "reused" table, so post-load
+    compaction (on by default) collapses the two files' identical book rows down to one copy of
+    each -- unlike `library`, the schema's root table, which is exempt from content-addressing
+    (see `is_xml2db_content_addressed_table`) and keeps one row per source file regardless.
+    """
     settings = settings_factory()
     input_dir = Path(settings.input_dir)
     input_dir.mkdir(exist_ok=True)
@@ -57,10 +63,10 @@ def test_run_xml2db_ingest_pipeline_pass_gzip_files_are_loaded(
 
     load_info = run_xml2db_ingest_pipeline(settings)
     library_df, book_df = check_book_list_results(load_info)
-    # one root row from each of the two files
+    # one root row from each of the two files: the root table is never compacted
     assert len(library_df) == EXPECTED_LIBRARY_ROOT_COUNT_TWO_FILES
-    # one copy of the three books from the plain file, one from the gzipped copy
-    assert sorted(book_df["id"].tolist()) == ["1", "1", "2", "2", "3", "3"]
+    # the two files' identical books are compacted down to one copy of each
+    assert sorted(book_df["id"].tolist()) == ["1", "2", "3"]
 
 
 def test_run_xml2db_ingest_pipeline_pass_no_matching_files_yields_no_data_table(

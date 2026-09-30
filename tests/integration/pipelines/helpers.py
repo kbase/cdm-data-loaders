@@ -1,5 +1,6 @@
 """Misc helpers for integration tests."""
 
+import gzip
 import json
 from collections import defaultdict
 from collections.abc import Callable

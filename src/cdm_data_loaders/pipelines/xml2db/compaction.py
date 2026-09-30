@@ -1,12 +1,13 @@
 """Post-load compaction for xml2db "reused" tables written to a filesystem destination.
 
-`cdm_data_loaders.readers.xml.process_xml_file_with_xml2db` parses each source file -- and, when
-chunked parsing is enabled (`Xml2DbSettings.chunk_element_tag`), each chunk within a file -- into
-its own independent xml2db `Document`. xml2db's content-hash deduplication of "reused" tables
-only ever happens *within* a single `Document`, so identical content parsed by two different
-`Document` instances still produces two physically separate rows once loaded.
+`cdm_data_loaders.readers.xml2db_doc.process_xml_file_with_xml2db` parses each source file --
+and, when chunked parsing is enabled (`Xml2DbSettings.chunk_element_tag`), each chunk within a
+file -- into its own independent xml2db `Document`. xml2db's content-hash deduplication of
+"reused" tables only ever happens *within* a single `Document`, so identical content parsed by
+two different `Document` instances -- two separate source files, two chunks of one file, or any
+combination -- still produces two physically separate rows once loaded.
 
-`cdm_data_loaders.readers.xml.flatten_xml2db_document` already gives those rows the *same*
+`cdm_data_loaders.readers.xml2db_doc.flatten_xml2db_document` already gives those rows the *same*
 content-addressed primary key (see its `_content_addressed_key` helper), so any literal
 duplicates are byte-for-byte identical, and every foreign key referencing them is already
 correct -- nothing needs to be rewritten. This module simply collapses those literal duplicates
@@ -39,8 +40,9 @@ def reused_table_names(model: DataModel) -> list[str]:
     """Return the destination table names of every table whose rows use a content-addressed key.
 
     This intentionally excludes the schema's root table even though it is itself "reused": see
-    `cdm_data_loaders.readers.xml.is_xml2db_content_addressed_table` for why the root's key isn't
-    content-addressed, and therefore never produces the kind of duplicate this module cleans up.
+    `cdm_data_loaders.readers.xml2db_doc.is_xml2db_content_addressed_table` for why the root's
+    key isn't content-addressed, and therefore never produces the kind of duplicate this module
+    cleans up.
 
     :param model: an xml2db `DataModel`.
     :type model: DataModel
@@ -53,8 +55,10 @@ def reused_table_names(model: DataModel) -> list[str]:
 def compact_reused_tables(dataset_dir: Path, model: DataModel, loader_file_format: str) -> dict[str, int]:
     """Deduplicate literal duplicate rows out of every "reused" table's output files, in place.
 
-    Safe to call on a dataset that has no duplicates (or that was never chunk-parsed at all):
-    tables with nothing to remove are left completely untouched.
+    Reads and dedups ALL of a table's output fragment files together, in one pass -- across
+    every source file and chunk the pipeline run produced, not just within one of them. Safe to
+    call on a dataset that has no duplicates at all: tables with nothing to remove are left
+    completely untouched.
 
     :param dataset_dir: the pipeline's output dataset directory (`output_dir / dataset_name`),
         containing one subdirectory per table, as produced by dlt's `filesystem` destination.

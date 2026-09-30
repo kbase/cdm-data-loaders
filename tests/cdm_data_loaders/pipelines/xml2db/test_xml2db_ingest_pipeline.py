@@ -259,15 +259,24 @@ def test_maybe_compact_pass_runs_when_chunked_and_enabled(tmp_path: Path, librar
     assert args[2] == "parquet"
 
 
-def test_maybe_compact_pass_skipped_when_not_chunked(tmp_path: Path, library_model: DataModel) -> None:
-    """No compaction for an unchunked run, even with compact_reused_tables set."""
+def test_maybe_compact_pass_runs_when_not_chunked_and_enabled(tmp_path: Path, library_model: DataModel) -> None:
+    """Compaction also runs for an unchunked, local_fs run with compact_reused_tables set.
+
+    A multi-file unchunked run can leave the same kind of literal duplicate rows behind as a
+    chunked one (one xml2db Document per file, same as one per chunk), so compaction is not
+    gated on chunk_element_tag being set.
+    """
     settings = fake_settings(tmp_path, tmp_path / "library.xsd")
     load_info = make_load_info(settings.dataset_name)
 
     with patch.object(xml2db_pipeline_module, "compact_reused_tables") as mock_compact:
         xml2db_pipeline_module._maybe_compact(settings, library_model, load_info)  # noqa: SLF001
 
-    mock_compact.assert_not_called()
+    mock_compact.assert_called_once()
+    args, _kwargs = mock_compact.call_args
+    assert args[0] == Path(settings.output_dir) / settings.dataset_name
+    assert args[1] is library_model
+    assert args[2] == "parquet"
 
 
 def test_maybe_compact_pass_skipped_when_compact_reused_tables_false(tmp_path: Path, library_model: DataModel) -> None:

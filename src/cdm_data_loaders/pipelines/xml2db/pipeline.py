@@ -76,8 +76,11 @@ def run_xml2db_ingest_pipeline(settings: Xml2DbSettings) -> LoadInfo | None:
 def _maybe_compact(settings: Xml2DbSettings, model: DataModel, load_info: LoadInfo | None) -> None:
     """Run post-load compaction of "reused" tables, if configured and the run succeeded.
 
-    Only chunked runs (`settings.chunk_element_tag` set) can produce the literal duplicate rows
-    `compact_reused_tables` cleans up, and compaction rewrites files directly on the local
+    xml2db's content-hash deduplication of "reused" tables only ever happens within a single
+    xml2db `Document` -- one per source file, or, when `settings.chunk_element_tag` is set, one
+    per chunk. Any run that parses more than one `Document` (multiple files, multiple chunks, or
+    both) can leave literal duplicate rows behind in "reused" tables, so compaction runs
+    regardless of whether chunking is enabled. Compaction rewrites files directly on the local
     filesystem, so it is skipped for any other destination.
 
     :param settings: pipeline configuration.
@@ -89,7 +92,7 @@ def _maybe_compact(settings: Xml2DbSettings, model: DataModel, load_info: LoadIn
     """
     if load_info is None or load_info.has_failed_jobs:
         return
-    if not (settings.chunk_element_tag and settings.compact_reused_tables):
+    if not settings.compact_reused_tables:
         return
     if settings.use_destination != LOCAL_FS:
         logger.warning(

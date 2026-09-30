@@ -93,26 +93,28 @@ def run_xml2db_pipeline(
     """Return a factory that runs the xml2db pipeline on a chunk dir with full isolation.
 
     Each run gets a unique output_dir and dataset_name, so parallel-safe
-    repeated runs never collide or accumulate rows.
+    repeated runs never collide or accumulate rows. `isolated_run_factory` is called once per
+    test, not once per chunk_dir/override combination, so its output_dir counter is shared and
+    keeps incrementing across every call this fixture's factory makes within one test -- calling
+    it again per call would reset the counter and collide on the same output_dir every time.
     """
+    run = isolated_run_factory(
+        "reference_run",
+        run_xml2db_ingest_pipeline,
+        {
+            "buffer_size": 10,
+            "dev_mode": False,
+            "file_glob": "*.xml*",
+            "log_interval": 1000,
+            "short_name": "uniref",
+            "settings_cls": Xml2DbSettings,
+            "use_destination": dlt_destination_config,
+            "use_output_dir_for_pipeline_metadata": False,
+            "xsd_file": str(reference_xsd),
+        },
+    )
 
     def _factory(chunk_dir: str, **overrides: Any) -> tuple[LoadInfo | None, Path]:
-        run = isolated_run_factory(
-            "reference_run",
-            run_xml2db_ingest_pipeline,
-            {
-                "buffer_size": 10,
-                "dev_mode": False,
-                "file_glob": "*.xml*",
-                "input_dir": str(reference_xml_data_dir / chunk_dir),
-                "log_interval": 1000,
-                "short_name": "uniref",
-                "settings_cls": Xml2DbSettings,
-                "use_destination": dlt_destination_config,
-                "use_output_dir_for_pipeline_metadata": False,
-                "xsd_file": str(reference_xsd),
-            },
-        )
-        return run(**overrides)
+        return run(input_dir=str(reference_xml_data_dir / chunk_dir), **overrides)
 
     return _factory

@@ -35,11 +35,13 @@ class Xml2DbSettings(CtsSettings):
     element directly followed by many repeated elements of one type (e.g. `<UniRef50><entry/>
     ...<entry/></UniRef50>`), set `chunk_element_tag` to that repeated element's tag: the file will
     then be streamed and parsed in bounded-size pieces of `chunk_size` elements at a time instead
-    of all at once. See `cdm_data_loaders.readers.xml.iter_xml2db_chunk_fragments` for the details
-    and constraints of this mode. Note that xml2db's content-hash deduplication of "reused" tables
-    only happens within a single parsed document, so chunking trades whole-file deduplication for
-    bounded memory: rows in tables shared across many elements (e.g. UniRef's `property` table)
-    may be duplicated once per chunk they occur in, rather than collapsed into a single row.
+    of all at once. See `cdm_data_loaders.readers.xml2db_doc.iter_xml2db_chunk_fragments` for the
+    details and constraints of this mode. Note that xml2db's content-hash deduplication of
+    "reused" tables only happens within a single parsed document, so chunking (like parsing
+    multiple separate files) trades whole-run deduplication for bounded memory: rows in tables
+    shared across many elements (e.g. UniRef's `property` table) may be duplicated once per
+    document (file or chunk) they occur in, rather than collapsed into a single row.
+    `compact_reused_tables` cleans this up after the fact, regardless of chunking.
     """
 
     model_config = SettingsConfigDict(
@@ -80,11 +82,11 @@ class Xml2DbSettings(CtsSettings):
         Field(
             default=True,
             description=(
-                "After a run with chunk_element_tag set, deduplicate literal duplicate rows out "
-                "of every xml2db 'reused' table (see cdm_data_loaders.pipelines.xml2db.compaction "
-                "for why chunked parsing can produce them, and why this is always a safe, "
-                "reference-preserving row removal). Only takes effect when chunk_element_tag is "
-                "set and use_destination is 'local_fs'; ignored otherwise."
+                "After a run, deduplicate literal duplicate rows out of every xml2db 'reused' "
+                "table (see cdm_data_loaders.pipelines.xml2db.compaction for why parsing more "
+                "than one file and/or chunk can produce them, and why this is always a safe, "
+                "reference-preserving row removal). Only takes effect when use_destination is "
+                "'local_fs'; ignored otherwise."
             ),
         ),
     ]
