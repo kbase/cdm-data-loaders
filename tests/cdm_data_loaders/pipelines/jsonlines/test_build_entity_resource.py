@@ -8,7 +8,7 @@ import dlt
 from pydantic import BaseModel
 
 from cdm_data_loaders.core.fields import LOCAL_FS
-from cdm_data_loaders.pipelines.jsonlines.pipeline import build_entity_resource
+from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import build_entity_resource
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
 
 

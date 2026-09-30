@@ -1,16 +1,10 @@
 """Nested-entry reconstruction and reference-dataset helpers for uniref tests."""
 
-import contextlib
-import gzip
 import json
 from collections import defaultdict
-from pathlib import Path
 from typing import Any, Final
 
 import duckdb
-import pyarrow.parquet as pq
-
-from cdm_data_loaders.core.fields import PARQUET
 
 DLT_METADATA_PREFIX: Final[str] = "_dlt"
 
@@ -27,44 +21,6 @@ DLT_TO_XML_NAMES: Final[dict[str, str]] = {
     "representative_member": "representativeMember",
     "db_reference": "dbReference",
 }
-
-
-def read_parquet_tables(output_dir: Path) -> dict[str, list[dict[str, Any]]]:
-    """Read all parquet files under a pipeline output dataset dir, grouped by table name."""
-    tables: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for parquet_file in sorted(output_dir.rglob("*.parquet")):
-        tables[parquet_file.parent.name].extend(pq.read_table(parquet_file).to_pylist())
-    return dict(tables)
-
-
-def read_pipeline_tables(output_dir: Path, output_format: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    """Read all json files under a pipeline output dataset dir, grouped by table name.
-
-    Defaults to reading jsonlines files; supply "parquet" as file format to read parquet files.
-    """
-    if output_format and output_format == PARQUET:
-        return read_parquet_tables(output_dir)
-
-    tables: dict[str, list[dict[str, Any]]] = defaultdict(list)
-
-    for json_file in sorted(output_dir.rglob("*.json*")):
-        if not json_file.is_file():
-            continue
-        # ignore metadata dirs
-        if json_file.parent.name.startswith("_dlt"):
-            continue
-        # Detect gzip by magic bytes rather than relying on the extension,
-        # in case a .json file is actually gzipped or vice versa.
-        with json_file.open("rb") as f:
-            is_gzipped = f.read(2) == b"\x1f\x8b"
-
-        opener = gzip.open if is_gzipped else open
-        with opener(json_file, "rt", encoding="utf-8") as f:
-            for raw_line in f:
-                with contextlib.suppress(BaseException):
-                    tables[json_file.parent.name].append(json.loads(raw_line.strip()))
-
-    return dict(tables)
 
 
 def strip_metadata_columns(row: dict[str, Any]) -> dict[str, Any]:
@@ -147,7 +103,7 @@ def reconstruct_entries(tables: dict[str, list[dict[str, Any]]]) -> list[dict[st
     return entries
 
 
-def _attach_nested_rows(
+def _attach_nested_rows(  # noqa: PLR0917
     target: dict[str, Any],
     parent_id: str,
     parent_index: dict[str, list[tuple[str, dict[str, Any]]]],

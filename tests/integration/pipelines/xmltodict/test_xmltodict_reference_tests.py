@@ -1,4 +1,4 @@
-"""Integration tests for the xml_to_dict pipeline against the uniref reference dataset."""
+"""Integration tests for the xmltodict pipeline against the uniref reference dataset."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -8,17 +8,17 @@ import dlt
 import duckdb
 import pytest
 
-from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from tests.integration.pipelines.helpers import (
     BUFFER_SIZES,
+    LOADER_FILE_FORMATS,
     WORKER_CONFIGS,
-    _sorted_json,
     assert_dataset_matches_reference,
     assert_datasets_equal,
-    run_and_read,
-)
-from tests.integration.pipelines.xml.xmltodict_reference_helpers import (
     read_pipeline_tables,
+    run_and_read,
+    sorted_json,
+)
+from tests.integration.pipelines.pipeline_helpers import (
     reconstruct_entries,
     reference_entries_from_duckdb,
 )
@@ -66,13 +66,13 @@ def test_xml_ingest_pass_diff_format_same_results(run_xmltodict_pipeline: Callab
             "chunk_20_el",
             loader_file_format=output_format,
         )
-        for output_format in LoaderFileFormatEnum.__members__.values()
+        for output_format in LOADER_FILE_FORMATS
     }
     assert_datasets_equal(load_info_and_dir)
 
 
 @pytest.mark.xfail(reason="not yet implemented")
-@pytest.mark.parametrize("loader_file_format", LoaderFileFormatEnum.__members__.values())
+@pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS)
 def test_xml_ingest_pass_nesting_levels(
     run_xmltodict_pipeline: Callable[..., Any],
     sorted_reference_xml_entries: list[str],
@@ -98,7 +98,7 @@ def test_xml_ingest_pass_nesting_levels(
     assert_dataset_matches_reference(load_info_and_dir, sorted_reference_xml_entries, loader_file_format)
 
 
-@pytest.mark.parametrize("loader_file_format", LoaderFileFormatEnum.__members__.values())
+@pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS)
 def test_xml_ingest_pass_output_identical_across_chunk_dirs(
     run_xmltodict_pipeline: Callable[..., Any], sorted_reference_xml_entries: list[str], loader_file_format: str
 ) -> None:
@@ -112,7 +112,7 @@ def test_xml_ingest_pass_output_identical_across_chunk_dirs(
     assert_dataset_matches_reference(load_info_and_dir, sorted_reference_xml_entries, loader_file_format)
 
 
-@pytest.mark.parametrize("loader_file_format", LoaderFileFormatEnum.__members__.values())
+@pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS)
 def test_xml_ingest_pass_output_identical_across_buffer_sizes(
     run_xmltodict_pipeline: Callable[..., Any], sorted_reference_xml_entries: list[str], loader_file_format: str
 ) -> None:
@@ -142,20 +142,23 @@ def test_xml_ingest_pass_no_data_lost_across_worker_configs(
 ) -> None:
     """No data is lost regardless of how the job is split across extract/normalize/load workers."""
     load_info_and_dir = {}
-    with dlt.config.values(
-        {
-            "extract.workers": extract_workers,
-            "normalize.workers": normalize_workers,
-            "load.workers": load_workers,
-        }
-    ):
-        load_info_and_dir["chunk_5_el"] = run_and_read(run_xmltodict_pipeline, "chunk_5_el")
+    for worker_key in ("baseline", "current"):
+        with dlt.config.values(
+            {}
+            if worker_key == "baseline"
+            else {
+                "extract.workers": extract_workers,
+                "normalize.workers": normalize_workers,
+                "load.workers": load_workers,
+            }
+        ):
+            load_info_and_dir[worker_key] = run_and_read(run_xmltodict_pipeline, "chunk_5_el")
 
     assert_datasets_equal(load_info_and_dir)
     assert_dataset_matches_reference(load_info_and_dir, sorted_reference_xml_entries)
 
 
-@pytest.mark.parametrize("loader_file_format", LoaderFileFormatEnum.__members__.values())
+@pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS)
 def test_xml_ingest_pass_reconstructed_matches_duckdb_reference(
     run_xmltodict_pipeline: Callable[..., Any],
     reference_xml_dataset: duckdb.DuckDBPyConnection,
@@ -169,4 +172,4 @@ def test_xml_ingest_pass_reconstructed_matches_duckdb_reference(
     reconstructed = reconstruct_entries(tables)
     from_duckdb = reference_entries_from_duckdb(reference_xml_dataset)
     assert len(from_duckdb) == EXPECTED_ENTRY_COUNT
-    assert _sorted_json(reconstructed) == _sorted_json(from_duckdb)
+    assert sorted_json(reconstructed) == sorted_json(from_duckdb)

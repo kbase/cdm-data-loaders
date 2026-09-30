@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from cdm_data_loaders.core.fields import DEFAULTS, S3
-from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
+from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 
 # All schema-driven tests below use tests/data/xsd/uniref_like.xsd, which is already exercised
 # (and its list_paths/single_paths independently verified) by test_xsd.py:
@@ -23,7 +23,7 @@ def _copy_xsd_fixture(test_data_dir: Path, input_dir: Path, filename: str) -> st
     return filename
 
 
-def test_xml_to_dict_ingest_settings_pass_defaults(settings_factory: Callable[..., XmlToDictSettings]) -> None:
+def test_xmltodict_ingest_settings_pass_defaults(settings_factory: Callable[..., XmlToDictSettings]) -> None:
     """file_glob defaults to '*.xml*'. buffer_size and log_interval default to the common CTS defaults."""
     settings = settings_factory()
     assert settings.file_glob == "*.xml*"
@@ -31,14 +31,14 @@ def test_xml_to_dict_ingest_settings_pass_defaults(settings_factory: Callable[..
     assert settings.log_interval == DEFAULTS["log_interval"]
 
 
-def test_xml_to_dict_ingest_settings_pass_custom_file_glob(
+def test_xmltodict_ingest_settings_pass_custom_file_glob(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """file_glob accepts a custom glob pattern."""
     assert settings_factory(file_glob="*.rdf").file_glob == "*.rdf"
 
 
-def test_xml_to_dict_ingest_settings_pass_custom_xml_tag(
+def test_xmltodict_ingest_settings_pass_custom_xml_tag(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """xml_tag accepts any tag name."""
@@ -46,7 +46,7 @@ def test_xml_to_dict_ingest_settings_pass_custom_xml_tag(
     assert settings.xml_tag == "entry"
 
 
-def test_xml_to_dict_ingest_settings_fail_missing_xml_tag(
+def test_xmltodict_ingest_settings_fail_missing_xml_tag(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """Omitting xml_tag raises ValidationError."""
@@ -54,7 +54,7 @@ def test_xml_to_dict_ingest_settings_fail_missing_xml_tag(
         settings_factory(xml_tag=None)
 
 
-def test_xml_to_dict_ingest_settings_fail_missing_table_name(
+def test_xmltodict_ingest_settings_fail_missing_table_name(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """Omitting table_name raises ValidationError."""
@@ -62,7 +62,7 @@ def test_xml_to_dict_ingest_settings_fail_missing_table_name(
         settings_factory(table_name=None)
 
 
-def test_xml_to_dict_ingest_settings_fail_missing_dataset_name(
+def test_xmltodict_ingest_settings_fail_missing_dataset_name(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """Omitting dataset_name raises ValidationError."""
@@ -70,7 +70,7 @@ def test_xml_to_dict_ingest_settings_fail_missing_dataset_name(
         settings_factory(dataset_name=None)
 
 
-def test_xml_to_dict_ingest_settings_fail_non_positive_buffer_size(
+def test_xmltodict_ingest_settings_fail_non_positive_buffer_size(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """buffer_size must be a positive integer."""
@@ -78,7 +78,7 @@ def test_xml_to_dict_ingest_settings_fail_non_positive_buffer_size(
         settings_factory(buffer_size=0)
 
 
-def test_xml_to_dict_ingest_settings_fail_non_positive_log_interval(
+def test_xmltodict_ingest_settings_fail_non_positive_log_interval(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """log_interval must be a positive integer."""
@@ -86,7 +86,7 @@ def test_xml_to_dict_ingest_settings_fail_non_positive_log_interval(
         settings_factory(log_interval=0)
 
 
-def test_xml_to_dict_ingest_settings_fail_local_destination_with_s3_output_dir(
+def test_xmltodict_ingest_settings_fail_local_destination_with_s3_output_dir(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """use_destination='local_fs' with an s3:// output_dir raises ValidationError.
@@ -98,7 +98,7 @@ def test_xml_to_dict_ingest_settings_fail_local_destination_with_s3_output_dir(
         settings_factory(output_dir="s3://some-bucket/path")
 
 
-def test_xml_to_dict_ingest_settings_fail_local_destination_with_s3_flag(
+def test_xmltodict_ingest_settings_fail_local_destination_with_s3_flag(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """use_destination='s3' with a local output_dir raises ValidationError."""
@@ -106,7 +106,7 @@ def test_xml_to_dict_ingest_settings_fail_local_destination_with_s3_flag(
         settings_factory(use_destination=S3)
 
 
-def test_xml_to_dict_ingest_settings_pass_unknown_use_destination_rejected(
+def test_xmltodict_ingest_settings_pass_unknown_use_destination_rejected(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """use_destination not present in the dlt config raises ValidationError."""
@@ -114,7 +114,7 @@ def test_xml_to_dict_ingest_settings_pass_unknown_use_destination_rejected(
         settings_factory(use_destination="not_a_destination")
 
 
-def test_xml_to_dict_ingest_settings_pass_xmltodict_args_empty_without_xsd_file(
+def test_xmltodict_ingest_settings_pass_xmltodict_args_empty_without_xsd_file(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """Without xsd_file (the default), xmltodict_args contributes no extra xmltodict.parse() kwargs."""
@@ -123,7 +123,7 @@ def test_xml_to_dict_ingest_settings_pass_xmltodict_args_empty_without_xsd_file(
     assert settings.xmltodict_args == {}
 
 
-def test_xml_to_dict_ingest_settings_pass_xmltodict_args_has_force_list_callable_when_xsd_file_set(
+def test_xmltodict_ingest_settings_pass_xmltodict_args_has_force_list_callable_when_xsd_file_set(
     tmp_path: Path, test_data_dir: Path, settings_factory: Callable[..., XmlToDictSettings]
 ) -> None:
     """With xsd_file set, xmltodict_args exposes exactly one force_list callable kwarg."""
@@ -134,17 +134,17 @@ def test_xml_to_dict_ingest_settings_pass_xmltodict_args_has_force_list_callable
     assert callable(settings.xmltodict_args["force_list"])
 
 
-def test_xml_to_dict_ingest_settings_pass_xmltodict_args_is_cached(
+def test_xmltodict_ingest_settings_pass_xmltodict_args_is_cached(
     tmp_path: Path, test_data_dir: Path, settings_factory: Callable[..., XmlToDictSettings]
 ) -> None:
     """xmltodict_args is a cached_property: repeated access returns the same dict, not a rebuild."""
     xsd_file = _copy_xsd_fixture(test_data_dir, tmp_path / "input", UNIREF_LIKE_XSD)
     settings = settings_factory(xsd_file=xsd_file)
-
+    # FIXME: what is this shit?
     assert settings.xmltodict_args is settings.xmltodict_args
 
 
-def test_xml_to_dict_ingest_settings_fail_xsd_file_not_found_raises_runtime_error(
+def test_xmltodict_ingest_settings_fail_xsd_file_not_found_raises_runtime_error(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
     """A xsd_file that does not exist under input_dir raises RuntimeError, not the underlying OSError."""
@@ -194,7 +194,7 @@ def force_list_from_uniref_like_xsd(
         ),
     ],
 )
-def test_xml_to_dict_ingest_settings_pass_force_list_classifies_by_immediate_parent(
+def test_xmltodict_ingest_settings_pass_force_list_classifies_by_immediate_parent(
     force_list_from_uniref_like_xsd: Callable[..., bool],
     path: list[tuple[str, dict[str, str] | None]],
     key: str,
@@ -218,7 +218,7 @@ def test_xml_to_dict_ingest_settings_pass_force_list_classifies_by_immediate_par
     assert force_list_from_uniref_like_xsd(path, key, "some-value") is expected
 
 
-def test_xml_to_dict_ingest_settings_pass_xml_tag_shortcut(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_xmltodict_ingest_settings_pass_xml_tag_shortcut(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The file_glob field is exposed as both --file-glob and -g on the command line."""
     log_config_file = tmp_path / "logging.json"
     log_config_file.write_text('{"version": 1}')
@@ -228,7 +228,7 @@ def test_xml_to_dict_ingest_settings_pass_xml_tag_shortcut(tmp_path: Path, monke
     output_dir.mkdir()
 
     argv = [
-        "xml_to_dict_ingest",
+        "xmltodict_ingest",
         "--input-dir",
         str(input_dir),
         "--output-dir",

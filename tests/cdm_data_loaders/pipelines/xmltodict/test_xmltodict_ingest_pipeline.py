@@ -6,18 +6,18 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
-from dlt.extract import DltResource
 
 import dlt
 import pytest
+from dlt.extract import DltResource
 
-import cdm_data_loaders.pipelines.xml_to_dict.pipeline as xml_to_dict_ingest_module
+import cdm_data_loaders.pipelines.xmltodict.pipeline as xmltodict_ingest_module
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
-from cdm_data_loaders.pipelines.xml_to_dict.pipeline import (
+from cdm_data_loaders.pipelines.xmltodict.pipeline import (
     cli,
     run_xml_ingest_pipeline,
 )
-from cdm_data_loaders.pipelines.xml_to_dict.settings import PIPELINE_NAME, XmlToDictSettings
+from cdm_data_loaders.pipelines.xmltodict.settings import PIPELINE_NAME, XmlToDictSettings
 
 SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
 <library>
@@ -27,17 +27,15 @@ SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
 """
 
 
-@pytest.mark.parametrize("loader_file_format", LoaderFileFormatEnum.__members__.values())
+@pytest.mark.parametrize("loader_file_format", list(LoaderFileFormatEnum), ids=str)
 def test_run_xml_ingest_pipeline_pass_sets_core_run_pipeline_args_correctly(
     settings_factory: Callable[..., XmlToDictSettings],
-    fresh_xml_to_dict_reader: Callable[[], Any],
     loader_file_format: str,
 ) -> None:
-    """run_xml_ingest_pipeline binds the reader and delegates to run_pipeline with the correct args."""
+    """run_xml_ingest_pipeline builds the reader and delegates to run_pipeline with the correct args."""
     settings = settings_factory(loader_file_format=loader_file_format)
-    fresh_xml_to_dict_reader()
 
-    with patch.object(xml_to_dict_ingest_module, "run_pipeline") as mock_run_pipeline:
+    with patch.object(xmltodict_ingest_module, "run_pipeline") as mock_run_pipeline:
         run_xml_ingest_pipeline(settings)
 
     assert mock_run_pipeline.call_count == 1
@@ -54,30 +52,26 @@ def test_run_xml_ingest_pipeline_pass_sets_core_run_pipeline_args_correctly(
 
 def test_run_xml_ingest_pipeline_pass_binds_reader_before_run_pipeline(
     settings_factory: Callable[..., XmlToDictSettings],
-    fresh_xml_to_dict_reader: Callable[[], Any],
 ) -> None:
-    """The module-level transformer is bound to settings before run_pipeline is called."""
+    """The resource passed to run_pipeline is the bound reader piped into the filesystem source."""
     settings = settings_factory()
-    fresh_xml_to_dict_reader()
 
-    with patch.object(xml_to_dict_ingest_module, "run_pipeline") as mock_run_pipeline:
+    with patch.object(xmltodict_ingest_module, "run_pipeline") as mock_run_pipeline:
         run_xml_ingest_pipeline(settings)
 
     mock_run_pipeline.assert_called_once()
-    reader = xml_to_dict_ingest_module.xml_to_dict_reader
-    assert reader.args_bound
-    assert reader.explicit_args == {"items": settings}
+    resource = mock_run_pipeline.call_args.kwargs["resource"]
+    assert resource.name == "xmltodict_reader"
+    assert resource._pipe.parent.name == "filesystem"  # noqa: SLF001
 
 
 def test_run_xml_ingest_pipeline_pass_resource_is_reader_piped_into_source(
     settings_factory: Callable[..., XmlToDictSettings],
-    fresh_xml_to_dict_reader: Callable[[], Any],
 ) -> None:
     """The resource passed to run_pipeline combines the filesystem source with the bound reader."""
     settings = settings_factory()
-    fresh_xml_to_dict_reader()
 
-    with patch.object(xml_to_dict_ingest_module, "run_pipeline") as mock_run_pipeline:
+    with patch.object(xmltodict_ingest_module, "run_pipeline") as mock_run_pipeline:
         run_xml_ingest_pipeline(settings)
 
     resource = mock_run_pipeline.call_args.kwargs["resource"]
@@ -85,7 +79,6 @@ def test_run_xml_ingest_pipeline_pass_resource_is_reader_piped_into_source(
 
 
 def test_cli_pass_runs_end_to_end_from_command_line_arguments(
-    fresh_xml_to_dict_reader: Callable[[], Any],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -102,10 +95,9 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     output_dir.mkdir()
     log_config_file = tmp_path / "logging.json"
     log_config_file.write_text('{"version": 1}')
-    fresh_xml_to_dict_reader()
 
     argv = [
-        "xml_to_dict_ingest",
+        "xmltodict_ingest",
         "--input-dir",
         str(input_dir),
         "--output-dir",
@@ -145,7 +137,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
         )
         captured["load_info"] = pipeline.run(resource)
 
-    with patch.object(xml_to_dict_ingest_module, "run_pipeline", fake_run_pipeline):
+    with patch.object(xmltodict_ingest_module, "run_pipeline", fake_run_pipeline):
         cli()
 
     load_info = captured["load_info"]
@@ -166,7 +158,6 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
 
 
 def test_cli_pass_writes_rows_for_matching_xml_files(
-    fresh_xml_to_dict_reader: Callable[[], Any],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -179,10 +170,9 @@ def test_cli_pass_writes_rows_for_matching_xml_files(
     output_dir.mkdir()
     log_config_file = tmp_path / "logging.json"
     log_config_file.write_text('{"version": 1}')
-    fresh_xml_to_dict_reader()
 
     argv = [
-        "xml_to_dict_ingest",
+        "xmltodict_ingest",
         "--input-dir",
         str(input_dir),
         "--output-dir",
@@ -219,7 +209,7 @@ def test_cli_pass_writes_rows_for_matching_xml_files(
         captured["load_info"] = pipeline.run(resource)
         captured["pipeline"] = pipeline
 
-    with patch.object(xml_to_dict_ingest_module, "run_pipeline", fake_run_pipeline):
+    with patch.object(xmltodict_ingest_module, "run_pipeline", fake_run_pipeline):
         cli()
 
     assert not captured["load_info"].has_failed_jobs
@@ -241,7 +231,6 @@ def test_cli_pass_writes_rows_for_matching_xml_files(
     ],
 )
 def test_cli_fail_missing_required_args_raise(
-    fresh_xml_to_dict_reader: Callable[[], Any],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     missing_args: list[str],
@@ -250,10 +239,9 @@ def test_cli_fail_missing_required_args_raise(
     """cli() without required pipeline-specific args raises before running the pipeline."""
     log_config_file = tmp_path / "logging.json"
     log_config_file.write_text('{"version": 1}')
-    fresh_xml_to_dict_reader()
 
     argv = [
-        "xml_to_dict_ingest",
+        "xmltodict_ingest",
         "--input-dir",
         str(tmp_path / "input"),
         "--output-dir",
@@ -265,7 +253,7 @@ def test_cli_fail_missing_required_args_raise(
     monkeypatch.setattr(sys, "argv", argv)
 
     with (
-        patch.object(xml_to_dict_ingest_module, "run_pipeline") as mock_run_pipeline,
+        patch.object(xmltodict_ingest_module, "run_pipeline") as mock_run_pipeline,
         pytest.raises(Exception, match=expected_fragment),
     ):
         cli()

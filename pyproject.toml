@@ -13,6 +13,7 @@ dependencies = [
     "bioregistry>=0.13.58",
     "boto3[crt]>=1.43.0",
     "click>=8.4.1",
+    "datamodel-code-generator>=0.82.0",
     "defusedxml>=0.7.1",
     "delta-spark>=4.2.0",
     "dlt[deltalake,duckdb,filesystem,parquet,pyiceberg]>=1.30.0",
@@ -30,7 +31,7 @@ dependencies = [
     "pydantic-settings>=2.14.1",
     "pyiceberg[pandas,pyarrow,pyiceberg-core,snappy]>=0.11.1",
     "smart-open>=8.0.1",
-    "tqdm>=4.67.3",
+    "tqdm>=4.70.1",
     "xml2db>=0.14.0",
     "xmlschema>=4.3.1",
     "xmltodict>=1.0.4",
@@ -38,12 +39,19 @@ dependencies = [
 
 [project.scripts]
 all_the_bacteria = "cdm_data_loaders.pipelines.all_the_bacteria:cli"
+jsonl_extract = "cdm_data_loaders.pipelines.jsonlines.extract_pipeline:cli"
+jsonl_jsonschema = "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:cli"
+jsonl_pydantic = "cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline:cli"
 ncbi_ftp_promote = "cdm_data_loaders.pipelines.ncbi_ftp_promote:cli"
 ncbi_ftp_sync = "cdm_data_loaders.pipelines.ncbi_ftp_download:cli"
 ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"
 pdb_manifest = "cdm_data_loaders.pipelines.pdb_manifest:cli"
 uniprot = "cdm_data_loaders.pipelines.uniprot_kb:cli"
 uniref = "cdm_data_loaders.pipelines.uniref:cli"
+xmltodict = "cdm_data_loaders.pipelines.xmltodict.pipeline:cli"
+xml2db = "cdm_data_loaders.pipelines.xml2db.pipeline:cli"
+xsv_ingest = "cdm_data_loaders.pipelines.xsv.pipeline:cli"
+
 
 [dependency-groups]
 dev = [
@@ -208,7 +216,7 @@ max-complexity = 15
 requires = ["uv_build>=0.12.0,<0.20.0"]
 build-backend = "uv_build"
 
-[tool.pytest]
+[tool.pytest.ini_config]
 pythonpath = ["src"]
 log_cli = true
 log_cli_level = "WARNING"
