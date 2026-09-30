@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 import xmltodict
 
+from cdm_data_loaders.core.fields import PARQUET
 from tests.integration.pipelines.helpers import LOADER_FILE_FORMATS, read_pipeline_tables, sorted_json
 from tests.integration.pipelines.xml2db.xml2db_reference_helpers import (
     assert_uniref_referential_integrity,
@@ -71,12 +72,16 @@ def xmltodict_reference_entries(reference_xml_data_dir: Path) -> list[dict[str, 
 
 
 def run_and_reconstruct(run_pipeline: Callable[..., Any], chunk_dir: str, **overrides: Any) -> list[dict[str, Any]]:
-    """Run the pipeline on a chunk dir and reconstruct nested entries from its output tables."""
+    """Run the pipeline on a chunk dir and reconstruct nested entries from its output tables.
+
+    Reads back whatever `loader_file_format` the run actually used -- `PARQUET`, matching
+    `Xml2DbSettings.loader_file_format`'s own default, unless overridden.
+    """
     (load_info, output_dir) = run_pipeline(chunk_dir, **overrides)
     assert load_info is not None
     assert not load_info.has_failed_jobs
-    output_format = overrides.get("loader_file_format")
-    tables = read_pipeline_tables(output_dir / load_info.dataset_name, str(output_format) if output_format else None)
+    output_format = str(overrides.get("loader_file_format", PARQUET))
+    tables = read_pipeline_tables(output_dir / load_info.dataset_name, output_format)
     return reconstruct_xml2db_entries(tables)
 
 
@@ -123,7 +128,7 @@ def test_xml2db_ingest_pass_referential_integrity_across_merged_files(
     (load_info, output_dir) = run_xml2db_pipeline("chunk_5_el")
     assert load_info is not None
     assert not load_info.has_failed_jobs
-    tables = read_pipeline_tables(output_dir / load_info.dataset_name)
+    tables = read_pipeline_tables(output_dir / load_info.dataset_name, PARQUET)
     assert_uniref_referential_integrity(tables)
 
 
@@ -167,7 +172,7 @@ def test_xml2db_ingest_pass_chunked_referential_integrity_across_files_and_chunk
     (load_info, output_dir) = run_xml2db_pipeline("chunk_5_el", chunk_element_tag="entry", chunk_size=2)
     assert load_info is not None
     assert not load_info.has_failed_jobs
-    tables = read_pipeline_tables(output_dir / load_info.dataset_name)
+    tables = read_pipeline_tables(output_dir / load_info.dataset_name, PARQUET)
     assert_uniref_referential_integrity(tables)
 
 
@@ -189,8 +194,8 @@ def test_xml2db_ingest_pass_chunked_compaction_matches_unchunked_row_counts_exac
     assert not unchunked_info.has_failed_jobs
     assert not chunked_info.has_failed_jobs
 
-    unchunked_tables = read_pipeline_tables(unchunked_dir / unchunked_info.dataset_name)
-    chunked_tables = read_pipeline_tables(chunked_dir / chunked_info.dataset_name)
+    unchunked_tables = read_pipeline_tables(unchunked_dir / unchunked_info.dataset_name, PARQUET)
+    chunked_tables = read_pipeline_tables(chunked_dir / chunked_info.dataset_name, PARQUET)
 
     for table_name in ("entry", "property", "representative_member"):
         assert len(chunked_tables[table_name]) == len(unchunked_tables[table_name]), table_name
@@ -208,7 +213,7 @@ def test_xml2db_ingest_pass_chunked_compaction_root_table_is_left_alone(
     (load_info, output_dir) = run_xml2db_pipeline("chunk_100_el", chunk_element_tag="entry", chunk_size=7)
     assert load_info is not None
     assert not load_info.has_failed_jobs
-    tables = read_pipeline_tables(output_dir / load_info.dataset_name)
+    tables = read_pipeline_tables(output_dir / load_info.dataset_name, PARQUET)
 
     n_chunks = -(-EXPECTED_ENTRY_COUNT // 7)  # ceil division
     assert len(tables["uniref"]) == n_chunks
@@ -221,7 +226,7 @@ def test_xml2db_ingest_pass_chunked_compaction_preserves_referential_integrity(
     (load_info, output_dir) = run_xml2db_pipeline("chunk_100_el", chunk_element_tag="entry", chunk_size=7)
     assert load_info is not None
     assert not load_info.has_failed_jobs
-    tables = read_pipeline_tables(output_dir / load_info.dataset_name)
+    tables = read_pipeline_tables(output_dir / load_info.dataset_name, PARQUET)
     assert_uniref_referential_integrity(tables)
 
 
@@ -236,8 +241,8 @@ def test_xml2db_ingest_pass_compact_reused_tables_false_keeps_literal_duplicates
     assert unchunked_info is not None
     assert chunked_info is not None
 
-    unchunked_tables = read_pipeline_tables(unchunked_dir / unchunked_info.dataset_name)
-    chunked_tables = read_pipeline_tables(chunked_dir / chunked_info.dataset_name)
+    unchunked_tables = read_pipeline_tables(unchunked_dir / unchunked_info.dataset_name, PARQUET)
+    chunked_tables = read_pipeline_tables(chunked_dir / chunked_info.dataset_name, PARQUET)
 
     # without compaction, the chunked run keeps every literal duplicate, so it has *more* rows...
     assert len(chunked_tables["property"]) > len(unchunked_tables["property"])
@@ -245,3 +250,39 @@ def test_xml2db_ingest_pass_compact_reused_tables_false_keeps_literal_duplicates
     assert {row["pk_property"] for row in chunked_tables["property"]} == {
         row["pk_property"] for row in unchunked_tables["property"]
     }
+
+
+def test_xml2db_ingest_pass_compaction_dedupes_across_separate_unchunked_files(
+    run_xml2db_pipeline: Callable[..., Any],
+) -> None:
+    """compact_reused_tables also dedupes across multiple separate files, not just chunks.
+
+    chunk_5_el splits the same 100 entries across 20 files with no chunk_element_tag set, so
+    every file parses into its own xml2db Document. Content shared across files (e.g. common
+    `property` values like protein names, which real UniRef data repeats heavily) gets the same
+    content-addressed key (see `is_xml2db_content_addressed_table`) but still lands as separate
+    literal duplicate rows until compaction merges them -- exactly the same failure mode as
+    chunking, just from multiple files instead of multiple chunks of one file.
+    """
+    (compacted_info, compacted_dir) = run_xml2db_pipeline("chunk_5_el")
+    (uncompacted_info, uncompacted_dir) = run_xml2db_pipeline("chunk_5_el", compact_reused_tables=False)
+    assert compacted_info is not None
+    assert uncompacted_info is not None
+    assert not compacted_info.has_failed_jobs
+    assert not uncompacted_info.has_failed_jobs
+
+    compacted_tables = read_pipeline_tables(compacted_dir / compacted_info.dataset_name, PARQUET)
+    uncompacted_tables = read_pipeline_tables(uncompacted_dir / uncompacted_info.dataset_name, PARQUET)
+
+    # without compaction, distributing the 100 entries across 20 separate files leaves literal
+    # duplicate rows behind for property content shared across files (real UniRef data repeats
+    # protein names, lengths, and cross-references heavily)...
+    assert len(uncompacted_tables["property"]) > len(compacted_tables["property"])
+    # ...but the compacted run has exactly one row per distinct content-addressed key, with
+    # nothing missing and nothing left over.
+    compacted_property_pks = {row["pk_property"] for row in compacted_tables["property"]}
+    assert len(compacted_property_pks) == len(compacted_tables["property"])
+    assert compacted_property_pks == {row["pk_property"] for row in uncompacted_tables["property"]}
+
+    # entry and every junction table are non-reused: file-count has no effect on their row counts.
+    assert len(compacted_tables["entry"]) == len(uncompacted_tables["entry"]) == EXPECTED_ENTRY_COUNT
