@@ -39,9 +39,9 @@ from cdm_data_loaders.audit.schema import (
     RUN_ID,
     SOURCE,
 )
+from cdm_data_loaders.core.constants import INVALID_DATA_FIELD_NAME
 from cdm_data_loaders.core.fields import LOCAL_FS, S3
 from cdm_data_loaders.core.pipeline_run import PipelineRun
-from cdm_data_loaders.readers.dsv import INVALID_DATA_FIELD
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
 
@@ -54,6 +54,10 @@ ALT_PIPELINE_RUN = frozendict({RUN_ID: "9876-5432-10", PIPELINE: "KeystoneXXXL",
 BASE_DIR: Final[Path] = Path("tests").parent
 TEST_DATA_DIR: Final[Path] = Path("tests") / "data"
 CASSETTES_DIR: Final[Path] = Path("tests") / "cassettes"
+
+# schema field to catch input errors
+INVALID_DATA_FIELD = StructField(INVALID_DATA_FIELD_NAME, StringType(), nullable=True)
+
 
 DEFAULT_VCR_CONFIG = frozendict(
     {
