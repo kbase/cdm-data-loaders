@@ -1,30 +1,102 @@
 # Converter IR and Reader Contract
 
-Phases 3 through 5 provide immutable readers, a structural intermediate representation
-(IR), three emitters, and four thin converter facades. Facades retain the public conversion
-entry points and target policy defaults. Captured legacy outputs are the compatibility
-reference, not the definition of source truth.
+The converters package translates schema definitions between formats. Every conversion is a
+reader (source -> IR) followed by an emitter (IR -> target), composed by a thin facade that
+owns the public entry points, input guards and target policy defaults. The intermediate
+representation (IR) is a frozen node tree that preserves source facts without choosing target
+policy; emitters make every target-specific decision. Captured legacy outputs in the golden
+file are the compatibility reference for the four original routes, not the definition of
+source truth.
 
-## Public Modules
+## Package Layout
 
 All paths below are under `src/cdm_data_loaders/converters/`.
 
-| Module | Public API |
-| --- | --- |
-| `ir.py` | `NodeType`, `Source`, `Provenance`, `NodeHints`, `TypedNode`, `Field`, `SchemaDocument`, `Reader`, `Emitter` |
-| `ir_values.py` | `Value`, `freeze_value`, `freeze_mapping`, `mutable_value` |
-| `extensions.py` | `ExtensionError`, `ExtensionSpec`, `ExtensionRegistry`, `Extensions`, `DEFAULT_EXTENSIONS`, `validated_extensions` |
-| `readers/json_schema.py` | `JsonSchemaReader`, including `read_node` |
-| `readers/dlt.py` | `DltReader` |
-| `readers/iceberg.py` | `IcebergReader`, including `read_node` and `read_field`; `iceberg_value` |
-| `emitters/json_schema.py` | `JsonSchemaEmitter`, including `emit_node` and `emit_field`; `decimal_pattern` |
-| `emitters/dlt.py` | `DltEmitter` |
-| `emitters/pyspark.py` | `PySparkEmitter`, `ConversionContext`, metadata helpers, `merge_format_map` |
+```
+core/                          shared, target-independent foundation
+  errors.py                    ConversionError base class
+  ir.py                        NodeType, Source, Provenance, NodeHints, TypedNode,
+                               Field, SchemaDocument, Reader/Emitter protocols
+  ir_values.py                 Value, freeze_value, freeze_mapping, mutable_value
+  extensions.py                ExtensionError, ExtensionSpec, ExtensionRegistry,
+                               Extensions, DEFAULT_EXTENSIONS, validated_extensions
+  guards.py                    require_schema_keyword, require_object_root,
+                               reject_unresolved_references
+  inference.py                 infer_implicit_type, json_type_from_enum,
+                               decimal_places, decimal_pattern, resolve_union_type
+  io.py                        load_schema_text, load_schema_file
+  paths.py                     NestedPathError, set_nested
+readers/                       source -> IR
+  json_schema.py               JsonSchemaReader
+  dlt.py                       DltReader
+  iceberg.py                   IcebergReader, iceberg_value
+emitters/                      IR -> target
+  json_schema.py               JsonSchemaEmitter
+  dlt.py                       DltEmitter
+  pyspark.py                   PySparkEmitter, ConversionContext, format-map helpers
+  linkml.py                    LinkMLEmitter
+jsonschema_to_dlt.py           facade: JSON Schema -> dlt stored schema
+jsonschema_to_pyspark.py       facade: JSON Schema -> PySpark StructType
+dlt_to_jsonschema.py           facade: dlt -> JSON Schema documents
+pyiceberg_to_jsonschema.py     functions over IcebergReader + JsonSchemaEmitter
+pyiceberg_to_linkml.py         functions over IcebergReader + LinkMLEmitter
+pyiceberg_catalog_to_jsonschema.py  CLI: dump catalog tables as JSON Schema
+pyiceberg_catalog_to_linkml.py      CLI: dump catalog tables as LinkML
+```
+
+`core/` imports no dlt, PyIceberg or PySpark modules. The only cross-package import is the
+`x-xsv-config` contract, which reuses `X_XSV_CONFIG_SCHEMA` from
+`cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema`. dlt table
+normalization lives outside the package in `cdm_data_loaders.utils.dlt.dlt_normalization`
+(`DltTableNode`, `unflatten_tables`, `flatten_nodes`, `tables_parents_first`, `child_key`,
+`child_table_name`).
+
+| Module                    | Public API                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `core/ir.py`              | `NodeType`, `Source`, `Provenance`, `NodeHints`, `TypedNode`, `Field`, `SchemaDocument`, `Reader`, `Emitter`       |
+| `core/ir_values.py`       | `Value`, `freeze_value`, `freeze_mapping`, `mutable_value`                                                         |
+| `core/extensions.py`      | `ExtensionError`, `ExtensionSpec`, `ExtensionRegistry`, `Extensions`, `DEFAULT_EXTENSIONS`, `validated_extensions` |
+| `core/guards.py`          | `require_schema_keyword`, `require_object_root`, `reject_unresolved_references`                                    |
+| `core/inference.py`       | `infer_implicit_type`, `json_type_from_enum`, `decimal_places`, `decimal_pattern`, `resolve_union_type`            |
+| `core/io.py`              | `load_schema_text`, `load_schema_file`                                                                             |
+| `core/paths.py`           | `set_nested`                                                                                                       |
+| `readers/json_schema.py`  | `JsonSchemaReader`, including `read_node`                                                                          |
+| `readers/dlt.py`          | `DltReader`                                                                                                        |
+| `readers/iceberg.py`      | `IcebergReader`, including `read_node` and `read_field`; `iceberg_value`                                           |
+| `emitters/json_schema.py` | `JsonSchemaEmitter`, including `emit_node` and `emit_field`                                                        |
+| `emitters/dlt.py`         | `DltEmitter`                                                                                                       |
+| `emitters/pyspark.py`     | `PySparkEmitter`, `ConversionContext`, metadata helpers, `merge_format_map`                                        |
+| `emitters/linkml.py`      | `LinkMLEmitter`, including `emit_node` and `emit_field`                                                            |
 
 The IR, value helpers and extension registry import no dlt, PyIceberg or PySpark modules.
 The XSV contract imports only the existing custom metaschema module, not Spark readers.
 Models are frozen, slotted dataclasses. Constructors validate and recursively copy mappings
 into `frozendict` and sequences into tuples. There is no unchecked construction path.
+
+### LinkML Output
+
+`LinkMLEmitter.emit()` and `table_to_linkml()` return official `linkml-runtime`
+`SchemaDefinition` objects, not dictionaries. `emit_node()`, `emit_field()`,
+`convert_type()`, `convert_field()`, and `convert_struct()` return `SlotDefinition`
+objects. Access model attributes directly, for example `schema.classes["record"].attributes["id"].range`.
+
+Serialize these models using `linkml_runtime.dumpers.yaml_dumper.dumps(schema)`.
+The catalog CLI writes UTF-8 YAML to `*.schema.yaml`, with one UTC generation
+timestamp per run in `annotations.generated_at.value`. It does not emit JSON or
+the nonstandard top-level `x-iceberg` property.
+
+By default, the CLI writes one `<namespace>.<table>.schema.yaml` file per table.
+Set `group_by_namespace=True` (CLI: `--group-by-namespace true`, environment:
+`CDL_GROUP_BY_NAMESPACE=true`) to write one `<namespace>.schema.yaml` file instead.
+Each table becomes a class with local attributes; nested structs and maps retain
+their supporting classes. Table comments become class descriptions. Name collisions
+receive numeric suffixes, with tables processed in sorted identifier order.
+Empty namespaces and namespaces where every table fails produce no file.
+Failed tables are logged and skipped without adding partial definitions.
+
+For in-memory grouping, `table_to_linkml(table, identifier, schema=destination)`
+appends to an existing `SchemaDefinition` and returns it. `LinkMLEmitter.emit_into()`
+provides the same operation for typed schema documents.
 
 ## Models
 
@@ -97,8 +169,14 @@ SchemaDocument(
     annotations: Mapping[str, Value] = {},
     extensions: Mapping[str, Value] = {},
     provenance: Provenance | None = None,
+    jsonschema_validator_cls: type | None = None,
 )
 ```
+
+`JsonSchemaReader.read()` detects the draft and records its validator class in
+`jsonschema_validator_cls`, preserving the original URI in `dialect`. The PySpark emitter
+reuses this class for metadata selection. Documents without a detected validator and
+standalone nodes without an explicit conversion context use Draft 2020-12 metadata rules.
 
 `Field.required` describes property presence, not whether its value accepts null.
 `TypedNode.nullable=None` means unresolved. JSON unions are not flattened or selected.
@@ -186,7 +264,7 @@ reader/emitter failures, including `ExtensionError` and its underlying validatio
 Explicit registration example:
 
 ```python
-from cdm_data_loaders.converters.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
 from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import JSONSchemaToPySpark
 
 registry = DEFAULT_EXTENSIONS.register(
@@ -409,54 +487,21 @@ stored dlt dictionaries or JSON Schema documents. Cases cover nested trees, scal
 unions, precedence, dynamic objects, metadata, multi-root dlt, and Iceberg maps/defaults.
 The existing precise converter tests remain primary; the corpus is not exhaustive.
 
-Tests cover readers, emitters, existing facade entry points, `test_ir.py`, `test_extensions.py`,
-and `test_facades_end_to_end.py`. Emitter comparisons that became tautologies were replaced
+Tests cover readers, emitters, the existing facade entry points, the core IR modules
+(`core/ir.py`, `core/ir_values.py`, `core/extensions.py`), and the per-facade and
+end-to-end test modules. Emitter comparisons that became tautologies were replaced
 with independent explicit expectations. The captured golden file is unchanged. No internal
 mocks, external services or Spark sessions are used by these tests.
 
-Verified phase-3 results: 783 converter tests passed, including 136 new tests. Focused
-coverage of the new production modules reached 100% statements and 99% combined
-statement/branch coverage; the remaining branch is absent PyIceberg field-default metadata.
-Targeted Ruff checks and formatting passed, and editor diagnostics reported no errors.
-An isolated interpreter import confirmed the IR loads no dlt, PyIceberg or PySpark modules.
-
-Initial phase-5 results: 1,548 converter and pure XML-helper tests passed, including 38
-new end-to-end cases. The four facades have 100% statement and branch coverage. Across
-facades, readers and emitters, all 1,062 statements are covered; six branch alternatives
-remain uncovered (three dlt emitter, two JSON emitter, one Iceberg reader absent-default
-metadata branch), giving 99% combined coverage. No engine/JVM validation was attempted.
-The separate XSV schema-utils and mocked adapter run passed 99 tests, deselecting 26
-external-binary cases. It reports five unknown-metaschema deprecation warnings. Coverage
-runs also report SQLite connection ResourceWarnings during cleanup; no test failed.
-
-Final review added regressions for extension keys hidden in annotation/constraint mappings,
-mixed Decimal/float numeric validation, and explicitly empty Spark format maps. Extension
-keys must use the validated extension mapping, but nested literal data remains unrestricted
-by that placement rule. Extension validation uses exact Fraction copies for numeric checks;
-stored values remain unchanged. Empty format maps stay empty through facade delegation.
-The final combined run passed 1,757 tests, deselected 26 external-binary cases, and reported
-the same five XSV deprecation warnings. No engine or external service was started.
-
-Targeted Ruff check, separate Ruff formatting and editor diagnostics passed for all touched
-Python files. The original golden file has no changes. The phase-5 validation commands are:
+The validation commands are:
 
 ```sh
-uv run pytest tests/cdm_data_loaders/converters tests/integration/pipelines/xml/test_reference_helpers.py -m 'not requires_spark and not requires_ceph and not external_request' -o addopts='' -o log_cli=false -q
-uv run pytest tests/cdm_data_loaders/readers/jsonschema_xsv/xsv_validator/test_schema_utils.py tests/cdm_data_loaders/validation/test_xsv.py -m 'not requires_spark and not requires_ceph and not external_request and not requires_xsv' -o addopts='' -o log_cli=false -q
+uv run pytest tests/cdm_data_loaders/converters -m 'not requires_spark and not requires_ceph and not external_request' -o addopts='' -o log_cli=false -q
 ```
 
 Coverage adds `--cov=cdm_data_loaders.converters.<module>` for the four facade modules,
 `readers` and `emitters`, with `--cov-branch --cov-report=term-missing`. The terminal-only
 report leaves the repository's existing coverage XML unchanged.
-
-Historical phase-3 commands, run from the repository root:
-
-```sh
-uv run pytest tests/cdm_data_loaders/converters -m 'not requires_spark and not requires_ceph and not external_request'
-uv run pytest tests/cdm_data_loaders/converters/test_ir.py tests/cdm_data_loaders/converters/test_extensions.py tests/cdm_data_loaders/converters/readers --cov=cdm_data_loaders.converters.ir --cov=cdm_data_loaders.converters.ir_values --cov=cdm_data_loaders.converters.extensions --cov=cdm_data_loaders.converters.readers --cov-branch --cov-report=term-missing
-uv run ruff check src/cdm_data_loaders/converters/ir.py src/cdm_data_loaders/converters/ir_values.py src/cdm_data_loaders/converters/extensions.py src/cdm_data_loaders/converters/readers tests/cdm_data_loaders/converters/test_ir.py tests/cdm_data_loaders/converters/test_extensions.py tests/cdm_data_loaders/converters/readers
-uv run ruff format src/cdm_data_loaders/converters/ir.py src/cdm_data_loaders/converters/ir_values.py src/cdm_data_loaders/converters/extensions.py src/cdm_data_loaders/converters/readers tests/cdm_data_loaders/converters/test_ir.py tests/cdm_data_loaders/converters/test_extensions.py tests/cdm_data_loaders/converters/readers
-```
 
 Readers recurse over typed children; unlike the iterative dlt normalizer, they do not
 promise support beyond Python's recursion limit. JSON input validation is upstream.

@@ -44,15 +44,20 @@ def convert_struct(
 
 
 def table_to_linkml(
-    table: Table, identifier: tuple[str, ...], *, extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
+    table: Table,
+    identifier: tuple[str, ...],
+    *,
+    extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS,
+    schema: SchemaDefinition | None = None,
 ) -> SchemaDefinition:
     """Read loaded table metadata and emit a LinkML schema model without I/O.
 
     :param table: Loaded Iceberg table.
     :param identifier: Namespace and table name.
     :param extension_registry: Registry for Iceberg extensions.
+    :param schema: Optional schema to append table classes to, preserving existing definitions.
     :returns: Schema model suitable for LinkML's YAML dumper.
     """
-    return LinkMLEmitter().emit(
-        IcebergReader(extension_registry, mapping_target="LinkML").read_table(table, identifier)
-    )
+    document = IcebergReader(extension_registry, mapping_target="LinkML").read_table(table, identifier)
+    emitter = LinkMLEmitter()
+    return emitter.emit(document) if schema is None else emitter.emit_into(document, schema)

@@ -196,3 +196,68 @@ def test_emit_field_pass_description_precedence() -> None:
         )
     )
     assert result == SlotDefinition(name="label", range="string", description="Field description.")
+
+
+def test_emit_into_pass_unique_names_and_descriptions() -> None:
+    """Appending documents preserves classes, enums, descriptions, and collision-free references."""
+    document = SchemaDocument(
+        name="record",
+        annotations={"description": "Table description."},
+        root=TypedNode(
+            type="object",
+            properties=(
+                Field("child", TypedNode(type="object")),
+                Field("status", TypedNode(type="string", constraints={"enum": ("active",)})),
+            ),
+        ),
+    )
+    emitter = LinkMLEmitter()
+    schema = SchemaDefinition(id="urn:test:namespace", name="namespace")
+    assert emitter.emit_into(document, schema) is schema
+    assert emitter.emit_into(document, schema) is schema
+    assert schema.classes == {
+        name: ClassDefinition(
+            name=name,
+            description="Table description.",
+            attributes=[
+                SlotDefinition(name="child", range=f"{name}_child"),
+                SlotDefinition(name="status", range=f"{name}_status_enum"),
+            ],
+        )
+        for name in ("record", "record_2")
+    } | {name: ClassDefinition(name=name) for name in ("record_child", "record_2_child")}
+    assert schema.enums == {
+        name: EnumDefinition(name=name, permissible_values={"active": None})
+        for name in ("record_status_enum", "record_2_status_enum")
+    }
+
+
+@pytest.mark.parametrize(
+    "root",
+    [
+        TypedNode(type="string"),
+        TypedNode(
+            type="object",
+            properties=(
+                Field("child", TypedNode(type="object")),
+                Field("status", TypedNode(type="string", constraints={"enum": ("active",)})),
+                Field("unsupported", TypedNode(type="null")),
+            ),
+        ),
+    ],
+    ids=["non-object-root", "failure-after-nested-definitions"],
+)
+def test_emit_into_fail_preserves_destination(root: TypedNode) -> None:
+    """Failed emission leaves the destination unchanged and permits a subsequent conversion."""
+    emitter = LinkMLEmitter()
+    schema = emitter.emit(SchemaDocument(name="existing", root=TypedNode(type="object")))
+    original_yaml = yaml_dumper.dumps(schema)
+    with pytest.raises(LinkMLEmitterError):
+        emitter.emit_into(SchemaDocument(name="broken", root=root), schema)
+    assert yaml_dumper.dumps(schema) == original_yaml
+    emitter.emit_into(SchemaDocument(name="good", root=TypedNode(type="object")), schema)
+    assert schema.classes == {
+        "existing": ClassDefinition(name="existing"),
+        "good": ClassDefinition(name="good"),
+    }
+    assert schema.enums == {}

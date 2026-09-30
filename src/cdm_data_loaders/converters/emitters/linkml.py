@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Final, cast
 
 from linkml_runtime.linkml_model.meta import (
     ClassDefinition,
@@ -89,6 +89,31 @@ class LinkMLEmitter:
         :returns: LinkML slot definition named ``node``.
         """
         return self._node_expression(node, "Node", "node")
+
+    def emit_into(self, document: SchemaDocument, schema: SchemaDefinition) -> SchemaDefinition:
+        """Add a document's classes to a schema without overwriting existing definitions.
+
+        :param document: Object-rooted document to convert.
+        :param schema: Destination schema, updated only after successful conversion.
+        :returns: The destination schema.
+        """
+        if document.root.type != "object":
+            msg = "A LinkML schema requires an object root"
+            raise LinkMLEmitterError(msg)
+        self._classes = {}
+        self._enums = {}
+        classes = cast("dict[str, ClassDefinition]", schema.classes)
+        enums = cast("dict[str, EnumDefinition]", schema.enums)
+        types = cast("dict[str, object]", schema.types)
+        self._used_names = set(classes) | set(enums) | set(types)
+        root_name = self._unique_name(document.name or "Root")
+        self._emit_class(root_name, document.root)
+        description = document.annotations.get("description")
+        if description is not None:
+            self._classes[root_name].description = str(description)
+        classes.update(self._classes)
+        enums.update(self._enums)
+        return schema
 
     def emit_field(self, field: SchemaField) -> SlotDefinition:
         """Emit a single field attribute.
