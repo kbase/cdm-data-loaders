@@ -457,3 +457,56 @@ def test_list_buffer_pass_buffer_scope_is_call_local() -> None:
     values = [page.data for page in emitted]
     assert [v for page in values for v in page] == [name_row(n) for n in range(10)]
     assert [len(page) for page in values] == [3, 3, 3, 1]
+
+
+# table hints
+
+PEOPLE_HINTS: Final[dict[str, Any]] = {
+    "primary_key": "name",
+    "write_disposition": {"disposition": "merge", "strategy": "insert-only"},
+}
+
+
+def test_dict_buffer_pass_table_hints_default_to_none() -> None:
+    """Without table_hints, pages are tagged with just a table name."""
+    assert DictBuffer().table_hints is None
+
+
+def test_dict_buffer_pass_table_hints_applied_to_hinted_tables_only() -> None:
+    """Pages for a hinted table carry the hints; pages for other tables carry only the table name."""
+    buffer = DictBuffer(max_items=2, table_hints={PEOPLE: PEOPLE_HINTS})
+
+    pages = [
+        *buffer.add_items({PEOPLE: [name_row(1), name_row(2)], EMAILS: [number_row(1), number_row(2)]}),
+    ]
+
+    by_table = {
+        (page.meta.hints["table_name"] if hasattr(page.meta, "hints") else page.meta.table_name): page for page in pages
+    }
+    assert by_table[PEOPLE].meta.hints == {"columns": {}, "table_name": PEOPLE, **PEOPLE_HINTS}
+    assert by_table[PEOPLE].data == [name_row(1), name_row(2)]
+    assert not hasattr(by_table[EMAILS].meta, "hints")
+    assert by_table[EMAILS].meta.table_name == EMAILS
+    assert by_table[EMAILS].data == [number_row(1), number_row(2)]
+
+
+def test_dict_buffer_pass_table_hints_applied_to_flushed_and_single_item_pages() -> None:
+    """Hints are applied whether a page is released by add_item reaching max_items or by flush."""
+    buffer = DictBuffer(max_items=1, table_hints={PEOPLE: PEOPLE_HINTS})
+    full_page = list(buffer.add_item(PEOPLE, name_row(1)))
+
+    buffer = DictBuffer(max_items=10, table_hints={PEOPLE: PEOPLE_HINTS})
+    assert list(buffer.add_item(PEOPLE, name_row(2))) == []
+    flushed_page = list(buffer.flush())
+
+    for pages, expected_rows in ((full_page, [name_row(1)]), (flushed_page, [name_row(2)])):
+        assert len(pages) == 1
+        assert pages[0].meta.hints["table_name"] == PEOPLE
+        assert pages[0].meta.hints["primary_key"] == "name"
+        assert pages[0].data == expected_rows
+
+
+def test_dict_buffer_fail_empty_table_hint_table_name_rejected() -> None:
+    """A table_hints key must be a non-empty table name."""
+    with pytest.raises(ValidationError):
+        DictBuffer(table_hints={"": PEOPLE_HINTS})

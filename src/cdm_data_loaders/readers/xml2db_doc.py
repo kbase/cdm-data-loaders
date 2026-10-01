@@ -11,7 +11,7 @@ from collections.abc import Generator, Mapping
 from io import BytesIO
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from lxml.etree import Element, XMLSyntaxError, iterparse, tostring
 from xml2db import DataModel, Document
@@ -19,6 +19,9 @@ from xml2db import DataModel, Document
 from cdm_data_loaders.pipelines.xml2db.settings import Xml2DbSettings
 from cdm_data_loaders.utils.buffer import DictBuffer
 from cdm_data_loaders.utils.gz import open_maybe_gzip
+
+if TYPE_CHECKING:
+    from cdm_data_loaders.readers.xml2db_merge import MergePreparer
 
 logger: Logger = getLogger(__name__)
 
@@ -107,10 +110,11 @@ def _content_addressed_key(table_name: str, record_hash: bytes) -> str:
     - Identical content always gets the same key, in any `Document`.
     - Every foreign key referencing the row is correct as soon as it is written. Nothing needs
       rewriting later.
-    - Any literal duplicate rows that reach the destination are byte-for-byte identical. It is
-      safe to keep any one of them and drop the rest.
+    - Any literal duplicate rows are byte-for-byte identical. It is safe to keep any one of them
+      and drop the rest.
 
-    See `cdm_data_loaders.pipelines.xml2db.compaction` for the step that drops those duplicates.
+    See `cdm_data_loaders.readers.xml2db_merge.MergePreparer` for the step that drops those
+    duplicates.
 
     :param table_name: the destination table name (`DataModelTable.name`). Included so a row in
         one table can never collide with a row in another table that hashes the same.
@@ -374,8 +378,8 @@ def flatten_xml2db_document(model: DataModel, document: Document, file_key: str)
     - "Reused" tables get a content-addressed key, derived from their own `xml2db_record_hash`.
       Identical content parsed by different `Document` instances (different files, or different
       chunks of one file) gets the same key. Every foreign key into it is correct immediately.
-      Any literal duplicate rows that result are safe to drop later without touching any other
-      table (see `cdm_data_loaders.pipelines.xml2db.compaction`).
+      Any literal duplicate rows that result are safe to drop without touching any other table
+      (see `cdm_data_loaders.readers.xml2db_merge.MergePreparer`).
     - Other tables keep a simple key namespaced by file/chunk.
 
     :param model: the `DataModel` `document` was parsed with.
@@ -416,6 +420,7 @@ def process_xml_file_with_xml2db(
     settings: Xml2DbSettings,
     model: DataModel,
     file_path: Path,
+    merge_preparer: "MergePreparer | None" = None,
 ) -> Generator[Any, Any]:
     """Parse a whole XML file with xml2db and yield pages of rows, one page per output table.
 
@@ -433,6 +438,10 @@ def process_xml_file_with_xml2db(
     :type model: DataModel
     :param file_path: path to the XML file to parse; the file can be gzipped or not.
     :type file_path: Path
+    :param merge_preparer: if supplied, rows already seen earlier in the run (by any file or chunk)
+        are dropped before being buffered, and pages are yielded with the merge hints for their table;
+        see `cdm_data_loaders.readers.xml2db_merge.MergePreparer`.
+    :type merge_preparer: MergePreparer | None
     :yield: pages of table-tagged rows.
 
     .. note::
@@ -449,14 +458,14 @@ def process_xml_file_with_xml2db(
         each "reused" row's key from its own content hash (see `_content_addressed_key`):
         identical content parsed by different chunks always gets the same key, so every foreign
         key into it is correct immediately. A chunked run may still contain more (never fewer)
-        literal rows than an unchunked run, until something collapses same-keyed duplicates
-        (e.g. `cdm_data_loaders.pipelines.xml2db.compaction.compact_reused_tables`, run
-        automatically by `run_xml2db_ingest_pipeline` when `Xml2DbSettings.compact_reused_tables`
-        is set). Many-to-many junction tables have no primary key of their own, so chunking never
-        duplicates them either way.
+        literal rows than an unchunked run, unless a `merge_preparer` shared by every call in the
+        run is supplied to drop the repeats. Many-to-many junction tables have no primary key of their
+        own, so chunking never duplicates them either way.
     """
     logger.info("Reading from %s", str(file_path))
-    buffer = DictBuffer(max_items=settings.buffer_size)
+    buffer = DictBuffer(
+        max_items=settings.buffer_size, table_hints=merge_preparer.table_hints if merge_preparer else None
+    )
 
     if settings.chunk_element_tag:
         n_rows = 0
@@ -467,6 +476,8 @@ def process_xml_file_with_xml2db(
             document = Document(model)
             document.parse_xml(BytesIO(chunk_bytes), skip_validation=settings.skip_xml_validation, iterparse=True)
             tables = flatten_xml2db_document(model, document, file_key=f"{file_path.name}:{n_chunks}")
+            if merge_preparer is not None:
+                tables = merge_preparer.prepare(tables)
             n_rows += sum(len(rows) for rows in tables.values())
             yield from buffer.add_items(tables)
 
@@ -485,6 +496,8 @@ def process_xml_file_with_xml2db(
     document.parse_xml(xml_source, skip_validation=settings.skip_xml_validation, iterparse=True)
 
     tables = flatten_xml2db_document(model, document, file_key=file_path.name)
+    if merge_preparer is not None:
+        tables = merge_preparer.prepare(tables)
     yield from buffer.add_items(tables)
     yield from buffer.flush()
 

@@ -202,8 +202,8 @@ def test_process_xml_file_with_xml2db_pass_reused_table_keys_collide_across_file
     PART_01 and PART_02; under the old file-namespaced key scheme these could never share a key
     even though their content is identical. Content-addressing fixes that: this is precisely what
     makes the rows produced from two different files (or, in chunked mode, two different chunks
-    of one file) safe to collapse later without touching any foreign key -- see
-    `cdm_data_loaders.pipelines.xml2db.compaction`.
+    of one file) safe to collapse without touching any foreign key -- see
+    `cdm_data_loaders.readers.xml2db_merge.MergePreparer`.
     """
     rows_1 = _rows_by_table(process_xml_file_with_xml2db(fake_xml2db_settings(), uniref_model, PART_01))
     rows_2 = _rows_by_table(process_xml_file_with_xml2db(fake_xml2db_settings(), uniref_model, PART_02))
@@ -448,8 +448,8 @@ def test_process_xml_file_with_xml2db_pass_chunked_reused_table_distinct_key_cou
 ) -> None:
     """Distinct keys for reused tables match exactly between chunked and unchunked parsing.
 
-    Literal row counts may still differ until the output is compacted (see
-    `cdm_data_loaders.pipelines.xml2db.compaction`), but the *set* of keys never does: identical
+    Literal row counts may still differ until the rows are deduplicated (see
+    `cdm_data_loaders.readers.xml2db_merge.MergePreparer`), but the *set* of keys never does: identical
     content always produces the same content-addressed key, in any `Document`. Since unchunked
     (whole-file, single-`Document`) parsing already fully deduplicates reused tables, this distinct
     key count is also that table's true minimal row count. This excludes the virtual root table --
@@ -479,8 +479,7 @@ def test_process_xml_file_with_xml2db_pass_chunked_root_table_keys_are_not_conte
     chunk's synthetic root only ever has *that chunk's* entries attached, every chunk's root row
     gets a different hash even though the underlying `releaseDate`/`version` values are identical
     -- so, unlike `property`/`representativeMember`, root rows never collide across chunks, and
-    `compact_reused_tables` deliberately leaves this table alone (see
-    `cdm_data_loaders.pipelines.xml2db.compaction.reused_table_names`).
+    `MergePreparer` deliberately leaves this table alone.
     """
     chunked_rows = _rows_by_table(
         process_xml_file_with_xml2db(

@@ -12,7 +12,6 @@ from cdm_data_loaders.core.fields import (
     BufferSize,
     DatasetName,
     FileGlob,
-    LoaderFileFormat,
     LogInterval,
     NonEmptyStr,
 )
@@ -36,12 +35,12 @@ class Xml2DbSettings(CtsSettings):
     ...<entry/></UniRef50>`), set `chunk_element_tag` to that repeated element's tag: the file will
     then be streamed and parsed in bounded-size pieces of `chunk_size` elements at a time instead
     of all at once. See `cdm_data_loaders.readers.xml2db_doc.iter_xml2db_chunk_fragments` for the
-    details and constraints of this mode. Note that xml2db's content-hash deduplication of
-    "reused" tables only happens within a single parsed document, so chunking (like parsing
-    multiple separate files) trades whole-run deduplication for bounded memory: rows in tables
-    shared across many elements (e.g. UniRef's `property` table) may be duplicated once per
-    document (file or chunk) they occur in, rather than collapsed into a single row.
-    `compact_reused_tables` cleans this up after the fact, regardless of chunking.
+    details and constraints of this mode.
+
+    Output is always written as iceberg tables, merged on each table's primary key. xml2db's own
+    content-hash deduplication of "reused" tables only happens within a single parsed document, so
+    the pipeline also drops rows already seen earlier in the run, across every file and chunk.
+    That bookkeeping uses memory proportional to the number of distinct rows in the run.
     """
 
     model_config = SettingsConfigDict(
@@ -77,19 +76,6 @@ class Xml2DbSettings(CtsSettings):
             ),
         ),
     ]
-    compact_reused_tables: Annotated[
-        bool,
-        Field(
-            default=True,
-            description=(
-                "After a run, deduplicate literal duplicate rows out of every xml2db 'reused' "
-                "table (see cdm_data_loaders.pipelines.xml2db.compaction for why parsing more "
-                "than one file and/or chunk can produce them, and why this is always a safe, "
-                "reference-preserving row removal). Only takes effect when use_destination is "
-                "'local_fs'; ignored otherwise."
-            ),
-        ),
-    ]
     dataset_name: DatasetName
     file_glob: Annotated[
         FileGlob,
@@ -98,7 +84,6 @@ class Xml2DbSettings(CtsSettings):
             description="Glob pattern for XML files inside settings.input_dir.",
         ),
     ]
-    loader_file_format: LoaderFileFormat
     log_interval: LogInterval
     short_name: Annotated[
         NonEmptyStr,

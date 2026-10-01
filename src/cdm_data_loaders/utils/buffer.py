@@ -29,6 +29,11 @@ type TableToSchemaMap = Annotated[
     dict[NonEmptyStr, pa.Schema], Field(min_length=1, description="Mapping of table names to schemas")
 ]
 
+type TableHints = Annotated[
+    dict[NonEmptyStr, dict[str, Any]],
+    Field(description="Keyword arguments for `dlt.mark.make_hints`, by table name"),
+]
+
 
 class BufferCore(BaseModel):
     """Accumulates rows per table and yields them as pages to dlt."""
@@ -39,6 +44,25 @@ class BufferCore(BaseModel):
     _buffers: Buffers = PrivateAttr(default_factory=dict)
 
     max_items: MaxItems = Field(default=DEFAULT_BUFFER_MAX_ITEMS)
+    table_hints: TableHints | None = Field(
+        default=None,
+        description="If set, pages for the named tables are yielded with these dlt hints, e.g. a primary key",
+    )
+
+    def _mark(self, rows: list[Any], table_name: str) -> DataItemWithMeta:
+        """Tag a page of rows with its table name, and the table's hints if it has any.
+
+        :param rows: the page of rows
+        :type  rows: list[Any]
+        :param table_name: name of the table the rows belong to
+        :type  table_name: str
+        :return: the rows, marked for dlt
+        :rtype: DataItemWithMeta
+        """
+        hints = (self.table_hints or {}).get(table_name)
+        if hints is None:
+            return dlt.mark.with_table_name(rows, table_name)
+        return dlt.mark.with_hints(rows, dlt.mark.make_hints(table_name=table_name, **hints))
 
     @model_validator(mode="after")
     def set_up_buffers(self) -> Self:
@@ -65,7 +89,7 @@ class BufferCore(BaseModel):
         """
         self._buffers[table_name].append(item_to_add)
         if len(self._buffers[table_name]) >= self.max_items:
-            yield dlt.mark.with_table_name(self._buffers[table_name], table_name)
+            yield self._mark(self._buffers[table_name], table_name)
             self._buffers[table_name] = []
 
     def _add_items(self, items_to_add: dict[str, list[Any]]) -> Generator[DataItemWithMeta, Any]:
@@ -81,14 +105,14 @@ class BufferCore(BaseModel):
                 continue
             self._buffers[table_name].extend(contents)
             if len(self._buffers[table_name]) >= self.max_items:
-                yield dlt.mark.with_table_name(self._buffers[table_name], table_name)
+                yield self._mark(self._buffers[table_name], table_name)
                 self._buffers[table_name] = []
 
     def flush(self) -> Generator[DataItemWithMeta, Any]:
         """Yield any remaining buffered rows as final pages and empty the buffers."""
         for table_name, rows in self._buffers.items():
             if rows:
-                yield dlt.mark.with_table_name(rows, table_name)
+                yield self._mark(rows, table_name)
                 self._buffers[table_name] = []
 
 

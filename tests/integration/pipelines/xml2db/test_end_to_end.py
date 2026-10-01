@@ -3,45 +3,65 @@
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from dlt.common.pipeline import LoadInfo
-from pandas import DataFrame
 
 from cdm_data_loaders.pipelines.xml2db.pipeline import cli, run_xml2db_ingest_pipeline
 from cdm_data_loaders.pipelines.xml2db.settings import PIPELINE_NAME, Xml2DbSettings
-from tests.integration.pipelines.conftest import DEFAULT_DLT_TABLES, SIMPLE_LIBRARY_XML
+from tests.integration.pipelines.conftest import SIMPLE_LIBRARY_XML
+from tests.integration.pipelines.xml2db.xml2db_reference_helpers import read_iceberg_tables
 
-EXPECTED_BOOK_COUNT = 3
+EXPECTED_BOOK_IDS = ["1", "2", "3"]
 EXPECTED_LIBRARY_ROOT_COUNT_TWO_FILES = 2
+LIBRARY_TABLES = {"library", "book", "library_book"}
+
+OVERLAPPING_LIBRARY_XML = """<?xml version="1.0"?>
+<library>
+    <book id="3"><title>The Tommyknockers</title></book>
+    <book id="4"><title>It</title></book>
+</library>
+"""
 
 
-def check_book_list_results(load_info: LoadInfo | None) -> tuple[DataFrame, DataFrame]:
-    """Check over the output of parsing SIMPLE_LIBRARY_XML: one root row, three book rows."""
+def read_library_tables(load_info: LoadInfo | None, output_dir: str) -> dict[str, list[dict[str, Any]]]:
+    """Check a library run succeeded and read back its iceberg tables."""
     assert load_info is not None
     assert load_info.has_failed_jobs is False
-    dataset = load_info.pipeline.dataset()
-    assert {"library", "book", "library_book", *DEFAULT_DLT_TABLES} == set(dataset.tables)
-    book_df = dataset.table("book").df()
-    library_df = dataset.table("library").df()
-    assert set(book_df.columns.tolist()) >= {"pk_book", "id", "title"}
-    return library_df, book_df
+    return read_iceberg_tables(Path(output_dir) / load_info.dataset_name)
+
+
+def check_book_list_results(load_info: LoadInfo | None, output_dir: str) -> dict[str, list[dict[str, Any]]]:
+    """Check over the output of parsing SIMPLE_LIBRARY_XML once: one root row, three books, three links."""
+    tables = read_library_tables(load_info, output_dir)
+    assert set(tables) == LIBRARY_TABLES
+    assert set(tables["book"][0]) >= {"pk_book", "id", "title"}
+    assert len(tables["library"]) == 1
+    assert sorted(row["id"] for row in tables["book"]) == EXPECTED_BOOK_IDS
+    assert sorted(row["title"] for row in tables["book"]) == ["The Shining", "The Stand", "The Tommyknockers"]
+    assert len(tables["library_book"]) == len(EXPECTED_BOOK_IDS)
+    return tables
+
+
+def write_library_file(settings: Xml2DbSettings, name: str, content: str) -> None:
+    """Write an XML file into the settings' input directory."""
+    input_dir = Path(settings.input_dir)
+    input_dir.mkdir(exist_ok=True)
+    (input_dir / name).write_text(content, encoding="utf-8")
 
 
 def test_run_xml2db_ingest_pipeline_pass_writes_expected_output(
     settings_factory: Callable[..., Xml2DbSettings],
 ) -> None:
-    """Running the pipeline loads one row per library root and one row per book."""
+    """Running the pipeline loads one row per library root and one row per book, as iceberg tables."""
     settings = settings_factory()
-    input_dir = Path(settings.input_dir)
-    input_dir.mkdir(exist_ok=True)
-    (input_dir / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+    write_library_file(settings, "library.xml", SIMPLE_LIBRARY_XML)
 
-    load_info = run_xml2db_ingest_pipeline(settings)
-    library_df, book_df = check_book_list_results(load_info)
-    assert len(library_df) == 1
-    assert sorted(book_df["id"].tolist()) == ["1", "2", "3"]
-    assert sorted(book_df["title"].tolist()) == ["The Shining", "The Stand", "The Tommyknockers"]
+    check_book_list_results(run_xml2db_ingest_pipeline(settings), settings.output_dir)
+
+    for table_name in LIBRARY_TABLES:
+        assert (Path(settings.output_dir) / settings.dataset_name / table_name / "metadata").is_dir()
 
 
 def test_run_xml2db_ingest_pipeline_pass_gzip_files_are_loaded(
@@ -50,23 +70,20 @@ def test_run_xml2db_ingest_pipeline_pass_gzip_files_are_loaded(
 ) -> None:
     """Gzip-compressed xml files matching the glob are decompressed and loaded.
 
-    Both files contain the same three books. `book` is a "reused" table, so post-load
-    compaction (on by default) collapses the two files' identical book rows down to one copy of
-    each -- unlike `library`, the schema's root table, which is exempt from content-addressing
-    (see `is_xml2db_content_addressed_table`) and keeps one row per source file regardless.
+    Both files contain the same three books. `book` is a content-addressed table, so the two
+    files' identical book rows are merged into one copy of each -- unlike `library`, the schema's
+    root table, which is not content-addressed (see `is_xml2db_content_addressed_table`) and
+    keeps one row per source file.
     """
     settings = settings_factory()
-    input_dir = Path(settings.input_dir)
-    input_dir.mkdir(exist_ok=True)
-    (input_dir / "plain.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
-    write_gzip_file(input_dir, "library.xml.gz", SIMPLE_LIBRARY_XML)
+    write_library_file(settings, "plain.xml", SIMPLE_LIBRARY_XML)
+    write_gzip_file(Path(settings.input_dir), "library.xml.gz", SIMPLE_LIBRARY_XML)
 
-    load_info = run_xml2db_ingest_pipeline(settings)
-    library_df, book_df = check_book_list_results(load_info)
-    # one root row from each of the two files: the root table is never compacted
-    assert len(library_df) == EXPECTED_LIBRARY_ROOT_COUNT_TWO_FILES
-    # the two files' identical books are compacted down to one copy of each
-    assert sorted(book_df["id"].tolist()) == ["1", "2", "3"]
+    tables = read_library_tables(run_xml2db_ingest_pipeline(settings), settings.output_dir)
+
+    assert len(tables["library"]) == EXPECTED_LIBRARY_ROOT_COUNT_TWO_FILES
+    assert sorted(row["id"] for row in tables["book"]) == EXPECTED_BOOK_IDS
+    assert len(tables["library_book"]) == len(EXPECTED_BOOK_IDS) * EXPECTED_LIBRARY_ROOT_COUNT_TWO_FILES
 
 
 def test_run_xml2db_ingest_pipeline_pass_no_matching_files_yields_no_data_table(
@@ -76,12 +93,9 @@ def test_run_xml2db_ingest_pipeline_pass_no_matching_files_yields_no_data_table(
     settings = settings_factory()
     Path(settings.input_dir).mkdir(exist_ok=True)
 
-    load_info = run_xml2db_ingest_pipeline(settings)
-    assert load_info is not None
-    assert load_info.has_failed_jobs is False
-    dataset = load_info.pipeline.dataset()
-    # only dlt's own metadata tables exist; the data tables are never created
-    assert set(dataset.tables) == DEFAULT_DLT_TABLES
+    tables = read_library_tables(run_xml2db_ingest_pipeline(settings), settings.output_dir)
+
+    assert tables == {}
 
 
 def test_run_xml2db_ingest_pipeline_pass_custom_short_name_used_for_root_table(
@@ -94,14 +108,47 @@ def test_run_xml2db_ingest_pipeline_pass_custom_short_name_used_for_root_table(
     not break a single-root schema.
     """
     settings = settings_factory(short_name="my_schema")
-    input_dir = Path(settings.input_dir)
-    input_dir.mkdir(exist_ok=True)
-    (input_dir / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+    write_library_file(settings, "library.xml", SIMPLE_LIBRARY_XML)
 
-    load_info = run_xml2db_ingest_pipeline(settings)
-    library_df, book_df = check_book_list_results(load_info)
-    assert len(library_df) == 1
-    assert sorted(book_df["id"].tolist()) == ["1", "2", "3"]
+    check_book_list_results(run_xml2db_ingest_pipeline(settings), settings.output_dir)
+
+
+def test_run_xml2db_ingest_pipeline_pass_rerun_into_same_dataset_adds_no_rows(
+    settings_factory: Callable[..., Xml2DbSettings],
+) -> None:
+    """Running the same input into the same dataset again leaves every table exactly as it was."""
+    settings = settings_factory()
+    write_library_file(settings, "library.xml", SIMPLE_LIBRARY_XML)
+
+    first = check_book_list_results(run_xml2db_ingest_pipeline(settings), settings.output_dir)
+    second = check_book_list_results(run_xml2db_ingest_pipeline(settings), settings.output_dir)
+
+    assert {name: sorted(rows, key=str) for name, rows in second.items()} == {
+        name: sorted(rows, key=str) for name, rows in first.items()
+    }
+
+
+def test_run_xml2db_ingest_pipeline_pass_later_run_merges_only_new_rows_into_existing_tables(
+    settings_factory: Callable[..., Xml2DbSettings],
+) -> None:
+    """A later run over a new file adds only the rows not already in the tables.
+
+    The new file repeats book 3 and adds book 4, so only book 4 is new. Its root row and the
+    links from its root are new too, because root keys are per source file.
+    """
+    settings = settings_factory()
+    write_library_file(settings, "library.xml", SIMPLE_LIBRARY_XML)
+    first = check_book_list_results(run_xml2db_ingest_pipeline(settings), settings.output_dir)
+
+    write_library_file(settings, "later.xml", OVERLAPPING_LIBRARY_XML)
+    second = read_library_tables(run_xml2db_ingest_pipeline(settings), settings.output_dir)
+
+    assert sorted(row["id"] for row in second["book"]) == [*EXPECTED_BOOK_IDS, "4"]
+    first_book_pks = {row["pk_book"] for row in first["book"]}
+    assert first_book_pks <= {row["pk_book"] for row in second["book"]}
+    assert len(second["library"]) == EXPECTED_LIBRARY_ROOT_COUNT_TWO_FILES
+    # one link per book per library file that the book appears in: 3 in the first file, 2 in the second
+    assert len(second["library_book"]) == len(EXPECTED_BOOK_IDS) + 2
 
 
 def test_cli_pass_runs_end_to_end_from_command_line_arguments(
@@ -140,7 +187,4 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     ]
     monkeypatch.setattr(sys, "argv", argv)
 
-    load_info = cli()
-    library_df, book_df = check_book_list_results(load_info)
-    assert len(library_df) == 1
-    assert sorted(book_df["id"].tolist()) == ["1", "2", "3"]
+    check_book_list_results(cli(), str(output_dir))

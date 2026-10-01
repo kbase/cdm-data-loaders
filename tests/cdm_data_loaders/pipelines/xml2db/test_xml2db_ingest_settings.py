@@ -20,7 +20,6 @@ MINIMAL_SETTINGS_KWARGS: dict[str, object] = {
     "buffer_size": 100,
     "log_interval": 1000,
     "dataset_name": "xml2db_test_dataset",
-    "loader_file_format": "parquet",
     "xsd_file": "uniref.xsd",
     "input_dir": "/input_dir",
     "output_dir": "/output_dir",
@@ -65,12 +64,11 @@ def settings_factory(tmp_path: Path, test_data_dir: Path) -> Callable[..., Xml2D
 
 
 def test_xml2db_ingest_settings_pass_defaults(settings_factory: Callable[..., Xml2DbSettings]) -> None:
-    """chunk_element_tag, xml2db_config_file default to None; chunk/compaction defaults are set."""
+    """chunk_element_tag, xml2db_config_file default to None; the other defaults are set."""
     settings = settings_factory()
     assert settings.chunk_element_tag is None
     assert settings.xml2db_config_file is None
     assert settings.chunk_size == DEFAULT_XML2DB_CHUNK_SIZE
-    assert settings.compact_reused_tables is True
     assert settings.skip_xml_validation is True
     assert settings.short_name == DEFAULT_XML2DB_SHORT_NAME
     assert settings.file_glob == DEFAULTS["file_glob"] or settings.file_glob == "*.xml*"
@@ -129,6 +127,19 @@ def test_xml2db_ingest_settings_fail_non_positive_log_interval(
     """log_interval must be a positive integer."""
     with pytest.raises(ValidationError):
         settings_factory(log_interval=0)
+
+
+@pytest.mark.parametrize(
+    ("removed_field", "value"),
+    [("loader_file_format", "parquet"), ("compact_reused_tables", True)],
+    ids=["loader_file_format", "compact_reused_tables"],
+)
+def test_xml2db_ingest_settings_fail_removed_field_rejected(
+    settings_factory: Callable[..., Xml2DbSettings], removed_field: str, value: object
+) -> None:
+    """Fields made obsolete by the iceberg output (always parquet, merged on write) raise ValidationError."""
+    with pytest.raises(ValidationError, match=removed_field):
+        settings_factory(**{removed_field: value})
 
 
 def test_xml2db_ingest_settings_fail_missing_dataset_name(

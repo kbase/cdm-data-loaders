@@ -1,16 +1,15 @@
-"""Unit tests for run_xml2db_ingest_pipeline, _read_items, _maybe_compact, and cli wiring."""
+"""Unit tests for run_xml2db_ingest_pipeline, _read_items, and cli wiring."""
 
 import gzip
 import sys
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import dlt
 import pendulum
 import pytest
-from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.extract import DltResource
 from xml2db import DataModel
@@ -19,6 +18,7 @@ import cdm_data_loaders.pipelines.xml2db.pipeline as xml2db_pipeline_module
 from cdm_data_loaders.pipelines.xml2db.pipeline import _read_items, cli, run_xml2db_ingest_pipeline
 from cdm_data_loaders.pipelines.xml2db.settings import PIPELINE_NAME, Xml2DbSettings
 from cdm_data_loaders.readers.xml2db_doc import build_xml2db_model
+from cdm_data_loaders.readers.xml2db_merge import MergePreparer
 
 SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
 <library>
@@ -92,7 +92,6 @@ def fake_settings(
         "buffer_size": 100,
         "log_interval": 1000,
         "dataset_name": "xml2db_test_dataset",
-        "loader_file_format": "parquet",
         "log_config_file": str(log_config_file),
         "input_dir": str(input_dir),
         "output_dir": str(output_dir),
@@ -153,15 +152,46 @@ def test_read_items_pass_gzip_files_are_decompressed(tmp_path: Path, library_mod
     assert len(book_rows) == 2  # noqa: PLR2004
 
 
+def test_read_items_pass_merge_preparer_drops_rows_repeated_across_files(
+    tmp_path: Path, library_model: DataModel
+) -> None:
+    """With a merge preparer, rows already seen in an earlier file are not yielded again."""
+    settings = fake_settings(tmp_path, tmp_path / "library.xsd")
+    file_items = []
+    for index in range(3):
+        xml_file = tmp_path / f"data_{index}.xml"
+        xml_file.write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+        file_items.append(make_file_item(xml_file))
+
+    items = list(_read_items(iter(file_items), settings, library_model, MergePreparer(library_model)))
+
+    book_rows = [row for item in items if item.meta.hints["table_name"] == "book" for row in item.data]
+    assert sorted(row["id"] for row in book_rows) == ["1", "2"]
+
+
+def test_read_items_pass_merge_preparer_attaches_merge_hints(tmp_path: Path, library_model: DataModel) -> None:
+    """With a merge preparer, every page carries insert-only merge hints keyed on its table's primary key."""
+    xml_file = tmp_path / "data.xml"
+    xml_file.write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+    settings = fake_settings(tmp_path, tmp_path / "library.xsd")
+
+    items = list(_read_items(iter([make_file_item(xml_file)]), settings, library_model, MergePreparer(library_model)))
+
+    hints_by_table = {item.meta.hints["table_name"]: item.meta.hints for item in items}
+    assert set(hints_by_table) == {"library", "book", "library_book"}
+    for table_name, hints in hints_by_table.items():
+        assert hints["primary_key"] == f"pk_{table_name}"
+        assert hints["write_disposition"] == {"disposition": "merge", "strategy": "insert-only"}
+
+
 # run_xml2db_ingest_pipeline
 
 
-@pytest.mark.parametrize("loader_file_format", ["jsonl", "parquet"])
 def test_run_xml2db_ingest_pipeline_pass_sets_core_run_pipeline_args_correctly(
-    tmp_path: Path, library_xsd: Path, loader_file_format: str
+    tmp_path: Path, library_xsd: Path
 ) -> None:
-    """run_xml2db_ingest_pipeline builds the reader and delegates to run_pipeline with correct args."""
-    settings = fake_settings(tmp_path, library_xsd, loader_file_format=loader_file_format)
+    """run_xml2db_ingest_pipeline builds the reader and delegates to run_pipeline, requesting iceberg tables."""
+    settings = fake_settings(tmp_path, library_xsd)
 
     with patch.object(xml2db_pipeline_module, "run_pipeline") as mock_run_pipeline:
         run_xml2db_ingest_pipeline(settings)
@@ -174,7 +204,7 @@ def test_run_xml2db_ingest_pipeline_pass_sets_core_run_pipeline_args_correctly(
         "pipeline_name": PIPELINE_NAME,
         "dataset_name": settings.dataset_name,
     }
-    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": loader_file_format}
+    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": "parquet", "table_format": "iceberg"}
     assert isinstance(kwargs["resource"], DltResource)
 
 
@@ -231,114 +261,6 @@ def test_run_xml2db_ingest_pipeline_pass_loads_model_config_from_xml2db_config_f
     mock_build.assert_called_once()
     _, kwargs = mock_build.call_args
     assert kwargs["model_config"] == {"record_hash_size": 16}
-
-
-# _maybe_compact
-
-
-def make_load_info(dataset_name: str, has_failed_jobs: bool = False) -> LoadInfo:
-    """Build a real LoadInfo-shaped object for _maybe_compact tests."""
-    load_info = MagicMock(spec=LoadInfo)
-    load_info.dataset_name = dataset_name
-    load_info.has_failed_jobs = has_failed_jobs
-    return load_info
-
-
-def test_maybe_compact_pass_runs_when_chunked_and_enabled(tmp_path: Path, library_model: DataModel) -> None:
-    """Compaction runs for a chunked, local_fs run with compact_reused_tables set."""
-    settings = fake_settings(tmp_path, tmp_path / "library.xsd", chunk_element_tag="book")
-    load_info = make_load_info(settings.dataset_name)
-
-    with patch.object(xml2db_pipeline_module, "compact_reused_tables") as mock_compact:
-        xml2db_pipeline_module._maybe_compact(settings, library_model, load_info)  # noqa: SLF001
-
-    mock_compact.assert_called_once()
-    args, _kwargs = mock_compact.call_args
-    assert args[0] == Path(settings.output_dir) / settings.dataset_name
-    assert args[1] is library_model
-    assert args[2] == "parquet"
-
-
-def test_maybe_compact_pass_runs_when_not_chunked_and_enabled(tmp_path: Path, library_model: DataModel) -> None:
-    """Compaction also runs for an unchunked, local_fs run with compact_reused_tables set.
-
-    A multi-file unchunked run can leave the same kind of literal duplicate rows behind as a
-    chunked one (one xml2db Document per file, same as one per chunk), so compaction is not
-    gated on chunk_element_tag being set.
-    """
-    settings = fake_settings(tmp_path, tmp_path / "library.xsd")
-    load_info = make_load_info(settings.dataset_name)
-
-    with patch.object(xml2db_pipeline_module, "compact_reused_tables") as mock_compact:
-        xml2db_pipeline_module._maybe_compact(settings, library_model, load_info)  # noqa: SLF001
-
-    mock_compact.assert_called_once()
-    args, _kwargs = mock_compact.call_args
-    assert args[0] == Path(settings.output_dir) / settings.dataset_name
-    assert args[1] is library_model
-    assert args[2] == "parquet"
-
-
-def test_maybe_compact_pass_skipped_when_compact_reused_tables_false(tmp_path: Path, library_model: DataModel) -> None:
-    """No compaction when compact_reused_tables is off, even for a chunked run."""
-    settings = fake_settings(tmp_path, tmp_path / "library.xsd", chunk_element_tag="book", compact_reused_tables=False)
-    load_info = make_load_info(settings.dataset_name)
-
-    with patch.object(xml2db_pipeline_module, "compact_reused_tables") as mock_compact:
-        xml2db_pipeline_module._maybe_compact(settings, library_model, load_info)  # noqa: SLF001
-
-    mock_compact.assert_not_called()
-
-
-def test_maybe_compact_pass_skipped_when_load_info_is_none(tmp_path: Path, library_model: DataModel) -> None:
-    """No compaction when the pipeline run failed to start (load_info is None)."""
-    settings = fake_settings(tmp_path, tmp_path / "library.xsd", chunk_element_tag="book")
-
-    with patch.object(xml2db_pipeline_module, "compact_reused_tables") as mock_compact:
-        xml2db_pipeline_module._maybe_compact(settings, library_model, None)  # noqa: SLF001
-
-    mock_compact.assert_not_called()
-
-
-def test_maybe_compact_pass_skipped_when_run_has_failed_jobs(tmp_path: Path, library_model: DataModel) -> None:
-    """No compaction when the load had failed jobs."""
-    settings = fake_settings(tmp_path, tmp_path / "library.xsd", chunk_element_tag="book")
-    load_info = make_load_info(settings.dataset_name, has_failed_jobs=True)
-
-    with patch.object(xml2db_pipeline_module, "compact_reused_tables") as mock_compact:
-        xml2db_pipeline_module._maybe_compact(settings, library_model, load_info)  # noqa: SLF001
-
-    mock_compact.assert_not_called()
-
-
-def test_maybe_compact_pass_skipped_for_non_local_fs_destination(tmp_path: Path, library_model: DataModel) -> None:
-    """Compaction is skipped with a warning for non-local_fs destinations."""
-    settings = fake_settings(
-        tmp_path,
-        tmp_path / "library.xsd",
-        chunk_element_tag="book",
-        output_dir="s3://some-bucket/out",
-        use_destination="s3",
-    )
-    load_info = make_load_info(settings.dataset_name)
-
-    with patch.object(xml2db_pipeline_module, "compact_reused_tables") as mock_compact:
-        xml2db_pipeline_module._maybe_compact(settings, library_model, load_info)  # noqa: SLF001
-
-    mock_compact.assert_not_called()
-
-
-def test_maybe_compact_pass_logs_when_duplicates_removed(
-    tmp_path: Path, library_model: DataModel, caplog: pytest.LogCaptureFixture
-) -> None:
-    """A non-empty compaction result is logged."""
-    settings = fake_settings(tmp_path, tmp_path / "library.xsd", chunk_element_tag="book")
-    load_info = make_load_info(settings.dataset_name)
-
-    with patch.object(xml2db_pipeline_module, "compact_reused_tables", return_value={"book": 3}):
-        xml2db_pipeline_module._maybe_compact(settings, library_model, load_info)  # noqa: SLF001
-
-    assert any("compaction" in record.message.lower() for record in caplog.records)
 
 
 # cli
