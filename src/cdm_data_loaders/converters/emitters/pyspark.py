@@ -2,13 +2,11 @@
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
 from decimal import Decimal
-from functools import cache
 from typing import Final
 
 from frozendict import frozendict
-from jsonschema import Draft7Validator, Draft202012Validator
+from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pyspark.sql.types import (
     ArrayType,
@@ -31,10 +29,11 @@ from pyspark.sql.types import (
 )
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.inference import decimal_places, json_type_from_enum
+from cdm_data_loaders.converters.core.inference import decimal_places, is_unconstrained_node, json_type_from_enum
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.ir_values import mutable_value
+from cdm_data_loaders.converters.core.metadata import DEFAULT_METADATA_KEYWORDS, ConversionContext
 
 logger = logging.getLogger(__name__)
 
@@ -42,37 +41,6 @@ INT32_MIN: Final = -2_147_483_648
 INT32_MAX: Final = 2_147_483_647
 INT32_WIDTH: Final = 32
 MAX_DECIMAL_PRECISION: Final = 38
-DEFAULT_METADATA_KEYWORDS: Final = frozenset({"title"})
-REF_AND_IDENTITY_KEYWORDS: Final = frozenset(
-    {"$anchor", "$defs", "$dynamicAnchor", "$dynamicRef", "$id", "$ref", "$schema", "$vocabulary", "definitions", "id"}
-)
-STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS: Final = frozenset(
-    {
-        "additionalItems",
-        "additionalProperties",
-        "allOf",
-        "anyOf",
-        "contains",
-        "contentSchema",
-        "dependencies",
-        "dependentRequired",
-        "dependentSchemas",
-        "else",
-        "if",
-        "items",
-        "not",
-        "oneOf",
-        "patternProperties",
-        "prefixItems",
-        "properties",
-        "propertyNames",
-        "required",
-        "then",
-        "type",
-        "unevaluatedItems",
-        "unevaluatedProperties",
-    }
-)
 DEFAULT_FORMAT_MAP: Final[frozendict[str, DataType]] = frozendict(
     {
         "date": DateType(),
@@ -97,43 +65,6 @@ DEFAULT_FORMAT_MAP: Final[frozendict[str, DataType]] = frozendict(
         ),
     }
 )
-
-
-def get_known_jsonschema_keywords(validator_cls: type) -> set[str]:
-    """Combine draft-specific assertions with the Draft-07 annotation vocabulary."""
-    keywords = set(Draft7Validator.META_SCHEMA["properties"]) | set(validator_cls.VALIDATORS)
-    return keywords - REF_AND_IDENTITY_KEYWORDS
-
-
-@cache
-def metadata_keys_for(validator_cls: type) -> frozenset[str]:
-    """Find nonstructural field metadata keywords for a validator class."""
-    return frozenset(get_known_jsonschema_keywords(validator_cls) - STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS)
-
-
-@dataclass(frozen=True)
-class ConversionContext:
-    """Draft-specific metadata selection for a single emission."""
-
-    validator_cls: type
-    extra_metadata_keywords: frozenset[str] = frozenset()
-
-    @property
-    def metadata_keys(self) -> frozenset[str]:
-        """Return the active draft's eligible metadata keywords."""
-        return metadata_keys_for(self.validator_cls)
-
-    @property
-    def allowed_extra_metadata_keywords(self) -> frozenset[str]:
-        """Select standard keywords and explicitly requested extension namespaces."""
-        return frozenset(
-            key for key in self.extra_metadata_keywords if key in self.metadata_keys or key.startswith("x-")
-        )
-
-    @property
-    def invalid_extra_metadata_keywords(self) -> frozenset[str]:
-        """Return ignored structural, identity and unknown keywords."""
-        return self.extra_metadata_keywords - self.allowed_extra_metadata_keywords
 
 
 def merge_format_map(value: object) -> object:
@@ -352,7 +283,7 @@ class PySparkEmitter(BaseModel):
                 "homogeneous, so only the first item's type is used as the array's element type."
             )
             element = element[0] if element else None
-        if element is None or _empty_array_element(element):
+        if element is None or is_unconstrained_node(element):
             element_type = StringType()
         else:
             element_type = self.emit_node(element, ctx, depth + 1)
@@ -422,22 +353,3 @@ def infer_type_from_enum(values: list[object]) -> DataType:
         "number": DoubleType(),
         "string": StringType(),
     }[json_type_from_enum(values)]
-
-
-def _empty_array_element(node: TypedNode) -> bool:
-    """Identify false or empty JSON item schemas that use the string fallback."""
-    if node.type == "never":
-        return True
-    return (
-        node.type == "unknown"
-        and node.declared_type is None
-        and node.inferred_type is None
-        and not node.source_keywords
-        and not node.constraints
-        and not node.annotations
-        and not node.extensions
-        and node.one_of is None
-        and node.any_of is None
-        and not node.schema_keywords
-        and not node.schema_maps
-    )

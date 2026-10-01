@@ -29,11 +29,8 @@ from pyspark.sql.types import (
 
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
 from cdm_data_loaders.converters.core.inference import decimal_places, infer_implicit_type
-from cdm_data_loaders.converters.emitters.pyspark import (
-    get_known_jsonschema_keywords,
-    infer_type_from_enum,
-    metadata_keys_for,
-)
+from cdm_data_loaders.converters.core.metadata import get_known_jsonschema_keywords, metadata_keys_for
+from cdm_data_loaders.converters.emitters.pyspark import infer_type_from_enum
 from cdm_data_loaders.converters.jsonschema_to_pyspark import (
     ConversionContext,
     InvalidJSONSchemaError,

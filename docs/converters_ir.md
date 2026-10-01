@@ -22,8 +22,11 @@ core/                          shared, target-independent foundation
                                Extensions, DEFAULT_EXTENSIONS, validated_extensions
   guards.py                    require_schema_keyword, require_object_root,
                                reject_unresolved_references
-  inference.py                 infer_implicit_type, json_type_from_enum,
+  inference.py                 infer_implicit_type, json_type_from_enum, is_unconstrained_node,
                                decimal_places, decimal_pattern, resolve_union_type
+  metadata.py                  ConversionContext, metadata_keys_for, get_known_jsonschema_keywords,
+                               DEFAULT_METADATA_KEYWORDS, REF_AND_IDENTITY_KEYWORDS,
+                               STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS
   io.py                        load_schema_text, load_schema_file
   paths.py                     NestedPathError, set_nested
 readers/                       source -> IR
@@ -33,10 +36,12 @@ readers/                       source -> IR
 emitters/                      IR -> target
   json_schema.py               JsonSchemaEmitter
   dlt.py                       DltEmitter
-  pyspark.py                   PySparkEmitter, ConversionContext, format-map helpers
+  pyspark.py                   PySparkEmitter, format-map helpers
+  pyarrow.py                   PyArrowEmitter, format-map helpers
   linkml.py                    LinkMLEmitter
 jsonschema_to_dlt.py           facade: JSON Schema -> dlt stored schema
 jsonschema_to_pyspark.py       facade: JSON Schema -> PySpark StructType
+jsonschema_to_pyarrow.py       facade: JSON Schema -> PyArrow Schema / empty Table
 dlt_to_jsonschema.py           facade: dlt -> JSON Schema documents
 pyiceberg_to_jsonschema.py     functions over IcebergReader + JsonSchemaEmitter
 pyiceberg_to_linkml.py         functions over IcebergReader + LinkMLEmitter
@@ -65,7 +70,9 @@ normalization lives outside the package in `cdm_data_loaders.utils.dlt.dlt_norma
 | `readers/iceberg.py`      | `IcebergReader`, including `read_node` and `read_field`; `iceberg_value`                                           |
 | `emitters/json_schema.py` | `JsonSchemaEmitter`, including `emit_node` and `emit_field`                                                        |
 | `emitters/dlt.py`         | `DltEmitter`                                                                                                       |
-| `emitters/pyspark.py`     | `PySparkEmitter`, `ConversionContext`, metadata helpers, `merge_format_map`                                        |
+| `core/metadata.py`        | `ConversionContext`, `metadata_keys_for`, `get_known_jsonschema_keywords`, metadata keyword constants              |
+| `emitters/pyspark.py`     | `PySparkEmitter`, `merge_format_map`                                                                               |
+| `emitters/pyarrow.py`     | `PyArrowEmitter`, `merge_format_map`, `infer_type_from_enum`                                                       |
 | `emitters/linkml.py`      | `LinkMLEmitter`, including `emit_node` and `emit_field`                                                            |
 
 The IR, value helpers and extension registry import no dlt, PyIceberg or PySpark modules.
@@ -97,6 +104,28 @@ Failed tables are logged and skipped without adding partial definitions.
 For in-memory grouping, `table_to_linkml(table, identifier, schema=destination)`
 appends to an existing `SchemaDefinition` and returns it. `LinkMLEmitter.emit_into()`
 provides the same operation for typed schema documents.
+
+### PyArrow Output
+
+`PyArrowEmitter.emit()` returns a `pyarrow.Schema`; `emit_table()` returns an empty `pyarrow.Table`.
+`JSONSchemaToPyArrow` is the facade: `convert()` and `convert_from_string/file()` return the schema,
+`convert_to_table()` returns the empty table. The root must resolve to a struct.
+
+JSON dispatch follows the PySpark emitter: declared or inferred types precede combiners, `oneOf`
+then `anyOf` approximate their first branch, and `treat_unknown_as_string` controls the string
+fallback. Differences from Spark:
+
+- Integers: `int32` when both bounds fit, otherwise `int64`.
+- Numbers: `decimal128(38, scale)` from `multipleOf`, otherwise `float64`.
+- `date` is `date32`; `date-time` is `timestamp[us, tz=UTC]`; `time` stays a string.
+- Arrays are `list<item>` and dynamic objects are `map<string, value>`. List elements and map values
+  are nullable, except where a typed source (Iceberg, dlt) declares them required.
+- Typed sources use their hints: bit widths select `int8` to `int64`, `float` is `float32`,
+  decimals above precision 38 (and dlt `wei`) are `decimal256`, `timestamp` precision selects the
+  unit (0: `s`, 1-3: `ms`, 4-6: `us`, 7-9: `ns`), `time` is `time64[us]`, and `fixed` is
+  `fixed_size_binary(length)`. A missing timestamp timezone is treated as UTC.
+- Field metadata uses Arrow string pairs: `jsonschema` (JSON object of selected keywords, decimals
+  encoded as strings), `comment` (description) and `original_union` (JSON array).
 
 ## Models
 
@@ -333,6 +362,7 @@ iceberg_value(value: object) -> Value
 JsonSchemaEmitter.emit_node(node: TypedNode) -> dict[str, Any] | bool
 JsonSchemaEmitter.emit_field(field: Field) -> dict[str, Any] | bool
 PySparkEmitter.emit_node(node: TypedNode, ctx: ConversionContext | None = None) -> DataType
+PyArrowEmitter.emit_node(node: TypedNode, ctx: ConversionContext | None = None) -> pa.DataType
 
 class Reader[Input, Output](Protocol):
     def read(self, source: Input) -> Output: ...

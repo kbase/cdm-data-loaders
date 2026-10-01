@@ -80,6 +80,31 @@ def json_type_from_enum(values: list[Any]) -> Literal["boolean", "integer", "num
     return "string"
 
 
+def is_unconstrained_node(node: TypedNode) -> bool:
+    """Identify false or empty JSON schemas that carry no type information.
+
+    :param node: the schema node to inspect
+    :type node: TypedNode
+    :return: True for a ``never`` node or an unknown node with no keywords, metadata or combiners
+    :rtype: bool
+    """
+    if node.type == "never":
+        return True
+    return (
+        node.type == "unknown"
+        and node.declared_type is None
+        and node.inferred_type is None
+        and not node.source_keywords
+        and not node.constraints
+        and not node.annotations
+        and not node.extensions
+        and node.one_of is None
+        and node.any_of is None
+        and not node.schema_keywords
+        and not node.schema_maps
+    )
+
+
 def decimal_places(value: float | Decimal) -> int:
     """Count fractional digits in the decimal representation; non-finite values return zero."""
     exponent = Decimal(str(value)).as_tuple().exponent
