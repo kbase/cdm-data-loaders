@@ -123,11 +123,12 @@ def test_jsonlines_ingest_pass_duplicates_blanks_and_final_line_preserved(
 def test_jsonlines_ingest_pass_multiple_entities_and_file_glob(
     *,
     run_reference_pipeline: Callable[..., Any],
+    pipeline_kind: str,
     tmp_path: Path,
     loader_file_format: str,
     reference_registry_factory: Callable[[list[str]], dict[str, str]],
 ) -> None:
-    """Subdirectories route to distinct tables and a custom file glob excludes malformed files."""
+    """Matching files route to configured tables and a custom glob excludes malformed files."""
     input_dir = tmp_path / "entities"
     expected = {"dataset": "GCA_000003115.1", "other": "GCF_002271065.1"}
     for table_name, accession in expected.items():
@@ -144,9 +145,14 @@ def test_jsonlines_ingest_pass_multiple_entities_and_file_glob(
         **reference_registry_factory(list(expected)),
     )
     tables = read_pipeline_tables(output_dir / load_info.dataset_name, loader_file_format)
-    assert {name for name in tables if not name.startswith("_dlt")} == set(expected)
-    for table_name, accession in expected.items():
-        assert [row["accession"] for row in tables[table_name]] == [accession]
+    expected_tables = (
+        {"dataset": sorted(expected.values())}
+        if pipeline_kind == "extract"
+        else {table_name: [accession] for table_name, accession in expected.items()}
+    )
+    assert {
+        name: sorted(row["accession"] for row in rows) for name, rows in tables.items() if not name.startswith("_dlt")
+    } == expected_tables
 
 
 @pytest.mark.parametrize(
@@ -260,7 +266,7 @@ def test_jsonlines_cli_pass_reference_dataset_loads(
     log_config.write_text('{"version": 1}', encoding="utf-8")
     output_dir = tmp_path / "cli_output"
     registry_flag, registry_module = {
-        "extract": (None, None),
+        "extract": ("table-name", "dataset"),
         "extract_validate": ("entity-models-module", "tests.integration.pipelines.jsonlines.dataset_report_models"),
         "extract_jsonschema_validate": (
             "schema-files-module",

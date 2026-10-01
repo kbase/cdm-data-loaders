@@ -10,11 +10,10 @@ from typing import Any
 import pytest
 
 from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
-    PIPELINE_NAME,
     cli,
     run_jsonlines_ingest_pipeline,
 )
-from cdm_data_loaders.pipelines.jsonlines.settings import JsonlJsonschemaIngestSettings
+from cdm_data_loaders.pipelines.jsonlines.settings import JSONSCHEMA_PIPELINE_NAME, JsonlJsonschemaIngestSettings
 from tests.integration.pipelines.helpers import LOADER_FILE_FORMATS, read_data_rows
 from tests.integration.pipelines.pipeline_helpers import (
     parse_json_string,
@@ -70,7 +69,7 @@ def test_run_jsonlines_ingest_pipeline_pass_persists_valid_and_rejected_rows(
 
     assert load_info is not None
     assert not load_info.has_failed_jobs
-    assert load_info.pipeline.pipeline_name == PIPELINE_NAME
+    assert load_info.pipeline.pipeline_name == JSONSCHEMA_PIPELINE_NAME
     assert load_info.dataset_name == "schema_test"
     tables = read_data_tables(settings, load_info.dataset_name)
     assert set(tables) == {"widget", "widget_rejected", "gadget"}
@@ -174,13 +173,13 @@ def test_cli_pass_loads_selected_entity(
     loader_file_format: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The real CTS CLI accepts registry/table shortcuts and the requested file format."""
+    """The real CTS CLI accepts a registry shortcut, table selection, and the requested file format."""
     settings = schema_settings_factory(input_dir=str(schema_input_dir), loader_file_format=loader_file_format)
     monkeypatch.setattr(
         sys,
         "argv",
         [
-            PIPELINE_NAME,
+            JSONSCHEMA_PIPELINE_NAME,
             "--input-dir",
             str(settings.input_dir),
             "--output-dir",
@@ -197,7 +196,7 @@ def test_cli_pass_loads_selected_entity(
             "schema_cli",
             "-m",
             settings.schema_files_module,
-            "-t",
+            "--table-names",
             "gadget",
         ],
     )

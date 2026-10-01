@@ -22,7 +22,7 @@ from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline imp
     run_jsonlines_ingest_with_validation_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import (
-    JsonlIngestSettings,
+    JsonlExtractSettings,
     JsonlJsonschemaIngestSettings,
     JsonlPydanticIngestSettings,
 )
@@ -50,7 +50,7 @@ def run_reference_pipeline(
     """Run the selected JSONL pipeline on a chunk dir with per-run isolated output directories."""
     run_counter = count()
     settings_cls, registry_kwarg, dataset_prefix, file_glob = {
-        "extract": (JsonlIngestSettings, {}, "jsonl_extract_run", "**/*.jsonl*"),
+        "extract": (JsonlExtractSettings, {"table_name": "dataset"}, "jsonl_extract_run", "**/*.jsonl*"),
         "extract_validate": (
             JsonlPydanticIngestSettings,
             {"entity_models_module": "tests.integration.pipelines.jsonlines.dataset_report_models"},

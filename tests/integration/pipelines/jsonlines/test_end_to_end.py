@@ -4,7 +4,6 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-import dlt
 import pytest
 
 from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
@@ -12,7 +11,7 @@ from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline imp
     load_entity_models,
     run_jsonlines_ingest_with_validation_pipeline,
 )
-from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
+from cdm_data_loaders.pipelines.jsonlines.settings import PYDANTIC_PIPELINE_NAME, JsonlPydanticIngestSettings
 
 
 def test_run_jsonlines_ingest_pipeline_pass_writes_expected_parquet(
@@ -67,7 +66,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     output_dir.mkdir()
 
     argv = [
-        "jsonlines_ingest",
+        PYDANTIC_PIPELINE_NAME,
         "--input-dir",
         scenario_input_dir("happy_path"),
         "--output-dir",
@@ -80,11 +79,15 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
         entity_models_module,
         "--dataset-name",
         "some_cool_dataset",
+        "--use-output-dir-for-pipeline-metadata",
+        "true",
     ]
     monkeypatch.setattr(sys, "argv", argv)
 
-    cli()
+    load_info = cli()
 
-    pipeline = dlt.pipeline(pipeline_name="jsonlines_ingest")
-    dataset = pipeline.dataset()
+    assert load_info is not None
+    assert not load_info.has_failed_jobs
+    assert load_info.pipeline.pipeline_name == PYDANTIC_PIPELINE_NAME
+    dataset = load_info.pipeline.dataset()
     assert sorted(dataset.widget.df()["widget_id"].tolist()) == ["a", "b", "c"]

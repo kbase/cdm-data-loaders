@@ -133,17 +133,20 @@ def test_xml_ingest_pass_output_identical_across_buffer_sizes(
     WORKER_CONFIGS,
     ids=[f"extract_{e}-normalize_{n}-load_{l}" for e, n, l in WORKER_CONFIGS],  # noqa: E741
 )
+@pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS, ids=str)
 def test_xml_ingest_pass_no_data_lost_across_worker_configs(
+    *,
     run_xmltodict_pipeline: Callable[..., Any],
     sorted_reference_xml_entries: list[str],
     extract_workers: int,
     normalize_workers: int,
     load_workers: int,
+    loader_file_format: str,
 ) -> None:
     """No data is lost regardless of how the job is split across extract/normalize/load workers."""
     load_info_and_dir = {}
     for worker_key in ("baseline", "current"):
-        with dlt.config.values(
+        worker_config = (
             {}
             if worker_key == "baseline"
             else {
@@ -151,11 +154,14 @@ def test_xml_ingest_pass_no_data_lost_across_worker_configs(
                 "normalize.workers": normalize_workers,
                 "load.workers": load_workers,
             }
-        ):
-            load_info_and_dir[worker_key] = run_and_read(run_xmltodict_pipeline, "chunk_5_el")
+        )
+        with dlt.config.values(worker_config):
+            load_info_and_dir[worker_key] = run_and_read(
+                run_xmltodict_pipeline, "chunk_5_el", loader_file_format=loader_file_format
+            )
 
     assert_datasets_equal(load_info_and_dir)
-    assert_dataset_matches_reference(load_info_and_dir, sorted_reference_xml_entries)
+    assert_dataset_matches_reference(load_info_and_dir, sorted_reference_xml_entries, loader_file_format)
 
 
 @pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS)

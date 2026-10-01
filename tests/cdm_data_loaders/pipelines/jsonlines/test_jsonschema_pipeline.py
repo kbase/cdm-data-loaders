@@ -287,7 +287,7 @@ def test_settings_pass_table_selection(
     """JSON Schema settings retain the shared table selection contract."""
     settings = schema_settings_factory(table_names=table_names)
     assert settings.table_names == expected
-    assert settings.model_config["cli_prog_name"] == "jsonschema_validator"
+    assert settings.model_config["cli_prog_name"] == "jsonlines_ingest_jsonschema_validator"
 
 
 @pytest.mark.parametrize("buffer_size", [0, -1], ids=["zero", "negative"])
