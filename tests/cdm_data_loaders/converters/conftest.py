@@ -15,6 +15,7 @@ from pyiceberg.types import LongType, NestedField, StringType
 
 from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema
 from cdm_data_loaders.converters.jsonschema_to_dlt import JSONSchemaToDlt
+from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrow
 from cdm_data_loaders.converters.jsonschema_to_pyspark import ConversionContext, JSONSchemaToPySpark
 
 JSON_SCHEMA_KEYWORDS: Final = frozenset(
@@ -61,6 +62,12 @@ def nested_json_converter() -> JSONSchemaToDlt:
 def jsonschema_to_pyspark_converter() -> JSONSchemaToPySpark:
     """A JSONSchemaToPySpark instance configured with all default settings."""
     return JSONSchemaToPySpark()
+
+
+@pytest.fixture
+def jsonschema_to_pyarrow_converter() -> JSONSchemaToPyArrow:
+    """A JSONSchemaToPyArrow instance configured with all default settings."""
+    return JSONSchemaToPyArrow()
 
 
 @pytest.fixture

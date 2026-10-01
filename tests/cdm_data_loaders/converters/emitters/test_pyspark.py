@@ -36,16 +36,18 @@ from pyspark.sql.types import (
 
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, ExtensionSpec
 from cdm_data_loaders.converters.core.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.emitters.pyspark import (
-    DEFAULT_FORMAT_MAP,
+from cdm_data_loaders.converters.core.metadata import (
     REF_AND_IDENTITY_KEYWORDS,
     STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS,
     ConversionContext,
+    get_known_jsonschema_keywords,
+    metadata_keys_for,
+)
+from cdm_data_loaders.converters.emitters.pyspark import (
+    DEFAULT_FORMAT_MAP,
     PySparkEmitter,
     PySparkEmitterError,
-    get_known_jsonschema_keywords,
     infer_type_from_enum,
-    metadata_keys_for,
 )
 from cdm_data_loaders.converters.readers.dlt import DltReader
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader

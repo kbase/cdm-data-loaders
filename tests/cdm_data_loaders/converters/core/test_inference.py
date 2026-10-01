@@ -13,10 +13,38 @@ from cdm_data_loaders.converters.core.inference import (
     decimal_pattern,
     decimal_places,
     infer_implicit_type,
+    is_unconstrained_node,
     json_type_from_enum,
     resolve_union_type,
 )
 from cdm_data_loaders.converters.core.ir import TypedNode
+
+
+@pytest.mark.parametrize(
+    ("node", "expected"),
+    [
+        pytest.param(TypedNode(type="never"), True, id="never"),
+        pytest.param(TypedNode(type="unknown"), True, id="bare-unknown"),
+        pytest.param(TypedNode(type="any"), False, id="any"),
+        pytest.param(TypedNode(type="string"), False, id="string"),
+        pytest.param(TypedNode(type="unknown", declared_type="alien"), False, id="declared-type"),
+        pytest.param(TypedNode(type="unknown", inferred_type="string"), False, id="inferred-type"),
+        pytest.param(TypedNode(type="unknown", source_keywords=("type",)), False, id="source-keyword"),
+        pytest.param(TypedNode(type="unknown", constraints={"const": 1}), False, id="constraint"),
+        pytest.param(TypedNode(type="unknown", annotations={"description": "d"}), False, id="annotation"),
+        pytest.param(TypedNode(type="unknown", one_of=()), False, id="empty-one-of"),
+        pytest.param(TypedNode(type="unknown", any_of=()), False, id="empty-any-of"),
+        pytest.param(
+            TypedNode(type="unknown", schema_keywords={"not": TypedNode(type="never")}), False, id="schema-keyword"
+        ),
+        pytest.param(
+            TypedNode(type="unknown", schema_maps={"$defs": {"a": TypedNode(type="string")}}), False, id="schema-map"
+        ),
+    ],
+)
+def test_is_unconstrained_node_pass(node: TypedNode, expected: bool) -> None:
+    """Only a never node or a keyword-free unknown node counts as unconstrained."""
+    assert is_unconstrained_node(node) is expected
 
 
 @pytest.mark.parametrize(
