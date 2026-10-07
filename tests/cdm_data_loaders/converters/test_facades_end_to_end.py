@@ -15,15 +15,11 @@ from pyiceberg.schema import Schema
 from pyiceberg.types import DecimalType, NestedField
 from pyspark.sql.types import StringType
 
-from cdm_data_loaders.converters import jsonschema_to_dlt as dlt_facade
 from cdm_data_loaders.converters import jsonschema_to_pyspark as spark_facade
-from cdm_data_loaders.converters import pyiceberg_to_jsonschema as iceberg_facade
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, ExtensionSpec
 from cdm_data_loaders.converters.core.ir import Field, TypedNode
 from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema, DltToJSONSchemaError
-from cdm_data_loaders.converters.emitters import dlt as dlt_emitter
-from cdm_data_loaders.converters.emitters import json_schema as json_emitter
 from cdm_data_loaders.converters.emitters import pyspark as spark_emitter
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter

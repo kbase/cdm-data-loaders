@@ -1,23 +1,27 @@
 """Utilities for interacting with Spark."""
 
 from logging import Logger, getLogger
+from typing import Final
 
-from pyspark.sql import DataFrame, DataFrameWriter, SparkSession
+from pyspark.sql import DataFrame, DataFrameWriterV2, SparkSession
 
 logger: Logger = getLogger(__name__)
 
 
-APPEND = "append"
-OVERWRITE = "overwrite"
-ERROR = "error"  # default
-ERROR_IF_EXISTS = "errorifexists"
-IGNORE = "ignore"
+APPEND: Final[str] = "append"
+CREATE: Final[str] = "create"
+CREATE_OR_REPLACE: Final[str] = "createOrReplace"
+REPLACE: Final[str] = "replace"
 
-WRITE_MODE = [APPEND, OVERWRITE, ERROR, ERROR_IF_EXISTS, IGNORE]
+# requires argument
+OVERWRITE: Final[str] = "overwrite"
 
-DEFAULT_APP_NAME = "cdm_data_loader"
-DEFAULT_NAMESPACE = "default"
-DEFAULT_WRITE_MODE = APPEND
+WRITE_MODE_V2 = [APPEND, CREATE, CREATE_OR_REPLACE, REPLACE, OVERWRITE]
+
+
+DEFAULT_APP_NAME: Final[str] = "cdm_data_loader"
+DEFAULT_NAMESPACE: Final[str] = "default"
+DEFAULT_WRITE_MODE: Final[str] = APPEND
 
 
 def get_spark(
@@ -72,81 +76,20 @@ def set_up_workspace(
     return (spark, catalog_db)
 
 
-def get_existing_database_save_dir(spark: SparkSession, catalog_db: str) -> str | None:
-    """Check whether a table is already registered in the Hive metastore, and if so, where data is saved.
+def write_table_v2(sdf: DataFrame, catalog_db: str, table: str, mode: str = DEFAULT_WRITE_MODE) -> None:
+    """Write data as database tables and register it in the catalog.
 
-    :param spark: spark session
-    :type spark: SparkSession
-    :param catalog_db: catalog_db name
-    :type catalog_db: str
-    :raises ValueError: if the table exists but the SQL query to retrieve the description returns unexpected results
-    :return: path to the existing table data or None
-    :rtype: str | None
-    """
-    if not spark.catalog.databaseExists(catalog_db):
-        return None
-
-    # namespace query
-    ns_location_rows = spark.sql(f"DESCRIBE NAMESPACE EXTENDED {catalog_db}").collect()
-    # we want info_value
-    ns_locations = [r["info_value"] for r in ns_location_rows if r["info_name"].lower() == "location"]
-
-    if len(ns_locations) == 1:
-        return ns_locations[0]
-
-    # there should only be one 'location' entry, so more than one indicates some sort of dodgy data.
-    msg = f"Expected 1 location row in {catalog_db} description; got {len(ns_locations)} rows."
-    logger.error(msg)
-    logger.error(ns_locations)
-    raise ValueError(msg)
-
-
-def get_existing_table_save_dir(spark: SparkSession, catalog_db: str, table: str | None = None) -> str | None:
-    """Check whether a table is already registered in the Hive metastore, and if so, where data is saved.
-
-    :param spark: spark session
-    :type spark: SparkSession
-    :param catalog_db_table: catalog_db.table name
-    :type catalog_db_table: str
-    :raises ValueError: if the table exists but the SQL query to retrieve the description returns unexpected results
-    :return: path to the existing table data or None
-    :rtype: str | None
-    """
-    catalog_db_table = f"{catalog_db}.{table}"
-    if not spark.catalog.tableExists(catalog_db_table):
-        return None
-
-    table_location_rows = spark.sql(f"DESCRIBE EXTENDED {catalog_db_table}").where('col_name = "Location"').collect()
-    table_locations = [r["data_type"] for r in table_location_rows if r["col_name"].lower() == "location"]
-    if len(table_locations) == 1:
-        return table_locations[0]
-
-    # there should only be one 'location' entry, so more than one indicates some sort of dodgy data.
-    msg = f"Expected 1 location row in {catalog_db_table} description; got {len(table_locations)} rows."
-    logger.error(msg)
-    logger.error(table_locations)
-    raise ValueError(msg)
-
-
-def write_table(
-    spark: SparkSession, sdf: DataFrame, catalog_db: str, table: str, mode: str = DEFAULT_WRITE_MODE
-) -> None:
-    """
-    Write data as database tables and register it in the catalog.
-
-    :param spark: spark sesh
-    :type spark: SparkSession
     :param sdf: data frame to be written
     :type sdf: DataFrame
     :param catalog_db: catalog database name assigned by `set_up_workspace` or `create_namespace_if_not_exists`
     :type catalog_db: str
     :param table: table name
     :type table: str
-    :param mode: spark write mode; one of the modes specified in WRITE_MODE
+    :param mode: spark write mode; one of the modes specified in WRITE_MODE_V2
     :type mode: str
     """
     catalog_db_table = f"{catalog_db}.{table}"
-    if mode not in WRITE_MODE:
+    if mode not in WRITE_MODE_V2:
         msg = f"Invalid mode supplied for writing table {catalog_db_table}: {mode}"
         logger.error(msg)
         raise ValueError(msg)
@@ -155,66 +98,20 @@ def write_table(
         logger.warning("No data to write to %s", catalog_db_table)
         return
 
-    # this should have been set using create_namespace_if_not_exists
-    base_path = get_existing_database_save_dir(spark, catalog_db)
-    if not base_path:
-        msg = "Could not find an appropriate base directory for saving data. Was the workspace initialised using set_up_workspace?"
-        logger.error(msg)
-        raise RuntimeError(msg)
-
-    # check whether the table already exists and get the path if so
-    existing_path = get_existing_table_save_dir(spark, catalog_db, table)
-
-    if existing_path and mode in (IGNORE, ERROR, ERROR_IF_EXISTS):
-        # TODO: check if data must be in the dir or whether the table just needs to be registered
-        logger.warning(
-            "Database table %s already exists and writer is set to %s mode, so no data would be written. Aborting.",
-            catalog_db_table,
-            mode,
-        )
-        return
-
-    merge_or_overwrite_schema = "mergeSchema" if mode == APPEND else "overwriteSchema"
-    # use to(schema) to ensure that the schema is saved with the dataframe
-    writer = sdf.to(sdf.schema).write.format("delta").mode(mode).option(merge_or_overwrite_schema, "true")
+    df_writer: DataFrameWriterV2 = sdf.to(sdf.schema).writeTo(catalog_db_table)
 
     logger.info("Writing table %s in mode %s (rows=%d)", catalog_db_table, mode, sdf.count())
     logger.debug(sdf.printSchema())
     logger.debug(sdf.show(10, truncate=False))
 
-    # use the standard spark saveAsTable, which will save to the appropriate subdirectory under the
-    # designated namespace dir
+    # set any other stuff
+
+    # run the fn - append/create/replace
     try:
-        writer.saveAsTable(catalog_db_table)
+        getattr(df_writer, mode)()
         logger.info("Saved managed table %s (rows=%d)", catalog_db_table, sdf.count())
     except Exception:
         logger.exception("Error writing managed table %s", catalog_db_table)
         raise
 
-
-def write_table_to_file(
-    spark: SparkSession, sdf: DataFrame, catalog_db: str, table: str, writer: DataFrameWriter, data_dir: str
-) -> None:
-    """Write database tables to a specific location."""
-    catalog_db_table = f"{catalog_db}.{table}"
-    try:
-        writer.save(data_dir)
-        # Register/create an external table using LOCATION
-        spark.sql(f"CREATE TABLE IF NOT EXISTS {catalog_db_table} USING DELTA LOCATION '{data_dir}'")
-        logger.info("Saved external table %s (rows=%d) to %s", catalog_db_table, sdf.count(), data_dir)
-    except Exception:
-        logger.exception("Error writing external table %s", catalog_db_table)
-        raise
-
-
-def preview_or_skip(spark: SparkSession, catalog_db: str, table: str, limit: int = 20) -> None:
-    """
-    Preview table if it exists.
-    """
-    catalog_db_table = f"{catalog_db}.{table}"
-    if not spark.catalog.tableExists(catalog_db_table):
-        logger.info("Table %s not found. Skipping preview.", catalog_db_table)
-        return
-
-    logger.info("Preview for %s:", catalog_db_table)
-    spark.sql(f"SELECT * FROM {catalog_db_table} LIMIT {limit}").show(truncate=False)
+    return

@@ -13,7 +13,6 @@ from cdm_data_loaders.core.fields import (
     BUFFER_SIZE,
     DEFAULTS,
     DLT_DEV_MODE,
-    FILE_GLOB,
     INPUT_DIR,
     LOG_CONFIG_FILE,
     LOG_INTERVAL,

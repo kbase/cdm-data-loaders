@@ -9,7 +9,7 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Final
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
 import dlt
 import pytest
@@ -19,12 +19,10 @@ from pydantic_settings import SettingsError
 from requests import RequestException
 
 from cdm_data_loaders.core.destination import PIPELINE_METADATA_NOT_LOCAL
-from cdm_data_loaders.core.fields import JSONL, LOCAL_FS
 from cdm_data_loaders.core.settings import CtsSettings, InputOutputSettings, LoggerSettings
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import (
     DISABLE_COMPRESSION_ENV_VAR,
-    LOAD_INFO_TABLE_NAME,
     NO_MESSAGE,
     UNRESOLVED_OUTPUT_DIR,
     WEBHOOK_NOT_CONFIGURED,
@@ -38,8 +36,6 @@ from cdm_data_loaders.pipelines.core import (
 )
 from tests.cdm_data_loaders.pipelines.conftest import (
     DLT_CONFIG,
-    HOOK_ENV_VAR,
-    HOOK_PART_ENV_VARS,
 )
 
 CORE_LOGGER: Final[str] = core.__name__
@@ -291,7 +287,7 @@ def test_compression_disabled_active_restores_on_error(previous: str | None, mon
     if previous is not None:
         monkeypatch.setenv(DISABLE_COMPRESSION_ENV_VAR, previous)
     with pytest.raises(RuntimeError, match="^boom$"), compression_disabled(active=True):
-        raise RuntimeError("boom")  # noqa: EM101, TRY003
+        raise RuntimeError("boom")  # noqa: EM101
     assert os.environ.get(DISABLE_COMPRESSION_ENV_VAR) == previous
 
 

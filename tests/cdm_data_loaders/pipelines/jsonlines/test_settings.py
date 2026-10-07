@@ -1,7 +1,6 @@
 """Tests for JsonlPydanticIngestSettings field validation and defaults."""
 
 from collections.abc import Callable
-from typing import Any
 
 import pytest
 from pydantic import ValidationError

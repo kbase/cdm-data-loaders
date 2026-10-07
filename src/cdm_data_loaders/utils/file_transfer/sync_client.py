@@ -49,8 +49,7 @@ def get_httpx_client() -> httpx.Client:
 
 
 class FileDownloader:
-    """
-    Synchronous downloader interface.
+    """Synchronous downloader interface.
     """
 
     RETRYABLE_EXCEPTIONS = (
