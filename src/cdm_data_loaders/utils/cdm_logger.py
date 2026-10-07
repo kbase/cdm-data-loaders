@@ -1,5 +1,4 @@
-"""Provides structured logging with contextual metadata for CDM data import pipelines.
-"""
+"""Provides structured logging with contextual metadata for CDM data import pipelines."""
 
 import json
 import logging

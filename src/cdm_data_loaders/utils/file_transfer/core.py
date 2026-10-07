@@ -48,8 +48,7 @@ RETRY_DEFAULTS = frozendict(
 
 
 class DownloadCore:
-    """HTTP file downloader with retries and checksum testing.
-    """
+    """HTTP file downloader with retries and checksum testing."""
 
     RETRYABLE_EXCEPTIONS = (
         httpx.TimeoutException,

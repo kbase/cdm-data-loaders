@@ -71,8 +71,7 @@ def safe_list(x) -> list[Any]:
 
 
 def parse_properties(dbref: Element | None, ns: dict[str, str]) -> dict[str, list[str]]:
-    """Extract key/value pairs from <property type="..." value="..."> blocks.
-    """
+    """Extract key/value pairs from <property type="..." value="..."> blocks."""
     if dbref is None:
         return {}
     props = {}
@@ -111,6 +110,5 @@ def parse_db_references(elem: Element, ns: dict[str, str], pub_types=("PubMed", 
 
 
 def clean_dict(d: dict[str, Any]) -> dict[str, Any]:
-    """Remove keys whose value is None or empty list.
-    """
+    """Remove keys whose value is None or empty list."""
     return {k: v for k, v in d.items() if v not in (None, [], {})}

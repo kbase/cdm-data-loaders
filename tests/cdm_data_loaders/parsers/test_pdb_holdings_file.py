@@ -1,5 +1,4 @@
-"""Tests of the PDB holdings file parser.
-"""
+"""Tests of the PDB holdings file parser."""
 
 import json
 from pathlib import Path

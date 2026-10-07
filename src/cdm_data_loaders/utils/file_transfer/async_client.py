@@ -49,8 +49,7 @@ def get_async_httpx_client() -> httpx.AsyncClient:
 
 
 class AsyncFileDownloader:
-    """Asynchronous downloader interface.
-    """
+    """Asynchronous downloader interface."""
 
     RETRYABLE_EXCEPTIONS = (
         httpx.TimeoutException,
