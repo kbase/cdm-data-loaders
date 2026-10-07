@@ -91,10 +91,12 @@ is the Pydantic model used to validate that table's records:
 from datetime import date
 from pydantic import BaseModel
 
+
 class Widget(BaseModel):
     widget_id: str
     count: int
     collected: date | None = None
+
 
 ENTITY_MODELS = {"widget": Widget}
 ```
