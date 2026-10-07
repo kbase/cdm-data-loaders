@@ -8,7 +8,6 @@ import pytest
 
 from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
     cli,
-    load_entity_models,
     run_jsonlines_ingest_with_validation_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import PYDANTIC_PIPELINE_NAME, JsonlPydanticIngestSettings
@@ -38,18 +37,6 @@ def test_run_jsonlines_ingest_pipeline_fail_unknown_table_name_raises(
 
     with pytest.raises(ValueError, match="Unknown table name"):
         run_jsonlines_ingest_with_validation_pipeline(settings)
-
-
-def test_run_jsonlines_ingest_pipeline_pass_table_names_none_processes_every_registered_table(
-    settings_factory: Callable[..., JsonlPydanticIngestSettings],
-) -> None:
-    """table_names=None resolves to every entity in entity_models_module."""
-    settings = settings_factory()
-
-    entity_models = load_entity_models(settings.entity_models_module)
-    resolved = settings.table_names or sorted(entity_models)
-
-    assert resolved == ["widget"]
 
 
 def test_cli_pass_runs_end_to_end_from_command_line_arguments(

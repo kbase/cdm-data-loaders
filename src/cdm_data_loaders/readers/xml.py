@@ -1,28 +1,27 @@
 """Common reusable XML pipeline elements for the xmltodict-based pipelines."""
 
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
+import dlt
 import xmltodict
+from dlt.common.storages.fsspec_filesystem import FileItemDict
+from dlt.extract import DltResource
 from dlt.extract.items import DataItemWithMeta
 from lxml.etree import Element, iterparse, tostring
 
-from cdm_data_loaders.core.settings import BatchedFileInputSettings
+from cdm_data_loaders.core.fields import DEFAULT_XML_FILE_GLOB
+from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.pipelines.core import filesystem_resource
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
-from cdm_data_loaders.utils.batcher import get_file_batches
 from cdm_data_loaders.utils.buffer import DictBuffer, ListBuffer
 from cdm_data_loaders.utils.gz import open_maybe_gzip
 
 logger: Logger = getLogger(__name__)
 
-DEFAULT_XMLTODICT_ARGS = {"attr_prefix": "_"}
-
-type XmlToDictValue = str | dict[str, "XmlToDictValue"] | list["XmlToDictValue"] | None
-type XmlToDictResult = DataItemWithMeta | BaseException | None
-
-XMLTODICT_QUEUE_POLL_SECONDS = 0.1
+DEFAULT_XMLTODICT_ARGS: dict[str, str | bool | int | None] = {"attr_prefix": "_"}
 
 
 def parse_head_matter(file_path: str | Path) -> dict[str, str]:
@@ -82,8 +81,8 @@ def stream_xml_file(file_path: str | Path, element_with_ns: str) -> Generator[El
             elem.clear()
 
 
-def _log_interval_progress(n_entries: int, file_path: Path, log_interval: int) -> None:
-    """Log processed-entry counts every log_interval elements, including a final count."""
+def _log_interval_progress(n_entries: int, log_interval: int) -> None:
+    """Log the processed-entry count every log_interval elements."""
     if (n_entries + 1) % log_interval == 0:
         logger.debug("Processed %d entries", n_entries + 1)
 
@@ -104,7 +103,7 @@ def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: Path) -> Ge
     :param settings: pipeline config, including xml_tag, table_name, and buffer_size
     :type settings: XmlToDictSettings
     :param file_path: file path, as a string
-    :type file_item: FileItemDict
+    :type file_path: Path
     :yield: pages of dictionary items
     :rtype: Generator[DataItemWithMeta]
     """
@@ -119,14 +118,14 @@ def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: Path) -> Ge
                 # remove the xmlns declarations
                 parsed_element[k] = {kv: val for kv, val in v.items() if not kv.startswith("_xmlns")}
             yield from buffer.add_item(parsed_element)
-        _log_interval_progress(n_entries, file_path, settings.log_interval)
+        _log_interval_progress(n_entries, settings.log_interval)
 
     _log_interval_final(n_entries, file_path, settings.log_interval)
     yield from buffer.flush()
 
 
 def process_xml_file(
-    settings: BatchedFileInputSettings,
+    settings: CtsSettings,
     xml_tag: str,
     parse_fn: Callable,
     file_path: Path,
@@ -136,8 +135,8 @@ def process_xml_file(
     This processor is expected to return a dictionary of table names and lists of rows, unlike the
     xmltodict parser, which creates a single dictionary for each element.
 
-    :param settings: pipeline config with input_dir and start_at
-    :type  settings: BatchedFileInputSettings
+    :param settings: pipeline config with input_dir and buffer_size
+    :type  settings: CtsSettings
     :param xml_tag: XML element tag to stream
     :type  xml_tag: str
     :param parse_fn: callable(element, timestamp, file_path) -> dict[str, rows]
@@ -154,31 +153,71 @@ def process_xml_file(
         parsed_element = parse_fn(entry=element, file_path=file_path)
         yield from buffer.add_items(parsed_element)
 
-        _log_interval_progress(n_entries, file_path, settings.log_interval)
+        _log_interval_progress(n_entries, settings.log_interval)
 
     _log_interval_final(n_entries, file_path, settings.log_interval)
     yield from buffer.flush()
 
 
-def process_xml_file_batches(
-    settings: BatchedFileInputSettings,
+def process_xml_file_items(
+    items: Iterable[FileItemDict],
+    settings: CtsSettings,
     xml_tag: str,
     parse_fn: Callable,
 ) -> Generator[DataItemWithMeta, Any]:
-    """Generate a list of XML files to process using the NumericFileSequenceBatcher.
+    """Process each file item emitted by the dlt filesystem source.
 
-    :param settings: pipeline config with input_dir and start_at
-    :type settings: BatchedFileInputSettings
+    Each file is passed to the parser as `settings.input_dir` joined to the item's relative path,
+    so recorded source file names do not depend on the absolute location of the input directory.
+
+    :param items: file items to read
+    :type  items: Iterable[FileItemDict]
+    :param settings: pipeline config with input_dir, buffer_size and log_interval
+    :type  settings: CtsSettings
     :param xml_tag: XML element tag to stream
-    :type xml_tag: str
+    :type  xml_tag: str
     :param parse_fn: function for parsing the XML
-    :type parse_fn: Callable
+    :type  parse_fn: Callable
+    :yield: table-tagged rows
+    :rtype: Generator[DataItemWithMeta, Any]
     """
-    for files in get_file_batches(settings):
-        for file_path in files:
-            yield from process_xml_file(
-                settings=settings,
-                xml_tag=xml_tag,
-                parse_fn=parse_fn,
-                file_path=file_path,
-            )
+    for file_item in items:
+        yield from process_xml_file(
+            settings=settings,
+            xml_tag=xml_tag,
+            parse_fn=parse_fn,
+            file_path=Path(settings.input_dir) / file_item["relative_path"],
+        )
+
+
+def build_xml_file_resource(
+    settings: CtsSettings,
+    xml_tag: str,
+    parse_fn: Callable,
+    resource_name: str,
+) -> DltResource:
+    """Build a dlt resource that parses the XML files in `settings.input_dir`.
+
+    Files are read using the dlt filesystem source.
+
+    :param settings: pipeline config with input_dir, buffer_size and log_interval
+    :type  settings: CtsSettings
+    :param xml_tag: XML element tag to stream
+    :type  xml_tag: str
+    :param parse_fn: function for parsing the XML
+    :type  parse_fn: Callable
+    :param resource_name: name of the resulting dlt resource
+    :type  resource_name: str
+    :return: resource yielding table-tagged rows
+    :rtype: DltResource
+    """
+    files = filesystem_resource(bucket_url=settings.input_dir, file_glob=DEFAULT_XML_FILE_GLOB)
+    resource = dlt.transformer(
+        process_xml_file_items,
+        data_from=files,
+        name=resource_name,
+        file_format="parquet",
+        parallelized=True,
+    )
+    resource.bind(settings, xml_tag, parse_fn)
+    return resource

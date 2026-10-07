@@ -17,7 +17,7 @@ from cdm_data_loaders.core.fields import (
     NonEmptyStr,
     OutputDir,
 )
-from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, LoggerSettings
+from cdm_data_loaders.core.settings import LoggerSettings, default_settings_with_shortcuts
 
 logger: Logger = getLogger(__name__)
 
@@ -27,14 +27,8 @@ PIPELINE_NAME: Final[str] = "iceberg_catalog_converter"
 class IcebergToJsonSchemaSettings(LoggerSettings):
     """Settings for generating a set of JSONSchemas from an Iceberg data catalog."""
 
-    model_config = SettingsConfigDict(
-        **DEFAULT_SETTINGS_CONFIG_DICT,
-        cli_prog_name=PIPELINE_NAME,
-        cli_shortcuts={
-            **CLI_SHORTCUTS,
-            OUTPUT_DIR.replace("_", "-"): "o",
-            "catalog": "c",
-        },
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
+        cli_prog_name=PIPELINE_NAME, cli_shortcuts={OUTPUT_DIR: "o", "catalog": "c", "group_by_namespace": "g"}
     )
 
     catalog: Annotated[NonEmptyStr, Field(description="Name of the catalog to retrieve schemas from")]

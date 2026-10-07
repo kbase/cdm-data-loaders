@@ -14,6 +14,7 @@ from dlt.common.pipeline import LoadInfo
 from dlt.destinations import filesystem
 
 from cdm_data_loaders.core.fields import PARQUET, LoaderFileFormatEnum
+from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from tests.integration.pipelines.pipeline_helpers import (
     reconstruct_entries,
     strip_metadata_columns,
@@ -49,7 +50,7 @@ def read_pipeline_tables(output_dir: Path, output_format: str | None = None) -> 
         if not json_file.is_file():
             continue
         # ignore metadata dirs
-        if json_file.parent.name.startswith("_dlt"):
+        if is_metadata_table(json_file.parent.name):
             continue
         # Detect gzip by magic bytes rather than relying on the extension,
         # in case a .json file is actually gzipped or vice versa.
@@ -108,7 +109,7 @@ def read_data_rows(dataset_dir: Path, file_format: str | None = None) -> dict[st
     return {
         name: [strip_metadata_columns(row) for row in rows]
         for name, rows in tables.items()
-        if not name.startswith("_dlt")
+        if not is_metadata_table(name)
     }
 
 
@@ -136,7 +137,7 @@ def extract_table_data(dataset: dlt.Dataset, table_name: str) -> list[str]:
 
 def is_metadata_table(table_name: str) -> bool:
     """Return whether a table contains dlt pipeline metadata rather than loaded records."""
-    return table_name.startswith("_dlt")
+    return table_name.startswith("_dlt") or table_name == LOAD_INFO_TABLE_NAME
 
 
 def assert_datasets_equal(

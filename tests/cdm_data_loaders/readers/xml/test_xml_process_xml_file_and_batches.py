@@ -1,4 +1,4 @@
-"""Tests for `process_xml_file`, `process_xml_file_batches`, and `process_xml_file_to_dict` from cdm_data_loaders.readers.xml."""
+"""Tests for `process_xml_file`, `process_xml_file_items`, `build_xml_file_resource`, and `process_xml_file_to_dict` from cdm_data_loaders.readers.xml."""
 
 import gzip
 import logging
@@ -9,18 +9,21 @@ from unittest.mock import MagicMock
 
 import pytest
 import xmltodict
+from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.extract.items import DataItemWithMeta, TableNameMeta
+from dlt.sources.filesystem import filesystem
 from lxml.etree import Element, XMLSyntaxError, tostring
 
 import cdm_data_loaders.readers.xml as xml_module
 import cdm_data_loaders.utils.buffer as buffer_module
-from cdm_data_loaders.core.fields import BUFFER_SIZE, DEFAULTS, LOG_INTERVAL
-from cdm_data_loaders.core.settings import BatchedFileInputSettings
+from cdm_data_loaders.core.fields import BUFFER_SIZE, DEFAULT_XML_FILE_GLOB, DEFAULTS, LOG_INTERVAL
+from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.readers.xml import (
     DEFAULT_XMLTODICT_ARGS,
+    build_xml_file_resource,
     process_xml_file,
-    process_xml_file_batches,
+    process_xml_file_items,
     process_xml_file_to_dict,
 )
 
@@ -28,9 +31,8 @@ ParseFn = Callable[..., dict[str, list[dict[str, Any]]]]
 
 UNIPROT_NS: Final[str] = "http://uniprot.org/uniprot"
 
-# Arbitrary non-default values used to prove settings are forwarded to process_xml_file.
+# Arbitrary non-default value used to prove settings are forwarded to process_xml_file.
 CUSTOM_LOG_INTERVAL: Final[int] = 7
-CUSTOM_BATCH_LOG_INTERVAL: Final[int] = 50
 
 PEOPLE_XML_2: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
 <people>
@@ -211,17 +213,20 @@ def _table_and_data(items: Iterable[DataItemWithMeta]) -> list[tuple[str, Any]]:
 def fake_settings(
     buffer_size: int = DEFAULTS[BUFFER_SIZE],
     log_interval: int = DEFAULTS[LOG_INTERVAL],
-    settings_class: type = BatchedFileInputSettings,
-) -> BatchedFileInputSettings | XmlToDictSettings:
-    """Build a MagicMock stand-in for BatchedFileInputSettings, XmlToDictSettings, etc.
+    settings_class: type = CtsSettings,
+    input_dir: str | Path = ".",
+) -> CtsSettings | XmlToDictSettings:
+    """Build a MagicMock stand-in for CtsSettings, XmlToDictSettings, etc.
 
     ``process_xml_file`` reads ``buffer_size`` and ``log_interval`` off the settings
     object, so these are exposed as real integers (rather than nested mocks) to make
-    the arithmetic in the function under test behave correctly.
+    the arithmetic in the function under test behave correctly. ``process_xml_file_items``
+    also reads ``input_dir``.
     """
     settings = MagicMock(spec=settings_class)
     settings.buffer_size = buffer_size
     settings.log_interval = log_interval
+    settings.input_dir = str(input_dir)
     return settings
 
 
@@ -274,7 +279,7 @@ def test_process_xml_file_pass_buffer_size_controls_batching(
     """Verify rows are yielded in batches of at most `buffer_size`, with a final partial batch.
 
     ``buffer_size`` is now supplied via the settings object and constrained to be a
-    positive integer by ``BatchedFileInputSettings``.
+    positive integer by ``CtsSettings``.
     """
     file_path = _write_xml(tmp_path, "five.xml", PEOPLE_XML_5)
 
@@ -391,7 +396,7 @@ def test_process_xml_file_pass_log_interval_boundary(
     """Verify the exact entry counts logged at each interim checkpoint and in the trailing summary, not just their number.
 
     ``log_interval`` is supplied via the settings object and constrained to be a
-    positive integer by ``BatchedFileInputSettings``.
+    positive integer by ``CtsSettings``.
     """
     caplog.set_level(logging.DEBUG)
     file_path = _write_xml(tmp_path, "five.xml", PEOPLE_XML_5)
@@ -466,7 +471,7 @@ def test_process_xml_file_to_dict_pass_matches_xmltodict_reference(tmp_path: Pat
     xml_tag = f"{{{UNIPROT_NS}}}entry"
 
     raw_entries = [
-        xmltodict.parse(tostring(entry), **DEFAULT_XMLTODICT_ARGS)["entry"]
+        xmltodict.parse(tostring(entry), **DEFAULT_XMLTODICT_ARGS)["entry"]  # pyright: ignore[reportArgumentType]
         for entry in xml_module.stream_xml_file(file_path, xml_tag)
     ]
     # sanity check that the fixture actually exercises xmlns stripping, so a no-op filter
@@ -730,149 +735,95 @@ def test_process_xml_file_to_dict_pass_force_list_shapes_children_by_schema_occu
     assert items == [("entry", [{"entry": expected_entry}])]
 
 
-"""process_xml_file_batches"""
+"""process_xml_file_items"""
 
 
-def test_process_xml_file_batches_pass_single_batch_single_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Verify a single batch containing one file is processed identically to calling process_xml_file directly."""
-    file_path = _write_xml(tmp_path, "two.xml", PEOPLE_XML_2)
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[file_path]]))
-
-    items = _table_and_data(process_xml_file_batches(fake_settings(), "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
-    ids = [row["id"] for _, rows in items for row in rows]
-    assert ids == ["1", "2"]
+def _file_items(directory: Path) -> list[FileItemDict]:
+    """Collect the file items emitted by the dlt filesystem source for XML files in a directory, in name order."""
+    items = list(filesystem(bucket_url=str(directory), file_glob=DEFAULT_XML_FILE_GLOB))
+    assert all(isinstance(item, FileItemDict) for item in items)
+    return sorted(items, key=lambda item: item["file_name"])
 
 
-def test_process_xml_file_batches_pass_multiple_batches_preserve_order(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Verify files across multiple batches are processed in batch order, then file order, within each."""
-    file_a = _write_xml(tmp_path, "a.xml", PEOPLE_XML_2)
-    file_b = _write_xml(tmp_path, "b.xml", PEOPLE_XML_5)
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[file_a], [file_b]]))
+def test_process_xml_file_items_pass_multiple_files_preserve_order(tmp_path: Path) -> None:
+    """Verify files are processed in the order they are supplied, including gzipped files."""
+    file_a = _write_xml(tmp_path, "a_00001.xml", PEOPLE_XML_2)
+    file_b = _write_xml(tmp_path, "b_00002.xml.gz", PEOPLE_XML_5, gzip_compress=True)
 
-    items = _table_and_data(process_xml_file_batches(fake_settings(), "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
+    items = _table_and_data(
+        process_xml_file_items(
+            _file_items(tmp_path),
+            fake_settings(input_dir=tmp_path),  # pyright: ignore[reportArgumentType]
+            "person",
+            parse_person_entry,
+        )
+    )
+
     sources = [row["source_file"] for _, rows in items for row in rows]
     assert sources == [str(file_a)] * 2 + [str(file_b)] * 5
 
 
-def test_process_xml_file_batches_pass_empty_batches(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify a get_file_batches iterable with no batches produces no output items."""
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([]))
-    items = list(process_xml_file_batches(fake_settings(), "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
-    assert items == []
-
-
-def test_process_xml_file_batches_pass_batch_with_empty_file_list(
+def test_process_xml_file_items_pass_file_path_is_input_dir_joined_to_relative_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify an empty file list within a batch is skipped gracefully and later batches still process."""
-    file_path = _write_xml(tmp_path, "two.xml", PEOPLE_XML_2)
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[], [file_path]]))
-
-    items = _table_and_data(process_xml_file_batches(fake_settings(), "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
-    ids = [row["id"] for _, rows in items for row in rows]
-    assert ids == ["1", "2"]
-
-
-@pytest.mark.parametrize("buffer_size", [1, 2, 50])
-def test_process_xml_file_batches_pass_settings_forwarded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, buffer_size: int
-) -> None:
-    """Verify the settings object (carrying buffer_size/log_interval) is forwarded to process_xml_file."""
-    file_path = _write_xml(tmp_path, "two.xml", PEOPLE_XML_2)
-    settings = fake_settings(buffer_size=buffer_size, log_interval=CUSTOM_LOG_INTERVAL)
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[file_path]]))
-    spy = MagicMock(wraps=xml_module.process_xml_file)
-    monkeypatch.setattr(xml_module, "process_xml_file", spy)
-
-    list(process_xml_file_batches(settings, "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
-
-    spy.assert_called_once()
-    forwarded_settings = spy.call_args.kwargs.get("settings")
-    assert forwarded_settings is not None
-    assert forwarded_settings is settings
-    assert forwarded_settings.log_interval == CUSTOM_LOG_INTERVAL
-    assert forwarded_settings.buffer_size == buffer_size
-
-
-def test_process_xml_file_batches_pass_default_settings_forwarded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Verify the default buffer_size/log_interval on the settings object reach process_xml_file."""
-    file_path = _write_xml(tmp_path, "two.xml", PEOPLE_XML_2)
-    settings = fake_settings()
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[file_path]]))
-    spy = MagicMock(wraps=xml_module.process_xml_file)
-    monkeypatch.setattr(xml_module, "process_xml_file", spy)
-
-    list(process_xml_file_batches(settings, "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
-
-    forwarded_settings = spy.call_args.kwargs.get("settings")
-    assert forwarded_settings is not None
-    assert forwarded_settings is settings
-    assert forwarded_settings.log_interval == DEFAULTS[LOG_INTERVAL]
-    assert forwarded_settings.buffer_size == DEFAULTS[BUFFER_SIZE]
-
-
-def test_process_xml_file_batches_pass_process_xml_file_not_called_for_empty_batches(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify process_xml_file is never invoked for empty file-list batches, and invoked exactly once for the real file."""
-    file_path = Path("only_file.xml")
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[], [file_path], []]))
+    """Verify the path given to the parser is input_dir plus the file's path relative to the bucket."""
+    sub_dir = tmp_path / "sub"
+    sub_dir.mkdir()
+    _write_xml(sub_dir, "nested_00001.xml", PEOPLE_XML_2)
+    items = list(filesystem(bucket_url=str(tmp_path), file_glob="**/*.xml"))
     process_file_mock = MagicMock(side_effect=lambda *_, **__: iter([]))
     monkeypatch.setattr(xml_module, "process_xml_file", process_file_mock)
 
-    list(process_xml_file_batches(fake_settings(), "tag", MagicMock()))  # pyright: ignore[reportArgumentType]
+    list(process_xml_file_items(items, fake_settings(input_dir="relative_dir"), "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
 
     process_file_mock.assert_called_once()
-    assert process_file_mock.call_args.kwargs.get("file_path") == file_path
+    assert process_file_mock.call_args.kwargs["file_path"] == Path("relative_dir") / "sub" / "nested_00001.xml"
 
 
-def test_process_xml_file_batches_fail_missing_file_mid_batch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify a missing file later in a batch raises FileNotFoundError after earlier files were fully processed."""
-    good_path = _write_xml(tmp_path, "good.xml", PEOPLE_XML_2)
-    missing_path = tmp_path / "missing.xml"
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[good_path, missing_path]]))
+def test_process_xml_file_items_pass_no_items_yields_nothing() -> None:
+    """Verify an empty iterable of file items produces no output."""
+    assert list(process_xml_file_items([], fake_settings(), "person", parse_person_entry)) == []  # pyright: ignore[reportArgumentType]
+
+
+@pytest.mark.parametrize("buffer_size", [1, 2, 50])
+def test_process_xml_file_items_pass_settings_forwarded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, buffer_size: int
+) -> None:
+    """Verify the settings object (carrying buffer_size/log_interval) and file path reach process_xml_file."""
+    file_path = _write_xml(tmp_path, "two_00001.xml", PEOPLE_XML_2)
+    settings = fake_settings(buffer_size=buffer_size, log_interval=CUSTOM_LOG_INTERVAL, input_dir=tmp_path)
+    spy = MagicMock(wraps=xml_module.process_xml_file)
+    monkeypatch.setattr(xml_module, "process_xml_file", spy)
+
+    list(process_xml_file_items(_file_items(tmp_path), settings, "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
+
+    spy.assert_called_once_with(
+        settings=settings, xml_tag="person", parse_fn=parse_person_entry, file_path=Path(str(file_path))
+    )
+    assert spy.call_args.kwargs["settings"].buffer_size == buffer_size
+    assert spy.call_args.kwargs["settings"].log_interval == CUSTOM_LOG_INTERVAL
+
+
+def test_process_xml_file_items_fail_missing_file_mid_iteration(tmp_path: Path) -> None:
+    """Verify a missing file raises FileNotFoundError after earlier files were fully processed."""
+    good_path = _write_xml(tmp_path, "a_00001.xml", PEOPLE_XML_2)
+    items = _file_items(tmp_path)
+    missing_item = FileItemDict({**items[0], "relative_path": "missing_00002.xml"})
 
     collected: list[DataItemWithMeta] = []
     with pytest.raises(FileNotFoundError, match="No such file or directory"):  # noqa: PT012
-        for item in process_xml_file_batches(fake_settings(), "person", parse_person_entry):  # pyright: ignore[reportArgumentType]
+        for item in process_xml_file_items(
+            [*items, missing_item],
+            fake_settings(input_dir=tmp_path),  # pyright: ignore[reportArgumentType]
+            "person",
+            parse_person_entry,
+        ):
             collected.append(item)  # noqa: PERF402
 
     tagged = _table_and_data(collected)
     assert [table for table, _ in tagged] == ["people"]
-    assert tagged[0][1] == [
-        {
-            "source_file": str(good_path),
-            "id": "1",
-            "name": "Anne Example",
-            "email": "a@example.com",
-        },
-        {
-            "source_file": str(good_path),
-            "id": "2",
-            "name": "Belinda Carlisle",
-            "email": "b@example.com",
-        },
-    ]
-
-
-def test_process_xml_file_batches_fail_get_file_batches_raises(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify an exception raised by get_file_batches itself propagates out of the generator."""
-
-    def _raising_get_file_batches(_settings: BatchedFileInputSettings) -> Iterator[list[Path]]:
-        msg = "invalid settings"
-        raise RuntimeError(msg)
-
-    monkeypatch.setattr(xml_module, "get_file_batches", _raising_get_file_batches)
-    with pytest.raises(RuntimeError, match="invalid settings"):
-        list(process_xml_file_batches(fake_settings(), "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
+    assert [row["id"] for row in tagged[0][1]] == ["1", "2"]
+    assert {row["source_file"] for row in tagged[0][1]} == {str(good_path)}
 
 
 def test_process_xml_file_pass_calls_stream_xml_file_with_correct_args(
@@ -960,73 +911,3 @@ def test_process_xml_file_fail_propagates_stream_xml_file_error(
 
     parse_fn.assert_called_once_with(entry=fake_entry, file_path=file_path)
     assert collected == []
-
-
-# process_xml_file_batches - isolated unit tests (get_file_batches / process_xml_file mocked)
-def test_process_xml_file_batches_pass_calls_get_file_batches_once_with_settings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify get_file_batches is invoked exactly once, receiving the settings object unchanged."""
-    settings = fake_settings()
-    get_batches_mock = MagicMock(return_value=iter([]))
-    monkeypatch.setattr(xml_module, "get_file_batches", get_batches_mock)
-
-    items = list(process_xml_file_batches(settings, "tag", MagicMock()))  # pyright: ignore[reportArgumentType]
-
-    get_batches_mock.assert_called_once_with(settings)
-    assert items == []
-
-
-def test_process_xml_file_batches_pass_calls_process_xml_file_per_file_in_order(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify process_xml_file is called once per file across all batches, in order, with forwarded args."""
-    file_a, file_b, file_c = Path("a.xml"), Path("b.xml"), Path("c.xml")
-    settings = fake_settings(log_interval=CUSTOM_BATCH_LOG_INTERVAL)
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[file_a, file_b], [file_c]]))
-    process_file_mock = MagicMock(side_effect=lambda *_, **__: iter([]))
-    monkeypatch.setattr(xml_module, "process_xml_file", process_file_mock)
-    parse_fn = MagicMock()
-
-    list(process_xml_file_batches(settings, "tag", parse_fn))  # pyright: ignore[reportArgumentType]
-
-    assert [call.kwargs.get("file_path") for call in process_file_mock.call_args_list] == [
-        file_a,
-        file_b,
-        file_c,
-    ]
-    for call in process_file_mock.call_args_list:
-        assert call.kwargs.get("xml_tag") == "tag"
-        assert call.kwargs.get("parse_fn") is parse_fn
-        assert call.kwargs.get("settings") is settings
-        assert call.kwargs.get("settings").log_interval == CUSTOM_BATCH_LOG_INTERVAL  # pyright: ignore[reportOptionalMemberAccess]
-
-
-def test_process_xml_file_batches_pass_yields_items_from_process_xml_file_unchanged(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify items yielded by process_xml_file are passed through by process_xml_file_batches as-is."""
-    sentinel_item = DataItemWithMeta(TableNameMeta("people"), [{"id": 1}])
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[Path("a.xml")]]))
-    monkeypatch.setattr(xml_module, "process_xml_file", lambda *_, **__: iter([sentinel_item]))
-
-    items = list(process_xml_file_batches(fake_settings(), "tag", MagicMock()))  # pyright: ignore[reportArgumentType]
-
-    assert items == [sentinel_item]
-
-
-def test_process_xml_file_batches_fail_propagates_process_xml_file_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify an exception raised inside process_xml_file for one file propagates without being swallowed."""
-
-    def _raising_process(*_: Any, **__: Any) -> Iterator[DataItemWithMeta]:  # noqa: ANN401
-        msg = "parse failure"
-        raise RuntimeError(msg)
-        yield  # pragma: no cover - unreachable, keeps this a generator function
-
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[Path("a.xml")]]))
-    monkeypatch.setattr(xml_module, "process_xml_file", _raising_process)
-
-    with pytest.raises(RuntimeError, match="parse failure"):
-        list(process_xml_file_batches(fake_settings(), "tag", MagicMock()))  # pyright: ignore[reportArgumentType]

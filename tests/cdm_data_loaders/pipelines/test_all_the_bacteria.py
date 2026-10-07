@@ -12,7 +12,7 @@ import pytest
 from frozendict import frozendict
 from requests.exceptions import HTTPError
 
-from cdm_data_loaders.core.fields import S3, VALID_DESTINATIONS
+from cdm_data_loaders.core.fields import S3
 from cdm_data_loaders.pipelines import all_the_bacteria
 from cdm_data_loaders.pipelines.all_the_bacteria import (
     ALL_ATB_FILE_NAME,
@@ -30,7 +30,7 @@ from tests.cdm_data_loaders.core.conftest import (
     TEST_CTS_SETTINGS,
     TEST_CTS_SETTINGS_RECONCILED,
 )
-from tests.cdm_data_loaders.pipelines.conftest import TEST_LOG_CONFIG_FILE
+from tests.cdm_data_loaders.pipelines.conftest import TEST_LOG_CONFIG_FILE, VALID_DESTINATIONS
 from tests.conftest import DEFAULT_VCR_CONFIG
 from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes
 
@@ -100,20 +100,13 @@ def test_cli_fields_parse_correctly(
     )
 
 
-def test_cli_calls_run_atb_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure that cli() calls run_atb_pipeline with the settings."""
-    mock_settings_instance = MagicMock()
-    mock_settings_instance.log_config_file = str(TEST_LOG_CONFIG_FILE)
-    mock_settings_cls = MagicMock(return_value=mock_settings_instance)
-    mock_run_atb_pipeline = MagicMock()
+def test_cli_passes_settings_class_to_run_cli() -> None:
+    """Ensure that cli() calls run_cli with AtbSettings and run_atb_pipeline."""
+    with patch.object(all_the_bacteria, "run_cli") as mock_run_cli:
+        cli()
 
-    monkeypatch.setattr(all_the_bacteria, "AtbSettings", mock_settings_cls)
-    monkeypatch.setattr(all_the_bacteria, "run_atb_pipeline", mock_run_atb_pipeline)
-
-    cli()
-
-    mock_settings_cls.assert_called_once_with()
-    mock_run_atb_pipeline.assert_called_once_with(mock_settings_instance)
+    mock_run_cli.assert_called_once()
+    assert mock_run_cli.call_args[0] == (AtbSettings, run_atb_pipeline)
 
 
 def test_load_patterns_returns_compiled_pattern(pattern_file: Path) -> None:
@@ -662,10 +655,10 @@ def test_run_atb_pipeline_resource_passed_to_run_pipeline_is_file_downloader(
 
 
 @pytest.mark.parametrize("use_output_dir_for_pipeline_metadata", [True, False])
-@pytest.mark.parametrize("dev_mode", [True, False])
+@pytest.mark.parametrize("dlt_dev_mode", [True, False])
 def test_run_atb_pipeline_pipeline_dir_present_or_absent(
     use_output_dir_for_pipeline_metadata: bool,
-    dev_mode: bool,
+    dlt_dev_mode: bool,
     mock_dlt: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -674,7 +667,7 @@ def test_run_atb_pipeline_pipeline_dir_present_or_absent(
         output_dir="/my/output",
         use_destination=VALID_DESTINATIONS[0],
         use_output_dir_for_pipeline_metadata=use_output_dir_for_pipeline_metadata,
-        dev_mode=dev_mode,
+        dlt_dev_mode=dlt_dev_mode,
     )  # pyright: ignore[reportCallIssue]
     mock_file_downloader = MagicMock(name="file_downloader")
     if use_output_dir_for_pipeline_metadata:
@@ -690,14 +683,16 @@ def test_run_atb_pipeline_pipeline_dir_present_or_absent(
 
     run_atb_pipeline(settings)
 
-    assert mock_dlt.destination.call_args_list == [call(VALID_DESTINATIONS[0], max_table_nesting=0)]
+    assert mock_dlt.destination.call_args_list == [
+        call(VALID_DESTINATIONS[0], bucket_url="/my/output", max_table_nesting=0)
+    ]
     mock_pipeline = mock_dlt.pipeline.return_value
     assert mock_pipeline.run.call_args_list == [call(mock_file_downloader)]
 
     pipeline_kwargs: dict[str, Any] = {"pipeline_name": DATASET_NAME, "dataset_name": DATASET_NAME}
     if use_output_dir_for_pipeline_metadata:
         pipeline_kwargs["pipelines_dir"] = settings.pipeline_dir
-    if dev_mode:
+    if dlt_dev_mode:
         pipeline_kwargs["dev_mode"] = True
 
     assert mock_dlt.pipeline.call_args_list == [call(destination=mock_dlt.destination.return_value, **pipeline_kwargs)]

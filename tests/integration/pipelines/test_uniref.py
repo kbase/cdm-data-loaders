@@ -6,12 +6,12 @@ derived from that fixture. Every test runs once per valid UniRef variant.
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 import dlt
 import pytest
 from frozendict import frozendict
 
+from cdm_data_loaders.core.destination import normalise_dir
 from cdm_data_loaders.core.fields import LOCAL_FS
 from cdm_data_loaders.pipelines import uniref as uniref_module
 from cdm_data_loaders.pipelines.uniref import (
@@ -21,7 +21,6 @@ from cdm_data_loaders.pipelines.uniref import (
     cli,
     parse_uniref,
 )
-from tests.cdm_data_loaders.core.conftest import make_settings_autofill_config
 from tests.conftest import TEST_DATA_DIR
 
 TEST_DEFAULT_UNIREF_VARIANT = "50"
@@ -50,9 +49,8 @@ def duckdb_uniref_settings(tmp_path: Path, request: pytest.FixtureRequest) -> Un
     """Provide UnirefSettings pointing at the real UniRef XML fixtures, one per variant."""
     output_dir = tmp_path / "output"
     output_dir.mkdir()
-    return make_settings_autofill_config(  # pyright: ignore[reportReturnType]
-        UnirefSettings,
-        {
+    return UnirefSettings(
+        **{
             VARIANT: request.param,
             "input_dir": str(UNIREF_FIXTURE_DIR),
             "output_dir": str(output_dir),
@@ -136,8 +134,10 @@ def test_integration_cli_uniref_pipeline_output_validated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Exercise the real ``cli()`` wiring end-to-end against a DuckDB destination."""
-    monkeypatch.setattr(uniref_module, "UnirefSettings", MagicMock(return_value=duckdb_uniref_settings))
-
+    variant = duckdb_uniref_settings.variant
+    monkeypatch.setenv("CDL_VARIANT", variant)
+    monkeypatch.setenv("CDL_INPUT_DIR", str(UNIREF_FIXTURE_DIR))
+    monkeypatch.setenv("CDL_OUTPUT_DIR", str(tmp_path / "cli_output_dir"))
     captured: dict[str, Any] = {}
 
     def fake_run_pipeline(
@@ -147,10 +147,12 @@ def test_integration_cli_uniref_pipeline_output_validated(
         pipeline_kwargs: dict[str, Any],
     ) -> None:
         """Replacement for core.run_pipeline that runs the resource through DuckDB."""
-        assert settings is duckdb_uniref_settings
+        assert settings.variant == variant
+        assert settings.input_dir == str(UNIREF_FIXTURE_DIR)
+        assert settings.output_dir == normalise_dir(str(tmp_path / "cli_output_dir"))
         assert pipeline_kwargs == {
-            "pipeline_name": f"uniref_{duckdb_uniref_settings.variant}",
-            "dataset_name": "uniprot_kb",
+            "pipeline_name": "uniprot_kb",
+            "dataset_name": f"uniref_{variant}",
         }
         pipeline = dlt.pipeline(
             pipeline_name=f"test_uniref_cli_pipeline_{duckdb_uniref_settings.variant}",
@@ -164,9 +166,6 @@ def test_integration_cli_uniref_pipeline_output_validated(
     monkeypatch.setattr(uniref_module, "run_pipeline", fake_run_pipeline)
 
     cli()
-
-    # UnirefSettings was constructed with the dlt config coming from core
-    uniref_module.UnirefSettings.assert_called_once_with()
 
     load_info = captured["load_info"]
     pipeline = captured["pipeline"]

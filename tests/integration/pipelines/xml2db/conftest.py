@@ -14,12 +14,12 @@ from tests.conftest import (
     REFERENCE_XML_FIXTURE_DIR,
     REFERENCE_XSD,
 )
-from tests.integration.pipelines.conftest import LIBRARY_XSD
+from tests.xml_samples import LIBRARY_XSD
 
 DEFAULT_XML2DB_SETTINGS: frozendict = frozendict(
     {
         "buffer_size": 10,
-        "dev_mode": False,
+        "dlt_dev_mode": False,
         "file_glob": "*.xml*",
         "log_interval": 1000,
         "use_output_dir_for_pipeline_metadata": True,
@@ -103,7 +103,7 @@ def run_xml2db_pipeline(
         run_xml2db_ingest_pipeline,
         {
             "buffer_size": 10,
-            "dev_mode": False,
+            "dlt_dev_mode": False,
             "file_glob": "*.xml*",
             "log_interval": 1000,
             "short_name": "uniref",

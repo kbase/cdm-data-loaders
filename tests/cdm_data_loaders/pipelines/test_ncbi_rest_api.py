@@ -36,7 +36,6 @@ from tests.cdm_data_loaders.core.conftest import (
     TEST_CTS_SETTINGS,
     TEST_CTS_SETTINGS_RECONCILED,
     check_settings,
-    make_settings_autofill_config,
 )
 from tests.cdm_data_loaders.pipelines.conftest import TEST_LOG_CONFIG_FILE
 from tests.conftest import DEFAULT_VCR_CONFIG
@@ -102,7 +101,7 @@ def assembly_ids(valid_assembly_ids: list[str], invalid_assembly_id: str) -> lis
 @pytest.fixture(scope="module")
 def test_settings() -> NcbiRestApiSettings:
     """Generate a test settings class."""
-    return make_settings_autofill_config(NcbiRestApiSettings)  # type: ignore[reportReturnType]
+    return NcbiRestApiSettings()  # type: ignore[reportReturnType]
 
 
 @pytest.fixture(autouse=True)
@@ -146,7 +145,7 @@ def test_settings_valid_batch_size(
     if batch_size is None:
         settings = test_settings
     else:
-        settings: NcbiRestApiSettings = make_settings_autofill_config(NcbiRestApiSettings, {"batch_size": batch_size})  # type: ignore[reportReturnType]
+        settings: NcbiRestApiSettings = NcbiRestApiSettings(batch_size=batch_size)  # type: ignore[reportReturnType]
     assert settings.batch_size == parsed_batch_size
 
 
@@ -169,7 +168,7 @@ def test_cli_invalid_batch_size_via_cli_raises(bad_batch_size: str, message: str
             CliApp.run(NcbiRestApiSettings, cli_args=["--batch-size", bad_batch_size])
     else:
         with pytest.raises(ValidationError, match=message):
-            make_settings_autofill_config(NcbiRestApiSettings, {"batch_size": bad_batch_size})
+            NcbiRestApiSettings(batch_size=bad_batch_size)  # pyright: ignore[reportCallIssue]
 
 
 @pytest.mark.parametrize(
@@ -188,7 +187,7 @@ def test_cli_valid_query_type(
     query_type: str | None, parsed_query_type: str | None, test_settings: NcbiRestApiSettings
 ) -> None:
     """Ensure that a valid batch size is correctly parsed."""
-    settings: NcbiRestApiSettings = make_settings_autofill_config(NcbiRestApiSettings, {"query_type": query_type})  # type: ignore[reportReturnType]
+    settings: NcbiRestApiSettings = NcbiRestApiSettings(query_type=query_type)  # type: ignore[reportReturnType]
     assert settings.query_type == parsed_query_type
 
     if query_type is None:
@@ -215,7 +214,7 @@ def test_cli_invalid_query_type(query_type: str, use_cliapp: bool) -> None:
             CliApp.run(NcbiRestApiSettings, cli_args=["--query-type", query_type])
     else:
         with pytest.raises(ValidationError, match=STRING_MATCH_MESSAGE):
-            make_settings_autofill_config(NcbiRestApiSettings, {"query_type": query_type})
+            NcbiRestApiSettings(query_type=query_type)  # pyright: ignore[reportCallIssue]
 
 
 @pytest.mark.parametrize(
@@ -227,7 +226,7 @@ def test_cli_invalid_query_type(query_type: str, use_cliapp: bool) -> None:
 )
 def test_settings_all_params_set(settings: frozendict, reconciled: frozendict) -> None:
     """Ensure that settings are set correctly when all args are specified."""
-    s = make_settings_autofill_config(NcbiRestApiSettings, settings)
+    s = NcbiRestApiSettings(**settings)
     check_settings(s, reconciled)
 
 
@@ -264,22 +263,6 @@ def test_cli_passes_settings_class_to_run_cli() -> None:
     assert mock_run_cli.call_args[0] == (NcbiRestApiSettings, run_ncbi_pipeline)
 
 
-def test_cli_calls_run_ncbi_pipeline(monkeypatch: pytest.MonkeyPatch, dlt_config: dict[str, Any]) -> None:
-    """Ensure that cli() calls run_ncbi_pipeline with the settings."""
-    mock_settings_instance = MagicMock()
-    mock_settings_instance.log_config_file = str(TEST_LOG_CONFIG_FILE)
-    mock_settings_cls = MagicMock(return_value=mock_settings_instance)
-    mock_run_ncbi_pipeline = MagicMock()
-
-    monkeypatch.setattr(ncbi_module, "NcbiRestApiSettings", mock_settings_cls)
-    monkeypatch.setattr(ncbi_module, "run_ncbi_pipeline", mock_run_ncbi_pipeline)
-
-    cli()
-
-    mock_settings_cls.assert_called_once_with()
-    mock_run_ncbi_pipeline.assert_called_once_with(mock_settings_instance)
-
-
 def check_dataset_report(dataset_report: dict[str, Any] | None, assembly_id: str) -> None:
     """Check the basic structure of a dataset report."""
     assert dataset_report is not None
@@ -308,9 +291,7 @@ def check_annotation_report(annotation_report: list[dict[str, Any]] | None, asse
 
 def test_assembly_list_resource() -> None:
     """Test that the assembly list resource yields the expected assembly IDs."""
-    settings: NcbiRestApiSettings = make_settings_autofill_config(
-        NcbiRestApiSettings, {"input_dir": "tests/data/ncbi_rest_api/input"}
-    )  # type: ignore[reportAssignmentType]
+    settings: NcbiRestApiSettings = NcbiRestApiSettings(input_dir="tests/data/ncbi_rest_api/input")  # type: ignore[reportAssignmentType]
     set_settings(settings)
 
     ass_list = list(assembly_list())
@@ -326,10 +307,10 @@ def test_assembly_list_resource() -> None:
     ]
 
 
-@pytest.mark.parametrize("dev_mode", [False, True, None])
+@pytest.mark.parametrize("dlt_dev_mode", [False, True, None])
 @pytest.mark.parametrize("use_pipeline_dir", [False, True, None])
 def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
-    dev_mode: bool | None,
+    dlt_dev_mode: bool | None,
     use_pipeline_dir: bool | None,
     mock_dlt: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
@@ -344,41 +325,46 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
         "input_dir": "tests/data/ncbi_rest_api/input",
         "output_dir": "/some/dir",
     }
-    if dev_mode is not None:
-        base_settings["dev_mode"] = dev_mode
+    if dlt_dev_mode is not None:
+        base_settings["dlt_dev_mode"] = dlt_dev_mode
     if use_pipeline_dir is not None:
         base_settings["use_output_dir_for_pipeline_metadata"] = use_pipeline_dir
 
-    settings: NcbiRestApiSettings = make_settings_autofill_config(NcbiRestApiSettings, base_settings)  # type: ignore[reportAssignmentType]
+    settings: NcbiRestApiSettings = NcbiRestApiSettings(**base_settings)  # type: ignore[reportAssignmentType]
 
     check_settings(
         settings,
         {
-            "dev_mode": bool(dev_mode),
+            "batch_size": MAX_IDS_PER_QUERY,
+            "buffer_size": 100,
+            "dlt_dev_mode": bool(dlt_dev_mode),
             "input_dir": "tests/data/ncbi_rest_api/input",
             "log_config_file": None,
+            "log_interval": 1000,
             "output_dir": "/some/dir",
+            "output_is_local": True,
             "pipeline_dir": "/some/dir/.dlt_conf" if use_pipeline_dir else None,
+            "query_type": None,
             "raw_data_dir": "/some/dir/raw_data",
             "use_destination": LOCAL_FS,
             "use_output_dir_for_pipeline_metadata": bool(use_pipeline_dir),
-            "batch_size": MAX_IDS_PER_QUERY,
-            "query_type": None,
         },
     )
 
     run_ncbi_pipeline(settings)
 
-    mock_dlt.destination.assert_called_once_with(settings.use_destination, max_table_nesting=0)
+    mock_dlt.destination.assert_called_once_with(
+        settings.use_destination, bucket_url=settings.output_dir, max_table_nesting=0
+    )
     mock_dlt.destination.assert_called_once()
-    assert mock_dlt.destination.call_args_list[0].kwargs == {"max_table_nesting": 0}
+    assert mock_dlt.destination.call_args_list[0].kwargs == {"bucket_url": settings.output_dir, "max_table_nesting": 0}
     assert mock_dlt.destination.call_args_list[0].args == (LOCAL_FS,)
 
     mock_dlt.pipeline.assert_called_once()
     assert mock_dlt.pipeline.call_args.kwargs["destination"] == mock_dlt.destination.return_value
     assert mock_dlt.pipeline.call_args.kwargs["pipeline_name"] == DATASET_NAME
     assert mock_dlt.pipeline.call_args.kwargs["dataset_name"] == DATASET_NAME
-    if dev_mode:  # truthy
+    if dlt_dev_mode:  # truthy
         assert mock_dlt.pipeline.call_args.kwargs["dev_mode"] is True
     else:
         assert "dev_mode" not in mock_dlt.pipeline.call_args.kwargs
@@ -466,7 +452,7 @@ def test_get_assembly_reports(test_settings: NcbiRestApiSettings) -> None:
 @pytest.mark.parametrize("query_type", [None, DATASET, ANNOTATION])
 def test_get_assembly_reports_mock_subs(query_type: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure that the correct subs are called and the correct subs are not called with the query_type parameter."""
-    settings: NcbiRestApiSettings = make_settings_autofill_config(NcbiRestApiSettings, {"query_type": query_type})  # type: ignore[reportAssignmentType]
+    settings: NcbiRestApiSettings = NcbiRestApiSettings(query_type=query_type)  # type: ignore[reportAssignmentType]
     set_settings(settings)
     mock_get_annotation_report = MagicMock(return_value={"this": "that"})
     mock_get_dataset_reports = MagicMock(return_value=dict.fromkeys(ALL_IDS, "blob"))
@@ -645,10 +631,10 @@ def test_get_assembly_reports_total_wipeout(test_settings: NcbiRestApiSettings) 
 @pytest.mark.skip("FIXME: not working, possibly due to parallelization?")
 @pytest.mark.vcr
 def test_get_assembly_report_parser_with_cassette(tmp_path: Path) -> None:
+    """Get assembly reports with a cassette."""
     with patch("dlt.mark"):
-        settings: NcbiRestApiSettings = make_settings_autofill_config(
-            NcbiRestApiSettings,
-            {"input_dir": "tests/data/ncbi_rest_api/input", "output_dir": str(tmp_path)},
+        settings: NcbiRestApiSettings = NcbiRestApiSettings(
+            input_dir="tests/data/ncbi_rest_api/input", output_dir=str(tmp_path)
         )  # type: ignore[reportAssignmentType]
         run_ncbi_pipeline(settings)
 
@@ -757,7 +743,7 @@ EXPECTED_DB_TABLES_WITH_ERROR = {
 
 @pytest.mark.parametrize("reports", [{}, None])
 def test_assemble_assembly_reports_empty_dict_yields_nothing(
-    reports: None | dict[str, Any],
+    reports: dict[str, Any] | None,
 ) -> None:
     """Ensure that empty or None as input produces no output items."""
     assert list(assemble_assembly_reports(reports)) == []  # type: ignore[reportArgumentType]

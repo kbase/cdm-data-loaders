@@ -15,32 +15,10 @@ from cdm_data_loaders.readers.xml2db_doc import (
     flatten_xml2db_document,
     is_xml2db_content_addressed_table,
 )
+from tests.xml_samples import LIBRARY_XSD, TWO_BOOK_LIBRARY_XML
 
 REFERENCE_XSD: Final[Path] = Path("tests") / "data" / "uniprot" / "uniref" / "uniref.xsd"
-SIMPLE_LIBRARY_XML: Final[str] = """<?xml version="1.0"?>
-<library>
-    <book id="1"><title>The Shining</title></book>
-    <book id="2"><title>The Stand</title></book>
-</library>
-"""
-LIBRARY_XSD: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
-    <xs:element name="library">
-        <xs:complexType>
-            <xs:sequence>
-                <xs:element name="book" maxOccurs="unbounded">
-                    <xs:complexType>
-                        <xs:sequence>
-                            <xs:element name="title" type="xs:string"/>
-                        </xs:sequence>
-                        <xs:attribute name="id" type="xs:string" use="required"/>
-                    </xs:complexType>
-                </xs:element>
-            </xs:sequence>
-        </xs:complexType>
-    </xs:element>
-</xs:schema>
-"""
+
 ROOT_SHORT_NAME: Final[str] = "uniref_test"
 
 
@@ -184,7 +162,7 @@ def test_flatten_xml2db_document_pass_non_reused_table_parent_fk_is_namespaced(
 
     def _flatten(file_key: str) -> dict[str, list[dict[str, Any]]]:
         document = Document(model)
-        document.parse_xml(BytesIO(SIMPLE_LIBRARY_XML.encode("utf-8")), skip_validation=True, iterparse=True)
+        document.parse_xml(BytesIO(TWO_BOOK_LIBRARY_XML.encode("utf-8")), skip_validation=True, iterparse=True)
         return flatten_xml2db_document(model, document, file_key=file_key)
 
     tables = _flatten("file_one.xml")

@@ -107,6 +107,8 @@ def test_run_xsv_ingest_pipeline_pass_end_to_end_via_duckdb(
 
     pipeline_name = f"test_xsv_ingest_pipeline_{uuid4().hex}"
     captured: dict[str, Any] = {}
+    output_dir = tmp_path / "duckdb_output"
+    output_dir.mkdir()
 
     def fake_run_pipeline(
         *,
@@ -117,7 +119,7 @@ def test_run_xsv_ingest_pipeline_pass_end_to_end_via_duckdb(
         assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "xsv_test_dataset"}
         pipeline = dlt.pipeline(
             pipeline_name=pipeline_name,
-            destination="duckdb",
+            destination=dlt.destinations.duckdb(f"duckdb:///{output_dir!s}/{pipeline_name}.db"),
             dataset_name="xsv_test_dataset",
             pipelines_dir=str(tmp_path / "pipelines"),
         )
@@ -131,7 +133,7 @@ def test_run_xsv_ingest_pipeline_pass_end_to_end_via_duckdb(
 
     pipeline = dlt.pipeline(
         pipeline_name=pipeline_name,
-        destination="duckdb",
+        destination=dlt.destinations.duckdb(f"duckdb:///{output_dir!s}/{pipeline_name}.db"),
         dataset_name="xsv_test_dataset",
         pipelines_dir=str(tmp_path / "pipelines"),
     )
@@ -157,7 +159,7 @@ def test_run_xsv_ingest_pipeline_pass_no_matching_files_loads_nothing(
     def fake_run_pipeline(*, resource: Any, **_: Any) -> None:  # noqa: ANN401
         pipeline = dlt.pipeline(
             pipeline_name=pipeline_name,
-            destination="duckdb",
+            destination=dlt.destinations.duckdb(f"duckdb:///{settings.output_dir}/{pipeline_name}.db"),
             dataset_name="xsv_test_dataset",
             pipelines_dir=str(tmp_path / "pipelines"),
         )
@@ -224,7 +226,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
         assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "cli_dataset"}
         pipeline = dlt.pipeline(
             pipeline_name=pipeline_name,
-            destination="duckdb",
+            destination=dlt.destinations.duckdb(f"duckdb:///{settings.output_dir}/{pipeline_name}.db"),
             dataset_name="cli_dataset",
             pipelines_dir=str(tmp_path / "pipelines"),
         )
@@ -238,7 +240,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
 
     pipeline = dlt.pipeline(
         pipeline_name=pipeline_name,
-        destination="duckdb",
+        destination=dlt.destinations.duckdb(f"duckdb:///{settings.output_dir}/{pipeline_name}.db"),
         dataset_name="cli_dataset",
         pipelines_dir=str(tmp_path / "pipelines"),
     )

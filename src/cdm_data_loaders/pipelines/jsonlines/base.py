@@ -7,7 +7,7 @@ three pipelines share; each pipeline module supplies only its validator and
 registry loader.
 """
 
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import Callable, Generator
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -15,10 +15,8 @@ from typing import TYPE_CHECKING, Any, Final
 import dlt
 from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TSchemaContractDict
-from dlt.common.storages.fsspec_filesystem import FileItemDict
-from dlt.common.typing import TDataItems
 
-from cdm_data_loaders.pipelines.core import filesystem_source, run_pipeline
+from cdm_data_loaders.pipelines.core import filesystem_resource, run_pipeline
 from cdm_data_loaders.readers.jsonlines import stream_jsonl_lines
 from cdm_data_loaders.utils.buffer import ListBuffer
 
@@ -39,22 +37,6 @@ REJECTED_COLUMNS: Final[tuple[str, ...]] = ("source_file", "line_no", "raw_recor
 
 ParseErrorResolver = Callable[[dict[str, Any]], str | None]
 ResourceFactory = Callable[[str, dict[str, Any], Any], "DltResource"]
-
-
-def read_jsonl_pages(items: Iterator[FileItemDict], buffer_size: int) -> Generator[TDataItems, Any, Any]:
-    """Read each file in items. Yield pages of line records.
-
-    Each record has: record (parsed JSON, or None on parse failure),
-    raw_record, parse_error (None on success), source_file, line_no.
-
-    :param items: file items to read
-    :type items: Iterator[FileItemDict]
-    :param buffer_size: number of line records per yielded page
-    :type buffer_size: int
-    :yield: pages of line records
-    :rtype: Generator[TDataItems, Any, Any]
-    """
-    yield from stream_jsonl_lines(items, buffer_size)
 
 
 def make_page_router(  # noqa: PLR0913
@@ -147,13 +129,13 @@ def build_entity_resource(  # noqa: PLR0913
     """
     entity_dir = Path(settings.input_dir) / table_name
     if entity_dir.is_dir():
-        files = filesystem_source(bucket_url=str(entity_dir), file_glob=settings.file_glob)
+        files = filesystem_resource(bucket_url=str(entity_dir), file_glob=settings.file_glob)
     else:
         logger.warning("Entity directory does not exist, skipping: %s", entity_dir)
         files = dlt.resource([], name=f"{table_name}_files")
 
     raw = dlt.transformer(
-        read_jsonl_pages,
+        stream_jsonl_lines,
         data_from=files,
         name=f"{table_name}_raw",
         max_table_nesting=0,

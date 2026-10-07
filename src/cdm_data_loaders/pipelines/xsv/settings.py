@@ -17,7 +17,7 @@ from cdm_data_loaders.core.fields import (
     NonEmptyStr,
     TableName,
 )
-from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
+from cdm_data_loaders.core.settings import CLI_SHORTCUTS, CtsSettings, default_settings_with_shortcuts
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import resolve_xsv_parsing_config
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
     ValidatedSchema,
@@ -30,13 +30,21 @@ PIPELINE_NAME: Final[str] = "xsv_ingest"
 logger: Logger = getLogger(__name__)
 
 
+SHORTCUTS: Final[dict[str, str]] = {
+    **CLI_SHORTCUTS,
+    "file_glob": "g",
+    "loader_file_format": "f",
+    "schema_file": "s",
+    "table_name": "t",
+}
+
+
 class XsvIngestSettings(CtsSettings):
     """Settings for the XSV (CSV/TSV) ingestion pipeline."""
 
-    model_config = SettingsConfigDict(
-        **DEFAULT_SETTINGS_CONFIG_DICT,
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=PIPELINE_NAME,
-        cli_shortcuts=CLI_SHORTCUTS,
+        cli_shortcuts=SHORTCUTS,
     )
 
     _validated_schema: ValidatedSchema | None = PrivateAttr(default=None)

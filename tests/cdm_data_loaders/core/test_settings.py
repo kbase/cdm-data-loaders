@@ -1,757 +1,466 @@
-"""Tests for the Settings objects used by DLT pipelines."""
+"""Tests for cdm_data_loaders.core.settings."""
 
-from pathlib import Path
-from typing import Any, Final, Self
+import logging
+from collections.abc import Mapping
+from typing import Final, cast
 
 import pytest
 from frozendict import frozendict
-from pydantic import ValidationError
-from pydantic_settings import CliApp, SettingsConfigDict, SettingsError
+from pydantic import AliasChoices, AliasPath, Field, ValidationError
+from pydantic_settings import BaseSettings, CliApp, SettingsConfigDict, SettingsError
 
+from cdm_data_loaders.core.destination import PIPELINE_METADATA_NOT_LOCAL
 from cdm_data_loaders.core.fields import (
-    DEV_MODE,
+    BUFFER_SIZE,
+    DLT_DEV_MODE,
     INPUT_DIR,
-    LOCAL_FS,
+    LOG_CONFIG_FILE,
+    LOG_INTERVAL,
     OUTPUT_DIR,
-    S3,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
-    VALID_DESTINATIONS,
 )
 from cdm_data_loaders.core.settings import (
     CLI_SHORTCUTS,
     DEFAULT_SETTINGS_CONFIG_DICT,
-    BatchedFileInputSettings,
     CdmDataLoadersBase,
     CtsSettings,
     InputOutputSettings,
     LoggerSettings,
+    _alias_names,
+    cli_shortcuts_for,
+    default_settings_with_shortcuts,
 )
-from tests.cdm_data_loaders.core.conftest import (
-    DEFAULT_BATCH_FILE_SETTINGS_RECONCILED,
-    DEFAULT_CTS_SETTINGS_RECONCILED,
-    DESTINATION_TO_OUTPUT,
-    TEST_BATCH_FILE_SETTINGS,
-    TEST_BATCH_FILE_SETTINGS_RECONCILED,
-    TEST_CTS_SETTINGS,
-    TEST_CTS_SETTINGS_RECONCILED,
-    check_settings,
-    make_settings,
-    make_settings_autofill_config,
+from tests.cdm_data_loaders.core.conftest import SETTINGS_SOURCES, SettingsFactory
+
+SETTINGS_LOGGER: Final[str] = "cdm_data_loaders.core.settings"
+OUTPUT_IS_LOCAL: Final[str] = "output_is_local"
+RAW_DATA_DIR: Final[str] = "raw_data_dir"
+PIPELINE_DIR: Final[str] = "pipeline_dir"
+NON_EMPTY: Final[str] = "String should have at least 1 character"
+INVALID_BOOL: Final[str] = "Input should be a valid boolean, unable to interpret input"
+NOT_POSITIVE: Final[str] = "Input should be greater than 0"
+
+CTS_DEFAULT_DUMP: Final = frozendict(
+    {
+        BUFFER_SIZE: 100,
+        DLT_DEV_MODE: False,
+        INPUT_DIR: "/input_dir",
+        LOG_CONFIG_FILE: None,
+        LOG_INTERVAL: 1000,
+        OUTPUT_DIR: None,
+        USE_DESTINATION: "local_fs",
+        USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: False,
+        OUTPUT_IS_LOCAL: None,
+        RAW_DATA_DIR: None,
+        PIPELINE_DIR: None,
+    }
 )
-from tests.dlt_config_isolation import dlt_config_unset, isolated_dlt_config
-from tests.helpers import build_cli_arg_specs, make_cli_arg
 
 
-def _raw_values(settings_cls: type[CtsSettings]) -> frozendict[str, Any] | dict[str, Any]:
-    return TEST_BATCH_FILE_SETTINGS if settings_cls is BatchedFileInputSettings else TEST_CTS_SETTINGS
+def define_settings(
+    fields: Mapping[str, object],
+    cli_shortcuts: Mapping[str, str | list[str]] | None = None,
+    *,
+    cli_kebab_case: bool = True,
+) -> type[CdmDataLoadersBase]:
+    """Define a str-field CdmDataLoadersBase subclass named 'Probe'; class creation runs check_aliases."""
+    config = SettingsConfigDict(cli_kebab_case=cli_kebab_case)
+    if cli_shortcuts is not None:
+        config["cli_shortcuts"] = dict(cli_shortcuts)
+    namespace = {"__annotations__": dict.fromkeys(fields, str), **fields, "model_config": config}
+    return cast("type[CdmDataLoadersBase]", type("Probe", (CdmDataLoadersBase,), namespace))
 
 
-def _reconciled_values(settings_cls: type[CtsSettings]) -> frozendict[str, Any] | dict[str, Any]:
-    return (
-        TEST_BATCH_FILE_SETTINGS_RECONCILED
-        if settings_cls is BatchedFileInputSettings
-        else TEST_CTS_SETTINGS_RECONCILED
-    )
+def io_dump(
+    input_dir: str = "/input_dir", output_dir: str | None = None, log_config_file: str | None = None
+) -> dict[str, str | None]:
+    """Expected model_dump() of an InputOutputSettings object."""
+    return {INPUT_DIR: input_dir, OUTPUT_DIR: output_dir, LOG_CONFIG_FILE: log_config_file}
 
 
-SETTINGS_CLASSES = [CtsSettings, BatchedFileInputSettings]
-
-INVALID_DESTINATIONS = ["gcs", "filesystem", "", "LocalFs", "S3"]
-INVALID_BOOLEAN_VALUES = ["what", "yep", "nope", "2", -1, "", " ", "wtf", None]
-
-
-def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
-    """Dynamically parametrize CLI-alias tests from the real argparse parser.
-
-    `@pytest.mark.settings_cls.with_args(*classes)` selects which settings classes to
-    run against. `@pytest.mark.cli_fields.with_args(*field_names)` optionally restricts
-    to a subset of fields (e.g. just the boolean or destination fields); without it,
-    every CLI-exposed field on the class is used.
-    """
-    settings_marker = metafunc.definition.get_closest_marker("settings_cls")
-    if settings_marker is None:
-        return
-    settings_classes = settings_marker.args
-
-    field_marker = metafunc.definition.get_closest_marker("cli_fields")
-
-    wants_option = {"settings_cls", "field_name", "cli_option"}.issubset(metafunc.fixturenames)
-    wants_field_only = not wants_option and {"settings_cls", "field_name"}.issubset(metafunc.fixturenames)
-    if not (wants_option or wants_field_only):
-        return
-
-    argvalues: list[tuple[Any, ...]] = []
-    ids: list[str] = []
-    for settings_cls in settings_classes:
-        specs = build_cli_arg_specs(settings_cls)
-        field_names = field_marker.args if field_marker else tuple(specs)
-        for field_name in field_names:
-            if field_name not in specs:
-                continue  # this settings class doesn't define that field
-            if wants_option:
-                for option in specs[field_name].option_strings:
-                    argvalues.append((settings_cls, field_name, option))
-                    ids.append(f"{settings_cls.__name__}-{field_name}-{option}")
-            else:
-                argvalues.append((settings_cls, field_name))
-                ids.append(f"{settings_cls.__name__}-{field_name}")
-
-    if wants_option:
-        metafunc.parametrize(("settings_cls", "field_name", "cli_option"), argvalues, ids=ids)
-    else:
-        metafunc.parametrize(("settings_cls", "field_name"), argvalues, ids=ids)
-
-
-IS_S3: Final[str] = "is_s3"
-OUT: Final[str] = OUTPUT_DIR
-RAW: Final[str] = "raw_data_dir"
-PIPE: Final[str] = "pipeline_dir"
-
-
-# manually specify to avoid recapitulating logic
-OUTPUT_PATHS: dict[str, dict[str, Any]] = {
-    "": {IS_S3: False, OUT: "", RAW: "raw_data", PIPE: ".dlt_conf"},
-    "/": {IS_S3: False, OUT: "/", RAW: "/raw_data", PIPE: "/.dlt_conf"},
-    # from destination.local_fs
-    "/output_dir": {
-        IS_S3: False,
-        OUT: "/output_dir",
-        RAW: "/output_dir/raw_data",
-        PIPE: "/output_dir/.dlt_conf",
-    },
-    "/output/dir": {
-        IS_S3: False,
-        OUT: "/output/dir",
-        RAW: "/output/dir/raw_data",
-        PIPE: "/output/dir/.dlt_conf",
-    },
-    "s3/some/path/": {
-        IS_S3: False,
-        OUT: "s3/some/path",
-        RAW: "s3/some/path/raw_data",
-        PIPE: "s3/some/path/.dlt_conf",
-    },
-    # normalised form of the above
-    "s3/some/path": {
-        IS_S3: False,
-        OUT: "s3/some/path",
-        RAW: "s3/some/path/raw_data",
-        PIPE: "s3/some/path/.dlt_conf",
-    },
-    "s3a://bucket/key": {
-        IS_S3: True,
-        OUT: "s3a://bucket/key",
-        RAW: "s3a://bucket/key/raw_data",
-        PIPE: None,
-    },
-    "s3://test/bucket/": {
-        IS_S3: True,
-        OUT: "s3://test/bucket",
-        RAW: "s3://test/bucket/raw_data",
-        PIPE: None,
-    },
-    # normalised from above
-    "s3://test/bucket": {
-        IS_S3: True,
-        OUT: "s3://test/bucket",
-        RAW: "s3://test/bucket/raw_data",
-        PIPE: None,
-    },
-    # from destination.s3
-    "s3://some/s3/bucket": {
-        IS_S3: True,
-        OUT: "s3://some/s3/bucket",
-        RAW: "s3://some/s3/bucket/raw_data",
-        PIPE: None,
-    },
-}
-
-
-# a whole load of values that Pydantic will coerce to a boolean
-TRUE_FALSE_VALUES = [
-    ("0", False),
-    ("1", True),
-    ("f", False),
-    ("false", False),
-    ("False", False),
-    ("FALSE", False),
-    ("n", False),
-    ("no", False),
-    ("off", False),
-    ("on", True),
-    ("t", True),
-    ("true", True),
-    ("True", True),
-    ("TRUE", True),
-    ("y", True),
-    ("yes", True),
-    (0, False),
-    (1, True),
-    (False, False),
-    (True, True),
-]
-
-
-# Baseline: no aliases at all
-def test_check_aliases_no_additional_fields() -> None:
-    """A subclass that adds no fields beyond the base does not raise."""
-
-    class EmptySettings(CdmDataLoadersBase):
-        pass
-
-    EmptySettings()
-
-
-def test_check_aliases_fields_with_no_alias() -> None:
-    """Fields with no alias are distinguished by field name only."""
-
-    class PlainSettings(CdmDataLoadersBase):
-        field_a: str = "a"
-        field_b: str = "b"
-
-        def cli_cmd(self) -> Self:
-            return self
-
-    ps = PlainSettings(field_a="whatever", field_b="something")
-    assert ps.field_a == "whatever"
-    assert ps.field_b == "something"
-
-    ps_from_cmd_line = CliApp.run(PlainSettings, cli_args=["--field-a", "whatever", "--field-b", "something"])
-    assert ps == ps_from_cmd_line
-
-
-@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-def test_settings_cli_alias_parses_expected_value(
-    settings_cls: type[CtsSettings], field_name: str, cli_option: str
-) -> None:
-    """Every registered CLI flag for a field parses to the expected value.
-
-    Includes cli_shortcuts, kebab-case versions, validation aliases, etc.
-    """
-    value = str(_raw_values(settings_cls)[field_name])
-    settings = CliApp.run(settings_cls, cli_args=[cli_option, value])
-    assert getattr(settings, field_name) == _reconciled_values(settings_cls)[field_name]
-
-
-@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-def test_settings_all_cli_aliases_equivalent(settings_cls: type[CtsSettings], field_name: str) -> None:
-    """All CLI flags registered for a single field must produce identical settings objects.
-
-    E.g. `--input-dir foo` and `-i foo` (if `-i` is a configured shortcut) must be
-    indistinguishable to the resulting settings instance.
-    """
-    specs = build_cli_arg_specs(settings_cls)
-    option_strings = specs[field_name].option_strings
-    if len(option_strings) < 2:
-        pytest.skip(f"{settings_cls.__name__}.{field_name} has only one registered CLI flag")
-
-    value = str(_raw_values(settings_cls)[field_name])
-    results = [CliApp.run(settings_cls, cli_args=[option, value]) for option in option_strings]
-    assert all(r == results[0] for r in results), (
-        f"{settings_cls.__name__}.{field_name}: flags {option_strings} produced different results: {results}"
-    )
-
-
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-def test_configured_cli_shortcuts_are_registered(settings_cls: type[CtsSettings]) -> None:
-    """Every shortcut declared in CLI_SHORTCUTS must actually show up on the CLI parser.
-
-    Guards against a `cli_shortcuts` target that doesn't match the (possibly
-    kebab-cased) argument name pydantic-settings registers -- which would otherwise
-    silently produce a documented shortcut nobody can use.
-    """
-    specs = build_cli_arg_specs(settings_cls)
-    for field_name, shortcuts in CLI_SHORTCUTS.items():
-        if field_name not in specs:
-            continue
-        for shortcut in [shortcuts] if isinstance(shortcuts, str) else shortcuts:
-            expected_flag = make_cli_arg(shortcut)
-            assert expected_flag in specs[field_name].option_strings, (
-                f"shortcut {shortcut!r} for {settings_cls.__name__}.{field_name} was not registered "
-                f"(got {specs[field_name].option_strings}); check the cli_shortcuts target matches "
-                "the post-kebab-case argument name"
-            )
-
-
-@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-def test_settings_env_var_parses_expected_value(
-    monkeypatch: pytest.MonkeyPatch, settings_cls: type[CtsSettings], field_name: str
-) -> None:
-    """Every field can be populated via its env-prefixed environment variable."""
-    env_prefix = settings_cls.model_config.get("env_prefix", "")
-    monkeypatch.setenv(f"{env_prefix}{field_name}".upper(), str(_raw_values(settings_cls)[field_name]))
-    settings = make_settings_autofill_config(settings_cls, {})
-    assert getattr(settings, field_name) == _reconciled_values(settings_cls)[field_name]
-
-
-@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-def test_settings_env_var_overrides_dlt_config(
-    monkeypatch: pytest.MonkeyPatch, settings_cls: type[CtsSettings], field_name: str
-) -> None:
-    """Environment variables should take precedence over dlt.config."""
-    if field_name != OUTPUT_DIR:
-        return
-
-    env_prefix = settings_cls.model_config.get("env_prefix", "")
-    override_value = "/env/override/path"
-    monkeypatch.setenv(f"{env_prefix}{field_name}".upper(), override_value)
-
-    settings = make_settings_autofill_config(settings_cls, {})
-    assert settings.output_dir == override_value
-
-
-# holy crap, that ain't right
-def test_check_aliases_shortcut_matches_field_name_raises() -> None:
-    """A shortcut identical to another field's real name is rejected."""
-    with pytest.raises(SettingsError, match="' is claimed by both '"):
-
-        class ShortcutMatchesFieldName(CdmDataLoadersBase):
-            alpha: str = "a"
-            beta: str = "b"
-
-            model_config = SettingsConfigDict(
-                **DEFAULT_SETTINGS_CONFIG_DICT,
-                cli_shortcuts={"alpha": "beta"},
-            )
-
-
-def test_check_aliases_duplicate_shortcut_raises() -> None:
-    """Two fields cannot be assigned the same shortcut."""
-    with pytest.raises(SettingsError, match="' is claimed by both '"):
-
-        class DuplicateShortcuts(CdmDataLoadersBase):
-            alpha: str = "a"
-            beta: str = "b"
-
-            model_config = SettingsConfigDict(
-                **DEFAULT_SETTINGS_CONFIG_DICT,
-                cli_shortcuts={"alpha": "x", "beta": "x"},
-            )
-
-
-def test_check_aliases_self_referential_shortcut_is_allowed() -> None:
-    """A shortcut that maps a field to its own kebab-case name is a harmless no-op."""
-
-    class SelfShortcut(CdmDataLoadersBase):
-        output_dir: str = "/tmp"
-
-        model_config = SettingsConfigDict(
-            **DEFAULT_SETTINGS_CONFIG_DICT,
-            cli_shortcuts={"output_dir": "output-dir"},
-        )
-
-    SelfShortcut()
-
-
-def test_check_aliases_kebab_case_collision_raises() -> None:
-    """A field's kebab-cased CLI name cannot collide with another field's shortcut."""
-    with pytest.raises(SettingsError, match="'log-config-file' is claimed by both 'log_config_file' and 'other'"):
-
-        class KebabCollision(CdmDataLoadersBase):
-            log_config_file: str = "log.json"
-            other: str = "x"
-
-            model_config = SettingsConfigDict(
-                **DEFAULT_SETTINGS_CONFIG_DICT,
-                cli_shortcuts={"other": "log-config-file"},
-            )
-
-
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-def test_settings_classes_have_no_cli_collisions(settings_cls: type[CtsSettings]) -> None:
-    """Building the real parser for each production settings class must not raise an error.
-
-    This is a regression guard against accidentally reusing a shortcut or alias.
-    """
-    # already ran at class-definition time; call again to be explicit
-    settings_cls.check_aliases()
-    # raises ArgumentError on any collision
-    build_cli_arg_specs(settings_cls)
-
-
-# CLI App: ignore extra properties
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-def test_cli_app_run_invalid_params_ignored(settings_cls: type[CtsSettings]) -> None:
-    """Test that invalid parameter values are ignored."""
-    s = CliApp.run(
-        settings_cls,
-        cli_args=[
-            "--some_random_arg",
-            "some value",
-            "-q",
-            "answer",
-        ],
-    )
-    output = s.model_dump()
-
-    assert "some value" not in output.values()
-    assert "answer" not in output.values()
-
-
-# LoggerSettings
+# _alias_names
 
 
 @pytest.mark.parametrize(
-    "env_var_name",
-    ["CDL_log_config_file", "CDL_LOG_CONFIG_FILE"],
-)
-def test_logger_settings_alias_accepted_via_environment(
-    env_var_name: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Both hyphenated and underscored environment variable aliases are resolved to log_config_file."""
-    config_file = tmp_path / "log_conf.json"
-    config_file.write_text("{}")
-    monkeypatch.setenv(env_var_name, str(config_file))
-    settings = LoggerSettings()  # pyright: ignore[reportCallIssue]
-    assert settings.log_config_file == str(config_file)
-
-
-# InputOutputSettings
-def test_input_output_settings_validate_dir_path() -> None:
-    """Test that InputOutputSettings correctly strips trailing slashes."""
-
-    class TestIO(InputOutputSettings):
-        log_config_file: str = "log.json"  # pyright: ignore[reportIncompatibleVariableOverride]
-        input_dir: str = "/input/"
-        output_dir: str = "/output//"
-
-    s = TestIO()
-    assert s.input_dir == "/input"
-    assert s.output_dir == "/output"
-    assert s.log_config_file == "log.json"
-
-    t = InputOutputSettings(input_dir="/input/", output_dir="/output//", log_config_file="log.json")
-    for attr in ["input_dir", "output_dir", "log_config_file"]:
-        assert getattr(s, attr) == getattr(t, attr)
-
-
-def test_input_output_settings_preserve_root() -> None:
-    """Test that InputOutputSettings preserves the root directory slash."""
-
-    class TestIO(InputOutputSettings):
-        log_config_file: str = "log.json"  # pyright: ignore[reportIncompatibleVariableOverride]
-        input_dir: str = "/"
-        output_dir: str = "/"
-
-    s = TestIO()
-    assert s.input_dir == "/"
-    assert s.output_dir == "/"
-    assert s.log_config_file == "log.json"
-
-
-# Generic settings tests
-@pytest.mark.parametrize(
-    ("settings_cls", "args", "expected"),
+    ("alias", "expected"),
     [
-        # default values
-        (CtsSettings, {}, DEFAULT_CTS_SETTINGS_RECONCILED),
-        (BatchedFileInputSettings, {}, DEFAULT_BATCH_FILE_SETTINGS_RECONCILED),
-        # all args specified
-        (CtsSettings, TEST_CTS_SETTINGS, TEST_CTS_SETTINGS_RECONCILED),
-        (BatchedFileInputSettings, TEST_BATCH_FILE_SETTINGS, TEST_BATCH_FILE_SETTINGS_RECONCILED),
+        pytest.param(None, set(), id="none"),
+        pytest.param("alpha", {"alpha"}, id="str"),
+        pytest.param(AliasPath("outer", "inner", 0), {"outer"}, id="alias_path_str_first"),
+        pytest.param(AliasPath(0), set(), id="alias_path_int_first"),  # pyright: ignore[reportArgumentType]
+        pytest.param(AliasChoices("a", "b"), {"a", "b"}, id="alias_choices_str"),
+        pytest.param(
+            AliasChoices("a", AliasPath("b", 0), AliasPath(1, "c")),  # pyright: ignore[reportArgumentType]
+            {"a", "b"},
+            id="alias_choices_mixed",
+        ),
     ],
 )
-def test_settings_all_settings_specified(
-    settings_cls: type[CtsSettings], args: dict[str, Any], expected: dict[str, Any]
-) -> None:
-    """Ensure the CTS settings are set up correctly."""
-    s = make_settings_autofill_config(settings_cls, args)
-    check_settings(s, expected)
+def test_alias_names_pass(alias: str | AliasChoices | AliasPath | None, expected: set[str]) -> None:
+    """Each alias form yields its top-level string names only."""
+    assert _alias_names(alias) == expected
 
 
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-def test_cli_app_run_default_settings(settings_cls: type[CtsSettings]) -> None:
-    """Ensure the CTS settings are set up correctly, CLI version."""
-    s = CliApp.run(settings_cls)
-    expected = (
-        DEFAULT_CTS_SETTINGS_RECONCILED if settings_cls == CtsSettings else DEFAULT_BATCH_FILE_SETTINGS_RECONCILED
-    )
-    check_settings(s, expected)
+# cli_shortcuts_for
 
 
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-def test_settings_no_dlt_config_error(settings_cls: type[CtsSettings]) -> None:
-    """Ensure an error is raised if there is no dlt_config."""
-    with pytest.raises(ValidationError, match=r"dlt_config must be defined"):
-        make_settings(settings_cls, dlt_config=None)
-
-
-@pytest.mark.parametrize("invalid_destination_config", [{}, {"destination": {}}])
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-def test_settings_no_destinations_set(
-    settings_cls: type[CtsSettings], invalid_destination_config: dict[str, dict[Any, Any]]
-) -> None:
-    """Ensure that destinations are specified in the dlt config."""
-    with pytest.raises(ValueError, match="No valid destinations found in dlt configuration"):
-        make_settings(settings_cls, dlt_config=invalid_destination_config)
-
-
-# same thing but via CliApp.run
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(
-    ("dlt_config_value", "error", "err_msg"),
+    ("field_names", "expected"),
     [
-        (None, ValidationError, "dlt_config must be defined"),
-        ({}, ValueError, "No valid destinations found in dlt configuration"),
-        ({"destination": {}}, ValueError, "No valid destinations found in dlt configuration"),
+        pytest.param({}, {}, id="empty"),
+        pytest.param(
+            CLI_SHORTCUTS,
+            {"input-dir": "i", "output-dir": "o", "use-destination": "d", "use-output-dir-for-pipeline-metadata": "p"},
+            id="frozendict_cli_shortcuts",
+        ),
+        pytest.param(
+            {"snake_case": "s", "already-kebab": ["a", "b"]},
+            {"snake-case": "s", "already-kebab": ["a", "b"]},
+            id="list_values_and_kebab_keys",
+        ),
     ],
 )
-def test_cli_app_run_dlt_config_errors(
-    settings_cls: type[CtsSettings],
-    dlt_config_value: dict[str, Any] | None,
-    error: type[Exception],
-    err_msg: str,
+def test_cli_shortcuts_for_pass(
+    field_names: dict[str, str | list[str]] | frozendict[str, str | list[str]], expected: dict[str, str | list[str]]
 ) -> None:
-    """Test all the variants of the Settings fields.
-
-    dlt_config_value=None simulates dlt.config itself being entirely unset; the other cases
-    simulate an ambient dlt.config that exists but has no usable destinations.
-    """
-    isolation = dlt_config_unset() if dlt_config_value is None else isolated_dlt_config(dlt_config_value)
-    with isolation, pytest.raises(error, match=err_msg):
-        CliApp.run(settings_cls)
+    """Keys are converted to kebab case; values are passed through unchanged."""
+    assert cli_shortcuts_for(field_names) == expected
 
 
-# destination tests
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+# default_settings_with_shortcuts
+
+
 @pytest.mark.parametrize(
-    ("use_destination", "output_dir", "should_raise"),
+    ("kwargs", "expected_extra"),
     [
-        (LOCAL_FS, "s3://bucket/path", True),
-        (S3, "/local/path", True),
-        (LOCAL_FS, "/local/path", False),
-        (S3, "s3://bucket/path", False),
+        pytest.param({}, {}, id="no_args"),
+        pytest.param({"cli_prog_name": "uniref"}, {"cli_prog_name": "uniref"}, id="prog_name"),
+        pytest.param(
+            {"cli_shortcuts": {"input_dir": "i", "output_dir": ["o", "out"]}},
+            {"cli_shortcuts": {"input-dir": "i", "output-dir": ["o", "out"]}},
+            id="shortcuts_kebab_cased",
+        ),
     ],
 )
-def test_settings_destination_output_mismatch(
-    settings_cls: type[CtsSettings], use_destination: str, output_dir: str, should_raise: bool
-) -> None:
-    """Mismatch between use_destination and output_dir should raise ValueError."""
-    if should_raise:
-        with pytest.raises(ValueError, match="Mismatch between output location and use_destination"):
-            make_settings_autofill_config(settings_cls, {USE_DESTINATION: use_destination, OUTPUT_DIR: output_dir})
-    else:
-        s = make_settings_autofill_config(settings_cls, {USE_DESTINATION: use_destination, OUTPUT_DIR: output_dir})
-        assert s.use_destination == use_destination
-        assert s.output_dir == output_dir
+def test_default_settings_with_shortcuts_pass(kwargs: dict[str, object], expected_extra: dict[str, object]) -> None:
+    """The default config is extended with cli_prog_name and kebab-cased cli_shortcuts."""
+    assert default_settings_with_shortcuts(**kwargs) == {**DEFAULT_SETTINGS_CONFIG_DICT, **expected_extra}
 
 
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize(USE_DESTINATION, VALID_DESTINATIONS)
-def test_settings_valid_destinations_accepted(use_destination: str, settings_cls: type[CtsSettings]) -> None:
-    """Test valid destinations against the settings class."""
-    s = make_settings_autofill_config(settings_cls, {USE_DESTINATION: use_destination})
-    assert s.use_destination == use_destination
+# CdmDataLoadersBase.check_aliases
 
 
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize(USE_DESTINATION, INVALID_DESTINATIONS)
-def test_settings_invalid_destination_raises(use_destination: str, settings_cls: type[CtsSettings]) -> None:
-    """Ensure that an unrecognised use_destination raises a ValidationError."""
-    err_msg = (
-        r"use_destination must be one of \['local_fs', 's3'\]"
-        if use_destination
-        else "String should have at least 1 character"
-    )
-    with pytest.raises(ValidationError, match=err_msg):
-        make_settings_autofill_config(settings_cls, {USE_DESTINATION: use_destination})
-
-
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-def test_settings_destination_has_no_bucket_url(settings_cls: type[CtsSettings]) -> None:
-    """Ensure that destinations have a bucket_url."""
-    with pytest.raises(ValueError, match="No bucket_url specified for destination local_fs"):
-        make_settings(
-            settings_cls,
-            dlt_config={"destination": {LOCAL_FS: None}},
-            kwargs={USE_DESTINATION: LOCAL_FS},
-        )
-
-
-@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-@pytest.mark.cli_fields.with_args(DEV_MODE, USE_OUTPUT_DIR_FOR_PIPELINE_METADATA)
-@pytest.mark.parametrize(("raw_value", "expected"), TRUE_FALSE_VALUES)
-def test_settings_boolean_cli_variants_accepted(
-    settings_cls: type[CtsSettings], field_name: str, cli_option: str, raw_value: Any, expected: bool
-) -> None:
-    """Booleans can be correctly parsed from CLI args."""
-    settings = CliApp.run(settings_cls, cli_args=[cli_option, str(raw_value)])
-    assert getattr(settings, field_name) == expected
-
-
-@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-@pytest.mark.cli_fields.with_args(DEV_MODE, USE_OUTPUT_DIR_FOR_PIPELINE_METADATA)
-@pytest.mark.parametrize("bad_value", INVALID_BOOLEAN_VALUES)
-@pytest.mark.usefixtures("field_name")
-def test_settings_boolean_cli_variants_rejected(
-    settings_cls: type[CtsSettings], cli_option: str, bad_value: Any
-) -> None:
-    """Invalid booleans are rejected appropriately on the CLI."""
-    with pytest.raises(ValidationError, match="Input should be a valid boolean"):
-        CliApp.run(settings_cls, cli_args=[cli_option, str(bad_value)])
-
-
-@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-@pytest.mark.cli_fields.with_args(USE_DESTINATION)
-@pytest.mark.parametrize(USE_DESTINATION, VALID_DESTINATIONS)
-@pytest.mark.usefixtures("field_name")
-def test_settings_cli_valid_destinations_accepted(
-    settings_cls: type[CtsSettings], cli_option: str, use_destination: str
-) -> None:
-    """Valid destinations are accepted through the CLI."""
-    settings = CliApp.run(settings_cls, cli_args=[cli_option, use_destination])
-    assert settings.use_destination == use_destination
-
-
-# boolean fields
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize(("input_arg", "value"), TRUE_FALSE_VALUES)
-@pytest.mark.parametrize("input_arg_name", [USE_OUTPUT_DIR_FOR_PIPELINE_METADATA, DEV_MODE])
-def test_settings_boolean_variants_accepted(
-    input_arg: str, value: bool, input_arg_name: str, settings_cls: type[CtsSettings]
-) -> None:
-    """Ensure that each valid boolean value is accepted without error."""
-    s = make_settings_autofill_config(settings_cls, {input_arg_name: input_arg})  # type: ignore[reportArgumentType]
-    assert getattr(s, input_arg_name) == value
-
-
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize("value", INVALID_BOOLEAN_VALUES)
-@pytest.mark.parametrize("input_arg_name", [USE_OUTPUT_DIR_FOR_PIPELINE_METADATA, DEV_MODE])
-def test_settings_invalid_boolean_variants_raises(
-    value: bool, input_arg_name: str, settings_cls: type[CtsSettings]
-) -> None:
-    """Ensure that each invalid boolean value is throws an error."""
-    with pytest.raises(ValidationError, match="Input should be a valid boolean"):
-        make_settings_autofill_config(settings_cls, {input_arg_name: value})  # type: ignore[reportArgumentType]
-
-
-@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-@pytest.mark.cli_fields.with_args(USE_DESTINATION)
-@pytest.mark.parametrize(USE_DESTINATION, INVALID_DESTINATIONS)
-@pytest.mark.usefixtures("field_name")
-def test_settings_cli_invalid_destinations_raises(
-    settings_cls: type[CtsSettings], cli_option: str, use_destination: str
-) -> None:
-    """Invalid destinations are rejected on the CLI."""
-    err_msg = "use_destination must be one of" if use_destination else "String should have at least 1 character"
-    with pytest.raises(ValidationError, match=err_msg):
-        CliApp.run(settings_cls, cli_args=[cli_option, use_destination])
-
-
-@pytest.mark.settings_cls.with_args(*SETTINGS_CLASSES)
-@pytest.mark.cli_fields.with_args(USE_DESTINATION)
-@pytest.mark.usefixtures("field_name")
-def test_settings_cli_destination_has_no_bucket_url(settings_cls: type[CtsSettings], cli_option: str) -> None:
-    """Incomplete configs are rejected."""
-    with (
-        isolated_dlt_config({"destination": {LOCAL_FS: None}}),
-        pytest.raises(ValueError, match="No bucket_url specified for destination local_fs"),
-    ):
-        CliApp.run(settings_cls, cli_args=[cli_option, LOCAL_FS])
-
-
-# input and output path coercion
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(
-    ("raw", "expected"),
+    ("fields", "cli_shortcuts", "cli_kebab_case"),
     [
-        ("/some/path/", "/some/path"),
-        ("/some/path//", "/some/path"),
-        ("/some/path", "/some/path"),
-        ("///", "/"),
-        ("/", "/"),
-        ("", ""),
+        pytest.param({}, None, True, id="no_fields"),
+        pytest.param({"alpha": "a", "beta": "b"}, {"alpha": "a"}, True, id="str_shortcut"),
+        pytest.param({"alpha": "a"}, {"alpha": ["a", "x"]}, True, id="list_shortcuts"),
+        pytest.param(
+            {"alpha": Field("a", validation_alias=AliasChoices("first", AliasPath("second", 0))), "beta": "b"},
+            {"second": "s"},
+            True,
+            id="shortcut_targets_alias_path_name",
+        ),
+        pytest.param(
+            {"alpha_beta": Field("x", validation_alias="alpha-beta")},
+            {"alpha_beta": "a"},
+            False,
+            id="no_kebab-own_alias_differs_only_by_dash",
+        ),
     ],
 )
-@pytest.mark.parametrize("field_name", [INPUT_DIR, OUTPUT_DIR])
-def test_settings_trailing_slash_stripped(
-    settings_cls: type[CtsSettings],
-    raw: str,
-    expected: str,
-    field_name: str,
+def test_check_aliases_pass_valid_names(
+    fields: dict[str, object], cli_shortcuts: dict[str, str | list[str]] | None, cli_kebab_case: bool
 ) -> None:
-    """Ensure that validate_dir_path removes trailing slashes but leaves directory slashes intact."""
-    if field_name == "input_dir" and raw == "":
-        with pytest.raises(ValidationError, match="String should have at least 1 character"):
-            make_settings_autofill_config(settings_cls, {field_name: raw})
-        return
-
-    s = make_settings_autofill_config(settings_cls, {field_name: raw})
-    # output_dir gets filled in with the default if it is falsy
-    if field_name == OUTPUT_DIR and raw == "":
-        expected = "/output_dir"
-    assert getattr(s, field_name) == expected
+    """Non-colliding names, aliases and shortcuts are accepted when the class is defined."""
+    settings_cls = define_settings(fields, cli_shortcuts, cli_kebab_case=cli_kebab_case)
+    assert settings_cls.check_aliases() is None
 
 
-# values set during reconcile_with_dlt_config
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize(USE_DESTINATION, VALID_DESTINATIONS)
-def test_settings_reconcile_with_dlt_config_output_resolved_from_dlt_config_bucket_url(
-    settings_cls: type[CtsSettings],
-    use_destination: str,
-    dlt_config: dict[str, Any],
-) -> None:
-    """When output_dir is empty, it is populated from dlt config's bucket_url."""
-    s = make_settings_autofill_config(settings_cls, {OUTPUT_DIR: "", USE_DESTINATION: use_destination})
-    assert s.output_dir == dlt_config[f"destination.{use_destination}.bucket_url"]
-
-
-# properties derived from self.output_dir: pipeline_dir and raw_data_dir
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 @pytest.mark.parametrize(
-    OUTPUT_DIR,
-    list(OUTPUT_PATHS.keys()),
+    ("fields", "cli_shortcuts", "expected"),
+    [
+        pytest.param(
+            {"help": "x"}, None, "Probe: CLI name 'help' for 'help' is reserved by argparse", id="reserved_field_name"
+        ),
+        pytest.param(
+            {"alpha": "a"},
+            {"alpha": "h"},
+            "Probe: CLI name 'h' for 'alpha' is reserved by argparse",
+            id="reserved_shortcut",
+        ),
+        pytest.param(
+            {"alpha": "a", "beta": "b"},
+            {"alpha": "beta"},
+            "Probe: CLI name 'beta' is claimed by both 'alpha' and 'beta'",
+            id="shortcut_is_other_field_name",
+        ),
+        pytest.param(
+            {"alpha": "a", "beta": "b"},
+            {"alpha": "x", "beta": "x"},
+            "Probe: CLI name 'x' is claimed by both 'alpha' and 'beta'",
+            id="same_shortcut_two_fields",
+        ),
+        pytest.param(
+            {"log_config_file": "a", "other": "b"},
+            {"other": "log_config_file"},
+            "Probe: CLI name 'log_config_file' is claimed by both 'log_config_file' and 'other'",
+            id="underscore_dash_collision",
+        ),
+        pytest.param(
+            {"alpha": Field("a", alias="beta"), "beta": "b"},
+            None,
+            "Probe: CLI name 'beta' is claimed by both 'alpha' and 'beta'",
+            id="alias_is_other_field_name",
+        ),
+        pytest.param(
+            {"output_dir": "x"},
+            {"output-dir": "output-dir"},
+            "Probe: CLI name 'output-dir' is claimed twice by 'output_dir'",
+            id="shortcut_is_own_name",
+        ),
+        pytest.param(
+            {"alpha": "a"},
+            {"alpha": ["a", "a"]},
+            "Probe: CLI name 'a' is claimed twice by 'alpha'",
+            id="repeated_shortcut",
+        ),
+        pytest.param(
+            {"input_dir": "x"},
+            {"input_dir": "i"},
+            "Probe: cli_shortcuts target 'input_dir' does not match any CLI argument (did you mean 'input-dir'?)",
+            id="target_not_kebab_case",
+        ),
+        pytest.param(
+            {"alpha": "a"},
+            {"nope": "n"},
+            "Probe: cli_shortcuts target 'nope' does not match any CLI argument",
+            id="unknown_target",
+        ),
+        pytest.param(
+            {"alpha": "a"},
+            {"alpha": "-a"},
+            "Probe: invalid shortcut '-a' for 'alpha'; omit the leading dashes",
+            id="leading_dash",
+        ),
+        pytest.param(
+            {"alpha": "a"}, {"alpha": ""}, "Probe: invalid shortcut '' for 'alpha'; omit the leading dashes", id="empty"
+        ),
+        pytest.param(
+            {"alpha": "a"},
+            {"alpha": ["-a", "h"], "nope": "n"},
+            "\n".join(
+                [
+                    "Probe: invalid shortcut '-a' for 'alpha'; omit the leading dashes",
+                    "Probe: CLI name 'h' for 'alpha' is reserved by argparse",
+                    "Probe: cli_shortcuts target 'nope' does not match any CLI argument",
+                ]
+            ),
+            id="all_errors_reported",
+        ),
+    ],
 )
-@pytest.mark.parametrize(USE_OUTPUT_DIR_FOR_PIPELINE_METADATA, [True, False])
-@pytest.mark.parametrize(USE_DESTINATION, VALID_DESTINATIONS)
-def test_settings_generate_pipeline_raw_data_dirs(
-    settings_cls: type[CtsSettings],
-    output_dir: str,
+def test_check_aliases_fail_invalid_names(
+    fields: dict[str, object], cli_shortcuts: dict[str, str | list[str]] | None, expected: str
+) -> None:
+    """Reserved, colliding, mistargeted or malformed names raise a SettingsError when the class is defined."""
+    with pytest.raises(SettingsError) as exc_info:
+        define_settings(fields, cli_shortcuts)
+    assert str(exc_info.value) == expected
+
+
+# production settings classes
+
+
+@pytest.mark.parametrize(
+    ("settings_cls", "cli_args", "field_name", "expected"),
+    [
+        pytest.param(InputOutputSettings, ["-i", "/in/"], INPUT_DIR, "/in", id="InputOutputSettings--i"),
+        pytest.param(InputOutputSettings, ["-o", "/out/"], OUTPUT_DIR, "/out", id="InputOutputSettings--o"),
+        pytest.param(CtsSettings, ["-i", "/in/"], INPUT_DIR, "/in", id="CtsSettings--i"),
+        pytest.param(CtsSettings, ["-o", "/out/"], OUTPUT_DIR, "/out", id="CtsSettings--o"),
+        pytest.param(CtsSettings, ["-d", "s3"], USE_DESTINATION, "s3", id="CtsSettings--d"),
+        pytest.param(CtsSettings, ["-p", "true"], USE_OUTPUT_DIR_FOR_PIPELINE_METADATA, True, id="CtsSettings--p"),
+    ],
+)
+def test_settings_classes_pass_cli_shortcuts(
+    settings_cls: type[BaseSettings], cli_args: list[str], field_name: str, expected: object
+) -> None:
+    """Each configured shortcut is registered on the CLI and populates its target field."""
+    assert getattr(CliApp.run(settings_cls, cli_args=cli_args), field_name) == expected
+
+
+@pytest.mark.parametrize("source", SETTINGS_SOURCES)
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        pytest.param({}, io_dump(), id="not_given"),
+        pytest.param(
+            {INPUT_DIR: "/in/", OUTPUT_DIR: "/out//", LOG_CONFIG_FILE: "log.json"},
+            io_dump("/in", "/out", "log.json"),
+            id="trailing_slashes",
+        ),
+        pytest.param({INPUT_DIR: "/", OUTPUT_DIR: "///"}, io_dump("/", "/"), id="root"),
+        pytest.param({INPUT_DIR: " /in/ ", OUTPUT_DIR: " /out/ "}, io_dump("/in", "/out"), id="surrounding_whitespace"),
+        pytest.param(
+            {INPUT_DIR: "s3://bucket/in/", OUTPUT_DIR: "s3a://bucket/out//"},
+            io_dump("s3://bucket/in", "s3a://bucket/out"),
+            id="url_trailing_slashes",
+        ),
+        pytest.param(
+            {INPUT_DIR: "file:///", OUTPUT_DIR: "s3://"}, io_dump("file:///", "s3://"), id="bare_protocol_roots"
+        ),
+        pytest.param({OUTPUT_DIR: ""}, io_dump(), id="empty_output_dir_is_unset"),
+        pytest.param({OUTPUT_DIR: "  \t "}, io_dump(), id="whitespace_output_dir_is_unset"),
+    ],
+)
+def test_input_output_settings_pass_dir_values(
+    make_settings: SettingsFactory, source: str, values: dict[str, str], expected: dict[str, str | None]
+) -> None:
+    """Directory values are stripped and normalised; a blank output_dir becomes None."""
+    assert make_settings(InputOutputSettings, source, values).model_dump() == expected
+
+
+@pytest.mark.parametrize("source", SETTINGS_SOURCES)
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        pytest.param({}, CTS_DEFAULT_DUMP, id="defaults"),
+        pytest.param(
+            {
+                BUFFER_SIZE: "25",
+                DLT_DEV_MODE: "true",
+                INPUT_DIR: "/in/",
+                LOG_CONFIG_FILE: "log.json",
+                LOG_INTERVAL: "5",
+                OUTPUT_DIR: "/out/",
+                USE_DESTINATION: "custom_dest",
+                USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: "true",
+            },
+            {
+                BUFFER_SIZE: 25,
+                DLT_DEV_MODE: True,
+                INPUT_DIR: "/in",
+                LOG_CONFIG_FILE: "log.json",
+                LOG_INTERVAL: 5,
+                OUTPUT_DIR: "/out",
+                USE_DESTINATION: "custom_dest",
+                USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: True,
+                OUTPUT_IS_LOCAL: True,
+                RAW_DATA_DIR: "/out/raw_data",
+                PIPELINE_DIR: "/out/.dlt_conf",
+            },
+            id="all_values",
+        ),
+    ],
+)
+def test_cts_settings_pass_values(
+    make_settings: SettingsFactory, source: str, values: dict[str, str], expected: Mapping[str, object]
+) -> None:
+    """CtsSettings applies defaults, coerces string input, and derives computed fields, from every source."""
+    assert make_settings(CtsSettings, source, values).model_dump() == expected
+
+
+def test_cts_settings_pass_unknown_cli_args_ignored() -> None:
+    """Unrecognised CLI arguments are ignored rather than raising."""
+    settings = CliApp.run(CtsSettings, cli_args=["--not-a-field", "x", "-q", "y", "--output-dir", "/out"])
+    assert settings.model_dump() == {
+        **CTS_DEFAULT_DUMP,
+        OUTPUT_DIR: "/out",
+        OUTPUT_IS_LOCAL: True,
+        RAW_DATA_DIR: "/out/raw_data",
+    }
+
+
+@pytest.mark.parametrize(
+    ("output_dir", "use_output_dir_for_pipeline_metadata", "expected"),
+    [
+        pytest.param(None, False, (None, None, None, None), id="unresolved"),
+        pytest.param(None, True, (None, None, None, None), id="unresolved-metadata"),
+        pytest.param("/out", False, ("/out", True, "/out/raw_data", None), id="local"),
+        pytest.param("/out", True, ("/out", True, "/out/raw_data", "/out/.dlt_conf"), id="local-metadata"),
+        pytest.param("/", True, ("/", True, "/raw_data", "/.dlt_conf"), id="root-metadata"),
+        pytest.param(
+            "relative/out/",
+            True,
+            ("relative/out", True, "relative/out/raw_data", "relative/out/.dlt_conf"),
+            id="relative",
+        ),
+        pytest.param("file:///", True, ("file:///", True, "file:///raw_data", "file:///.dlt_conf"), id="file_url_root"),
+        pytest.param("s3://bucket/key/", False, ("s3://bucket/key", False, "s3://bucket/key/raw_data", None), id="s3"),
+        pytest.param(
+            "s3a://bucket/key", False, ("s3a://bucket/key", False, "s3a://bucket/key/raw_data", None), id="s3a"
+        ),
+    ],
+)
+def test_cts_settings_pass_computed_fields(
+    output_dir: str | None,
     use_output_dir_for_pipeline_metadata: bool,
-    use_destination: str,
+    expected: tuple[str | None, bool | None, str | None, str | None],
 ) -> None:
-    """Ensure that the correct paths are generated for pipeline and raw data directories.
-
-    Ensure that the destination set in `use_destination` concurs with any output_dir path set.
-
-    Ensure that pipeline directories cannot be set if the output_dir is set to s3.
-    """
-    make_settings_args = {
-        OUTPUT_DIR: output_dir,
-        USE_DESTINATION: use_destination,
-        USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: use_output_dir_for_pipeline_metadata,
-    }
-
-    expected = {
-        **DEFAULT_CTS_SETTINGS_RECONCILED,
-        USE_DESTINATION: use_destination,
-        USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: use_output_dir_for_pipeline_metadata,
-        OUTPUT_DIR: DESTINATION_TO_OUTPUT[use_destination] if output_dir == "" else OUTPUT_PATHS[output_dir][OUT],
-    }
-    if settings_cls == BatchedFileInputSettings:
-        expected = {**DEFAULT_BATCH_FILE_SETTINGS_RECONCILED, **expected}
-
-    if (OUTPUT_PATHS[expected[OUTPUT_DIR]][IS_S3] and use_destination == LOCAL_FS) or (
-        OUTPUT_PATHS[expected[OUTPUT_DIR]][IS_S3] is False and use_destination == S3
-    ):
-        with pytest.raises(ValueError, match="Mismatch between output location and use_destination"):
-            make_settings_autofill_config(settings_cls, make_settings_args)
-        return
-
-    if use_output_dir_for_pipeline_metadata and OUTPUT_PATHS[expected[OUTPUT_DIR]][IS_S3] is True:
-        # can't have pipeline dir on s3
-        with pytest.raises(ValueError, match="It is not currently possible to have the pipeline directory on s3"):
-            make_settings_autofill_config(settings_cls, make_settings_args)
-        return
-
-    s = make_settings_autofill_config(settings_cls, make_settings_args)
-
-    # get the pipeline and raw data dirs from OUTPUT_PATHS
-    expected["raw_data_dir"] = OUTPUT_PATHS[expected[OUTPUT_DIR]][RAW]
-    # No pipeline_dir if use_output_dir_for_pipeline_metadata is not set
-    expected["pipeline_dir"] = (
-        OUTPUT_PATHS[expected[OUTPUT_DIR]][PIPE] if use_output_dir_for_pipeline_metadata else None
+    """output_is_local, raw_data_dir and pipeline_dir are derived from the normalised output_dir."""
+    settings = CtsSettings(
+        output_dir=output_dir, use_output_dir_for_pipeline_metadata=use_output_dir_for_pipeline_metadata
     )
-    check_settings(s, expected)
+    assert (settings.output_dir, settings.output_is_local, settings.raw_data_dir, settings.pipeline_dir) == expected
+
+
+@pytest.mark.parametrize("source", SETTINGS_SOURCES)
+@pytest.mark.parametrize(
+    ("output_dir", "reported_url"),
+    [
+        pytest.param("s3://bucket/key", "s3://bucket/key", id="s3"),
+        pytest.param("s3a://bucket/key/", "s3a://bucket/key", id="s3a_normalised"),
+        pytest.param("gs://bucket", "gs://bucket", id="gs"),
+    ],
+)
+def test_cts_settings_fail_remote_pipeline_metadata(
+    make_settings: SettingsFactory, source: str, output_dir: str, reported_url: str
+) -> None:
+    """Pipeline metadata cannot be written to an explicit remote output_dir."""
+    with pytest.raises(ValidationError) as exc_info:
+        make_settings(CtsSettings, source, {OUTPUT_DIR: output_dir, USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: "true"})
+    assert [(err["loc"], err["msg"]) for err in exc_info.value.errors()] == [
+        ((), f"Value error, {PIPELINE_METADATA_NOT_LOCAL.format(url=reported_url)}")
+    ]
+
+
+@pytest.mark.parametrize("source", SETTINGS_SOURCES)
+@pytest.mark.parametrize(
+    ("settings_cls", "values", "expected_errors"),
+    [
+        pytest.param(LoggerSettings, {LOG_CONFIG_FILE: ""}, [((LOG_CONFIG_FILE,), NON_EMPTY)], id="empty_log_config"),
+        pytest.param(InputOutputSettings, {INPUT_DIR: ""}, [((INPUT_DIR,), NON_EMPTY)], id="empty_input_dir"),
+        pytest.param(InputOutputSettings, {INPUT_DIR: "   "}, [((INPUT_DIR,), NON_EMPTY)], id="blank_input_dir"),
+        pytest.param(CtsSettings, {BUFFER_SIZE: "0"}, [((BUFFER_SIZE,), NOT_POSITIVE)], id="zero_buffer_size"),
+        pytest.param(CtsSettings, {LOG_INTERVAL: "0"}, [((LOG_INTERVAL,), NOT_POSITIVE)], id="zero_log_interval"),
+        pytest.param(
+            CtsSettings,
+            {LOG_INTERVAL: "1.5"},
+            [((LOG_INTERVAL,), "Input should be a valid integer, unable to parse string as an integer")],
+            id="non_int_log_interval",
+        ),
+        pytest.param(CtsSettings, {DLT_DEV_MODE: "maybe"}, [((DLT_DEV_MODE,), INVALID_BOOL)], id="invalid_dev_mode"),
+        pytest.param(
+            CtsSettings,
+            {USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: "2"},
+            [((USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,), INVALID_BOOL)],
+            id="invalid_metadata_flag",
+        ),
+        pytest.param(CtsSettings, {USE_DESTINATION: ""}, [((USE_DESTINATION,), NON_EMPTY)], id="empty_destination"),
+        pytest.param(CtsSettings, {USE_DESTINATION: "  "}, [((USE_DESTINATION,), NON_EMPTY)], id="blank_destination"),
+    ],
+)
+def test_settings_classes_fail_invalid_values(
+    make_settings: SettingsFactory,
+    source: str,
+    settings_cls: type[BaseSettings],
+    values: dict[str, str],
+    expected_errors: list[tuple[tuple[str, ...], str]],
+) -> None:
+    """Invalid field values are rejected with a precise validation error from every source."""
+    with pytest.raises(ValidationError) as exc_info:
+        make_settings(settings_cls, source, values)
+    assert [(err["loc"], err["msg"]) for err in exc_info.value.errors()] == expected_errors

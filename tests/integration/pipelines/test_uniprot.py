@@ -6,20 +6,19 @@ per-table counts below are derived from those fixtures.
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 import dlt
 import pytest
 from frozendict import frozendict
 
-from cdm_data_loaders.core.fields import LOCAL_FS
+from cdm_data_loaders.core.destination import normalise_dir
+from cdm_data_loaders.core.fields import LOCAL_FS, OUTPUT_DIR
 from cdm_data_loaders.pipelines import uniprot_kb as uniprot_module
 from cdm_data_loaders.pipelines.uniprot_kb import (
     UniProtSettings,
     cli,
     parse_uniprot,
 )
-from tests.cdm_data_loaders.core.conftest import make_settings_autofill_config
 from tests.conftest import TEST_DATA_DIR
 
 UNIPROT_FIXTURE_DIR = TEST_DATA_DIR / "uniprot" / "uniprot_kb" / "chunk_4"
@@ -60,7 +59,7 @@ def duckdb_uniprot_settings_args(tmp_path: Path) -> frozendict:
 @pytest.fixture
 def duckdb_uniprot_settings(duckdb_uniprot_settings_args: frozendict) -> UniProtSettings:
     """Provide UniProtSettings pointing at the real UniProt XML fixtures."""
-    return make_settings_autofill_config(UniProtSettings, duckdb_uniprot_settings_args)  # pyright: ignore[reportReturnType]
+    return UniProtSettings(**duckdb_uniprot_settings_args)  # pyright: ignore[reportReturnType]
 
 
 def _run_uniprot_duckdb_pipeline(settings: UniProtSettings, tmp_path: Path, name: str) -> tuple[Any, Any]:
@@ -133,8 +132,8 @@ def test_integration_cli_uniprot_pipeline_output_validated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Exercise the real ``cli()`` wiring end-to-end against a DuckDB destination."""
-    monkeypatch.setattr(uniprot_module, "UniProtSettings", MagicMock(return_value=duckdb_uniprot_settings))
-
+    monkeypatch.setenv("CDL_INPUT_DIR", str(UNIPROT_FIXTURE_DIR))
+    monkeypatch.setenv("CDL_OUTPUT_DIR", str(tmp_path / "cli_output_dir"))
     captured: dict[str, Any] = {}
 
     def fake_run_pipeline(
@@ -144,7 +143,8 @@ def test_integration_cli_uniprot_pipeline_output_validated(
         pipeline_kwargs: dict[str, Any],
     ) -> None:
         """Replacement for core.run_pipeline that runs the resource through DuckDB."""
-        assert settings is duckdb_uniprot_settings
+        assert settings.input_dir == str(UNIPROT_FIXTURE_DIR)
+        assert settings.output_dir == normalise_dir(str(tmp_path / "cli_output_dir"))
         assert pipeline_kwargs == {"pipeline_name": "uniprot_kb", "dataset_name": "uniprot_kb"}
         pipeline = dlt.pipeline(
             pipeline_name="test_uniprot_cli_pipeline",
@@ -158,8 +158,6 @@ def test_integration_cli_uniprot_pipeline_output_validated(
     monkeypatch.setattr(uniprot_module, "run_pipeline", fake_run_pipeline)
 
     cli()
-
-    uniprot_module.UniProtSettings.assert_called_once_with()
 
     load_info = captured["load_info"]
     pipeline = captured["pipeline"]

@@ -19,32 +19,7 @@ from cdm_data_loaders.pipelines.xml2db.pipeline import _read_items, cli, run_xml
 from cdm_data_loaders.pipelines.xml2db.settings import PIPELINE_NAME, Xml2DbSettings
 from cdm_data_loaders.readers.xml2db_doc import build_xml2db_model
 from cdm_data_loaders.readers.xml2db_merge import MergePreparer
-
-SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
-<library>
-    <book id="1"><title>The Shining</title></book>
-    <book id="2"><title>The Stand</title></book>
-</library>
-"""
-
-LIBRARY_XSD = """<?xml version="1.0" encoding="UTF-8"?>
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
-    <xs:element name="library">
-        <xs:complexType>
-            <xs:sequence>
-                <xs:element name="book" maxOccurs="unbounded">
-                    <xs:complexType>
-                        <xs:sequence>
-                            <xs:element name="title" type="xs:string"/>
-                        </xs:sequence>
-                        <xs:attribute name="id" type="xs:string" use="required"/>
-                    </xs:complexType>
-                </xs:element>
-            </xs:sequence>
-        </xs:complexType>
-    </xs:element>
-</xs:schema>
-"""
+from tests.xml_samples import LIBRARY_XSD, TWO_BOOK_LIBRARY_XML
 
 
 @pytest.fixture
@@ -95,7 +70,7 @@ def fake_settings(
         "log_config_file": str(log_config_file),
         "input_dir": str(input_dir),
         "output_dir": str(output_dir),
-        "dev_mode": False,
+        "dlt_dev_mode": False,
         "use_destination": "local_fs",
         "use_output_dir_for_pipeline_metadata": False,
         "xsd_file": str(xsd_file),
@@ -110,7 +85,7 @@ def fake_settings(
 def test_read_items_pass_yields_pages_of_rows_per_table(tmp_path: Path, library_model: DataModel) -> None:
     """_read_items parses each file item and yields table-tagged pages of rows."""
     xml_file = tmp_path / "data.xml"
-    xml_file.write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+    xml_file.write_text(TWO_BOOK_LIBRARY_XML, encoding="utf-8")
     settings = fake_settings(tmp_path, tmp_path / "library.xsd")
 
     items = list(_read_items(iter([make_file_item(xml_file)]), settings, library_model))
@@ -128,7 +103,7 @@ def test_read_items_pass_reads_every_file_in_items(tmp_path: Path, library_model
     file_paths = []
     for index in range(3):
         xml_file = tmp_path / f"data_{index}.xml"
-        xml_file.write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+        xml_file.write_text(TWO_BOOK_LIBRARY_XML, encoding="utf-8")
         file_paths.append(xml_file)
 
     items = list(_read_items(iter(make_file_item(path) for path in file_paths), settings, library_model))
@@ -143,7 +118,7 @@ def test_read_items_pass_gzip_files_are_decompressed(tmp_path: Path, library_mod
     """A gzipped input file parses the same as its decompressed copy."""
     xml_file = tmp_path / "data.xml.gz"
     with gzip.open(xml_file, "wb") as fh:
-        fh.write(SIMPLE_LIBRARY_XML.encode("utf-8"))
+        fh.write(TWO_BOOK_LIBRARY_XML.encode("utf-8"))
     settings = fake_settings(tmp_path, tmp_path / "library.xsd")
 
     items = list(_read_items(iter([make_file_item(xml_file)]), settings, library_model))
@@ -160,7 +135,7 @@ def test_read_items_pass_merge_preparer_drops_rows_repeated_across_files(
     file_items = []
     for index in range(3):
         xml_file = tmp_path / f"data_{index}.xml"
-        xml_file.write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+        xml_file.write_text(TWO_BOOK_LIBRARY_XML, encoding="utf-8")
         file_items.append(make_file_item(xml_file))
 
     items = list(_read_items(iter(file_items), settings, library_model, MergePreparer(library_model)))
@@ -172,7 +147,7 @@ def test_read_items_pass_merge_preparer_drops_rows_repeated_across_files(
 def test_read_items_pass_merge_preparer_attaches_merge_hints(tmp_path: Path, library_model: DataModel) -> None:
     """With a merge preparer, every page carries insert-only merge hints keyed on its table's primary key."""
     xml_file = tmp_path / "data.xml"
-    xml_file.write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+    xml_file.write_text(TWO_BOOK_LIBRARY_XML, encoding="utf-8")
     settings = fake_settings(tmp_path, tmp_path / "library.xsd")
 
     items = list(_read_items(iter([make_file_item(xml_file)]), settings, library_model, MergePreparer(library_model)))
@@ -283,7 +258,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     """cli() reads command-line arguments and loads rows via a real DuckDB pipeline."""
     input_dir = tmp_path / "cli_input"
     input_dir.mkdir()
-    (input_dir / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+    (input_dir / "library.xml").write_text(TWO_BOOK_LIBRARY_XML, encoding="utf-8")
     output_dir = tmp_path / "cli_output"
     output_dir.mkdir()
     xsd_file = tmp_path / "library.xsd"
@@ -324,7 +299,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
         assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "cli_dataset"}
         pipeline = dlt.pipeline(
             pipeline_name=pipeline_name,
-            destination="duckdb",
+            destination=dlt.destinations.duckdb(f"duckdb:///{output_dir!s}/{pipeline_name}.db"),
             dataset_name="cli_dataset",
             pipelines_dir=str(tmp_path / "pipelines"),
         )
@@ -338,7 +313,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
 
     pipeline = dlt.pipeline(
         pipeline_name=pipeline_name,
-        destination="duckdb",
+        destination=dlt.destinations.duckdb(f"duckdb:///{output_dir!s}/{pipeline_name}.db"),
         dataset_name="cli_dataset",
         pipelines_dir=str(tmp_path / "pipelines"),
     )

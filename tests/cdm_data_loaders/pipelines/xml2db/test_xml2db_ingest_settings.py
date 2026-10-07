@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from pydantic_settings import CliApp
 
 from cdm_data_loaders.core.fields import DEFAULTS, S3
+from cdm_data_loaders.pipelines.core import resolve_cts_settings
 from cdm_data_loaders.pipelines.xml2db.settings import (
     DEFAULT_XML2DB_CHUNK_SIZE,
     DEFAULT_XML2DB_SHORT_NAME,
@@ -24,7 +25,7 @@ MINIMAL_SETTINGS_KWARGS: dict[str, object] = {
     "input_dir": "/input_dir",
     "output_dir": "/output_dir",
     "log_config_file": None,
-    "dev_mode": False,
+    "dlt_dev_mode": False,
     "use_destination": "local_fs",
     "use_output_dir_for_pipeline_metadata": False,
 }
@@ -184,25 +185,32 @@ def test_xml2db_ingest_settings_pass_xml2db_config_file_accepted(
 def test_xml2db_ingest_settings_pass_local_destination_with_s3_output_dir_rejected(
     settings_factory: Callable[..., Xml2DbSettings],
 ) -> None:
-    """use_destination='local_fs' with an s3:// output_dir raises ValidationError."""
-    with pytest.raises(ValidationError, match="Mismatch between output location and use_destination"):
-        settings_factory(output_dir="s3://some-bucket/path")
+    """A local_fs destination with an s3:// output_dir raises ValueError at resolution.
+
+    The check lives in resolve_output_dir and runs when run_cli resolves the
+    settings, so constructing them still succeeds.
+    """
+    settings = settings_factory(output_dir="s3://some-bucket/path", use_destination="local_fs")
+    with pytest.raises(ValueError, match="uses protocol 's3', but destination 'local_fs' is configured for 'file'"):
+        resolve_cts_settings(settings, {"destination": {"local_fs": {"bucket_url": "/out"}}})
 
 
 def test_xml2db_ingest_settings_pass_s3_destination_with_local_output_dir_rejected(
     settings_factory: Callable[..., Xml2DbSettings],
 ) -> None:
-    """use_destination='s3' with a local output_dir raises ValidationError."""
-    with pytest.raises(ValidationError, match="Mismatch between output location and use_destination"):
-        settings_factory(use_destination=S3)
+    """An s3 destination with a local output_dir raises ValueError at resolution."""
+    settings = settings_factory(output_dir="/local/out", use_destination=S3)
+    with pytest.raises(ValueError, match="uses protocol 'file', but destination 's3' is configured for 's3'"):
+        resolve_cts_settings(settings, {"destination": {"s3": {"bucket_url": "s3://bucket/prefix"}}})
 
 
 def test_xml2db_ingest_settings_pass_unknown_use_destination_rejected(
     settings_factory: Callable[..., Xml2DbSettings],
 ) -> None:
-    """use_destination not present in the dlt config raises ValidationError."""
-    with pytest.raises(ValidationError, match="use_destination must be one of"):
-        settings_factory(use_destination="not_a_destination")
+    """use_destination not present in the dlt config raises ValueError at resolution."""
+    settings = settings_factory(use_destination="not_a_destination")
+    with pytest.raises(ValueError, match="use_destination must be one of"):
+        resolve_cts_settings(settings, {"destination": {"local_fs": {"bucket_url": "/out"}}})
 
 
 def test_xml2db_ingest_settings_pass_pipeline_name_constant() -> None:

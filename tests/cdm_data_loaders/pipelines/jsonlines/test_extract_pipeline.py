@@ -9,12 +9,14 @@ from uuid import uuid4
 
 import dlt
 import pytest
+from dlt.common.pipeline import LoadInfo
 from dlt.extract import DltResource
 
 import cdm_data_loaders.pipelines.jsonlines.extract_pipeline as extract_pipeline_module
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import cli, run_jsonlines_ingest_pipeline
-from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
+
+from cdm_data_loaders.pipelines.jsonlines.settings import EXTRACT_PIPELINE_NAME, JsonlExtractSettings
 
 SIMPLE_JSONL = """{"widget_id": "a", "count": 1}
 {"widget_id": "b", "count": 2}
@@ -37,7 +39,7 @@ def test_run_jsonlines_ingest_pipeline_pass_sets_core_run_pipeline_args_correctl
     assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
     assert kwargs["settings"] == settings
     assert kwargs["pipeline_kwargs"] == {
-        "pipeline_name": "jsonlines_ingest",
+        "pipeline_name": EXTRACT_PIPELINE_NAME,
         "dataset_name": settings.dataset_name,
     }
     assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": loader_file_format}
@@ -108,7 +110,7 @@ def test_run_jsonlines_ingest_pipeline_pass_no_matching_files_yields_no_tables(
     assert load_info is not None
     assert not load_info.has_failed_jobs
     dataset = load_info.pipeline.dataset()
-    assert set(dataset.tables) == {"_dlt_version", "_dlt_loads", "_dlt_pipeline_state", "_dlt_load_info"}
+    assert set(dataset.tables) == {"_dlt_version", "_dlt_loads", "_dlt_pipeline_state", "_load_info"}
 
 
 def test_cli_pass_runs_end_to_end_from_command_line_arguments(
@@ -125,7 +127,6 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     log_config_file = tmp_path / "logging.json"
     log_config_file.write_text('{"version": 1}')
 
-    pipeline_name = f"test_jsonl_cli_pipeline_{uuid4().hex}"
     argv = [
         "jsonlines_ingest",
         "--input-dir",
@@ -137,7 +138,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
         "--use-destination",
         str(settings.use_destination),
         "--dataset-name",
-        pipeline_name,
+        "cli_dataset",
         "--table-name",
         "widget",
         "--use-output-dir-for-pipeline-metadata",
@@ -146,23 +147,25 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
         "false",
     ]
     monkeypatch.setattr(sys, "argv", argv)
+    pipeline_name = f"test_jsonl_cli_pipeline_{uuid4().hex}"
 
-    captured: dict[str, Any] = {}
-
-    def fake_run_pipeline(*, resource: DltResource, pipeline_kwargs: dict[str, Any], **_: dict[str, Any]) -> None:
+    def fake_run_pipeline(
+        *, resource: DltResource, pipeline_kwargs: dict[str, Any], **_: dict[str, Any]
+    ) -> LoadInfo | None:
+        assert pipeline_kwargs == {"pipeline_name": EXTRACT_PIPELINE_NAME, "dataset_name": "cli_dataset"}
         pipeline = dlt.pipeline(
             pipeline_name=pipeline_kwargs["pipeline_name"],
-            destination="duckdb",
+            destination=dlt.destinations.duckdb(f"duckdb:///{output_dir!s}/{pipeline_name}.db"),
             dataset_name=pipeline_kwargs["dataset_name"],
             pipelines_dir=str(tmp_path / "pipelines"),
         )
-        captured["load_info"] = pipeline.run(resource)
+        return pipeline.run(resource)
 
     with patch.object(extract_pipeline_module, "run_pipeline", fake_run_pipeline):
-        cli()
+        load_info = cli()
 
-    load_info = captured["load_info"]
+    assert load_info is not None
     assert not load_info.has_failed_jobs
-    # n.b. no _dlt_load_info due to this being a monkeypatched pipeline
+    # n.b. no _load_info due to this being a monkeypatched pipeline
     assert set(load_info.pipeline.dataset().tables) == {"widget", "_dlt_version", "_dlt_loads", "_dlt_pipeline_state"}
     assert sorted(load_info.pipeline.dataset().widget.df()["widget_id"].tolist()) == ["a", "b"]
