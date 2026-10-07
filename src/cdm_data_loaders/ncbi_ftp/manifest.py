@@ -67,6 +67,7 @@ class AssemblyRecord:
         seq_rel_date: Release date.
         ftp_url: Full FTP URL.
         assembly_dir: Assembly directory name (final path segment from the FTP URL).
+
     """
 
     accession: str

@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict
 
 from pydantic import AwareDatetime, Base64Str, BaseModel, ConfigDict, Field
 
@@ -15,15 +14,13 @@ class V2AssemblyAccessions(BaseModel):
 
 
 class V2AssemblyCheckMHistogramReplyHistogramInterval(BaseModel):
-    start_pos: float | None = Field(None, title='Starting position for this interval')
-    stop_pos: float | None = Field(None, title='ending position for this interval')
-    count: float | None = Field(None, title='number of elements in this interval')
+    start_pos: float | None = Field(None, title="Starting position for this interval")
+    stop_pos: float | None = Field(None, title="ending position for this interval")
+    count: float | None = Field(None, title="number of elements in this interval")
 
 
 class V2AssemblyCheckMHistogramRequest(BaseModel):
-    species_taxon: str | None = Field(
-        None, title='Bacterial species taxonomy ID or taxonomic name'
-    )
+    species_taxon: str | None = Field(None, title="Bacterial species taxonomy ID or taxonomic name")
 
 
 class V2AssemblyDataReportDraftRequest(BaseModel):
@@ -37,7 +34,7 @@ class V2AssemblyDatasetAvailability(BaseModel):
 
 
 class V2AssemblyRevisionHistoryRequest(BaseModel):
-    accession: str | None = Field(None, title='One genome assembly accession')
+    accession: str | None = Field(None, title="One genome assembly accession")
 
 
 class V2BioSampleDatasetReportsRequest(BaseModel):
@@ -75,11 +72,9 @@ class V2GeneChromosomeSummaryReplyGeneChromosomeSummary(BaseModel):
 class V2GeneChromosomeSummaryRequest(BaseModel):
     taxon: str | None = Field(
         None,
-        title='NCBI Taxonomy ID or name (common or scientific) at any taxonomic rank, with an anntoated genome',
+        title="NCBI Taxonomy ID or name (common or scientific) at any taxonomic rank, with an anntoated genome",
     )
-    annotation_name: str | None = Field(
-        None, title='Annotation name corresponding to the provided taxon'
-    )
+    annotation_name: str | None = Field(None, title="Annotation name corresponding to the provided taxon")
 
 
 class V2GeneCountsByTaxonReplyGeneTypeAndCount(BaseModel):
@@ -88,14 +83,14 @@ class V2GeneCountsByTaxonReplyGeneTypeAndCount(BaseModel):
 
 
 class V2GeneCountsByTaxonRequest(BaseModel):
-    taxon: str | None = Field(None, title='Taxon for provided gene symbol')
+    taxon: str | None = Field(None, title="Taxon for provided gene symbol")
 
 
 class V2GeneDatasetReportsRequestSymbolsForTaxon(BaseModel):
     symbols: list[str] | None = None
     taxon: str | None = Field(
         None,
-        title='NCBI Taxonomy ID or name (common or scientific, any taxonomic rank) for the provided gene symbol',
+        title="NCBI Taxonomy ID or name (common or scientific, any taxonomic rank) for the provided gene symbol",
     )
 
 
@@ -112,9 +107,7 @@ class V2GenePubmedIdsResponse(BaseModel):
 
 
 class V2GenomeAnnotationTableSummaryReply(BaseModel):
-    accession: str | None = Field(
-        None, title='Assembly from which available values are taken'
-    )
+    accession: str | None = Field(None, title="Assembly from which available values are taken")
     chromosomes: list[str] | None = None
     gene_types: list[str] | None = None
     empty_columns: list[str] | None = None
@@ -123,11 +116,9 @@ class V2GenomeAnnotationTableSummaryReply(BaseModel):
 class V2HttpBody(BaseModel):
     content_type: str | None = Field(
         None,
-        title='The HTTP Content-Type header value specifying the content type of the body.',
+        title="The HTTP Content-Type header value specifying the content type of the body.",
     )
-    data: Base64Str | None = Field(
-        None, title='The HTTP request/response body as raw binary.'
-    )
+    data: Base64Str | None = Field(None, title="The HTTP request/response body as raw binary.")
 
 
 class V2ProkaryoteGeneRequestGeneFlankConfig(BaseModel):
@@ -139,22 +130,18 @@ class V2PubmedList(BaseModel):
 
 
 class V2SequenceAccessionRequest(BaseModel):
-    accession: str | None = Field(
-        None, title='Nucleotide sequence accession associated with a genome assembly'
-    )
+    accession: str | None = Field(None, title="Nucleotide sequence accession associated with a genome assembly")
 
 
 class V2SequenceFeatureRequest(BaseModel):
-    accession: str | None = Field(
-        None, title='A single nucleotide or protein sequence accession.'
-    )
+    accession: str | None = Field(None, title="A single nucleotide or protein sequence accession.")
     page_size: int | None = Field(
         None,
-        title='The maximum number of sequence feature reports to return. Default is 20.',
+        title="The maximum number of sequence feature reports to return. Default is 20.",
     )
     page_token: str | None = Field(
         None,
-        title='A page token is returned when more sequence feature reports are available. Use this token along with the accessions to retrieve the next page.',
+        title="A page token is returned when more sequence feature reports are available. Use this token along with the accessions to retrieve the next page.",
     )
 
 
@@ -164,7 +151,7 @@ class V2SleepReply(BaseModel):
 
 class V2SleepRequest(BaseModel):
     sleep_msec: int | None = None
-    error_rate: float | None = Field(None, title='From 0 to 100, chance of an error')
+    error_rate: float | None = Field(None, title="From 0 to 100, chance of an error")
 
 
 class V2TabularOutput(BaseModel):
@@ -188,7 +175,7 @@ class V2TaxonomyTaxIdsPage(BaseModel):
     tax_ids: list[int] | None = None
     next_page_token: str | None = Field(
         None,
-        title='A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.',
+        title="A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.",
     )
 
 
@@ -203,33 +190,31 @@ class V2VirusAnnotationFilter(BaseModel):
     accessions: list[str] | None = None
     taxon: str | None = Field(
         None,
-        title='NCBI Taxonomy ID or name (common or scientific) at any taxonomic rank',
+        title="NCBI Taxonomy ID or name (common or scientific) at any taxonomic rank",
     )
     taxons: list[str] | None = None
-    refseq_only: bool | None = Field(None, title='If true, limit to RefSeq genomes.')
-    annotated_only: bool | None = Field(
-        None, title='If true, limit to annotated genomes.'
-    )
+    refseq_only: bool | None = Field(None, title="If true, limit to RefSeq genomes.")
+    annotated_only: bool | None = Field(None, title="If true, limit to annotated genomes.")
     released_since: AwareDatetime | None = None
     updated_since: AwareDatetime | None = None
     host: str | None = Field(
         None,
-        title='Limit to genomes isolated from the specified host species (NCBI Taxonomy ID, common or scientific name).',
+        title="Limit to genomes isolated from the specified host species (NCBI Taxonomy ID, common or scientific name).",
     )
     pangolin_classification: str | None = Field(
-        None, title='Limit to SARS-CoV-2 genomes from the specified Pango lineage.'
+        None, title="Limit to SARS-CoV-2 genomes from the specified Pango lineage."
     )
     geo_location: str | None = Field(
         None,
-        title='Limit to genomes collected from the specififed geographic location.',
+        title="Limit to genomes collected from the specififed geographic location.",
     )
     usa_state: str | None = Field(
         None,
-        title='Limit to genomes collected from the specified U.S. state (two-letter abbreviation).',
+        title="Limit to genomes collected from the specified U.S. state (two-letter abbreviation).",
     )
     complete_only: bool | None = Field(
         None,
-        title='Limit to genomes designated as complete, as defined by the submitter.',
+        title="Limit to genomes designated as complete, as defined by the submitter.",
     )
 
 
@@ -238,15 +223,15 @@ class V2VirusAnnotationReportRequest(BaseModel):
     table_fields: list[str] | None = None
     table_format: str | None = Field(
         None,
-        title='Optional pre-defined template for processing a tabular data request',
+        title="Optional pre-defined template for processing a tabular data request",
     )
     page_size: int | None = Field(
         None,
-        title='The maximum number of virus data reports to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.',
+        title="The maximum number of virus data reports to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.",
     )
     page_token: str | None = Field(
         None,
-        title='A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.',
+        title="A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.",
     )
 
 
@@ -264,130 +249,112 @@ class V2VirusDatasetFilter(BaseModel):
     accessions: list[str] | None = None
     taxon: str | None = Field(
         None,
-        title='NCBI Taxonomy ID or name (common or scientific) at any taxonomic rank',
+        title="NCBI Taxonomy ID or name (common or scientific) at any taxonomic rank",
     )
     taxons: list[str] | None = None
-    refseq_only: bool | None = Field(
-        None, title='If true, limit results to RefSeq genomes.'
-    )
-    annotated_only: bool | None = Field(
-        None, title='If true, limit results to annotated genomes.'
-    )
+    refseq_only: bool | None = Field(None, title="If true, limit results to RefSeq genomes.")
+    annotated_only: bool | None = Field(None, title="If true, limit results to annotated genomes.")
     released_since: AwareDatetime | None = None
     updated_since: AwareDatetime | None = None
     host: str | None = Field(
         None,
-        title='Limit to genomes isolated from the specified host species (NCBI Taxonomy ID, common or scientific name).',
+        title="Limit to genomes isolated from the specified host species (NCBI Taxonomy ID, common or scientific name).",
     )
     pangolin_classification: str | None = Field(
-        None, title='Limit to SARS-CoV-2 genomes from the specified Pango lineage.'
+        None, title="Limit to SARS-CoV-2 genomes from the specified Pango lineage."
     )
-    geo_location: str | None = Field(
-        None, title='Limit to genomes collected from the specified geographic location.'
-    )
+    geo_location: str | None = Field(None, title="Limit to genomes collected from the specified geographic location.")
     usa_state: str | None = Field(
         None,
-        title='Limit to genomes collected from the specified U.S. state (two-letter abbreviation).',
+        title="Limit to genomes collected from the specified U.S. state (two-letter abbreviation).",
     )
     complete_only: bool | None = Field(
         None,
-        title='Limit to genomes designated as complete, as defined by the submitter.',
+        title="Limit to genomes designated as complete, as defined by the submitter.",
     )
 
 
 class V2reportsAdditionalSubmitter(BaseModel):
-    genbank_accession: str | None = Field(
-        None, title='genbank accession of extra sequence'
-    )
-    refseq_accession: str | None = Field(
-        None, title='genbank accession of extra sequence'
-    )
-    chr_name: str | None = Field(None, title='chromosome name')
-    molecule_type: str | None = Field(None, title='molecule type')
-    submitter: str | None = Field(None, title='Name of submitter')
-    bioproject_accession: str | None = Field(None, title='Bioproject accession')
+    genbank_accession: str | None = Field(None, title="genbank accession of extra sequence")
+    refseq_accession: str | None = Field(None, title="genbank accession of extra sequence")
+    chr_name: str | None = Field(None, title="chromosome name")
+    molecule_type: str | None = Field(None, title="molecule type")
+    submitter: str | None = Field(None, title="Name of submitter")
+    bioproject_accession: str | None = Field(None, title="Bioproject accession")
 
 
 class V2reportsAggregateExpressionValue(BaseModel):
-    mean: float | None = Field(None, title='Mean')
-    stddev: float | None = Field(None, title='Standard deviation')
+    mean: float | None = Field(None, title="Mean")
+    stddev: float | None = Field(None, title="Standard deviation")
 
 
 class V2reportsAssemblyStats(BaseModel):
     total_number_of_chromosomes: int | None = Field(
         None,
-        title='Count of nuclear chromosomes, organelles and plasmids in a submitted genome assembly',
+        title="Count of nuclear chromosomes, organelles and plasmids in a submitted genome assembly",
     )
     total_sequence_length: str | None = Field(
         None,
-        title='Total sequence length of the nuclear genome including unplaced and unlocalized sequences',
+        title="Total sequence length of the nuclear genome including unplaced and unlocalized sequences",
     )
     total_ungapped_length: str | None = Field(
         None,
-        title='Total length of all top-level sequences ignoring gaps. Any stretch of 10 or more Ns in a sequence is treated like a gap',
+        title="Total length of all top-level sequences ignoring gaps. Any stretch of 10 or more Ns in a sequence is treated like a gap",
     )
     number_of_contigs: int | None = Field(
         None,
-        title='Total number of sequence contigs in the assembly. Any stretch of 10 or more Ns in a sequence is treated as a gap between two  contigs in a scaffold when counting contigs and calculating contig N50 & L50 values',
+        title="Total number of sequence contigs in the assembly. Any stretch of 10 or more Ns in a sequence is treated as a gap between two  contigs in a scaffold when counting contigs and calculating contig N50 & L50 values",
     )
     contig_n50: int | None = Field(
         None,
-        title='Length such that sequence contigs of this length or longer include half the bases of the assembly',
+        title="Length such that sequence contigs of this length or longer include half the bases of the assembly",
     )
     contig_l50: int | None = Field(
         None,
-        title='Number of sequence contigs that are longer than, or equal to, the N50 length and therefore include half the bases of the assembly',
+        title="Number of sequence contigs that are longer than, or equal to, the N50 length and therefore include half the bases of the assembly",
     )
     number_of_scaffolds: int | None = Field(
         None,
-        title='Number of scaffolds including placed, unlocalized, unplaced, alternate loci and patch scaffolds',
+        title="Number of scaffolds including placed, unlocalized, unplaced, alternate loci and patch scaffolds",
     )
     scaffold_n50: int | None = Field(
         None,
-        title='Length such that scaffolds of this length or longer include half the bases of the assembly',
+        title="Length such that scaffolds of this length or longer include half the bases of the assembly",
     )
     scaffold_l50: int | None = Field(
         None,
-        title='Number of scaffolds that are longer than, or equal to, the N50 length and therefore include half the bases of the assembly',
+        title="Number of scaffolds that are longer than, or equal to, the N50 length and therefore include half the bases of the assembly",
     )
-    gaps_between_scaffolds_count: int | None = Field(
-        None, title='Number of unspanned gaps between scaffolds'
-    )
+    gaps_between_scaffolds_count: int | None = Field(None, title="Number of unspanned gaps between scaffolds")
     number_of_component_sequences: int | None = Field(
-        None, title='Total number of component WGS or clone sequences in the assembly'
+        None, title="Total number of component WGS or clone sequences in the assembly"
     )
-    atgc_count: str | None = Field(
-        None, title='The number of AT and GC base-pairs in the assembly'
-    )
-    gc_count: str | None = Field(
-        None, title='The number of GC base-pairs in the assembly'
-    )
+    atgc_count: str | None = Field(None, title="The number of AT and GC base-pairs in the assembly")
+    gc_count: str | None = Field(None, title="The number of GC base-pairs in the assembly")
     gc_percent: float | None = Field(
         None,
-        title='The percentage of GC base-pairs in the assembly, rounded to the nearest 0.5%',
+        title="The percentage of GC base-pairs in the assembly, rounded to the nearest 0.5%",
     )
-    genome_coverage: str | None = Field(None, title='Genome assembly coverage')
-    number_of_organelles: int | None = Field(None, title='number of organelles')
+    genome_coverage: str | None = Field(None, title="Genome assembly coverage")
+    number_of_organelles: int | None = Field(None, title="number of organelles")
 
 
 class V2reportsAtypicalInfo(BaseModel):
     is_atypical: bool | None = Field(
         None,
-        title='If true there are assembly issues or the assembly is in some way non-standard',
+        title="If true there are assembly issues or the assembly is in some way non-standard",
     )
     warnings: list[str] | None = None
 
 
 class V2reportsAuthor(BaseModel):
-    name: str | None = Field(None, title='Author names.')
-    affiliation: str | None = Field(None, title='Author affiliation')
+    name: str | None = Field(None, title="Author names.")
+    affiliation: str | None = Field(None, title="Author affiliation")
 
 
 class V2reportsBioProject(BaseModel):
-    accession: str | None = Field(None, title='BioProject accession')
-    title: str | None = Field(
-        None, title='Title of the BioProject provided by the submitter'
-    )
+    accession: str | None = Field(None, title="BioProject accession")
+    title: str | None = Field(None, title="Title of the BioProject provided by the submitter")
     parent_accession: str | None = None
     parent_accessions: list[str] | None = None
 
@@ -402,7 +369,7 @@ class V2reportsBioSampleAttribute(BaseModel):
 
 
 class V2reportsBioSampleContact(BaseModel):
-    lab: str | None = Field(None, title='Submitter lab name.')
+    lab: str | None = Field(None, title="Submitter lab name.")
 
 
 class V2reportsBioSampleId(BaseModel):
@@ -422,74 +389,56 @@ class V2reportsBioSampleStatus(BaseModel):
 
 
 class V2reportsBiocollection(BaseModel):
-    bio_collection_id: str | None = Field(
-        None, title='Stable numeric identifier for the biocollection in NameBank.'
-    )
-    code: str | None = Field(
-        None, title='Canonical collection code as provided by the source institution.'
-    )
+    bio_collection_id: str | None = Field(None, title="Stable numeric identifier for the biocollection in NameBank.")
+    code: str | None = Field(None, title="Canonical collection code as provided by the source institution.")
     ncbi_unique_code: str | None = Field(
         None,
-        title='NCBI-normalized unique collection code used for cross-source lookup.',
+        title="NCBI-normalized unique collection code used for cross-source lookup.",
     )
-    name: str | None = Field(None, title='Human-readable collection name.')
-    type: str | None = Field(
-        None, title='Collection type from NameBank (e.g., museum, culture collection)'
-    )
-    comments: str | None = Field(None, title='Any additional comments')
+    name: str | None = Field(None, title="Human-readable collection name.")
+    type: str | None = Field(None, title="Collection type from NameBank (e.g., museum, culture collection)")
+    comments: str | None = Field(None, title="Any additional comments")
 
 
 class V2reportsBiocollectionInstitution(BaseModel):
-    name: str | None = Field(None, title='Human-readable institution name.')
-    country: str | None = Field(None, title='Country where the institution is located.')
-    address: str | None = Field(
-        None, title='Mailing or street address for the institution.'
-    )
-    url: str | None = Field(None, title='Institution website URL.')
-    comments: str | None = Field(None, title='Additional notes about the institution.')
+    name: str | None = Field(None, title="Human-readable institution name.")
+    country: str | None = Field(None, title="Country where the institution is located.")
+    address: str | None = Field(None, title="Mailing or street address for the institution.")
+    url: str | None = Field(None, title="Institution website URL.")
+    comments: str | None = Field(None, title="Additional notes about the institution.")
     bio_collections: list[V2reportsBiocollection] | None = None
 
 
 class V2reportsBook(BaseModel):
-    pmid: int | None = Field(None, title='PubMed identifier for this book.')
-    title: str | None = Field(None, title='Book title')
-    date: str | None = Field(None, title='Publication date')
+    pmid: int | None = Field(None, title="PubMed identifier for this book.")
+    title: str | None = Field(None, title="Book title")
+    date: str | None = Field(None, title="Publication date")
     authors: list[V2reportsAuthor] | None = None
-    pages: str | None = Field(
-        None, title='Pages of the book where the publication can be found.'
-    )
-    publisher: str | None = Field(None, title='Publisher of the book.')
+    pages: str | None = Field(None, title="Pages of the book where the publication can be found.")
+    publisher: str | None = Field(None, title="Publisher of the book.")
 
 
 class V2reportsBuscoStat(BaseModel):
-    busco_lineage: str | None = Field(None, title='BUSCO Lineage')
-    busco_ver: str | None = Field(None, title='BUSCO Version')
-    complete: float | None = Field(None, title='BUSCO score: Complete')
-    single_copy: float | None = Field(None, title='BUSCO score: Single Copy')
-    duplicated: float | None = Field(None, title='BUSCO score: Duplicated')
-    fragmented: float | None = Field(None, title='BUSCO score: Fragmented')
-    missing: float | None = Field(None, title='BUSCO score: Missing')
-    total_count: str | None = Field(None, title='BUSCO score: Total Count')
+    busco_lineage: str | None = Field(None, title="BUSCO Lineage")
+    busco_ver: str | None = Field(None, title="BUSCO Version")
+    complete: float | None = Field(None, title="BUSCO score: Complete")
+    single_copy: float | None = Field(None, title="BUSCO score: Single Copy")
+    duplicated: float | None = Field(None, title="BUSCO score: Duplicated")
+    fragmented: float | None = Field(None, title="BUSCO score: Fragmented")
+    missing: float | None = Field(None, title="BUSCO score: Missing")
+    total_count: str | None = Field(None, title="BUSCO score: Total Count")
 
 
 class V2reportsCheckM(BaseModel):
     checkm_marker_set: str | None = Field(
         None,
-        title='What taxonomic group is used as the basis for comparison with this assembly with regards to checkM values',
+        title="What taxonomic group is used as the basis for comparison with this assembly with regards to checkM values",
     )
-    checkm_species_tax_id: int | None = Field(
-        None, title='The species-level taxid for this assemblies checkM dataset'
-    )
-    checkm_marker_set_rank: str | None = Field(
-        None, title='CheckM taxonomic rank of checkm_marker_set'
-    )
-    checkm_version: str | None = Field(None, title='CheckM software version')
-    completeness: float | None = Field(
-        None, title='What percent complete is this assembly'
-    )
-    contamination: float | None = Field(
-        None, title='What is the contamination percentage for this assembly'
-    )
+    checkm_species_tax_id: int | None = Field(None, title="The species-level taxid for this assemblies checkM dataset")
+    checkm_marker_set_rank: str | None = Field(None, title="CheckM taxonomic rank of checkm_marker_set")
+    checkm_version: str | None = Field(None, title="CheckM software version")
+    completeness: float | None = Field(None, title="What percent complete is this assembly")
+    contamination: float | None = Field(None, title="What is the contamination percentage for this assembly")
     completeness_percentile: float | None = Field(
         None,
         title="The percent of assemblies under the taxonomic grouping 'checkm_marker_set' that this assembly is as-or-more complete than.",
@@ -497,55 +446,39 @@ class V2reportsCheckM(BaseModel):
 
 
 class V2reportsCultureCollection(BaseModel):
-    id: int | None = Field(
-        None, title='Internal identifier for this culture collection entry.'
-    )
-    biocollection_code: str | None = Field(
-        None, title='Institution code for the culture collection.'
-    )
+    id: int | None = Field(None, title="Internal identifier for this culture collection entry.")
+    biocollection_code: str | None = Field(None, title="Institution code for the culture collection.")
 
 
 class V2reportsExpressionRelease(BaseModel):
-    release_name: str | None = Field(None, title='Release Name')
-    assembly_accession: str | None = Field(
-        None, title='Assembly Accession with Version'
-    )
+    release_name: str | None = Field(None, title="Release Name")
+    assembly_accession: str | None = Field(None, title="Assembly Accession with Version")
 
 
 class V2reportsFunctionalSite(BaseModel):
-    name: str | None = Field(None, title='the name of this functional site')
-    type: str | None = Field(None, title='function type')
-    specific: bool | None = Field(None, title='Whether this is a specific site')
-    completeness: float | None = Field(
-        None, title='The fraction of residues mapped to the protein sequence'
-    )
-    source_accession: str | None = Field(
-        None, title='The accession of domain that defines this functional site'
-    )
+    name: str | None = Field(None, title="the name of this functional site")
+    type: str | None = Field(None, title="function type")
+    specific: bool | None = Field(None, title="Whether this is a specific site")
+    completeness: float | None = Field(None, title="The fraction of residues mapped to the protein sequence")
+    source_accession: str | None = Field(None, title="The accession of domain that defines this functional site")
     location: list[int] | None = None
 
 
 class V2reportsGeneCounts(BaseModel):
-    total: int | None = Field(None, title='Total number of annotated genes')
-    protein_coding: int | None = Field(
-        None, title='Count of annotated genes that encode a protein'
-    )
+    total: int | None = Field(None, title="Total number of annotated genes")
+    protein_coding: int | None = Field(None, title="Count of annotated genes that encode a protein")
     non_coding: int | None = Field(
         None,
-        title='Count of transcribed non-coding genes (e.g. lncRNAs, miRNAs, rRNAs, etc...) excludes transcribed pseudogenes',
+        title="Count of transcribed non-coding genes (e.g. lncRNAs, miRNAs, rRNAs, etc...) excludes transcribed pseudogenes",
     )
-    pseudogene: int | None = Field(
-        None, title='Count of transcribed and non-transcribed pseudogenes'
-    )
-    other: int | None = Field(
-        None, title='Count of genic region GeneIDs and non-genic regulatory GeneIDs'
-    )
+    pseudogene: int | None = Field(None, title="Count of transcribed and non-transcribed pseudogenes")
+    other: int | None = Field(None, title="Count of genic region GeneIDs and non-genic regulatory GeneIDs")
 
 
 class V2reportsGeneGroup(BaseModel):
     id: str | None = Field(
         None,
-        title='Gene group identifier, currently these only include gene ortholog sets',
+        title="Gene group identifier, currently these only include gene ortholog sets",
     )
     method: str | None = Field(
         None,
@@ -554,19 +487,15 @@ class V2reportsGeneGroup(BaseModel):
 
 
 class V2reportsGeneSummary(BaseModel):
-    source: str | None = Field(None, title='Source of the gene summary')
-    description: str | None = Field(
-        None, title='Gene summary text itself that describes the gene'
-    )
-    date: str | None = Field(None, title='Date that the gene summary was last updated')
+    source: str | None = Field(None, title="Source of the gene summary")
+    description: str | None = Field(None, title="Gene summary text itself that describes the gene")
+    date: str | None = Field(None, title="Date that the gene summary was last updated")
 
 
 class V2reportsGeneral(BaseModel):
-    pmid: int | None = Field(
-        None, title='PubMed identifier for this general submission.'
-    )
-    title: str | None = Field(None, title='Publication title')
-    date: str | None = Field(None, title='Publication date')
+    pmid: int | None = Field(None, title="PubMed identifier for this general submission.")
+    title: str | None = Field(None, title="Publication title")
+    date: str | None = Field(None, title="Publication date")
     authors: list[V2reportsAuthor] | None = None
     status: str | None = Field(
         None,
@@ -575,104 +504,76 @@ class V2reportsGeneral(BaseModel):
 
 
 class V2reportsGeneticCode(BaseModel):
-    id: int | None = Field(None, title='Genetic code identifier')
-    name: str | None = Field(None, title='Genetic code descriptive name')
+    id: int | None = Field(None, title="Genetic code identifier")
+    name: str | None = Field(None, title="Genetic code descriptive name")
 
 
 class V2reportsGeneticCodes(BaseModel):
-    primary: V2reportsGeneticCode | None = Field(None, title='Primary genetic code')
-    mitochondrial: V2reportsGeneticCode | None = Field(
-        None, title='Mitochondrial genetic code'
-    )
-    plastid: V2reportsGeneticCode | None = Field(None, title='Plastid genetic code')
-    hydrogenosome: V2reportsGeneticCode | None = Field(
-        None, title='Hydrogenosome  genetic code'
-    )
+    primary: V2reportsGeneticCode | None = Field(None, title="Primary genetic code")
+    mitochondrial: V2reportsGeneticCode | None = Field(None, title="Mitochondrial genetic code")
+    plastid: V2reportsGeneticCode | None = Field(None, title="Plastid genetic code")
+    hydrogenosome: V2reportsGeneticCode | None = Field(None, title="Hydrogenosome  genetic code")
 
 
 class V2reportsGetBiocollectionsReport(BaseModel):
     institution: V2reportsBiocollectionInstitution | None = Field(
         None,
-        title='A single institution and its collections. Each report contains exactly one institution record and the list of biocollections owned by that institution.',
+        title="A single institution and its collections. Each report contains exactly one institution record and the list of biocollections owned by that institution.",
     )
 
 
 class V2reportsInfraspecificNames(BaseModel):
-    breed: str | None = Field(
-        None, title='A homogenous group of animals within a domesticated species'
-    )
+    breed: str | None = Field(None, title="A homogenous group of animals within a domesticated species")
     cultivar: str | None = Field(
         None,
-        title='A variety of plant within a species produced and maintained by cultivation',
+        title="A variety of plant within a species produced and maintained by cultivation",
     )
-    ecotype: str | None = Field(
-        None, title='A population or subspecies occupying a distinct habitat'
-    )
+    ecotype: str | None = Field(None, title="A population or subspecies occupying a distinct habitat")
     isolate: str | None = Field(
         None,
-        title='The individual isolate from which the sequences in the genome assembly were derived',
+        title="The individual isolate from which the sequences in the genome assembly were derived",
     )
-    sex: str | None = Field(None, title='Physical sex of sampled organism')
-    strain: str | None = Field(
-        None, title='A genetic variant, subtype or culture within a species'
-    )
+    sex: str | None = Field(None, title="Physical sex of sampled organism")
+    strain: str | None = Field(None, title="A genetic variant, subtype or culture within a species")
 
 
 class V2reportsIsolate(BaseModel):
     name: str | None = Field(
         None,
-        title='BioSample harmonized attribute names https://www.ncbi.nlm.nih.gov/biosample/docs/attributes/',
+        title="BioSample harmonized attribute names https://www.ncbi.nlm.nih.gov/biosample/docs/attributes/",
     )
-    source: str | None = Field(
-        None, title='Source material from which the viral specimen was isolated'
-    )
+    source: str | None = Field(None, title="Source material from which the viral specimen was isolated")
     collection_date: str | None = Field(
         None,
-        title='The collection date for the sample from which the viral nucleotide sequence was derived',
+        title="The collection date for the sample from which the viral nucleotide sequence was derived",
     )
 
 
 class V2reportsIsolationDetails(BaseModel):
-    metagenomic: bool | None = Field(None, title='True when the sample is metagenomic.')
-    metagenome_name: str | None = Field(None, title='Name of the metagenome.')
-    metagenome_taxid: int | None = Field(
-        None, title='NCBI taxonomy identifier for the metagenome.'
-    )
-    lab_host: str | None = Field(
-        None, title='Laboratory host used to propagate the source organism or material.'
-    )
-    natural_host: str | None = Field(
-        None, title='Natural host organism associated with the sample.'
-    )
-    environmental_sample: bool | None = Field(
-        None, title='True when the sample is environmental.'
-    )
-    isolation_source: str | None = Field(
-        None, title='Source from which the sample was isolated.'
-    )
+    metagenomic: bool | None = Field(None, title="True when the sample is metagenomic.")
+    metagenome_name: str | None = Field(None, title="Name of the metagenome.")
+    metagenome_taxid: int | None = Field(None, title="NCBI taxonomy identifier for the metagenome.")
+    lab_host: str | None = Field(None, title="Laboratory host used to propagate the source organism or material.")
+    natural_host: str | None = Field(None, title="Natural host organism associated with the sample.")
+    environmental_sample: bool | None = Field(None, title="True when the sample is environmental.")
+    isolation_source: str | None = Field(None, title="Source from which the sample was isolated.")
 
 
 class V2reportsJournal(BaseModel):
-    pmid: int | None = Field(None, title='PubMed identifier for this journal article.')
-    pmcid: str | None = Field(
-        None, title='PubMed Central identifier for this journal article.'
-    )
-    doi: str | None = Field(
-        None, title='Digital Object Identifier for this journal article.'
-    )
-    date: str | None = Field(None, title='Publication date of the journal article.')
-    journal_name: str | None = Field(
-        None, title='Name of the journal in which the article was published.'
-    )
-    volume: str | None = Field(None, title='Volume number of the journal issue.')
-    issue: str | None = Field(None, title='Issue number of the journal volume.')
-    pages: str | None = Field(None, title='Page range within the journal issue.')
+    pmid: int | None = Field(None, title="PubMed identifier for this journal article.")
+    pmcid: str | None = Field(None, title="PubMed Central identifier for this journal article.")
+    doi: str | None = Field(None, title="Digital Object Identifier for this journal article.")
+    date: str | None = Field(None, title="Publication date of the journal article.")
+    journal_name: str | None = Field(None, title="Name of the journal in which the article was published.")
+    volume: str | None = Field(None, title="Volume number of the journal issue.")
+    issue: str | None = Field(None, title="Issue number of the journal volume.")
+    pages: str | None = Field(None, title="Page range within the journal issue.")
     authors: list[V2reportsAuthor] | None = None
 
 
 class V2reportsLineageOrganism(BaseModel):
-    tax_id: int | None = Field(None, title='NCBI Taxonomy identifier')
-    name: str | None = Field(None, title='Scientific name')
+    tax_id: int | None = Field(None, title="NCBI Taxonomy identifier")
+    name: str | None = Field(None, title="Scientific name")
 
 
 class V2reportsMaturePeptide(BaseModel):
@@ -682,64 +583,52 @@ class V2reportsMaturePeptide(BaseModel):
 
 
 class V2reportsMeeting(BaseModel):
-    pmid: int | None = Field(None, title='PubMed identifier for this meeting.')
-    number: int | None = Field(None, title='Meeting number or edition identifier.')
-    date: str | None = Field(None, title='Date of the meeting.')
-    place: str | None = Field(None, title='Location where the meeting took place.')
+    pmid: int | None = Field(None, title="PubMed identifier for this meeting.")
+    number: int | None = Field(None, title="Meeting number or edition identifier.")
+    date: str | None = Field(None, title="Date of the meeting.")
+    place: str | None = Field(None, title="Location where the meeting took place.")
 
 
 class V2reportsNameAndAuthorityPublication(BaseModel):
-    name: str | None = Field(
-        None, title='Name of the publication (article, book, etc.).'
-    )
-    citation: str | None = Field(None, title='Citation to the publication.')
+    name: str | None = Field(None, title="Name of the publication (article, book, etc.).")
+    citation: str | None = Field(None, title="Citation to the publication.")
     pmid: str | None = None
 
 
 class V2reportsNomenclatureAuthority(BaseModel):
-    authority: str | None = Field(
-        None, title='The nomenclature authority for this gene record'
-    )
-    identifier: str | None = Field(
-        None, title='The nomenclature authority identifier for this gene record'
-    )
+    authority: str | None = Field(None, title="The nomenclature authority for this gene record")
+    identifier: str | None = Field(None, title="The nomenclature authority identifier for this gene record")
 
 
 class V2reportsOrganelleBiosample(BaseModel):
-    accession: str | None = Field(None, title='BioSample Accession identifier')
+    accession: str | None = Field(None, title="BioSample Accession identifier")
 
 
 class V2reportsOrganelleGeneCounts(BaseModel):
-    total: int | None = Field(None, title='Total number of annotated genes')
-    protein_coding: int | None = Field(
-        None, title='Count of annotated genes that encode a protein'
-    )
-    rrna: int | None = Field(None, title='Count of ribosomal RNAs')
-    trna: int | None = Field(None, title='Count of transfer RNAs')
-    lncrna: int | None = Field(None, title='Count of long, non-coding RNAs')
+    total: int | None = Field(None, title="Total number of annotated genes")
+    protein_coding: int | None = Field(None, title="Count of annotated genes that encode a protein")
+    rrna: int | None = Field(None, title="Count of ribosomal RNAs")
+    trna: int | None = Field(None, title="Count of transfer RNAs")
+    lncrna: int | None = Field(None, title="Count of long, non-coding RNAs")
 
 
 class V2reportsOrganelleInfo(BaseModel):
-    assembly_name: str | None = Field(None, title='Name of associated nuclear assembly')
+    assembly_name: str | None = Field(None, title="Name of associated nuclear assembly")
     infraspecific_name: str | None = Field(
         None,
-        title='The strain, breed, cultivar or ecotype of the organism from which the sequences in the assembly were derived',
+        title="The strain, breed, cultivar or ecotype of the organism from which the sequences in the assembly were derived",
     )
     bioproject: list[str] | None = None
-    description: str | None = Field(
-        None, title='Long description of the organelle genome'
-    )
-    total_seq_length: str | None = Field(
-        None, title='Sequence length of the organelle genome'
-    )
-    submitter: str | None = Field(None, title='Name of submitter')
+    description: str | None = Field(None, title="Long description of the organelle genome")
+    total_seq_length: str | None = Field(None, title="Sequence length of the organelle genome")
+    submitter: str | None = Field(None, title="Name of submitter")
 
 
 class V2reportsOrganism(BaseModel):
-    tax_id: int | None = Field(None, title='NCBI Taxonomy identifier')
-    sci_name: str | None = Field(None, title='Scientific name')
-    organism_name: str | None = Field(None, title='Scientific name')
-    common_name: str | None = Field(None, title='Common name')
+    tax_id: int | None = Field(None, title="NCBI Taxonomy identifier")
+    sci_name: str | None = Field(None, title="Scientific name")
+    organism_name: str | None = Field(None, title="Scientific name")
+    common_name: str | None = Field(None, title="Common name")
     lineage: list[V2reportsLineageOrganism] | None = None
     strain: str | None = None
     pangolin_classification: str | None = None
@@ -747,31 +636,27 @@ class V2reportsOrganism(BaseModel):
 
 
 class V2reportsPatent(BaseModel):
-    pmid: int | None = Field(None, title='PubMed identifier for this patent.')
-    patent_id: str | None = Field(None, title='Patent identifier.')
-    title: str | None = Field(None, title='Title of the patent.')
+    pmid: int | None = Field(None, title="PubMed identifier for this patent.")
+    patent_id: str | None = Field(None, title="Patent identifier.")
+    title: str | None = Field(None, title="Title of the patent.")
     authors: list[V2reportsAuthor] | None = None
-    claim_no: int | None = Field(None, title='Claim number within the patent.')
-    issued_date: str | None = Field(None, title='Date the patent was issued.')
-    assignee: str | None = Field(None, title='Entity to whom the patent is assigned.')
+    claim_no: int | None = Field(None, title="Claim number within the patent.")
+    issued_date: str | None = Field(None, title="Date the patent was issued.")
+    assignee: str | None = Field(None, title="Entity to whom the patent is assigned.")
 
 
 class V2reportsProceedings(BaseModel):
-    pmid: int | None = Field(None, title='PubMed identifier for this proceeding.')
+    pmid: int | None = Field(None, title="PubMed identifier for this proceeding.")
     meeting: V2reportsMeeting | None = None
     book: V2reportsBook | None = None
 
 
 class V2reportsProtein(BaseModel):
-    accession_version: str | None = Field(
-        None, title='RefSeq protein accession with version'
-    )
-    name: str | None = Field(None, title='Protein name')
-    length: int | None = Field(None, title='Protein length in amino acids')
-    isoform_name: str | None = Field(None, title='Protein isoform name')
-    ensembl_protein: str | None = Field(
-        None, title='Ensembl protein accession with version'
-    )
+    accession_version: str | None = Field(None, title="RefSeq protein accession with version")
+    name: str | None = Field(None, title="Protein name")
+    length: int | None = Field(None, title="Protein length in amino acids")
+    isoform_name: str | None = Field(None, title="Protein isoform name")
+    ensembl_protein: str | None = Field(None, title="Ensembl protein accession with version")
     mature_peptides: list[V2reportsMaturePeptide] | None = None
 
 
@@ -780,53 +665,41 @@ class V2reportsProteinConservedDomain(BaseModel):
         None,
         title="Domain family or superfamily accession, like 'cd01234' or 'cl01234'",
     )
-    name: str | None = Field(None, title='The short name of the domain family')
-    description: str | None = Field(
-        None, title='The description for the domain/superfamily (defline)'
-    )
-    start: int | None = Field(
-        None, title='The start coordinate of the annotation on the query sequence'
-    )
+    name: str | None = Field(None, title="The short name of the domain family")
+    description: str | None = Field(None, title="The description for the domain/superfamily (defline)")
+    start: int | None = Field(None, title="The start coordinate of the annotation on the query sequence")
     stop: int | None = Field(
         None,
-        title='The stop coordination (inclusive) of the annotation on the query protein',
+        title="The stop coordination (inclusive) of the annotation on the query protein",
     )
-    specific: bool | None = Field(
-        None, title='Whether this hit is specific for a particular model'
-    )
-    partial: bool | None = Field(
-        None, title='Whether this domain is fully aligned to the protein'
-    )
+    specific: bool | None = Field(None, title="Whether this hit is specific for a particular model")
+    partial: bool | None = Field(None, title="Whether this domain is fully aligned to the protein")
     evalue: float | None = Field(
         None,
-        title='The Expect Value of the alignment between query sequence and the domain consensus',
+        title="The Expect Value of the alignment between query sequence and the domain consensus",
     )
     bit_score: float | None = Field(
         None,
-        title='The bit_score of the alignment between query sequence and the domain consensus',
+        title="The bit_score of the alignment between query sequence and the domain consensus",
     )
 
 
 class V2reportsProteinFamily(BaseModel):
-    method: str | None = Field(
-        None, title='The method used to assign the protein family'
-    )
+    method: str | None = Field(None, title="The method used to assign the protein family")
     identifier: int | None = Field(
         None,
-        title='The numeric ID of the model assigned to the protein using the particular method',
+        title="The numeric ID of the model assigned to the protein using the particular method",
     )
-    name: str | None = Field(None, title='The name of the assigned model')
-    description: str | None = Field(
-        None, title='The more detailed description of the assigned model'
-    )
-    type: str | None = Field(None, title='Sub-category specific to this method')
+    name: str | None = Field(None, title="The name of the assigned model")
+    description: str | None = Field(None, title="The more detailed description of the assigned model")
+    type: str | None = Field(None, title="Sub-category specific to this method")
 
 
 class V2reportsProteinNameEvidence(BaseModel):
-    accession: str | None = Field(None, title='Evidence Accession')
-    category: str | None = Field(None, title='Evidence Category')
-    source: str | None = Field(None, title='Evidence Source')
-    source_identifier: str | None = Field(None, title='Source Identifier')
+    accession: str | None = Field(None, title="Evidence Accession")
+    category: str | None = Field(None, title="Evidence Category")
+    source: str | None = Field(None, title="Evidence Source")
+    source_identifier: str | None = Field(None, title="Source Identifier")
 
 
 class V2reportsReference(BaseModel):
@@ -834,59 +707,43 @@ class V2reportsReference(BaseModel):
 
 
 class V2reportsSampleInfo(BaseModel):
-    clone: str | None = Field(
-        None, title='Name for the clone or subculture from which the sample was taken.'
-    )
+    clone: str | None = Field(None, title="Name for the clone or subculture from which the sample was taken.")
     subclone: str | None = Field(
         None,
-        title='Name for the derived clone or subculture from which the sample was taken.',
+        title="Name for the derived clone or subculture from which the sample was taken.",
     )
-    haplotype: str | None = Field(None, title='Name of the haplotype.')
-    genotype: str | None = Field(None, title='Observed genotype.')
-    sex: str | None = Field(None, title='Physical sex of sampled organism.')
-    cell_line: str | None = Field(None, title='Name of the cell line.')
-    cell_type: str | None = Field(
-        None, title='Type of cell of the sample or from which the sample was obtained.'
-    )
-    tissue: str | None = Field(None, title='Tissue from which the sample was derived.')
+    haplotype: str | None = Field(None, title="Name of the haplotype.")
+    genotype: str | None = Field(None, title="Observed genotype.")
+    sex: str | None = Field(None, title="Physical sex of sampled organism.")
+    cell_line: str | None = Field(None, title="Name of the cell line.")
+    cell_type: str | None = Field(None, title="Type of cell of the sample or from which the sample was obtained.")
+    tissue: str | None = Field(None, title="Tissue from which the sample was derived.")
     clone_lib: str | None = Field(
         None,
-        title='Formal identifier that points to source institute and clone library identifier.',
+        title="Formal identifier that points to source institute and clone library identifier.",
     )
-    dev_stage: str | None = Field(
-        None, title='Developmental stage at the time of sampling.'
-    )
+    dev_stage: str | None = Field(None, title="Developmental stage at the time of sampling.")
     tissue_lib: str | None = Field(
         None,
-        title='Formal identifier that points to source institute and tissue library identifier.',
+        title="Formal identifier that points to source institute and tissue library identifier.",
     )
-    geo_loc_name: str | None = Field(None, title='Geographical origin of the sample.')
+    geo_loc_name: str | None = Field(None, title="Geographical origin of the sample.")
     lat_lon: str | None = Field(
         None,
-        title='Geographic coordinates of the location where the sample was collected.',
+        title="Geographic coordinates of the location where the sample was collected.",
     )
-    collection_date: str | None = Field(
-        None, title='Date on which the sample was collected.'
-    )
-    collected_by: str | None = Field(
-        None, title='Name of persons or institute who collected the sample.'
-    )
-    identified_by: str | None = Field(
-        None, title='Name of the taxonomist who identified the specimen.'
-    )
-    mating_type: str | None = Field(None, title='Mating type of the sampled organism.')
-    phenotype: str | None = Field(None, title='Phenotype of sampled organism.')
-    altitude: str | None = Field(
-        None, title='The altitude of the sample above sea level.'
-    )
-    isolation_details: V2reportsIsolationDetails | None = Field(
-        None, title='Isolation details of the sample.'
-    )
+    collection_date: str | None = Field(None, title="Date on which the sample was collected.")
+    collected_by: str | None = Field(None, title="Name of persons or institute who collected the sample.")
+    identified_by: str | None = Field(None, title="Name of the taxonomist who identified the specimen.")
+    mating_type: str | None = Field(None, title="Mating type of the sampled organism.")
+    phenotype: str | None = Field(None, title="Phenotype of sampled organism.")
+    altitude: str | None = Field(None, title="The altitude of the sample above sea level.")
+    isolation_details: V2reportsIsolationDetails | None = Field(None, title="Isolation details of the sample.")
 
 
 class V2reportsSequenceFeatureLocationFuzzRange(BaseModel):
-    min: int | None = Field(None, title='Minimum position value.')
-    max: int | None = Field(None, title='Maximum position value.')
+    min: int | None = Field(None, title="Minimum position value.")
+    max: int | None = Field(None, title="Maximum position value.")
 
 
 class V2reportsSequenceFeatureQualifier(BaseModel):
@@ -953,95 +810,71 @@ class V2reportsSequenceFeatureQualifier(BaseModel):
 
 
 class V2reportsSequenceInfo(BaseModel):
-    assembly_accession: str | None = Field(None, title='The genome assembly accession')
+    assembly_accession: str | None = Field(None, title="The genome assembly accession")
     chr_name: str | None = Field(
         None,
         title='The name of the associated chromosome. The name "Un" indicates that the chromosome is unknown.',
     )
     ucsc_style_name: str | None = Field(
-        None, title='Name ascribed to this sequence by the UC Santa Cruz genome browser'
+        None, title="Name ascribed to this sequence by the UC Santa Cruz genome browser"
     )
-    sort_order: int | None = Field(
-        None, title='A sort order value assigned to the sequence'
-    )
-    assigned_molecule_location_type: str | None = Field(
-        None, title='The type of molecule represented by the sequence'
-    )
-    refseq_accession: str | None = Field(
-        None, title='The RefSeq accession of the sequence'
-    )
+    sort_order: int | None = Field(None, title="A sort order value assigned to the sequence")
+    assigned_molecule_location_type: str | None = Field(None, title="The type of molecule represented by the sequence")
+    refseq_accession: str | None = Field(None, title="The RefSeq accession of the sequence")
     assembly_unit: str | None = Field(
         None,
-        title='Name of the assembly unit, or set of sequences that comprise the assembly.',
+        title="Name of the assembly unit, or set of sequences that comprise the assembly.",
     )
-    length: int | None = Field(None, title='The length of the sequence in nucleotides')
-    genbank_accession: str | None = Field(
-        None, title='The GenBank accession of the sequence'
-    )
-    gc_count: str | None = Field(
-        None, title='The number of GC base-pairs in the chromosome'
-    )
-    gc_percent: float | None = Field(
-        None, title='The percentage of GC base-pairs in the chromosome'
-    )
-    unlocalized_count: int | None = Field(
-        None, title='Number of scaffolds that are unlocalized on a given chromosome'
-    )
+    length: int | None = Field(None, title="The length of the sequence in nucleotides")
+    genbank_accession: str | None = Field(None, title="The GenBank accession of the sequence")
+    gc_count: str | None = Field(None, title="The number of GC base-pairs in the chromosome")
+    gc_percent: float | None = Field(None, title="The percentage of GC base-pairs in the chromosome")
+    unlocalized_count: int | None = Field(None, title="Number of scaffolds that are unlocalized on a given chromosome")
     assembly_unplaced_count: int | None = Field(
-        None, title='Number of unplaced scaffolds for a given assembly accession'
+        None, title="Number of unplaced scaffolds for a given assembly accession"
     )
     role: str | None = None
-    sequence_name: str | None = Field(None, title='The sequence name')
+    sequence_name: str | None = Field(None, title="The sequence name")
 
 
 class V2reportsSequenceInformation(BaseModel):
     accession: str | None = Field(
         None,
-        title='The accession.version of the organelle genomic nucleotide sequence.',
+        title="The accession.version of the organelle genomic nucleotide sequence.",
     )
     submission_date: str | None = Field(
         None,
-        title='Date record was submitted to GenBank or Curated into RefSeq (ISO 8601)',
+        title="Date record was submitted to GenBank or Curated into RefSeq (ISO 8601)",
     )
-    submitter: str | None = Field(
-        None, title='The submitter, e.g. NCBI Genome Project for RefSeq'
-    )
+    submitter: str | None = Field(None, title="The submitter, e.g. NCBI Genome Project for RefSeq")
 
 
 class V2reportsSequenceTypeMaterial(BaseModel):
-    type: str | None = Field(None, title='Type material identifier.')
-    name: str | None = Field(None, title='Institution code for the type material.')
+    type: str | None = Field(None, title="Type material identifier.")
+    name: str | None = Field(None, title="Institution code for the type material.")
 
 
 class V2reportsSpecimenVoucher(BaseModel):
-    id: str | None = Field(None, title='Specimen voucher identifier.')
-    biocollection_code: str | None = Field(
-        None, title='Institution code for the specimen voucher.'
-    )
+    id: str | None = Field(None, title="Specimen voucher identifier.")
+    biocollection_code: str | None = Field(None, title="Institution code for the specimen voucher.")
 
 
 class V2reportsSraRun(BaseModel):
-    accession: str | None = Field(None, title='The SRA accession for this run.')
-    expression_value: float | None = Field(
-        None, title='The expression value for this run.'
-    )
+    accession: str | None = Field(None, title="The SRA accession for this run.")
+    expression_value: float | None = Field(None, title="The expression value for this run.")
 
 
 class V2reportsSubmission(BaseModel):
-    pmid: int | None = Field(None, title='PubMed identifier for this submission.')
-    date: str | None = Field(None, title='Submission date')
-    institution: str | None = Field(
-        None, title='Submitting institution or organization.'
-    )
-    address: str | None = Field(
-        None, title='Submitter mailing address or contact address.'
-    )
+    pmid: int | None = Field(None, title="PubMed identifier for this submission.")
+    date: str | None = Field(None, title="Submission date")
+    institution: str | None = Field(None, title="Submitting institution or organization.")
+    address: str | None = Field(None, title="Submitter mailing address or contact address.")
     authors: list[str] | None = None
 
 
 class V2reportsTaxData(BaseModel):
-    name: str | None = Field(None, title='Taxonomic name')
-    id: int | None = Field(None, title='NCBI Taxonomy identifier')
+    name: str | None = Field(None, title="Taxonomic name")
+    id: int | None = Field(None, title="NCBI Taxonomy identifier")
 
 
 class V2reportsTaxonomyNamesDescriptorCitation(BaseModel):
@@ -1056,39 +889,29 @@ class V2reportsTypeMaterial(BaseModel):
 
 
 class V2reportsVirusAssemblyCollectionLocation(BaseModel):
-    geographic_location: str | None = Field(
-        None, title='Country of virus specimen collection'
-    )
-    geographic_region: str | None = Field(
-        None, title='Region of virus specimen collection'
-    )
+    geographic_location: str | None = Field(None, title="Country of virus specimen collection")
+    geographic_region: str | None = Field(None, title="Region of virus specimen collection")
     usa_state: str | None = Field(
         None,
-        title='Two letter abbreviation of the state of the virus specifime collection (if United States)',
+        title="Two letter abbreviation of the state of the virus specifime collection (if United States)",
     )
 
 
 class V2reportsVirusAssemblySubmitterInfo(BaseModel):
     names: list[str] | None = None
-    affiliation: str | None = Field(
-        None, title="The submitter's organization and/or institution"
-    )
-    country: str | None = Field(
-        None, title="The country representing the submitter's affilation"
-    )
+    affiliation: str | None = Field(None, title="The submitter's organization and/or institution")
+    country: str | None = Field(None, title="The country representing the submitter's affilation")
 
 
 class V2reportsVirusPeptideUniProtId(BaseModel):
-    id: str | None = Field(None, title='UniProt ID')
-    name: str | None = Field(None, title='UniProt name')
+    id: str | None = Field(None, title="UniProt ID")
+    name: str | None = Field(None, title="UniProt name")
 
 
 class V2reportsWGSInfo(BaseModel):
-    wgs_project_accession: str | None = Field(None, title='WGS project accession')
-    master_wgs_url: str | None = Field(None, title='WGS project Nucleotide web address')
-    wgs_contigs_url: str | None = Field(
-        None, title='WGS project Sequence set browser web address'
-    )
+    wgs_project_accession: str | None = Field(None, title="WGS project accession")
+    master_wgs_url: str | None = Field(None, title="WGS project Nucleotide web address")
+    wgs_contigs_url: str | None = Field(None, title="WGS project Sequence set browser web address")
 
 
 class V2reportsWarningReplacedId(BaseModel):
@@ -1105,14 +928,12 @@ class Ncbigsupgcolv2AssemblyAccessionsReply(BaseModel):
 
 
 class Ncbigsupgcolv2AssemblyCheckMHistogramRequest(BaseModel):
-    tax_id: int | None = Field(None, title='species level')
+    tax_id: int | None = Field(None, title="species level")
 
 
 class Ncbigsupgcolv2AssemblyDataReportDraftRequest(BaseModel):
     accession: str | None = None
-    field_bypass_cache: str | None = Field(
-        None, alias='_bypass_cache', title='buf:lint:ignore FIELD_LOWER_SNAKE_CASE'
-    )
+    field_bypass_cache: str | None = Field(None, alias="_bypass_cache", title="buf:lint:ignore FIELD_LOWER_SNAKE_CASE")
 
 
 class Ncbigsupgcolv2AssemblyDataReportsRequest(BaseModel):
@@ -1120,7 +941,7 @@ class Ncbigsupgcolv2AssemblyDataReportsRequest(BaseModel):
 
 
 class Ncbigsupgcolv2SequenceAccessionRequest(BaseModel):
-    accession: str | None = Field(None, title='Could be WGS or sequence accession')
+    accession: str | None = Field(None, title="Could be WGS or sequence accession")
 
 
 class Ncbiprotddv2ChainFootprint(BaseModel):
@@ -1132,16 +953,14 @@ class Ncbiprotddv2ChainFootprint(BaseModel):
 
 class Ncbiprotddv2ParsedAbstractAuthor(BaseModel):
     surname: str | None = Field(None, title="Author's surname")
-    given_name_initials: str | None = Field(
-        None, title="Abbreviated initials of the author's given name"
-    )
+    given_name_initials: str | None = Field(None, title="Abbreviated initials of the author's given name")
 
 
 class Ncbiprotddv2ParsedAbstractEpub(BaseModel):
-    journal: str | None = Field(None, title='Name of the journal')
-    year: int | None = Field(None, title='Year of publication')
-    volume: int | None = Field(None, title='Volume of publication')
-    pages: str | None = Field(None, title='Pages of publication')
+    journal: str | None = Field(None, title="Name of the journal")
+    year: int | None = Field(None, title="Year of publication")
+    volume: int | None = Field(None, title="Volume of publication")
+    pages: str | None = Field(None, title="Pages of publication")
 
 
 class Ncbiprotddv2ProteinAccessionRequest(BaseModel):
@@ -1149,877 +968,865 @@ class Ncbiprotddv2ProteinAccessionRequest(BaseModel):
 
 
 class Ncbiprotddv2PubmedAbstractRequest(BaseModel):
-    pmid: int | None = Field(None, title='The pubmed ID of the article')
+    pmid: int | None = Field(None, title="The pubmed ID of the article")
 
 
 class Ncbiprotddv2QueryStructureDefinition(BaseModel):
     sdid: int | None = Field(
         None,
-        title='Structure Domain ID: Unique ID for mmdb_id + chain_id + domain_number',
+        title="Structure Domain ID: Unique ID for mmdb_id + chain_id + domain_number",
     )
-    mmdb_id: int | None = Field(None, title='The MMDB ID of the structure')
-    pdb_id: str | None = Field(None, title='The PDB ID of the structure')
-    description: str | None = Field(None, title='Description of the structure')
-    chain_id: str | None = Field(None, title='Chain name. I.e. AA')
-    domain_number: int | None = Field(None, title='Domain Number 0 is the entire chain')
-    from_: int | None = Field(
-        None, alias='from', title='Domain start interval residue number.'
-    )
-    to: int | None = Field(None, title='Domain end interval residue number.')
+    mmdb_id: int | None = Field(None, title="The MMDB ID of the structure")
+    pdb_id: str | None = Field(None, title="The PDB ID of the structure")
+    description: str | None = Field(None, title="Description of the structure")
+    chain_id: str | None = Field(None, title="Chain name. I.e. AA")
+    domain_number: int | None = Field(None, title="Domain Number 0 is the entire chain")
+    from_: int | None = Field(None, alias="from", title="Domain start interval residue number.")
+    to: int | None = Field(None, title="Domain end interval residue number.")
 
 
 class Ncbiprotddv2SdidRequest(BaseModel):
-    sdid: int | None = Field(None, title='Structure Domain ID')
+    sdid: int | None = Field(None, title="Structure Domain ID")
 
 
 class Ncbiprotddv2StructureDataReportExperiment(BaseModel):
     experimental_method: str | None = Field(
         None,
-        title='The experimental method used to characterize the protein structure. I.e. x-ray diffraction, etc.',
+        title="The experimental method used to characterize the protein structure. I.e. x-ray diffraction, etc.",
     )
     resolution: float | None = Field(
         None,
-        title='The resolution (in Angstroms) of a protein structure resolved by diffraction or electron microscopy.',
+        title="The resolution (in Angstroms) of a protein structure resolved by diffraction or electron microscopy.",
     )
 
 
 class Ncbiprotddv2StructureRequest(BaseModel):
-    pdb_id: str | None = Field(None, title='The PDB ID of the structure')
-    mmdb_id: int | None = Field(None, title='The MMDB ID of the structure')
+    pdb_id: str | None = Field(None, title="The PDB ID of the structure")
+    mmdb_id: int | None = Field(None, title="The MMDB ID of the structure")
 
 
 class Ncbiprotddv2VastScore(BaseModel):
-    vast_score: float | None = Field(
-        None, title='Vast Similarity Score as computed by the VAST algorithm'
-    )
-    align_length: int | None = Field(None, title='Alignment Length')
-    pct_identity: float | None = Field(None, title='Percentage Sequence Identity')
-    rmsd: float | None = Field(None, title='Root Mean Square Deviation in Angstroms')
-    p_value: float | None = Field(
-        None, title='Statistical Significance of the similarity'
-    )
+    vast_score: float | None = Field(None, title="Vast Similarity Score as computed by the VAST algorithm")
+    align_length: int | None = Field(None, title="Alignment Length")
+    pct_identity: float | None = Field(None, title="Percentage Sequence Identity")
+    rmsd: float | None = Field(None, title="Root Mean Square Deviation in Angstroms")
+    p_value: float | None = Field(None, title="Statistical Significance of the similarity")
 
 
 class V2AnnotationForAssemblyType(Enum):
-    DEFAULT = 'DEFAULT'
-    GENOME_GFF = 'GENOME_GFF'
-    GENOME_GBFF = 'GENOME_GBFF'
-    RNA_FASTA = 'RNA_FASTA'
-    PROT_FASTA = 'PROT_FASTA'
-    GENOME_GTF = 'GENOME_GTF'
-    CDS_FASTA = 'CDS_FASTA'
-    GENOME_FASTA = 'GENOME_FASTA'
-    SEQUENCE_REPORT = 'SEQUENCE_REPORT'
+    DEFAULT = "DEFAULT"
+    GENOME_GFF = "GENOME_GFF"
+    GENOME_GBFF = "GENOME_GBFF"
+    RNA_FASTA = "RNA_FASTA"
+    PROT_FASTA = "PROT_FASTA"
+    GENOME_GTF = "GENOME_GTF"
+    CDS_FASTA = "CDS_FASTA"
+    GENOME_FASTA = "GENOME_FASTA"
+    SEQUENCE_REPORT = "SEQUENCE_REPORT"
 
 
 class V2AnnotationForOrganelleType(Enum):
-    DEFAULT = 'DEFAULT'
-    GENOME_FASTA = 'GENOME_FASTA'
-    CDS_FASTA = 'CDS_FASTA'
-    PROTEIN_FASTA = 'PROTEIN_FASTA'
+    DEFAULT = "DEFAULT"
+    GENOME_FASTA = "GENOME_FASTA"
+    CDS_FASTA = "CDS_FASTA"
+    PROTEIN_FASTA = "PROTEIN_FASTA"
 
 
 class V2AssemblyDatasetDescriptorsFilterAssemblySource(Enum):
-    all = 'all'
-    refseq = 'refseq'
-    genbank = 'genbank'
+    all = "all"
+    refseq = "refseq"
+    genbank = "genbank"
 
 
 class V2AssemblyDatasetDescriptorsFilterAssemblyVersion(Enum):
-    current = 'current'
-    all_assemblies = 'all_assemblies'
+    current = "current"
+    all_assemblies = "all_assemblies"
 
 
 class V2AssemblyDatasetDescriptorsFilterMetagenomeDerivedFilter(Enum):
-    METAGENOME_DERIVED_UNSET = 'METAGENOME_DERIVED_UNSET'
-    metagenome_derived_only = 'metagenome_derived_only'
-    metagenome_derived_exclude = 'metagenome_derived_exclude'
+    METAGENOME_DERIVED_UNSET = "METAGENOME_DERIVED_UNSET"
+    metagenome_derived_only = "metagenome_derived_only"
+    metagenome_derived_exclude = "metagenome_derived_exclude"
 
 
 class V2AssemblyDatasetDescriptorsFilterTypeMaterialCategory(Enum):
-    NONE = 'NONE'
-    TYPE_MATERIAL = 'TYPE_MATERIAL'
-    TYPE_MATERIAL_CLADE = 'TYPE_MATERIAL_CLADE'
-    TYPE_MATERIAL_NEOTYPE = 'TYPE_MATERIAL_NEOTYPE'
-    TYPE_MATERIAL_REFTYPE = 'TYPE_MATERIAL_REFTYPE'
-    PATHOVAR_TYPE = 'PATHOVAR_TYPE'
-    TYPE_MATERIAL_SYN = 'TYPE_MATERIAL_SYN'
+    NONE = "NONE"
+    TYPE_MATERIAL = "TYPE_MATERIAL"
+    TYPE_MATERIAL_CLADE = "TYPE_MATERIAL_CLADE"
+    TYPE_MATERIAL_NEOTYPE = "TYPE_MATERIAL_NEOTYPE"
+    TYPE_MATERIAL_REFTYPE = "TYPE_MATERIAL_REFTYPE"
+    PATHOVAR_TYPE = "PATHOVAR_TYPE"
+    TYPE_MATERIAL_SYN = "TYPE_MATERIAL_SYN"
 
 
 class V2AssemblyDatasetReportsRequestContentType(Enum):
-    COMPLETE = 'COMPLETE'
-    ASSM_ACC = 'ASSM_ACC'
-    PAIRED_ACC = 'PAIRED_ACC'
+    COMPLETE = "COMPLETE"
+    ASSM_ACC = "ASSM_ACC"
+    PAIRED_ACC = "PAIRED_ACC"
 
 
 class V2AssemblyDatasetRequestResolution(Enum):
-    FULLY_HYDRATED = 'FULLY_HYDRATED'
-    DATA_REPORT_ONLY = 'DATA_REPORT_ONLY'
+    FULLY_HYDRATED = "FULLY_HYDRATED"
+    DATA_REPORT_ONLY = "DATA_REPORT_ONLY"
 
 
 class V2AssemblyLinksReplyAssemblyLinkType(Enum):
-    DEFAULT = 'DEFAULT'
-    GDV_LINK = 'GDV_LINK'
-    FTP_LINK = 'FTP_LINK'
-    ASSEMBLY_PUBMED = 'ASSEMBLY_PUBMED'
-    BLAST_LINK = 'BLAST_LINK'
-    ASSEMBLY_NUCCORE_REFSEQ = 'ASSEMBLY_NUCCORE_REFSEQ'
-    ASSEMBLY_NUCCORE_GENBANK = 'ASSEMBLY_NUCCORE_GENBANK'
-    CGV_LINK = 'CGV_LINK'
+    DEFAULT = "DEFAULT"
+    GDV_LINK = "GDV_LINK"
+    FTP_LINK = "FTP_LINK"
+    ASSEMBLY_PUBMED = "ASSEMBLY_PUBMED"
+    BLAST_LINK = "BLAST_LINK"
+    ASSEMBLY_NUCCORE_REFSEQ = "ASSEMBLY_NUCCORE_REFSEQ"
+    ASSEMBLY_NUCCORE_GENBANK = "ASSEMBLY_NUCCORE_GENBANK"
+    CGV_LINK = "CGV_LINK"
 
 
 class V2CatalogApiVersion(Enum):
-    UNKNOWN = 'UNKNOWN'
-    V1 = 'V1'
-    V2 = 'V2'
+    UNKNOWN = "UNKNOWN"
+    V1 = "V1"
+    V2 = "V2"
 
 
 class V2Fasta(Enum):
-    FASTA_UNSPECIFIED = 'FASTA_UNSPECIFIED'
-    FASTA_GENE = 'FASTA_GENE'
-    FASTA_RNA = 'FASTA_RNA'
-    FASTA_PROTEIN = 'FASTA_PROTEIN'
-    FASTA_GENE_FLANK = 'FASTA_GENE_FLANK'
-    FASTA_CDS = 'FASTA_CDS'
-    FASTA_5P_UTR = 'FASTA_5P_UTR'
-    FASTA_3P_UTR = 'FASTA_3P_UTR'
+    FASTA_UNSPECIFIED = "FASTA_UNSPECIFIED"
+    FASTA_GENE = "FASTA_GENE"
+    FASTA_RNA = "FASTA_RNA"
+    FASTA_PROTEIN = "FASTA_PROTEIN"
+    FASTA_GENE_FLANK = "FASTA_GENE_FLANK"
+    FASTA_CDS = "FASTA_CDS"
+    FASTA_5P_UTR = "FASTA_5P_UTR"
+    FASTA_3P_UTR = "FASTA_3P_UTR"
 
 
 class V2FileFileType(Enum):
-    UNKNOWN = 'UNKNOWN'
-    FASTA = 'FASTA'
-    GFF3 = 'GFF3'
-    DATA_REPORT = 'DATA_REPORT'
-    ANNOTATION_REPORT = 'ANNOTATION_REPORT'
-    GENOMIC_NUCLEOTIDE_FASTA = 'GENOMIC_NUCLEOTIDE_FASTA'
-    PROTEIN_FASTA = 'PROTEIN_FASTA'
-    GENBANK_FLAT_FILE = 'GENBANK_FLAT_FILE'
-    GENPEPT_FLAT_FILE = 'GENPEPT_FLAT_FILE'
-    README = 'README'
-    PDB_FILE = 'PDB_FILE'
-    CDS_NUCLEOTIDE_FASTA = 'CDS_NUCLEOTIDE_FASTA'
-    RNA_NUCLEOTIDE_FASTA = 'RNA_NUCLEOTIDE_FASTA'
-    DATA_TABLE = 'DATA_TABLE'
-    SEQUENCE_REPORT = 'SEQUENCE_REPORT'
-    GTF = 'GTF'
-    PROKARYOTE_GENE_DATA_REPORT = 'PROKARYOTE_GENE_DATA_REPORT'
-    PROKARYOTE_GENE_LOCATION_DATA_REPORT = 'PROKARYOTE_GENE_LOCATION_DATA_REPORT'
-    GENOMIC_NUCLEOTIDE_WITH_FLANK_FASTA = 'GENOMIC_NUCLEOTIDE_WITH_FLANK_FASTA'
-    BIOSAMPLE_REPORT = 'BIOSAMPLE_REPORT'
-    CATALOG = 'CATALOG'
-    TAXONOMY_NAMES_REPORT = 'TAXONOMY_NAMES_REPORT'
+    UNKNOWN = "UNKNOWN"
+    FASTA = "FASTA"
+    GFF3 = "GFF3"
+    DATA_REPORT = "DATA_REPORT"
+    ANNOTATION_REPORT = "ANNOTATION_REPORT"
+    GENOMIC_NUCLEOTIDE_FASTA = "GENOMIC_NUCLEOTIDE_FASTA"
+    PROTEIN_FASTA = "PROTEIN_FASTA"
+    GENBANK_FLAT_FILE = "GENBANK_FLAT_FILE"
+    GENPEPT_FLAT_FILE = "GENPEPT_FLAT_FILE"
+    README = "README"
+    PDB_FILE = "PDB_FILE"
+    CDS_NUCLEOTIDE_FASTA = "CDS_NUCLEOTIDE_FASTA"
+    RNA_NUCLEOTIDE_FASTA = "RNA_NUCLEOTIDE_FASTA"
+    DATA_TABLE = "DATA_TABLE"
+    SEQUENCE_REPORT = "SEQUENCE_REPORT"
+    GTF = "GTF"
+    PROKARYOTE_GENE_DATA_REPORT = "PROKARYOTE_GENE_DATA_REPORT"
+    PROKARYOTE_GENE_LOCATION_DATA_REPORT = "PROKARYOTE_GENE_LOCATION_DATA_REPORT"
+    GENOMIC_NUCLEOTIDE_WITH_FLANK_FASTA = "GENOMIC_NUCLEOTIDE_WITH_FLANK_FASTA"
+    BIOSAMPLE_REPORT = "BIOSAMPLE_REPORT"
+    CATALOG = "CATALOG"
+    TAXONOMY_NAMES_REPORT = "TAXONOMY_NAMES_REPORT"
 
 
 class V2GeneDatasetReportsRequestContentType(Enum):
-    COMPLETE = 'COMPLETE'
-    IDS_ONLY = 'IDS_ONLY'
-    COUNTS_ONLY = 'COUNTS_ONLY'
+    COMPLETE = "COMPLETE"
+    IDS_ONLY = "IDS_ONLY"
+    COUNTS_ONLY = "COUNTS_ONLY"
 
 
 class V2GeneDatasetRequestContentType(Enum):
-    COMPLETE = 'COMPLETE'
-    IDS_ONLY = 'IDS_ONLY'
+    COMPLETE = "COMPLETE"
+    IDS_ONLY = "IDS_ONLY"
 
 
 class V2GeneDatasetRequestGeneDatasetReportType(Enum):
-    DATASET_REPORT = 'DATASET_REPORT'
-    PRODUCT_REPORT = 'PRODUCT_REPORT'
+    DATASET_REPORT = "DATASET_REPORT"
+    PRODUCT_REPORT = "PRODUCT_REPORT"
 
 
 class V2GeneLinksReplyGeneLinkType(Enum):
-    DEFAULT = 'DEFAULT'
-    GENE_LINK = 'GENE_LINK'
-    GDV_LINK = 'GDV_LINK'
-    ORTHOLOG_LINK = 'ORTHOLOG_LINK'
-    MCGV_LINK = 'MCGV_LINK'
-    CROSS_REFERENCE_LINK = 'CROSS_REFERENCE_LINK'
+    DEFAULT = "DEFAULT"
+    GENE_LINK = "GENE_LINK"
+    GDV_LINK = "GDV_LINK"
+    ORTHOLOG_LINK = "ORTHOLOG_LINK"
+    MCGV_LINK = "MCGV_LINK"
+    CROSS_REFERENCE_LINK = "CROSS_REFERENCE_LINK"
 
 
 class V2GeneType(Enum):
-    UNKNOWN = 'UNKNOWN'
-    tRNA = 'tRNA'
-    rRNA = 'rRNA'
-    snRNA = 'snRNA'
-    scRNA = 'scRNA'
-    snoRNA = 'snoRNA'
-    PROTEIN_CODING = 'PROTEIN_CODING'
-    PSEUDO = 'PSEUDO'
-    TRANSPOSON = 'TRANSPOSON'
-    miscRNA = 'miscRNA'
-    ncRNA = 'ncRNA'
-    BIOLOGICAL_REGION = 'BIOLOGICAL_REGION'
-    OTHER = 'OTHER'
+    UNKNOWN = "UNKNOWN"
+    tRNA = "tRNA"
+    rRNA = "rRNA"
+    snRNA = "snRNA"
+    scRNA = "scRNA"
+    snoRNA = "snoRNA"
+    PROTEIN_CODING = "PROTEIN_CODING"
+    PSEUDO = "PSEUDO"
+    TRANSPOSON = "TRANSPOSON"
+    miscRNA = "miscRNA"
+    ncRNA = "ncRNA"
+    BIOLOGICAL_REGION = "BIOLOGICAL_REGION"
+    OTHER = "OTHER"
 
 
 class V2GenomeAnnotationRequestAnnotationType(Enum):
-    DEFAULT = 'DEFAULT'
-    GENOME_FASTA = 'GENOME_FASTA'
-    RNA_FASTA = 'RNA_FASTA'
-    PROT_FASTA = 'PROT_FASTA'
+    DEFAULT = "DEFAULT"
+    GENOME_FASTA = "GENOME_FASTA"
+    RNA_FASTA = "RNA_FASTA"
+    PROT_FASTA = "PROT_FASTA"
 
 
 class V2GenomeAnnotationRequestGenomeAnnotationTableFormat(Enum):
-    NO_TABLE = 'NO_TABLE'
-    SUMMARY = 'SUMMARY'
-    PRODUCT = 'PRODUCT'
+    NO_TABLE = "NO_TABLE"
+    SUMMARY = "SUMMARY"
+    PRODUCT = "PRODUCT"
 
 
 class V2ImageSize(Enum):
-    UNSPECIFIED = 'UNSPECIFIED'
-    SMALL = 'SMALL'
-    MEDIUM = 'MEDIUM'
+    UNSPECIFIED = "UNSPECIFIED"
+    SMALL = "SMALL"
+    MEDIUM = "MEDIUM"
 
 
 class V2IncludeTabularHeader(Enum):
-    INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY = 'INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY'
-    INCLUDE_TABULAR_HEADER_ALWAYS = 'INCLUDE_TABULAR_HEADER_ALWAYS'
-    INCLUDE_TABULAR_HEADER_NEVER = 'INCLUDE_TABULAR_HEADER_NEVER'
+    INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY = "INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY"
+    INCLUDE_TABULAR_HEADER_ALWAYS = "INCLUDE_TABULAR_HEADER_ALWAYS"
+    INCLUDE_TABULAR_HEADER_NEVER = "INCLUDE_TABULAR_HEADER_NEVER"
 
 
 class V2MicroBiggeDatasetRequestFileType(Enum):
-    element_fasta = 'element_fasta'
-    element_flank_fasta = 'element_flank_fasta'
-    contig_fasta = 'contig_fasta'
-    protein_fasta = 'protein_fasta'
+    element_fasta = "element_fasta"
+    element_flank_fasta = "element_flank_fasta"
+    contig_fasta = "contig_fasta"
+    protein_fasta = "protein_fasta"
 
 
 class V2OrganelleMetadataRequestContentType(Enum):
-    COMPLETE = 'COMPLETE'
-    ASSM_ACC = 'ASSM_ACC'
+    COMPLETE = "COMPLETE"
+    ASSM_ACC = "ASSM_ACC"
 
 
 class V2OrganelleMetadataRequestOrganelleTableFormat(Enum):
-    ORGANELLE_TABLE_FORMAT_NO_TABLE = 'ORGANELLE_TABLE_FORMAT_NO_TABLE'
-    SUMMARY = 'SUMMARY'
+    ORGANELLE_TABLE_FORMAT_NO_TABLE = "ORGANELLE_TABLE_FORMAT_NO_TABLE"
+    SUMMARY = "SUMMARY"
 
 
 class V2OrganismQueryRequestTaxRankFilter(Enum):
-    species = 'species'
-    higher_taxon = 'higher_taxon'
+    species = "species"
+    higher_taxon = "higher_taxon"
 
 
 class V2OrganismQueryRequestTaxonResourceFilter(Enum):
-    TAXON_RESOURCE_FILTER_ALL = 'TAXON_RESOURCE_FILTER_ALL'
-    TAXON_RESOURCE_FILTER_GENOME = 'TAXON_RESOURCE_FILTER_GENOME'
-    TAXON_RESOURCE_FILTER_GENE = 'TAXON_RESOURCE_FILTER_GENE'
-    TAXON_RESOURCE_FILTER_ORGANELLE = 'TAXON_RESOURCE_FILTER_ORGANELLE'
+    TAXON_RESOURCE_FILTER_ALL = "TAXON_RESOURCE_FILTER_ALL"
+    TAXON_RESOURCE_FILTER_GENOME = "TAXON_RESOURCE_FILTER_GENOME"
+    TAXON_RESOURCE_FILTER_GENE = "TAXON_RESOURCE_FILTER_GENE"
+    TAXON_RESOURCE_FILTER_ORGANELLE = "TAXON_RESOURCE_FILTER_ORGANELLE"
 
 
 class V2OrthologRequestContentType(Enum):
-    COMPLETE = 'COMPLETE'
-    IDS_ONLY = 'IDS_ONLY'
+    COMPLETE = "COMPLETE"
+    IDS_ONLY = "IDS_ONLY"
 
 
 class V2RefGeneCatalogDatasetRequestFileType(Enum):
-    FILE_TYPE_NUCLEOTIDE = 'FILE_TYPE_NUCLEOTIDE'
-    FILE_TYPE_NUCLEOTIDE_WITH_FLANK = 'FILE_TYPE_NUCLEOTIDE_WITH_FLANK'
-    FILE_TYPE_PROTEIN = 'FILE_TYPE_PROTEIN'
+    FILE_TYPE_NUCLEOTIDE = "FILE_TYPE_NUCLEOTIDE"
+    FILE_TYPE_NUCLEOTIDE_WITH_FLANK = "FILE_TYPE_NUCLEOTIDE_WITH_FLANK"
+    FILE_TYPE_PROTEIN = "FILE_TYPE_PROTEIN"
 
 
 class V2SequenceDatasetRequestFileType(Enum):
-    UNSPECIFIED = 'UNSPECIFIED'
-    FASTA = 'FASTA'
-    GBFF = 'GBFF'
-    DATASET_REPORT = 'DATASET_REPORT'
-    ANNOTATION_REPORT = 'ANNOTATION_REPORT'
+    UNSPECIFIED = "UNSPECIFIED"
+    FASTA = "FASTA"
+    GBFF = "GBFF"
+    DATASET_REPORT = "DATASET_REPORT"
+    ANNOTATION_REPORT = "ANNOTATION_REPORT"
 
 
 class V2SequenceRequestContentType(Enum):
-    COMPLETE = 'COMPLETE'
-    MINIMAL = 'MINIMAL'
+    COMPLETE = "COMPLETE"
+    MINIMAL = "MINIMAL"
 
 
 class V2SequenceRequestTableFormat(Enum):
-    SUMMARY = 'SUMMARY'
-    SUMMARY_NO_QUERY = 'SUMMARY_NO_QUERY'
+    SUMMARY = "SUMMARY"
+    SUMMARY_NO_QUERY = "SUMMARY_NO_QUERY"
 
 
 class V2SortDirection(Enum):
-    SORT_DIRECTION_UNSPECIFIED = 'SORT_DIRECTION_UNSPECIFIED'
-    SORT_DIRECTION_ASCENDING = 'SORT_DIRECTION_ASCENDING'
-    SORT_DIRECTION_DESCENDING = 'SORT_DIRECTION_DESCENDING'
+    SORT_DIRECTION_UNSPECIFIED = "SORT_DIRECTION_UNSPECIFIED"
+    SORT_DIRECTION_ASCENDING = "SORT_DIRECTION_ASCENDING"
+    SORT_DIRECTION_DESCENDING = "SORT_DIRECTION_DESCENDING"
 
 
 class V2TableFormat(Enum):
-    tsv = 'tsv'
-    csv = 'csv'
-    jsonl = 'jsonl'
+    tsv = "tsv"
+    csv = "csv"
+    jsonl = "jsonl"
 
 
 class V2TaxonomyDatasetRequestTaxonomyReportType(Enum):
-    TAXONOMY_SUMMARY = 'TAXONOMY_SUMMARY'
-    NAMES_REPORT = 'NAMES_REPORT'
+    TAXONOMY_SUMMARY = "TAXONOMY_SUMMARY"
+    NAMES_REPORT = "NAMES_REPORT"
 
 
 class V2TaxonomyFilteredSubtreeResponseEdgeChildStatus(Enum):
-    UNSPECIFIED = 'UNSPECIFIED'
-    HAS_MORE_CHILDREN = 'HAS_MORE_CHILDREN'
-    NO_VISIBLE_CHILDREN = 'NO_VISIBLE_CHILDREN'
-    ONLY_UNSPECIFIED_CHILDREN = 'ONLY_UNSPECIFIED_CHILDREN'
+    UNSPECIFIED = "UNSPECIFIED"
+    HAS_MORE_CHILDREN = "HAS_MORE_CHILDREN"
+    NO_VISIBLE_CHILDREN = "NO_VISIBLE_CHILDREN"
+    ONLY_UNSPECIFIED_CHILDREN = "ONLY_UNSPECIFIED_CHILDREN"
 
 
 class V2TaxonomyMetadataRequestContentType(Enum):
-    COMPLETE = 'COMPLETE'
-    TAXIDS = 'TAXIDS'
-    METADATA = 'METADATA'
+    COMPLETE = "COMPLETE"
+    TAXIDS = "TAXIDS"
+    METADATA = "METADATA"
 
 
 class V2TaxonomyMetadataRequestTableFormat(Enum):
-    SUMMARY = 'SUMMARY'
+    SUMMARY = "SUMMARY"
 
 
 class V2ViralSequenceType(Enum):
-    GENOME = 'GENOME'
-    CDS = 'CDS'
-    PROTEIN = 'PROTEIN'
-    NONE = 'NONE'
+    GENOME = "GENOME"
+    CDS = "CDS"
+    PROTEIN = "PROTEIN"
+    NONE = "NONE"
 
 
 class V2VirusDataReportRequestContentType(Enum):
-    COMPLETE = 'COMPLETE'
-    ACCESSIONS_ONLY = 'ACCESSIONS_ONLY'
+    COMPLETE = "COMPLETE"
+    ACCESSIONS_ONLY = "ACCESSIONS_ONLY"
 
 
 class V2VirusDatasetReportType(Enum):
-    DATASET_REPORT = 'DATASET_REPORT'
-    ANNOTATION = 'ANNOTATION'
-    BIOSAMPLE_REPORT = 'BIOSAMPLE_REPORT'
+    DATASET_REPORT = "DATASET_REPORT"
+    ANNOTATION = "ANNOTATION"
+    BIOSAMPLE_REPORT = "BIOSAMPLE_REPORT"
 
 
 class V2VirusTableField(Enum):
-    unspecified = 'unspecified'
-    nucleotide_accession = 'nucleotide_accession'
-    species_tax_id = 'species_tax_id'
-    species_name = 'species_name'
-    genus = 'genus'
-    family = 'family'
-    nucleotide_length = 'nucleotide_length'
-    isolate_name = 'isolate_name'
-    sequence_type = 'sequence_type'
-    nuc_completeness = 'nuc_completeness'
-    geo_location = 'geo_location'
-    us_state = 'us_state'
-    host_name = 'host_name'
-    host_tax_id = 'host_tax_id'
-    collection_date = 'collection_date'
-    bioproject = 'bioproject'
-    biosample = 'biosample'
-    polyprotein_name = 'polyprotein_name'
-    protein_name = 'protein_name'
-    protein_accession = 'protein_accession'
-    protein_synonym = 'protein_synonym'
-    cds_span = 'cds_span'
+    unspecified = "unspecified"
+    nucleotide_accession = "nucleotide_accession"
+    species_tax_id = "species_tax_id"
+    species_name = "species_name"
+    genus = "genus"
+    family = "family"
+    nucleotide_length = "nucleotide_length"
+    isolate_name = "isolate_name"
+    sequence_type = "sequence_type"
+    nuc_completeness = "nuc_completeness"
+    geo_location = "geo_location"
+    us_state = "us_state"
+    host_name = "host_name"
+    host_tax_id = "host_tax_id"
+    collection_date = "collection_date"
+    bioproject = "bioproject"
+    biosample = "biosample"
+    polyprotein_name = "polyprotein_name"
+    protein_name = "protein_name"
+    protein_accession = "protein_accession"
+    protein_synonym = "protein_synonym"
+    cds_span = "cds_span"
 
 
 class V2reportsANITypeCategory(Enum):
-    ANI_CATEGORY_UNKNOWN = 'ANI_CATEGORY_UNKNOWN'
-    claderef = 'claderef'
-    category_na = 'category_na'
-    neotype = 'neotype'
-    no_type = 'no_type'
-    pathovar = 'pathovar'
-    reftype = 'reftype'
-    suspected_type = 'suspected_type'
-    synonym = 'synonym'
-    type = 'type'
+    ANI_CATEGORY_UNKNOWN = "ANI_CATEGORY_UNKNOWN"
+    claderef = "claderef"
+    category_na = "category_na"
+    neotype = "neotype"
+    no_type = "no_type"
+    pathovar = "pathovar"
+    reftype = "reftype"
+    suspected_type = "suspected_type"
+    synonym = "synonym"
+    type = "type"
 
 
 class V2reportsAssemblyLevel(Enum):
-    chromosome = 'chromosome'
-    scaffold = 'scaffold'
-    contig = 'contig'
-    complete_genome = 'complete_genome'
+    chromosome = "chromosome"
+    scaffold = "scaffold"
+    contig = "contig"
+    complete_genome = "complete_genome"
 
 
 class V2reportsAssemblyStatus(Enum):
-    ASSEMBLY_STATUS_UNKNOWN = 'ASSEMBLY_STATUS_UNKNOWN'
-    current = 'current'
-    previous = 'previous'
-    suppressed = 'suppressed'
-    retired = 'retired'
+    ASSEMBLY_STATUS_UNKNOWN = "ASSEMBLY_STATUS_UNKNOWN"
+    current = "current"
+    previous = "previous"
+    suppressed = "suppressed"
+    retired = "retired"
 
 
 class V2reportsAverageNucleotideIdentityMatchStatus(Enum):
-    BEST_MATCH_STATUS_UNKNOWN = 'BEST_MATCH_STATUS_UNKNOWN'
-    approved_mismatch = 'approved_mismatch'
-    below_threshold_match = 'below_threshold_match'
-    below_threshold_mismatch = 'below_threshold_mismatch'
-    best_match_status = 'best_match_status'
-    derived_species_match = 'derived_species_match'
-    genus_match = 'genus_match'
-    low_coverage = 'low_coverage'
-    mismatch = 'mismatch'
-    status_na = 'status_na'
-    species_match = 'species_match'
-    subspecies_match = 'subspecies_match'
-    synonym_match = 'synonym_match'
-    lineage_match = 'lineage_match'
-    below_threshold_lineage_match = 'below_threshold_lineage_match'
+    BEST_MATCH_STATUS_UNKNOWN = "BEST_MATCH_STATUS_UNKNOWN"
+    approved_mismatch = "approved_mismatch"
+    below_threshold_match = "below_threshold_match"
+    below_threshold_mismatch = "below_threshold_mismatch"
+    best_match_status = "best_match_status"
+    derived_species_match = "derived_species_match"
+    genus_match = "genus_match"
+    low_coverage = "low_coverage"
+    mismatch = "mismatch"
+    status_na = "status_na"
+    species_match = "species_match"
+    subspecies_match = "subspecies_match"
+    synonym_match = "synonym_match"
+    lineage_match = "lineage_match"
+    below_threshold_lineage_match = "below_threshold_lineage_match"
 
 
 class V2reportsAverageNucleotideIdentityTaxonomyCheckStatus(Enum):
-    TAXONOMY_CHECK_STATUS_UNKNOWN = 'TAXONOMY_CHECK_STATUS_UNKNOWN'
-    OK = 'OK'
-    Failed = 'Failed'
-    Inconclusive = 'Inconclusive'
+    TAXONOMY_CHECK_STATUS_UNKNOWN = "TAXONOMY_CHECK_STATUS_UNKNOWN"
+    OK = "OK"
+    Failed = "Failed"
+    Inconclusive = "Inconclusive"
 
 
 class V2reportsCollectionType(Enum):
-    no_collection_type = 'no_collection_type'
-    collection_culture_collection = 'collection_culture_collection'
-    specimen_voucher = 'specimen_voucher'
+    no_collection_type = "no_collection_type"
+    collection_culture_collection = "collection_culture_collection"
+    specimen_voucher = "specimen_voucher"
 
 
 class V2reportsContentType(Enum):
-    COMPLETE = 'COMPLETE'
-    ASSM_ACC = 'ASSM_ACC'
-    PAIRED_ACC = 'PAIRED_ACC'
+    COMPLETE = "COMPLETE"
+    ASSM_ACC = "ASSM_ACC"
+    PAIRED_ACC = "PAIRED_ACC"
 
 
 class V2reportsCountType(Enum):
-    COUNT_TYPE_UNSPECIFIED = 'COUNT_TYPE_UNSPECIFIED'
-    COUNT_TYPE_ASSEMBLY = 'COUNT_TYPE_ASSEMBLY'
-    COUNT_TYPE_GENE = 'COUNT_TYPE_GENE'
-    COUNT_TYPE_tRNA = 'COUNT_TYPE_tRNA'
-    COUNT_TYPE_rRNA = 'COUNT_TYPE_rRNA'
-    COUNT_TYPE_snRNA = 'COUNT_TYPE_snRNA'
-    COUNT_TYPE_scRNA = 'COUNT_TYPE_scRNA'
-    COUNT_TYPE_snoRNA = 'COUNT_TYPE_snoRNA'
-    COUNT_TYPE_PROTEIN_CODING = 'COUNT_TYPE_PROTEIN_CODING'
-    COUNT_TYPE_PSEUDO = 'COUNT_TYPE_PSEUDO'
-    COUNT_TYPE_TRANSPOSON = 'COUNT_TYPE_TRANSPOSON'
-    COUNT_TYPE_miscRNA = 'COUNT_TYPE_miscRNA'
-    COUNT_TYPE_ncRNA = 'COUNT_TYPE_ncRNA'
-    COUNT_TYPE_BIOLOGICAL_REGION = 'COUNT_TYPE_BIOLOGICAL_REGION'
-    COUNT_TYPE_OTHER = 'COUNT_TYPE_OTHER'
-    COUNT_TYPE_ORGANELLE = 'COUNT_TYPE_ORGANELLE'
+    COUNT_TYPE_UNSPECIFIED = "COUNT_TYPE_UNSPECIFIED"
+    COUNT_TYPE_ASSEMBLY = "COUNT_TYPE_ASSEMBLY"
+    COUNT_TYPE_GENE = "COUNT_TYPE_GENE"
+    COUNT_TYPE_tRNA = "COUNT_TYPE_tRNA"
+    COUNT_TYPE_rRNA = "COUNT_TYPE_rRNA"
+    COUNT_TYPE_snRNA = "COUNT_TYPE_snRNA"
+    COUNT_TYPE_scRNA = "COUNT_TYPE_scRNA"
+    COUNT_TYPE_snoRNA = "COUNT_TYPE_snoRNA"
+    COUNT_TYPE_PROTEIN_CODING = "COUNT_TYPE_PROTEIN_CODING"
+    COUNT_TYPE_PSEUDO = "COUNT_TYPE_PSEUDO"
+    COUNT_TYPE_TRANSPOSON = "COUNT_TYPE_TRANSPOSON"
+    COUNT_TYPE_miscRNA = "COUNT_TYPE_miscRNA"
+    COUNT_TYPE_ncRNA = "COUNT_TYPE_ncRNA"
+    COUNT_TYPE_BIOLOGICAL_REGION = "COUNT_TYPE_BIOLOGICAL_REGION"
+    COUNT_TYPE_OTHER = "COUNT_TYPE_OTHER"
+    COUNT_TYPE_ORGANELLE = "COUNT_TYPE_ORGANELLE"
 
 
 class V2reportsErrorAssemblyErrorCode(Enum):
-    UNKNOWN_ASSEMBLY_ERROR_CODE = 'UNKNOWN_ASSEMBLY_ERROR_CODE'
-    INVALID_BIOPROJECT_IDS = 'INVALID_BIOPROJECT_IDS'
-    NO_ASSEMBLIES_FOR_BIOPROJECTS = 'NO_ASSEMBLIES_FOR_BIOPROJECTS'
-    INVALID_TAXON = 'INVALID_TAXON'
-    MISSING_SEARCH_FIELD = 'MISSING_SEARCH_FIELD'
-    INVALID_BIOSAMPLE_IDS = 'INVALID_BIOSAMPLE_IDS'
-    NO_ASSEMBLIES_FOR_BIOSAMPLE_IDS = 'NO_ASSEMBLIES_FOR_BIOSAMPLE_IDS'
-    NO_ASSEMBLIES_FOR_ASSEMBLY_NAMES = 'NO_ASSEMBLIES_FOR_ASSEMBLY_NAMES'
-    INVALID_WGS_ACCESSIONS = 'INVALID_WGS_ACCESSIONS'
-    NO_ASSEMBLIES_FOR_WGS_ACCESSIONS = 'NO_ASSEMBLIES_FOR_WGS_ACCESSIONS'
+    UNKNOWN_ASSEMBLY_ERROR_CODE = "UNKNOWN_ASSEMBLY_ERROR_CODE"
+    INVALID_BIOPROJECT_IDS = "INVALID_BIOPROJECT_IDS"
+    NO_ASSEMBLIES_FOR_BIOPROJECTS = "NO_ASSEMBLIES_FOR_BIOPROJECTS"
+    INVALID_TAXON = "INVALID_TAXON"
+    MISSING_SEARCH_FIELD = "MISSING_SEARCH_FIELD"
+    INVALID_BIOSAMPLE_IDS = "INVALID_BIOSAMPLE_IDS"
+    NO_ASSEMBLIES_FOR_BIOSAMPLE_IDS = "NO_ASSEMBLIES_FOR_BIOSAMPLE_IDS"
+    NO_ASSEMBLIES_FOR_ASSEMBLY_NAMES = "NO_ASSEMBLIES_FOR_ASSEMBLY_NAMES"
+    INVALID_WGS_ACCESSIONS = "INVALID_WGS_ACCESSIONS"
+    NO_ASSEMBLIES_FOR_WGS_ACCESSIONS = "NO_ASSEMBLIES_FOR_WGS_ACCESSIONS"
 
 
 class V2reportsErrorGeneErrorCode(Enum):
-    UNKNOWN_GENE_ERROR_CODE = 'UNKNOWN_GENE_ERROR_CODE'
-    INCOMPLETE_LOOKUP_SYMBOL = 'INCOMPLETE_LOOKUP_SYMBOL'
-    INVALID_TAXON_GENE_ARGUMENT = 'INVALID_TAXON_GENE_ARGUMENT'
+    UNKNOWN_GENE_ERROR_CODE = "UNKNOWN_GENE_ERROR_CODE"
+    INCOMPLETE_LOOKUP_SYMBOL = "INCOMPLETE_LOOKUP_SYMBOL"
+    INVALID_TAXON_GENE_ARGUMENT = "INVALID_TAXON_GENE_ARGUMENT"
 
 
 class V2reportsErrorOrganelleErrorCode(Enum):
-    UNKNOWN_ORGANELLE_ERROR_CODE = 'UNKNOWN_ORGANELLE_ERROR_CODE'
-    INVALID_ORGANELLE_TAXON = 'INVALID_ORGANELLE_TAXON'
-    NO_ORGANELLES_FOR_ACCESSION = 'NO_ORGANELLES_FOR_ACCESSION'
+    UNKNOWN_ORGANELLE_ERROR_CODE = "UNKNOWN_ORGANELLE_ERROR_CODE"
+    INVALID_ORGANELLE_TAXON = "INVALID_ORGANELLE_TAXON"
+    NO_ORGANELLES_FOR_ACCESSION = "NO_ORGANELLES_FOR_ACCESSION"
 
 
 class V2reportsErrorSequenceErrorCode(Enum):
-    UNKNOWN_SEQUENCE_ERROR_CODE = 'UNKNOWN_SEQUENCE_ERROR_CODE'
-    INVALID_SEQUENCE_ACCESSION = 'INVALID_SEQUENCE_ACCESSION'
+    UNKNOWN_SEQUENCE_ERROR_CODE = "UNKNOWN_SEQUENCE_ERROR_CODE"
+    INVALID_SEQUENCE_ACCESSION = "INVALID_SEQUENCE_ACCESSION"
 
 
 class V2reportsErrorTaxonomyErrorCode(Enum):
-    UNKNOWN_TAXONOMY_ERROR_CODE = 'UNKNOWN_TAXONOMY_ERROR_CODE'
-    INVALID_TAXONOMY_TAXON = 'INVALID_TAXONOMY_TAXON'
+    UNKNOWN_TAXONOMY_ERROR_CODE = "UNKNOWN_TAXONOMY_ERROR_CODE"
+    INVALID_TAXONOMY_TAXON = "INVALID_TAXONOMY_TAXON"
 
 
 class V2reportsErrorVirusErrorCode(Enum):
-    UNKNOWN_VIRUS_ERROR_CODE = 'UNKNOWN_VIRUS_ERROR_CODE'
+    UNKNOWN_VIRUS_ERROR_CODE = "UNKNOWN_VIRUS_ERROR_CODE"
 
 
 class V2reportsGeneType(Enum):
-    UNKNOWN = 'UNKNOWN'
-    tRNA = 'tRNA'
-    rRNA = 'rRNA'
-    snRNA = 'snRNA'
-    scRNA = 'scRNA'
-    snoRNA = 'snoRNA'
-    PROTEIN_CODING = 'PROTEIN_CODING'
-    PSEUDO = 'PSEUDO'
-    TRANSPOSON = 'TRANSPOSON'
-    miscRNA = 'miscRNA'
-    ncRNA = 'ncRNA'
-    BIOLOGICAL_REGION = 'BIOLOGICAL_REGION'
-    OTHER = 'OTHER'
+    UNKNOWN = "UNKNOWN"
+    tRNA = "tRNA"
+    rRNA = "rRNA"
+    snRNA = "snRNA"
+    scRNA = "scRNA"
+    snoRNA = "snoRNA"
+    PROTEIN_CODING = "PROTEIN_CODING"
+    PSEUDO = "PSEUDO"
+    TRANSPOSON = "TRANSPOSON"
+    miscRNA = "miscRNA"
+    ncRNA = "ncRNA"
+    BIOLOGICAL_REGION = "BIOLOGICAL_REGION"
+    OTHER = "OTHER"
 
 
 class V2reportsGenomicRegionGenomicRegionType(Enum):
-    UNKNOWN = 'UNKNOWN'
-    REFSEQ_GENE = 'REFSEQ_GENE'
-    PSEUDOGENE = 'PSEUDOGENE'
-    BIOLOGICAL_REGION = 'BIOLOGICAL_REGION'
-    OTHER = 'OTHER'
+    UNKNOWN = "UNKNOWN"
+    REFSEQ_GENE = "REFSEQ_GENE"
+    PSEUDOGENE = "PSEUDOGENE"
+    BIOLOGICAL_REGION = "BIOLOGICAL_REGION"
+    OTHER = "OTHER"
 
 
 class V2reportsLinkedAssemblyType(Enum):
-    LINKED_ASSEMBLY_TYPE_UNKNOWN = 'LINKED_ASSEMBLY_TYPE_UNKNOWN'
-    alternate_pseudohaplotype_of_diploid = 'alternate_pseudohaplotype_of_diploid'
-    principal_pseudohaplotype_of_diploid = 'principal_pseudohaplotype_of_diploid'
-    maternal_haplotype_of_diploid = 'maternal_haplotype_of_diploid'
-    paternal_haplotype_of_diploid = 'paternal_haplotype_of_diploid'
-    haplotype_1 = 'haplotype_1'
-    haplotype_2 = 'haplotype_2'
-    haplotype_3 = 'haplotype_3'
-    haplotype_4 = 'haplotype_4'
-    haploid = 'haploid'
+    LINKED_ASSEMBLY_TYPE_UNKNOWN = "LINKED_ASSEMBLY_TYPE_UNKNOWN"
+    alternate_pseudohaplotype_of_diploid = "alternate_pseudohaplotype_of_diploid"
+    principal_pseudohaplotype_of_diploid = "principal_pseudohaplotype_of_diploid"
+    maternal_haplotype_of_diploid = "maternal_haplotype_of_diploid"
+    paternal_haplotype_of_diploid = "paternal_haplotype_of_diploid"
+    haplotype_1 = "haplotype_1"
+    haplotype_2 = "haplotype_2"
+    haplotype_3 = "haplotype_3"
+    haplotype_4 = "haplotype_4"
+    haploid = "haploid"
 
 
 class V2reportsMapLocationMapType(Enum):
-    Unknown = 'Unknown'
-    Cytogenetic = 'Cytogenetic'
-    Genetic = 'Genetic'
+    Unknown = "Unknown"
+    Cytogenetic = "Cytogenetic"
+    Genetic = "Genetic"
 
 
 class V2reportsMedlineStatus(Enum):
-    unknown = 'unknown'
-    publisher = 'publisher'
-    premedline = 'premedline'
-    medline = 'medline'
+    unknown = "unknown"
+    publisher = "publisher"
+    premedline = "premedline"
+    medline = "medline"
 
 
 class V2reportsMoleculeType(Enum):
-    molecule_type_unspecified = 'molecule_type_unspecified'
-    unassigned_dna = 'unassigned_dna'
-    unassigned_rna = 'unassigned_rna'
-    genomic_dna = 'genomic_dna'
-    genomic_rna = 'genomic_rna'
-    m_rna = 'm_rna'
-    r_rna = 'r_rna'
-    t_rna = 't_rna'
-    transcribed_rna = 'transcribed_rna'
-    other_dna = 'other_dna'
-    other_rna = 'other_rna'
-    viral_c_rna = 'viral_c_rna'
-    protein = 'protein'
+    molecule_type_unspecified = "molecule_type_unspecified"
+    unassigned_dna = "unassigned_dna"
+    unassigned_rna = "unassigned_rna"
+    genomic_dna = "genomic_dna"
+    genomic_rna = "genomic_rna"
+    m_rna = "m_rna"
+    r_rna = "r_rna"
+    t_rna = "t_rna"
+    transcribed_rna = "transcribed_rna"
+    other_dna = "other_dna"
+    other_rna = "other_rna"
+    viral_c_rna = "viral_c_rna"
+    protein = "protein"
 
 
 class V2reportsNameAndAuthorityNoteClassifier(Enum):
-    no_authority_classifier = 'no_authority_classifier'
-    effective_name = 'effective_name'
-    nomen_approbbatum = 'nomen_approbbatum'
-    ictv_accepted = 'ictv_accepted'
+    no_authority_classifier = "no_authority_classifier"
+    effective_name = "effective_name"
+    nomen_approbbatum = "nomen_approbbatum"
+    ictv_accepted = "ictv_accepted"
 
 
 class V2reportsOrganelleTopology(Enum):
-    TOPOLOGY_UNKNOWN = 'TOPOLOGY_UNKNOWN'
-    Circular = 'Circular'
-    Linear = 'Linear'
-    Tandem = 'Tandem'
+    TOPOLOGY_UNKNOWN = "TOPOLOGY_UNKNOWN"
+    Circular = "Circular"
+    Linear = "Linear"
+    Tandem = "Tandem"
 
 
 class V2reportsOrganelleType(Enum):
-    ORGANELLE_TYPE_UNKNOWN = 'ORGANELLE_TYPE_UNKNOWN'
-    Mitochondrion = 'Mitochondrion'
-    Chloroplast = 'Chloroplast'
-    Plastid = 'Plastid'
-    Kinetoplast = 'Kinetoplast'
-    Apicoplast = 'Apicoplast'
-    Chromatophore = 'Chromatophore'
-    Cyanelle = 'Cyanelle'
+    ORGANELLE_TYPE_UNKNOWN = "ORGANELLE_TYPE_UNKNOWN"
+    Mitochondrion = "Mitochondrion"
+    Chloroplast = "Chloroplast"
+    Plastid = "Plastid"
+    Kinetoplast = "Kinetoplast"
+    Apicoplast = "Apicoplast"
+    Chromatophore = "Chromatophore"
+    Cyanelle = "Cyanelle"
 
 
 class V2reportsOrientation(Enum):
-    none = 'none'
-    plus = 'plus'
-    minus = 'minus'
+    none = "none"
+    plus = "plus"
+    minus = "minus"
 
 
 class V2reportsProkaryoteGeneLocationCompleteness(Enum):
-    complete = 'complete'
-    partial = 'partial'
+    complete = "complete"
+    partial = "partial"
 
 
 class V2reportsPurposeOfSampling(Enum):
-    PURPOSE_OF_SAMPLING_UNKNOWN = 'PURPOSE_OF_SAMPLING_UNKNOWN'
-    PURPOSE_OF_SAMPLING_BASELINE_SURVEILLANCE = (
-        'PURPOSE_OF_SAMPLING_BASELINE_SURVEILLANCE'
-    )
+    PURPOSE_OF_SAMPLING_UNKNOWN = "PURPOSE_OF_SAMPLING_UNKNOWN"
+    PURPOSE_OF_SAMPLING_BASELINE_SURVEILLANCE = "PURPOSE_OF_SAMPLING_BASELINE_SURVEILLANCE"
 
 
 class V2reportsRankType(Enum):
-    NO_RANK = 'NO_RANK'
-    SUPERKINGDOM = 'SUPERKINGDOM'
-    DOMAIN = 'DOMAIN'
-    REALM = 'REALM'
-    KINGDOM = 'KINGDOM'
-    SUBKINGDOM = 'SUBKINGDOM'
-    SUPERPHYLUM = 'SUPERPHYLUM'
-    SUBPHYLUM = 'SUBPHYLUM'
-    PHYLUM = 'PHYLUM'
-    CLADE = 'CLADE'
-    SUPERCLASS = 'SUPERCLASS'
-    CLASS = 'CLASS'
-    SUBCLASS = 'SUBCLASS'
-    INFRACLASS = 'INFRACLASS'
-    COHORT = 'COHORT'
-    SUBCOHORT = 'SUBCOHORT'
-    SUPERORDER = 'SUPERORDER'
-    ORDER = 'ORDER'
-    SUBORDER = 'SUBORDER'
-    INFRAORDER = 'INFRAORDER'
-    PARVORDER = 'PARVORDER'
-    SUPERFAMILY = 'SUPERFAMILY'
-    FAMILY = 'FAMILY'
-    SUBFAMILY = 'SUBFAMILY'
-    GENUS = 'GENUS'
-    SUBGENUS = 'SUBGENUS'
-    SPECIES_GROUP = 'SPECIES_GROUP'
-    SPECIES_SUBGROUP = 'SPECIES_SUBGROUP'
-    SPECIES = 'SPECIES'
-    SUBSPECIES = 'SUBSPECIES'
-    TRIBE = 'TRIBE'
-    SUBTRIBE = 'SUBTRIBE'
-    FORMA = 'FORMA'
-    VARIETAS = 'VARIETAS'
-    STRAIN = 'STRAIN'
-    SECTION = 'SECTION'
-    SUBSECTION = 'SUBSECTION'
-    PATHOGROUP = 'PATHOGROUP'
-    SUBVARIETY = 'SUBVARIETY'
-    GENOTYPE = 'GENOTYPE'
-    SEROTYPE = 'SEROTYPE'
-    ISOLATE = 'ISOLATE'
-    MORPH = 'MORPH'
-    SERIES = 'SERIES'
-    FORMA_SPECIALIS = 'FORMA_SPECIALIS'
-    SEROGROUP = 'SEROGROUP'
-    BIOTYPE = 'BIOTYPE'
-    ACELLULAR_ROOT = 'ACELLULAR_ROOT'
-    CELLULAR_ROOT = 'CELLULAR_ROOT'
+    NO_RANK = "NO_RANK"
+    SUPERKINGDOM = "SUPERKINGDOM"
+    DOMAIN = "DOMAIN"
+    REALM = "REALM"
+    KINGDOM = "KINGDOM"
+    SUBKINGDOM = "SUBKINGDOM"
+    SUPERPHYLUM = "SUPERPHYLUM"
+    SUBPHYLUM = "SUBPHYLUM"
+    PHYLUM = "PHYLUM"
+    CLADE = "CLADE"
+    SUPERCLASS = "SUPERCLASS"
+    CLASS = "CLASS"
+    SUBCLASS = "SUBCLASS"
+    INFRACLASS = "INFRACLASS"
+    COHORT = "COHORT"
+    SUBCOHORT = "SUBCOHORT"
+    SUPERORDER = "SUPERORDER"
+    ORDER = "ORDER"
+    SUBORDER = "SUBORDER"
+    INFRAORDER = "INFRAORDER"
+    PARVORDER = "PARVORDER"
+    SUPERFAMILY = "SUPERFAMILY"
+    FAMILY = "FAMILY"
+    SUBFAMILY = "SUBFAMILY"
+    GENUS = "GENUS"
+    SUBGENUS = "SUBGENUS"
+    SPECIES_GROUP = "SPECIES_GROUP"
+    SPECIES_SUBGROUP = "SPECIES_SUBGROUP"
+    SPECIES = "SPECIES"
+    SUBSPECIES = "SUBSPECIES"
+    TRIBE = "TRIBE"
+    SUBTRIBE = "SUBTRIBE"
+    FORMA = "FORMA"
+    VARIETAS = "VARIETAS"
+    STRAIN = "STRAIN"
+    SECTION = "SECTION"
+    SUBSECTION = "SUBSECTION"
+    PATHOGROUP = "PATHOGROUP"
+    SUBVARIETY = "SUBVARIETY"
+    GENOTYPE = "GENOTYPE"
+    SEROTYPE = "SEROTYPE"
+    ISOLATE = "ISOLATE"
+    MORPH = "MORPH"
+    SERIES = "SERIES"
+    FORMA_SPECIALIS = "FORMA_SPECIALIS"
+    SEROGROUP = "SEROGROUP"
+    BIOTYPE = "BIOTYPE"
+    ACELLULAR_ROOT = "ACELLULAR_ROOT"
+    CELLULAR_ROOT = "CELLULAR_ROOT"
 
 
 class V2reportsRnaType(Enum):
-    rna_UNKNOWN = 'rna_UNKNOWN'
-    premsg = 'premsg'
-    tmRna = 'tmRna'
+    rna_UNKNOWN = "rna_UNKNOWN"
+    premsg = "premsg"
+    tmRna = "tmRna"
 
 
 class V2reportsSequenceDataReportCompleteness(Enum):
-    completeness_unknown = 'completeness_unknown'
-    complete = 'complete'
-    partial = 'partial'
-    no_left = 'no_left'
-    no_right = 'no_right'
-    no_ends = 'no_ends'
-    has_left = 'has_left'
-    has_right = 'has_right'
-    completeness_other = 'completeness_other'
+    completeness_unknown = "completeness_unknown"
+    complete = "complete"
+    partial = "partial"
+    no_left = "no_left"
+    no_right = "no_right"
+    no_ends = "no_ends"
+    has_left = "has_left"
+    has_right = "has_right"
+    completeness_other = "completeness_other"
 
 
 class V2reportsSequenceDataReportGenomeType(Enum):
-    genome_type_unknown = 'genome_type_unknown'
-    chloroplast = 'chloroplast'
-    chromoplast = 'chromoplast'
-    kinetoplast = 'kinetoplast'
-    mitochondrion = 'mitochondrion'
-    plastid = 'plastid'
-    macronuclear = 'macronuclear'
-    extrachromosomal = 'extrachromosomal'
-    plasmid = 'plasmid'
-    transposon = 'transposon'
-    insertion_sequence = 'insertion_sequence'
-    cyanelle = 'cyanelle'
-    proviral = 'proviral'
-    virion = 'virion'
-    nucleomorph = 'nucleomorph'
-    apicoplast = 'apicoplast'
-    leucoplast = 'leucoplast'
-    proplastid = 'proplastid'
-    endogenous_virus = 'endogenous_virus'
-    hydrogenosome = 'hydrogenosome'
-    chromatophore = 'chromatophore'
-    plasmid_in_mitochondrion = 'plasmid_in_mitochondrion'
-    plasmid_in_plastid = 'plasmid_in_plastid'
-    nitroplast = 'nitroplast'
+    genome_type_unknown = "genome_type_unknown"
+    chloroplast = "chloroplast"
+    chromoplast = "chromoplast"
+    kinetoplast = "kinetoplast"
+    mitochondrion = "mitochondrion"
+    plastid = "plastid"
+    macronuclear = "macronuclear"
+    extrachromosomal = "extrachromosomal"
+    plasmid = "plasmid"
+    transposon = "transposon"
+    insertion_sequence = "insertion_sequence"
+    cyanelle = "cyanelle"
+    proviral = "proviral"
+    virion = "virion"
+    nucleomorph = "nucleomorph"
+    apicoplast = "apicoplast"
+    leucoplast = "leucoplast"
+    proplastid = "proplastid"
+    endogenous_virus = "endogenous_virus"
+    hydrogenosome = "hydrogenosome"
+    chromatophore = "chromatophore"
+    plasmid_in_mitochondrion = "plasmid_in_mitochondrion"
+    plasmid_in_plastid = "plasmid_in_plastid"
+    nitroplast = "nitroplast"
 
 
 class V2reportsSequenceDataReportOriginType(Enum):
-    unknown = 'unknown'
-    natural = 'natural'
-    naturally_occurring_mutant = 'naturally_occurring_mutant'
-    artificially_mutagenized = 'artificially_mutagenized'
-    artificially_engineered = 'artificially_engineered'
-    purely_synthetic = 'purely_synthetic'
-    other = 'other'
+    unknown = "unknown"
+    natural = "natural"
+    naturally_occurring_mutant = "naturally_occurring_mutant"
+    artificially_mutagenized = "artificially_mutagenized"
+    artificially_engineered = "artificially_engineered"
+    purely_synthetic = "purely_synthetic"
+    other = "other"
 
 
 class V2reportsSequenceDataReportSequencingMethod(Enum):
-    sequencing_method_unknown = 'sequencing_method_unknown'
-    expressed_sequence_tag = 'expressed_sequence_tag'
-    sequence_tagged_site = 'sequence_tagged_site'
-    survey = 'survey'
-    single_genomic_reads_for_coordination = 'single_genomic_reads_for_coordination'
-    unordered_high_throughput_sequence_contig = (
-        'unordered_high_throughput_sequence_contig'
-    )
-    ordered_high_throughput_sequence_contig = 'ordered_high_throughput_sequence_contig'
-    finished_high_throughput_sequence_contig = (
-        'finished_high_throughput_sequence_contig'
-    )
-    full_length_insert_cDNA = 'full_length_insert_cDNA'
-    high_throughput_cDNA = 'high_throughput_cDNA'
-    whole_genome_shotgun_sequencing = 'whole_genome_shotgun_sequencing'
-    barcode_of_life_project = 'barcode_of_life_project'
-    transcriptome_shotgun_assembly = 'transcriptome_shotgun_assembly'
+    sequencing_method_unknown = "sequencing_method_unknown"
+    expressed_sequence_tag = "expressed_sequence_tag"
+    sequence_tagged_site = "sequence_tagged_site"
+    survey = "survey"
+    single_genomic_reads_for_coordination = "single_genomic_reads_for_coordination"
+    unordered_high_throughput_sequence_contig = "unordered_high_throughput_sequence_contig"
+    ordered_high_throughput_sequence_contig = "ordered_high_throughput_sequence_contig"
+    finished_high_throughput_sequence_contig = "finished_high_throughput_sequence_contig"
+    full_length_insert_cDNA = "full_length_insert_cDNA"
+    high_throughput_cDNA = "high_throughput_cDNA"
+    whole_genome_shotgun_sequencing = "whole_genome_shotgun_sequencing"
+    barcode_of_life_project = "barcode_of_life_project"
+    transcriptome_shotgun_assembly = "transcriptome_shotgun_assembly"
 
 
 class V2reportsSequenceDataReportTopologyType(Enum):
-    not_set = 'not_set'
-    linear = 'linear'
-    circular = 'circular'
-    tandem = 'tandem'
-    topology_other = 'topology_other'
+    not_set = "not_set"
+    linear = "linear"
+    circular = "circular"
+    tandem = "tandem"
+    topology_other = "topology_other"
 
 
 class V2reportsSequenceDataReportUnits(Enum):
-    units_unspecified = 'units_unspecified'
-    nucleotides = 'nucleotides'
-    amino_acids = 'amino_acids'
+    units_unspecified = "units_unspecified"
+    nucleotides = "nucleotides"
+    amino_acids = "amino_acids"
 
 
 class V2reportsSequenceFeatureLocationFuzzLim(Enum):
-    lim_unknown = 'lim_unknown'
-    gt = 'gt'
-    lt = 'lt'
-    tr = 'tr'
-    tl = 'tl'
-    circle = 'circle'
-    other = 'other'
+    lim_unknown = "lim_unknown"
+    gt = "gt"
+    lt = "lt"
+    tr = "tr"
+    tl = "tl"
+    circle = "circle"
+    other = "other"
 
 
 class V2reportsSequenceFeatureLocationStrand(Enum):
-    strand_unknown = 'strand_unknown'
-    plus = 'plus'
-    minus = 'minus'
+    strand_unknown = "strand_unknown"
+    plus = "plus"
+    minus = "minus"
 
 
 class V2reportsSourceDatabase(Enum):
-    SOURCE_DATABASE_UNSPECIFIED = 'SOURCE_DATABASE_UNSPECIFIED'
-    SOURCE_DATABASE_GENBANK = 'SOURCE_DATABASE_GENBANK'
-    SOURCE_DATABASE_REFSEQ = 'SOURCE_DATABASE_REFSEQ'
+    SOURCE_DATABASE_UNSPECIFIED = "SOURCE_DATABASE_UNSPECIFIED"
+    SOURCE_DATABASE_GENBANK = "SOURCE_DATABASE_GENBANK"
+    SOURCE_DATABASE_REFSEQ = "SOURCE_DATABASE_REFSEQ"
 
 
 class V2reportsThesisType(Enum):
-    unknown = 'unknown'
-    manuscript = 'manuscript'
-    letter = 'letter'
-    thesis = 'thesis'
+    unknown = "unknown"
+    manuscript = "manuscript"
+    letter = "letter"
+    thesis = "thesis"
 
 
 class V2reportsTranscriptSelectCategory(Enum):
-    SELECT_UNKNOWN = 'SELECT_UNKNOWN'
-    REFSEQ_SELECT = 'REFSEQ_SELECT'
-    MANE_SELECT = 'MANE_SELECT'
-    MANE_PLUS_CLINICAL = 'MANE_PLUS_CLINICAL'
+    SELECT_UNKNOWN = "SELECT_UNKNOWN"
+    REFSEQ_SELECT = "REFSEQ_SELECT"
+    MANE_SELECT = "MANE_SELECT"
+    MANE_PLUS_CLINICAL = "MANE_PLUS_CLINICAL"
 
 
 class V2reportsTranscriptTranscriptType(Enum):
-    UNKNOWN = 'UNKNOWN'
-    PROTEIN_CODING = 'PROTEIN_CODING'
-    NON_CODING = 'NON_CODING'
-    PROTEIN_CODING_MODEL = 'PROTEIN_CODING_MODEL'
-    NON_CODING_MODEL = 'NON_CODING_MODEL'
+    UNKNOWN = "UNKNOWN"
+    PROTEIN_CODING = "PROTEIN_CODING"
+    NON_CODING = "NON_CODING"
+    PROTEIN_CODING_MODEL = "PROTEIN_CODING_MODEL"
+    NON_CODING_MODEL = "NON_CODING_MODEL"
 
 
 class V2reportsVirusAssemblyCompleteness(Enum):
-    UNKNOWN = 'UNKNOWN'
-    COMPLETE = 'COMPLETE'
-    PARTIAL = 'PARTIAL'
+    UNKNOWN = "UNKNOWN"
+    COMPLETE = "COMPLETE"
+    PARTIAL = "PARTIAL"
 
 
 class V2reportsVirusPeptideViralPeptideCompleteness(Enum):
-    UNKNOWN = 'UNKNOWN'
-    COMPLETE = 'COMPLETE'
-    PARTIAL = 'PARTIAL'
+    UNKNOWN = "UNKNOWN"
+    COMPLETE = "COMPLETE"
+    PARTIAL = "PARTIAL"
 
 
 class V2reportsWarningGeneWarningCode(Enum):
-    UNKNOWN_GENE_WARNING_CODE = 'UNKNOWN_GENE_WARNING_CODE'
-    ACCESSION_VERSION_MISMATCH = 'ACCESSION_VERSION_MISMATCH'
-    REPLACED_GENE_ID = 'REPLACED_GENE_ID'
-    DISCONTINUED_GENE_ID = 'DISCONTINUED_GENE_ID'
-    UNRECOGNIZED_GENE_ID = 'UNRECOGNIZED_GENE_ID'
-    UNRECOGNIZED_GENE_SYMBOL = 'UNRECOGNIZED_GENE_SYMBOL'
-    UNRECOGNIZED_ACCESSION = 'UNRECOGNIZED_ACCESSION'
-    UNRECOGNIZED_TAX_TOKEN = 'UNRECOGNIZED_TAX_TOKEN'
-    NO_GENE_ANNOTATION_FOUND = 'NO_GENE_ANNOTATION_FOUND'
-    ABOVE_SPECIES_TAXON = 'ABOVE_SPECIES_TAXON'
+    UNKNOWN_GENE_WARNING_CODE = "UNKNOWN_GENE_WARNING_CODE"
+    ACCESSION_VERSION_MISMATCH = "ACCESSION_VERSION_MISMATCH"
+    REPLACED_GENE_ID = "REPLACED_GENE_ID"
+    DISCONTINUED_GENE_ID = "DISCONTINUED_GENE_ID"
+    UNRECOGNIZED_GENE_ID = "UNRECOGNIZED_GENE_ID"
+    UNRECOGNIZED_GENE_SYMBOL = "UNRECOGNIZED_GENE_SYMBOL"
+    UNRECOGNIZED_ACCESSION = "UNRECOGNIZED_ACCESSION"
+    UNRECOGNIZED_TAX_TOKEN = "UNRECOGNIZED_TAX_TOKEN"
+    NO_GENE_ANNOTATION_FOUND = "NO_GENE_ANNOTATION_FOUND"
+    ABOVE_SPECIES_TAXON = "ABOVE_SPECIES_TAXON"
 
 
 class Ncbigsupgcolv2ChromosomeLocation(Enum):
-    LOCATION_UNKNOWN = 'LOCATION_UNKNOWN'
-    APICOPLAST = 'APICOPLAST'
-    CHLOROPLAST = 'CHLOROPLAST'
-    CHROMATOPHORE = 'CHROMATOPHORE'
-    CHROMOPLAST = 'CHROMOPLAST'
-    CYANELLE = 'CYANELLE'
-    HYDROGENOSOME = 'HYDROGENOSOME'
-    KINETOPLAST = 'KINETOPLAST'
-    LEUCOPLAST = 'LEUCOPLAST'
-    MACRONUCLEAR = 'MACRONUCLEAR'
-    MITOCHONDRION = 'MITOCHONDRION'
-    NUCLEARPROKARYOTE = 'NUCLEARPROKARYOTE'
-    NUCLEOMORPH = 'NUCLEOMORPH'
-    OTHER_LOCATION = 'OTHER_LOCATION'
-    PLASTID = 'PLASTID'
-    PROPLASTID = 'PROPLASTID'
-    PROVIRALPROPHAGE = 'PROVIRALPROPHAGE'
-    VIRIONPHAGE = 'VIRIONPHAGE'
-    VIROID = 'VIROID'
+    LOCATION_UNKNOWN = "LOCATION_UNKNOWN"
+    APICOPLAST = "APICOPLAST"
+    CHLOROPLAST = "CHLOROPLAST"
+    CHROMATOPHORE = "CHROMATOPHORE"
+    CHROMOPLAST = "CHROMOPLAST"
+    CYANELLE = "CYANELLE"
+    HYDROGENOSOME = "HYDROGENOSOME"
+    KINETOPLAST = "KINETOPLAST"
+    LEUCOPLAST = "LEUCOPLAST"
+    MACRONUCLEAR = "MACRONUCLEAR"
+    MITOCHONDRION = "MITOCHONDRION"
+    NUCLEARPROKARYOTE = "NUCLEARPROKARYOTE"
+    NUCLEOMORPH = "NUCLEOMORPH"
+    OTHER_LOCATION = "OTHER_LOCATION"
+    PLASTID = "PLASTID"
+    PROPLASTID = "PROPLASTID"
+    PROVIRALPROPHAGE = "PROVIRALPROPHAGE"
+    VIRIONPHAGE = "VIRIONPHAGE"
+    VIROID = "VIROID"
 
 
 class Ncbigsupgcolv2ChromosomeType(Enum):
-    TYPE_UNKNOWN = 'TYPE_UNKNOWN'
-    CHROMOSOME = 'CHROMOSOME'
-    EXTRACHROM = 'EXTRACHROM'
-    LINKAGEGROUP = 'LINKAGEGROUP'
-    OTHER_TYPE = 'OTHER_TYPE'
-    PLASMID = 'PLASMID'
-    SEGMENT = 'SEGMENT'
+    TYPE_UNKNOWN = "TYPE_UNKNOWN"
+    CHROMOSOME = "CHROMOSOME"
+    EXTRACHROM = "EXTRACHROM"
+    LINKAGEGROUP = "LINKAGEGROUP"
+    OTHER_TYPE = "OTHER_TYPE"
+    PLASMID = "PLASMID"
+    SEGMENT = "SEGMENT"
 
 
 class Ncbiprotddv2RedundancyLevel(Enum):
-    NOT_SPECIFIED = 'NOT_SPECIFIED'
-    ALL_SEQUENCES = 'ALL_SEQUENCES'
-    LOW = 'LOW'
-    MEDIUM = 'MEDIUM'
-    HIGH = 'HIGH'
+    NOT_SPECIFIED = "NOT_SPECIFIED"
+    ALL_SEQUENCES = "ALL_SEQUENCES"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
 
 
 class Ncbiprotddv2SortById(Enum):
-    NONE = 'NONE'
-    VAST_SCORE = 'VAST_SCORE'
-    P_VALUE = 'P_VALUE'
-    RMSD = 'RMSD'
-    ALIGNMENT_LENGTH = 'ALIGNMENT_LENGTH'
-    PCT_IDENTITY = 'PCT_IDENTITY'
-    ACCESSION = 'ACCESSION'
-    SDID = 'SDID'
-    ALIGNMENT_ID = 'ALIGNMENT_ID'
-    PDB_ID = 'PDB_ID'
-    CHAIN_NAME = 'CHAIN_NAME'
-    DOMAIN_NUMBER = 'DOMAIN_NUMBER'
-    DESCRIPTION = 'DESCRIPTION'
-    TAXONOMY_ID = 'TAXONOMY_ID'
-    SUPERKINGDOM_ID = 'SUPERKINGDOM_ID'
-    DOMAIN_NAME = 'DOMAIN_NAME'
+    NONE = "NONE"
+    VAST_SCORE = "VAST_SCORE"
+    P_VALUE = "P_VALUE"
+    RMSD = "RMSD"
+    ALIGNMENT_LENGTH = "ALIGNMENT_LENGTH"
+    PCT_IDENTITY = "PCT_IDENTITY"
+    ACCESSION = "ACCESSION"
+    SDID = "SDID"
+    ALIGNMENT_ID = "ALIGNMENT_ID"
+    PDB_ID = "PDB_ID"
+    CHAIN_NAME = "CHAIN_NAME"
+    DOMAIN_NUMBER = "DOMAIN_NUMBER"
+    DESCRIPTION = "DESCRIPTION"
+    TAXONOMY_ID = "TAXONOMY_ID"
+    SUPERKINGDOM_ID = "SUPERKINGDOM_ID"
+    DOMAIN_NAME = "DOMAIN_NAME"
 
 
 class Ncbiprotddv2StructureDataReportKind(Enum):
-    DNA = 'DNA'
-    RNA = 'RNA'
-    PROTEIN = 'PROTEIN'
-    OTHER_BIOPOLYMER = 'OTHER_BIOPOLYMER'
-    SOLVENT = 'SOLVENT'
-    OTHER_NONPOLYMER = 'OTHER_NONPOLYMER'
-    OTHER = 'OTHER'
+    DNA = "DNA"
+    RNA = "RNA"
+    PROTEIN = "PROTEIN"
+    OTHER_BIOPOLYMER = "OTHER_BIOPOLYMER"
+    SOLVENT = "SOLVENT"
+    OTHER_NONPOLYMER = "OTHER_NONPOLYMER"
+    OTHER = "OTHER"
 
 
 class ProtobufAny(BaseModel):
@@ -2035,63 +1842,51 @@ class RpcStatus(BaseModel):
 
 class V2AssemblyCheckMHistogramReply(BaseModel):
     species_taxid: int | None = None
-    histogram_intervals: (
-        list[V2AssemblyCheckMHistogramReplyHistogramInterval] | None
-    ) = None
+    histogram_intervals: list[V2AssemblyCheckMHistogramReplyHistogramInterval] | None = None
 
 
 class V2AssemblyDatasetDescriptorsFilter(BaseModel):
-    reference_only: bool | None = Field(
-        None, title='If true, limit to reference genome assemblies.'
-    )
+    reference_only: bool | None = Field(None, title="If true, limit to reference genome assemblies.")
     assembly_source: V2AssemblyDatasetDescriptorsFilterAssemblySource | None = Field(
-        'all',
-        title='Limit to either RefSeq (GCF_) or GenBank (GCA_) genome assemblies.',
+        "all",
+        title="Limit to either RefSeq (GCF_) or GenBank (GCA_) genome assemblies.",
     )
-    has_annotation: bool | None = Field(
-        None, title='Limit to annotated genome assemblies.'
-    )
+    has_annotation: bool | None = Field(None, title="Limit to annotated genome assemblies.")
     exclude_paired_reports: bool | None = Field(
         None,
-        title='If true, for GenBank (GCA_)/RefSeq (GCF_) pairs, returns the RefSeq copy. When no RefSeq copy exists, the GenBank assembly is returned.',
+        title="If true, for GenBank (GCA_)/RefSeq (GCF_) pairs, returns the RefSeq copy. When no RefSeq copy exists, the GenBank assembly is returned.",
     )
     exclude_atypical: bool | None = Field(
         None,
-        title='If true, exclude [atypical genome assemblies](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/data-processing/policies-annotation/genome-processing/genome_notes/#atypical-assemblies), i.e., genomes that have assembly issues or are otherwise atypical.',
+        title="If true, exclude [atypical genome assemblies](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/data-processing/policies-annotation/genome-processing/genome_notes/#atypical-assemblies), i.e., genomes that have assembly issues or are otherwise atypical.",
     )
     assembly_version: V2AssemblyDatasetDescriptorsFilterAssemblyVersion | None = Field(
-        'current',
-        title='Limit to the most recent (current) version of a genome assembly.',
+        "current",
+        title="Limit to the most recent (current) version of a genome assembly.",
     )
     assembly_level: list[V2reportsAssemblyLevel] | None = None
     first_release_date: AwareDatetime | None = Field(
-        None, title='Limit to genomes released on or after the specified date'
+        None, title="Limit to genomes released on or after the specified date"
     )
     last_release_date: AwareDatetime | None = Field(
-        None, title='Limit to genomes released on or before the specified date'
+        None, title="Limit to genomes released on or before the specified date"
     )
     search_text: list[str] | None = None
-    is_metagenome_derived: (
-        V2AssemblyDatasetDescriptorsFilterMetagenomeDerivedFilter | None
-    ) = Field(
-        'METAGENOME_DERIVED_UNSET',
-        title='Exclude or limit to metagenome-assembled genomes (MAGs).',
+    is_metagenome_derived: V2AssemblyDatasetDescriptorsFilterMetagenomeDerivedFilter | None = Field(
+        "METAGENOME_DERIVED_UNSET",
+        title="Exclude or limit to metagenome-assembled genomes (MAGs).",
     )
-    is_type_material: bool | None = Field(
-        None, title='If true, limit to genomes derived from type material.'
-    )
+    is_type_material: bool | None = Field(None, title="If true, limit to genomes derived from type material.")
     is_ictv_exemplar: bool | None = Field(
         None,
-        title='If true, limit to genomes derived from an ICTV exemplar (only applies to virus genomes).',
+        title="If true, limit to genomes derived from an ICTV exemplar (only applies to virus genomes).",
     )
     exclude_multi_isolate: bool | None = Field(
         None,
-        title='If true, exclude genomes that were sequenced as part of large multi-isolate projects.',
+        title="If true, exclude genomes that were sequenced as part of large multi-isolate projects.",
     )
-    type_material_category: (
-        V2AssemblyDatasetDescriptorsFilterTypeMaterialCategory | None
-    ) = Field(
-        'NONE', title='Limit to genomes derived from specific type material categories.'
+    type_material_category: V2AssemblyDatasetDescriptorsFilterTypeMaterialCategory | None = Field(
+        "NONE", title="Limit to genomes derived from specific type material categories."
     )
 
 
@@ -2100,20 +1895,16 @@ class V2AssemblyDatasetRequest(BaseModel):
     chromosomes: list[str] | None = None
     include_annotation_type: list[V2AnnotationForAssemblyType] | None = None
     hydrated: V2AssemblyDatasetRequestResolution | None = Field(
-        'FULLY_HYDRATED',
-        title='Specify whether to download a hydrated (with sequence and annotation files included) or dehydrated data package. A dehydrated data package includes the assembly data report and `fetch.txt`, which includes paths to the requested data files on NCBI servers.',
+        "FULLY_HYDRATED",
+        title="Specify whether to download a hydrated (with sequence and annotation files included) or dehydrated data package. A dehydrated data package includes the assembly data report and `fetch.txt`, which includes paths to the requested data files on NCBI servers.",
     )
-    include_tsv: bool | None = Field(
-        None, title='Set to true to include a TSV representation of the data-report.'
-    )
+    include_tsv: bool | None = Field(None, title="Set to true to include a TSV representation of the data-report.")
 
 
 class V2AssemblyLinksReplyAssemblyLink(BaseModel):
-    accession: str | None = Field(None, title='The matching assembly accession')
-    assembly_link_type: V2AssemblyLinksReplyAssemblyLinkType | None = Field(
-        'DEFAULT', title='The type of link'
-    )
-    resource_link: str | None = Field(None, title='A link to the resource')
+    accession: str | None = Field(None, title="The matching assembly accession")
+    assembly_link_type: V2AssemblyLinksReplyAssemblyLinkType | None = Field("DEFAULT", title="The type of link")
+    resource_link: str | None = Field(None, title="A link to the resource")
     linked_identifiers: list[str] | None = None
 
 
@@ -2123,33 +1914,29 @@ class V2AssemblyLinksRequest(BaseModel):
 
 
 class V2AssemblySequenceReportsRequest(BaseModel):
-    accession: str | None = Field(None, title='A single genome assembly accession')
+    accession: str | None = Field(None, title="A single genome assembly accession")
     chromosomes: list[str] | None = None
     role_filters: list[str] | None = None
     table_fields: list[str] | None = None
-    count_assembly_unplaced: bool | None = Field(
-        None, title='Include the count of unplaced scaffold sequences'
-    )
+    count_assembly_unplaced: bool | None = Field(None, title="Include the count of unplaced scaffold sequences")
     page_size: int | None = Field(
         None,
-        title='The maximum number of genome assemblies to return. Maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.',
+        title="The maximum number of genome assemblies to return. Maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.",
     )
     page_token: str | None = Field(
         None,
-        title='A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.',
+        title="A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.",
     )
-    include_tabular_header: V2IncludeTabularHeader | None = (
-        'INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY'
-    )
+    include_tabular_header: V2IncludeTabularHeader | None = "INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY"
     table_format: str | None = Field(
         None,
-        title='Optional pre-defined template for processing a tabular data request',
+        title="Optional pre-defined template for processing a tabular data request",
     )
 
 
 class V2BiocollectionsSortField(BaseModel):
     field: str | None = None
-    direction: V2SortDirection | None = 'SORT_DIRECTION_UNSPECIFIED'
+    direction: V2SortDirection | None = "SORT_DIRECTION_UNSPECIFIED"
 
 
 class V2DownloadSummaryAvailableFiles(BaseModel):
@@ -2165,9 +1952,7 @@ class V2DownloadSummaryAvailableFiles(BaseModel):
 
 
 class V2GeneChromosomeSummaryReply(BaseModel):
-    gene_chromosome_summaries: (
-        list[V2GeneChromosomeSummaryReplyGeneChromosomeSummary] | None
-    ) = None
+    gene_chromosome_summaries: list[V2GeneChromosomeSummaryReplyGeneChromosomeSummary] | None = None
 
 
 class V2GeneCountsByTaxonReply(BaseModel):
@@ -2178,8 +1963,8 @@ class V2GeneDatasetRequest(BaseModel):
     gene_ids: list[int] | None = None
     include_annotation_type: list[V2Fasta] | None = None
     returned_content: V2GeneDatasetRequestContentType | None = Field(
-        'COMPLETE',
-        title='Return complete gene reports, or abbreviated reports with either GeneIDs only or GeneIDs, transcript and protein counts.',
+        "COMPLETE",
+        title="Return complete gene reports, or abbreviated reports with either GeneIDs only or GeneIDs, transcript and protein counts.",
     )
     fasta_filter: list[str] | None = None
     accession_filter: list[str] | None = None
@@ -2187,35 +1972,33 @@ class V2GeneDatasetRequest(BaseModel):
     tabular_reports: list[V2GeneDatasetRequestGeneDatasetReportType] | None = None
     table_fields: list[str] | None = None
     table_report_type: V2GeneDatasetRequestGeneDatasetReportType | None = Field(
-        'DATASET_REPORT',
-        title='Specify the report from which the table fields will be taken. This is currently deprecated - use tabular_reports instead.',
+        "DATASET_REPORT",
+        title="Specify the report from which the table fields will be taken. This is currently deprecated - use tabular_reports instead.",
     )
 
 
 class V2GeneLinksReplyGeneLink(BaseModel):
-    gene_id: int | None = Field(None, title='The matching gene id')
+    gene_id: int | None = Field(None, title="The matching gene id")
     gene_link_type: V2GeneLinksReplyGeneLinkType | None = Field(
-        'DEFAULT', title='The type of link, e.g. gdv link or ortholog set'
+        "DEFAULT", title="The type of link, e.g. gdv link or ortholog set"
     )
-    resource_link: str | None = Field(None, title='A link to a gene resource')
+    resource_link: str | None = Field(None, title="A link to a gene resource")
     resource_id: str | None = Field(
         None,
-        title='A resource ID, provided if gene-id is not used for the link, e.g. the ortholog id.',
+        title="A resource ID, provided if gene-id is not used for the link, e.g. the ortholog id.",
     )
-    database: str | None = Field(
-        None, title='For cross-reference links, the cross-referenced database'
-    )
+    database: str | None = Field(None, title="For cross-reference links, the cross-referenced database")
 
 
 class V2GetBiocollectionsRequest(BaseModel):
     collection_ids: list[str] | None = None
     page_size: int | None = Field(
         None,
-        title='The maximum number of biocollection reports to return. Default is 1000 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.',
+        title="The maximum number of biocollection reports to return. Default is 1000 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.",
     )
     page_token: str | None = Field(
         None,
-        title='A page token returned from a prior call with more than `page_size` results. Use this token with the same request parameters to retrieve the next page. When `page_token` is empty, all results have been retrieved.',
+        title="A page token returned from a prior call with more than `page_size` results. Use this token with the same request parameters to retrieve the next page. When `page_token` is empty, all results have been retrieved.",
     )
     sort: list[V2BiocollectionsSortField] | None = None
 
@@ -2228,50 +2011,46 @@ class V2MicroBiggeDatasetRequest(BaseModel):
 
 class V2OrganelleDownloadRequest(BaseModel):
     accessions: list[str] | None = None
-    exclude_sequence: bool | None = Field(
-        None, title='If true, exclude the genome sequence from the data package.'
-    )
+    exclude_sequence: bool | None = Field(None, title="If true, exclude the genome sequence from the data package.")
     include_annotation_type: list[V2AnnotationForOrganelleType] | None = None
 
 
 class V2OrganelleSort(BaseModel):
     field: str | None = None
-    direction: V2SortDirection | None = 'SORT_DIRECTION_UNSPECIFIED'
+    direction: V2SortDirection | None = "SORT_DIRECTION_UNSPECIFIED"
 
 
 class V2OrganismQueryRequest(BaseModel):
     organism_query: str | None = None
-    taxon_query: str | None = Field(
-        None, title='Taxonomy ID or name (common or scientific) at any taxonomic rank'
-    )
+    taxon_query: str | None = Field(None, title="Taxonomy ID or name (common or scientific) at any taxonomic rank")
     tax_rank_filter: V2OrganismQueryRequestTaxRankFilter | None = Field(
-        'species',
-        title='Optionally return results for taxonomic ranks above species using `higher_taxon`',
+        "species",
+        title="Optionally return results for taxonomic ranks above species using `higher_taxon`",
     )
     taxon_resource_filter: V2OrganismQueryRequestTaxonResourceFilter | None = Field(
-        'TAXON_RESOURCE_FILTER_ALL',
-        title='Limit to taxonomy nodes with gene, genome or organelle data',
+        "TAXON_RESOURCE_FILTER_ALL",
+        title="Limit to taxonomy nodes with gene, genome or organelle data",
     )
     exact_match: bool | None = Field(
         None,
-        title='If true, only return results that exactly match the provided taxonomic name',
+        title="If true, only return results that exactly match the provided taxonomic name",
     )
 
 
 class V2OrthologRequest(BaseModel):
-    gene_id: int | None = Field(None, title='A single NCBI GeneID')
+    gene_id: int | None = Field(None, title="A single NCBI GeneID")
     returned_content: V2OrthologRequestContentType | None = Field(
-        'COMPLETE',
-        title='Return complete gene reports, or abbreviated reports with either GeneIDs only or GeneIDs, transcript and protein counts.',
+        "COMPLETE",
+        title="Return complete gene reports, or abbreviated reports with either GeneIDs only or GeneIDs, transcript and protein counts.",
     )
     taxon_filter: list[str] | None = None
     page_size: int | None = Field(
         None,
-        title='The maximum number of gene reports to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.',
+        title="The maximum number of gene reports to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.",
     )
     page_token: str | None = Field(
         None,
-        title='A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.',
+        title="A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.",
     )
 
 
@@ -2281,7 +2060,7 @@ class V2ProkaryoteGeneRequest(BaseModel):
     gene_flank_config: V2ProkaryoteGeneRequestGeneFlankConfig | None = None
     taxon: str | None = Field(
         None,
-        title='Limit gene sequences and the genome assemblies described by the [annotation report file](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/reference-docs/data-reports/prokaryote-gene-location/) to the specified NCBI Taxonomy ID or name (common or scientific) at any taxonomic rank.',
+        title="Limit gene sequences and the genome assemblies described by the [annotation report file](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/reference-docs/data-reports/prokaryote-gene-location/) to the specified NCBI Taxonomy ID or name (common or scientific) at any taxonomic rank.",
     )
 
 
@@ -2293,78 +2072,60 @@ class V2RefGeneCatalogDatasetRequest(BaseModel):
 
 class V2Sars2ProteinDatasetRequest(BaseModel):
     proteins: list[str] | None = None
-    refseq_only: bool | None = Field(
-        None, title='If true, limit results to RefSeq genomes.'
-    )
-    annotated_only: bool | None = Field(
-        None, title='If true, limit results to annotated genomes.'
-    )
+    refseq_only: bool | None = Field(None, title="If true, limit results to RefSeq genomes.")
+    annotated_only: bool | None = Field(None, title="If true, limit results to annotated genomes.")
     released_since: AwareDatetime | None = None
     updated_since: AwareDatetime | None = None
     host: str | None = Field(
         None,
-        title='Limit to genomes isolated from the specified host species (NCBI Taxonomy ID, common or scientific name).',
+        title="Limit to genomes isolated from the specified host species (NCBI Taxonomy ID, common or scientific name).",
     )
     pangolin_classification: str | None = Field(
-        None, title='Limit to SARS-CoV-2 genomes with the specified Pango lineage.'
+        None, title="Limit to SARS-CoV-2 genomes with the specified Pango lineage."
     )
     geo_location: str | None = Field(
         None,
-        title='Limit to genomes collected from the specififed geographic location.',
+        title="Limit to genomes collected from the specififed geographic location.",
     )
     usa_state: str | None = Field(
         None,
-        title='Limit to genomes collected from the specified U.S. state (two-letter abbreviation).',
+        title="Limit to genomes collected from the specified U.S. state (two-letter abbreviation).",
     )
     complete_only: bool | None = Field(
         None,
-        title='Limit to genomes designated as complete, as defined by the submitter.',
+        title="Limit to genomes designated as complete, as defined by the submitter.",
     )
     table_fields: list[V2VirusTableField] | None = None
     include_sequence: list[V2ViralSequenceType] | None = None
     aux_report: list[V2VirusDatasetReportType] | None = None
-    format: V2TableFormat | None = Field('tsv', title='Specify output format')
+    format: V2TableFormat | None = Field("tsv", title="Specify output format")
 
 
 class V2SciNameAndIdsSciNameAndId(BaseModel):
-    sci_name: str | None = Field(None, title='Scientific name')
-    tax_id: str | None = Field(None, title='NCBI Taxonomy ID')
-    common_name: str | None = Field(None, title='Common name')
-    matched_term: str | None = Field(None, title='Matched term')
-    rank: V2reportsRankType | None = Field('NO_RANK', title='Rank')
-    group_name: str | None = Field(None, title='Group name (blast group)')
+    sci_name: str | None = Field(None, title="Scientific name")
+    tax_id: str | None = Field(None, title="NCBI Taxonomy ID")
+    common_name: str | None = Field(None, title="Common name")
+    matched_term: str | None = Field(None, title="Matched term")
+    rank: V2reportsRankType | None = Field("NO_RANK", title="Rank")
+    group_name: str | None = Field(None, title="Group name (blast group)")
 
 
 class V2SeqRange(BaseModel):
-    accession: str | None = Field(
-        None, title='A single nucleotide or protein accession'
-    )
-    begin: str | None = Field(
-        None, title='The first nucleotide or amino acid of the requested sequence'
-    )
-    end: str | None = Field(
-        None, title='The last nucleotide or amino acid of the requested sequence'
-    )
-    orientation: V2reportsOrientation | None = Field(
-        'none', title='This parameter has not yet been implemented'
-    )
+    accession: str | None = Field(None, title="A single nucleotide or protein accession")
+    begin: str | None = Field(None, title="The first nucleotide or amino acid of the requested sequence")
+    end: str | None = Field(None, title="The last nucleotide or amino acid of the requested sequence")
+    orientation: V2reportsOrientation | None = Field("none", title="This parameter has not yet been implemented")
 
 
 class V2SeqReply(BaseModel):
-    accession: str | None = Field(
-        None, title='Accession.version of the retrieved sequence'
-    )
-    length: str | None = Field(
-        None, title='Total length of the sequence (not just the amount retrieved)'
-    )
+    accession: str | None = Field(None, title="Accession.version of the retrieved sequence")
+    length: str | None = Field(None, title="Total length of the sequence (not just the amount retrieved)")
     molecule_type: V2reportsMoleculeType | None = Field(
-        'molecule_type_unspecified', title='Molecule type - dna, rna, protein'
+        "molecule_type_unspecified", title="Molecule type - dna, rna, protein"
     )
-    defline: str | None = Field(None, title='Defline for the retrieved sequence data')
-    sequence: str | None = Field(
-        None, title='The retrieved sequence (includes line-breaks)'
-    )
-    begin: str | None = Field(None, title='starting index of the retrieved sequence')
+    defline: str | None = Field(None, title="Defline for the retrieved sequence data")
+    sequence: str | None = Field(None, title="The retrieved sequence (includes line-breaks)")
+    begin: str | None = Field(None, title="starting index of the retrieved sequence")
     end: str | None = Field(
         None,
         title="ending index of retrieved sequence - may be less than the 'end' requested if the requested size was greater than the maximum retrieval length.",
@@ -2380,11 +2141,11 @@ class V2SequenceReportPage(BaseModel):
     reports: list[V2reportsSequenceInfo] | None = None
     total_count: int | None = Field(
         None,
-        title='The total count of available datasets (ignoring the cutoff parameter). Only provided for the first page of results (when `page_token` is empty in the request).',
+        title="The total count of available datasets (ignoring the cutoff parameter). Only provided for the first page of results (when `page_token` is empty in the request).",
     )
     next_page_token: str | None = Field(
         None,
-        title='A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.',
+        title="A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.",
     )
 
 
@@ -2392,25 +2153,25 @@ class V2SequenceRequest(BaseModel):
     accessions: list[str] | None = None
     include_all_versions: bool | None = Field(
         None,
-        title='When true, include previous versions as well as the latest. Default behavior when this field is omitted is to return latest version only (i.e., `include_all_versions` defaults to false). This is not yet implemented',
+        title="When true, include previous versions as well as the latest. Default behavior when this field is omitted is to return latest version only (i.e., `include_all_versions` defaults to false). This is not yet implemented",
     )
     returned_content: V2SequenceRequestContentType | None = Field(
-        'COMPLETE',
-        title='Return complete sequence reports, or abbreviated reports with the sequence accession, molecule type, taxonomy ID, and length',
+        "COMPLETE",
+        title="Return complete sequence reports, or abbreviated reports with the sequence accession, molecule type, taxonomy ID, and length",
     )
     include_tabular_header: V2IncludeTabularHeader | None = Field(
-        'INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY',
-        title='Specify when to include the table header when requesting a tabular report.',
+        "INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY",
+        title="Specify when to include the table header when requesting a tabular report.",
     )
     table_format: V2SequenceRequestTableFormat | None = Field(
-        'SUMMARY',
-        title='Specify a predefined set of fields for the tabular report using built-in templates. Use of this parameter requires the HTTP header, `accept: text/tab-separated-values`.',
+        "SUMMARY",
+        title="Specify a predefined set of fields for the tabular report using built-in templates. Use of this parameter requires the HTTP header, `accept: text/tab-separated-values`.",
     )
 
 
 class V2SortField(BaseModel):
     field: str | None = None
-    direction: V2SortDirection | None = 'SORT_DIRECTION_UNSPECIFIED'
+    direction: V2SortDirection | None = "SORT_DIRECTION_UNSPECIFIED"
 
 
 class V2TaxonomyDatasetRequest(BaseModel):
@@ -2420,13 +2181,11 @@ class V2TaxonomyDatasetRequest(BaseModel):
 
 class V2TaxonomyFilteredSubtreeRequest(BaseModel):
     taxons: list[str] | None = None
-    specified_limit: bool | None = Field(None, title='Limit to specified species')
-    exclude_extinct: bool | None = Field(
-        None, title='Limit to species that are not extinct'
-    )
+    specified_limit: bool | None = Field(None, title="Limit to specified species")
+    exclude_extinct: bool | None = Field(None, title="Limit to species that are not extinct")
     levels: int | None = Field(
         None,
-        title='Number of taxonomic levels to return with a valid range of 1-5. Values above 5 will return 5 levels and if level is 0 or not specified, 1 level will be returned.',
+        title="Number of taxonomic levels to return with a valid range of 1-5. Values above 5 will return 5 levels and if level is 0 or not specified, 1 level will be returned.",
     )
     rank_limits: list[V2reportsRankType] | None = None
     include_incertae_sedis: bool | None = Field(
@@ -2437,10 +2196,8 @@ class V2TaxonomyFilteredSubtreeRequest(BaseModel):
 
 class V2TaxonomyFilteredSubtreeResponseEdge(BaseModel):
     visible_children: list[int] | None = None
-    children_status: V2TaxonomyFilteredSubtreeResponseEdgeChildStatus | None = (
-        'UNSPECIFIED'
-    )
-    rank: V2reportsRankType | None = 'NO_RANK'
+    children_status: V2TaxonomyFilteredSubtreeResponseEdgeChildStatus | None = "UNSPECIFIED"
+    rank: V2reportsRankType | None = "NO_RANK"
     scientific_name: str | None = None
     curator_common_name: str | None = None
     assembly_count: int | None = None
@@ -2448,10 +2205,10 @@ class V2TaxonomyFilteredSubtreeResponseEdge(BaseModel):
 
 class V2TaxonomyFilteredSubtreeResponseEdgesEntry(BaseModel):
     model_config = ConfigDict(
-        extra='allow',
+        extra="allow",
     )
     __annotations__ = {
-        '__pydantic_extra__': Dict[str, V2TaxonomyFilteredSubtreeResponseEdge],
+        "__pydantic_extra__": dict[str, V2TaxonomyFilteredSubtreeResponseEdge],
     }
     default: V2TaxonomyFilteredSubtreeResponseEdge | None = None
 
@@ -2469,7 +2226,7 @@ class V2TaxonomyImageMetadataResponse(BaseModel):
 
 class V2TaxonomyImageRequest(BaseModel):
     taxon: str | None = None
-    image_size: V2ImageSize | None = 'UNSPECIFIED'
+    image_size: V2ImageSize | None = "UNSPECIFIED"
 
 
 class V2TaxonomyLinksResponse(BaseModel):
@@ -2485,71 +2242,69 @@ class V2TaxonomyLinksResponse(BaseModel):
 class V2TaxonomyMetadataRequest(BaseModel):
     taxons: list[str] | None = None
     returned_content: V2TaxonomyMetadataRequestContentType | None = Field(
-        'COMPLETE',
-        title='Return complete taxonomy reports, Taxonomy IDs only, or reports without assembly and gene counts (metadata).',
+        "COMPLETE",
+        title="Return complete taxonomy reports, Taxonomy IDs only, or reports without assembly and gene counts (metadata).",
     )
     page_size: int | None = Field(
         None,
-        title='The maximum number of taxons to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.',
+        title="The maximum number of taxons to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.",
     )
     include_tabular_header: V2IncludeTabularHeader | None = Field(
-        'INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY',
-        title='Specify when to include the table header when requesting a tabular report.',
+        "INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY",
+        title="Specify when to include the table header when requesting a tabular report.",
     )
     page_token: str | None = Field(
         None,
-        title='A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.',
+        title="A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.",
     )
     table_format: V2TaxonomyMetadataRequestTableFormat | None = Field(
-        'SUMMARY',
-        title='Specify a predefined set of fields for the tabular report using built-in templates. Use of this parameter requires the HTTP header, `accept: text/tab-separated-values`.',
+        "SUMMARY",
+        title="Specify a predefined set of fields for the tabular report using built-in templates. Use of this parameter requires the HTTP header, `accept: text/tab-separated-values`.",
     )
-    children: bool | None = Field(None, title='If true, return results for child taxa.')
+    children: bool | None = Field(None, title="If true, return results for child taxa.")
     ranks: list[V2reportsRankType] | None = None
 
 
 class V2TaxonomyNodeCountByType(BaseModel):
-    type: V2reportsCountType | None = 'COUNT_TYPE_UNSPECIFIED'
+    type: V2reportsCountType | None = "COUNT_TYPE_UNSPECIFIED"
     count: int | None = None
 
 
 class V2TaxonomyRelatedIdRequest(BaseModel):
     tax_id: int | None = None
-    include_lineage: bool | None = Field(None, title='If true, include parent nodes')
+    include_lineage: bool | None = Field(None, title="If true, include parent nodes")
     include_subtree: bool | None = Field(
         None,
-        title='This field is deprecated because all requests include the subtree, so it has no effect',
+        title="This field is deprecated because all requests include the subtree, so it has no effect",
     )
     ranks: list[V2reportsRankType] | None = None
     page_size: int | None = Field(
         None,
-        title='The maximum number of taxids to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.',
+        title="The maximum number of taxids to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.",
     )
     page_token: str | None = Field(
         None,
-        title='A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.',
+        title="A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.",
     )
 
 
 class V2VirusDataReportRequest(BaseModel):
-    filter: V2VirusDatasetFilter | None = Field(
-        None, title='All the supported filters for virus requests'
-    )
+    filter: V2VirusDatasetFilter | None = Field(None, title="All the supported filters for virus requests")
     returned_content: V2VirusDataReportRequestContentType | None = Field(
-        'COMPLETE', title='Return complete virus reports or nucleotide accessions only'
+        "COMPLETE", title="Return complete virus reports or nucleotide accessions only"
     )
     table_fields: list[str] | None = None
     table_format: str | None = Field(
         None,
-        title='Optional pre-defined template for processing a tabular data request',
+        title="Optional pre-defined template for processing a tabular data request",
     )
     page_size: int | None = Field(
         None,
-        title='The maximum number of virus data reports to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.',
+        title="The maximum number of virus data reports to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.",
     )
     page_token: str | None = Field(
         None,
-        title='A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.',
+        title="A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.",
     )
 
 
@@ -2557,127 +2312,99 @@ class V2VirusDatasetRequest(BaseModel):
     accessions: list[str] | None = None
     taxon: str | None = Field(
         None,
-        title='NCBI Taxonomy ID or name (common or scientific) at any taxonomic rank',
+        title="NCBI Taxonomy ID or name (common or scientific) at any taxonomic rank",
     )
     taxons: list[str] | None = None
-    refseq_only: bool | None = Field(
-        None, title='If true, limit results to RefSeq genomes.'
-    )
-    annotated_only: bool | None = Field(
-        None, title='If true, limit results to annotated genomes.'
-    )
+    refseq_only: bool | None = Field(None, title="If true, limit results to RefSeq genomes.")
+    annotated_only: bool | None = Field(None, title="If true, limit results to annotated genomes.")
     released_since: AwareDatetime | None = None
     updated_since: AwareDatetime | None = None
     host: str | None = Field(
         None,
-        title='Limit to genomes isolated from the specified host species (NCBI Taxonomy ID, common or scientific name).',
+        title="Limit to genomes isolated from the specified host species (NCBI Taxonomy ID, common or scientific name).",
     )
     pangolin_classification: str | None = Field(
-        None, title='Limit to SARS-CoV-2 genomes from the specified Pango lineage.'
+        None, title="Limit to SARS-CoV-2 genomes from the specified Pango lineage."
     )
-    geo_location: str | None = Field(
-        None, title='Limit to genomes collected from the specified geographic location.'
-    )
+    geo_location: str | None = Field(None, title="Limit to genomes collected from the specified geographic location.")
     usa_state: str | None = Field(
         None,
-        title='Limit to genomes collected from the specified U.S. state (two-letter abbreviation).',
+        title="Limit to genomes collected from the specified U.S. state (two-letter abbreviation).",
     )
     complete_only: bool | None = Field(
         None,
-        title='Limit to genomes designated as complete, as defined by the submitter.',
+        title="Limit to genomes designated as complete, as defined by the submitter.",
     )
     table_fields: list[V2VirusTableField] | None = None
     include_sequence: list[V2ViralSequenceType] | None = None
     aux_report: list[V2VirusDatasetReportType] | None = None
-    format: V2TableFormat | None = Field(
-        'tsv', title='Choose download format (tsv, csv or jsonl)'
-    )
-    use_psg: bool | None = Field(
-        None, title='Experimental approach to retrieving sequence data.'
-    )
+    format: V2TableFormat | None = Field("tsv", title="Choose download format (tsv, csv or jsonl)")
+    use_psg: bool | None = Field(None, title="Experimental approach to retrieving sequence data.")
 
 
 class V2reportsANIMatch(BaseModel):
     assembly: str | None = Field(
         None,
-        title='Accession of the submitted organism best match type-strain assembly or best match type-strain assembly',
+        title="Accession of the submitted organism best match type-strain assembly or best match type-strain assembly",
     )
     organism_name: str | None = Field(
         None,
-        title='Taxonomic name of the submitted organism or best match type-strain organism',
+        title="Taxonomic name of the submitted organism or best match type-strain organism",
     )
-    category: V2reportsANITypeCategory | None = Field(
-        'ANI_CATEGORY_UNKNOWN', title='Type category'
-    )
-    ani: float | None = Field(None, title='Percent average nucleotide identity')
+    category: V2reportsANITypeCategory | None = Field("ANI_CATEGORY_UNKNOWN", title="Type category")
+    ani: float | None = Field(None, title="Percent average nucleotide identity")
     assembly_coverage: float | None = Field(
         None,
-        title='Percent coverage of the query assembly by the submitted organism or best match type assembly',
+        title="Percent coverage of the query assembly by the submitted organism or best match type assembly",
     )
     type_assembly_coverage: float | None = Field(
         None,
-        title='Percent coverage of the submitted organism or best match type assembly by the query assembly',
+        title="Percent coverage of the submitted organism or best match type assembly by the query assembly",
     )
 
 
 class V2reportsArticle(BaseModel):
-    pmid: int | None = Field(None, title='Pubmed Identifier for this article.')
-    title: str | None = Field(None, title='Title of this article.')
-    date: str | None = Field(None, title='Publication date of this article.')
+    pmid: int | None = Field(None, title="Pubmed Identifier for this article.")
+    title: str | None = Field(None, title="Title of this article.")
+    date: str | None = Field(None, title="Publication date of this article.")
     authors: list[V2reportsAuthor] | None = None
-    journal: V2reportsJournal | None = Field(
-        None, title='Journal in which this article was published.'
-    )
-    book: V2reportsBook | None = Field(
-        None, title='Book in which this article was published.'
-    )
-    proceedings: V2reportsProceedings | None = Field(
-        None, title='Proceedings in which this article was published.'
-    )
+    journal: V2reportsJournal | None = Field(None, title="Journal in which this article was published.")
+    book: V2reportsBook | None = Field(None, title="Book in which this article was published.")
+    proceedings: V2reportsProceedings | None = Field(None, title="Proceedings in which this article was published.")
 
 
 class V2reportsAssemblyRevision(BaseModel):
     genbank_accession: str | None = None
     refseq_accession: str | None = None
     assembly_name: str | None = None
-    assembly_level: V2reportsAssemblyLevel | None = 'chromosome'
+    assembly_level: V2reportsAssemblyLevel | None = "chromosome"
     release_date: str | None = None
     submission_date: str | None = None
     sequencing_technology: str | None = None
-    identical: bool | None = Field(
-        None, title='Are the RefSeq and GenBank revisions identical?'
-    )
+    identical: bool | None = Field(None, title="Are the RefSeq and GenBank revisions identical?")
 
 
 class V2reportsAverageNucleotideIdentity(BaseModel):
-    taxonomy_check_status: (
-        V2reportsAverageNucleotideIdentityTaxonomyCheckStatus | None
-    ) = Field(
-        'TAXONOMY_CHECK_STATUS_UNKNOWN',
-        title='Indicates whether the ANI result is consistent with the submitted organism',
+    taxonomy_check_status: V2reportsAverageNucleotideIdentityTaxonomyCheckStatus | None = Field(
+        "TAXONOMY_CHECK_STATUS_UNKNOWN",
+        title="Indicates whether the ANI result is consistent with the submitted organism",
     )
     match_status: V2reportsAverageNucleotideIdentityMatchStatus | None = Field(
-        'BEST_MATCH_STATUS_UNKNOWN',
-        title='Indicates the specific type of ANI result that supports the Taxonomy check status',
+        "BEST_MATCH_STATUS_UNKNOWN",
+        title="Indicates the specific type of ANI result that supports the Taxonomy check status",
     )
-    submitted_organism: str | None = Field(
-        None, title='Taxonomic name of the query assembly'
-    )
-    submitted_species: str | None = Field(
-        None, title='Species name of the query assembly'
-    )
+    submitted_organism: str | None = Field(None, title="Taxonomic name of the query assembly")
+    submitted_species: str | None = Field(None, title="Species name of the query assembly")
     category: V2reportsANITypeCategory | None = Field(
-        'ANI_CATEGORY_UNKNOWN', title='Category of type or validated assembly'
+        "ANI_CATEGORY_UNKNOWN", title="Category of type or validated assembly"
     )
     submitted_ani_match: V2reportsANIMatch | None = None
     best_ani_match: V2reportsANIMatch | None = None
-    comment: str | None = Field(
-        None, title='Additional information about the ANI result'
-    )
+    comment: str | None = Field(None, title="Additional information about the ANI result")
 
 
 class V2reportsBioSample(BaseModel):
-    accession: str | None = Field(None, title='BioSample accession')
+    accession: str | None = Field(None, title="BioSample accession")
     sra_runs: list[V2reportsSraRun] | None = None
 
 
@@ -2700,259 +2427,199 @@ class V2reportsBioSampleDescriptor(BaseModel):
     package: str | None = None
     attributes: list[V2reportsBioSampleAttribute] | None = None
     status: V2reportsBioSampleStatus | None = None
-    age: str | None = Field(None, title='Age at the time of sampling')
-    biomaterial_provider: str | None = Field(
-        None, title='Name and address of the lab or PI'
-    )
-    breed: str | None = Field(None, title='Breed name')
-    collected_by: str | None = Field(
-        None, title='Name of persons or institute who collected the sample'
-    )
-    collection_date: str | None = Field(
-        None, title='Date on which the sample was collected'
-    )
-    cultivar: str | None = Field(None, title='Cultivated variety of plant')
-    dev_stage: str | None = Field(
-        None, title='Developmental stage at the time of sampling'
-    )
-    ecotype: str | None = Field(
-        None, title='Population within a given species adapted to a local habitat'
-    )
-    geo_loc_name: str | None = Field(None, title='Geographical origin of the sample')
-    host: str | None = Field(None, title='The natural host to the organism')
-    host_disease: str | None = Field(None, title='Name of relevant disease')
-    identified_by: str | None = Field(
-        None, title='Name of the taxonomist who identified the specimen'
-    )
-    ifsac_category: str | None = Field(
-        None, title='Interagency Food Safety Analytics Collaboration (IFSAC) category'
-    )
+    age: str | None = Field(None, title="Age at the time of sampling")
+    biomaterial_provider: str | None = Field(None, title="Name and address of the lab or PI")
+    breed: str | None = Field(None, title="Breed name")
+    collected_by: str | None = Field(None, title="Name of persons or institute who collected the sample")
+    collection_date: str | None = Field(None, title="Date on which the sample was collected")
+    cultivar: str | None = Field(None, title="Cultivated variety of plant")
+    dev_stage: str | None = Field(None, title="Developmental stage at the time of sampling")
+    ecotype: str | None = Field(None, title="Population within a given species adapted to a local habitat")
+    geo_loc_name: str | None = Field(None, title="Geographical origin of the sample")
+    host: str | None = Field(None, title="The natural host to the organism")
+    host_disease: str | None = Field(None, title="Name of relevant disease")
+    identified_by: str | None = Field(None, title="Name of the taxonomist who identified the specimen")
+    ifsac_category: str | None = Field(None, title="Interagency Food Safety Analytics Collaboration (IFSAC) category")
     isolate: str | None = Field(
         None,
-        title='Description of the specific individual from which the sample was derived',
+        title="Description of the specific individual from which the sample was derived",
     )
-    isolate_name_alias: str | None = Field(
-        None, title='Other IDs associated with this isolate'
-    )
-    isolation_source: str | None = Field(None, title='Source of the sample')
+    isolate_name_alias: str | None = Field(None, title="Other IDs associated with this isolate")
+    isolation_source: str | None = Field(None, title="Source of the sample")
     lat_lon: str | None = Field(
         None,
-        title='Geographic coordinates of the location where the sample was collected',
+        title="Geographic coordinates of the location where the sample was collected",
     )
-    project_name: str | None = Field(None, title='Name of the project')
-    sample_name: str | None = Field(None, title='Sample name in source database')
-    serovar: str | None = Field(
-        None, title='Taxonomic name below subspecies. Same as serotype.'
-    )
-    sex: str | None = Field(None, title='Physical sex of sampled organism')
-    source_type: str | None = Field(
-        None, title='Controlled vocabulary describing the isolation source'
-    )
-    strain: str | None = Field(None, title='Strain name')
-    sub_species: str | None = Field(None, title='Sub-species taxonomic name')
-    tissue: str | None = Field(
-        None, title='Type of tissue from which the sample was derived'
-    )
-    serotype: str | None = Field(
-        None, title='Taxonomic name below subspecies. Same as serovar'
-    )
+    project_name: str | None = Field(None, title="Name of the project")
+    sample_name: str | None = Field(None, title="Sample name in source database")
+    serovar: str | None = Field(None, title="Taxonomic name below subspecies. Same as serotype.")
+    sex: str | None = Field(None, title="Physical sex of sampled organism")
+    source_type: str | None = Field(None, title="Controlled vocabulary describing the isolation source")
+    strain: str | None = Field(None, title="Strain name")
+    sub_species: str | None = Field(None, title="Sub-species taxonomic name")
+    tissue: str | None = Field(None, title="Type of tissue from which the sample was derived")
+    serotype: str | None = Field(None, title="Taxonomic name below subspecies. Same as serovar")
 
 
 class V2reportsClassification(BaseModel):
     superkingdom: V2reportsTaxData | None = None
     kingdom: V2reportsTaxData | None = None
     phylum: V2reportsTaxData | None = None
-    class_: V2reportsTaxData | None = Field(None, alias='class')
+    class_: V2reportsTaxData | None = Field(None, alias="class")
     order: V2reportsTaxData | None = None
     family: V2reportsTaxData | None = None
     genus: V2reportsTaxData | None = None
     species: V2reportsTaxData | None = None
-    domain: V2reportsTaxData | None = Field(None, title='NOTE: These are out of order')
+    domain: V2reportsTaxData | None = Field(None, title="NOTE: These are out of order")
     realm: V2reportsTaxData | None = None
     acellular_root: V2reportsTaxData | None = None
 
 
 class V2reportsError(BaseModel):
-    assembly_error_code: V2reportsErrorAssemblyErrorCode | None = (
-        'UNKNOWN_ASSEMBLY_ERROR_CODE'
-    )
-    gene_error_code: V2reportsErrorGeneErrorCode | None = 'UNKNOWN_GENE_ERROR_CODE'
-    organelle_error_code: V2reportsErrorOrganelleErrorCode | None = (
-        'UNKNOWN_ORGANELLE_ERROR_CODE'
-    )
-    virus_error_code: V2reportsErrorVirusErrorCode | None = 'UNKNOWN_VIRUS_ERROR_CODE'
-    taxonomy_error_code: V2reportsErrorTaxonomyErrorCode | None = (
-        'UNKNOWN_TAXONOMY_ERROR_CODE'
-    )
-    sequence_error_code: V2reportsErrorSequenceErrorCode | None = (
-        'UNKNOWN_SEQUENCE_ERROR_CODE'
-    )
+    assembly_error_code: V2reportsErrorAssemblyErrorCode | None = "UNKNOWN_ASSEMBLY_ERROR_CODE"
+    gene_error_code: V2reportsErrorGeneErrorCode | None = "UNKNOWN_GENE_ERROR_CODE"
+    organelle_error_code: V2reportsErrorOrganelleErrorCode | None = "UNKNOWN_ORGANELLE_ERROR_CODE"
+    virus_error_code: V2reportsErrorVirusErrorCode | None = "UNKNOWN_VIRUS_ERROR_CODE"
+    taxonomy_error_code: V2reportsErrorTaxonomyErrorCode | None = "UNKNOWN_TAXONOMY_ERROR_CODE"
+    sequence_error_code: V2reportsErrorSequenceErrorCode | None = "UNKNOWN_SEQUENCE_ERROR_CODE"
     reason: str | None = None
     message: str | None = None
     invalid_identifiers: list[str] | None = None
 
 
 class V2reportsFeatureCounts(BaseModel):
-    gene_counts: V2reportsGeneCounts | None = Field(None, title='Counts of gene types')
+    gene_counts: V2reportsGeneCounts | None = Field(None, title="Counts of gene types")
 
 
 class V2reportsInfraspecificModifers(BaseModel):
-    strain: str | None = Field(
-        None, title='A specific genetic variant or lineage within a species.'
-    )
-    substrain: str | None = Field(None, title='A subdivision of a strain.')
-    variety: str | None = Field(None, title='A taxonomic rank below species.')
+    strain: str | None = Field(None, title="A specific genetic variant or lineage within a species.")
+    substrain: str | None = Field(None, title="A subdivision of a strain.")
+    variety: str | None = Field(None, title="A taxonomic rank below species.")
     serotype: str | None = Field(
         None,
-        title='A distinct variation within a species of bacteria or virus based on surface antigens.',
+        title="A distinct variation within a species of bacteria or virus based on surface antigens.",
     )
-    serogroup: str | None = Field(None, title='A group of serotypes.')
+    serogroup: str | None = Field(None, title="A group of serotypes.")
     biotype: str | None = Field(
         None,
-        title='A group of organisms sharing a specific genetic makeup, often referring to physiological characteristics.',
+        title="A group of organisms sharing a specific genetic makeup, often referring to physiological characteristics.",
     )
     isolate: str | None = Field(
         None,
-        title='An organism obtained from a specific source, typically indicating a particular collection event.',
+        title="An organism obtained from a specific source, typically indicating a particular collection event.",
     )
-    forma: str | None = Field(None, title='A taxonomic rank below variety.')
+    forma: str | None = Field(None, title="A taxonomic rank below variety.")
     forma_specialis: str | None = Field(
         None,
-        title='A taxonomic rank for parasitic fungi or bacteria that are adapted to specific hosts.',
+        title="A taxonomic rank for parasitic fungi or bacteria that are adapted to specific hosts.",
     )
     ecotype: str | None = Field(
         None,
-        title='A genetically distinct geographical variety or population within a species.',
+        title="A genetically distinct geographical variety or population within a species.",
     )
-    breed: str | None = Field(None, title='A domesticated group within a species')
+    breed: str | None = Field(None, title="A domesticated group within a species")
     specimen_voucher: V2reportsSpecimenVoucher | None = Field(
-        None, title='Specimen voucher information for this sequence record.'
+        None, title="Specimen voucher information for this sequence record."
     )
     biomaterial: str | None = Field(
         None,
-        title='Biomaterial identifier for this sequence record, for example a culture collection accession.',
+        title="Biomaterial identifier for this sequence record, for example a culture collection accession.",
     )
     culture_collection: V2reportsCultureCollection | None = Field(
-        None, title='Culture collection information for this sequence record.'
+        None, title="Culture collection information for this sequence record."
     )
     type_material: V2reportsSequenceTypeMaterial | None = Field(
-        None, title='Type material information for this sequence record.'
+        None, title="Type material information for this sequence record."
     )
 
 
 class V2reportsLinkedAssembly(BaseModel):
-    linked_assembly: str | None = Field(None, title='The linked assembly accession')
+    linked_assembly: str | None = Field(None, title="The linked assembly accession")
     assembly_type: V2reportsLinkedAssemblyType | None = Field(
-        'LINKED_ASSEMBLY_TYPE_UNKNOWN', title='The linked assembly type'
+        "LINKED_ASSEMBLY_TYPE_UNKNOWN", title="The linked assembly type"
     )
 
 
 class V2reportsMapLocation(BaseModel):
     map_type: V2reportsMapLocationMapType | None = Field(
-        'Unknown', title='Type of mapping; can be "Cytogenetic" or "Genetic"'
+        "Unknown", title='Type of mapping; can be "Cytogenetic" or "Genetic"'
     )
-    map_value: str | None = Field(
-        None, title='Location of the gene in mapping coordinates'
-    )
+    map_value: str | None = Field(None, title="Location of the gene in mapping coordinates")
 
 
 class V2reportsMedline(BaseModel):
-    pmid: int | None = Field(None, title='PubMed identifier for this medline article.')
-    medline_uid: str | None = Field(
-        None, title='MEDLINE unique identifier for this record.'
-    )
-    entry_month: str | None = Field(
-        None, title='Month this record was entered into MEDLINE (YYYYMM format).'
-    )
-    article: V2reportsArticle | None = Field(
-        None, title='Article associated with this MEDLINE record.'
-    )
-    status: V2reportsMedlineStatus | None = Field(
-        'unknown', title='Current indexing status of this MEDLINE record.'
-    )
+    pmid: int | None = Field(None, title="PubMed identifier for this medline article.")
+    medline_uid: str | None = Field(None, title="MEDLINE unique identifier for this record.")
+    entry_month: str | None = Field(None, title="Month this record was entered into MEDLINE (YYYYMM format).")
+    article: V2reportsArticle | None = Field(None, title="Article associated with this MEDLINE record.")
+    status: V2reportsMedlineStatus | None = Field("unknown", title="Current indexing status of this MEDLINE record.")
 
 
 class V2reportsNameAndAuthorityNote(BaseModel):
-    name: str | None = Field(None, title='Name of the notation.')
-    note: str | None = Field(None, title='Note text.')
+    name: str | None = Field(None, title="Name of the notation.")
+    note: str | None = Field(None, title="Note text.")
     note_classifier: V2reportsNameAndAuthorityNoteClassifier | None = Field(
-        'no_authority_classifier', title='Note classification'
+        "no_authority_classifier", title="Note classification"
     )
 
 
 class V2reportsOrganelle(BaseModel):
-    description: V2reportsOrganelleType | None = 'ORGANELLE_TYPE_UNKNOWN'
+    description: V2reportsOrganelleType | None = "ORGANELLE_TYPE_UNKNOWN"
     genbank: V2reportsSequenceInformation | None = None
     refseq: V2reportsSequenceInformation | None = None
-    organism: V2reportsOrganism | None = Field(None, title='Taxon for the organelle')
+    organism: V2reportsOrganism | None = Field(None, title="Taxon for the organelle")
     bioprojects: list[V2reportsBioProject] | None = None
-    biosample: V2reportsOrganelleBiosample | None = Field(
-        None, title='The associated BioSample.'
-    )
+    biosample: V2reportsOrganelleBiosample | None = Field(None, title="The associated BioSample.")
     gene_counts: V2reportsOrganelleGeneCounts | None = None
-    length: int | None = Field(None, title='Genome length')
-    topology: V2reportsOrganelleTopology | None = 'TOPOLOGY_UNKNOWN'
+    length: int | None = Field(None, title="Genome length")
+    topology: V2reportsOrganelleTopology | None = "TOPOLOGY_UNKNOWN"
     gene_count: int | None = None
 
 
 class V2reportsPairedAssembly(BaseModel):
     accession: str | None = Field(
         None,
-        title='The GenColl assembly accession of the GenBank or RefSeq assembly paired with this one',
+        title="The GenColl assembly accession of the GenBank or RefSeq assembly paired with this one",
     )
     status: V2reportsAssemblyStatus | None = Field(
-        'ASSEMBLY_STATUS_UNKNOWN', title='GenColl Assembly status from paired record'
+        "ASSEMBLY_STATUS_UNKNOWN", title="GenColl Assembly status from paired record"
     )
-    annotation_name: str | None = Field(
-        None, title='Annotation name from paired record'
-    )
-    only_genbank: str | None = Field(
-        None, title='Sequences that are only included in the GenBank assembly'
-    )
-    only_refseq: str | None = Field(
-        None, title='Sequences that are only included in the RefSeq assembly'
-    )
+    annotation_name: str | None = Field(None, title="Annotation name from paired record")
+    only_genbank: str | None = Field(None, title="Sequences that are only included in the GenBank assembly")
+    only_refseq: str | None = Field(None, title="Sequences that are only included in the RefSeq assembly")
     changed: str | None = Field(
         None,
-        title='Sequences present on both the GenBank and the RefSeq assemblies that have been changed, e.g., contaminated sequence in the GenBank assembly has been replaced with a gap',
+        title="Sequences present on both the GenBank and the RefSeq assemblies that have been changed, e.g., contaminated sequence in the GenBank assembly has been replaced with a gap",
     )
     manual_diff: str | None = Field(
         None,
-        title='Manually curated description of differences between the GenBank and RefSeq assemblies',
+        title="Manually curated description of differences between the GenBank and RefSeq assemblies",
     )
     refseq_genbank_are_different: bool | None = Field(
         None,
-        title='boolean indication on whether there are any differences between the GenBank and RefSeq assemblies',
+        title="boolean indication on whether there are any differences between the GenBank and RefSeq assemblies",
     )
     differences: str | None = Field(
         None,
-        title='Concatenation of all differences between the GenBank and RefSeq assemblies, including manually curated description and other fields',
+        title="Concatenation of all differences between the GenBank and RefSeq assemblies, including manually curated description and other fields",
     )
 
 
 class V2reportsProcessMetadata(BaseModel):
-    name: str | None = Field(None, title='Gene ontology term name')
-    go_id: str | None = Field(None, title='Gene ontology identifier')
-    evidence_code: str | None = Field(
-        None, title='Indicates how the annotation is supported'
-    )
-    qualifier: str | None = Field(
-        None, title='Explicitly link gene products to GO terms'
-    )
-    reference: V2reportsReference | None = Field(
-        None, title='Source of evidence supporting the GO annotation'
-    )
+    name: str | None = Field(None, title="Gene ontology term name")
+    go_id: str | None = Field(None, title="Gene ontology identifier")
+    evidence_code: str | None = Field(None, title="Indicates how the annotation is supported")
+    qualifier: str | None = Field(None, title="Explicitly link gene products to GO terms")
+    reference: V2reportsReference | None = Field(None, title="Source of evidence supporting the GO annotation")
 
 
 class V2reportsProteinDataReport(BaseModel):
-    accession: str | None = Field(None, title='Protein accession, as input')
-    description: str | None = Field(None, title='Protein name as in defline')
-    length: int | None = Field(None, title='Length of the protein')
-    gene_id: int | None = Field(None, title='Gene ID associated with the protein')
-    identical_protein_group: int | None = Field(
-        None, title='Non-redundent protein group ID, aka IPG/PIG'
-    )
-    tax_id: int | None = Field(None, title='Taxonomy ID')
+    accession: str | None = Field(None, title="Protein accession, as input")
+    description: str | None = Field(None, title="Protein name as in defline")
+    length: int | None = Field(None, title="Length of the protein")
+    gene_id: int | None = Field(None, title="Gene ID associated with the protein")
+    identical_protein_group: int | None = Field(None, title="Non-redundent protein group ID, aka IPG/PIG")
+    tax_id: int | None = Field(None, title="Taxonomy ID")
     conserved_domains: list[V2reportsProteinConservedDomain] | None = None
     functional_sites: list[V2reportsFunctionalSite] | None = None
     protein_families: list[V2reportsProteinFamily] | None = None
@@ -2963,197 +2630,161 @@ class V2reportsProteinDataReportPage(BaseModel):
 
 
 class V2reportsRange(BaseModel):
-    begin: str | None = Field(None, title='Sequence start position')
-    end: str | None = Field(None, title='Sequence stop position')
-    orientation: V2reportsOrientation | None = Field(
-        'none', title='Direction relative to the genome'
-    )
-    order: int | None = Field(
-        None, title='The position of this sequence in a group of sequences'
-    )
+    begin: str | None = Field(None, title="Sequence start position")
+    end: str | None = Field(None, title="Sequence stop position")
+    orientation: V2reportsOrientation | None = Field("none", title="Direction relative to the genome")
+    order: int | None = Field(None, title="The position of this sequence in a group of sequences")
     ribosomal_slippage: int | None = Field(
         None,
-        title='When ribosomal slippage is desired, fill out slippage amount between this and previous range.',
+        title="When ribosomal slippage is desired, fill out slippage amount between this and previous range.",
     )
 
 
 class V2reportsSample(BaseModel):
-    sample_name: str | None = Field(None, title='Sample name')
+    sample_name: str | None = Field(None, title="Sample name")
     aggregate_expression_value: V2reportsAggregateExpressionValue | None = Field(
-        None, title='Aggregate Expression Value'
+        None, title="Aggregate Expression Value"
     )
     biosamples: list[V2reportsBioSample] | None = None
 
 
 class V2reportsSeqRangeSet(BaseModel):
-    accession_version: str | None = Field(
-        None, title='NCBI Accession.version of the sequence'
-    )
+    accession_version: str | None = Field(None, title="NCBI Accession.version of the sequence")
     range: list[V2reportsRange] | None = None
 
 
 class V2reportsSeqRangeSetFasta(BaseModel):
     seq_id: str | None = Field(
         None,
-        title='Seq_id may include location info in addition to a sequence accession',
+        title="Seq_id may include location info in addition to a sequence accession",
     )
-    accession_version: str | None = Field(
-        None, title='Accession and version of the viral nucleotide sequence'
-    )
+    accession_version: str | None = Field(None, title="Accession and version of the viral nucleotide sequence")
     title: str | None = None
-    sequence_hash: str | None = Field(
-        None, title='Unique identifier for identical sequences'
-    )
+    sequence_hash: str | None = Field(None, title="Unique identifier for identical sequences")
     range: list[V2reportsRange] | None = None
 
 
 class V2reportsSequenceFeatureLocationIntFuzz(BaseModel):
-    p_m: int | None = Field(None, title='Plus or minus uncertainty value.')
+    p_m: int | None = Field(None, title="Plus or minus uncertainty value.")
     range: V2reportsSequenceFeatureLocationFuzzRange | None = Field(
-        None, title='Range of uncertainty with min and max values.'
+        None, title="Range of uncertainty with min and max values."
     )
-    percentage: int | None = Field(None, title='Percentage uncertainty.')
+    percentage: int | None = Field(None, title="Percentage uncertainty.")
     lim: V2reportsSequenceFeatureLocationFuzzLim | None = Field(
-        'lim_unknown', title='Limit-based constraint on the position.'
+        "lim_unknown", title="Limit-based constraint on the position."
     )
 
 
 class V2reportsTaxonomyNodeCountByType(BaseModel):
-    type: V2reportsCountType | None = 'COUNT_TYPE_UNSPECIFIED'
+    type: V2reportsCountType | None = "COUNT_TYPE_UNSPECIFIED"
     count: int | None = None
 
 
 class V2reportsTaxonomyTypeMaterial(BaseModel):
-    type_strain_name: str | None = Field(
-        None, title='The strain name of the type material.'
-    )
-    type_strain_id: str | None = Field(
-        None, title='The strain ID of the type material.'
-    )
-    bio_collection_id: str | None = Field(
-        None, title='The biocollection ID of the type material.'
-    )
-    bio_collection_name: str | None = Field(
-        None, title='The biocollection name of the type material.'
-    )
+    type_strain_name: str | None = Field(None, title="The strain name of the type material.")
+    type_strain_id: str | None = Field(None, title="The strain ID of the type material.")
+    bio_collection_id: str | None = Field(None, title="The biocollection ID of the type material.")
+    bio_collection_name: str | None = Field(None, title="The biocollection name of the type material.")
     collection_type: list[V2reportsCollectionType] | None = None
-    type_class: str | None = Field(None, title='Type material classification.')
+    type_class: str | None = Field(None, title="Type material classification.")
 
 
 class V2reportsThesis(BaseModel):
-    pmid: int | None = Field(None, title='PubMed identifier for this thesis.')
+    pmid: int | None = Field(None, title="PubMed identifier for this thesis.")
     book: V2reportsBook | None = Field(
         None,
-        title='Book-style bibliographic metadata for this thesis/manuscript/letter citation.',
+        title="Book-style bibliographic metadata for this thesis/manuscript/letter citation.",
     )
-    id: str | None = Field(
-        None, title='Identifier associated with the citation record.'
-    )
-    classification_type: V2reportsThesisType | None = Field(
-        'unknown', title='Classification of this citation entry.'
-    )
+    id: str | None = Field(None, title="Identifier associated with the citation record.")
+    classification_type: V2reportsThesisType | None = Field("unknown", title="Classification of this citation entry.")
 
 
 class V2reportsTranscriptTypeCount(BaseModel):
-    type: V2reportsTranscriptTranscriptType | None = Field(
-        'UNKNOWN', title='Type of transcript'
-    )
-    count: int | None = Field(None, title='Number of transcripts of a particular type')
+    type: V2reportsTranscriptTranscriptType | None = Field("UNKNOWN", title="Type of transcript")
+    count: int | None = Field(None, title="Number of transcripts of a particular type")
 
 
 class V2reportsVirusAssembly(BaseModel):
     accession: str | None = Field(
         None,
-        title='The accession.version of the viral nucleotide sequence. Includes both GenBank and RefSeq accessions',
+        title="The accession.version of the viral nucleotide sequence. Includes both GenBank and RefSeq accessions",
     )
     is_complete: bool | None = None
     is_annotated: bool | None = Field(
         None,
-        title='The viral genome has been annotated by either the submitter (GenBank) or by NCBI (RefSeq)',
+        title="The viral genome has been annotated by either the submitter (GenBank) or by NCBI (RefSeq)",
     )
     isolate: V2reportsIsolate | None = None
     source_database: str | None = Field(
         None,
-        title='Indicates if the source of the viral nucleotide record is from a GenBank submitter or from NCBI-derived curation (RefSeq)',
+        title="Indicates if the source of the viral nucleotide record is from a GenBank submitter or from NCBI-derived curation (RefSeq)",
     )
     protein_count: int | None = Field(
         None,
-        title='The total count of annotated proteins including both proteins and polyproteins but not processed mature peptides',
+        title="The total count of annotated proteins including both proteins and polyproteins but not processed mature peptides",
     )
-    host: V2reportsOrganism | None = Field(
-        None, title='Taxon from which the virus sample was isolated'
-    )
-    virus: V2reportsOrganism | None = Field(None, title='Viral taxon')
+    host: V2reportsOrganism | None = Field(None, title="Taxon from which the virus sample was isolated")
+    virus: V2reportsOrganism | None = Field(None, title="Viral taxon")
     bioprojects: list[str] | None = None
     location: V2reportsVirusAssemblyCollectionLocation | None = None
-    update_date: str | None = Field(
-        None, title='Date the viral nucleotide accession was last updated in NCBI Virus'
-    )
+    update_date: str | None = Field(None, title="Date the viral nucleotide accession was last updated in NCBI Virus")
     release_date: str | None = Field(
         None,
-        title='Date the viral nucleotide accession was first released in NCBI Virus',
+        title="Date the viral nucleotide accession was first released in NCBI Virus",
     )
     nucleotide_completeness: str | None = Field(
         None,
-        title='Value describing if the of the viral nucleotide sequence represents a complete or partial genome',
+        title="Value describing if the of the viral nucleotide sequence represents a complete or partial genome",
     )
     completeness: V2reportsVirusAssemblyCompleteness | None = Field(
-        'UNKNOWN',
-        title='Indicates whether the viral nucleotide sequence represents a complete or partial genome',
+        "UNKNOWN",
+        title="Indicates whether the viral nucleotide sequence represents a complete or partial genome",
     )
-    length: int | None = Field(None, title='Length of the viral nucleotide sequence')
-    gene_count: int | None = Field(
-        None, title='Total count of genes annotated on the viral nucleotide sequence'
-    )
+    length: int | None = Field(None, title="Length of the viral nucleotide sequence")
+    gene_count: int | None = Field(None, title="Total count of genes annotated on the viral nucleotide sequence")
     mature_peptide_count: int | None = Field(
         None,
-        title='Total count of processed mature peptides annotated on the viral nucleotide sequence',
+        title="Total count of processed mature peptides annotated on the viral nucleotide sequence",
     )
-    biosample: str | None = Field(None, title='Associated Biosample accessions')
+    biosample: str | None = Field(None, title="Associated Biosample accessions")
     mol_type: str | None = Field(
         None,
-        title='ICTV (International Committee on Taxonomy of Viruses) viral classification based on nucleic acid composition, strandedness and method of replication',
+        title="ICTV (International Committee on Taxonomy of Viruses) viral classification based on nucleic acid composition, strandedness and method of replication",
     )
     nucleotide: V2reportsSeqRangeSetFasta | None = Field(
-        None, title='The whole genomic nucleotide record of the CDS feature.'
+        None, title="The whole genomic nucleotide record of the CDS feature."
     )
     purpose_of_sampling: V2reportsPurposeOfSampling | None = Field(
-        'PURPOSE_OF_SAMPLING_UNKNOWN',
-        title='SARS-CoV-2 only, indicates whether the sequence was collected randomly for epedimiology studies',
+        "PURPOSE_OF_SAMPLING_UNKNOWN",
+        title="SARS-CoV-2 only, indicates whether the sequence was collected randomly for epedimiology studies",
     )
     sra_accessions: list[str] | None = None
     submitter: V2reportsVirusAssemblySubmitterInfo | None = Field(
-        None, title='Name, affiliation, and country of the submitter(s)'
+        None, title="Name, affiliation, and country of the submitter(s)"
     )
-    lab_host: str | None = Field(
-        None, title='This sequence is from viruses passaged in this host'
-    )
-    is_lab_host: bool | None = Field(
-        None, title='If true, this sequence is from viruses passaged in a laboratory'
-    )
+    lab_host: str | None = Field(None, title="This sequence is from viruses passaged in this host")
+    is_lab_host: bool | None = Field(None, title="If true, this sequence is from viruses passaged in a laboratory")
     is_vaccine_strain: bool | None = Field(
         None,
-        title='If true, this sequence is derived from a virus used as a vaccine or potential vaccine',
+        title="If true, this sequence is derived from a virus used as a vaccine or potential vaccine",
     )
-    segment: str | None = Field(None, title='The virus segment')
+    segment: str | None = Field(None, title="The virus segment")
 
 
 class V2reportsVirusDataReportPage(BaseModel):
     reports: list[V2reportsVirusAssembly] | None = None
     total_count: int | None = Field(
         None,
-        title='The total count of available assemblies (ignoring the page_size parameter).',
+        title="The total count of available assemblies (ignoring the page_size parameter).",
     )
     next_page_token: str | None = Field(
         None,
-        title='A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.',
+        title="A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.",
     )
 
 
 class V2reportsWarning(BaseModel):
-    gene_warning_code: V2reportsWarningGeneWarningCode | None = (
-        'UNKNOWN_GENE_WARNING_CODE'
-    )
+    gene_warning_code: V2reportsWarningGeneWarningCode | None = "UNKNOWN_GENE_WARNING_CODE"
     reason: str | None = None
     message: str | None = None
     replaced_id: V2reportsWarningReplacedId | None = None
@@ -3161,27 +2792,25 @@ class V2reportsWarning(BaseModel):
 
 
 class Ncbiprotddv2ParsedAbstract(BaseModel):
-    pmid: int | None = Field(None, title='The pubmed ID of the article')
-    title: str | None = Field(None, title='Title of the article')
+    pmid: int | None = Field(None, title="The pubmed ID of the article")
+    title: str | None = Field(None, title="Title of the article")
     authors: list[Ncbiprotddv2ParsedAbstractAuthor] | None = None
-    epub: Ncbiprotddv2ParsedAbstractEpub | None = Field(
-        None, title='Electronic publication information'
-    )
-    abstract_text: str | None = Field(None, title='Body of the abstract')
+    epub: Ncbiprotddv2ParsedAbstractEpub | None = Field(None, title="Electronic publication information")
+    abstract_text: str | None = Field(None, title="Body of the abstract")
 
 
 class Ncbiprotddv2SimilarStructureReport(BaseModel):
-    sdid: int | None = Field(None, title='Structure Domain ID')
-    structure_title: str | None = Field(None, title='PDB Structure Title')
-    protein_chain_name: str | None = Field(None, title='Protein Chain Name')
-    chain_id: str | None = Field(None, title='Chain ID')
-    domain_number: int | None = Field(None, title='Domain Number 0 is the entire chain')
-    mmdb_id: int | None = Field(None, title='The MMDB ID of the structure')
-    pdb_id: str | None = Field(None, title='The PDB ID of the structure')
+    sdid: int | None = Field(None, title="Structure Domain ID")
+    structure_title: str | None = Field(None, title="PDB Structure Title")
+    protein_chain_name: str | None = Field(None, title="Protein Chain Name")
+    chain_id: str | None = Field(None, title="Chain ID")
+    domain_number: int | None = Field(None, title="Domain Number 0 is the entire chain")
+    mmdb_id: int | None = Field(None, title="The MMDB ID of the structure")
+    pdb_id: str | None = Field(None, title="The PDB ID of the structure")
     vast_score: Ncbiprotddv2VastScore | None = None
-    align_id: int | None = Field(None, title='Alignment Id')
-    superkingdom_id: int | None = Field(None, title='Superkingdom ID')
-    tax_id: int | None = Field(None, title='NCBI Taxonomy ID')
+    align_id: int | None = Field(None, title="Alignment Id")
+    superkingdom_id: int | None = Field(None, title="Superkingdom ID")
+    tax_id: int | None = Field(None, title="NCBI Taxonomy ID")
     footprints: list[Ncbiprotddv2ChainFootprint] | None = None
 
 
@@ -3191,42 +2820,34 @@ class Ncbiprotddv2SimilarStructureReportPage(BaseModel):
     total_count: int | None = None
     query_length: int | None = Field(
         None,
-        title='Complete length of the query protein chain in residues. Defines the shared coordinate system for ChainFootprint.query_from and ChainFootprint.query_to. This is not the requested domain length or an individual alignment length. Zero indicates unavailable.',
+        title="Complete length of the query protein chain in residues. Defines the shared coordinate system for ChainFootprint.query_from and ChainFootprint.query_to. This is not the requested domain length or an individual alignment length. Zero indicates unavailable.",
     )
 
 
 class Ncbiprotddv2SimilarStructureRequest(BaseModel):
     sdid: str | None = None
-    page_token: str | None = Field(
-        None, title='Only needed for paging GetSimilarStructures RPC'
-    )
+    page_token: str | None = Field(None, title="Only needed for paging GetSimilarStructures RPC")
     redundancy_level: Ncbiprotddv2RedundancyLevel | None = Field(
-        'NOT_SPECIFIED', title='Sort and filter fields here. Redundancy Level'
+        "NOT_SPECIFIED", title="Sort and filter fields here. Redundancy Level"
     )
-    sort_by: Ncbiprotddv2SortById | None = 'NONE'
+    sort_by: Ncbiprotddv2SortById | None = "NONE"
     hits_per_page: int | None = None
-    sort_direction: V2SortDirection | None = 'SORT_DIRECTION_UNSPECIFIED'
+    sort_direction: V2SortDirection | None = "SORT_DIRECTION_UNSPECIFIED"
 
 
 class Ncbiprotddv2StructureDataReportBiounitChain(BaseModel):
-    chain_id: str | None = Field(None, title='Chain name. I.e. AA')
-    tax_id: int | None = Field(None, title='taxonomy id')
-    kind: Ncbiprotddv2StructureDataReportKind | None = Field(
-        'DNA', title='Kind of molecule. DNA, RNA, Protein, etc.'
-    )
-    molecule_group: int | None = Field(
-        None, title='Which group of identical chains does this chain belong to'
-    )
-    sdid: int | None = Field(None, title='Unique structure identifier of the chain')
+    chain_id: str | None = Field(None, title="Chain name. I.e. AA")
+    tax_id: int | None = Field(None, title="taxonomy id")
+    kind: Ncbiprotddv2StructureDataReportKind | None = Field("DNA", title="Kind of molecule. DNA, RNA, Protein, etc.")
+    molecule_group: int | None = Field(None, title="Which group of identical chains does this chain belong to")
+    sdid: int | None = Field(None, title="Unique structure identifier of the chain")
 
 
 class Ncbiprotddv2StructureDataReportLigandChain(BaseModel):
-    chain_id: str | None = Field(None, title='Chain name. I.e. ZINC ION')
-    kind: Ncbiprotddv2StructureDataReportKind | None = Field(
-        'DNA', title='Kind of molecule. DNA, RNA, Protein, etc.'
-    )
-    sid: int | None = Field(None, title='Unique substance identifier')
-    sdid: int | None = Field(None, title='Unique structure identifiers')
+    chain_id: str | None = Field(None, title="Chain name. I.e. ZINC ION")
+    kind: Ncbiprotddv2StructureDataReportKind | None = Field("DNA", title="Kind of molecule. DNA, RNA, Protein, etc.")
+    sid: int | None = Field(None, title="Unique substance identifier")
+    sdid: int | None = Field(None, title="Unique structure identifiers")
 
 
 class V2AssemblyDatasetReportsRequest(BaseModel):
@@ -3244,25 +2865,25 @@ class V2AssemblyDatasetReportsRequest(BaseModel):
     chromosomes: list[str] | None = None
     table_fields: list[str] | None = None
     returned_content: V2AssemblyDatasetReportsRequestContentType | None = Field(
-        'COMPLETE',
-        title='Return complete genome assembly reports, or abbreviated reports with assembly accessions with or without paired assembly information.',
+        "COMPLETE",
+        title="Return complete genome assembly reports, or abbreviated reports with assembly accessions with or without paired assembly information.",
     )
     page_size: int | None = Field(
         None,
-        title='The maximum number of genome assembly reports to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.',
+        title="The maximum number of genome assembly reports to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.",
     )
     page_token: str | None = Field(
         None,
-        title='A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.',
+        title="A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.",
     )
     sort: list[V2SortField] | None = None
     include_tabular_header: V2IncludeTabularHeader | None = Field(
-        'INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY',
-        title='Specify when to include the table header when requesting a tabular report.',
+        "INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY",
+        title="Specify when to include the table header when requesting a tabular report.",
     )
     table_format: str | None = Field(
         None,
-        title='Optional pre-defined template for processing a tabular data request',
+        title="Optional pre-defined template for processing a tabular data request",
     )
 
 
@@ -3283,43 +2904,43 @@ class V2DatasetRequest(BaseModel):
 
 class V2GeneDatasetReportsRequest(BaseModel):
     returned_content: V2GeneDatasetReportsRequestContentType | None = Field(
-        'COMPLETE',
-        title='Return complete gene reports, or abbreviated reports with either GeneIDs only or GeneIDs, transcript and protein counts.',
+        "COMPLETE",
+        title="Return complete gene reports, or abbreviated reports with either GeneIDs only or GeneIDs, transcript and protein counts.",
     )
     gene_ids: list[int] | None = None
     accessions: list[str] | None = None
     symbols_for_taxon: V2GeneDatasetReportsRequestSymbolsForTaxon | None = None
     taxon: str | None = Field(
         None,
-        title='NCBI Taxonomy ID or name (common or scientific) that the genes are annotated at',
+        title="NCBI Taxonomy ID or name (common or scientific) that the genes are annotated at",
     )
     locus_tags: list[str] | None = None
     table_fields: list[str] | None = None
     table_format: str | None = Field(
         None,
-        title='Specify a predefined set of fields for the tabular report using built-in templates. Use of this parameter requires the HTTP header, `accept: text/tab-separated-values`.',
+        title="Specify a predefined set of fields for the tabular report using built-in templates. Use of this parameter requires the HTTP header, `accept: text/tab-separated-values`.",
     )
     include_tabular_header: V2IncludeTabularHeader | None = Field(
-        'INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY',
-        title='Specify when to include the table header when requesting a tabular report.',
+        "INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY",
+        title="Specify when to include the table header when requesting a tabular report.",
     )
     page_size: int | None = Field(
         None,
-        title='The maximum number of gene reports to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.',
+        title="The maximum number of gene reports to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.",
     )
     page_token: str | None = Field(
         None,
-        title='A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.',
+        title="A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.",
     )
     query: str | None = Field(
         None,
-        title='Limit to genes that match the specified gene symbol, name (description), alias, locus tag or protein name.',
+        title="Limit to genes that match the specified gene symbol, name (description), alias, locus tag or protein name.",
     )
     types: list[V2GeneType] | None = None
     accession_filter: list[str] | None = None
     tax_search_subtree: bool | None = Field(
         None,
-        title='If true, include genes from taxonomic ranks below the requested taxon.',
+        title="If true, include genes from taxonomic ranks below the requested taxon.",
     )
     sort: list[V2SortField] | None = None
 
@@ -3329,7 +2950,7 @@ class V2GeneLinksReply(BaseModel):
 
 
 class V2GenomeAnnotationRequest(BaseModel):
-    accession: str | None = Field(None, title='A single genome assembly accession')
+    accession: str | None = Field(None, title="A single genome assembly accession")
     annotation_ids: list[str] | None = None
     symbols: list[str] | None = None
     locations: list[str] | None = None
@@ -3339,20 +2960,20 @@ class V2GenomeAnnotationRequest(BaseModel):
     include_annotation_type: list[V2GenomeAnnotationRequestAnnotationType] | None = None
     page_size: int | None = Field(
         None,
-        title='The maximum number of features to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.',
+        title="The maximum number of features to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.",
     )
     table_fields: list[str] | None = None
     table_format: V2GenomeAnnotationRequestGenomeAnnotationTableFormat | None = Field(
-        'NO_TABLE',
-        title='Optional pre-defined template for processing a tabular data request',
+        "NO_TABLE",
+        title="Optional pre-defined template for processing a tabular data request",
     )
     include_tabular_header: V2IncludeTabularHeader | None = Field(
-        'INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY',
-        title='Specify when to include the table header when requesting a tabular report.',
+        "INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY",
+        title="Specify when to include the table header when requesting a tabular report.",
     )
     page_token: str | None = Field(
         None,
-        title='A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.',
+        title="A page token is returned when the results count exceeds `page size`. Use this token along with previous request parameters to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.",
     )
 
 
@@ -3362,36 +2983,36 @@ class V2OrganelleMetadataRequest(BaseModel):
     organelle_types: list[V2reportsOrganelleType] | None = None
     first_release_date: AwareDatetime | None = Field(
         None,
-        title='Limit results to organelle genomes released on or after the specified date.',
+        title="Limit results to organelle genomes released on or after the specified date.",
     )
     last_release_date: AwareDatetime | None = Field(
         None,
-        title='Limit results to organelle genomes released on or before the specified date.',
+        title="Limit results to organelle genomes released on or before the specified date.",
     )
     tax_exact_match: bool | None = Field(
         None,
-        title='If true, only return assemblies with the given NCBI Taxonomy ID, or name. Otherwise, assemblies from taxonomy subtree are included, too.',
+        title="If true, only return assemblies with the given NCBI Taxonomy ID, or name. Otherwise, assemblies from taxonomy subtree are included, too.",
     )
     sort: list[V2OrganelleSort] | None = None
     returned_content: V2OrganelleMetadataRequestContentType | None = Field(
-        'COMPLETE',
-        title='Return complete organelle reports or nucleotide accessions only.',
+        "COMPLETE",
+        title="Return complete organelle reports or nucleotide accessions only.",
     )
     page_size: int | None = Field(
         None,
-        title='The maximum number of organelle assemblies to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.',
+        title="The maximum number of organelle assemblies to return. Default is 20 and maximum is 1000. If the number of results exceeds the page size, `page_token` can be used to retrieve the remaining results.",
     )
     page_token: str | None = Field(
         None,
-        title='A page token is returned from an `OrganelleMetadata` call with more than `page_size` results. Use this token, along with the previous `OrganelleMetadata` parameters, to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.',
+        title="A page token is returned from an `OrganelleMetadata` call with more than `page_size` results. Use this token, along with the previous `OrganelleMetadata` parameters, to retrieve the next page of results. When `page_token` is empty, all results have been retrieved.",
     )
     table_format: V2OrganelleMetadataRequestOrganelleTableFormat | None = Field(
-        'ORGANELLE_TABLE_FORMAT_NO_TABLE',
-        title='Specify a predefined set of fields for the tabular report using built-in templates. Use of this parameter requires the HTTP header, `accept: text/tab-separated-values`.',
+        "ORGANELLE_TABLE_FORMAT_NO_TABLE",
+        title="Specify a predefined set of fields for the tabular report using built-in templates. Use of this parameter requires the HTTP header, `accept: text/tab-separated-values`.",
     )
     include_tabular_header: V2IncludeTabularHeader | None = Field(
-        'INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY',
-        title='Specify when to include the table header when requesting a tabular report.',
+        "INCLUDE_TABULAR_HEADER_FIRST_PAGE_ONLY",
+        title="Specify when to include the table header when requesting a tabular report.",
     )
 
 
@@ -3407,243 +3028,189 @@ class V2TaxonomyFilteredSubtreeResponse(BaseModel):
 
 
 class V2TaxonomyNode(BaseModel):
-    tax_id: int | None = Field(None, title='NCBI Taxonomy identifier')
-    organism_name: str | None = Field(None, title='Scientific name')
-    common_name: str | None = Field(None, title='Common name')
-    genbank_common_name: str | None = Field(None, title='GenBank common name')
+    tax_id: int | None = Field(None, title="NCBI Taxonomy identifier")
+    organism_name: str | None = Field(None, title="Scientific name")
+    common_name: str | None = Field(None, title="Common name")
+    genbank_common_name: str | None = Field(None, title="GenBank common name")
     acronyms: list[str] | None = None
-    genbank_acronym: str | None = Field(None, title='GenBank acronym')
-    blast_name: str | None = Field(None, title='blast name for organism')
+    genbank_acronym: str | None = Field(None, title="GenBank acronym")
+    blast_name: str | None = Field(None, title="blast name for organism")
     lineage: list[int] | None = None
     children: list[int] | None = None
     descendent_with_described_species_names_count: int | None = Field(
-        None, title='The number of descendants (grand total) that are specified.'
+        None, title="The number of descendants (grand total) that are specified."
     )
-    rank: V2reportsRankType | None = Field(
-        'NO_RANK', title='The rank of the organism.  An enumerated set of values.'
-    )
-    has_described_species_name: bool | None = Field(
-        None, title='If the taxonomy node has a proper species name'
-    )
+    rank: V2reportsRankType | None = Field("NO_RANK", title="The rank of the organism.  An enumerated set of values.")
+    has_described_species_name: bool | None = Field(None, title="If the taxonomy node has a proper species name")
     counts: list[V2TaxonomyNodeCountByType] | None = None
     min_ord: int | None = Field(
         None,
-        title='ordinal values for any node are the full range of the ordinal values in the subtree underneath this node, and are used for faster range-based lookups',
+        title="ordinal values for any node are the full range of the ordinal values in the subtree underneath this node, and are used for faster range-based lookups",
     )
     max_ord: int | None = None
-    extinct: bool | None = Field(None, title='True if organism is extinct')
-    genomic_moltype: str | None = Field(
-        None, title='genomic molecule type (dsDNA, ssDNA, ssDNA(-), ssRNA)'
-    )
+    extinct: bool | None = Field(None, title="True if organism is extinct")
+    genomic_moltype: str | None = Field(None, title="genomic molecule type (dsDNA, ssDNA, ssDNA(-), ssRNA)")
 
 
 class V2reportsAnnotationInfo(BaseModel):
-    name: str | None = Field(None, title='Annotation name')
-    provider: str | None = Field(None, title='Source of the annotation')
-    release_date: str | None = Field(None, title='Annotation release date')
-    report_url: str | None = Field(None, title='Annotation report web address')
+    name: str | None = Field(None, title="Annotation name")
+    provider: str | None = Field(None, title="Source of the annotation")
+    release_date: str | None = Field(None, title="Annotation release date")
+    report_url: str | None = Field(None, title="Annotation report web address")
     stats: V2reportsFeatureCounts | None = None
     busco: V2reportsBuscoStat | None = None
-    method: str | None = Field(
-        None, title='Software tools used to calculate annotation'
-    )
-    pipeline: str | None = Field(
-        None, title='NCBI annotation pipeline used to calculate annotation'
-    )
-    software_version: str | None = Field(
-        None, title='NCBI annotation pipeline software version'
-    )
-    status: str | None = Field(None, title='Type of annotation')
+    method: str | None = Field(None, title="Software tools used to calculate annotation")
+    pipeline: str | None = Field(None, title="NCBI annotation pipeline used to calculate annotation")
+    software_version: str | None = Field(None, title="NCBI annotation pipeline software version")
+    status: str | None = Field(None, title="Type of annotation")
     release_version: str | None = None
 
 
 class V2reportsAssemblyInfo(BaseModel):
-    assembly_level: str | None = Field(
-        None, title='The level at which a genome has been assembled'
-    )
+    assembly_level: str | None = Field(None, title="The level at which a genome has been assembled")
     assembly_status: V2reportsAssemblyStatus | None = Field(
-        'ASSEMBLY_STATUS_UNKNOWN', title='The GenColl assembly status'
+        "ASSEMBLY_STATUS_UNKNOWN", title="The GenColl assembly status"
     )
     paired_assembly: V2reportsPairedAssembly | None = Field(
-        None, title='Metadata from the GenBank or RefSeq assembly paired with this one'
+        None, title="Metadata from the GenBank or RefSeq assembly paired with this one"
     )
     assembly_name: str | None = Field(
         None,
         title="The assembly submitter's name for the genome assembly, when provided. Otherwise, a default name in the  form ASM#####v# is assigned",
     )
     assembly_long_name: str | None = None
-    assembly_type: str | None = Field(
-        None, title='Chromosome content of the submitted genome assembly'
-    )
+    assembly_type: str | None = Field(None, title="Chromosome content of the submitted genome assembly")
     bioproject_lineage: list[V2reportsBioProjectLineage] | None = None
     bioproject_accession: str | None = None
     submission_date: str | None = Field(
         None,
-        title='Date the assembly was submitted to NCBI (being replaced by release date - should maintain until most CLI users upgrade)',
+        title="Date the assembly was submitted to NCBI (being replaced by release date - should maintain until most CLI users upgrade)",
     )
     release_date: str | None = Field(
         None,
-        title='Date the assembly was made available by NCBI. This field is not returned by versions of the datasets Command Line Interface (CLI) program < 15.',
+        title="Date the assembly was made available by NCBI. This field is not returned by versions of the datasets Command Line Interface (CLI) program < 15.",
     )
-    description: str | None = Field(None, title='Long description for this genome')
+    description: str | None = Field(None, title="Long description for this genome")
     submitter: str | None = Field(
         None,
-        title='The submitting consortium or organization. Full submitter information is available in the BioProject',
+        title="The submitting consortium or organization. Full submitter information is available in the BioProject",
     )
     refseq_category: str | None = Field(
         None,
-        title='The RefSeq Category, if present, indicates whether the assembly is a reference genome',
+        title="The RefSeq Category, if present, indicates whether the assembly is a reference genome",
     )
     synonym: str | None = Field(
         None,
-        title='Genome name ascribed to this assembly by the UC Santa Cruz genome browser',
+        title="Genome name ascribed to this assembly by the UC Santa Cruz genome browser",
     )
     linked_assembly: str | None = Field(
         None,
-        title='The accession.version and designation (principal or alternate pseudohaplotype) of a paired genome assembly derived from the same diploid individual',
+        title="The accession.version and designation (principal or alternate pseudohaplotype) of a paired genome assembly derived from the same diploid individual",
     )
     linked_assemblies: list[V2reportsLinkedAssembly] | None = None
     atypical: V2reportsAtypicalInfo | None = Field(
         None,
-        title='Information on atypical genomes - genomes that have assembly issues or are otherwise atypical',
+        title="Information on atypical genomes - genomes that have assembly issues or are otherwise atypical",
     )
     genome_notes: list[str] | None = None
-    sequencing_tech: str | None = Field(
-        None, title='Sequencing technology used to sequence this genome'
-    )
-    assembly_method: str | None = Field(None, title='Genome assembly method')
+    sequencing_tech: str | None = Field(None, title="Sequencing technology used to sequence this genome")
+    assembly_method: str | None = Field(None, title="Genome assembly method")
     grouping_method: str | None = Field(
         None,
-        title='Version of the NCBI Virus segmented genome grouping pipeline, which groups  nucleotide sequences for segmented viruses into a single genome assembly. For more  information, see the [NCBI Virus Help Documentation](https://www.ncbi.nlm.nih.gov/labs/virus/vssi/docs/help/#virus_segment_grouping)',
+        title="Version of the NCBI Virus segmented genome grouping pipeline, which groups  nucleotide sequences for segmented viruses into a single genome assembly. For more  information, see the [NCBI Virus Help Documentation](https://www.ncbi.nlm.nih.gov/labs/virus/vssi/docs/help/#virus_segment_grouping)",
     )
     biosample: V2reportsBioSampleDescriptor | None = Field(
         None,
-        title='NCBI BioSample from which the sequences in the genome assembly were obtained.',
+        title="NCBI BioSample from which the sequences in the genome assembly were obtained.",
     )
-    blast_url: str | None = Field(None, title='URL to blast page for this assembly')
-    comments: str | None = Field(None, title='Freeform comments')
+    blast_url: str | None = Field(None, title="URL to blast page for this assembly")
+    comments: str | None = Field(None, title="Freeform comments")
     suppression_reason: str | None = Field(
         None,
-        title='The reason for the assembly is suppressed, for suppressed assemblies',
+        title="The reason for the assembly is suppressed, for suppressed assemblies",
     )
-    diploid_role: V2reportsLinkedAssemblyType | None = 'LINKED_ASSEMBLY_TYPE_UNKNOWN'
+    diploid_role: V2reportsLinkedAssemblyType | None = "LINKED_ASSEMBLY_TYPE_UNKNOWN"
 
 
 class V2reportsBioSampleDataReport(BaseModel):
-    accession: str | None = Field(None, title='BioSample Accession identifier')
-    last_updated: str | None = Field(
-        None, title='When the biosample object was last updated.'
-    )
-    publication_date: str | None = Field(
-        None, title='BioSample object publication date.'
-    )
-    submission_date: str | None = Field(None, title='BioSample object submission date.')
+    accession: str | None = Field(None, title="BioSample Accession identifier")
+    last_updated: str | None = Field(None, title="When the biosample object was last updated.")
+    publication_date: str | None = Field(None, title="BioSample object publication date.")
+    submission_date: str | None = Field(None, title="BioSample object submission date.")
     sample_ids: list[V2reportsBioSampleId] | None = None
-    description: V2reportsBioSampleDescription | None = Field(
-        None, title='BioSample description.'
-    )
-    owner: V2reportsBioSampleOwner | None = Field(None, title='BioSample owner.')
+    description: V2reportsBioSampleDescription | None = Field(None, title="BioSample description.")
+    owner: V2reportsBioSampleOwner | None = Field(None, title="BioSample owner.")
     models: list[str] | None = None
     bioprojects: list[V2reportsBioProject] | None = None
-    package: str | None = Field(None, title='Package identifier.')
+    package: str | None = Field(None, title="Package identifier.")
     attributes: list[V2reportsBioSampleAttribute] | None = None
-    status: V2reportsBioSampleStatus | None = Field(
-        None, title='Current status of the object.'
-    )
-    age: str | None = Field(None, title='Age at the time of sampling')
-    biomaterial_provider: str | None = Field(
-        None, title='Name and address of the lab or PI'
-    )
-    breed: str | None = Field(None, title='Breed name')
-    collected_by: str | None = Field(
-        None, title='Name of persons or institute who collected the sample'
-    )
-    collection_date: str | None = Field(
-        None, title='Date on which the sample was collected'
-    )
-    cultivar: str | None = Field(None, title='Cultivated variety of plant')
-    dev_stage: str | None = Field(
-        None, title='Developmental stage at the time of sampling'
-    )
-    ecotype: str | None = Field(
-        None, title='Population within a given species adapted to a local habitat'
-    )
-    geo_loc_name: str | None = Field(None, title='Geographical origin of the sample')
-    host: str | None = Field(None, title='The natural host to the organism')
-    host_disease: str | None = Field(None, title='Name of relevant disease')
-    identified_by: str | None = Field(
-        None, title='Name of the taxonomist who identified the specimen'
-    )
-    ifsac_category: str | None = Field(
-        None, title='Interagency Food Safety Analytics Collaboration (IFSAC) category'
-    )
+    status: V2reportsBioSampleStatus | None = Field(None, title="Current status of the object.")
+    age: str | None = Field(None, title="Age at the time of sampling")
+    biomaterial_provider: str | None = Field(None, title="Name and address of the lab or PI")
+    breed: str | None = Field(None, title="Breed name")
+    collected_by: str | None = Field(None, title="Name of persons or institute who collected the sample")
+    collection_date: str | None = Field(None, title="Date on which the sample was collected")
+    cultivar: str | None = Field(None, title="Cultivated variety of plant")
+    dev_stage: str | None = Field(None, title="Developmental stage at the time of sampling")
+    ecotype: str | None = Field(None, title="Population within a given species adapted to a local habitat")
+    geo_loc_name: str | None = Field(None, title="Geographical origin of the sample")
+    host: str | None = Field(None, title="The natural host to the organism")
+    host_disease: str | None = Field(None, title="Name of relevant disease")
+    identified_by: str | None = Field(None, title="Name of the taxonomist who identified the specimen")
+    ifsac_category: str | None = Field(None, title="Interagency Food Safety Analytics Collaboration (IFSAC) category")
     isolate: str | None = Field(
         None,
-        title='Description of the specific individual from which the sample was derived',
+        title="Description of the specific individual from which the sample was derived",
     )
-    isolate_name_alias: str | None = Field(
-        None, title='Other IDs associated with this isolate'
-    )
-    isolation_source: str | None = Field(None, title='Source of the sample')
+    isolate_name_alias: str | None = Field(None, title="Other IDs associated with this isolate")
+    isolation_source: str | None = Field(None, title="Source of the sample")
     lat_lon: str | None = Field(
         None,
-        title='Geogrpahic coordinates of the location where the sample was collected',
+        title="Geogrpahic coordinates of the location where the sample was collected",
     )
-    project_name: str | None = Field(None, title='Name of the project')
-    sample_name: str | None = Field(None, title='Sample name in source database')
-    serovar: str | None = Field(
-        None, title='Taxonomic name below subspecies. Same as serotype.'
-    )
-    sex: str | None = Field(None, title='Physical sex of sampled organism')
-    source_type: str | None = Field(
-        None, title='Controlled vocabulary describing the isolation source'
-    )
-    strain: str | None = Field(None, title='Strain name')
-    sub_species: str | None = Field(None, title='Sub-species taxonomic name')
-    tissue: str | None = Field(
-        None, title='Type of tissue from which the sample was derived'
-    )
-    serotype: str | None = Field(
-        None, title='Taxonomic name below subspecies. Same as serovar'
-    )
+    project_name: str | None = Field(None, title="Name of the project")
+    sample_name: str | None = Field(None, title="Sample name in source database")
+    serovar: str | None = Field(None, title="Taxonomic name below subspecies. Same as serotype.")
+    sex: str | None = Field(None, title="Physical sex of sampled organism")
+    source_type: str | None = Field(None, title="Controlled vocabulary describing the isolation source")
+    strain: str | None = Field(None, title="Strain name")
+    sub_species: str | None = Field(None, title="Sub-species taxonomic name")
+    tissue: str | None = Field(None, title="Type of tissue from which the sample was derived")
+    serotype: str | None = Field(None, title="Taxonomic name below subspecies. Same as serovar")
 
 
 class V2reportsConservedDomain(BaseModel):
-    accession: str | None = Field(None, title='cdd accession')
+    accession: str | None = Field(None, title="cdd accession")
     name: str | None = None
-    range: V2reportsRange | None = Field(None, title='range on the protein')
+    range: V2reportsRange | None = Field(None, title="range on the protein")
 
 
 class V2reportsExpressionBioProject(BaseModel):
-    accession: str | None = Field(None, title='BioProject Accession')
-    study_title: str | None = Field(None, title='Study title')
-    description: str | None = Field(None, title='Description')
-    sra_study_accession: str | None = Field(None, title='SRA study accession')
-    pmid: str | None = Field(None, title='PubMed identifier')
+    accession: str | None = Field(None, title="BioProject Accession")
+    study_title: str | None = Field(None, title="Study title")
+    description: str | None = Field(None, title="Description")
+    sra_study_accession: str | None = Field(None, title="SRA study accession")
+    pmid: str | None = Field(None, title="PubMed identifier")
     samples: list[V2reportsSample] | None = None
 
 
 class V2reportsExpressionDescriptor(BaseModel):
-    gene_id: str | None = Field(None, title='NCBI Gene ID')
-    expression_release: V2reportsExpressionRelease | None = Field(
-        None, title='Expression Release'
-    )
-    expression_method: str | None = Field(None, title='Expression Method')
+    gene_id: str | None = Field(None, title="NCBI Gene ID")
+    expression_release: V2reportsExpressionRelease | None = Field(None, title="Expression Release")
+    expression_method: str | None = Field(None, title="Expression Method")
     bioprojects: list[V2reportsExpressionBioProject] | None = None
 
 
 class V2reportsGeneNeighbor(BaseModel):
-    gene_id: str | None = Field(None, title='NCBI Gene ID')
-    symbol: str | None = Field(None, title='Gene symbol')
-    description: str | None = Field(None, title='Gene name')
-    gene_type: V2reportsGeneType | None = Field('UNKNOWN', title='Type of gene')
-    genomic_range: V2reportsRange | None = Field(
-        None, title='Location range and orientation of gene'
-    )
+    gene_id: str | None = Field(None, title="NCBI Gene ID")
+    symbol: str | None = Field(None, title="Gene symbol")
+    description: str | None = Field(None, title="Gene name")
+    gene_type: V2reportsGeneType | None = Field("UNKNOWN", title="Type of gene")
+    genomic_range: V2reportsRange | None = Field(None, title="Location range and orientation of gene")
 
 
 class V2reportsGeneOntology(BaseModel):
-    assigned_by: str | None = Field(None, title='The database that made the annotation')
+    assigned_by: str | None = Field(None, title="The database that made the annotation")
     molecular_functions: list[V2reportsProcessMetadata] | None = None
     biological_processes: list[V2reportsProcessMetadata] | None = None
     cellular_components: list[V2reportsProcessMetadata] | None = None
@@ -3657,12 +3224,8 @@ class V2reportsGenomicLocation(BaseModel):
 
 
 class V2reportsGenomicRegion(BaseModel):
-    gene_range: V2reportsSeqRangeSet | None = Field(
-        None, title='The range of this Gene record on this genomic region.'
-    )
-    type: V2reportsGenomicRegionGenomicRegionType | None = Field(
-        'UNKNOWN', title='Type of genomic region'
-    )
+    gene_range: V2reportsSeqRangeSet | None = Field(None, title="The range of this Gene record on this genomic region.")
+    type: V2reportsGenomicRegionGenomicRegionType | None = Field("UNKNOWN", title="Type of genomic region")
 
 
 class V2reportsMessage(BaseModel):
@@ -3673,29 +3236,25 @@ class V2reportsMessage(BaseModel):
 class V2reportsNameAndAuthority(BaseModel):
     name: str | None = Field(
         None,
-        title='This could be the scientific name, common name, synonym, etc. depending on the context.',
+        title="This could be the scientific name, common name, synonym, etc. depending on the context.",
     )
     authority: str | None = Field(
         None,
-        title='The authority that this name was created by. The authority is typically represented by the author(s) name and the year in which it was published.',
+        title="The authority that this name was created by. The authority is typically represented by the author(s) name and the year in which it was published.",
     )
     type_strains: list[V2reportsTaxonomyTypeMaterial] | None = None
-    curator_synonym: str | None = Field(
-        None, title='The primary synonym of the scientific name.'
-    )
+    curator_synonym: str | None = Field(None, title="The primary synonym of the scientific name.")
     homotypic_synonyms: list[V2reportsNameAndAuthority] | None = None
     heterotypic_synonyms: list[V2reportsNameAndAuthority] | None = None
     other_synonyms: list[V2reportsNameAndAuthority] | None = None
     informal_names: list[str] | None = None
     basionym: V2reportsNameAndAuthority | None = Field(
         None,
-        title='The originally described name, no longer in use. Attached to the type material and species description.',
+        title="The originally described name, no longer in use. Attached to the type material and species description.",
     )
     publications: list[V2reportsNameAndAuthorityPublication] | None = None
     notes: list[V2reportsNameAndAuthorityNote] | None = None
-    formal: bool | None = Field(
-        None, title='Indicates whether the name is formal (i.e. compliant)'
-    )
+    formal: bool | None = Field(None, title="Indicates whether the name is formal (i.e. compliant)")
 
 
 class V2reportsOrganelleDataReports(BaseModel):
@@ -3703,95 +3262,67 @@ class V2reportsOrganelleDataReports(BaseModel):
     reports: list[V2reportsOrganelle] | None = None
     total_count: int | None = Field(
         None,
-        title='The total count of available datasets (ignoring the cutoff parameter). Only provided for the first page of results (when `page_token` is empty in the request).',
+        title="The total count of available datasets (ignoring the cutoff parameter). Only provided for the first page of results (when `page_token` is empty in the request).",
     )
     next_page_token: str | None = Field(
         None,
-        title='A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.',
+        title="A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.",
     )
 
 
 class V2reportsSequenceFeatureLocation(BaseModel):
-    from_: int | None = Field(
-        None, alias='from', title='Start position of the feature (1-based, inclusive).'
-    )
-    to: int | None = Field(
-        None, title='End position of the feature (1-based, inclusive).'
-    )
+    from_: int | None = Field(None, alias="from", title="Start position of the feature (1-based, inclusive).")
+    to: int | None = Field(None, title="End position of the feature (1-based, inclusive).")
     strand: V2reportsSequenceFeatureLocationStrand | None = Field(
-        'strand_unknown', title='Strand of the feature location.'
+        "strand_unknown", title="Strand of the feature location."
     )
     fuzz_from: V2reportsSequenceFeatureLocationIntFuzz | None = Field(
-        None, title='Fuzziness/uncertainty for the start position.'
+        None, title="Fuzziness/uncertainty for the start position."
     )
     fuzz_to: V2reportsSequenceFeatureLocationIntFuzz | None = Field(
-        None, title='Fuzziness/uncertainty for the end position.'
+        None, title="Fuzziness/uncertainty for the end position."
     )
 
 
 class V2reportsSequenceFeatureWithAccession(BaseModel):
-    accession: str | None = Field(None, title='The accession this feature belongs to.')
+    accession: str | None = Field(None, title="The accession this feature belongs to.")
     name: str | None = Field(
         None,
         title='GenBank feature name, for example "gene", "CDS", "mRNA", or "rRNA".',
     )
     location: list[V2reportsSequenceFeatureLocation] | None = None
-    qualifiers: V2reportsSequenceFeatureQualifier | None = Field(
-        None, title='Feature qualifiers as named fields.'
-    )
+    qualifiers: V2reportsSequenceFeatureQualifier | None = Field(None, title="Feature qualifiers as named fields.")
 
 
 class V2reportsSequenceFeaturesPage(BaseModel):
     reports: list[V2reportsSequenceFeatureWithAccession] | None = None
-    total_count: int | None = Field(
-        None, title='Total number of features available across all pages.'
-    )
-    next_page_token: str | None = Field(
-        None, title='Token to retrieve the next page of features.'
-    )
+    total_count: int | None = Field(None, title="Total number of features available across all pages.")
+    next_page_token: str | None = Field(None, title="Token to retrieve the next page of features.")
 
 
 class V2reportsSequenceReference(BaseModel):
-    article: V2reportsArticle | None = Field(
-        None, title='Article citation for this sequence record.'
-    )
-    journal: V2reportsJournal | None = Field(
-        None, title='Journal citation for this sequence record.'
-    )
-    book: V2reportsBook | None = Field(
-        None, title='Book citation for this sequence record.'
-    )
-    proceedings: V2reportsProceedings | None = Field(
-        None, title='Proceedings citation for this sequence record.'
-    )
-    thesis: V2reportsThesis | None = Field(
-        None, title='Thesis or manuscript citation for this sequence record.'
-    )
-    patent: V2reportsPatent | None = Field(
-        None, title='Patent citation for this sequence record.'
-    )
-    general: V2reportsGeneral | None = Field(
-        None, title='General or unpublished citation for this sequence record.'
-    )
-    medline: V2reportsMedline | None = Field(
-        None, title='MEDLINE citation for this sequence record.'
-    )
+    article: V2reportsArticle | None = Field(None, title="Article citation for this sequence record.")
+    journal: V2reportsJournal | None = Field(None, title="Journal citation for this sequence record.")
+    book: V2reportsBook | None = Field(None, title="Book citation for this sequence record.")
+    proceedings: V2reportsProceedings | None = Field(None, title="Proceedings citation for this sequence record.")
+    thesis: V2reportsThesis | None = Field(None, title="Thesis or manuscript citation for this sequence record.")
+    patent: V2reportsPatent | None = Field(None, title="Patent citation for this sequence record.")
+    general: V2reportsGeneral | None = Field(None, title="General or unpublished citation for this sequence record.")
+    medline: V2reportsMedline | None = Field(None, title="MEDLINE citation for this sequence record.")
 
 
 class V2reportsTaxonomyNamesDescriptor(BaseModel):
-    tax_id: str | None = Field(None, title='NCBI Taxonomy identifier')
-    rank: V2reportsRankType | None = Field(
-        'NO_RANK', title='The taxonomic rank of the taxonomic node.'
-    )
+    tax_id: str | None = Field(None, title="NCBI Taxonomy identifier")
+    rank: V2reportsRankType | None = Field("NO_RANK", title="The taxonomic rank of the taxonomic node.")
     current_scientific_name: V2reportsNameAndAuthority | None = Field(
         None,
-        title='The currently accepted name chosen out of all synonyms for the taxonomic node.',
+        title="The currently accepted name chosen out of all synonyms for the taxonomic node.",
     )
-    group_name: str | None = Field(None, title='Group name for the species.')
-    curator_common_name: str | None = Field(None, title='The canonical common name.')
+    group_name: str | None = Field(None, title="Group name for the species.")
+    curator_common_name: str | None = Field(None, title="The canonical common name.")
     other_common_names: list[str] | None = None
     general_notes: list[str] | None = None
-    links_from_type: str | None = Field(None, title='TBD')
+    links_from_type: str | None = Field(None, title="TBD")
     citations: list[V2reportsTaxonomyNamesDescriptorCitation] | None = None
     current_scientific_name_is_formal: bool | None = Field(
         None,
@@ -3801,55 +3332,47 @@ class V2reportsTaxonomyNamesDescriptor(BaseModel):
 
 class V2reportsTaxonomyNamesReportMatch(BaseModel):
     taxonomy: V2reportsTaxonomyNamesDescriptor | None = Field(
-        None, title='Detailed taxonomic information related to the requested node.'
+        None, title="Detailed taxonomic information related to the requested node."
     )
     query: list[str] | None = None
     warning: V2reportsWarning | None = Field(
         None,
-        title='Warnings associated with this request.  Any warning associated with this request.  This is represented by a Warning object which is separately documented.',
+        title="Warnings associated with this request.  Any warning associated with this request.  This is represented by a Warning object which is separately documented.",
     )
     errors: list[V2reportsError] | None = None
 
 
 class V2reportsTaxonomyNode(BaseModel):
-    tax_id: int | None = Field(None, title='NCBI Taxonomy identifier')
-    rank: V2reportsRankType | None = Field(
-        'NO_RANK', title='The taxonomic rank of the taxonomic node.'
-    )
+    tax_id: int | None = Field(None, title="NCBI Taxonomy identifier")
+    rank: V2reportsRankType | None = Field("NO_RANK", title="The taxonomic rank of the taxonomic node.")
     current_scientific_name: V2reportsNameAndAuthority | None = Field(
         None,
-        title='The currently accepted name chosen out of all synonyms for the taxonomic node.',
+        title="The currently accepted name chosen out of all synonyms for the taxonomic node.",
     )
     basionym: V2reportsNameAndAuthority | None = Field(
         None,
-        title='The originally described name, no longer in use. Attached to the type material and species description.',
+        title="The originally described name, no longer in use. Attached to the type material and species description.",
     )
-    curator_common_name: str | None = Field(None, title='The canonical common name.')
-    group_name: str | None = Field(
-        None, title='A common name describing large, well-known taxa.'
-    )
+    curator_common_name: str | None = Field(None, title="The canonical common name.")
+    group_name: str | None = Field(None, title="A common name describing large, well-known taxa.")
     has_type_material: bool | None = Field(
         None,
-        title='A boolean that indicates whether or not type material is available for the species.',
+        title="A boolean that indicates whether or not type material is available for the species.",
     )
     classification: V2reportsClassification | None = Field(
-        None, title='A subset of parent nodes including well-established ranks.'
+        None, title="A subset of parent nodes including well-established ranks."
     )
     parents: list[int] | None = None
     children: list[int] | None = None
     counts: list[V2reportsTaxonomyNodeCountByType] | None = None
-    genomic_moltype: str | None = Field(
-        None, title='Genomic molecule type (dsDNA, ssDNA, ssDNA(-), ssRNA)'
-    )
+    genomic_moltype: str | None = Field(None, title="Genomic molecule type (dsDNA, ssDNA, ssDNA(-), ssRNA)")
     current_scientific_name_is_formal: bool | None = Field(
         None,
         title="Specify if the current scientific name is considered 'formal' or not.",
     )
     secondary_tax_ids: list[int] | None = None
-    extinct: bool | None = Field(None, title='True if organism is extinct')
-    genetic_code: V2reportsGeneticCodes | None = Field(
-        None, title='Genetic codes for the organism'
-    )
+    extinct: bool | None = Field(None, title="True if organism is extinct")
+    genetic_code: V2reportsGeneticCodes | None = Field(None, title="Genetic codes for the organism")
 
 
 class V2reportsTaxonomyReportMatch(BaseModel):
@@ -3860,79 +3383,61 @@ class V2reportsTaxonomyReportMatch(BaseModel):
 
 
 class V2reportsTranscript(BaseModel):
-    accession_version: str | None = Field(
-        None, title='RefSeq transcript accession with version'
-    )
-    name: str | None = Field(None, title='RefSeq transcript name')
-    length: int | None = Field(None, title='RefSeq transcript length in nucleotides')
+    accession_version: str | None = Field(None, title="RefSeq transcript accession with version")
+    name: str | None = Field(None, title="RefSeq transcript name")
+    length: int | None = Field(None, title="RefSeq transcript length in nucleotides")
     cds: V2reportsSeqRangeSet | None = None
     genomic_locations: list[V2reportsGenomicLocation] | None = None
-    ensembl_transcript: str | None = Field(
-        None, title='Ensembl transcript accession with version'
-    )
+    ensembl_transcript: str | None = Field(None, title="Ensembl transcript accession with version")
     protein: V2reportsProtein | None = None
     type: V2reportsTranscriptTranscriptType | None = Field(
-        'UNKNOWN',
-        title='Indicates transcript protein-coding potential and whether it was computationally predicted',
+        "UNKNOWN",
+        title="Indicates transcript protein-coding potential and whether it was computationally predicted",
     )
-    select_category: V2reportsTranscriptSelectCategory | None = 'SELECT_UNKNOWN'
+    select_category: V2reportsTranscriptSelectCategory | None = "SELECT_UNKNOWN"
 
 
 class V2reportsVirusPeptide(BaseModel):
-    accession: str | None = Field(None, title='Protein accession and version')
-    name: str | None = Field(None, title='Protein name')
+    accession: str | None = Field(None, title="Protein accession and version")
+    name: str | None = Field(None, title="Protein name")
     other_names: list[str] | None = None
     nucleotide: V2reportsSeqRangeSetFasta | None = Field(
         None,
-        title='The interval on the genomic nucleotide record of this mature-peptide feature',
+        title="The interval on the genomic nucleotide record of this mature-peptide feature",
     )
     protein: V2reportsSeqRangeSetFasta | None = Field(
         None,
-        title='The full polyprotein record or interval on the polyprotein for mature-peptide features',
+        title="The full polyprotein record or interval on the polyprotein for mature-peptide features",
     )
     pdb_ids: list[str] | None = None
     cdd: list[V2reportsConservedDomain] | None = None
-    uni_prot_kb: V2reportsVirusPeptideUniProtId | None = Field(
-        None, title='UniProt identifier'
-    )
+    uni_prot_kb: V2reportsVirusPeptideUniProtId | None = Field(None, title="UniProt identifier")
     mature_peptide: list[V2reportsVirusPeptide] | None = None
     protein_completeness: V2reportsVirusPeptideViralPeptideCompleteness | None = Field(
-        'UNKNOWN', title='Protein completeness'
+        "UNKNOWN", title="Protein completeness"
     )
 
 
 class Ncbiprotddv2StructureDataReport(BaseModel):
-    pdb_id: str | None = Field(None, title='The PDB ID of the structure')
-    mmdb_id: int | None = Field(None, title='The MMDB ID of the structure')
-    is_obsolete: bool | None = Field(None, title='Marks the structure as obsolete')
+    pdb_id: str | None = Field(None, title="The PDB ID of the structure")
+    mmdb_id: int | None = Field(None, title="The MMDB ID of the structure")
+    is_obsolete: bool | None = Field(None, title="Marks the structure as obsolete")
     publication_pmid: list[int] | None = None
-    deposition_date: str | None = Field(
-        None, title='YYYY-MM-DD formatted date of publication Example: "2023-10-01"'
-    )
-    update_date: str | None = Field(
-        None, title='YYYY-MM-DD formatted last date updated'
-    )
-    experiment: Ncbiprotddv2StructureDataReportExperiment | None = Field(
-        None, title='relevant experiment data'
-    )
+    deposition_date: str | None = Field(None, title='YYYY-MM-DD formatted date of publication Example: "2023-10-01"')
+    update_date: str | None = Field(None, title="YYYY-MM-DD formatted last date updated")
+    experiment: Ncbiprotddv2StructureDataReportExperiment | None = Field(None, title="relevant experiment data")
     chains: list[Ncbiprotddv2StructureDataReportBiounitChain] | None = None
     ligand_chains: list[Ncbiprotddv2StructureDataReportLigandChain] | None = None
     asymmetric_chains: list[Ncbiprotddv2StructureDataReportBiounitChain] | None = None
     asymmetric_ligands: list[Ncbiprotddv2StructureDataReportLigandChain] | None = None
-    title: str | None = Field(None, title='title of the MMDB Page')
-    default_biounit: int | None = Field(None, title='default biounit of the structure')
+    title: str | None = Field(None, title="title of the MMDB Page")
+    default_biounit: int | None = Field(None, title="default biounit of the structure")
 
 
 class V2DownloadSummary(BaseModel):
-    record_count: int | None = Field(
-        None, title='The number of records for the requested filter.'
-    )
-    assembly_count: int | None = Field(
-        None, title='For backwards compatability with old VirusDatasetSummary'
-    )
-    resource_updated_on: AwareDatetime | None = Field(
-        None, title='The latest date on which the resource was updated.'
-    )
+    record_count: int | None = Field(None, title="The number of records for the requested filter.")
+    assembly_count: int | None = Field(None, title="For backwards compatability with old VirusDatasetSummary")
+    resource_updated_on: AwareDatetime | None = Field(None, title="The latest date on which the resource was updated.")
     hydrated: V2DownloadSummaryHydrated | None = None
     dehydrated: V2DownloadSummaryDehydrated | None = None
     errors: list[V2reportsError] | None = None
@@ -3953,61 +3458,53 @@ class V2TaxonomyMetadataResponse(BaseModel):
 
 
 class V2reportsAnnotation(BaseModel):
-    assembly_accession: str | None = Field(None, title='Genome assembly accession')
-    assembly_name: str | None = Field(None, title='Genome assembly name')
-    annotation_name: str | None = Field(None, title='Genome annotation name')
-    annotation_release_date: str | None = Field(
-        None, title='Genome annotation release date'
-    )
+    assembly_accession: str | None = Field(None, title="Genome assembly accession")
+    assembly_name: str | None = Field(None, title="Genome assembly name")
+    annotation_name: str | None = Field(None, title="Genome annotation name")
+    annotation_release_date: str | None = Field(None, title="Genome annotation release date")
     genomic_locations: list[V2reportsGenomicLocation] | None = None
 
 
 class V2reportsAssemblyDataReport(BaseModel):
-    accession: str | None = Field(None, title='The GenColl assembly accession')
-    current_accession: str | None = Field(
-        None, title='The latest GenColl assembly accession for this revision chain'
-    )
+    accession: str | None = Field(None, title="The GenColl assembly accession")
+    current_accession: str | None = Field(None, title="The latest GenColl assembly accession for this revision chain")
     paired_accession: str | None = Field(
-        None, title='The GenBank or RefSeq assembly accession paired with this assembly'
+        None, title="The GenBank or RefSeq assembly accession paired with this assembly"
     )
     source_database: V2reportsSourceDatabase | None = Field(
-        'SOURCE_DATABASE_UNSPECIFIED',
-        title='Source of the accession. The paired accession, if it exists, is from the other database.',
+        "SOURCE_DATABASE_UNSPECIFIED",
+        title="Source of the accession. The paired accession, if it exists, is from the other database.",
     )
     organism: V2reportsOrganism | None = None
-    assembly_info: V2reportsAssemblyInfo | None = Field(
-        None, title='Metadata for the genome assembly submission'
-    )
-    assembly_stats: V2reportsAssemblyStats | None = Field(
-        None, title='Global statistics for the genome assembly'
-    )
+    assembly_info: V2reportsAssemblyInfo | None = Field(None, title="Metadata for the genome assembly submission")
+    assembly_stats: V2reportsAssemblyStats | None = Field(None, title="Global statistics for the genome assembly")
     organelle_info: list[V2reportsOrganelleInfo] | None = None
     additional_submitters: list[V2reportsAdditionalSubmitter] | None = None
     annotation_info: V2reportsAnnotationInfo | None = Field(
         None,
-        title='Metadata and statistics for the genome assembly annotation, when available',
+        title="Metadata and statistics for the genome assembly annotation, when available",
     )
     wgs_info: V2reportsWGSInfo | None = Field(
         None,
-        title='Metadata pertaining to the Whole Genome Shotgun (WGS) record for the genome assemblies  that are complete genomes. Those that are clone-based do not have WGS-master records.',
+        title="Metadata pertaining to the Whole Genome Shotgun (WGS) record for the genome assemblies  that are complete genomes. Those that are clone-based do not have WGS-master records.",
     )
     type_material: V2reportsTypeMaterial | None = None
     checkm_info: V2reportsCheckM | None = Field(
-        None, title='Metadata on the completeness and contamination of this assembly'
+        None, title="Metadata on the completeness and contamination of this assembly"
     )
     average_nucleotide_identity: V2reportsAverageNucleotideIdentity | None = None
 
 
 class V2reportsAssemblyDataReportPage(BaseModel):
     reports: list[V2reportsAssemblyDataReport] | None = None
-    content_type: V2reportsContentType | None = 'COMPLETE'
+    content_type: V2reportsContentType | None = "COMPLETE"
     total_count: int | None = Field(
         None,
-        title='The total count of available datasets (ignoring the page_size parameter).',
+        title="The total count of available datasets (ignoring the page_size parameter).",
     )
     next_page_token: str | None = Field(
         None,
-        title='A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.',
+        title="A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.",
     )
     messages: list[V2reportsMessage] | None = None
 
@@ -4016,11 +3513,11 @@ class V2reportsBioSampleDataReportPage(BaseModel):
     reports: list[V2reportsBioSampleDataReport] | None = None
     total_count: int | None = Field(
         None,
-        title='The total count of available datasets (ignoring the page_size parameter).',
+        title="The total count of available datasets (ignoring the page_size parameter).",
     )
     next_page_token: str | None = Field(
         None,
-        title='A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.',
+        title="A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.",
     )
     messages: list[V2reportsMessage] | None = None
 
@@ -4030,25 +3527,25 @@ class V2reportsBiocollectionsReportPage(BaseModel):
     messages: list[V2reportsMessage] | None = None
     total_count: int | None = Field(
         None,
-        title='The total count of available biocollection reports (ignoring page_size) for the full request.',
+        title="The total count of available biocollection reports (ignoring page_size) for the full request.",
     )
     next_page_token: str | None = Field(
         None,
-        title='A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.',
+        title="A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.",
     )
 
 
 class V2reportsGeneDescriptor(BaseModel):
-    gene_id: str | None = Field(None, title='NCBI Gene ID')
-    symbol: str | None = Field(None, title='Gene symbol')
-    description: str | None = Field(None, title='Gene name')
-    tax_id: str | None = Field(None, title='NCBI Taxonomy ID for the organism')
-    taxname: str | None = Field(None, title='Taxonomic name of the organism')
-    common_name: str | None = Field(None, title='Common name of the organism')
-    type: V2reportsGeneType | None = Field('UNKNOWN', title='Type of gene')
-    rna_type: V2reportsRnaType | None = 'rna_UNKNOWN'
+    gene_id: str | None = Field(None, title="NCBI Gene ID")
+    symbol: str | None = Field(None, title="Gene symbol")
+    description: str | None = Field(None, title="Gene name")
+    tax_id: str | None = Field(None, title="NCBI Taxonomy ID for the organism")
+    taxname: str | None = Field(None, title="Taxonomic name of the organism")
+    common_name: str | None = Field(None, title="Common name of the organism")
+    type: V2reportsGeneType | None = Field("UNKNOWN", title="Type of gene")
+    rna_type: V2reportsRnaType | None = "rna_UNKNOWN"
     orientation: V2reportsOrientation | None = Field(
-        'none', title='Direction of the gene relative to the genome coordinates'
+        "none", title="Direction of the gene relative to the genome coordinates"
     )
     reference_standards: list[V2reportsGenomicRegion] | None = None
     genomic_regions: list[V2reportsGenomicRegion] | None = None
@@ -4061,15 +3558,11 @@ class V2reportsGeneDescriptor(BaseModel):
     alternate_names: list[str] | None = None
     replaced_gene_id: str | None = Field(
         None,
-        title='The NCBI Gene ID for the gene that was merged into the current gene record',
+        title="The NCBI Gene ID for the gene that was merged into the current gene record",
     )
     annotations: list[V2reportsAnnotation] | None = None
-    transcript_count: int | None = Field(
-        None, title='Number of transcripts encoded by the gene'
-    )
-    protein_count: int | None = Field(
-        None, title='Number of proteins encoded by the gene'
-    )
+    transcript_count: int | None = Field(None, title="Number of transcripts encoded by the gene")
+    protein_count: int | None = Field(None, title="Number of proteins encoded by the gene")
     transcript_type_counts: list[V2reportsTranscriptTypeCount] | None = None
     gene_groups: list[V2reportsGeneGroup] | None = None
     summary: list[V2reportsGeneSummary] | None = None
@@ -4084,21 +3577,19 @@ class V2reportsGeneNeighborGenomicLocation(BaseModel):
 
 
 class V2reportsGeneNeighborsAnnotation(BaseModel):
-    assembly_accession: str | None = Field(None, title='Genome assembly accession')
-    assembly_name: str | None = Field(None, title='Genome assembly name')
-    annotation_name: str | None = Field(None, title='Genome annotation name')
-    annotation_release_date: str | None = Field(
-        None, title='Genome annotation release date'
-    )
+    assembly_accession: str | None = Field(None, title="Genome assembly accession")
+    assembly_name: str | None = Field(None, title="Genome assembly name")
+    annotation_name: str | None = Field(None, title="Genome annotation name")
+    annotation_release_date: str | None = Field(None, title="Genome annotation release date")
     genomic_locations: list[V2reportsGeneNeighborGenomicLocation] | None = None
 
 
 class V2reportsGeneNeighborsDescriptor(BaseModel):
-    tax_id: str | None = Field(None, title='NCBI Taxonomy ID for the organism')
-    gene_id: str | None = Field(None, title='NCBI Gene ID')
-    symbol: str | None = Field(None, title='Gene symbol')
-    description: str | None = Field(None, title='Gene name')
-    gene_type: V2reportsGeneType | None = Field('UNKNOWN', title='Type of gene')
+    tax_id: str | None = Field(None, title="NCBI Taxonomy ID for the organism")
+    gene_id: str | None = Field(None, title="NCBI Gene ID")
+    symbol: str | None = Field(None, title="Gene symbol")
+    description: str | None = Field(None, title="Gene name")
+    gene_type: V2reportsGeneType | None = Field("UNKNOWN", title="Type of gene")
     annotations: list[V2reportsGeneNeighborsAnnotation] | None = None
 
 
@@ -4107,17 +3598,17 @@ class V2reportsGeneNeighborsReports(BaseModel):
 
 
 class V2reportsGenomeAnnotation(BaseModel):
-    gene_id: str | None = Field(None, title='NCBI GeneID')
-    symbol: str | None = Field(None, title='Gene symbol')
-    description: str | None = Field(None, title='Gene name')
+    gene_id: str | None = Field(None, title="NCBI GeneID")
+    symbol: str | None = Field(None, title="Gene symbol")
+    description: str | None = Field(None, title="Gene name")
     name: str | None = None
-    tax_id: str | None = Field(None, title='NCBI Taxonomy ID for the organism')
-    taxname: str | None = Field(None, title='Taxonomic name of the organism')
-    common_name: str | None = Field(None, title='Common name of the organism')
-    type: V2reportsGeneType | None = Field('UNKNOWN', title='Deprecated')
-    gene_type: str | None = Field(None, title='Gene locus type')
-    rna_type: V2reportsRnaType | None = 'rna_UNKNOWN'
-    orientation: V2reportsOrientation | None = 'none'
+    tax_id: str | None = Field(None, title="NCBI Taxonomy ID for the organism")
+    taxname: str | None = Field(None, title="Taxonomic name of the organism")
+    common_name: str | None = Field(None, title="Common name of the organism")
+    type: V2reportsGeneType | None = Field("UNKNOWN", title="Deprecated")
+    gene_type: str | None = Field(None, title="Gene locus type")
+    rna_type: V2reportsRnaType | None = "rna_UNKNOWN"
+    orientation: V2reportsOrientation | None = "none"
     locus_tag: str | None = None
     reference_standards: list[V2reportsGenomicRegion] | None = None
     genomic_regions: list[V2reportsGenomicRegion] | None = None
@@ -4144,107 +3635,83 @@ class V2reportsGenomeAnnotationReportPage(BaseModel):
     messages: list[V2reportsMessage] | None = None
     total_count: int | None = Field(
         None,
-        title='The total count of available genes (ignoring the page_size parameter).',
+        title="The total count of available genes (ignoring the page_size parameter).",
     )
     next_page_token: str | None = Field(
         None,
-        title='A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.',
+        title="A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.",
     )
 
 
 class V2reportsProductDescriptor(BaseModel):
-    gene_id: str | None = Field(None, title='NCBI Gene ID')
-    symbol: str | None = Field(None, title='gene symbol')
-    description: str | None = Field(None, title='gene name')
-    tax_id: str | None = Field(None, title='NCBI Taxonomy ID for the organism')
-    taxname: str | None = Field(None, title='Taxonomic name of the organism')
-    common_name: str | None = Field(None, title='Common name of the organism')
-    type: V2reportsGeneType | None = Field('UNKNOWN', title='Type of gene')
-    rna_type: V2reportsRnaType | None = Field('rna_UNKNOWN', title='Type of RNA')
+    gene_id: str | None = Field(None, title="NCBI Gene ID")
+    symbol: str | None = Field(None, title="gene symbol")
+    description: str | None = Field(None, title="gene name")
+    tax_id: str | None = Field(None, title="NCBI Taxonomy ID for the organism")
+    taxname: str | None = Field(None, title="Taxonomic name of the organism")
+    common_name: str | None = Field(None, title="Common name of the organism")
+    type: V2reportsGeneType | None = Field("UNKNOWN", title="Type of gene")
+    rna_type: V2reportsRnaType | None = Field("rna_UNKNOWN", title="Type of RNA")
     transcripts: list[V2reportsTranscript] | None = None
-    transcript_count: int | None = Field(
-        None, title='Number of transcripts encoded by the gene'
-    )
-    protein_count: int | None = Field(
-        None, title='Number of proteins encoded by the gene'
-    )
+    transcript_count: int | None = Field(None, title="Number of transcripts encoded by the gene")
+    protein_count: int | None = Field(None, title="Number of proteins encoded by the gene")
     transcript_type_counts: list[V2reportsTranscriptTypeCount] | None = None
 
 
 class V2reportsSequenceDataReport(BaseModel):
     accession: str | None = Field(
         None,
-        title='Sequence accession requested by the user (typically accession.version).',
+        title="Sequence accession requested by the user (typically accession.version).",
     )
-    organism_name: str | None = Field(
-        None, title='Scientific organism name associated with this sequence.'
-    )
-    length: int | None = Field(
-        None, title='Sequence length measured in the units field.'
-    )
-    update_date: str | None = Field(None, title='Latest update date for the sequence.')
+    organism_name: str | None = Field(None, title="Scientific organism name associated with this sequence.")
+    length: int | None = Field(None, title="Sequence length measured in the units field.")
+    update_date: str | None = Field(None, title="Latest update date for the sequence.")
     units: V2reportsSequenceDataReportUnits | None = Field(
-        'units_unspecified',
-        title='Units for sequence length, for example nucleotides or amino acids.',
+        "units_unspecified",
+        title="Units for sequence length, for example nucleotides or amino acids.",
     )
     molecule_type: V2reportsMoleculeType | None = Field(
-        'molecule_type_unspecified', title='Molecule type for this sequence record.'
+        "molecule_type_unspecified", title="Molecule type for this sequence record."
     )
-    sequencing_method: V2reportsSequenceDataReportSequencingMethod | None = (
-        'sequencing_method_unknown'
-    )
-    completeness: V2reportsSequenceDataReportCompleteness | None = Field(
-        'completeness_unknown', title='Completeness'
-    )
-    database_provider: str | None = Field(
-        None, title='Upstream source database for this record, for example "RefSeq".'
-    )
-    description: str | None = Field(
-        None, title='Human-readable sequence definition line.'
-    )
+    sequencing_method: V2reportsSequenceDataReportSequencingMethod | None = "sequencing_method_unknown"
+    completeness: V2reportsSequenceDataReportCompleteness | None = Field("completeness_unknown", title="Completeness")
+    database_provider: str | None = Field(None, title='Upstream source database for this record, for example "RefSeq".')
+    description: str | None = Field(None, title="Human-readable sequence definition line.")
     source_mrna: str | None = Field(
         None,
-        title='Source mRNA accession when this report describes a protein sequence.',
+        title="Source mRNA accession when this report describes a protein sequence.",
     )
-    tax_id: int | None = Field(None, title='NCBI Taxonomy identifier for this rank.')
+    tax_id: int | None = Field(None, title="NCBI Taxonomy identifier for this rank.")
     submissions: list[V2reportsSubmission] | None = None
     references: list[V2reportsSequenceReference] | None = None
-    bioproject_accession: str | None = Field(
-        None, title='NCBI BioProject accession linked to this sequence record.'
-    )
+    bioproject_accession: str | None = Field(None, title="NCBI BioProject accession linked to this sequence record.")
     biosample_accessions: list[str] | None = None
     origin_type: V2reportsSequenceDataReportOriginType | None = Field(
-        'unknown',
-        title='Biological context regarding how the material for the sequence originated.',
+        "unknown",
+        title="Biological context regarding how the material for the sequence originated.",
     )
-    infraspecific_modifiers: V2reportsInfraspecificModifers | None = Field(
-        None, title='Infraspecific Modifiers'
-    )
-    sample_info: V2reportsSampleInfo | None = Field(None, title='Sample Info')
+    infraspecific_modifiers: V2reportsInfraspecificModifers | None = Field(None, title="Infraspecific Modifiers")
+    sample_info: V2reportsSampleInfo | None = Field(None, title="Sample Info")
     genome_type: V2reportsSequenceDataReportGenomeType | None = Field(
-        'genome_type_unknown', title='Genome type for this sequence record.'
+        "genome_type_unknown", title="Genome type for this sequence record."
     )
     topology: V2reportsSequenceDataReportTopologyType | None = Field(
-        'not_set', title='Topology type for this sequence record.'
+        "not_set", title="Topology type for this sequence record."
     )
     protein_name_evidence: V2reportsProteinNameEvidence | None = Field(
-        None, title='Evidence supporting the protein name for this sequence record.'
+        None, title="Evidence supporting the protein name for this sequence record."
     )
 
 
 class V2reportsSequenceDataReportMatch(BaseModel):
     query: list[str] | None = None
-    sequence: V2reportsSequenceDataReport | None = Field(
-        None, title='Sequence data report for a single accession.'
-    )
+    sequence: V2reportsSequenceDataReport | None = Field(None, title="Sequence data report for a single accession.")
     errors: list[V2reportsError] | None = None
 
 
 class V2reportsSequenceDataReportPage(BaseModel):
     reports: list[V2reportsSequenceDataReportMatch] | None = None
-    total_count: int | None = Field(
-        None, title='Total number of reports available across all pages.'
-    )
+    total_count: int | None = Field(None, title="Total number of reports available across all pages.")
 
 
 class V2reportsTaxonomyDataReportPage(BaseModel):
@@ -4252,11 +3719,11 @@ class V2reportsTaxonomyDataReportPage(BaseModel):
     messages: list[V2reportsMessage] | None = None
     total_count: int | None = Field(
         None,
-        title='The total count of available taxons - deprecated because it not supported for multiple-page results.',
+        title="The total count of available taxons - deprecated because it not supported for multiple-page results.",
     )
     next_page_token: str | None = Field(
         None,
-        title='A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.',
+        title="A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.",
     )
 
 
@@ -4265,11 +3732,11 @@ class V2reportsTaxonomyNamesDataReportPage(BaseModel):
     messages: list[V2reportsMessage] | None = None
     total_count: int | None = Field(
         None,
-        title='The total count of available taxons - deprecated because it not supported for multiple-page results.',
+        title="The total count of available taxons - deprecated because it not supported for multiple-page results.",
     )
     next_page_token: str | None = Field(
         None,
-        title='A page token.  A token that can be used in a future request as `page_token` to retrieve the next page. If this field is emtpy then there are no subsequent pages available.',
+        title="A page token.  A token that can be used in a future request as `page_token` to retrieve the next page. If this field is emtpy then there are no subsequent pages available.",
     )
 
 
@@ -4277,7 +3744,7 @@ class V2reportsVirusGene(BaseModel):
     name: str | None = None
     gene_id: int | None = None
     nucleotide: V2reportsSeqRangeSetFasta | None = Field(
-        None, title='The interval on the genomic nucleotide record of the CDS feature.'
+        None, title="The interval on the genomic nucleotide record of the CDS feature."
     )
     cds: list[V2reportsVirusPeptide] | None = None
 
@@ -4302,11 +3769,11 @@ class V2reportsVirusAnnotationReportPage(BaseModel):
     reports: list[V2reportsVirusAnnotationReport] | None = None
     total_count: int | None = Field(
         None,
-        title='The total count of available assemblies (ignoring the page_size parameter).',
+        title="The total count of available assemblies (ignoring the page_size parameter).",
     )
     next_page_token: str | None = Field(
         None,
-        title='A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.',
+        title="A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.",
     )
 
 
@@ -4315,11 +3782,11 @@ class V2reportsGeneDataReportPage(BaseModel):
     messages: list[V2reportsMessage] | None = None
     total_count: int | None = Field(
         None,
-        title='The total count of available genes (ignoring the page_size parameter).',
+        title="The total count of available genes (ignoring the page_size parameter).",
     )
     next_page_token: str | None = Field(
         None,
-        title='A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.',
+        title="A token that can be sent as `page_token` to retrieve the next page. If this field is omitted, there are no subsequent pages.",
     )
 
 

@@ -12,7 +12,7 @@ import pytest
 from frozendict import frozendict
 
 from cdm_data_loaders.core.destination import normalise_dir
-from cdm_data_loaders.core.fields import LOCAL_FS, OUTPUT_DIR
+from cdm_data_loaders.core.fields import LOCAL_FS
 from cdm_data_loaders.pipelines import uniprot_kb as uniprot_module
 from cdm_data_loaders.pipelines.uniprot_kb import (
     UniProtSettings,

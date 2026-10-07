@@ -15,7 +15,6 @@ from dlt.extract import DltResource
 import cdm_data_loaders.pipelines.jsonlines.extract_pipeline as extract_pipeline_module
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import cli, run_jsonlines_ingest_pipeline
-
 from cdm_data_loaders.pipelines.jsonlines.settings import EXTRACT_PIPELINE_NAME, JsonlExtractSettings
 
 SIMPLE_JSONL = """{"widget_id": "a", "count": 1}

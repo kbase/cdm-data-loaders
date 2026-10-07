@@ -9,7 +9,6 @@ from frozendict import frozendict
 from pydantic import ValidationError
 from pydantic_settings import CliApp
 
-from cdm_data_loaders.core.fields import OUTPUT_DIR
 from cdm_data_loaders.parsers.uniprot.uniref import ENTRY_XML_TAG
 from cdm_data_loaders.pipelines import uniref as uniref_module
 from cdm_data_loaders.pipelines.core import resolve_cts_settings
@@ -26,7 +25,6 @@ from tests.cdm_data_loaders.core.conftest import (
     TEST_CTS_SETTINGS_RECONCILED,
     check_settings,
 )
-from tests.cdm_data_loaders.pipelines.conftest import TEST_LOG_CONFIG_FILE
 from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes, make_cli_arg
 
 TEST_DEFAULT_UNIREF_VARIANT = "50"

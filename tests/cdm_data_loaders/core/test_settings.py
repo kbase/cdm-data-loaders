@@ -1,6 +1,5 @@
 """Tests for cdm_data_loaders.core.settings."""
 
-import logging
 from collections.abc import Mapping
 from typing import Final, cast
 
@@ -21,14 +20,12 @@ from cdm_data_loaders.core.fields import (
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
 )
 from cdm_data_loaders.core.settings import (
-    CLI_SHORTCUTS,
     DEFAULT_SETTINGS_CONFIG_DICT,
     CdmDataLoadersBase,
     CtsSettings,
     InputOutputSettings,
     LoggerSettings,
     _alias_names,
-    cli_shortcuts_for,
     default_settings_with_shortcuts,
 )
 from tests.cdm_data_loaders.core.conftest import SETTINGS_SOURCES, SettingsFactory
@@ -102,32 +99,6 @@ def test_alias_names_pass(alias: str | AliasChoices | AliasPath | None, expected
     assert _alias_names(alias) == expected
 
 
-# cli_shortcuts_for
-
-
-@pytest.mark.parametrize(
-    ("field_names", "expected"),
-    [
-        pytest.param({}, {}, id="empty"),
-        pytest.param(
-            CLI_SHORTCUTS,
-            {"input-dir": "i", "output-dir": "o", "use-destination": "d", "use-output-dir-for-pipeline-metadata": "p"},
-            id="frozendict_cli_shortcuts",
-        ),
-        pytest.param(
-            {"snake_case": "s", "already-kebab": ["a", "b"]},
-            {"snake-case": "s", "already-kebab": ["a", "b"]},
-            id="list_values_and_kebab_keys",
-        ),
-    ],
-)
-def test_cli_shortcuts_for_pass(
-    field_names: dict[str, str | list[str]] | frozendict[str, str | list[str]], expected: dict[str, str | list[str]]
-) -> None:
-    """Keys are converted to kebab case; values are passed through unchanged."""
-    assert cli_shortcuts_for(field_names) == expected
-
-
 # default_settings_with_shortcuts
 
 
@@ -145,7 +116,7 @@ def test_cli_shortcuts_for_pass(
 )
 def test_default_settings_with_shortcuts_pass(kwargs: dict[str, object], expected_extra: dict[str, object]) -> None:
     """The default config is extended with cli_prog_name and kebab-cased cli_shortcuts."""
-    assert default_settings_with_shortcuts(**kwargs) == {**DEFAULT_SETTINGS_CONFIG_DICT, **expected_extra}
+    assert default_settings_with_shortcuts(**kwargs) == {**DEFAULT_SETTINGS_CONFIG_DICT, **expected_extra}  # pyright: ignore[reportArgumentType]
 
 
 # CdmDataLoadersBase.check_aliases
@@ -251,13 +222,7 @@ def test_check_aliases_pass_valid_names(
         pytest.param(
             {"alpha": "a"},
             {"alpha": ["-a", "h"], "nope": "n"},
-            "\n".join(
-                [
-                    "Probe: invalid shortcut '-a' for 'alpha'; omit the leading dashes",
-                    "Probe: CLI name 'h' for 'alpha' is reserved by argparse",
-                    "Probe: cli_shortcuts target 'nope' does not match any CLI argument",
-                ]
-            ),
+            "Probe: invalid shortcut '-a' for 'alpha'; omit the leading dashes\nProbe: CLI name 'h' for 'alpha' is reserved by argparse\nProbe: cli_shortcuts target 'nope' does not match any CLI argument",
             id="all_errors_reported",
         ),
     ],
@@ -403,7 +368,7 @@ def test_cts_settings_pass_computed_fields(
     """output_is_local, raw_data_dir and pipeline_dir are derived from the normalised output_dir."""
     settings = CtsSettings(
         output_dir=output_dir, use_output_dir_for_pipeline_metadata=use_output_dir_for_pipeline_metadata
-    )
+    )  # pyright: ignore[reportCallIssue]
     assert (settings.output_dir, settings.output_is_local, settings.raw_data_dir, settings.pipeline_dir) == expected
 
 

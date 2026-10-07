@@ -30,7 +30,7 @@ from tests.cdm_data_loaders.core.conftest import (
     TEST_CTS_SETTINGS,
     TEST_CTS_SETTINGS_RECONCILED,
 )
-from tests.cdm_data_loaders.pipelines.conftest import TEST_LOG_CONFIG_FILE, VALID_DESTINATIONS
+from tests.cdm_data_loaders.pipelines.conftest import VALID_DESTINATIONS
 from tests.conftest import DEFAULT_VCR_CONFIG
 from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes
 

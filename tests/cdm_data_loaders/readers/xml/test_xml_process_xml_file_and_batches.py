@@ -21,7 +21,6 @@ from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.readers.xml import (
     DEFAULT_XMLTODICT_ARGS,
-    build_xml_file_resource,
     process_xml_file,
     process_xml_file_items,
     process_xml_file_to_dict,
