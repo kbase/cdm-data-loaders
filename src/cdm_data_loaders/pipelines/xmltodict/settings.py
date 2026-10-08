@@ -19,7 +19,11 @@ from cdm_data_loaders.core.fields import (
     NonEmptyStr,
     TableName,
 )
-from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
+from cdm_data_loaders.core.settings import (
+    CLI_SHORTCUTS,
+    CtsSettings,
+    default_settings_with_shortcuts,
+)
 from cdm_data_loaders.readers.xsd import find_list_and_single_child_paths, load_schema
 
 PIPELINE_NAME: Final[str] = "xmltodict_ingest"
@@ -30,12 +34,11 @@ logger: Logger = getLogger(__name__)
 class XmlToDictSettings(CtsSettings):
     """Settings for the XML ingestion pipeline."""
 
-    model_config = SettingsConfigDict(
-        **DEFAULT_SETTINGS_CONFIG_DICT,
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=PIPELINE_NAME,
         cli_shortcuts={
             **CLI_SHORTCUTS,
-            FILE_GLOB.replace("_", "-"): "g",
+            FILE_GLOB: "g",
         },
     )
 

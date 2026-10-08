@@ -87,7 +87,7 @@ def make_settings(
     kwargs: dict[str, Any] = {
         "buffer_size": 10,
         "dataset_name": "xsv_test_dataset",
-        "dev_mode": False,
+        "dlt_dev_mode": False,
         "file_glob": "*",
         "input_dir": str(input_dir),
         "loader_file_format": "jsonl",

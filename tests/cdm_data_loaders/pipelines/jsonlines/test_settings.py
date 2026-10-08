@@ -5,6 +5,7 @@ from collections.abc import Callable
 import pytest
 from pydantic import ValidationError
 
+from cdm_data_loaders.pipelines.core import resolve_cts_settings
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
 
 
@@ -50,13 +51,14 @@ def test_jsonlines_ingest_settings_pass_custom_file_glob(
 def test_jsonlines_ingest_settings_fail_local_destination_with_s3_output_dir(
     settings_factory: Callable[..., JsonlPydanticIngestSettings],
 ) -> None:
-    """use_destination='local_fs' with an s3:// output_dir raises ValidationError.
+    """A local_fs destination with an s3:// output_dir raises ValueError at resolution.
 
-    This check comes from CtsSettings. It is tested here because a
-    regression would silently break where this pipeline writes its output.
+    The check lives in resolve_output_dir and runs when run_cli resolves the
+    settings, so constructing them still succeeds.
     """
-    with pytest.raises(ValidationError, match="Mismatch between output location and use_destination"):
-        settings_factory(output_dir="s3://some-bucket/path")
+    settings = settings_factory(output_dir="s3://some-bucket/path", use_destination="local_fs")
+    with pytest.raises(ValueError, match="uses protocol 's3', but destination 'local_fs' is configured for 'file'"):
+        resolve_cts_settings(settings, {"destination": {"local_fs": {"bucket_url": "/out"}}})
 
 
 @pytest.mark.parametrize("dataset_name", [None, ""])

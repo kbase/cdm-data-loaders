@@ -70,7 +70,7 @@ def schema_settings_factory(
             "log_config_file": str(log_config_file),
             "use_destination": dlt_destination_config,
             "use_output_dir_for_pipeline_metadata": True,
-            "dev_mode": False,
+            "dlt_dev_mode": False,
             "dataset_name": "schema_test",
             "file_glob": "*.jsonl*",
             "loader_file_format": "parquet",

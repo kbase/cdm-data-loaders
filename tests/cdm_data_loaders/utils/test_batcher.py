@@ -1,27 +1,20 @@
 """Tests of file system-related utilities."""
 
 import logging
-from collections.abc import Callable
-from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
 
-import cdm_data_loaders.utils.batcher
-from cdm_data_loaders.core.fields import DEFAULT_PIPELINE_BATCH_SIZE, MIN_START_AT
+from cdm_data_loaders.core.fields import MIN_START_AT
 from cdm_data_loaders.utils.batcher import (
     FILE_NAME_REGEX,
     MIN_BATCH_SIZE,
     MIN_END_AT,
     NumericFileSequenceBatcher,
-    get_file_batches,
 )
 
-# the maximum file number in the directory
-MAX_FILE_NUMBER = 15
 # what the range should be set to (max range is exclusive)
 MAX_RANGE_VALUE = 16
 
@@ -62,8 +55,6 @@ EXPECTED[20] = EXPECTED[15]
 for ix, vals in EXPECTED.items():
     if ix is not None:
         EXPECTED[ix][None] = vals[1]
-
-EXPECTED_END_AT = deepcopy(EXPECTED)
 
 
 def make_files(directory: Path, names: list[str]) -> list[Path]:
@@ -129,26 +120,6 @@ def mixed_dir(tmp_path: Path, non_matching_file_names: list[str]) -> Path:
     ]
     make_files(tmp_path, more_files)
     return tmp_path
-
-
-@pytest.fixture
-def fake_batcher_factory() -> Callable[..., tuple[type, list[dict[str, Any]]]]:
-    """Return a factory producing a fake NumericFileSequenceBatcher class fed by a fixed batch queue."""
-
-    def _make(batches: list[list[Path]]) -> tuple[type, list[dict[str, Any]]]:
-        construction_calls: list[dict[str, Any]] = []
-        batch_queue = list(batches)
-
-        class _FakeBatcher:
-            def __init__(self, **kwargs: Any) -> None:
-                construction_calls.append(kwargs)
-
-            def get_batch(self) -> list[Path]:
-                return batch_queue.pop(0) if batch_queue else []
-
-        return _FakeBatcher, construction_calls
-
-    return _make
 
 
 def test_init_batcher_defaults(tmp_path: Path) -> None:
@@ -586,91 +557,3 @@ def test_get_batch_new_files_within_current_window_are_included(tmp_path: Path) 
     (tmp_path / "log_00015.txt").touch()
     assert cursor.get_batch() == []
     assert cursor.start_at == 14  # noqa: PLR2004
-
-
-def test_get_file_batches_pass_yields_all_batches_in_order(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_batcher_factory: Any
-) -> None:
-    """Verify batches are yielded from the batcher in the order it produces them."""
-    batch1 = [tmp_path / "0001.xml", tmp_path / "0002.xml"]
-    batch2 = [tmp_path / "0003.xml"]
-    fake_batcher_cls, _ = fake_batcher_factory([batch1, batch2])
-    monkeypatch.setattr(cdm_data_loaders.utils.batcher, "NumericFileSequenceBatcher", fake_batcher_cls)
-
-    settings = MagicMock(input_dir=tmp_path, start_at=None)
-    results = list(get_file_batches(settings))
-
-    assert results == [batch1, batch2]
-
-
-def test_get_file_batches_pass_no_batches_yields_nothing(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_batcher_factory: Any
-) -> None:
-    """Verify a batcher that immediately returns no files produces an empty generator."""
-    fake_batcher_cls, _ = fake_batcher_factory([])
-    monkeypatch.setattr(cdm_data_loaders.utils.batcher, "NumericFileSequenceBatcher", fake_batcher_cls)
-
-    settings = MagicMock(input_dir=tmp_path, start_at=None)
-    results = list(get_file_batches(settings))
-
-    assert results == []
-
-
-def test_get_file_batches_pass_batcher_constructed_with_input_dir_and_default_batch_size(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_batcher_factory: Any
-) -> None:
-    """Verify the batcher is constructed with the settings' input_dir and the module's default batch size."""
-    fake_batcher_cls, construction_calls = fake_batcher_factory([])
-    monkeypatch.setattr(cdm_data_loaders.utils.batcher, "NumericFileSequenceBatcher", fake_batcher_cls)
-
-    settings = MagicMock(input_dir=tmp_path, start_at=None)
-    list(get_file_batches(settings))
-
-    assert construction_calls[0]["directory"] == tmp_path
-    assert construction_calls[0]["batch_size"] == DEFAULT_PIPELINE_BATCH_SIZE
-
-
-@pytest.mark.parametrize(
-    ("start_at", "expect_start_at_key"),
-    [
-        (None, False),
-        ("", False),
-        (0, False),  # documents current (possibly unintended) behavior: falsy start_at is dropped
-        ("20230101", True),
-        (5, True),
-    ],
-)
-def test_get_file_batches_pass_falsy_start_at_omitted_truthy_start_at_forwarded(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    fake_batcher_factory: Any,
-    start_at: Any,
-    expect_start_at_key: bool,
-) -> None:
-    """Verify `start_at` is forwarded to the batcher only when truthy, per the `if settings.start_at:` check."""
-    fake_batcher_cls, construction_calls = fake_batcher_factory([])
-    monkeypatch.setattr(cdm_data_loaders.utils.batcher, "NumericFileSequenceBatcher", fake_batcher_cls)
-
-    settings = MagicMock(input_dir=tmp_path, start_at=start_at)
-    list(get_file_batches(settings))
-
-    assert ("start_at" in construction_calls[0]) == expect_start_at_key
-    if expect_start_at_key:
-        assert construction_calls[0]["start_at"] == start_at
-
-
-def test_get_file_batches_pass_logs_debug_message_listing_files_per_batch(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, fake_batcher_factory: Any
-) -> None:
-    """Verify a debug-level log listing the batch's files is emitted once per batch, not once per file."""
-    caplog.set_level(logging.DEBUG)
-    batch1 = [tmp_path / "0001.xml", tmp_path / "0002.xml"]
-    batch2 = [tmp_path / "0003.xml"]
-    fake_batcher_cls, _ = fake_batcher_factory([batch1, batch2])
-    monkeypatch.setattr(cdm_data_loaders.utils.batcher, "NumericFileSequenceBatcher", fake_batcher_cls)
-
-    settings = MagicMock(input_dir=tmp_path, start_at=None)
-    list(get_file_batches(settings))
-
-    batch_logs = [r for r in caplog.records if r.msg == "Files to be processed:%s"]
-    assert len(batch_logs) == 2

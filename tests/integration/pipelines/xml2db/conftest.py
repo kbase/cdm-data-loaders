@@ -19,10 +19,10 @@ from tests.xml_samples import LIBRARY_XSD
 DEFAULT_XML2DB_SETTINGS: frozendict = frozendict(
     {
         "buffer_size": 10,
-        "dev_mode": False,
+        "dlt_dev_mode": False,
         "file_glob": "*.xml*",
         "log_interval": 1000,
-        "use_output_dir_for_pipeline_metadata": False,
+        "use_output_dir_for_pipeline_metadata": True,
     }
 )
 
@@ -103,13 +103,13 @@ def run_xml2db_pipeline(
         run_xml2db_ingest_pipeline,
         {
             "buffer_size": 10,
-            "dev_mode": False,
+            "dlt_dev_mode": False,
             "file_glob": "*.xml*",
             "log_interval": 1000,
             "short_name": "uniref",
             "settings_cls": Xml2DbSettings,
             "use_destination": dlt_destination_config,
-            "use_output_dir_for_pipeline_metadata": False,
+            "use_output_dir_for_pipeline_metadata": True,
             "xsd_file": str(reference_xsd),
         },
     )

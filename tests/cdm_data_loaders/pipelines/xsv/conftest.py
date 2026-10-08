@@ -47,7 +47,7 @@ def settings_factory(tmp_path: Path) -> Callable[..., XsvIngestSettings]:
             "loader_file_format": "jsonl",
             "table_name": "my_table",
             "log_config_file": None,
-            "dev_mode": False,
+            "dlt_dev_mode": False,
             "use_destination": "local_fs",
             "use_output_dir_for_pipeline_metadata": False,
             "input_dir": str(input_dir),
