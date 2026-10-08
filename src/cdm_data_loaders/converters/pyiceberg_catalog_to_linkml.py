@@ -68,44 +68,44 @@ def dump_catalog_schemas(settings: IcebergToLinkMLSettings) -> None:
     :param settings: Catalog name and output directory.
     :returns: None.
     """
-    catalog = load_catalog(settings.catalog)
     out_path = Path(settings.output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     generated_at = datetime.now(UTC).isoformat()
-
-    namespaces = catalog.list_namespaces()
-    logger.info("Dumping schemas for %d namespace(s) from catalog %r", len(namespaces), settings.catalog)
     failures = 0
-    for namespace in namespaces:
-        namespace_name = ".".join(namespace)
-        namespace_schema = (
-            SchemaDefinition(
-                id=f"urn:iceberg:{namespace_name}",
-                name=namespace_name,
-                prefixes=[
-                    Prefix(prefix_prefix="iceberg", prefix_reference=f"urn:iceberg:{namespace_name}#"),
-                    Prefix(prefix_prefix="linkml", prefix_reference=LINKML_PREFIX),
-                ],
-                default_prefix="iceberg",
-                imports=["linkml:types"],
+
+    with load_catalog(settings.catalog) as catalog:
+        namespaces = catalog.list_namespaces()
+        logger.info("Dumping schemas for %d namespace(s) from catalog %r", len(namespaces), settings.catalog)
+        for namespace in namespaces:
+            namespace_name = ".".join(namespace)
+            namespace_schema = (
+                SchemaDefinition(
+                    id=f"urn:iceberg:{namespace_name}",
+                    name=namespace_name,
+                    prefixes=[
+                        Prefix(prefix_prefix="iceberg", prefix_reference=f"urn:iceberg:{namespace_name}#"),
+                        Prefix(prefix_prefix="linkml", prefix_reference=LINKML_PREFIX),
+                    ],
+                    default_prefix="iceberg",
+                    imports=["linkml:types"],
+                )
+                if settings.group_by_namespace
+                else None
             )
-            if settings.group_by_namespace
-            else None
-        )
-        for identifier in sorted(catalog.list_tables(namespace)):
-            try:
-                table = catalog.load_table(identifier)
-                schema_doc = table_to_linkml(table, identifier, schema=namespace_schema)
-            except Exception:
-                failures += 1
-                logger.exception("Failed to convert table %s; skipping", identifier)
-                continue
+            for identifier in sorted(catalog.list_tables(namespace)):
+                try:
+                    table = catalog.load_table(identifier)
+                    schema_doc = table_to_linkml(table, identifier, schema=namespace_schema)
+                except Exception:
+                    failures += 1
+                    logger.exception("Failed to convert table %s; skipping", identifier)
+                    continue
 
-            if namespace_schema is None:
-                _write_schema(schema_doc, out_path / (".".join(identifier) + ".schema.yaml"), generated_at)
+                if namespace_schema is None:
+                    _write_schema(schema_doc, out_path / (".".join(identifier) + ".schema.yaml"), generated_at)
 
-        if namespace_schema is not None and namespace_schema.classes:
-            _write_schema(namespace_schema, out_path / (namespace_name + ".schema.yaml"), generated_at)
+            if namespace_schema is not None and namespace_schema.classes:
+                _write_schema(namespace_schema, out_path / (namespace_name + ".schema.yaml"), generated_at)
 
     if failures:
         logger.warning("Completed with %d table(s) skipped due to conversion failures", failures)
