@@ -923,8 +923,10 @@ def test_get_known_jsonschema_keywords_pass_draft7_includes_annotation_keywords(
 def test_merge_with_builtin_format_map_pass_merges_user_overrides_over_defaults() -> None:
     """_merge_with_builtin_format_map() merges a non-empty user mapping on top of DEFAULT_FORMAT_MAP."""
     result = JSONSchemaToPySpark._merge_with_builtin_format_map({"date-time": StringType()})
-    assert result["date-time"] == StringType()
-    assert result["date"] == DateType()  # untouched default entry survives
+    assert result["date-time"] == StringType()  # pyright: ignore[reportIndexIssue]
+
+    # untouched default entry survives
+    assert result["date"] == DateType()  # pyright: ignore[reportIndexIssue]
 
 
 @pytest.mark.parametrize("value", [None, {}, "", 0])
@@ -990,7 +992,7 @@ def _all_types_schema() -> dict[str, Any]:
         "type": "object",
         "title": "AllTypes",
         "properties": {
-            # --- primitives ---
+            # primitives
             "a_string": {"type": "string", "title": "A String", "description": "a plain string"},
             "a_formatted_date": {"type": "string", "format": "date"},
             "a_formatted_datetime": {"type": "string", "format": "date-time"},
@@ -1002,19 +1004,19 @@ def _all_types_schema() -> dict[str, Any]:
             "a_decimal_number": {"type": "number", "multipleOf": 0.01},
             "a_boolean": {"type": "boolean"},
             "a_null": {"type": "null"},
-            # --- enum (typeless) ---
+            # an enum (typeless)
             "a_string_enum": {"enum": ["red", "green", "blue"]},
             "an_integer_enum": {"enum": [1, 2, 3]},
             "a_boolean_enum": {"enum": [True, False]},
-            # --- nullable union ---
+            # nullable union
             "a_nullable_string": {"type": ["string", "null"]},
-            # --- array ---
+            # array
             "a_string_array": {"type": "array", "items": {"type": "string"}},
             "a_nested_array": {
                 "type": "array",
                 "items": {"type": "array", "items": {"type": "integer"}},
             },
-            # --- nested object (fixed properties) ---
+            # nested object (fixed properties)
             "a_nested_object": {
                 "type": "object",
                 "properties": {
@@ -1022,13 +1024,13 @@ def _all_types_schema() -> dict[str, Any]:
                 },
                 "required": ["inner_field"],
             },
-            # --- object -> MapType (dynamic keys) ---
+            # object -> MapType (dynamic keys)
             "a_string_map": {"type": "object", "additionalProperties": {"type": "string"}},
             "a_pattern_property_map": {
                 "type": "object",
                 "patternProperties": {"^x-": {"type": "integer"}},
             },
-            # --- oneOf / anyOf approximated by first branch ---
+            # oneOf / anyOf approximated by first branch
             "a_one_of_field": {"oneOf": [{"type": "integer"}, {"type": "string"}]},
             "an_any_of_field": {"anyOf": [{"type": "boolean"}, {"type": "string"}]},
         },

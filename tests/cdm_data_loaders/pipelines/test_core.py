@@ -746,9 +746,9 @@ def test_run_pipeline_passes_kwargs_to_real_pipeline(
 
 # load_info saved as part of the dataset
 def read_load_info_jsonl_rows(settings: BatchedFileInputSettings) -> list[dict[str, Any]]:
-    """Read every row of the _dlt_load_info table written to the settings output directory."""
+    """Read every row of the load info table written to the settings output directory."""
     rows: list[dict[str, Any]] = []
-    for jsonl_file in sorted(Path(settings.output_dir).glob("**/_dlt_load_info/*.jsonl*")):
+    for jsonl_file in sorted(Path(settings.output_dir).glob(f"**/{LOAD_INFO_TABLE_NAME}/*.jsonl*")):
         if jsonl_file.name.endswith(".gz"):
             with gzip.open(jsonl_file, "rt") as f:
                 content = f.read()
@@ -759,7 +759,7 @@ def read_load_info_jsonl_rows(settings: BatchedFileInputSettings) -> list[dict[s
 
 
 def test_run_pipeline_saves_load_info_to_dataset(dlt_test_settings: BatchedFileInputSettings) -> None:
-    """The pipeline's load_info is saved as a _dlt_load_info table in the same dataset."""
+    """The pipeline's load_info is saved as a table in the same dataset."""
     load_info = run_pipeline(dlt_test_settings, tiny_resource())
 
     assert load_info is not None
@@ -777,13 +777,13 @@ def test_run_pipeline_saves_load_info_to_dataset(dlt_test_settings: BatchedFileI
 
 
 def test_run_pipeline_load_info_saved_to_same_dataset(dlt_test_settings: BatchedFileInputSettings) -> None:
-    """The _dlt_load_info table lands in the same dataset directory as the resource tables."""
+    """The load info table lands in the same dataset directory as the resource tables."""
     load_info = run_pipeline(dlt_test_settings, tiny_resource())
 
     assert load_info is not None
     dataset_dir = Path(dlt_test_settings.output_dir) / load_info.dataset_name
     assert (dataset_dir / TINY_TABLE_NAME).is_dir()
-    assert (dataset_dir / "_dlt_load_info").is_dir()
+    assert (dataset_dir / LOAD_INFO_TABLE_NAME).is_dir()
     assert read_output_jsonl_records(dlt_test_settings) == TINY_RESOURCE_DATA
     assert read_load_info_jsonl_rows(dlt_test_settings)
 
@@ -867,7 +867,7 @@ def test_run_pipeline_load_info_named_pipeline_and_dataset(dlt_test_settings: Ba
     assert rows[0]["dataset_name"] == "core_test_dataset"
     assert rows[0]["pipeline"] == {"pipeline_name": TINY_PIPELINE_NAME}
     dataset_dir = Path(dlt_test_settings.output_dir) / "core_test_dataset"
-    assert (dataset_dir / "_dlt_load_info").is_dir()
+    assert (dataset_dir / LOAD_INFO_TABLE_NAME).is_dir()
 
 
 def test_run_pipeline_load_info_row_references_entity_load(

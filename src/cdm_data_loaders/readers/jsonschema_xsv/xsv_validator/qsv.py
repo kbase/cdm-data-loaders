@@ -295,9 +295,9 @@ def run_qsv_validate(
         args.errors.append(ErrorRecord.from_qsv_result(args.file_name, result))
 
     # if errors are found, produces three files:
-    # {input_file_name}{VALIDATION_ERRORS} -- list of all the errors found
-    # {input_file_name}{args.valid_file_suffix} -- valid lines
-    # {input_file_name}{args.invalid_file_suffix}-- lines that fail validation
+    # {input_file_name}{VALIDATION_ERRORS}         -- list of all the errors found
+    # {input_file_name}{args.valid_file_suffix}    -- valid lines
+    # {input_file_name}{args.invalid_file_suffix}  -- lines that fail validation
     # comments are automatically removed and do not appear in .valid or .invalid files
     # headers appear in the valid_lines_file
 
