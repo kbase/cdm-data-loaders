@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Final
 import dlt
 from dlt.common.pipeline import LoadInfo
 from dlt.common.runtime.slack import send_slack_message
+from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
@@ -73,12 +74,25 @@ def dump_settings(settings: LoggerSettings) -> None:
     logger.info(settings.model_dump())
 
 
+def filesystem_source(bucket_url: str, file_glob: str) -> "DltResource":
+    """Build a dlt filesystem source over an input directory.
+
+    :param bucket_url: directory holding the input files
+    :type  bucket_url: str
+    :param file_glob: glob pattern selecting the files to read
+    :type  file_glob: str
+    :return: a dlt filesystem source over the matching files
+    :rtype: DltResource
+    """
+    return filesystem(bucket_url=bucket_url, file_glob=file_glob)
+
+
 def run_cli(
     settings_cls: type[LoggerSettings],
     pipeline_fn: Callable[[Any], LoadInfo | None],
     settings_kwargs: dict[str, Any] | None = None,
 ) -> LoadInfo | None:
-    """Generic CLI entry point for any pipeline.
+    """Run any pipeline through the generic CLI entry point.
 
     :param settings_cls: the Settings class to instantiate
     :type  settings_cls: type[LoggerSettings]

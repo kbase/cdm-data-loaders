@@ -6,6 +6,7 @@ dump_catalog_schemas and validates the emitted documents.
 
 import json
 import logging
+from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from linkml.linter.linter import Linter
 from linkml_runtime.linkml_model.meta import ClassDefinition, SchemaDefinition, SlotDefinition
 from linkml_runtime.loaders import yaml_loader
 from pyiceberg import catalog as pyiceberg_catalog
-from pyiceberg.catalog import load_catalog
+from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
     DateType,
@@ -53,6 +54,13 @@ def catalog_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
+def catalog(catalog_env: Path) -> Generator[Catalog]:  # noqa: ARG001
+    """Load the test catalog, closing its SQLite-backed engine on teardown."""
+    with load_catalog(CATALOG_NAME) as loaded_catalog:
+        yield loaded_catalog
+
+
+@pytest.fixture
 def wide_schema() -> Schema:
     """A schema exercising scalars, nested structs, lists, and maps."""
     return Schema(
@@ -84,10 +92,9 @@ def wide_schema() -> Schema:
 
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
 def test_dump_catalog_schemas_pass_yaml_models(
-    catalog_env: Path, simple_schema: Schema, wide_schema: Schema, group_by_namespace: bool
+    catalog: Catalog, catalog_env: Path, simple_schema: Schema, wide_schema: Schema, group_by_namespace: bool
 ) -> None:
     """Write YAML schemas with valid LinkML models and a shared timezone-aware timestamp."""
-    catalog = load_catalog(CATALOG_NAME)
     catalog.create_namespace("ns")
     catalog.create_table(("ns", "simple"), schema=simple_schema)
     catalog.create_table(("ns", "wide"), schema=wide_schema)
@@ -155,10 +162,9 @@ def test_dump_catalog_schemas_pass_yaml_models(
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
 @pytest.mark.parametrize("empty_namespace", [False, True], ids=["empty-catalog", "empty-namespace"])
 def test_dump_catalog_schemas_pass_empty_catalog(
-    catalog_env: Path, group_by_namespace: bool, empty_namespace: bool
+    catalog: Catalog, catalog_env: Path, group_by_namespace: bool, empty_namespace: bool
 ) -> None:
     """Empty catalogs and namespaces write no files."""
-    catalog = load_catalog(CATALOG_NAME)
     if empty_namespace:
         catalog.create_namespace("empty")
     out_dir = catalog_env / "schemas"
@@ -171,7 +177,8 @@ def test_dump_catalog_schemas_pass_empty_catalog(
 
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
 @pytest.mark.parametrize("include_good", [False, True], ids=["all-fail", "partial-failure"])
-def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
+def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(  # noqa: PLR0917
+    catalog: Catalog,
     catalog_env: Path,
     simple_schema: Schema,
     caplog: pytest.LogCaptureFixture,
@@ -179,7 +186,6 @@ def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
     include_good: bool,
 ) -> None:
     """A table that fails to convert is logged and skipped; other tables still succeed."""
-    catalog = load_catalog(CATALOG_NAME)
     catalog.create_namespace("ns")
     bad_table = catalog.create_table(("ns", "bad"), schema=simple_schema)
     bad_table.io.delete(bad_table.metadata_location)
@@ -204,10 +210,13 @@ def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
 
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
 def test_dump_catalog_schemas_pass_overwrites_existing_file_with_warning(
-    catalog_env: Path, simple_schema: Schema, caplog: pytest.LogCaptureFixture, group_by_namespace: bool
+    catalog: Catalog,
+    catalog_env: Path,
+    simple_schema: Schema,
+    caplog: pytest.LogCaptureFixture,
+    group_by_namespace: bool,
 ) -> None:
     """A pre-existing output file for a table is overwritten, with a warning logged first."""
-    catalog = load_catalog(CATALOG_NAME)
     catalog.create_namespace("ns")
     catalog.create_table(("ns", "simple"), schema=simple_schema)
 
@@ -227,9 +236,10 @@ def test_dump_catalog_schemas_pass_overwrites_existing_file_with_warning(
     assert written.name == ("ns" if group_by_namespace else "simple")
 
 
-def test_dump_catalog_schemas_pass_namespace_isolation_and_collisions(catalog_env: Path, simple_schema: Schema) -> None:
+def test_dump_catalog_schemas_pass_namespace_isolation_and_collisions(
+    catalog: Catalog, catalog_env: Path, simple_schema: Schema
+) -> None:
     """Keep namespaces separate and retain colliding table and nested class definitions."""
-    catalog = load_catalog(CATALOG_NAME)
     nested_schema = Schema(NestedField(1, "child", StructType(NestedField(2, "value", StringType()))))
     for namespace in ("first", "second"):
         catalog.create_namespace(namespace)

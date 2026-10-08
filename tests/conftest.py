@@ -1,10 +1,11 @@
 """Global configuration settings for tests."""
 
+import gzip
 import logging
 import os
 import shutil
 import sys
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from copy import deepcopy
 from importlib.util import find_spec
 from pathlib import Path
@@ -34,12 +35,19 @@ from cdm_data_loaders.core.fields import LOCAL_FS, S3
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
 
+pytest_plugins = ["tests.jsonschema_fixtures"]
+
 SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 
 BASE_DIR: Final[Path] = Path("tests").parent
 TEST_DATA_DIR: Final[Path] = Path("tests") / "data"
 CASSETTES_DIR: Final[Path] = Path("tests") / "cassettes"
 
+REFERENCE_XML_NS: Final[str] = "http://uniprot.org/uniref"
+REFERENCE_XML_TAG: Final[str] = f"{{{REFERENCE_XML_NS}}}entry"
+REFERENCE_XML_FIXTURE_DIR: Final[Path] = TEST_DATA_DIR / "uniprot" / "uniref"
+REFERENCE_XSD: Final[Path] = REFERENCE_XML_FIXTURE_DIR / "uniref.xsd"
+N_REFERENCE_XML_ENTRIES: Final[int] = 100
 
 DEFAULT_VCR_CONFIG = frozendict(
     {
@@ -256,6 +264,20 @@ def dlt_destination_config(tmp_path: Path) -> Generator[str]:
         }
     ):
         yield LOCAL_FS
+
+
+@pytest.fixture
+def write_gzip_file() -> Callable[[Path, str, str], Path]:
+    """Return a function that writes text content to a gzip-compressed file."""
+
+    def _write(directory: Path, filename: str, content: str) -> Path:
+        directory.mkdir(parents=True, exist_ok=True)
+        file_path = directory / filename
+        with gzip.open(file_path, "wb") as f:
+            f.write(content.encode("utf-8"))
+        return file_path
+
+    return _write
 
 
 @pytest.fixture

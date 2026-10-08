@@ -16,7 +16,7 @@ import cdm_data_loaders.readers.xml as xml_module
 import cdm_data_loaders.utils.buffer as buffer_module
 from cdm_data_loaders.core.fields import BUFFER_SIZE, DEFAULTS, LOG_INTERVAL
 from cdm_data_loaders.core.settings import BatchedFileInputSettings
-from cdm_data_loaders.pipelines.xml_to_dict.settings import XmlToDictSettings
+from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.readers.xml import (
     DEFAULT_XMLTODICT_ARGS,
     process_xml_file,
@@ -225,7 +225,7 @@ def fake_settings(
     return settings
 
 
-def fake_xml_to_dict_settings(
+def fake_xmltodict_settings(
     table_name: str = "people",
     xml_tag: str = "person",
     buffer_size: int = DEFAULTS[BUFFER_SIZE],
@@ -474,7 +474,7 @@ def test_process_xml_file_to_dict_pass_matches_xmltodict_reference(tmp_path: Pat
     assert any(key.startswith("_xmlns") for entry in raw_entries for key in entry)
     expected_rows = [{"entry": {k: v for k, v in entry.items() if not k.startswith("_xmlns")}} for entry in raw_entries]
 
-    settings = fake_xml_to_dict_settings(table_name="some_table", xml_tag=xml_tag)
+    settings = fake_xmltodict_settings(table_name="some_table", xml_tag=xml_tag)
     tagged = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
 
     assert tagged == [("some_table", expected_rows)]
@@ -489,7 +489,7 @@ def test_process_xml_file_to_dict_pass_strips_only_xmlns_prefixed_keys(tmp_path:
         'id="1" xsinil="true"><name>Anne Example</name></person>\n'
     )
     file_path = _write_xml(tmp_path, "namespaced.xml", xml_with_xmlns_and_lookalike)
-    settings = fake_xml_to_dict_settings(xml_tag=f"{{{namespace}}}person")
+    settings = fake_xmltodict_settings(xml_tag=f"{{{namespace}}}person")
 
     items = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
 
@@ -507,7 +507,7 @@ def test_process_xml_file_to_dict_pass_strips_only_xmlns_prefixed_keys(tmp_path:
 def test_process_xml_file_to_dict_pass_custom_table_name_and_xml_tag_are_respected(tmp_path: Path) -> None:
     """Verify rows land under settings.table_name, matched by settings.xml_tag, not any hardcoded name."""
     file_path = _write_xml(tmp_path, "two.xml", PEOPLE_XML_2)
-    settings = fake_xml_to_dict_settings(table_name="library_entries", xml_tag="person")
+    settings = fake_xmltodict_settings(table_name="library_entries", xml_tag="person")
 
     tagged = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
 
@@ -529,7 +529,7 @@ def test_process_xml_file_to_dict_pass_buffer_size_controls_batching(
 ) -> None:
     """Verify rows are yielded in batches of at most `buffer_size`, with a final partial batch."""
     file_path = _write_xml(tmp_path, "five.xml", PEOPLE_XML_5)
-    settings = fake_xml_to_dict_settings(buffer_size=buffer_size)
+    settings = fake_xmltodict_settings(buffer_size=buffer_size)
 
     items = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
 
@@ -544,7 +544,7 @@ def test_process_xml_file_to_dict_pass_no_matching_elements_yields_nothing_and_l
     """Verify a well-formed file with no elements matching xml_tag yields nothing and logs no progress."""
     caplog.set_level(logging.DEBUG)
     file_path = _write_xml(tmp_path, "empty.xml", PEOPLE_XML_EMPTY)
-    settings = fake_xml_to_dict_settings()
+    settings = fake_xmltodict_settings()
 
     items = list(process_xml_file_to_dict(settings, file_path=file_path))
 
@@ -558,7 +558,7 @@ def test_process_xml_file_to_dict_pass_logs_reading_info_message_once(
     """Verify the INFO-level 'Reading from <path>' message is logged exactly once with the correct path."""
     caplog.set_level(logging.INFO)
     file_path = _write_xml(tmp_path, "five.xml", PEOPLE_XML_5)
-    settings = fake_xml_to_dict_settings()
+    settings = fake_xmltodict_settings()
 
     list(process_xml_file_to_dict(settings, file_path=file_path))
 
@@ -587,7 +587,7 @@ def test_process_xml_file_to_dict_pass_log_interval_boundary(
     """Verify the exact entry counts logged at each interim checkpoint and in the trailing summary."""
     caplog.set_level(logging.DEBUG)
     file_path = _write_xml(tmp_path, "five.xml", PEOPLE_XML_5)
-    settings = fake_xml_to_dict_settings(log_interval=log_interval)
+    settings = fake_xmltodict_settings(log_interval=log_interval)
 
     list(process_xml_file_to_dict(settings, file_path=file_path))
 
@@ -606,10 +606,10 @@ def test_process_xml_file_to_dict_pass_gzip_file(tmp_path: Path) -> None:
     """Verify gzip-compressed XML input (.gz suffix) is transparently decompressed and parsed."""
     plain_path = _write_xml(tmp_path, "plain.xml", PEOPLE_XML_5)
     gz_path = _write_xml(tmp_path, "compressed.xml.gz", PEOPLE_XML_5, gzip_compress=True)
-    settings = fake_xml_to_dict_settings()
+    settings = fake_xmltodict_settings()
 
     plain_items = _table_and_data(process_xml_file_to_dict(settings, file_path=plain_path))
-    gz_items = _table_and_data(process_xml_file_to_dict(fake_xml_to_dict_settings(), file_path=gz_path))
+    gz_items = _table_and_data(process_xml_file_to_dict(fake_xmltodict_settings(), file_path=gz_path))
 
     plain_rows = [row for _, rows in plain_items for row in rows]
     gz_rows = [row for _, rows in gz_items for row in rows]
@@ -619,7 +619,7 @@ def test_process_xml_file_to_dict_pass_gzip_file(tmp_path: Path) -> None:
 def test_process_xml_file_to_dict_fail_missing_file(tmp_path: Path) -> None:
     """Verify a nonexistent file path raises FileNotFoundError when the generator is consumed."""
     missing_path = tmp_path / "does_not_exist.xml"
-    settings = fake_xml_to_dict_settings()
+    settings = fake_xmltodict_settings()
     with pytest.raises(FileNotFoundError, match="No such file or directory"):
         list(process_xml_file_to_dict(settings, file_path=missing_path))
 
@@ -627,7 +627,7 @@ def test_process_xml_file_to_dict_fail_missing_file(tmp_path: Path) -> None:
 def test_process_xml_file_to_dict_fail_malformed_xml(tmp_path: Path) -> None:
     """Verify malformed (not well-formed) XML raises lxml's XMLSyntaxError during streaming."""
     file_path = _write_xml(tmp_path, "malformed.xml", PEOPLE_XML_MALFORMED)
-    settings = fake_xml_to_dict_settings()
+    settings = fake_xmltodict_settings()
     with pytest.raises(XMLSyntaxError, match="Opening and ending tag mismatch"):
         list(process_xml_file_to_dict(settings, file_path=file_path))
 
@@ -652,12 +652,10 @@ UNIREF_LIKE_ENTRY_XML: Final[str] = """<?xml version="1.0"?>
 """
 
 
-def _build_real_xml_to_dict_settings(
-    tmp_path: Path, test_data_dir: Path, xsd_filename: str | None
-) -> XmlToDictSettings:
+def _build_real_xmltodict_settings(tmp_path: Path, test_data_dir: Path, xsd_filename: str | None) -> XmlToDictSettings:
     """Build a real (non-mock) XmlToDictSettings, optionally with an xsd_file copied from tests/data/xsd.
 
-    A real settings object is required here, rather than fake_xml_to_dict_settings, because
+    A real settings object is required here, rather than fake_xmltodict_settings, because
     xmltodict_args is a computed property with real schema-derived logic to exercise: a mock
     would either need that same logic re-implemented by hand (proving nothing about the actual
     implementation) or would unpack to `{}` by default, silently skipping the feature entirely.
@@ -725,7 +723,7 @@ def test_process_xml_file_to_dict_pass_force_list_shapes_children_by_schema_occu
     schema would allow more.
     """
     file_path = _write_xml(tmp_path, "entry.xml", UNIREF_LIKE_ENTRY_XML)
-    settings = _build_real_xml_to_dict_settings(tmp_path, test_data_dir, xsd_filename)
+    settings = _build_real_xmltodict_settings(tmp_path, test_data_dir, xsd_filename)
 
     items = _table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
 

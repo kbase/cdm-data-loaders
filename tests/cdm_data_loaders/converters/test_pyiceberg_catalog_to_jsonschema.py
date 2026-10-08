@@ -7,12 +7,13 @@ Draft 2020-12 validator.
 
 import json
 import logging
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 from pyiceberg import catalog as pyiceberg_catalog
-from pyiceberg.catalog import load_catalog
+from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
     BinaryType,
@@ -58,6 +59,13 @@ def catalog_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
+def catalog(catalog_env: Path) -> Generator[Catalog]:  # noqa: ARG001
+    """Load the testcat SQL catalog and close its database connections at teardown."""
+    with load_catalog(CATALOG_NAME) as loaded_catalog:
+        yield loaded_catalog
+
+
+@pytest.fixture
 def wide_schema() -> Schema:
     """A schema exercising scalars, nested structs, lists, and maps."""
     return Schema(
@@ -89,10 +97,9 @@ def wide_schema() -> Schema:
 
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
 def test_end_to_end_dump_catalog_schemas_writes_valid_docs(
-    catalog_env: Path, simple_schema: Schema, wide_schema: Schema, group_by_namespace: bool
+    catalog: Catalog, catalog_env: Path, simple_schema: Schema, wide_schema: Schema, group_by_namespace: bool
 ) -> None:
     """dump_catalog_schemas loads the catalog by name and writes valid schema docs, per table or per namespace."""
-    catalog = load_catalog(CATALOG_NAME)
     catalog.create_namespace("ns")
     catalog.create_table(("ns", "simple"), schema=simple_schema)
     catalog.create_table(("ns", "wide"), schema=wide_schema)
@@ -167,10 +174,9 @@ def test_end_to_end_dump_catalog_schemas_writes_valid_docs(
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
 @pytest.mark.parametrize("empty_namespace", [False, True], ids=["empty-catalog", "empty-namespace"])
 def test_dump_catalog_schemas_pass_empty_catalog(
-    catalog_env: Path, group_by_namespace: bool, empty_namespace: bool
+    catalog: Catalog, catalog_env: Path, group_by_namespace: bool, empty_namespace: bool
 ) -> None:
     """Empty catalogs and namespaces write no files."""
-    catalog = load_catalog(CATALOG_NAME)
     if empty_namespace:
         catalog.create_namespace("empty")
     out_dir = catalog_env / "schemas"
@@ -183,7 +189,8 @@ def test_dump_catalog_schemas_pass_empty_catalog(
 
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
 @pytest.mark.parametrize("include_good", [False, True], ids=["all-fail", "partial-failure"])
-def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
+def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(  # noqa: PLR0917
+    catalog: Catalog,
     catalog_env: Path,
     simple_schema: Schema,
     caplog: pytest.LogCaptureFixture,
@@ -192,7 +199,6 @@ def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
 ) -> None:
     """A table that fails to convert is logged and skipped; other tables still succeed."""
     unsupported_schema = Schema(NestedField(1, "value", BinaryType(), required=True))
-    catalog = load_catalog(CATALOG_NAME)
     catalog.create_namespace("ns")
     catalog.create_table(("ns", "bad"), schema=unsupported_schema)
     if include_good:
@@ -217,10 +223,13 @@ def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
 
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
 def test_dump_catalog_schemas_pass_overwrites_existing_file_with_warning(
-    catalog_env: Path, simple_schema: Schema, caplog: pytest.LogCaptureFixture, group_by_namespace: bool
+    catalog: Catalog,
+    catalog_env: Path,
+    simple_schema: Schema,
+    caplog: pytest.LogCaptureFixture,
+    group_by_namespace: bool,
 ) -> None:
     """A pre-existing output file for a table is overwritten, with a warning logged first."""
-    catalog = load_catalog(CATALOG_NAME)
     catalog.create_namespace("ns")
     catalog.create_table(("ns", "simple"), schema=simple_schema)
 
@@ -240,9 +249,10 @@ def test_dump_catalog_schemas_pass_overwrites_existing_file_with_warning(
     assert (set(written["$defs"]) == {"simple"}) if group_by_namespace else (written["title"] == "simple")
 
 
-def test_dump_catalog_schemas_pass_namespace_isolation(catalog_env: Path, simple_schema: Schema) -> None:
+def test_dump_catalog_schemas_pass_namespace_isolation(
+    catalog: Catalog, catalog_env: Path, simple_schema: Schema
+) -> None:
     """Each namespace's grouped document holds only that namespace's tables."""
-    catalog = load_catalog(CATALOG_NAME)
     for namespace in ("first", "second"):
         catalog.create_namespace(namespace)
         catalog.create_table((namespace, "record"), schema=simple_schema, properties={"comment": "Table description."})
