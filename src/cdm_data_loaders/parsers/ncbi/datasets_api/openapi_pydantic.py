@@ -2,6 +2,8 @@
 #   filename:  datasets-api-21-sep-2026.yaml
 #   timestamp: 2026-09-23T15:03:08+00:00
 
+from __future__ import annotations
+
 from enum import Enum
 
 from pydantic import AwareDatetime, Base64Str, BaseModel, ConfigDict, Field
