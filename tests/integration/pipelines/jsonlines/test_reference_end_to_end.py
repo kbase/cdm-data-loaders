@@ -232,7 +232,7 @@ def test_jsonlines_validation_pass_table_selection_skips_other_entities(
     tmp_path: Path,
     loader_file_format: str,
 ) -> None:
-    """An explicit table selection processes only that registered entity."""
+    """An explicit table selection processes only that registered entity and uses the configured dataset name."""
     input_dir = tmp_path / "selected"
     for table_name in ("dataset", "other"):
         table_dir = input_dir / table_name
@@ -243,9 +243,11 @@ def test_jsonlines_validation_pass_table_selection_skips_other_entities(
         "chunk_52",
         input_dir=str(input_dir),
         table_names=["other"],
+        dataset_name="selected",
         loader_file_format=loader_file_format,
         **reference_registry_factory(["dataset", "other"]),
     )
+    assert load_info.dataset_name == "selected"
     tables = read_pipeline_tables(output_dir / load_info.dataset_name, loader_file_format)
     assert {name for name in tables if not name.startswith("_dlt")} == {"other"}
     assert [row["accession"] for row in tables["other"]] == ["GCA_000003115.1"]

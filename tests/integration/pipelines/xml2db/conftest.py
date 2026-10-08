@@ -14,7 +14,7 @@ from tests.conftest import (
     REFERENCE_XML_FIXTURE_DIR,
     REFERENCE_XSD,
 )
-from tests.integration.pipelines.conftest import LIBRARY_XSD
+from tests.xml_samples import LIBRARY_XSD
 
 DEFAULT_XML2DB_SETTINGS: frozendict = frozendict(
     {

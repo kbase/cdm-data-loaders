@@ -35,7 +35,7 @@ from cdm_data_loaders.core.fields import LOCAL_FS, S3
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
 
-pytest_plugins = ["tests.jsonschema_fixtures"]
+pytest_plugins = ["tests.jsonlines_fixtures", "tests.jsonschema_fixtures"]
 
 SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 
@@ -182,6 +182,20 @@ def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
 def test_data_dir() -> Path:
     """Test data directory."""
     return TEST_DATA_DIR
+
+
+@pytest.fixture
+def write_gzip_file() -> Callable[[Path, str, str], Path]:
+    """Return a function that writes text content to a gzip-compressed file."""
+
+    def _write(directory: Path, filename: str, content: str) -> Path:
+        directory.mkdir(parents=True, exist_ok=True)
+        file_path = directory / filename
+        with gzip.open(file_path, "wb") as f:
+            f.write(content.encode("utf-8"))
+        return file_path
+
+    return _write
 
 
 @pytest.fixture(scope="session")
