@@ -6,11 +6,14 @@ from logging import Logger, getLogger
 from typing import TYPE_CHECKING, Any, Final
 
 import dlt
+from dlt.common.destination.reference import AnyDestination
 from dlt.common.pipeline import LoadInfo
 from dlt.common.runtime.slack import send_slack_message
+from dlt.extract import DltResource
 from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
-from pydantic_settings import SettingsError
+from pydantic_settings import CliApp, SettingsError
+from requests import RequestException
 
 from cdm_data_loaders.core.fields import DEV_MODE, JSONL, OUTPUT_DIR, USE_DESTINATION
 from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
@@ -30,23 +33,23 @@ logger: Logger = getLogger(__name__)
 def send_slack_message_carefully(slack_hook: str, message: str, is_markdown: bool = False) -> None:  # noqa: FBT001, FBT002
     """Carefully send a slack message by wrapping it in a try/except.
 
-    :param slack_hook: _description_
+    :param slack_hook: slack webhook URL
     :type slack_hook: str
-    :param message: _description_
+    :param message: message to be slacked
     :type message: str
-    :param is_markdown: _description_, defaults to False
+    :param is_markdown: whether or not the message is markdown, defaults to False
     :type is_markdown: bool, optional
     """
     if not slack_hook:
         logger.warning("Cannot send slack message: %s", WEBHOOK_NOT_CONFIGURED)
         return
-    if not message:
+    if not message or not message.strip():
         logger.warning("Cannot send slack message: %s", NO_MESSAGE)
         return
 
     try:
-        send_slack_message(slack_hook, message, is_markdown)
-    except Exception:
+        send_slack_message(slack_hook, message.strip(), is_markdown)
+    except RequestException:
         logger.exception("Failed to send slack message")
 
 
@@ -74,7 +77,7 @@ def dump_settings(settings: LoggerSettings) -> None:
     logger.info(settings.model_dump())
 
 
-def filesystem_source(bucket_url: str, file_glob: str) -> "DltResource":
+def filesystem_resource(bucket_url: str, file_glob: str) -> DltResource:
     """Build a dlt filesystem source over an input directory.
 
     :param bucket_url: directory holding the input files
@@ -113,8 +116,6 @@ def run_cli(
     except Exception:
         logger.exception("Unexpected error setting up config")
         raise
-
-    dump_settings(settings)
     return pipeline_fn(settings)
 
 

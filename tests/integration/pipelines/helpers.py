@@ -20,6 +20,10 @@ from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 logger: Logger = getLogger(__name__)
 
 
+WORKER_CONFIGS = ((1, 1, 1), (3, 2, 2), (5, 3, 4))
+BUFFER_SIZES = (1, 5, 100, 500)
+LOADER_FILE_FORMATS = list(LoaderFileFormatEnum)
+
 DLT_METADATA_PREFIX: Final[str] = "_dlt"
 
 XMLNS_COLUMNS: Final[frozenset[str]] = frozenset({"entry__axmlns", "entry__axmlns_xsi"})
@@ -37,9 +41,9 @@ DLT_TO_XML_NAMES: Final[dict[str, str]] = {
 }
 
 
-WORKER_CONFIGS = ((1, 1, 1), (3, 2, 2), (5, 3, 4))
-BUFFER_SIZES = (1, 5, 100, 500)
-LOADER_FILE_FORMATS = list(LoaderFileFormatEnum)
+def is_metadata_table(table_name: str) -> bool:
+    """Return whether a table contains dlt pipeline metadata rather than loaded records."""
+    return table_name.startswith("_dlt") or table_name == LOAD_INFO_TABLE_NAME
 
 
 def read_parquet_tables(output_dir: Path) -> dict[str, list[dict[str, Any]]]:
@@ -64,7 +68,7 @@ def read_pipeline_tables(output_dir: Path, output_format: str | None = None) -> 
         if not json_file.is_file():
             continue
         # ignore metadata dirs
-        if json_file.parent.name.startswith("_dlt"):
+        if is_metadata_table(json_file.parent.name):
             continue
         # Detect gzip by magic bytes rather than relying on the extension,
         # in case a .json file is actually gzipped or vice versa.
@@ -123,7 +127,7 @@ def read_data_rows(dataset_dir: Path, file_format: str | None = None) -> dict[st
     return {
         name: [strip_metadata_columns(row) for row in rows]
         for name, rows in tables.items()
-        if not name.startswith("_dlt")
+        if not is_metadata_table(name)
     }
 
 
@@ -147,11 +151,6 @@ def extract_table_data(dataset: dlt.Dataset, table_name: str) -> list[str]:
             for datum in dataset.table(table_name).df().to_dict("records")
         ]
     )
-
-
-def is_metadata_table(table_name: str) -> bool:
-    """Return whether a table contains dlt pipeline metadata rather than loaded records."""
-    return table_name.startswith("_dlt") or table_name == LOAD_INFO_TABLE_NAME
 
 
 def get_pipeline(load_info: LoadInfo, output_dir: Path) -> dlt.Pipeline:
@@ -222,7 +221,7 @@ def reconstruct_entries(tables: dict[str, list[dict[str, Any]]]) -> list[dict[st
 
     parent_index: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
     for table_name, rows in tables.items():
-        if table_name in (top_table, LOAD_INFO_TABLE_NAME) or table_name.startswith("_dlt"):
+        if table_name == top_table or is_metadata_table(table_name):
             continue
         for row in rows:
             parent_index[row["_dlt_parent_id"]].append((table_name, row))
