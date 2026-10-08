@@ -11,7 +11,6 @@ from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
 
-import dlt
 import pytest
 
 import cdm_data_loaders.pipelines.xsv.pipeline as xsv_pipeline_module
@@ -23,6 +22,7 @@ from cdm_data_loaders.pipelines.xsv.pipeline import (
     run_xsv_ingest_pipeline,
 )
 from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
+from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
 
 VALID_SCHEMA_URI = "https://json-schema.org/draft/2020-12/schema"
 
@@ -115,12 +115,7 @@ def test_run_xsv_ingest_pipeline_pass_end_to_end_via_duckdb(
         **_: Any,  # noqa: ANN401
     ) -> None:
         assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "xsv_test_dataset"}
-        pipeline = dlt.pipeline(
-            pipeline_name=pipeline_name,
-            destination="duckdb",
-            dataset_name="xsv_test_dataset",
-            pipelines_dir=str(tmp_path / "pipelines"),
-        )
+        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "xsv_test_dataset")
         captured["load_info"] = pipeline.run(resource)
 
     with patch.object(xsv_pipeline_module, "run_pipeline", fake_run_pipeline):
@@ -129,12 +124,7 @@ def test_run_xsv_ingest_pipeline_pass_end_to_end_via_duckdb(
     load_info = captured["load_info"]
     assert not load_info.has_failed_jobs
 
-    pipeline = dlt.pipeline(
-        pipeline_name=pipeline_name,
-        destination="duckdb",
-        dataset_name="xsv_test_dataset",
-        pipelines_dir=str(tmp_path / "pipelines"),
-    )
+    pipeline = duckdb_pipeline(tmp_path, pipeline_name, "xsv_test_dataset")
     with (
         pipeline.sql_client() as client,
         client.execute_query("SELECT number, name FROM my_table ORDER BY number") as cur,
@@ -155,12 +145,7 @@ def test_run_xsv_ingest_pipeline_pass_no_matching_files_loads_nothing(
     captured: dict[str, Any] = {}
 
     def fake_run_pipeline(*, resource: Any, **_: Any) -> None:  # noqa: ANN401
-        pipeline = dlt.pipeline(
-            pipeline_name=pipeline_name,
-            destination="duckdb",
-            dataset_name="xsv_test_dataset",
-            pipelines_dir=str(tmp_path / "pipelines"),
-        )
+        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "xsv_test_dataset")
         captured["load_info"] = pipeline.run(resource)
 
     with patch.object(xsv_pipeline_module, "run_pipeline", fake_run_pipeline):
@@ -222,12 +207,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
         **_: Any,  # noqa: ANN401
     ) -> None:
         assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "cli_dataset"}
-        pipeline = dlt.pipeline(
-            pipeline_name=pipeline_name,
-            destination="duckdb",
-            dataset_name="cli_dataset",
-            pipelines_dir=str(tmp_path / "pipelines"),
-        )
+        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
         captured["load_info"] = pipeline.run(resource)
 
     with patch.object(xsv_pipeline_module, "run_pipeline", fake_run_pipeline):
@@ -236,12 +216,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     load_info = captured["load_info"]
     assert not load_info.has_failed_jobs
 
-    pipeline = dlt.pipeline(
-        pipeline_name=pipeline_name,
-        destination="duckdb",
-        dataset_name="cli_dataset",
-        pipelines_dir=str(tmp_path / "pipelines"),
-    )
+    pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
     with (
         pipeline.sql_client() as client,
         client.execute_query("SELECT COUNT(*) FROM my_table") as cur,

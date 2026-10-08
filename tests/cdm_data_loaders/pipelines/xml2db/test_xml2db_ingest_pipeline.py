@@ -19,6 +19,7 @@ import cdm_data_loaders.pipelines.xml2db.pipeline as xml2db_pipeline_module
 from cdm_data_loaders.pipelines.xml2db.pipeline import _read_items, cli, run_xml2db_ingest_pipeline
 from cdm_data_loaders.pipelines.xml2db.settings import PIPELINE_NAME, Xml2DbSettings
 from cdm_data_loaders.readers.xml2db_doc import build_xml2db_model
+from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
 
 SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
 <library>
@@ -338,7 +339,7 @@ def test_maybe_compact_pass_logs_when_duplicates_removed(
     with patch.object(xml2db_pipeline_module, "compact_reused_tables", return_value={"book": 3}):
         xml2db_pipeline_module._maybe_compact(settings, library_model, load_info)  # noqa: SLF001
 
-    assert any("compaction" in record.message.lower() for record in caplog.records)
+    assert any("compaction" in record.getMessage().lower() for record in caplog.records)
 
 
 # cli
@@ -400,12 +401,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
         **_: Any,  # noqa: ANN401
     ) -> None:
         assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "cli_dataset"}
-        pipeline = dlt.pipeline(
-            pipeline_name=pipeline_name,
-            destination="duckdb",
-            dataset_name="cli_dataset",
-            pipelines_dir=str(tmp_path / "pipelines"),
-        )
+        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
         captured["load_info"] = pipeline.run(resource)
 
     with patch.object(xml2db_pipeline_module, "run_pipeline", fake_run_pipeline):
@@ -414,12 +410,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     load_info = captured["load_info"]
     assert not load_info.has_failed_jobs
 
-    pipeline = dlt.pipeline(
-        pipeline_name=pipeline_name,
-        destination="duckdb",
-        dataset_name="cli_dataset",
-        pipelines_dir=str(tmp_path / "pipelines"),
-    )
+    pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
     with (
         pipeline.sql_client() as client,
         client.execute_query("SELECT COUNT(*) FROM book") as cur,

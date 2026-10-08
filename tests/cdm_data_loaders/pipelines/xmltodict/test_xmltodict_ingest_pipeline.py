@@ -18,6 +18,7 @@ from cdm_data_loaders.pipelines.xmltodict.pipeline import (
     run_xml_ingest_pipeline,
 )
 from cdm_data_loaders.pipelines.xmltodict.settings import PIPELINE_NAME, XmlToDictSettings
+from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
 
 SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
 <library>
@@ -129,12 +130,8 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
         **_: Any,  # noqa: ANN401
     ) -> None:
         assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "cli_dataset"}
-        pipeline = dlt.pipeline(
-            pipeline_name=pipeline_name,
-            destination="duckdb",
-            dataset_name="cli_dataset",
-            pipelines_dir=str(tmp_path / "pipelines"),
-        )
+
+        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
         captured["load_info"] = pipeline.run(resource)
 
     with patch.object(xmltodict_ingest_module, "run_pipeline", fake_run_pipeline):
@@ -143,12 +140,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     load_info = captured["load_info"]
     assert not load_info.has_failed_jobs
 
-    pipeline = dlt.pipeline(
-        pipeline_name=pipeline_name,
-        destination="duckdb",
-        dataset_name="cli_dataset",
-        pipelines_dir=str(tmp_path / "pipelines"),
-    )
+    pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
     with (
         pipeline.sql_client() as client,
         client.execute_query("SELECT COUNT(*) FROM book") as cur,
@@ -200,12 +192,7 @@ def test_cli_pass_writes_rows_for_matching_xml_files(
         resource: Any,  # noqa: ANN401
         **_: Any,  # noqa: ANN401
     ) -> None:
-        pipeline = dlt.pipeline(
-            pipeline_name=pipeline_name,
-            destination="duckdb",
-            dataset_name="cli_dataset",
-            pipelines_dir=str(tmp_path / "pipelines"),
-        )
+        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
         captured["load_info"] = pipeline.run(resource)
         captured["pipeline"] = pipeline
 

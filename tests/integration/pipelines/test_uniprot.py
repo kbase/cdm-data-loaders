@@ -20,6 +20,7 @@ from cdm_data_loaders.pipelines.uniprot_kb import (
     parse_uniprot,
 )
 from tests.cdm_data_loaders.core.conftest import make_settings_autofill_config
+from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
 from tests.conftest import TEST_DATA_DIR
 
 UNIPROT_FIXTURE_DIR = TEST_DATA_DIR / "uniprot" / "uniprot_kb" / "chunk_4"
@@ -70,12 +71,7 @@ def _run_uniprot_duckdb_pipeline(settings: UniProtSettings, tmp_path: Path, name
     on re-runs, so each test gets its own database file and pipeline name under
     tmp_path to stay isolated from other tests.
     """
-    pipeline = dlt.pipeline(
-        pipeline_name=f"test_uniprot_pipeline_{name}",
-        destination=dlt.destinations.duckdb(str(tmp_path / f"{name}.duckdb")),
-        dataset_name="test_uniprot",
-        pipelines_dir=str(tmp_path / "pipelines"),
-    )
+    pipeline = duckdb_pipeline(tmp_path, f"test_uniprot_pipeline_{name}", "test_uniprot")
     load_info = pipeline.run(parse_uniprot(settings))
     return pipeline, load_info
 
@@ -146,12 +142,7 @@ def test_integration_cli_uniprot_pipeline_output_validated(
         """Replacement for core.run_pipeline that runs the resource through DuckDB."""
         assert settings is duckdb_uniprot_settings
         assert pipeline_kwargs == {"pipeline_name": "uniprot_kb", "dataset_name": "uniprot_kb"}
-        pipeline = dlt.pipeline(
-            pipeline_name="test_uniprot_cli_pipeline",
-            destination=dlt.destinations.duckdb(str(tmp_path / "cli.duckdb")),
-            dataset_name="test_uniprot_cli",
-            pipelines_dir=str(tmp_path / "pipelines"),
-        )
+        pipeline = duckdb_pipeline(tmp_path, "test_uniprot_cli_pipeline", "test_uniprot_cli")
         captured["load_info"] = pipeline.run(resource)
         captured["pipeline"] = pipeline
 

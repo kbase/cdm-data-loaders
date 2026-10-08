@@ -15,12 +15,10 @@ from tests.integration.pipelines.helpers import (
     assert_dataset_matches_reference,
     assert_datasets_equal,
     read_pipeline_tables,
-    run_and_read,
-    sorted_json,
-)
-from tests.integration.pipelines.pipeline_helpers import (
     reconstruct_entries,
     reference_entries_from_duckdb,
+    run_and_read,
+    sorted_json,
 )
 
 CHUNK_DIRS = ("chunk_5_el", "chunk_20_el", "chunk_100_el")

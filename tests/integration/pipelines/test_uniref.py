@@ -22,6 +22,7 @@ from cdm_data_loaders.pipelines.uniref import (
     parse_uniref,
 )
 from tests.cdm_data_loaders.core.conftest import make_settings_autofill_config
+from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
 from tests.conftest import TEST_DATA_DIR
 
 TEST_DEFAULT_UNIREF_VARIANT = "50"
@@ -69,12 +70,7 @@ def _run_uniref_duckdb_pipeline(settings: UnirefSettings, tmp_path: Path, name: 
     on re-runs, so each test gets its own database file and pipeline name under
     tmp_path to stay isolated from other tests and parametrized cases.
     """
-    pipeline = dlt.pipeline(
-        pipeline_name=f"test_uniref_pipeline_{name}",
-        destination=dlt.destinations.duckdb(str(tmp_path / f"{name}.duckdb")),
-        dataset_name="test_uniref",
-        pipelines_dir=str(tmp_path / "pipelines"),
-    )
+    pipeline = duckdb_pipeline(tmp_path, f"test_uniref_pipeline_{name}", "test_uniref")
     load_info = pipeline.run(parse_uniref(settings))
     return pipeline, load_info
 
@@ -152,11 +148,8 @@ def test_integration_cli_uniref_pipeline_output_validated(
             "pipeline_name": f"uniref_{duckdb_uniref_settings.variant}",
             "dataset_name": "uniprot_kb",
         }
-        pipeline = dlt.pipeline(
-            pipeline_name=f"test_uniref_cli_pipeline_{duckdb_uniref_settings.variant}",
-            destination=dlt.destinations.duckdb(str(tmp_path / "cli.duckdb")),
-            dataset_name="test_uniref_cli",
-            pipelines_dir=str(tmp_path / "pipelines"),
+        pipeline = duckdb_pipeline(
+            tmp_path, f"test_uniref_cli_pipeline_{duckdb_uniref_settings.variant}", "test_uniref_cli"
         )
         captured["load_info"] = pipeline.run(resource)
         captured["pipeline"] = pipeline

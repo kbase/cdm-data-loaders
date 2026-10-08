@@ -13,8 +13,10 @@ from dlt.extract import DltResource
 
 import cdm_data_loaders.pipelines.jsonlines.extract_pipeline as extract_pipeline_module
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
+from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import cli, run_jsonlines_ingest_pipeline
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
+from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
 
 SIMPLE_JSONL = """{"widget_id": "a", "count": 1}
 {"widget_id": "b", "count": 2}
@@ -108,7 +110,7 @@ def test_run_jsonlines_ingest_pipeline_pass_no_matching_files_yields_no_tables(
     assert load_info is not None
     assert not load_info.has_failed_jobs
     dataset = load_info.pipeline.dataset()
-    assert set(dataset.tables) == {"_dlt_version", "_dlt_loads", "_dlt_pipeline_state", "_dlt_load_info"}
+    assert set(dataset.tables) == {"_dlt_version", "_dlt_loads", "_dlt_pipeline_state", LOAD_INFO_TABLE_NAME}
 
 
 def test_cli_pass_runs_end_to_end_from_command_line_arguments(
@@ -150,12 +152,8 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     captured: dict[str, Any] = {}
 
     def fake_run_pipeline(*, resource: DltResource, pipeline_kwargs: dict[str, Any], **_: dict[str, Any]) -> None:
-        pipeline = dlt.pipeline(
-            pipeline_name=pipeline_kwargs["pipeline_name"],
-            destination="duckdb",
-            dataset_name=pipeline_kwargs["dataset_name"],
-            pipelines_dir=str(tmp_path / "pipelines"),
-        )
+        pipeline = duckdb_pipeline(tmp_path, pipeline_kwargs["pipeline_name"], pipeline_kwargs["dataset_name"])
+
         captured["load_info"] = pipeline.run(resource)
 
     with patch.object(extract_pipeline_module, "run_pipeline", fake_run_pipeline):
@@ -163,6 +161,6 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
 
     load_info = captured["load_info"]
     assert not load_info.has_failed_jobs
-    # n.b. no _dlt_load_info due to this being a monkeypatched pipeline
+    # n.b. no load info table due to this being a monkeypatched pipeline
     assert set(load_info.pipeline.dataset().tables) == {"widget", "_dlt_version", "_dlt_loads", "_dlt_pipeline_state"}
     assert sorted(load_info.pipeline.dataset().widget.df()["widget_id"].tolist()) == ["a", "b"]

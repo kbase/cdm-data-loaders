@@ -12,7 +12,7 @@ from contextlib import suppress
 from datetime import UTC, date, datetime
 from typing import Any, Final
 
-from tests.integration.pipelines.pipeline_helpers import reconstruct_entries
+from tests.integration.pipelines.helpers import reconstruct_entries
 
 EXPECTED_ENTRY_COUNT: Final[int] = 52
 

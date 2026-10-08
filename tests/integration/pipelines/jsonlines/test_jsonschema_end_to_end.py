@@ -14,9 +14,10 @@ from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline i
     run_jsonlines_ingest_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JSONSCHEMA_PIPELINE_NAME, JsonlJsonschemaIngestSettings
-from tests.integration.pipelines.helpers import LOADER_FILE_FORMATS, read_data_rows
-from tests.integration.pipelines.pipeline_helpers import (
+from tests.integration.pipelines.helpers import (
+    LOADER_FILE_FORMATS,
     parse_json_string,
+    read_data_rows,
 )
 
 pytestmark = pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS, ids=str)

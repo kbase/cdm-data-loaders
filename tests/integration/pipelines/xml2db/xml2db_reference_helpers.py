@@ -12,7 +12,7 @@ from functools import partial
 from json import dumps
 from typing import Any
 
-from tests.integration.pipelines.pipeline_helpers import strip_metadata_columns
+from tests.integration.pipelines.helpers import strip_metadata_columns
 
 ENTRY_TABLE = "entry"
 PROPERTY_TABLE = "property"
