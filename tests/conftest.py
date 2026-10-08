@@ -44,6 +44,7 @@ TEST_DATA_DIR: Final[Path] = Path("tests") / "data"
 CASSETTES_DIR: Final[Path] = Path("tests") / "cassettes"
 
 REFERENCE_XML_NS: Final[str] = "http://uniprot.org/uniref"
+REFERENCE_XML_TAG: Final[str] = f"{{{REFERENCE_XML_NS}}}entry"
 REFERENCE_XML_FIXTURE_DIR: Final[Path] = TEST_DATA_DIR / "uniprot" / "uniref"
 REFERENCE_XSD: Final[Path] = REFERENCE_XML_FIXTURE_DIR / "uniref.xsd"
 N_REFERENCE_XML_ENTRIES: Final[int] = 100
