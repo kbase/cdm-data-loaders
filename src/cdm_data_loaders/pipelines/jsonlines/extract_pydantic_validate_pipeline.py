@@ -32,7 +32,6 @@ Write disposition is `append` or `replace` only. No merge is performed.
 
 import json
 from importlib import import_module
-from logging import Logger, getLogger
 from typing import Any
 
 from dlt.common.pipeline import LoadInfo
@@ -50,8 +49,6 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     PYDANTIC_PIPELINE_NAME,
     JsonlPydanticIngestSettings,
 )
-
-logger: Logger = getLogger(__name__)
 
 
 def load_entity_models(module_path: str) -> dict[str, type[BaseModel]]:

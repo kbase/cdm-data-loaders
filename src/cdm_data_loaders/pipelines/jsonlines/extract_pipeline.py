@@ -9,7 +9,6 @@ file, line number, raw text, and parse error detail.
 """
 
 from collections.abc import Generator, Iterator
-from logging import Logger, getLogger
 from typing import Any
 
 import dlt
@@ -24,8 +23,6 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlExtractSettings,
 )
 from cdm_data_loaders.readers.jsonlines import route_jsonl_lines
-
-logger: Logger = getLogger(__name__)
 
 
 @dlt.transformer(name="jsonl_reader", parallelized=True)

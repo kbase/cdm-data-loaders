@@ -9,7 +9,6 @@ left in its scratch output directory and are not currently surfaced as rows.
 
 from collections.abc import Generator
 from dataclasses import dataclass
-from logging import Logger, getLogger
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Final
@@ -26,8 +25,6 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import Cleane
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import clean_validate_file, qsv_check
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import generate_header
 from cdm_data_loaders.utils.buffer import ListBuffer
-
-logger: Logger = getLogger(__name__)
 
 SCHEMA_CONTRACT: Final[TSchemaContractDict] = {
     "tables": "evolve",

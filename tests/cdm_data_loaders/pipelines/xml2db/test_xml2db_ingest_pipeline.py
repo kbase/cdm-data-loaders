@@ -7,7 +7,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-import dlt
 import pendulum
 import pytest
 from dlt.common.pipeline import LoadInfo
