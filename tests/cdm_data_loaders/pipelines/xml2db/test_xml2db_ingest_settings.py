@@ -25,7 +25,7 @@ MINIMAL_SETTINGS_KWARGS: dict[str, object] = {
     "input_dir": "/input_dir",
     "output_dir": "/output_dir",
     "log_config_file": None,
-    "dev_mode": False,
+    "dlt_dev_mode": False,
     "use_destination": "local_fs",
     "use_output_dir_for_pipeline_metadata": False,
 }
@@ -170,28 +170,40 @@ def test_xml2db_ingest_settings_pass_xml2db_config_file_accepted(
     assert settings.xml2db_config_file == config_path
 
 
-def test_xml2db_ingest_settings_pass_local_destination_with_s3_output_dir_rejected(
+def test_xml2db_ingest_settings_pass_local_destination_with_s3_output_dir_accepted_at_construction(
     settings_factory: Callable[..., Xml2DbSettings],
 ) -> None:
-    """use_destination='local_fs' with an s3:// output_dir raises ValidationError."""
-    with pytest.raises(ValidationError, match="Mismatch between output location and use_destination"):
-        settings_factory(output_dir="s3://some-bucket/path")
+    """use_destination='local_fs' with an s3:// output_dir is accepted at construction.
+
+    The protocol check happens when output_dir is resolved against the dlt config, not at
+    construction time (see tests/cdm_data_loaders/core/test_destination.py).
+    """
+    settings = settings_factory(output_dir="s3://some-bucket/path")
+    assert settings.output_is_local is False
 
 
-def test_xml2db_ingest_settings_pass_s3_destination_with_local_output_dir_rejected(
+def test_xml2db_ingest_settings_pass_s3_destination_with_local_output_dir_accepted_at_construction(
     settings_factory: Callable[..., Xml2DbSettings],
 ) -> None:
-    """use_destination='s3' with a local output_dir raises ValidationError."""
-    with pytest.raises(ValidationError, match="Mismatch between output location and use_destination"):
-        settings_factory(use_destination=S3)
+    """use_destination='s3' with a local output_dir is accepted at construction.
+
+    The protocol check happens when output_dir is resolved against the dlt config, not at
+    construction time (see tests/cdm_data_loaders/core/test_destination.py).
+    """
+    settings = settings_factory(use_destination=S3)
+    assert settings.output_is_local is True
 
 
-def test_xml2db_ingest_settings_pass_unknown_use_destination_rejected(
+def test_xml2db_ingest_settings_pass_unknown_use_destination_accepted_at_construction(
     settings_factory: Callable[..., Xml2DbSettings],
 ) -> None:
-    """use_destination not present in the dlt config raises ValidationError."""
-    with pytest.raises(ValidationError, match="use_destination must be one of"):
-        settings_factory(use_destination="not_a_destination")
+    """A use_destination not present in the dlt config is accepted at construction.
+
+    Unknown destinations are rejected when output_dir is resolved against the dlt config, not
+    at construction time (see tests/cdm_data_loaders/core/test_destination.py).
+    """
+    settings = settings_factory(use_destination="not_a_destination")
+    assert settings.use_destination == "not_a_destination"
 
 
 def test_xml2db_ingest_settings_pass_pipeline_name_constant() -> None:

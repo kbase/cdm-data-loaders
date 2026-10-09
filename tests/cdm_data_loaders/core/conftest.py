@@ -86,6 +86,14 @@ def check_settings(
         assert getattr(settings_object, attr) == value
 
 
+def make_settings_autofill_config(
+    settings_cls: type[CtsSettings],
+    kwargs: dict[str, Any] | frozendict[str, Any] | None = None,
+) -> CtsSettings:
+    """Generate a validated settings object with the given init kwargs."""
+    return settings_cls(**(kwargs or {}))
+
+
 # ways of supplying values to a settings class
 INIT: Final[str] = "init"
 ENV: Final[str] = "env"

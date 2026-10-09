@@ -58,12 +58,14 @@ BATCH_SIZE_STRING = str(BATCH_SIZE)
 
 TEST_NCBI_SETTINGS = frozendict(**TEST_CTS_SETTINGS, batch_size=BATCH_SIZE_STRING, query_type="")
 
-TEST_NCBI_SETTINGS_RECONCILED = frozendict(**TEST_CTS_SETTINGS_RECONCILED, batch_size=BATCH_SIZE, query_type=None)
+TEST_NCBI_SETTINGS_RECONCILED = frozendict(
+    **TEST_CTS_SETTINGS_RECONCILED, batch_size=BATCH_SIZE, query_type=None, save_raw_responses=False
+)
 
 TEST_NCBI_SETTINGS_V1 = frozendict(**TEST_CTS_SETTINGS, batch_size=BATCH_SIZE_STRING, query_type=" ANNOTATION ")
 
 TEST_NCBI_SETTINGS_RECONCILED_V1 = frozendict(
-    **TEST_CTS_SETTINGS_RECONCILED, batch_size=BATCH_SIZE, query_type=ANNOTATION
+    **TEST_CTS_SETTINGS_RECONCILED, batch_size=BATCH_SIZE, query_type=ANNOTATION, save_raw_responses=False
 )
 
 
@@ -347,6 +349,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
             "raw_data_dir": "/some/dir/raw_data",
             "use_destination": LOCAL_FS,
             "use_output_dir_for_pipeline_metadata": bool(use_pipeline_dir),
+            "save_raw_responses": False,
         },
     )
 

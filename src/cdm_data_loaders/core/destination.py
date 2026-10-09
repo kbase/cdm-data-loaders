@@ -30,7 +30,9 @@ PIPELINE_METADATA_NOT_LOCAL: Final[str] = (
 class ConfigLookup(Protocol):
     """Anything that supports dlt.config-style ``get``: the dlt config accessor, or a plain dict in tests."""
 
-    def get(self, key: str, /) -> Any: ...  # noqa: ANN401
+    def get(self, key: str, /) -> Any:  # noqa: ANN401
+        """Return the value stored under ``key``."""
+        ...
 
 
 def normalise_dir(path: str) -> str:
@@ -84,6 +86,9 @@ def destinations_from_dlt_config(config: ConfigLookup) -> dict[str, dict[str, An
     :return: mapping of destination name to {"bucket_url": str | None}
     :rtype: dict[str, dict[str, Any]]
     """
+    if config is None:
+        err_msg = "dlt config is None"
+        raise ValueError(err_msg)
     sections = config.get("destination") or {}
     if not isinstance(sections, Mapping):
         err_msg = f"Expected the dlt 'destination' config to be a table, got {type(sections).__name__}"

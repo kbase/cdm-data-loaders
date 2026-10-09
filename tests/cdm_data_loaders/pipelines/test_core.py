@@ -2,9 +2,7 @@
 
 import gzip
 import logging
-import os
 from collections.abc import Iterator
-from copy import deepcopy
 from json import loads
 from pathlib import Path
 from typing import Any, Final
@@ -12,36 +10,24 @@ from unittest.mock import MagicMock, patch
 
 import dlt
 import pytest
+from dlt.common.pipeline import LoadInfo
 from dlt.extract.resource import DltResource
-from pydantic import ValidationError
 from pydantic_settings import SettingsError
+from requests import RequestException
 
-from cdm_data_loaders.core.fields import (
-    DEV_MODE,
-    LOCAL_FS,
-    OUTPUT_DIR,
-    S3,
-    USE_DESTINATION,
-    VALID_DESTINATIONS,
-)
-from cdm_data_loaders.core.settings import (
-    BatchedFileInputSettings,
-    CtsSettings,
-    InputOutputSettings,
-    LoggerSettings,
-)
+from cdm_data_loaders.core.fields import LOCAL_FS, OUTPUT_DIR, S3, USE_DESTINATION
+from cdm_data_loaders.core.settings import CtsSettings, InputOutputSettings, LoggerSettings
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import (
     LOAD_INFO_TABLE_NAME,
     NO_MESSAGE,
     WEBHOOK_NOT_CONFIGURED,
-    construct_env_var,
+    resolve_cts_settings,
     run_cli,
     run_pipeline,
     send_slack_message_carefully,
-    sync_configs,
 )
-from tests.cdm_data_loaders.core.test_settings import SETTINGS_CLASSES, TEST_CTS_SETTINGS
+from tests.cdm_data_loaders.core.conftest import TEST_CTS_SETTINGS
 from tests.dlt_config_isolation import dlt_config_unset, isolated_dlt_config
 
 TINY_RESOURCE_DATA: Final[list[dict[str, Any]]] = [
@@ -51,30 +37,40 @@ TINY_RESOURCE_DATA: Final[list[dict[str, Any]]] = [
 TINY_PIPELINE_NAME: Final[str] = "test_core_tiny_pipeline"
 TINY_TABLE_NAME: Final[str] = "tiny"
 
-
-def make_batched_settings(**kwargs: str | int) -> BatchedFileInputSettings:
-    """Generate a validated BatchedFileInputSettings object with a valid dlt config."""
-    return BatchedFileInputSettings.model_validate(kwargs)
+SETTINGS_CLASSES: Final[list[type[CtsSettings]]] = [LoggerSettings, InputOutputSettings, CtsSettings]
 
 
-@pytest.fixture
-def test_bfi_settings(tmp_path: Path) -> BatchedFileInputSettings:
-    """Minimal valid BatchedFileInputSettings (no start_at, no output_dir)."""
-    return make_batched_settings(input_dir="/fake/input", output_dir=str(tmp_path))
+def make_cts_settings(**kwargs: str | int | bool) -> CtsSettings:
+    """Generate a validated CtsSettings object with a valid dlt config."""
+    return CtsSettings.model_validate(kwargs)
 
 
 @pytest.fixture
-def dlt_test_settings(
-    tmp_path: Path, dlt_destination_config: str, monkeypatch: pytest.MonkeyPatch
-) -> BatchedFileInputSettings:
-    """Settings pointing the real local_fs destination at a tmp_path bucket.
+def test_bfi_settings(tmp_path: Path) -> CtsSettings:
+    """Minimal valid CtsSettings (no output_dir)."""
+    return make_cts_settings(input_dir="/fake/input", output_dir=str(tmp_path))
+
+
+@pytest.fixture
+def dlt_test_settings(tmp_path: Path, dlt_destination_config: str, monkeypatch: pytest.MonkeyPatch) -> CtsSettings:
+    """Settings whose output_dir matches the local_fs destination bucket in dlt.config.
+
+    run_pipeline takes the output location from the dlt.config bucket_url, so the settings
+    output_dir is set to the same bucket to keep the two consistent.
 
     Telemetry is disabled so the real pipeline runs do not fire analytics from tests.
     """
     monkeypatch.setenv("RUNTIME__DLTHUB_TELEMETRY", "false")
-    return make_batched_settings(
+    bucket_url = resolve_cts_settings(
+        make_cts_settings(
+            input_dir=str(tmp_path / "input"),
+            use_destination=dlt_destination_config,
+            use_output_dir_for_pipeline_metadata=True,
+        )
+    ).output_dir
+    return make_cts_settings(
         input_dir=str(tmp_path / "input"),
-        output_dir=str(tmp_path / "output"),
+        output_dir=bucket_url,
         use_destination=dlt_destination_config,
         use_output_dir_for_pipeline_metadata=True,
     )
@@ -96,7 +92,7 @@ def failing_resource() -> DltResource:
     return dlt.resource(_generate, name=TINY_TABLE_NAME)
 
 
-def read_output_jsonl_records(settings: BatchedFileInputSettings) -> list[dict[str, Any]]:
+def read_output_jsonl_records(settings: CtsSettings) -> list[dict[str, Any]]:
     """Read every jsonl record written to the settings output directory, minus dlt's internal columns."""
     records: list[dict[str, Any]] = []
     for jsonl_file in sorted(Path(settings.output_dir).glob(f"**/{TINY_TABLE_NAME}/*.jsonl*")):
@@ -113,7 +109,7 @@ def read_output_jsonl_records(settings: BatchedFileInputSettings) -> list[dict[s
 @pytest.fixture
 def test_cts_settings() -> CtsSettings:
     """A fully validated CtsSettings instance using the test dlt config."""
-    return CtsSettings.model_validate(TEST_CTS_SETTINGS)
+    return make_cts_settings(**TEST_CTS_SETTINGS)
 
 
 @pytest.fixture(
@@ -123,16 +119,15 @@ def test_cts_settings() -> CtsSettings:
             {
                 "input_dir": "/path/to/dir",
                 "use_destination": LOCAL_FS,
-                "start_at": 15,
                 "output_dir": "/some/dir",
             },
             id="alt",
         ),
     ]
 )
-def config(request: pytest.FixtureRequest) -> BatchedFileInputSettings:
+def config(request: pytest.FixtureRequest) -> CtsSettings:
     """Parametrized fixture providing default and non-default settings."""
-    return make_batched_settings(**request.param)
+    return make_cts_settings(**request.param)
 
 
 @pytest.fixture(
@@ -145,77 +140,8 @@ def config(request: pytest.FixtureRequest) -> BatchedFileInputSettings:
     ]
 )
 def settings_missing_sync_attrs(request: pytest.FixtureRequest) -> LoggerSettings | InputOutputSettings:
-    """Settings instances missing one or more attribute that sync_configs checks for via hasattr."""
+    """Settings instances missing one or more attribute the sync tests check for via hasattr."""
     return request.param()
-
-
-# construct_env_var
-@pytest.mark.parametrize(
-    ("b_var", "t_var", "char_str", "expected"),
-    [
-        ("B123", "T456", "C789", "https://hooks.slack.com/services/B123/T456/C789/"),
-        ("one", "two", "three", "https://hooks.slack.com/services/one/two/three/"),
-    ],
-)
-def test_construct_env_var_sets_runtime_slack_incoming_hook(
-    b_var: str, t_var: str, char_str: str, expected: str
-) -> None:
-    """Test successful setting of the RUNTIME__SLACK_INCOMING_HOOK env var when all three variables are present."""
-    with patch.dict(
-        os.environ,
-        {
-            "VARIABLE_B": b_var,
-            "VARIABLE_T": t_var,
-            "CHAR_STR": char_str,
-        },
-        clear=True,
-    ):
-        # function returns None
-        assert construct_env_var() is None
-        assert os.environ["RUNTIME__SLACK_INCOMING_HOOK"] == expected
-
-
-@pytest.mark.parametrize(
-    ("b_var", "t_var", "char_str"),
-    [
-        (None, "T456", "C789"),
-        ("B123", None, "C789"),
-        ("B123", "T456", None),
-        (None, None, None),
-        ("", "T456", "C789"),
-    ],
-)
-def test_construct_env_var_does_not_set_when_any_variable_missing(
-    b_var: str | None, t_var: str | None, char_str: str | None
-) -> None:
-    """Test unsuccessful interpolation of env vars if any of the three variables are missing or empty."""
-    env = {}
-    if b_var is not None:
-        env["VARIABLE_B"] = b_var
-    if t_var is not None:
-        env["VARIABLE_T"] = t_var
-    if char_str is not None:
-        env["CHAR_STR"] = char_str
-
-    with patch.dict(os.environ, env, clear=True):
-        assert construct_env_var() is None
-        assert "RUNTIME__SLACK_INCOMING_HOOK" not in os.environ
-
-
-def test_construct_env_var_overwrites_existing_hook() -> None:
-    """An existing RUNTIME__SLACK_INCOMING_HOOK is overwritten when all vars are present."""
-    with patch.dict(
-        os.environ,
-        {
-            "VARIABLE_B": "B",
-            "VARIABLE_T": "T",
-            "CHAR_STR": "C",
-            "RUNTIME__SLACK_INCOMING_HOOK": "https://old.hook/",
-        },
-        clear=True,
-    ):
-        assert construct_env_var() is None
-        assert os.environ["RUNTIME__SLACK_INCOMING_HOOK"] == "https://hooks.slack.com/services/B/T/C/"
 
 
 # send slack message carefully
@@ -236,20 +162,18 @@ def test_send_slack_message_carefully_params_fail(
     message: str,
     err_msg: str,
     caplog: pytest.LogCaptureFixture,
-    mock_send_slack_message: MagicMock,
+    slack_mock: MagicMock,
 ) -> None:
     """Test sending a slack message ever so carefully, but with incorrect parameters."""
     send_slack_message_carefully(slack_hook, message)
-    mock_send_slack_message.assert_not_called()
+    slack_mock.assert_not_called()
     assert len(caplog.records) == 1
     assert caplog.records[-1].levelno == logging.WARNING
     assert caplog.records[-1].getMessage() == f"Cannot send slack message: {err_msg}"
 
 
 @pytest.mark.parametrize("markdown", [True, False, None])
-def test_send_slack_message_carefully_markdown_params(
-    markdown: None | bool, mock_send_slack_message: MagicMock
-) -> None:
+def test_send_slack_message_carefully_markdown_params(markdown: None | bool, slack_mock: MagicMock) -> None:
     """Test that the markdown param is correctly passed on to send_slack_message.
 
     :param markdown: markdown parameter
@@ -261,14 +185,14 @@ def test_send_slack_message_carefully_markdown_params(
         send_slack_message_carefully(SLACK_HOOK, TEST_MESSAGE, markdown)
 
     if markdown:
-        mock_send_slack_message.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, True)  # noqa: FBT003
+        slack_mock.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, True)  # noqa: FBT003
     else:
-        mock_send_slack_message.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, False)  # noqa: FBT003
+        slack_mock.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, False)  # noqa: FBT003
 
 
 def test_send_slack_message_fail_error_oh_no(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
-    """Ensure that errors are caught and don't crash the whole goddamn ship of fools."""
-    slack_mock = MagicMock(side_effect=ValueError("Oh no! An error!"))
+    """Ensure that request errors are caught and don't crash the whole ship of fools."""
+    slack_mock = MagicMock(side_effect=RequestException("Oh no! An error!"))
     monkeypatch.setattr(core, "send_slack_message", slack_mock)
     send_slack_message_carefully(SLACK_HOOK, TEST_MESSAGE)
     assert len(caplog.records) == 1
@@ -276,106 +200,29 @@ def test_send_slack_message_fail_error_oh_no(monkeypatch: pytest.MonkeyPatch, ca
     assert caplog.records[-1].getMessage() == "Failed to send slack message"
 
 
-# sync_configs
-def test_sync_configs_mutates_dlt_config_in_place(dlt_config: dict[str, Any], test_cts_settings: CtsSettings) -> None:
-    """sync_configs mutates the supplied dlt_config dict in-place."""
-    original_id = id(dlt_config)
-    sync_configs(test_cts_settings, dlt_config)
-    assert id(dlt_config) == original_id
-
-
-def test_sync_configs_with_mock_dlt_config_object(test_cts_settings: CtsSettings) -> None:
-    """sync_configs works with any mapping that supports __setitem__."""
-    mock_cfg = MagicMock()
-    sync_configs(test_cts_settings, mock_cfg)
-    mock_cfg.__setitem__.assert_any_call("normalize.data_writer.disable_compression", test_cts_settings.dev_mode)
-    mock_cfg.__setitem__.assert_any_call(
-        f"destination.{test_cts_settings.use_destination}.bucket_url",
-        test_cts_settings.output_dir,
-    )
-
-
-@pytest.mark.parametrize("use_destination", VALID_DESTINATIONS)
-@pytest.mark.parametrize("dev_mode", [True, False])
-@pytest.mark.parametrize("output_dir", ["/some/path", "s3://bucket/whatever"])
-def test_sync_configs_both_keys_set_in_single_call(
-    dlt_config: dict[str, Any],
-    test_cts_settings: CtsSettings,
-    dev_mode: bool,
-    use_destination: str,
-    output_dir: str,
-) -> None:
-    """Test that sync_configs changes the disable_compression and bucket_url values."""
-    original_dlt_config = deepcopy(dlt_config)
-    test_cts_settings.dev_mode = dev_mode
-    test_cts_settings.use_destination = use_destination
-    test_cts_settings.output_dir = output_dir
-    sync_configs(test_cts_settings, dlt_config)
-    assert dlt_config == {
-        **original_dlt_config,
-        "normalize.data_writer.disable_compression": dev_mode,
-        f"destination.{use_destination}.bucket_url": output_dir,
-    }
-
-
-def test_sync_configs_attrs_missing_as_expected(
+# sync settings behaviour: run_pipeline derives the destination from the settings
+def test_run_pipeline_missing_sync_attrs_resolve_cts_settings(
     settings_missing_sync_attrs: LoggerSettings | InputOutputSettings,
 ) -> None:
     """Sanity-check the fixture: confirm which attributes are genuinely absent."""
     assert hasattr(settings_missing_sync_attrs, OUTPUT_DIR) == isinstance(
         settings_missing_sync_attrs, InputOutputSettings
     )
-    assert not hasattr(settings_missing_sync_attrs, DEV_MODE)
     assert not hasattr(settings_missing_sync_attrs, USE_DESTINATION)
-
-
-def test_sync_configs_no_op_when_relevant_attrs_missing(
-    settings_missing_sync_attrs: LoggerSettings | InputOutputSettings,
-) -> None:
-    """sync_configs must not write any keys when the settings object lacks the attrs it needs.
-
-    This covers both the case where dev_mode/output/use_destination are all absent, and the case
-    where output_dir is present but use_destination is not (so the bucket_url key must still be skipped).
-    """
-    empty_dlt_config = {}
-    sync_configs(settings_missing_sync_attrs, empty_dlt_config)  # pyright: ignore[reportArgumentType]
-    assert empty_dlt_config == {}
-
-
-def test_sync_configs_no_op_with_mock_config_when_relevant_attrs_missing(
-    settings_missing_sync_attrs: LoggerSettings | InputOutputSettings,
-) -> None:
-    """As above, but verified via a MagicMock config to confirm __setitem__ is never even attempted."""
-    mock_cfg = MagicMock()
-    sync_configs(settings_missing_sync_attrs, mock_cfg)  # pyright: ignore[reportArgumentType]
-    mock_cfg.__setitem__.assert_not_called()
-
-
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-def test_sync_configs_sets_both_keys_from_a_de_novo_dlt_config(settings_cls: type[CtsSettings]) -> None:
-    """When dev_mode/output_dir/use_destination are all present, sync_configs sets exactly two keys."""
-    settings = settings_cls(dev_mode=True, output_dir="/some/output", use_destination=LOCAL_FS)  # pyright: ignore[reportCallIssue]
-    empty_dlt_config = {}
-    sync_configs(settings, empty_dlt_config)
-
-    assert empty_dlt_config == {
-        "normalize.data_writer.disable_compression": True,
-        "destination.local_fs.bucket_url": "/some/output",
-    }
 
 
 # tests for run_cli()
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-def test_run_cli_calls_settings_cls_with_dlt_config(
-    settings_cls: type[CtsSettings], dlt_config: dict[str, Any]
+def test_run_cli_calls_settings_cls_with_cli_args(
+    settings_cls: type[CtsSettings],
 ) -> None:
-    """Ensure run_cli instantiates the supplied settings class with dlt.config."""
+    """Ensure run_cli instantiates the supplied settings class via CliApp.run."""
     captured: list[CtsSettings] = []
 
     class _CaptureCls(settings_cls):  # type: ignore[valid-type]
         def __init__(self, **data: Any) -> None:  # noqa: ANN401
+            data.pop("_build_sources", None)
             super().__init__(**data)
-            assert data == {}
             captured.append(self)
 
     run_cli(_CaptureCls, MagicMock())
@@ -383,46 +230,65 @@ def test_run_cli_calls_settings_cls_with_dlt_config(
     assert len(captured) == 1
     captured_config = captured[0]
     assert isinstance(captured_config, settings_cls)
-    # The object passed to sync_configs must be a fully initialised instance
     for attr in settings_cls.model_fields:
         assert hasattr(captured_config, attr)
-    # no dlt_config override was supplied, so it falls back to the ambient dlt.config -- isolated
-    # for this test, but still the real dlt accessor, not a plain dict
-    assert captured_config.dlt_config is dlt.config
-    # prevent annoying pylance warning on the next assertion
-    assert captured_config.dlt_config is not None
-    assert (
-        captured_config.dlt_config["destination.local_fs.bucket_url"] == dlt_config["destination.local_fs.bucket_url"]
-    )
+
+
+@pytest.mark.parametrize("settings_cls", [CtsSettings])
+def test_run_cli_resolves_cts_settings_output_dir(
+    settings_cls: type[CtsSettings],
+    dlt_config: dict[str, Any],
+) -> None:
+    """run_cli resolves output_dir against the ambient dlt.config for CtsSettings instances."""
+    pipeline_fn_config: list[CtsSettings] = []
+
+    def pipeline_fn(settings: CtsSettings) -> LoadInfo | None:
+        pipeline_fn_config.append(settings)
+        return None
+
+    run_cli(settings_cls, pipeline_fn, {"input_dir": "/fake/input"})
+
+    settings = pipeline_fn_config[0]
+    assert settings.output_dir == dlt_config["destination.local_fs.bucket_url"]
 
 
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 def test_run_cli_function_calls_args(settings_cls: type[CtsSettings]) -> None:
     """Ensure run_cli instantiates the settings class and dispatches to pipeline_fn with the result."""
-    instantiated_cls = settings_cls()  # pyright: ignore[reportCallIssue]
-    pipeline_fn_mock = MagicMock()
-    settings_cls_mock = MagicMock(return_value=instantiated_cls)
+    pipeline_fn_config: list[CtsSettings] = []
 
-    run_cli(settings_cls_mock, pipeline_fn_mock)  # type: ignore[reportArgumentType]
+    def pipeline_fn(settings: CtsSettings) -> LoadInfo | None:
+        pipeline_fn_config.append(settings)
+        return None
 
-    settings_cls_mock.assert_called_once_with()
-    pipeline_fn_mock.assert_called_once_with(instantiated_cls)
+    if issubclass(settings_cls, InputOutputSettings):
+        settings_kwargs: dict[str, Any] = {"input_dir": "/fake/input"}
+    else:
+        settings_kwargs = {}
+
+    returned = run_cli(settings_cls, pipeline_fn, settings_kwargs)
+
+    assert returned is None
+    assert len(pipeline_fn_config) == 1
+    assert isinstance(pipeline_fn_config[0], settings_cls)
 
 
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize("pipeline_fn_result", [None, {"loads_ids": ["load-1"]}], ids=["none", "load_info"])
-def test_run_cli_returns_pipeline_fn_result_verbatim(
-    settings_cls: type[CtsSettings],
-    pipeline_fn_result: dict[str, Any] | None,
-) -> None:
-    """run_cli returns whatever pipeline_fn returns: load_info on success, None otherwise."""
-    instantiated_cls = settings_cls()  # pyright: ignore[reportCallIssue]
-    pipeline_fn = MagicMock(return_value=pipeline_fn_result)
-    settings_cls_mock = MagicMock(return_value=instantiated_cls)
+def test_run_cli_returns_pipeline_fn_result_verbatim(settings_cls: type[CtsSettings]) -> None:
+    """run_cli returns whatever pipeline_fn returns verbatim, for every settings class."""
+    sentinel = {"loads_ids": ["load-1"]}
 
-    returned = run_cli(settings_cls_mock, pipeline_fn)  # type: ignore[reportArgumentType]
+    def pipeline_fn(settings: CtsSettings) -> dict[str, Any]:  # noqa: ARG001
+        return sentinel
 
-    assert returned is pipeline_fn_result
+    if issubclass(settings_cls, InputOutputSettings):
+        settings_kwargs: dict[str, Any] = {"input_dir": "/fake/input"}
+    else:
+        settings_kwargs = {}
+
+    returned = run_cli(settings_cls, pipeline_fn, settings_kwargs)
+
+    assert returned is sentinel
 
 
 # error handling: SettingsError/ValidationError/ValueError
@@ -440,16 +306,16 @@ def test_run_cli_reraises_settings_error(
     ):
         run_cli(settings_cls, MagicMock())
 
-    log_records = caplog.records
-    assert log_records[-1].levelno == logging.ERROR
-    assert log_records[-1].getMessage() == "Error initialising config"
+    error_records = [record for record in caplog.records if record.levelno == logging.ERROR]
+    assert error_records
+    assert error_records[-1].getMessage() == "Error initialising config"
 
 
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+@pytest.mark.parametrize("settings_cls", [CtsSettings])
 @pytest.mark.parametrize(
     ("bad_dlt_config", "error", "err_msg"),
     [
-        (None, ValidationError, "dlt_config must be defined"),
+        (None, ValueError, "dlt config is None"),
         ({}, ValueError, "No valid destinations found in dlt configuration"),
         ({"destination": {}}, ValueError, "No valid destinations found in dlt configuration"),
     ],
@@ -459,19 +325,17 @@ def test_run_cli_reraises_validation_errors(
     bad_dlt_config: None | dict[str, Any],
     error: type[Exception],
     err_msg: str,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Ensure that errors in instantiating the configuration are re-raised.
+    """Ensure that errors in resolving the dlt config are re-raised.
+
+    Only CtsSettings instances are resolved against the dlt config, so the bad-config paths
+    apply to CtsSettings alone.
 
     See also the cts_defaults test ``test_cli_app_run_dlt_config_errors``.
     """
     isolation = dlt_config_unset() if bad_dlt_config is None else isolated_dlt_config(bad_dlt_config)
     with isolation, pytest.raises(error, match=err_msg):
         run_cli(settings_cls, MagicMock())
-
-    log_records = caplog.records
-    assert log_records[-1].levelno == logging.ERROR
-    assert log_records[-1].getMessage() == "Error initialising config"
 
 
 # error handling: unexpected Exception
@@ -488,9 +352,9 @@ def test_run_cli_reraises_unexpected_exception(
     ):
         run_cli(settings_cls, mock_pipeline_fn)
 
-    log_records = caplog.records
-    assert log_records[-1].levelno == logging.ERROR
-    assert log_records[-1].getMessage() == "Unexpected error setting up config"
+    error_records = [record for record in caplog.records if record.levelno == logging.ERROR]
+    assert error_records
+    assert error_records[-1].getMessage() == "Unexpected error setting up config"
 
     mock_pipeline_fn.assert_not_called()
 
@@ -519,72 +383,60 @@ def test_run_cli_pipeline_fn_not_called_on_settings_instantiation_error(
     mock_pipeline_fn.assert_not_called()
 
 
-# run_pipeline bootstrap: construct_env_var and sync_configs
-def test_run_pipeline_calls_construct_env_var_and_sync_configs(
-    dlt_test_settings: BatchedFileInputSettings, mock_dlt: MagicMock
-) -> None:
-    """run_pipeline calls construct_env_var() and sync_configs(settings, dlt.config)."""
-    with (
-        patch("cdm_data_loaders.pipelines.core.construct_env_var") as mock_env_var,
-        patch("cdm_data_loaders.pipelines.core.sync_configs") as mock_sync,
-    ):
-        run_pipeline(dlt_test_settings, MagicMock())
+# run_pipeline bootstrap: destination and dev_mode derivation
+def test_run_pipeline_builds_destination_from_settings(mock_dlt: MagicMock) -> None:
+    """run_pipeline builds dlt.destination from settings.use_destination and forwards it to dlt.pipeline."""
+    settings = make_cts_settings(
+        input_dir="/fake/input",
+        output_dir="/fake/output",
+        use_destination=S3,
+        use_output_dir_for_pipeline_metadata=False,
+        dlt_dev_mode=True,
+    )
+    resource = MagicMock()
 
-    mock_env_var.assert_called_once_with()
-    mock_sync.assert_called_once_with(dlt_test_settings, mock_dlt.config)
+    run_pipeline(settings, resource)
 
-
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-@pytest.mark.parametrize("dev_mode", [True, False])
-@pytest.mark.parametrize(("use_destination", "output_dir"), [(LOCAL_FS, "/some/path"), (S3, "s3://bucket/whatever")])
-def test_run_pipeline_dlt_config_updated_after_success(
-    dlt_config: dict[str, Any],
-    mock_dlt: MagicMock,
-    settings_cls: type[CtsSettings],
-    dev_mode: bool,
-    use_destination: str,
-    output_dir: str,
-) -> None:
-    """run_pipeline's sync_configs call changes the disable_compression and bucket_url values."""
-    original_dlt_config = deepcopy(dlt_config)
-    settings = settings_cls(dev_mode=dev_mode, output_dir=output_dir, use_destination=use_destination)  # pyright: ignore[reportCallIssue]
-
-    run_pipeline(settings, MagicMock())
-
+    mock_dlt.destination.assert_called_once_with(S3, bucket_url="/fake/output")
+    mock_dlt.pipeline.assert_called_once_with(
+        destination=mock_dlt.destination.return_value,
+        dev_mode=True,
+    )
     assert mock_dlt.pipeline.return_value.run.call_count == 2
-    assert dlt_config == {
-        **original_dlt_config,
-        "normalize.data_writer.disable_compression": dev_mode,
-        f"destination.{use_destination}.bucket_url": output_dir,
-    }
 
 
-def test_run_pipeline_uses_slack_env_var_if_set(
-    dlt_test_settings: BatchedFileInputSettings,
-    mock_send_slack_message: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(("use_destination", "destination_kwargs"), [(S3, {}), (LOCAL_FS, {"max_table_nesting": 0})])
+def test_run_pipeline_forwards_destination_kwargs(
+    mock_dlt: MagicMock, use_destination: str, destination_kwargs: dict
 ) -> None:
-    """RUNTIME__SLACK_INCOMING_HOOK built by construct_env_var reaches real dlt's runtime config."""
-    monkeypatch.setenv("VARIABLE_B", "BBB")
-    monkeypatch.setenv("VARIABLE_T", "TTT")
-    monkeypatch.setenv("CHAR_STR", "CCC")
+    """destination_kwargs are forwarded to the dlt.destination constructor."""
+    settings = make_cts_settings(
+        input_dir="/fake/input",
+        output_dir="/fake/output",
+        use_destination=use_destination,
+        use_output_dir_for_pipeline_metadata=False,
+    )
 
-    load_info = run_pipeline(dlt_test_settings, tiny_resource())
+    run_pipeline(settings, MagicMock(), destination_kwargs=dict(destination_kwargs))
 
-    expected = "https://hooks.slack.com/services/BBB/TTT/CCC/"
-    assert os.environ.get("RUNTIME__SLACK_INCOMING_HOOK") == expected
-    assert load_info is not None
-    assert not load_info.has_failed_jobs
-    mock_send_slack_message.assert_called_once_with(expected, "Pipeline completed successfully!", False)  # noqa: FBT003
+    mock_dlt.destination.assert_called_once_with(use_destination, bucket_url="/fake/output", **destination_kwargs)
+
+
+def test_run_pipeline_raises_on_unresolved_output_dir() -> None:
+    """run_pipeline raises ValueError when settings.output_dir has not been resolved."""
+    settings = make_cts_settings(input_dir="/fake/input", output_dir=None, use_destination=LOCAL_FS)
+
+    with pytest.raises(ValueError, match=r"settings\.output_dir is not set"):
+        run_pipeline(settings, MagicMock())
 
 
 def test_run_pipeline_no_slack_env_var_when_vars_missing(
-    dlt_test_settings: BatchedFileInputSettings,
-    mock_send_slack_message: MagicMock,
+    dlt_test_settings: CtsSettings,
+    slack_mock: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """RUNTIME__SLACK_INCOMING_HOOK is not set when source vars are absent; no slack alerts are sent."""
+    """No slack hook is configured; no slack alerts are sent."""
     for var in ("VARIABLE_B", "VARIABLE_T", "CHAR_STR", "RUNTIME__SLACK_INCOMING_HOOK"):
         monkeypatch.delenv(var, raising=False)
 
@@ -592,13 +444,12 @@ def test_run_pipeline_no_slack_env_var_when_vars_missing(
 
     assert load_info is not None
     assert not load_info.has_failed_jobs
-    assert "RUNTIME__SLACK_INCOMING_HOOK" not in os.environ
-    mock_send_slack_message.assert_not_called()
+    slack_mock.assert_not_called()
     assert f"No Slack alerts will be sent: {WEBHOOK_NOT_CONFIGURED}" in caplog.messages
 
 
 # run_pipeline tests
-def test_run_pipeline_minimal(dlt_test_settings: BatchedFileInputSettings) -> None:
+def test_run_pipeline_minimal(dlt_test_settings: CtsSettings) -> None:
     """Ensure a tiny pipeline loads its records through real dlt and returns load_info."""
     load_info = run_pipeline(dlt_test_settings, tiny_resource())
 
@@ -608,7 +459,7 @@ def test_run_pipeline_minimal(dlt_test_settings: BatchedFileInputSettings) -> No
 
 
 def test_run_pipeline_returns_none_on_pipeline_run_failure(
-    dlt_test_settings: BatchedFileInputSettings, caplog: pytest.LogCaptureFixture
+    dlt_test_settings: CtsSettings, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A resource that raises mid-extraction is caught: run_pipeline logs and returns None."""
     load_info = run_pipeline(dlt_test_settings, failing_resource())
@@ -622,32 +473,29 @@ def test_run_pipeline_returns_none_on_pipeline_run_failure(
 
 @pytest.mark.parametrize("slack_configured", [True, False])
 def test_run_pipeline_slack_configured(
-    dlt_test_settings: BatchedFileInputSettings,
-    mock_send_slack_message: MagicMock,
+    dlt_test_settings: CtsSettings,
+    slack_mock: MagicMock,
     slack_configured: bool,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A slack message is sent if the slack_incoming_hook runtime config value is available."""
     if slack_configured:
-        monkeypatch.setenv("VARIABLE_B", "BBB")
-        monkeypatch.setenv("VARIABLE_T", "TTT")
-        monkeypatch.setenv("CHAR_STR", "CCC")
+        monkeypatch.setenv("RUNTIME__SLACK_INCOMING_HOOK", SLACK_HOOK)
 
     load_info = run_pipeline(dlt_test_settings, tiny_resource())
 
     assert load_info is not None
     assert not load_info.has_failed_jobs
     if slack_configured:
-        expected = "https://hooks.slack.com/services/BBB/TTT/CCC/"
-        mock_send_slack_message.assert_called_once_with(
-            expected,
+        slack_mock.assert_called_once_with(
+            SLACK_HOOK,
             "Pipeline completed successfully!",
             False,  # noqa: FBT003
         )
         assert f"No Slack alerts will be sent: {WEBHOOK_NOT_CONFIGURED}" not in caplog.messages
     else:
-        mock_send_slack_message.assert_not_called()
+        slack_mock.assert_not_called()
         assert f"No Slack alerts will be sent: {WEBHOOK_NOT_CONFIGURED}" in caplog.messages
     assert caplog.records[-1].levelno == logging.INFO
     assert caplog.records[-1].getMessage().startswith("Work complete!")
@@ -655,17 +503,15 @@ def test_run_pipeline_slack_configured(
 
 @pytest.mark.parametrize("slack_configured", [True, False])
 def test_run_pipeline_slack_configured_on_failure(
-    dlt_test_settings: BatchedFileInputSettings,
-    mock_send_slack_message: MagicMock,
+    dlt_test_settings: CtsSettings,
+    slack_mock: MagicMock,
     slack_configured: bool,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The failure message is sent to slack if a hook is configured; nothing is sent otherwise."""
     if slack_configured:
-        monkeypatch.setenv("VARIABLE_B", "BBB")
-        monkeypatch.setenv("VARIABLE_T", "TTT")
-        monkeypatch.setenv("CHAR_STR", "CCC")
+        monkeypatch.setenv("RUNTIME__SLACK_INCOMING_HOOK", SLACK_HOOK)
 
     load_info = run_pipeline(dlt_test_settings, failing_resource())
 
@@ -675,16 +521,15 @@ def test_run_pipeline_slack_configured_on_failure(
     assert err_msg.startswith("Pipeline failed: ")
     assert "Oh crap!!" in err_msg
     if slack_configured:
-        expected = "https://hooks.slack.com/services/BBB/TTT/CCC/"
-        assert mock_send_slack_message.call_args.args[0] == expected
-        assert mock_send_slack_message.call_args.args[1].startswith("Pipeline failed: ")
-        assert "Oh crap!!" in mock_send_slack_message.call_args.args[1]
-        assert mock_send_slack_message.call_args.args[2] is False
+        assert slack_mock.call_args.args[0] == SLACK_HOOK
+        assert slack_mock.call_args.args[1].startswith("Pipeline failed: ")
+        assert "Oh crap!!" in slack_mock.call_args.args[1]
+        assert slack_mock.call_args.args[2] is False
     else:
-        mock_send_slack_message.assert_not_called()
+        slack_mock.assert_not_called()
 
 
-def test_run_pipeline_pipelines_dir_used_for_pipeline_metadata(dlt_test_settings: BatchedFileInputSettings) -> None:
+def test_run_pipeline_pipelines_dir_used_for_pipeline_metadata(dlt_test_settings: CtsSettings) -> None:
     """The pipeline metadata directory is the settings pipeline_dir, not the default ~/.dlt."""
     assert dlt_test_settings.pipeline_dir is not None
     load_info = run_pipeline(dlt_test_settings, tiny_resource())
@@ -695,16 +540,16 @@ def test_run_pipeline_pipelines_dir_used_for_pipeline_metadata(dlt_test_settings
     assert pipeline_state_files
 
 
-def test_run_pipeline_dev_mode_true_loads_into_fresh_dataset(dlt_test_settings: BatchedFileInputSettings) -> None:
+def test_run_pipeline_dev_mode_true_loads_into_fresh_dataset(dlt_test_settings: CtsSettings) -> None:
     """dev_mode=True is forwarded to dlt.pipeline(); the pipeline loads into a suffixed dataset."""
-    settings = make_batched_settings(
+    settings = make_cts_settings(
         input_dir=str(Path(dlt_test_settings.input_dir)),
         output_dir=str(Path(dlt_test_settings.output_dir)),
         use_destination=LOCAL_FS,
         use_output_dir_for_pipeline_metadata=True,
-        dev_mode=True,
+        dlt_dev_mode=True,
     )
-    assert settings.dev_mode is True
+    assert settings.dlt_dev_mode is True
 
     load_info = run_pipeline(settings, tiny_resource())
 
@@ -724,7 +569,7 @@ def test_run_pipeline_dev_mode_true_loads_into_fresh_dataset(dlt_test_settings: 
     ids=["minimal", "named", "jsonl-format"],
 )
 def test_run_pipeline_passes_kwargs_to_real_pipeline(
-    dlt_test_settings: BatchedFileInputSettings,
+    dlt_test_settings: CtsSettings,
     pipeline_kwargs: dict[str, Any],
     pipeline_run_kwargs: dict[str, Any],
 ) -> None:
@@ -745,7 +590,7 @@ def test_run_pipeline_passes_kwargs_to_real_pipeline(
 
 
 # load_info saved as part of the dataset
-def read_load_info_jsonl_rows(settings: BatchedFileInputSettings) -> list[dict[str, Any]]:
+def read_load_info_jsonl_rows(settings: CtsSettings) -> list[dict[str, Any]]:
     """Read every row of the load info table written to the settings output directory."""
     rows: list[dict[str, Any]] = []
     for jsonl_file in sorted(Path(settings.output_dir).glob(f"**/{LOAD_INFO_TABLE_NAME}/*.jsonl*")):
@@ -758,7 +603,7 @@ def read_load_info_jsonl_rows(settings: BatchedFileInputSettings) -> list[dict[s
     return rows
 
 
-def test_run_pipeline_saves_load_info_to_dataset(dlt_test_settings: BatchedFileInputSettings) -> None:
+def test_run_pipeline_saves_load_info_to_dataset(dlt_test_settings: CtsSettings) -> None:
     """The pipeline's load_info is saved as a table in the same dataset."""
     load_info = run_pipeline(dlt_test_settings, tiny_resource())
 
@@ -776,7 +621,7 @@ def test_run_pipeline_saves_load_info_to_dataset(dlt_test_settings: BatchedFileI
     assert set(row["pipeline"]) == {"pipeline_name"}
 
 
-def test_run_pipeline_load_info_saved_to_same_dataset(dlt_test_settings: BatchedFileInputSettings) -> None:
+def test_run_pipeline_load_info_saved_to_same_dataset(dlt_test_settings: CtsSettings) -> None:
     """The load info table lands in the same dataset directory as the resource tables."""
     load_info = run_pipeline(dlt_test_settings, tiny_resource())
 
@@ -788,7 +633,7 @@ def test_run_pipeline_load_info_saved_to_same_dataset(dlt_test_settings: Batched
     assert read_load_info_jsonl_rows(dlt_test_settings)
 
 
-def test_run_pipeline_load_info_flat_structure(dlt_test_settings: BatchedFileInputSettings) -> None:
+def test_run_pipeline_load_info_flat_structure(dlt_test_settings: CtsSettings) -> None:
     """max_table_nesting=0 keeps nested structures as json columns; no child tables."""
     load_info = run_pipeline(dlt_test_settings, tiny_resource())
 
@@ -804,7 +649,7 @@ def test_run_pipeline_load_info_flat_structure(dlt_test_settings: BatchedFileInp
         assert all(isinstance(item, dict) for item in row[nested])
 
 
-def read_tiny_load_ids(settings: BatchedFileInputSettings) -> set[str]:
+def read_tiny_load_ids(settings: CtsSettings) -> set[str]:
     """The _dlt_load_id values of the entity rows written to the settings output directory."""
     load_ids: set[str] = set()
     for jsonl_file in sorted(Path(settings.output_dir).glob(f"**/{TINY_TABLE_NAME}/*.jsonl*")):
@@ -817,7 +662,7 @@ def read_tiny_load_ids(settings: BatchedFileInputSettings) -> set[str]:
     return load_ids
 
 
-def test_run_pipeline_load_info_runs_accumulate(dlt_test_settings: BatchedFileInputSettings) -> None:
+def test_run_pipeline_load_info_runs_accumulate(dlt_test_settings: CtsSettings) -> None:
     """Each pipeline run appends its own load_info row; earlier rows are preserved."""
     first = run_pipeline(dlt_test_settings, tiny_resource())
     assert first is not None
@@ -833,14 +678,14 @@ def test_run_pipeline_load_info_runs_accumulate(dlt_test_settings: BatchedFileIn
     assert saved_load_ids == {(load_id,) for load_id in read_tiny_load_ids(dlt_test_settings)}
 
 
-def test_run_pipeline_load_info_in_dev_mode(dlt_test_settings: BatchedFileInputSettings) -> None:
+def test_run_pipeline_load_info_in_dev_mode(dlt_test_settings: CtsSettings) -> None:
     """dev_mode runs save the load_info into the same suffixed dataset as the resource data."""
-    settings = make_batched_settings(
+    settings = make_cts_settings(
         input_dir=str(Path(dlt_test_settings.input_dir)),
         output_dir=str(Path(dlt_test_settings.output_dir)),
         use_destination=LOCAL_FS,
         use_output_dir_for_pipeline_metadata=True,
-        dev_mode=True,
+        dlt_dev_mode=True,
     )
     load_info = run_pipeline(settings, tiny_resource())
 
@@ -853,7 +698,7 @@ def test_run_pipeline_load_info_in_dev_mode(dlt_test_settings: BatchedFileInputS
     assert rows[0]["dataset_name"] == load_info.dataset_name
 
 
-def test_run_pipeline_load_info_named_pipeline_and_dataset(dlt_test_settings: BatchedFileInputSettings) -> None:
+def test_run_pipeline_load_info_named_pipeline_and_dataset(dlt_test_settings: CtsSettings) -> None:
     """A named pipeline/dataset save lands in the named dataset with a load_info row."""
     load_info = run_pipeline(
         dlt_test_settings,
@@ -871,7 +716,7 @@ def test_run_pipeline_load_info_named_pipeline_and_dataset(dlt_test_settings: Ba
 
 
 def test_run_pipeline_load_info_row_references_entity_load(
-    dlt_test_settings: BatchedFileInputSettings,
+    dlt_test_settings: CtsSettings,
 ) -> None:
     """The saved row's loads_ids points at the entity data load, not the save load."""
     load_info = run_pipeline(dlt_test_settings, tiny_resource())
@@ -886,7 +731,7 @@ def test_run_pipeline_load_info_row_references_entity_load(
 
 
 def test_run_pipeline_load_info_returns_original_import_result(
-    dlt_test_settings: BatchedFileInputSettings,
+    dlt_test_settings: CtsSettings,
 ) -> None:
     """run_pipeline returns the original resource load, not the load_info save load."""
     load_info = run_pipeline(dlt_test_settings, tiny_resource())
@@ -901,7 +746,7 @@ def test_run_pipeline_load_info_returns_original_import_result(
 
 
 def test_run_pipeline_load_info_save_resource_error_returns_none(
-    dlt_test_settings: BatchedFileInputSettings,
+    dlt_test_settings: CtsSettings,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """An error saving the load_info is caught: run_pipeline logs and returns None."""
@@ -930,7 +775,7 @@ def test_run_pipeline_load_info_save_resource_error_returns_none(
 
 
 def test_run_pipeline_load_info_save_pipeline_run_error_returns_none(
-    dlt_test_settings: BatchedFileInputSettings,
+    dlt_test_settings: CtsSettings,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A failure in the save pipeline's run() is caught: run_pipeline logs and returns None."""
@@ -953,7 +798,7 @@ def test_run_pipeline_load_info_save_pipeline_run_error_returns_none(
 
 
 def test_run_pipeline_load_info_save_run_mock_shape(
-    dlt_test_settings: BatchedFileInputSettings,
+    dlt_test_settings: CtsSettings,
     mock_dlt: MagicMock,
 ) -> None:
     """The save run reuses the same pipeline object and passes a named flat resource."""

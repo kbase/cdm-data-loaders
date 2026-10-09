@@ -17,7 +17,7 @@ from lxml.etree import Element, XMLSyntaxError, tostring
 import cdm_data_loaders.readers.xml as xml_module
 import cdm_data_loaders.utils.buffer as buffer_module
 from cdm_data_loaders.core.fields import BUFFER_SIZE, DEFAULT_XML_FILE_GLOB, DEFAULTS, LOG_INTERVAL
-from cdm_data_loaders.core.settings import BatchedFileInputSettings, CtsSettings
+from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.readers.xml import (
     DEFAULT_XMLTODICT_ARGS,

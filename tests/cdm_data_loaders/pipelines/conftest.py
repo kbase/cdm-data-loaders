@@ -31,6 +31,21 @@ DLT_CONFIG: Final[dict[str, Any]] = {
 }
 
 
+def duckdb_pipeline(tmp_path: Path, pipeline_name: str, dataset_name: str, db_name: str | None = None) -> dlt.Pipeline:
+    """Return a dlt pipeline with a duckdb destination in tmp_path.
+
+    The database file defaults to a name derived from the pipeline name so that the DuckDB
+    catalog differs from the dataset schema; equal names trigger a DuckDB binder error.
+    """
+    db_file = f"{db_name or pipeline_name}_db.duckdb"
+    return dlt.pipeline(
+        pipeline_name=pipeline_name,
+        dataset_name=dataset_name,
+        destination=dlt.destinations.duckdb(str(tmp_path / db_file)),
+        pipelines_dir=str(tmp_path / "pipelines"),
+    )
+
+
 @pytest.fixture(autouse=True)
 def clean_env() -> Iterator[None]:
     """Remove env vars that core reads or writes, and restore the whole environment afterwards."""

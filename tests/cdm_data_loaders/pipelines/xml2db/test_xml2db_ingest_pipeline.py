@@ -96,7 +96,7 @@ def fake_settings(
         "log_config_file": str(log_config_file),
         "input_dir": str(input_dir),
         "output_dir": str(output_dir),
-        "dev_mode": False,
+        "dlt_dev_mode": False,
         "use_destination": "local_fs",
         "use_output_dir_for_pipeline_metadata": False,
         "xsd_file": str(xsd_file),

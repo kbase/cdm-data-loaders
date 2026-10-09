@@ -13,7 +13,7 @@ from dlt.extract.items import DataItemWithMeta
 from lxml.etree import Element, iterparse, tostring
 
 from cdm_data_loaders.core.fields import DEFAULT_XML_FILE_GLOB
-from cdm_data_loaders.core.settings import BatchedFileInputSettings, CtsSettings
+from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.core import filesystem_resource
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.utils.batcher import get_file_batches
@@ -161,14 +161,14 @@ def process_xml_file(
 
 
 def process_xml_file_batches(
-    settings: BatchedFileInputSettings,
+    settings: CtsSettings,
     xml_tag: str,
     parse_fn: Callable,
 ) -> Generator[DataItemWithMeta, Any]:
     """Generate a list of XML files to process using the NumericFileSequenceBatcher.
 
-    :param settings: pipeline config with input_dir and start_at
-    :type settings: BatchedFileInputSettings
+    :param settings: pipeline config with input_dir
+    :type settings: CtsSettings
     :param xml_tag: XML element tag to stream
     :type xml_tag: str
     :param parse_fn: function for parsing the XML

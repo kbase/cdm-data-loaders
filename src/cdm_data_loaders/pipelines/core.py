@@ -1,13 +1,11 @@
 """Common reusable pipeline elements."""
 
-import os
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from collections.abc import Callable
 from logging import Logger, getLogger
 from typing import Any, Final, TypeVar
 
 import dlt
-from dlt.common.destination.reference import AnyDestination
+from dlt.common.destination.reference import TDestinationReferenceArg
 from dlt.common.pipeline import LoadInfo
 from dlt.common.runtime.slack import send_slack_message
 from dlt.extract import DltResource
@@ -131,10 +129,10 @@ def run_cli(
     return pipeline_fn(settings)
 
 
-def run_pipeline(  # noqa: PLR0913
+def run_pipeline(  # noqa: PLR0913, PLR0917
     settings: CtsSettings,
     resource: DltResource | list[DltResource],
-    destination: AnyDestination | None = None,
+    destination: TDestinationReferenceArg = None,
     destination_kwargs: dict[str, Any] | None = None,
     pipeline_kwargs: dict[str, Any] | None = None,
     pipeline_run_kwargs: dict[str, Any] | None = None,
@@ -147,7 +145,7 @@ def run_pipeline(  # noqa: PLR0913
     :type resource: DltResource | list[DltResource]
     :param destination: the dlt destination to use. If given, the caller is responsible for making
         its location consistent with settings.output_dir.
-    :type destination: Destination | None
+    :type destination: TDestinationReferenceArg
     :param destination_kwargs: keyword arguments for the dlt destination
     :type destination_kwargs: dict[str, Any] | None
     :param pipeline_kwargs: keyword arguments for the dlt pipeline
@@ -172,7 +170,11 @@ def run_pipeline(  # noqa: PLR0913
         pipeline_kwargs["dev_mode"] = settings.dlt_dev_mode
 
     if destination is None:
-        destination = dlt.destination(settings.use_destination, **(destination_kwargs or {}))
+        # the settings output_dir is resolved against the config by run_cli / resolve_cts_settings,
+        # so it takes precedence over the destination block's default bucket_url
+        destination = dlt.destination(
+            settings.use_destination, bucket_url=settings.output_dir, **(destination_kwargs or {})
+        )
 
     pipeline = dlt.pipeline(destination=destination, **pipeline_kwargs)
 
