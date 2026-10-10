@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict
 
 from pydantic import AwareDatetime, Base64Str, BaseModel, ConfigDict, Field
 
@@ -2209,7 +2208,7 @@ class V2TaxonomyFilteredSubtreeResponseEdgesEntry(BaseModel):
         extra="allow",
     )
     __annotations__ = {
-        "__pydantic_extra__": Dict[str, V2TaxonomyFilteredSubtreeResponseEdge],
+        "__pydantic_extra__": dict[str, V2TaxonomyFilteredSubtreeResponseEdge],
     }
     default: V2TaxonomyFilteredSubtreeResponseEdge | None = None
 

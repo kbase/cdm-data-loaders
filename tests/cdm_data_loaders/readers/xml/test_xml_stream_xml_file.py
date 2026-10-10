@@ -1,6 +1,5 @@
 """Tests for `stream_xml_file` from cdm_data_loaders.readers.xml."""
 
-import gzip
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -9,14 +8,7 @@ import pytest
 from lxml.etree import XMLSyntaxError
 
 from cdm_data_loaders.readers.xml import stream_xml_file
-
-SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
-<library>
-    <book id="1"><title>The Shining</title></book>
-    <book id="2"><title>The Stand</title></book>
-    <book id="3"><title>The Tommyknockers</title></book>
-</library>
-"""
+from tests.xml_samples import SIMPLE_LIBRARY_XML
 
 MIXED_TAGS_XML = """<?xml version="1.0"?>
 <catalog>
@@ -35,23 +27,6 @@ MISMATCHED_TAG_XML = '<library><book id="1"><title>Broken</title></library>'
 
 EXPECTED_SIMPLE_TAGS_IDS = [("book", "1"), ("book", "2"), ("book", "3")]
 EXPECTED_MIXED_TAGS_IDS = [("book", "1"), ("book", "2")]
-
-
-@pytest.fixture
-def xml_path_factory(tmp_path: Path) -> Callable[..., Path]:
-    """Return a factory that writes XML content to a real file, optionally gzip-compressed."""
-
-    def _make(content: str, *, gzip_compress: bool = False, filename: str = "data.xml") -> Path:
-        if gzip_compress:
-            path = tmp_path / f"{filename}.gz"
-            with gzip.open(path, "wb") as f:
-                f.write(content.encode("utf-8"))
-        else:
-            path = tmp_path / filename
-            path.write_text(content, encoding="utf-8")
-        return path
-
-    return _make
 
 
 @pytest.mark.parametrize("as_path", [True, False])

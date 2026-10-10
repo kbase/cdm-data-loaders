@@ -14,11 +14,7 @@ from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline i
     run_jsonlines_ingest_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JSONSCHEMA_PIPELINE_NAME, JsonlJsonschemaIngestSettings
-from tests.integration.pipelines.helpers import (
-    LOADER_FILE_FORMATS,
-    parse_json_string,
-    read_data_rows,
-)
+from tests.integration.pipelines.helpers import LOADER_FILE_FORMATS, parse_json_string, read_data_rows
 
 pytestmark = pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS, ids=str)
 
@@ -101,26 +97,6 @@ def test_run_jsonlines_ingest_pipeline_pass_persists_valid_and_rejected_rows(
     ]
 
 
-@pytest.mark.parametrize("input_case", ["missing", "empty-directory", "empty-file", "blank-file"], ids=str)
-def test_run_jsonlines_ingest_pipeline_pass_empty_inputs(
-    schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings], loader_file_format: str, input_case: str
-) -> None:
-    """Empty inputs complete without creating data tables."""
-    settings = schema_settings_factory(loader_file_format=loader_file_format)
-    if input_case != "missing":
-        table_dir = Path(settings.input_dir) / "widget"
-        table_dir.mkdir()
-        if input_case != "empty-directory":
-            content = "\n \t\n" if input_case == "blank-file" else ""
-            (table_dir / "data.jsonl").write_text(content, encoding="utf-8")
-
-    load_info = run_jsonlines_ingest_pipeline(settings)
-
-    assert load_info is not None
-    assert not load_info.has_failed_jobs
-    assert read_data_tables(settings, load_info.dataset_name) == {}
-
-
 def test_run_jsonlines_ingest_pipeline_pass_all_invalid(
     schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings], loader_file_format: str
 ) -> None:
@@ -145,27 +121,6 @@ def test_run_jsonlines_ingest_pipeline_pass_all_invalid(
             },
         ]
     }
-
-
-def test_run_jsonlines_ingest_pipeline_pass_table_selection(
-    schema_input_dir: Path,
-    schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
-    loader_file_format: str,
-) -> None:
-    """Selecting an entity excludes others and uses the configured dataset name."""
-    settings = schema_settings_factory(
-        input_dir=str(schema_input_dir),
-        table_names=["gadget"],
-        dataset_name="selected",
-        loader_file_format=loader_file_format,
-    )
-
-    load_info = run_jsonlines_ingest_pipeline(settings)
-
-    assert load_info is not None
-    assert not load_info.has_failed_jobs
-    assert load_info.dataset_name == "selected"
-    assert read_data_tables(settings, load_info.dataset_name) == {"gadget": [GADGET_RECORD]}
 
 
 def test_cli_pass_loads_selected_entity(

@@ -14,9 +14,7 @@ DOWNLOAD_URL = "https://example.com/file.txt"
 
 @pytest.mark.asyncio
 async def test_max_concurrency_is_enforced(tmp_path: Path) -> None:
-    """
-    No more than max_concurrency downloads may run at once.
-    """
+    """No more than max_concurrency downloads may run at once."""
     max_concurrency = 2
     active = 0
     peak = 0
@@ -61,9 +59,7 @@ async def test_max_concurrency_is_enforced(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_no_concurrency_limit_when_none(tmp_path: Path) -> None:
-    """
-    When max_concurrency is None, all downloads may run concurrently.
-    """
+    """When max_concurrency is None, all downloads may run concurrently."""
     active = 0
     peak = 0
     lock = asyncio.Lock()

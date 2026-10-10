@@ -1,5 +1,4 @@
-"""
-UniProt XML Parser Core.
+"""UniProt XML Parser Core.
 
 Contains the core logic for parsing a UniProt XML file that can be successfully validated against the UniProt XSD.
 """

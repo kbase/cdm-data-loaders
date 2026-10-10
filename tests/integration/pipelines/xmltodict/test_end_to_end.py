@@ -13,8 +13,9 @@ from cdm_data_loaders.pipelines.xmltodict.pipeline import (
     run_xml_ingest_pipeline,
 )
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
-from tests.integration.pipelines.conftest import DEFAULT_DLT_TABLES, SIMPLE_LIBRARY_XML
+from tests.integration.pipelines.conftest import DEFAULT_DLT_TABLES
 from tests.integration.pipelines.helpers import LOADER_FILE_FORMATS
+from tests.xml_samples import SIMPLE_LIBRARY_XML
 
 
 def check_book_list_results(load_info: LoadInfo | None, table_name: str | None = None) -> DataFrame:

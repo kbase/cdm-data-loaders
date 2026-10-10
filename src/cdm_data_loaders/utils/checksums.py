@@ -92,8 +92,7 @@ def _final_digest(hasher: Hasher) -> str:
 
 
 class HashingReader:
-    """
-    Wraps a file-like object, computing a hash of everything read through it.
+    """Wraps a file-like object, computing a hash of everything read through it.
 
     Transparently proxies attribute access (e.g. `close`) to the wrapped
     object so it remains compatible with s3transfer's fileobj introspection.

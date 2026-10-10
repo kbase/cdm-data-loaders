@@ -17,17 +17,7 @@ import dlt
 import pytest
 from frozendict import frozendict
 from moto import mock_aws
-from pyspark.conf import SparkConf
-from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.types import (
-    BooleanType,
-    DateType,
-    FloatType,
-    IntegerType,
-    StringType,
-    StructField,
-    StructType,
-)
+from pyspark.sql import SparkSession
 from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
@@ -35,7 +25,7 @@ from cdm_data_loaders.core.fields import LOCAL_FS, S3
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
 
-pytest_plugins = ["tests.jsonschema_fixtures"]
+pytest_plugins = ["tests.jsonlines_fixtures", "tests.jsonschema_fixtures"]
 
 SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 
@@ -141,15 +131,14 @@ def _isolated_cli_and_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
 
 @pytest.fixture
 def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
-    """Generate a spark session with spark.sql.warehouse.dir set to the pytest temporary directory."""
+    """Generate a local spark session with spark.sql.warehouse.dir set to the pytest temporary directory."""
     logger = logging.getLogger(__name__)
     try:
-        from berdl_notebook_utils.setup_spark_session import generate_spark_conf  # pyright: ignore[reportMissingImports]  # noqa: I001, PLC0415
+        from berdl_notebook_utils.setup_spark_session import get_spark_session  # pyright: ignore[reportMissingImports]  # noqa: I001, PLC0415
     except ModuleNotFoundError:
         logger.exception("berdl_notebook_utils not available: cannot create a spark session")
         raise
 
-    config = generate_spark_conf("test_delta_app", local=True)
     test_config = {
         "spark.sql.shuffle.partitions": 5,
         "spark.default.parallelism": 9,
@@ -162,12 +151,12 @@ def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
         # Extra configs to optimize Delta internal operations on tests
         "spark.databricks.delta.snapshotPartitions": 2,
         "delta.log.cacheSize": 3,
+        SAVE_DIR: str(tmp_path),
     }
-    config.update(test_config)
-    config[SAVE_DIR] = str(tmp_path)
-    spark_conf = SparkConf().setAll(list(config.items()))
+    # local=True builds the session without any BERDL environment (no get_settings(),
+    # no Spark Connect server); the override applies the test-tuning configs after.
     logger.info("starting spark session...")
-    spark = SparkSession.builder.config(conf=spark_conf).getOrCreate()
+    spark = get_spark_session("test_app", local=True, override=test_config)
     save_dir = spark.conf.get(SAVE_DIR).removeprefix("file:")  # pyright: ignore[reportOptionalMemberAccess]
     if save_dir != str(tmp_path):
         logger.error("spark dir: %s; save dir: %s", tmp_path, save_dir)
@@ -182,6 +171,20 @@ def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
 def test_data_dir() -> Path:
     """Test data directory."""
     return TEST_DATA_DIR
+
+
+@pytest.fixture
+def write_gzip_file() -> Callable[[Path, str, str], Path]:
+    """Return a function that writes text content to a gzip-compressed file."""
+
+    def _write(directory: Path, filename: str, content: str) -> Path:
+        directory.mkdir(parents=True, exist_ok=True)
+        file_path = directory / filename
+        with gzip.open(file_path, "wb") as f:
+            f.write(content.encode("utf-8"))
+        return file_path
+
+    return _write
 
 
 @pytest.fixture(scope="session")
@@ -264,154 +267,6 @@ def dlt_destination_config(tmp_path: Path) -> Generator[str]:
         }
     ):
         yield LOCAL_FS
-
-
-@pytest.fixture
-def write_gzip_file() -> Callable[[Path, str, str], Path]:
-    """Return a function that writes text content to a gzip-compressed file."""
-
-    def _write(directory: Path, filename: str, content: str) -> Path:
-        directory.mkdir(parents=True, exist_ok=True)
-        file_path = directory / filename
-        with gzip.open(file_path, "wb") as f:
-            f.write(content.encode("utf-8"))
-        return file_path
-
-    return _write
-
-
-@pytest.fixture
-def empty_df_schema() -> list[StructField]:
-    """List of fields corresponding to the empty dataframe."""
-    return [
-        StructField("name", StringType(), nullable=True),
-        StructField("id", IntegerType(), nullable=False),
-    ]
-
-
-@pytest.fixture
-def empty_df(spark: SparkSession, empty_df_schema: list[StructField]) -> Generator[DataFrame, Any]:
-    """Empty dataframe for testing usage."""
-    df = spark.createDataFrame([], schema=StructType(empty_df_schema))
-    yield df
-    assert df.schema == StructType(empty_df_schema)
-
-
-# Various CSV permutations for testing
-VALID = "valid_csv"
-MISSING_REQUIRED = "invalid_csv_missing_required"
-TYPE_MISMATCH = "invalid_csv_type_mismatch"
-TOO_FEW_COLS = "invalid_csv_too_few_cols"
-TOO_MANY_COLS = "invalid_csv_too_many_cols"
-ALL_LINES = "all_lines"
-
-
-@pytest.fixture
-def csv_schema() -> list[StructField]:
-    """List of fields for parsing the various CSV snippets."""
-    return [
-        StructField("col1", IntegerType(), nullable=False),
-        StructField("col2", DateType(), nullable=False),
-        StructField("col3", FloatType(), nullable=False),
-        StructField("col4", BooleanType(), nullable=False),
-        StructField("col5", StringType(), nullable=False),
-    ]
-
-
-@pytest.fixture(scope="session")
-def valid_csv(test_data_dir: Path) -> Path:
-    """Valid CSV data.
-
-    1,20250301,1.2345,true,EcoCyc:EG10986-MONOMER
-    2,20250201,0.2,false,MetaCyc:EG10986-MONOMER
-    3,20250801,23,True,4261555
-    4,00010101,.1234,False,col5
-
-    """
-    return test_data_dir / "dsv" / "valid.csv"
-
-
-@pytest.fixture(scope="session")
-def invalid_csv_missing_required(test_data_dir: Path) -> Path:
-    """CSV data with required fields missing.
-
-    # correct number of cols, but some cols are empty
-    1,,,,col5
-    # missing leading cols
-    ,,2.345,True,col5
-    # missing trailing cols
-    3,20250531,23.45,,
-    # all missing
-    ,,,,
-    """
-    return test_data_dir / "dsv" / "missing_required.csv"
-
-
-@pytest.fixture
-def invalid_csv_missing_required_annots() -> list[list[str]]:
-    """Generate the expected error annotations for the lines in invalid_csv_missing_required.
-
-    :return: list of list of error strings
-    :rtype: list[list[str]]
-    """
-    valid_invalid_fields = [[1, 0, 0, 0, 1], [0, 0, 1, 1, 1], [1, 1, 1, 0, 0], [0, 0, 0, 0, 0]]
-    return [[f"missing_required: col{n + 1}" for n in range(5) if not row[n]] for row in valid_invalid_fields]
-
-
-@pytest.fixture(scope="session")
-def invalid_csv_type_mismatch(test_data_dir: Path) -> Path:
-    """CSV data with incorrect data types.
-
-    # Y, N, Y, N, Y
-    1,2,3,4,5
-    # N, N, Y, N, Y
-    1.234,2.3456,3.45,4.5,5
-    # N, N, N, Y, Y
-    true,false,true,false,true
-    # Y, Y, N, N, Y
-    00200202,00200202,00200202,00200202,00200202
-    """
-    return test_data_dir / "dsv" / "type_mismatch.csv"
-
-
-@pytest.fixture(scope="session")
-def invalid_csv_too_few_cols(test_data_dir: Path) -> Path:
-    """CSV data containing rows with too few columns.
-
-    # too few cols
-    1
-    2,20250502,0.2345
-    3,,23.56,False
-    ,,,
-    """
-    return test_data_dir / "dsv" / "too_few_cols.csv"
-
-
-@pytest.fixture(scope="session")
-def invalid_csv_too_many_cols(test_data_dir: Path) -> Path:
-    """CSV data containing rows with too many columns.
-
-    # too many cols - all have 6 cols
-    ,,,,,
-    2,20250710,col3,True,,col6
-    # empty trailing
-    3,20250101,,,,
-    # empty leading
-    ,,,,,col6
-    """
-    return test_data_dir / "dsv" / "too_many_cols.csv"
-
-
-@pytest.fixture(scope="session")
-def all_lines(test_data_dir: Path) -> Path:
-    """All the CSV lines in a single fixture!"""
-    return test_data_dir / "dsv" / "all_lines.csv"
-
-
-@pytest.fixture(scope="session")
-def all_lines_tsv(test_data_dir: Path) -> Path:
-    """All the CSV lines in a single fixture!"""
-    return test_data_dir / "dsv" / "all_lines.tsv"
 
 
 """S3 Client mocks"""

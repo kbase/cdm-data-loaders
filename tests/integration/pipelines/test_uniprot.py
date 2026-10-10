@@ -6,7 +6,7 @@ per-table counts below are derived from those fixtures.
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from collections.abc import Callable
 
 import dlt
 import pytest
@@ -129,9 +129,16 @@ def test_integration_cli_uniprot_pipeline_output_validated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Exercise the real ``cli()`` wiring end-to-end against a DuckDB destination."""
-    monkeypatch.setattr(uniprot_module, "UniProtSettings", MagicMock(return_value=duckdb_uniprot_settings))
-
     captured: dict[str, Any] = {}
+
+    def fake_run_cli(
+        settings_cls: type[UniProtSettings],
+        pipeline_fn: Callable[..., Any],
+        settings_kwargs: dict[str, Any] | None = None,
+    ) -> Any:
+        """Replacement for core.run_cli that dispatches to pipeline_fn with the fixture settings."""
+        assert settings_cls is UniProtSettings
+        return pipeline_fn(duckdb_uniprot_settings)
 
     def fake_run_pipeline(
         *,
@@ -146,11 +153,10 @@ def test_integration_cli_uniprot_pipeline_output_validated(
         captured["load_info"] = pipeline.run(resource)
         captured["pipeline"] = pipeline
 
+    monkeypatch.setattr(uniprot_module, "run_cli", fake_run_cli)
     monkeypatch.setattr(uniprot_module, "run_pipeline", fake_run_pipeline)
 
     cli()
-
-    uniprot_module.UniProtSettings.assert_called_once_with()
 
     load_info = captured["load_info"]
     pipeline = captured["pipeline"]
