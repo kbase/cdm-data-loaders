@@ -1,29 +1,18 @@
-from collections.abc import Callable
 from typing import Any
-from unittest.mock import MagicMock, patch
 
 import pytest
 from frozendict import frozendict
-from pydantic import ValidationError
-from pydantic_settings import CliApp
 
-from cdm_data_loaders.parsers.uniprot.uniref import ENTRY_XML_TAG
-from cdm_data_loaders.pipelines import uniref as uniref_module
 from cdm_data_loaders.pipelines.core import resolve_cts_settings
 from cdm_data_loaders.pipelines.uniref import (
     UNIREF_VARIANTS,
     VARIANT,
     UnirefSettings,
-    cli,
-    parse_uniref,
-    run_uniref_pipeline,
 )
 from tests.cdm_data_loaders.core.conftest import (
     TEST_CTS_SETTINGS,
     TEST_CTS_SETTINGS_RECONCILED,
-    check_settings,
 )
-from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes, make_cli_arg
 
 TEST_DEFAULT_UNIREF_VARIANT = "50"
 
