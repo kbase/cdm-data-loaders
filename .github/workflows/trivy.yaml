@@ -35,14 +35,14 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout code
-              uses: actions/checkout@v6
+              uses: actions/checkout@v7
 
             - name: Build an image from Dockerfile
               run: |
                   docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
 
             - name: Run Trivy vulnerability scanner
-              uses: aquasecurity/trivy-action@7b7aa264d83dc58691451798b4d117d53d21edfe
+              uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
               with:
                   image-ref: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
                   format: "template"
