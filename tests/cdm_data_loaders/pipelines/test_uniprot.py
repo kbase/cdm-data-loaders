@@ -1,6 +1,7 @@
 """Tests for the UniProt DLT pipeline."""
 
 from collections.abc import Callable
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -8,6 +9,7 @@ from frozendict import frozendict
 
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import ENTRY_XML_TAG
 from cdm_data_loaders.pipelines import uniprot_kb as uniprot_module
+from cdm_data_loaders.pipelines.core import resolve_cts_settings
 from cdm_data_loaders.pipelines.uniprot_kb import (
     UNIPROT_LOG_INTERVAL,
     UniProtSettings,
@@ -16,26 +18,24 @@ from cdm_data_loaders.pipelines.uniprot_kb import (
     run_uniprot_pipeline,
 )
 from tests.cdm_data_loaders.core.conftest import (
-    TEST_BATCH_FILE_SETTINGS,
-    TEST_BATCH_FILE_SETTINGS_RECONCILED,
+    TEST_CTS_SETTINGS,
+    TEST_CTS_SETTINGS_RECONCILED,
     check_settings,
-    make_settings_autofill_config,
 )
-from tests.cdm_data_loaders.pipelines.conftest import TEST_LOG_CONFIG_FILE
 from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes
 
 
 @pytest.fixture
-def test_settings() -> UniProtSettings:
-    """Provide a minimal valid UniProtSettings object."""
-    return make_settings_autofill_config(UniProtSettings)  # type: ignore[reportReturnType]
+def test_settings(dlt_config: dict[str, Any]) -> UniProtSettings:
+    """Provide a minimal valid UniProtSettings object, with output_dir resolved against the test config."""
+    return resolve_cts_settings(UniProtSettings(), dlt_config)
 
 
 TEST_SETTINGS = frozendict(
-    {**TEST_BATCH_FILE_SETTINGS, "log_interval": UNIPROT_LOG_INTERVAL},
+    {**TEST_CTS_SETTINGS, "log_interval": UNIPROT_LOG_INTERVAL},
 )
 
-TEST_SETTINGS_RECONCILED = frozendict({**TEST_BATCH_FILE_SETTINGS_RECONCILED, "log_interval": UNIPROT_LOG_INTERVAL})
+TEST_SETTINGS_RECONCILED = frozendict({**TEST_CTS_SETTINGS_RECONCILED, "log_interval": UNIPROT_LOG_INTERVAL})
 
 
 def test_uniprot_settings_all_params_set() -> None:
@@ -43,7 +43,7 @@ def test_uniprot_settings_all_params_set() -> None:
 
     Note that TEST_SETTINGS includes a value for pipeline_dir.
     """
-    s = make_settings_autofill_config(UniProtSettings, TEST_SETTINGS)  # type: ignore[reportReturnType]
+    s = UniProtSettings(**TEST_SETTINGS)  # type: ignore[reportReturnType]
     check_settings(s, TEST_SETTINGS_RECONCILED)
 
 
@@ -69,22 +69,6 @@ def test_cli_passes_settings_class_to_run_cli() -> None:
     mock_run_cli.assert_called_once()
     assert mock_run_cli.call_args[0] == (UniProtSettings, run_uniprot_pipeline)
     assert mock_run_cli.call_args.kwargs == {}
-
-
-def test_cli_calls_run_uniprot_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure that cli() calls run_uniprot_pipeline with the test_settings."""
-    mock_settings_instance = MagicMock()
-    mock_settings_instance.log_config_file = str(TEST_LOG_CONFIG_FILE)
-    mock_settings_cls = MagicMock(return_value=mock_settings_instance)
-    mock_run_uniprot_pipeline = MagicMock()
-
-    monkeypatch.setattr(uniprot_module, "UniProtSettings", mock_settings_cls)
-    monkeypatch.setattr(uniprot_module, "run_uniprot_pipeline", mock_run_uniprot_pipeline)
-
-    cli()
-
-    mock_settings_cls.assert_called_once_with()
-    mock_run_uniprot_pipeline.assert_called_once_with(mock_settings_instance)
 
 
 # Tests for running the pipeline itself
@@ -119,7 +103,7 @@ def test_run_uniprot_pipeline_sets_core_run_pipeline_args_correctly(
     # the return value of parse_uniprot(test_settings) is what gets passed to pipeline.run
     expected_resource = mock_parse_uniprot.return_value
 
-    mock_dlt.destination.assert_called_once_with(test_settings.use_destination)
+    mock_dlt.destination.assert_called_once_with(test_settings.use_destination, bucket_url=test_settings.output_dir)
     mock_dlt.pipeline.assert_called_once_with(
         destination=mock_dlt.destination.return_value,
         pipeline_name="uniprot_kb",
@@ -133,14 +117,15 @@ def test_run_uniprot_pipeline_sets_core_run_pipeline_args_correctly(
 
 
 def test_parse_uniprot_resource(test_settings: UniProtSettings) -> None:
-    """Ensure that parse_uniprot calls process_xml_file_batches with the namespaced UniProt XML tag."""
-    with patch.object(uniprot_module, "process_xml_file_batches") as mock_stream:
-        mock_stream.return_value = iter([])
-        list(parse_uniprot(test_settings))
+    """Ensure that parse_uniprot calls build_xml_file_resource with the namespaced UniProt XML tag."""
+    with patch.object(uniprot_module, "build_xml_file_resource") as mock_build:
+        resource = parse_uniprot(test_settings)
 
-    assert mock_stream.call_count == 1
-    kwargs = mock_stream.call_args.kwargs
-    assert kwargs.keys() == {"settings", "xml_tag", "parse_fn"}
+    assert resource is mock_build.return_value
+    assert mock_build.call_count == 1
+    kwargs = mock_build.call_args.kwargs
+    assert kwargs.keys() == {"settings", "xml_tag", "parse_fn", "resource_name"}
     assert kwargs["xml_tag"] == ENTRY_XML_TAG
     assert kwargs["settings"] == test_settings
+    assert kwargs["resource_name"] == "parse_uniprot"
     assert isinstance(kwargs["parse_fn"], Callable)

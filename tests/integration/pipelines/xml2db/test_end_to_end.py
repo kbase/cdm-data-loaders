@@ -10,7 +10,8 @@ from pandas import DataFrame
 
 from cdm_data_loaders.pipelines.xml2db.pipeline import cli, run_xml2db_ingest_pipeline
 from cdm_data_loaders.pipelines.xml2db.settings import PIPELINE_NAME, Xml2DbSettings
-from tests.integration.pipelines.conftest import DEFAULT_DLT_TABLES, SIMPLE_LIBRARY_XML
+from tests.integration.pipelines.conftest import DEFAULT_DLT_TABLES
+from tests.xml_samples import SIMPLE_LIBRARY_XML
 
 EXPECTED_BOOK_COUNT = 3
 EXPECTED_LIBRARY_ROOT_COUNT_TWO_FILES = 2

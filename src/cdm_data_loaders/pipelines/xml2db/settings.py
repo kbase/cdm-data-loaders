@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Annotated, Final
 
 from pydantic import Field, PositiveInt, field_validator
-from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import (
     DEFAULT_XML_FILE_GLOB,
@@ -16,7 +15,7 @@ from cdm_data_loaders.core.fields import (
     LogInterval,
     NonEmptyStr,
 )
-from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
+from cdm_data_loaders.core.settings import CLI_SHORTCUTS, CtsSettings, default_settings_with_shortcuts
 
 PIPELINE_NAME: Final[str] = "xml2db_ingest"
 DEFAULT_XML2DB_SHORT_NAME: Final[str] = "xml2db"
@@ -44,12 +43,11 @@ class Xml2DbSettings(CtsSettings):
     `compact_reused_tables` cleans this up after the fact, regardless of chunking.
     """
 
-    model_config = SettingsConfigDict(
-        **DEFAULT_SETTINGS_CONFIG_DICT,
+    model_config = default_settings_with_shortcuts(
         cli_prog_name=PIPELINE_NAME,
         cli_shortcuts={
             **CLI_SHORTCUTS,
-            FILE_GLOB.replace("_", "-"): "g",
+            FILE_GLOB: "g",
         },
     )
 

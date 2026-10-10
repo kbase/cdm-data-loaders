@@ -8,14 +8,15 @@ from typing import Annotated, Any, Final, Self
 
 from pydantic import BaseModel, DirectoryPath, Field, model_validator
 
-from cdm_data_loaders.core.fields import DEFAULT_PIPELINE_BATCH_SIZE, MIN_START_AT
-from cdm_data_loaders.core.settings import BatchedFileInputSettings
+from cdm_data_loaders.core.fields import MIN_START_AT
+from cdm_data_loaders.core.settings import CtsSettings
 
 # Matches files like: name_00001.ext or name_00001.ext.gz
 FILE_NAME_REGEX: re.Pattern[str] = re.compile(r"^\w+_(\d+)(\.\w+)+$")
 
 MIN_BATCH_SIZE: Final[int] = 1
 MIN_END_AT: Final[int] = 0
+DEFAULT_PIPELINE_BATCH_SIZE: Final[int] = 50
 
 logger: Logger = getLogger(__name__)
 
@@ -97,23 +98,15 @@ class NumericFileSequenceBatcher(BaseModel):
         return batch
 
 
-def get_file_batches(settings: BatchedFileInputSettings) -> Generator[list[Path], Any]:
+def get_file_batches(settings: CtsSettings) -> Generator[list[Path], Any]:
     """Yield successive batches of files to process, driven by a NumericFileSequenceBatcher.
 
-    :param settings: pipeline config with input_dir and start_at
-    :type  settings: BatchedFileInputSettings
+    :param settings: pipeline config with input_dir
+    :type  settings: CtsSettings
     :yield: batches of file paths
     :rtype: Generator[list[Path], Any]
     """
-    batch_params: dict[str, Any] = {}
-    if settings.start_at:
-        batch_params["start_at"] = settings.start_at
-
-    batcher = NumericFileSequenceBatcher(
-        directory=settings.input_dir,  # pyright: ignore[reportArgumentType]
-        batch_size=DEFAULT_PIPELINE_BATCH_SIZE,
-        **batch_params,
-    )
+    batcher = NumericFileSequenceBatcher(directory=settings.input_dir, batch_size=DEFAULT_PIPELINE_BATCH_SIZE)
     while files := batcher.get_batch():
         logger.debug("Files to be processed:%s", "".join("- " + str(f) + "\n" for f in files))
         yield files

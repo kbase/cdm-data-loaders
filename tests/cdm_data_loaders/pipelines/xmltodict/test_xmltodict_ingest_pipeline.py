@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import dlt
 import pytest
+from dlt.common.pipeline import LoadInfo
 from dlt.extract import DltResource
 
 import cdm_data_loaders.pipelines.xmltodict.pipeline as xmltodict_ingest_module
@@ -18,14 +19,7 @@ from cdm_data_loaders.pipelines.xmltodict.pipeline import (
     run_xml_ingest_pipeline,
 )
 from cdm_data_loaders.pipelines.xmltodict.settings import PIPELINE_NAME, XmlToDictSettings
-from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
-
-SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
-<library>
-    <book id="1"><title>The Shining</title></book>
-    <book id="2"><title>The Stand</title></book>
-</library>
-"""
+from tests.xml_samples import TWO_BOOK_LIBRARY_XML
 
 
 @pytest.mark.parametrize("loader_file_format", list(LoaderFileFormatEnum), ids=str)
@@ -91,7 +85,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     """
     input_dir = tmp_path / "cli_input"
     input_dir.mkdir()
-    (input_dir / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+    (input_dir / "library.xml").write_text(TWO_BOOK_LIBRARY_XML, encoding="utf-8")
     output_dir = tmp_path / "cli_output"
     output_dir.mkdir()
     log_config_file = tmp_path / "logging.json"
@@ -121,28 +115,30 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     # unique pipeline name: the duckdb database file is derived from it, so
     # repeated runs of the suite do not see rows from previous runs
     pipeline_name = f"test_xml_cli_pipeline_{uuid4().hex}"
-    captured: dict[str, Any] = {}
 
     def fake_run_pipeline(
         *,
-        resource: Any,  # noqa: ANN401
+        resource: DltResource,
         pipeline_kwargs: dict[str, Any],
-        **_: Any,  # noqa: ANN401
-    ) -> None:
+        **_: dict[str, Any],
+    ) -> LoadInfo | None:
         assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "cli_dataset"}
-
-        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
-        captured["load_info"] = pipeline.run(resource)
+        pipeline = dlt.pipeline(
+            pipeline_name=pipeline_name,
+            destination=dlt.destinations.duckdb(f"duckdb:///{output_dir!s}/{pipeline_name}.db"),
+            dataset_name="cli_dataset",
+            pipelines_dir=str(tmp_path / "pipelines"),
+        )
+        return pipeline.run(resource)
 
     with patch.object(xmltodict_ingest_module, "run_pipeline", fake_run_pipeline):
-        cli()
+        load_info = cli()
 
-    load_info = captured["load_info"]
+    assert load_info is not None
     assert not load_info.has_failed_jobs
 
-    pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
     with (
-        pipeline.sql_client() as client,
+        load_info.pipeline.sql_client() as client,
         client.execute_query("SELECT COUNT(*) FROM book") as cur,
     ):
         (row_count,) = cur.fetchone()
@@ -156,7 +152,7 @@ def test_cli_pass_writes_rows_for_matching_xml_files(
     """cli() with xml files in the input dir loads one row per matching element."""
     input_dir = tmp_path / "xml_input"
     input_dir.mkdir()
-    (input_dir / "data.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+    (input_dir / "data.xml").write_text(TWO_BOOK_LIBRARY_XML, encoding="utf-8")
 
     output_dir = tmp_path / "cli_output"
     output_dir.mkdir()
@@ -191,16 +187,21 @@ def test_cli_pass_writes_rows_for_matching_xml_files(
         *,
         resource: Any,  # noqa: ANN401
         **_: Any,  # noqa: ANN401
-    ) -> None:
-        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
-        captured["load_info"] = pipeline.run(resource)
-        captured["pipeline"] = pipeline
+    ) -> LoadInfo | None:
+        pipeline = dlt.pipeline(
+            pipeline_name=pipeline_name,
+            destination=dlt.destinations.duckdb(f"duckdb:///{output_dir!s}/{pipeline_name}.db"),
+            dataset_name="cli_dataset",
+            pipelines_dir=str(tmp_path / "pipelines"),
+        )
+        return pipeline.run(resource)
 
     with patch.object(xmltodict_ingest_module, "run_pipeline", fake_run_pipeline):
-        cli()
+        load_info = cli()
 
-    assert not captured["load_info"].has_failed_jobs
-    pipeline = captured["pipeline"]
+    assert load_info is not None
+    assert not load_info.has_failed_jobs
+    pipeline = load_info.pipeline
     with (
         pipeline.sql_client() as client,
         client.execute_query("SELECT COUNT(*) FROM book") as cur,

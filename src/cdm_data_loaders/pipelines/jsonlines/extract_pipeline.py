@@ -34,7 +34,9 @@ def jsonl_reader(items: Iterator[FileItemDict], settings: JsonlExtractSettings) 
     :yield: one dict per line
     :rtype: Generator[TDataItems, Any, Any]
     """
-    yield from route_jsonl_lines(items, settings.buffer_size, lambda _file_item: settings.table_name)
+    yield from route_jsonl_lines(
+        items, buffer_size=settings.buffer_size, table_name_of=lambda _file_item: settings.table_name
+    )
 
 
 def run_jsonlines_ingest_pipeline(settings: JsonlExtractSettings) -> LoadInfo | None:

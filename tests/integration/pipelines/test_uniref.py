@@ -6,7 +6,7 @@ derived from that fixture. Every test runs once per valid UniRef variant.
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from collections.abc import Callable
 
 import dlt
 import pytest
@@ -132,9 +132,16 @@ def test_integration_cli_uniref_pipeline_output_validated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Exercise the real ``cli()`` wiring end-to-end against a DuckDB destination."""
-    monkeypatch.setattr(uniref_module, "UnirefSettings", MagicMock(return_value=duckdb_uniref_settings))
-
     captured: dict[str, Any] = {}
+
+    def fake_run_cli(
+        settings_cls: type[UnirefSettings],
+        pipeline_fn: Callable[..., Any],
+        settings_kwargs: dict[str, Any] | None = None,
+    ) -> Any:
+        """Replacement for core.run_cli that dispatches to pipeline_fn with the fixture settings."""
+        assert settings_cls is UnirefSettings
+        return pipeline_fn(duckdb_uniref_settings)
 
     def fake_run_pipeline(
         *,
@@ -145,8 +152,8 @@ def test_integration_cli_uniref_pipeline_output_validated(
         """Replacement for core.run_pipeline that runs the resource through DuckDB."""
         assert settings is duckdb_uniref_settings
         assert pipeline_kwargs == {
-            "pipeline_name": f"uniref_{duckdb_uniref_settings.variant}",
-            "dataset_name": "uniprot_kb",
+            "pipeline_name": "uniprot_kb",
+            "dataset_name": f"uniref_{duckdb_uniref_settings.variant}",
         }
         pipeline = duckdb_pipeline(
             tmp_path, f"test_uniref_cli_pipeline_{duckdb_uniref_settings.variant}", "test_uniref_cli"
@@ -154,12 +161,10 @@ def test_integration_cli_uniref_pipeline_output_validated(
         captured["load_info"] = pipeline.run(resource)
         captured["pipeline"] = pipeline
 
+    monkeypatch.setattr(uniref_module, "run_cli", fake_run_cli)
     monkeypatch.setattr(uniref_module, "run_pipeline", fake_run_pipeline)
 
     cli()
-
-    # UnirefSettings was constructed with the dlt config coming from core
-    uniref_module.UnirefSettings.assert_called_once_with()
 
     load_info = captured["load_info"]
     pipeline = captured["pipeline"]

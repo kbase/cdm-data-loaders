@@ -1,5 +1,4 @@
-"""
-PDB holdings file parser.
+"""PDB holdings file parser.
 
 Holdings json files apply one of two schemas:
 

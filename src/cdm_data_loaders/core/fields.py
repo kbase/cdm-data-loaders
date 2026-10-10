@@ -1,13 +1,10 @@
 """Common defaults for running pipelines on the KBase CTS."""
 
 from enum import StrEnum
-from typing import Annotated, Any, Final
+from typing import Annotated, Final
 
-import dlt
-import dlt.common.configuration.accessors
 from frozendict import frozendict
 from pydantic import Field, PositiveInt, StringConstraints
-from pydantic_settings import CLI_SUPPRESS
 
 INPUT_MOUNT: Final[str] = "/input_dir"
 OUTPUT_MOUNT: Final[str] = "/output_dir"
@@ -28,19 +25,16 @@ class LoaderFileFormatEnum(StrEnum):
     PARQUET = PARQUET
 
 
-# destinations
+# destination config block names
 LOCAL_FS: Final[str] = "local_fs"
 S3: Final[str] = "s3"
 
-
-VALID_DESTINATIONS: Final[list[str]] = [LOCAL_FS, S3]
-
-# Common fields
+# field names
 BATCH_SIZE: Final[str] = "batch_size"
 BUFFER_SIZE: Final[str] = "buffer_size"
 DATASET_NAME: Final[str] = "dataset_name"
-DEV_MODE: Final[str] = "dev_mode"
-DLT_CONFIG: Final[str] = "dlt_config"
+DLT_DEV_MODE: Final[str] = "dlt_dev_mode"
+DISABLE_OUTPUT_COMPRESSION: Final[str] = "disable_output_compression"
 FILE_GLOB: Final[str] = "file_glob"
 INPUT_DIR: Final[str] = "input_dir"
 LOADER_FILE_FORMAT: Final[str] = "loader_file_format"
@@ -49,7 +43,7 @@ LOG_INTERVAL: Final[str] = "log_interval"
 MAX_TABLE_NESTING: Final[str] = "max_table_nesting"
 OUTPUT_DIR: Final[str] = "output_dir"
 PRESERVE_TABLE_NESTING: Final[str] = "preserve_table_nesting"
-START_AT: Final[str] = "start_at"
+SAVE_RAW_RESPONSES: Final[str] = "save_raw_responses"
 TABLE_NAME: Final[str] = "table_name"
 USE_DESTINATION: Final[str] = "use_destination"
 USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: Final[str] = "use_output_dir_for_pipeline_metadata"
@@ -62,27 +56,24 @@ DEFAULTS = frozendict(
     {
         BATCH_SIZE: 1000,
         BUFFER_SIZE: 100,
-        DEV_MODE: False,
+        DLT_DEV_MODE: False,
+        DISABLE_OUTPUT_COMPRESSION: False,
         FILE_GLOB: "*",
         INPUT_DIR: INPUT_MOUNT,
-        LOADER_FILE_FORMAT: PARQUET,
+        LOADER_FILE_FORMAT: LoaderFileFormatEnum.PARQUET,
         LOG_CONFIG_FILE: None,
         LOG_INTERVAL: 1000,
         MAX_TABLE_NESTING: 0,
-        # N.b. this gets replaced by destination.local_fs.bucket_url in CtsSettings and derivatives
-        OUTPUT_DIR: "",
+        # None: use the bucket_url of the use_destination config block
+        OUTPUT_DIR: None,
         PRESERVE_TABLE_NESTING: False,
-        START_AT: MIN_START_AT,
+        SAVE_RAW_RESPONSES: False,
         USE_DESTINATION: LOCAL_FS,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: False,
     }
 )
 
-DEFAULT_PIPELINE_BATCH_SIZE: Final[int] = 50
-
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
-
-# Common fields
 
 BatchSize = Annotated[
     PositiveInt,
@@ -99,25 +90,19 @@ BufferSize = Annotated[
     ),
 ]
 DatasetName = Annotated[NonEmptyStr, Field(description="The name of the dataset being produced")]
-DevMode = Annotated[
+DltDevMode = Annotated[
     bool,
     Field(
-        default=DEFAULTS[DEV_MODE],
-        description="Whether to run the pipeline in dev mode, which saves raw API responses to disk and disables compression for easier debugging.",
+        default=DEFAULTS[DLT_DEV_MODE],
+        description="Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run.",
     ),
 ]
-# this should really just be _Accessor but leaving the dict version in for ease of testing
-# suppressed from CLI help/argparse output as it is not a value a user should ever set directly.
-DltConfig = Annotated[
-    dlt.common.configuration.accessors._Accessor | dict[str, Any] | None,  # noqa: SLF001
+DisableOutputCompression = Annotated[
+    bool,
     Field(
-        default_factory=lambda: dlt.config,
-        description="DLT configuration for the pipeline.",
-        # exclude from model_dump()
-        exclude=True,
-        repr=False,
+        default=DEFAULTS[DISABLE_OUTPUT_COMPRESSION],
+        description="Disables output compression for the pipeline. Output files are compressed by default; setting this to False turns off compression.",
     ),
-    CLI_SUPPRESS,
 ]
 FileGlob = Annotated[str, Field(default=DEFAULTS[FILE_GLOB], description="File glob for input files")]
 InputDir = Annotated[
@@ -131,7 +116,7 @@ LoaderFileFormat = Annotated[
     LoaderFileFormatEnum,
     Field(
         default=DEFAULTS[LOADER_FILE_FORMAT],
-        description=f"Format to save the output to the destination as. Choices: {[member.value for member in LoaderFileFormatEnum.__members__.values()]}",
+        description=f"Format of the output files. Choices: {[member.value for member in LoaderFileFormatEnum]}",
     ),
 ]
 LogConfigFile = Annotated[
@@ -145,7 +130,7 @@ LogInterval = Annotated[
     PositiveInt,
     Field(
         default=DEFAULTS[LOG_INTERVAL],
-        description="How often (in number of processed entries) to emit a progress log message. Must be a positive integer.",
+        description="How often (in number of processed entries) to emit a progress log message.",
     ),
 ]
 MaxTableNesting = Annotated[
@@ -153,14 +138,14 @@ MaxTableNesting = Annotated[
     Field(
         default=DEFAULTS[MAX_TABLE_NESTING],
         description="Maximum level of nesting of output datasets. For infinite nesting, set to 0.",
-        gt=-1,
+        ge=0,
     ),
 ]
 OutputDir = Annotated[
-    str,
+    NonEmptyStr | None,
     Field(
         default=DEFAULTS[OUTPUT_DIR],
-        description="Location to save imported data to, if different from the default supplied by the destination config",
+        description="Location to save imported data to. Defaults to the bucket_url of the destination chosen by use_destination.",
     ),
 ]
 PreserveTableNesting = Annotated[
@@ -170,11 +155,11 @@ PreserveTableNesting = Annotated[
         description="Whether or not nested data should be flattened out into separate tables",
     ),
 ]
-StartAt = Annotated[
-    PositiveInt,
+SaveRawResponses = Annotated[
+    bool,
     Field(
-        default=DEFAULTS[START_AT],
-        description="File to start import at",
+        default=DEFAULTS[SAVE_RAW_RESPONSES],
+        description="Whether or not to save the raw responses from the API to the output directory.",
     ),
 ]
 TableName = Annotated[str, Field(description="The name of the table to export parsed data to")]
@@ -182,13 +167,13 @@ UseDestination = Annotated[
     NonEmptyStr,
     Field(
         default=DEFAULTS[USE_DESTINATION],
-        description=f"DLT destination configuration to use for data output. Data to be saved to s3 should use the destination 's3'; to save data locally, use the destination 'local_fs'. The output directory can be specified using the 'output_dir' field. Choices: {VALID_DESTINATIONS}",
+        description="Name of the dlt destination config block to use (credentials, endpoint, and default bucket_url). Must match a [destination.<name>] section in the dlt config. The output directory can be further specified using the 'output_dir' field.",
     ),
 ]
 UseOutputDirForPipelineMetadata = Annotated[
     bool,
     Field(
         default=DEFAULTS[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA],
-        description="If true, use the output directory for pipeline metadata. Note: pipeline metadata cannot be stored in an S3 bucket, so this option should only be used when the destination is 'local_fs'.",
+        description="Store pipeline metadata in `<output_dir>/.dlt_conf`. output_dir must be on the local filesystem.",
     ),
 ]
