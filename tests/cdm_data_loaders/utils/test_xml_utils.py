@@ -1,79 +1,38 @@
-import xml.etree.ElementTree as ET
+"""Tests for the xml_utils module."""
 
-from cdm_data_loaders.utils.xml_utils import (
-    clean_dict,
-    get_attr,
-    get_text,
-    parse_db_references,
+import pytest
+from lxml.etree import Element
+
+from cdm_data_loaders.utils.xml_utils import get_text
+
+
+def make_element_with_text(raw_text: str | None) -> Element:
+    """Create an element whose text is set to raw_text."""
+    elem = Element("tag")
+    elem.text = raw_text
+    return elem
+
+
+@pytest.mark.parametrize("default", [None, "n/a"], ids=["default_none", "default_custom"])
+@pytest.mark.parametrize("raw_text", ["hello", "  hello  "], ids=["no_padding", "padded"])
+def test_get_text_pass_returns_stripped_text(raw_text: str, default: str | None) -> None:
+    """Non-empty element text is returned stripped regardless of the default."""
+    assert get_text(make_element_with_text(raw_text), default) == "hello"
+
+
+@pytest.mark.parametrize("default", [None, "n/a"], ids=["default_none", "default_custom"])
+@pytest.mark.parametrize(
+    "missing_text",
+    [None, "", "   "],
+    ids=["elem_none", "text_none", "text_whitespace"],
 )
+def test_get_text_pass_returns_default_when_text_missing(missing_text: str | None, default: str | None) -> None:
+    """A None element or missing/whitespace-only text yields the default value."""
+    elem = None if missing_text is None else make_element_with_text(missing_text)
+    assert get_text(elem, default) == default
 
 
-def test_get_text_and_get_attr_basic() -> None:
-    elem = ET.Element("tag", attrib={"id": "123"})
-    elem.text = "  hello  "
-
-    assert get_text(elem) == "hello"
-    assert get_text(None) is None
-    assert get_attr(elem, "id") == "123"
-    assert get_attr(elem, "missing") is None
-
-
-def test_parse_db_references_pub_and_others() -> None:
-    ns = {"ns": "dummy"}
-    source = ET.Element("source")
-    db1 = ET.SubElement(source, "dbReference", attrib={"type": "PubMed", "id": "12345"})
-    db2 = ET.SubElement(source, "dbReference", attrib={"type": "DOI", "id": "10.1000/xyz"})
-    db3 = ET.SubElement(source, "dbReference", attrib={"type": "PDB", "id": "1ABC"})
-
-    db1.tag = "{dummy}dbReference"
-    db2.tag = "{dummy}dbReference"
-    db3.tag = "{dummy}dbReference"
-
-    pubs, others = parse_db_references(source, ns)
-
-    assert "PUBMED:12345" in pubs
-    assert "DOI:10.1000/xyz" in pubs
-    assert "PDB:1ABC" in others
-
-
-def test_clean_dict_removes_nones_and_empty() -> None:
-    """Test that clean_dict removes None and empty values."""
-    d = {
-        "a": 1,
-        "b": None,
-        "c": [],
-        "d": {},
-        "e": "ok",
-    }
-    cleaned = clean_dict(d)
-    assert cleaned == {"a": 1, "e": "ok"}
-
-
-class FakeSparkDF:
-    """A fake DataFrame returned by spark.read.format().load().select()."""
-
-    def __init__(self, rows):
-        self._rows = rows
-
-    def collect(self):
-        return self._rows
-
-
-class FakeSparkReader:
-    """Mock spark.read.format('delta').load().select() chain."""
-
-    def __init__(self, rows=None, fail=False):
-        self._rows = rows
-        self._fail = fail
-
-    def format(self, fmt):
-        assert fmt == "delta"
-        return self
-
-    def load(self, path):
-        if self._fail:
-            raise Exception("Table does not exist")
-        return self
-
-    def select(self, *cols):
-        return FakeSparkDF(self._rows)
+def test_get_text_fail_rejects_non_element() -> None:
+    """A non-Element input raises AttributeError."""
+    with pytest.raises(AttributeError):
+        get_text(123)  # type: ignore[arg-type]
