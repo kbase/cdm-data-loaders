@@ -18,7 +18,7 @@ def make_item(
     source_file: str = "file.jsonl",
     line_no: int = 1,
 ) -> dict[str, Any]:
-    """Build a line record matching read_jsonl_pages' output shape."""
+    """Build a line record matching stream_jsonl_lines' output shape."""
     return {
         "record": record,
         "raw_record": raw_record,

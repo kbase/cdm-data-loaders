@@ -6,8 +6,10 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from pydantic_settings import CliApp
 
 from cdm_data_loaders.core.fields import DEFAULTS, S3
+from cdm_data_loaders.pipelines.core import resolve_cts_settings
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 
 # All schema-driven tests below use tests/data/xsd/uniref_like.xsd, which is already exercised
@@ -89,29 +91,32 @@ def test_xmltodict_ingest_settings_fail_non_positive_log_interval(
 def test_xmltodict_ingest_settings_fail_local_destination_with_s3_output_dir(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
-    """use_destination='local_fs' with an s3:// output_dir raises ValidationError.
+    """A local_fs destination with an s3:// output_dir raises ValueError at resolution.
 
-    This check comes from CtsSettings. It is tested here because a
-    regression would silently break where this pipeline writes its output.
+    The check lives in resolve_output_dir and runs when run_cli resolves the
+    settings, so constructing them still succeeds.
     """
-    with pytest.raises(ValidationError, match="Mismatch between output location and use_destination"):
-        settings_factory(output_dir="s3://some-bucket/path")
+    settings = settings_factory(output_dir="s3://some-bucket/path", use_destination="local_fs")
+    with pytest.raises(ValueError, match="uses protocol 's3', but destination 'local_fs' is configured for 'file'"):
+        resolve_cts_settings(settings, {"destination": {"local_fs": {"bucket_url": "/out"}}})
 
 
 def test_xmltodict_ingest_settings_fail_local_destination_with_s3_flag(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
-    """use_destination='s3' with a local output_dir raises ValidationError."""
-    with pytest.raises(ValidationError, match="Mismatch between output location and use_destination"):
-        settings_factory(use_destination=S3)
+    """An s3 destination with a local output_dir raises ValueError at resolution."""
+    settings = settings_factory(output_dir="/local/out", use_destination=S3)
+    with pytest.raises(ValueError, match="uses protocol 'file', but destination 's3' is configured for 's3'"):
+        resolve_cts_settings(settings, {"destination": {"s3": {"bucket_url": "s3://bucket/prefix"}}})
 
 
 def test_xmltodict_ingest_settings_pass_unknown_use_destination_rejected(
     settings_factory: Callable[..., XmlToDictSettings],
 ) -> None:
-    """use_destination not present in the dlt config raises ValidationError."""
-    with pytest.raises(ValidationError, match="use_destination must be one of"):
-        settings_factory(use_destination="not_a_destination")
+    """use_destination not present in the dlt config raises ValueError at resolution."""
+    settings = settings_factory(use_destination="not_a_destination")
+    with pytest.raises(ValueError, match="use_destination must be one of"):
+        resolve_cts_settings(settings, {"destination": {"local_fs": {"bucket_url": "/out"}}})
 
 
 def test_xmltodict_ingest_settings_pass_xmltodict_args_empty_without_xsd_file(
@@ -140,7 +145,6 @@ def test_xmltodict_ingest_settings_pass_xmltodict_args_is_cached(
     """xmltodict_args is a cached_property: repeated access returns the same dict, not a rebuild."""
     xsd_file = _copy_xsd_fixture(test_data_dir, tmp_path / "input", UNIREF_LIKE_XSD)
     settings = settings_factory(xsd_file=xsd_file)
-    # FIXME: what is this shit?
     assert settings.xmltodict_args is settings.xmltodict_args
 
 
@@ -227,16 +231,13 @@ def test_xmltodict_ingest_settings_pass_xml_tag_shortcut(tmp_path: Path, monkeyp
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    argv = [
-        "xmltodict_ingest",
+    common = [
         "--input-dir",
         str(input_dir),
         "--output-dir",
         str(output_dir),
         "--log-config-file",
         str(log_config_file),
-        "-g",
-        "*.xml.gz",
         "--dataset-name",
         "cli_dataset",
         "--table-name",
@@ -244,8 +245,8 @@ def test_xmltodict_ingest_settings_pass_xml_tag_shortcut(tmp_path: Path, monkeyp
         "--xml-tag",
         "entry",
     ]
-    monkeypatch.setattr("sys.argv", argv)
 
-    settings = XmlToDictSettings()  # pyright: ignore[reportCallIssue]
-    assert settings.file_glob == "*.xml.gz"
-    assert settings.xml_tag == "entry"
+    for glob_arg in (["--file-glob", "*.xml.gz"], ["-g", "*.xml.gz"]):
+        settings = CliApp.run(XmlToDictSettings, cli_args=[*common, *glob_arg])
+        assert settings.file_glob == "*.xml.gz"
+        assert settings.xml_tag == "entry"

@@ -12,7 +12,7 @@ from dlt.common.typing import TDataItems
 from xml2db import DataModel, load_config
 
 from cdm_data_loaders.core.fields import LOCAL_FS
-from cdm_data_loaders.pipelines.core import filesystem_source, run_cli, run_pipeline
+from cdm_data_loaders.pipelines.core import filesystem_resource, run_cli, run_pipeline
 from cdm_data_loaders.pipelines.xml2db.compaction import compact_reused_tables
 from cdm_data_loaders.pipelines.xml2db.settings import PIPELINE_NAME, Xml2DbSettings
 from cdm_data_loaders.readers.xml2db_doc import build_xml2db_model, process_xml_file_with_xml2db
@@ -52,7 +52,7 @@ def run_xml2db_ingest_pipeline(settings: Xml2DbSettings) -> LoadInfo | None:
 
     reader = dlt.transformer(_read_items, name="xml2db_reader", parallelized=True)
 
-    files = filesystem_source(bucket_url=settings.input_dir, file_glob=settings.file_glob)
+    files = filesystem_resource(bucket_url=settings.input_dir, file_glob=settings.file_glob)
 
     xml2db_resource: DltResource = files | reader(settings, model)
 

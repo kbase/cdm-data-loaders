@@ -35,7 +35,7 @@ MINIMAL_SETTINGS_KWARGS: dict[str, object] = {
     "loader_file_format": "parquet",
     "table_name": "my_table",
     "log_config_file": None,
-    "dev_mode": False,
+    "dlt_dev_mode": False,
     "use_destination": "local_fs",
     "use_output_dir_for_pipeline_metadata": False,
 }

@@ -27,7 +27,11 @@ from pydantic import Field, StringConstraints, computed_field, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import LOCAL_FS, S3
-from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
+from cdm_data_loaders.core.settings import (
+    CLI_SHORTCUTS,
+    CtsSettings,
+    default_settings_with_shortcuts,
+)
 from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
@@ -60,8 +64,7 @@ REQUIRED_ATB_FIELDNAMES = {"project", "filename", "url", "md5"}
 class AtbSettings(CtsSettings):
     """Configuration for running the AllTheBacteria import pipeline."""
 
-    model_config = SettingsConfigDict(
-        **DEFAULT_SETTINGS_CONFIG_DICT,
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name="all_the_bacteria",
         cli_shortcuts={VERSION: "v", **CLI_SHORTCUTS},
     )

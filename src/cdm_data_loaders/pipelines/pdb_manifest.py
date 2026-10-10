@@ -90,9 +90,9 @@ class PdbManfestSettings(CtsSettings):
 
 
 def run_manifest_generation(config: PdbManfestSettings) -> None:
-    """Main CTS entry point for PDB manifest generation.
+    """Run manifest generation for PDB.
 
-    "param config: validated pipeline settings
+    :param config: validated pipeline settings
     """
     config.output_path.mkdir(parents=True, exist_ok=True)
     snapshot: dict[str, PDBRecord] = {}
@@ -162,7 +162,7 @@ def _download_holdings_files(
         url = f"https://{base_url / holdings.filename}"
         msg = f"Downloading PDB holdings file: {url}"
         logger.info(msg)
-        with urlopen(url) as response:  # noqa: S310
+        with urlopen(url) as response:
             compressed = response.read()
         result[key] = parse_holdings_file(holdings, gzip.decompress(compressed))
         msg = f"Downloaded {holdings.filename} ({len(compressed)} bytes compressed)"
@@ -177,7 +177,7 @@ def _generate_manifest_data(
     previous: dict[str, PDBRecord] | None = None,
     missing_dates: list[str] | None = None,
 ) -> ManifestData:
-    """Generates a set of manifest data."""
+    """Generate a set of manifest data."""
     previous = previous or {}
     missing_dates = missing_dates or []
     return ManifestData(
@@ -204,7 +204,7 @@ def _generate_snapshot_from_s3_state(
     key_prefix: PurePosixPath,
     date: date,
 ) -> dict[str, PDBRecord]:
-    """Bootstraps a holdings snapshot file based on the current store state."""
+    """Bootstrap a holdings snapshot file based on the current store state."""
     s3_client = client.get_s3_client()
     paginator = s3_client.get_paginator("list_objects_v2")
     results: dict[str, PDBRecord] = {}
@@ -248,7 +248,7 @@ def _save_holdings_snapshot(
 def _load_holdings_snapshot(
     path: Path,
 ) -> dict[str, PDBRecord]:
-    """Loads holdings snapshot data from a local file."""
+    """Load holdings snapshot data from a local file."""
     with gzip.open(path, "rb") as f:
         payload: dict[str, Any] = json.loads(f.read())
     records: dict[str, PDBRecord] = {
@@ -285,7 +285,7 @@ def _download_holdings_snapshot(
 
 
 def _save_manifest_files(data: ManifestData, output_path: Path) -> None:
-    """Saves manifest data to files."""
+    """Save manifest data to files."""
 
     def save_file(filename: str, ids: list[str]) -> None:
         file = output_path / filename
@@ -301,7 +301,7 @@ def _save_manifest_files(data: ManifestData, output_path: Path) -> None:
 
 
 def _save_summary_file(data: ManifestData, regex_filter: str | None, output_path: Path) -> None:
-    """Saves a summary of the manifest generation to a JSON file."""
+    """Save a summary of the manifest generation to a JSON file."""
     summary: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
         **({"regex_filter": regex_filter} if regex_filter is not None else {}),

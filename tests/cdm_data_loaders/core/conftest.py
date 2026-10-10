@@ -1,31 +1,30 @@
-"""Shared fixtures for pipelines tests."""
+"""Shared fixtures and constants for core and pipelines tests."""
 
+from collections.abc import Callable, Mapping
 from typing import Any, Final
 
+import pytest
 from frozendict import frozendict
+from pydantic_settings import BaseSettings, CliApp
 
 from cdm_data_loaders.core.fields import (
     BUFFER_SIZE,
-    DEV_MODE,
+    DLT_DEV_MODE,
     INPUT_DIR,
     LOCAL_FS,
     LOG_CONFIG_FILE,
     LOG_INTERVAL,
     OUTPUT_DIR,
     S3,
-    START_AT,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
 )
 from cdm_data_loaders.core.settings import (
-    DEFAULT_BATCH_FILE_SETTINGS,
     DEFAULT_CTS_SETTINGS,
     CtsSettings,
 )
 from tests.conftest import TEST_DLT_CONFIG
 
-START_AT_VALUE: Final[int] = 50
-START_AT_STRING: Final[str] = "50"
 TEST_LOG_CONFIG_FILE: Final[str] = "log_conf.json"
 
 DESTINATION_TO_OUTPUT = frozendict(
@@ -41,70 +40,36 @@ DEFAULT_CTS_SETTINGS_RECONCILED = frozendict(
     {
         **DEFAULT_CTS_SETTINGS,
         OUTPUT_DIR: DESTINATION_OUTPUT,
+        "output_is_local": True,
         "raw_data_dir": f"{DESTINATION_OUTPUT}/raw_data",
         "pipeline_dir": None,
     }
 )
 
-DEFAULT_BATCH_FILE_SETTINGS_RECONCILED = frozendict({**DEFAULT_BATCH_FILE_SETTINGS, **DEFAULT_CTS_SETTINGS_RECONCILED})
-
 TEST_CTS_SETTINGS = frozendict(
     {
-        DEV_MODE: "false",
+        DLT_DEV_MODE: "false",
         INPUT_DIR: "/dir/path",
         LOG_CONFIG_FILE: "some/path",
         OUTPUT_DIR: "/some/dir",
         USE_DESTINATION: LOCAL_FS,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: "true",
+        LOG_INTERVAL: "5000",
+        BUFFER_SIZE: 25,
     }
 )
 
 TEST_CTS_SETTINGS_RECONCILED = frozendict(
     {
         **TEST_CTS_SETTINGS,
-        DEV_MODE: False,
+        DLT_DEV_MODE: False,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: True,
-        "pipeline_dir": "/some/dir/.dlt_conf",
-        "raw_data_dir": "/some/dir/raw_data",
-    }
-)
-
-TEST_BATCH_FILE_SETTINGS = frozendict(
-    **TEST_CTS_SETTINGS,
-    start_at=START_AT_STRING,
-    log_interval=5000,
-    buffer_size=25,
-)
-
-TEST_BATCH_FILE_SETTINGS_RECONCILED = frozendict(
-    {
-        **TEST_CTS_SETTINGS_RECONCILED,
-        BUFFER_SIZE: 25,
         LOG_INTERVAL: 5000,
-        START_AT: START_AT_VALUE,
+        "output_is_local": True,
         "pipeline_dir": "/some/dir/.dlt_conf",
         "raw_data_dir": "/some/dir/raw_data",
     }
 )
-
-
-def make_settings(
-    settings_cls: type[CtsSettings],
-    dlt_config: dict[str, Any] | None = None,
-    kwargs: dict[str, Any] | frozendict[str, Any] | None = None,
-) -> CtsSettings:  # CtsSettings | BatchedFileInputSettings | NcbiRestApiSettings | AtbSettings:
-    """Generate a validated Settings object with an explicit dlt_config (None included)."""
-    return settings_cls(dlt_config=dlt_config, **(kwargs or {}))  # pyright: ignore[reportArgumentType]
-
-
-def make_settings_autofill_config(
-    settings_cls: type[CtsSettings],
-    kwargs: dict[str, Any] | frozendict[str, Any] | None = None,
-) -> (
-    CtsSettings
-):  # CtsSettings | BatchedFileInputSettings | NcbiRestApiSettings | AtbSettings | UniProtSettings | UnirefSettings:
-    """Generate a validated Settings object, supplying the dlt_config if necessary."""
-    return settings_cls(**(kwargs or {}))  # pyright: ignore[reportArgumentType]
 
 
 def check_settings(
@@ -112,7 +77,6 @@ def check_settings(
     expected: dict[str, Any] | frozendict[str, Any],
 ) -> None:
     """Check that the settings object has the expected values."""
-    assert settings_object.dlt_config is not None
     assert settings_object.model_dump() == expected
 
     # make sure we have both raw_data_dir and pipeline_dir
@@ -120,3 +84,41 @@ def check_settings(
     assert "pipeline_dir" in expected
     for attr, value in expected.items():
         assert getattr(settings_object, attr) == value
+
+
+def make_settings_autofill_config(
+    settings_cls: type[CtsSettings],
+    kwargs: dict[str, Any] | frozendict[str, Any] | None = None,
+) -> CtsSettings:
+    """Generate a validated settings object with the given init kwargs."""
+    return settings_cls(**(kwargs or {}))
+
+
+# ways of supplying values to a settings class
+INIT: Final[str] = "init"
+ENV: Final[str] = "env"
+CLI: Final[str] = "cli"
+SETTINGS_SOURCES: Final[tuple[str, ...]] = (INIT, ENV, CLI)
+
+type SettingsFactory = Callable[[type[BaseSettings], str, Mapping[str, str]], BaseSettings]
+
+
+@pytest.fixture
+def make_settings(monkeypatch: pytest.MonkeyPatch) -> SettingsFactory:
+    """Build a settings object from string values supplied as init kwargs, env vars, or CLI args."""
+
+    def _make(settings_cls: type[BaseSettings], source: str, values: Mapping[str, str]) -> BaseSettings:
+        if source == INIT:
+            return settings_cls(**values)
+        if source == ENV:
+            prefix = settings_cls.model_config.get("env_prefix", "")
+            for name, value in values.items():
+                monkeypatch.setenv(f"{prefix}{name}".upper(), value)
+            return settings_cls()
+        if source == CLI:
+            cli_args = [arg for name, value in values.items() for arg in (f"--{name.replace('_', '-')}", value)]
+            return CliApp.run(settings_cls, cli_args=cli_args)
+        err_msg = f"Unknown settings source: {source!r}"
+        raise ValueError(err_msg)
+
+    return _make

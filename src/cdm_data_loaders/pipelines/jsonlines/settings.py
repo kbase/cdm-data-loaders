@@ -18,7 +18,11 @@ from cdm_data_loaders.core.fields import (
     NonEmptyStr,
     TableName,
 )
-from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
+from cdm_data_loaders.core.settings import (
+    CLI_SHORTCUTS,
+    CtsSettings,
+    default_settings_with_shortcuts,
+)
 
 EXTRACT_PIPELINE_NAME: Final[str] = "jsonlines_ingest"
 PYDANTIC_PIPELINE_NAME: Final[str] = "jsonlines_ingest_pydantic_validator"
@@ -27,6 +31,15 @@ JSONSCHEMA_PIPELINE_NAME: Final[str] = "jsonlines_ingest_jsonschema_validator"
 ENTITY_MODELS_MODULE: Final[str] = "entity_models_module"
 SCHEMA_FILES_MODULE: Final[str] = "schema_files_module"
 TABLE_NAMES: Final[str] = "table_names"
+
+LOCAL_CLI_SHORTCUTS: Final[dict[str, str]] = {
+    ENTITY_MODELS_MODULE: "m",
+    FILE_GLOB: "g",
+    LOADER_FILE_FORMAT: "f",
+    SCHEMA_FILES_MODULE: "m",
+    TABLE_NAME: "t",
+    TABLE_NAMES: "t",
+}
 
 
 class JsonlIngestSettings(CtsSettings):
@@ -47,13 +60,11 @@ class JsonlIngestSettings(CtsSettings):
 class JsonlExtractSettings(JsonlIngestSettings):
     """Settings for the JSONL extraction-only pipeline."""
 
-    model_config = SettingsConfigDict(
-        **DEFAULT_SETTINGS_CONFIG_DICT,
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=EXTRACT_PIPELINE_NAME,
         cli_shortcuts={
             **CLI_SHORTCUTS,
-            TABLE_NAME.replace("_", "-"): "t",
-            FILE_GLOB.replace("_", "-"): "g",
+            **{k: v for k, v in LOCAL_CLI_SHORTCUTS.items() if k in [FILE_GLOB, LOADER_FILE_FORMAT, TABLE_NAME]},
         },
     )
 
@@ -80,14 +91,15 @@ class ValidatedJsonlIngestSettings(JsonlIngestSettings):
 class JsonlPydanticIngestSettings(ValidatedJsonlIngestSettings):
     """Pipeline settings for JSONL pipeline that uses Pydantic for validation."""
 
-    model_config = SettingsConfigDict(
-        **DEFAULT_SETTINGS_CONFIG_DICT,
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=PYDANTIC_PIPELINE_NAME,
         cli_shortcuts={
             **CLI_SHORTCUTS,
-            ENTITY_MODELS_MODULE.replace("_", "-"): "m",
-            TABLE_NAMES.replace("_", "-"): "t",
-            FILE_GLOB.replace("_", "-"): "g",
+            **{
+                k: v
+                for k, v in LOCAL_CLI_SHORTCUTS.items()
+                if k in [ENTITY_MODELS_MODULE, FILE_GLOB, LOADER_FILE_FORMAT, TABLE_NAMES]
+            },
         },
     )
 
@@ -106,13 +118,20 @@ class JsonlPydanticIngestSettings(ValidatedJsonlIngestSettings):
 class JsonlJsonschemaIngestSettings(ValidatedJsonlIngestSettings):
     """Pipeline settings for JSONL ingestion with JSON Schema validation."""
 
-    model_config = SettingsConfigDict(
-        **DEFAULT_SETTINGS_CONFIG_DICT,
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=JSONSCHEMA_PIPELINE_NAME,
         cli_shortcuts={
             **CLI_SHORTCUTS,
-            SCHEMA_FILES_MODULE.replace("_", "-"): "m",
-            FILE_GLOB.replace("_", "-"): "g",
+            **{
+                k: v
+                for k, v in LOCAL_CLI_SHORTCUTS.items()
+                if k
+                in [
+                    FILE_GLOB,
+                    LOADER_FILE_FORMAT,
+                    SCHEMA_FILES_MODULE,
+                ]
+            },
         },
     )
 

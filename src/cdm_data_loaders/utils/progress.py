@@ -11,8 +11,7 @@ DEFAULT_UNIT_DIVISOR: Final[int] = 1024
 
 
 class SynchronizedCallback:
-    """
-    Wraps a callable so it can be safely invoked from multiple threads.
+    """Wraps a callable so it can be safely invoked from multiple threads.
 
     boto3's `Callback` parameter (used by `upload_fileobj`/`download_fileobj`)
     may be invoked concurrently from multiple transfer threads during

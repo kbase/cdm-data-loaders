@@ -21,7 +21,7 @@ from tests.conftest import N_REFERENCE_XML_ENTRIES, REFERENCE_XML_FIXTURE_DIR, R
 DEFAULT_XMLTODICT_SETTINGS: frozendict = frozendict(
     {
         "buffer_size": 10,
-        "dev_mode": False,
+        "dlt_dev_mode": False,
         "file_glob": "*.xml*",
         "log_interval": 1000,
         "use_output_dir_for_pipeline_metadata": False,
@@ -180,7 +180,7 @@ def run_xmltodict_pipeline(
         kwargs = {
             "buffer_size": 10,  # overrides.get("buffer_size", 10),
             "dataset_name": dataset_name,
-            "dev_mode": False,
+            "dlt_dev_mode": False,
             "file_glob": "*.xml*",
             "input_dir": str(reference_xml_data_dir / chunk_dir),
             "log_config_file": str(log_config_file),

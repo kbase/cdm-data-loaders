@@ -49,6 +49,13 @@ def read_items(directory: Path, file_glob: str = "*.jsonl*") -> list[Any]:
     return list(filesystem(bucket_url=str(directory), file_glob=file_glob))
 
 
+def read_records(directory: Path, buffer_size: int = 10) -> list[dict[str, Any]]:
+    """Stream every line record in a directory, flattened across pages."""
+    return [
+        record for page in stream_jsonl_lines(iter(read_items(directory)), buffer_size=buffer_size) for record in page
+    ]
+
+
 def test_stream_jsonl_lines_pass_yields_pages_of_line_records(tmp_path: Path) -> None:
     """stream_jsonl_lines yields pages of at most buffer_size records with provenance."""
     directory = tmp_path / "widget"
@@ -72,9 +79,33 @@ def test_stream_jsonl_lines_pass_blank_lines_are_skipped(tmp_path: Path) -> None
     directory.mkdir()
     (directory / "blank.jsonl").write_text('{"widget_id": "a"}\n\n   \n{"widget_id": "b"}\n', encoding="utf-8")
 
-    records = [record for page in stream_jsonl_lines(iter(read_items(directory)), buffer_size=10) for record in page]
+    records = read_records(directory)
 
     assert [record["record"]["widget_id"] for record in records] == ["a", "b"]
+
+
+def test_stream_jsonl_lines_fail_malformed_json_line_captured_not_raised(tmp_path: Path) -> None:
+    """A line that is not valid JSON sets record to None and fills parse_error; it does not raise."""
+    directory = tmp_path / "widget"
+    directory.mkdir()
+    (directory / "bad.jsonl").write_text("{not valid json\n", encoding="utf-8")
+
+    records = read_records(directory)
+
+    assert len(records) == 1
+    assert records[0]["record"] is None
+    assert records[0]["parse_error"] is not None
+    assert records[0]["raw_record"] == "{not valid json"
+    assert records[0]["line_no"] == 1
+
+
+def test_stream_jsonl_lines_pass_empty_file_yields_nothing(tmp_path: Path) -> None:
+    """An empty file produces no output records."""
+    directory = tmp_path / "widget"
+    directory.mkdir()
+    (directory / "empty.jsonl").write_text("", encoding="utf-8")
+
+    assert read_records(directory) == []
 
 
 def test_stream_jsonl_lines_pass_line_numbers_restart_per_file(tmp_path: Path) -> None:
@@ -84,7 +115,7 @@ def test_stream_jsonl_lines_pass_line_numbers_restart_per_file(tmp_path: Path) -
     (directory / "first.jsonl").write_text('{"widget_id": "a"}\n{"widget_id": "b"}\n', encoding="utf-8")
     (directory / "second.jsonl").write_text('{"widget_id": "c"}\n', encoding="utf-8")
 
-    records = [record for page in stream_jsonl_lines(iter(read_items(directory)), buffer_size=10) for record in page]
+    records = read_records(directory)
 
     by_source: dict[str, list[int]] = {}
     for record in records:
@@ -100,7 +131,7 @@ def test_stream_jsonl_lines_pass_gzip_file_is_decompressed(
     directory = tmp_path / "widget"
     write_gzip_file(directory, "compressed.jsonl.gz", '{"widget_id": "a", "count": 1}\n')
 
-    records = [record for page in stream_jsonl_lines(iter(read_items(directory)), buffer_size=10) for record in page]
+    records = read_records(directory)
 
     assert len(records) == 1
     assert records[0]["record"] == {"widget_id": "a", "count": 1}

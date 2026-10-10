@@ -28,7 +28,8 @@ from pydantic import Field, field_validator
 from pydantic_settings import SettingsConfigDict
 from requests.exceptions import HTTPError
 
-from cdm_data_loaders.core.settings import CLI_SHORTCUTS, DEFAULT_SETTINGS_CONFIG_DICT, CtsSettings
+from cdm_data_loaders.core.fields import SaveRawResponses
+from cdm_data_loaders.core.settings import CLI_SHORTCUTS, CtsSettings, default_settings_with_shortcuts
 from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
@@ -62,8 +63,7 @@ QUERY_TYPE: Final[str] = "query_type"
 class NcbiRestApiSettings(CtsSettings):
     """Configuration for running the NCBI REST API import pipeline."""
 
-    model_config = SettingsConfigDict(
-        **DEFAULT_SETTINGS_CONFIG_DICT,
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name="ncbi_rest_api",
         cli_shortcuts={**CLI_SHORTCUTS, BATCH_SIZE: "b", QUERY_TYPE: "q"},
     )
@@ -80,6 +80,8 @@ class NcbiRestApiSettings(CtsSettings):
         description="The type of query to perform, dataset or annotation. By default, both are performed.",
         pattern=QUERY_TYPE_REGEX,
     )
+
+    save_raw_responses: SaveRawResponses
 
     @field_validator(QUERY_TYPE, mode="before")
     @classmethod
@@ -373,7 +375,7 @@ def run_ncbi_pipeline(settings: NcbiRestApiSettings) -> LoadInfo | None:
     """
     set_settings(settings)
 
-    if settings.dev_mode:
+    if settings.save_raw_responses:
         REST_CLIENT_HOOKS["response"] = [partial(save_raw_response, settings)]
 
     pipeline_kwargs = {

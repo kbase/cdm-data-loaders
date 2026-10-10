@@ -236,9 +236,7 @@ CLUSTER_SEED_DATA = {**CLUSTER_DATA, "is_seed": True}
 def test_extract_cross_refs_param(
     xml: str, expected: dict[str, Any], warning: str | None, is_representative: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """
-    Test that extract_cross_refs correctly extracts all UniRef cross-reference fields.
-    """
+    """Test that extract_cross_refs correctly extracts all UniRef cross-reference fields."""
     # edit the cluster member as appropriate
     if expected:
         expected["is_representative"] = is_representative

@@ -1,10 +1,9 @@
 """Tests for pipelines.ncbi_ftp_download — settings, batch orchestration, CLI."""
 
 import json
-from collections.abc import Generator
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import boto3
 import pytest
@@ -128,37 +127,23 @@ def test_settings_threads_boundaries_accepted(threads: int) -> None:
 # download_batch
 
 
-@pytest.fixture(autouse=True)
-def _mock_ftp_pool() -> Generator[None]:
-    """Prevent real FTP connections from the ThreadLocalFTP pool."""
-    mock_pool = MagicMock()
-    with patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP", return_value=mock_pool):
-        yield
-
-
-def _write_manifest(tmp_path: Path, lines: list[str]) -> tuple[Path, Path]:
-    """Write a manifest file and create the output directory; return (manifest, output)."""
+def test_download_batch_reads_manifest_and_calls_download(tmp_path: Path) -> None:
+    """Manifest is read and download is called for each entry."""
     manifest = tmp_path / "manifest.txt"
-    manifest.write_text("".join(f"{line}\n" for line in lines))
+    manifest.write_text(
+        "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n"
+        "/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/\n"
+    )
     output = tmp_path / "output"
     output.mkdir()
-    return manifest, output
-
-
-def test_download_batch_reads_manifest_and_calls_download(tmp_path: Path) -> None:
-    """Verify manifest is read and download is called for each entry."""
-    manifest, output = _write_manifest(
-        tmp_path,
-        [
-            "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/",
-            "/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/",
-        ],
-    )
 
     mock_stats = {"accession": "test", "files_downloaded": 3}
-    with patch(
-        "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
-        return_value=mock_stats,
+    with (
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
+        patch(
+            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            return_value=mock_stats,
+        ),
     ):
         report = download_batch(
             manifest_path=manifest,
@@ -173,19 +158,22 @@ def test_download_batch_reads_manifest_and_calls_download(tmp_path: Path) -> Non
 
 
 def test_download_batch_limit_truncates(tmp_path: Path) -> None:
-    """Verify limit parameter truncates the number of assemblies processed."""
-    manifest, output = _write_manifest(
-        tmp_path,
-        [
-            "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/",
-            "/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/",
-        ],
+    """The limit parameter truncates the number of assemblies processed."""
+    manifest = tmp_path / "manifest.txt"
+    manifest.write_text(
+        "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n"
+        "/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/\n"
     )
+    output = tmp_path / "output"
+    output.mkdir()
 
     mock_stats = {"accession": "test", "files_downloaded": 1}
-    with patch(
-        "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
-        return_value=mock_stats,
+    with (
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
+        patch(
+            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            return_value=mock_stats,
+        ),
     ):
         report = download_batch(
             manifest_path=manifest,
@@ -197,16 +185,19 @@ def test_download_batch_limit_truncates(tmp_path: Path) -> None:
 
 
 def test_download_batch_writes_report_json(tmp_path: Path) -> None:
-    """Verify download_report.json is written to the output directory."""
-    manifest, output = _write_manifest(
-        tmp_path,
-        ["/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/"],
-    )
+    """download_report.json is written to the output directory."""
+    manifest = tmp_path / "manifest.txt"
+    manifest.write_text("/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n")
+    output = tmp_path / "output"
+    output.mkdir()
 
     mock_stats = {"accession": "GCF_000001215.4", "files_downloaded": 5}
-    with patch(
-        "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
-        return_value=mock_stats,
+    with (
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
+        patch(
+            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            return_value=mock_stats,
+        ),
     ):
         download_batch(manifest_path=manifest, output_dir=output, threads=1)
 
@@ -218,15 +209,18 @@ def test_download_batch_writes_report_json(tmp_path: Path) -> None:
 
 
 def test_download_batch_handles_download_failure(tmp_path: Path) -> None:
-    """Verify failed downloads are counted and do not crash the batch."""
-    manifest, output = _write_manifest(
-        tmp_path,
-        ["/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/"],
-    )
+    """Failed downloads are counted and do not crash the batch."""
+    manifest = tmp_path / "manifest.txt"
+    manifest.write_text("/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n")
+    output = tmp_path / "output"
+    output.mkdir()
 
-    with patch(
-        "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
-        side_effect=RuntimeError("connection lost"),
+    with (
+        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
+        patch(
+            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            side_effect=RuntimeError("connection lost"),
+        ),
     ):
         report = download_batch(manifest_path=manifest, output_dir=output, threads=1)
 

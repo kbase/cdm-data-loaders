@@ -1,21 +1,19 @@
 """DLT pipeline to import UniRef data."""
 
-from collections.abc import Generator
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated, Any, Final
+from typing import Annotated, Final
 
-import dlt
 from dlt.common.pipeline import LoadInfo
-from dlt.extract.items import DataItemWithMeta
+from dlt.extract import DltResource
 from pydantic import Field, field_validator
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.core.fields import START_AT, LogInterval
+from cdm_data_loaders.core.fields import LogInterval
 from cdm_data_loaders.core.settings import (
     CLI_SHORTCUTS,
-    DEFAULT_SETTINGS_CONFIG_DICT,
-    BatchedFileInputSettings,
+    CtsSettings,
+    default_settings_with_shortcuts,
 )
 from cdm_data_loaders.parsers.uniprot.uniref import (
     ENTRY_XML_TAG,
@@ -25,9 +23,8 @@ from cdm_data_loaders.pipelines.core import (
     run_cli,
     run_pipeline,
 )
-from cdm_data_loaders.readers.xml import process_xml_file_batches
+from cdm_data_loaders.readers.xml import build_xml_file_resource
 
-APP_NAME: Final[str] = "uniref_importer"
 UNIREF_LOG_INTERVAL: Final[int] = 10000
 VARIANT: Final[str] = "variant"
 FIFTY: Final[str] = "50"
@@ -46,13 +43,12 @@ class UnirefVariantEnum(StrEnum):
 UNIREF_VARIANTS: Final[list[str]] = [member.value for member in UnirefVariantEnum.__members__.values()]
 
 
-class UnirefSettings(BatchedFileInputSettings):
+class UnirefSettings(CtsSettings):
     """Configuration for running the UniRef import pipeline."""
 
-    model_config = SettingsConfigDict(
-        **DEFAULT_SETTINGS_CONFIG_DICT,
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name="uniref",
-        cli_shortcuts={**CLI_SHORTCUTS, START_AT: "s", "variant": "v"},
+        cli_shortcuts={**CLI_SHORTCUTS, "variant": "v"},
     )
 
     variant: Annotated[
@@ -86,16 +82,17 @@ class UnirefSettings(BatchedFileInputSettings):
         return v
 
 
-@dlt.resource(name="parse_uniref", file_format="parquet", parallelized=True)
-def parse_uniref(settings: UnirefSettings) -> Generator[DataItemWithMeta, Any]:
-    """Parse the information from UniRef files, batch by batch.
+def parse_uniref(settings: UnirefSettings) -> DltResource:
+    """Build the resource that parses the information from UniRef files.
 
     :param settings: config for running the pipeline.
     :type settings: UnirefSettings
+    :return: resource yielding parsed UniRef entries
+    :rtype: DltResource
     """
     # a single timestamp is used to mark every entity parsed in this run
     timestamp = datetime.now(UTC)
-    yield from process_xml_file_batches(
+    return build_xml_file_resource(
         settings=settings,
         xml_tag=ENTRY_XML_TAG,
         parse_fn=lambda entry, file_path: parse_uniref_entry(
@@ -104,6 +101,7 @@ def parse_uniref(settings: UnirefSettings) -> Generator[DataItemWithMeta, Any]:
             file_path=file_path,
             uniref_variant=f"UniRef {settings.variant}",
         ),
+        resource_name="parse_uniref",
     )
 
 
@@ -117,8 +115,8 @@ def run_uniref_pipeline(settings: UnirefSettings) -> LoadInfo | None:
         settings=settings,
         resource=parse_uniref(settings),
         pipeline_kwargs={
-            "pipeline_name": f"uniref_{settings.variant}",
-            "dataset_name": "uniprot_kb",
+            "pipeline_name": "uniprot_kb",
+            "dataset_name": f"uniref_{settings.variant}",
         },
     )
 
