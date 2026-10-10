@@ -19,6 +19,7 @@ from cdm_data_loaders.pipelines.xmltodict.pipeline import (
     run_xml_ingest_pipeline,
 )
 from cdm_data_loaders.pipelines.xmltodict.settings import PIPELINE_NAME, XmlToDictSettings
+from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
 from tests.xml_samples import TWO_BOOK_LIBRARY_XML
 
 
@@ -123,12 +124,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
         **_: dict[str, Any],
     ) -> LoadInfo | None:
         assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "cli_dataset"}
-        pipeline = dlt.pipeline(
-            pipeline_name=pipeline_name,
-            destination=dlt.destinations.duckdb(f"duckdb:///{output_dir!s}/{pipeline_name}.db"),
-            dataset_name="cli_dataset",
-            pipelines_dir=str(tmp_path / "pipelines"),
-        )
+        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
         return pipeline.run(resource)
 
     with patch.object(xmltodict_ingest_module, "run_pipeline", fake_run_pipeline):
@@ -181,19 +177,13 @@ def test_cli_pass_writes_rows_for_matching_xml_files(
     monkeypatch.setattr(sys, "argv", argv)
 
     pipeline_name = f"test_xml_cli_rows_pipeline_{uuid4().hex}"
-    captured: dict[str, Any] = {}
 
     def fake_run_pipeline(
         *,
         resource: Any,  # noqa: ANN401
         **_: Any,  # noqa: ANN401
     ) -> LoadInfo | None:
-        pipeline = dlt.pipeline(
-            pipeline_name=pipeline_name,
-            destination=dlt.destinations.duckdb(f"duckdb:///{output_dir!s}/{pipeline_name}.db"),
-            dataset_name="cli_dataset",
-            pipelines_dir=str(tmp_path / "pipelines"),
-        )
+        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
         return pipeline.run(resource)
 
     with patch.object(xmltodict_ingest_module, "run_pipeline", fake_run_pipeline):

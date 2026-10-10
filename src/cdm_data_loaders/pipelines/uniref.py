@@ -65,22 +65,6 @@ class UnirefSettings(CtsSettings):
         ),
     ]
 
-    @field_validator("variant")
-    @classmethod
-    def validate_uniref_variant(cls, v: str) -> str:
-        """Validate the uniref variant against valid choices.
-
-        :param v: uniref variant specified
-        :type v: str
-        :raises ValueError: if the uniref variant is not valid
-        :return: valid uniref variant
-        :rtype: str
-        """
-        if v not in UNIREF_VARIANTS:
-            err_msg = f"UniRef variant must be one of {UNIREF_VARIANTS}, got '{v}'"
-            raise ValueError(err_msg)
-        return v
-
 
 def parse_uniref(settings: UnirefSettings) -> DltResource:
     """Build the resource that parses the information from UniRef files.

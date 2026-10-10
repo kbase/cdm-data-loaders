@@ -222,7 +222,8 @@ def test_xmltodict_ingest_settings_pass_force_list_classifies_by_immediate_paren
     assert force_list_from_uniref_like_xsd(path, key, "some-value") is expected
 
 
-def test_xmltodict_ingest_settings_pass_xml_tag_shortcut(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("file_glob_arg", ["--file-glob", "-g"])
+def test_xmltodict_ingest_settings_pass_xml_tag_shortcut(tmp_path: Path, file_glob_arg: str) -> None:
     """The file_glob field is exposed as both --file-glob and -g on the command line."""
     log_config_file = tmp_path / "logging.json"
     log_config_file.write_text('{"version": 1}')
@@ -231,13 +232,15 @@ def test_xmltodict_ingest_settings_pass_xml_tag_shortcut(tmp_path: Path, monkeyp
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    common = [
+    argv = [
         "--input-dir",
         str(input_dir),
         "--output-dir",
         str(output_dir),
         "--log-config-file",
         str(log_config_file),
+        file_glob_arg,
+        "*.xml.gz",
         "--dataset-name",
         "cli_dataset",
         "--table-name",
@@ -246,7 +249,6 @@ def test_xmltodict_ingest_settings_pass_xml_tag_shortcut(tmp_path: Path, monkeyp
         "entry",
     ]
 
-    for glob_arg in (["--file-glob", "*.xml.gz"], ["-g", "*.xml.gz"]):
-        settings = CliApp.run(XmlToDictSettings, cli_args=[*common, *glob_arg])
-        assert settings.file_glob == "*.xml.gz"
-        assert settings.xml_tag == "entry"
+    settings = CliApp.run(XmlToDictSettings, cli_args=argv)
+    assert settings.file_glob == "*.xml.gz"
+    assert settings.xml_tag == "entry"

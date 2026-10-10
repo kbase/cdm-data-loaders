@@ -16,6 +16,7 @@ import cdm_data_loaders.pipelines.jsonlines.extract_pipeline as extract_pipeline
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import cli, run_jsonlines_ingest_pipeline
 from cdm_data_loaders.pipelines.jsonlines.settings import EXTRACT_PIPELINE_NAME, JsonlExtractSettings
+from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
 
 SIMPLE_JSONL = """{"widget_id": "a", "count": 1}
 {"widget_id": "b", "count": 2}
@@ -146,18 +147,12 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
         "false",
     ]
     monkeypatch.setattr(sys, "argv", argv)
-    pipeline_name = f"test_jsonl_cli_pipeline_{uuid4().hex}"
 
     def fake_run_pipeline(
         *, resource: DltResource, pipeline_kwargs: dict[str, Any], **_: dict[str, Any]
     ) -> LoadInfo | None:
         assert pipeline_kwargs == {"pipeline_name": EXTRACT_PIPELINE_NAME, "dataset_name": "cli_dataset"}
-        pipeline = dlt.pipeline(
-            pipeline_name=pipeline_kwargs["pipeline_name"],
-            destination=dlt.destinations.duckdb(f"duckdb:///{output_dir!s}/{pipeline_name}.db"),
-            dataset_name=pipeline_kwargs["dataset_name"],
-            pipelines_dir=str(tmp_path / "pipelines"),
-        )
+        pipeline = duckdb_pipeline(tmp_path, pipeline_kwargs["pipeline_name"], pipeline_kwargs["dataset_name"])
         return pipeline.run(resource)
 
     with patch.object(extract_pipeline_module, "run_pipeline", fake_run_pipeline):
