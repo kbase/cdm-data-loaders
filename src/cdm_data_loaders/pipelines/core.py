@@ -50,6 +50,22 @@ class PipelineCli[S: LoggerSettings]:
         return run_cli(self.settings_cls, self.pipeline_fn, settings_kwargs, cli_args)
 
 
+@dataclass(frozen=True, slots=True)
+class PipelineCli[S: LoggerSettings]:
+    """Console-script entry point for a pipeline; ``run`` returns the LoadInfo."""
+
+    settings_cls: type[S]
+    pipeline_fn: Callable[[S], LoadInfo | None]
+
+    def __call__(self) -> None:
+        """Parse sys.argv and run the pipeline. Returns None so the process exits with 0."""
+        self.run()
+
+    def run(self, cli_args: list[str] | None = None, **settings_kwargs: Any) -> LoadInfo | None:
+        """Parse ``cli_args`` (default ``sys.argv[1:]``), run the pipeline and return its LoadInfo."""
+        return run_cli(self.settings_cls, self.pipeline_fn, settings_kwargs, cli_args)
+
+
 def send_slack_message_carefully(
     slack_hook: str,
     message: str,
