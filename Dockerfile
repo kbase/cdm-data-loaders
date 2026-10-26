@@ -94,6 +94,7 @@ ENV HOME="/home/nonroot"
 
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
 
 USER nonroot
 ENTRYPOINT ["./scripts/entrypoint.sh"]

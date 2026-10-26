@@ -6,8 +6,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
+from cdm_data_loaders.core.fields import PARQUET
 from cdm_data_loaders.pipelines.jsonlines.settings import JSONSCHEMA_PIPELINE_NAME, JsonlJsonschemaIngestSettings
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
@@ -23,6 +26,20 @@ pytestmark = pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS, 
 
 WIDGET_RECORD = {"widget_id": "a", "count": 0, "nested": {"tags": ["one", "two"]}}
 GADGET_RECORD = {"widget_id": "g", "count": 3}
+EXPECTED_WIDGET_ROW = {
+    "widget_id": "a",
+    "count": 0,
+    "collected": None,
+    "label": None,
+    "nested": {"tags": ["one", "two"]},
+}
+EXPECTED_GADGET_ROW = {
+    "widget_id": "g",
+    "count": 3,
+    "collected": None,
+    "label": None,
+    "nested": None,
+}
 TYPE_ERROR_RAW = '{"widget_id":"bad", "count":"2"}'
 FORMAT_ERROR_RAW = '{"widget_id":"bad","count":1,"collected":"2023-02-29"}'
 MALFORMED_RAW = "{broken"
@@ -73,9 +90,17 @@ def test_run_jsonlines_pipeline_pass_persists_valid_and_rejected_rows(
     tables = read_data_tables(settings, load_info.dataset_name)
     assert set(tables) == {"widget", "widget_rejected", "gadget"}
     assert [{key: parse_json_string(value) for key, value in row.items()} for row in tables["widget"]] == [
-        WIDGET_RECORD
+        EXPECTED_WIDGET_ROW
     ] * 3
-    assert tables["gadget"] == [GADGET_RECORD]
+    assert tables["gadget"] == [EXPECTED_GADGET_ROW]
+    if loader_file_format == PARQUET:
+        widget_parquet = next((Path(settings.output_dir) / load_info.dataset_name / "widget").glob("*.parquet"))
+        parquet_schema = pq.read_schema(widget_parquet)
+        assert parquet_schema.field("widget_id").type == pa.string()
+        assert parquet_schema.field("count").type == pa.int64()
+        assert parquet_schema.field("collected").type == pa.date32()
+        assert parquet_schema.field("label").type == pa.string()
+        assert parquet_schema.field("nested").type == pa.struct([pa.field("tags", pa.list_(pa.string()))])
     assert sorted(tables["widget_rejected"], key=lambda row: (row["source_file"], row["line_no"])) == [
         {
             "source_file": "compressed.jsonl.gz",
@@ -151,4 +176,4 @@ def test_cli_pass_loads_selected_entity(
     )
     assert load_info.dataset_name == "schema_cli"
     assert_pipeline_report_written(Path(settings.output_dir), load_info, metadata_moved=True)
-    assert read_data_tables(settings, load_info.dataset_name) == {"gadget": [GADGET_RECORD]}
+    assert read_data_tables(settings, load_info.dataset_name) == {"gadget": [EXPECTED_GADGET_ROW]}
