@@ -206,7 +206,7 @@ def save_pipeline_metadata(
                         "environment",
                         "staging_type",
                         "staging_name",
-                        "staging_display_credentials",
+                        "staging_displayable_credentials",
                         "dataset_name",
                     ]
                 },
@@ -290,6 +290,8 @@ def run_pipeline(
 
     pipeline = dlt.pipeline(**pipeline_kwargs)
 
+    logger.info("Prepping pipeline...")
+
     try:
         pipeline.destination = dlt.destination(settings.use_destination, **(destination_kwargs or {}))
     except Exception as e:
@@ -305,7 +307,9 @@ def run_pipeline(
     load_info: LoadInfo | None = None
     err_msg: str | None = None
     try:
+        logger.info("Running pipeline!")
         load_info = pipeline.run(resource, **(pipeline_run_kwargs or {}))
+        logger.info("Pipeline complete!")
     except PipelineStepFailed as e:
         # errors raise PipelineStepFailed
         err_msg = f"Pipeline failed: {e!s}"

@@ -294,9 +294,7 @@ def test_convert_schema_to_pyarrow_pass_empty_object_schema(schema: dict[str, An
         ),
     ],
 )
-def test_convert_schema_to_pyarrow_fail_invalid_schemas(
-    schema: dict[str, Any], exc_type: type[Exception]
-) -> None:
+def test_convert_schema_to_pyarrow_fail_invalid_schemas(schema: dict[str, Any], exc_type: type[Exception]) -> None:
     """Dereferencing and PyArrow conversion failures raise their documented exception types."""
     with pytest.raises(exc_type):
         convert_schema_to_pyarrow(schema)
