@@ -2,7 +2,6 @@
 
 from typing import TYPE_CHECKING, Any
 
-from dlt.common.data_types.typing import TDataType
 from dlt.common.schema.typing import TStoredSchema
 from pydantic import BaseModel, ConfigDict, Field, InstanceOf, field_validator
 
@@ -15,20 +14,11 @@ from cdm_data_loaders.converters.core.guards import (
 )
 from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
 from cdm_data_loaders.converters.core.ir import SchemaDocument
-from cdm_data_loaders.converters.emitters.dlt import (
-    DltEmitter,
-    _scalar_type,
-)
+from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 
 if TYPE_CHECKING:
     from dlt.common.schema import Schema
-
-
-# FIXME: dead code
-def _data_type_from_enum(values: list[Any]) -> TDataType:
-    """Infer an enum's dlt type using the shared node conversion."""
-    return _scalar_type(JsonSchemaReader().read_node({"enum": values}))
 
 
 class JSONSchemaToDltError(ConversionError):
