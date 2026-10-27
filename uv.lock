@@ -505,7 +505,6 @@ dependencies = [
 dev = [
     { name = "linkml" },
     { name = "moto", extra = ["s3"] },
-    { name = "platformdirs" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -514,6 +513,9 @@ dev = [
     { name = "pytest-recording" },
     { name = "ruff" },
     { name = "types-boto3", extra = ["s3"] },
+]
+lakehouse = [
+    { name = "cdm-task-service-client" },
 ]
 models = [
     { name = "genson" },
@@ -561,7 +563,6 @@ requires-dist = [
 dev = [
     { name = "linkml", specifier = ">=1.9.5" },
     { name = "moto", extras = ["s3"], specifier = ">=5.2.1" },
-    { name = "platformdirs", specifier = ">=4.11.15" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
@@ -571,7 +572,7 @@ dev = [
     { name = "ruff", specifier = ">=0.15.14" },
     { name = "types-boto3", extras = ["s3"], specifier = ">=1.43.62" },
 ]
-lakehouse = []
+lakehouse = [{ name = "cdm-task-service-client", git = "https://github.com/kbase/cdm-task-service-client.git" }]
 models = [
     { name = "genson", specifier = ">=1.3.0" },
     { name = "json2python-models", specifier = ">=0.3.1" },
@@ -581,6 +582,14 @@ mutants = [
     { name = "pytest-gremlins", specifier = ">=1.12.2" },
 ]
 xml = [{ name = "xsdata", extras = ["cli", "lxml"], specifier = ">=26.2" }]
+
+[[package]]
+name = "cdm-task-service-client"
+version = "0.2.1"
+source = { git = "https://github.com/kbase/cdm-task-service-client.git#4b5da002b4c6484fe55a9ddc0056427353c352a3" }
+dependencies = [
+    { name = "requests" },
+]
 
 [[package]]
 name = "certifi"

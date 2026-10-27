@@ -1,0 +1,11 @@
+title: Mixed Content Kept as Raw Text
+xml_tag: article
+schema: schema.xsd
+rules: [R-SHAPE-MIXED, R-NAME-TEXT, R-SHAPE-GROUPS, R-EMPTY-COERCE, R-NULL-TEXT]
+notes: |
+  - `title` is `mixed="true"` without attributes -> `pa.string()`; the empty `<title/>` coerces to `""`.
+  - `abstractText` is `mixed="true"` with a `Label` attribute -> `pa.struct([_Label, #text])`.
+  - `&amp;` in text remains escaped so literal `<`/`>` are distinguishable from inline tags.
+runs:
+  - id: default
+    data: data.xml

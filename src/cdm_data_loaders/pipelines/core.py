@@ -206,7 +206,7 @@ def save_pipeline_metadata(
                         "environment",
                         "staging_type",
                         "staging_name",
-                        "staging_display_credentials",
+                        "staging_displayable_credentials",
                         "dataset_name",
                     ]
                 },

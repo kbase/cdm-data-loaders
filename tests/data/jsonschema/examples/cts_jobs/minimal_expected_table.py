@@ -1,0 +1,36 @@
+"""Expected PyArrow table for minimal real-world example cts_jobs."""
+
+# ruff: noqa: INP001
+
+import pyarrow as pa
+from expected_schema import EXPECTED_SCHEMA
+
+EXPECTED_TABLE = pa.Table.from_pylist(
+    [
+        {
+            "jobs": [
+                {
+                    "id": "f4f0a1d9-74e9-4c68-ba42-fa86ca904c99",
+                    "state": "complete",
+                    "transition_times": [{"state": "created", "time": "2026-10-23T21:01:25.546000Z"}],
+                    "user": "ialarmedalien",
+                    "job_input": {
+                        "cluster": "kbase",
+                        "image": "ghcr.io/kbase/cdm-data-loaders@sha256:747f6a055fb3a5dc811373565f61e94df4a9d08d09bf09ecd7be5467f82aebbb",
+                        "params": {},
+                        "output_dir": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/",
+                    },
+                    "image": {
+                        "registered_by": "gavinlocaladmin",
+                        "registered_on": "2026-10-22T02:34:49.514000Z",
+                        "name": "ghcr.io/kbase/cdm-data-loaders",
+                        "digest": "sha256:747f6a055fb3a5dc811373565f61e94df4a9d08d09bf09ecd7be5467f82aebbb",
+                        "entrypoint": ["./scripts/entrypoint.sh"],
+                    },
+                    "input_file_count": 601,
+                }
+            ]
+        },
+    ],
+    schema=EXPECTED_SCHEMA,
+)

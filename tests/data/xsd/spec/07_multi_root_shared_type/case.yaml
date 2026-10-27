@@ -1,0 +1,10 @@
+title: Multiple Root Elements Sharing the Same Child `xml_tag`
+xml_tag: entry
+schema: schema.xsd
+rules: [R-RESOLVE-DEPTH]
+notes: |
+  Several root elements each declare a child `entry` of the same named type (the `uniref.xsd` pattern), so
+  resolving `xml_tag="entry"` is unambiguous.
+runs:
+  - id: default
+    data: data.xml

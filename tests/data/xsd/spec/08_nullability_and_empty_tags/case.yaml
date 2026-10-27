@@ -1,0 +1,12 @@
+title: Field Nullability and Empty String Tag Coercion
+xml_tag: entry
+schema: schema.xsd
+rules: [R-NULL-ATTR, R-NULL-CHILD, R-NULL-CHOICE, R-NULL-NILLABLE-PARENT, R-EMPTY-COERCE, R-NIL]
+notes: |
+  - `_id` (`use="required"`) is non-nullable; `_source` is nullable.
+  - `summary` is required and non-nillable, so the present `<summary/>` coerces to `""`.
+  - `geneId` / `proteinId` sit in an `xs:choice` and are nullable.
+  - `comment` is `nillable="true"`, so its required child `text` is nullable.
+runs:
+  - id: default
+    data: data.xml

@@ -1,0 +1,11 @@
+title: Scalar Types, Restrictions, Lists and Unions
+xml_tag: record
+schema: schema.xsd
+rules: [R-UNWRAP, R-NAME-ATTR, R-ORDER, R-SHAPE-XSLIST, R-SCALAR-BUILTIN, R-SCALAR-RESTRICTION, R-SCALAR-UNION, R-META-XSD-TYPE, R-META-COMMENT, R-NULL-ATTR]
+notes: |
+  - `code` is `xs:int | xs:short`: members map to different Arrow types (`int32` vs `int16`), so it falls back to `pa.string()`.
+  - `published` is `xs:date | xs:gYearMonth | xs:gYear` and also resolves to `pa.string()`.
+  - `scores` and `_evidence` use the `xs:list` type `intListType` and become `pa.list_(pa.int32())`.
+runs:
+  - id: default
+    data: data.xml

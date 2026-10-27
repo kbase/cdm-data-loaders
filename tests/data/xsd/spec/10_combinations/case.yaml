@@ -1,0 +1,12 @@
+title: Combinations
+xml_tag: record
+schema: schema.xsd
+rules: [R-SHAPE-CARDINALITY, R-SHAPE-EXTENSION, R-SHAPE-ATTR-ONLY, R-SHAPE-SIMPLECONTENT, R-SHAPE-MIXED, R-SHAPE-EMPTY-MARKER, R-SHAPE-CONTEXT-PATH, R-RECURSION, R-ORDER, R-NAME-TEXT]
+notes: |
+  Stress test combining the constructs above in one type: bounded and unbounded repeats, `maxOccurs="0"`
+  children, children of repeated `xs:choice` / `xs:sequence` compositors, `simpleContent` with string and
+  decimal bases, attribute-only types, mixed types with and without attributes, element `ref`, a
+  self-recursive type and `complexContent` extension.
+runs:
+  - id: default
+    data: data.xml
