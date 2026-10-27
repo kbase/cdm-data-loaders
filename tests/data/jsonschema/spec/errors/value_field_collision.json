@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "note": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "_value": {
+              "type": "string"
+            },
+            "author": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/spec/05_defs_and_refs.schema.json",
+  "title": "DefsAndRefsRoot",
+  "$ref": "#/$defs/Document",
+  "$defs": {
+    "IsoDate": {
+      "type": "string",
+      "format": "date",
+      "description": "ISO-8601 calendar date."
+    },
+    "Author": {
+      "type": "object",
+      "description": "Author contact record.",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "orcid": {
+          "type": "string"
+        }
+      }
+    },
+    "Document": {
+      "type": "object",
+      "required": [
+        "doc_id",
+        "lead_author"
+      ],
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "published_on": {
+          "$ref": "#/$defs/IsoDate"
+        },
+        "lead_author": {
+          "$ref": "#/$defs/Author",
+          "description": "Primary corresponding author."
+        },
+        "reviewer": {
+          "$ref": "#/$defs/Author"
+        },
+        "co_authors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Author"
+          }
+        }
+      }
+    }
+  }
+}
+

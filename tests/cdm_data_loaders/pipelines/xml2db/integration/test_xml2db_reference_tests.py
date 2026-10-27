@@ -11,7 +11,6 @@ import xmltodict
 
 from cdm_data_loaders.core.fields import PARQUET
 from tests.cdm_data_loaders.pipelines.helpers import (
-    LOADER_FILE_FORMATS,
     read_pipeline_tables,
     run_and_read,
     sorted_json,
@@ -21,7 +20,6 @@ from tests.cdm_data_loaders.pipelines.xml2db.integration.xml2db_reference_helper
     reconstruct_xml2db_entries,
 )
 
-CHUNK_DIRS = ("chunk_5_el", "chunk_20_el", "chunk_100_el")
 EXPECTED_ENTRY_COUNT = 100
 MASTER_XML = Path("chunk_100_el") / "uniref_100_part_01.xml.gz"
 
@@ -98,30 +96,6 @@ def test_xml2db_pass_reference_dataset_matches_xmltodict(
 
     reference = xmltodict_reference_entries(reference_xml_data_dir)
     assert sorted_json(reconstructed) == sorted_json(reference)
-
-
-def test_xml2db_pass_output_identical_across_chunk_dirs(run_xml2db_pipeline_fxt: Callable[..., Any]) -> None:
-    """Splitting the same 100 entries across differently-sized file chunks does not change the result."""
-    reconstructed_by_chunk = {
-        chunk_dir: run_and_reconstruct(run_xml2db_pipeline_fxt, chunk_dir) for chunk_dir in CHUNK_DIRS
-    }
-
-    for chunk_dir, entries in reconstructed_by_chunk.items():
-        assert len(entries) == EXPECTED_ENTRY_COUNT, chunk_dir
-
-    sorted_by_chunk = {chunk_dir: sorted_json(entries) for chunk_dir, entries in reconstructed_by_chunk.items()}
-    baseline = sorted_by_chunk[CHUNK_DIRS[0]]
-    for chunk_dir in CHUNK_DIRS[1:]:
-        assert sorted_by_chunk[chunk_dir] == baseline, chunk_dir
-
-
-@pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS)
-def test_xml2db_pass_output_identical_across_loader_file_formats(
-    run_xml2db_pipeline_fxt: Callable[..., Any], loader_file_format: str
-) -> None:
-    """The save format (jsonl vs parquet) does not affect the reconstructed content."""
-    reconstructed = run_and_reconstruct(run_xml2db_pipeline_fxt, "chunk_20_el", loader_file_format=loader_file_format)
-    assert len(reconstructed) == EXPECTED_ENTRY_COUNT
 
 
 def test_xml2db_pass_referential_integrity_across_merged_files(

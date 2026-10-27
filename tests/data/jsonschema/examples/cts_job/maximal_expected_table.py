@@ -1,0 +1,706 @@
+"""Expected PyArrow table for maximal real-world example cts_job."""
+
+# ruff: noqa: INP001
+
+import pyarrow as pa
+from expected_schema import EXPECTED_SCHEMA
+
+EXPECTED_TABLE = pa.Table.from_pylist(
+    [
+        {
+            "outputs": [
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/log_file.txt",
+                    "crc64nvme": "YetpCoji89E=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/report_1792766652.4976728__2026-10-23 15:41:54.557359+00:00.txt",
+                    "crc64nvme": "oFlF2ps4FRA=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/uniref_100/init",
+                    "crc64nvme": "Bb62uECKpvw=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/uniref_100/_dlt_pipeline_state/uniref__1792766652.4976728__219847d34c216fd49eaa0a29b5685af1527b4cb7961bd786a5e26b3d2a3948ee.jsonl",
+                    "crc64nvme": "Oc/EWEbBI24=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/uniref_100/_dlt_loads/uniref__1792766652.4976728.jsonl",
+                    "crc64nvme": "H1xMKkQHOFY=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/uniref_100/_dlt_loads/uniref__1792770114.583901.jsonl",
+                    "crc64nvme": "QK7ttbxhQqU=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/uniref_100/entry/1792766652.4976728.813434744e.parquet",
+                    "crc64nvme": "z9Cvo3R6sX4=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/uniref_100/entry/1792766652.4976728.51a72d392c.parquet",
+                    "crc64nvme": "B8ha5S1/xXE=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/uniref_100/entry/1792766652.4976728.d83e2c6f87.parquet",
+                    "crc64nvme": "Rfy09JuYVeU=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/uniref_100/entry/1792766652.4976728.8e924d979f.parquet",
+                    "crc64nvme": "Ptx4ZtzfrI4=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/uniref_100/entry/1792766652.4976728.92504fbf37.parquet",
+                    "crc64nvme": "QY5cXWS8Kuc=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/uniref_100/_dlt_version/uniref__1792770114.5197887__219847d34c216fd49eaa0a29b5685af1527b4cb7961bd786a5e26b3d2a3948ee.jsonl",
+                    "crc64nvme": "lxnoFj56GaU=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/uniref_100/_dlt_version/uniref__1792770114.6481373__eb434791363e8c934022b6faf778c49b4125d350419c4f9dd2e04791906a5393.jsonl",
+                    "crc64nvme": "6M+qilyqvxc=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/uniref_100/_load_info/1792770114.583901.443a8320dd.jsonl.gz",
+                    "crc64nvme": "D80ZjtzgUK0=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/state.json",
+                    "crc64nvme": "Iwe4P8J1Af0=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/trace.pickle",
+                    "crc64nvme": "hN5641iL3Hs=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/schemas/uniref.schema.json",
+                    "crc64nvme": "8H8HIYpB1Qg=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/normalize/.version",
+                    "crc64nvme": "zOeiWdY8BCE=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/.version",
+                    "crc64nvme": "TVSzAYZin6o=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792766652.4976728/load_package_state.json",
+                    "crc64nvme": "KTHoLjwSTAM=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792766652.4976728/schema.json",
+                    "crc64nvme": "5bTldziTvNc=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792766652.4976728/applied_schema_updates.json",
+                    "crc64nvme": "4XFncxoZtjY=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792766652.4976728/package_completed.json",
+                    "crc64nvme": "QRhACZr0J8A=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792770114.583901/load_package_state.json",
+                    "crc64nvme": "Zv61rVvcMbs=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792770114.583901/schema.json",
+                    "crc64nvme": "X8cM63TM3kg=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792770114.583901/applied_schema_updates.json",
+                    "crc64nvme": "JhddfQZvrCU=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792770114.583901/package_completed.json",
+                    "crc64nvme": "QRhACZr0J8A=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792766652.4976728/completed_jobs/entry.813434744e.0.parquet",
+                    "crc64nvme": "z9Cvo3R6sX4=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792766652.4976728/completed_jobs/_dlt_pipeline_state.b1dbfcdc2a.0.jsonl.gz",
+                    "crc64nvme": "jb/PpRfGC3I=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792766652.4976728/completed_jobs/entry.51a72d392c.0.parquet",
+                    "crc64nvme": "B8ha5S1/xXE=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792766652.4976728/completed_jobs/entry.d83e2c6f87.0.parquet",
+                    "crc64nvme": "Rfy09JuYVeU=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792766652.4976728/completed_jobs/entry.8e924d979f.0.parquet",
+                    "crc64nvme": "Ptx4ZtzfrI4=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792766652.4976728/completed_jobs/entry.92504fbf37.0.parquet",
+                    "crc64nvme": "QY5cXWS8Kuc=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792766652.4976728/.restore/state.json",
+                    "crc64nvme": "h+ukr8cdheA=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792770114.583901/completed_jobs/_load_info.443a8320dd.0.jsonl.gz",
+                    "crc64nvme": "D80ZjtzgUK0=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792770114.583901/.restore/state.json",
+                    "crc64nvme": "Iwe4P8J1Af0=",
+                },
+                {
+                    "file": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/1792766652.4976728__2026-10-23 15:41:54.557359+00:00/uniref/load/loaded/1792770114.583901/.restore/schemas/uniref.schema.json",
+                    "crc64nvme": "nCdltW/rRYY=",
+                },
+            ],
+            "output_file_count": 37,
+            "id": "86844795-67ed-4d4b-b981-5eb482f499c6",
+            "state": "complete",
+            "transition_times": [
+                {"state": "created", "time": "2026-10-23T14:43:50.339000Z"},
+                {"state": "download_submitted", "time": "2026-10-23T14:43:50.367000Z"},
+                {"state": "job_submitting", "time": "2026-10-23T14:44:10.612000Z"},
+                {"state": "job_submitted", "time": "2026-10-23T14:44:11.279000Z"},
+                {"state": "upload_submitting", "time": "2026-10-23T15:41:55.483000Z"},
+                {"state": "upload_submitted", "time": "2026-10-23T15:41:55.551000Z"},
+                {"state": "complete", "time": "2026-10-23T15:42:57.859000Z"},
+            ],
+            "user": "ialarmedalien",
+            "admin_meta": {
+                "cse_event_processing_start": "2026-10-23T15:43:04.780730+00:00",
+                "cse_event_processing_no_operation": "2026-10-23T15:43:04.943741+00:00",
+            },
+            "job_input": {
+                "cluster": "kbase",
+                "image": "ghcr.io/kbase/cdm-data-loaders@sha256:747f6a055fb3a5dc811373565f61e94df4a9d08d09bf09ecd7be5467f82aebbb",
+                "params": {
+                    "input_mount_point": "/input_dir",
+                    "output_mount_point": "/output_dir",
+                    "declobber": False,
+                    "args": [
+                        {"_value": "pipeline"},
+                        {"_value": "uniref"},
+                        {"_value": "--dataset-name"},
+                        {"_value": "uniref_100"},
+                        {"_value": "-i"},
+                        {"_value": "/input_dir"},
+                        {"_value": "-o"},
+                        {"_value": "/output_dir"},
+                        {"_value": "-d"},
+                        {"_value": "cts"},
+                        {"_value": "-p"},
+                        {"_value": "True"},
+                        {"_value": "--log-config-file"},
+                        {"_value": "/input_dir/logger_config.json"},
+                    ],
+                },
+                "num_containers": 1,
+                "cpus": 11,
+                "gpus": 0,
+                "memory": 100000000000,
+                "runtime": "PT10M",
+                "output_dir": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/uniref/uniref100/uniref100.xml.gz/",
+                "input_files": [
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00901.xml.gz",
+                        "crc64nvme": "I7ZvxE4/2Cs=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00902.xml.gz",
+                        "crc64nvme": "PShwZ1YTS1M=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00903.xml.gz",
+                        "crc64nvme": "uhlsDw2jnyI=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00904.xml.gz",
+                        "crc64nvme": "LFnossLcgko=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00905.xml.gz",
+                        "crc64nvme": "kyZyDfn1yBM=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00906.xml.gz",
+                        "crc64nvme": "pRe+89Ajp6w=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00907.xml.gz",
+                        "crc64nvme": "MDygV6n+IUg=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00908.xml.gz",
+                        "crc64nvme": "gOE6kyBqsOA=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00909.xml.gz",
+                        "crc64nvme": "4DqQGjF2uN4=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00910.xml.gz",
+                        "crc64nvme": "0NDUxs3D/KA=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00911.xml.gz",
+                        "crc64nvme": "ErPRtYHG0qs=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00912.xml.gz",
+                        "crc64nvme": "QIkR+wNHjFE=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00913.xml.gz",
+                        "crc64nvme": "yskjnjIP9ZE=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00914.xml.gz",
+                        "crc64nvme": "xiFhSIJmzkM=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00915.xml.gz",
+                        "crc64nvme": "LqcSEL2Flgw=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00916.xml.gz",
+                        "crc64nvme": "toI46/7cP6w=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00917.xml.gz",
+                        "crc64nvme": "f+i+lTDBR1U=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00918.xml.gz",
+                        "crc64nvme": "9F8hdpcZrFs=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00919.xml.gz",
+                        "crc64nvme": "DeE6y166rZw=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00920.xml.gz",
+                        "crc64nvme": "v/XLAIPhlPk=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00921.xml.gz",
+                        "crc64nvme": "4mwGQwn35WY=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00922.xml.gz",
+                        "crc64nvme": "RDXOBgsURrQ=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00923.xml.gz",
+                        "crc64nvme": "s0Xa33+zjU0=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00924.xml.gz",
+                        "crc64nvme": "ZX76o6BbG+k=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00925.xml.gz",
+                        "crc64nvme": "fv+e0Ap5xq4=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00926.xml.gz",
+                        "crc64nvme": "nMvPKcQsgG8=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00927.xml.gz",
+                        "crc64nvme": "xtGxOC71tYc=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00928.xml.gz",
+                        "crc64nvme": "FwyVDrJ7UJE=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00929.xml.gz",
+                        "crc64nvme": "XKjQf39LCDc=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00930.xml.gz",
+                        "crc64nvme": "YVBpJMjTF0Q=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00931.xml.gz",
+                        "crc64nvme": "t99Jn6AdHzc=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00932.xml.gz",
+                        "crc64nvme": "AZ+5HCuHvxA=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00933.xml.gz",
+                        "crc64nvme": "JzSAx/2bLWk=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00934.xml.gz",
+                        "crc64nvme": "hsb116dQ6rI=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00935.xml.gz",
+                        "crc64nvme": "dIMvpUazcyw=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00936.xml.gz",
+                        "crc64nvme": "Vb4NZPsUSws=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00937.xml.gz",
+                        "crc64nvme": "zyX6aKkq7jk=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00938.xml.gz",
+                        "crc64nvme": "O0UomXy622c=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00939.xml.gz",
+                        "crc64nvme": "/znK28KJTjk=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00940.xml.gz",
+                        "crc64nvme": "Ul7txpVB4cQ=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00941.xml.gz",
+                        "crc64nvme": "mgxRdhEvuOg=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00942.xml.gz",
+                        "crc64nvme": "SVWekta8l0c=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00943.xml.gz",
+                        "crc64nvme": "2sd+HrUemIs=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00944.xml.gz",
+                        "crc64nvme": "3Di/rXN8NWA=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00945.xml.gz",
+                        "crc64nvme": "DeP+sg5WtTk=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00946.xml.gz",
+                        "crc64nvme": "afn9IyJ7rWg=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00947.xml.gz",
+                        "crc64nvme": "wOFqkr18rE8=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00948.xml.gz",
+                        "crc64nvme": "/YoD8rlxIDs=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00949.xml.gz",
+                        "crc64nvme": "rrfQfh8sViQ=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00950.xml.gz",
+                        "crc64nvme": "cKgbZTEvoEY=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00951.xml.gz",
+                        "crc64nvme": "fRIDwpT8ZY4=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00952.xml.gz",
+                        "crc64nvme": "VXxAVmcmIUY=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00953.xml.gz",
+                        "crc64nvme": "rXgY1zN0LBg=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00954.xml.gz",
+                        "crc64nvme": "2OWmJ0BtuMI=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00955.xml.gz",
+                        "crc64nvme": "rHT2/UmnK3w=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00956.xml.gz",
+                        "crc64nvme": "VaUSc6zE3tg=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00957.xml.gz",
+                        "crc64nvme": "GBcwCd5LByI=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00958.xml.gz",
+                        "crc64nvme": "Zyre71e/Vd8=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00959.xml.gz",
+                        "crc64nvme": "P7emDdBJ6S8=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00960.xml.gz",
+                        "crc64nvme": "pXxHRBlVN8E=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00961.xml.gz",
+                        "crc64nvme": "IvDue8zTBaA=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00962.xml.gz",
+                        "crc64nvme": "oq8cuWxCpWs=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00963.xml.gz",
+                        "crc64nvme": "s3MU8QHgzdo=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00964.xml.gz",
+                        "crc64nvme": "dNyIkdkJD68=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00965.xml.gz",
+                        "crc64nvme": "Qmi310kWfrQ=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00966.xml.gz",
+                        "crc64nvme": "waf6BC/NyNU=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00967.xml.gz",
+                        "crc64nvme": "P68CJd7KmGo=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00968.xml.gz",
+                        "crc64nvme": "OsmvTygQlKw=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00969.xml.gz",
+                        "crc64nvme": "7iyD21gjMsw=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00970.xml.gz",
+                        "crc64nvme": "CMUz+fM55Bs=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00971.xml.gz",
+                        "crc64nvme": "U4z1MVCayWo=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00972.xml.gz",
+                        "crc64nvme": "fR68wEfg+hU=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00973.xml.gz",
+                        "crc64nvme": "jl3JpfnijRc=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00974.xml.gz",
+                        "crc64nvme": "A51PgS8iUIU=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00975.xml.gz",
+                        "crc64nvme": "NAjQmGkKXPs=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00976.xml.gz",
+                        "crc64nvme": "FePD5NBKgCg=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00977.xml.gz",
+                        "crc64nvme": "OFs7PoZG/Q0=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00978.xml.gz",
+                        "crc64nvme": "seSyambXUdI=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00979.xml.gz",
+                        "crc64nvme": "xGBgEYfGGm4=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00980.xml.gz",
+                        "crc64nvme": "AJapve6eeUA=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00981.xml.gz",
+                        "crc64nvme": "Ut3dINq172I=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00982.xml.gz",
+                        "crc64nvme": "eztQlsjZdu8=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00983.xml.gz",
+                        "crc64nvme": "fmMOg/cYAYo=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00984.xml.gz",
+                        "crc64nvme": "lz7dNy4S+jo=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00985.xml.gz",
+                        "crc64nvme": "VTSosmfTvJU=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00986.xml.gz",
+                        "crc64nvme": "8NgCDRCDd0E=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00987.xml.gz",
+                        "crc64nvme": "veAwqrRhzbM=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00988.xml.gz",
+                        "crc64nvme": "iCJnOeDZ8Lc=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00989.xml.gz",
+                        "crc64nvme": "SstUmtV9x8s=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00990.xml.gz",
+                        "crc64nvme": "hvdb09Q3R1E=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00991.xml.gz",
+                        "crc64nvme": "u1eoNuvR2bk=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00992.xml.gz",
+                        "crc64nvme": "mfyfoapFs4A=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00993.xml.gz",
+                        "crc64nvme": "GNBAMAfiQHs=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00994.xml.gz",
+                        "crc64nvme": "YFwQTzM/WnA=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00995.xml.gz",
+                        "crc64nvme": "NU7s7gDnsyI=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00996.xml.gz",
+                        "crc64nvme": "emyRjNDoDcw=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00997.xml.gz",
+                        "crc64nvme": "oF6O3t+xBmo=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00998.xml.gz",
+                        "crc64nvme": "thNC/o2Qq+U=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_00999.xml.gz",
+                        "crc64nvme": "Ve0WPqO300w=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/uniref/uniref100/uniref100.xml.gz/part_01000.xml.gz",
+                        "crc64nvme": "AmKF7K3jDe4=",
+                    },
+                    {"file": "cts/io/ialarmedalien/misc/logger_config.json", "crc64nvme": "ImY6G9xmYs4="},
+                ],
+            },
+            "image": {
+                "registered_by": "gavinlocaladmin",
+                "registered_on": "2026-10-22T02:34:49.514000Z",
+                "name": "ghcr.io/kbase/cdm-data-loaders",
+                "digest": "sha256:747f6a055fb3a5dc811373565f61e94df4a9d08d09bf09ecd7be5467f82aebbb",
+                "entrypoint": ["./scripts/entrypoint.sh"],
+                "tag": "v0.1.12",
+            },
+            "input_file_count": 101,
+            "cpu_hours": 0.9685900804811111,
+            "cpu_factor": 0.09150890887030012,
+            "max_memory": 4710187008,
+        },
+        {
+            "error": "The job produced no output files",
+            "id": "253089e2-7ad1-4e32-a9fe-11aabda31c62",
+            "state": "error",
+            "transition_times": [
+                {"state": "created", "time": "2026-10-22T04:27:42.903000Z"},
+                {"state": "download_submitted", "time": "2026-10-22T04:27:42.988000Z"},
+                {"state": "job_submitting", "time": "2026-10-22T04:27:52.802000Z"},
+                {"state": "job_submitted", "time": "2026-10-22T04:28:31.509000Z"},
+                {"state": "upload_submitting", "time": "2026-10-22T04:28:33.503000Z"},
+                {"state": "upload_submitted", "time": "2026-10-22T04:28:33.560000Z"},
+                {"state": "error", "time": "2026-10-22T04:29:28.225000Z"},
+            ],
+            "user": "ialarmedalien",
+            "admin_meta": {},
+            "job_input": {
+                "cluster": "kbase",
+                "image": "ghcr.io/kbase/cdm-data-loaders@sha256:029f2893e1109f1d9961233f439cb411de8d7623203eb8f17410dca0bd516088",
+                "params": {
+                    "input_mount_point": "/input_dir",
+                    "output_mount_point": "/output_dir",
+                    "declobber": False,
+                    "args": [
+                        {"_value": "uniprot"},
+                        {"_value": "-i"},
+                        {"_value": "/input_dir"},
+                        {"_value": "-o"},
+                        {"_value": "/output_dir"},
+                        {"_value": "--log-config-file"},
+                        {"_value": "/input_dir/logger_config.json"},
+                    ],
+                },
+                "num_containers": 1,
+                "cpus": 11,
+                "gpus": 0,
+                "memory": 100000000000,
+                "runtime": "PT10M",
+                "output_dir": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/knowledgebase/complete/uniprot_sprot.xml.gz/batch_001/",
+                "input_files": [
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/knowledgebase/complete/uniprot_sprot.xml.gz/part_00001.xml.gz",
+                        "crc64nvme": "AFAZfDzbbfc=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/knowledgebase/complete/uniprot_sprot.xml.gz/part_00002.xml.gz",
+                        "crc64nvme": "ZpZSu7BcMGs=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/knowledgebase/complete/uniprot_sprot.xml.gz/part_00003.xml.gz",
+                        "crc64nvme": "q8rI7iaPk50=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/knowledgebase/complete/uniprot_sprot.xml.gz/part_00004.xml.gz",
+                        "crc64nvme": "ea4sVxZ8JFI=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/knowledgebase/complete/uniprot_sprot.xml.gz/part_00005.xml.gz",
+                        "crc64nvme": "KPrvcCVDlwM=",
+                    },
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/knowledgebase/complete/uniprot_sprot.xml.gz/part_00006.xml.gz",
+                        "crc64nvme": "XWV3eNCm6hY=",
+                    },
+                    {"file": "cts/io/ialarmedalien/misc/logger_config.json", "crc64nvme": "ImY6G9xmYs4="},
+                ],
+            },
+            "image": {
+                "registered_by": "gavinlocaladmin",
+                "registered_on": "2026-04-26T15:46:11.342000Z",
+                "name": "ghcr.io/kbase/cdm-data-loaders",
+                "digest": "sha256:029f2893e1109f1d9961233f439cb411de8d7623203eb8f17410dca0bd516088",
+                "entrypoint": ["./scripts/entrypoint.sh"],
+                "tag": "v0.1.8",
+            },
+            "input_file_count": 7,
+            "cpu_hours": 0.0023639620611111112,
+            "cpu_factor": 0.4487487295293731,
+            "max_memory": 116162560,
+        },
+    ],
+    schema=EXPECTED_SCHEMA,
+)

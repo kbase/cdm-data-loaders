@@ -216,7 +216,11 @@ def resolve_pipeline(pipeline: PipelineIdentifier) -> PipelineSpec:
 
     if isinstance(pipeline, PipelineCli):
         module_path = pipeline.pipeline_fn.__module__
-        cli_command = MODULE_TO_CLI_COMMAND.get(module_path, module_path.rsplit(".", maxsplit=1)[-1])
+        prog_name = pipeline.settings_cls.model_config.get("cli_prog_name")
+        cli_command = MODULE_TO_CLI_COMMAND.get(
+            module_path,
+            str(prog_name) if prog_name else module_path.rsplit(".", maxsplit=1)[-1],
+        )
         return PipelineSpec(
             cli_command=cli_command,
             module_path=module_path,
@@ -228,31 +232,42 @@ def resolve_pipeline(pipeline: PipelineIdentifier) -> PipelineSpec:
     if isinstance(pipeline, ModuleType):
         module_path = pipeline.__name__
         short_key = module_path.removeprefix("cdm_data_loaders.pipelines.")
+        cli_attr = getattr(pipeline, "cli", None)
+        prog_name = (
+            cli_attr.settings_cls.model_config.get("cli_prog_name") if isinstance(cli_attr, PipelineCli) else None
+        )
         cli_command = MODULE_TO_CLI_COMMAND.get(
             module_path,
-            PIPELINE_TARGETS.get(short_key, (short_key.rsplit(".", maxsplit=1)[-1], module_path))[0],
+            PIPELINE_TARGETS.get(
+                short_key,
+                (str(prog_name) if prog_name else short_key.rsplit(".", maxsplit=1)[-1], module_path),
+            )[0],
         )
         return _spec_from_module(cli_command, pipeline)
 
     if callable(pipeline):
         module_path = getattr(pipeline, "__module__", "")
-        if module_path in MODULE_TO_CLI_COMMAND:
-            module = import_module(module_path)
-            return _spec_from_module(MODULE_TO_CLI_COMMAND[module_path], module)
+        module = (sys.modules.get(module_path) or import_module(module_path)) if module_path else None
+        if module is not None:
+            if module_path in MODULE_TO_CLI_COMMAND:
+                return _spec_from_module(MODULE_TO_CLI_COMMAND[module_path], module)
+            cli_attr = getattr(module, "cli", None)
+            if isinstance(cli_attr, PipelineCli) and cli_attr.pipeline_fn is pipeline:
+                return resolve_pipeline(cli_attr)
         err_msg = f"Cannot resolve pipeline from callable {pipeline!r} (module {module_path!r})"
         raise ValueError(err_msg)
 
     if isinstance(pipeline, str):
         normalized = pipeline.strip().removeprefix("cdm_data_loaders.pipelines.")
-        if normalized in PIPELINE_TARGETS:
-            cli_command, module_path = PIPELINE_TARGETS[normalized]
-            module = import_module(module_path)
-            return _spec_from_module(cli_command, module)
         full_module_path = f"cdm_data_loaders.pipelines.{normalized}"
-        if full_module_path in MODULE_TO_CLI_COMMAND:
-            cli_command = MODULE_TO_CLI_COMMAND[full_module_path]
-            module = import_module(full_module_path)
-            return _spec_from_module(cli_command, module)
+        target = PIPELINE_TARGETS.get(normalized) or (
+            (MODULE_TO_CLI_COMMAND[full_module_path], full_module_path)
+            if full_module_path in MODULE_TO_CLI_COMMAND
+            else None
+        )
+        if target is not None:
+            cli_command, module_path = target
+            return _spec_from_module(cli_command, import_module(module_path))
 
     err_msg = f"Unknown pipeline {pipeline!r}. Known pipelines: {', '.join(sorted(PIPELINE_TARGETS))}"
     raise ValueError(err_msg)
@@ -408,7 +423,7 @@ def _normalize_cli_args(cli_args: list[str]) -> list[str]:
         arg = cli_args[idx]
         if arg == "--log-config-file" and idx + 1 < len(cli_args):
             log_path = Path(cli_args[idx + 1])
-            if log_path.suffix.lower() == ".conf" and log_path.exists() and log_path.stat().st_size == 0:
+            if log_path.suffix.lower() == ".conf" and (not log_path.exists() or log_path.stat().st_size == 0):
                 idx += 2
                 continue
         normalized.append(arg)
@@ -453,6 +468,10 @@ def _write_docker_dlt_config(config_path: Path, use_destination: str) -> None:
     for dest in sorted(destinations):
         blocks.append(f'[destination.{dest}]\nbucket_url = "{CONTAINER_OUTPUT_DIR}"\ndestination_type = "filesystem"\n')
         blocks.append(f'[sources.{dest}]\nbucket_url = "{CONTAINER_INPUT_DIR}"\n')
+    for section in ("extract", "normalize", "load"):
+        workers = dlt.config.get(f"{section}.workers")
+        if workers is not None:
+            blocks.append(f"[{section}]\nworkers = {int(workers)}\n")
     config_path.write_text("\n".join(blocks), encoding="utf-8")
 
 
@@ -685,7 +704,12 @@ class PipelineTestRunner:
         else:
             docker_cmd.extend(["-e", "PYTHONPATH=/app/src:/app"])
 
-        docker_cmd.extend([image_tag, "pipeline", spec.cli_command, *container_args])
+        docker_target = (
+            spec.cli_command
+            if spec.module_path in MODULE_TO_CLI_COMMAND
+            else f"{spec.module_path.replace('.', '/')}.py"
+        )
+        docker_cmd.extend([image_tag, "pipeline", docker_target, *container_args])
 
         result = subprocess.run(docker_cmd, capture_output=True, text=True, check=False)  # noqa: S603
         if result.returncode != 0:

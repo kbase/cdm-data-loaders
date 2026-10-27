@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/spec/01_scalars_and_formats.schema.json",
+  "title": "ScalarsAndFormatsRecord",
+  "type": "object",
+  "required": [
+    "id",
+    "status",
+    "version",
+    "flag"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique record identifier."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "archived",
+        "pending"
+      ],
+      "description": "Record lifecycle status."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 32767
+    },
+    "flag": {
+      "type": "boolean",
+      "description": "Primary boolean flag."
+    },
+    "bounded_int": {
+      "type": "integer",
+      "exclusiveMinimum": -1000,
+      "exclusiveMaximum": 1000
+    },
+    "big_int": {
+      "type": "integer"
+    },
+    "float_val": {
+      "type": "number"
+    },
+    "decimal_multiple": {
+      "type": "number",
+      "multipleOf": 0.01
+    },
+    "created_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "event_time": {
+      "type": "string",
+      "format": "time"
+    },
+    "elapsed": {
+      "type": "string",
+      "format": "duration"
+    },
+    "record_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "homepage": {
+      "type": "string",
+      "format": "uri"
+    },
+    "const_tag": {
+      "const": "v1"
+    },
+    "untyped_int_enum": {
+      "enum": [
+        10,
+        20,
+        30
+      ]
+    },
+    "untyped_mixed_enum": {
+      "enum": [
+        1,
+        "two",
+        true
+      ]
+    },
+    "numeric_union": {
+      "type": [
+        "integer",
+        "number"
+      ]
+    },
+    "scalar_union": {
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "date_or_year_union": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9]{4}$"
+        }
+      ]
+    },
+    "raw_b64": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "raw_hex": {
+      "type": "string",
+      "contentEncoding": "base16"
+    }
+  }
+}
+

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/spec/04_objects_and_maps.schema.json",
+  "title": "ObjectsAndMapsRecord",
+  "type": "object",
+  "required": [
+    "id",
+    "closed_meta"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "closed_meta": {
+      "type": "object",
+      "description": "Strict object with additionalProperties set to false.",
+      "required": [
+        "owner"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "owner": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "integer"
+        }
+      }
+    },
+    "open_meta": {
+      "type": "object",
+      "description": "Fixed-property object with boolean additionalProperties true.",
+      "additionalProperties": true,
+      "properties": {
+        "source": {
+          "type": "string"
+        }
+      }
+    },
+    "string_to_int_map": {
+      "type": "object",
+      "description": "Dynamic map from string keys to non-null integer counts.",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "nullable_score_map": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "number",
+          "null"
+        ]
+      }
+    },
+    "pattern_metric_map": {
+      "type": "object",
+      "patternProperties": {
+        "^metric_[0-9]+$": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "struct_map": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
+
