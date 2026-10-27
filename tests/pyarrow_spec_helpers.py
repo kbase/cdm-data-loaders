@@ -129,4 +129,3 @@ def assert_rows_and_table_match_expected(
     roundtrip_table = pq.read_table(buf)
     assert roundtrip_table.num_rows == expected_table.num_rows
     assert roundtrip_table.to_pylist() == expected_table.to_pylist()
-
