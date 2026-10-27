@@ -241,7 +241,7 @@ def test_get_file_download_links_use_pattern_file(tmp_path: Path, pattern_lines:
     settings = AtbSettings(
         input_dir=str(tmp_path),
         output_dir=str(tmp_path),
-        pattern_file="patterns.txt",
+        pattern_file=str(tmp_path / "patterns.txt"),
         use_destination="local_fs",
     )  # pyright: ignore[reportCallIssue]
     file_path = Path("tests") / "data" / "atb" / "all_atb_files.tsv"

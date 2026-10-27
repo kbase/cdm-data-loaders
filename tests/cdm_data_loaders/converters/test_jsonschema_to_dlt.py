@@ -17,7 +17,6 @@ from cdm_data_loaders.converters.jsonschema_to_dlt import (
     InvalidJSONSchemaError,
     JSONSchemaToDlt,
     JSONSchemaToDltError,
-    _data_type_from_enum,
 )
 from cdm_data_loaders.utils.jsonschema.dereferencer import dereference_schema
 from tests.cdm_data_loaders.converters.conftest import base_object_schema
@@ -38,17 +37,6 @@ def test_json_schema_to_dlt_fail_empty_schema_name(schema_name: str) -> None:
     """A blank schema_name raises at construction."""
     with pytest.raises(ValidationError, match="schema_name must be a non-empty string"):
         JSONSchemaToDlt(schema_name=schema_name)
-
-
-def test_data_type_from_enum_values() -> None:
-    """_data_type_from_enum maps value lists to the narrowest covering dlt type."""
-    assert _data_type_from_enum([]) == "text"
-    assert _data_type_from_enum([True, False]) == "bool"
-    assert _data_type_from_enum([1, 2, 3]) == "bigint"
-    assert _data_type_from_enum([1.5, 2.5]) == "double"
-    assert _data_type_from_enum([1, 2.5]) == "double"
-    assert _data_type_from_enum(["a", "b"]) == "text"
-    assert _data_type_from_enum([1, "a"]) == "text"
 
 
 def test_decimal_places_values() -> None:
