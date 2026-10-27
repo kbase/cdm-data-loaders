@@ -1,0 +1,89 @@
+# Error specification fixtures for the JSON Schema -> PyArrow converter.
+# `code` must match the `code` of a JSONSchemaToPyArrowError subclass in
+# cdm_data_loaders.converters.jsonschema_to_pyarrow. `file` is relative to this directory.
+# `match` is a regex applied to the exception message.
+errors:
+  - file: missing_schema_dialect.json
+    code: E1
+    match: \$schema|2020-12|dialect
+    description: Declares the Draft-07 dialect URI.
+  - file: missing_schema_keyword.json
+    code: E1
+    match: \$schema|2020-12|dialect
+    description: No `$schema` keyword.
+  - file: scalar_top_level.json
+    code: E2
+    match: object|top-level|root
+    description: 'Root is `{"type": "string"}`.'
+  - file: array_top_level.json
+    code: E2
+    match: object|top-level|root
+    description: 'Root is `{"type": "array", "items": {"type": "integer"}}`.'
+  - file: map_top_level.json
+    code: E2
+    match: map|properties|top-level|root
+    description: 'Root is a pure map (`additionalProperties: {"type": "string"}`).'
+  - file: empty_object_top_level.json
+    code: E3
+    match: empty|properties
+    description: 'Root object has `properties: {}`.'
+  - file: empty_object_nested.json
+    code: E3
+    match: empty|properties
+    description: 'Nested property has `properties: {}`.'
+  - file: unconstrained_property.json
+    code: E4
+    match: unconstrained|type|boolean
+    description: 'Property schema is `{}`.'
+  - file: boolean_property_schema.json
+    code: E4
+    match: unconstrained|type|boolean
+    description: 'Property schema is `true`.'
+  - file: open_tuple_prefix_items.json
+    code: E5
+    match: prefixItems|open tuple|items
+    description: '`prefixItems` with `items: {"type": "boolean"}`.'
+  - file: mixed_properties_and_map.json
+    code: E6
+    match: additionalProperties|patternProperties|mixed
+    description: '`properties` together with `additionalProperties: {"type": "integer"}`.'
+  - file: negation_not_keyword.json
+    code: E7
+    match: not
+    description: 'Property uses `"not": {"type": "string"}`.'
+  - file: incompatible_branch_shapes.json
+    code: E8
+    match: incompatible|branch|oneOf|anyOf
+    description: '`oneOf` with an object branch and an array branch.'
+  - file: unresolvable_ref.json
+    code: E9
+    match: \$ref|DoesNotExist|unresolvable
+    description: '`$ref` to the missing `#/$defs/DoesNotExist`.'
+  - file: dynamic_ref.json
+    code: E9
+    match: \$dynamicRef|dynamic|ref
+    description: 'Property uses `$dynamicRef`.'
+  - file: recursive_date_type.json
+    code: E10
+    match: recursive
+    description: 'Recursive `DatedNode` has a `format: "date"` property.'
+  - file: recursive_binary_type.json
+    code: E10
+    match: recursive
+    description: 'Recursive `BlobNode` has a `contentEncoding: "base64"` property.'
+  - file: null_only_field.json
+    code: E11
+    match: "null"
+    description: 'Property is `{"type": "null"}`.'
+  - file: const_null_field.json
+    code: E11
+    match: "null"
+    description: 'Property is `{"const": null}`.'
+  - file: enum_null_field.json
+    code: E11
+    match: "null"
+    description: 'Property is `{"enum": [null]}`.'
+  - file: value_field_collision.json
+    code: E12
+    match: _value|collision|scalar|object
+    description: Object branch of a string + object `anyOf` declares `_value`.

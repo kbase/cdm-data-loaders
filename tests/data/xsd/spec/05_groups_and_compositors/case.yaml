@@ -1,0 +1,12 @@
+title: Model Groups, Attribute Groups, `xs:all` and Duplicate Element Names
+xml_tag: item
+schema: schema.xsd
+rules: [R-SHAPE-GROUPS, R-SHAPE-CARDINALITY, R-ORDER, R-NULL-CHOICE, R-NULL-CHILD]
+notes: |
+  - `pagination` is `(StartPage, EndPage?, MedlinePgn?) | MedlinePgn`: `MedlinePgn` appears in both choice
+    branches but has `overall_max_occurs == 1`, so it is a single field emitted once.
+  - `pairs` repeats `<xs:group ref="kvGroup" maxOccurs="unbounded"/>`, so `k` and `v` are lists.
+  - `meta` uses `<xs:all>`; `auditAttrs` is an `xs:attributeGroup`.
+runs:
+  - id: default
+    data: data.xml

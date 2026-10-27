@@ -36,35 +36,34 @@ jobs:
         continue-on-error: true
         run: uv run ruff check --output-format=github .
 
-  spark_tests:
-    name: Run container tests
+  container_tests:
+    name: Run container tests (${{ matrix.suite.name }})
     needs: code_format_and_lint
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         suite:
-          - name: spark
-            args: tests/cdm_data_loaders/utils
-          - name: integration
-            args: tests/integration
           - name: pipelines
-            args: tests/cdm_data_loaders/pipelines
-          - name: all the rest
-            args: --ignore=tests/cdm_data_loaders/utils --ignore=tests/integration --ignore=tests/cdm_data_loaders/pipelines
+            args: tests/cdm_data_loaders/pipelines/
+          - name: integration
+            args: tests/integration/
+          - name: everything else
+            args: --ignore=tests/integration --ignore=tests/cdm_data_loaders/pipelines
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - name: Run spark tests
+      - name: Run container tests
         shell: bash
         continue-on-error: false
         run: |
-          docker pull ghcr.io/kbasedatalakehouse/spark_notebook:main
+          docker build -t cdm-data-loaders-test:latest .
           echo "Running tests inside container..."
           # slightly nasty hack
           chmod 777 .
-          docker run --rm -e NB_USER=runner -v .:/tmp/cdm ghcr.io/kbasedatalakehouse/spark_notebook:main /bin/bash /tmp/cdm/scripts/run_tests.sh ${{matrix.suite.args}}
+          docker run --rm -v .:/out cdm-data-loaders-test:latest test --cov-report=xml:/out/coverage.xml --junitxml=/out/junit.xml -o junit_family=legacy ${{ matrix.suite.args }}
 
       - name: Send coverage to Codecov
         id: upload_coverage
@@ -72,6 +71,46 @@ jobs:
         with:
           files: coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Send test reports to Codecov
+        id: upload_test_reports
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        if: ${{ !cancelled() }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          report_type: test_results
+
+  docker_tests:
+    name: Run docker pipeline tests
+    runs-on: ubuntu-24.04
+    needs: code_format_and_lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run docker pipeline tests
+        shell: bash
+        continue-on-error: false
+        run: uv run pytest --run-docker -m "docker and not requires_spark and not requires_ceph" --cov --junitxml=junit.xml -o junit_family=legacy tests/cdm_data_loaders/pipelines/
+
+      - name: Send test reports to Codecov
+        id: upload_test_reports
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        if: ${{ !cancelled() }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          report_type: test_results
 
   tests:
     name: Run local tests (${{ matrix.suite.name }}, ${{ matrix.python-version }}, ${{ matrix.os }})
@@ -85,8 +124,6 @@ jobs:
         suite:
           - name: pipelines
             args: tests/cdm_data_loaders/pipelines/
-          # - name: docker
-          #   args: --run-docker -m "docker and not requires_spark and not requires_ceph" tests/cdm_data_loaders/pipelines/
           - name: integration
             args: tests/integration/
           - name: everything else

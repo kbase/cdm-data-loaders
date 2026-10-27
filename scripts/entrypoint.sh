@@ -79,7 +79,7 @@ case "$cmd" in
     exec /usr/bin/tini -- xml_file_splitter "$@"
     ;;
   test)
-    exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark and not requires_ceph"
+    exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark and not requires_ceph" --cov=src --cov-report=xml "$@"
     ;;
   ceph_integration_test)
     # run the CEPH-backed integration tests (requires a running CEPH instance)

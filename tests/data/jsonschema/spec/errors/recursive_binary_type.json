@@ -1,0 +1,23 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "node": {
+            "$ref": "#/$defs/BlobNode"
+        }
+    },
+    "$defs": {
+        "BlobNode": {
+            "type": "object",
+            "properties": {
+                "payload": {
+                    "type": "string",
+                    "contentEncoding": "base64"
+                },
+                "child": {
+                    "$ref": "#/$defs/BlobNode"
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/spec/06_recursion_depth.schema.json",
+  "title": "RecursionDepthRecord",
+  "type": "object",
+  "required": [
+    "id"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tree": {
+      "$ref": "#/$defs/TreeNode"
+    },
+    "section": {
+      "$ref": "#/$defs/Section"
+    }
+  },
+  "$defs": {
+    "TreeNode": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "weight": {
+          "type": "integer"
+        },
+        "branch": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TreeNode"
+          }
+        }
+      }
+    },
+    "Section": {
+      "type": "object",
+      "required": [
+        "section_title"
+      ],
+      "properties": {
+        "section_title": {
+          "type": "string"
+        },
+        "subsection": {
+          "$ref": "#/$defs/Subsection"
+        }
+      }
+    },
+    "Subsection": {
+      "type": "object",
+      "required": [
+        "subsection_title"
+      ],
+      "properties": {
+        "subsection_title": {
+          "type": "string"
+        },
+        "nested_sections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Section"
+          }
+        }
+      }
+    }
+  }
+}
+

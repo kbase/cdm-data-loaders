@@ -1,0 +1,11 @@
+title: Scalars, Formats, Binary Encodings, Enums and Scalar Unions
+schema: schema.json
+rules: [R-DIALECT, R-UNWRAP, R-NAME-PROPERTY, R-SCALAR-TYPE, R-SCALAR-ENUM-CONST, R-UNION-SCALAR, R-META-JSONSCHEMA-TYPE, R-META-COMMENT, R-NULL-REQUIRED, R-COERCE-SCALAR, R-COERCE-STRING-FALLBACK, R-COERCE-SPARSE]
+notes: |
+  - `untyped_mixed_enum` (`enum: [1, "two", true]`) falls back to `pa.string()`; the value `1` is coerced to `"1"`.
+  - `numeric_union` (`["integer", "number"]`) promotes to `pa.float64()`; `scalar_union` (`["integer", "string"]`) falls back to `pa.string()`.
+  - `date_or_year_union` mixes `string (date)` (`pa.date32()`) and `string`, so it falls back to `pa.string()`.
+  - The second record omits every optional key; they stay absent in the coerced row.
+runs:
+  - id: default
+    data: data.json

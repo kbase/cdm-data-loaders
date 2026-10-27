@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, ClassVar, Final, Literal
 
 import pyarrow as pa
 import xmlschema
@@ -88,6 +88,93 @@ SCALAR_ARROW_TYPES: Final[Mapping[str, pa.DataType]] = {
     "xs:base64Binary": pa.binary(),
     "xs:hexBinary": pa.binary(),
 }
+
+
+class XsdToPyArrowError(ValueError):
+    """Base class for XSD constructs that cannot be converted to a PyArrow schema.
+
+    Each subclass carries a stable specification ``code`` and a short ``title``; its docstring states the reason
+    the construct is rejected. The converter specification document is generated from these attributes.
+    """
+
+    code: ClassVar[str] = ""
+    title: ClassVar[str] = ""
+
+
+class XmlTagNotFoundError(XsdToPyArrowError):
+    """The target element is not declared anywhere in the XSD."""
+
+    code = "E1"
+    title = "`xml_tag` not found"
+
+
+class AmbiguousXmlTagError(XsdToPyArrowError):
+    """Declarations of `xml_tag` at the shallowest matching depth have different types, so no single `pa.Schema` can be chosen."""
+
+    code = "E2"
+    title = "Ambiguous `xml_tag` type"
+
+
+class NonStructXmlTagError(XsdToPyArrowError):
+    """A `pa.Table` schema needs top-level columns: the type of `xml_tag` must yield at least one attribute, `#text`, or child element field."""
+
+    code = "E3"
+    title = "Non-struct top-level `xml_tag`"
+
+
+class WildcardElementError(XsdToPyArrowError):
+    """Arbitrary undeclared child elements cannot be represented as fixed `pa.struct` fields."""
+
+    code = "E4"
+    title = "Element wildcard (`xs:any`)"
+
+
+class WildcardAttributeError(XsdToPyArrowError):
+    """Arbitrary undeclared attributes cannot be represented as fixed `pa.struct` fields."""
+
+    code = "E5"
+    title = "Attribute wildcard (`xs:anyAttribute`)"
+
+
+class AbstractComponentError(XsdToPyArrowError):
+    """Concrete instances of an abstract element or type require `xsi:type` or substitution polymorphism, which has no single schema."""
+
+    code = "E6"
+    title = 'Abstract element or type (`abstract="true"`)'
+
+
+class SubstitutionGroupError(XsdToPyArrowError):
+    """Substituted elements introduce element names and types that are not declared in the parent content model."""
+
+    code = "E7"
+    title = "Substitution group"
+
+
+class FieldNameCollisionError(XsdToPyArrowError):
+    """An attribute (prefixed `_`) and a child element map to the same field name in one `pa.struct`."""
+
+    code = "E8"
+    title = "Attribute / child field name collision"
+
+
+class RecursiveNonJsonTypeError(XsdToPyArrowError):
+    """Subtrees truncated beyond `max_recursion_depth` are serialized with `json.dumps`, which cannot encode `datetime.date` or `bytes` without lossy conversion."""
+
+    code = "E9"
+    title = "Non-JSON-serializable scalar under recursion"
+
+
+XSD_TO_PYARROW_ERRORS: Final[tuple[type[XsdToPyArrowError], ...]] = (
+    XmlTagNotFoundError,
+    AmbiguousXmlTagError,
+    NonStructXmlTagError,
+    WildcardElementError,
+    WildcardAttributeError,
+    AbstractComponentError,
+    SubstitutionGroupError,
+    FieldNameCollisionError,
+    RecursiveNonJsonTypeError,
+)
 
 
 def load_schema(schema_path: str | Path) -> xmlschema.XMLSchema:
@@ -246,7 +333,7 @@ def _check_complex_type_forbidden_recursion(root_type: XsdType, current: XsdComp
                         f"Unsupported XSD feature: recursive type {root_type.local_name or root_type.name!r} "
                         f"contains attribute @{attr.local_name} of type {xsd_name!r}"
                     )
-                    raise ValueError(msg)
+                    raise RecursiveNonJsonTypeError(msg)
 
     if current.has_simple_content() and isinstance(current.content, XsdType):
         return [current.content]
@@ -277,7 +364,7 @@ def _check_no_forbidden_types_under_recursion(root_type: XsdType) -> None:
                         f"Unsupported XSD feature: recursive type {root_type.local_name or root_type.name!r} "
                         f"contains {xsd_name!r}, which cannot be serialized to JSON when recursion is truncated"
                     )
-                    raise ValueError(msg)
+                    raise RecursiveNonJsonTypeError(msg)
             continue
 
         stack.extend(_check_complex_type_forbidden_recursion(root_type, current))
@@ -348,14 +435,14 @@ def _validate_group_particles(schema: xmlschema.XMLSchema, group: XsdGroup) -> N
     for item in target_group.content:
         if _is_any_element(item):
             msg = "Unsupported XSD feature: xs:any wildcard element is not supported"
-            raise ValueError(msg)
+            raise WildcardElementError(msg)
         if isinstance(item, XsdGroup):
             _validate_group_particles(schema, item)
         elif isinstance(item, XsdElement):
             target_el = item.ref if item.ref is not None else item
             if getattr(item, "abstract", False) or getattr(target_el, "abstract", False):
                 msg = f"Unsupported XSD feature: abstract element {item.local_name!r} is not supported"
-                raise ValueError(msg)
+                raise AbstractComponentError(msg)
             if (
                 item.name in schema.substitution_groups
                 or target_el.name in schema.substitution_groups
@@ -363,10 +450,10 @@ def _validate_group_particles(schema: xmlschema.XMLSchema, group: XsdGroup) -> N
                 or getattr(target_el, "substitution_group", None) is not None
             ):
                 msg = f"Unsupported XSD feature: substitutionGroup on element {item.local_name!r} is not supported"
-                raise ValueError(msg)
+                raise SubstitutionGroupError(msg)
             if item.type is not None and getattr(item.type, "abstract", False):
                 msg = f"Unsupported XSD feature: abstract type {item.type.local_name!r} is not supported"
-                raise ValueError(msg)
+                raise AbstractComponentError(msg)
 
 
 def _collect_unique_children(schema: xmlschema.XMLSchema, complex_type: XsdComplexType) -> list[XsdElement]:
@@ -394,7 +481,7 @@ def _collect_attributes(complex_type: XsdComplexType) -> list[XsdAttribute]:
     for attr in complex_type.attributes.values():
         if _is_any_attribute(attr):
             msg = "Unsupported XSD feature: xs:anyAttribute wildcard is not supported"
-            raise ValueError(msg)
+            raise WildcardAttributeError(msg)
         if isinstance(attr, XsdAttribute) and getattr(attr, "use", None) != "prohibited":
             if attr.local_name is None:
                 continue
@@ -501,7 +588,7 @@ def _build_complex_struct_fields(
                 f"Field name collision in {complex_type.local_name or 'complexType'!r}: "
                 f"attribute and child element both map to {child_name!r}"
             )
-            raise ValueError(msg)
+            raise FieldNameCollisionError(msg)
 
         is_list, nullable = _resolve_child_cardinality(model_group, child, parent_nillable=parent_nillable)
 
@@ -674,7 +761,7 @@ def _resolve_target_element(schema: xmlschema.XMLSchema, xml_tag: str) -> XsdEle
         current_level = next_level
 
     msg = f"Element {xml_tag!r} not found in XSD schema"
-    raise ValueError(msg)
+    raise XmlTagNotFoundError(msg)
 
 
 def _deduplicate_target_elements(matches: list[XsdElement], xml_tag: str) -> XsdElement:
@@ -682,15 +769,15 @@ def _deduplicate_target_elements(matches: list[XsdElement], xml_tag: str) -> Xsd
     by_type: dict[int, XsdElement] = {id(el.type): el for el in matches}
     if len(by_type) > 1:
         msg = f"Ambiguous xml_tag {xml_tag!r}: found {len(by_type)} declarations with different types"
-        raise ValueError(msg)
+        raise AmbiguousXmlTagError(msg)
     target = next(iter(by_type.values()))
     target_ref = target.ref if target.ref is not None else target
     if getattr(target, "abstract", False) or getattr(target_ref, "abstract", False):
         msg = f"Unsupported XSD feature: abstract element {xml_tag!r} is not supported"
-        raise ValueError(msg)
+        raise AbstractComponentError(msg)
     if target.type is not None and getattr(target.type, "abstract", False):
         msg = f"Unsupported XSD feature: abstract type on {xml_tag!r} is not supported"
-        raise ValueError(msg)
+        raise AbstractComponentError(msg)
     return target
 
 
@@ -698,7 +785,7 @@ def _require_complex_type(elem_type: XsdType | None, xml_tag: str) -> XsdComplex
     """Ensure that the resolved target element has an ``XsdComplexType``."""
     if elem_type is None or not elem_type.is_complex():
         msg = f"Top-level xml_tag {xml_tag!r} must have a complex type with attributes or child elements"
-        raise ValueError(msg)
+        raise NonStructXmlTagError(msg)
     assert isinstance(elem_type, XsdComplexType)  # noqa: S101
     return elem_type
 
@@ -745,12 +832,12 @@ def generate_pyarrow_schema(
 
     if _is_empty_marker_complex_type(elem_type):
         msg = f"Top-level xml_tag {xml_tag!r} has an empty complex type with no attributes or child elements"
-        raise ValueError(msg)
+        raise NonStructXmlTagError(msg)
 
     attrs = _collect_attributes(elem_type)
     if (elem_type.has_simple_content() or elem_type.mixed) and not attrs:
         msg = f"Top-level xml_tag {xml_tag!r} must have a complex type that resolves to a struct"
-        raise ValueError(msg)
+        raise NonStructXmlTagError(msg)
 
     fields = _build_complex_struct_fields(
         ctx,
@@ -759,7 +846,7 @@ def generate_pyarrow_schema(
     )
     if not fields:
         msg = f"Top-level xml_tag {xml_tag!r} must have a complex type with at least one field"
-        raise ValueError(msg)
+        raise NonStructXmlTagError(msg)
     return pa.schema(fields)
 
 

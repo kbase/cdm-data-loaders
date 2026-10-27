@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "node": {
+      "$ref": "#/$defs/DatedNode"
+    }
+  },
+  "$defs": {
+    "DatedNode": {
+      "type": "object",
+      "properties": {
+        "created_on": {
+          "type": "string",
+          "format": "date"
+        },
+        "child": {
+          "$ref": "#/$defs/DatedNode"
+        }
+      }
+    }
+  }
+}
+
