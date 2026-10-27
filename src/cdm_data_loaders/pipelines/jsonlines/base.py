@@ -13,6 +13,7 @@ from logging import Logger, getLogger
 from typing import TYPE_CHECKING, Any, Final
 
 import dlt
+import pyarrow as pa
 from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TSchemaContractDict
 from dlt.sources.filesystem import filesystem
@@ -23,7 +24,7 @@ from cdm_data_loaders.pipelines.core import (
     run_pipeline,
 )
 from cdm_data_loaders.readers.jsonlines import stream_jsonl_lines
-from cdm_data_loaders.utils.buffer import ListBuffer
+from cdm_data_loaders.utils.buffer import ArrowListBuffer, ListBuffer
 
 if TYPE_CHECKING:
     from dlt.extract.resource import DltResource
@@ -67,6 +68,7 @@ def make_page_router(  # noqa: PLR0913
     rejected_suffix: str = DEFAULT_REJECTED_SUFFIX,
     include_record: bool = False,
     transform_valid: Callable[[Any], Any] | None = None,
+    pyarrow_schema: pa.Schema | None = None,
 ) -> Callable[[list[dict[str, Any]]], Generator[Any, Any, Any]]:
     """Build a function that routes pages of line records to valid and rejected tables.
 
@@ -76,6 +78,8 @@ def make_page_router(  # noqa: PLR0913
     through `transform_valid` (identity when None) into `table_name`; failed
     records yield a provenance row into ``{table_name}{rejected_suffix}``. With
     `include_record`, the rejected row also carries the parsed `record` value.
+    When `pyarrow_schema` is supplied, valid records are accumulated in an
+    `ArrowListBuffer` and yielded as `pyarrow.Table` pages.
 
     :param table_name: table name for valid records
     :type  table_name: str
@@ -89,13 +93,19 @@ def make_page_router(  # noqa: PLR0913
     :type  include_record: bool
     :param transform_valid: function applied to each valid record before yielding
     :type  transform_valid: Callable[[Any], Any] | None
+    :param pyarrow_schema: optional PyArrow schema for buffering valid records as Arrow tables
+    :type  pyarrow_schema: pa.Schema | None
     :return: function taking one page of line records and yielding routed pages
     :rtype : Callable[[list[dict[str, Any]]], Generator[Any, Any, Any]]
     """
     rejected_table = f"{table_name}{rejected_suffix}"
 
     def _route(page: list[dict[str, Any]]) -> Generator[Any, Any, Any]:
-        valid_buffer = ListBuffer(table_name=table_name, max_items=buffer_size)
+        valid_buffer: ListBuffer | ArrowListBuffer = (
+            ArrowListBuffer(table_to_schema_map={table_name: pyarrow_schema}, max_items=buffer_size)
+            if pyarrow_schema is not None
+            else ListBuffer(table_name=table_name, max_items=buffer_size)
+        )
         rejected_buffer = ListBuffer(table_name=rejected_table, max_items=buffer_size)
         for item in page:
             error_detail = item["parse_error"]
@@ -126,6 +136,7 @@ def build_entity_resource(  # noqa: PLR0913
     rejected_suffix: str = DEFAULT_REJECTED_SUFFIX,
     include_record: bool = False,
     transform_valid: Callable[[Any], Any] | None = None,
+    pyarrow_schema: pa.Schema | None = None,
 ) -> "DltResource":
     """Read plain or gzip JSONL files for one entity and route validated pages.
 
@@ -144,6 +155,8 @@ def build_entity_resource(  # noqa: PLR0913
     :type  include_record: bool
     :param transform_valid: function applied to each valid record before yielding
     :type  transform_valid: Callable[[Any], Any] | None
+    :param pyarrow_schema: optional PyArrow schema for buffering valid records as Arrow tables
+    :type  pyarrow_schema: pa.Schema | None
     :return: resource yielding validated and rejected records for this entity
     :rtype: DltResource
     """
@@ -170,6 +183,7 @@ def build_entity_resource(  # noqa: PLR0913
             rejected_suffix=rejected_suffix,
             include_record=include_record,
             transform_valid=transform_valid,
+            pyarrow_schema=pyarrow_schema,
         ),
         data_from=raw,
         name=f"{table_name}_validated",

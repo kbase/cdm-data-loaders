@@ -22,7 +22,7 @@ import dlt
 from dlt.common.pipeline import LoadInfo
 from dlt.extract.items import DataItemWithMeta
 from dlt.sources.helpers.rest_client.client import RESTClient
-from pydantic import Field, computed_field, model_validator
+from pydantic import Field, FilePath, computed_field, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import NonEmptyStr
@@ -70,9 +70,9 @@ class AtbSettings(CtsSettings):
         description="Name of the current AllTheBacteria version",
     )
 
-    pattern_file: NonEmptyStr | None = Field(
+    pattern_file: FilePath | None = Field(
         default=None,
-        description="Path, relative to the input dir, of a file containing patterns to match when downloading ATB files",
+        description="Path to a file containing patterns to match when downloading ATB files",
     )
 
     @model_validator(mode="after")
@@ -99,10 +99,9 @@ class AtbSettings(CtsSettings):
         or does not contain any content, the default PROJECT_PART_REGEX will be used instead.
         """
         if self.pattern_file:
-            pattern_file = self.input_dir / self.pattern_file
-            regex = load_patterns(pattern_file)
+            regex = load_patterns(self.pattern_file)
             if regex is None:
-                err_msg = f"No patterns found in {pattern_file!s}"
+                err_msg = f"No patterns found in {self.pattern_file!s}"
                 raise ValueError(err_msg)
             # return the compiled regexes from the file
             return regex

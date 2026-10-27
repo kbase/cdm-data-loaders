@@ -17,7 +17,7 @@ from tests.helpers import make_cts_settings
 
 @pytest.fixture
 def widget_schema() -> dict[str, Any]:
-    """Return an object schema with required, numeric, and format constraints."""
+    """Return an object schema with required, numeric, format, and nested constraints."""
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -27,6 +27,12 @@ def widget_schema() -> dict[str, Any]:
             "count": {"type": "integer", "minimum": 0},
             "collected": {"type": "string", "format": "date"},
             "label": {"type": "string", "default": "not inserted"},
+            "nested": {
+                "type": "object",
+                "properties": {
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                },
+            },
         },
     }
 
