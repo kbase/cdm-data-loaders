@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import dlt
 import pytest
 from pydantic import BaseModel
 
@@ -37,6 +38,11 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     assert_pipeline_report_written,
     assert_run_ok,
     read_data_rows,
+)
+from tests.cdm_data_loaders.pipelines.reference import pipeline as reference_pipeline_mod
+from tests.cdm_data_loaders.pipelines.reference.pipeline import (
+    ReferencePipelineSettings,
+    run_reference_pipeline,
 )
 from tests.conftest import LOCAL_FS
 from tests.helpers import make_cts_settings, settings_to_argv
@@ -81,6 +87,16 @@ def test_resolve_pipeline_pass_from_module_cli_spec_and_callable() -> None:
 
     from_spec = resolve_pipeline(from_cli)
     assert from_spec is from_cli
+
+    from_test_callable = resolve_pipeline(run_reference_pipeline)
+    assert from_test_callable.cli_command == "reference_pipeline"
+    assert from_test_callable.settings_cls is ReferencePipelineSettings
+    assert from_test_callable.pipeline_fn is run_reference_pipeline
+    assert from_test_callable.cli_callable is reference_pipeline_mod.cli
+
+    from_test_module = resolve_pipeline(reference_pipeline_mod)
+    assert from_test_module.cli_command == "reference_pipeline"
+    assert from_test_module.settings_cls is ReferencePipelineSettings
 
 
 def test_resolve_pipeline_fail_unknown_identifier() -> None:
@@ -320,6 +336,61 @@ def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
     idx_xsd = container_args.index("--xsd-file")
     assert container_args[idx_xsd + 1].startswith(f"{CONTAINER_AUX_DIR}/")
     assert f"PYTHONPATH={CONTAINER_PYMODULES_DIR}:/app/src:/app" in docker_cmd
+
+
+def test_pipeline_test_runner_pass_docker_mode_test_pipeline_and_workers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Docker mode dispatches test-only pipeline modules via script path and forwards worker config to config.toml."""
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.setattr(framework, "_built_docker_images", {"test-image:latest"})
+    captured_cmds: list[list[str]] = []
+
+    def fake_docker_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured_cmds.append(cmd)
+        (output_dir / "report_999_1000.txt").write_text(
+            "Pipeline: reference_pipeline\n"
+            "Dataset: ref_docker_ds\n"
+            "Started: 2026-02-01 00:00:00+00:00\n"
+            "Finished: 2026-02-01 00:00:05+00:00\n"
+            "Status: completed\n"
+            "Completed loads: 999\n"
+            "Pipeline load info saved\n",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_docker_run)
+    runner = PipelineTestRunner(mode=ExecutionMode.DOCKER, docker_image="test-image:latest")
+    with dlt.config.values({"extract.workers": 3, "normalize.workers": 2, "load.workers": 4}):
+        load_info = runner.run(
+            run_reference_pipeline,
+            settings=ReferencePipelineSettings(
+                input_dir=str(input_dir),
+                output_dir=str(output_dir),
+                use_destination=LOCAL_FS,
+                use_output_dir_for_pipeline_metadata=True,
+                dlt_dev_mode=False,
+                dataset_name="ref_docker_ds",
+            ),
+        )
+    assert load_info is not None
+    ref_docker_cmd = captured_cmds[0]
+    idx_ref_image = ref_docker_cmd.index("test-image:latest")
+    assert ref_docker_cmd[idx_ref_image : idx_ref_image + 3] == [
+        "test-image:latest",
+        "pipeline",
+        "tests/cdm_data_loaders/pipelines/reference/pipeline.py",
+    ]
+    stage_dirs = sorted(output_dir.parent.glob(".docker_stage_*"))
+    config_text = (stage_dirs[-1] / "input_dir" / "dlt_conf" / "config.toml").read_text(encoding="utf-8")
+    assert "[extract]\nworkers = 3" in config_text
+    assert "[normalize]\nworkers = 2" in config_text
+    assert "[load]\nworkers = 4" in config_text
 
 
 def test_pipeline_test_runner_fail_docker_mode_nonzero_exit(

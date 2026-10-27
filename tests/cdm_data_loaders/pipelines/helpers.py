@@ -304,7 +304,8 @@ def reconstruct_entries(tables: dict[str, list[dict[str, Any]]]) -> list[dict[st
             if column in XMLNS_COLUMNS or value is None:
                 continue
             set_nested(entry, denormalize_path(column.removeprefix(f"{top_table}__")), parse_json_string(value))
-        _attach_nested_rows(entry, row["_dlt_id"], parent_index, [], depth_limit=100, top_table=top_table)
+        if "_dlt_id" in row:
+            _attach_nested_rows(entry, row["_dlt_id"], parent_index, [], depth_limit=100, top_table=top_table)
         entries.append(entry)
     return entries
 
