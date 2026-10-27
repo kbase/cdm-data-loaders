@@ -1,0 +1,10 @@
+title: Context-Dependent Shared Definitions
+schema: schema.json
+rules: [R-SHAPE-REF, R-NULL-REQUIRED, R-NULL-ALLOWS-NULL, R-NULL-ITEMS, R-META-COMMENT]
+notes: |
+  One `#/$defs/Tag` used as a required property (`primary_tag`), an optional property (`secondary_tag`), a
+  required-but-nullable `anyOf` property (`fallback_tag`), an array item (`tag_list`) and a map value
+  (`tag_lookup`).
+runs:
+  - id: default
+    data: data.json

@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/spec/10_combinations.schema.json",
+  "title": "ComprehensiveCombinationsRecord",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/$defs/AuditHeader"
+    }
+  ],
+  "required": [
+    "record_id",
+    "active",
+    "count",
+    "ratio",
+    "release_date",
+    "range_tuple"
+  ],
+  "properties": {
+    "record_id": {
+      "type": "string",
+      "description": "Primary record identifier."
+    },
+    "active": {
+      "type": "boolean"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ratio": {
+      "type": "number",
+      "multipleOf": 0.001
+    },
+    "release_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "timestamp_str": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload_b64": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "score_or_label": {
+      "type": [
+        "number",
+        "string",
+        "null"
+      ]
+    },
+    "range_tuple": {
+      "type": "array",
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "items": false
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "annotations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "source_choice": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "accession"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "genbank"
+            },
+            "accession": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "doi"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "publication"
+            },
+            "doi": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "lineage_tree": {
+      "$ref": "#/$defs/TaxNode"
+    }
+  },
+  "dependentSchemas": {
+    "payload_b64": {
+      "properties": {
+        "payload_sha256": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "AuditHeader": {
+      "type": "object",
+      "required": [
+        "schema_version"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        }
+      }
+    },
+    "TaxNode": {
+      "type": "object",
+      "required": [
+        "taxon_name"
+      ],
+      "properties": {
+        "taxon_name": {
+          "type": "string"
+        },
+        "rank": {
+          "type": "string"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaxNode"
+          }
+        }
+      }
+    }
+  }
+}
+

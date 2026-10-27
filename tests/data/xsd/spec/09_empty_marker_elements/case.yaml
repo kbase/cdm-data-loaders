@@ -1,0 +1,10 @@
+title: Purely Empty `complexType` Marker Elements
+xml_tag: book
+schema: schema.xsd
+rules: [R-SHAPE-EMPTY-MARKER, R-EMPTY-COERCE, R-SHAPE-CARDINALITY]
+notes: |
+  DTD-derived markers such as PubMed's `<BookInProcess/>` map to `pa.string()` (`""` when present) and repeated
+  markers to `pa.list_(pa.string())`.
+runs:
+  - id: default
+    data: data.xml

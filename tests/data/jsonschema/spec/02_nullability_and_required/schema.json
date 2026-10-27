@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/spec/02_nullability_and_required.schema.json",
+  "title": "NullabilityAndRequiredRecord",
+  "type": "object",
+  "required": [
+    "required_str",
+    "required_int",
+    "required_nullable_str",
+    "required_anyof_nullable",
+    "required_enum_nullable",
+    "strict_int_list",
+    "nullable_int_list"
+  ],
+  "properties": {
+    "required_str": {
+      "type": "string",
+      "description": "Strictly required non-null string."
+    },
+    "required_int": {
+      "type": "integer"
+    },
+    "required_nullable_str": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Required key whose value may be null."
+    },
+    "required_anyof_nullable": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "required_enum_nullable": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        null
+      ]
+    },
+    "optional_str": {
+      "type": "string"
+    },
+    "optional_with_default": {
+      "type": "string",
+      "default": "fallback"
+    },
+    "optional_nullable_number": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "strict_int_list": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "nullable_int_list": {
+      "type": "array",
+      "items": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "optional_str_list": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
+

@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/spec/07_combinators_allof_anyof_oneof.schema.json",
+  "title": "CombinatorsRecord",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/$defs/BaseEntity"
+    }
+  ],
+  "required": [
+    "sample_name",
+    "location"
+  ],
+  "properties": {
+    "sample_name": {
+      "type": "string"
+    },
+    "location": {
+      "description": "Storage location choice across S3 or HTTP.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "storage_kind",
+            "bucket",
+            "key"
+          ],
+          "properties": {
+            "storage_kind": {
+              "type": "string",
+              "const": "s3"
+            },
+            "bucket": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "storage_kind",
+            "url"
+          ],
+          "properties": {
+            "storage_kind": {
+              "type": "string",
+              "const": "http"
+            },
+            "url": {
+              "type": "string",
+              "format": "uri"
+            },
+            "checksum": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "pagination": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "start_page"
+          ],
+          "properties": {
+            "start_page": {
+              "type": "string"
+            },
+            "end_page": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "medline_pgn"
+          ],
+          "properties": {
+            "medline_pgn": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "identifier_union": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "note": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "author": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "BaseEntity": {
+      "type": "object",
+      "required": [
+        "entity_id"
+      ],
+      "properties": {
+        "entity_id": {
+          "type": "string",
+          "description": "Inherited base entity identifier."
+        },
+        "created_by": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
+

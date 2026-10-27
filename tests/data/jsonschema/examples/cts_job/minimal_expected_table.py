@@ -1,0 +1,38 @@
+"""Expected PyArrow table for minimal real-world example cts_job."""
+
+# ruff: noqa: INP001
+
+import pyarrow as pa
+from expected_schema import EXPECTED_SCHEMA
+
+EXPECTED_TABLE = pa.Table.from_pylist(
+    [
+        {
+            "id": "253089e2-7ad1-4e32-a9fe-11aabda31c62",
+            "state": "error",
+            "transition_times": [{"state": "created", "time": "2026-10-22T04:27:42.903000Z"}],
+            "user": "ialarmedalien",
+            "job_input": {
+                "cluster": "kbase",
+                "image": "ghcr.io/kbase/cdm-data-loaders@sha256:029f2893e1109f1d9961233f439cb411de8d7623203eb8f17410dca0bd516088",
+                "params": {},
+                "output_dir": "cts/io/ialarmedalien/datasets/uniprot/cts_output/2026_03/knowledgebase/complete/uniprot_sprot.xml.gz/batch_001/",
+                "input_files": [
+                    {
+                        "file": "cts/io/ialarmedalien/datasets/uniprot/derived/2026_03/knowledgebase/complete/uniprot_sprot.xml.gz/part_00001.xml.gz",
+                        "crc64nvme": "AFAZfDzbbfc=",
+                    }
+                ],
+            },
+            "image": {
+                "registered_by": "gavinlocaladmin",
+                "registered_on": "2026-04-26T15:46:11.342000Z",
+                "name": "ghcr.io/kbase/cdm-data-loaders",
+                "digest": "sha256:029f2893e1109f1d9961233f439cb411de8d7623203eb8f17410dca0bd516088",
+                "entrypoint": ["./scripts/entrypoint.sh"],
+            },
+            "input_file_count": 1,
+        },
+    ],
+    schema=EXPECTED_SCHEMA,
+)

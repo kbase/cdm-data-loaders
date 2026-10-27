@@ -1,0 +1,10 @@
+title: Context-Dependent Same `(parent, child)` Names with Different Types
+xml_tag: root
+schema: schema.xsd
+rules: [R-SHAPE-CONTEXT-PATH, R-SHAPE-SIMPLECONTENT, R-NULL-CHILD]
+notes: |
+  `left/node/leaf` is a single `xs:string`; `right/node/leaf` is an unbounded `simpleContent` type with a `lang`
+  attribute. The ancestor paths differ, so each `leaf` gets its own type.
+runs:
+  - id: default
+    data: data.xml

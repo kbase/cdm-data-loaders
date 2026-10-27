@@ -1,0 +1,872 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:jsonschema:listjobsresponse.json",
+  "title": "ListJobsResponse",
+  "$ref": "#/$defs/ListJobsResponse",
+  "$defs": {
+    "ListJobsResponse": {
+      "properties": {
+        "jobs": {
+          "items": {
+            "$ref": "#/$defs/JobPreview"
+          },
+          "type": "array",
+          "title": "Jobs",
+          "description": "The jobs"
+        }
+      },
+      "type": "object",
+      "required": [
+        "jobs"
+      ],
+      "title": "ListJobsResponse",
+      "description": "The response to a successful job listing request. "
+    },
+    "JobPreview": {
+      "properties": {
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error",
+          "description": "A description of the error that occurred.",
+          "examples": [
+            "The front fell off"
+          ]
+        },
+        "output_file_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Output File Count",
+          "description": "The number of output files, if available.",
+          "examples": [
+            24
+          ]
+        },
+        "id": {
+          "type": "string",
+          "title": "Id",
+          "description": "An opaque, unique string that serves as the job's ID."
+        },
+        "state": {
+          "$ref": "#/$defs/JobState",
+          "examples": [
+            "complete"
+          ]
+        },
+        "transition_times": {
+          "items": {
+            "$ref": "#/$defs/JobStateTransition"
+          },
+          "type": "array",
+          "title": "Transition Times",
+          "description": "A list of job state transitions.",
+          "examples": [
+            [
+              {
+                "state": "created",
+                "time": "2024-10-24T22:35:40Z"
+              },
+              {
+                "state": "upload_submitted",
+                "time": "2024-10-24T22:35:41Z"
+              },
+              {
+                "state": "job_submitting",
+                "time": "2024-10-24T22:47:67Z"
+              }
+            ]
+          ]
+        },
+        "user": {
+          "type": "string",
+          "title": "User",
+          "description": "The user that ran the job.",
+          "examples": [
+            "myuserid"
+          ]
+        },
+        "admin_meta": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "type": "object",
+          "title": "Admin Meta",
+          "description": "Metadata for the job set by service administrators. This metadata is mutable and arbitrary from the point of view of the service.",
+          "examples": [
+            {
+              "children": 31619,
+              "name": "Getrude"
+            }
+          ]
+        },
+        "job_input": {
+          "$ref": "#/$defs/JobInputPreview"
+        },
+        "image": {
+          "$ref": "#/$defs/JobImage"
+        },
+        "input_file_count": {
+          "type": "integer",
+          "title": "Input File Count",
+          "description": "The number of input files.",
+          "examples": [
+            42
+          ]
+        },
+        "cpu_hours": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cpu Hours",
+          "description": "The total CPU hours used by the job, if available.",
+          "examples": [
+            52.4
+          ]
+        },
+        "cpu_factor": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cpu Factor",
+          "description": "The ratio of the cpu time used to the number of cpus requested times the job's actual time, if available. Perfect usage is 1, < 1 means requested CPUs are partially idle, possibly due to memory or IO bounded work, > 1 means more CPU usage than requested.",
+          "examples": [
+            0.8
+          ]
+        },
+        "max_memory": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Max Memory",
+          "description": "The maximum memory in bytes used by a single container in the job, if available.",
+          "examples": [
+            1032000000
+          ]
+        },
+        "logpath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Logpath",
+          "description": "A location in S3 where the logfiles for the job containers can be viewed.",
+          "examples": [
+            "cts-logs/container_logs/e14a21ba-032d-42f2-b235-d82606675b17"
+          ]
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "state",
+        "transition_times",
+        "user",
+        "job_input",
+        "image",
+        "input_file_count"
+      ],
+      "title": "JobPreview",
+      "description": "Information about a job, consisting of fields containing small amounts of data.\nSuitable for a list of jobs."
+    },
+    "JobState": {
+      "type": "string",
+      "enum": [
+        "created",
+        "download_submitted",
+        "job_submitting",
+        "job_submitted",
+        "upload_submitting",
+        "upload_submitted",
+        "complete",
+        "recovering",
+        "canceling",
+        "canceled",
+        "error_processing_submitting",
+        "error_processing_submitted",
+        "error"
+      ],
+      "title": "JobState",
+      "description": "The state of a job."
+    },
+    "JobStateTransition": {
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/JobState"
+        },
+        "time": {
+          "type": "string",
+          "format": "date-time",
+          "title": "Time",
+          "description": "The time at which the new state was entered.",
+          "examples": [
+            "2024-10-24T22:35:40Z"
+          ]
+        }
+      },
+      "type": "object",
+      "required": [
+        "state",
+        "time"
+      ],
+      "title": "JobStateTransition",
+      "description": "Denotes the new state and the entry time when a state change occurs."
+    },
+    "JobInputPreview": {
+      "properties": {
+        "cluster": {
+          "$ref": "#/$defs/Cluster",
+          "examples": [
+            "perlmutter-jaws"
+          ]
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Image",
+          "description": "The Docker image to run for the job. Include the SHA to ensure the exact code requested is run.",
+          "examples": [
+            "ghcr.io/kbase/collections:checkm2_0.1.6@sha256:c9291c94c382b88975184203100d119cba865c1be91b1c5891749ee02193d380"
+          ]
+        },
+        "params": {
+          "$ref": "#/$defs/Parameters-Output"
+        },
+        "num_containers": {
+          "type": "integer",
+          "maximum": 1000.0,
+          "minimum": 1.0,
+          "title": "Num Containers",
+          "description": "The number of containers to run in parallel. Input files will be split between the containers.",
+          "default": 1,
+          "examples": [
+            1
+          ]
+        },
+        "cpus": {
+          "type": "integer",
+          "maximum": 256.0,
+          "minimum": 1.0,
+          "title": "Cpus",
+          "description": "The number of CPUs to allocate per container.",
+          "default": 1,
+          "examples": [
+            1
+          ]
+        },
+        "gpus": {
+          "type": "integer",
+          "maximum": 4.0,
+          "minimum": 0.0,
+          "title": "Gpus",
+          "description": "The number of GPUs to allocate per container. Jobs requesting 0 GPUs are never scheduled on GPU-capable nodes.",
+          "default": 0,
+          "examples": [
+            1
+          ]
+        },
+        "memory": {
+          "type": "integer",
+          "minimum": 0.0,
+          "title": "Memory",
+          "description": "The amount of memory to allocate per container either as the number of bytes or a specification string such as 100MB, 2GB, etc.",
+          "default": 10000000,
+          "examples": [
+            "10MB"
+          ]
+        },
+        "runtime": {
+          "type": "string",
+          "format": "duration",
+          "title": "Runtime",
+          "description": "The runtime required for each container as the number of seconds or an ISO8601 duration string.",
+          "default": "PT1M",
+          "examples": [
+            "PT12H30M5S",
+            45005
+          ]
+        },
+        "input_roots": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Input Roots",
+          "description": "If specified, preserves file hierarchies for S3 files below the given root paths, starting from the bucket. Any files that are not prefixed by a root path are placed in the root directory of the job input dir. If any input files have the same path in the input dir, the job fails. For example, given a input_roots entry of [\"mybucket/foo/bar\"] and the input files [\"otherbucket/foo\", \"mybucket/bar\", \"mybucket/foo/bar/baz/bat\"] the job input directory would include the files foo, bar, and baz/bat. To preserve hierarchies for all files, set input_roots to [\"\"].  If an input file matches more than one root, the longest root that isn't identical to the file path is used. Whitespace on the left side of the path is is ignored. Duplicate roots are ignored.",
+          "examples": [
+            [
+              "mybucket/foo/bar"
+            ]
+          ]
+        },
+        "output_dir": {
+          "type": "string",
+          "maxLength": 1088,
+          "minLength": 5,
+          "title": "Output Dir",
+          "description": "The S3 folder, starting with the bucket, in which to place results.",
+          "examples": [
+            "mybucket/out"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "cluster",
+        "image",
+        "params",
+        "output_dir"
+      ],
+      "title": "JobInputPreview",
+      "description": "Input to a Job, consisting of fields containing small amounts of data.\nSuitable for a list of jobs."
+    },
+    "Cluster": {
+      "type": "string",
+      "enum": [
+        "perlmutter-jaws",
+        "lawrencium-jaws",
+        "kbase"
+      ],
+      "title": "Cluster",
+      "description": "All clusters that have ever been registered in the system, including those that are no longer\nregistered but may have associated job records.\n\nperlmutter-jaws: The Perlmutter cluster at NERSC run via JAWS.  \nlawrencium-jaws: The Lawrencium cluster at LBNL run via JAWS.  \nkbase: KBase compute nodes."
+    },
+    "Parameters-Output": {
+      "properties": {
+        "input_mount_point": {
+          "type": "string",
+          "maxLength": 1024,
+          "minLength": 1,
+          "pattern": "^/(?:[\\w.-]+/)*[\\w.-]+/?$",
+          "title": "Input Mount Point",
+          "description": "Where to place input files in the container. Must start from the container root and include at least one directory when resolved.",
+          "default": "/input_files",
+          "examples": [
+            "/input_files"
+          ]
+        },
+        "output_mount_point": {
+          "type": "string",
+          "maxLength": 1024,
+          "minLength": 1,
+          "pattern": "^/(?:[\\w.-]+/)*[\\w.-]+/?$",
+          "title": "Output Mount Point",
+          "description": "Where output files should be written in the container. Must start from the container root and include at least one directory when resolved. Note that the mount point is not included in the file paths thatare eventually transferred to S3.",
+          "default": "/output_files",
+          "examples": [
+            "/output_files"
+          ]
+        },
+        "declobber": {
+          "type": "boolean",
+          "title": "Declobber",
+          "description": "If true, prepend the container number to all output file paths as a directory. This prevents containers that write to the same file path from clobbering each other and losing data. If the output files of containers are guaranteed to be unique (e.g. output file names are based on input file names and input file names are unique) then this setting is not necessary. The same effect can be created by use of a container number parameter when specifying the output directory in the arguments or environment.",
+          "default": false
+        },
+        "refdata_mount_point": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024,
+              "minLength": 1,
+              "pattern": "^/(?:[\\w.-]+/)*[\\w.-]+/?$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Refdata Mount Point",
+          "description": "Where reference data files should be pleased in the container. Must start from the container root and include at least one directory when resolved. Required if the job image requires reference data and a default reference data mount point isn't specified for the image. If a default is provided, this setting overrides it.",
+          "examples": [
+            "/reference_data"
+          ]
+        },
+        "args": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "minLength": 1,
+                    "pattern": "^[\\w\\./][\\w\\.\\,+/-]*$"
+                  },
+                  {
+                    "type": "string",
+                    "maxLength": 256,
+                    "minLength": 2,
+                    "pattern": "^--?[a-zA-Z0-9][\\w\\.-]*=?$"
+                  },
+                  {
+                    "$ref": "#/$defs/ParameterWithFlag"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Args",
+          "description": "A list of command line arguments to be inserted after the container entrypoint command. Strings are treated as literals.",
+          "examples": [
+            [
+              "process",
+              "--output-dir",
+              "/output_files",
+              {
+                "flag": "--input-file=",
+                "input_files_format": "repeat_parameter",
+                "type": "input_files"
+              },
+              "--jobid",
+              {
+                "type": "container_number"
+              }
+            ]
+          ]
+        },
+        "environment": {
+          "anyOf": [
+            {
+              "patternProperties": {
+                "^[A-Z_][A-Z0-9_]*$": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 1024,
+                      "minLength": 1,
+                      "pattern": "^[\\w\\./][\\w\\.\\,+/-]*$"
+                    },
+                    {
+                      "$ref": "#/$defs/Parameter"
+                    }
+                  ]
+                }
+              },
+              "propertyNames": {
+                "maxLength": 256,
+                "minLength": 1
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Environment",
+          "description": "A dictionary of environment variables to be inserted into the container. String values are treated as literals.",
+          "examples": [
+            {
+              "DIAMOND_DB_PATH": "/reference_data",
+              "FILE_MANIFEST": {
+                "manifest_file_format": "files",
+                "manifest_file_header": "infiles",
+                "type": "manifest_file"
+              }
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "title": "Parameters",
+      "description": "A set of parameters for a container in a job.\n\nSpecifying files as part of arguments to a job can be done in three ways:\n\n* If the entrypoint command takes a directory as an argument, that\n  directory can be specified literally in an argument. All files will be available in the\n  input mount point, with paths resulting from the path in S3 as well as the input_roots\n  parameter from the job input.\n* If individual filenames need to be specified, use a Parameter instance in\n  the positional or environmental arguments. At most one Parameter can\n  be specified per parameter set.\n* A Parameter instance can also be used to specify a manifest of file names or\n  file IDs to be passed to the container."
+    },
+    "ParameterWithFlag": {
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/ParameterType",
+          "examples": [
+            "input_files"
+          ]
+        },
+        "input_files_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InputFilesFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "examples": [
+            "comma_separated_list"
+          ]
+        },
+        "manifest_file_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ManifestFileFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "examples": [
+            "files"
+          ]
+        },
+        "manifest_file_header": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1000,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Manifest File Header",
+          "description": "The header for the manifest file, if any.",
+          "examples": [
+            "genome_id"
+          ]
+        },
+        "container_num_prefix": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024,
+              "minLength": 1,
+              "pattern": "^[\\w\\./][\\w\\.\\,+/-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Container Num Prefix",
+          "description": "A string that will be prepended to the container number.",
+          "examples": [
+            "/output/job-"
+          ]
+        },
+        "container_num_suffix": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024,
+              "minLength": 1,
+              "pattern": "^[\\w\\./][\\w\\.\\,+/-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Container Num Suffix",
+          "description": "A string that will be appended to the container number.",
+          "examples": [
+            "_output"
+          ]
+        },
+        "flag": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 256,
+              "minLength": 2,
+              "pattern": "^--?[a-zA-Z0-9][\\w\\.-]*=?$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Flag",
+          "description": "A command line argument flag to precede the parameter. If the flag ends with '=', no space is left between the flag and its value.",
+          "examples": [
+            "--file"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "title": "ParameterWithFlag",
+      "description": "Represents a special parameter passed to a container, optionally with a\npreceding flag argument.\n\nCan represent a set of input file names formatted in various ways, a manifest file\ncontaining file paths or data IDs, or a container number.\n\ninput_files_format is required when the type is input_files, but ignored otherwise.  \nmanifest_file_format is required when the type is manifest_file, but ignored otherwise.  \nmanifest_file_header is optional and only taken into account when the type is manifest_file.  "
+    },
+    "ParameterType": {
+      "type": "string",
+      "enum": [
+        "input_files",
+        "manifest_file",
+        "container_number"
+      ],
+      "title": "ParameterType",
+      "description": "The type of a parameter if not a string literal.\n\ninput_files will cause the list of input files for the container to be inserted\ninto the entrypoint command line or an environment variable.\n\nmanifest_file will cause the list of input files for the container to be placed in a\nmanifest file and will insert the file location into the entrypoint command line\nor an environment variable.\n\ncontainer_number will insert the integer number of the container into the\nentrypoint command line or an environment variable. This can be used so prevent file path\ncollisions if multiple containers write to the same file paths."
+    },
+    "InputFilesFormat": {
+      "type": "string",
+      "enum": [
+        "comma_separated_list",
+        "space_separated_list",
+        "repeat_parameter"
+      ],
+      "title": "InputFilesFormat",
+      "description": "The format of an input files type parameter.\n\nComma and space separated lists format the list of files as one would expect.\n\nRepeat parameter causes the input files to be inserted as a space separated list,\nwith each file preceded by the parameter flag. Only valid for CLI flag based arguments.\nIf the flag ends with an equals sign, there is no space left between the flag and the\nparameter.\n\nExamples:  \n`-i`: `-i file1 -i file2 ... -i fileN`  \n`--input_file=`: `--input_file=file1 --input_file=file2 ... --input_file=fileN`  "
+    },
+    "ManifestFileFormat": {
+      "type": "string",
+      "enum": [
+        "files",
+        "data_ids"
+      ],
+      "title": "ManifestFileFormat",
+      "description": "The format of a manifest file.\n\nfiles will cause the manifest file to consist of a list of the input files, one per line.\n\ndata_ids will cause the manifest file to consist of a list of the data IDs associated with\nthe input files, one per line."
+    },
+    "Parameter": {
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/ParameterType",
+          "examples": [
+            "input_files"
+          ]
+        },
+        "input_files_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InputFilesFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "examples": [
+            "comma_separated_list"
+          ]
+        },
+        "manifest_file_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ManifestFileFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "examples": [
+            "files"
+          ]
+        },
+        "manifest_file_header": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1000,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Manifest File Header",
+          "description": "The header for the manifest file, if any.",
+          "examples": [
+            "genome_id"
+          ]
+        },
+        "container_num_prefix": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024,
+              "minLength": 1,
+              "pattern": "^[\\w\\./][\\w\\.\\,+/-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Container Num Prefix",
+          "description": "A string that will be prepended to the container number.",
+          "examples": [
+            "/output/job-"
+          ]
+        },
+        "container_num_suffix": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024,
+              "minLength": 1,
+              "pattern": "^[\\w\\./][\\w\\.\\,+/-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Container Num Suffix",
+          "description": "A string that will be appended to the container number.",
+          "examples": [
+            "_output"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "title": "Parameter",
+      "description": "Represents a special parameter passed to a container.\n\nCan represent a set of input file names formatted in various ways, a manifest file\ncontaining file paths or data IDs, or a container number.\n\ninput_files_format is required when the type is input_files, but ignored otherwise.  \nmanifest_file_format is required when the type is manifest_file, but ignored otherwise.  \nmanifest_file_header is optional and only taken into account when the type is manifest_file.  "
+    },
+    "JobImage": {
+      "properties": {
+        "registered_by": {
+          "type": "string",
+          "title": "Registered By",
+          "description": "The username of the user that performed the registration.",
+          "examples": [
+            "aparkin"
+          ]
+        },
+        "registered_on": {
+          "type": "string",
+          "format": "date-time",
+          "title": "Registered On",
+          "description": "The time of registration.",
+          "examples": [
+            "2024-10-24T22:35:40Z"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "title": "Name",
+          "description": "The normalized name of the a docker image, consisting of the host and path.",
+          "examples": [
+            "ghcr.io/kbase/collections"
+          ]
+        },
+        "digest": {
+          "type": "string",
+          "title": "Digest",
+          "description": "The image digest.",
+          "examples": [
+            "sha256:c9291c94c382b88975184203100d119cba865c1be91b1c5891749ee02193d380"
+          ]
+        },
+        "entrypoint": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Entrypoint",
+          "description": "The entrypoint command extracted from the image.",
+          "examples": [
+            [
+              "checkm2",
+              "predict"
+            ]
+          ]
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Tag",
+          "description": "The image tag at registration time. The tag may no longer point to the same image.",
+          "examples": [
+            "checkm2_0.1.6"
+          ]
+        },
+        "refdata_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Refdata Id",
+          "description": "The ID of reference data associated with the image. The image requires this reference data to run, and it will be mounted into the image container at the refdata mount point.",
+          "examples": [
+            "3a28c155-ea8b-4e1b-baef-242d991a8200"
+          ]
+        },
+        "default_refdata_mount_point": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Default Refdata Mount Point",
+          "description": "The default mount point for the image refdata in the container. Overridden by the refdata mount point in a job submission if provided there. If a default mount point is provided, then providing a mount point in the job submission is optional. Must be an absolute path.",
+          "examples": [
+            "/reference_data"
+          ]
+        }
+      },
+      "type": "object",
+      "required": [
+        "registered_by",
+        "registered_on",
+        "name",
+        "digest",
+        "entrypoint"
+      ],
+      "title": "JobImage",
+      "description": "Information about a Docker image as stored in a Job data structure."
+    }
+  }
+}

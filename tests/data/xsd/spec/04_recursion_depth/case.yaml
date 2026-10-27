@@ -1,0 +1,17 @@
+title: Structural Recursion with Configurable `max_recursion_depth`
+xml_tag: record
+schema: schema.xsd
+rules: [R-RECURSION, R-SHAPE-CARDINALITY]
+notes: |
+  With `max_recursion_depth=2`, `tree` (depth 1) and its `branch` children (depth 2) are structs; grandchild
+  `branch` elements are serialized to JSON strings. With `max_recursion_depth=1`, `branch` is already truncated.
+runs:
+  - id: depth-2
+    params: {max_recursion_depth: 2}
+    data: data.xml
+  - id: depth-1
+    params: {max_recursion_depth: 1}
+    data: data.xml
+    expected_json: expected_depth_1.json
+    schema_attr: EXPECTED_SCHEMA_DEPTH_1
+    table_attr: EXPECTED_TABLE_DEPTH_1

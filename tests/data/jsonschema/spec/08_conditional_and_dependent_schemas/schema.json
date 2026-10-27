@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/spec/08_conditional_and_dependent_schemas.schema.json",
+  "title": "ConditionalAndDependentRecord",
+  "type": "object",
+  "required": [
+    "id",
+    "specimen_type"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "specimen_type": {
+      "type": "string",
+      "enum": [
+        "isolate",
+        "metagenome"
+      ]
+    },
+    "sequencing_depth": {
+      "type": "number"
+    },
+    "depth_unit": {
+      "type": "string"
+    }
+  },
+  "dependentRequired": {
+    "sequencing_depth": [
+      "depth_unit"
+    ]
+  },
+  "dependentSchemas": {
+    "sequencing_depth": {
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "Sequencing platform when depth is reported."
+        }
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "specimen_type": {
+        "const": "isolate"
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "strain_name"
+    ],
+    "properties": {
+      "strain_name": {
+        "type": "string",
+        "description": "Cultured isolate strain identifier."
+      }
+    }
+  },
+  "else": {
+    "required": [
+      "biome"
+    ],
+    "properties": {
+      "biome": {
+        "type": "string",
+        "description": "Environmental biome for metagenome samples."
+      }
+    }
+  }
+}
+

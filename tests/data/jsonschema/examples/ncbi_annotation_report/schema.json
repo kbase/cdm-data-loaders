@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:jsonschema:annotationreportresponse.json",
+  "title": "AnnotationReportResponse",
+  "$ref": "#/$defs/v2reportsGenomeAnnotationReportPage",
+  "$defs": {
+    "v2reportsGenomeAnnotationReportPage": {
+      "type": "object",
+      "properties": {
+        "reports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/v2reportsGenomeAnnotationReportMatch"
+          }
+        },
+        "total_count": {
+          "type": "integer",
+          "description": "The total count of available genes (ignoring the page_size parameter)."
+        },
+        "next_page_token": {
+          "type": "string",
+          "description": "A token that can be sent as page_token to retrieve the next page."
+        }
+      }
+    },
+    "v2reportsGenomeAnnotationReportMatch": {
+      "type": "object",
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/v2reportsGenomeAnnotation"
+        },
+        "query": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "row_id": {
+          "type": "string"
+        }
+      }
+    },
+    "v2reportsGenomeAnnotation": {
+      "type": "object",
+      "properties": {
+        "gene_id": {
+          "type": "string",
+          "format": "uint64",
+          "description": "NCBI GeneID"
+        },
+        "symbol": {
+          "type": "string",
+          "description": "Gene symbol"
+        },
+        "description": {
+          "type": "string",
+          "description": "Gene name"
+        },
+        "tax_id": {
+          "type": "string",
+          "format": "uint64",
+          "description": "NCBI Taxonomy ID for the organism"
+        },
+        "taxname": {
+          "type": "string",
+          "description": "Taxonomic name of the organism"
+        },
+        "gene_type": {
+          "type": "string",
+          "description": "Gene locus type"
+        },
+        "orientation": {
+          "$ref": "#/$defs/v2reportsOrientation"
+        },
+        "locus_tag": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/v2reportsAnnotation"
+          }
+        }
+      }
+    },
+    "v2reportsOrientation": {
+      "type": "string",
+      "enum": [
+        "none",
+        "plus",
+        "minus"
+      ],
+      "default": "none"
+    },
+    "v2reportsAnnotation": {
+      "type": "object",
+      "properties": {
+        "assembly_accession": {
+          "type": "string"
+        },
+        "assembly_name": {
+          "type": "string"
+        },
+        "annotation_name": {
+          "type": "string"
+        },
+        "annotation_release_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "genomic_locations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/v2reportsGenomicLocation"
+          }
+        }
+      }
+    },
+    "v2reportsGenomicLocation": {
+      "type": "object",
+      "properties": {
+        "genomic_accession_version": {
+          "type": "string"
+        },
+        "sequence_name": {
+          "type": "string"
+        },
+        "genomic_range": {
+          "$ref": "#/$defs/v2reportsRange"
+        }
+      }
+    },
+    "v2reportsRange": {
+      "type": "object",
+      "properties": {
+        "begin": {
+          "type": "string",
+          "format": "int64"
+        },
+        "end": {
+          "type": "string",
+          "format": "int64"
+        },
+        "orientation": {
+          "$ref": "#/$defs/v2reportsOrientation"
+        },
+        "order": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

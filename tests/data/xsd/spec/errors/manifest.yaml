@@ -1,0 +1,84 @@
+# Error specification fixtures for the XSD -> PyArrow converter.
+# `code` must match the `code` of an XsdToPyArrowError subclass in cdm_data_loaders.readers.xsd.
+# `file` is relative to this directory. `match` is a regex applied to the exception message.
+errors:
+  - file: ../../empty_schema.xsd
+    xml_tag: root
+    code: E1
+    match: not found
+    description: Schema declares no elements.
+  - file: ../../../uniprot/uniref/uniref.xsd
+    xml_tag: nonExistentElement
+    code: E1
+    match: not found
+    description: "`xml_tag` is not declared in an otherwise valid schema."
+  - file: ambiguous_xml_tag.xsd
+    xml_tag: entry
+    code: E2
+    match: Ambiguous
+    description: Root `A` declares `<entry type="Type1"/>` and root `B` declares `<entry type="Type2"/>`.
+  - file: scalar_top_level.xsd
+    xml_tag: leaf
+    code: E3
+    match: complex type
+    description: "`xml_tag` has a simple type (`xs:string`)."
+  - file: empty_marker_top_level.xsd
+    xml_tag: marker
+    code: E3
+    match: complex type
+    description: "`xml_tag` has an empty `complexType` with no attributes or children."
+  - file: ../../no_children.xsd
+    xml_tag: leaf
+    code: E3
+    match: complex type
+    description: "`xml_tag` is a scalar root element."
+  - file: wildcard_any_element.xsd
+    xml_tag: entry
+    code: E4
+    match: xs:any
+    description: "`<xs:sequence><xs:any processContents=\"lax\"/></xs:sequence>`"
+  - file: wildcard_any_attribute.xsd
+    xml_tag: entry
+    code: E5
+    match: xs:anyAttribute
+    description: "`<xs:anyAttribute processContents=\"skip\"/>`"
+  - file: ../../cdata_variety.xsd
+    xml_tag: root
+    code: E5
+    match: xs:anyAttribute
+    description: Legacy fixture containing `xs:anyAttribute`.
+  - file: ../../combinations.xsd
+    xml_tag: record
+    code: E5
+    match: xs:anyAttribute
+    description: Legacy fixture containing `xs:anyAttribute`.
+  - file: abstract_element.xsd
+    xml_tag: entry
+    code: E6
+    match: abstract
+    description: Child element declared with `abstract="true"`.
+  - file: abstract_type.xsd
+    xml_tag: entry
+    code: E6
+    match: abstract
+    description: Child element typed by a `complexType` with `abstract="true"`.
+  - file: substitution_group.xsd
+    xml_tag: entry
+    code: E7
+    match: substitutionGroup
+    description: '`<xs:element name="sub" substitutionGroup="head" type="OtherType"/>`'
+  - file: attr_child_name_collision.xsd
+    xml_tag: entry
+    code: E8
+    match: collision
+    description: Attribute `id` (field `_id`) and child element `_id` in the same type.
+  - file: nested_date_under_recursion.xsd
+    xml_tag: entry
+    code: E9
+    match: recursive type
+    description: Recursive `NodeType` has an `xs:date` child element.
+  - file: nested_binary_under_recursion.xsd
+    xml_tag: entry
+    code: E9
+    match: recursive type
+    description: Recursive `NodeType` has an `xs:hexBinary` attribute.

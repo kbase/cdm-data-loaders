@@ -1,0 +1,18 @@
+title: PubMed (`PubmedBookArticle`)
+xml_tag: PubmedBookArticle
+schema: ../../../pubmed/pubmed.xsd
+rules: [R-SHAPE-MIXED, R-RECURSION, R-SHAPE-EMPTY-MARKER]
+notes: |
+  Book article variant of the PubMed schema, including recursive `Section` elements and the empty
+  `BookInProcess` marker.
+runs:
+  - id: minimal
+    data: minimal.xml
+    expected_json: minimal_expected.json
+    expected_table: minimal_expected_table.py
+    expected_count: 1
+  - id: maximal
+    data: maximal.xml
+    expected_json: maximal_expected.json
+    expected_table: maximal_expected_table.py
+    expected_count: 1
