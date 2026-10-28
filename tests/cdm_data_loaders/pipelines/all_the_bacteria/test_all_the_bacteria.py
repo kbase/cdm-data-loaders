@@ -12,6 +12,7 @@ from frozendict import frozendict
 from pydantic import ValidationError
 from requests.exceptions import HTTPError
 
+from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
 from cdm_data_loaders.pipelines import all_the_bacteria
 from cdm_data_loaders.pipelines.all_the_bacteria import (
     ALL_ATB_FILE_NAME,
@@ -579,7 +580,7 @@ def test_run_atb_pipeline_pipeline_dir_present_or_absent(
     )  # pyright: ignore[reportCallIssue]
     mock_file_downloader = MagicMock(name="file_downloader")
     if use_output_dir_for_pipeline_metadata:
-        assert settings.pipeline_dir == output_dir.resolve() / ".dlt_conf"
+        assert settings.pipeline_dir == output_dir.resolve() / PIPELINE_DIR_NAME
     else:
         assert settings.pipeline_dir is None
 

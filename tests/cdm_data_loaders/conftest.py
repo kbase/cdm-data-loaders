@@ -16,6 +16,8 @@ from cdm_data_loaders.core.fields import (
     LOG_CONFIG_FILE,
     LOG_INTERVAL,
     OUTPUT_DIR,
+    PIPELINE_DIR_NAME,
+    REPORT_FILE_NAME,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
 )
@@ -72,13 +74,22 @@ def local_io_expected(input_dir: Path, output_dir: Path) -> dict[str, Any]:
 
 def cts_expected(input_dir: Path, output_dir: Path, **overrides: Any) -> dict[str, Any]:  # noqa: ANN401
     """Expected model_dump of CtsSettings: defaults, the given dirs, and any overrides."""
+    resolved_output_dir = output_dir.resolve()
+    use_pipeline_dir = overrides.get(
+        USE_OUTPUT_DIR_FOR_PIPELINE_METADATA, DEFAULTS[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA]
+    )
+    pipeline_dir = overrides.get(
+        "pipeline_dir",
+        resolved_output_dir / PIPELINE_DIR_NAME if use_pipeline_dir else None,
+    )
     return {
         **local_io_expected(input_dir, output_dir),
         BUFFER_SIZE: DEFAULTS[BUFFER_SIZE],
         DLT_DEV_MODE: DEFAULTS[DLT_DEV_MODE],
         LOG_INTERVAL: DEFAULTS[LOG_INTERVAL],
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: DEFAULTS[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA],
-        "pipeline_dir": None,
+        "pipeline_dir": pipeline_dir,
+        "report_path": (pipeline_dir or resolved_output_dir) / REPORT_FILE_NAME,
         **overrides,
     }
 
@@ -123,12 +134,14 @@ def test_cts_settings(input_dir: Path, output_dir: Path) -> frozendict[str, Any]
 @pytest.fixture
 def test_cts_settings_reconciled(test_cts_settings: frozendict[str, Any]) -> frozendict[str, Any]:
     """Reconciled CtsSettings dictionary matching model_dump()."""
+    pipeline_dir = test_cts_settings[OUTPUT_DIR] / PIPELINE_DIR_NAME
     return frozendict(
         {
             **test_cts_settings,
             DLT_DEV_MODE: False,
             USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: True,
             LOG_INTERVAL: 5000,
-            "pipeline_dir": test_cts_settings[OUTPUT_DIR] / ".dlt_conf",
+            "pipeline_dir": pipeline_dir,
+            "report_path": pipeline_dir / REPORT_FILE_NAME,
         }
     )

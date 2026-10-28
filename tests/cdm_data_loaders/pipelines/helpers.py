@@ -18,7 +18,7 @@ from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.destinations import filesystem
 
-from cdm_data_loaders.core.fields import PARQUET, LoaderFileFormatEnum
+from cdm_data_loaders.core.fields import PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 
 logger: Logger = getLogger(__name__)
@@ -172,13 +172,14 @@ def read_data_rows(dataset_dir: Path, file_format: str | None = None) -> dict[st
 
 
 def assert_pipeline_report_written(output_dir: Path, load_info: LoadInfo, *, metadata_moved: bool = False) -> None:
-    """Assert that save_pipeline_metadata wrote the expected report file (and moved metadata if configured)."""
-    report_files = list(output_dir.glob(f"report_{load_info.loads_ids[0]}__*.txt"))
-    assert len(report_files) == 1
-    pipeline_e2e_id = report_files[0].stem.removeprefix("report_")
+    """Assert that save_pipeline_metadata wrote the expected report file in the configured directory."""
     if metadata_moved:
-        assert (output_dir / pipeline_e2e_id).is_dir()
-    report_text = report_files[0].read_text(encoding="utf-8")
+        assert (output_dir / PIPELINE_DIR_NAME).is_dir()
+        report_file = output_dir / PIPELINE_DIR_NAME / "report.txt"
+    else:
+        report_file = output_dir / "report.txt"
+    assert report_file.is_file()
+    report_text = report_file.read_text(encoding="utf-8")
     report_lines = report_text.splitlines()
     started_line = report_lines[2]
     finished_line = report_lines[3]
@@ -186,7 +187,6 @@ def assert_pipeline_report_written(output_dir: Path, load_info: LoadInfo, *, met
     assert finished_line.startswith("Finished: ")
     started_at = datetime.fromisoformat(started_line.removeprefix("Started: "))
     finished_at = datetime.fromisoformat(finished_line.removeprefix("Finished: "))
-    assert pipeline_e2e_id == f"{load_info.loads_ids[0]}__{finished_at}"
     assert started_at <= load_info.started_at <= finished_at
     if load_info.finished_at is not None:
         assert load_info.started_at <= load_info.finished_at <= finished_at
@@ -210,7 +210,7 @@ def run_and_read(
     (load_info, output_dir) = run_pipeline(chunk_dir, **overrides)
     assert load_info is not None
     assert not load_info.has_failed_jobs
-    assert_pipeline_report_written(output_dir, load_info)
+    assert_pipeline_report_written(output_dir, load_info, metadata_moved=(output_dir / PIPELINE_DIR_NAME).is_dir())
     return (load_info, output_dir)
 
 

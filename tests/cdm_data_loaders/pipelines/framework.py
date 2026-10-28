@@ -21,6 +21,7 @@ import pytest
 from dlt.common.pipeline import LoadInfo
 from dlt.destinations import filesystem
 
+from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
 from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME, PipelineCli
@@ -290,11 +291,11 @@ def _read_saved_load_info_row(dataset_dir: Path) -> dict[str, Any]:
 def reconstruct_load_info(output_dir: Path, bucket_dir: Path | None = None) -> LoadInfo | None:
     """Reconstruct a LoadInfo-compatible object and attached dlt.Pipeline from disk artifacts.
 
-    Reads the ``report_<pipeline_e2e_id>.txt`` file written by ``save_pipeline_metadata`` in
-    ``output_dir`` and attaches a ``dlt.Pipeline`` pointing at the filesystem destination
-    containing ``<dataset_name>``.
+    Reads the ``report.txt`` file written by ``save_pipeline_metadata`` in
+    ``output_dir / PIPELINE_DIR_NAME`` or ``output_dir`` and attaches a ``dlt.Pipeline``
+    pointing at the filesystem destination containing ``<dataset_name>``.
 
-    :param output_dir: directory containing ``report_<pipeline_e2e_id>.txt``
+    :param output_dir: directory containing ``report.txt`` or ``pipeline_metadata/report.txt``
     :type output_dir: Path
     :param bucket_dir: optional separate filesystem destination bucket directory
     :type bucket_dir: Path | None
@@ -302,7 +303,11 @@ def reconstruct_load_info(output_dir: Path, bucket_dir: Path | None = None) -> L
     :rtype: LoadInfo | None
     """
     output_dir = Path(output_dir)
-    report_files = sorted(output_dir.glob("report_*.txt"), key=lambda path: path.stat().st_mtime)
+    candidate_reports = (output_dir / PIPELINE_DIR_NAME / "report.txt", output_dir / "report.txt")
+    report_files = sorted(
+        (path for path in candidate_reports if path.is_file()),
+        key=lambda path: path.stat().st_mtime,
+    )
     if not report_files:
         return None
 
@@ -354,8 +359,8 @@ def reconstruct_load_info(output_dir: Path, bucket_dir: Path | None = None) -> L
 
     # Use a fresh working directory outside output_dir so dlt syncs the schema from the destination
     # without colliding with stale schemas in ~/.dlt/pipelines or adding files to output_dir.
-    pipeline_e2e_id = report_file.stem.removeprefix("report_")
-    reconstructed_pipelines_dir = output_dir.parent / f".reconstructed_dlt_{pipeline_e2e_id}"
+    reconstructed_id = loads_ids[0] if loads_ids else uuid4().hex
+    reconstructed_pipelines_dir = output_dir.parent / f".reconstructed_dlt_{reconstructed_id}"
     pipeline = dlt.pipeline(
         pipeline_name=pipeline_name,
         destination=filesystem(bucket_url=str(actual_bucket_dir)),
@@ -712,10 +717,12 @@ class PipelineTestRunner:
         docker_cmd.extend([image_tag, "pipeline", docker_target, *container_args])
 
         result = subprocess.run(docker_cmd, capture_output=True, text=True, check=False)  # noqa: S603
+        stderr_and_stdout = f"{result.stdout}\n{result.stderr}".strip()
+        if (result.returncode != 0 or "exited with status" in stderr_and_stdout) and (
+            "Unknown table name" in stderr_and_stdout or "ValueError" in stderr_and_stdout
+        ):
+            raise ValueError(stderr_and_stdout)
         if result.returncode != 0:
-            stderr_and_stdout = f"{result.stdout}\n{result.stderr}".strip()
-            if "Unknown table name" in stderr_and_stdout or "ValueError" in stderr_and_stdout:
-                raise ValueError(stderr_and_stdout)
             err_msg = (
                 f"Docker pipeline '{spec.cli_command}' failed with exit code {result.returncode}:\n"
                 f"Command: {' '.join(docker_cmd)}\n"

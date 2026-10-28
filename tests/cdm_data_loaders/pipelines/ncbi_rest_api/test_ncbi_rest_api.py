@@ -9,6 +9,7 @@ import pytest
 from dlt.extract.items import DataItemWithMeta
 from requests import HTTPError
 
+from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME, REPORT_FILE_NAME
 from cdm_data_loaders.pipelines import ncbi_rest_api as ncbi_module
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.ncbi_rest_api import (
@@ -121,6 +122,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
 
     settings: NcbiRestApiSettings = NcbiRestApiSettings(**base_settings)  # type: ignore[reportAssignmentType]
     resolved_output_dir = output_dir.resolve()
+    pipeline_dir = resolved_output_dir / PIPELINE_DIR_NAME if use_pipeline_dir else None
 
     check_settings(
         settings,
@@ -132,9 +134,10 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
             "log_config_file": None,
             "log_interval": 1000,
             "output_dir": resolved_output_dir,
-            "pipeline_dir": resolved_output_dir / ".dlt_conf" if use_pipeline_dir else None,
+            "pipeline_dir": pipeline_dir,
             "query_type": None,
             "raw_data_dir": resolved_output_dir / "raw_data" / "api_responses",
+            "report_path": (pipeline_dir or resolved_output_dir) / REPORT_FILE_NAME,
             "use_destination": LOCAL_FS,
             "use_output_dir_for_pipeline_metadata": bool(use_pipeline_dir),
             "save_raw_responses": False,
@@ -157,7 +160,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
     else:
         assert "dev_mode" not in mock_dlt.pipeline.call_args.kwargs
     if use_pipeline_dir:  # truthy
-        assert mock_dlt.pipeline.call_args.kwargs["pipelines_dir"] == settings.output_dir / ".dlt_conf"
+        assert mock_dlt.pipeline.call_args.kwargs["pipelines_dir"] == settings.output_dir / PIPELINE_DIR_NAME
     else:
         assert "pipelines_dir" not in mock_dlt.pipeline.call_args.kwargs
 

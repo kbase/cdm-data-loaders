@@ -8,6 +8,7 @@ from frozendict import frozendict
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
+from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
 from cdm_data_loaders.core.settings import (
     DEFAULT_SETTINGS_CONFIG_DICT,
     FILE_FORMAT_CLI_SHORTCUTS,
@@ -192,7 +193,9 @@ def test_cts_settings_pass_sources(
         {**{k: str(v) for k, v in test_defaults.items()}, **values},
     )
     pipeline_dir = (
-        test_defaults["output_dir"] / ".dlt_conf" if overrides.get("use_output_dir_for_pipeline_metadata") else None
+        test_defaults["output_dir"] / PIPELINE_DIR_NAME
+        if overrides.get("use_output_dir_for_pipeline_metadata")
+        else None
     )
     check_settings(settings, cts_expected(**{**test_defaults, **overrides}, pipeline_dir=pipeline_dir))
 
@@ -210,7 +213,7 @@ def test_cts_settings_pass_cli_shortcuts(input_dir: Path, output_dir: Path) -> N
             output_dir,
             use_destination="s3",
             use_output_dir_for_pipeline_metadata=True,
-            pipeline_dir=output_dir.resolve() / ".dlt_conf",
+            pipeline_dir=output_dir.resolve() / PIPELINE_DIR_NAME,
         ),
     )
 

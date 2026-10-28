@@ -10,6 +10,7 @@ from collections.abc import Generator
 from typing import Annotated, Any, Self
 
 import dlt
+import pandas as pd  # noqa: F401 - import on main thread before dlt worker threads yield arrow tables
 import pyarrow as pa
 from dlt.extract.items import DataItemWithMeta
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, PrivateAttr, model_validator
