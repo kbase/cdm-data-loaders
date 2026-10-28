@@ -4,14 +4,7 @@ from dlt.common.pipeline import LoadInfo
 
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
-from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
-    UNIPROT_PIPELINE_NAME as PIPELINE_NAME,
-)
-from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
-    UniProtXmlToPyArrowSettings,
-)
-
-__all__ = ["PIPELINE_NAME", "UniProtXmlToPyArrowSettings", "cli", "run_uniprot_pipeline"]
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import UniProtXmlToPyArrowSettings
 
 
 def run_uniprot_pipeline(settings: UniProtXmlToPyArrowSettings) -> LoadInfo | None:

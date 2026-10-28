@@ -47,6 +47,11 @@ TABLE_NAME: Final[str] = "table_name"
 USE_DESTINATION: Final[str] = "use_destination"
 USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: Final[str] = "use_output_dir_for_pipeline_metadata"
 
+PIPELINE_DIR_NAME: Final[str] = "pipeline_metadata"
+"""Directory where dlt will put run metadata, schemas, etc."""
+REPORT_FILE_NAME: Final[str] = "report.txt"
+"""Name of the report file."""
+
 
 MIN_START_AT: Final[int] = 1
 
@@ -171,6 +176,6 @@ UseOutputDirForPipelineMetadata = Annotated[
     bool,
     Field(
         default=DEFAULTS[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA],
-        description="Store pipeline metadata in `<output_dir>/.dlt_conf`. output_dir must be set and on the local filesystem.",
+        description="Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem.",
     ),
 ]

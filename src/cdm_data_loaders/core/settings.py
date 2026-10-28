@@ -14,6 +14,8 @@ from cdm_data_loaders.core.fields import (
     INPUT_DIR,
     LOADER_FILE_FORMAT,
     OUTPUT_DIR,
+    PIPELINE_DIR_NAME,
+    REPORT_FILE_NAME,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
     BufferSize,
@@ -65,8 +67,6 @@ XML_CLI_SHORTCUTS: frozendict[str, str] = frozendict(
 
 # argparse registers -h/--help on every parser; claiming either makes the parser fail to build
 RESERVED_CLI_NAMES: Final[frozenset[str]] = frozenset({"h", "help"})
-# dir where dlt will put run metadata, schemas, etc.
-PIPELINE_DIR_NAME: Final[str] = ".dlt_conf"
 
 
 def default_settings_with_shortcuts(
@@ -214,12 +214,24 @@ class CtsSettings(LocalInputOutputSettings):
     def pipeline_dir(self) -> Path | None:
         """Custom directory to save pipeline metadata to.
 
-        If use_output_dir_for_pipeline_metadata is true, this is ``<output_dir>/.dlt_conf``;
+        If use_output_dir_for_pipeline_metadata is true, this is ``<output_dir>/<PIPELINE_DIR_NAME>``;
         otherwise None, and dlt uses its default.
         """
         if self.use_output_dir_for_pipeline_metadata:
             return self.output_dir / PIPELINE_DIR_NAME
         return None
+
+    @computed_field
+    @property
+    def report_path(self) -> Path:
+        """Path to the report file.
+
+        If use_output_dir_for_pipeline_metadata is true, the report is saved in the pipelines dir;
+        Otherwise, it is saved directly to the output directory.
+        """
+        if self.pipeline_dir:
+            return self.pipeline_dir / REPORT_FILE_NAME
+        return self.output_dir / REPORT_FILE_NAME
 
 
 class FileFormatIngestSettings(CtsSettings):

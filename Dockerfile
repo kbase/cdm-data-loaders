@@ -37,6 +37,7 @@ RUN ARCH=$(uname -m) && \
     wget https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-${ARCH}-unknown-linux-gnu.zip && \
     unzip qsv-${QSV_VERSION}-${ARCH}-unknown-linux-gnu.zip -d /tmp/qsv && \
     mv /tmp/qsv/qsv /usr/local/bin/ && \
+    chmod +x /usr/local/bin/xml_file_splitter /usr/local/bin/qsv && \
     rm -rf /tmp/*
 
 # Setup a non-root user

@@ -97,15 +97,12 @@ def build_cli_arg_specs(settings_cls: type[BaseSettings]) -> dict[str, CliArgSpe
     """
     parser = CliSettingsSource(settings_cls).root_parser
     specs: dict[str, CliArgSpec] = {}
-    for action in parser._actions:  # noqa: SLF001 -- argparse has no public introspection API
+    for action in parser._actions:  # noqa: SLF001
         if not action.option_strings or action.dest == "help" or action.dest.endswith(":subcommand"):
             continue
         field_info = settings_cls.model_fields.get(action.dest)
         if field_info is not None and field_info.exclude:
-            # pydantic-settings always registers a real argparse action per field -- there is no
-            # way to omit one outright -- so Field(exclude=True) fields (e.g. CtsSettings.dlt_config)
-            # still show up here unless filtered explicitly. Such fields aren't real user-facing CLI
-            # options (see DltConfig in cdm_data_loaders.core.fields), so exclude them from the specs.
+            # filter out any fields that are not real user-facing CLI options
             continue
         specs[action.dest] = CliArgSpec(
             field_name=action.dest,
@@ -125,7 +122,8 @@ def assert_no_cli_clashes(settings_cls: type[CdmDataLoadersBase]) -> None:
     AliasChoices / AliasPath, which check_aliases doesn't model.
     """
     settings_cls.check_aliases()
-    build_cli_arg_specs(settings_cls)  # raises argparse.ArgumentError on any residual clash
+    # raises argparse.ArgumentError on any residual clash
+    build_cli_arg_specs(settings_cls)
 
 
 def assert_cli_field_roundtrips(

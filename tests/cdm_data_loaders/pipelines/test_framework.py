@@ -127,6 +127,7 @@ def test_settings_to_argv_pass_excludes_computed_fields_and_expands_lists(tmp_pa
     )  # pyright: ignore[reportCallIssue]
     argv = settings_to_argv(settings)
     assert "--pipeline-dir" not in argv
+    assert "--report-path" not in argv
     assert "--log-config-file" not in argv
     assert "--use-output-dir-for-pipeline-metadata" in argv
     idx_meta = argv.index("--use-output-dir-for-pipeline-metadata")
@@ -143,7 +144,7 @@ def test_reconstruct_load_info_pass_and_error_cases(tmp_path: Path) -> None:
 
     error_dir = tmp_path / "error_out"
     error_dir.mkdir()
-    (error_dir / "report_123_456.txt").write_text(
+    (error_dir / "report.txt").write_text(
         "Pipeline: test_pipe\n"
         "Dataset: test_ds\n"
         "Started: 2026-01-01 00:00:00+00:00\n"
@@ -158,7 +159,7 @@ def test_reconstruct_load_info_pass_and_error_cases(tmp_path: Path) -> None:
     completed_dir.mkdir()
     started_str = "2026-01-01 12:34:56.789000+00:00"
     finished_str = "2026-01-01 12:35:00.000000+00:00"
-    (completed_dir / "report_111_222.txt").write_text(
+    (completed_dir / "report.txt").write_text(
         f"Pipeline: test_pipe\n"
         f"Dataset: test_ds\n"
         f"Started: {started_str}\n"
@@ -280,7 +281,7 @@ def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
     def fake_docker_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         captured_cmds.append(cmd)
         # Simulate the container writing a completed report to the mounted output_dir
-        (output_dir / "report_999_1000.txt").write_text(
+        (output_dir / "report.txt").write_text(
             "Pipeline: xmltodict\n"
             "Dataset: xml_docker_ds\n"
             "Started: 2026-02-01 00:00:00+00:00\n"
@@ -352,7 +353,7 @@ def test_pipeline_test_runner_pass_docker_mode_test_pipeline_and_workers(
 
     def fake_docker_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         captured_cmds.append(cmd)
-        (output_dir / "report_999_1000.txt").write_text(
+        (output_dir / "report.txt").write_text(
             "Pipeline: reference_pipeline\n"
             "Dataset: ref_docker_ds\n"
             "Started: 2026-02-01 00:00:00+00:00\n"
@@ -416,6 +417,21 @@ def test_pipeline_test_runner_fail_docker_mode_nonzero_exit(
         return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="ValueError: Unknown table name: foo")
 
     monkeypatch.setattr(subprocess, "run", fake_fail_value_error)
+    with pytest.raises(ValueError, match="Unknown table name"):
+        runner.run(
+            "jsonlines_extract",
+            cli_args=settings_to_argv(settings),
+        )
+
+    def fake_entrypoint_swallowed_value_error(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            cmd,
+            returncode=0,
+            stdout="",
+            stderr="ValueError: Unknown table name: foo\nWarning: pipeline 'jsonl_pydantic' exited with status 1",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_entrypoint_swallowed_value_error)
     with pytest.raises(ValueError, match="Unknown table name"):
         runner.run(
             "jsonlines_extract",
