@@ -59,7 +59,7 @@ def test_run_xmltopyarrow_pipeline_pass_writes_expected_output(
     load_info = pipeline_runner.run(PIPELINE_NAME, settings=settings)
     book_df = check_book_list_results(load_info)
     assert sorted(book_df["_id"].tolist()) == ["1", "2", "3"]
-    assert_pipeline_report_written(Path(settings.output_dir), load_info)
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files=["library.xml"])
 
 
 def test_run_xmltopyarrow_pipeline_pass_gzip_files_are_loaded(
@@ -92,7 +92,7 @@ def test_run_xmltopyarrow_pipeline_pass_no_matching_files_yields_no_data_table(
     dataset = load_info.pipeline.dataset()
     # only dlt's own metadata tables exist; the data table is never created
     assert set(dataset.tables) == DEFAULT_DLT_TABLES
-    assert_pipeline_report_written(Path(settings.output_dir), load_info)
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files=[])
 
 
 def test_run_xmltopyarrow_pipeline_pass_custom_table_name_is_respected(
@@ -123,7 +123,7 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, cli_args=settings_to_argv(settings)))
     book_df = check_book_list_results(load_info)
     assert sorted(book_df["_id"].tolist()) == ["1", "2", "3"]
-    assert_pipeline_report_written(Path(settings.output_dir), load_info)
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files=["library.xml"])
 
 
 def test_run_xmltopyarrow_pipeline_pass_uniref_chunk_5_el(
@@ -176,4 +176,4 @@ def test_run_subclass_pipeline_pass_end_to_end(
     assert set(dataset.tables) == {"entry", *DEFAULT_DLT_TABLES}
     entry_df = dataset.table("entry").df()
     assert len(entry_df) == 1
-    assert_pipeline_report_written(Path(settings.output_dir), load_info)
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files=["minimal.xml.gz"])

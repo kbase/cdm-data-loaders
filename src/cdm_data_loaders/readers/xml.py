@@ -18,7 +18,6 @@ from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from cdm_data_loaders.readers.xsd import convert_xml_element
-from cdm_data_loaders.utils.batcher import get_file_batches
 from cdm_data_loaders.utils.buffer import ArrowListBuffer, DictBuffer, ListBuffer
 from cdm_data_loaders.utils.gz import open_maybe_gzip
 
@@ -246,30 +245,6 @@ def process_xml_file(
         buffer=buffer,
         buffer_element_fn=lambda element: buffer.add_items(parse_fn(entry=element, file_path=file_path)),
     )
-
-
-def process_xml_file_batches(
-    settings: CtsSettings,
-    xml_tag: str,
-    parse_fn: Callable,
-) -> Generator[DataItemWithMeta, Any]:
-    """Generate a list of XML files to process using the NumericFileSequenceBatcher.
-
-    :param settings: pipeline config with input_dir
-    :type settings: CtsSettings
-    :param xml_tag: XML element tag to stream
-    :type xml_tag: str
-    :param parse_fn: function for parsing the XML
-    :type parse_fn: Callable
-    """
-    for files in get_file_batches(settings):
-        for file_path in files:
-            yield from process_xml_file(
-                settings=settings,
-                xml_tag=xml_tag,
-                parse_fn=parse_fn,
-                file_path=file_path,
-            )
 
 
 def process_xml_file_items(

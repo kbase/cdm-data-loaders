@@ -86,7 +86,12 @@ def test_run_jsonlines_pipeline_pass_persists_valid_and_rejected_rows(
     load_info = assert_run_ok(pipeline_runner.run(JSONSCHEMA_PIPELINE_NAME, settings=settings))
     assert load_info.pipeline.pipeline_name == JSONSCHEMA_PIPELINE_NAME
     assert load_info.dataset_name == "schema_test"
-    assert_pipeline_report_written(Path(settings.output_dir), load_info, metadata_moved=True)
+    assert_pipeline_report_written(
+        Path(settings.output_dir),
+        load_info,
+        metadata_moved=True,
+        ingested_files={"plain.jsonl", "compressed.jsonl.gz", "records.jsonl"},
+    )
     tables = read_data_tables(settings, load_info.dataset_name)
     assert set(tables) == {"widget", "widget_rejected", "gadget"}
     assert [{key: parse_json_string(value) for key, value in row.items()} for row in tables["widget"]] == [
@@ -136,7 +141,9 @@ def test_run_jsonlines_pipeline_pass_all_invalid(
     (table_dir / "invalid.jsonl").write_text(f"{MALFORMED_RAW}\n{TYPE_ERROR_RAW}", encoding="utf-8")
 
     load_info = assert_run_ok(pipeline_runner.run(JSONSCHEMA_PIPELINE_NAME, settings=settings))
-    assert_pipeline_report_written(Path(settings.output_dir), load_info, metadata_moved=True)
+    assert_pipeline_report_written(
+        Path(settings.output_dir), load_info, metadata_moved=True, ingested_files=["invalid.jsonl"]
+    )
     assert read_data_tables(settings, load_info.dataset_name) == {
         "widget_rejected": [
             {"source_file": "invalid.jsonl", "line_no": 1, "raw_record": MALFORMED_RAW, "error_detail": PARSE_ERROR},
@@ -175,5 +182,7 @@ def test_cli_pass_loads_selected_entity(
         )
     )
     assert load_info.dataset_name == "schema_cli"
-    assert_pipeline_report_written(Path(settings.output_dir), load_info, metadata_moved=True)
+    assert_pipeline_report_written(
+        Path(settings.output_dir), load_info, metadata_moved=True, ingested_files=["records.jsonl"]
+    )
     assert read_data_tables(settings, load_info.dataset_name) == {"gadget": [EXPECTED_GADGET_ROW]}

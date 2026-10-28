@@ -23,7 +23,7 @@ Domain logic lives in the top-level packages and is orchestration-free; orchestr
 - IR is a frozen, slotted node tree (`converters/core/ir.py`) that preserves source facts without choosing target policy; emitters make all target-specific decisions.
 - `converters/core/` imports no dlt, PyIceberg, or PySpark modules. The only cross-package import is the `x-xsv-config` contract reusing `X_XSV_CONFIG_SCHEMA` from `cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema`.
 
-Settings hierarchy: pipeline settings in `pipelines/` extend the hierarchy in `core/settings.py`: `CdmDataLoadersBase` -> `LoggerSettings` -> `LocalInputOutputSettings` -> `CtsSettings` -> `FileFormatIngestSettings`. Settings use `env_prefix="CDL_"`, `cli_kebab_case=True`, and `default_settings_with_shortcuts(...)`. `CdmDataLoadersBase.__pydantic_init_subclass__` calls `check_aliases()` at class creation time to verify that CLI argument names, aliases, and `cli_shortcuts` do not collide or claim reserved flags (`h`, `help`). CLI parsing is invoked explicitly via `pydantic_settings.CliApp.run` in `pipelines/core.py` (`PipelineCli` / `run_cli`), not implicitly on model instantiation. Every pipeline registers a `cli` entry point in `pyproject.toml` under `[project.scripts]` (and in `scripts/entrypoint.sh` for Docker execution): `all_the_bacteria`, `jsonl_extract`, `jsonl_jsonschema`, `jsonl_pydantic`, `ncbi_ftp_promote`, `ncbi_ftp_sync`, `ncbi_rest_api`, `pdb_manifest`, `uniprot`, `uniref`, `xmltodict`, `xml2db`, `xsv`.
+Settings hierarchy: pipeline settings in `pipelines/` extend the hierarchy in `core/settings.py`: `CdmDataLoadersBase` -> `LoggerSettings` -> `LocalInputOutputSettings` -> `CtsSettings` -> `FileFormatIngestSettings`. Settings use `env_prefix="CDL_"`, `cli_kebab_case=True`, and `default_settings_with_shortcuts(...)`. `CdmDataLoadersBase.__pydantic_init_subclass__` calls `check_aliases()` at class creation time to verify that CLI argument names, aliases, and `cli_shortcuts` do not collide or claim reserved flags (`h`, `help`). CLI parsing is invoked explicitly via `pydantic_settings.CliApp.run` in `pipelines/core.py` (`PipelineCli` / `run_cli`), not implicitly on model instantiation. Every pipeline registers a `cli` entry point in `pyproject.toml` under `[project.scripts]` (and in `scripts/entrypoint.sh` for Docker execution): `all_the_bacteria`, `jsonl_extract`, `jsonl_jsonschema`, `jsonl_pydantic`, `ncbi_ftp_promote`, `ncbi_ftp_sync`, `ncbi_rest_api`, `uniprot`, `uniref`, `xmltodict`, `xml2db`, `xsv`.
 
 ## Package Map
 
@@ -54,7 +54,7 @@ Schema-format translation. See `docs/converters_ir.md` for the full contract.
 File-format readers feeding pipelines:
 
 - `jsonlines.py`: JSONL line parsing (`parse_jsonl_line`), paged streaming (`stream_jsonl_lines`), and table routing (`route_jsonl_lines`).
-- `xml.py`: shared XML streaming and `xmltodict` helpers (`parse_head_matter`, `stream_xml_file`, `process_xml_file_to_dict`, `process_xml_file`, `process_xml_file_batches`, `process_xml_file_items`, and `build_xml_file_resource` over dlt's `filesystem` source).
+- `xml.py`: shared XML streaming and `xmltodict` helpers (`parse_head_matter`, `stream_xml_file`, `process_xml_file_to_dict`, `process_xml_file`, `process_xml_file_items`, and `build_xml_file_resource` over dlt's `filesystem` source).
 - `xml2db_doc.py`: `xml2db` model building (`build_xml2db_model`), bounded-memory chunk fragment streaming (`iter_xml2db_chunk_fragments`), primary/foreign key rewriting (content-addressed keys for reused tables, file/chunk-namespaced keys otherwise), document flattening (`flatten_xml2db_document`), and `process_xml_file_with_xml2db`.
 - `xsd.py`: XSD schema loading (`load_schema`) and parent/child element cardinality classification (`find_list_and_single_child_paths`).
 - `jsonschema_xsv/`: `xsv_reader.py` (casts validated CSV/TSV rows to JSON Schema property types and resolves `x-xsv-config` parsing parameters) plus `xsv_validator/` (`qsv.py` wraps the external `qsv` binary for two-pass validation, normalization, and null replacement; `custom_metaschema.py` defines the `https://json-schema.kbase.us/draft/2020-12-xsv/schema` metaschema and `X_XSV_CONFIG_SCHEMA`, also imported by `converters`; `schema_utils.py` and `helpers.py`).
@@ -66,16 +66,12 @@ Parsers for third-party outputs and formats:
 - `uniprot/`: `uniprot_kb.py` (UniProt XML), `uniref.py` (UniRef XML), `metalink.py`, `relnotes.py`, `idmapping.schema.json`; shared XML helpers in `utils/xml_utils.py`.
 - `ncbi/datasets_api/openapi_pydantic.py`: pydantic models for NCBI Datasets API responses (bundled `AnnotationReportResponse.schema.json` and `DatasetReportResponse.schema.json` alongside).
 - `ncbi/ftp_mod_times/`: `ftp_mod_times.schema.json` for NCBI FTP modification-time files.
-- `bbmap_stats.py` (bbmap `stats.sh` output), `checkm2.py` (quality reports), `pdb_holdings_file.py`.
+- `bbmap_stats.py` (bbmap `stats.sh` output), `checkm2.py` (quality reports)
 - `all_the_bacteria/schema/` and `gtdb/schema/`: JSON Schemas for ATB and GTDB tabular files (no Python modules).
 
 ### `ncbi_ftp/`
 
 NCBI FTP assembly domain logic, phased: `manifest.py` (phase 1: assembly summary diffing and manifest generation), download is the phase 2 pipeline, `promote.py` (phase 3: promote staged files to final Lakehouse paths in S3), plus `assembly.py` (assembly-specific logic), `metadata.py` (frictionless data package descriptors), `constants.py`.
-
-### `pdb/`
-
-PDB pipeline constants, enums, and globals (`constants.py`); the pipeline itself is `pipelines/pdb_manifest.py`.
 
 ### `pipelines/`
 
@@ -86,18 +82,17 @@ dlt-based orchestrators; each exposes a `cli = PipelineCli(...)` registered in `
 - `jsonlines/`: JSONL ingest pipelines (`settings.py`, shared machinery in `base.py`) - `extract_pipeline.py` (`jsonl_extract`, plain load into `<table_name>` / `<table_name>_invalid`), `extract_jsonschema_validate_pipeline.py` (`jsonl_jsonschema`, validates against `ENTITY_SCHEMAS`), `extract_pydantic_validate_pipeline.py` (`jsonl_pydantic`, validates against `ENTITY_MODELS`). See `docs/jsonschema_ingest.md`.
 - `ncbi_ftp_download.py` / `ncbi_ftp_promote.py`: phases 2 (`ncbi_ftp_sync`) and 3 (`ncbi_ftp_promote`) of the NCBI FTP flow.
 - `ncbi_rest_api.py`: NCBI REST API import.
-- `pdb_manifest.py`: PDB holdings transfer manifest.
 - `uniprot_kb.py` / `uniref.py`: UniProt (`uniprot`) and UniRef (`uniref`) dlt pipelines.
 - `xml2db/` / `xmltodict/` / `xsv/`: XML-to-relational, XML-to-dictionary, and XSV (CSV/TSV) ingestion, each with `pipeline.py` and `settings.py`; `xml2db/compaction.py` runs DuckDB-based post-load deduplication of "reused" tables on filesystem destinations.
 
 ### `utils/`
 
-Cross-cutting helpers: `batcher.py` (`NumericFileSequenceBatcher`, `get_file_batches`), `buffer.py` (per-table row buffers for dlt: `DictBuffer`, `ListBuffer`, `ArrowDictBuffer`, `ArrowListBuffer`), `cdm_logger.py` (structured JSON logging), `checksums.py`, `gz.py` (`open_maybe_gzip`), `helpers.py`, `progress.py` (tqdm helpers), `spark.py`, `xml_utils.py`, `jsonschema/dereferencer.py` (`$ref` resolution), `dlt/dlt_normalization.py` (lossless parent-linked normalization of dlt table definitions, used by the converters' `DltReader`), and `file_transfer/` - `core.py` (tenacity-retried downloads), `sync_client.py` / `async_client.py` / `ftp_client.py`, and `s3/` (`client.py`, `object_utils.py`, HTTP-to-S3 streaming in `streamer.py`, `transfer_config.py`, `cli.py`).
+Cross-cutting helpers: `batcher.py` (`NumericFileSequenceBatcher`), `buffer.py` (per-table row buffers for dlt: `DictBuffer`, `ListBuffer`, `ArrowDictBuffer`, `ArrowListBuffer`), `cdm_logger.py` (structured JSON logging), `checksums.py`, `gz.py` (`open_maybe_gzip`), `helpers.py`, `progress.py` (tqdm helpers), `spark.py`, `xml_utils.py`, `jsonschema/dereferencer.py` (`$ref` resolution), `dlt/dlt_normalization.py` (lossless parent-linked normalization of dlt table definitions, used by the converters' `DltReader`), and `file_transfer/` - `core.py` (tenacity-retried downloads), `sync_client.py` / `async_client.py` / `ftp_client.py`, and `s3/` (`client.py`, `object_utils.py`, HTTP-to-S3 streaming in `streamer.py`, `transfer_config.py`, `cli.py`).
 
 ### Other Top-Level Directories
 
 - `scripts/`: `entrypoint.sh` (container entrypoint dispatching to registered pipeline CLIs), `run_tests.sh` (`unit`, `container`, or `all` test suites), `filter_ncbi_updates.py` (CLI filtering NCBI assembly IDs by modification date), `s3_local.py` (thin S3 CLI for local Ceph testing), `dtd2xsd.pl` (DTD-to-XSD converter), `run_tools.sh`, `parse_index.py`.
-- `docs/`: architecture and pipeline guides (`converters_ir.md`, `jsonschema_ingest.md`, `ncbi_ftp_e2e_walkthrough.md`, `pdb_e2e_walkthrough.md`, `rclone_instructions.md`, `uniprot.md`).
+- `docs/`: architecture and pipeline guides (`converters_ir.md`, `jsonschema_ingest.md`, `ncbi_ftp_e2e_walkthrough.md`, `rclone_instructions.md`, `uniprot.md`).
 - `cdl_skill/`: skill definition (`SKILL.md`) and generator (`scripts/skill_gen.sh`) for packaging pipeline documentation and schemas.
 
 ## Conventions
