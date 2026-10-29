@@ -48,7 +48,7 @@ def test_run_xsv_pipeline_pass_writes_expected_output(
         {"number": 2, "date": "2023-01-15", "float": "3.14", "boolean": True, "string": "key:value1"},
         {"number": 3, "date": "2023-02-20", "float": "1.11", "boolean": False, "string": "key:value2"},
     ]
-    assert_pipeline_report_written(Path(settings.output_dir), load_info)
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files={"data.csv", "schema.json"})
 
 
 def test_run_xsv_pipeline_pass_multiple_files_loaded_together(
@@ -188,4 +188,4 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
 
     df = load_info.pipeline.dataset().table("my_table").df()
     assert sorted(df["number"].tolist()) == [2, 3]
-    assert_pipeline_report_written(Path(settings.output_dir), load_info)
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files={"data.csv", "schema.json"})

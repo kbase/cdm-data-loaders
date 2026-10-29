@@ -78,7 +78,7 @@ def test_run_xmltodict_pipeline_pass_no_matching_files_yields_no_data_table(
     dataset = load_info.pipeline.dataset()
     # only dlt's own metadata tables exist; the data table is never created
     assert set(dataset.tables) == DEFAULT_DLT_TABLES
-    assert_pipeline_report_written(Path(settings.output_dir), load_info)
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files=[])
 
 
 def test_run_xmltodict_pipeline_pass_custom_table_name_is_respected(

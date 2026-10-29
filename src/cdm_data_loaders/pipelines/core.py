@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Final
 
 import dlt
+import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.common.runtime.slack import send_slack_message
 from dlt.common.schema.typing import TSchemaContractDict
@@ -17,7 +18,7 @@ from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
-from cdm_data_loaders.core.fields import DEFAULT_XML_FILE_GLOB, JSONL
+from cdm_data_loaders.core.fields import JSONL
 from cdm_data_loaders.core.settings import (
     CtsSettings,
     FileFormatIngestSettings,
@@ -39,6 +40,8 @@ DEFAULT_SCHEMA_CONTRACT: Final[TSchemaContractDict] = {
     "data_type": "discard_row",
 }
 DEFAULT_REJECTED_SUFFIX: Final[str] = "_rejected"
+
+yaml.SafeDumper.add_multi_representer(datetime, yaml.SafeDumper.represent_datetime)
 
 logger: Logger = getLogger(__name__)
 
@@ -70,6 +73,7 @@ class PipelineReport:
     pipeline_load_info: LoadInfo | None = None
     pipeline_err_msg: str | None = None
     info_load_err_msg: str | None = None
+    ingested_files: list[str] | None = None
 
 
 def send_slack_message_carefully(
@@ -141,17 +145,17 @@ def write_pipeline_report(
     :param report: pipeline report information to write
     :type  report: PipelineReport
     """
-    lines = [
-        f"Pipeline: {report.pipeline_name}",
-        f"Dataset: {report.dataset_name}",
-        f"Started: {report.started_at}",
-        f"Finished: {report.finished_at}",
-    ]
+    report_data = {
+        "pipeline": report.pipeline_name,
+        "dataset": report.dataset_name,
+        "started": report.started_at,
+        "finished": report.finished_at,
+    }
 
     if report.pipeline_load_info is None or report.pipeline_load_info.loads_ids is None:
-        lines.append("Status: error")
+        report_data["status"] = "error"
         if report.pipeline_err_msg:
-            lines.append(report.pipeline_err_msg)
+            report_data["pipeline_err_msg"] = report.pipeline_err_msg
     else:
         failed_messages = [
             failed_job.failed_message
@@ -160,23 +164,31 @@ def write_pipeline_report(
             if failed_job.failed_message
         ]
         status = "completed with errors" if failed_messages else "completed"
-        lines.append(f"Status: {status}")
-        lines.append(f"Completed loads: {', '.join(report.pipeline_load_info.loads_ids)}")
-        lines.extend(failed_messages)
+        report_data["status"] = status
+        report_data["load_ids"] = report.pipeline_load_info.loads_ids
+        if report.ingested_files:
+            report_data["ingested_files"] = report.ingested_files
+        if failed_messages:
+            report_data["load_errors"] = failed_messages
         if report.info_load_err_msg is None:
-            lines.append("Pipeline load info saved")
+            report_data["pipeline_load_info_errs"] = None
         else:
-            lines.append(f"Pipeline load info not saved: {report.info_load_err_msg!s}")
+            report_data["pipeline_load_info_errs"] = report.info_load_err_msg
 
     try:
-        report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        with report_path.open("w", encoding="utf-8") as fh:
+            yaml.safe_dump(report_data, fh, default_flow_style=False, sort_keys=False)
     except Exception as err:
         report_err_msg = f"Could not write pipeline report file: {err!s}"
         logger.exception(report_err_msg)
 
 
 def save_pipeline_metadata(
-    settings: CtsSettings, pipeline: dlt.Pipeline, load_info: LoadInfo | None, err_msg: str | None
+    settings: CtsSettings,
+    pipeline: dlt.Pipeline,
+    load_info: LoadInfo | None,
+    err_msg: str | None,
+    ingested_files: list[str] | None = None,
 ) -> None:
     """Save the pipeline metadata to a unique directory in settings.output_dir.
 
@@ -190,6 +202,8 @@ def save_pipeline_metadata(
     :type  load_info: LoadInfo | None
     :param err_msg: error message indicating why pipeline failed, or None if the pipeline was successful
     :type  err_msg: str | None
+    :param ingested_files: relative paths of files ingested from the filesystem resource, if any
+    :type  ingested_files: list[str] | None, optional
     """
     started_at = pipeline.last_trace.started_at
     finished_at = pipeline.last_trace.finished_at
@@ -230,8 +244,30 @@ def save_pipeline_metadata(
         pipeline_load_info=load_info,
         pipeline_err_msg=err_msg,
         info_load_err_msg=info_load_err_msg,
+        ingested_files=ingested_files,
     )
     write_pipeline_report(settings.report_path, report)
+
+
+def _attach_file_collector(resource: DltResource | list[DltResource]) -> list[str]:
+    """Attach a map step to any root ``filesystem`` resource to record ingested file paths."""
+    ingested_files: list[str] = []
+    seen_pipes: set[str] = set()
+    resources = resource if isinstance(resource, list) else [resource]
+
+    def _record_file(item: Any) -> Any:  # noqa: ANN401
+        if isinstance(item, dict) and "relative_path" in item:
+            ingested_files.append(item["relative_path"])
+        return item
+
+    for res in resources:
+        curr: DltResource | None = res
+        while isinstance(curr, DltResource):
+            if curr.name == "filesystem" and curr._pipe.instance_id not in seen_pipes:  # noqa: SLF001
+                seen_pipes.add(curr._pipe.instance_id)  # noqa: SLF001
+                curr.add_map(_record_file)
+            curr = curr._parent  # noqa: SLF001
+    return ingested_files
 
 
 def run_pipeline(
@@ -281,6 +317,7 @@ def run_pipeline(
     if not slack_hook:
         logger.info("No Slack alerts will be sent: %s", WEBHOOK_NOT_CONFIGURED)
 
+    ingested_files = _attach_file_collector(resource)
     load_info: LoadInfo | None = None
     err_msg: str | None = None
     try:
@@ -297,7 +334,7 @@ def run_pipeline(
         else:
             logger.info("All pipeline jobs completed successfully")
 
-    save_pipeline_metadata(settings, pipeline, load_info, err_msg)
+    save_pipeline_metadata(settings, pipeline, load_info, err_msg, ingested_files=ingested_files or None)
 
     if slack_hook:
         msg = err_msg or f"Pipeline completed {'with errors' if load_info.has_failed_jobs else 'successfully!'}"
@@ -326,8 +363,13 @@ def build_filesystem_resource(
     :param transformer_kwargs: additional keyword arguments passed to ``dlt.transformer``
     :return: configured ``DltResource``
     """
-    resolved_glob = file_glob if file_glob is not None else getattr(settings, "file_glob", DEFAULT_XML_FILE_GLOB)
-    files = filesystem(bucket_url=str(settings.input_dir), file_glob=resolved_glob)
+    fs_args: dict[str, Any] = {"bucket_url": str(settings.input_dir)}
+    if file_glob is not None:
+        fs_args["file_glob"] = file_glob
+    elif glob := getattr(settings, "file_glob", None):
+        fs_args["file_glob"] = glob
+
+    files = filesystem(**fs_args)
     reader = (
         reader_fn
         if isinstance(reader_fn, DltResource)

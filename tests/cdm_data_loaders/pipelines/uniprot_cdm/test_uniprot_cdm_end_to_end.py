@@ -116,7 +116,12 @@ def test_integration_cli_uniprot_pipeline_output_validated(
     load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=duckdb_uniprot_settings))
     assert load_info.pipeline.pipeline_name == PIPELINE_NAME
     assert load_info.dataset_name == PIPELINE_NAME
-    assert_pipeline_report_written(Path(duckdb_uniprot_settings.output_dir), load_info, metadata_moved=True)
+    assert_pipeline_report_written(
+        Path(duckdb_uniprot_settings.output_dir),
+        load_info,
+        metadata_moved=True,
+        ingested_files=set(UNIPROT_FIXTURE_FILES),
+    )
 
     dataset_dir = Path(duckdb_uniprot_settings.output_dir) / load_info.dataset_name
     for table_name, expected_count in EXPECTED_ROW_COUNTS.items():

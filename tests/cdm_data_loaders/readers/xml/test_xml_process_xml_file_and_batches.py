@@ -25,7 +25,6 @@ from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSetting
 from cdm_data_loaders.readers.xml import (
     DEFAULT_XMLTODICT_ARGS,
     process_xml_file,
-    process_xml_file_batches,
     process_xml_file_items,
     process_xml_file_to_dict,
     process_xml_file_to_pyarrow,
@@ -1159,76 +1158,6 @@ def test_process_xml_file_fail_propagates_stream_xml_file_error(
 
     parse_fn.assert_called_once_with(entry=fake_entry, file_path=file_path)
     assert collected == []
-
-
-# process_xml_file_batches - isolated unit tests (get_file_batches / process_xml_file mocked)
-def test_process_xml_file_batches_pass_calls_get_file_batches_once_with_settings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify get_file_batches is invoked exactly once, receiving the settings object unchanged."""
-    settings = fake_settings()
-    get_batches_mock = MagicMock(return_value=iter([]))
-    monkeypatch.setattr(xml_module, "get_file_batches", get_batches_mock)
-
-    items = list(process_xml_file_batches(settings, "tag", MagicMock()))  # pyright: ignore[reportArgumentType]
-
-    get_batches_mock.assert_called_once_with(settings)
-    assert items == []
-
-
-def test_process_xml_file_batches_pass_calls_process_xml_file_per_file_in_order(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify process_xml_file is called once per file across all batches, in order, with forwarded args."""
-    file_a, file_b, file_c = Path("a.xml"), Path("b.xml"), Path("c.xml")
-    settings = fake_settings(log_interval=CUSTOM_BATCH_LOG_INTERVAL)
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[file_a, file_b], [file_c]]))
-    process_file_mock = MagicMock(side_effect=lambda *_, **__: iter([]))
-    monkeypatch.setattr(xml_module, "process_xml_file", process_file_mock)
-    parse_fn = MagicMock()
-
-    list(process_xml_file_batches(settings, "tag", parse_fn))  # pyright: ignore[reportArgumentType]
-
-    assert [call.kwargs.get("file_path") for call in process_file_mock.call_args_list] == [
-        file_a,
-        file_b,
-        file_c,
-    ]
-    for call in process_file_mock.call_args_list:
-        assert call.kwargs.get("xml_tag") == "tag"
-        assert call.kwargs.get("parse_fn") is parse_fn
-        assert call.kwargs.get("settings") is settings
-        assert call.kwargs.get("settings").log_interval == CUSTOM_BATCH_LOG_INTERVAL  # pyright: ignore[reportOptionalMemberAccess]
-
-
-def test_process_xml_file_batches_pass_yields_items_from_process_xml_file_unchanged(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify items yielded by process_xml_file are passed through by process_xml_file_batches as-is."""
-    sentinel_item = DataItemWithMeta(TableNameMeta("people"), [{"id": 1}])
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[Path("a.xml")]]))
-    monkeypatch.setattr(xml_module, "process_xml_file", lambda *_, **__: iter([sentinel_item]))
-
-    items = list(process_xml_file_batches(fake_settings(), "tag", MagicMock()))  # pyright: ignore[reportArgumentType]
-
-    assert items == [sentinel_item]
-
-
-def test_process_xml_file_batches_fail_propagates_process_xml_file_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify an exception raised inside process_xml_file for one file propagates without being swallowed."""
-
-    def _raising_process(*_: Any, **__: Any) -> Iterator[DataItemWithMeta]:  # noqa: ANN401
-        msg = "parse failure"
-        raise RuntimeError(msg)
-        yield  # pragma: no cover - unreachable, keeps this a generator function
-
-    monkeypatch.setattr(xml_module, "get_file_batches", lambda _: iter([[Path("a.xml")]]))
-    monkeypatch.setattr(xml_module, "process_xml_file", _raising_process)
-
-    with pytest.raises(RuntimeError, match="parse failure"):
-        list(process_xml_file_batches(fake_settings(), "tag", MagicMock()))  # pyright: ignore[reportArgumentType]
 
 
 def test_process_xml_file_to_dict_pass_skips_empty_xmltodict_result(

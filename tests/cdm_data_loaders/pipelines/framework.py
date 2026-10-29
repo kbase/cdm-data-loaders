@@ -18,6 +18,7 @@ from uuid import uuid4
 
 import dlt
 import pytest
+import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.destinations import filesystem
 
@@ -75,7 +76,6 @@ PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
     "ncbi_ftp_promote": ("ncbi_ftp_promote", "cdm_data_loaders.pipelines.ncbi_ftp_promote"),
     "ncbi_ftp_sync": ("ncbi_ftp_sync", "cdm_data_loaders.pipelines.ncbi_ftp_download"),
     "ncbi_rest_api": ("ncbi_rest_api", "cdm_data_loaders.pipelines.ncbi_rest_api"),
-    "pdb_manifest": ("pdb_manifest", "cdm_data_loaders.pipelines.pdb_manifest"),
     "uniprot": ("uniprot", "cdm_data_loaders.pipelines.xmltopyarrow.uniprot"),
     "uniprot_cdm": ("uniprot_cdm", "cdm_data_loaders.pipelines.uniprot_kb_cdm"),
     "uniref": ("uniref", "cdm_data_loaders.pipelines.xmltopyarrow.uniref"),
@@ -312,38 +312,27 @@ def reconstruct_load_info(output_dir: Path, bucket_dir: Path | None = None) -> L
         return None
 
     report_file = report_files[-1]
-    lines = report_file.read_text(encoding="utf-8").splitlines()
-    if len(lines) < 5:  # noqa: PLR2004
+    with report_file.open("r", encoding="utf-8") as fh:
+        report_data = yaml.safe_load(fh)
+    if not isinstance(report_data, dict):
         return None
 
-    # Line 0: "Pipeline: <pipeline_name>"
-    # Line 1: "Dataset: <dataset_name>"
-    # Line 2: "Started: <started_at>"
-    # Line 3: "Finished: <finished_at>"
-    # Line 4: "Status: completed" | "Status: completed with errors" | "Status: error"
-    expected_prefixes = ("Pipeline: ", "Dataset: ", "Started: ", "Finished: ", "Status: ")
-    if not all(line.startswith(prefix) for line, prefix in zip(lines[:5], expected_prefixes, strict=True)):
+    required_keys = {"pipeline", "dataset", "started", "finished", "status"}
+    if not required_keys.issubset(report_data):
         return None
 
-    pipeline_name = lines[0].removeprefix("Pipeline: ").strip()
-    dataset_name = lines[1].removeprefix("Dataset: ").strip()
-    started_str = lines[2].removeprefix("Started: ").strip()
-    finished_str = lines[3].removeprefix("Finished: ").strip()
-    started_at = _PreservedStrDatetime(started_str)
-    report_finished_at = _PreservedStrDatetime(finished_str)
+    pipeline_name = str(report_data["pipeline"])
+    dataset_name = str(report_data["dataset"])
+    started_at = _PreservedStrDatetime(str(report_data["started"]))
+    report_finished_at = _PreservedStrDatetime(str(report_data["finished"]))
 
-    status_str = lines[4].removeprefix("Status: ").strip()
+    status_str = str(report_data["status"])
     if status_str == "error":
         return None
     has_failed_jobs = status_str != "completed"
 
-    # Line 5+: "Completed loads: <id1>, <id2>, ..."
-    loads_ids: list[str] = []
-    for line in lines[5:]:
-        if line.startswith("Completed loads:"):
-            loads_raw = line.removeprefix("Completed loads:").strip()
-            loads_ids = [item.strip() for item in loads_raw.split(",") if item.strip()]
-            break
+    raw_load_ids = report_data.get("load_ids") or []
+    loads_ids = [str(item) for item in raw_load_ids]
 
     # Determine where the dataset directory actually lives on disk
     if (output_dir / dataset_name).is_dir():

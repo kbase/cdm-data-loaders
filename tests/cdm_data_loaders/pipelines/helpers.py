@@ -5,7 +5,6 @@ import json
 from collections import defaultdict
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from datetime import datetime
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Final
@@ -14,6 +13,7 @@ import dlt
 import duckdb
 import pendulum
 import pyarrow.parquet as pq
+import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.destinations import filesystem
@@ -171,34 +171,75 @@ def read_data_rows(dataset_dir: Path, file_format: str | None = None) -> dict[st
     }
 
 
-def assert_pipeline_report_written(output_dir: Path, load_info: LoadInfo, *, metadata_moved: bool = False) -> None:
+def check_pipeline_report(path: Path, expected: dict[str, Any]) -> dict[str, Any]:
+    """Ensure a pipeline report contains what it purports to contain.
+
+    :param path: path to the report file
+    :type path: Path
+    :param expected: key, value pairs that should appear in the report
+    :type expected: dict[str, Any]
+    :return: parsed YAML report dictionary
+    :rtype: dict[str, Any]
+    """
+    assert path.is_file()
+    with path.open("r", encoding="utf-8") as fh:
+        report_data: dict[str, Any] = yaml.safe_load(fh)
+
+    for e, v in expected.items():
+        assert report_data[e] == v
+    return report_data
+
+
+def assert_pipeline_report_written(
+    output_dir: Path,
+    load_info: LoadInfo,
+    *,
+    metadata_moved: bool = False,
+    ingested_files: list[str] | set[str] | None = None,
+) -> None:
     """Assert that save_pipeline_metadata wrote the expected report file in the configured directory."""
     if metadata_moved:
         assert (output_dir / PIPELINE_DIR_NAME).is_dir()
         report_file = output_dir / PIPELINE_DIR_NAME / "report.txt"
     else:
         report_file = output_dir / "report.txt"
-    assert report_file.is_file()
-    report_text = report_file.read_text(encoding="utf-8")
-    report_lines = report_text.splitlines()
-    started_line = report_lines[2]
-    finished_line = report_lines[3]
-    assert started_line.startswith("Started: ")
-    assert finished_line.startswith("Finished: ")
-    started_at = datetime.fromisoformat(started_line.removeprefix("Started: "))
-    finished_at = datetime.fromisoformat(finished_line.removeprefix("Finished: "))
+
+    expected: dict[str, Any] = {
+        "pipeline": load_info.pipeline.pipeline_name,
+        "dataset": load_info.dataset_name,
+        "status": "completed",
+        "load_ids": list(load_info.loads_ids),
+        "pipeline_load_info_errs": None,
+    }
+    if isinstance(ingested_files, list) and ingested_files:
+        expected["ingested_files"] = ingested_files
+
+    report_data = check_pipeline_report(report_file, expected)
+    started_at = report_data["started"]
+    finished_at = report_data["finished"]
     assert started_at <= load_info.started_at <= finished_at
     if load_info.finished_at is not None:
         assert load_info.started_at <= load_info.finished_at <= finished_at
-    assert report_text == (
-        f"Pipeline: {load_info.pipeline.pipeline_name}\n"
-        f"Dataset: {load_info.dataset_name}\n"
-        f"Started: {started_at}\n"
-        f"Finished: {finished_at}\n"
-        "Status: completed\n"
-        f"Completed loads: {', '.join(load_info.loads_ids)}\n"
-        "Pipeline load info saved\n"
-    )
+
+    if isinstance(ingested_files, set):
+        if ingested_files:
+            assert set(report_data["ingested_files"]) == ingested_files
+        else:
+            assert "ingested_files" not in report_data
+    elif ingested_files == []:
+        assert "ingested_files" not in report_data
+    elif ingested_files is None and "ingested_files" in report_data:
+        assert report_data["ingested_files"]
+    assert set(report_data) <= {
+        "pipeline",
+        "dataset",
+        "started",
+        "finished",
+        "status",
+        "load_ids",
+        "ingested_files",
+        "pipeline_load_info_errs",
+    }
 
 
 def run_and_read(

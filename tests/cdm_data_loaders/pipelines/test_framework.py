@@ -145,12 +145,12 @@ def test_reconstruct_load_info_pass_and_error_cases(tmp_path: Path) -> None:
     error_dir = tmp_path / "error_out"
     error_dir.mkdir()
     (error_dir / "report.txt").write_text(
-        "Pipeline: test_pipe\n"
-        "Dataset: test_ds\n"
-        "Started: 2026-01-01 00:00:00+00:00\n"
-        "Finished: 2026-01-01 00:00:05+00:00\n"
-        "Status: error\n"
-        "Pipeline failed\n",
+        "pipeline: test_pipe\n"
+        "dataset: test_ds\n"
+        "started: 2026-01-01 00:00:00+00:00\n"
+        "finished: 2026-01-01 00:00:05+00:00\n"
+        "status: error\n"
+        "pipeline_err_msg: Pipeline failed\n",
         encoding="utf-8",
     )
     assert reconstruct_load_info(error_dir) is None
@@ -158,15 +158,17 @@ def test_reconstruct_load_info_pass_and_error_cases(tmp_path: Path) -> None:
     completed_dir = tmp_path / "completed_out"
     completed_dir.mkdir()
     started_str = "2026-01-01 12:34:56.789000+00:00"
-    finished_str = "2026-01-01 12:35:00.000000+00:00"
+    finished_str = "2026-01-01 12:35:00+00:00"
     (completed_dir / "report.txt").write_text(
-        f"Pipeline: test_pipe\n"
-        f"Dataset: test_ds\n"
-        f"Started: {started_str}\n"
-        f"Finished: {finished_str}\n"
-        f"Status: completed with errors\n"
-        f"Completed loads: 111, 222\n"
-        f"Pipeline load info saved\n",
+        f"pipeline: test_pipe\n"
+        f"dataset: test_ds\n"
+        f"started: {started_str}\n"
+        f"finished: {finished_str}\n"
+        f"status: completed with errors\n"
+        f"load_ids:\n"
+        f"  - '111'\n"
+        f"  - '222'\n"
+        f"pipeline_load_info_errs: null\n",
         encoding="utf-8",
     )
     reconstructed = reconstruct_load_info(completed_dir)
@@ -246,7 +248,7 @@ def test_pipeline_test_runner_pass_core_and_cli_modes_end_to_end(
         )
     )
 
-    assert_pipeline_report_written(output_dir, load_info, metadata_moved=True)
+    assert_pipeline_report_written(output_dir, load_info, metadata_moved=True, ingested_files=["data.jsonl"])
     assert set(load_info.pipeline.dataset().tables) >= set(DEFAULT_DLT_TABLES)
     assert read_data_rows(output_dir / settings.dataset_name) == {"items": expected_records}
 
@@ -282,13 +284,14 @@ def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
         captured_cmds.append(cmd)
         # Simulate the container writing a completed report to the mounted output_dir
         (output_dir / "report.txt").write_text(
-            "Pipeline: xmltodict\n"
-            "Dataset: xml_docker_ds\n"
-            "Started: 2026-02-01 00:00:00+00:00\n"
-            "Finished: 2026-02-01 00:00:05+00:00\n"
-            "Status: completed\n"
-            "Completed loads: 999\n"
-            "Pipeline load info saved\n",
+            "pipeline: xmltodict\n"
+            "dataset: xml_docker_ds\n"
+            "started: 2026-02-01 00:00:00+00:00\n"
+            "finished: 2026-02-01 00:00:05+00:00\n"
+            "status: completed\n"
+            "load_ids:\n"
+            "  - '999'\n"
+            "pipeline_load_info_errs: null\n",
             encoding="utf-8",
         )
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="ok", stderr="")
@@ -354,13 +357,14 @@ def test_pipeline_test_runner_pass_docker_mode_test_pipeline_and_workers(
     def fake_docker_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         captured_cmds.append(cmd)
         (output_dir / "report.txt").write_text(
-            "Pipeline: reference_pipeline\n"
-            "Dataset: ref_docker_ds\n"
-            "Started: 2026-02-01 00:00:00+00:00\n"
-            "Finished: 2026-02-01 00:00:05+00:00\n"
-            "Status: completed\n"
-            "Completed loads: 999\n"
-            "Pipeline load info saved\n",
+            "pipeline: reference_pipeline\n"
+            "dataset: ref_docker_ds\n"
+            "started: 2026-02-01 00:00:00+00:00\n"
+            "finished: 2026-02-01 00:00:05+00:00\n"
+            "status: completed\n"
+            "load_ids:\n"
+            "  - '999'\n"
+            "pipeline_load_info_errs: null\n",
             encoding="utf-8",
         )
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="ok", stderr="")
@@ -503,6 +507,6 @@ def test_pipeline_test_runner_pass_real_docker_container(tmp_path: Path, docker_
     runner = PipelineTestRunner(mode=ExecutionMode.DOCKER, docker_image=docker_image)
     load_info = assert_run_ok(runner.run("jsonlines_extract", settings=settings))
 
-    assert_pipeline_report_written(output_dir, load_info, metadata_moved=True)
+    assert_pipeline_report_written(output_dir, load_info, metadata_moved=True, ingested_files=["data.jsonl"])
     assert set(load_info.pipeline.dataset().tables) >= set(DEFAULT_DLT_TABLES)
     assert read_data_rows(output_dir / settings.dataset_name) == {"items": expected_records}
