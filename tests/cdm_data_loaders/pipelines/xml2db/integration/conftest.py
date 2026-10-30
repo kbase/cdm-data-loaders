@@ -12,7 +12,6 @@ from cdm_data_loaders.pipelines.xml2db.pipeline import run_xml2db_pipeline
 from cdm_data_loaders.pipelines.xml2db.settings import Xml2DbSettings
 from tests.conftest import REFERENCE_XSD
 from tests.helpers import make_cts_settings
-from tests.xml_samples import LIBRARY_XSD
 
 DEFAULT_XML2DB_SETTINGS: frozendict = frozendict(
     {
@@ -23,14 +22,6 @@ DEFAULT_XML2DB_SETTINGS: frozendict = frozendict(
         "use_output_dir_for_pipeline_metadata": True,
     }
 )
-
-
-@pytest.fixture
-def library_xsd(tmp_path: Path) -> Path:
-    """Write the small library.xsd schema used for basic pipeline-mechanics tests."""
-    xsd_path = tmp_path / "library.xsd"
-    xsd_path.write_text(LIBRARY_XSD, encoding="utf-8")
-    return xsd_path
 
 
 @pytest.fixture(scope="session")

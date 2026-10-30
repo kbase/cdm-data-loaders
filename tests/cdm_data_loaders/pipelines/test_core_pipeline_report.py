@@ -33,8 +33,11 @@ from cdm_data_loaders.pipelines.core import (
     save_pipeline_metadata,
     write_pipeline_report,
 )
+from tests.cdm_data_loaders.pipelines.conftest import (
+    LOAD_INFO_SAVE_FAILED,
+    LOAD_INFO_SAVE_FAILED_JOBS,
+)
 from tests.cdm_data_loaders.pipelines.helpers import check_pipeline_report
-from tests.helpers import make_cts_settings
 
 TEST_PIPELINE_NAME: Final[str] = "test_pipeline"
 TEST_DATASET_NAME: Final[str] = "test_dataset"
@@ -45,20 +48,6 @@ MOCK_LOAD_START_TIME: Final[datetime] = datetime(2026, 3, 30, 12, 0, 5, tzinfo=U
 MOCK_FINISH_TIME: Final[datetime] = datetime(2026, 3, 30, 12, 0, 10, tzinfo=UTC)
 MOCK_SAVE_START_TIME: Final[datetime] = datetime(2026, 3, 30, 12, 1, 0, tzinfo=UTC)
 MOCK_SAVE_FINISH_TIME: Final[datetime] = datetime(2026, 3, 30, 12, 1, 5, tzinfo=UTC)
-LOAD_INFO_SAVE_FAILED: Final[str] = "Loading pipeline load info failed: "
-LOAD_INFO_SAVE_FAILED_JOBS: Final[str] = "Loading pipeline load info had failed jobs: "
-
-
-@pytest.fixture
-def dlt_test_settings(tmp_path: Path, dlt_destination_config: str) -> CtsSettings:
-    """Settings that load into the local_fs destination and keep pipeline metadata in a separate output_dir."""
-    return make_cts_settings(
-        CtsSettings,
-        tmp_path,
-        log_config_file=None,
-        use_destination=dlt_destination_config,
-        use_output_dir_for_pipeline_metadata=True,
-    )
 
 
 def make_job_info(

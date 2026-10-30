@@ -2,9 +2,8 @@
 
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
-import pytest
 from xml2db import DataModel, Document
 
 from cdm_data_loaders.readers.xml2db_doc import (
@@ -15,18 +14,7 @@ from cdm_data_loaders.readers.xml2db_doc import (
     flatten_xml2db_document,
     is_xml2db_content_addressed_table,
 )
-from tests.xml_samples import LIBRARY_XSD, TWO_BOOK_LIBRARY_XML
-
-REFERENCE_XSD: Final[Path] = Path("tests") / "data" / "uniprot" / "uniref" / "uniref.xsd"
-
-ROOT_SHORT_NAME: Final[str] = "uniref_test"
-
-
-@pytest.fixture(scope="module")
-def uniref_model() -> DataModel:
-    """Build the xml2db DataModel from uniref.xsd once for the whole test module."""
-    return DataModel(xsd_file=str(REFERENCE_XSD), short_name=ROOT_SHORT_NAME, model_config={})
-
+from tests.xml_samples import TWO_BOOK_LIBRARY_XML
 
 # _xml2db_scalar
 
@@ -103,17 +91,15 @@ def test_is_xml2db_content_addressed_table_fail_root_table_never_qualifies(
     assert not is_xml2db_content_addressed_table(uniref_model, root_table)
 
 
-def test_is_xml2db_content_addressed_table_fail_non_reused_table(tmp_path: Path) -> None:
+def test_is_xml2db_content_addressed_table_fail_non_reused_table(library_xsd: Path) -> None:
     """A table configured with reuse: false does not qualify.
 
     The small library schema is used here: xml2db rejects a reuse:false table with more than one
     parent, and in the uniref schema every table below the root has two (its parent plus a
     junction).
     """
-    xsd_file = tmp_path / "library.xsd"
-    xsd_file.write_text(LIBRARY_XSD, encoding="utf-8")
     model_config = {"tables": {"book": {"reuse": False}}}
-    model = DataModel(xsd_file=str(xsd_file), short_name="library_test", model_config=model_config)
+    model = DataModel(xsd_file=str(library_xsd), short_name="library_test", model_config=model_config)
     book_table = model.tables["book"]
     assert not book_table.is_reused
     assert not is_xml2db_content_addressed_table(model, book_table)
@@ -146,7 +132,7 @@ def test_local_name_pass_lxml_tags_are_always_strings() -> None:
 
 
 def test_flatten_xml2db_document_pass_non_reused_table_parent_fk_is_namespaced(
-    tmp_path: Path,
+    library_xsd: Path,
 ) -> None:
     """A non-reused table's parent fk is rewritten to a file-namespaced key.
 
@@ -155,10 +141,8 @@ def test_flatten_xml2db_document_pass_non_reused_table_parent_fk_is_namespaced(
     Document, so a raw value would collide across files and chunks; it must be namespaced by
     the file key like every other non-content-addressed key.
     """
-    xsd_file = tmp_path / "library.xsd"
-    xsd_file.write_text(LIBRARY_XSD, encoding="utf-8")
     model_config = {"tables": {"book": {"reuse": False}}}
-    model = DataModel(xsd_file=str(xsd_file), short_name="library_test", model_config=model_config)
+    model = DataModel(xsd_file=str(library_xsd), short_name="library_test", model_config=model_config)
 
     def _flatten(file_key: str) -> dict[str, list[dict[str, Any]]]:
         document = Document(model)

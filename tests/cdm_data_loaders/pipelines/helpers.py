@@ -23,6 +23,7 @@ from cdm_data_loaders.converters.core.paths import set_nested
 from cdm_data_loaders.core.fields import PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.utils.gz import open_maybe_gzip
+from tests.helpers import strip_none_values
 
 logger: Logger = getLogger(__name__)
 
@@ -421,17 +422,8 @@ def _normalize_reference_entry(entry: dict[str, Any]) -> dict[str, Any]:
         value = raw_value
         if isinstance(value, str) and value.startswith(("{", "[")):
             value = json.loads(value)
-        normalized[key] = _normalize_reference_value(value)
+        normalized[key] = strip_none_values(value)
     return normalized
-
-
-def _normalize_reference_value(value: Any) -> Any:
-    """Recursively normalize DuckDB STRUCT/LIST/JSON values to plain Python structures."""
-    if isinstance(value, list):
-        return [_normalize_reference_value(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _normalize_reference_value(item) for key, item in value.items() if item is not None}
-    return value
 
 
 def assert_datasets_equal(

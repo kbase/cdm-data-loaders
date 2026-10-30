@@ -10,15 +10,6 @@ import pytest
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from tests.helpers import make_cts_settings
-from tests.xml_samples import LIBRARY_XSD
-
-
-@pytest.fixture
-def library_xsd(tmp_path: Path) -> Path:
-    """Write LIBRARY_XSD to tmp_path and return its path."""
-    xsd_path = tmp_path / "library.xsd"
-    xsd_path.write_text(LIBRARY_XSD, encoding="utf-8")
-    return xsd_path
 
 
 @pytest.fixture

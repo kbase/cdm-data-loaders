@@ -5,7 +5,6 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Final
 from unittest.mock import MagicMock
 
 import pytest
@@ -31,26 +30,6 @@ from tests.cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.conftest import
     _touch,
     build_xsv_content,
 )
-
-VALID_SCHEMA_URI: Final[str] = "https://json-schema.org/draft/2019-09/schema"
-SCHEMA_KEY_VALUE: dict[str, str] = {"$schema": VALID_SCHEMA_URI}
-
-INVALID_TOP_LEVEL_SCHEMA_LIST = [
-    pytest.param(["a", "b"], id="schema-is-a-list"),
-    pytest.param("just a string", id="schema-is-string"),
-    pytest.param(42, id="schema-is-a-number"),
-    pytest.param(None, id="schema-is-null"),
-    pytest.param(True, id="schema-is-bool"),
-]
-MISSING_EMPTY_REQUIRED_LIST = [
-    pytest.param({}, id="missing-required-key"),
-    pytest.param({"required": []}, id="empty-required-list"),
-]
-INVALID_REQUIRED_LIST = [
-    pytest.param({"required": "not-a-list"}, id="required-is-a-string"),
-    pytest.param({"required": None}, id="required-is-null"),
-    pytest.param({"required": {"a": 1}}, id="required-is-a-dict"),
-]
 
 """copy_safely and move_safely"""
 

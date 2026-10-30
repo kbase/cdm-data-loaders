@@ -24,40 +24,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     make_file_item,
 )
 from tests.helpers import make_cts_settings, settings_to_argv
-
-SIMPLE_LIBRARY_XML = """<?xml version="1.0"?>
-<library>
-    <book id="1"><title>The Shining</title></book>
-    <book id="2"><title>The Stand</title></book>
-</library>
-"""
-
-LIBRARY_XSD = """<?xml version="1.0" encoding="UTF-8"?>
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
-    <xs:element name="library">
-        <xs:complexType>
-            <xs:sequence>
-                <xs:element name="book" maxOccurs="unbounded">
-                    <xs:complexType>
-                        <xs:sequence>
-                            <xs:element name="title" type="xs:string"/>
-                        </xs:sequence>
-                        <xs:attribute name="id" type="xs:string" use="required"/>
-                    </xs:complexType>
-                </xs:element>
-            </xs:sequence>
-        </xs:complexType>
-    </xs:element>
-</xs:schema>
-"""
-
-
-@pytest.fixture
-def library_xsd(tmp_path: Path) -> Path:
-    """Write the small library.xsd schema used for pipeline-mechanics tests."""
-    xsd_path = tmp_path / "library.xsd"
-    xsd_path.write_text(LIBRARY_XSD, encoding="utf-8")
-    return xsd_path
+from tests.xml_samples import TWO_BOOK_LIBRARY_XML as SIMPLE_LIBRARY_XML
 
 
 @pytest.fixture

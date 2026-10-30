@@ -28,13 +28,7 @@ from cdm_data_loaders.pipelines.all_the_bacteria import (
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.utils.file_transfer.core import NonRetryableDownloadError
 from tests.cdm_data_loaders.pipelines.conftest import VALID_DESTINATIONS
-from tests.conftest import DEFAULT_VCR_CONFIG, S3
-
-
-@pytest.fixture(scope="module")
-def vcr_config() -> dict[str, Any]:
-    """VCR config for tests that make HTTP requests."""
-    return {**DEFAULT_VCR_CONFIG}
+from tests.conftest import S3
 
 
 @pytest.fixture

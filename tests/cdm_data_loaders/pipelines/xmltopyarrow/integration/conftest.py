@@ -1,29 +1,22 @@
 """Shared fixtures for xmltopyarrow pipeline integration tests."""
 
-import gzip
 import json
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import pytest
-import xmltodict
 from dlt.common.pipeline import LoadInfo
 from frozendict import frozendict
 
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
-from cdm_data_loaders.readers.xml import DEFAULT_XMLTODICT_ARGS
 from tests.cdm_data_loaders.pipelines.helpers import (
     denormalize_identifier,
-    duckdb_reference_from_jsonl,
-    read_jsonl_file,
     strip_metadata_columns,
 )
-from tests.conftest import N_REFERENCE_XML_ENTRIES, REFERENCE_XML_TAG
-from tests.helpers import make_cts_settings
-from tests.xml_samples import LIBRARY_XSD
+from tests.conftest import REFERENCE_XML_TAG
+from tests.helpers import strip_none_values
 
 DEFAULT_XMLTOPYARROW_SETTINGS: frozendict = frozendict(
     {
@@ -37,82 +30,19 @@ DEFAULT_XMLTOPYARROW_SETTINGS: frozendict = frozendict(
 
 
 @pytest.fixture
-def library_xsd(tmp_path: Path) -> Path:
-    """Write LIBRARY_XSD to tmp_path and return its path."""
-    xsd_path = tmp_path / "library.xsd"
-    xsd_path.write_text(LIBRARY_XSD, encoding="utf-8")
-    return xsd_path
-
-
-@pytest.fixture
 def settings_factory(
-    tmp_path: Path,
+    settings_factory: Callable[..., XmlToPyArrowSettings],
     dlt_destination_config: str,
-    library_xsd: Path,
 ) -> Callable[..., XmlToPyArrowSettings]:
     """Return a factory that builds a valid XmlToPyArrowSettings (or subclass), with fields open to override."""
-
-    def _factory(
-        settings_cls: type[XmlToPyArrowSettings] = XmlToPyArrowSettings,
-        **overrides: Any,  # noqa: ANN401
-    ) -> XmlToPyArrowSettings:
-        defaults: dict[str, Any] = {
+    return lambda settings_cls=XmlToPyArrowSettings, **overrides: settings_factory(
+        settings_cls,
+        **{
             **DEFAULT_XMLTOPYARROW_SETTINGS,
             "use_destination": dlt_destination_config,
-        }
-        if settings_cls is XmlToPyArrowSettings:
-            defaults.update(
-                {
-                    "dataset_name": "xml_test_dataset",
-                    "table_name": "book",
-                    "xml_tag": "book",
-                    "xsd_file": str(library_xsd),
-                }
-            )
-        defaults.update(overrides)
-        return make_cts_settings(settings_cls, tmp_path, **defaults)
-
-    return _factory
-
-
-def write_reference_xml_as_jsonl(source_xml: Path, jsonl_path: Path) -> int:
-    """Parse the UniRef XML with xmltodict and write the reference JSONL."""
-    with gzip.open(source_xml, "rb") as fh:
-        document = xmltodict.parse(fh.read(), **DEFAULT_XMLTODICT_ARGS)
-
-    entries = document["UniRef50"]["entry"]
-    with jsonl_path.open("w", encoding="utf-8") as out:
-        for entry in entries:
-            out.write(json.dumps({"entry": entry}, ensure_ascii=False) + "\n")
-    return len(entries)
-
-
-@pytest.fixture(scope="session")
-def reference_xml_as_jsonl(reference_xml_data_dir: Path) -> Path:
-    """Generate the reference JSONL from the chunk_100_el source, if not present."""
-    jsonl_path = reference_xml_data_dir / "jsonl" / "uniref_100.jsonl"
-    if not jsonl_path.exists():
-        source_xml = reference_xml_data_dir / "chunk_100_el" / "uniref_100_part_01.xml.gz"
-        n_entries = write_reference_xml_as_jsonl(source_xml, jsonl_path)
-        assert n_entries == N_REFERENCE_XML_ENTRIES
-
-    return jsonl_path
-
-
-@pytest.fixture(scope="session")
-def reference_xml_entries(reference_xml_as_jsonl: Path) -> list[dict[str, Any]]:
-    """The canonical nested entry dicts read back from the reference JSONL."""
-    ref_json = read_jsonl_file(reference_xml_as_jsonl)
-    assert isinstance(ref_json, list)
-    for line in ref_json:
-        assert list(line.keys()) == ["entry"]
-        entry = line.get("entry", {})
-        for key in ("_id", "name", "property", "representativeMember"):
-            assert key in entry
-        assert entry.get("_id") is not None
-        assert entry.get("_id").startswith("UniRef50_")
-    assert len(ref_json) == N_REFERENCE_XML_ENTRIES
-    return ref_json
+            **overrides,
+        },
+    )
 
 
 @pytest.fixture(scope="session")
@@ -122,13 +52,6 @@ def sorted_reference_xml_entries(reference_xml_entries: list[dict[str, Any]]) ->
         json.dumps(normalize_uniref_entry_for_xsd(entry), sort_keys=True, default=str)
         for entry in reference_xml_entries
     )
-
-
-@pytest.fixture(scope="session")
-def reference_xml_dataset(reference_xml_as_jsonl: Path) -> Generator[duckdb.DuckDBPyConnection]:
-    """Load the reference JSONL into an in-memory DuckDB connection with nested structures."""
-    with duckdb_reference_from_jsonl(reference_xml_as_jsonl) as conn:
-        yield conn
 
 
 @pytest.fixture
@@ -162,19 +85,10 @@ def run_xmltopyarrow_pipeline_fxt(
     return _factory
 
 
-def _strip_none_values(value: Any) -> Any:  # noqa: ANN401
-    """Recursively remove keys with None values from nested dicts and lists."""
-    if isinstance(value, dict):
-        return {k: _strip_none_values(v) for k, v in value.items() if v is not None}
-    if isinstance(value, list):
-        return [_strip_none_values(item) for item in value]
-    return value
-
-
 def strip_xsd_arrow_row(row: dict[str, Any]) -> dict[str, Any]:
     """Strip dlt metadata columns, unmangle top-level column names, and drop None struct fields."""
     unmangled = {denormalize_identifier(k): v for k, v in strip_metadata_columns(row).items()}
-    return _strip_none_values(unmangled)
+    return strip_none_values(unmangled)
 
 
 def _normalize_xsd_reference_member(member: dict[str, Any]) -> dict[str, Any]:

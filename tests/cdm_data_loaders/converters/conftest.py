@@ -1,22 +1,40 @@
 """Shared fixtures and helpers for the converters test suite."""
 
 import re
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
+from pathlib import Path
 from typing import Any, Final
 
 import pytest
 from jsonschema import Draft7Validator, Draft202012Validator
+from pyiceberg import catalog as pyiceberg_catalog
+from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import SortOrder
-from pyiceberg.types import LongType, NestedField, StringType
+from pyiceberg.types import (
+    DateType,
+    DecimalType,
+    DoubleType,
+    IntegerType,
+    ListType,
+    LongType,
+    MapType,
+    NestedField,
+    StringType,
+    StructType,
+    TimestamptzType,
+)
+from pyiceberg.utils.config import Config
 
 from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema
 from cdm_data_loaders.converters.jsonschema_to_dlt import JSONSchemaToDlt
 from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrow
 from cdm_data_loaders.converters.jsonschema_to_pyspark import ConversionContext, JSONSchemaToPySpark
+
+CATALOG_NAME: Final[str] = "testcat"
 
 JSON_SCHEMA_KEYWORDS: Final = frozenset(
     {
@@ -145,6 +163,56 @@ def simple_schema() -> Schema:
     return Schema(
         NestedField(1, "id", LongType(), required=True, doc="primary key"),
         NestedField(2, "name", StringType(), doc="display name"),
+    )
+
+
+@pytest.fixture
+def catalog_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the testcat catalog at a file-backed SQLite DB under tmp_path."""
+    db_path = tmp_path / "catalog.db"
+    warehouse = tmp_path / "warehouse"
+    warehouse.mkdir()
+    monkeypatch.setenv(f"PYICEBERG_CATALOG__{CATALOG_NAME.upper()}__TYPE", "sql")
+    monkeypatch.setenv(f"PYICEBERG_CATALOG__{CATALOG_NAME.upper()}__URI", f"sqlite:///{db_path}")
+    monkeypatch.setenv(f"PYICEBERG_CATALOG__{CATALOG_NAME.upper()}__WAREHOUSE", f"file://{warehouse}")
+    monkeypatch.setattr(pyiceberg_catalog, "_ENV_CONFIG", Config())
+    return tmp_path
+
+
+@pytest.fixture
+def catalog(catalog_env: Path) -> Generator[Catalog]:  # noqa: ARG001
+    """Load the testcat SQL catalog and close its database connections at teardown."""
+    with load_catalog(CATALOG_NAME) as loaded_catalog:
+        yield loaded_catalog
+
+
+@pytest.fixture
+def wide_schema() -> Schema:
+    """A schema exercising scalars, nested structs, lists, and maps."""
+    return Schema(
+        NestedField(1, "id", LongType(), required=True, doc="primary key"),
+        NestedField(2, "name", StringType(), required=True),
+        NestedField(3, "count", IntegerType(), required=False),
+        NestedField(4, "ratio", DoubleType(), required=False),
+        NestedField(5, "as_of", TimestamptzType(), required=False),
+        NestedField(6, "born_on", DateType(), required=False),
+        NestedField(7, "rate", DecimalType(12, 4), required=False),
+        NestedField(8, "tags", ListType(element_id=9, element=StringType(), element_required=False), required=False),
+        NestedField(
+            10,
+            "attrs",
+            MapType(key_id=11, key_type=StringType(), value_id=12, value_type=DoubleType(), value_required=False),
+            required=False,
+        ),
+        NestedField(
+            13,
+            "address",
+            StructType(
+                NestedField(14, "street", StringType(), required=True),
+                NestedField(15, "city", StringType(), required=False),
+            ),
+            required=False,
+        ),
     )
 
 

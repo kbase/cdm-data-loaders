@@ -6,28 +6,19 @@ compaction's file-rewriting logic directly and cheaply for both loader file form
 """
 
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 import pytest
 from xml2db import DataModel
 
 from cdm_data_loaders.core.fields import JSONL, PARQUET
 from cdm_data_loaders.pipelines.xml2db.compaction import compact_reused_tables, reused_table_names
-from cdm_data_loaders.readers.xml2db_doc import build_xml2db_model
 from tests.cdm_data_loaders.pipelines.helpers import (
     read_destination_rows,
     write_jsonl_gz_file,
     write_parquet_file,
 )
-
-REFERENCE_XSD: Final[Path] = Path("tests") / "data" / "uniprot" / "uniref" / "uniref.xsd"
-ROOT_SHORT_NAME: Final[str] = "uniref_test"
-
-
-@pytest.fixture(scope="module")
-def uniref_model() -> DataModel:
-    """Build the xml2db DataModel from uniref.xsd once for the whole test module."""
-    return build_xml2db_model(REFERENCE_XSD, short_name=ROOT_SHORT_NAME)
+from tests.conftest import UNIREF_ROOT_SHORT_NAME as ROOT_SHORT_NAME
 
 
 def _write_table_files(

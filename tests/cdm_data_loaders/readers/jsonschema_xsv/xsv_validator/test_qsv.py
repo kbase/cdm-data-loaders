@@ -46,20 +46,7 @@ from tests.cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.conftest import
     parse_xsv,
     snapshot_dir,
 )
-
-# One ragged row (missing the trailing `string` field) among otherwise-valid rows: recoverable.
-PARTIAL_RAGGED_ROWS: Final[list[list[str]]] = [
-    ["2", "2023-01-15", "3.14", "true", "key:value1"],
-    ["3", "2023-02-20", "1.11", "false"],
-    ["4", "2023-03-25", "2.22", "true", "key:value3"],
-]
-
-# Every row here is ragged (too few or too many fields): unrecoverable.
-ALL_RAGGED_ROWS: Final[list[list[str]]] = [
-    ["2", "2023-01-15", "3.14", "true"],
-    ["3", "2023-02-20", "1.11", "false", "key:value2", "extra"],
-]
-
+from tests.xsv_fixtures import ALL_RAGGED_ROWS, PARTIAL_RAGGED_ROWS
 
 ROWS_INVALID_NUMBER: Final[list[list[str]]] = [
     ["10", "2023-01-15", "3.14", "true", "key:value1"],

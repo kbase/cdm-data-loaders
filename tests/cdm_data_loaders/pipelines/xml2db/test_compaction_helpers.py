@@ -1,11 +1,9 @@
 """Unit tests for the private helpers and edge cases in `cdm_data_loaders.pipelines.xml2db.compaction`."""
 
 from pathlib import Path
-from typing import Final
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-import pytest
 from xml2db import DataModel
 
 from cdm_data_loaders.core.fields import JSONL, PARQUET
@@ -15,22 +13,11 @@ from cdm_data_loaders.pipelines.xml2db.compaction import (
     _write_compacted,
     compact_reused_tables,
 )
-from cdm_data_loaders.readers.xml2db_doc import build_xml2db_model
 from tests.cdm_data_loaders.pipelines.helpers import (
     read_jsonl_file,
     write_jsonl_gz_file,
     write_parquet_file,
 )
-
-REFERENCE_XSD: Final[Path] = Path("tests") / "data" / "uniprot" / "uniref" / "uniref.xsd"
-ROOT_SHORT_NAME: Final[str] = "uniref_test"
-
-
-@pytest.fixture(scope="module")
-def uniref_model() -> DataModel:
-    """Build the xml2db DataModel from uniref.xsd once for the whole test module."""
-    return build_xml2db_model(REFERENCE_XSD, short_name=ROOT_SHORT_NAME)
-
 
 # _source_files
 

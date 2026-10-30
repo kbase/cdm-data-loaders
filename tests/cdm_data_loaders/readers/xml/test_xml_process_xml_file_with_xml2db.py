@@ -22,7 +22,6 @@ from xml2db import DataModel, Document
 from cdm_data_loaders.pipelines.xml2db.settings import Xml2DbSettings
 from cdm_data_loaders.readers.xml import DEFAULT_XMLTODICT_ARGS
 from cdm_data_loaders.readers.xml2db_doc import (
-    build_xml2db_model,
     flatten_xml2db_document,
     iter_xml2db_chunk_fragments,
     process_xml_file_with_xml2db,
@@ -74,12 +73,6 @@ def fake_xml2db_settings(
     settings.xml_tag = xml_tag
     settings.chunk_size = chunk_size
     return settings
-
-
-@pytest.fixture(scope="module")
-def uniref_model() -> DataModel:
-    """Build the xml2db DataModel from uniref.xsd once for the whole test module."""
-    return build_xml2db_model(UNIREF_XSD, short_name="uniref_test")
 
 
 def _reference_entries(file_path: Path) -> dict[str, dict[str, Any]]:

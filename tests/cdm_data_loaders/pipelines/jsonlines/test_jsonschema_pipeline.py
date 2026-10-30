@@ -1,12 +1,10 @@
 """Tests for JSON Schema validation, PyArrow conversion, and rejected-record routing."""
 
 import json
-import sys
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 from uuid import uuid4
 
@@ -31,6 +29,7 @@ from tests.cdm_data_loaders.pipelines.jsonlines.conftest import make_item
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas import (
     ENTITY_SCHEMAS as DATASET_ENTITY_SCHEMAS,
 )
+from tests.helpers import register_temp_module
 
 
 def make_router(schema: dict[str, Any], buffer_size: int = 2) -> Callable[[list[dict[str, Any]]], Any]:
@@ -130,8 +129,7 @@ def test_load_entity_schemas_fail_invalid_types(schema_module_factory: Callable[
 
 def test_load_entity_schemas_fail_missing_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     """A module must explicitly provide ENTITY_SCHEMAS."""
-    module_name = f"_test_missing_registry_{uuid4().hex}"
-    monkeypatch.setitem(sys.modules, module_name, ModuleType(module_name))
+    module_name = register_temp_module(monkeypatch, "_test_missing_registry")
     with pytest.raises(ValueError, match="non-empty ENTITY_SCHEMAS"):
         load_entity_schemas(module_name)
 

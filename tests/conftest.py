@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from importlib.util import find_spec
@@ -22,13 +23,16 @@ from frozendict import frozendict
 from moto import mock_aws
 from pyspark.sql import SparkSession
 from types_boto3_s3.client import S3Client
+from xml2db import DataModel
 
 import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
+from cdm_data_loaders.readers.xml2db_doc import build_xml2db_model
 from cdm_data_loaders.utils import cdm_logger
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
+from tests.xml_samples import LIBRARY_XSD
 
-pytest_plugins = ["tests.jsonlines_fixtures", "tests.jsonschema_fixtures"]
+pytest_plugins = ["tests.jsonlines_fixtures", "tests.jsonschema_fixtures", "tests.xsv_fixtures"]
 
 LOCAL_FS: Final[str] = "local_fs"
 S3: Final[str] = "s3"
@@ -44,6 +48,7 @@ REFERENCE_XML_TAG: Final[str] = f"{{{REFERENCE_XML_NS}}}entry"
 REFERENCE_XML_FIXTURE_DIR: Final[Path] = TEST_DATA_DIR / "uniprot" / "uniref"
 REFERENCE_XSD: Final[Path] = REFERENCE_XML_FIXTURE_DIR / "uniref.xsd"
 N_REFERENCE_XML_ENTRIES: Final[int] = 100
+UNIREF_ROOT_SHORT_NAME: Final[str] = "uniref_test"
 
 DEFAULT_VCR_CONFIG = frozendict(
     {
@@ -58,6 +63,26 @@ DEFAULT_VCR_CONFIG = frozendict(
         "allow_playback_repeats": True,
     }
 )
+
+
+@pytest.fixture(scope="module")
+def vcr_config() -> dict[str, Any]:
+    """VCR configuration for recording/replaying HTTP cassettes."""
+    return {**DEFAULT_VCR_CONFIG}
+
+
+@pytest.fixture(scope="session")
+def uniref_model() -> DataModel:
+    """Build the UniRef DataModel once per test session."""
+    return build_xml2db_model(REFERENCE_XSD, short_name=UNIREF_ROOT_SHORT_NAME)
+
+
+@pytest.fixture
+def library_xsd(tmp_path: Path) -> Path:
+    """Write the minimal library XSD to tmp_path."""
+    xsd_path = tmp_path / "library.xsd"
+    xsd_path.write_text(LIBRARY_XSD, encoding="utf-8")
+    return xsd_path
 
 _notebook_utils_available: bool | None = None
 
@@ -405,24 +430,35 @@ class LoggerState:
             handler.setFormatter(formatter)
 
 
-@pytest.fixture
-def isolated_logging(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> Generator[None]:
-    """Reset init_logger's record of the applied config and undo any logging changes made by the test."""
+@contextmanager
+def preserve_logging_state(exclude_handler: logging.Handler | None = None) -> Generator[None]:
+    """Snapshot all logger states and cdm_logger.applied_key, restoring them and closing new handlers on exit."""
     root = logging.getLogger()
     manager = logging.Logger.manager
-    # pytest attaches a new caplog handler to the root logger for each test phase, so this one must not be restored
-    root_state = LoggerState.capture(root, exclude=caplog.handler)
+    root_state = LoggerState.capture(root, exclude=exclude_handler)
     saved = {name: LoggerState.capture(lg) for name, lg in manager.loggerDict.items() if isinstance(lg, logging.Logger)}
-    monkeypatch.setattr(cdm_logger, "applied_key", None)
+    saved_applied_key = cdm_logger.applied_key
+    cdm_logger.applied_key = None
 
-    yield
+    try:
+        yield
+    finally:
+        loggers = {name: lg for name, lg in manager.loggerDict.items() if isinstance(lg, logging.Logger)}
+        extra_handlers = (exclude_handler,) if exclude_handler is not None else ()
+        known = {*root_state.handlers, *extra_handlers, *(h for state in saved.values() for h in state.handlers)}
+        for lg in [root, *loggers.values()]:
+            for handler in lg.handlers:
+                if handler not in known:
+                    handler.close()
+        root_state.restore(root, *extra_handlers)
+        for name, lg in loggers.items():
+            saved.get(name, LoggerState()).restore(lg)
+        cdm_logger.applied_key = saved_applied_key
 
-    loggers = {name: lg for name, lg in manager.loggerDict.items() if isinstance(lg, logging.Logger)}
-    known = {*root_state.handlers, caplog.handler, *(h for state in saved.values() for h in state.handlers)}
-    for lg in [root, *loggers.values()]:
-        for handler in lg.handlers:
-            if handler not in known:
-                handler.close()
-    root_state.restore(root, caplog.handler)
-    for name, lg in loggers.items():
-        saved.get(name, LoggerState()).restore(lg)
+
+@pytest.fixture
+def isolated_logging(caplog: pytest.LogCaptureFixture) -> Generator[None]:
+    """Reset init_logger's record of the applied config and undo any logging changes made by the test."""
+    # pytest attaches a new caplog handler to the root logger for each test phase, so this one must not be restored
+    with preserve_logging_state(exclude_handler=caplog.handler):
+        yield

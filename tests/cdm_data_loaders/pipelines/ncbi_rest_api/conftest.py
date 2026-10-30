@@ -6,7 +6,6 @@ import pytest
 
 from cdm_data_loaders.pipelines import ncbi_rest_api as ncbi_module
 from cdm_data_loaders.pipelines.ncbi_rest_api import NcbiRestApiSettings
-from tests.conftest import DEFAULT_VCR_CONFIG
 
 ID_WITH_2K_ANNOTS = "GCF_000003135.1"
 ID_WITH_500_ANNOTS = "GCF_000007725.1"
@@ -23,12 +22,6 @@ def patch_rest_client_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "cdm_data_loaders.pipelines.ncbi_rest_api.ncbi_genome_client._config.http_show_error_body", True
     )
-
-
-@pytest.fixture(scope="module")
-def vcr_config() -> dict[str, Any]:
-    """VCR config for tests that make HTTP requests."""
-    return {**DEFAULT_VCR_CONFIG}
 
 
 @pytest.fixture(scope="module")

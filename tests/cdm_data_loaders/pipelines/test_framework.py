@@ -1,7 +1,6 @@
 """Unit and integration tests for the unified pipeline test execution framework."""
 
 import subprocess
-import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -45,7 +44,7 @@ from tests.cdm_data_loaders.pipelines.reference.pipeline import (
     run_reference_pipeline,
 )
 from tests.conftest import LOCAL_FS
-from tests.helpers import make_cts_settings, settings_to_argv
+from tests.helpers import make_cts_settings, register_temp_module, settings_to_argv
 
 
 class _SampleEntityModel(BaseModel):
@@ -267,15 +266,12 @@ def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
     xsd_file.write_text("<xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema'/>", encoding="utf-8")
 
     # Create dynamic in-memory modules for both ENTITY_SCHEMAS and ENTITY_MODELS
-    dyn_schema_mod_name = "_test_dynamic_schema_mod"
-    dyn_schema_mod = ModuleType(dyn_schema_mod_name)
-    dyn_schema_mod.ENTITY_SCHEMAS = {"widget": {"type": "object"}}  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, dyn_schema_mod_name, dyn_schema_mod)
-
-    dyn_model_mod_name = "_test_dynamic_model_mod"
-    dyn_model_mod = ModuleType(dyn_model_mod_name)
-    dyn_model_mod.ENTITY_MODELS = {"widget": _SampleEntityModel}  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, dyn_model_mod_name, dyn_model_mod)
+    dyn_schema_mod_name = register_temp_module(
+        monkeypatch, name="_test_dynamic_schema_mod", ENTITY_SCHEMAS={"widget": {"type": "object"}}
+    )
+    dyn_model_mod_name = register_temp_module(
+        monkeypatch, name="_test_dynamic_model_mod", ENTITY_MODELS={"widget": _SampleEntityModel}
+    )
 
     monkeypatch.setattr(framework, "_built_docker_images", {"test-image:latest"})
     captured_cmds: list[list[str]] = []

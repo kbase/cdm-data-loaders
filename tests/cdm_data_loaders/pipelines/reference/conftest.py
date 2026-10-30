@@ -1,16 +1,14 @@
 """Shared fixtures for the generic reference pipeline tests."""
 
 import json
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import pytest
 from dlt.common.pipeline import LoadInfo
 
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
-from tests.cdm_data_loaders.pipelines.helpers import duckdb_reference_from_jsonl, read_jsonl_file
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.jsonlines_reference_helpers import (
     canonicalize_entry,
 )
@@ -18,34 +16,8 @@ from tests.cdm_data_loaders.pipelines.reference.pipeline import (
     ReferencePipelineSettings,
     run_reference_pipeline,
 )
-from tests.conftest import TEST_DATA_DIR
 
 type PipelineRunner = Callable[..., tuple[LoadInfo | None, Path]]
-
-
-@pytest.fixture
-def reference_data_dir() -> Path:
-    """Return the directory containing all reference chunk configurations."""
-    return TEST_DATA_DIR / "ncbi_rest_api" / "dataset_report"
-
-
-@pytest.fixture(scope="session")
-def reference_jsonl() -> Path:
-    """Path to the reference JSONL file."""
-    return TEST_DATA_DIR / "ncbi_rest_api" / "dataset_report" / "chunk_52" / "dataset" / "dataset_reports_52.jsonl"
-
-
-@pytest.fixture(scope="session")
-def jsonl_reference_entities(reference_jsonl: Path) -> list[dict[str, Any]]:
-    """Parsed JSONL file."""
-    return read_jsonl_file(reference_jsonl)
-
-
-@pytest.fixture(scope="session")
-def reference_dataset(reference_jsonl: Path) -> Generator[duckdb.DuckDBPyConnection]:
-    """Load the reference JSONL into an in-memory DuckDB connection with nested structures."""
-    with duckdb_reference_from_jsonl(reference_jsonl) as conn:
-        yield conn
 
 
 @pytest.fixture(scope="session")

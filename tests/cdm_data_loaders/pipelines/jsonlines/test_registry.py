@@ -1,7 +1,5 @@
 """Unit tests for the module-level settings accessors and the entity model registry loader."""
 
-import sys
-import types
 from collections.abc import Callable
 from typing import Any
 
@@ -10,6 +8,7 @@ from pydantic import BaseModel
 
 from cdm_data_loaders.pipelines.jsonlines.base import load_registry_dict
 from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import load_entity_models
+from tests.helpers import register_temp_module
 
 
 def test_load_entity_models_pass_returns_registered_mapping(
@@ -36,21 +35,16 @@ def test_load_entity_models_fail_module_not_found() -> None:
     ],
 )
 def test_load_entity_models_fail_invalid_registry(
+    monkeypatch: pytest.MonkeyPatch,
     attribute_present: bool,
     value: object,
     match: str,
 ) -> None:
     """load_entity_models raises ValueError for a missing, empty, or wrongly-typed ENTITY_MODELS attribute."""
-    module_name = f"_test_invalid_registry_{id(value)}"
-    module = types.ModuleType(module_name)
-    if attribute_present:
-        module.ENTITY_MODELS = value  # type: ignore[attr-defined]
-    sys.modules[module_name] = module
-    try:
-        with pytest.raises(ValueError, match=match):
-            load_entity_models(module_name)
-    finally:
-        sys.modules.pop(module_name, None)
+    attrs = {"ENTITY_MODELS": value} if attribute_present else {}
+    module_name = register_temp_module(monkeypatch, f"_test_invalid_registry_{id(value)}", **attrs)
+    with pytest.raises(ValueError, match=match):
+        load_entity_models(module_name)
 
 
 def test_load_registry_dict_pass_returns_mapping(
@@ -97,10 +91,7 @@ def test_load_registry_dict_fail_invalid_attribute(
     expected_message: str,
 ) -> None:
     """load_registry_dict raises ValueError with optional type_hint when attribute is missing, empty, or not a dict."""
-    module_name = "_test_load_registry_dict_invalid"
-    module = types.ModuleType(module_name)
-    if attribute_present:
-        module.CUSTOM_REG = value  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, module_name, module)
+    attrs = {"CUSTOM_REG": value} if attribute_present else {}
+    module_name = register_temp_module(monkeypatch, name="_test_load_registry_dict_invalid", **attrs)
     with pytest.raises(ValueError, match=r"^" + expected_message.replace("[", r"\[").replace("]", r"\]") + r"$"):
         load_registry_dict(module_name, "CUSTOM_REG", type_hint=type_hint)

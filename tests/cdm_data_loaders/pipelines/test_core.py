@@ -44,7 +44,11 @@ from cdm_data_loaders.pipelines.core import (
     run_pipeline,
     send_slack_message_carefully,
 )
-from tests.cdm_data_loaders.pipelines.conftest import HOOK_ENV_VAR
+from tests.cdm_data_loaders.pipelines.conftest import (
+    HOOK_ENV_VAR,
+    LOAD_INFO_SAVE_FAILED,
+    LOAD_INFO_SAVE_FAILED_JOBS,
+)
 from tests.cdm_data_loaders.pipelines.helpers import (
     check_pipeline_report,
     read_destination_rows,
@@ -63,22 +67,8 @@ TINY_TABLE_NAME: Final[str] = "tiny"
 FILESYSTEM_DESTINATION_TYPE: Final[str] = "dlt.destinations.filesystem"
 ALL_JOBS_COMPLETED: Final[str] = "All pipeline jobs completed successfully"
 FAILED_JOBS_WARNING: Final[str] = "Pipeline contains failed jobs"
-LOAD_INFO_SAVE_FAILED: Final[str] = "Loading pipeline load info failed: "
-LOAD_INFO_SAVE_FAILED_JOBS: Final[str] = "Loading pipeline load info had failed jobs: "
 
 SETTINGS_CLASSES: Final[list[type[CdmDataLoadersBase]]] = [LoggerSettings, LocalInputOutputSettings, CtsSettings]
-
-
-@pytest.fixture
-def dlt_test_settings(tmp_path: Path, dlt_destination_config: str) -> CtsSettings:
-    """Settings that load into the local_fs destination and keep pipeline metadata in a separate output_dir."""
-    return make_cts_settings(
-        CtsSettings,
-        tmp_path,
-        log_config_file=None,
-        use_destination=dlt_destination_config,
-        use_output_dir_for_pipeline_metadata=True,
-    )
 
 
 def tiny_resource() -> DltResource:

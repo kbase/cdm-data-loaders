@@ -1,11 +1,15 @@
 """Utilities for running tests."""
 
 import json
+import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import Any
+from uuid import uuid4
 
+import pytest
 import yaml
 from pydantic_settings import BaseSettings, CliApp, CliSettingsSource
 from pyspark.sql import Row, SparkSession
@@ -205,3 +209,28 @@ def jsonlines_text_to_objects(text: str) -> list[dict[str, Any]]:
     :rtype : list[dict[str, Any]]
     """
     return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def register_temp_module(
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: str = "_test_module",
+    *,
+    name: str | None = None,
+    **attrs: Any,  # noqa: ANN401
+) -> str:
+    """Create an in-memory module with the given attributes and register it in ``sys.modules`` via ``monkeypatch``."""
+    module_name = name or f"{prefix}_{uuid4().hex}"
+    module = ModuleType(module_name)
+    for attr_name, attr_val in attrs.items():
+        setattr(module, attr_name, attr_val)
+    monkeypatch.setitem(sys.modules, module_name, module)
+    return module_name
+
+
+def strip_none_values(value: Any) -> Any:  # noqa: ANN401
+    """Recursively remove keys with None values from nested dicts and lists."""
+    if isinstance(value, dict):
+        return {k: strip_none_values(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [strip_none_values(item) for item in value]
+    return value
