@@ -206,7 +206,6 @@ def run_jsonlines_pipeline(settings: JsonlJsonschemaIngestSettings) -> LoadInfo 
             pyarrow_schema=pyarrow_schemas[table_name],
         ),
         pipeline_name=JSONSCHEMA_PIPELINE_NAME,
-        pipeline_run_kwargs={"loader_file_format": str(settings.loader_file_format)},
     )
 
 

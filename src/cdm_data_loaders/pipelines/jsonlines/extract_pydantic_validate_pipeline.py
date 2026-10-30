@@ -124,7 +124,6 @@ def run_jsonlines_with_validation_pipeline(settings: JsonlPydanticIngestSettings
         entity_models,
         build_resource=build_entity_resource,
         pipeline_name=PYDANTIC_PIPELINE_NAME,
-        pipeline_run_kwargs={"loader_file_format": str(settings.loader_file_format)},
     )
 
 

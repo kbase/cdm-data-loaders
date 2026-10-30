@@ -1,19 +1,16 @@
 """xml2db-based XML to relational-table pipeline for the KBase CTS."""
 
-from collections.abc import Generator, Iterator
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any
 
 from dlt.common.pipeline import LoadInfo
-from dlt.common.storages.fsspec_filesystem import FileItemDict
-from dlt.common.typing import TDataItems
 from xml2db import DataModel, load_config
 
 from cdm_data_loaders.pipelines.core import (
     PipelineCli,
     build_file_ingest_kwargs,
     build_filesystem_resource,
+    make_per_file_reader,
     run_pipeline,
 )
 from cdm_data_loaders.pipelines.xml2db.compaction import compact_reused_tables
@@ -22,23 +19,11 @@ from cdm_data_loaders.readers.xml2db_doc import build_xml2db_model, process_xml_
 
 logger: Logger = getLogger(__name__)
 
-
-def _read_items(
-    items: Iterator[FileItemDict], settings: Xml2DbSettings, model: DataModel
-) -> Generator[TDataItems, Any, Any]:
-    """Read each file in items with xml2db. Yields pages of rows, one page per output table.
-
-    :param items: file items to read
-    :type  items: Iterator[FileItemDict]
-    :param settings: pipeline config, including buffer_size and skip_xml_validation
-    :type  settings: Xml2DbSettings
-    :param model: the xml2db DataModel built from settings.xsd_file
-    :type  model: DataModel
-    :yield: pages of table-tagged rows
-    :rtype: Generator[TDataItems, Any, Any]
-    """
-    for file_item in items:
-        yield from process_xml_file_with_xml2db(settings, model, file_path=Path(file_item.local_file_path))
+_read_items = make_per_file_reader(
+    lambda file_item, settings, model: process_xml_file_with_xml2db(
+        settings, model, file_path=Path(file_item.local_file_path)
+    )
+)
 
 
 def run_xml2db_pipeline(settings: Xml2DbSettings) -> LoadInfo | None:

@@ -5,16 +5,14 @@ from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
-import dlt
 import xmltodict
-from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.extract import DltResource
 from dlt.extract.items import DataItemWithMeta
-from dlt.sources.filesystem import filesystem
 from lxml.etree import Element, iterparse, tostring
 
 from cdm_data_loaders.core.fields import DEFAULT_XML_FILE_GLOB
 from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.pipelines.core import build_filesystem_resource, make_per_file_reader
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from cdm_data_loaders.readers.xsd import convert_xml_element
@@ -247,35 +245,14 @@ def process_xml_file(
     )
 
 
-def process_xml_file_items(
-    items: Iterable[FileItemDict],
-    settings: CtsSettings,
-    xml_tag: str,
-    parse_fn: Callable,
-) -> Generator[DataItemWithMeta, Any]:
-    """Process each file item emitted by the dlt filesystem source.
-
-    Each file is passed to the parser as `settings.input_dir` joined to the item's relative path,
-    so recorded source file names do not depend on the absolute location of the input directory.
-
-    :param items: file items to read
-    :type  items: Iterable[FileItemDict]
-    :param settings: pipeline config with input_dir, buffer_size and log_interval
-    :type  settings: CtsSettings
-    :param xml_tag: XML element tag to stream
-    :type  xml_tag: str
-    :param parse_fn: function for parsing the XML
-    :type  parse_fn: Callable
-    :yield: table-tagged rows
-    :rtype: Generator[DataItemWithMeta, Any]
-    """
-    for file_item in items:
-        yield from process_xml_file(
-            settings=settings,
-            xml_tag=xml_tag,
-            parse_fn=parse_fn,
-            file_path=settings.input_dir / file_item["relative_path"],
-        )
+process_xml_file_items = make_per_file_reader(
+    lambda file_item, settings, xml_tag, parse_fn: process_xml_file(
+        settings=settings,
+        xml_tag=xml_tag,
+        parse_fn=parse_fn,
+        file_path=settings.input_dir / file_item["relative_path"],
+    )
+)
 
 
 def build_xml_file_resource(
@@ -299,13 +276,13 @@ def build_xml_file_resource(
     :return: resource yielding table-tagged rows
     :rtype: DltResource
     """
-    files = filesystem(bucket_url=str(settings.input_dir), file_glob=DEFAULT_XML_FILE_GLOB)
-    resource = dlt.transformer(
+    return build_filesystem_resource(
+        settings,
         process_xml_file_items,
-        data_from=files,
+        settings,
+        xml_tag,
+        parse_fn,
         name=resource_name,
+        file_glob=DEFAULT_XML_FILE_GLOB,
         file_format="parquet",
-        parallelized=True,
     )
-    resource.bind(settings, xml_tag, parse_fn)
-    return resource
