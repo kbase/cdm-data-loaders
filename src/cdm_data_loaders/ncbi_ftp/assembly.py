@@ -13,7 +13,12 @@ from typing import Any
 
 from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX, FTP_HOST
 from cdm_data_loaders.utils.checksums import compute_file_checksum
-from cdm_data_loaders.utils.file_transfer.ftp_client import ftp_noop_keepalive, ftp_retrieve_text, ftp_session
+from cdm_data_loaders.utils.file_transfer.ftp_client import (
+    ftp_list_dir,
+    ftp_noop_keepalive,
+    ftp_retrieve_text,
+    ftp_session,
+)
 
 logger: Logger = getLogger(__name__)
 
@@ -168,11 +173,7 @@ def download_assembly_to_local(
     }
 
     with ftp_session(ftp_host, ftp) as active_ftp:
-        active_ftp.cwd(str(assembly_path))
-
-        file_strings: list[str] = []
-        active_ftp.retrlines("NLST", file_strings.append)
-        files: list[PurePosixPath] = [PurePosixPath(f) for f in file_strings]
+        files = ftp_list_dir(active_ftp, assembly_path)
 
         # Download and parse md5checksums.txt
         md5_checksums: dict[PurePosixPath, str] = {}

@@ -48,26 +48,39 @@ def _md5(data: bytes) -> str:
 s3_backends = pytest.mark.parametrize("s3_client", ["ceph", "mock"], indirect=True)
 
 
+def _stage_many(
+    s3: S3Client,
+    bucket: PurePosixPath,
+    assembly_dir: PurePosixPath,
+    files: dict[PurePosixPath, bytes],
+    *,
+    with_md5: bool = True,
+) -> None:
+    """Stage *files* with optional .md5 sidecars under the standard staging prefix."""
+    rel = build_accession_path(assembly_dir)
+    base = STAGING_PREFIX / rel
+    for fname, content in files.items():
+        key = base / fname
+        s3.put_object(Bucket=str(bucket), Key=str(key), Body=content)
+        if with_md5:
+            s3.put_object(Bucket=str(bucket), Key=f"{key}.md5", Body=_md5(content).encode())
+
+
 def _stage_assembly(
     s3: S3Client,
     bucket: PurePosixPath,
     assembly_dir: PurePosixPath,
 ) -> None:
     """Stage a fake assembly with data files and .md5 sidecars under the staging prefix."""
-    rel = build_accession_path(assembly_dir)
-    base = STAGING_PREFIX / rel
-
-    files = {
-        assembly_dir.with_name(f"{assembly_dir.name}_genomic.fna.gz"): FAKE_GENOMIC,
-        assembly_dir.with_name(f"{assembly_dir.name}_protein.faa.gz"): FAKE_PROTEIN,
-    }
-
-    for fname, content in files.items():
-        key = base / fname
-        s3.put_object(Bucket=str(bucket), Key=str(key), Body=content)
-        # Write .md5 sidecar
-        md5_key = key.with_name(f"{key.name}.md5")
-        s3.put_object(Bucket=str(bucket), Key=str(md5_key), Body=_md5(content).encode())
+    _stage_many(
+        s3,
+        bucket,
+        assembly_dir,
+        {
+            assembly_dir.with_name(f"{assembly_dir.name}_genomic.fna.gz"): FAKE_GENOMIC,
+            assembly_dir.with_name(f"{assembly_dir.name}_protein.faa.gz"): FAKE_PROTEIN,
+        },
+    )
 
 
 def _write_manifest(tmp_path: Path, accessions: list[str], name: str) -> Path:
@@ -928,24 +941,6 @@ class TestArchiveDryRunParallel:
 
 
 # Concurrent promotion tests
-
-
-def _stage_many(
-    s3: S3Client,
-    bucket: PurePosixPath,
-    assembly_dir: PurePosixPath,
-    files: dict[PurePosixPath, bytes],
-    *,
-    with_md5: bool = True,
-) -> None:
-    """Stage *files* with optional .md5 sidecars under the standard staging prefix."""
-    rel = build_accession_path(assembly_dir)
-    base = STAGING_PREFIX / rel
-    for fname, content in files.items():
-        key = base / fname
-        s3.put_object(Bucket=str(bucket), Key=str(key), Body=content)
-        if with_md5:
-            s3.put_object(Bucket=str(bucket), Key=f"{key}.md5", Body=_md5(content).encode())
 
 
 @pytest.mark.s3

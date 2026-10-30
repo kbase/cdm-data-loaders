@@ -26,7 +26,7 @@ from typing import Any, TypedDict
 from frictionless import Package
 
 from cdm_data_loaders.utils.file_transfer.s3 import client
-from cdm_data_loaders.utils.file_transfer.s3.object_utils import copy_object
+from cdm_data_loaders.utils.file_transfer.s3.object_utils import copy_object, object_exists
 
 logger: Logger = getLogger(__name__)
 
@@ -245,18 +245,9 @@ def archive_descriptor(  # noqa: PLR0913
         logger.debug("[dry-run] would archive descriptor: s3://%s/%s -> %s", bucket, source_key, archive_key)
         return True
 
-    s3_client = client.get_s3_client()
-    try:
-        s3_client.head_object(Bucket=str(bucket), Key=str(source_key))
-    except s3_client.exceptions.NoSuchKey:
+    if not object_exists(str(bucket / source_key)):
         logger.warning("Descriptor not found, skipping archive: s3://%s/%s", bucket, source_key)
         return False
-    except Exception as e:
-        # head_object raises ClientError with 404 when key is absent
-        if hasattr(e, "response") and e.response.get("Error", {}).get("Code") in ("404", "NoSuchKey"):  # type: ignore[union-attr]
-            logger.warning("Descriptor not found, skipping archive: s3://%s/%s", bucket, source_key)
-            return False
-        raise
 
     _ = copy_object(
         str(bucket / source_key),
