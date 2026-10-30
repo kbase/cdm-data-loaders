@@ -15,13 +15,13 @@ from cdm_data_loaders.pipelines.uniprot_kb_cdm import (
     UniProtSettings,
     parse_uniprot,
 )
-from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_destination_table_counts,
     assert_duckdb_table_counts,
     assert_pipeline_report_written,
     assert_run_ok,
+    duckdb_pipeline,
     fetch_all_duckdb,
 )
 from tests.conftest import TEST_DATA_DIR

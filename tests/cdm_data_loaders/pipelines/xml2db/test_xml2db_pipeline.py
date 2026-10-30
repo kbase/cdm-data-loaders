@@ -5,11 +5,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
 
 import pytest
 from dlt.common.pipeline import LoadInfo
-from dlt.extract import DltResource
 from xml2db import DataModel
 
 import cdm_data_loaders.pipelines.xml2db.pipeline as xml2db_pipeline_module
@@ -17,11 +15,12 @@ from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.xml2db.pipeline import _read_items, cli, run_xml2db_pipeline
 from cdm_data_loaders.pipelines.xml2db.settings import PIPELINE_NAME, Xml2DbSettings
 from cdm_data_loaders.readers.xml2db_doc import build_xml2db_model
-from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
 from tests.cdm_data_loaders.pipelines.helpers import (
-    assert_run_ok,
+    assert_binds_filesystem_reader,
+    assert_core_run_pipeline_args,
     fetch_all_duckdb,
     make_file_item,
+    run_with_duckdb_pipeline,
 )
 from tests.helpers import make_cts_settings, settings_to_argv
 from tests.xml_samples import TWO_BOOK_LIBRARY_XML as SIMPLE_LIBRARY_XML
@@ -105,33 +104,13 @@ def test_run_xml2db_pipeline_pass_sets_core_run_pipeline_args_correctly(
 ) -> None:
     """run_xml2db_pipeline builds the reader and delegates to run_pipeline with correct args."""
     settings = fake_settings(tmp_path, library_xsd, loader_file_format=loader_file_format)
-
-    with patch.object(xml2db_pipeline_module, "run_pipeline") as mock_run_pipeline:
-        run_xml2db_pipeline(settings)
-
-    assert mock_run_pipeline.call_count == 1
-    _, kwargs = mock_run_pipeline.call_args
-    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
-    assert kwargs["settings"] == settings
-    assert kwargs["pipeline_kwargs"] == {
-        "pipeline_name": PIPELINE_NAME,
-        "dataset_name": settings.dataset_name,
-    }
-    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": loader_file_format}
-    assert isinstance(kwargs["resource"], DltResource)
+    assert_core_run_pipeline_args(xml2db_pipeline_module, run_xml2db_pipeline, settings, PIPELINE_NAME)
 
 
 def test_run_xml2db_pipeline_pass_binds_reader_before_run_pipeline(tmp_path: Path, library_xsd: Path) -> None:
     """The resource passed to run_pipeline is the bound reader piped into the filesystem source."""
     settings = fake_settings(tmp_path, library_xsd)
-
-    with patch.object(xml2db_pipeline_module, "run_pipeline") as mock_run_pipeline:
-        run_xml2db_pipeline(settings)
-
-    mock_run_pipeline.assert_called_once()
-    resource = mock_run_pipeline.call_args.kwargs["resource"]
-    assert resource.name == "xml2db_reader"
-    assert resource._pipe.parent.name == "filesystem"  # noqa: SLF001
+    assert_binds_filesystem_reader(xml2db_pipeline_module, run_xml2db_pipeline, settings, "xml2db_reader")
 
 
 def test_run_xml2db_pipeline_pass_builds_model_with_settings_schema_and_short_name(
@@ -185,29 +164,15 @@ def make_load_info(dataset_name: str, has_failed_jobs: bool = False) -> LoadInfo
     return load_info
 
 
-def test_maybe_compact_pass_runs_when_chunked_and_enabled(tmp_path: Path, library_model: DataModel) -> None:
-    """Compaction runs for a chunked, local_fs run with compact_reused_tables set."""
-    settings = fake_settings(tmp_path, tmp_path / "library.xsd", xml_tag="book")
-    load_info = make_load_info(settings.dataset_name)
-
-    with patch.object(xml2db_pipeline_module, "compact_reused_tables") as mock_compact:
-        xml2db_pipeline_module._maybe_compact(settings, library_model, load_info)  # noqa: SLF001
-
-    mock_compact.assert_called_once()
-    args, _kwargs = mock_compact.call_args
-    assert args[0] == Path(settings.output_dir) / settings.dataset_name
-    assert args[1] is library_model
-    assert args[2] == "parquet"
-
-
-def test_maybe_compact_pass_runs_when_not_chunked_and_enabled(tmp_path: Path, library_model: DataModel) -> None:
-    """Compaction also runs for an unchunked, local_fs run with compact_reused_tables set.
-
-    A multi-file unchunked run can leave the same kind of literal duplicate rows behind as a
-    chunked one (one xml2db Document per file, same as one per chunk), so compaction is not
-    gated on xml_tag being set.
-    """
-    settings = fake_settings(tmp_path, tmp_path / "library.xsd")
+@pytest.mark.parametrize("xml_tag", ["book", None], ids=["chunked", "not_chunked"])
+def test_maybe_compact_pass_runs_when_enabled(
+    tmp_path: Path,
+    library_model: DataModel,
+    xml_tag: str | None,
+) -> None:
+    """Compaction runs for both chunked and unchunked local_fs runs when compact_reused_tables is enabled."""
+    overrides: dict[str, Any] = {"xml_tag": xml_tag} if xml_tag is not None else {}
+    settings = fake_settings(tmp_path, tmp_path / "library.xsd", **overrides)
     load_info = make_load_info(settings.dataset_name)
 
     with patch.object(xml2db_pipeline_module, "compact_reused_tables") as mock_compact:
@@ -285,26 +250,14 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     (Path(settings.input_dir) / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
     monkeypatch.setattr(sys, "argv", ["xml2db", *settings_to_argv(settings)])
 
-    # unique pipeline name: the duckdb database file is derived from it, so
-    # repeated runs of the suite do not see rows from previous runs
-    pipeline_name = f"test_xml2db_cli_pipeline_{uuid4().hex}"
-    captured: dict[str, Any] = {}
+    load_info = run_with_duckdb_pipeline(
+        tmp_path,
+        xml2db_pipeline_module,
+        cli,
+        expected_pipeline_name=PIPELINE_NAME,
+        expected_dataset_name="cli_dataset",
+        pipeline_name_prefix="test_xml2db_cli_pipeline",
+    )
 
-    def fake_run_pipeline(
-        *,
-        resource: Any,  # noqa: ANN401
-        pipeline_kwargs: dict[str, Any],
-        **_: Any,  # noqa: ANN401
-    ) -> None:
-        assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "cli_dataset"}
-        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
-        captured["load_info"] = pipeline.run(resource)
-
-    with patch.object(xml2db_pipeline_module, "run_pipeline", fake_run_pipeline):
-        cli()
-
-    assert_run_ok(captured["load_info"])
-
-    pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
-    ((row_count,),) = fetch_all_duckdb(pipeline, "SELECT COUNT(*) FROM book")
+    ((row_count,),) = fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM book")
     assert row_count == 2  # noqa: PLR2004

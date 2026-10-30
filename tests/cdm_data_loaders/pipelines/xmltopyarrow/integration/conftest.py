@@ -1,6 +1,5 @@
 """Shared fixtures for xmltopyarrow pipeline integration tests."""
 
-import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -42,15 +41,6 @@ def settings_factory(
             "use_destination": dlt_destination_config,
             **overrides,
         },
-    )
-
-
-@pytest.fixture(scope="session")
-def sorted_reference_xml_entries(reference_xml_entries: list[dict[str, Any]]) -> list[str]:
-    """Sorted XSD-normalized entries for the uniref reference dataset."""
-    return sorted(
-        json.dumps(normalize_uniref_entry_for_xsd(entry), sort_keys=True, default=str)
-        for entry in reference_xml_entries
     )
 
 

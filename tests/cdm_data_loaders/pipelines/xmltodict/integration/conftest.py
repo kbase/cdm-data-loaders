@@ -1,6 +1,5 @@
 """Shared fixtures for xml pipeline integration tests."""
 
-import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -36,24 +35,6 @@ def settings_factory(
             **overrides,
         }
     )
-
-
-@pytest.fixture
-def scenario_input_dir(test_data_dir: Path) -> Callable[[str], str]:
-    """Return a function that maps a scenario name to its XML data directory."""
-
-    def _resolve(scenario: str) -> str:
-        path = test_data_dir / "xml" / scenario
-        assert path.is_dir(), f"missing test fixture directory: {path}"
-        return str(path)
-
-    return _resolve
-
-
-@pytest.fixture(scope="session")
-def sorted_reference_xml_entries(reference_xml_entries: list[dict[str, Any]]) -> list[str]:
-    """Sorted entries for the uniref reference dataset."""
-    return sorted(json.dumps(entry.get("entry"), sort_keys=True, default=str) for entry in reference_xml_entries)
 
 
 @pytest.fixture

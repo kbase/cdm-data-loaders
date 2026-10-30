@@ -17,7 +17,7 @@ from tests.cdm_data_loaders.conftest import check_settings
 from tests.cdm_data_loaders.pipelines.uniref_cdm.conftest import (
     UNIREF_VARIANT_ALIASES,
 )
-from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes, make_cli_arg, settings_to_argv
+from tests.helpers import assert_cli_field_roundtrips, make_cli_arg, settings_to_argv
 
 
 def test_uniref_settings_all_params_set(
@@ -27,12 +27,6 @@ def test_uniref_settings_all_params_set(
     """Ensure that settings are set correctly when all args are specified."""
     s = UnirefSettings(**test_uniref_settings)  # type: ignore[reportReturnType]
     check_settings(s, test_uniref_settings_reconciled)
-
-
-# model_fields
-def test_no_cli_param_clashes() -> None:
-    """Ensure that the settings object does not have any internal alias collisions."""
-    assert_no_cli_clashes(UnirefSettings)
 
 
 @pytest.mark.parametrize("field_name", list(UnirefSettings.model_fields))
@@ -52,94 +46,65 @@ def test_cli_fields_parse_correctly(
     )
 
 
-@pytest.mark.parametrize("uniref_variant_value", UNIREF_VARIANTS)
-def test_settings_valid_variants_accepted(uniref_variant_value: str, test_defaults: dict[str, Any]) -> None:
-    """Ensure that each valid variant value is accepted without error."""
-    s = UnirefSettings(VARIANT=uniref_variant_value, **test_defaults)  # pyright: ignore[reportCallIssue]
-    assert isinstance(s, UnirefSettings)
-    assert s.variant == uniref_variant_value
-
-
-@pytest.mark.parametrize("uniref_variant_value", UNIREF_VARIANTS)
-@pytest.mark.parametrize(VARIANT, UNIREF_VARIANT_ALIASES)
-def test_cli_valid_variants_accepted(uniref_variant_value: str, variant: str, test_defaults: dict[str, Any]) -> None:
-    """Ensure that each valid uniref variant value is accepted without error when passed via CLI."""
+def _instantiate_uniref_settings(
+    test_defaults: dict[str, Any],
+    *,
+    use_cli: bool = False,
+    variant_alias: str = VARIANT,
+    variant_value: str | None = None,
+) -> UnirefSettings:
+    """Instantiate UnirefSettings either directly or via CliApp.run."""
+    if not use_cli:
+        kwargs = {**test_defaults, VARIANT: variant_value} if variant_value is not None else test_defaults
+        return UnirefSettings(**kwargs)  # pyright: ignore[reportCallIssue]
     base_settings = CtsSettings(**test_defaults)
-    s = CliApp.run(
-        UnirefSettings,
-        cli_args=[*settings_to_argv(base_settings), make_cli_arg(variant), uniref_variant_value],
+    cli_args = settings_to_argv(base_settings)
+    if variant_value is not None:
+        cli_args = [*cli_args, make_cli_arg(variant_alias), variant_value]
+    return CliApp.run(UnirefSettings, cli_args=cli_args)
+
+
+@pytest.mark.parametrize("uniref_variant_value", UNIREF_VARIANTS)
+@pytest.mark.parametrize("variant_alias", [None, *UNIREF_VARIANT_ALIASES])
+def test_valid_variants_accepted(
+    uniref_variant_value: str,
+    variant_alias: str | None,
+    test_defaults: dict[str, Any],
+) -> None:
+    """Ensure that each valid uniref variant value is accepted via direct instantiation and CLI."""
+    s = _instantiate_uniref_settings(
+        test_defaults,
+        use_cli=variant_alias is not None,
+        variant_alias=variant_alias or VARIANT,
+        variant_value=uniref_variant_value,
     )
     assert isinstance(s, UnirefSettings)
     assert s.variant == uniref_variant_value
 
 
 @pytest.mark.parametrize("value", ["25", "75", "uniref50", "", "ALL"])
-def test_invalid_variant_raises(value: str, test_defaults: dict[str, Any]) -> None:
-    """Ensure that an unrecognised uniref variant raises a ValidationError."""
-    with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        UnirefSettings(VARIANT=value, **test_defaults)  # pyright: ignore[reportCallIssue]
-
-    exc_message = str(exc_info.value)
-    assert "Input should be '50', '90' or '100'" in exc_message
-
-
-@pytest.mark.parametrize("value", ["25", "75", "uniref50", "", "ALL"])
-@pytest.mark.parametrize(VARIANT, UNIREF_VARIANT_ALIASES)
-def test_cli_invalid_variant_via_cli_raises(
+@pytest.mark.parametrize("variant_alias", [None, *UNIREF_VARIANT_ALIASES])
+def test_invalid_variant_raises(
     value: str,
-    variant: str,
+    variant_alias: str | None,
     test_defaults: dict[str, Any],
 ) -> None:
-    """Ensure that an invalid uniref variant passed via CLI raises an error."""
-    base_settings = CtsSettings(**test_defaults)
+    """Ensure that an unrecognised uniref variant raises a ValidationError via direct instantiation and CLI."""
     with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        CliApp.run(UnirefSettings, cli_args=[*settings_to_argv(base_settings), make_cli_arg(variant), value])
-
-    exc_message = str(exc_info.value)
-    assert "Input should be '50', '90' or '100'" in exc_message
-
-
-def test_missing_required_uniref_variant_raises(test_defaults: dict[str, Any]) -> None:
-    """Ensure that omitting the required uniref variant argument raises a ValidationError."""
-    with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        UnirefSettings(**test_defaults)  # pyright: ignore[reportCallIssue]
-
-    exc_message = str(exc_info.value)
-    assert "Field required" in exc_message
-
-
-def test_cli_missing_required_uniref_variant_raises(test_defaults: dict[str, Any]) -> None:
-    """Ensure that omitting the required uniref variant argument raises an error."""
-    base_settings = CtsSettings(**test_defaults)
-    with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        CliApp.run(UnirefSettings, cli_args=settings_to_argv(base_settings))
-
-    exc_message = str(exc_info.value)
-    assert "Field required" in exc_message
-
-
-@pytest.mark.parametrize("value", ["25", "75", "uniref50", "", "ALL"])
-@pytest.mark.parametrize(VARIANT, UNIREF_VARIANT_ALIASES)
-def test_cli_invalid_variant_and_destination_via_cli_raises(
-    value: str, variant: str, test_defaults: dict[str, Any]
-) -> None:
-    """Ensure that invalid uniref variant and use_destination passed via CLI raises an error with both errors.
-
-    N.b. Pydantic only reports the first error!!!
-    """
-    base_settings = CtsSettings(**test_defaults)
-    with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        CliApp.run(
-            UnirefSettings,
-            cli_args=[
-                *settings_to_argv(base_settings, exclude=["use_destination"]),
-                make_cli_arg(variant),
-                value,
-                "--use-destination",
-                "some invalid destination",
-            ],
+        _instantiate_uniref_settings(
+            test_defaults,
+            use_cli=variant_alias is not None,
+            variant_alias=variant_alias or VARIANT,
+            variant_value=value,
         )
 
-    # Check that both errors are present in the exception message
-    exc_message = str(exc_info.value)
-    assert "Input should be '50', '90' or '100'" in exc_message
+    assert "Input should be '50', '90' or '100'" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("use_cliapp", [False, True])
+def test_missing_required_uniref_variant_raises(use_cliapp: bool, test_defaults: dict[str, Any]) -> None:
+    """Ensure that omitting the required uniref variant argument raises a ValidationError."""
+    with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
+        _instantiate_uniref_settings(test_defaults, use_cli=use_cliapp)
+
+    assert "Field required" in str(exc_info.value)

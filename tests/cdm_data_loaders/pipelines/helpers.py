@@ -8,6 +8,8 @@ from contextlib import contextmanager
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Final
+from unittest.mock import patch
+from uuid import uuid4
 
 import dlt
 import duckdb
@@ -18,9 +20,12 @@ import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.destinations import filesystem
+from dlt.extract import DltResource
+from pandas import DataFrame
 
 from cdm_data_loaders.converters.core.paths import set_nested
 from cdm_data_loaders.core.fields import PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
+from cdm_data_loaders.core.settings import FileFormatIngestSettings
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.utils.gz import open_maybe_gzip
 from tests.helpers import strip_none_values
@@ -114,8 +119,13 @@ def read_pipeline_tables(output_dir: Path, output_format: str | None = None) -> 
     return dict(tables)
 
 
-def read_destination_rows(base_dir: Path, table_name: str) -> list[dict[str, Any]]:
-    """Read the rows the filesystem destination wrote for table_name under base_dir, without dlt columns.
+def read_destination_rows(
+    base_dir: Path,
+    table_name: str,
+    *,
+    strip_metadata: bool = True,
+) -> list[dict[str, Any]]:
+    """Read the rows the filesystem destination wrote for table_name under base_dir.
 
     Handles parquet, jsonl and gzipped jsonl files. Returns an empty list if the table has no files.
     """
@@ -125,7 +135,122 @@ def read_destination_rows(base_dir: Path, table_name: str) -> list[dict[str, Any
             rows.extend(pq.read_table(data_file).to_pylist())
         elif ".jsonl" in data_file.name:
             rows.extend(read_jsonl_file(data_file))
-    return [strip_metadata_columns(row) for row in rows]
+    if strip_metadata:
+        return [strip_metadata_columns(row) for row in rows]
+    return rows
+
+
+def duckdb_pipeline(tmp_path: Path, pipeline_name: str, dataset_name: str, db_name: str | None = None) -> dlt.Pipeline:
+    """Return a dlt pipeline with a duckdb destination in tmp_path.
+
+    The database file defaults to a name derived from the pipeline name so that the DuckDB
+    catalog differs from the dataset schema; equal names trigger a DuckDB binder error.
+    """
+    db_file = f"{db_name or pipeline_name}_db.duckdb"
+    return dlt.pipeline(
+        pipeline_name=pipeline_name,
+        dataset_name=dataset_name,
+        destination=dlt.destinations.duckdb(str(tmp_path / db_file)),
+        pipelines_dir=str(tmp_path / "pipelines"),
+    )
+
+
+def assert_core_run_pipeline_args(
+    pipeline_module: Any,  # noqa: ANN401
+    run_fn: Callable[[Any], Any],
+    settings: FileFormatIngestSettings,
+    pipeline_name: str,
+) -> None:
+    """Assert that a pipeline runner delegates to core.run_pipeline with standard ingest kwargs."""
+    with patch.object(pipeline_module, "run_pipeline") as mock_run_pipeline:
+        run_fn(settings)
+
+    assert mock_run_pipeline.call_count == 1
+    _, kwargs = mock_run_pipeline.call_args
+    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
+    assert kwargs["settings"] == settings
+    assert kwargs["pipeline_kwargs"] == {
+        "pipeline_name": pipeline_name,
+        "dataset_name": settings.dataset_name,
+    }
+    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": settings.loader_file_format}
+    assert isinstance(kwargs["resource"], DltResource)
+
+
+def assert_binds_filesystem_reader(
+    pipeline_module: Any,  # noqa: ANN401
+    run_fn: Callable[[Any], Any],
+    settings: Any,  # noqa: ANN401
+    expected_reader_name: str | None = None,
+) -> DltResource:
+    """Assert that a pipeline runner passes a DltResource piped from `filesystem` to run_pipeline."""
+    with patch.object(pipeline_module, "run_pipeline") as mock_run_pipeline:
+        run_fn(settings)
+
+    mock_run_pipeline.assert_called_once()
+    resource = mock_run_pipeline.call_args.kwargs["resource"]
+    assert isinstance(resource, dlt.sources.DltResource)
+    if expected_reader_name is not None:
+        assert resource.name == expected_reader_name
+        assert resource._pipe.parent.name == "filesystem"  # noqa: SLF001
+    return resource
+
+
+def run_with_duckdb_pipeline(
+    tmp_path: Path,
+    pipeline_module: Any,  # noqa: ANN401
+    invoke_fn: Callable[[], Any],
+    *,
+    expected_pipeline_name: str,
+    expected_dataset_name: str,
+    pipeline_name_prefix: str = "test_cli_pipeline",
+) -> LoadInfo:
+    """Patch `pipeline_module.run_pipeline` to run against a real DuckDB destination and return LoadInfo."""
+    db_pipeline_name = f"{pipeline_name_prefix}_{uuid4().hex}"
+    captured: dict[str, LoadInfo] = {}
+
+    def fake_run_pipeline(
+        *,
+        resource: DltResource,
+        pipeline_kwargs: dict[str, Any],
+        **_: Any,  # noqa: ANN401
+    ) -> LoadInfo:
+        assert pipeline_kwargs == {
+            "pipeline_name": expected_pipeline_name,
+            "dataset_name": expected_dataset_name,
+        }
+        pipeline = duckdb_pipeline(tmp_path, db_pipeline_name, expected_dataset_name)
+        load_info = pipeline.run(resource)
+        captured["load_info"] = load_info
+        return load_info
+
+    with patch.object(pipeline_module, "run_pipeline", fake_run_pipeline):
+        invoke_fn()
+
+    return assert_run_ok(captured.get("load_info"))
+
+
+def check_book_list_results(
+    load_info: LoadInfo | None,
+    table_name: str | None = None,
+    *,
+    expected_columns: set[str] | None = None,
+) -> DataFrame:
+    """Check the output of parsing SIMPLE_LIBRARY_XML into a single book table."""
+    load_info = assert_run_ok(load_info)
+    dataset = load_info.pipeline.dataset()
+    table_name = table_name or "book"
+    assert set(dataset.tables) == {
+        table_name,
+        "_dlt_version",
+        "_dlt_loads",
+        "_dlt_pipeline_state",
+        LOAD_INFO_TABLE_NAME,
+    }
+    book_df = dataset.table(table_name).df()
+    required_cols = expected_columns or {"book___id", "book__title", "_dlt_id", "_dlt_load_id"}
+    assert set(book_df.columns.tolist()) >= required_cols
+    return book_df
 
 
 def make_file_item(file_path: Path, mime_type: str = "application/octet-stream") -> FileItemDict:
