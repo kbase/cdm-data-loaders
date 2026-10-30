@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 import xmltodict
-from dlt.extract.items import DataItemWithMeta, TableNameMeta
+from dlt.extract.items import DataItemWithMeta
 from lxml.etree import fromstring
 from xml2db import DataModel, Document
 
@@ -27,6 +27,7 @@ from cdm_data_loaders.readers.xml2db_doc import (
     iter_xml2db_chunk_fragments,
     process_xml_file_with_xml2db,
 )
+from tests.cdm_data_loaders.readers.xml.conftest import table_and_data
 
 REFERENCE_XML_DIR: Final[Path] = Path("tests") / "data" / "uniprot" / "uniref"
 UNIREF_XSD: Final[Path] = REFERENCE_XML_DIR / "uniref.xsd"
@@ -52,20 +53,10 @@ RECORD_HASH_COLUMN: Final[str] = "xml2db_record_hash"
 SHA1_HEX_LENGTH: Final[int] = 40
 
 
-def _table_and_data(items: Iterable[DataItemWithMeta]) -> list[tuple[str, Any]]:
-    """Flatten a sequence of DataItemWithMeta into (table_name, rows) pairs."""
-    result: list[tuple[str, Any]] = []
-    for item in items:
-        assert isinstance(item, DataItemWithMeta)
-        assert isinstance(item.meta, TableNameMeta)
-        result.append((item.meta.table_name, item.data))
-    return result
-
-
 def _rows_by_table(items: Iterable[DataItemWithMeta]) -> dict[str, list[dict[str, Any]]]:
     """Merge all pages for the same table into a single list of rows, keyed by table name."""
     merged: dict[str, list[dict[str, Any]]] = {}
-    for table_name, rows in _table_and_data(items):
+    for table_name, rows in table_and_data(items):
         merged.setdefault(table_name, []).extend(rows)
     return merged
 

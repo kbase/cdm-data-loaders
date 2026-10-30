@@ -1,7 +1,7 @@
 """Unit tests for run_xml2db_pipeline, _read_items, _maybe_compact, and cli wiring."""
 
-import gzip
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -116,11 +116,11 @@ def test_read_items_pass_reads_every_file_in_items(tmp_path: Path, library_model
     assert ids == {"1", "2"}
 
 
-def test_read_items_pass_gzip_files_are_decompressed(tmp_path: Path, library_model: DataModel) -> None:
+def test_read_items_pass_gzip_files_are_decompressed(
+    tmp_path: Path, library_model: DataModel, write_gzip_file: Callable[[Path, str, str], Path]
+) -> None:
     """A gzipped input file parses the same as its decompressed copy."""
-    xml_file = tmp_path / "data.xml.gz"
-    with gzip.open(xml_file, "wb") as fh:
-        fh.write(SIMPLE_LIBRARY_XML.encode("utf-8"))
+    xml_file = write_gzip_file(tmp_path, "data.xml.gz", SIMPLE_LIBRARY_XML)
     settings = fake_settings(tmp_path, tmp_path / "library.xsd")
 
     items = list(_read_items(iter([make_file_item(xml_file)]), settings, library_model))

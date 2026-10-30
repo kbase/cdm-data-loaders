@@ -25,7 +25,7 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlJsonschemaIngestSettings,
     JsonlPydanticIngestSettings,
 )
-from tests.cdm_data_loaders.pipelines.helpers import duckdb_reference_from_jsonl
+from tests.cdm_data_loaders.pipelines.helpers import duckdb_reference_from_jsonl, read_jsonl_file
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_models import ENTITY_MODELS
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas import ENTITY_SCHEMAS
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.jsonlines_reference_helpers import (
@@ -127,8 +127,7 @@ def reference_registry_factory(
 @pytest.fixture(scope="session")
 def jsonl_reference_entities(reference_jsonl: Path) -> list[dict[str, Any]]:
     """Parsed JSONL file."""
-    with reference_jsonl.open(encoding="utf-8") as fh:
-        return [json.loads(line.strip()) for line in fh if line.strip()]
+    return read_jsonl_file(reference_jsonl)
 
 
 @pytest.fixture(scope="session")
@@ -182,13 +181,3 @@ def settings_factory(
         return make_cts_settings(JsonlPydanticIngestSettings, tmp_path, **defaults)
 
     return _factory
-
-
-@pytest.fixture
-def write_gzip_jsonl_file(write_gzip_file: Callable[[Path, str, str], Path]) -> Callable[[Path, str, list[str]], Path]:
-    """Return a function that writes a list of JSON lines to a gzip-compressed file."""
-
-    def _write(directory: Path, filename: str, lines: list[str]) -> Path:
-        return write_gzip_file(directory, filename, "\n".join(lines) + "\n")
-
-    return _write

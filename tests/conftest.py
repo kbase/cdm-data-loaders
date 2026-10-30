@@ -231,6 +231,18 @@ def write_gzip_file() -> Callable[[Path, str, str], Path]:
     return _write
 
 
+@pytest.fixture
+def write_gzip_jsonl_file(
+    write_gzip_file: Callable[[Path, str, str], Path],
+) -> Callable[[Path, str, list[str]], Path]:
+    """Return a function that writes a list of JSON lines to a gzip-compressed file."""
+
+    def _write(directory: Path, filename: str, lines: list[str]) -> Path:
+        return write_gzip_file(directory, filename, "\n".join(lines) + "\n")
+
+    return _write
+
+
 @pytest.fixture(scope="session")
 def json_test_strings() -> dict[str, Any]:
     """A selection of JSON strings for testing."""

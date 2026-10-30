@@ -1,6 +1,5 @@
 """Tests for JSON Schema validation, PyArrow conversion, and rejected-record routing."""
 
-import gzip
 import json
 import sys
 from collections.abc import Callable
@@ -561,6 +560,7 @@ def test_make_page_router_pass_flushes_independent_buffers(widget_schema: dict[s
 def test_build_entity_resource_pass_reads_selected_files(
     schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
     widget_schema: dict[str, Any],
+    write_gzip_file: Callable[[Path, str, str], Path],
     compressed: bool,
 ) -> None:
     """The real resource reads plain/gzip files, skips blanks, and honors the glob."""
@@ -571,8 +571,7 @@ def test_build_entity_resource_pass_reads_selected_files(
     contents = f"\n{json.dumps(record)}\n\n{{broken\n"
     filename = "data.jsonl.gz" if compressed else "data.jsonl"
     if compressed:
-        with gzip.open(entity_dir / filename, "wt", encoding="utf-8") as stream:
-            stream.write(contents)
+        write_gzip_file(entity_dir, filename, contents)
     else:
         (entity_dir / filename).write_text(contents, encoding="utf-8")
     (entity_dir / "ignored.txt").write_text("not JSON", encoding="utf-8")

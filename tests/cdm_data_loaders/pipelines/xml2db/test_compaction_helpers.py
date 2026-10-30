@@ -1,9 +1,7 @@
 """Unit tests for the private helpers and edge cases in `cdm_data_loaders.pipelines.xml2db.compaction`."""
 
-import gzip
-import json
 from pathlib import Path
-from typing import Any, Final
+from typing import Final
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -18,6 +16,11 @@ from cdm_data_loaders.pipelines.xml2db.compaction import (
     compact_reused_tables,
 )
 from cdm_data_loaders.readers.xml2db_doc import build_xml2db_model
+from tests.cdm_data_loaders.pipelines.helpers import (
+    read_jsonl_file,
+    write_jsonl_gz_file,
+    write_parquet_file,
+)
 
 REFERENCE_XSD: Final[Path] = Path("tests") / "data" / "uniprot" / "uniref" / "uniref.xsd"
 ROOT_SHORT_NAME: Final[str] = "uniref_test"
@@ -29,26 +32,14 @@ def uniref_model() -> DataModel:
     return build_xml2db_model(REFERENCE_XSD, short_name=ROOT_SHORT_NAME)
 
 
-def _write_jsonl_gz(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with gzip.open(path, "wt", encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(json.dumps(row) + "\n")
-
-
-def _write_parquet(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(pa.Table.from_pylist(rows), path)
-
-
 # _source_files
 
 
 def test_source_files_pass_selects_parquet_only(tmp_path: Path) -> None:
     """Only .parquet files are selected when the loader format is parquet."""
     table_dir = tmp_path / "property"
-    _write_parquet(table_dir / "b.parquet", [])
-    _write_parquet(table_dir / "a.parquet", [])
+    write_parquet_file(table_dir / "b.parquet", [])
+    write_parquet_file(table_dir / "a.parquet", [])
     (table_dir / "ignored.jsonl.gz").write_text("not a parquet file", encoding="utf-8")
     (table_dir / "ignored.txt").write_text("neither is this", encoding="utf-8")
 
@@ -60,9 +51,9 @@ def test_source_files_pass_selects_parquet_only(tmp_path: Path) -> None:
 def test_source_files_pass_selects_all_json_variants(tmp_path: Path) -> None:
     """Every .json* variant is selected when the loader format is jsonl, in stable order."""
     table_dir = tmp_path / "property"
-    _write_jsonl_gz(table_dir / "b.jsonl.gz", [])
-    _write_jsonl_gz(table_dir / "a.jsonl.gz", [])
-    _write_jsonl_gz(table_dir / "c.json", [])
+    write_jsonl_gz_file(table_dir / "b.jsonl.gz", [])
+    write_jsonl_gz_file(table_dir / "a.jsonl.gz", [])
+    write_jsonl_gz_file(table_dir / "c.json", [])
     (table_dir / "ignored.parquet").write_bytes(b"not a json file")
 
     files = _source_files(table_dir, JSONL)
@@ -140,8 +131,7 @@ def test_write_compacted_pass_jsonl_gz(tmp_path: Path) -> None:
 
     _write_compacted(deduped, table_dir, JSONL)
 
-    with gzip.open(table_dir / "compacted.jsonl.gz", "rt", encoding="utf-8") as fh:
-        rows = [json.loads(line) for line in fh if line.strip()]
+    rows = read_jsonl_file(table_dir / "compacted.jsonl.gz")
     assert rows == [{"pk_property": "property:aaa", "value": "1"}]
 
 
@@ -157,7 +147,7 @@ def test_compact_reused_tables_pass_dedupes_across_mixed_file_counts(uniref_mode
 
     table_dir = dataset_dir / "property"
     for index, file_rows in enumerate(rows):
-        _write_parquet(table_dir / f"part_{index}.parquet", file_rows)
+        write_parquet_file(table_dir / f"part_{index}.parquet", file_rows)
 
     removed = compact_reused_tables(dataset_dir, uniref_model, PARQUET)
 
@@ -171,8 +161,8 @@ def test_compact_reused_tables_pass_dedupes_across_mixed_file_counts(uniref_mode
 def test_compact_reused_tables_pass_jsonl_duplicates_across_files(uniref_model: DataModel, tmp_path: Path) -> None:
     """The jsonl loader format deduplicates across multiple .jsonl.gz files."""
     dataset_dir = tmp_path / "dataset"
-    _write_jsonl_gz(dataset_dir / "property" / "a.jsonl.gz", [{"pk_property": "property:aaa", "value": "1"}])
-    _write_jsonl_gz(dataset_dir / "property" / "b.jsonl.gz", [{"pk_property": "property:aaa", "value": "1"}])
+    write_jsonl_gz_file(dataset_dir / "property" / "a.jsonl.gz", [{"pk_property": "property:aaa", "value": "1"}])
+    write_jsonl_gz_file(dataset_dir / "property" / "b.jsonl.gz", [{"pk_property": "property:aaa", "value": "1"}])
 
     removed = compact_reused_tables(dataset_dir, uniref_model, JSONL)
 

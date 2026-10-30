@@ -63,11 +63,6 @@ def scenario_input_dir(test_data_dir: Path) -> Callable[[str], str]:
     return _resolve
 
 
-def import_jsonl_data(jsonl_path: Path) -> list[dict[str, Any]]:
-    """Read the reference JSONL into a list of canonical nested entry dicts."""
-    return read_jsonl_file(jsonl_path)
-
-
 def write_reference_xml_as_jsonl(source_xml: Path, jsonl_path: Path) -> int:
     """Parse the UniRef XML with xmltodict and write the reference JSONL.
 
@@ -99,7 +94,7 @@ def reference_xml_as_jsonl(reference_xml_data_dir: Path) -> Path:
 @pytest.fixture(scope="session")
 def reference_xml_entries(reference_xml_as_jsonl: Path) -> list[dict[str, Any]]:
     """The canonical nested entry dicts read back from the reference JSONL."""
-    ref_json = import_jsonl_data(reference_xml_as_jsonl)
+    ref_json = read_jsonl_file(reference_xml_as_jsonl)
     assert isinstance(ref_json, list)
     for line in ref_json:
         assert list(line.keys()) == ["entry"]
