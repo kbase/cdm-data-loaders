@@ -430,4 +430,3 @@ def test_list_buffer_pass_loses_nothing_under_parallelized_transformer() -> None
     values = _run_page_per_call_transformer(total=total, max_items=5, chunk_size=7)
 
     assert sorted(values) == list(range(total))
-

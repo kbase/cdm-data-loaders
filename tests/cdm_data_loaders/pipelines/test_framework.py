@@ -236,9 +236,7 @@ def test_pipeline_test_runner_pass_core_and_cli_modes_end_to_end(
         )
     )
 
-    assert_pipeline_report_written(
-        settings.output_dir, load_info, metadata_moved=True, ingested_files=["data.jsonl"]
-    )
+    assert_pipeline_report_written(settings.output_dir, load_info, metadata_moved=True, ingested_files=["data.jsonl"])
     assert set(load_info.pipeline.dataset().tables) >= set(DEFAULT_DLT_TABLES)
     assert read_data_rows(settings.output_dir / settings.dataset_name) == {"items": expected_records}
 
@@ -480,8 +478,6 @@ def test_pipeline_test_runner_pass_real_docker_container(tmp_path: Path, docker_
     runner = PipelineTestRunner(mode=ExecutionMode.DOCKER, docker_image=docker_image)
     load_info = assert_run_ok(runner.run("jsonlines_extract", settings=settings))
 
-    assert_pipeline_report_written(
-        settings.output_dir, load_info, metadata_moved=True, ingested_files=["data.jsonl"]
-    )
+    assert_pipeline_report_written(settings.output_dir, load_info, metadata_moved=True, ingested_files=["data.jsonl"])
     assert set(load_info.pipeline.dataset().tables) >= set(DEFAULT_DLT_TABLES)
     assert read_data_rows(settings.output_dir / settings.dataset_name) == {"items": expected_records}

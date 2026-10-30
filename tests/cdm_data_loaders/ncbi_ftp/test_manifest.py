@@ -408,10 +408,8 @@ def test_verify_transfer_candidates_mixed(
 ) -> None:
     """A mix of matching and non-matching assemblies: matched pruned, unmatched kept."""
     mock_connect.return_value = MagicMock()
-    mock_head.side_effect = (
-        lambda s3_path: _matching_object_info(s3_path)
-        if "GCF_000001215.4_Release_6_plus_ISO1_MT/" in s3_path
-        else None
+    mock_head.side_effect = lambda s3_path: (
+        _matching_object_info(s3_path) if "GCF_000001215.4_Release_6_plus_ISO1_MT/" in s3_path else None
     )
     result = verify_transfer_candidates(["GCF_000001215.4", "GCF_000001405.40"], _assemblies(), _BUCKET, _KEY_PREFIX)
     assert result == ["GCF_000001405.40"]
