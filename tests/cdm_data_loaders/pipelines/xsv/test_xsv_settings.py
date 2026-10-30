@@ -59,15 +59,6 @@ def test_xsv_settings_fail_empty_schema_file_name(settings_factory: Callable[...
         settings_factory(schema_file="")
 
 
-@pytest.mark.parametrize("field", ["buffer_size", "log_interval"])
-def test_xsv_settings_fail_non_positive_int_fields(
-    settings_factory: Callable[..., XsvIngestSettings], field: str
-) -> None:
-    """buffer_size and log_interval must be positive integers."""
-    with pytest.raises(ValidationError):
-        settings_factory(**{field: 0})
-
-
 """derived properties: first_pass_schema and parsing_config"""
 
 

@@ -1103,6 +1103,21 @@ def test_promote_crc64nvme_sidecars_deleted_after_promote(
         assert result.get("KeyCount", 0) == 0, f"Sidecar not deleted: {sidecar_key}"
 
 
+def _fail_download_for_key(mock_s3_client: botocore.client.BaseClient, failing_key: PurePosixPath | str) -> None:
+    """Patch ``mock_s3_client.download_file`` to raise ``RuntimeError`` when ``Key == str(failing_key)``."""
+    dynamic_client = cast("DownloadFileClient", mock_s3_client)
+    original_download = dynamic_client.download_file
+    target = str(failing_key)
+
+    def _patched(Bucket: str, Key: str, Filename: str, **kw: object) -> None:  # noqa: N803
+        if Key == target:
+            msg = "simulated download failure"
+            raise RuntimeError(msg)
+        return original_download(Bucket=Bucket, Key=Key, Filename=Filename, **kw)
+
+    dynamic_client.download_file = _patched
+
+
 @pytest.mark.s3
 def test_promote_partial_failure_staging_not_cleaned(
     mock_s3_client: botocore.client.BaseClient,
@@ -1118,17 +1133,7 @@ def test_promote_partial_failure_staging_not_cleaned(
     staged_ok = _STG1 / file_ok
     staged_fail = _STG1 / file_fail
 
-    # Make download_file raise for exactly the failing key
-    dynamic_client = cast("DownloadFileClient", mock_s3_client)
-    original_download = dynamic_client.download_file
-
-    def _download_one_fail(Bucket: str, Key: str, Filename: str, **kw: object) -> None:  # noqa: N803
-        if Key == f"{staged_fail}":
-            msg = "simulated download failure"
-            raise RuntimeError(msg)
-        return original_download(Bucket=Bucket, Key=Key, Filename=Filename, **kw)
-
-    dynamic_client.download_file = _download_one_fail
+    _fail_download_for_key(mock_s3_client, staged_fail)
 
     report = promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
@@ -1158,17 +1163,7 @@ def test_promote_partial_failure_failed_count(
     ]
     _stage(mock_s3_client, _STG1, dict.fromkeys(file_names, b"data"))
 
-    failing_key = f"{_STG1 / file_names[1]}"
-    dynamic_client = cast("DownloadFileClient", mock_s3_client)
-    original_download = dynamic_client.download_file
-
-    def _download_middle_fail(Bucket: str, Key: str, Filename: str, **kw: object) -> None:  # noqa: N803
-        if Key == str(failing_key):
-            msg = "simulated failure"
-            raise RuntimeError(msg)
-        return original_download(Bucket=Bucket, Key=Key, Filename=Filename, **kw)
-
-    dynamic_client.download_file = _download_middle_fail
+    _fail_download_for_key(mock_s3_client, _STG1 / file_names[1])
 
     report = promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
@@ -1202,17 +1197,7 @@ def test_promote_two_assemblies_independent_cleanup(
         _STG2,
         {PurePosixPath(f"{_ACC2}_genomic.fna.gz"): b"g2", PurePosixPath(f"{_ACC2}_protein.faa.gz"): b"p2"},
     )
-    failing_key = f"{_STG2 / _ACC2}_protein.faa.gz"
-    dynamic_client = cast("DownloadFileClient", mock_s3_client)
-    original_download = dynamic_client.download_file
-
-    def _patched(Bucket: str, Key: str, Filename: str, **kw: object) -> None:  # noqa: N803
-        if Key == f"{failing_key}":
-            msg = "simulated failure"
-            raise RuntimeError(msg)
-        return original_download(Bucket=Bucket, Key=Key, Filename=Filename, **kw)
-
-    dynamic_client.download_file = _patched
+    _fail_download_for_key(mock_s3_client, f"{_STG2 / _ACC2}_protein.faa.gz")
 
     report = promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,

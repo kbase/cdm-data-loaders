@@ -99,32 +99,6 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     assert fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM book") == [(2,)]
 
 
-def test_cli_pass_writes_rows_for_matching_xml_files(
-    tmp_path: Path,
-    settings_factory: Callable[..., XmlToDictSettings],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """cli() with xml files in the input dir loads one row per matching element."""
-    settings = settings_factory(dataset_name="cli_dataset", dlt_dev_mode=False)
-    (Path(settings.input_dir) / "data.xml").write_text(TWO_BOOK_LIBRARY_XML, encoding="utf-8")
-    monkeypatch.setattr(sys, "argv", [PIPELINE_NAME, *settings_to_argv(settings)])
-
-    pipeline_name = f"test_xml_cli_rows_pipeline_{uuid4().hex}"
-
-    def fake_run_pipeline(
-        *,
-        resource: Any,  # noqa: ANN401
-        **_: Any,  # noqa: ANN401
-    ) -> LoadInfo | None:
-        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
-        return pipeline.run(resource)
-
-    with patch.object(xmltodict_module, "run_pipeline", fake_run_pipeline):
-        load_info = assert_run_ok(cli.run())
-
-    assert fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM book") == [(2,)]
-
-
 @pytest.mark.parametrize("missing_field", ["dataset_name", "table_name", "xml_tag"])
 def test_cli_fail_missing_required_args_raise(
     settings_factory: Callable[..., XmlToDictSettings],

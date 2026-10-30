@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from pydantic_settings import SettingsError
 from requests import RequestException
 
-from cdm_data_loaders.core.fields import OUTPUT_DIR, PIPELINE_DIR_NAME, USE_DESTINATION
+from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX, OUTPUT_DIR, PIPELINE_DIR_NAME, USE_DESTINATION
 from cdm_data_loaders.core.settings import (
     CdmDataLoadersBase,
     CtsSettings,
@@ -32,7 +32,6 @@ from cdm_data_loaders.core.settings import (
 )
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import (
-    DEFAULT_REJECTED_SUFFIX,
     DEFAULT_SCHEMA_CONTRACT,
     LOAD_INFO_TABLE_NAME,
     NO_MESSAGE,

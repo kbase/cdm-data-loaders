@@ -18,6 +18,7 @@ from cdm_data_loaders.core.settings import (
     FileFormatIngestSettings,
     LocalInputOutputSettings,
     LoggerSettings,
+    SingleTableXmlIngestSettings,
     XmlIngestSettings,
     default_settings_with_shortcuts,
 )
@@ -28,6 +29,7 @@ from tests.cdm_data_loaders.conftest import (
     cts_expected,
     local_io_expected,
 )
+from tests.conftest import S3
 from tests.helpers import (
     assert_cli_field_roundtrips,
     assert_no_cli_clashes,
@@ -37,7 +39,14 @@ from tests.helpers import (
 
 @pytest.mark.parametrize(
     "settings_cls",
-    [LoggerSettings, LocalInputOutputSettings, CtsSettings, FileFormatIngestSettings, XmlIngestSettings],
+    [
+        LoggerSettings,
+        LocalInputOutputSettings,
+        CtsSettings,
+        FileFormatIngestSettings,
+        XmlIngestSettings,
+        SingleTableXmlIngestSettings,
+    ],
 )
 def test_settings_pass_no_cli_clashes(settings_cls: type[CdmDataLoadersBase]) -> None:
     """Every core settings class has no CLI argument or alias collisions."""
@@ -322,3 +331,58 @@ def test_xml_ingest_settings_pass_defaults_and_cli_shortcuts(
             "file_glob": "*.xml.gz",
         },
     )
+
+
+@pytest.mark.parametrize("field", ["buffer_size", "log_interval"])
+def test_cts_settings_fail_non_positive_int_fields(test_defaults: dict[str, Any], field: str) -> None:
+    """buffer_size and log_interval must be positive integers."""
+    with pytest.raises(ValidationError):
+        CtsSettings(**{**test_defaults, field: 0})
+
+
+def test_cts_settings_fail_s3_output_dir(test_defaults: dict[str, Any]) -> None:
+    """An s3:// output_dir raises ValidationError at construction because output_dir must be a local path."""
+    with pytest.raises(ValidationError):
+        CtsSettings(**{**test_defaults, "output_dir": "s3://some-bucket/path"})
+
+
+@pytest.mark.parametrize("destination", [S3, "not_a_destination"])
+def test_cts_settings_pass_any_non_empty_use_destination_accepted_at_construction(
+    test_defaults: dict[str, Any], destination: str
+) -> None:
+    """Any non-empty use_destination is accepted at settings construction time."""
+    settings = CtsSettings(**{**test_defaults, "use_destination": destination})
+    assert settings.use_destination == destination
+
+
+@pytest.mark.parametrize("dataset_name", [None, ""])
+def test_file_format_ingest_settings_fail_missing_or_empty_dataset_name(
+    test_defaults: dict[str, Any], dataset_name: str | None
+) -> None:
+    """Omitting or passing an empty dataset_name raises ValidationError."""
+    with pytest.raises(ValidationError):
+        FileFormatIngestSettings(**test_defaults, dataset_name=dataset_name)  # type: ignore[arg-type]
+
+
+def test_single_table_xml_ingest_settings_pass_and_fail_validation(test_defaults: dict[str, Any]) -> None:
+    """SingleTableXmlIngestSettings requires non-empty table_name and xml_tag."""
+    settings = SingleTableXmlIngestSettings(
+        **test_defaults,
+        dataset_name="xml_ds",
+        table_name="entries",
+        xml_tag="entry",
+    )
+    assert settings.table_name == "entries"
+    assert settings.xml_tag == "entry"
+    assert settings.file_glob == "*.xml*"
+
+    for missing_field in ("table_name", "xml_tag"):
+        kwargs: dict[str, Any] = {
+            **test_defaults,
+            "dataset_name": "xml_ds",
+            "table_name": "entries",
+            "xml_tag": "entry",
+            missing_field: None,
+        }
+        with pytest.raises(ValidationError):
+            SingleTableXmlIngestSettings(**kwargs)

@@ -309,10 +309,18 @@ def _write_file(dir_path: Path, content: str | bytes, file_name: str) -> Path:
     return write_xsv(dir_path, content, file_name)
 
 
-def _write_header_input_file(args: CleanerValidatorArgs, write_working_file: WriteFile) -> str:
+def _write_header_input_file(
+    args: CleanerValidatorArgs,
+    write_working_file: WriteFile,
+    rows: Sequence[Row] = VALID_ROWS,
+    delimiter: str | None = None,
+) -> str:
     """Write a `-header`-suffixed working file for `args` and return its name."""
     input_file_name = f"{args.xsv_file_base_name}{HEADER_SUFFIX}{args.ext}"
-    write_working_file(build_xsv_content(VALID_ROWS, header=COLUMNS), input_file_name)
+    write_working_file(
+        build_xsv_content(rows, header=COLUMNS, delimiter=delimiter or args.delimiter),
+        input_file_name,
+    )
     return input_file_name
 
 

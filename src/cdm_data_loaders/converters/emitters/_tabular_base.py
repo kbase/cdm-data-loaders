@@ -10,7 +10,7 @@ from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ConfigDict, Field
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.inference import is_unconstrained_node
+from cdm_data_loaders.converters.core.inference import decimal_places, is_unconstrained_node, json_type_from_enum
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import TypedNode
 from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
@@ -65,6 +65,17 @@ def fits_int32_bounds(node: TypedNode) -> bool:
     )
 
 
+def element_nullable(node: TypedNode) -> bool:
+    """Honor non-null element facts from typed sources; JSON item schemas stay nullable."""
+    from_json = node.provenance is None or node.provenance.source == "json-schema"
+    return from_json or node.nullable is not False
+
+
+def infer_enum_type[DataTypeT](values: list[object], type_map: Mapping[str, DataTypeT]) -> DataTypeT:
+    """Map homogeneous JSON enum values to target scalar types."""
+    return type_map[json_type_from_enum(values)]
+
+
 class _TabularEmitterBase[DataTypeT](BaseModel):
     """Shared node-dispatch and metadata-selection logic for tabular emitters."""
 
@@ -72,7 +83,12 @@ class _TabularEmitterBase[DataTypeT](BaseModel):
 
     _error_cls: ClassVar[type[ConversionError]] = ConversionError
     _target_name: ClassVar[str] = ""
+    _decimal_target_label: ClassVar[str] = ""
     _string_type_label: ClassVar[str] = "string"
+    _struct_type_label: ClassVar[str] = "struct"
+    _empty_struct_label: ClassVar[str] = "empty struct"
+    _map_type_label: ClassVar[str] = "map"
+    _map_value_label: ClassVar[str] = "map value type"
     _union_approx_reason: ClassVar[str] = ""
     _array_label: ClassVar[str] = "arrays"
     _slot_label: ClassVar[str] = "array's"
@@ -81,6 +97,7 @@ class _TabularEmitterBase[DataTypeT](BaseModel):
     emit_unions_as_json: bool = False
     extra_metadata_keywords: frozenset[str] = Field(default_factory=frozenset)
     max_nesting: int = Field(default=10, ge=1)
+    format_map: frozendict[str, DataTypeT] = Field(default_factory=frozendict)
 
     def _logger(self) -> logging.Logger:
         """Return the concrete emitter module logger."""
@@ -213,33 +230,124 @@ class _TabularEmitterBase[DataTypeT](BaseModel):
             return None
         return element
 
+    def _emit_object(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> DataTypeT:
+        """Emit fixed fields, a dynamic map, or an empty struct."""
+        log = self._logger()
+        if depth >= self.max_nesting:
+            log.warning(
+                "Max nesting limit (%d) reached; collapsing object to %s.",
+                self.max_nesting,
+                self._string_type_label,
+            )
+            return self._string_type()
+
+        additional = node.additional_properties
+        schema_additional = additional is not None and additional.type not in {"any", "never"}
+        if node.properties:
+            if node.pattern_properties or schema_additional:
+                log.warning(
+                    "Object schema declares both fixed 'properties' and dynamic 'patternProperties' / "
+                    "'additionalProperties'; %s requires fixed field names, so the "
+                    "dynamic keys are ignored.",
+                    self._struct_type_label,
+                )
+            return self._struct_type(node.properties, ctx, depth)
+        value_node = additional if schema_additional else None
+        if node.pattern_properties:
+            if len(node.pattern_properties) > 1:
+                log.warning(
+                    "Multiple 'patternProperties' patterns found; only the first pattern's schema is "
+                    "used as the %s, since %s has a single value type.",
+                    self._map_value_label,
+                    self._map_type_label,
+                )
+            value_node = next(iter(node.pattern_properties.values()))
+        if value_node is not None:
+            return self._map_type(
+                self._string_type(),
+                self.emit_node(value_node, ctx, depth + 1),
+                value_nullable=True,
+            )
+        log.warning(
+            "Object schema has no 'properties', 'patternProperties', or schema-valued "
+            "'additionalProperties'; converting to an %s.",
+            self._empty_struct_label,
+        )
+        return self._struct_type((), ctx, depth)
+
+    def _emit_map(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> DataTypeT:
+        """Emit a map with independently typed keys and values."""
+        if node.key_type is None or node.value_type is None:
+            msg = "Map nodes require both key_type and value_type"
+            raise self._error_cls(msg)
+        return self._map_type(
+            self.emit_node(node.key_type, ctx, depth + 1),
+            self.emit_node(node.value_type, ctx, depth + 1),
+            value_nullable=element_nullable(node.value_type),
+        )
+
+    def _emit_array(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> DataTypeT:
+        """Emit homogeneous arrays, approximating tuple schemas by their first slot."""
+        element = self._resolve_array_element(node)
+        if element is None:
+            return self._array_type(self._string_type(), element_nullable=True)
+        return self._array_type(
+            self.emit_node(element, ctx, depth + 1),
+            element_nullable=element_nullable(element),
+        )
+
+    def _emit_string(self, node: TypedNode) -> DataTypeT:
+        """Map recognized formats to target types."""
+        default = self._string_type()
+        value = node.constraints.get("format")
+        return self.format_map.get(value, default) if isinstance(value, str) else default
+
+    def _emit_integer(self, node: TypedNode) -> DataTypeT:
+        """Use int32 only when both bounds fit."""
+        return self._int32_type() if fits_int32_bounds(node) else self._int64_type()
+
+    def _emit_number(self, node: TypedNode) -> DataTypeT:
+        """Derive decimal scale from numeric JSON multipleOf values."""
+        multiple = node.constraints.get("multipleOf")
+        if isinstance(multiple, (int, float, Decimal)):
+            scale = decimal_places(multiple)
+            if scale > DECIMAL128_MAX_PRECISION:
+                msg = (
+                    f"Unsupported {self._decimal_target_label} decimal precision/scale: "
+                    f"({DECIMAL128_MAX_PRECISION}, {scale})"
+                )
+                raise self._error_cls(msg)
+            return self._decimal128_type(DECIMAL128_MAX_PRECISION, scale)
+        return self._float64_type()
+
     def _string_type(self) -> DataTypeT:
         raise NotImplementedError
 
-    def _scalar_types(self) -> dict[str, DataTypeT]:
+    def _int32_type(self) -> DataTypeT:
+        raise NotImplementedError
+
+    def _int64_type(self) -> DataTypeT:
+        raise NotImplementedError
+
+    def _float64_type(self) -> DataTypeT:
+        raise NotImplementedError
+
+    def _decimal128_type(self, precision: int, scale: int) -> DataTypeT:
+        raise NotImplementedError
+
+    def _scalar_types(self) -> Mapping[str, DataTypeT]:
         raise NotImplementedError
 
     def _infer_enum_type(self, values: list[object]) -> DataTypeT:
         raise NotImplementedError
 
-    def _emit_object(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> DataTypeT:
+    def _struct_type(self, properties: tuple[SchemaField, ...], ctx: ConversionContext, depth: int) -> DataTypeT:
         raise NotImplementedError
 
-    def _emit_array(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> DataTypeT:
+    def _map_type(self, key_type: DataTypeT, value_type: DataTypeT, *, value_nullable: bool) -> DataTypeT:
         raise NotImplementedError
 
-    def _emit_map(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> DataTypeT:
-        raise NotImplementedError
-
-    def _emit_string(self, node: TypedNode) -> DataTypeT:
-        raise NotImplementedError
-
-    @staticmethod
-    def _emit_integer(node: TypedNode) -> DataTypeT:
-        raise NotImplementedError
-
-    @staticmethod
-    def _emit_number(node: TypedNode) -> DataTypeT:
+    def _array_type(self, element_type: DataTypeT, *, element_nullable: bool) -> DataTypeT:
         raise NotImplementedError
 
     @staticmethod

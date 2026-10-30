@@ -8,13 +8,12 @@ import pyarrow as pa
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 
-from cdm_data_loaders.core.fields import GZIP_SUFFIX
+from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX, GZIP_SUFFIX
 from cdm_data_loaders.utils.buffer import ArrowListBuffer, ListBuffer
 
 LineRecord = dict[str, Any]
 ParseErrorResolver = Callable[[dict[str, Any]], str | None]
 
-DEFAULT_REJECTED_SUFFIX: Final[str] = "_rejected"
 REJECTED_COLUMNS: Final[tuple[str, ...]] = ("source_file", "line_no", "raw_record")
 
 

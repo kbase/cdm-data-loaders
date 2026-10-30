@@ -18,8 +18,8 @@ from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TSchemaContractDict
 from dlt.sources.filesystem import filesystem
 
+from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX
 from cdm_data_loaders.pipelines.core import (
-    DEFAULT_REJECTED_SUFFIX,
     DEFAULT_SCHEMA_CONTRACT,
     build_file_ingest_kwargs,
     run_pipeline,

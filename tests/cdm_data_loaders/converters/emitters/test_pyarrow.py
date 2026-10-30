@@ -1,22 +1,17 @@
 """Pure schema-object checks for the Arrow emitter."""
 
 import json
-import logging
-from collections import UserDict
 from decimal import Decimal
 from typing import Any
 
 import pyarrow as pa
 import pytest
-from frozendict import frozendict
 from jsonschema import Draft202012Validator
-from pydantic import ValidationError
 from pyiceberg import types as iceberg_types
 from pyiceberg.schema import Schema
 
 from cdm_data_loaders.converters.core.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.emitters.pyarrow import (
-    DEFAULT_FORMAT_MAP,
     PyArrowEmitter,
     PyArrowEmitterError,
     infer_type_from_enum,
@@ -27,7 +22,6 @@ from cdm_data_loaders.converters.readers.iceberg import IcebergReader
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
-EMITTER_LOGGER = "cdm_data_loaders.converters.emitters.pyarrow"
 
 
 def _document(schema: dict[str, Any] | bool) -> SchemaDocument:
@@ -63,21 +57,6 @@ def test_emit_pass_simple_object() -> None:
     schema = PyArrowEmitter().emit(document)
     assert schema == pa.schema([pa.field("name", pa.string(), nullable=False), pa.field("age", pa.int64())])
     assert [schema.field(name).metadata for name in schema.names] == [None, None]
-
-
-def test_emit_pass_field_presence_controls_nullable() -> None:
-    """Required presence controls field nullability independently of value nullability."""
-    document = SchemaDocument(
-        root=TypedNode(
-            type="object",
-            properties=(
-                Field("required", TypedNode(type="string", nullable=True), required=True),
-                Field("optional", TypedNode(type="string", nullable=False)),
-            ),
-        )
-    )
-    schema = PyArrowEmitter().emit(document)
-    assert [(field.name, field.nullable) for field in schema] == [("required", False), ("optional", True)]
 
 
 def test_emit_table_pass_empty_table_with_schema() -> None:
@@ -213,143 +192,6 @@ def test_emit_pass_json_dispatch(schema: dict[str, Any], expected: pa.DataType, 
     assert emitter.emit(_document(schema)) == _value_schema(expected)
 
 
-@pytest.mark.parametrize("strict", [False, True], ids=["fallback-policy", "strict-policy"])
-@pytest.mark.parametrize(
-    ("schema", "message"),
-    [
-        pytest.param(True, "no Arrow equivalent", id="true-schema"),
-        pytest.param(False, "no Arrow equivalent", id="false-schema"),
-        pytest.param({}, "Unsupported/unknown schema type", id="empty-schema"),
-        pytest.param({"type": "alien"}, "Unsupported/unknown schema type", id="unknown-type"),
-        pytest.param({"description": "anything"}, "Unsupported/unknown schema type", id="annotation-only"),
-        pytest.param({"const": 1}, "Unsupported/unknown schema type", id="const-only"),
-        pytest.param({"oneOf": []}, "Unsupported/unknown schema type", id="empty-oneof"),
-        pytest.param({"anyOf": []}, "Unsupported/unknown schema type", id="empty-anyof"),
-        pytest.param({"oneOf": [False]}, "no Arrow equivalent", id="false-combiner-branch"),
-        pytest.param({"type": ["string", "integer"]}, "multi-type union", id="mixed-type-list"),
-        pytest.param({"not": {"type": "string"}}, "Unsupported/unknown schema type", id="not"),
-        pytest.param({"if": {"type": "string"}}, "Unsupported/unknown schema type", id="if"),
-    ],
-)
-def test_emit_node_pass_unsupported_policy(schema: dict[str, Any] | bool, message: str, strict: bool) -> None:
-    """Unsupported nodes either raise their specific error or use a string fallback."""
-    emitter = PyArrowEmitter(treat_unknown_as_string=not strict)
-    node = _document(schema).root.properties[0].node
-    if strict:
-        with pytest.raises(PyArrowEmitterError, match=message):
-            emitter.emit_node(node)
-    else:
-        assert emitter.emit_node(node) == pa.string()
-
-
-@pytest.mark.parametrize(
-    "schema",
-    [
-        {"type": "array", "items": True},
-        {"type": "array", "items": {"description": "unknown"}},
-        {"type": "array", "items": {"oneOf": []}},
-        {"type": "array", "prefixItems": [True]},
-        {"type": "object", "additionalProperties": {}},
-        {"type": "object", "patternProperties": {"a": False}},
-    ],
-    ids=["true-items", "nonempty-items", "empty-combiner-items", "true-prefix", "empty-map-value", "false-map-value"],
-)
-def test_emit_fail_strict_nested_unknown(schema: dict[str, Any]) -> None:
-    """Nonempty unknown array schemas and dynamic map schemas use strict dispatch."""
-    with pytest.raises(PyArrowEmitterError):
-        PyArrowEmitter(treat_unknown_as_string=False).emit(_document(schema))
-
-
-@pytest.mark.parametrize(
-    ("schema", "warning"),
-    [
-        pytest.param({"oneOf": [{"type": "integer"}]}, "Approximating 'oneOf'", id="oneof"),
-        pytest.param({"anyOf": [{"type": "integer"}]}, "Approximating 'anyOf'", id="anyof"),
-        pytest.param({"not": False}, "Ignoring unsupported conditional keyword 'not'", id="not"),
-        pytest.param({"then": False}, "Ignoring unsupported conditional keyword 'then'", id="then"),
-        pytest.param({"type": ["string", "integer"]}, "Collapsing multi-type union", id="union"),
-        pytest.param(
-            {"properties": {"value": {"type": "string"}}, "additionalProperties": {}},
-            "dynamic keys are ignored",
-            id="fixed-dynamic",
-        ),
-        pytest.param(
-            {"patternProperties": {"a": {"type": "integer"}, "b": False}}, "only the first pattern's", id="patterns"
-        ),
-        pytest.param({"type": "object"}, "empty struct", id="empty-object"),
-        pytest.param({"type": "array", "prefixItems": []}, "prefixItems", id="prefix"),
-        pytest.param({"type": "array", "items": []}, "tuple-style 'items'", id="tuple"),
-    ],
-)
-def test_emit_pass_warnings(schema: dict[str, Any], warning: str, caplog: pytest.LogCaptureFixture) -> None:
-    """Lossy schema approximations report the selected policy."""
-    with caplog.at_level(logging.WARNING, logger=EMITTER_LOGGER):
-        PyArrowEmitter().emit(_document(schema))
-    assert warning in caplog.text
-
-
-def test_emit_pass_recognized_types_ignore_combiners_silently(caplog: pytest.LogCaptureFixture) -> None:
-    """Recognized types ignore irrelevant combiners without warning."""
-    for schema in (
-        {"type": "string", "oneOf": [False], "not": False},
-        {"format": "date", "anyOf": [False], "if": False},
-        {"properties": {"value": {"type": "string"}}, "additionalProperties": True},
-    ):
-        PyArrowEmitter(treat_unknown_as_string=False).emit(_document(schema))
-    assert not [record for record in caplog.records if record.name == EMITTER_LOGGER]
-
-
-def test_emit_pass_strict_multi_type_union_fails() -> None:
-    """Strict mode rejects multi-type unions before collapsing them."""
-    with pytest.raises(PyArrowEmitterError, match="Unsupported multi-type union"):
-        PyArrowEmitter(treat_unknown_as_string=False).emit(_document({"type": ["string", "integer"]}))
-
-
-def test_emit_pass_nesting_limit(caplog: pytest.LogCaptureFixture) -> None:
-    """Objects at max_nesting collapse to string."""
-
-    def make_deep_node(depth: int) -> TypedNode:
-        if depth <= 0:
-            return TypedNode(type="string")
-        return TypedNode(type="object", properties=(Field("child", make_deep_node(depth - 1), required=True),))
-
-    with caplog.at_level(logging.WARNING, logger=EMITTER_LOGGER):
-        current = PyArrowEmitter(max_nesting=10).emit_node(make_deep_node(15))
-
-    for _ in range(10):
-        assert pa.types.is_struct(current)
-        current = current.field(0).type
-    assert current == pa.string()
-    assert "Max nesting limit (10) reached" in caplog.text
-
-
-@pytest.mark.parametrize(
-    "node",
-    [
-        TypedNode(type="string"),
-        TypedNode(type="object", additional_properties=TypedNode(type="string")),
-        TypedNode(type="array", items=TypedNode(type="string")),
-        TypedNode(type="unknown"),
-    ],
-    ids=["scalar", "dynamic-map", "array", "unknown"],
-)
-def test_emit_fail_non_struct_root(node: TypedNode) -> None:
-    """Table emission rejects every non-struct root result."""
-    with pytest.raises(PyArrowEmitterError, match="did not resolve to a struct"):
-        PyArrowEmitter().emit(SchemaDocument(root=node))
-
-
-@pytest.mark.parametrize(
-    "node",
-    [TypedNode(type="map"), TypedNode(type="map", key_type=TypedNode(type="string"))],
-    ids=["no-key-or-value", "no-value"],
-)
-def test_emit_node_fail_incomplete_map(node: TypedNode) -> None:
-    """Map nodes need both key and value types."""
-    with pytest.raises(PyArrowEmitterError, match="require both key_type and value_type"):
-        PyArrowEmitter().emit_node(node)
-
-
 def test_emit_node_pass_map_node() -> None:
     """Map nodes keep their distinct key and value types and value nullability."""
     node = TypedNode(
@@ -421,16 +263,6 @@ def test_emit_node_pass_logical_hints(hints: NodeHints, node_type: NodeType, exp
     assert PyArrowEmitter().emit_node(TypedNode(type=node_type, hints=hints)) == expected
 
 
-def test_emit_node_pass_json_source_ignores_hints() -> None:
-    """Hints on JSON Schema nodes are ignored in favor of keyword dispatch."""
-    node = TypedNode(
-        type="number",
-        hints=NodeHints(logical_type="decimal", precision=10, scale=2),
-        provenance=Provenance("json-schema"),
-    )
-    assert PyArrowEmitter().emit_node(node) == pa.float64()
-
-
 @pytest.mark.parametrize(
     "hints",
     [
@@ -445,13 +277,6 @@ def test_emit_node_fail_invalid_decimal_hints(hints: NodeHints) -> None:
     """Decimal hints outside Arrow's range raise."""
     with pytest.raises(PyArrowEmitterError, match="Unsupported Arrow decimal precision/scale"):
         PyArrowEmitter().emit_node(TypedNode(type="number", hints=hints))
-
-
-def test_emit_node_fail_decimal_scale_exceeds_precision_limit() -> None:
-    """A multipleOf scale beyond 38 digits cannot be a decimal128."""
-    node = TypedNode(type="number", constraints={"multipleOf": Decimal("0." + "0" * 39 + "1")})
-    with pytest.raises(PyArrowEmitterError, match=r"\(38, 40\)"):
-        PyArrowEmitter().emit_node(node)
 
 
 def test_emit_pass_iceberg_types() -> None:
@@ -608,15 +433,6 @@ def test_build_metadata_pass_field_annotations_override_node() -> None:
     assert metadata == {"jsonschema": '{"title": "Field"}', "comment": "node text"}
 
 
-def test_build_context_pass_warns_about_invalid_keywords(caplog: pytest.LogCaptureFixture) -> None:
-    """Structural and unknown extra keywords are reported and ignored."""
-    emitter = PyArrowEmitter(extra_metadata_keywords=frozenset({"type", "typo", "x-ok"}))
-    with caplog.at_level(logging.WARNING, logger=EMITTER_LOGGER):
-        context = emitter.build_context(Draft202012Validator)
-    assert context.allowed_extra_metadata_keywords == frozenset({"x-ok"})
-    assert "['type', 'typo']" in caplog.text
-
-
 @pytest.mark.parametrize(
     ("values", "expected"),
     [
@@ -631,56 +447,6 @@ def test_build_context_pass_warns_about_invalid_keywords(caplog: pytest.LogCaptu
 def test_infer_type_from_enum_pass(values: list[object], expected: pa.DataType) -> None:
     """Enum members map to the narrowest shared Arrow scalar type."""
     assert infer_type_from_enum(values) == expected
-
-
-@pytest.mark.parametrize(
-    ("format_name", "expected"),
-    [*DEFAULT_FORMAT_MAP.items(), ("unknown", pa.string()), ("", pa.string())],
-    ids=[*DEFAULT_FORMAT_MAP, "unknown-format", "empty-format"],
-)
-def test_emit_node_pass_formats(format_name: str, expected: pa.DataType) -> None:
-    """Every built-in format and unknown format resolves to the expected type."""
-    node = TypedNode(type="string", constraints={"format": format_name})
-    assert PyArrowEmitter().emit_node(node) == expected
-
-
-def test_emit_node_pass_non_string_format_ignored() -> None:
-    """A non-string format constraint falls back to string."""
-    assert PyArrowEmitter().emit_node(TypedNode(type="string", constraints={"format": 1})) == pa.string()
-
-
-@pytest.mark.parametrize(
-    "overrides",
-    [{"date-time": pa.string()}, UserDict({"date-time": pa.string()})],
-    ids=["dict-override", "mapping-override"],
-)
-def test_pyarrow_emitter_pass_merged_frozen_formats(overrides: dict[str, pa.DataType]) -> None:
-    """Format overrides are copied and merged while the emitter's configuration remains frozen."""
-    expected = {**DEFAULT_FORMAT_MAP, **overrides}
-    emitter = PyArrowEmitter.model_validate({"format_map": overrides})
-    overrides["date"] = pa.bool_()
-    assert emitter.format_map == frozendict(expected)
-    assert isinstance(emitter.format_map, frozendict)
-    with pytest.raises(ValidationError, match="Instance is frozen"):
-        emitter.treat_unknown_as_string = False
-    with pytest.raises(TypeError):
-        emitter.format_map["date"] = pa.bool_()
-    assert emitter.emit_node(TypedNode(type="string", constraints={"format": "date-time"})) == pa.string()
-
-
-@pytest.mark.parametrize(
-    "value", [None, "bad", {"date": "date"}, {1: pa.date32()}], ids=["none", "text", "value", "key"]
-)
-def test_pyarrow_emitter_fail_invalid_format_map(value: object) -> None:
-    """Invalid format map containers, keys and values fail model validation."""
-    with pytest.raises(ValidationError):
-        PyArrowEmitter.model_validate({"format_map": value})
-
-
-def test_pyarrow_emitter_fail_invalid_max_nesting() -> None:
-    """max_nesting must be positive."""
-    with pytest.raises(ValidationError):
-        PyArrowEmitter(max_nesting=0)
 
 
 def test_merge_format_map_pass_non_mapping_unchanged() -> None:

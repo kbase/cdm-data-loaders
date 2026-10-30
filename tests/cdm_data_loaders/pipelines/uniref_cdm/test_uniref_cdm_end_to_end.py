@@ -16,14 +16,17 @@ from cdm_data_loaders.pipelines.uniref_cdm import (
     UnirefSettings,
     parse_uniref,
 )
-from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline, read_destination_rows
+from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
+    assert_destination_table_counts,
+    assert_duckdb_table_counts,
     assert_pipeline_report_written,
     assert_run_ok,
     fetch_all_duckdb,
 )
-from tests.conftest import LOCAL_FS, TEST_DATA_DIR
+from tests.conftest import TEST_DATA_DIR
+from tests.helpers import make_cts_settings
 
 TEST_DEFAULT_UNIREF_VARIANT = "50"
 
@@ -46,15 +49,13 @@ EXPECTED_ROW_COUNTS = frozendict(
 @pytest.fixture(params=UNIREF_VARIANTS)
 def duckdb_uniref_settings(tmp_path: Path, request: pytest.FixtureRequest) -> UnirefSettings:
     """Provide UnirefSettings pointing at the real UniRef XML fixtures, one per variant."""
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
-    return UnirefSettings(
+    return make_cts_settings(
+        UnirefSettings,
+        tmp_path,
         variant=request.param,
-        input_dir=str(UNIREF_FIXTURE_DIR),
-        output_dir=str(output_dir),
-        use_destination=LOCAL_FS,
+        input_dir=UNIREF_FIXTURE_DIR,
         use_output_dir_for_pipeline_metadata=True,
-    )  # pyright: ignore[reportCallIssue]
+    )
 
 
 def _run_uniref_duckdb_pipeline(settings: UnirefSettings, tmp_path: Path, name: str) -> tuple[Any, Any]:
@@ -81,10 +82,7 @@ def test_integration_uniref_pipeline_loads_into_duckdb(
     pipeline, load_info = _run_uniref_duckdb_pipeline(duckdb_uniref_settings, tmp_path, "loads")
 
     assert_run_ok(load_info)
-
-    for table_name, expected_count in EXPECTED_ROW_COUNTS.items():
-        ((count,),) = fetch_all_duckdb(pipeline, f"SELECT COUNT(*) FROM {table_name}")  # noqa: S608
-        assert count == expected_count, f"expected {expected_count} rows in '{table_name}', got {count}"
+    assert_duckdb_table_counts(pipeline, EXPECTED_ROW_COUNTS)
 
 
 def test_integration_uniref_pipeline_entity_and_cluster_content(
@@ -129,6 +127,4 @@ def test_integration_cli_uniref_pipeline_output_validated(
     )
 
     dataset_dir = Path(duckdb_uniref_settings.output_dir) / load_info.dataset_name
-    for table_name, expected_count in EXPECTED_ROW_COUNTS.items():
-        rows = read_destination_rows(dataset_dir, table_name)
-        assert len(rows) == expected_count, f"expected {expected_count} rows in '{table_name}', got {len(rows)}"
+    assert_destination_table_counts(dataset_dir, EXPECTED_ROW_COUNTS)

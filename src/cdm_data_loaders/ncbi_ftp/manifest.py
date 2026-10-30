@@ -15,13 +15,10 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from ftplib import FTP
-from http import HTTPStatus
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
-
-from botocore.exceptions import ClientError
 
 from cdm_data_loaders.ncbi_ftp.assembly import (
     build_accession_path,
@@ -37,7 +34,7 @@ from cdm_data_loaders.utils.file_transfer.ftp_client import (
     ftp_session,
 )
 from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
-    head_object,
+    get_existing_object_info,
     list_objects,
 )
 
@@ -438,23 +435,12 @@ def _does_accession_need_update(
     """
     for fname, expected_md5 in target_checksums.items():
         s3_path = bucket / s3_prefix / fname
-        s3_md5 = ""
-        try:
-            obj_info = head_object(str(s3_path))
-            s3_md5 = obj_info.get("Metadata", {}).get("md5", "")
-        except ClientError as e:
-            code = e.response.get("Error", {}).get("Code")
-            # boto3 error codes are not always ints, so check the conversion first
-            try:
-                code_int = int(code)
-            except (TypeError, ValueError):
-                code_int = None
+        obj_info = get_existing_object_info(str(s3_path))
+        if obj_info is None:
+            logger.debug("File missing from store: %s", s3_path)
+            return True
 
-            if code_int == HTTPStatus.NOT_FOUND:
-                logger.debug("File missing from store: %s", s3_path)
-                return True
-            raise
-
+        s3_md5 = obj_info.get("Metadata", {}).get("md5", "")
         if s3_md5 != expected_md5:
             logger.debug("MD5 mismatch for %s: S3=%s FTP=%s", s3_path, s3_md5, expected_md5)
             return True

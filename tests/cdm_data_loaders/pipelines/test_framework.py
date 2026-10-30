@@ -43,7 +43,6 @@ from tests.cdm_data_loaders.pipelines.reference.pipeline import (
     ReferencePipelineSettings,
     run_reference_pipeline,
 )
-from tests.conftest import LOCAL_FS
 from tests.helpers import make_cts_settings, register_temp_module, settings_to_argv
 
 
@@ -109,21 +108,17 @@ def test_resolve_pipeline_fail_unknown_identifier() -> None:
 
 def test_settings_to_argv_pass_excludes_computed_fields_and_expands_lists(tmp_path: Path) -> None:
     """settings_to_argv omits computed fields and None values, formats bools, and expands list fields."""
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
-    settings = JsonlJsonschemaIngestSettings(
-        input_dir=str(input_dir),
-        output_dir=str(output_dir),
-        use_destination=LOCAL_FS,
+    settings = make_cts_settings(
+        JsonlJsonschemaIngestSettings,
+        tmp_path,
+        log_config_file=None,
         use_output_dir_for_pipeline_metadata=True,
         dlt_dev_mode=False,
         dataset_name="custom_ds",
         loader_file_format="jsonl",
         schema_files_module="some.module",
         table_names=["alpha", "beta"],
-    )  # pyright: ignore[reportCallIssue]
+    )
     argv = settings_to_argv(settings)
     assert "--pipeline-dir" not in argv
     assert "--report-path" not in argv
@@ -218,25 +213,19 @@ def test_pipeline_test_runner_pass_core_and_cli_modes_end_to_end(
     mode: ExecutionMode,
 ) -> None:
     """PipelineTestRunner executes a pipeline in core and cli modes and hooks into all result assertions."""
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    expected_records = [{"id": "rec_1", "value": 10}, {"id": "rec_2", "value": 20}]
-    (input_dir / "data.jsonl").write_text(
-        "\n".join(f'{{"id": "{r["id"]}", "value": {r["value"]}}}' for r in expected_records) + "\n",
-        encoding="utf-8",
-    )
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
-
-    settings = JsonlExtractSettings(
-        input_dir=str(input_dir),
-        output_dir=str(output_dir),
-        use_destination=LOCAL_FS,
+    settings = make_cts_settings(
+        JsonlExtractSettings,
+        tmp_path,
         use_output_dir_for_pipeline_metadata=True,
         dlt_dev_mode=False,
         dataset_name="framework_test_ds",
         table_name="items",
         loader_file_format="jsonl",
+    )
+    expected_records = [{"id": "rec_1", "value": 10}, {"id": "rec_2", "value": 20}]
+    (settings.input_dir / "data.jsonl").write_text(
+        "\n".join(f'{{"id": "{r["id"]}", "value": {r["value"]}}}' for r in expected_records) + "\n",
+        encoding="utf-8",
     )
 
     runner = PipelineTestRunner(mode=mode)
@@ -247,9 +236,9 @@ def test_pipeline_test_runner_pass_core_and_cli_modes_end_to_end(
         )
     )
 
-    assert_pipeline_report_written(output_dir, load_info, metadata_moved=True, ingested_files=["data.jsonl"])
+    assert_pipeline_report_written(settings.output_dir, load_info, metadata_moved=True, ingested_files=["data.jsonl"])
     assert set(load_info.pipeline.dataset().tables) >= set(DEFAULT_DLT_TABLES)
-    assert read_data_rows(output_dir / settings.dataset_name) == {"items": expected_records}
+    assert read_data_rows(settings.output_dir / settings.dataset_name) == {"items": expected_records}
 
 
 def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
@@ -257,11 +246,18 @@ def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Docker mode stages input, dlt config, auxiliary files, dynamic modules, and reconstructs LoadInfo."""
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    (input_dir / "sample.xml").write_text("<root><entry><id>1</id></entry></root>", encoding="utf-8")
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    settings = make_cts_settings(
+        XmlToDictSettings,
+        tmp_path,
+        use_output_dir_for_pipeline_metadata=True,
+        dlt_dev_mode=False,
+        dataset_name="xml_docker_ds",
+        table_name="entries",
+        xml_tag="entry",
+        loader_file_format="parquet",
+    )
+    (settings.input_dir / "sample.xml").write_text("<root><entry><id>1</id></entry></root>", encoding="utf-8")
+    output_dir = settings.output_dir
     xsd_file = tmp_path / "schema.xsd"
     xsd_file.write_text("<xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema'/>", encoding="utf-8")
 
@@ -293,18 +289,6 @@ def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="ok", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_docker_run)
-
-    settings = XmlToDictSettings(
-        input_dir=str(input_dir),
-        output_dir=str(output_dir),
-        use_destination=LOCAL_FS,
-        use_output_dir_for_pipeline_metadata=True,
-        dlt_dev_mode=False,
-        dataset_name="xml_docker_ds",
-        table_name="entries",
-        xml_tag="entry",
-        loader_file_format="parquet",
-    )  # pyright: ignore[reportCallIssue]
 
     runner = PipelineTestRunner(mode=ExecutionMode.DOCKER, docker_image="test-image:latest")
     cli_args = [
@@ -343,10 +327,14 @@ def test_pipeline_test_runner_pass_docker_mode_test_pipeline_and_workers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Docker mode dispatches test-only pipeline modules via script path and forwards worker config to config.toml."""
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    ref_settings = make_cts_settings(
+        ReferencePipelineSettings,
+        tmp_path,
+        use_output_dir_for_pipeline_metadata=True,
+        dlt_dev_mode=False,
+        dataset_name="ref_docker_ds",
+    )
+    output_dir = ref_settings.output_dir
     monkeypatch.setattr(framework, "_built_docker_images", {"test-image:latest"})
     captured_cmds: list[list[str]] = []
 
@@ -370,14 +358,7 @@ def test_pipeline_test_runner_pass_docker_mode_test_pipeline_and_workers(
     with dlt.config.values({"extract.workers": 3, "normalize.workers": 2, "load.workers": 4}):
         load_info = runner.run(
             run_reference_pipeline,
-            settings=ReferencePipelineSettings(
-                input_dir=str(input_dir),
-                output_dir=str(output_dir),
-                use_destination=LOCAL_FS,
-                use_output_dir_for_pipeline_metadata=True,
-                dlt_dev_mode=False,
-                dataset_name="ref_docker_ds",
-            ),
+            settings=ref_settings,
         )
     assert load_info is not None
     ref_docker_cmd = captured_cmds[0]
@@ -482,27 +463,21 @@ def test_resolve_pipeline_pass_legacy_module_without_pipeline_cli() -> None:
 @pytest.mark.docker
 def test_pipeline_test_runner_pass_real_docker_container(tmp_path: Path, docker_image: str) -> None:
     """Execute a real Docker container run via PipelineTestRunner when --run-docker is enabled."""
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    expected_records = [{"id": "docker_1", "value": 42}]
-    (input_dir / "data.jsonl").write_text('{"id": "docker_1", "value": 42}\n', encoding="utf-8")
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
-
-    settings = JsonlExtractSettings(
-        input_dir=str(input_dir),
-        output_dir=str(output_dir),
-        use_destination=LOCAL_FS,
+    settings = make_cts_settings(
+        JsonlExtractSettings,
+        tmp_path,
         use_output_dir_for_pipeline_metadata=True,
         dlt_dev_mode=False,
         dataset_name="docker_framework_ds",
         table_name="items",
         loader_file_format="jsonl",
-    )  # pyright: ignore[reportCallIssue]
+    )
+    expected_records = [{"id": "docker_1", "value": 42}]
+    (settings.input_dir / "data.jsonl").write_text('{"id": "docker_1", "value": 42}\n', encoding="utf-8")
 
     runner = PipelineTestRunner(mode=ExecutionMode.DOCKER, docker_image=docker_image)
     load_info = assert_run_ok(runner.run("jsonlines_extract", settings=settings))
 
-    assert_pipeline_report_written(output_dir, load_info, metadata_moved=True, ingested_files=["data.jsonl"])
+    assert_pipeline_report_written(settings.output_dir, load_info, metadata_moved=True, ingested_files=["data.jsonl"])
     assert set(load_info.pipeline.dataset().tables) >= set(DEFAULT_DLT_TABLES)
-    assert read_data_rows(output_dir / settings.dataset_name) == {"items": expected_records}
+    assert read_data_rows(settings.output_dir / settings.dataset_name) == {"items": expected_records}

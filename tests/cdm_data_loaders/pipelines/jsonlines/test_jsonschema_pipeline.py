@@ -27,6 +27,7 @@ from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline i
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlJsonschemaIngestSettings
 from cdm_data_loaders.readers.jsonlines import make_page_router
 from cdm_data_loaders.utils.jsonschema.dereferencer import DereferencingError
+from tests.cdm_data_loaders.pipelines.helpers import assert_run_ok
 from tests.cdm_data_loaders.pipelines.jsonlines.conftest import make_item
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas import (
     ENTITY_SCHEMAS as DATASET_ENTITY_SCHEMAS,
@@ -75,13 +76,7 @@ def test_make_page_router_fail_uses_declared_draft() -> None:
         "properties": {"count": {"type": "number", "minimum": 5, "exclusiveMinimum": True}},
     }
     validate = make_router(schema)
-    item = {
-        "record": {"count": 5},
-        "raw_record": '{"count": 5}',
-        "parse_error": None,
-        "source_file": "data.jsonl",
-        "line_no": 1,
-    }
+    item = make_item({"count": 5})
 
     results = list(validate([item]))
 
@@ -617,9 +612,7 @@ def test_run_jsonlines_pipeline_pass_loads_valid_and_rejected_rows(
         encoding="utf-8",
     )
 
-    load_info = run_jsonlines_pipeline(settings)
-    assert load_info is not None
-    assert not load_info.has_failed_jobs
+    assert_run_ok(run_jsonlines_pipeline(settings))
     dataset_dir = Path(settings.output_dir) / str(settings.dataset_name)
     assert (dataset_dir / "widget").is_dir()
     assert (dataset_dir / "widget_rejected").is_dir()

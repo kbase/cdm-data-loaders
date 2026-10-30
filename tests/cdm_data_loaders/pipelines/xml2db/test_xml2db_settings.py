@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-from pydantic_settings import CliApp
 
 from cdm_data_loaders.core.fields import DEFAULTS
 from cdm_data_loaders.pipelines.xml2db.settings import (
@@ -15,8 +14,7 @@ from cdm_data_loaders.pipelines.xml2db.settings import (
     PIPELINE_NAME,
     Xml2DbSettings,
 )
-from tests.conftest import S3
-from tests.helpers import make_cts_settings, settings_to_argv
+from tests.helpers import make_cts_settings
 
 MINIMAL_SETTINGS_KWARGS: dict[str, object] = {
     "buffer_size": 100,
@@ -60,7 +58,7 @@ def settings_factory(tmp_path: Path, test_data_dir: Path) -> Callable[..., Xml2D
 
 
 def test_xml2db_settings_pass_defaults(settings_factory: Callable[..., Xml2DbSettings]) -> None:
-    """xml_tag, xml2db_config_file default to None; chunk/compaction defaults are set."""
+    """xml_tag, xml2db_config_file default to None; chunk/compaction and common CTS defaults are set."""
     settings = settings_factory()
     assert settings.xml_tag is None
     assert settings.xml2db_config_file is None
@@ -68,12 +66,7 @@ def test_xml2db_settings_pass_defaults(settings_factory: Callable[..., Xml2DbSet
     assert settings.compact_reused_tables is True
     assert settings.skip_xml_validation is True
     assert settings.short_name == DEFAULT_XML2DB_SHORT_NAME
-    assert settings.file_glob == DEFAULTS["file_glob"] or settings.file_glob == "*.xml*"
-
-
-def test_xml2db_settings_pass_common_cts_defaults(settings_factory: Callable[..., Xml2DbSettings]) -> None:
-    """buffer_size and log_interval default to the common CTS defaults."""
-    settings = settings_factory()
+    assert settings.file_glob == "*.xml*"
     assert settings.buffer_size == DEFAULTS["buffer_size"]
     assert settings.log_interval == DEFAULTS["log_interval"]
 
@@ -110,30 +103,6 @@ def test_xml2db_settings_fail_non_positive_chunk_size(
         settings_factory(chunk_size=0)
 
 
-def test_xml2db_settings_fail_non_positive_buffer_size(
-    settings_factory: Callable[..., Xml2DbSettings],
-) -> None:
-    """buffer_size must be a positive integer."""
-    with pytest.raises(ValidationError):
-        settings_factory(buffer_size=0)
-
-
-def test_xml2db_settings_fail_non_positive_log_interval(
-    settings_factory: Callable[..., Xml2DbSettings],
-) -> None:
-    """log_interval must be a positive integer."""
-    with pytest.raises(ValidationError):
-        settings_factory(log_interval=0)
-
-
-def test_xml2db_settings_fail_missing_dataset_name(
-    settings_factory: Callable[..., Xml2DbSettings],
-) -> None:
-    """Omitting dataset_name raises ValidationError."""
-    with pytest.raises(ValidationError):
-        settings_factory(dataset_name=None)
-
-
 def test_xml2db_settings_fail_missing_xsd_file() -> None:
     """Omitting xsd_file raises ValidationError."""
     with pytest.raises(ValidationError):
@@ -165,47 +134,7 @@ def test_xml2db_settings_pass_xml2db_config_file_accepted(
     assert settings.xml2db_config_file == config_path
 
 
-def test_xml2db_settings_pass_local_destination_with_s3_output_dir_accepted_at_construction(
-    settings_factory: Callable[..., Xml2DbSettings],
-) -> None:
-    """An s3:// output_dir is rejected at construction because output_dir must be a local path."""
-    with pytest.raises(ValidationError):
-        settings_factory(output_dir="s3://some-bucket/path")
-
-
-def test_xml2db_settings_pass_s3_destination_with_local_output_dir_accepted_at_construction(
-    settings_factory: Callable[..., Xml2DbSettings],
-) -> None:
-    """use_destination='s3' with a local output_dir is accepted at construction."""
-    settings = settings_factory(use_destination=S3)
-    assert settings.use_destination == S3
-
-
-def test_xml2db_settings_pass_unknown_use_destination_accepted_at_construction(
-    settings_factory: Callable[..., Xml2DbSettings],
-) -> None:
-    """A use_destination not present in the dlt config is accepted at construction.
-
-    Unknown destinations are rejected when output_dir is resolved against the dlt config, not
-    at construction time (see tests/cdm_data_loaders/core/test_destination.py).
-    """
-    settings = settings_factory(use_destination="not_a_destination")
-    assert settings.use_destination == "not_a_destination"
-
-
 def test_xml2db_settings_pass_pipeline_name_constant() -> None:
     """PIPELINE_NAME is the CLI program name and the dlt pipeline name."""
     assert PIPELINE_NAME == "xml2db"
     assert Xml2DbSettings.model_config.get("cli_prog_name") == PIPELINE_NAME
-
-
-def test_xml2db_settings_pass_cli_shortcut_g_targets_file_glob(
-    settings_factory: Callable[..., Xml2DbSettings],
-) -> None:
-    """The '-g' shortcut added on top of the shared shortcuts parses as file_glob."""
-    base_settings = settings_factory()
-    settings = CliApp.run(
-        Xml2DbSettings,
-        cli_args=[*settings_to_argv(base_settings, exclude=["file_glob"]), "-g", "*.gz"],
-    )
-    assert settings.file_glob == "*.gz"

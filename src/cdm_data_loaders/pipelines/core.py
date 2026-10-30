@@ -41,7 +41,6 @@ DEFAULT_SCHEMA_CONTRACT: Final[TSchemaContractDict] = {
     "columns": "evolve",
     "data_type": "discard_row",
 }
-DEFAULT_REJECTED_SUFFIX: Final[str] = "_rejected"
 
 yaml.SafeDumper.add_multi_representer(datetime, yaml.SafeDumper.represent_datetime)
 

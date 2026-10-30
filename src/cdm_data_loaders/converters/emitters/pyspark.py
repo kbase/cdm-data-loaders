@@ -1,7 +1,6 @@
 """Emit PySpark schema objects from immutable typed schema nodes."""
 
-import logging
-from decimal import Decimal
+from collections.abc import Mapping
 from typing import ClassVar, Final
 
 from frozendict import frozendict
@@ -28,7 +27,6 @@ from pyspark.sql.types import (
 )
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.inference import decimal_places, json_type_from_enum
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.ir_values import mutable_value
@@ -38,17 +36,30 @@ from cdm_data_loaders.converters.emitters._tabular_base import (
     DEFAULT_STRING_FORMATS,
     INT32_WIDTH,
     _TabularEmitterBase,
-    fits_int32_bounds,
+    infer_enum_type,
     merge_format_map_with_defaults,
 )
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_FORMAT_MAP: Final[frozendict[str, DataType]] = frozendict(
     {
         "date": DateType(),
         "date-time": TimestampType(),
         **dict.fromkeys(DEFAULT_STRING_FORMATS, StringType()),
+    }
+)
+SCALAR_TYPE_MAP: Final[frozendict[str, DataType]] = frozendict(
+    {
+        "boolean": BooleanType(),
+        "null": NullType(),
+        "collapsed-union": StringType(),
+    }
+)
+ENUM_TYPE_MAP: Final[frozendict[str, DataType]] = frozendict(
+    {
+        "boolean": BooleanType(),
+        "integer": LongType(),
+        "number": DoubleType(),
+        "string": StringType(),
     }
 )
 
@@ -67,7 +78,12 @@ class PySparkEmitter(_TabularEmitterBase[DataType]):
 
     _error_cls: ClassVar[type[ConversionError]] = PySparkEmitterError
     _target_name: ClassVar[str] = "PySpark"
+    _decimal_target_label: ClassVar[str] = "Spark"
     _string_type_label: ClassVar[str] = "StringType"
+    _struct_type_label: ClassVar[str] = "PySpark's StructType"
+    _empty_struct_label: ClassVar[str] = "empty StructType()"
+    _map_type_label: ClassVar[str] = "PySpark's MapType"
+    _map_value_label: ClassVar[str] = "MapType value type"
     _union_approx_reason: ClassVar[str] = "PySpark has no union type."
     _array_label: ClassVar[str] = "PySpark arrays"
     _slot_label: ClassVar[str] = "array's"
@@ -110,92 +126,53 @@ class PySparkEmitter(_TabularEmitterBase[DataType]):
     def _string_type(self) -> DataType:
         return StringType()
 
-    def _scalar_types(self) -> dict[str, DataType]:
-        return {"boolean": BooleanType(), "null": NullType(), "collapsed-union": StringType()}
+    def _int32_type(self) -> DataType:
+        return IntegerType()
+
+    def _int64_type(self) -> DataType:
+        return LongType()
+
+    def _float64_type(self) -> DataType:
+        return DoubleType()
+
+    def _decimal128_type(self, precision: int, scale: int) -> DataType:
+        return DecimalType(precision, scale)
+
+    def _scalar_types(self) -> Mapping[str, DataType]:
+        return SCALAR_TYPE_MAP
 
     def _infer_enum_type(self, values: list[object]) -> DataType:
         return infer_type_from_enum(values)
 
-    def _emit_object(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> DataType:
-        """Emit fixed fields, a dynamic map, or an empty struct."""
-        if depth >= self.max_nesting:
-            logger.warning("Max nesting limit (%d) reached; collapsing object to StringType.", self.max_nesting)
-            return StringType()
-
-        additional = node.additional_properties
-        schema_additional = additional is not None and additional.type not in {"any", "never"}
-        if node.properties:
-            if node.pattern_properties or schema_additional:
-                logger.warning(
-                    "Object schema declares both fixed 'properties' and dynamic 'patternProperties' / "
-                    "'additionalProperties'; PySpark's StructType requires fixed field names, so the "
-                    "dynamic keys are ignored."
+    def _struct_type(self, properties: tuple[SchemaField, ...], ctx: ConversionContext, depth: int) -> StructType:
+        return StructType(
+            [
+                StructField(
+                    prop.name,
+                    self.emit_node(prop.node, ctx, depth + 1),
+                    nullable=not prop.required,
+                    metadata=self.build_metadata(prop.node, ctx, prop),
                 )
-            return StructType(
-                [
-                    StructField(
-                        prop.name,
-                        self.emit_node(prop.node, ctx, depth + 1),
-                        nullable=not prop.required,
-                        metadata=self.build_metadata(prop.node, ctx, prop),
-                    )
-                    for prop in node.properties
-                ]
-            )
-        value_node = additional if schema_additional else None
-        if node.pattern_properties:
-            if len(node.pattern_properties) > 1:
-                logger.warning(
-                    "Multiple 'patternProperties' patterns found; only the first pattern's schema is "
-                    "used as the MapType value type, since PySpark's MapType has a single value type."
-                )
-            value_node = next(iter(node.pattern_properties.values()))
-        if value_node is not None:
-            return MapType(StringType(), self.emit_node(value_node, ctx, depth + 1), valueContainsNull=True)
-        logger.warning(
-            "Object schema has no 'properties', 'patternProperties', or schema-valued "
-            "'additionalProperties'; converting to an empty StructType()."
-        )
-        return StructType([])
-
-    def _emit_map(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> MapType:
-        """Emit a map with independently typed keys and values."""
-        if node.key_type is None or node.value_type is None:
-            msg = "Map nodes require both key_type and value_type"
-            raise PySparkEmitterError(msg)
-        return MapType(
-            self.emit_node(node.key_type, ctx, depth + 1),
-            self.emit_node(node.value_type, ctx, depth + 1),
-            valueContainsNull=True,
+                for prop in properties
+            ]
         )
 
-    def _emit_array(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> ArrayType:
-        """Emit homogeneous arrays, approximating tuple schemas by their first slot."""
-        element = self._resolve_array_element(node)
-        element_type = StringType() if element is None else self.emit_node(element, ctx, depth + 1)
+    def _map_type(
+        self,
+        key_type: DataType,
+        value_type: DataType,
+        *,
+        value_nullable: bool,  # noqa: ARG002
+    ) -> MapType:
+        return MapType(key_type, value_type, valueContainsNull=True)
+
+    def _array_type(
+        self,
+        element_type: DataType,
+        *,
+        element_nullable: bool,  # noqa: ARG002
+    ) -> ArrayType:
         return ArrayType(element_type, containsNull=True)
-
-    def _emit_string(self, node: TypedNode) -> DataType:
-        """Map recognized formats to Spark types."""
-        value = node.constraints.get("format")
-        return self.format_map.get(value, StringType()) if isinstance(value, str) else StringType()
-
-    @staticmethod
-    def _emit_integer(node: TypedNode) -> DataType:
-        """Use int32 only when both bounds fit."""
-        return IntegerType() if fits_int32_bounds(node) else LongType()
-
-    @staticmethod
-    def _emit_number(node: TypedNode) -> DataType:
-        """Derive decimal scale from numeric JSON multipleOf values."""
-        multiple = node.constraints.get("multipleOf")
-        if isinstance(multiple, (int, float, Decimal)):
-            scale = decimal_places(multiple)
-            if scale > DECIMAL128_MAX_PRECISION:
-                msg = f"Unsupported Spark decimal precision/scale: ({DECIMAL128_MAX_PRECISION}, {scale})"
-                raise PySparkEmitterError(msg)
-            return DecimalType(DECIMAL128_MAX_PRECISION, scale)
-        return DoubleType()
 
     @staticmethod
     def _emit_logical(node: TypedNode) -> DataType | None:
@@ -224,9 +201,4 @@ class PySparkEmitter(_TabularEmitterBase[DataType]):
 
 def infer_type_from_enum(values: list[object]) -> DataType:
     """Map homogeneous JSON enum values to Spark scalar types."""
-    return {
-        "boolean": BooleanType(),
-        "integer": LongType(),
-        "number": DoubleType(),
-        "string": StringType(),
-    }[json_type_from_enum(values)]
+    return infer_enum_type(values, ENUM_TYPE_MAP)

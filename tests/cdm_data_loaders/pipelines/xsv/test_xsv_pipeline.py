@@ -14,7 +14,8 @@ from uuid import uuid4
 import pytest
 
 import cdm_data_loaders.pipelines.xsv.pipeline as xsv_pipeline_module
-from cdm_data_loaders.pipelines.core import DEFAULT_REJECTED_SUFFIX, PipelineCli
+from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX
+from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.xsv.pipeline import (
     XsvWorkPaths,
     _process_xsv_file,

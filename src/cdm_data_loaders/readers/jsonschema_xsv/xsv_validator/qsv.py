@@ -138,6 +138,29 @@ def _require_input_file(args: CleanerValidatorArgs, input_file_name: str) -> Pat
     return input_path
 
 
+def _run_qsv_transform_step(
+    cmd: list[str],
+    output_file_name: str,
+    args: CleanerValidatorArgs,
+    *,
+    failed_input_to_copy: Path | None = None,
+) -> str | None:
+    """Execute a qsv transformation command and return ``output_file_name`` on exit code 0."""
+    result = _run_qsv_step(cmd, args)
+    if result is None:
+        return None
+
+    if result.returncode == 0:
+        return output_file_name
+
+    # any other return code: record the error
+    # note: the output file may still exist, but it is ignored
+    args.errors.append(ErrorRecord.from_qsv_result(args.file_name, result))
+    if failed_input_to_copy is not None:
+        copy_safely(failed_input_to_copy, args.qsv_output_dir_path / failed_input_to_copy.name, args)
+    return None
+
+
 def run_qsv_input(args: CleanerValidatorArgs, input_file_name: str) -> str | None:
     """Run qsv input to normalise the file input_file_name.
 
@@ -178,17 +201,7 @@ def run_qsv_input(args: CleanerValidatorArgs, input_file_name: str) -> str | Non
         # input file
         str(input_path),
     ]
-    result = _run_qsv_step(cmd, args)
-    if result is None:
-        return None
-
-    if result.returncode == 0:
-        return output_file_name
-
-    # any other return code: record the error
-    # note: the output file will still exist, but it is ignored
-    args.errors.append(ErrorRecord.from_qsv_result(args.file_name, result))
-    return None
+    return _run_qsv_transform_step(cmd, output_file_name, args)
 
 
 def run_qsv_null_replacement(args: CleanerValidatorArgs, input_file_name: str) -> str | None:
@@ -225,18 +238,7 @@ def run_qsv_null_replacement(args: CleanerValidatorArgs, input_file_name: str) -
         # input file
         str(input_path),
     ]
-    result = _run_qsv_step(cmd, args)
-    if result is None:
-        return None
-
-    if result.returncode == 0:
-        return output_file_name
-    # any other return code: record the error
-    # note: the output file may still exist, but it is ignored
-    args.errors.append(ErrorRecord.from_qsv_result(args.file_name, result))
-    # copy the input file to the output directory for later perusal
-    copy_safely(input_path, args.qsv_output_dir_path / input_file_name, args)
-    return None
+    return _run_qsv_transform_step(cmd, output_file_name, args, failed_input_to_copy=input_path)
 
 
 def run_qsv_validate(

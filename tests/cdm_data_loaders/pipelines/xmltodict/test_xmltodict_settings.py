@@ -7,17 +7,17 @@ from pydantic import ValidationError
 from pydantic_settings import CliApp
 
 from cdm_data_loaders.core.fields import DEFAULTS
-from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
-from tests.conftest import S3
+from cdm_data_loaders.pipelines.xmltodict.settings import PIPELINE_NAME, XmlToDictSettings
 from tests.helpers import settings_to_argv
 
 
 def test_xmltodict_settings_pass_defaults(settings_factory: Callable[..., XmlToDictSettings]) -> None:
-    """file_glob defaults to '*.xml*'. buffer_size and log_interval default to the common CTS defaults."""
+    """file_glob defaults to '*.xml*'. buffer_size, log_interval, and cli_prog_name default as expected."""
     settings = settings_factory()
     assert settings.file_glob == "*.xml*"
     assert settings.buffer_size == DEFAULTS["buffer_size"]
     assert settings.log_interval == DEFAULTS["log_interval"]
+    assert settings.model_config.get("cli_prog_name") == PIPELINE_NAME
 
 
 def test_xmltodict_settings_pass_custom_file_glob(
@@ -35,68 +35,14 @@ def test_xmltodict_settings_pass_custom_xml_tag(
     assert settings.xml_tag == "entry"
 
 
-def test_xmltodict_settings_fail_missing_xml_tag(
+@pytest.mark.parametrize("missing_field", ["xml_tag", "table_name", "dataset_name"])
+def test_xmltodict_settings_fail_missing_required_fields(
     settings_factory: Callable[..., XmlToDictSettings],
+    missing_field: str,
 ) -> None:
-    """Omitting xml_tag raises ValidationError."""
+    """Omitting xml_tag, table_name, or dataset_name raises ValidationError."""
     with pytest.raises(ValidationError):
-        settings_factory(xml_tag=None)
-
-
-def test_xmltodict_settings_fail_missing_table_name(
-    settings_factory: Callable[..., XmlToDictSettings],
-) -> None:
-    """Omitting table_name raises ValidationError."""
-    with pytest.raises(ValidationError):
-        settings_factory(table_name=None)
-
-
-def test_xmltodict_settings_fail_missing_dataset_name(
-    settings_factory: Callable[..., XmlToDictSettings],
-) -> None:
-    """Omitting dataset_name raises ValidationError."""
-    with pytest.raises(ValidationError):
-        settings_factory(dataset_name=None)
-
-
-def test_xmltodict_settings_fail_non_positive_buffer_size(
-    settings_factory: Callable[..., XmlToDictSettings],
-) -> None:
-    """buffer_size must be a positive integer."""
-    with pytest.raises(ValidationError):
-        settings_factory(buffer_size=0)
-
-
-def test_xmltodict_settings_fail_non_positive_log_interval(
-    settings_factory: Callable[..., XmlToDictSettings],
-) -> None:
-    """log_interval must be a positive integer."""
-    with pytest.raises(ValidationError):
-        settings_factory(log_interval=0)
-
-
-def test_xmltodict_settings_fail_local_destination_with_s3_output_dir(
-    settings_factory: Callable[..., XmlToDictSettings],
-) -> None:
-    """An s3:// output_dir raises ValidationError at construction because output_dir must be a local path."""
-    with pytest.raises(ValidationError):
-        settings_factory(output_dir="s3://some-bucket/path", use_destination="local_fs")
-
-
-def test_xmltodict_settings_fail_local_destination_with_s3_flag(
-    settings_factory: Callable[..., XmlToDictSettings],
-) -> None:
-    """An s3 destination with a local output_dir is accepted at construction."""
-    settings = settings_factory(use_destination=S3)
-    assert settings.use_destination == S3
-
-
-def test_xmltodict_settings_pass_unknown_use_destination_rejected(
-    settings_factory: Callable[..., XmlToDictSettings],
-) -> None:
-    """use_destination not present in the dlt config is accepted at construction."""
-    settings = settings_factory(use_destination="not_a_destination")
-    assert settings.use_destination == "not_a_destination"
+        settings_factory(**{missing_field: None})
 
 
 @pytest.mark.parametrize("file_glob_arg", ["--file-glob", "-g"])

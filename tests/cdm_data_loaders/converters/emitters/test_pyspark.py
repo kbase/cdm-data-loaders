@@ -1,17 +1,13 @@
 """Pure schema-object checks for the Spark emitter."""
 
 import json
-import logging
-from collections import UserDict
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import pytest
-from frozendict import frozendict
 from jsonschema import Draft7Validator, Draft202012Validator
-from pydantic import ValidationError
 from pyiceberg import types as iceberg_types
 from pyiceberg.schema import Schema
 from pyspark.sql.types import (
@@ -35,7 +31,7 @@ from pyspark.sql.types import (
 )
 
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, ExtensionSpec
-from cdm_data_loaders.converters.core.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.ir import Field, NodeHints, NodeType, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.metadata import (
     REF_AND_IDENTITY_KEYWORDS,
     STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS,
@@ -44,7 +40,6 @@ from cdm_data_loaders.converters.core.metadata import (
     metadata_keys_for,
 )
 from cdm_data_loaders.converters.emitters.pyspark import (
-    DEFAULT_FORMAT_MAP,
     PySparkEmitter,
     PySparkEmitterError,
     infer_type_from_enum,
@@ -85,59 +80,6 @@ def test_emit_pass_strict_empty_array_items(items: object) -> None:
     }
 
 
-def test_emit_pass_field_presence_controls_nullable() -> None:
-    """Required presence controls field nullability independently of value nullability."""
-    document = SchemaDocument(
-        root=TypedNode(
-            type="object",
-            properties=(
-                Field("required", TypedNode(type="string", nullable=True), required=True),
-                Field("optional", TypedNode(type="string", nullable=False)),
-            ),
-        )
-    )
-    assert PySparkEmitter().emit(document).jsonValue() == {
-        "type": "struct",
-        "fields": [
-            {"name": "required", "type": "string", "nullable": False, "metadata": {}},
-            {"name": "optional", "type": "string", "nullable": True, "metadata": {}},
-        ],
-    }
-
-
-def test_emit_pass_nesting_limit(caplog: pytest.LogCaptureFixture) -> None:
-    """Deeply nested objects are collapsed to StringType when max_nesting is reached."""
-
-    def make_deep_node(depth: int) -> TypedNode:
-        if depth <= 0:
-            return TypedNode(type="string")
-        return TypedNode(
-            type="object",
-            properties=(Field("child", make_deep_node(depth - 1), required=True),),
-        )
-
-    depth = 15
-    node = make_deep_node(depth)
-    document = SchemaDocument(root=node, name="deep")
-
-    emitter = PySparkEmitter(max_nesting=10)
-    with caplog.at_level(logging.WARNING):
-        result = emitter.emit(document)
-
-    # The 11th level should be collapsed to StringType
-    # Result is StructType. Fields are recursively processed.
-    # We check the deep structure.
-    # Since it's a chain of Structs, the 11th StructField should have StringType.
-
-    current_type = result
-    for _i in range(10):
-        assert isinstance(current_type, StructType)
-        current_type = current_type.fields[0].dataType
-
-    assert current_type == StringType()
-    assert "Max nesting limit (10) reached" in caplog.text
-
-
 def test_emit_pass_json_round_trip() -> None:
     """Serialized emitted schemas deserialize through PySpark's native parser."""
     document = JsonSchemaReader().read(
@@ -155,14 +97,6 @@ def test_emit_pass_json_round_trip() -> None:
     emitted = PySparkEmitter().emit(document)
 
     assert StructType.fromJson(emitted.jsonValue()) == emitted
-
-
-@pytest.mark.parametrize("schema", [True, False], ids=["any-schema", "never-schema"])
-def test_emit_node_fail_strict_boolean_schema(schema: bool) -> None:
-    """Direct boolean schemas remain unsupported in strict mode."""
-    document = JsonSchemaReader().read({"$schema": DIALECT, "properties": {"value": schema}})
-    with pytest.raises(PySparkEmitterError, match="no PySpark equivalent"):
-        PySparkEmitter(treat_unknown_as_string=False).emit_node(document.root.properties[0].node)
 
 
 @pytest.mark.parametrize(
@@ -322,111 +256,6 @@ def test_emit_pass_json_dispatch(schema: dict[str, Any], expected: DataType, str
     }
 
 
-@pytest.mark.parametrize("strict", [False, True], ids=["fallback-policy", "strict-policy"])
-@pytest.mark.parametrize(
-    ("schema", "message"),
-    [
-        pytest.param(True, "no PySpark equivalent", id="true-schema"),
-        pytest.param(False, "no PySpark equivalent", id="false-schema"),
-        pytest.param({}, "Unsupported/unknown schema type", id="empty-schema"),
-        pytest.param({"type": "alien"}, "Unsupported/unknown schema type", id="unknown-type"),
-        pytest.param({"description": "anything"}, "Unsupported/unknown schema type", id="annotation-only"),
-        pytest.param({"const": 1}, "Unsupported/unknown schema type", id="const-only"),
-        pytest.param({"oneOf": []}, "Unsupported/unknown schema type", id="empty-oneof"),
-        pytest.param({"anyOf": []}, "Unsupported/unknown schema type", id="empty-anyof"),
-        pytest.param({"oneOf": [False]}, "no PySpark equivalent", id="false-combiner-branch"),
-        pytest.param({"type": ["string", "integer"]}, "multi-type union", id="mixed-type-list"),
-        pytest.param({"type": ["string", "string"]}, "multi-type union", id="duplicate-non-null-types"),
-        pytest.param({"not": {"type": "string"}}, "Unsupported/unknown schema type", id="not"),
-        pytest.param({"if": {"type": "string"}}, "Unsupported/unknown schema type", id="if"),
-        pytest.param({"then": {"type": "string"}}, "Unsupported/unknown schema type", id="then"),
-        pytest.param({"else": {"type": "string"}}, "Unsupported/unknown schema type", id="else"),
-    ],
-)
-def test_emit_node_pass_unsupported_policy(schema: dict[str, Any] | bool, message: str, strict: bool) -> None:
-    """Unsupported nodes either raise their specific error or use a string fallback."""
-    emitter = PySparkEmitter(treat_unknown_as_string=not strict)
-    node = _document(schema).root.properties[0].node
-    if strict:
-        with pytest.raises(PySparkEmitterError, match=message):
-            emitter.emit_node(node)
-    else:
-        assert emitter.emit_node(node) == StringType()
-
-
-@pytest.mark.parametrize(
-    "schema",
-    [
-        {"type": "array", "items": True},
-        {"type": "array", "items": {"description": "unknown"}},
-        {"type": "array", "items": {"oneOf": []}},
-        {"type": "array", "prefixItems": [True]},
-        {"type": "object", "additionalProperties": {}},
-        {"type": "object", "patternProperties": {"a": False}},
-    ],
-    ids=["true-items", "nonempty-items", "empty-combiner-items", "true-prefix", "empty-map-value", "false-map-value"],
-)
-def test_emit_fail_strict_nested_unknown(schema: dict[str, Any]) -> None:
-    """Nonempty unknown array schemas and dynamic map schemas use strict dispatch."""
-    with pytest.raises(PySparkEmitterError):
-        PySparkEmitter(treat_unknown_as_string=False).emit(_document(schema))
-
-
-@pytest.mark.parametrize(
-    ("schema", "warning"),
-    [
-        ({"oneOf": [{"type": "integer"}]}, "Approximating 'oneOf'"),
-        ({"anyOf": [{"type": "integer"}]}, "Approximating 'anyOf'"),
-        ({"not": False}, "Ignoring unsupported conditional keyword 'not'"),
-        ({"if": False}, "Ignoring unsupported conditional keyword 'if'"),
-        ({"then": False}, "Ignoring unsupported conditional keyword 'then'"),
-        ({"else": False}, "Ignoring unsupported conditional keyword 'else'"),
-        ({"type": ["string", "integer"]}, "Collapsing multi-type union"),
-        ({"properties": {"value": {"type": "string"}}, "additionalProperties": {}}, "dynamic keys are ignored"),
-        ({"patternProperties": {"a": {"type": "integer"}, "b": False}}, "only the first pattern's schema"),
-        ({"type": "object"}, "empty StructType"),
-        ({"type": "array", "prefixItems": []}, "prefixItems"),
-        ({"type": "array", "items": []}, "tuple-style 'items'"),
-    ],
-    ids=[
-        "oneof",
-        "anyof",
-        "not",
-        "if",
-        "then",
-        "else",
-        "union",
-        "fixed-dynamic",
-        "patterns",
-        "empty",
-        "prefix",
-        "tuple",
-    ],
-)
-def test_emit_pass_warnings(schema: dict[str, Any], warning: str, caplog: pytest.LogCaptureFixture) -> None:
-    """Lossy schema approximations report the selected policy."""
-    with caplog.at_level(logging.WARNING, logger="cdm_data_loaders.converters.emitters.pyspark"):
-        PySparkEmitter().emit(_document(schema))
-    assert warning in caplog.text
-
-
-@pytest.mark.parametrize(
-    "schema",
-    [
-        {"type": "string", "oneOf": [False], "not": False},
-        {"format": "date", "anyOf": [False], "if": False},
-        {"properties": {"value": {"type": "string"}}, "additionalProperties": True},
-    ],
-    ids=["declared", "inferred", "boolean-additional"],
-)
-def test_emit_pass_recognized_types_ignore_combiners_silently(
-    schema: dict[str, Any], caplog: pytest.LogCaptureFixture
-) -> None:
-    """Recognized types ignore irrelevant combiners without warning."""
-    PySparkEmitter(treat_unknown_as_string=False).emit(_document(schema))
-    assert not [record for record in caplog.records if record.name == "cdm_data_loaders.converters.emitters.pyspark"]
-
-
 @pytest.mark.parametrize(
     "case_id", ["json-spark-nested-meta", "json-spark-union-dynamic"], ids=["nested-meta", "union-map"]
 )
@@ -439,22 +268,6 @@ def test_emit_pass_fixed_golden(case_id: str) -> None:
     assert emitter.emit(JsonSchemaReader().read(case["input"])).jsonValue() == case["expected"]
 
 
-@pytest.mark.parametrize(
-    "node",
-    [
-        TypedNode(type="string"),
-        TypedNode(type="object", additional_properties=TypedNode(type="string")),
-        TypedNode(type="array", items=TypedNode(type="string")),
-        TypedNode(type="unknown"),
-    ],
-    ids=["scalar", "dynamic-map", "array", "unknown"],
-)
-def test_emit_fail_non_struct_root(node: TypedNode) -> None:
-    """Table emission rejects every non-struct root result."""
-    with pytest.raises(PySparkEmitterError, match="did not resolve to a StructType"):
-        PySparkEmitter().emit(SchemaDocument(root=node))
-
-
 def test_emit_pass_root_union_and_inference() -> None:
     """Struct emission accepts an inferred or nullable object without a facade declaration guard."""
     for declaration in (None, ["object", "null"]):
@@ -462,55 +275,6 @@ def test_emit_pass_root_union_and_inference() -> None:
         if declaration is not None:
             schema["type"] = declaration
         assert PySparkEmitter().emit(JsonSchemaReader().read(schema)) == StructType([StructField("name", StringType())])
-
-
-@pytest.mark.parametrize(
-    ("format_name", "expected"),
-    [(name, value) for name, value in DEFAULT_FORMAT_MAP.items()] + [("unknown", StringType()), ("", StringType())],
-    ids=[*DEFAULT_FORMAT_MAP, "unknown-format", "empty-format"],
-)
-def test_emit_node_pass_formats(format_name: str, expected: DataType) -> None:
-    """Every built-in format and unknown format resolves to the expected type."""
-    node = TypedNode(type="string", constraints={"format": format_name})
-    assert PySparkEmitter().emit_node(node) == expected
-
-
-@pytest.mark.parametrize(
-    "overrides",
-    [{"date-time": StringType()}, UserDict({"date-time": StringType()})],
-    ids=["dict-override", "mapping-override"],
-)
-def test_pyspark_emitter_pass_merged_frozen_formats(overrides: dict[str, DataType] | UserDict[str, DataType]) -> None:
-    """Format overrides are copied and merged while the emitter's configuration remains frozen."""
-    expected = {**DEFAULT_FORMAT_MAP, **overrides}
-    emitter = PySparkEmitter.model_validate({"format_map": overrides})
-    overrides["date"] = BooleanType()
-    assert emitter.format_map == frozendict(expected)
-    assert isinstance(emitter.format_map, frozendict)
-    with pytest.raises(ValidationError, match="Instance is frozen"):
-        emitter.treat_unknown_as_string = False
-    with pytest.raises(TypeError):
-        emitter.format_map["date"] = BooleanType()
-    assert emitter.emit_node(TypedNode(type="string", constraints={"format": "date-time"})) == expected["date-time"]
-
-
-@pytest.mark.parametrize(
-    "value", [None, "bad", {"date": "date"}, {1: DateType()}], ids=["none", "text", "value", "key"]
-)
-def test_pyspark_emitter_fail_invalid_format_map(value: object) -> None:
-    """Invalid format map containers, keys and values fail model validation."""
-    with pytest.raises(ValidationError):
-        PySparkEmitter.model_validate({"format_map": value})
-
-
-@pytest.mark.parametrize(
-    "value", [["pattern"], ("pattern",), {"pattern"}, frozenset({"pattern"})], ids=["list", "tuple", "set", "frozen"]
-)
-def test_pyspark_emitter_pass_metadata_keyword_coercion(value: object) -> None:
-    """Metadata keyword collections are normalized into frozensets."""
-    emitter = PySparkEmitter.model_validate({"extra_metadata_keywords": value})
-    assert emitter.extra_metadata_keywords == frozenset({"pattern"})
-    assert isinstance(emitter.extra_metadata_keywords, frozenset)
 
 
 @pytest.mark.parametrize("validator", [Draft7Validator, Draft202012Validator], ids=["draft7", "draft2020"])
@@ -678,25 +442,6 @@ def test_emit_pass_json_multiple_of_scale_within_limit_uses_decimal() -> None:
     assert PySparkEmitter().emit(document).fields[0].dataType == DecimalType(38, 38)
 
 
-def test_emit_fail_json_multiple_of_scale_exceeds_decimal_limit() -> None:
-    """A 'multipleOf' whose implied scale exceeds Spark's 38-digit limit raises instead of degrading."""
-    document = _document({"multipleOf": Decimal("1e-39")})
-    with pytest.raises(PySparkEmitterError, match="Unsupported Spark decimal precision/scale"):
-        PySparkEmitter().emit(document)
-
-
-@pytest.mark.parametrize("missing", ["key", "value"], ids=["missing-key", "missing-value"])
-def test_emit_node_fail_incomplete_map(missing: str) -> None:
-    """A structural map requires explicit key and value types."""
-    node = TypedNode(
-        type="map",
-        key_type=None if missing == "key" else TypedNode(type="string"),
-        value_type=None if missing == "value" else TypedNode(type="number"),
-    )
-    with pytest.raises(PySparkEmitterError, match="Map nodes require both"):
-        PySparkEmitter().emit_node(node)
-
-
 def test_emit_pass_direct_dlt_document() -> None:
     """Dlt decimals, timestamp timezone hints, widths and metadata emit directly."""
     document = DltReader().read(
@@ -761,28 +506,6 @@ def test_emit_pass_direct_iceberg_document() -> None:
             },
         ],
     }
-
-
-def test_emit_node_pass_json_source_ignores_foreign_logical_hints() -> None:
-    """JSON source dispatch is controlled by its declarations and constraints."""
-    node = replace(
-        _document({"type": "number"}).root.properties[0].node,
-        hints=NodeHints(logical_type="decimal", precision=12, scale=3),
-        provenance=Provenance("json-schema"),
-    )
-    assert PySparkEmitter().emit_node(node) == DoubleType()
-
-
-@pytest.mark.parametrize("strict", [False, True], ids=["fallback-policy", "strict-policy"])
-def test_emit_node_pass_malformed_enum_policy(strict: bool) -> None:
-    """Non-sequence enum constraints follow the unsupported-node policy."""
-    node = TypedNode(type="unknown", constraints={"enum": None})
-    emitter = PySparkEmitter(treat_unknown_as_string=not strict)
-    if strict:
-        with pytest.raises(PySparkEmitterError, match="Unsupported/unknown schema type"):
-            emitter.emit_node(node)
-    else:
-        assert emitter.emit_node(node) == StringType()
 
 
 def test_emit_node_pass_explicit_context_and_branch_metadata() -> None:

@@ -11,6 +11,7 @@ import pytest
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
 from cdm_data_loaders.readers.xsd import generate_pyarrow_schema, load_schema
+from tests.helpers import strip_none_values
 
 
 def _json_default(obj: object) -> str:
@@ -21,15 +22,6 @@ def _json_default(obj: object) -> str:
         return obj.decode("utf-8")
     msg = f"Object of type {type(obj)} is not JSON serializable"
     raise TypeError(msg)
-
-
-def _strip_none(value: object) -> object:
-    """Recursively remove keys with None values from dicts to compare Arrow-materialized rows with sparse expected.json."""
-    if isinstance(value, dict):
-        return {k: _strip_none(v) for k, v in value.items() if v is not None}
-    if isinstance(value, list):
-        return [_strip_none(item) for item in value]
-    return value
 
 
 @pytest.mark.parametrize(
@@ -193,5 +185,5 @@ def test_process_xml_file_to_pyarrow_pass_yields_arrow_tables_for_spec_and_examp
     assert table.schema.equals(expected_pa_schema, check_metadata=True)
     assert table.num_rows == len(expected)
 
-    actual_rows = json.loads(json.dumps(_strip_none(table.to_pylist()), default=_json_default))
+    actual_rows = json.loads(json.dumps(strip_none_values(table.to_pylist()), default=_json_default))
     assert actual_rows == expected

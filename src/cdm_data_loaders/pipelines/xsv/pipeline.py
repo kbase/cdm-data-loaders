@@ -17,8 +17,8 @@ from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 
+from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX
 from cdm_data_loaders.pipelines.core import (
-    DEFAULT_REJECTED_SUFFIX,
     DEFAULT_SCHEMA_CONTRACT,
     PipelineCli,
     build_file_ingest_kwargs,
