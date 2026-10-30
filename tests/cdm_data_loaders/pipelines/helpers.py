@@ -3,7 +3,7 @@
 import gzip
 import json
 from collections import defaultdict
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from logging import Logger, getLogger
 from pathlib import Path
@@ -149,6 +149,20 @@ def fetch_all_duckdb(pipeline: dlt.Pipeline, query: str) -> list[tuple[Any, ...]
         client.execute_query(query) as cur,
     ):
         return list(cur.fetchall())
+
+
+def assert_duckdb_table_counts(pipeline: dlt.Pipeline, expected_counts: Mapping[str, int]) -> None:
+    """Assert that each table in `expected_counts` has the expected row count in DuckDB."""
+    for table_name, expected_count in expected_counts.items():
+        ((count,),) = fetch_all_duckdb(pipeline, f"SELECT COUNT(*) FROM {table_name}")  # noqa: S608
+        assert count == expected_count, f"expected {expected_count} rows in '{table_name}', got {count}"
+
+
+def assert_destination_table_counts(dataset_dir: Path, expected_counts: Mapping[str, int]) -> None:
+    """Assert that each table in `expected_counts` has the expected row count on the filesystem destination."""
+    for table_name, expected_count in expected_counts.items():
+        rows = read_destination_rows(dataset_dir, table_name)
+        assert len(rows) == expected_count, f"expected {expected_count} rows in '{table_name}', got {len(rows)}"
 
 
 @contextmanager

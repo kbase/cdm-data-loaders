@@ -116,6 +116,7 @@ class JsonlJsonschemaIngestSettings(ValidatedJsonlIngestSettings):
                 in [
                     FILE_GLOB,
                     SCHEMA_FILES_MODULE,
+                    TABLE_NAMES,
                 ]
             },
         },

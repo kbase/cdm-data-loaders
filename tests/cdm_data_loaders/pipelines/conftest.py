@@ -16,6 +16,7 @@ import pytest
 import xmltodict
 from dlt.common.pipeline import LoadInfo
 
+from cdm_data_loaders.core.fields import GZIP_SUFFIX
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import (
@@ -32,9 +33,6 @@ from tests.cdm_data_loaders.pipelines.framework import (
 from tests.cdm_data_loaders.pipelines.helpers import (
     duckdb_reference_from_jsonl,
     read_jsonl_file,
-)
-from tests.cdm_data_loaders.pipelines.helpers import (
-    read_destination_rows as _read_destination_rows,
 )
 from tests.conftest import (
     LOCAL_FS,
@@ -58,7 +56,6 @@ LOAD_INFO_SAVE_FAILED_JOBS: Final[str] = "Loading pipeline load info had failed 
 PIPELINE_TEST_DATA_DIR: Final[Path] = Path(__file__).parents[2] / "data" / "pipelines"
 UNIREF_DATA_DIR: Final[Path] = PIPELINE_TEST_DATA_DIR / "uniref"
 XMLTODICT_DATA_DIR: Final[Path] = PIPELINE_TEST_DATA_DIR / "xmltodict"
-GZIP_SUFFIX: Final[str] = ".gz"
 
 
 @pytest.fixture
@@ -350,14 +347,6 @@ def copy_test_files(source_dir: Path, file_names: Iterable[str], dest_dir: Path)
         else:
             target.write_bytes((source_dir / name).read_bytes())
     return dest_dir
-
-
-def read_destination_rows(base_dir: Path, table_name: str) -> list[dict[str, Any]]:
-    """Read the rows the filesystem destination wrote for table_name under base_dir, without dlt columns.
-
-    Handles parquet, jsonl and gzipped jsonl files. Returns an empty list if the table has no files.
-    """
-    return _read_destination_rows(base_dir, table_name)
 
 
 def sort_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:

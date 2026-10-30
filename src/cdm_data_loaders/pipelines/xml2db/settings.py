@@ -6,6 +6,7 @@ from pydantic import Field, FilePath, PositiveInt
 
 from cdm_data_loaders.core.fields import (
     NonEmptyStr,
+    XsdFile,
 )
 from cdm_data_loaders.core.settings import (
     XML_CLI_SHORTCUTS,
@@ -103,9 +104,4 @@ class Xml2DbSettings(XmlIngestSettings):
             ),
         ),
     ]
-    xsd_file: Annotated[
-        FilePath,
-        Field(
-            description="Path to the XSD file describing the XML documents to be imported.",
-        ),
-    ]
+    xsd_file: XsdFile

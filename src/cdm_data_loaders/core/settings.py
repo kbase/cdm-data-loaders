@@ -25,8 +25,10 @@ from cdm_data_loaders.core.fields import (
     LoaderFileFormat,
     LogConfigFile,
     LogInterval,
+    TableName,
     UseDestination,
     UseOutputDirForPipelineMetadata,
+    XmlTag,
 )
 from cdm_data_loaders.core.path_fields import LocalInputDir, LocalOutputDir
 
@@ -255,3 +257,10 @@ class XmlIngestSettings(FileFormatIngestSettings):
             description="Glob pattern for XML files",
         ),
     ]
+
+
+class SingleTableXmlIngestSettings(XmlIngestSettings):
+    """Configuration for DLT pipelines that import XML elements into a single target table."""
+
+    table_name: TableName
+    xml_tag: XmlTag

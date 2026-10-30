@@ -10,12 +10,13 @@ from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import (
     DatasetName,
-    NonEmptyStr,
     TableName,
+    XmlTag,
+    XsdFile,
 )
 from cdm_data_loaders.core.settings import (
     XML_CLI_SHORTCUTS,
-    XmlIngestSettings,
+    SingleTableXmlIngestSettings,
     default_settings_with_shortcuts,
 )
 from cdm_data_loaders.readers.xsd import (
@@ -38,7 +39,7 @@ UNIPROT_XSD_FILE: Final[Path] = SCHEMAS_DIR / "uniprot" / "uniprot.xsd"
 UNIREF_XSD_FILE: Final[Path] = SCHEMAS_DIR / "uniref" / "uniref.xsd"
 
 
-class XmlToPyArrowSettings(XmlIngestSettings):
+class XmlToPyArrowSettings(SingleTableXmlIngestSettings):
     """Settings for the XML to PyArrow ingestion pipeline."""
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
@@ -48,19 +49,7 @@ class XmlToPyArrowSettings(XmlIngestSettings):
 
     _xsd_schema: xmlschema.XMLSchema = PrivateAttr()
     _pyarrow_schema: pa.Schema = PrivateAttr()
-    table_name: TableName
-    xml_tag: Annotated[
-        NonEmptyStr,
-        Field(
-            description="XML tag to capture the contents of",
-        ),
-    ]
-    xsd_file: Annotated[
-        FilePath,
-        Field(
-            description="Path to the XSD file describing the XML documents to be imported. Including the schema will ensure that the appropriate relationships (1-to-1 vs 1-to-many) are created between parent and child elements, and that element text is stored consistently.",
-        ),
-    ]
+    xsd_file: XsdFile
     max_recursion_depth: Annotated[
         PositiveInt,
         Field(
@@ -113,7 +102,7 @@ class PresetXmlToPyArrowSettings(XmlToPyArrowSettings):
         ),
     ]
     xml_tag: Annotated[
-        NonEmptyStr,
+        XmlTag,
         Field(
             default=ENTRY_XML_TAG,
             description="XML tag to capture the contents of",

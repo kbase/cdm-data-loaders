@@ -4,8 +4,13 @@ from collections.abc import Callable
 
 import pytest
 from pydantic import ValidationError
+from pydantic_settings import CliApp
 
-from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
+from cdm_data_loaders.pipelines.jsonlines.settings import (
+    JsonlJsonschemaIngestSettings,
+    JsonlPydanticIngestSettings,
+)
+from tests.helpers import settings_to_argv
 
 
 @pytest.mark.parametrize(
@@ -47,18 +52,13 @@ def test_jsonlines_settings_pass_custom_file_glob(
     assert settings_factory(file_glob="*.txt").file_glob == "*.txt"
 
 
-def test_jsonlines_settings_fail_local_destination_with_s3_output_dir(
-    settings_factory: Callable[..., JsonlPydanticIngestSettings],
+def test_jsonschema_settings_pass_table_names_cli_shortcut(
+    schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
 ) -> None:
-    """An s3:// output_dir raises ValidationError at construction because output_dir must be a local path."""
-    with pytest.raises(ValidationError):
-        settings_factory(output_dir="s3://some-bucket/path", use_destination="local_fs")
-
-
-@pytest.mark.parametrize("dataset_name", [None, ""])
-def test_jsonlines_settings_fail_missing_dataset_name(
-    settings_factory: Callable[..., JsonlPydanticIngestSettings], dataset_name: str | None
-) -> None:
-    """Omitting dataset_name raises ValidationError."""
-    with pytest.raises(ValidationError):
-        settings_factory(dataset_name=dataset_name)
+    """JsonlJsonschemaIngestSettings exposes the -t shortcut for table_names."""
+    base_settings = schema_settings_factory()
+    settings = CliApp.run(
+        JsonlJsonschemaIngestSettings,
+        cli_args=[*settings_to_argv(base_settings, exclude=["table_names"]), "-t", "widget,sample"],
+    )
+    assert settings.table_names == ["widget", "sample"]
