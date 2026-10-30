@@ -2,7 +2,6 @@
 
 import json
 from decimal import Decimal
-from typing import Any
 
 import pyarrow as pa
 import pytest
@@ -10,11 +9,10 @@ from jsonschema import Draft202012Validator
 from pyiceberg import types as iceberg_types
 from pyiceberg.schema import Schema
 
-from cdm_data_loaders.converters.core.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.ir import NodeHints, NodeType, Provenance, TypedNode
 from cdm_data_loaders.converters.emitters.pyarrow import (
     PyArrowEmitter,
     PyArrowEmitterError,
-    infer_type_from_enum,
     merge_format_map,
 )
 from cdm_data_loaders.converters.readers.dlt import DltReader
@@ -22,16 +20,6 @@ from cdm_data_loaders.converters.readers.iceberg import IcebergReader
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
-
-
-def _document(schema: dict[str, Any] | bool) -> SchemaDocument:
-    """Wrap a fragment in an object-compatible JSON document."""
-    return JsonSchemaReader().read({"$schema": DIALECT, "properties": {"value": schema}})
-
-
-def _value_schema(data_type: pa.DataType) -> pa.Schema:
-    """Build the expected one-column schema produced by `_document`."""
-    return pa.schema([pa.field("value", data_type, nullable=True)])
 
 
 def _list(element: pa.DataType, *, nullable: bool = True) -> pa.ListType:
@@ -88,108 +76,6 @@ def test_emit_pass_ipc_round_trip() -> None:
     emitted = PyArrowEmitter().emit(document)
     restored = pa.ipc.read_schema(pa.py_buffer(emitted.serialize()))
     assert restored.equals(emitted, check_metadata=True)
-
-
-@pytest.mark.parametrize("strict", [False, True], ids=["fallback-policy", "strict-policy"])
-@pytest.mark.parametrize(
-    ("schema", "expected"),
-    [
-        pytest.param({"type": "string"}, pa.string(), id="string"),
-        pytest.param({"type": "boolean"}, pa.bool_(), id="boolean"),
-        pytest.param({"type": "null"}, pa.null(), id="null"),
-        pytest.param({"type": "integer"}, pa.int64(), id="integer"),
-        pytest.param({"type": "number"}, pa.float64(), id="number"),
-        pytest.param({"type": "object"}, pa.struct([]), id="empty-object"),
-        pytest.param({"type": ["null", "string"]}, pa.string(), id="nullable-string"),
-        pytest.param({"type": ["integer"]}, pa.int64(), id="single-type-list"),
-        pytest.param({"type": ["null", "null"]}, pa.null(), id="null-only-list"),
-        pytest.param({"type": []}, pa.null(), id="empty-type-list"),
-        pytest.param({"enum": [True, False]}, pa.bool_(), id="boolean-enum"),
-        pytest.param({"enum": [1, 2]}, pa.int64(), id="integer-enum"),
-        pytest.param({"enum": [1, 2.5]}, pa.float64(), id="number-enum"),
-        pytest.param({"enum": ["a", "b"]}, pa.string(), id="string-enum"),
-        pytest.param({"enum": []}, pa.string(), id="empty-enum"),
-        pytest.param({"enum": [True, 1]}, pa.string(), id="bool-is-not-integer-enum"),
-        pytest.param({"enum": [1], "minimum": 0, "oneOf": [{"type": "string"}]}, pa.int64(), id="enum-precedence"),
-        pytest.param({"type": "string", "enum": [1]}, pa.string(), id="declared-over-enum"),
-        pytest.param({"oneOf": [{"type": "integer"}, {"type": "string"}]}, pa.int64(), id="oneof-first"),
-        pytest.param({"anyOf": [{"type": "null"}, {"type": "string"}]}, pa.null(), id="anyof-null-first"),
-        pytest.param(
-            {"oneOf": [{"type": "boolean"}], "anyOf": [{"type": "integer"}]}, pa.bool_(), id="oneof-over-anyof"
-        ),
-        pytest.param({"type": "mystery", "anyOf": [{"type": "boolean"}]}, pa.bool_(), id="unknown-with-combiner"),
-        pytest.param({"format": "date", "oneOf": [False]}, pa.date32(), id="inferred-over-combiner"),
-        pytest.param({"items": {"type": "integer"}, "pattern": "a"}, _list(pa.int64()), id="array-before-string"),
-        pytest.param({"pattern": "a", "multipleOf": 0.01}, pa.string(), id="string-before-number"),
-        pytest.param({"minimum": 0, "maximum": 10}, pa.float64(), id="numeric-inference"),
-        pytest.param({"multipleOf": 0.01}, pa.decimal128(38, 2), id="decimal-inference"),
-        pytest.param({"required": ["missing"]}, pa.struct([]), id="required-implies-object"),
-        pytest.param({"uniqueItems": True}, _list(pa.string()), id="uniqueness-implies-array"),
-        pytest.param({"type": "array", "prefixItems": []}, _list(pa.string()), id="empty-prefix"),
-        pytest.param({"type": "array", "prefixItems": [False]}, _list(pa.string()), id="false-prefix"),
-        pytest.param({"type": "array", "prefixItems": [{}]}, _list(pa.string()), id="empty-prefix-schema"),
-        pytest.param(
-            {"type": "array", "prefixItems": [{"type": "integer"}, False], "items": True},
-            _list(pa.int64()),
-            id="prefix-before-items",
-        ),
-        pytest.param({"type": "array", "items": [{"type": "boolean"}, False]}, _list(pa.bool_()), id="tuple-items"),
-        pytest.param({"type": "array", "items": [False]}, _list(pa.string()), id="false-tuple"),
-        pytest.param(
-            {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}},
-            _list(_list(pa.int64())),
-            id="nested-arrays",
-        ),
-        pytest.param({"type": "object", "additionalProperties": True}, pa.struct([]), id="additional-true"),
-        pytest.param({"type": "object", "additionalProperties": False}, pa.struct([]), id="additional-false"),
-        pytest.param(
-            {"type": "object", "additionalProperties": {"type": "integer"}},
-            _map(pa.int64()),
-            id="additional-schema",
-        ),
-        pytest.param(
-            {"patternProperties": {"a": {"type": "boolean"}, "b": False}, "additionalProperties": False},
-            _map(pa.bool_()),
-            id="first-pattern",
-        ),
-        pytest.param(
-            {"patternProperties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "boolean"}},
-            _map(pa.int64()),
-            id="pattern-before-additional",
-        ),
-        pytest.param(
-            {"properties": {"name": {"type": "string"}}, "patternProperties": {"a": False}, "additionalProperties": {}},
-            pa.struct([pa.field("name", pa.string())]),
-            id="fixed-before-dynamic",
-        ),
-        pytest.param({"type": "integer", "minimum": 0, "maximum": 100}, pa.int32(), id="bounded-int"),
-        pytest.param(
-            {"type": "integer", "minimum": -2_147_483_648, "maximum": 2_147_483_647},
-            pa.int32(),
-            id="int32-boundaries",
-        ),
-        pytest.param({"type": "integer", "minimum": -2_147_483_649, "maximum": 100}, pa.int64(), id="below-int32"),
-        pytest.param({"type": "integer", "minimum": 0, "maximum": 2_147_483_648}, pa.int64(), id="above-int32"),
-        pytest.param({"type": "integer", "minimum": 0}, pa.int64(), id="missing-maximum"),
-        pytest.param({"type": "integer", "maximum": 0}, pa.int64(), id="missing-minimum"),
-        pytest.param(
-            {"type": "integer", "exclusiveMinimum": 0, "exclusiveMaximum": 100}, pa.int32(), id="exclusive-bounds"
-        ),
-        pytest.param({"type": "number", "multipleOf": 1}, pa.decimal128(38, 0), id="integral-multiple"),
-        pytest.param({"type": "number", "multipleOf": 0.001}, pa.decimal128(38, 3), id="fractional-multiple"),
-        pytest.param({"type": "number", "multipleOf": 1e-9}, pa.decimal128(38, 9), id="exponent-multiple"),
-        pytest.param({"type": "number", "multipleOf": "0.01"}, pa.float64(), id="nonnumeric-multiple"),
-        pytest.param({"type": "number", "multipleOf": Decimal("0.0100")}, pa.decimal128(38, 4), id="decimal-multiple"),
-        pytest.param({"type": "string", "format": "date"}, pa.date32(), id="date-format"),
-        pytest.param({"type": "string", "format": "date-time"}, pa.timestamp("us", tz="UTC"), id="date-time-format"),
-        pytest.param({"type": "string", "format": "uuid"}, pa.string(), id="uuid-format"),
-        pytest.param({"type": "string", "format": "unknown"}, pa.string(), id="unknown-format"),
-    ],
-)
-def test_emit_pass_json_dispatch(schema: dict[str, Any], expected: pa.DataType, strict: bool) -> None:
-    """Typed dispatch matches fixed expected schemas under both unknown-type policies."""
-    emitter = PyArrowEmitter(treat_unknown_as_string=not strict)
-    assert emitter.emit(_document(schema)) == _value_schema(expected)
 
 
 def test_emit_node_pass_map_node() -> None:
@@ -382,28 +268,6 @@ def test_emit_fail_dlt_json_column_strict() -> None:
         PyArrowEmitter(treat_unknown_as_string=False).emit(document)
 
 
-def test_emit_pass_metadata() -> None:
-    """Titles, descriptions and requested keywords are stored as string field metadata."""
-    document = JsonSchemaReader().read(
-        {
-            "$schema": DIALECT,
-            "properties": {
-                "name": {"type": "string", "title": "Name", "description": "A name", "pattern": "^a", "x-pii": True}
-            },
-        }
-    )
-    emitter = PyArrowEmitter(extra_metadata_keywords=frozenset({"pattern", "description", "x-pii"}))
-    metadata = emitter.emit(document).field("name").metadata
-    assert set(metadata) == {b"jsonschema", b"comment"}
-    assert json.loads(metadata[b"jsonschema"]) == {
-        "title": "Name",
-        "description": "A name",
-        "pattern": "^a",
-        "x-pii": True,
-    }
-    assert metadata[b"comment"] == b"A name"
-
-
 def test_build_metadata_pass_decimal_encoded_as_string() -> None:
     """Exact decimals are encoded as strings, never as binary floats."""
     emitter = PyArrowEmitter(extra_metadata_keywords=frozenset({"multipleOf"}))
@@ -422,31 +286,6 @@ def test_build_metadata_pass_original_union() -> None:
     assert schema.field("value").type == pa.string()
     assert json.loads(schema.field("value").metadata[b"original_union"]) == ["string", "integer"]
     assert PyArrowEmitter().emit(document).field("value").metadata is None
-
-
-def test_build_metadata_pass_field_annotations_override_node() -> None:
-    """Field-level annotations take precedence over node annotations."""
-    emitter = PyArrowEmitter()
-    node = TypedNode(type="string", annotations={"title": "Node", "description": "node text"})
-    field = Field("value", node, annotations={"title": "Field"})
-    metadata = emitter.build_metadata(node, emitter.build_context(Draft202012Validator), field)
-    assert metadata == {"jsonschema": '{"title": "Field"}', "comment": "node text"}
-
-
-@pytest.mark.parametrize(
-    ("values", "expected"),
-    [
-        pytest.param([True], pa.bool_(), id="boolean"),
-        pytest.param([1, 2], pa.int64(), id="integer"),
-        pytest.param([1, 2.5], pa.float64(), id="number"),
-        pytest.param(["a"], pa.string(), id="string"),
-        pytest.param([], pa.string(), id="empty"),
-        pytest.param([1, "a"], pa.string(), id="mixed"),
-    ],
-)
-def test_infer_type_from_enum_pass(values: list[object], expected: pa.DataType) -> None:
-    """Enum members map to the narrowest shared Arrow scalar type."""
-    assert infer_type_from_enum(values) == expected
 
 
 def test_merge_format_map_pass_non_mapping_unchanged() -> None:

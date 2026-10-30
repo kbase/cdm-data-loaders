@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.inference import decimal_places, is_unconstrained_node, json_type_from_enum
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
-from cdm_data_loaders.converters.core.ir import TypedNode
+from cdm_data_loaders.converters.core.ir import NodeHints, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
 from cdm_data_loaders.converters.core.metadata import DEFAULT_METADATA_KEYWORDS, ConversionContext
 
@@ -76,6 +76,23 @@ def infer_enum_type[DataTypeT](values: list[object], type_map: Mapping[str, Data
     return type_map[json_type_from_enum(values)]
 
 
+def resolve_logical_decimal(
+    hints: NodeHints,
+    *,
+    default_precision: int = DECIMAL128_MAX_PRECISION,
+    max_precision: int = DECIMAL128_MAX_PRECISION,
+    target_label: str,
+    error_cls: type[ConversionError],
+) -> tuple[int, int]:
+    """Validate and resolve decimal precision and scale from logical hints."""
+    precision = hints.precision if hints.precision is not None else default_precision
+    scale = hints.scale if hints.scale is not None else 0
+    if not 1 <= precision <= max_precision or scale > precision:
+        msg = f"Unsupported {target_label} decimal precision/scale: ({precision}, {scale})"
+        raise error_cls(msg)
+    return precision, scale
+
+
 class _TabularEmitterBase[DataTypeT](BaseModel):
     """Shared node-dispatch and metadata-selection logic for tabular emitters."""
 
@@ -114,6 +131,11 @@ class _TabularEmitterBase[DataTypeT](BaseModel):
                 validator_cls.__name__,
             )
         return context
+
+    def _emit_root_node(self, document: SchemaDocument) -> DataTypeT:
+        """Emit the document root using the document's detected JSON Schema validator."""
+        validator_cls = document.jsonschema_validator_cls or Draft202012Validator
+        return self.emit_node(document.root, self.build_context(validator_cls))
 
     def emit_node(self, node: TypedNode, ctx: ConversionContext | None = None, depth: int = 0) -> DataTypeT:
         """Emit a scalar or container node without a table-root restriction."""

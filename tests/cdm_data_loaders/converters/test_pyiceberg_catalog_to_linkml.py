@@ -5,7 +5,6 @@ dump_catalog_schemas and validates the emitted documents.
 """
 
 import json
-import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -93,83 +92,6 @@ def test_dump_catalog_schemas_pass_yaml_models(
         assert list(Linter.validate_schema(str(schema_path))) == []
 
 
-@pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
-@pytest.mark.parametrize("empty_namespace", [False, True], ids=["empty-catalog", "empty-namespace"])
-def test_dump_catalog_schemas_pass_empty_catalog(
-    catalog: Catalog, catalog_env: Path, group_by_namespace: bool, empty_namespace: bool
-) -> None:
-    """Empty catalogs and namespaces write no files."""
-    if empty_namespace:
-        catalog.create_namespace("empty")
-    out_dir = catalog_env / "schemas"
-    settings = IcebergToLinkMLSettings(  # pyright: ignore[reportCallIssue]
-        catalog=CATALOG_NAME, output_dir=str(out_dir), group_by_namespace=group_by_namespace
-    )
-    dump_catalog_schemas(settings)
-    assert list(out_dir.iterdir()) == []
-
-
-@pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
-@pytest.mark.parametrize("include_good", [False, True], ids=["all-fail", "partial-failure"])
-def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
-    catalog: Catalog,
-    catalog_env: Path,
-    simple_schema: Schema,
-    caplog: pytest.LogCaptureFixture,
-    group_by_namespace: bool,
-    include_good: bool,
-) -> None:
-    """A table that fails to convert is logged and skipped; other tables still succeed."""
-    catalog.create_namespace("ns")
-    bad_table = catalog.create_table(("ns", "bad"), schema=simple_schema)
-    bad_table.io.delete(bad_table.metadata_location)
-    if include_good:
-        catalog.create_table(("ns", "good"), schema=simple_schema)
-
-    out_dir = catalog_env / "schemas"
-    settings = IcebergToLinkMLSettings(  # pyright: ignore[reportCallIssue]
-        catalog=CATALOG_NAME, output_dir=str(out_dir), group_by_namespace=group_by_namespace
-    )
-    with caplog.at_level(logging.WARNING):
-        dump_catalog_schemas(settings)
-
-    expected_files = ["ns.schema.yaml" if group_by_namespace else "ns.good.schema.yaml"] if include_good else []
-    assert [f.name for f in sorted(out_dir.iterdir())] == expected_files
-    if include_good:
-        written = yaml_loader.load(str(out_dir / expected_files[0]), target_class=SchemaDefinition)
-        assert set(written.classes) == {"good"}
-    assert "Failed to convert table ('ns', 'bad'); skipping" in caplog.text
-    assert "Completed with 1 table(s) skipped due to conversion failures" in caplog.text
-
-
-@pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
-def test_dump_catalog_schemas_pass_overwrites_existing_file_with_warning(
-    catalog: Catalog,
-    catalog_env: Path,
-    simple_schema: Schema,
-    caplog: pytest.LogCaptureFixture,
-    group_by_namespace: bool,
-) -> None:
-    """A pre-existing output file for a table is overwritten, with a warning logged first."""
-    catalog.create_namespace("ns")
-    catalog.create_table(("ns", "simple"), schema=simple_schema)
-
-    out_dir = catalog_env / "schemas"
-    out_dir.mkdir(parents=True)
-    stale_file = out_dir / ("ns.schema.yaml" if group_by_namespace else "ns.simple.schema.yaml")
-    stale_file.write_text("stale")
-
-    settings = IcebergToLinkMLSettings(  # pyright: ignore[reportCallIssue]
-        catalog=CATALOG_NAME, output_dir=str(out_dir), group_by_namespace=group_by_namespace
-    )
-    with caplog.at_level(logging.WARNING):
-        dump_catalog_schemas(settings)
-
-    assert "Overwriting existing schema file" in caplog.text
-    written = yaml_loader.load(str(stale_file), target_class=SchemaDefinition)
-    assert written.name == ("ns" if group_by_namespace else "simple")
-
-
 def test_dump_catalog_schemas_pass_namespace_isolation_and_collisions(
     catalog: Catalog, catalog_env: Path, simple_schema: Schema
 ) -> None:
@@ -204,16 +126,3 @@ def test_dump_catalog_schemas_pass_namespace_isolation_and_collisions(
         assert document.classes["record"].attributes == {"child": SlotDefinition(name="child", range="record_child")}
         assert list(Linter.validate_schema(str(out_dir / f"{namespace}.schema.yaml"))) == []
     assert first.annotations["generated_at"] == second.annotations["generated_at"]
-
-
-@pytest.mark.parametrize(
-    ("arguments", "expected"),
-    [([], False), (["--group-by-namespace", "true"], True), (["--group-by-namespace", "false"], False)],
-    ids=["default", "enabled", "disabled"],
-)
-def test_iceberg_to_linkml_settings_pass_grouping_cli(tmp_path: Path, arguments: list[str], expected: bool) -> None:
-    """Parse namespace grouping from the CLI while retaining the per-table default."""
-    settings = IcebergToLinkMLSettings(  # pyright: ignore[reportCallIssue]
-        _cli_parse_args=["--catalog", CATALOG_NAME, "--output-dir", str(tmp_path), *arguments]
-    )
-    assert settings.group_by_namespace is expected

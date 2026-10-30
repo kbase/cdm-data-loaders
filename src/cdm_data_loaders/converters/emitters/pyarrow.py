@@ -7,7 +7,6 @@ from typing import ClassVar, Final
 
 import pyarrow as pa
 from frozendict import frozendict
-from jsonschema import Draft202012Validator
 from pydantic import Field, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
@@ -21,6 +20,7 @@ from cdm_data_loaders.converters.emitters._tabular_base import (
     _TabularEmitterBase,
     infer_enum_type,
     merge_format_map_with_defaults,
+    resolve_logical_decimal,
 )
 
 INT8_WIDTH: Final = 8
@@ -101,8 +101,7 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
         :rtype: pa.Schema
         :raises PyArrowEmitterError: if the root does not resolve to a struct
         """
-        validator_cls = document.jsonschema_validator_cls or Draft202012Validator
-        result = self.emit_node(document.root, self.build_context(validator_cls))
+        result = self._emit_root_node(document)
         if pa.types.is_struct(result):
             return pa.schema([result.field(index) for index in range(result.num_fields)])
         msg = (
@@ -222,12 +221,13 @@ def infer_type_from_enum(values: list[object]) -> pa.DataType:
 
 def _decimal_type(hints: NodeHints, *, wei: bool) -> pa.DataType:
     """Select decimal128 or decimal256 from precision and scale hints."""
-    default_precision = WEI_PRECISION if wei else DECIMAL128_MAX_PRECISION
-    precision = hints.precision if hints.precision is not None else default_precision
-    scale = hints.scale if hints.scale is not None else 0
-    if not 1 <= precision <= DECIMAL256_MAX_PRECISION or scale > precision:
-        msg = f"Unsupported Arrow decimal precision/scale: ({precision}, {scale})"
-        raise PyArrowEmitterError(msg)
+    precision, scale = resolve_logical_decimal(
+        hints,
+        default_precision=WEI_PRECISION if wei else DECIMAL128_MAX_PRECISION,
+        max_precision=DECIMAL256_MAX_PRECISION,
+        target_label="Arrow",
+        error_cls=PyArrowEmitterError,
+    )
     return pa.decimal128(precision, scale) if precision <= DECIMAL128_MAX_PRECISION else pa.decimal256(precision, scale)
 
 

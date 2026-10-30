@@ -1,14 +1,8 @@
 """Unit tests for jsonschema_to_pyspark."""
 
-# ruff: noqa: SLF001
-import json
-from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
-from pydantic import ValidationError
 from pyspark.sql.types import (
     ArrayType,
     BooleanType,
@@ -26,49 +20,11 @@ from pyspark.sql.types import (
 )
 
 from cdm_data_loaders.converters.jsonschema_to_pyspark import (
-    InvalidJSONSchemaError,
     JSONSchemaToPySpark,
     JSONSchemaToPySparkError,
 )
 from cdm_data_loaders.utils.jsonschema.dereferencer import dereference_schema
 from tests.cdm_data_loaders.converters.conftest import base_object_schema
-
-
-def test_json_schema_to_pyspark_fail_instance_is_frozen(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
-    """Assigning to a JSONSchemaToPySpark instance attribute raises ValidationError (frozen model)."""
-    with pytest.raises(ValidationError, match="Instance is frozen"):
-        jsonschema_to_pyspark_converter.treat_unknown_as_string = False
-
-
-"""convert"""
-
-
-def test_convert_fail_missing_schema_keyword(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
-    """convert() rejects a schema with no top-level '$schema' keyword."""
-    schema = {"type": "object", "properties": {}}
-    with pytest.raises(InvalidJSONSchemaError, match="missing a '\\$schema'"):
-        jsonschema_to_pyspark_converter.convert(schema)
-
-
-@pytest.mark.parametrize(
-    "root_type",
-    ["string", "array", "integer", "number", "boolean", "null"],
-)
-def test_convert_fail_non_object_root_type(
-    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, root_type: str
-) -> None:
-    """convert() rejects any root schema whose declared 'type' isn't 'object'."""
-    schema = base_object_schema(type=root_type)
-    with pytest.raises(JSONSchemaToPySparkError, match="must be of type 'object'"):
-        jsonschema_to_pyspark_converter.convert(schema)
-
-
-def test_convert_fail_unresolved_ref_at_root(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
-    """convert() refuses a root schema containing an un-dereferenced $ref."""
-    schema = base_object_schema(**{"$ref": "#/$defs/Foo"})
-    del schema["type"]
-    with pytest.raises(JSONSchemaToPySparkError, match="unresolved \\$ref"):
-        jsonschema_to_pyspark_converter.convert(schema)
 
 
 def test_convert_fail_root_resolves_to_maptype(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
@@ -107,115 +63,6 @@ def test_convert_pass_root_schema_without_type_keyword_infers_object(
     }
     result = jsonschema_to_pyspark_converter.convert(schema)
     assert result == StructType([StructField("a", StringType(), nullable=True, metadata={})])
-
-
-def test_convert_fail_list_form_object_root_type_rejected(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
-    """convert() rejects a list-form root 'type' (e.g. ['object', 'null']) even though it contains 'object'.
-
-    `JsonSchemaReader.read()` itself accepts this nullable-root form when used
-    directly, but the facade's `require_object_root` guard is intentionally
-    stricter and runs first, so this form is only usable via the reader.
-    """
-    schema = base_object_schema(type=["object", "null"])
-    with pytest.raises(JSONSchemaToPySparkError, match="must be of type 'object'"):
-        jsonschema_to_pyspark_converter.convert(schema)
-
-
-"""convert_from_string / convert_from_file"""
-
-
-def test_convert_from_string_pass_valid_json(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
-    """convert_from_string() parses JSON text and converts it identically to convert()."""
-    schema = base_object_schema(properties={"id": {"type": "integer"}})
-    result = jsonschema_to_pyspark_converter.convert_from_string(json.dumps(schema))
-    assert result == jsonschema_to_pyspark_converter.convert(schema)
-
-
-def test_convert_from_string_fail_invalid_json(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> None:
-    """convert_from_string() propagates a JSONDecodeError for malformed JSON text."""
-    with pytest.raises(json.JSONDecodeError):
-        jsonschema_to_pyspark_converter.convert_from_string("{not valid json")
-
-
-@pytest.mark.parametrize(
-    ("suffix", "dumper"),
-    [(".json", json.dumps), (".yaml", yaml.safe_dump)],
-)
-def test_convert_from_file_pass_supported_extensions(
-    jsonschema_to_pyspark_converter: JSONSchemaToPySpark,
-    tmp_path: Path,
-    suffix: str,
-    dumper: Callable[[dict[str, Any]], str],
-) -> None:
-    """convert_from_file() loads both .json and non-.json (YAML) files correctly."""
-    schema = base_object_schema(properties={"id": {"type": "integer"}})
-    path = tmp_path / f"schema{suffix}"
-    path.write_text(dumper(schema))
-    result = jsonschema_to_pyspark_converter.convert_from_file(str(path))
-    assert result == jsonschema_to_pyspark_converter.convert(schema)
-
-
-def test_convert_from_file_fail_missing_file(
-    jsonschema_to_pyspark_converter: JSONSchemaToPySpark, tmp_path: Path
-) -> None:
-    """convert_from_file() raises FileNotFoundError for a nonexistent path."""
-    missing = tmp_path / "does_not_exist.json"
-    with pytest.raises(FileNotFoundError):
-        jsonschema_to_pyspark_converter.convert_from_file(str(missing))
-
-
-"""_merge_with_builtin_format_map"""
-
-
-def test_merge_with_builtin_format_map_pass_merges_user_overrides_over_defaults() -> None:
-    """_merge_with_builtin_format_map() merges a non-empty user mapping on top of DEFAULT_FORMAT_MAP."""
-    result = JSONSchemaToPySpark._merge_with_builtin_format_map({"date-time": StringType()})
-    assert result["date-time"] == StringType()  # pyright: ignore[reportIndexIssue]
-
-    # untouched default entry survives
-    assert result["date"] == DateType()  # pyright: ignore[reportIndexIssue]
-
-
-@pytest.mark.parametrize("value", [None, {}, "", 0])
-def test_merge_with_builtin_format_map_pass_falsy_value_passed_through_unchanged(
-    value: dict | str | int | None,
-) -> None:
-    """_merge_with_builtin_format_map() passes falsy values straight through without merging."""
-    assert JSONSchemaToPySpark._merge_with_builtin_format_map(value) == value
-
-
-def test_merge_with_builtin_format_map_pass_non_dict_value_passed_through_unchanged() -> None:
-    """_merge_with_builtin_format_map() passes non-dict/non-frozendict values through unchanged."""
-    sentinel = object()
-    assert JSONSchemaToPySpark._merge_with_builtin_format_map(sentinel) is sentinel
-
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        ({"a", "b"}, frozenset({"a", "b"})),
-        (["a", "b"], frozenset({"a", "b"})),
-        (("a", "b"), frozenset({"a", "b"})),
-        (frozenset({"a", "b"}), frozenset({"a", "b"})),
-    ],
-)
-def test_coerce_extra_metadata_keywords_pass_coerces_set_list_tuple_to_frozenset(
-    value: list | tuple | set | frozenset, expected: frozenset[str]
-) -> None:
-    """_coerce_extra_metadata_keywords() coerces set/list/tuple inputs (and passes frozenset through) unchanged in value."""
-    assert JSONSchemaToPySpark._coerce_extra_metadata_keywords(value) == expected
-
-
-def test_coerce_extra_metadata_keywords_pass_frozenset_identity_preserved() -> None:
-    """_coerce_extra_metadata_keywords() returns the exact same frozenset object when already a frozenset."""
-    value = frozenset({"a"})
-    assert JSONSchemaToPySpark._coerce_extra_metadata_keywords(value) is value
-
-
-def test_coerce_extra_metadata_keywords_pass_other_type_passed_through_unchanged() -> None:
-    """_coerce_extra_metadata_keywords() passes non-set/list/tuple/frozenset values through unchanged."""
-    sentinel = object()
-    assert JSONSchemaToPySpark._coerce_extra_metadata_keywords(sentinel) is sentinel
 
 
 @pytest.mark.parametrize("value", [["a"], ("a",), {"a"}])
