@@ -17,7 +17,9 @@ from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
-from lxml.etree import Element, tounicode
+from lxml.etree import Element
+
+from cdm_data_loaders.utils.xml_utils import dump_xml_element
 
 UNIREF_URL = "http://uniprot.org/uniref"
 ENTRY_XML_TAG = f"{{{UNIREF_URL}}}entry"
@@ -37,22 +39,6 @@ PREFIX_TRANSLATION = {
 }
 
 logger: Logger = getLogger(__name__)
-
-
-def dump_xml_element(element: Element) -> str:
-    """Dump an XML element as a string.
-
-    :param element: the XML element
-    :type element: Element
-    :return: the element as a string
-    :rtype: str
-    """
-    unicode_version = tounicode(element)
-    return (
-        unicode_version.replace(' xmlns="https://uniprot.org/uniref"', "")
-        .replace(' xmlns="http://uniprot.org/uniref"', "")
-        .replace(' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"', "")
-    )
 
 
 def generate_dbxref(db: str, acc: str) -> str:

@@ -1,6 +1,5 @@
 """File downloader with tenacity for retry support."""
 
-import hashlib
 from collections.abc import AsyncIterable, Iterable
 from logging import Logger, getLogger
 from pathlib import Path
@@ -9,7 +8,7 @@ from typing import Any
 import httpx
 from frozendict import frozendict
 
-from cdm_data_loaders.utils.checksums import validate_checksum_fn
+from cdm_data_loaders.utils.checksums import new_hasher, validate_checksum_fn
 
 logger: Logger = getLogger(__name__)
 
@@ -158,7 +157,7 @@ class DownloadCore:
         :type checksum_fn: str, optional
         :raises ChecksumMismatchError: if the checksum of the downloaded data does not match the expected checksum.
         """
-        hash_obj = hashlib.new(checksum_fn) if expected_checksum else None
+        hash_obj = new_hasher(checksum_fn) if expected_checksum else None
 
         with destination.open("wb") as fh:
             for chunk in chunks:
@@ -192,7 +191,7 @@ class DownloadCore:
         :type checksum_fn: str, optional
         :raises ChecksumMismatchError: if the checksum of the downloaded data does not match the expected checksum.
         """
-        hash_obj = hashlib.new(checksum_fn) if expected_checksum else None
+        hash_obj = new_hasher(checksum_fn) if expected_checksum else None
 
         # NOTE: file I/O is sync, but chunk iteration must be async
         with destination.open("wb") as fh:

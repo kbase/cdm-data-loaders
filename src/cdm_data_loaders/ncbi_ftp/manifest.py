@@ -11,7 +11,7 @@ import contextlib
 import csv
 import json
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from http import HTTPStatus
@@ -23,13 +23,20 @@ from urllib.parse import urlsplit
 from botocore.exceptions import ClientError
 
 from cdm_data_loaders.ncbi_ftp.assembly import (
-    FILE_FILTERS,
     FTP_HOST,
     build_accession_path,
+    filter_assembly_checksums,
+    parse_assembly_path,
     parse_md5_checksums_file,
 )
-from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX
-from cdm_data_loaders.utils.file_transfer.ftp_client import FTP, connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
+from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX
+from cdm_data_loaders.utils.file_transfer.ftp_client import (
+    FTP,
+    connect_ftp,
+    ftp_noop_keepalive,
+    ftp_retrieve_text,
+    ftp_session,
+)
 from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
     head_object,
     list_objects,
@@ -103,12 +110,8 @@ def download_assembly_summary(database: str = "refseq", ftp_host: str = FTP_HOST
         raise ValueError(msg)
 
     logger.info("Downloading assembly_summary_%s.txt from NCBI FTP ...", database)
-    ftp = connect_ftp(ftp_host)
-    try:
+    with ftp_session(ftp_host) as ftp:
         content = ftp_retrieve_text(ftp, ftp_path)
-    finally:
-        with contextlib.suppress(Exception):
-            ftp.quit()
 
     logger.info("Downloaded assembly summary (%d bytes)", len(content))
     return content
@@ -301,10 +304,12 @@ def _extract_accession_dir_and_id_from_s3_key(key: PurePosixPath) -> tuple[str, 
     e.g. "some/prefix/GCF_000001215.4_Release_6_plus_ISO1_MT/file.gz"
          → ("GCF_000001215.4_Release_6_plus_ISO1_MT", "GCF_000001215.4")
     """
-    if m := ASSEMBLY_PATH_REGEX.search(str(key)):
-        return (m.group(1), m.group(2))
-    msg = f"Could not parse S3 key for accession info: {key}"
-    raise ValueError(msg)
+    try:
+        _db, assembly_dir, accession = parse_assembly_path(key)
+    except ValueError as exc:
+        msg = f"Could not parse S3 key for accession info: {key}"
+        raise ValueError(msg) from exc
+    return (str(assembly_dir), accession)
 
 
 def scan_store_to_synthetic_summary(
@@ -397,14 +402,14 @@ def scan_store_to_synthetic_summary(
 
 def _fetch_accession_checksums_from_ftp(
     ftp: FTP | None, ftp_host: str, last_activity: float, current_accession: str
-) -> tuple[dict[PurePosixPath, str], float]:
+) -> tuple[dict[PurePosixPath, str], float, FTP]:
     """Fetch and parse the md5checksums.txt file for a given accession from FTP.
 
     :param ftp: FTP connection object
     :param ftp_host: NCBI FTP hostname
     :param last_activity: timestamp of the last FTP activity
     :param current_accession: accession identifier
-    :return: dictionary mapping file names to MD5 checksums and updated last_activity timestamp
+    :return: dictionary mapping file names to MD5 checksums, updated last_activity timestamp, and active FTP client
     """
     if ftp is None:
         ftp = connect_ftp(ftp_host)
@@ -416,10 +421,8 @@ def _fetch_accession_checksums_from_ftp(
         ftp_checksums = parse_md5_checksums_file(md5_text)
     except Exception:  # noqa: BLE001
         logger.warning("Cannot fetch md5checksums.txt for %s, keeping in transfer list", current_accession)
-        return {}, last_activity
-    return {
-        fname: md5 for fname, md5 in ftp_checksums.items() if any(fname.match(f"**{suffix}") for suffix in FILE_FILTERS)
-    }, last_activity
+        return {}, last_activity, ftp
+    return filter_assembly_checksums(ftp_checksums), last_activity, ftp
 
 
 def _does_accession_need_update(
@@ -523,7 +526,7 @@ def verify_transfer_candidates(  # noqa: PLR0913
                 continue
 
             # Objects exist — need FTP md5 checksums to decide
-            target_checksums, last_activity = _fetch_accession_checksums_from_ftp(
+            target_checksums, last_activity, ftp = _fetch_accession_checksums_from_ftp(
                 ftp, ftp_host, last_activity, rec.ftp_url
             )
 
@@ -560,6 +563,13 @@ def verify_transfer_candidates(  # noqa: PLR0913
 # Manifest writing
 
 
+def _write_manifest_lines(items: Sequence[str | PurePosixPath], output_path: Path, label: str) -> None:
+    """Write one item per line to *output_path* and log the entry count."""
+    with Path(output_path).open("w") as f:
+        f.writelines(f"{item}\n" for item in items)
+    logger.info("Wrote %d entries to %s manifest: %s", len(items), label, output_path)
+
+
 def write_transfer_manifest(
     diff: DiffResult,
     current_assemblies: dict[str, AssemblyRecord],
@@ -585,10 +595,7 @@ def write_transfer_manifest(
         ftp_path = _ftp_dir_from_url(rec.ftp_url, ftp_host)
         paths.append(ftp_path)
 
-    with Path(output_path).open("w") as f:
-        f.writelines(f"{p}\n" for p in paths)
-
-    logger.info("Wrote %d entries to transfer manifest: %s", len(paths), output_path)
+    _write_manifest_lines(paths, output_path, "transfer")
     return paths
 
 
@@ -600,9 +607,7 @@ def write_removed_manifest(diff: DiffResult, output_path: Path) -> list[str]:
     :return: list of accessions written
     """
     removed = sorted(diff.replaced + diff.suppressed)
-    with output_path.open("w") as f:
-        f.writelines(acc + "\n" for acc in removed)
-    logger.info("Wrote %d entries to removed manifest: %s", len(removed), output_path)
+    _write_manifest_lines(removed, output_path, "removed")
     return removed
 
 
@@ -617,9 +622,7 @@ def write_updated_manifest(diff: DiffResult, output_path: Path) -> list[str]:
     :return: list of accessions written
     """
     updated = sorted(diff.updated)
-    with output_path.open("w") as f:
-        f.writelines(acc + "\n" for acc in updated)
-    logger.info("Wrote %d entries to updated manifest: %s", len(updated), output_path)
+    _write_manifest_lines(updated, output_path, "updated")
     return updated
 
 

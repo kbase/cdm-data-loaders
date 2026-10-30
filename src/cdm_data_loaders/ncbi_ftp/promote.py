@@ -6,6 +6,7 @@ archives replaced/suppressed and updated assemblies, and trims the transfer
 manifest so that a re-run of Phase 2 only downloads remaining entries.
 """
 
+import contextlib
 import tempfile
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,7 +18,7 @@ from typing import Any
 import botocore.exceptions
 import tqdm
 
-from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX
+from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path, parse_assembly_path
 from cdm_data_loaders.ncbi_ftp.metadata import (
     DescriptorResource,
     archive_descriptor,
@@ -150,9 +151,9 @@ def _group_files_by_assembly(
         rel_path = staged_key.relative_to(staging_prefix)
         if not rel_path.is_relative_to("raw_data/"):
             continue
-        m = ASSEMBLY_PATH_REGEX.search(str(staged_key))
-        if m:
-            assembly_files[(PurePosixPath(m.group(1)), m.group(2))].append(staged_key)
+        with contextlib.suppress(ValueError):
+            _db, assembly_dir, accession = parse_assembly_path(staged_key)
+            assembly_files[(assembly_dir, accession)].append(staged_key)
     return assembly_files
 
 
@@ -368,11 +369,11 @@ def _get_accession_path_prefix(accession: str, lakehouse_key_prefix: PurePosixPa
     :param lakehouse_key_prefix: S3 key prefix for the Lakehouse dataset root
     :return: S3 key prefix under which all files for the accession are stored, or None if the accession format is invalid
     """
-    m = ACCESSION_PARTS_REGEX.match(accession)  # returns, e.g., "GCF", "000", "001"', "405" captured groups
-    if not m:
+    try:
+        return lakehouse_key_prefix / build_accession_path(PurePosixPath(accession))
+    except ValueError:
         logger.warning("Invalid accession format: %s", accession)
         return None
-    return PurePosixPath(lakehouse_key_prefix, "raw_data", *m.groups(), accession)
 
 
 def _get_source_dest_pairs_for_accession(
@@ -524,8 +525,8 @@ def _archive_assemblies(  # noqa: PLR0913
         # Infer assembly_dir from key paths for descriptor archival
         assembly_dir: PurePosixPath | None = None
         for src, _ in key_pairs:
-            if adir_match := ASSEMBLY_PATH_REGEX.search(f"{src}"):
-                assembly_dir = PurePosixPath(adir_match.group(1))
+            with contextlib.suppress(ValueError):
+                _, assembly_dir, _ = parse_assembly_path(src)
                 break
 
         # Archive the frictionless descriptor alongside raw data

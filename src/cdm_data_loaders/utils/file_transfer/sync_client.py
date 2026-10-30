@@ -51,11 +51,7 @@ def get_httpx_client() -> httpx.Client:
 class FileDownloader:
     """Synchronous downloader interface."""
 
-    RETRYABLE_EXCEPTIONS = (
-        httpx.TimeoutException,
-        httpx.TransportError,
-        DownloadError,
-    )
+    RETRYABLE_EXCEPTIONS = DownloadCore.RETRYABLE_EXCEPTIONS
 
     def __init__(
         self,
