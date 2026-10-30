@@ -31,10 +31,6 @@ def test_run_jsonlines_pipeline_pass_writes_expected_parquet(
     assert len(dataset.widget_rejected.df()) == 2
     assert_pipeline_report_written(Path(settings.output_dir), load_info)
 
-    # FIXME: remove or improve
-    # get stats on tables
-    # dataset.row_counts(table_names=dataset.tables).fetchall()
-
 
 def test_run_jsonlines_pipeline_fail_unknown_table_name_raises(
     settings_factory: Callable[..., JsonlPydanticIngestSettings],
@@ -42,14 +38,8 @@ def test_run_jsonlines_pipeline_fail_unknown_table_name_raises(
 ) -> None:
     """A table name in table_names that is not in the entity model registry raises ValueError."""
     settings = settings_factory(table_names=["not_a_real_table"])
-
-    if pipeline_runner.mode == ExecutionMode.DOCKER:
-        output = pipeline_runner.run(PYDANTIC_PIPELINE_NAME, settings=settings)
-        assert output == "something"
-
-    else:
-        with pytest.raises(ValueError, match="Unknown table name"):
-            pipeline_runner.run(PYDANTIC_PIPELINE_NAME, settings=settings)
+    with pytest.raises(ValueError, match="Unknown table name"):
+        pipeline_runner.run(PYDANTIC_PIPELINE_NAME, settings=settings)
 
 
 def test_run_jsonlines_pipeline_pass_table_names_none_processes_every_registered_table(
