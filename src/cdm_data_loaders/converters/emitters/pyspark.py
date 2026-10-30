@@ -36,8 +36,6 @@ from cdm_data_loaders.converters.core.metadata import ConversionContext
 from cdm_data_loaders.converters.emitters._tabular_base import (
     DECIMAL128_MAX_PRECISION,
     DEFAULT_STRING_FORMATS,
-    INT32_MAX,
-    INT32_MIN,
     INT32_WIDTH,
     _TabularEmitterBase,
     fits_int32_bounds,
@@ -46,7 +44,6 @@ from cdm_data_loaders.converters.emitters._tabular_base import (
 
 logger = logging.getLogger(__name__)
 
-MAX_DECIMAL_PRECISION: Final = DECIMAL128_MAX_PRECISION
 DEFAULT_FORMAT_MAP: Final[frozendict[str, DataType]] = frozendict(
     {
         "date": DateType(),
@@ -194,10 +191,10 @@ class PySparkEmitter(_TabularEmitterBase[DataType]):
         multiple = node.constraints.get("multipleOf")
         if isinstance(multiple, (int, float, Decimal)):
             scale = decimal_places(multiple)
-            if scale > MAX_DECIMAL_PRECISION:
-                msg = f"Unsupported Spark decimal precision/scale: ({MAX_DECIMAL_PRECISION}, {scale})"
+            if scale > DECIMAL128_MAX_PRECISION:
+                msg = f"Unsupported Spark decimal precision/scale: ({DECIMAL128_MAX_PRECISION}, {scale})"
                 raise PySparkEmitterError(msg)
-            return DecimalType(MAX_DECIMAL_PRECISION, scale)
+            return DecimalType(DECIMAL128_MAX_PRECISION, scale)
         return DoubleType()
 
     @staticmethod
@@ -208,9 +205,9 @@ class PySparkEmitter(_TabularEmitterBase[DataType]):
         hints = node.hints
         logical = hints.logical_type
         if logical in {"decimal", "wei"}:
-            precision = hints.precision if hints.precision is not None else MAX_DECIMAL_PRECISION
+            precision = hints.precision if hints.precision is not None else DECIMAL128_MAX_PRECISION
             scale = hints.scale if hints.scale is not None else 0
-            if not 1 <= precision <= MAX_DECIMAL_PRECISION or scale > precision:
+            if not 1 <= precision <= DECIMAL128_MAX_PRECISION or scale > precision:
                 msg = f"Unsupported Spark decimal precision/scale: ({precision}, {scale})"
                 raise PySparkEmitterError(msg)
             return DecimalType(precision, scale)
@@ -233,16 +230,3 @@ def infer_type_from_enum(values: list[object]) -> DataType:
         "number": DoubleType(),
         "string": StringType(),
     }[json_type_from_enum(values)]
-
-__all__ = [
-    "DEFAULT_FORMAT_MAP",
-    "INT32_MAX",
-    "INT32_MIN",
-    "INT32_WIDTH",
-    "MAX_DECIMAL_PRECISION",
-    "ConversionContext",
-    "PySparkEmitter",
-    "PySparkEmitterError",
-    "infer_type_from_enum",
-    "merge_format_map",
-]

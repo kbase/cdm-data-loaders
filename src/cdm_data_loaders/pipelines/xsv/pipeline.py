@@ -11,10 +11,9 @@ from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Final
+from typing import Any
 
 from dlt.common.pipeline import LoadInfo
-from dlt.common.schema.typing import TSchemaContractDict
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 
@@ -32,9 +31,6 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import Cleane
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import clean_validate_file, qsv_check
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import generate_header
 from cdm_data_loaders.utils.buffer import ListBuffer
-
-SCHEMA_CONTRACT: Final[TSchemaContractDict] = DEFAULT_SCHEMA_CONTRACT
-REJECTED_SUFFIX: Final[str] = DEFAULT_REJECTED_SUFFIX
 
 
 @dataclass
@@ -92,7 +88,10 @@ def _process_xsv_file(
     validated_file_name = clean_validate_file(args)
 
     valid_buffer = ListBuffer(table_name=settings.table_name, max_items=settings.buffer_size)
-    rejected_buffer = ListBuffer(table_name=f"{settings.table_name}{REJECTED_SUFFIX}", max_items=settings.buffer_size)
+    rejected_buffer = ListBuffer(
+        table_name=f"{settings.table_name}{DEFAULT_REJECTED_SUFFIX}",
+        max_items=settings.buffer_size,
+    )
 
     if validated_file_name:
         properties = settings.validated_schema.jsonschema.get("properties", {})
@@ -149,7 +148,7 @@ def run_xsv_pipeline(settings: XsvIngestSettings) -> LoadInfo | None:
             settings,
             work_paths,
             name="xsv_reader",
-            schema_contract=SCHEMA_CONTRACT,
+            schema_contract=DEFAULT_SCHEMA_CONTRACT,
         )
 
         return run_pipeline(

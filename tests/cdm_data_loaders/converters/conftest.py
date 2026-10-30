@@ -29,10 +29,11 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.config import Config
 
+from cdm_data_loaders.converters.core.metadata import ConversionContext
 from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema
 from cdm_data_loaders.converters.jsonschema_to_dlt import JSONSchemaToDlt
 from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrow
-from cdm_data_loaders.converters.jsonschema_to_pyspark import ConversionContext, JSONSchemaToPySpark
+from cdm_data_loaders.converters.jsonschema_to_pyspark import JSONSchemaToPySpark
 
 CATALOG_NAME: Final[str] = "testcat"
 

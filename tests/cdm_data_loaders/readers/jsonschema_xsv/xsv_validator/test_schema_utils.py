@@ -25,9 +25,9 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
     validate_jsonschema,
 )
 from tests.cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.conftest import (
-    COLUMNS,
     DELIMITERS,
 )
+from tests.xsv_fixtures import COLUMNS
 
 VALID_SCHEMA_URI: Final[str] = "https://json-schema.org/draft/2019-09/schema"
 SCHEMA_KEY_VALUE: dict[str, str] = {"$schema": VALID_SCHEMA_URI}

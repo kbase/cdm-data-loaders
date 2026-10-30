@@ -13,9 +13,9 @@ from cdm_data_loaders.converters.core.guards import (
     require_schema_keyword,
 )
 from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase, coerce_extra_metadata_keywords
+from cdm_data_loaders.converters.core.metadata import ConversionContext
 from cdm_data_loaders.converters.emitters.pyspark import (
     DEFAULT_FORMAT_MAP,
-    ConversionContext,
     PySparkEmitter,
     merge_format_map,
 )

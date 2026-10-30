@@ -4,16 +4,17 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+import pytest
 from xml2db import DataModel, Document
 
 from cdm_data_loaders.readers.xml2db_doc import (
     _content_addressed_key,
-    _local_name,
     _xml2db_local_key,
     _xml2db_scalar,
     flatten_xml2db_document,
     is_xml2db_content_addressed_table,
 )
+from cdm_data_loaders.utils.xml_utils import local_name
 from tests.xml_samples import TWO_BOOK_LIBRARY_XML
 
 # _xml2db_scalar
@@ -105,27 +106,21 @@ def test_is_xml2db_content_addressed_table_fail_non_reused_table(library_xsd: Pa
     assert not is_xml2db_content_addressed_table(model, book_table)
 
 
-# _local_name
+# local_name
 
 
-def test_local_name_pass_strips_namespace() -> None:
-    """A Clark-notation expanded name is reduced to its local part."""
-    assert _local_name("{http://uniprot.org/uniref}entry") == "entry"
-
-
-def test_local_name_pass_bare_tag_unchanged() -> None:
-    """A bare tag with no namespace is returned unchanged."""
-    assert _local_name("entry") == "entry"
-
-
-def test_local_name_pass_namespace_only_prefix() -> None:
-    """A name that is only a namespace plus separator reduces to the empty string."""
-    assert _local_name("{http://uniprot.org/uniref}") == ""
-
-
-def test_local_name_pass_lxml_tags_are_always_strings() -> None:
-    """Non-string input passes through untouched."""
-    assert _local_name(None) is None  # pyright: ignore[reportArgumentType]
+@pytest.mark.parametrize(
+    ("input_str", "output"),
+    [
+        pytest.param("{http://uniprot.org/uniref}entry", "entry", id="Clark-notation-expanded-name"),
+        pytest.param("entry", "entry", id="bare-tag-no-namespace"),
+        pytest.param("{http://uniprot.org/uniref}", "", id="namespace-only-empty-string"),
+        pytest.param(None, None, id="Non-string input"),
+    ],
+)
+def test_local_name_parsing(input_str: str | None, output: str | None) -> None:
+    """Tests for parsing local names."""
+    assert local_name(tag=input_str) == output  # pyright: ignore[reportArgumentType]
 
 
 # flatten_xml2db_document, non-reused tables

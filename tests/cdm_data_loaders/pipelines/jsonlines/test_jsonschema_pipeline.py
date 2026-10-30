@@ -12,18 +12,20 @@ import pyarrow as pa
 import pytest
 from pydantic import ValidationError
 
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrowError
-from cdm_data_loaders.pipelines.jsonlines.base import make_page_router
+from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
+    JSONSchemaToPyArrowError,
+    coerce_record_for_pyarrow,
+)
 from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
     _make_resolve_error,
     build_entity_resource,
     build_pyarrow_schemas,
-    coerce_record_for_pyarrow,
     convert_schema_to_pyarrow,
     load_entity_schemas,
     run_jsonlines_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlJsonschemaIngestSettings
+from cdm_data_loaders.readers.jsonlines import make_page_router
 from cdm_data_loaders.utils.jsonschema.dereferencer import DereferencingError
 from tests.cdm_data_loaders.pipelines.jsonlines.conftest import make_item
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas import (

@@ -23,11 +23,13 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     prepend_header,
 )
 from tests.cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.conftest import (
-    COLUMNS,
     DELIMITERS,
+    _touch,
+)
+from tests.xsv_fixtures import (
+    COLUMNS,
     VALID_ROWS,
     WriteFile,
-    _touch,
     build_xsv_content,
 )
 

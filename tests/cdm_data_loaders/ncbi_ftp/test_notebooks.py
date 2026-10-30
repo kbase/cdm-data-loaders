@@ -6,7 +6,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST
+from cdm_data_loaders.ncbi_ftp.constants import FTP_HOST
 from cdm_data_loaders.ncbi_ftp.manifest import (
     AssemblyRecord,
     compute_diff,

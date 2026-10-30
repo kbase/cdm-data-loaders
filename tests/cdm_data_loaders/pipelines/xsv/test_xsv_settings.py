@@ -8,7 +8,8 @@ from pydantic import ValidationError
 
 from cdm_data_loaders.core.fields import DEFAULTS
 from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
-from tests.cdm_data_loaders.pipelines.xsv.conftest import COLUMNS, DEFAULT_XSV_SCHEMA, VALID_SCHEMA_URI
+from tests.cdm_data_loaders.pipelines.xsv.conftest import DEFAULT_XSV_SCHEMA, VALID_SCHEMA_URI
+from tests.xsv_fixtures import COLUMNS
 
 """defaults and basic construction"""
 

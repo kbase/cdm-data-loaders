@@ -12,8 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.inference import is_unconstrained_node
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
-from cdm_data_loaders.converters.core.ir import TypedNode, Value
-from cdm_data_loaders.converters.core.ir_values import mutable_value
+from cdm_data_loaders.converters.core.ir import TypedNode
+from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
 from cdm_data_loaders.converters.core.metadata import DEFAULT_METADATA_KEYWORDS, ConversionContext
 
 INT32_MIN: Final = -2_147_483_648

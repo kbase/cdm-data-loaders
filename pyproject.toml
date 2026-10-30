@@ -53,7 +53,6 @@ xmltodict = "cdm_data_loaders.pipelines.xmltodict.pipeline:cli"
 xmltopyarrow = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:cli"
 xml2db = "cdm_data_loaders.pipelines.xml2db.pipeline:cli"
 xsv = "cdm_data_loaders.pipelines.xsv.pipeline:cli"
-hello_world = "cdm_data_loaders.utils.hello_world:cli"
 
 [dependency-groups]
 dev = [
@@ -208,9 +207,7 @@ ignore = [
 # ANN401: type annotations
 # ARG002: unused mock args
 # PLR0913: too many arguments
-"tests/**/*.py" = ["D401", "S101", "T201", "FBT001", "FBT002", "ARG002", "PLR0913", ]
-"tests/integration/**/*.py" = ["S101", "T201", "FBT001", "FBT002", "ARG002", "ANN401"]
-"tests/utils/test_s3.py" = ["ANN401"]
+"tests/**/*.py" = ["D401", "S101", "T201", "FBT001", "FBT002", "ARG002", "PLR0913", "PLR0917"]
 
 [tool.ruff.lint.mccabe]
 # Flag errors (`C901`) whenever the complexity level exceeds 15.

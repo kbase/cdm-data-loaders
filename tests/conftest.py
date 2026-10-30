@@ -84,6 +84,7 @@ def library_xsd(tmp_path: Path) -> Path:
     xsd_path.write_text(LIBRARY_XSD, encoding="utf-8")
     return xsd_path
 
+
 _notebook_utils_available: bool | None = None
 
 

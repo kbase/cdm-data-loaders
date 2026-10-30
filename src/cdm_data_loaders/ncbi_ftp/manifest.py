@@ -14,6 +14,7 @@ import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from ftplib import FTP
 from http import HTTPStatus
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
@@ -23,15 +24,13 @@ from urllib.parse import urlsplit
 from botocore.exceptions import ClientError
 
 from cdm_data_loaders.ncbi_ftp.assembly import (
-    FTP_HOST,
     build_accession_path,
     filter_assembly_checksums,
     parse_assembly_path,
     parse_md5_checksums_file,
 )
-from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX
+from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, FTP_HOST
 from cdm_data_loaders.utils.file_transfer.ftp_client import (
-    FTP,
     connect_ftp,
     ftp_noop_keepalive,
     ftp_retrieve_text,
@@ -463,7 +462,7 @@ def _does_accession_need_update(
     return False
 
 
-def verify_transfer_candidates(  # noqa: PLR0913
+def verify_transfer_candidates(  # noqa: PLR0913, PLR0917
     accessions: list[str],
     current_assemblies: dict[str, AssemblyRecord],
     bucket: PurePosixPath,

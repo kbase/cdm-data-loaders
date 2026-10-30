@@ -29,17 +29,15 @@ from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
     upload_fileobj,
 )
 from tests.cdm_data_loaders.utils.file_transfer.s3.conftest import (
-    ALT_BUCKET,
     FILES_IN_BUCKETS,
     HTTP_200,
     HTTP_204,
     SAMPLE_FILES,
     SIZE_DATA,
     SIZE_HELLO,
-    TEST_BUCKET,
     populate_mock_s3,
 )
-from tests.conftest import BUCKETS
+from tests.conftest import ALT_BUCKET, BUCKETS, TEST_BUCKET
 
 # split_s3_path
 PATH = "path"

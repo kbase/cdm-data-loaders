@@ -11,22 +11,7 @@ from cdm_data_loaders.pipelines.xsv.pipeline import XsvWorkPaths
 from cdm_data_loaders.pipelines.xsv.settings import XsvIngestSettings
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import generate_header
 from tests.helpers import make_cts_settings
-from tests.xsv_fixtures import (
-    ALL_RAGGED_ROWS,
-    COLUMNS,
-    PARTIAL_RAGGED_ROWS,
-    VALID_ROWS,
-    rows_to_csv,
-    write_xsv,
-)
-
-__all__ = [
-    "ALL_RAGGED_ROWS",
-    "COLUMNS",
-    "PARTIAL_RAGGED_ROWS",
-    "VALID_ROWS",
-    "rows_to_csv",
-]
+from tests.xsv_fixtures import COLUMNS, write_xsv
 
 VALID_SCHEMA_URI: Final[str] = "https://json-schema.org/draft/2020-12/schema"
 

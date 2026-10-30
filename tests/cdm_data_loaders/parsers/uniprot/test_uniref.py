@@ -11,13 +11,13 @@ from lxml.etree import XMLParser, fromstring
 from cdm_data_loaders.parsers.uniprot.uniref import (
     ENTRY_XML_TAG,
     UNIREF_URL,
-    dump_xml_element,
     extract_cluster,
     extract_cross_refs,
     generate_dbxref,
     parse_uniref_entry,
 )
 from cdm_data_loaders.readers.xml import stream_xml_file
+from cdm_data_loaders.utils.xml_utils import dump_xml_element
 
 NOW = datetime.datetime.now(tz=datetime.UTC)
 PROTOCOL = "uniref_9000"

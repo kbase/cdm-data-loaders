@@ -10,7 +10,7 @@ registry loader.
 from collections.abc import Callable
 from importlib import import_module
 from logging import Logger, getLogger
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any
 
 import dlt
 import pyarrow as pa
@@ -25,7 +25,6 @@ from cdm_data_loaders.pipelines.core import (
     run_pipeline,
 )
 from cdm_data_loaders.readers.jsonlines import (
-    REJECTED_COLUMNS,
     ParseErrorResolver,
     make_page_router,
     stream_jsonl_lines,
@@ -36,20 +35,7 @@ if TYPE_CHECKING:
 
 logger: Logger = getLogger(__name__)
 
-SCHEMA_CONTRACT: Final[TSchemaContractDict] = DEFAULT_SCHEMA_CONTRACT
-
 ResourceFactory = Callable[[str, dict[str, Any], Any], "DltResource"]
-
-__all__ = [
-    "REJECTED_COLUMNS",
-    "SCHEMA_CONTRACT",
-    "ParseErrorResolver",
-    "ResourceFactory",
-    "build_entity_resource",
-    "load_registry_dict",
-    "make_page_router",
-    "run_registry_ingest",
-]
 
 
 def load_registry_dict(module_path: str, attribute_name: str, type_hint: str = "") -> dict[str, Any]:
@@ -135,7 +121,7 @@ def build_entity_resource(  # noqa: PLR0913
         max_table_nesting=0,
         parallelized=True,
     )
-    validated.apply_hints(schema_contract=TSchemaContractDict(**SCHEMA_CONTRACT))  # pyright: ignore[reportCallIssue]
+    validated.apply_hints(schema_contract=TSchemaContractDict(**DEFAULT_SCHEMA_CONTRACT))  # pyright: ignore[reportCallIssue]
     return validated
 
 

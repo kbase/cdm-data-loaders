@@ -9,7 +9,7 @@ from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline imp
     load_entity_models,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import PYDANTIC_PIPELINE_NAME, JsonlPydanticIngestSettings
-from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
+from tests.cdm_data_loaders.pipelines.framework import ExecutionMode, PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_pipeline_report_written,
     assert_run_ok,
@@ -43,8 +43,13 @@ def test_run_jsonlines_pipeline_fail_unknown_table_name_raises(
     """A table name in table_names that is not in the entity model registry raises ValueError."""
     settings = settings_factory(table_names=["not_a_real_table"])
 
-    with pytest.raises(ValueError, match="Unknown table name"):
-        pipeline_runner.run(PYDANTIC_PIPELINE_NAME, settings=settings)
+    if pipeline_runner.mode == ExecutionMode.DOCKER:
+        output = pipeline_runner.run(PYDANTIC_PIPELINE_NAME, settings=settings)
+        assert output == "something"
+
+    else:
+        with pytest.raises(ValueError, match="Unknown table name"):
+            pipeline_runner.run(PYDANTIC_PIPELINE_NAME, settings=settings)
 
 
 def test_run_jsonlines_pipeline_pass_table_names_none_processes_every_registered_table(
