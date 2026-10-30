@@ -9,7 +9,7 @@ from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline imp
     load_entity_models,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import PYDANTIC_PIPELINE_NAME, JsonlPydanticIngestSettings
-from tests.cdm_data_loaders.pipelines.framework import ExecutionMode, PipelineTestRunner
+from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_pipeline_report_written,
     assert_run_ok,

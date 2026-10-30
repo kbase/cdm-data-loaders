@@ -360,7 +360,7 @@ def reconstruct_entries(tables: dict[str, list[dict[str, Any]]]) -> list[dict[st
     return entries
 
 
-def _attach_nested_rows(  # noqa: PLR0917
+def _attach_nested_rows(
     target: dict[str, Any],
     parent_id: str,
     parent_index: dict[str, list[tuple[str, dict[str, Any]]]],

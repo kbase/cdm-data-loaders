@@ -122,7 +122,7 @@ def test_dump_catalog_schemas_pass_empty_catalog(
 
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
 @pytest.mark.parametrize("include_good", [False, True], ids=["all-fail", "partial-failure"])
-def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(  # noqa: PLR0917
+def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
     catalog: Catalog,
     catalog_env: Path,
     simple_schema: Schema,
