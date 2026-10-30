@@ -128,16 +128,13 @@ class DictBuffer(BufferCore):
         yield from super()._add_items(items_to_add)
 
 
-class ListBuffer(BufferCore):
-    """A single-table buffer for routing one row at a time, e.g. validation results."""
+class SingleTableBufferMixin:
+    """Shared single-table `add_item` implementation for `ListBuffer` and `ArrowListBuffer`."""
 
-    table_name: Annotated[NonEmptyStr, Field(..., description="Table to save the data to")]
-
-    @model_validator(mode="after")
-    def set_up_table_names(self) -> Self:
-        """Set up the buffers after successfully instantiating the Buffer instance."""
-        self._init_buffers()
-        return self
+    @property
+    def _single_table_name(self) -> str:
+        """Return the single target table name for this buffer."""
+        raise NotImplementedError
 
     def add_item(self, item_to_add: Any) -> Generator[DataItemWithMeta, Any]:  # noqa: ANN401
         """Add an item to the table. Yield a page if the table reaches max_items.
@@ -147,7 +144,17 @@ class ListBuffer(BufferCore):
         :yield: generator that yields collected rows to the appropriate dlt table
         :rtype: Generator[DataItemWithMeta, Any]
         """
-        yield from super()._add_item(self.table_name, item_to_add)
+        yield from self._add_item(self._single_table_name, item_to_add)  # type: ignore[attr-defined]
+
+
+class ListBuffer(SingleTableBufferMixin, BufferCore):
+    """A single-table buffer for routing one row at a time, e.g. validation results."""
+
+    table_name: Annotated[NonEmptyStr, Field(..., description="Table to save the data to")]
+
+    @property
+    def _single_table_name(self) -> str:
+        return self.table_name
 
 
 class ArrowBufferCore(BufferCore):
@@ -180,7 +187,7 @@ class ArrowDictBuffer(ArrowBufferCore, DictBuffer):
     """A pyarrow buffer for parsed results keyed by table name. Results are yielded as pyarrow tables."""
 
 
-class ArrowListBuffer(ArrowBufferCore):
+class ArrowListBuffer(SingleTableBufferMixin, ArrowBufferCore):
     """A single-table pyarrow buffer for routing one row at a time. Results are yielded as pyarrow tables."""
 
     _table_name: NonEmptyStr = PrivateAttr()
@@ -195,12 +202,6 @@ class ArrowListBuffer(ArrowBufferCore):
         self._table_name = next(iter(self.table_to_schema_map.keys()))
         return self
 
-    def add_item(self, item_to_add: Any) -> Generator[DataItemWithMeta, Any]:  # noqa: ANN401
-        """Add an item to the table. Yield a page if the table reaches max_items.
-
-        :param item_to_add: the item
-        :type  item_to_add: Any
-        :yield: generator that yields collected rows to the appropriate dlt table
-        :rtype: Generator[DataItemWithMeta, Any]
-        """
-        yield from super()._add_item(self._table_name, item_to_add)
+    @property
+    def _single_table_name(self) -> str:
+        return self._table_name

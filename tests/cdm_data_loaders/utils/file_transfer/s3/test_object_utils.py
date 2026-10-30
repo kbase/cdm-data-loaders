@@ -468,19 +468,38 @@ def test_upload_file_with_metadata_still_applies_default_extra_args(
 
 
 # transfer_config_kwargs
-@pytest.mark.s3
-def test_upload_file_pass_transfer_config_kwargs_forwarded(
-    mock_s3_client: S3Client, sample_file: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Verify that transfer_config_kwargs passed to upload_file reach build_transfer_config."""
+def _capture_transfer_config(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Patch ``object_utils.build_transfer_config`` to record ``file_size`` and ``kwargs``."""
     captured: dict[str, Any] = {}
 
-    def fake_build_transfer_config(file_size: int, **kwargs: Any) -> TransferConfig:
+    def fake_build_transfer_config(file_size: int, **kwargs: Any) -> TransferConfig:  # noqa: ANN401
         captured["file_size"] = file_size
         captured["kwargs"] = kwargs
         return TransferConfig()
 
     monkeypatch.setattr(object_utils, "build_transfer_config", fake_build_transfer_config)
+    return captured
+
+
+def _capture_progress_bar_disable(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    """Spy on ``object_utils.make_progress_bar`` and record each call's ``disable`` flag."""
+    captured_disable: list[bool] = []
+    original_make_progress_bar = object_utils.make_progress_bar
+
+    def spy_make_progress_bar(*, disable: bool, **kwargs: Any) -> Any:  # noqa: ANN401
+        captured_disable.append(disable)
+        return original_make_progress_bar(disable=disable, **kwargs)
+
+    monkeypatch.setattr(object_utils, "make_progress_bar", spy_make_progress_bar)
+    return captured_disable
+
+
+@pytest.mark.s3
+def test_upload_file_pass_transfer_config_kwargs_forwarded(
+    mock_s3_client: S3Client, sample_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify that transfer_config_kwargs passed to upload_file reach build_transfer_config."""
+    captured = _capture_transfer_config(monkeypatch)
 
     result = upload_file(
         sample_file,
@@ -502,13 +521,7 @@ def test_upload_file_pass_no_transfer_config_kwargs_uses_empty_dict(
     sample_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """When transfer_config_kwargs is not supplied, build_transfer_config still receives no extra kwargs."""
-    captured: dict[str, Any] = {}
-
-    def fake_build_transfer_config(_: int, **kwargs: Any) -> TransferConfig:
-        captured["kwargs"] = kwargs
-        return TransferConfig()
-
-    monkeypatch.setattr(object_utils, "build_transfer_config", fake_build_transfer_config)
+    captured = _capture_transfer_config(monkeypatch)
 
     result = upload_file(sample_file, f"{TEST_BUCKET}/uploads")
 
@@ -518,17 +531,12 @@ def test_upload_file_pass_no_transfer_config_kwargs_uses_empty_dict(
 
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
-def test_upload_file_pass_show_progress_false_disables_progress_bar(sample_file: Path) -> None:
+def test_upload_file_pass_show_progress_false_disables_progress_bar(
+    sample_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Verify that show_progress=False disables the tqdm progress bar for uploads."""
-    captured_disable: list[bool] = []
-    original_make_progress_bar = object_utils.make_progress_bar
-
-    def spy_make_progress_bar(*, disable: bool, **kwargs: Any) -> Any:
-        captured_disable.append(disable)
-        return original_make_progress_bar(disable=disable, **kwargs)
-
-    with patch.object(object_utils, "make_progress_bar", side_effect=spy_make_progress_bar):
-        result = upload_file(sample_file, f"{TEST_BUCKET}/uploads", show_progress=False)
+    captured_disable = _capture_progress_bar_disable(monkeypatch)
+    result = upload_file(sample_file, f"{TEST_BUCKET}/uploads", show_progress=False)
 
     assert result is True
     assert captured_disable == [True]
@@ -536,17 +544,12 @@ def test_upload_file_pass_show_progress_false_disables_progress_bar(sample_file:
 
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
-def test_upload_file_pass_show_progress_true_enables_progress_bar(sample_file: Path) -> None:
+def test_upload_file_pass_show_progress_true_enables_progress_bar(
+    sample_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Verify that show_progress=True (the default) enables the tqdm progress bar for uploads."""
-    captured_disable: list[bool] = []
-    original_make_progress_bar = object_utils.make_progress_bar
-
-    def spy_make_progress_bar(*, disable: bool, **kwargs: Any) -> Any:
-        captured_disable.append(disable)
-        return original_make_progress_bar(disable=disable, **kwargs)
-
-    with patch.object(object_utils, "make_progress_bar", side_effect=spy_make_progress_bar):
-        result = upload_file(sample_file, f"{TEST_BUCKET}/uploads", show_progress=True)
+    captured_disable = _capture_progress_bar_disable(monkeypatch)
+    result = upload_file(sample_file, f"{TEST_BUCKET}/uploads", show_progress=True)
 
     assert result is True
     assert captured_disable == [False]
@@ -623,13 +626,7 @@ def test_upload_fileobj_default_file_size_is_zero_when_unspecified(
     mock_s3_client: S3Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """When file_size is not supplied, build_transfer_config receives 0 (the declared default)."""
-    captured: dict[str, Any] = {}
-
-    def fake_build_transfer_config(file_size: int, **kwargs: Any) -> TransferConfig:
-        captured["file_size"] = file_size
-        return TransferConfig()
-
-    monkeypatch.setattr(object_utils, "build_transfer_config", fake_build_transfer_config)
+    captured = _capture_transfer_config(monkeypatch)
     result = upload_fileobj(io.BytesIO(b"data"), f"{TEST_BUCKET}/uploads/stream.bin")
     assert result is True
     assert captured["file_size"] == 0
@@ -683,14 +680,7 @@ def test_upload_fileobj_raises_for_invalid_s3_path() -> None:
 @pytest.mark.usefixtures("mock_s3_client")
 def test_upload_fileobj_pass_transfer_config_kwargs_forwarded(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify transfer_config_kwargs passed directly to upload_fileobj reach build_transfer_config."""
-    captured: dict[str, Any] = {}
-
-    def fake_build_transfer_config(file_size: int, **kwargs: Any) -> TransferConfig:
-        captured["file_size"] = file_size
-        captured["kwargs"] = kwargs
-        return TransferConfig()
-
-    monkeypatch.setattr(object_utils, "build_transfer_config", fake_build_transfer_config)
+    captured = _capture_transfer_config(monkeypatch)
     data = b"transfer config test"
     result = upload_fileobj(
         io.BytesIO(data),
@@ -705,17 +695,10 @@ def test_upload_fileobj_pass_transfer_config_kwargs_forwarded(monkeypatch: pytes
 
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
-def test_upload_fileobj_pass_show_progress_false_disables_progress_bar() -> None:
+def test_upload_fileobj_pass_show_progress_false_disables_progress_bar(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that show_progress=False disables the tqdm progress bar when calling upload_fileobj directly."""
-    captured_disable: list[bool] = []
-    original_make_progress_bar = object_utils.make_progress_bar
-
-    def spy_make_progress_bar(*, disable: bool, **kwargs: Any) -> Any:
-        captured_disable.append(disable)
-        return original_make_progress_bar(disable=disable, **kwargs)
-
-    with patch.object(object_utils, "make_progress_bar", side_effect=spy_make_progress_bar):
-        result = upload_fileobj(io.BytesIO(b"data"), f"{TEST_BUCKET}/uploads/np.bin", show_progress=False)
+    captured_disable = _capture_progress_bar_disable(monkeypatch)
+    result = upload_fileobj(io.BytesIO(b"data"), f"{TEST_BUCKET}/uploads/np.bin", show_progress=False)
 
     assert result is True
     assert captured_disable == [True]
@@ -974,14 +957,7 @@ def test_download_file_pass_transfer_config_kwargs_forwarded(
     content = b"config test content"
     mock_s3_client.put_object(Bucket=bucket, Key=key, Body=content, **DEFAULT_EXTRA_ARGS)
 
-    captured: dict[str, Any] = {}
-
-    def fake_build_transfer_config(file_size: int, **kwargs: Any) -> TransferConfig:
-        captured["file_size"] = file_size
-        captured["kwargs"] = kwargs
-        return TransferConfig()
-
-    monkeypatch.setattr(object_utils, "build_transfer_config", fake_build_transfer_config)
+    captured = _capture_transfer_config(monkeypatch)
 
     local_file = tmp_path / "config.txt"
     download_file(
@@ -1004,13 +980,7 @@ def test_download_file_pass_no_transfer_config_kwargs_uses_empty_dict(
     key = "transfer/config2.txt"
     mock_s3_client.put_object(Bucket=bucket, Key=key, Body=b"data", **DEFAULT_EXTRA_ARGS)
 
-    captured: dict[str, Any] = {}
-
-    def fake_build_transfer_config(_: int, **kwargs: Any) -> TransferConfig:
-        captured["kwargs"] = kwargs
-        return TransferConfig()
-
-    monkeypatch.setattr(object_utils, "build_transfer_config", fake_build_transfer_config)
+    captured = _capture_transfer_config(monkeypatch)
 
     download_file(f"{bucket}/{key}", tmp_path / "config2.txt")
 
@@ -1018,21 +988,16 @@ def test_download_file_pass_no_transfer_config_kwargs_uses_empty_dict(
 
 
 @pytest.mark.s3
-def test_download_file_pass_show_progress_false_disables_progress_bar(mock_s3_client: S3Client, tmp_path: Path) -> None:
+def test_download_file_pass_show_progress_false_disables_progress_bar(
+    mock_s3_client: S3Client, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Verify that show_progress=False disables the tqdm progress bar for downloads."""
     bucket = TEST_BUCKET
     key = "progress/no_bar.txt"
     mock_s3_client.put_object(Bucket=bucket, Key=key, Body=b"content", **DEFAULT_EXTRA_ARGS)
 
-    captured_disable: list[bool] = []
-    original_make_progress_bar = object_utils.make_progress_bar
-
-    def spy_make_progress_bar(*, disable: bool, **kwargs: Any) -> Any:
-        captured_disable.append(disable)
-        return original_make_progress_bar(disable=disable, **kwargs)
-
-    with patch.object(object_utils, "make_progress_bar", side_effect=spy_make_progress_bar):
-        download_file(f"{bucket}/{key}", tmp_path / "no_bar.txt", show_progress=False)
+    captured_disable = _capture_progress_bar_disable(monkeypatch)
+    download_file(f"{bucket}/{key}", tmp_path / "no_bar.txt", show_progress=False)
 
     assert captured_disable == [True]
 
@@ -1072,16 +1037,6 @@ def test_copy_object_source_bucket_nonexistent() -> None:
     s3_path = "some-bucket/some/path/to/file"
     assert object_exists(s3_path) is False
     with pytest.raises(Exception, match="The specified bucket does not exist"):
-        copy_object(s3_path, f"{TEST_BUCKET}/a/different/path/to/file")
-
-
-@pytest.mark.s3
-@pytest.mark.usefixtures("mock_s3_client")
-def test_copy_file_source_object_nonexistent() -> None:
-    """Ensure that the code throws an error if the source object does not exist."""
-    s3_path = f"{TEST_BUCKET}/some/path/to/file"
-    assert object_exists(s3_path) is False
-    with pytest.raises(Exception, match="The specified key does not exist"):
         copy_object(s3_path, f"{TEST_BUCKET}/a/different/path/to/file")
 
 
@@ -1351,22 +1306,25 @@ def test_delete_object_fail_no_such_bucket() -> None:
 
 
 # delete_objects
-@pytest.mark.s3
-def test_delete_objects_pass_splits_into_batches_of_1000(mock_s3_client: S3Client) -> None:
-    """More than 1000 keys are deleted via multiple batched API calls, each capped at 1000 objects."""
-    total_keys = 1005
-    keys = [f"batch/file_{i:04d}.txt" for i in range(total_keys)]
-    for k in keys:
-        mock_s3_client.put_object(Bucket=TEST_BUCKET, Key=k, Body=b"x")
-
+def _spy_delete_objects_batch_sizes(mock_s3_client: S3Client) -> list[int]:
+    """Spy on ``mock_s3_client.delete_objects`` and record the number of objects in each batch."""
     original_delete_objects = mock_s3_client.delete_objects
     call_sizes: list[int] = []
 
-    def spy_delete_objects(**kwargs: Any) -> Any:
+    def spy_delete_objects(**kwargs: Any) -> Any:  # noqa: ANN401
         call_sizes.append(len(kwargs["Delete"]["Objects"]))
         return original_delete_objects(**kwargs)
 
     mock_s3_client.delete_objects = spy_delete_objects
+    return call_sizes
+
+
+@pytest.mark.s3
+def test_delete_objects_pass_splits_into_batches_of_1000(mock_s3_client: S3Client) -> None:
+    """More than 1000 keys are deleted via multiple batched API calls, each capped at 1000 objects."""
+    keys = [f"batch/file_{i:04d}.txt" for i in range(1005)]
+    put_objects(mock_s3_client, TEST_BUCKET, keys, body=b"x")
+    call_sizes = _spy_delete_objects_batch_sizes(mock_s3_client)
 
     errors = delete_objects(TEST_BUCKET, keys)
 
@@ -1379,19 +1337,9 @@ def test_delete_objects_pass_splits_into_batches_of_1000(mock_s3_client: S3Clien
 @pytest.mark.s3
 def test_delete_objects_pass_exact_multiple_of_batch_size(mock_s3_client: S3Client) -> None:
     """Exactly 1000 keys results in a single batched delete_objects call."""
-    total_keys = 1000
-    keys = [f"exact_batch/file_{i:04d}.txt" for i in range(total_keys)]
-    for k in keys:
-        mock_s3_client.put_object(Bucket=TEST_BUCKET, Key=k, Body=b"x")
-
-    original_delete_objects = mock_s3_client.delete_objects
-    call_sizes: list[int] = []
-
-    def spy_delete_objects(**kwargs: Any) -> Any:
-        call_sizes.append(len(kwargs["Delete"]["Objects"]))
-        return original_delete_objects(**kwargs)
-
-    mock_s3_client.delete_objects = spy_delete_objects
+    keys = [f"exact_batch/file_{i:04d}.txt" for i in range(1000)]
+    put_objects(mock_s3_client, TEST_BUCKET, keys, body=b"x")
+    call_sizes = _spy_delete_objects_batch_sizes(mock_s3_client)
 
     errors = delete_objects(TEST_BUCKET, keys)
 

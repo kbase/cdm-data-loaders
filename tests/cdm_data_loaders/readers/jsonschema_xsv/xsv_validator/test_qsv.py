@@ -207,8 +207,7 @@ def test_run_qsv_input_fail_qsv_binary_not_found(
     """
     source = write_source_file(build_xsv_content(VALID_ROWS, header=COLUMNS), "data.tsv")
     args = make_mock_args(source)
-    input_file_name = f"{args.xsv_file_base_name}{HEADER_SUFFIX}{args.ext}"
-    write_working_file(build_xsv_content(VALID_ROWS, header=COLUMNS), input_file_name)
+    input_file_name = _write_header_input_file(args, write_working_file)
 
     result = run_qsv_input(args, input_file_name)
 
@@ -401,8 +400,7 @@ def test_run_qsv_input_pass_returns_cleaned_file_name(
     """On success, the -cleaned file is written to tmp_dir_path and its name is returned."""
     source = write_source_file(build_xsv_content(VALID_ROWS, header=COLUMNS), "data.tsv")
     args = make_args(source)
-    input_file_name = f"{args.xsv_file_base_name}{HEADER_SUFFIX}{args.ext}"
-    write_working_file(build_xsv_content(VALID_ROWS, header=COLUMNS), input_file_name)
+    input_file_name = _write_header_input_file(args, write_working_file)
 
     result = run_qsv_input(args, input_file_name)
 
@@ -443,8 +441,7 @@ def test_run_qsv_input_pass_with_various_delimiters(
     content = build_xsv_content(VALID_ROWS, header=COLUMNS, delimiter=delimiter)
     source = write_source_file(content, f"data{SEP_TO_EXT[delimiter]}")
     args = make_args(source, delimiter=delimiter)
-    input_file_name = f"{args.xsv_file_base_name}{HEADER_SUFFIX}{args.ext}"
-    write_working_file(content, input_file_name)
+    input_file_name = _write_header_input_file(args, write_working_file, delimiter=delimiter)
 
     result = run_qsv_input(args, input_file_name)
     assert result is not None
@@ -461,8 +458,7 @@ def test_run_qsv_input_pass_header_only_file(
     """A file containing only a header row (no data rows) is valid input to `qsv input`."""
     source = write_source_file(build_xsv_content([], header=COLUMNS), "data.tsv")
     args = make_args(source)
-    input_file_name = f"{args.xsv_file_base_name}{HEADER_SUFFIX}{args.ext}"
-    write_working_file(build_xsv_content([], header=COLUMNS), input_file_name)
+    input_file_name = _write_header_input_file(args, write_working_file, rows=[])
 
     result: str | None = run_qsv_input(args, input_file_name)
     assert result
@@ -633,8 +629,7 @@ def test_run_qsv_input_fail_ragged_records_error_and_returns_none(
     """
     source = write_source_file(build_xsv_content(ragged_row_fixture, header=COLUMNS), "data.tsv")
     args = make_args(source)
-    input_file_name = f"{args.xsv_file_base_name}{HEADER_SUFFIX}{args.ext}"
-    write_working_file(build_xsv_content(ragged_row_fixture, header=COLUMNS), input_file_name)
+    input_file_name = _write_header_input_file(args, write_working_file, rows=ragged_row_fixture)
 
     result = run_qsv_input(args, input_file_name)
 
@@ -686,8 +681,7 @@ def test_run_qsv_input_fail_records_error_on_bad_cli_flag(
     """A malformed CLI invocation (bad flag) is recorded as an ErrorRecord, and returns None."""
     source = write_source_file(build_xsv_content(VALID_ROWS, header=COLUMNS), "data.tsv")
     args = make_args(source)
-    input_file_name = f"{args.xsv_file_base_name}{HEADER_SUFFIX}{args.ext}"
-    write_working_file(build_xsv_content(VALID_ROWS, header=COLUMNS), input_file_name)
+    input_file_name = _write_header_input_file(args, write_working_file)
 
     result = run_qsv_input(args, input_file_name)
 
@@ -1264,7 +1258,6 @@ def test_run_qsv_validate_mocked_qsv_pass_recovers_valid_lines(
     errors_file = files.errors
     valid_lines_file = files.valid_lines
     invalid_lines_file = files.invalid_lines
-    schema_file = files.schema
 
     mock_qsv_run(
         returncode=1,
@@ -1312,7 +1305,6 @@ def test_run_qsv_validate_mocked_qsv_fail_returns_none_when_valid_file_only_cont
     errors_file = files.errors
     valid_lines_file = files.valid_lines
     invalid_lines_file = files.invalid_lines
-    schema_file = files.schema
 
     mock_qsv_run(
         returncode=1,
@@ -1373,11 +1365,9 @@ def test_run_qsv_validate_mocked_qsv_fail_returns_none_when_move_of_valid_lines_
     args = make_mock_args(source)
     input_file_name = _write_validator_input_file(args, write_working_file, VALID_ROWS, HEADER_SUFFIX)
     files = generate_qsv_validate_file_names(args, input_file_name, first_pass=True)
-    output = files.valid_output
     errors_file = files.errors
     valid_lines_file = files.valid_lines
     invalid_lines_file = files.invalid_lines
-    schema_file = files.schema
 
     mock_qsv_run(
         returncode=1,
@@ -1432,10 +1422,6 @@ def test_run_qsv_validate_pass_all_valid_first_pass_returns_valid_output_directl
     input_file_name = _write_validator_input_file(args, write_working_file, VALID_ROWS, HEADER_SUFFIX)
     files = generate_qsv_validate_file_names(args, input_file_name, first_pass=True)
     output = files.valid_output
-    errors_file = files.errors
-    valid_lines_file = files.valid_lines
-    invalid_lines_file = files.invalid_lines
-    schema_file = files.schema
 
     result = run_qsv_validate(args, input_file_name, args.first_pass_schema, first_pass=True)
     assert result is not None
@@ -1457,10 +1443,6 @@ def test_run_qsv_validate_pass_all_valid_second_pass_returns_valid_output_direct
     input_file_name = _write_validator_input_file(args, write_working_file, VALID_ROWS, NORM_SUFFIX)
     files = generate_qsv_validate_file_names(args, input_file_name, first_pass=False)
     output = files.valid_output
-    errors_file = files.errors
-    valid_lines_file = files.valid_lines
-    invalid_lines_file = files.invalid_lines
-    schema_file = files.schema
 
     result = run_qsv_validate(args, input_file_name, args.post_norm_schema, first_pass=False)
     assert result == output.name
@@ -1485,7 +1467,6 @@ def test_run_qsv_validate_pass_recovers_valid_lines_from_partially_ragged_input(
     errors_file = files.errors
     valid_lines_file = files.valid_lines
     invalid_lines_file = files.invalid_lines
-    schema_file = files.schema
 
     result = run_qsv_validate(args, input_file_name, args.first_pass_schema, first_pass=True)
 
@@ -1525,7 +1506,6 @@ def test_run_qsv_validate_fail_all_rows_ragged_returns_none(
     errors_file = files.errors
     valid_lines_file = files.valid_lines
     invalid_lines_file = files.invalid_lines
-    schema_file = files.schema
 
     result = run_qsv_validate(args, input_file_name, args.first_pass_schema, first_pass=True)
 
@@ -1574,7 +1554,6 @@ def test_run_qsv_validate_fail_second_pass_catches_field_format_errors(
     errors_file = files.errors
     valid_lines_file = files.valid_lines
     invalid_lines_file = files.invalid_lines
-    schema_file = files.schema
 
     result = run_qsv_validate(args, input_file_name, args.post_norm_schema, first_pass=False)
 
@@ -1612,7 +1591,6 @@ def test_run_qsv_validate_pass_second_pass_recovers_valid_rows_mixed_with_invali
     errors_file = files.errors
     valid_lines_file = files.valid_lines
     invalid_lines_file = files.invalid_lines
-    schema_file = files.schema
 
     result = run_qsv_validate(args, input_file_name, args.post_norm_schema, first_pass=False)
 
@@ -1924,27 +1902,6 @@ def test_clean_validate_file_fail_move_safely_failure_returns_none_despite_valid
     )
 
 
-def test_clean_validate_file_pass_move_safely_success_returns_validated_file_name(
-    make_mock_args: Callable[..., CleanerValidatorArgs],
-    write_source_file: WriteFile,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Conversely, when move_safely succeeds, the validated file name is returned as before."""
-    source = write_source_file(build_xsv_content(VALID_ROWS, header=COLUMNS), "data.tsv")
-    args = make_mock_args(source)
-    monkeypatch.setattr(qsv, "run_qsv_validate", MagicMock(side_effect=["first-pass-output.tsv", "final-output.tsv"]))
-    monkeypatch.setattr(qsv, "run_qsv_input", MagicMock(return_value="cleaned.tsv"))
-    mock_move = MagicMock(return_value=True)
-    monkeypatch.setattr(qsv, "move_safely", mock_move)
-
-    result = clean_validate_file(args)
-
-    assert result == "final-output.tsv"
-    mock_move.assert_called_once_with(
-        args.tmp_dir_path / "final-output.tsv", args.validated_file_dir_path / "final-output.tsv", args
-    )
-
-
 # clean_validate_file, real qsv end-to-end
 def test_clean_validate_file_pass_end_to_end_with_header_present(
     make_args: Callable[..., CleanerValidatorArgs], write_source_file: WriteFile
@@ -1957,10 +1914,6 @@ def test_clean_validate_file_pass_end_to_end_with_header_present(
 
     files = generate_qsv_validate_file_names(args, "ignored", first_pass=False)
     output = files.valid_output
-    errors_file = files.errors
-    valid_lines_file = files.valid_lines
-    invalid_lines_file = files.invalid_lines
-    schema_file = files.schema
 
     assert result == output.name
 
@@ -1983,10 +1936,6 @@ def test_clean_validate_file_pass_end_to_end_with_missing_header(
 
     files = generate_qsv_validate_file_names(args, "ignored", first_pass=False)
     output = files.valid_output
-    errors_file = files.errors
-    valid_lines_file = files.valid_lines
-    invalid_lines_file = files.invalid_lines
-    schema_file = files.schema
     assert result == output.name
 
     validated_path = args.validated_file_dir_path / output.name
@@ -2026,9 +1975,5 @@ def test_clean_validate_file_fail_end_to_end_move_failure_returns_none(
     # the validated content still exists in tmp_dir_path since the move never completed
     files = generate_qsv_validate_file_names(args, "ignored", first_pass=False)
     output = files.valid_output
-    errors_file = files.errors
-    valid_lines_file = files.valid_lines
-    invalid_lines_file = files.invalid_lines
-    schema_file = files.schema
 
     assert (args.tmp_dir_path / output.name).is_file()

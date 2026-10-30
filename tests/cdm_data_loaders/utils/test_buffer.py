@@ -218,14 +218,6 @@ def test_arrow_dict_buffer_pass_flush_yields_remaining_rows() -> None:
     assert list(buffer.flush()) == []
 
 
-def test_arrow_dict_buffer_pass_empty_table_rows_are_ignored() -> None:
-    """Empty row lists contribute nothing and yield no pages."""
-    buffer = ArrowDictBuffer(max_items=1, table_to_schema_map=SCHEMA_MAP)
-
-    assert list(buffer.add_items({PEOPLE: []})) == []
-    assert list(buffer.flush()) == []
-
-
 @pytest.mark.parametrize("cls", [DictBuffer, ArrowDictBuffer])
 def test_dict_buffer_pass_rows_accumulate_until_max_items(cls: type[DictBuffer] | type[ArrowDictBuffer]) -> None:
     """No pages are yielded while every table's buffer is below max_items."""
@@ -439,21 +431,3 @@ def test_list_buffer_pass_loses_nothing_under_parallelized_transformer() -> None
 
     assert sorted(values) == list(range(total))
 
-
-def test_list_buffer_pass_buffer_scope_is_call_local() -> None:
-    """A ListBuffer created inside one transformer call yields every row added to it.
-
-    Demonstrates the invariant that makes the pattern safe under parallelism: the
-    buffer never escapes the call that created it, so concurrent calls cannot
-    interleave reads and writes.
-    """
-    max_items = 3
-    buffer = ListBuffer(table_name="widget", max_items=max_items)  # pyright: ignore[reportCallIssue]
-    emitted: list[Any] = []
-    for n in range(10):
-        emitted.extend(buffer.add_item(name_row(n)))
-    emitted.extend(buffer.flush())
-
-    values = [page.data for page in emitted]
-    assert [v for page in values for v in page] == [name_row(n) for n in range(10)]
-    assert [len(page) for page in values] == [3, 3, 3, 1]

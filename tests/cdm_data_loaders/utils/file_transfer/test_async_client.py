@@ -12,10 +12,8 @@ from cdm_data_loaders.utils.file_transfer.async_client import AsyncFileDownloade
 DOWNLOAD_URL = "https://example.com/file.txt"
 
 
-@pytest.mark.asyncio
-async def test_max_concurrency_is_enforced(tmp_path: Path) -> None:
-    """No more than max_concurrency downloads may run at once."""
-    max_concurrency = 2
+async def _measure_peak_concurrency(tmp_path: Path, max_concurrency: int | None, n_tasks: int = 5) -> int:
+    """Run ``n_tasks`` concurrent downloads and return the peak active request count."""
     active = 0
     peak = 0
     lock = asyncio.Lock()
@@ -27,7 +25,6 @@ async def test_max_concurrency_is_enforced(tmp_path: Path) -> None:
             active += 1
             peak = max(peak, active)
 
-        # Block all requests here until released
         await block.wait()
         async with lock:
             active -= 1
@@ -41,64 +38,28 @@ async def test_max_concurrency_is_enforced(tmp_path: Path) -> None:
 
     async def start_download(i: int) -> None:
         dest = tmp_path / f"file_{i}.txt"
-        await downloader.download(
-            DOWNLOAD_URL,
-            dest,
-        )
+        await downloader.download(DOWNLOAD_URL, dest)
 
-    tasks = [asyncio.create_task(start_download(i)) for i in range(5)]
-
-    # Give tasks time to start and block
+    tasks = [asyncio.create_task(start_download(i)) for i in range(n_tasks)]
     await asyncio.sleep(0.1)
-    # Release blocked requests
     block.set()
     await asyncio.gather(*tasks)
-    # peak concurrency should be limited by the max_concurrency value
+    return peak
+
+
+@pytest.mark.asyncio
+async def test_max_concurrency_is_enforced(tmp_path: Path) -> None:
+    """No more than max_concurrency downloads may run at once."""
+    max_concurrency = 2
+    peak = await _measure_peak_concurrency(tmp_path, max_concurrency=max_concurrency)
     assert peak == max_concurrency
 
 
 @pytest.mark.asyncio
 async def test_no_concurrency_limit_when_none(tmp_path: Path) -> None:
     """When max_concurrency is None, all downloads may run concurrently."""
-    active = 0
-    peak = 0
-    lock = asyncio.Lock()
-    block = asyncio.Event()
-
-    async def handler(_: httpx.Request) -> httpx.Response:
-        nonlocal active, peak
-        async with lock:
-            active += 1
-            peak = max(peak, active)
-
-        await block.wait()
-        async with lock:
-            active -= 1
-
-        return httpx.Response(200, content=b"ok")
-
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-
-    downloader = AsyncFileDownloader(
-        client,
-        max_concurrency=None,
-    )
-
-    async def start_download(i: int) -> None:
-        dest = tmp_path / f"file_{i}.txt"
-        await downloader.download(
-            DOWNLOAD_URL,
-            dest,
-        )
-
     n_tasks = 5
-    tasks = [asyncio.create_task(start_download(i)) for i in range(n_tasks)]
-
-    await asyncio.sleep(0.1)
-    block.set()
-    await asyncio.gather(*tasks)
-
-    # All tasks should have entered concurrently
+    peak = await _measure_peak_concurrency(tmp_path, max_concurrency=None, n_tasks=n_tasks)
     assert peak == n_tasks
 
 

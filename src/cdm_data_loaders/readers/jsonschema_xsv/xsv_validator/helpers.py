@@ -2,11 +2,12 @@
 
 import os
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 from shutil import copy, move
-from typing import Final, Self
+from typing import Any, Final, Self
 
 from pydantic import (
     BaseModel,
@@ -158,6 +159,21 @@ class CleanerValidatorArgs(BaseModel):
         return f"invalid{self.ext}"
 
 
+def _transfer_safely(
+    op: Callable[[Path, Path], Any],
+    src: Path,
+    dst: Path,
+    args: "CleanerValidatorArgs",
+) -> bool:
+    """Execute a file transfer operation (`copy` or `move`), recording an `ErrorRecord` on `OSError`."""
+    try:
+        op(src, dst)
+    except OSError as exc:
+        args.errors.append(ErrorRecord.from_exception(args.file_name, exc))
+        return False
+    return True
+
+
 def copy_safely(src: Path, dst: Path, args: "CleanerValidatorArgs") -> bool:
     """Copy `src` to `dst`, recording an `ErrorRecord` and returning False on failure.
 
@@ -170,12 +186,7 @@ def copy_safely(src: Path, dst: Path, args: "CleanerValidatorArgs") -> bool:
     :return: True if the copy succeeded, False otherwise
     :rtype: bool
     """
-    try:
-        copy(src, dst)
-    except OSError as exc:
-        args.errors.append(ErrorRecord.from_exception(args.file_name, exc))
-        return False
-    return True
+    return _transfer_safely(copy, src, dst, args)
 
 
 def move_safely(src: Path, dst: Path, args: "CleanerValidatorArgs") -> bool:
@@ -190,12 +201,7 @@ def move_safely(src: Path, dst: Path, args: "CleanerValidatorArgs") -> bool:
     :return: True if the move succeeded, False otherwise
     :rtype: bool
     """
-    try:
-        move(src, dst)
-    except OSError as exc:
-        args.errors.append(ErrorRecord.from_exception(args.file_name, exc))
-        return False
-    return True
+    return _transfer_safely(move, src, dst, args)
 
 
 def non_header_lines_present(path: Path) -> bool:
