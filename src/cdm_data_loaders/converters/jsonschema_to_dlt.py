@@ -3,16 +3,15 @@
 from typing import TYPE_CHECKING, Any
 
 from dlt.common.schema.typing import TStoredSchema
-from pydantic import BaseModel, ConfigDict, Field, InstanceOf, field_validator
+from pydantic import Field, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.core.guards import (
     reject_unresolved_references,
     require_object_root,
     require_schema_keyword,
 )
-from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
+from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase
 from cdm_data_loaders.converters.core.ir import SchemaDocument
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
@@ -29,17 +28,14 @@ class InvalidJSONSchemaError(JSONSchemaToDltError):
     """Raised when the input document is not a valid JSON Schema."""
 
 
-class JSONSchemaToDlt(BaseModel):
+class JSONSchemaToDlt(JsonSchemaConverterBase[TStoredSchema]):
     """Read a dereferenced JSON Schema and emit dlt tables."""
-
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     schema_name: str
     skip_nested_types: bool = False
     max_nesting: int = Field(default=10, ge=1)
     write_disposition: str | None = None
     flatten_scalars: bool = True
-    extension_registry: InstanceOf[ExtensionRegistry] = DEFAULT_EXTENSIONS
 
     @field_validator("schema_name")
     @classmethod
@@ -73,14 +69,6 @@ class JSONSchemaToDlt(BaseModel):
     def convert(self, schema: dict[str, Any]) -> TStoredSchema:
         """Convert an object document into a dlt stored schema."""
         return self._emitter().emit(self._read(schema))
-
-    def convert_from_string(self, schema_str: str) -> TStoredSchema:
-        """Convert a JSON string, not YAML."""
-        return self.convert(load_schema_text(schema_str))
-
-    def convert_from_file(self, path: str) -> TStoredSchema:
-        """Convert a JSON or YAML file selected by its extension."""
-        return self.convert(load_schema_file(path))
 
     def to_yaml(self, schema: dict[str, Any]) -> str:
         """Emit a dlt stored schema as YAML."""

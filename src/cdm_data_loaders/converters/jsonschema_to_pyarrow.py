@@ -11,12 +11,11 @@ from typing import Any, ClassVar, Final
 
 import pyarrow as pa
 from frozendict import frozendict
-from pydantic import BaseModel, ConfigDict, Field, InstanceOf, field_validator
+from pydantic import Field, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.core.guards import require_object_root, require_schema_keyword
-from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
+from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase, coerce_extra_metadata_keywords
 from cdm_data_loaders.converters.emitters.pyarrow import DEFAULT_FORMAT_MAP, PyArrowEmitter, merge_format_map
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 
@@ -171,17 +170,14 @@ JSONSCHEMA_TO_PYARROW_ERRORS: Final[tuple[type[JSONSchemaToPyArrowError], ...]] 
 )
 
 
-class JSONSchemaToPyArrow(BaseModel):
+class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
     """Read dereferenced JSON Schema and emit PyArrow schemas and empty tables."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     format_map: frozendict[str, pa.DataType] = Field(default_factory=lambda: DEFAULT_FORMAT_MAP)
     treat_unknown_as_string: bool = True
     emit_unions_as_json: bool = False
     extra_metadata_keywords: frozenset[str] = Field(default_factory=frozenset)
     max_nesting: int = Field(default=10, ge=1)
-    extension_registry: InstanceOf[ExtensionRegistry] = DEFAULT_EXTENSIONS
 
     @field_validator("format_map", mode="before")
     @classmethod
@@ -193,7 +189,7 @@ class JSONSchemaToPyArrow(BaseModel):
     @classmethod
     def _coerce_extra_metadata_keywords(cls, value: object) -> object:
         """Normalize supported metadata keyword collections."""
-        return frozenset(value) if isinstance(value, (set, list, tuple)) else value
+        return coerce_extra_metadata_keywords(value)
 
     def _reader(self) -> JsonSchemaReader:
         """Configure reader diagnostics for this public facade."""
@@ -242,26 +238,6 @@ class JSONSchemaToPyArrow(BaseModel):
         :raises JSONSchemaToPyArrowError: if the root is not an object or a construct cannot be converted
         """
         return self.convert(schema).empty_table()
-
-    def convert_from_string(self, schema_str: str) -> pa.Schema:
-        """Convert a JSON string to an Arrow schema.
-
-        :param schema_str: the JSON Schema text
-        :type schema_str: str
-        :return: the Arrow schema
-        :rtype: pa.Schema
-        """
-        return self.convert(load_schema_text(schema_str))
-
-    def convert_from_file(self, path: str) -> pa.Schema:
-        """Convert a JSON or YAML file to an Arrow schema.
-
-        :param path: path to the JSON Schema file
-        :type path: str
-        :return: the Arrow schema
-        :rtype: pa.Schema
-        """
-        return self.convert(load_schema_file(path))
 
 
 @dataclass(frozen=True, slots=True)
