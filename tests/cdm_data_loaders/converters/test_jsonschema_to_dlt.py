@@ -11,7 +11,6 @@ from dlt.common.schema import Schema
 from dlt.common.schema.utils import is_nested_table
 from pydantic import ValidationError
 
-from cdm_data_loaders.converters.core.inference import decimal_places
 from cdm_data_loaders.converters.emitters.dlt import SCHEMA_ENGINE_VERSION
 from cdm_data_loaders.converters.jsonschema_to_dlt import (
     InvalidJSONSchemaError,
@@ -37,15 +36,6 @@ def test_json_schema_to_dlt_fail_empty_schema_name(schema_name: str) -> None:
     """A blank schema_name raises at construction."""
     with pytest.raises(ValidationError, match="schema_name must be a non-empty string"):
         JSONSchemaToDlt(schema_name=schema_name)
-
-
-def test_decimal_places_values() -> None:
-    """decimal_places counts fractional digits of a multipleOf value exactly."""
-    two_places = 2
-    assert decimal_places(0.01) == two_places
-    assert decimal_places(1) == 0
-    assert decimal_places(0.5) == 1
-    assert decimal_places(100) == 0
 
 
 """convert"""

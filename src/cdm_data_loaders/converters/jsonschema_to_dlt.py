@@ -7,7 +7,6 @@ from pydantic import Field, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.guards import (
-    reject_unresolved_references,
     require_object_root,
     require_schema_keyword,
 )
@@ -77,13 +76,3 @@ class JSONSchemaToDlt(JsonSchemaConverterBase[TStoredSchema]):
     def to_schema(self, schema: dict[str, Any]) -> "Schema":
         """Emit a live dlt Schema with parent tables installed first."""
         return self._emitter().to_schema(self._read(schema))
-
-    @staticmethod
-    def _reject_unresolved_references(schema: dict[str, Any]) -> None:
-        """Reject unresolved references with the direction-specific diagnostic."""
-        reject_unresolved_references(
-            schema,
-            JSONSchemaToDltError,
-            converter_name="JSONSchemaToDlt",
-            dereference_function="jsonschema_to_dlt.dereferencing.dereference_schema",
-        )

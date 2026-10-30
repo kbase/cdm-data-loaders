@@ -9,7 +9,6 @@ from typing import Any, Final
 
 import pytest
 from frozendict import frozendict
-from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 from pyiceberg.schema import Schema
 from pyiceberg.types import DecimalType, NestedField
@@ -18,13 +17,13 @@ from pyspark.sql.types import StringType
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, ExtensionSpec
 from cdm_data_loaders.converters.core.ir import Field, TypedNode
-from cdm_data_loaders.converters.core.metadata import ConversionContext
 from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema, DltToJSONSchemaError
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter
 from cdm_data_loaders.converters.emitters.pyspark import PySparkEmitter
 from cdm_data_loaders.converters.jsonschema_to_dlt import InvalidJSONSchemaError as InvalidDltSchemaError
 from cdm_data_loaders.converters.jsonschema_to_dlt import JSONSchemaToDlt, JSONSchemaToDltError
+from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrow
 from cdm_data_loaders.converters.jsonschema_to_pyspark import (
     InvalidJSONSchemaError as InvalidSparkSchemaError,
 )
@@ -368,27 +367,11 @@ def test_facades_end_to_end_pass_fragment_sources_and_aliases() -> None:
     )
     assert emitter.emit_node(field.node) == {"type": "integer"}
     assert emitter.emit_field(field) == {"type": "integer"}
-    context = ConversionContext(Draft202012Validator)
-    assert JSONSchemaToPySpark()._convert_property({"type": "string", "x-pii": True}, context) == (StringType(), {})  # noqa: SLF001
 
 
 @pytest.mark.parametrize("value", [None, True, "registry", {"specs": []}], ids=["null", "boolean", "string", "mapping"])
 def test_facades_end_to_end_fail_registry_constructor(value: object) -> None:
     """Facade constructors must not silently accept arbitrary registry substitutes."""
-    for facade in (JSONSchemaToDlt, JSONSchemaToPySpark, DltToJSONSchema):
+    for facade in (JSONSchemaToDlt, JSONSchemaToPySpark, JSONSchemaToPyArrow, DltToJSONSchema):
         with pytest.raises(ValidationError):
             facade(**({"schema_name": "records"} if facade is JSONSchemaToDlt else {}), extension_registry=value)
-
-
-@pytest.mark.parametrize(
-    ("source", "message"),
-    [({"type": "string"}, None), ({"$ref": "#/$defs/value"}, r"unresolved \$ref"), ({"allOf": []}, "unmerged 'allOf'")],
-    ids=["resolved", "unresolved-ref", "unmerged-allof"],
-)
-def test_facades_end_to_end_pass_dlt_reference_bridge(source: dict[str, Any], message: str | None) -> None:
-    """The retained dlt reference guard preserves its exception subtype and diagnostics."""
-    if message is None:
-        assert JSONSchemaToDlt._reject_unresolved_references(source) is None  # noqa: SLF001
-    else:
-        with pytest.raises(JSONSchemaToDltError, match=message):
-            JSONSchemaToDlt._reject_unresolved_references(source)  # noqa: SLF001

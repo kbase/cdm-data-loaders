@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, Final
 
 import pytest
-from jsonschema import Draft7Validator, Draft202012Validator
 from pyiceberg import catalog as pyiceberg_catalog
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.partitioning import PartitionSpec
@@ -29,7 +28,6 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.config import Config
 
-from cdm_data_loaders.converters.core.metadata import ConversionContext
 from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema
 from cdm_data_loaders.converters.jsonschema_to_dlt import JSONSchemaToDlt
 from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrow
@@ -87,33 +85,6 @@ def jsonschema_to_pyspark_converter() -> JSONSchemaToPySpark:
 def jsonschema_to_pyarrow_converter() -> JSONSchemaToPyArrow:
     """A JSONSchemaToPyArrow instance configured with all default settings."""
     return JSONSchemaToPyArrow()
-
-
-@pytest.fixture
-def strict_converter() -> JSONSchemaToPySpark:
-    """A JSONSchemaToPySpark instance that raises instead of falling back to StringType."""
-    return JSONSchemaToPySpark(treat_unknown_as_string=False)
-
-
-@pytest.fixture
-def ctx(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> ConversionContext:
-    """A default `jsonschema_to_pyspark_converter` fixture (Draft 2020-12, no extra metadata keywords)."""
-    return jsonschema_to_pyspark_converter._build_context(Draft202012Validator)  # noqa: SLF001
-
-
-@pytest.fixture
-def strict_ctx(strict_converter: JSONSchemaToPySpark) -> ConversionContext:
-    """Strict ConversionContext fixture: (Draft 2020-12, no extra keywords, treat_unknown_as_string=False.
-
-    For use with the `strict_converter` fixture.
-    """
-    return strict_converter._build_context(Draft202012Validator)  # noqa: SLF001
-
-
-@pytest.fixture
-def draft7_ctx(jsonschema_to_pyspark_converter: JSONSchemaToPySpark) -> ConversionContext:
-    """A ConversionContext using the Draft-07 validator class."""
-    return jsonschema_to_pyspark_converter._build_context(validator_cls=Draft7Validator)  # noqa: SLF001
 
 
 def base_stored_schema(tables: dict[str, Any]) -> dict[str, Any]:
