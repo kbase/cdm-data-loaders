@@ -7,10 +7,10 @@ three pipelines share; each pipeline module supplies only its validator and
 registry loader.
 """
 
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from importlib import import_module
 from logging import Logger, getLogger
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any
 
 import dlt
 import pyarrow as pa
@@ -21,21 +21,20 @@ from dlt.sources.filesystem import filesystem
 from cdm_data_loaders.pipelines.core import (
     DEFAULT_REJECTED_SUFFIX,
     DEFAULT_SCHEMA_CONTRACT,
+    build_file_ingest_kwargs,
     run_pipeline,
 )
-from cdm_data_loaders.readers.jsonlines import stream_jsonl_lines
-from cdm_data_loaders.utils.buffer import ArrowListBuffer, ListBuffer
+from cdm_data_loaders.readers.jsonlines import (
+    ParseErrorResolver,
+    make_page_router,
+    stream_jsonl_lines,
+)
 
 if TYPE_CHECKING:
     from dlt.extract.resource import DltResource
 
 logger: Logger = getLogger(__name__)
 
-SCHEMA_CONTRACT: Final[TSchemaContractDict] = DEFAULT_SCHEMA_CONTRACT
-
-REJECTED_COLUMNS: Final[tuple[str, ...]] = ("source_file", "line_no", "raw_record")
-
-ParseErrorResolver = Callable[[dict[str, Any]], str | None]
 ResourceFactory = Callable[[str, dict[str, Any], Any], "DltResource"]
 
 
@@ -58,74 +57,6 @@ def load_registry_dict(module_path: str, attribute_name: str, type_hint: str = "
         err_msg = f"{module_path} does not define a non-empty {attribute_name}{type_hint}"
         raise ValueError(err_msg)
     return registry
-
-
-def make_page_router(  # noqa: PLR0913
-    table_name: str,
-    buffer_size: int,
-    resolve_error: ParseErrorResolver,
-    *,
-    rejected_suffix: str = DEFAULT_REJECTED_SUFFIX,
-    include_record: bool = False,
-    transform_valid: Callable[[Any], Any] | None = None,
-    pyarrow_schema: pa.Schema | None = None,
-) -> Callable[[list[dict[str, Any]]], Generator[Any, Any, Any]]:
-    """Build a function that routes pages of line records to valid and rejected tables.
-
-    For each item, `resolve_error` inspects the record and returns None for a
-    valid record, or the error detail string otherwise. Parse errors bypass
-    `resolve_error` entirely. Valid records yield `item["record"]` passed
-    through `transform_valid` (identity when None) into `table_name`; failed
-    records yield a provenance row into ``{table_name}{rejected_suffix}``. With
-    `include_record`, the rejected row also carries the parsed `record` value.
-    When `pyarrow_schema` is supplied, valid records are accumulated in an
-    `ArrowListBuffer` and yielded as `pyarrow.Table` pages.
-
-    :param table_name: table name for valid records
-    :type  table_name: str
-    :param buffer_size: number of rows to buffer per table before yielding a page
-    :type  buffer_size: int
-    :param resolve_error: function returning None for valid records or error detail
-    :type  resolve_error: ParseErrorResolver
-    :param rejected_suffix: suffix for the rejected table name
-    :type  rejected_suffix: str
-    :param include_record: whether rejected rows carry the parsed record value
-    :type  include_record: bool
-    :param transform_valid: function applied to each valid record before yielding
-    :type  transform_valid: Callable[[Any], Any] | None
-    :param pyarrow_schema: optional PyArrow schema for buffering valid records as Arrow tables
-    :type  pyarrow_schema: pa.Schema | None
-    :return: function taking one page of line records and yielding routed pages
-    :rtype : Callable[[list[dict[str, Any]]], Generator[Any, Any, Any]]
-    """
-    rejected_table = f"{table_name}{rejected_suffix}"
-
-    def _route(page: list[dict[str, Any]]) -> Generator[Any, Any, Any]:
-        valid_buffer: ListBuffer | ArrowListBuffer = (
-            ArrowListBuffer(table_to_schema_map={table_name: pyarrow_schema}, max_items=buffer_size)
-            if pyarrow_schema is not None
-            else ListBuffer(table_name=table_name, max_items=buffer_size)
-        )
-        rejected_buffer = ListBuffer(table_name=rejected_table, max_items=buffer_size)
-        for item in page:
-            error_detail = item["parse_error"]
-            if error_detail is None:
-                error_detail = resolve_error(item["record"])
-            if error_detail is not None:
-                rejected = {column: item[column] for column in REJECTED_COLUMNS}
-                rejected["error_detail"] = error_detail
-                if include_record:
-                    rejected["record"] = item["record"]
-                yield from rejected_buffer.add_item(rejected)
-            else:
-                record = item["record"]
-                if transform_valid is not None:
-                    record = transform_valid(record)
-                yield from valid_buffer.add_item(record)
-        yield from valid_buffer.flush()
-        yield from rejected_buffer.flush()
-
-    return _route
 
 
 def build_entity_resource(  # noqa: PLR0913
@@ -190,7 +121,7 @@ def build_entity_resource(  # noqa: PLR0913
         max_table_nesting=0,
         parallelized=True,
     )
-    validated.apply_hints(schema_contract=TSchemaContractDict(**SCHEMA_CONTRACT))  # pyright: ignore[reportCallIssue]
+    validated.apply_hints(schema_contract=TSchemaContractDict(**DEFAULT_SCHEMA_CONTRACT))  # pyright: ignore[reportCallIssue]
     return validated
 
 
@@ -226,12 +157,11 @@ def run_registry_ingest(
         err_msg = f"Unknown table name(s) requested: {unknown}; available: {sorted(table_to_schema)}"
         raise ValueError(err_msg)
     resources = [build_resource(table_name, table_to_schema[table_name], settings) for table_name in table_names]
+    ingest_kwargs = build_file_ingest_kwargs(settings, pipeline_name, fallback_dataset_name=True)
+    if pipeline_run_kwargs:
+        ingest_kwargs["pipeline_run_kwargs"].update(pipeline_run_kwargs)
     return run_pipeline(
         settings=settings,
         resource=resources,
-        pipeline_kwargs={
-            "pipeline_name": pipeline_name,
-            "dataset_name": settings.dataset_name or pipeline_name,
-        },
-        pipeline_run_kwargs=pipeline_run_kwargs or {},
+        **ingest_kwargs,
     )

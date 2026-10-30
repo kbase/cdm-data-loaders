@@ -262,7 +262,7 @@ def test_stream_xml_file_fail_non_gzip_content_with_gz_extension_raises_error(tm
     ],
 )
 @pytest.mark.parametrize("compressed", [False, True], ids=["plain", "gzip"])
-def test_stream_xml_file_pass_yields_outermost_matches(  # noqa: PLR0917
+def test_stream_xml_file_pass_yields_outermost_matches(
     tmp_path: Path,
     write_gzip_file: Callable[[Path, str, str], Path],
     xml: str,

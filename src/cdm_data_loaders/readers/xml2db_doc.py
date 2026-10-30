@@ -18,7 +18,7 @@ from xml2db import DataModel, Document
 from cdm_data_loaders.pipelines.xml2db.settings import Xml2DbSettings
 from cdm_data_loaders.utils.buffer import DictBuffer
 from cdm_data_loaders.utils.gz import open_maybe_gzip
-from cdm_data_loaders.utils.xml_utils import local_name as _local_name
+from cdm_data_loaders.utils.xml_utils import local_name
 
 logger: Logger = getLogger(__name__)
 
@@ -322,7 +322,7 @@ def iter_xml2db_chunk_fragments(
     """
     if isinstance(file_path, Path):
         file_path = str(file_path)
-    child_local_name = _local_name(child_tag)
+    child_local_name = local_name(child_tag)
     with open_maybe_gzip(file_path) as fh:
         context = iterparse(fh, events=("start", "end"), remove_blank_text=True)
         try:
@@ -334,7 +334,7 @@ def iter_xml2db_chunk_fragments(
 
         chunk_root = Element(root_elem.tag, attrib=root_elem.attrib, nsmap=root_elem.nsmap)
         for event, elem in context:
-            if event != "end" or _local_name(elem.tag) != child_local_name:
+            if event != "end" or local_name(elem.tag) != child_local_name:
                 continue
             chunk_root.append(elem)
             if len(chunk_root) >= chunk_size:

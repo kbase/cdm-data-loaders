@@ -28,7 +28,8 @@ from pyiceberg.types import (
 )
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, decimal_pattern
+from cdm_data_loaders.converters.core.inference import decimal_pattern
+from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT
 from cdm_data_loaders.converters.pyiceberg_to_jsonschema import (
     convert_field,
     convert_struct,

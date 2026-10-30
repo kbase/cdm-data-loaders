@@ -1,6 +1,5 @@
 """End-to-end JSON Schema ingestion tests using real filesystem destinations."""
 
-import gzip
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -47,7 +46,7 @@ PARSE_ERROR = "Expecting property name enclosed in double quotes: line 1 column 
 
 
 @pytest.fixture
-def schema_input_dir(tmp_path: Path) -> Path:
+def schema_input_dir(tmp_path: Path, write_gzip_file: Callable[[Path, str, str], Path]) -> Path:
     """Create two entities containing plain, compressed, valid, and invalid inputs."""
     input_dir = tmp_path / "input"
     widget_dir = input_dir / "widget"
@@ -56,8 +55,7 @@ def schema_input_dir(tmp_path: Path) -> Path:
     (widget_dir / "plain.jsonl").write_text(
         f"\n{widget_line}\n{MALFORMED_RAW}\n{TYPE_ERROR_RAW}\n{widget_line}", encoding="utf-8"
     )
-    with gzip.open(widget_dir / "compressed.jsonl.gz", "wt", encoding="utf-8") as stream:
-        stream.write(f"{widget_line}\n{FORMAT_ERROR_RAW}\nnull")
+    write_gzip_file(widget_dir, "compressed.jsonl.gz", f"{widget_line}\n{FORMAT_ERROR_RAW}\nnull")
     (widget_dir / "ignored.txt").write_text(MALFORMED_RAW, encoding="utf-8")
     gadget_dir = input_dir / "gadget"
     gadget_dir.mkdir()

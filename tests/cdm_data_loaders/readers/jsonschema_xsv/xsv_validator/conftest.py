@@ -1,8 +1,6 @@
 """Fixtures and helpers for the xsv validator module parts."""
 
 import json
-import os
-import shutil
 import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -23,36 +21,22 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
     ValidatedSchema,
     generate_header,
 )
+from tests.xsv_fixtures import (
+    COLUMNS,
+    VALID_ROWS,
+    Row,
+    WriteFile,
+    build_xsv_content,
+    make_xsv_writer,
+    write_xsv,
+)
 
 FAKE_QSV_CMD: Final[str] = "mock-qsv"
 
 SCHEMAS_DIR: Final[Path] = Path("tests") / "data" / "qsv" / "schemas"
 
-Row = Sequence[str]
-WriteFile = Callable[[str | bytes, str], Path]
-
-# Canonical column order shared by both schema fixtures.
-COLUMNS: Final[list[str]] = ["number", "date", "float", "boolean", "string"]
-
 # valid delimiters from the extension <=> delimiter mapping
 DELIMITERS: Final[list[str]] = list(SEP_TO_EXT)
-
-VALID_ROWS: Final[list[list[str]]] = [
-    ["2", "2023-01-15", "3.14", "true", "key:value1"],
-    ["3", "2023-02-20", "1.11", "false", "key:value2"],
-]
-
-
-@pytest.fixture(scope="session")
-def qsv_cmd() -> str:
-    """Provide the path/name of the qsv binary; override via the QSV_BIN env var if not on PATH.
-
-    If the qsv binary is not available, all tests that rely on this fixture are skipped.
-    """
-    cmd = shutil.which("qsv") or os.environ.get("QSV_BIN")
-    if not cmd or not Path(cmd).is_file():
-        pytest.skip(f"qsv binary not found at {cmd!r}; set QSV_BIN to point at a real binary")
-    return cmd
 
 
 @pytest.fixture(scope="session")
@@ -141,13 +125,13 @@ def source_dir_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def write_source_file(source_dir_path: Path) -> WriteFile:
     """Factory fixture that writes content to a new file in source_dir_path (an xsv "input" location)."""
-    return lambda content, file_name: _write_file(source_dir_path, content, file_name)
+    return make_xsv_writer(source_dir_path)
 
 
 @pytest.fixture
 def write_working_file(tmp_dir_path: Path) -> WriteFile:
     """Factory fixture that writes content directly into tmp_dir_path (simulating an already-prepped file)."""
-    return lambda content, file_name: _write_file(tmp_dir_path, content, file_name)
+    return make_xsv_writer(tmp_dir_path)
 
 
 @pytest.fixture
@@ -307,26 +291,6 @@ def _touch(path: Path, content: str = "hello") -> Path:
     return path
 
 
-def build_xsv_content(
-    rows: Sequence[Row],
-    *,
-    delimiter: str = "\t",
-    header: Sequence[str] | None = None,
-) -> str:
-    """Build delimited text content from a list of rows, optionally prefixed with a header row.
-
-    :param rows: sequence of rows, each a sequence of field values
-    :param delimiter: field delimiter used to join each row
-    :param header: header columns to prepend; omitted entirely if None
-    :return: the fully assembled file content, newline-terminated
-    """
-    lines: list[str] = []
-    if header is not None:
-        lines.append(delimiter.join(header))
-    lines.extend(delimiter.join(row) for row in rows)
-    return "\n".join(lines) + "\n"
-
-
 def interleave_comments(content: str, comment_char: str) -> str:
     """Insert a comment line before every line in `content`, using the given comment character."""
     lines = content.splitlines()
@@ -342,12 +306,7 @@ def interleave_comments(content: str, comment_char: str) -> str:
 
 def _write_file(dir_path: Path, content: str | bytes, file_name: str) -> Path:
     """Write `content` (str or bytes) to `file_name` inside `dir_path`, returning the resulting path."""
-    path = dir_path / file_name
-    if isinstance(content, bytes):
-        path.write_bytes(content)
-    else:
-        path.write_text(content)
-    return path
+    return write_xsv(dir_path, content, file_name)
 
 
 def _write_header_input_file(args: CleanerValidatorArgs, write_working_file: WriteFile) -> str:

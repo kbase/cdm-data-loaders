@@ -10,6 +10,7 @@ import logging
 import socket
 import threading
 import time
+from collections.abc import Iterator
 from ftplib import FTP, error_temp
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
@@ -38,6 +39,24 @@ def connect_ftp(host: str, timeout: int = DEFAULT_TIMEOUT) -> FTP:
     ftp.login()
     _set_keepalive(ftp)
     return ftp
+
+
+@contextlib.contextmanager
+def ftp_session(host: str, ftp: FTP | None = None, timeout: int = DEFAULT_TIMEOUT) -> Iterator[FTP]:
+    """Context manager yielding an active FTP connection and closing it on exit if created here.
+
+    :param host: FTP hostname
+    :param ftp: optional existing FTP connection (caller manages lifecycle when provided)
+    :param timeout: connection timeout in seconds
+    """
+    owns_ftp = ftp is None
+    active_ftp = connect_ftp(host, timeout=timeout) if ftp is None else ftp
+    try:
+        yield active_ftp
+    finally:
+        if owns_ftp:
+            with contextlib.suppress(Exception):
+                active_ftp.quit()
 
 
 def _set_keepalive(ftp: FTP, idle: int = 30, interval: int = 10, count: int = 3) -> None:

@@ -1,16 +1,14 @@
 """Shared fixtures for the generic reference pipeline tests."""
 
 import json
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import pytest
 from dlt.common.pipeline import LoadInfo
 
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
-from tests.cdm_data_loaders.pipelines.helpers import duckdb_reference_from_jsonl
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.jsonlines_reference_helpers import (
     canonicalize_entry,
 )
@@ -18,35 +16,8 @@ from tests.cdm_data_loaders.pipelines.reference.pipeline import (
     ReferencePipelineSettings,
     run_reference_pipeline,
 )
-from tests.conftest import TEST_DATA_DIR
 
 type PipelineRunner = Callable[..., tuple[LoadInfo | None, Path]]
-
-
-@pytest.fixture
-def reference_data_dir() -> Path:
-    """Return the directory containing all reference chunk configurations."""
-    return TEST_DATA_DIR / "ncbi_rest_api" / "dataset_report"
-
-
-@pytest.fixture(scope="session")
-def reference_jsonl() -> Path:
-    """Path to the reference JSONL file."""
-    return TEST_DATA_DIR / "ncbi_rest_api" / "dataset_report" / "chunk_52" / "dataset" / "dataset_reports_52.jsonl"
-
-
-@pytest.fixture(scope="session")
-def jsonl_reference_entities(reference_jsonl: Path) -> list[dict[str, Any]]:
-    """Parsed JSONL file."""
-    with reference_jsonl.open(encoding="utf-8") as fh:
-        return [json.loads(line.strip()) for line in fh if line.strip()]
-
-
-@pytest.fixture(scope="session")
-def reference_dataset(reference_jsonl: Path) -> Generator[duckdb.DuckDBPyConnection]:
-    """Load the reference JSONL into an in-memory DuckDB connection with nested structures."""
-    with duckdb_reference_from_jsonl(reference_jsonl) as conn:
-        yield conn
 
 
 @pytest.fixture(scope="session")
@@ -84,15 +55,3 @@ def run_reference_pipeline_fxt(
         return runner(**kwargs)
 
     return _factory
-
-
-@pytest.fixture
-def write_gzip_jsonl_file(
-    write_gzip_file: Callable[[Path, str, str], Path],
-) -> Callable[[Path, str, list[str]], Path]:
-    """Return a function that writes a list of JSON lines to a gzip-compressed file."""
-
-    def _write(directory: Path, filename: str, lines: list[str]) -> Path:
-        return write_gzip_file(directory, filename, "\n".join(lines) + "\n")
-
-    return _write

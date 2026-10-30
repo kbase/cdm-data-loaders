@@ -51,11 +51,7 @@ def get_async_httpx_client() -> httpx.AsyncClient:
 class AsyncFileDownloader:
     """Asynchronous downloader interface."""
 
-    RETRYABLE_EXCEPTIONS = (
-        httpx.TimeoutException,
-        httpx.TransportError,
-        DownloadError,
-    )
+    RETRYABLE_EXCEPTIONS = DownloadCore.RETRYABLE_EXCEPTIONS
 
     def __init__(  # noqa: PLR0913
         self,

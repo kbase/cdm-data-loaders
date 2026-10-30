@@ -28,14 +28,14 @@ from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
 )
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.jsonlines.base import (
-    ParseErrorResolver,
+    build_entity_resource as build_shared_entity_resource,
+)
+from cdm_data_loaders.pipelines.jsonlines.base import (
     load_registry_dict,
     run_registry_ingest,
 )
-from cdm_data_loaders.pipelines.jsonlines.base import (
-    build_entity_resource as build_shared_entity_resource,
-)
 from cdm_data_loaders.pipelines.jsonlines.settings import JSONSCHEMA_PIPELINE_NAME, JsonlJsonschemaIngestSettings
+from cdm_data_loaders.readers.jsonlines import ParseErrorResolver
 from cdm_data_loaders.utils.jsonschema.dereferencer import DereferencingError, dereference_schema
 
 logger: Logger = getLogger(__name__)
@@ -206,7 +206,6 @@ def run_jsonlines_pipeline(settings: JsonlJsonschemaIngestSettings) -> LoadInfo 
             pyarrow_schema=pyarrow_schemas[table_name],
         ),
         pipeline_name=JSONSCHEMA_PIPELINE_NAME,
-        pipeline_run_kwargs={"loader_file_format": str(settings.loader_file_format)},
     )
 
 

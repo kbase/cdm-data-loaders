@@ -15,12 +15,11 @@ from pyiceberg.schema import Schema
 from pyiceberg.types import DecimalType, NestedField
 from pyspark.sql.types import StringType
 
-from cdm_data_loaders.converters import jsonschema_to_pyspark as spark_facade
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, ExtensionSpec
 from cdm_data_loaders.converters.core.ir import Field, TypedNode
+from cdm_data_loaders.converters.core.metadata import ConversionContext
 from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema, DltToJSONSchemaError
-from cdm_data_loaders.converters.emitters import pyspark as spark_emitter
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter
 from cdm_data_loaders.converters.emitters.pyspark import PySparkEmitter
@@ -354,7 +353,6 @@ def test_facades_end_to_end_pass_iceberg_fragments(required: bool, default: Deci
 
 def test_facades_end_to_end_pass_fragment_sources_and_aliases() -> None:
     """Fragment APIs select source policy and facade helper exports retain emitter ownership."""
-    assert spark_facade.ConversionContext is spark_emitter.ConversionContext
     emitter = JsonSchemaEmitter()
     for source in (True, False, {"type": "integer"}):
         node = JsonSchemaReader().read_node(source)
@@ -370,7 +368,7 @@ def test_facades_end_to_end_pass_fragment_sources_and_aliases() -> None:
     )
     assert emitter.emit_node(field.node) == {"type": "integer"}
     assert emitter.emit_field(field) == {"type": "integer"}
-    context = spark_facade.ConversionContext(Draft202012Validator)
+    context = ConversionContext(Draft202012Validator)
     assert JSONSchemaToPySpark()._convert_property({"type": "string", "x-pii": True}, context) == (StringType(), {})  # noqa: SLF001
 
 

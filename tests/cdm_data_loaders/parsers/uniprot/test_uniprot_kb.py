@@ -22,7 +22,6 @@ from cdm_data_loaders.parsers.uniprot.uniprot_kb import (
     XREF,
     dump_comment_xml,
     dump_evidence_xml,
-    dump_xml_element,
     parse_cross_references,
     parse_identifiers,
     parse_names,
@@ -32,6 +31,7 @@ from cdm_data_loaders.parsers.uniprot.uniprot_kb import (
     parse_uniprot_entry,
 )
 from cdm_data_loaders.readers.xml import stream_xml_file
+from cdm_data_loaders.utils.xml_utils import dump_xml_element
 
 TEST_ID = "uniprot:P01Q23"
 FILE_PATH = "/path/to/file"

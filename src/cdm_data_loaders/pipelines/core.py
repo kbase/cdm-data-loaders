@@ -1,6 +1,6 @@
 """Common reusable pipeline elements."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from logging import Logger, getLogger
@@ -12,6 +12,8 @@ import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.common.runtime.slack import send_slack_message
 from dlt.common.schema.typing import TSchemaContractDict
+from dlt.common.storages.fsspec_filesystem import FileItemDict
+from dlt.common.typing import TDataItems
 from dlt.extract import DltResource
 from dlt.pipeline.exceptions import PipelineStepFailed
 from dlt.sources.filesystem import filesystem
@@ -57,7 +59,7 @@ class PipelineCli[S: LoggerSettings]:
         """Parse sys.argv and run the pipeline. Returns None so the process exits with 0."""
         self.run()
 
-    def run(self, cli_args: list[str] | None = None, **settings_kwargs: Any) -> LoadInfo | None:
+    def run(self, cli_args: list[str] | None = None, **settings_kwargs: Any) -> LoadInfo | None:  # noqa: ANN401
         """Parse ``cli_args`` (default ``sys.argv[1:]``), run the pipeline and return its LoadInfo."""
         return run_cli(self.settings_cls, self.pipeline_fn, settings_kwargs, cli_args)
 
@@ -379,6 +381,39 @@ def build_filesystem_resource(
     if schema_contract is not None:
         resource.apply_hints(schema_contract=TSchemaContractDict(**schema_contract))  # pyright: ignore[reportCallIssue]
     return resource
+
+
+def make_per_file_reader(
+    file_fn: Callable[..., Iterable[Any]],
+) -> Callable[..., Generator[TDataItems, Any, Any]]:
+    """Wrap a single-file reader ``file_fn(file_item, *args)`` into a dlt transformer function over ``items``."""
+
+    def _read_items(items: Iterable[FileItemDict], *args: Any) -> Generator[TDataItems, Any, Any]:  # noqa: ANN401
+        for file_item in items:
+            yield from file_fn(file_item, *args)
+
+    return _read_items
+
+
+def build_per_file_filesystem_resource(
+    settings: LocalInputOutputSettings,
+    file_fn: Callable[..., Iterable[Any]],
+    *reader_args: Any,  # noqa: ANN401
+    name: str,
+    file_glob: str | None = None,
+    schema_contract: TSchemaContractDict | None = None,
+    **transformer_kwargs: Any,  # noqa: ANN401
+) -> DltResource:
+    """Build a dlt resource that runs a single-file reader ``file_fn(file_item, *reader_args)`` over ``filesystem`` items."""
+    return build_filesystem_resource(
+        settings,
+        make_per_file_reader(file_fn),
+        *reader_args,
+        name=name,
+        file_glob=file_glob,
+        schema_contract=schema_contract,
+        **transformer_kwargs,
+    )
 
 
 def build_file_ingest_kwargs(

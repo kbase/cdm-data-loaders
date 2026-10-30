@@ -1,26 +1,17 @@
 """Shared fixtures for xml pipeline integration tests."""
 
-import gzip
 import json
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import pytest
-import xmltodict
 from dlt.common.pipeline import LoadInfo
 from frozendict import frozendict
 
 from cdm_data_loaders.pipelines.xmltodict.pipeline import run_xmltodict_pipeline
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
-from cdm_data_loaders.readers.xml import DEFAULT_XMLTODICT_ARGS
-from tests.cdm_data_loaders.pipelines.helpers import (
-    duckdb_reference_from_jsonl,
-    read_jsonl_file,
-)
-from tests.conftest import N_REFERENCE_XML_ENTRIES, REFERENCE_XML_TAG
-from tests.helpers import make_cts_settings
+from tests.conftest import REFERENCE_XML_TAG
 
 DEFAULT_XMLTODICT_SETTINGS: frozendict = frozendict(
     {
@@ -34,21 +25,17 @@ DEFAULT_XMLTODICT_SETTINGS: frozendict = frozendict(
 
 
 @pytest.fixture
-def settings_factory(tmp_path: Path, dlt_destination_config: str) -> Callable[..., XmlToDictSettings]:
+def settings_factory(
+    settings_factory: Callable[..., XmlToDictSettings], dlt_destination_config: str
+) -> Callable[..., XmlToDictSettings]:
     """Return a factory that builds a valid XmlToDictSettings, with fields open to override."""
-
-    def _factory(**overrides: Any) -> XmlToDictSettings:  # noqa: ANN401
-        defaults: dict[str, Any] = {
+    return lambda **overrides: settings_factory(
+        **{
             **DEFAULT_XMLTODICT_SETTINGS,
-            "dataset_name": "xml_test_dataset",
-            "table_name": "book",
             "use_destination": dlt_destination_config,
-            "xml_tag": "book",
+            **overrides,
         }
-        defaults.update(overrides)
-        return make_cts_settings(XmlToDictSettings, tmp_path, **defaults)
-
-    return _factory
+    )
 
 
 @pytest.fixture
@@ -63,70 +50,10 @@ def scenario_input_dir(test_data_dir: Path) -> Callable[[str], str]:
     return _resolve
 
 
-def import_jsonl_data(jsonl_path: Path) -> list[dict[str, Any]]:
-    """Read the reference JSONL into a list of canonical nested entry dicts."""
-    return read_jsonl_file(jsonl_path)
-
-
-def write_reference_xml_as_jsonl(source_xml: Path, jsonl_path: Path) -> int:
-    """Parse the UniRef XML with xmltodict and write the reference JSONL.
-
-    The top-level element is ignored; one JSON object per entry element is written,
-    wrapped as {"entry": ...} so that nested content is preserved verbatim.
-    """
-    with gzip.open(source_xml, "rb") as fh:
-        document = xmltodict.parse(fh.read(), **DEFAULT_XMLTODICT_ARGS)
-
-    entries = document["UniRef50"]["entry"]
-    with jsonl_path.open("w", encoding="utf-8") as out:
-        for entry in entries:
-            out.write(json.dumps({"entry": entry}, ensure_ascii=False) + "\n")
-    return len(entries)
-
-
-@pytest.fixture(scope="session")
-def reference_xml_as_jsonl(reference_xml_data_dir: Path) -> Path:
-    """Generate the reference JSONL from the chunk_100_el source, if not present."""
-    jsonl_path = reference_xml_data_dir / "jsonl" / "uniref_100.jsonl"
-    if not jsonl_path.exists():
-        source_xml = reference_xml_data_dir / "chunk_100_el" / "uniref_100_part_01.xml.gz"
-        n_entries = write_reference_xml_as_jsonl(source_xml, jsonl_path)
-        assert n_entries == N_REFERENCE_XML_ENTRIES
-
-    return jsonl_path
-
-
-@pytest.fixture(scope="session")
-def reference_xml_entries(reference_xml_as_jsonl: Path) -> list[dict[str, Any]]:
-    """The canonical nested entry dicts read back from the reference JSONL."""
-    ref_json = import_jsonl_data(reference_xml_as_jsonl)
-    assert isinstance(ref_json, list)
-    for line in ref_json:
-        assert list(line.keys()) == ["entry"]
-        entry = line.get("entry", {})
-        for key in ("_id", "name", "property", "representativeMember"):
-            assert key in entry
-        assert entry.get("_id") is not None
-        assert entry.get("_id").startswith("UniRef50_")
-    assert len(ref_json) == N_REFERENCE_XML_ENTRIES
-    return ref_json
-
-
 @pytest.fixture(scope="session")
 def sorted_reference_xml_entries(reference_xml_entries: list[dict[str, Any]]) -> list[str]:
     """Sorted entries for the uniref reference dataset."""
     return sorted(json.dumps(entry.get("entry"), sort_keys=True, default=str) for entry in reference_xml_entries)
-
-
-@pytest.fixture(scope="session")
-def reference_xml_dataset(reference_xml_as_jsonl: Path) -> Generator[duckdb.DuckDBPyConnection]:
-    """Load the reference JSONL into an in-memory DuckDB connection with nested structures.
-
-    read_json_auto infers native STRUCT/STRUCT[] types for the nested content;
-    `member` infers as JSON because its shape varies across entries.
-    """
-    with duckdb_reference_from_jsonl(reference_xml_as_jsonl) as conn:
-        yield conn
 
 
 @pytest.fixture

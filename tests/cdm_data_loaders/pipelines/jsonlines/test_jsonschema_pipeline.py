@@ -1,13 +1,10 @@
 """Tests for JSON Schema validation, PyArrow conversion, and rejected-record routing."""
 
-import gzip
 import json
-import sys
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 from uuid import uuid4
 
@@ -15,23 +12,26 @@ import pyarrow as pa
 import pytest
 from pydantic import ValidationError
 
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrowError
-from cdm_data_loaders.pipelines.jsonlines.base import make_page_router
+from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
+    JSONSchemaToPyArrowError,
+    coerce_record_for_pyarrow,
+)
 from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
     _make_resolve_error,
     build_entity_resource,
     build_pyarrow_schemas,
-    coerce_record_for_pyarrow,
     convert_schema_to_pyarrow,
     load_entity_schemas,
     run_jsonlines_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlJsonschemaIngestSettings
+from cdm_data_loaders.readers.jsonlines import make_page_router
 from cdm_data_loaders.utils.jsonschema.dereferencer import DereferencingError
 from tests.cdm_data_loaders.pipelines.jsonlines.conftest import make_item
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas import (
     ENTITY_SCHEMAS as DATASET_ENTITY_SCHEMAS,
 )
+from tests.helpers import register_temp_module
 
 
 def make_router(schema: dict[str, Any], buffer_size: int = 2) -> Callable[[list[dict[str, Any]]], Any]:
@@ -131,8 +131,7 @@ def test_load_entity_schemas_fail_invalid_types(schema_module_factory: Callable[
 
 def test_load_entity_schemas_fail_missing_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     """A module must explicitly provide ENTITY_SCHEMAS."""
-    module_name = f"_test_missing_registry_{uuid4().hex}"
-    monkeypatch.setitem(sys.modules, module_name, ModuleType(module_name))
+    module_name = register_temp_module(monkeypatch, "_test_missing_registry")
     with pytest.raises(ValueError, match="non-empty ENTITY_SCHEMAS"):
         load_entity_schemas(module_name)
 
@@ -561,6 +560,7 @@ def test_make_page_router_pass_flushes_independent_buffers(widget_schema: dict[s
 def test_build_entity_resource_pass_reads_selected_files(
     schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
     widget_schema: dict[str, Any],
+    write_gzip_file: Callable[[Path, str, str], Path],
     compressed: bool,
 ) -> None:
     """The real resource reads plain/gzip files, skips blanks, and honors the glob."""
@@ -571,8 +571,7 @@ def test_build_entity_resource_pass_reads_selected_files(
     contents = f"\n{json.dumps(record)}\n\n{{broken\n"
     filename = "data.jsonl.gz" if compressed else "data.jsonl"
     if compressed:
-        with gzip.open(entity_dir / filename, "wt", encoding="utf-8") as stream:
-            stream.write(contents)
+        write_gzip_file(entity_dir, filename, contents)
     else:
         (entity_dir / filename).write_text(contents, encoding="utf-8")
     (entity_dir / "ignored.txt").write_text("not JSON", encoding="utf-8")

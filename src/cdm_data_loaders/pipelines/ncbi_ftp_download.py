@@ -26,11 +26,11 @@ from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_afte
 from cdm_data_loaders.core.fields import INPUT_MOUNT, OUTPUT_MOUNT
 from cdm_data_loaders.core.settings import LoggerSettings, default_settings_with_shortcuts
 from cdm_data_loaders.ncbi_ftp.assembly import (
-    FTP_HOST,
     build_accession_path,
     download_assembly_to_local,
     parse_assembly_path,
 )
+from cdm_data_loaders.ncbi_ftp.constants import FTP_HOST
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.utils.file_transfer.ftp_client import ThreadLocalFTP
 from cdm_data_loaders.utils.file_transfer.s3.client import get_s3_client

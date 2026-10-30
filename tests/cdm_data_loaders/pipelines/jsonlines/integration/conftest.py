@@ -1,11 +1,10 @@
 """Shared fixtures for jsonlines pipeline tests."""
 
 import json
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import pytest
 from dlt.common.pipeline import LoadInfo
 from pydantic import BaseModel
@@ -25,14 +24,11 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlJsonschemaIngestSettings,
     JsonlPydanticIngestSettings,
 )
-from tests.cdm_data_loaders.pipelines.helpers import duckdb_reference_from_jsonl
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_models import ENTITY_MODELS
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas import ENTITY_SCHEMAS
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.jsonlines_reference_helpers import (
     canonicalize_entry,
 )
-from tests.conftest import TEST_DATA_DIR
-from tests.helpers import make_cts_settings
 
 type PipelineRunner = Callable[..., tuple[LoadInfo | None, Path]]
 type PrepareReference = Callable[[dict[str, Any]], dict[str, Any]]
@@ -124,35 +120,6 @@ def reference_registry_factory(
     return _factory
 
 
-@pytest.fixture(scope="session")
-def jsonl_reference_entities(reference_jsonl: Path) -> list[dict[str, Any]]:
-    """Parsed JSONL file."""
-    with reference_jsonl.open(encoding="utf-8") as fh:
-        return [json.loads(line.strip()) for line in fh if line.strip()]
-
-
-@pytest.fixture(scope="session")
-def reference_jsonl() -> Path:
-    """Path to the reference JSONL file."""
-    return TEST_DATA_DIR / "ncbi_rest_api" / "dataset_report" / "chunk_52" / "dataset" / "dataset_reports_52.jsonl"
-
-
-@pytest.fixture
-def reference_data_dir() -> Path:
-    """Return the directory containing all reference chunk configurations."""
-    return TEST_DATA_DIR / "ncbi_rest_api" / "dataset_report"
-
-
-@pytest.fixture(scope="session")
-def reference_dataset(reference_jsonl: Path) -> Generator[duckdb.DuckDBPyConnection]:
-    """Load the reference JSONL into an in-memory DuckDB connection with nested structures.
-
-    read_json_auto infers native STRUCT/STRUCT[] types for the nested content.
-    """
-    with duckdb_reference_from_jsonl(reference_jsonl) as conn:
-        yield conn
-
-
 @pytest.fixture
 def sorted_reference_entities(
     jsonl_reference_entities: list[dict[str, Any]], prepare_reference: PrepareReference
@@ -163,32 +130,3 @@ def sorted_reference_entities(
         for obj in jsonl_reference_entities
     ]
     return sorted(lines_as_json)
-
-
-@pytest.fixture
-def settings_factory(
-    tmp_path: Path, dlt_destination_config: str, entity_models_module: str
-) -> Callable[..., JsonlPydanticIngestSettings]:
-    """Return a factory that builds a valid JsonlPydanticIngestSettings, with fields open to override."""
-
-    def _factory(**overrides: Any) -> JsonlPydanticIngestSettings:  # noqa: ANN401
-        defaults: dict[str, Any] = {
-            "dataset_name": "test_dataset",
-            "dlt_dev_mode": False,
-            "entity_models_module": entity_models_module,
-            "use_destination": dlt_destination_config,
-        }
-        defaults.update(overrides)
-        return make_cts_settings(JsonlPydanticIngestSettings, tmp_path, **defaults)
-
-    return _factory
-
-
-@pytest.fixture
-def write_gzip_jsonl_file(write_gzip_file: Callable[[Path, str, str], Path]) -> Callable[[Path, str, list[str]], Path]:
-    """Return a function that writes a list of JSON lines to a gzip-compressed file."""
-
-    def _write(directory: Path, filename: str, lines: list[str]) -> Path:
-        return write_gzip_file(directory, filename, "\n".join(lines) + "\n")
-
-    return _write

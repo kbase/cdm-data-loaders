@@ -7,14 +7,13 @@ in the schema, into `table_name`. Files that fail cleaning/validation are routed
 left in its scratch output directory and are not currently surfaced as rows.
 """
 
-from collections.abc import Generator, Iterator
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Final
+from typing import Any
 
 from dlt.common.pipeline import LoadInfo
-from dlt.common.schema.typing import TSchemaContractDict
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 
@@ -23,7 +22,7 @@ from cdm_data_loaders.pipelines.core import (
     DEFAULT_SCHEMA_CONTRACT,
     PipelineCli,
     build_file_ingest_kwargs,
-    build_filesystem_resource,
+    build_per_file_filesystem_resource,
     run_pipeline,
 )
 from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
@@ -32,9 +31,6 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import Cleane
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import clean_validate_file, qsv_check
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import generate_header
 from cdm_data_loaders.utils.buffer import ListBuffer
-
-SCHEMA_CONTRACT: Final[TSchemaContractDict] = DEFAULT_SCHEMA_CONTRACT
-REJECTED_SUFFIX: Final[str] = DEFAULT_REJECTED_SUFFIX
 
 
 @dataclass
@@ -92,7 +88,10 @@ def _process_xsv_file(
     validated_file_name = clean_validate_file(args)
 
     valid_buffer = ListBuffer(table_name=settings.table_name, max_items=settings.buffer_size)
-    rejected_buffer = ListBuffer(table_name=f"{settings.table_name}{REJECTED_SUFFIX}", max_items=settings.buffer_size)
+    rejected_buffer = ListBuffer(
+        table_name=f"{settings.table_name}{DEFAULT_REJECTED_SUFFIX}",
+        max_items=settings.buffer_size,
+    )
 
     if validated_file_name:
         properties = settings.validated_schema.jsonschema.get("properties", {})
@@ -120,26 +119,6 @@ def _process_xsv_file(
     yield from rejected_buffer.flush()
 
 
-def _read_items(
-    items: Iterator[FileItemDict],
-    settings: XsvIngestSettings,
-    work_paths: XsvWorkPaths,
-) -> Generator[TDataItems, Any, Any]:
-    """Clean, validate, and load each file in file_paths.
-
-    :param items: file items to read
-    :type  items: Iterator[FileItemDict]
-    :param settings: pipeline configuration
-    :type  settings: XsvIngestSettings
-    :param work_paths: scratch resources shared across the pipeline run
-    :type  work_paths: XsvWorkPaths
-    :yield: rows routed to table_name and/or ``{table_name}_rejected``
-    :rtype: Generator[TDataItems, Any, Any]
-    """
-    for file_item in items:
-        yield from _process_xsv_file(file_item, settings, work_paths)
-
-
 def run_xsv_pipeline(settings: XsvIngestSettings) -> LoadInfo | None:
     """Run the XSV ingestion pipeline on matching files in settings.input_dir.
 
@@ -163,13 +142,13 @@ def run_xsv_pipeline(settings: XsvIngestSettings) -> LoadInfo | None:
             validated_dir=Path(validated_dir),
         )
 
-        xsv_resource = build_filesystem_resource(
+        xsv_resource = build_per_file_filesystem_resource(
             settings,
-            _read_items,
+            _process_xsv_file,
             settings,
             work_paths,
             name="xsv_reader",
-            schema_contract=SCHEMA_CONTRACT,
+            schema_contract=DEFAULT_SCHEMA_CONTRACT,
         )
 
         return run_pipeline(

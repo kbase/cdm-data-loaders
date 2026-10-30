@@ -8,10 +8,10 @@ from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
-from lxml.etree import Element, tounicode
+from lxml.etree import Element
 
 from cdm_data_loaders.utils.helpers import _ensembl_type
-from cdm_data_loaders.utils.xml_utils import get_text
+from cdm_data_loaders.utils.xml_utils import dump_xml_element, get_text
 
 CONTENT = "content"
 DB = "db"
@@ -326,20 +326,6 @@ def dump_comment_xml(entry: Element, uniprot_id: str) -> list[dict[str, str]]:
     :rtype: list[dict[str, str]]
     """
     return [{ENTITY_ID: uniprot_id, CONTENT: dump_xml_element(comment)} for comment in entry.findall("ns:comment", NS)]
-
-
-def dump_xml_element(element: Element) -> str:
-    """Dump an XML element as a string.
-
-    :param element: the XML element
-    :type element: Element
-    :return: the element as a string
-    :rtype: str
-    """
-    unicode_version = tounicode(element)
-    return unicode_version.replace(' xmlns="https://uniprot.org/uniprot"', "").replace(
-        ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"', ""
-    )
 
 
 def parse_uniprot_entry(

@@ -14,15 +14,15 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     assert_pipeline_report_written,
     assert_run_ok,
 )
-from tests.cdm_data_loaders.pipelines.xsv.conftest import (
+from tests.cdm_data_loaders.pipelines.xsv.conftest import DEFAULT_XSV_SCHEMA
+from tests.helpers import settings_to_argv
+from tests.xsv_fixtures import (
     ALL_RAGGED_ROWS,
     COLUMNS,
-    DEFAULT_XSV_SCHEMA,
     PARTIAL_RAGGED_ROWS,
     VALID_ROWS,
     rows_to_csv,
 )
-from tests.helpers import settings_to_argv
 
 pytestmark = pytest.mark.usefixtures("qsv_cmd")
 

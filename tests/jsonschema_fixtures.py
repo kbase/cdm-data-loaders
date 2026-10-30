@@ -1,18 +1,15 @@
 """Isolated registry and settings fixtures for JSON Schema pipeline tests."""
 
-import sys
 from collections.abc import Callable
 from itertools import count
 from pathlib import Path
-from types import ModuleType
 from typing import Any
-from uuid import uuid4
 
 import dlt
 import pytest
 
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlJsonschemaIngestSettings
-from tests.helpers import make_cts_settings
+from tests.helpers import make_cts_settings, register_temp_module
 
 
 @pytest.fixture
@@ -42,11 +39,7 @@ def schema_module_factory(monkeypatch: pytest.MonkeyPatch) -> Callable[[object],
     """Register uniquely named schema modules and remove them after each test."""
 
     def _register(registry: object) -> str:
-        module_name = f"_test_entity_schemas_{uuid4().hex}"
-        module = ModuleType(module_name)
-        module.__dict__["ENTITY_SCHEMAS"] = registry
-        monkeypatch.setitem(sys.modules, module_name, module)
-        return module_name
+        return register_temp_module(monkeypatch, "_test_entity_schemas", ENTITY_SCHEMAS=registry)
 
     return _register
 

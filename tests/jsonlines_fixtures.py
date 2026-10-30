@@ -1,13 +1,12 @@
 """Shared model-registry and scenario-directory fixtures for the JSONL pipeline tests."""
 
-import sys
-import types
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 from pydantic import BaseModel, Field
+
+from tests.helpers import register_temp_module
 
 
 class Widget(BaseModel):
@@ -24,26 +23,13 @@ def widget_model() -> type[Widget]:
 
 
 @pytest.fixture
-def entity_models_module_factory() -> Generator[Callable[[dict[str, type[BaseModel]]], str]]:
-    """Return a factory that registers a module holding an ENTITY_MODELS dict.
-
-    Each call creates a module with a unique name and adds it to
-    sys.modules. Removes each created module after the test.
-    """
-    created_names: list[str] = []
+def entity_models_module_factory(monkeypatch: pytest.MonkeyPatch) -> Callable[[dict[str, type[BaseModel]]], str]:
+    """Return a factory that registers a module holding an ENTITY_MODELS dict."""
 
     def _factory(entity_models: dict[str, type[BaseModel]]) -> str:
-        module_name = f"_test_entity_models_{uuid4().hex}"
-        module = types.ModuleType(module_name)
-        module.ENTITY_MODELS = entity_models  # type: ignore[attr-defined]
-        sys.modules[module_name] = module
-        created_names.append(module_name)
-        return module_name
+        return register_temp_module(monkeypatch, "_test_entity_models", ENTITY_MODELS=entity_models)
 
-    yield _factory
-
-    for name in created_names:
-        sys.modules.pop(name, None)
+    return _factory
 
 
 @pytest.fixture

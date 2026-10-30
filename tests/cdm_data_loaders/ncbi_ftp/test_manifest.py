@@ -451,6 +451,8 @@ def test_verify_transfer_candidates_mixed(
     mock_head.side_effect = head_side_effect
     result = verify_transfer_candidates(["GCF_000001215.4", "GCF_000001405.40"], _assemblies(), _BUCKET, _KEY_PREFIX)
     assert result == ["GCF_000001405.40"]
+    mock_connect.assert_called_once()
+    mock_connect.return_value.quit.assert_called_once()
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")

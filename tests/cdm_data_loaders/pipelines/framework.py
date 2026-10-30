@@ -1,6 +1,5 @@
 """Unified test execution framework for running CDM data ingestion pipelines in core, cli, or docker mode."""
 
-import logging
 import os
 import shutil
 import subprocess
@@ -26,9 +25,8 @@ from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
 from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME, PipelineCli
-from cdm_data_loaders.utils import cdm_logger
 from tests.cdm_data_loaders.pipelines.helpers import read_jsonl_file
-from tests.conftest import BASE_DIR, CONFIG_BUCKET, LOCAL_FS
+from tests.conftest import BASE_DIR, CONFIG_BUCKET, LOCAL_FS, preserve_logging_state
 from tests.helpers import settings_to_argv
 
 DEFAULT_DOCKER_IMAGE_TAG: Final[str] = "cdm-data-loaders-test:latest"
@@ -581,24 +579,16 @@ class PipelineTestRunner:
             raise ValueError(err_msg)
 
         bucket_dir = self._resolve_bucket_dir(output_dir, use_destination)
-        root = logging.getLogger()
-        handlers, level = root.handlers[:], root.level
-        applied_key = cdm_logger.applied_key
-        try:
-            with dlt.config.values(
+        with (
+            preserve_logging_state(),
+            dlt.config.values(
                 {
                     f"destination.{use_destination}.destination_type": "filesystem",
                     f"destination.{use_destination}.bucket_url": str(bucket_dir),
                 }
-            ):
-                return core.run_cli(spec.settings_cls, spec.pipeline_fn, cli_args=args)
-        finally:
-            for handler in root.handlers[:]:
-                root.removeHandler(handler)
-            for handler in handlers:
-                root.addHandler(handler)
-            root.setLevel(level)
-            cdm_logger.applied_key = applied_key
+            ),
+        ):
+            return core.run_cli(spec.settings_cls, spec.pipeline_fn, cli_args=args)
 
     def _run_cli(
         self,
@@ -613,27 +603,17 @@ class PipelineTestRunner:
             raise ValueError(err_msg)
 
         bucket_dir = self._resolve_bucket_dir(output_dir, use_destination)
-        root = logging.getLogger()
-        handlers, level = root.handlers[:], root.level
-        applied_key = cdm_logger.applied_key
-        try:
-            with (
-                patch.object(sys, "argv", [spec.cli_command, *args]),
-                dlt.config.values(
-                    {
-                        f"destination.{use_destination}.destination_type": "filesystem",
-                        f"destination.{use_destination}.bucket_url": str(bucket_dir),
-                    }
-                ),
-            ):
-                spec.cli_callable()
-        finally:
-            for handler in root.handlers[:]:
-                root.removeHandler(handler)
-            for handler in handlers:
-                root.addHandler(handler)
-            root.setLevel(level)
-            cdm_logger.applied_key = applied_key
+        with (
+            preserve_logging_state(),
+            patch.object(sys, "argv", [spec.cli_command, *args]),
+            dlt.config.values(
+                {
+                    f"destination.{use_destination}.destination_type": "filesystem",
+                    f"destination.{use_destination}.bucket_url": str(bucket_dir),
+                }
+            ),
+        ):
+            spec.cli_callable()
 
         return reconstruct_load_info(output_dir, bucket_dir=bucket_dir)
 

@@ -2,30 +2,32 @@
 
 import json
 import logging
-from collections.abc import Mapping
 from decimal import Decimal
-from typing import Final
+from typing import ClassVar, Final
 
 import pyarrow as pa
 from frozendict import frozendict
 from jsonschema import Draft202012Validator
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.inference import decimal_places, is_unconstrained_node, json_type_from_enum
+from cdm_data_loaders.converters.core.inference import decimal_places, json_type_from_enum
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import NodeHints, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.core.ir_values import mutable_value
-from cdm_data_loaders.converters.core.metadata import DEFAULT_METADATA_KEYWORDS, ConversionContext
+from cdm_data_loaders.converters.core.metadata import ConversionContext
+from cdm_data_loaders.converters.emitters._tabular_base import (
+    DECIMAL128_MAX_PRECISION,
+    DEFAULT_STRING_FORMATS,
+    INT32_WIDTH,
+    _TabularEmitterBase,
+    fits_int32_bounds,
+    merge_format_map_with_defaults,
+)
 
 logger = logging.getLogger(__name__)
 
 INT8_WIDTH: Final = 8
 INT16_WIDTH: Final = 16
-INT32_WIDTH: Final = 32
-INT32_MIN: Final = -2_147_483_648
-INT32_MAX: Final = 2_147_483_647
-DECIMAL128_MAX_PRECISION: Final = 38
 DECIMAL256_MAX_PRECISION: Final = 76
 WEI_PRECISION: Final = DECIMAL256_MAX_PRECISION
 MAX_MILLIS_DIGITS: Final = 3
@@ -34,24 +36,7 @@ DEFAULT_FORMAT_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
     {
         "date": pa.date32(),
         "date-time": pa.timestamp("us", tz="UTC"),
-        **dict.fromkeys(
-            (
-                "time",
-                "duration",
-                "email",
-                "hostname",
-                "idn-email",
-                "idn-hostname",
-                "ipv4",
-                "ipv6",
-                "iri-reference",
-                "iri",
-                "uri-reference",
-                "uri",
-                "uuid",
-            ),
-            pa.string(),
-        ),
+        **dict.fromkeys(DEFAULT_STRING_FORMATS, pa.string()),
     }
 )
 
@@ -65,52 +50,30 @@ def merge_format_map(value: object) -> object:
     :rtype: object
     :raises ValueError: if a key is not a string or a value is not a PyArrow ``DataType``
     """
-    if isinstance(value, Mapping):
-        if any(not isinstance(key, str) or not isinstance(item, pa.DataType) for key, item in value.items()):
-            msg = "format_map must map strings to PyArrow DataType instances"
-            raise ValueError(msg)
-        return frozendict({**DEFAULT_FORMAT_MAP, **value})
-    return value
+    return merge_format_map_with_defaults(value, DEFAULT_FORMAT_MAP, pa.DataType, "PyArrow")
 
 
 class PyArrowEmitterError(ConversionError):
     """A typed schema cannot be represented by the configured Arrow policy."""
 
 
-class PyArrowEmitter(BaseModel):
+class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
     """Convert typed schema nodes into PyArrow schemas and empty tables."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+    _error_cls: ClassVar[type[ConversionError]] = PyArrowEmitterError
+    _target_name: ClassVar[str] = "Arrow"
+    _string_type_label: ClassVar[str] = "string"
+    _union_approx_reason: ClassVar[str] = "Arrow has no union type compatible with table storage."
+    _array_label: ClassVar[str] = "Arrow lists"
+    _slot_label: ClassVar[str] = "list's"
 
     format_map: frozendict[str, pa.DataType] = Field(default_factory=lambda: DEFAULT_FORMAT_MAP)
-    treat_unknown_as_string: bool = True
-    emit_unions_as_json: bool = False
-    extra_metadata_keywords: frozenset[str] = Field(default_factory=frozenset)
-    max_nesting: int = Field(default=10, ge=1)
 
     @field_validator("format_map", mode="before")
     @classmethod
     def _merge_with_builtin_format_map(cls, value: object) -> object:
         """Merge nonempty format overrides into the built-in mapping."""
         return merge_format_map(value) if value else value
-
-    def build_context(self, validator_cls: type) -> ConversionContext:
-        """Build draft-specific metadata policy and report invalid requested keywords.
-
-        :param validator_cls: the ``jsonschema`` validator class for the source draft
-        :type validator_cls: type
-        :return: the metadata selection context
-        :rtype: ConversionContext
-        """
-        context = ConversionContext(validator_cls, self.extra_metadata_keywords)
-        if context.invalid_extra_metadata_keywords:
-            logger.warning(
-                "Ignoring invalid extra_metadata_keywords %s: these are neither recognised JSON Schema "
-                "keywords for the detected draft (%s) nor vendor extensions prefixed with 'x-'.",
-                sorted(context.invalid_extra_metadata_keywords),
-                validator_cls.__name__,
-            )
-        return context
 
     def emit(self, document: SchemaDocument) -> pa.Schema:
         """Emit a table schema, requiring the root to be a struct.
@@ -143,39 +106,6 @@ class PyArrowEmitter(BaseModel):
         """
         return self.emit(document).empty_table()
 
-    def emit_node(self, node: TypedNode, ctx: ConversionContext | None = None, depth: int = 0) -> pa.DataType:
-        """Emit a scalar or container node without a table-root restriction.
-
-        :param node: the node to convert
-        :type node: TypedNode
-        :param ctx: draft-specific metadata context; Draft 2020-12 when omitted
-        :type ctx: ConversionContext | None
-        :param depth: current nesting depth
-        :type depth: int
-        :return: the Arrow type
-        :rtype: pa.DataType
-        :raises PyArrowEmitterError: if the node cannot be represented under the configured policy
-        """
-        if ctx is None:
-            ctx = self.build_context(Draft202012Validator)
-        logical = self._emit_logical(node)
-        if logical is not None:
-            return logical
-        kind = self._type_name(node)
-        if kind in {"object", "array", "map"}:
-            return {"object": self._emit_object, "array": self._emit_array, "map": self._emit_map}[kind](
-                node, ctx, depth
-            )
-        scalars = {"boolean": pa.bool_(), "null": pa.null(), "collapsed-union": pa.string()}
-        if kind in scalars:
-            return scalars[kind]
-        if kind == "enum":
-            values = node.constraints["enum"]
-            if isinstance(values, tuple):
-                return infer_type_from_enum(list(values))
-        converters = {"string": self._emit_string, "integer": self._emit_integer, "number": self._emit_number}
-        return converters[kind](node) if kind in converters else self._emit_unknown(node, ctx)
-
     def build_metadata(
         self, node: TypedNode, ctx: ConversionContext, field: SchemaField | None = None
     ) -> dict[str, str]:
@@ -190,73 +120,25 @@ class PyArrowEmitter(BaseModel):
         :return: ``jsonschema`` (JSON object), ``comment`` and ``original_union`` (JSON array) entries
         :rtype: dict[str, str]
         """
-        values = node.aggregate_metadata(field)
-        selected = DEFAULT_METADATA_KEYWORDS | ctx.allowed_extra_metadata_keywords
-        jsonschema = {key: mutable_value(values[key]) for key in selected if key in values}
+        values, jsonschema, original_union = self._select_metadata_parts(node, ctx, field)
         metadata: dict[str, str] = {}
         if jsonschema:
             metadata["jsonschema"] = _dump_json(jsonschema)
         description = values.get("description")
         if isinstance(description, str):
             metadata["comment"] = description
-        if self.emit_unions_as_json:
-            declaration = node.declared_type
-            if isinstance(declaration, tuple):
-                non_null = [kind for kind in declaration if kind != "null"]
-                if len(non_null) > 1:
-                    metadata["original_union"] = _dump_json(non_null)
+        if original_union is not None:
+            metadata["original_union"] = _dump_json(original_union)
         return metadata
 
-    def _type_name(self, node: TypedNode) -> str:
-        """Select declared, enum or inferred types without flattening the IR."""
-        declaration = node.declared_type
-        if isinstance(declaration, tuple):
-            non_null = [kind for kind in declaration if kind != "null"]
-            if not non_null:
-                return "null"
-            if len(non_null) == 1:
-                return non_null[0]
-            if not self.treat_unknown_as_string:
-                msg = f"Unsupported multi-type union: {list(declaration)!r}"
-                raise PyArrowEmitterError(msg)
-            if self.emit_unions_as_json:
-                logger.info("Emitting multi-type union %r as JSON string.", list(declaration))
-            else:
-                logger.warning("Collapsing multi-type union %r to string.", list(declaration))
-            return "collapsed-union"
-        if declaration is not None:
-            return declaration
-        if "enum" in node.constraints:
-            return "enum"
-        return node.inferred_type or node.type
-
-    def _emit_unknown(self, node: TypedNode, ctx: ConversionContext) -> pa.DataType:
-        """Approximate combiners or apply strict unsupported-type handling."""
-        if node.type in {"any", "never"} and (node.provenance is None or node.provenance.source == "json-schema"):
-            message = (
-                f"Boolean JSON Schema `{node.type == 'any'}` has no Arrow equivalent "
-                "(unconstrained 'any' type or unsatisfiable 'never' type)."
-            )
-        else:
-            for keyword, branches in (("oneOf", node.one_of), ("anyOf", node.any_of)):
-                if branches:
-                    logger.warning(
-                        "Approximating '%s' by using only its first branch for type inference; Arrow has no union "
-                        "type compatible with table storage.",
-                        keyword,
-                    )
-                    return self.emit_node(branches[0], ctx)
-            for keyword in ("not", "if", "then", "else"):
-                if keyword in node.schema_keywords:
-                    logger.warning(
-                        "Ignoring unsupported conditional keyword '%s'; it has no effect on the resulting Arrow type.",
-                        keyword,
-                    )
-            message = f"Unsupported/unknown schema type: {node.declared_type or node.type!r}"
-        if not self.treat_unknown_as_string:
-            raise PyArrowEmitterError(message)
-        logger.warning("%s Falling back to string.", message)
+    def _string_type(self) -> pa.DataType:
         return pa.string()
+
+    def _scalar_types(self) -> dict[str, pa.DataType]:
+        return {"boolean": pa.bool_(), "null": pa.null(), "collapsed-union": pa.string()}
+
+    def _infer_enum_type(self, values: list[object]) -> pa.DataType:
+        return infer_type_from_enum(values)
 
     def _emit_object(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> pa.DataType:
         """Emit fixed fields, a dynamic map, or an empty struct."""
@@ -312,20 +194,8 @@ class PyArrowEmitter(BaseModel):
 
     def _emit_array(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> pa.ListType:
         """Emit homogeneous arrays, approximating tuple schemas by their first slot."""
-        element = node.items
-        if node.prefix_items is not None:
-            logger.warning(
-                "Array schema uses 'prefixItems' (tuple validation); Arrow lists are homogeneous, so "
-                "only the first tuple slot's type is used as the list's element type."
-            )
-            element = node.prefix_items[0] if node.prefix_items else None
-        elif isinstance(element, tuple):
-            logger.warning(
-                "Array schema uses tuple-style 'items' (list of schemas); Arrow lists are "
-                "homogeneous, so only the first item's type is used as the list's element type."
-            )
-            element = element[0] if element else None
-        if element is None or is_unconstrained_node(element):
+        element = self._resolve_array_element(node)
+        if element is None:
             return pa.list_(pa.field("item", pa.string(), nullable=True))
         return pa.list_(pa.field("item", self.emit_node(element, ctx, depth + 1), nullable=_element_nullable(element)))
 
@@ -337,16 +207,7 @@ class PyArrowEmitter(BaseModel):
     @staticmethod
     def _emit_integer(node: TypedNode) -> pa.DataType:
         """Use int32 only when both bounds fit."""
-        minimum = node.constraints.get("minimum", node.constraints.get("exclusiveMinimum"))
-        maximum = node.constraints.get("maximum", node.constraints.get("exclusiveMaximum"))
-        if (
-            isinstance(minimum, (int, float, Decimal))
-            and isinstance(maximum, (int, float, Decimal))
-            and minimum >= INT32_MIN
-            and maximum <= INT32_MAX
-        ):
-            return pa.int32()
-        return pa.int64()
+        return pa.int32() if fits_int32_bounds(node) else pa.int64()
 
     @staticmethod
     def _emit_number(node: TypedNode) -> pa.DataType:

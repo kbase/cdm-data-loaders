@@ -1,35 +1,17 @@
 """XML to pyarrow pipeline for the KBase CTS."""
 
-from collections.abc import Generator, Iterator
 from pathlib import Path
-from typing import Any
 
 from dlt.common.pipeline import LoadInfo
-from dlt.common.storages.fsspec_filesystem import FileItemDict
-from dlt.common.typing import TDataItems
 
 from cdm_data_loaders.pipelines.core import (
     PipelineCli,
     build_file_ingest_kwargs,
-    build_filesystem_resource,
+    build_per_file_filesystem_resource,
     run_pipeline,
 )
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import PIPELINE_NAME, XmlToPyArrowSettings
 from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
-
-
-def _read_items(items: Iterator[FileItemDict], settings: XmlToPyArrowSettings) -> Generator[TDataItems, Any, Any]:
-    """Read each file in items. Yields PyArrow tables for matched `xml_tag` elements.
-
-    :param items: file items to read
-    :type  items: Iterator[FileItemDict]
-    :param settings: pipeline config, including xml_tag and XSD schema
-    :type  settings: XmlToPyArrowSettings
-    :yield: PyArrow tables of matched elements
-    :rtype: Generator[TDataItems, Any, Any]
-    """
-    for file_item in items:
-        yield from process_xml_file_to_pyarrow(settings, file_path=Path(file_item.local_file_path))
 
 
 def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None:
@@ -38,7 +20,12 @@ def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None
     :param settings: pipeline configuration
     :type  settings: XmlToPyArrowSettings
     """
-    xmltopyarrow_resource = build_filesystem_resource(settings, _read_items, settings, name="xmltopyarrow_reader")
+    xmltopyarrow_resource = build_per_file_filesystem_resource(
+        settings,
+        lambda file_item, cfg: process_xml_file_to_pyarrow(cfg, file_path=Path(file_item.local_file_path)),
+        settings,
+        name="xmltopyarrow_reader",
+    )
     pipeline_name = str(settings.model_config.get("cli_prog_name") or PIPELINE_NAME)
 
     return run_pipeline(

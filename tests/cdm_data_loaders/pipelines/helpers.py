@@ -12,14 +12,18 @@ from typing import Any, Final
 import dlt
 import duckdb
 import pendulum
+import pyarrow as pa
 import pyarrow.parquet as pq
 import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.destinations import filesystem
 
+from cdm_data_loaders.converters.core.paths import set_nested
 from cdm_data_loaders.core.fields import PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
+from cdm_data_loaders.utils.gz import open_maybe_gzip
+from tests.helpers import strip_none_values
 
 logger: Logger = getLogger(__name__)
 
@@ -51,22 +55,34 @@ def is_metadata_table(table_name: str) -> bool:
 
 
 def read_jsonl_file(file_path: Path) -> list[dict[str, Any]]:
-    """Read a plain or gzipped JSONLines file, detecting gzip by magic bytes."""
-    with file_path.open("rb") as f:
-        is_gzipped = f.read(2) == b"\x1f\x8b"
-
-    opener = gzip.open if is_gzipped else open
+    """Read a plain or gzipped JSONLines file."""
     rows: list[dict[str, Any]] = []
-    with opener(file_path, "rt", encoding="utf-8") as f:
+    with open_maybe_gzip(file_path) as f:
         for raw_line in f:
-            stripped = raw_line.strip()
+            stripped = raw_line.decode("utf-8").strip()
             if not stripped:
                 continue
             try:
                 rows.append(json.loads(stripped))
             except json.JSONDecodeError:
-                logger.warning("Skipping unparseable line in %s: %r", file_path, raw_line[:200])
+                logger.warning("Skipping unparseable line in %s: %r", file_path, stripped[:200])
     return rows
+
+
+def write_jsonl_gz_file(path: Path, rows: list[dict[str, Any]]) -> Path:
+    """Write rows as gzip-compressed JSONLines to `path`, creating parent directories."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(path, "wt", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps(row) + "\n")
+    return path
+
+
+def write_parquet_file(path: Path, rows: list[dict[str, Any]]) -> Path:
+    """Write rows as a Parquet file to `path`, creating parent directories."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(pa.Table.from_pylist(rows), path)
+    return path
 
 
 def read_parquet_tables(output_dir: Path) -> dict[str, list[dict[str, Any]]]:
@@ -285,13 +301,6 @@ def denormalize_path(path: str) -> list[str]:
     return [denormalize_identifier(fragment) for fragment in path.split("__")]
 
 
-def set_nested(target: dict[str, Any], path: list[str], value: Any) -> None:
-    """Set a value at a nested path, creating intermediate dicts as needed."""
-    for fragment in path[:-1]:
-        target = target.setdefault(fragment, {})
-    target[path[-1]] = value
-
-
 def rows_as_multiset(tables: dict[str, list[dict[str, Any]]], table_name: str) -> list[str]:
     """Rows of a table as sorted JSON strings for order-insensitive comparison."""
     return sorted(
@@ -351,7 +360,7 @@ def reconstruct_entries(tables: dict[str, list[dict[str, Any]]]) -> list[dict[st
     return entries
 
 
-def _attach_nested_rows(  # noqa: PLR0917
+def _attach_nested_rows(
     target: dict[str, Any],
     parent_id: str,
     parent_index: dict[str, list[tuple[str, dict[str, Any]]]],
@@ -413,17 +422,8 @@ def _normalize_reference_entry(entry: dict[str, Any]) -> dict[str, Any]:
         value = raw_value
         if isinstance(value, str) and value.startswith(("{", "[")):
             value = json.loads(value)
-        normalized[key] = _normalize_reference_value(value)
+        normalized[key] = strip_none_values(value)
     return normalized
-
-
-def _normalize_reference_value(value: Any) -> Any:
-    """Recursively normalize DuckDB STRUCT/LIST/JSON values to plain Python structures."""
-    if isinstance(value, list):
-        return [_normalize_reference_value(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _normalize_reference_value(item) for key, item in value.items() if item is not None}
-    return value
 
 
 def assert_datasets_equal(

@@ -39,7 +39,7 @@ def settings_factory(
     def _factory(**overrides: Any) -> JsonlPydanticIngestSettings:  # noqa: ANN401
         defaults: dict[str, Any] = {
             "dataset_name": "test_dataset",
-            "dlt_dev_mode": True,
+            "dlt_dev_mode": False,
             "entity_models_module": entity_models_module,
             "use_destination": dlt_destination_config,
         }

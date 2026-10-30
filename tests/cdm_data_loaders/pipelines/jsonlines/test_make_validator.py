@@ -8,7 +8,7 @@ import pytest
 from dlt.extract.items import DataItemWithMeta, TableNameMeta
 from pydantic import ValidationError
 
-from cdm_data_loaders.pipelines.jsonlines.base import make_page_router
+from cdm_data_loaders.readers.jsonlines import make_page_router
 from tests.cdm_data_loaders.pipelines.jsonlines.conftest import make_item
 
 

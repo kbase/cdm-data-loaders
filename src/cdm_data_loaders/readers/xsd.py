@@ -722,7 +722,7 @@ def _resolve_target_element(schema: xmlschema.XMLSchema, xml_tag: str) -> XsdEle
     """Resolve ``xml_tag`` (local name or Clark notation) to a unique ``XsdElement`` declaration."""
     if xml_tag.startswith("{") and "}" in xml_tag:
         ns_filter: str | None = xml_tag
-        local_target = xml_tag.rsplit("}", maxsplit=1)[-1]
+        local_target = _local_name(xml_tag)
     else:
         ns_filter = None
         local_target = xml_tag

@@ -14,9 +14,8 @@ from uuid import uuid4
 import pytest
 
 import cdm_data_loaders.pipelines.xsv.pipeline as xsv_pipeline_module
-from cdm_data_loaders.pipelines.core import PipelineCli
+from cdm_data_loaders.pipelines.core import DEFAULT_REJECTED_SUFFIX, PipelineCli
 from cdm_data_loaders.pipelines.xsv.pipeline import (
-    REJECTED_SUFFIX,
     XsvWorkPaths,
     _process_xsv_file,
     cli,
@@ -84,7 +83,7 @@ def test_process_xsv_file_pass_routes_total_failure_to_rejected_table(
     results = list(_process_xsv_file(make_file_item(Path(settings.input_dir) / "bad.csv"), settings, work_paths))
 
     table_names = [result.meta.table_name for result in results]
-    assert table_names == [f"my_table{REJECTED_SUFFIX}"]
+    assert table_names == [f"my_table{DEFAULT_REJECTED_SUFFIX}"]
     (rejected,) = results[0].data
     assert rejected["file"] == "bad.csv"
     assert rejected["message"]

@@ -12,9 +12,9 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import (
     resolve_xsv_parsing_config,
 )
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from tests.xsv_fixtures import COLUMNS, write_xsv
 
 VALID_SCHEMA_URI: Final[str] = "https://json-schema.org/draft/2020-12/schema"
-COLUMNS: Final[list[str]] = ["number", "date", "float", "boolean", "string"]
 
 
 def _schema(properties: dict[str, Any] | None = None, x_xsv_config: dict[str, Any] | None = None) -> ValidatedSchema:
@@ -137,12 +137,6 @@ def test_resolve_xsv_parsing_config_pass_quoting_policy_not_propagated() -> None
 """read_validated_rows"""
 
 
-def _write_xsv(tmp_path: Path, content: str, file_name: str = "data.csv") -> Path:
-    path = tmp_path / file_name
-    path.write_text(content)
-    return path
-
-
 def test_read_validated_rows_pass_casts_rows_by_property_type(tmp_path: Path) -> None:
     """Rows are cast according to the declared property types, keyed by header column name."""
     properties = {
@@ -153,7 +147,7 @@ def test_read_validated_rows_pass_casts_rows_by_property_type(tmp_path: Path) ->
         "string": {"type": "string"},
     }
     content = "number,date,float,boolean,string\n2,2023-01-15,3.14,true,key:value1\n3,2023-02-20,,false,key:value2\n"
-    xsv_path = _write_xsv(tmp_path, content)
+    xsv_path = write_xsv(tmp_path, content, file_name="data.csv")
 
     rows = list(read_validated_rows(xsv_path, properties, delimiter=","))
 
@@ -166,7 +160,7 @@ def test_read_validated_rows_pass_casts_rows_by_property_type(tmp_path: Path) ->
 def test_read_validated_rows_pass_tab_delimited(tmp_path: Path) -> None:
     r"""A tab-delimited file is read correctly when delimiter="\t"."""
     properties = {"a": {"type": "integer"}, "b": {"type": "string"}}
-    xsv_path = _write_xsv(tmp_path, "a\tb\n1\tfoo\n2\tbar\n", file_name="data.tsv")
+    xsv_path = write_xsv(tmp_path, "a\tb\n1\tfoo\n2\tbar\n", file_name="data.tsv")
 
     rows = list(read_validated_rows(xsv_path, properties, delimiter="\t"))
 
@@ -176,7 +170,7 @@ def test_read_validated_rows_pass_tab_delimited(tmp_path: Path) -> None:
 def test_read_validated_rows_pass_custom_quote_char(tmp_path: Path) -> None:
     """A field containing the delimiter is read as one field when wrapped in the custom quote char."""
     properties = {"a": {"type": "string"}, "b": {"type": "string"}}
-    xsv_path = _write_xsv(tmp_path, "a,b\n'contains, a comma',plain\n")
+    xsv_path = write_xsv(tmp_path, "a,b\n'contains, a comma',plain\n", file_name="data.csv")
 
     rows = list(read_validated_rows(xsv_path, properties, delimiter=",", quote="'"))
 
@@ -186,7 +180,7 @@ def test_read_validated_rows_pass_custom_quote_char(tmp_path: Path) -> None:
 def test_read_validated_rows_pass_custom_escape_char_disables_doublequote(tmp_path: Path) -> None:
     """A backslash-escaped quote inside a field is read literally when escape is set."""
     properties = {"a": {"type": "string"}}
-    xsv_path = _write_xsv(tmp_path, 'a\n"contains \\"a quote\\""\n')
+    xsv_path = write_xsv(tmp_path, 'a\n"contains \\"a quote\\""\n', file_name="data.csv")
 
     rows = list(read_validated_rows(xsv_path, properties, delimiter=",", escape="\\"))
 
@@ -195,6 +189,6 @@ def test_read_validated_rows_pass_custom_escape_char_disables_doublequote(tmp_pa
 
 def test_read_validated_rows_pass_header_only_file_yields_no_rows(tmp_path: Path) -> None:
     """A file with only a header row yields no rows."""
-    xsv_path = _write_xsv(tmp_path, "number,date,float,boolean,string\n")
+    xsv_path = write_xsv(tmp_path, "number,date,float,boolean,string\n", file_name="data.csv")
 
     assert list(read_validated_rows(xsv_path, {}, delimiter=",")) == []

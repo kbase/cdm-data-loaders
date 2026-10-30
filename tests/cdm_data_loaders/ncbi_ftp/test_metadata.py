@@ -7,10 +7,8 @@ from pathlib import PurePosixPath
 from unittest.mock import MagicMock, patch
 from urllib.parse import urlparse
 
-import boto3
-import botocore.client
 import pytest
-from moto import mock_aws
+from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.ncbi_ftp.metadata as metadata_mod
 from cdm_data_loaders.ncbi_ftp.metadata import (
@@ -22,11 +20,7 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
     upload_descriptor,
     validate_descriptor,
 )
-from cdm_data_loaders.utils.file_transfer.s3 import client
-from cdm_data_loaders.utils.file_transfer.s3.client import reset_s3_client
 from tests.cdm_data_loaders.ncbi_ftp.conftest import TEST_BUCKET
-
-AWS_REGION = "us-east-1"
 
 _ACCESSION = "GCF_000001215.4"
 _ASSEMBLY_DIR = PurePosixPath("GCF_000001215.4_Release_6_plus_ISO1_MT")
@@ -211,38 +205,19 @@ def test_validate_descriptor_empty_raises() -> None:
 
 
 @pytest.fixture
-def mock_s3(monkeypatch: pytest.MonkeyPatch) -> Generator[botocore.client.BaseClient]:
-    """Mocked S3 client with the CDM Lake bucket pre-created."""
-    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
-    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
-    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
-    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
-    boto3.DEFAULT_SESSION = None
-    with mock_aws():
-        s3_client = boto3.client("s3", region_name=AWS_REGION)
-        s3_client.create_bucket(Bucket=str(TEST_BUCKET))
-        reset_s3_client()
-        with patch.object(client, "get_s3_client", return_value=s3_client):
-            yield s3_client
-        reset_s3_client()
-
-
-@pytest.fixture
 def mock_s3_with_descriptor(
-    mock_s3: botocore.client.BaseClient,
-) -> Generator[tuple[botocore.client.BaseClient, MagicMock]]:
-    """mock_s3 with a live descriptor pre-uploaded and copy_object patched."""
+    mock_s3_client: S3Client,
+) -> Generator[tuple[S3Client, MagicMock]]:
+    """mock_s3_client with a live descriptor pre-uploaded and copy_object patched."""
     descriptor = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, _SAMPLE_RESOURCES, timestamp=_TIMESTAMP)
     live_key = build_descriptor_key(_ASSEMBLY_DIR, _KEY_PREFIX)
-    mock_s3.put_object(Bucket=str(TEST_BUCKET), Key=f"{live_key}", Body=json.dumps(descriptor).encode())
+    mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=f"{live_key}", Body=json.dumps(descriptor).encode())
     with patch.object(metadata_mod, "copy_object") as mock_copy:
-        yield mock_s3, mock_copy
+        yield mock_s3_client, mock_copy
 
 
 @pytest.mark.s3
-def test_upload_descriptor(mock_s3: botocore.client.BaseClient) -> None:
+def test_upload_descriptor(mock_s3_client: S3Client) -> None:
     """Uploaded object is valid JSON at the expected key with the expected identifier."""
     descriptor = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, _SAMPLE_RESOURCES, timestamp=_TIMESTAMP)
     key = upload_descriptor(descriptor, _ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX)
@@ -250,22 +225,22 @@ def test_upload_descriptor(mock_s3: botocore.client.BaseClient) -> None:
     assert key == expected_key
     assert key.is_relative_to(_KEY_PREFIX)
     assert key.match("**_datapackage.json")
-    body = json.loads(mock_s3.get_object(Bucket=str(TEST_BUCKET), Key=str(key))["Body"].read())
+    body = json.loads(mock_s3_client.get_object(Bucket=str(TEST_BUCKET), Key=str(key))["Body"].read())
     assert body["identifier"] == f"NCBI:{_ACCESSION}"
 
 
 @pytest.mark.s3
-def test_upload_descriptor_dry_run(mock_s3: botocore.client.BaseClient) -> None:
+def test_upload_descriptor_dry_run(mock_s3_client: S3Client) -> None:
     """Dry-run returns the correct key but creates no S3 object."""
     descriptor = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, _SAMPLE_RESOURCES, timestamp=_TIMESTAMP)
     key = upload_descriptor(descriptor, _ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, dry_run=True)
     assert key == build_descriptor_key(_ASSEMBLY_DIR, _KEY_PREFIX)
-    objs = mock_s3.list_objects_v2(Bucket=str(TEST_BUCKET)).get("Contents", [])
+    objs = mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET)).get("Contents", [])
     assert not any(o["Key"] == key for o in objs)
 
 
 @pytest.mark.s3
-def test_archive_descriptor(mock_s3_with_descriptor: tuple[botocore.client.BaseClient, MagicMock]) -> None:
+def test_archive_descriptor(mock_s3_with_descriptor: tuple[S3Client, MagicMock]) -> None:
     """archive_descriptor returns True and calls copy_object with the correct keys."""
     _, mock_copy = mock_s3_with_descriptor
     result = archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG)
@@ -277,14 +252,14 @@ def test_archive_descriptor(mock_s3_with_descriptor: tuple[botocore.client.BaseC
 
 
 @pytest.mark.s3
-def test_archive_descriptor_dry_run(mock_s3_with_descriptor: tuple[botocore.client.BaseClient, MagicMock]) -> None:
+def test_archive_descriptor_dry_run(mock_s3_with_descriptor: tuple[S3Client, MagicMock]) -> None:
     """Dry-run returns True but does not call copy_object."""
     _, mock_copy = mock_s3_with_descriptor
     assert archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG, dry_run=True) is True
     mock_copy.assert_not_called()
 
 
-@pytest.mark.usefixtures("mock_s3")
+@pytest.mark.usefixtures("mock_s3_client")
 def test_archive_descriptor_missing_returns_false() -> None:
     """Returns False when no descriptor exists at the live key."""
     assert archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG) is False

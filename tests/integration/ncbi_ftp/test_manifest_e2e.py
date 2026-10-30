@@ -11,7 +11,8 @@ from pathlib import Path, PurePosixPath
 import pytest
 from types_boto3_s3 import S3Client
 
-from cdm_data_loaders.ncbi_ftp.assembly import FILE_FILTERS, FTP_HOST, build_accession_path, parse_md5_checksums_file
+from cdm_data_loaders.ncbi_ftp.assembly import FILE_FILTERS, build_accession_path, parse_md5_checksums_file
+from cdm_data_loaders.ncbi_ftp.constants import FTP_HOST
 from cdm_data_loaders.ncbi_ftp.manifest import (
     AssemblyRecord,
     compute_diff,

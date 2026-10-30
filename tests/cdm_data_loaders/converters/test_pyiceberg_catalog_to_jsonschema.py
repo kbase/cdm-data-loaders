@@ -7,92 +7,25 @@ Draft 2020-12 validator.
 
 import json
 import logging
-from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
-from pyiceberg import catalog as pyiceberg_catalog
-from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog import Catalog
 from pyiceberg.schema import Schema
-from pyiceberg.types import (
-    BinaryType,
-    DateType,
-    DecimalType,
-    DoubleType,
-    IntegerType,
-    ListType,
-    LongType,
-    MapType,
-    NestedField,
-    StringType,
-    StructType,
-    TimestamptzType,
-)
-from pyiceberg.utils.config import Config
+from pyiceberg.types import BinaryType, NestedField
 
 from cdm_data_loaders.converters.pyiceberg_catalog_to_jsonschema import (
     IcebergToJsonSchemaSettings,
     dump_catalog_schemas,
 )
 from tests.cdm_data_loaders.converters.conftest import (
+    CATALOG_NAME,
     JSON_SCHEMA_KEYWORDS,
     iter_extension_keys,
     iter_schema_keywords,
     to_snake_case,
 )
-
-CATALOG_NAME = "testcat"
-
-
-@pytest.fixture
-def catalog_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Point the testcat catalog at a file-backed SQLite DB under tmp_path."""
-    db_path = tmp_path / "catalog.db"
-    warehouse = tmp_path / "warehouse"
-    warehouse.mkdir()
-    monkeypatch.setenv("PYICEBERG_CATALOG__TESTCAT__TYPE", "sql")
-    monkeypatch.setenv("PYICEBERG_CATALOG__TESTCAT__URI", f"sqlite:///{db_path}")
-    monkeypatch.setenv("PYICEBERG_CATALOG__TESTCAT__WAREHOUSE", f"file://{warehouse}")
-    monkeypatch.setattr(pyiceberg_catalog, "_ENV_CONFIG", Config())
-    return tmp_path
-
-
-@pytest.fixture
-def catalog(catalog_env: Path) -> Generator[Catalog]:  # noqa: ARG001
-    """Load the testcat SQL catalog and close its database connections at teardown."""
-    with load_catalog(CATALOG_NAME) as loaded_catalog:
-        yield loaded_catalog
-
-
-@pytest.fixture
-def wide_schema() -> Schema:
-    """A schema exercising scalars, nested structs, lists, and maps."""
-    return Schema(
-        NestedField(1, "id", LongType(), required=True, doc="primary key"),
-        NestedField(2, "name", StringType(), required=True),
-        NestedField(3, "count", IntegerType(), required=False),
-        NestedField(4, "ratio", DoubleType(), required=False),
-        NestedField(5, "as_of", TimestamptzType(), required=False),
-        NestedField(6, "born_on", DateType(), required=False),
-        NestedField(7, "rate", DecimalType(12, 4), required=False),
-        NestedField(8, "tags", ListType(element_id=9, element=StringType(), element_required=False), required=False),
-        NestedField(
-            10,
-            "attrs",
-            MapType(key_id=11, key_type=StringType(), value_id=12, value_type=DoubleType(), value_required=False),
-            required=False,
-        ),
-        NestedField(
-            13,
-            "address",
-            StructType(
-                NestedField(14, "street", StringType(), required=True),
-                NestedField(15, "city", StringType(), required=False),
-            ),
-            required=False,
-        ),
-    )
 
 
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
@@ -189,7 +122,7 @@ def test_dump_catalog_schemas_pass_empty_catalog(
 
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
 @pytest.mark.parametrize("include_good", [False, True], ids=["all-fail", "partial-failure"])
-def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(  # noqa: PLR0917
+def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
     catalog: Catalog,
     catalog_env: Path,
     simple_schema: Schema,

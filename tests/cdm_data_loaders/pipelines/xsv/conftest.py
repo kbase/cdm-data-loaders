@@ -1,8 +1,6 @@
 """Fixtures shared by the XSV ingestion pipeline tests."""
 
 import json
-import os
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
@@ -13,9 +11,9 @@ from cdm_data_loaders.pipelines.xsv.pipeline import XsvWorkPaths
 from cdm_data_loaders.pipelines.xsv.settings import XsvIngestSettings
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import generate_header
 from tests.helpers import make_cts_settings
+from tests.xsv_fixtures import COLUMNS, write_xsv
 
 VALID_SCHEMA_URI: Final[str] = "https://json-schema.org/draft/2020-12/schema"
-COLUMNS: Final[list[str]] = ["number", "date", "float", "boolean", "string"]
 
 # The `float` column is deliberately typed `["string", "null"]`, not `"number"`, matching the
 # convention used throughout the xsv_validator test fixtures: it lets a field hold either a
@@ -34,42 +32,6 @@ DEFAULT_XSV_SCHEMA: Final[dict[str, Any]] = {
     },
     "x-xsv-config": {"x-delimiter": ",", "x-has-header": True},
 }
-
-VALID_ROWS: Final[list[list[str]]] = [
-    ["2", "2023-01-15", "3.14", "true", "key:value1"],
-    ["3", "2023-02-20", "1.11", "false", "key:value2"],
-]
-
-# One ragged row (missing the trailing `string` field) among otherwise-valid rows: recoverable.
-PARTIAL_RAGGED_ROWS: Final[list[list[str]]] = [
-    ["2", "2023-01-15", "3.14", "true", "key:value1"],
-    ["3", "2023-02-20", "1.11", "false"],
-    ["4", "2023-03-25", "2.22", "true", "key:value3"],
-]
-
-# Every row here is ragged (too few or too many fields): unrecoverable.
-ALL_RAGGED_ROWS: Final[list[list[str]]] = [
-    ["2", "2023-01-15", "3.14", "true"],
-    ["3", "2023-02-20", "1.11", "false", "key:value2", "extra"],
-]
-
-
-def rows_to_csv(rows: list[list[str]], header: list[str] = COLUMNS, delimiter: str = ",") -> str:
-    """Render rows (plus header) as delimited text content, one row per line."""
-    lines = [delimiter.join(header), *(delimiter.join(row) for row in rows)]
-    return "\n".join(lines) + "\n"
-
-
-@pytest.fixture(scope="session")
-def qsv_cmd() -> str:
-    """Provide the path/name of the qsv binary; override via the QSV_BIN env var if not on PATH.
-
-    Tests using this fixture are skipped when the qsv binary is not available.
-    """
-    cmd = shutil.which("qsv") or os.environ.get("QSV_BIN")
-    if not cmd or not Path(cmd).is_file():
-        pytest.skip(f"qsv binary not found at {cmd!r}; set QSV_BIN to point at a real binary")
-    return cmd
 
 
 @pytest.fixture
@@ -128,10 +90,4 @@ def work_paths_factory(tmp_path: Path, qsv_cmd: str) -> Callable[[XsvIngestSetti
 @pytest.fixture
 def write_xsv_file() -> Callable[[XsvIngestSettings, str, str], Path]:
     """Return a function that writes text content to a new file inside settings.input_dir."""
-
-    def _write(settings: XsvIngestSettings, file_name: str, content: str) -> Path:
-        path = Path(settings.input_dir) / file_name
-        path.write_text(content)
-        return path
-
-    return _write
+    return lambda settings, file_name, content: write_xsv(Path(settings.input_dir), content, file_name)

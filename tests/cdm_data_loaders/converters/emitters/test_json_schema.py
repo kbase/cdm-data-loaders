@@ -36,9 +36,10 @@ from pyiceberg.types import (
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, Extensions, ExtensionSpec
+from cdm_data_loaders.converters.core.inference import decimal_pattern
 from cdm_data_loaders.converters.core.ir import Field, NodeHints, Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema
-from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter, decimal_pattern
+from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter
 from cdm_data_loaders.converters.readers.dlt import DltReader
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader

@@ -3,20 +3,19 @@
 from typing import Any, cast
 
 from frozendict import frozendict
-from pydantic import BaseModel, ConfigDict, Field, InstanceOf, field_validator
+from pydantic import Field, field_validator
 from pyspark.sql.types import ArrayType, DataType, StructType
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.core.guards import (
     reject_unresolved_references,
     require_object_root,
     require_schema_keyword,
 )
-from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
+from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase, coerce_extra_metadata_keywords
+from cdm_data_loaders.converters.core.metadata import ConversionContext
 from cdm_data_loaders.converters.emitters.pyspark import (
     DEFAULT_FORMAT_MAP,
-    ConversionContext,
     PySparkEmitter,
     merge_format_map,
 )
@@ -31,15 +30,12 @@ class InvalidJSONSchemaError(JSONSchemaToPySparkError):
     """Raised when the input document is not a valid JSON Schema."""
 
 
-class JSONSchemaToPySpark(BaseModel):
+class JSONSchemaToPySpark(JsonSchemaConverterBase[StructType]):
     """Read dereferenced JSON Schema and emit pure Python Spark schema objects."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     format_map: frozendict[str, DataType] = Field(default_factory=lambda: DEFAULT_FORMAT_MAP)
     treat_unknown_as_string: bool = True
     extra_metadata_keywords: frozenset[str] = Field(default_factory=frozenset)
-    extension_registry: InstanceOf[ExtensionRegistry] = DEFAULT_EXTENSIONS
 
     @field_validator("format_map", mode="before")
     @classmethod
@@ -51,7 +47,7 @@ class JSONSchemaToPySpark(BaseModel):
     @classmethod
     def _coerce_extra_metadata_keywords(cls, value: object) -> object:
         """Normalize supported metadata keyword collections."""
-        return frozenset(value) if isinstance(value, (set, list, tuple)) else value
+        return coerce_extra_metadata_keywords(value)
 
     def _reader(self) -> JsonSchemaReader:
         """Configure reader diagnostics for this public facade."""
@@ -82,14 +78,6 @@ class JSONSchemaToPySpark(BaseModel):
             return self._emitter().emit(self._reader().read(schema))
         except ConversionError as error:
             raise JSONSchemaToPySparkError(str(error)) from error
-
-    def convert_from_string(self, schema_str: str) -> StructType:
-        """Convert a JSON string."""
-        return self.convert(load_schema_text(schema_str))
-
-    def convert_from_file(self, path: str) -> StructType:
-        """Convert a JSON or YAML file."""
-        return self.convert(load_schema_file(path))
 
     @staticmethod
     def _reject_unresolved_references(schema: dict[str, Any]) -> None:
