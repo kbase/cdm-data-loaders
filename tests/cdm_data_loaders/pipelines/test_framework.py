@@ -464,8 +464,8 @@ def test_pipeline_test_runner_fail_missing_required_arguments(tmp_path: Path) ->
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(framework, "_built_docker_images", {"test-image:latest"})
     try:
-        with pytest.raises(ValueError, match="Docker execution mode requires --input-dir"):
-            docker_runner.run("jsonlines_extract", cli_args=["--output-dir", str(tmp_path)])
+        with pytest.raises(ValueError, match=r"Docker execution mode requires sources\.nowhere\.bucket_url"):
+            docker_runner.run("jsonlines_extract", cli_args=["--output-dir", str(tmp_path), "-r", "nowhere"])
     finally:
         monkeypatch.undo()
 

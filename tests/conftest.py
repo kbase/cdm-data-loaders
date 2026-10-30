@@ -12,6 +12,7 @@ from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, Final, Self
 from unittest.mock import patch
+from uuid import uuid4
 
 import boto3
 import dlt
@@ -313,6 +314,106 @@ def dlt_destination_config(tmp_path: Path) -> Generator[str]:
         }
     ):
         yield LOCAL_FS
+
+
+"""dlt input sources (use_resource)"""
+
+INPUT_SOURCE_NAME: Final[str] = "test_input"
+MOTO_ACCESS_KEY: Final[str] = "testing"
+MOTO_SECRET_KEY: Final[str] = "testing"  # noqa: S105
+MOTO_REGION: Final[str] = "us-east-1"
+
+
+@pytest.fixture(scope="session")
+def moto_server() -> Generator[str]:
+    """Run a moto S3 server in a background thread for the test session; yield its endpoint URL.
+
+    dlt's filesystem source reads S3 via s3fs/aiobotocore, which the in-process ``mock_aws`` decorator
+    does not reliably intercept, so a real (local) HTTP endpoint is used instead.
+    """
+    from moto.server import ThreadedMotoServer  # noqa: PLC0415
+
+    server = ThreadedMotoServer(ip_address="127.0.0.1", port=0, verbose=False)
+    server.start()
+    host, port = server.get_host_and_port()
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.stop()
+
+
+@pytest.fixture
+def moto_s3(moto_server: str, monkeypatch: pytest.MonkeyPatch) -> S3Client:
+    """A boto3 S3 client for the moto server, with dummy AWS credentials set in the environment."""
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", MOTO_ACCESS_KEY)
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", MOTO_SECRET_KEY)
+    monkeypatch.setenv("AWS_DEFAULT_REGION", MOTO_REGION)
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    return boto3.client(
+        S3,
+        endpoint_url=moto_server,
+        aws_access_key_id=MOTO_ACCESS_KEY,
+        aws_secret_access_key=MOTO_SECRET_KEY,
+        region_name=MOTO_REGION,
+    )  # pyright: ignore[reportReturnType]
+
+
+def configure_input_source(
+    name: str,
+    bucket_url: str,
+    credentials: dict[str, Any] | None = None,
+    resource_type: str = "filesystem",
+) -> None:
+    """Write a ``[sources.<name>]`` block (and its credentials, as secrets) into the active dlt config."""
+    dlt.config[f"sources.{name}.resource_type"] = resource_type
+    dlt.config[f"sources.{name}.bucket_url"] = bucket_url
+    for key, value in (credentials or {}).items():
+        dlt.secrets[f"sources.{name}.credentials.{key}"] = value
+
+
+type InputSourceFactory = Callable[[Path], str]
+
+
+@pytest.fixture(params=[LOCAL_FS, S3])
+def input_source_factory(request: pytest.FixtureRequest) -> InputSourceFactory:
+    """Return a function that publishes a local directory as a dlt input source and returns its name.
+
+    Parametrized over a local filesystem source (``bucket_url`` is the directory itself) and an S3
+    source (the directory's contents are uploaded to a fresh bucket on the moto server).
+    """
+    if request.param == LOCAL_FS:
+
+        def _local(local_dir: Path) -> str:
+            configure_input_source(INPUT_SOURCE_NAME, str(local_dir.resolve()))
+            return INPUT_SOURCE_NAME
+
+        return _local
+
+    moto_server: str = request.getfixturevalue("moto_server")
+    client: S3Client = request.getfixturevalue("moto_s3")
+
+    def _s3(local_dir: Path) -> str:
+        bucket = f"input-{uuid4().hex[:12]}"
+        client.create_bucket(Bucket=bucket)
+        for path in sorted(local_dir.rglob("*")):
+            if path.is_file():
+                client.upload_file(
+                    Filename=str(path), Bucket=bucket, Key=f"prefix/{path.relative_to(local_dir).as_posix()}"
+                )
+        configure_input_source(
+            INPUT_SOURCE_NAME,
+            f"s3://{bucket}/prefix",
+            {
+                "aws_access_key_id": MOTO_ACCESS_KEY,
+                "aws_secret_access_key": MOTO_SECRET_KEY,
+                "endpoint_url": moto_server,
+                "region_name": MOTO_REGION,
+            },
+        )
+        return INPUT_SOURCE_NAME
+
+    return _s3
 
 
 """S3 Client mocks"""

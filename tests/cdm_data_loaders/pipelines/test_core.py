@@ -22,12 +22,12 @@ from pydantic import ValidationError
 from pydantic_settings import SettingsError
 from requests import RequestException
 
-from cdm_data_loaders.core.fields import OUTPUT_DIR, PIPELINE_DIR_NAME, USE_DESTINATION
+from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
 from cdm_data_loaders.core.settings import (
     CdmDataLoadersBase,
     CtsSettings,
+    DltRunSettings,
     FileFormatIngestSettings,
-    LocalInputOutputSettings,
     LoggerSettings,
 )
 from cdm_data_loaders.pipelines import core
@@ -66,7 +66,7 @@ FAILED_JOBS_WARNING: Final[str] = "Pipeline contains failed jobs"
 LOAD_INFO_SAVE_FAILED: Final[str] = "Loading pipeline load info failed: "
 LOAD_INFO_SAVE_FAILED_JOBS: Final[str] = "Loading pipeline load info had failed jobs: "
 
-SETTINGS_CLASSES: Final[list[type[CdmDataLoadersBase]]] = [LoggerSettings, LocalInputOutputSettings, CtsSettings]
+SETTINGS_CLASSES: Final[list[type[CdmDataLoadersBase]]] = [LoggerSettings, DltRunSettings, CtsSettings]
 
 
 @pytest.fixture
@@ -130,18 +130,6 @@ def make_mock_pipeline(save_run_result: object, slack_hook: str | None = None) -
     return pipeline
 
 
-@pytest.fixture(params=["no-relevant-attrs", "output_dir-only-no-destination"])
-def settings_missing_sync_attrs(
-    request: pytest.FixtureRequest, tmp_path: Path
-) -> LoggerSettings | LocalInputOutputSettings:
-    """Settings instances missing one or more attribute the sync tests check for via hasattr."""
-    if request.param == "no-relevant-attrs":
-        return LoggerSettings.model_validate({})
-    input_dir = tmp_path / "input"
-    input_dir.mkdir(exist_ok=True)
-    return LocalInputOutputSettings.model_validate({"input_dir": input_dir, "output_dir": tmp_path / "output"})
-
-
 # send slack message carefully
 SLACK_HOOK: Final[str] = "https://slack.hook/what/ever"
 TEST_MESSAGE: Final[str] = "3... 2... 1... testing?"
@@ -196,16 +184,6 @@ def test_send_slack_message_fail_error_oh_no(monkeypatch: pytest.MonkeyPatch, ca
     assert len(caplog.records) == 1
     assert caplog.records[-1].levelno == logging.ERROR
     assert caplog.records[-1].getMessage() == "Failed to send slack message"
-
-
-def test_settings_missing_sync_attrs_pass_fixture_shape(
-    settings_missing_sync_attrs: LoggerSettings | LocalInputOutputSettings,
-) -> None:
-    """Sanity-check the fixture: confirm which attributes are genuinely absent."""
-    assert hasattr(settings_missing_sync_attrs, OUTPUT_DIR) == isinstance(
-        settings_missing_sync_attrs, LocalInputOutputSettings
-    )
-    assert not hasattr(settings_missing_sync_attrs, USE_DESTINATION)
 
 
 @pytest.mark.parametrize(
@@ -265,8 +243,8 @@ def test_run_cli_calls_settings_cls_with_cli_args(settings_cls: type[CtsSettings
 
     if issubclass(settings_cls, CtsSettings):
         settings_kwargs: dict[str, Any] = {"input_dir": tmp_path, "output_dir": tmp_path, "use_destination": LOCAL_FS}
-    elif issubclass(settings_cls, LocalInputOutputSettings):
-        settings_kwargs = {"input_dir": tmp_path, "output_dir": tmp_path}
+    elif issubclass(settings_cls, DltRunSettings):
+        settings_kwargs = {"output_dir": tmp_path, "use_destination": LOCAL_FS}
     else:
         settings_kwargs = {}
 
@@ -311,8 +289,8 @@ def test_run_cli_function_calls_args(settings_cls: type[CtsSettings], tmp_path: 
 
     if issubclass(settings_cls, CtsSettings):
         settings_kwargs: dict[str, Any] = {"input_dir": tmp_path, "output_dir": tmp_path, "use_destination": LOCAL_FS}
-    elif issubclass(settings_cls, LocalInputOutputSettings):
-        settings_kwargs = {"input_dir": tmp_path, "output_dir": tmp_path}
+    elif issubclass(settings_cls, DltRunSettings):
+        settings_kwargs = {"output_dir": tmp_path, "use_destination": LOCAL_FS}
     else:
         settings_kwargs = {}
 
@@ -333,8 +311,8 @@ def test_run_cli_returns_pipeline_fn_result_verbatim(settings_cls: type[CtsSetti
 
     if issubclass(settings_cls, CtsSettings):
         settings_kwargs: dict[str, Any] = {"input_dir": tmp_path, "output_dir": tmp_path, "use_destination": LOCAL_FS}
-    elif issubclass(settings_cls, LocalInputOutputSettings):
-        settings_kwargs = {"input_dir": tmp_path, "output_dir": tmp_path}
+    elif issubclass(settings_cls, DltRunSettings):
+        settings_kwargs = {"output_dir": tmp_path, "use_destination": LOCAL_FS}
     else:
         settings_kwargs = {}
 
@@ -1147,7 +1125,7 @@ def test_build_filesystem_resource_pass_default_glob_and_callable_transformer(
     """build_filesystem_resource uses settings.file_glob or DEFAULT_XML_FILE_GLOB and wraps a callable in dlt.transformer."""
     file_path = input_dir / "sample.xml"
     file_path.write_text("hello", encoding="utf-8")
-    settings = LocalInputOutputSettings(input_dir=input_dir, output_dir=output_dir)
+    settings = CtsSettings(input_dir=input_dir, output_dir=output_dir, use_destination=LOCAL_FS)  # pyright: ignore[reportCallIssue]
 
     def read_items(items: TDataItems, prefix: str) -> Iterator[dict[str, Any]]:
         for item in items:
@@ -1167,7 +1145,7 @@ def test_build_filesystem_resource_pass_custom_glob_resource_transformer_and_con
     matched.write_text("matched", encoding="utf-8")
     ignored = input_dir / "ignore.txt"
     ignored.write_text("ignored", encoding="utf-8")
-    settings = LocalInputOutputSettings(input_dir=input_dir, output_dir=output_dir)
+    settings = CtsSettings(input_dir=input_dir, output_dir=output_dir, use_destination=LOCAL_FS)  # pyright: ignore[reportCallIssue]
 
     @dlt.transformer(name="jsonl_test_reader")
     def read_jsonl_items(items: TDataItems) -> Iterator[dict[str, Any]]:

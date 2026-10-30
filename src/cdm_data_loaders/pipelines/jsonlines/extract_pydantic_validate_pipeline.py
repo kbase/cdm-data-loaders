@@ -20,7 +20,7 @@ table. Example:
 
     ENTITY_MODELS: dict[str, type[BaseModel]] = {"sample": Sample}
 
-`input_dir` must contain one subdirectory per table name in
+The input location (`input_dir` or `use_resource`) must contain one subdirectory per table name in
 `ENTITY_MODELS`. Each subdirectory holds that table's JSONL files.
 Files may be plain text or gzip-compressed (`.jsonl` or `.jsonl.gz`).
 
@@ -82,12 +82,12 @@ def _make_resolve_error(model: type[BaseModel]) -> ParseErrorResolver:
 def build_entity_resource(table_name: str, model: type[BaseModel], settings: JsonlPydanticIngestSettings) -> Any:  # noqa: ANN401
     """Build the resource that reads, validates, and routes one entity's records.
 
-    Reads files matching `settings.file_glob` from
-    `settings.input_dir/table_name`. If that directory does not exist,
+    Reads files matching `settings.file_glob` from the `table_name`
+    subdirectory of the input location. If that directory does not exist,
     uses an empty file list instead. A missing entity then produces zero
     rows, not an error.
 
-    :param table_name: entity name; also the input_dir subdirectory name
+    :param table_name: entity name; also the input subdirectory name
     :type table_name: str
     :param model: Pydantic model used to validate this entity's records
     :type model: type[BaseModel]
@@ -121,7 +121,7 @@ def run_jsonlines_with_validation_pipeline(settings: JsonlPydanticIngestSettings
     entity_models = load_entity_models(settings.entity_models_module)
     return run_registry_ingest(
         settings,
-        entity_models,
+        table_to_schema=entity_models,
         build_resource=build_entity_resource,
         pipeline_name=PYDANTIC_PIPELINE_NAME,
         pipeline_run_kwargs={"loader_file_format": str(settings.loader_file_format)},

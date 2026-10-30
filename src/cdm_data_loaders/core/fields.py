@@ -45,6 +45,7 @@ PRESERVE_TABLE_NESTING: Final[str] = "preserve_table_nesting"
 SAVE_RAW_RESPONSES: Final[str] = "save_raw_responses"
 TABLE_NAME: Final[str] = "table_name"
 USE_DESTINATION: Final[str] = "use_destination"
+USE_RESOURCE: Final[str] = "use_resource"
 USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: Final[str] = "use_output_dir_for_pipeline_metadata"
 
 PIPELINE_DIR_NAME: Final[str] = "pipeline_metadata"
@@ -70,6 +71,7 @@ DEFAULTS = frozendict(
         PRESERVE_TABLE_NESTING: False,
         SAVE_RAW_RESPONSES: False,
         USE_DESTINATION: CTS,
+        USE_RESOURCE: None,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: False,
     }
 )
@@ -108,13 +110,6 @@ DisableOutputCompression = Annotated[
     ),
 ]
 FileGlob = Annotated[str, Field(default=DEFAULTS[FILE_GLOB], description="File glob for input files")]
-InputDir = Annotated[
-    NonEmptyStr,
-    Field(
-        # no default - value must be supplied
-        description="Location of directory containing file(s) to import",
-    ),
-]
 LoaderFileFormat = Annotated[
     LoaderFileFormatEnum,
     Field(
@@ -144,12 +139,6 @@ MaxTableNesting = Annotated[
         ge=0,
     ),
 ]
-OutputDir = Annotated[
-    NonEmptyStr | None,
-    Field(
-        description="Location to save raw data files and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Has no effect on where the dlt destination loads data.",
-    ),
-]
 PreserveTableNesting = Annotated[
     bool,
     Field(
@@ -170,6 +159,13 @@ UseDestination = Annotated[
     Field(
         # no default - value must be supplied
         description="Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config.",
+    ),
+]
+UseResource = Annotated[
+    NonEmptyStr | None,
+    Field(
+        default=DEFAULTS[USE_RESOURCE],
+        description="Name of the dlt source to read input files from, used instead of input_dir. The dlt config must set sources.<name>.resource_type = 'filesystem' and sources.<name>.bucket_url; credentials also come from the dlt config. If set, input_dir is ignored.",
     ),
 ]
 UseOutputDirForPipelineMetadata = Annotated[

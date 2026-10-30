@@ -15,8 +15,8 @@ from cdm_data_loaders.core.settings import (
     XML_CLI_SHORTCUTS,
     CdmDataLoadersBase,
     CtsSettings,
+    DltRunSettings,
     FileFormatIngestSettings,
-    LocalInputOutputSettings,
     LoggerSettings,
     XmlIngestSettings,
     default_settings_with_shortcuts,
@@ -26,7 +26,7 @@ from tests.cdm_data_loaders.conftest import (
     SettingsFactory,
     check_settings,
     cts_expected,
-    local_io_expected,
+    dlt_run_expected,
 )
 from tests.helpers import (
     assert_cli_field_roundtrips,
@@ -37,7 +37,7 @@ from tests.helpers import (
 
 @pytest.mark.parametrize(
     "settings_cls",
-    [LoggerSettings, LocalInputOutputSettings, CtsSettings, FileFormatIngestSettings, XmlIngestSettings],
+    [LoggerSettings, DltRunSettings, CtsSettings, FileFormatIngestSettings, XmlIngestSettings],
 )
 def test_settings_pass_no_cli_clashes(settings_cls: type[CdmDataLoadersBase]) -> None:
     """Every core settings class has no CLI argument or alias collisions."""
@@ -52,7 +52,7 @@ def test_cts_settings_pass_all_params_set(
     check_settings(CtsSettings(**test_cts_settings), test_cts_settings_reconciled)
 
 
-@pytest.mark.parametrize("field_name", list(CtsSettings.model_fields))
+@pytest.mark.parametrize("field_name", [f for f in CtsSettings.model_fields if f != "use_resource"])
 def test_cts_settings_pass_cli_field_roundtrips(
     field_name: str,
     test_cts_settings: frozendict[str, Any],
@@ -137,20 +137,103 @@ def test_logger_settings_fail_whitespace_only_log_config_file(make_settings: Set
 
 
 @pytest.mark.parametrize("source", SETTINGS_SOURCES)
-def test_local_input_output_settings_pass_sources(
-    make_settings: SettingsFactory, source: str, input_dir: Path, output_dir: Path
-) -> None:
-    """Build LocalInputOutputSettings from each source."""
-    settings = make_settings(
-        LocalInputOutputSettings, source, {"input_dir": str(input_dir), "output_dir": str(output_dir)}
+def test_dlt_run_settings_pass_sources(make_settings: SettingsFactory, source: str, output_dir: Path) -> None:
+    """Build DltRunSettings from each source."""
+    settings = make_settings(DltRunSettings, source, {"output_dir": str(output_dir), "use_destination": "cts"})
+    check_settings(settings, dlt_run_expected(output_dir, use_destination="cts"))
+
+
+def test_dlt_run_settings_pass_cli_shortcuts(output_dir: Path) -> None:
+    """Set fields with the -o, -d and -p shortcuts."""
+    settings = CliApp.run(DltRunSettings, cli_args=["-o", str(output_dir), "-d", "s3", "-p", "true"])
+    check_settings(
+        settings,
+        dlt_run_expected(output_dir, use_destination="s3", use_output_dir_for_pipeline_metadata=True),
     )
-    check_settings(settings, local_io_expected(input_dir, output_dir))
 
 
-def test_local_input_output_settings_pass_cli_shortcuts(input_dir: Path, output_dir: Path) -> None:
-    """Set input_dir and output_dir with the -i and -o shortcuts."""
-    settings = CliApp.run(LocalInputOutputSettings, cli_args=["-i", str(input_dir), "-o", str(output_dir)])
-    check_settings(settings, local_io_expected(input_dir, output_dir))
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        pytest.param(["-i", "."], id="input_dir_shortcut"),
+        pytest.param(["--input-dir", "."], id="input_dir"),
+        pytest.param(["-r", "cts"], id="use_resource_shortcut"),
+        pytest.param(["--buffer-size", "5"], id="buffer_size"),
+        pytest.param(["--log-interval", "5"], id="log_interval"),
+    ],
+)
+def test_dlt_run_settings_fail_input_fields(output_dir: Path, extra_args: list[str]) -> None:
+    """DltRunSettings has no input-related fields, so supplying them is an error."""
+    with pytest.raises(SettingsError, match="unrecognized arguments"):
+        CliApp.run(DltRunSettings, cli_args=["-o", str(output_dir), "-d", "cts", *extra_args])
+
+
+@pytest.mark.parametrize("source", SETTINGS_SOURCES)
+@pytest.mark.parametrize(
+    "values",
+    [
+        pytest.param({"use_resource": "my_source"}, id="use_resource_only"),
+        pytest.param({"use_resource": "my_source", "input_dir": "INPUT_DIR"}, id="both_set"),
+        pytest.param({"use_resource": "my_source", "input_dir": "/does/not/exist"}, id="both_set_missing_input_dir"),
+        pytest.param({"use_resource": "  my_source\t", "input_dir": "/does/not/exist"}, id="whitespace_stripped"),
+    ],
+)
+def test_cts_settings_pass_use_resource(
+    make_settings: SettingsFactory,
+    *,
+    source: str,
+    values: dict[str, str],
+    input_dir: Path,
+    test_dlt_run_defaults: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """use_resource is accepted from each source; any input_dir is discarded (with a warning) before validation."""
+    values = {k: str(input_dir) if v == "INPUT_DIR" else v for k, v in values.items()}
+    settings = make_settings(
+        CtsSettings,
+        source,
+        {**{k: str(v) for k, v in test_dlt_run_defaults.items()}, **values},
+    )
+    check_settings(settings, cts_expected(None, **test_dlt_run_defaults, use_resource="my_source"))
+    ignored_msgs = [r.getMessage() for r in caplog.records if "ignoring input_dir" in r.getMessage()]
+    assert len(ignored_msgs) == (1 if "input_dir" in values else 0)
+
+
+def test_cts_settings_pass_use_resource_cli_shortcut(test_dlt_run_defaults: dict[str, Any]) -> None:
+    """Set use_resource with the -r shortcut; -i is then ignored."""
+    settings = CliApp.run(
+        CtsSettings,
+        cli_args=["-o", str(test_dlt_run_defaults["output_dir"]), "-d", "local_fs", "-r", "src", "-i", "/nope"],
+    )
+    check_settings(settings, cts_expected(None, **test_dlt_run_defaults, use_resource="src"))
+
+
+@pytest.mark.parametrize("source", SETTINGS_SOURCES)
+def test_cts_settings_fail_no_input_source(
+    make_settings: SettingsFactory, source: str, test_dlt_run_defaults: dict[str, Any]
+) -> None:
+    """Fail when neither input_dir nor use_resource is set."""
+    with pytest.raises(ValidationError) as exc_info:
+        make_settings(CtsSettings, source, {k: str(v) for k, v in test_dlt_run_defaults.items()})
+    errors = exc_info.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["type"] == "value_error"
+    assert "One of input_dir or use_resource must be set" in errors[0]["msg"]
+
+
+@pytest.mark.parametrize("source", SETTINGS_SOURCES)
+def test_cts_settings_fail_whitespace_use_resource(
+    make_settings: SettingsFactory, source: str, input_dir: Path, test_dlt_run_defaults: dict[str, Any]
+) -> None:
+    """A use_resource that is empty after stripping is invalid; it does not fall back to input_dir."""
+    values = {
+        **{k: str(v) for k, v in test_dlt_run_defaults.items()},
+        "use_resource": "   ",
+        "input_dir": str(input_dir),
+    }
+    with pytest.raises(ValidationError) as exc_info:
+        make_settings(CtsSettings, source, values)
+    assert [(err["loc"], err["type"]) for err in exc_info.value.errors()] == [(("use_resource",), "string_too_short")]
 
 
 @pytest.mark.parametrize("source", SETTINGS_SOURCES)
@@ -232,29 +315,23 @@ def test_cts_settings_fail_unrecognised_cli_args(test_defaults: dict[str, Any], 
         CliApp.run(CtsSettings, cli_args=[*settings_to_argv(base), *extra_args])
 
 
-@pytest.mark.parametrize(
-    "settings_cls",
-    [LocalInputOutputSettings, CtsSettings],
-    ids=["local_input_output_settings", "cts_settings"],
-)
+@pytest.mark.parametrize("settings_cls", [DltRunSettings, CtsSettings], ids=["dlt_run_settings", "cts_settings"])
 @pytest.mark.parametrize("set_unprefixed_env", [False, True], ids=["nothing_set", "env_vars_without_prefix"])
-def test_settings_fail_missing_dirs(
+def test_settings_fail_missing_required(
     monkeypatch: pytest.MonkeyPatch,
     input_dir: Path,
     output_dir: Path,
     settings_cls: type[CdmDataLoadersBase],
     set_unprefixed_env: bool,
 ) -> None:
-    """Fail when input_dir and output_dir are missing; env vars without the CDL_ prefix are ignored."""
+    """Fail when required fields are missing; env vars without the CDL_ prefix are ignored."""
     if set_unprefixed_env:
         monkeypatch.setenv("INPUT_DIR", str(input_dir))
         monkeypatch.setenv("OUTPUT_DIR", str(output_dir))
     expected = {
-        (("input_dir",), "missing"),
         (("output_dir",), "missing"),
+        (("use_destination",), "missing"),
     }
-    if settings_cls is CtsSettings:
-        expected.add((("use_destination",), "missing"))
     with pytest.raises(ValidationError) as exc_info:
         CliApp.run(settings_cls, cli_args=[])
     assert {(err["loc"], err["type"]) for err in exc_info.value.errors()} == expected

@@ -21,6 +21,7 @@ import pytest
 import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.destinations import filesystem
+from fsspec.core import split_protocol
 
 from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
 from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
@@ -60,6 +61,7 @@ MODULE_PATH_FLAGS: Final[frozenset[str]] = frozenset(
 INPUT_DIR_FLAGS: Final[frozenset[str]] = frozenset({"--input-dir", "-i"})
 OUTPUT_DIR_FLAGS: Final[frozenset[str]] = frozenset({"--output-dir", "-o"})
 DESTINATION_FLAGS: Final[frozenset[str]] = frozenset({"--use-destination", "-d"})
+RESOURCE_FLAGS: Final[frozenset[str]] = frozenset({"--use-resource", "-r"})
 
 # Registry mapping console-script / pipeline names to (cli_command, module_path)
 PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
@@ -454,14 +456,38 @@ def _materialize_dynamic_module(module_name: str, pymodules_dir: Path) -> bool:
     return False
 
 
-def _write_docker_dlt_config(config_path: Path, use_destination: str) -> None:
+def _resolve_host_input_dir(args: list[str], use_resource: str | None) -> str | None:
+    """Find the host directory to stage as the container's ``/input_dir``.
+
+    With ``use_resource``, this is the local ``bucket_url`` of the named dlt source (which overrides
+    any ``--input-dir``); otherwise, the ``--input-dir`` value, if any.
+    """
+    if use_resource:
+        bucket_url = dlt.config.get(f"sources.{use_resource}.bucket_url")
+        if bucket_url is None:
+            err_msg = f"Docker execution mode requires sources.{use_resource}.bucket_url in the dlt config"
+            raise ValueError(err_msg)
+        protocol, path = split_protocol(str(bucket_url))
+        if protocol not in (None, "file"):
+            err_msg = f"Docker execution mode only supports local sources, not {bucket_url!r}"
+            raise ValueError(err_msg)
+        return path
+    return _extract_flag_value(args, INPUT_DIR_FLAGS)
+
+
+def _write_docker_dlt_config(config_path: Path, use_destination: str, use_resource: str | None = None) -> None:
     """Write ``config.toml`` for the container with ``/input_dir`` and ``/output_dir`` buckets."""
     config_path.parent.mkdir(parents=True, exist_ok=True)
     destinations = {"cts", LOCAL_FS, use_destination}
-    blocks: list[str] = []
-    for dest in sorted(destinations):
-        blocks.append(f'[destination.{dest}]\nbucket_url = "{CONTAINER_OUTPUT_DIR}"\ndestination_type = "filesystem"\n')
-        blocks.append(f'[sources.{dest}]\nbucket_url = "{CONTAINER_INPUT_DIR}"\n')
+    sources = destinations | ({use_resource} if use_resource else set())
+    blocks: list[str] = [
+        f'[destination.{dest}]\nbucket_url = "{CONTAINER_OUTPUT_DIR}"\ndestination_type = "filesystem"\n'
+        for dest in sorted(destinations)
+    ]
+    blocks.extend(
+        f'[sources.{src}]\nbucket_url = "{CONTAINER_INPUT_DIR}"\nresource_type = "filesystem"\n'
+        for src in sorted(sources)
+    )
     for section in ("extract", "normalize", "load"):
         workers = dlt.config.get(f"{section}.workers")
         if workers is not None:
@@ -646,11 +672,9 @@ class PipelineTestRunner:
     ) -> LoadInfo | None:
         """Execute the pipeline inside the Docker container and reconstruct LoadInfo from mounted output."""
         image_tag = ensure_docker_image(self.docker_image)
-        input_dir_str = _extract_flag_value(args, INPUT_DIR_FLAGS)
-        if not input_dir_str:
-            err_msg = "Docker execution mode requires --input-dir / -i in settings or cli_args"
-            raise ValueError(err_msg)
-        host_input_dir = Path(input_dir_str).resolve()
+        use_resource = _extract_flag_value(args, RESOURCE_FLAGS)
+        input_dir_str = _resolve_host_input_dir(args, use_resource)
+        host_input_dir = Path(input_dir_str).resolve() if input_dir_str else None
         host_output_dir = output_dir.resolve()
 
         stage_dir = host_output_dir.parent / f".docker_stage_{uuid4().hex[:8]}"
@@ -659,10 +683,10 @@ class PipelineTestRunner:
         pymodules_dir = stage_dir / "pymodules"
         staged_input_dir.mkdir(parents=True, exist_ok=True)
 
-        if host_input_dir.is_dir():
+        if host_input_dir is not None and host_input_dir.is_dir():
             shutil.copytree(host_input_dir, staged_input_dir, dirs_exist_ok=True)
 
-        _write_docker_dlt_config(staged_input_dir / "dlt_conf" / "config.toml", use_destination)
+        _write_docker_dlt_config(staged_input_dir / "dlt_conf" / "config.toml", use_destination, use_resource)
 
         container_args = self._translate_args_for_docker(args, aux_dir, pymodules_dir)
 

@@ -2,7 +2,6 @@
 
 from collections.abc import Callable, Generator, Iterable
 from logging import Logger, getLogger
-from pathlib import Path
 from typing import Any
 
 import dlt
@@ -10,23 +9,23 @@ import xmltodict
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.extract import DltResource
 from dlt.extract.items import DataItemWithMeta
-from dlt.sources.filesystem import filesystem
 from lxml.etree import Element, iterparse, tostring
 
 from cdm_data_loaders.core.fields import DEFAULT_XML_FILE_GLOB
 from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.pipelines.input_source import build_input_files
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from cdm_data_loaders.readers.xsd import convert_xml_element
 from cdm_data_loaders.utils.buffer import ArrowListBuffer, DictBuffer, ListBuffer
-from cdm_data_loaders.utils.gz import open_maybe_gzip
+from cdm_data_loaders.utils.file_items import InputFile, open_input, source_label, source_name
 
 logger: Logger = getLogger(__name__)
 
 DEFAULT_XMLTODICT_ARGS: dict[str, str | bool | int | None] = {"attr_prefix": "_"}
 
 
-def parse_head_matter(file_path: str | Path) -> dict[str, str]:
+def parse_head_matter(file_path: InputFile) -> dict[str, str]:
     """Parse the namespace declarations from the head matter of an XML file.
 
     Reads the beginning of an XML document (gzipped or plain) and collects all XML
@@ -37,17 +36,18 @@ def parse_head_matter(file_path: str | Path) -> dict[str, str]:
     The returned mapping uses namespace prefixes as keys and namespace URIs as values.
     The default (unprefixed) namespace is stored under the empty-string key ``""``.
 
-    :param file_path: path to the XML file; the file can be gzipped or not.
-    :type file_path: str | Path
+    :param file_path: local path or dlt file item for the XML file; the file can be gzipped or not.
+    :type file_path: InputFile
     :raises FileNotFoundError: if the file does not exist.
     :raises lxml.etree.XMLSyntaxError: if the file is empty or malformed.
     :return: mapping of namespace prefix to namespace URI.
     :rtype: dict[str, str]
     """
-    logger.debug("Parsing head matter from %s", file_path)
+    label = source_label(file_path)
+    logger.debug("Parsing head matter from %s", label)
 
     namespaces: dict[str, str] = {}
-    with open_maybe_gzip(file_path) as fh:
+    with open_input(file_path) as fh:
         ctx = iterparse(fh, events=("start-ns", "start"))
         for event, elem in ctx:
             if event == "start-ns":
@@ -60,25 +60,25 @@ def parse_head_matter(file_path: str | Path) -> dict[str, str]:
             # namespace declared on the root has already been emitted as a "start-ns" event.
             break
 
-    logger.debug("Found %d namespace declaration(s) in %s", len(namespaces), file_path)
+    logger.debug("Found %d namespace declaration(s) in %s", len(namespaces), label)
     return namespaces
 
 
-def stream_xml_file(file_path: str | Path, element_with_ns: str) -> Generator[Element, Any]:
+def stream_xml_file(file_path: InputFile, element_with_ns: str) -> Generator[Element, Any]:
     """Stream the outermost matching XML elements from a file.
 
     A matching element nested inside another matching element is yielded as part of the outer element.
 
-    :param file_path: path to the XML file; file can be gzipped or not.
-    :type  file_path: str | Path
+    :param file_path: local path or dlt file item for the XML file; file can be gzipped or not.
+    :type  file_path: InputFile
     :param element_with_ns: name of the element (including namespace, in braces) to return; e.g. f"{{{UNIPROT_NS}}}entry"
     :type  element_with_ns: str
     :yield: elements from the file
     :rtype: Generator[Element, Any]
     """
-    logger.debug("Streaming XML from %s", file_path)
+    logger.debug("Streaming XML from %s", source_label(file_path))
 
-    with open_maybe_gzip(file_path) as f:
+    with open_input(file_path) as f:
         # number of open matching elements; 0 means the parser is outside any match
         depth = 0
         for event, elem in iterparse(f, events=("start", "end"), tag=element_with_ns, remove_blank_text=True):
@@ -102,13 +102,13 @@ def _log_interval_progress(n_entries: int, log_interval: int) -> None:
         logger.debug("Processed %d entries", n_entries + 1)
 
 
-def _log_interval_final(n_entries: int, file_path: Path, log_interval: int) -> None:
+def _log_interval_final(n_entries: int, file_path: InputFile, log_interval: int) -> None:
     """Log the trailing entry count if the final checkpoint was not an interval boundary."""
     if n_entries >= 0 and (n_entries + 1) % log_interval != 0:
-        logger.debug("Processed %d entries from %s", n_entries + 1, file_path.name)
+        logger.debug("Processed %d entries from %s", n_entries + 1, source_name(file_path))
 
 
-def _resolve_stream_tag(file_path: Path, xml_tag: str) -> str:
+def _resolve_stream_tag(file_path: InputFile, xml_tag: str) -> str:
     """Resolve an unprefixed XML tag against the file's default namespace if present."""
     if not xml_tag.startswith("{"):
         default_ns = parse_head_matter(file_path).get("")
@@ -129,7 +129,7 @@ def _parse_element_to_dict(element: Element) -> dict[str, Any] | None:
 
 
 def _stream_and_buffer_xml_elements(  # noqa: PLR0913
-    file_path: Path,
+    file_path: InputFile,
     xml_tag: str,
     log_interval: int,
     buffer: ArrowListBuffer | DictBuffer | ListBuffer,
@@ -138,7 +138,7 @@ def _stream_and_buffer_xml_elements(  # noqa: PLR0913
     resolve_default_ns: bool = False,
 ) -> Generator[DataItemWithMeta]:
     """Stream matching XML elements from ``file_path``, buffer parsed items, log progress, and flush."""
-    logger.info("Reading from %s", str(file_path))
+    logger.info("Reading from %s", source_label(file_path))
     stream_tag = _resolve_stream_tag(file_path, xml_tag) if resolve_default_ns else xml_tag
     n_entries = -1
     for n_entries, element in enumerate(stream_xml_file(file_path, stream_tag)):
@@ -149,7 +149,7 @@ def _stream_and_buffer_xml_elements(  # noqa: PLR0913
     yield from buffer.flush()
 
 
-def process_xml_file_to_pyarrow(settings: XmlToPyArrowSettings, file_path: Path) -> Generator[DataItemWithMeta]:
+def process_xml_file_to_pyarrow(settings: XmlToPyArrowSettings, file_path: InputFile) -> Generator[DataItemWithMeta]:
     """Convert XML elements to PyArrow table batches using an XSD schema.
 
     Each matching element is converted using ``settings.xsd_schema`` and buffered into PyArrow
@@ -159,8 +159,8 @@ def process_xml_file_to_pyarrow(settings: XmlToPyArrowSettings, file_path: Path)
 
     :param settings: pipeline config, including xml_tag, table_name, xsd_schema, pyarrow_schema, and buffer_size
     :type settings: XmlToPyArrowSettings
-    :param file_path: file path, as a Path
-    :type file_path: Path
+    :param file_path: local path or dlt file item for the XML file
+    :type file_path: InputFile
     :yield: pages of PyArrow tables
     :rtype: Generator[DataItemWithMeta]
     """
@@ -185,7 +185,7 @@ def process_xml_file_to_pyarrow(settings: XmlToPyArrowSettings, file_path: Path)
     )
 
 
-def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: Path) -> Generator[DataItemWithMeta]:
+def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: InputFile) -> Generator[DataItemWithMeta]:
     """Convert XML elements to dictionary form using ``xmltodict.parse``.
 
     Each matching element is converted with ``xmltodict.parse`` and buffered as dicts.
@@ -194,8 +194,8 @@ def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: Path) -> Ge
 
     :param settings: pipeline config, including xml_tag, table_name, and buffer_size
     :type settings: XmlToDictSettings
-    :param file_path: file path, as a Path
-    :type file_path: Path
+    :param file_path: local path or dlt file item for the XML file
+    :type file_path: InputFile
     :yield: pages of dictionary items
     :rtype: Generator[DataItemWithMeta]
     """
@@ -219,31 +219,35 @@ def process_xml_file(
     settings: CtsSettings,
     xml_tag: str,
     parse_fn: Callable,
-    file_path: Path,
+    file_path: InputFile,
 ) -> Generator[DataItemWithMeta, Any]:
     """Core generator shared by XML-based dlt pipeline resources.
 
     This processor is expected to return a dictionary of table names and lists of rows, unlike the
     xmltodict parser, which creates a single dictionary for each element.
 
-    :param settings: pipeline config with input_dir and buffer_size
+    `parse_fn` receives the file's provenance label as `file_path`: the item's `relative_path` for
+    dlt file items, or the path as given for local paths.
+
+    :param settings: pipeline config with buffer_size and log_interval
     :type  settings: CtsSettings
     :param xml_tag: XML element tag to stream
     :type  xml_tag: str
-    :param parse_fn: callable(element, timestamp, file_path) -> dict[str, rows]
+    :param parse_fn: callable(entry, file_path) -> dict[str, rows]
     :type  parse_fn: Callable
-    :param file_path: path to the XML file to be processed
-    :type  file_path: Path
+    :param file_path: local path or dlt file item for the XML file to be processed
+    :type  file_path: InputFile
     :yield: table-tagged rows
     :rtype: Generator[DataItemWithMeta, Any]
     """
     buffer = DictBuffer(max_items=settings.buffer_size)
+    label = source_label(file_path)
     yield from _stream_and_buffer_xml_elements(
         file_path=file_path,
         xml_tag=xml_tag,
         log_interval=settings.log_interval,
         buffer=buffer,
-        buffer_element_fn=lambda element: buffer.add_items(parse_fn(entry=element, file_path=file_path)),
+        buffer_element_fn=lambda element: buffer.add_items(parse_fn(entry=element, file_path=label)),
     )
 
 
@@ -255,12 +259,12 @@ def process_xml_file_items(
 ) -> Generator[DataItemWithMeta, Any]:
     """Process each file item emitted by the dlt filesystem source.
 
-    Each file is passed to the parser as `settings.input_dir` joined to the item's relative path,
-    so recorded source file names do not depend on the absolute location of the input directory.
+    Each file is streamed from the item itself, and its `relative_path` is recorded as the source file,
+    so recorded source file names do not depend on where the input files are stored.
 
     :param items: file items to read
     :type  items: Iterable[FileItemDict]
-    :param settings: pipeline config with input_dir, buffer_size and log_interval
+    :param settings: pipeline config with buffer_size and log_interval
     :type  settings: CtsSettings
     :param xml_tag: XML element tag to stream
     :type  xml_tag: str
@@ -274,7 +278,7 @@ def process_xml_file_items(
             settings=settings,
             xml_tag=xml_tag,
             parse_fn=parse_fn,
-            file_path=settings.input_dir / file_item["relative_path"],
+            file_path=file_item,
         )
 
 
@@ -284,11 +288,11 @@ def build_xml_file_resource(
     parse_fn: Callable,
     resource_name: str,
 ) -> DltResource:
-    """Build a dlt resource that parses the XML files in `settings.input_dir`.
+    """Build a dlt resource that parses the pipeline's XML input files.
 
-    Files are read using the dlt filesystem source.
+    Files are listed from `settings.use_resource` if set, otherwise from `settings.input_dir`.
 
-    :param settings: pipeline config with input_dir, buffer_size and log_interval
+    :param settings: pipeline config with input_dir or use_resource, buffer_size and log_interval
     :type  settings: CtsSettings
     :param xml_tag: XML element tag to stream
     :type  xml_tag: str
@@ -299,7 +303,7 @@ def build_xml_file_resource(
     :return: resource yielding table-tagged rows
     :rtype: DltResource
     """
-    files = filesystem(bucket_url=str(settings.input_dir), file_glob=DEFAULT_XML_FILE_GLOB)
+    files = build_input_files(settings, file_glob=DEFAULT_XML_FILE_GLOB)
     resource = dlt.transformer(
         process_xml_file_items,
         data_from=files,

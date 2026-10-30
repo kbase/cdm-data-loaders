@@ -1,7 +1,6 @@
 """XML to dictionary pipeline for the KBase CTS."""
 
 from collections.abc import Generator, Iterator
-from pathlib import Path
 from typing import Any
 
 from dlt.common.pipeline import LoadInfo
@@ -31,11 +30,11 @@ def _read_xmltodict_items(
     :rtype: Generator[TDataItems, Any, Any]
     """
     for file_item in items:
-        yield from process_xml_file_to_dict(settings, file_path=Path(file_item.local_file_path))
+        yield from process_xml_file_to_dict(settings, file_path=file_item)
 
 
 def run_xmltodict_pipeline(settings: XmlToDictSettings) -> LoadInfo | None:
-    """Run the XML to dict pipeline on matching files in settings.input_dir.
+    """Run the XML to dict pipeline on matching files in settings.input_dir or settings.use_resource.
 
     :param settings: pipeline configuration
     :type  settings: XmlToDictSettings

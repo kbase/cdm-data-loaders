@@ -994,8 +994,8 @@ def _file_items(directory: Path) -> list[FileItemDict]:
 
 def test_process_xml_file_items_pass_multiple_files_preserve_order(tmp_path: Path) -> None:
     """Verify files are processed in the order they are supplied, including gzipped files."""
-    file_a = _write_xml(tmp_path, "a_00001.xml", PEOPLE_XML_2)
-    file_b = _write_xml(tmp_path, "b_00002.xml.gz", PEOPLE_XML_5, gzip_compress=True)
+    _write_xml(tmp_path, "a_00001.xml", PEOPLE_XML_2)
+    _write_xml(tmp_path, "b_00002.xml.gz", PEOPLE_XML_5, gzip_compress=True)
 
     items = _table_and_data(
         process_xml_file_items(
@@ -1006,25 +1006,23 @@ def test_process_xml_file_items_pass_multiple_files_preserve_order(tmp_path: Pat
         )
     )
 
+    # the recorded source file is the path relative to the input location
     sources = [row["source_file"] for _, rows in items for row in rows]
-    assert sources == [str(file_a)] * 2 + [str(file_b)] * 5
+    assert sources == ["a_00001.xml"] * 2 + ["b_00002.xml.gz"] * 5
 
 
-def test_process_xml_file_items_pass_file_path_is_input_dir_joined_to_relative_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Verify the path given to the parser is input_dir plus the file's path relative to the bucket."""
+def test_process_xml_file_items_pass_source_file_is_relative_path(tmp_path: Path) -> None:
+    """Verify the file item is streamed directly and its path relative to the bucket is the recorded source file."""
     sub_dir = tmp_path / "sub"
     sub_dir.mkdir()
     _write_xml(sub_dir, "nested_00001.xml", PEOPLE_XML_2)
     items = list(filesystem(bucket_url=str(tmp_path), file_glob="**/*.xml"))
-    process_file_mock = MagicMock(side_effect=lambda *_, **__: iter([]))
-    monkeypatch.setattr(xml_module, "process_xml_file", process_file_mock)
 
-    list(process_xml_file_items(items, fake_settings(input_dir="relative_dir"), "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
+    tagged = _table_and_data(
+        process_xml_file_items(items, fake_settings(input_dir="/unused"), "person", parse_person_entry)  # pyright: ignore[reportArgumentType]
+    )
 
-    process_file_mock.assert_called_once()
-    assert process_file_mock.call_args.kwargs["file_path"] == Path("relative_dir") / "sub" / "nested_00001.xml"
+    assert {row["source_file"] for _, rows in tagged for row in rows} == {"sub/nested_00001.xml"}
 
 
 def test_process_xml_file_items_pass_no_items_yields_nothing() -> None:
@@ -1037,15 +1035,16 @@ def test_process_xml_file_items_pass_settings_forwarded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, buffer_size: int
 ) -> None:
     """Verify the settings object (carrying buffer_size/log_interval) and file path reach process_xml_file."""
-    file_path = _write_xml(tmp_path, "two_00001.xml", PEOPLE_XML_2)
+    _write_xml(tmp_path, "two_00001.xml", PEOPLE_XML_2)
     settings = fake_settings(buffer_size=buffer_size, log_interval=CUSTOM_LOG_INTERVAL, input_dir=tmp_path)
     spy = MagicMock(wraps=xml_module.process_xml_file)
     monkeypatch.setattr(xml_module, "process_xml_file", spy)
+    file_items = _file_items(tmp_path)
 
-    list(process_xml_file_items(_file_items(tmp_path), settings, "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
+    list(process_xml_file_items(file_items, settings, "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
 
     spy.assert_called_once_with(
-        settings=settings, xml_tag="person", parse_fn=parse_person_entry, file_path=Path(str(file_path))
+        settings=settings, xml_tag="person", parse_fn=parse_person_entry, file_path=file_items[0]
     )
     assert spy.call_args.kwargs["settings"].buffer_size == buffer_size
     assert spy.call_args.kwargs["settings"].log_interval == CUSTOM_LOG_INTERVAL
@@ -1053,9 +1052,18 @@ def test_process_xml_file_items_pass_settings_forwarded(
 
 def test_process_xml_file_items_fail_missing_file_mid_iteration(tmp_path: Path) -> None:
     """Verify a missing file raises FileNotFoundError after earlier files were fully processed."""
-    good_path = _write_xml(tmp_path, "a_00001.xml", PEOPLE_XML_2)
+    _write_xml(tmp_path, "a_00001.xml", PEOPLE_XML_2)
     items = _file_items(tmp_path)
-    missing_item = FileItemDict({**items[0], "relative_path": "missing_00002.xml"})
+    missing_path = tmp_path / "missing_00002.xml"
+    missing_item = FileItemDict(
+        {
+            **items[0],
+            "file_url": missing_path.resolve().as_uri(),
+            "file_name": missing_path.name,
+            "relative_path": missing_path.name,
+        },
+        items[0].fsspec,
+    )
 
     collected: list[DataItemWithMeta] = []
     with pytest.raises(FileNotFoundError, match="No such file or directory"):  # noqa: PT012
@@ -1070,7 +1078,7 @@ def test_process_xml_file_items_fail_missing_file_mid_iteration(tmp_path: Path) 
     tagged = _table_and_data(collected)
     assert [table for table, _ in tagged] == ["people"]
     assert [row["id"] for row in tagged[0][1]] == ["1", "2"]
-    assert {row["source_file"] for row in tagged[0][1]} == {str(good_path)}
+    assert {row["source_file"] for row in tagged[0][1]} == {"a_00001.xml"}
 
 
 def test_process_xml_file_pass_calls_stream_xml_file_with_correct_args(
@@ -1097,7 +1105,8 @@ def test_process_xml_file_pass_calls_parse_fn_with_expected_keyword_args(
 
     list(process_xml_file(fake_settings(), "tag", parse_fn, file_path=file_path))  # pyright: ignore[reportArgumentType]
 
-    parse_fn.assert_called_once_with(entry=fake_entry, file_path=file_path)
+    # local paths are passed to parse_fn as their string label
+    parse_fn.assert_called_once_with(entry=fake_entry, file_path=str(file_path))
 
 
 def test_process_xml_file_pass_wraps_each_table_with_dlt_mark(
@@ -1156,7 +1165,7 @@ def test_process_xml_file_fail_propagates_stream_xml_file_error(
         for item in process_xml_file(fake_settings(), "tag", parse_fn, file_path=file_path):  # pyright: ignore[reportArgumentType]
             collected.append(item)  # noqa: PERF402
 
-    parse_fn.assert_called_once_with(entry=fake_entry, file_path=file_path)
+    parse_fn.assert_called_once_with(entry=fake_entry, file_path=str(file_path))
     assert collected == []
 
 

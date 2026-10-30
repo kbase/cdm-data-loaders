@@ -28,8 +28,9 @@ from pydantic import Field, computed_field, field_validator
 from pydantic_settings import SettingsConfigDict
 from requests.exceptions import HTTPError
 
-from cdm_data_loaders.core.fields import SaveRawResponses
-from cdm_data_loaders.core.settings import CLI_SHORTCUTS, CtsSettings, default_settings_with_shortcuts
+from cdm_data_loaders.core.fields import INPUT_DIR, SaveRawResponses
+from cdm_data_loaders.core.path_fields import LocalInputDir
+from cdm_data_loaders.core.settings import DLT_RUN_CLI_SHORTCUTS, DltRunSettings, default_settings_with_shortcuts
 from cdm_data_loaders.pipelines.core import (
     PipelineCli,
     run_pipeline,
@@ -60,13 +61,19 @@ BATCH_SIZE: Final[str] = "batch_size"
 QUERY_TYPE: Final[str] = "query_type"
 
 
-class NcbiRestApiSettings(CtsSettings):
-    """Configuration for running the NCBI REST API import pipeline."""
+class NcbiRestApiSettings(DltRunSettings):
+    """Configuration for running the NCBI REST API import pipeline.
+
+    Only fields read by the pipeline are accepted. The input directory must be local, as the batcher
+    that reads the assembly ID files only works on the local filesystem.
+    """
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name="ncbi_rest_api",
-        cli_shortcuts={**CLI_SHORTCUTS, BATCH_SIZE: "b", QUERY_TYPE: "q"},
+        cli_shortcuts={**DLT_RUN_CLI_SHORTCUTS, INPUT_DIR: "i", BATCH_SIZE: "b", QUERY_TYPE: "q"},
     )
+
+    input_dir: LocalInputDir
 
     batch_size: int = Field(
         default=MAX_IDS_PER_QUERY,
@@ -86,7 +93,7 @@ class NcbiRestApiSettings(CtsSettings):
     @computed_field
     @cached_property
     def raw_data_dir(self) -> Path:
-        """Directory to save downloaded raw data files to: ``<output_dir>/raw_data/<version>``."""
+        """Directory to save raw API responses to: ``<output_dir>/raw_data/api_responses``."""
         return self.output_dir / "raw_data" / "api_responses"
 
     @field_validator(QUERY_TYPE, mode="before")

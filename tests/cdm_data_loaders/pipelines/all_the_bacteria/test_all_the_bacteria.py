@@ -195,12 +195,12 @@ def test_download_atv_index_tsv_error_missing_key(test_settings: AtbSettings) ->
         download_atb_index_tsv(test_settings)
 
 
-def test_download_atv_index_cannot_create_dir(tmp_path: Path) -> None:
+def test_download_atv_index_cannot_create_dir() -> None:
     """Ensure that the output raw_data_dir directory can be saved to."""
     # N.b. error message is OS specific -- may not work on Windows
     with pytest.raises(ValidationError, match=r"(Read-only file system|Permission denied)"):
         download_atb_index_tsv(
-            AtbSettings(input_dir=str(tmp_path), output_dir="/path/to/file", use_destination="local_fs")  # pyright: ignore[reportCallIssue]
+            AtbSettings(output_dir="/path/to/file", use_destination="local_fs")  # pyright: ignore[reportCallIssue]
         )
 
 
@@ -240,7 +240,6 @@ def test_get_file_download_links_use_pattern_file(tmp_path: Path, pattern_lines:
     p.write_text(f"{pattern_lines}\n", encoding="utf-8")
 
     settings = AtbSettings(
-        input_dir=str(tmp_path),
         output_dir=str(tmp_path),
         pattern_file=str(tmp_path / "patterns.txt"),
         use_destination="local_fs",
@@ -572,7 +571,6 @@ def test_run_atb_pipeline_pipeline_dir_present_or_absent(
     """Check that the appropriate args are passed as pipeline_kwargs."""
     output_dir = tmp_path / "output"
     settings = AtbSettings(
-        input_dir=str(tmp_path),
         output_dir=str(output_dir),
         use_destination=VALID_DESTINATIONS[0],
         use_output_dir_for_pipeline_metadata=use_output_dir_for_pipeline_metadata,

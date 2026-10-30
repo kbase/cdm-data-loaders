@@ -12,6 +12,14 @@ differ only in how (or whether) records are validated before loading:
 
 All three support plain and gzip-compressed inputs and Parquet or JSONL output.
 
+Input files are read from `--input-dir` (a local directory) or, instead, from a
+dlt filesystem source named with `--use-resource` / `-r`, which may point at S3
+or any other fsspec location. The source is a `[sources.<name>]` block in the dlt
+config with `resource_type = "filesystem"` and a `bucket_url`; credentials go in
+`[sources.<name>.credentials]` in `secrets.toml`. If both options are given,
+`--use-resource` wins and `--input-dir` is ignored. Below, "`input_dir`" means
+whichever input location is in use.
+
 ## Extract-Only Pipeline
 
 `jsonl_extract` loads every record from `input_dir` into a single destination

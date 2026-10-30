@@ -8,7 +8,7 @@ from cdm_data_loaders.pipelines.xmltopyarrow.settings import UniProtXmlToPyArrow
 
 
 def run_uniprot_pipeline(settings: UniProtXmlToPyArrowSettings) -> LoadInfo | None:
-    """Run the UniProt XML to PyArrow pipeline on matching files in settings.input_dir.
+    """Run the UniProt XML to PyArrow pipeline on matching files in settings.input_dir or settings.use_resource.
 
     :param settings: pipeline configuration
     :type  settings: UniProtXmlToPyArrowSettings

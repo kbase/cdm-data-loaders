@@ -112,7 +112,7 @@ def normalise_dir(full_path: str | None) -> str:
 LocalInputDir = Annotated[
     DirectoryPath,
     Field(
-        description="Local directory containing file(s) to import",
+        description="Local directory containing file(s) to import. Optional; ignored if use_resource is set.",
     ),
     BeforeValidator(check_local_path),
     AfterValidator(to_absolute),

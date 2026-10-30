@@ -11,6 +11,7 @@ from typing import Any, Final
 
 import dlt
 import duckdb
+import fsspec
 import pendulum
 import pyarrow.parquet as pq
 import yaml
@@ -113,16 +114,17 @@ def read_destination_rows(base_dir: Path, table_name: str) -> list[dict[str, Any
 
 
 def make_file_item(file_path: Path, mime_type: str = "application/octet-stream") -> FileItemDict:
-    """Build a dlt FileItemDict for a local file."""
+    """Build a dlt FileItemDict for a local file, with a local fsspec client so that it can be opened."""
     return FileItemDict(
         {
-            "file_url": file_path.as_uri(),
+            "file_url": file_path.resolve().as_uri(),
             "file_name": file_path.name,
             "relative_path": file_path.name,
             "mime_type": mime_type,
             "modification_date": pendulum.now(),
             "size_in_bytes": file_path.stat().st_size,
-        }
+        },
+        fsspec.filesystem("file"),
     )
 
 

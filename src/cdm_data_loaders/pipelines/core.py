@@ -14,17 +14,17 @@ from dlt.common.runtime.slack import send_slack_message
 from dlt.common.schema.typing import TSchemaContractDict
 from dlt.extract import DltResource
 from dlt.pipeline.exceptions import PipelineStepFailed
-from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
-from cdm_data_loaders.core.fields import JSONL
+from cdm_data_loaders.core.fields import DEFAULTS, FILE_GLOB, JSONL
 from cdm_data_loaders.core.settings import (
     CtsSettings,
+    DltRunSettings,
     FileFormatIngestSettings,
-    LocalInputOutputSettings,
     LoggerSettings,
 )
+from cdm_data_loaders.pipelines.input_source import build_input_files
 from cdm_data_loaders.utils.cdm_logger import init_logger
 
 WEBHOOK_NOT_CONFIGURED: Final[str] = "Slack webhook not configured"
@@ -184,7 +184,7 @@ def write_pipeline_report(
 
 
 def save_pipeline_metadata(
-    settings: CtsSettings,
+    settings: DltRunSettings,
     pipeline: dlt.Pipeline,
     load_info: LoadInfo | None,
     err_msg: str | None,
@@ -195,7 +195,7 @@ def save_pipeline_metadata(
     Writes a brief report of the pipeline state and saves it to report_<unique pipeline load id>.txt.
 
     :param settings: settings for this pipeline
-    :type  settings: CtsSettings
+    :type  settings: DltRunSettings
     :param pipeline: dlt pipeline instance
     :type  pipeline: dlt.Pipeline
     :param load_info: pipeline load info, or None if the pipeline did not complete successfully
@@ -271,7 +271,7 @@ def _attach_file_collector(resource: DltResource | list[DltResource]) -> list[st
 
 
 def run_pipeline(
-    settings: CtsSettings,
+    settings: DltRunSettings,
     resource: DltResource | list[DltResource],
     destination_kwargs: dict[str, Any] | None = None,
     pipeline_kwargs: dict[str, Any] | None = None,
@@ -280,7 +280,7 @@ def run_pipeline(
     """Execute a dlt pipeline.
 
     :param settings: pipeline settings
-    :type settings: CtsSettings
+    :type settings: DltRunSettings
     :param resource: dlt resource to run
     :type resource: DltResource | list[DltResource]
     :param destination_kwargs: keyword arguments for the dlt destination
@@ -344,7 +344,7 @@ def run_pipeline(
 
 
 def build_filesystem_resource(
-    settings: LocalInputOutputSettings,
+    settings: CtsSettings,
     reader_fn: Callable[..., Any] | DltResource,
     *reader_args: Any,  # noqa: ANN401
     name: str,
@@ -352,24 +352,22 @@ def build_filesystem_resource(
     schema_contract: TSchemaContractDict | None = None,
     **transformer_kwargs: Any,  # noqa: ANN401
 ) -> DltResource:
-    """Build a dlt resource that pipes ``filesystem(settings.input_dir, file_glob)`` into a parallelized transformer.
+    """Build a dlt resource that pipes the pipeline's input files into a parallelized transformer.
 
-    :param settings: pipeline settings with ``input_dir`` (and optionally ``file_glob``)
+    Input files are listed from the dlt source named by ``settings.use_resource`` if set, otherwise from
+    ``settings.input_dir``.
+
+    :param settings: pipeline settings with ``input_dir`` or ``use_resource`` (and optionally ``file_glob``)
     :param reader_fn: transformer function or resource accepting ``items`` followed by ``*reader_args``
     :param reader_args: positional arguments bound to the transformer after ``items``
     :param name: name of the resulting dlt transformer resource
-    :param file_glob: glob pattern for files; defaults to ``settings.file_glob`` if present, else ``DEFAULT_XML_FILE_GLOB``
+    :param file_glob: glob pattern for files; defaults to ``settings.file_glob`` if present, else ``DEFAULTS[FILE_GLOB]``
     :param schema_contract: optional dlt schema contract hint applied to the resource
     :param transformer_kwargs: additional keyword arguments passed to ``dlt.transformer``
     :return: configured ``DltResource``
     """
-    fs_args: dict[str, Any] = {"bucket_url": str(settings.input_dir)}
-    if file_glob is not None:
-        fs_args["file_glob"] = file_glob
-    elif glob := getattr(settings, "file_glob", None):
-        fs_args["file_glob"] = glob
-
-    files = filesystem(**fs_args)
+    glob = file_glob if file_glob is not None else (getattr(settings, "file_glob", None) or DEFAULTS[FILE_GLOB])
+    files = build_input_files(settings, file_glob=glob)
     reader = (
         reader_fn
         if isinstance(reader_fn, DltResource)

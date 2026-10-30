@@ -95,7 +95,7 @@ class JsonlPydanticIngestSettings(ValidatedJsonlIngestSettings):
         Field(
             description=(
                 "Dotted import path to a module that defines `ENTITY_MODELS: dict[str, type[BaseModel]]`. "
-                "Each key is a table name and a subdirectory of `input_dir`. "
+                "Each key is a table name and a subdirectory of the input location (`input_dir` or `use_resource`). "
                 "Each value is the Pydantic model for that table."
             ),
         ),
@@ -126,7 +126,7 @@ class JsonlJsonschemaIngestSettings(ValidatedJsonlIngestSettings):
         Field(
             description=(
                 "Dotted import path to a module that defines `ENTITY_SCHEMAS: dict[str, dict]`. "
-                "Each key is a table name and a subdirectory of `input_dir`. "
+                "Each key is a table name and a subdirectory of the input location (`input_dir` or `use_resource`). "
                 "Each value is a JSON Schema dictionary declaring its draft with `$schema`."
             ),
         ),
