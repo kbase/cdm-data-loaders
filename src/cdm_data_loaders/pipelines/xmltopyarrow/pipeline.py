@@ -1,7 +1,6 @@
 """XML to pyarrow pipeline for the KBase CTS."""
 
 from collections.abc import Generator, Iterator
-from pathlib import Path
 from typing import Any
 
 from dlt.common.pipeline import LoadInfo
@@ -29,11 +28,11 @@ def _read_items(items: Iterator[FileItemDict], settings: XmlToPyArrowSettings) -
     :rtype: Generator[TDataItems, Any, Any]
     """
     for file_item in items:
-        yield from process_xml_file_to_pyarrow(settings, file_path=Path(file_item.local_file_path))
+        yield from process_xml_file_to_pyarrow(settings, file_path=file_item)
 
 
 def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None:
-    """Run the XML to PyArrow pipeline on matching files in settings.input_dir.
+    """Run the XML to PyArrow pipeline on matching files in settings.input_dir or settings.use_resource.
 
     :param settings: pipeline configuration
     :type  settings: XmlToPyArrowSettings

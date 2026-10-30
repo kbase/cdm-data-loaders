@@ -1,14 +1,15 @@
 """Tests for the NCBI datasets API pipeline functions."""
 
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 from frozendict import frozendict
 from pydantic import ValidationError
-from pydantic_settings import CliApp
+from pydantic_settings import CliApp, SettingsError
 
-from cdm_data_loaders.core.fields import OUTPUT_DIR
+from cdm_data_loaders.core.fields import INPUT_DIR, OUTPUT_DIR
 from cdm_data_loaders.pipelines import ncbi_rest_api as ncbi_module
 from cdm_data_loaders.pipelines.ncbi_rest_api import (
     ANNOTATION,
@@ -28,10 +29,13 @@ BATCH_SIZE_STRING = str(BATCH_SIZE)
 @pytest.fixture(params=["default", "v1"])
 def ncbi_settings_pair(
     request: pytest.FixtureRequest,
-    test_cts_settings: frozendict[str, Any],
-    test_cts_settings_reconciled: frozendict[str, Any],
+    input_dir: Path,
+    test_dlt_run_settings: frozendict[str, Any],
+    test_dlt_run_settings_reconciled: frozendict[str, Any],
 ) -> tuple[frozendict[str, Any], frozendict[str, Any]]:
     """Return (settings, reconciled) dicts for NcbiRestApiSettings variants."""
+    test_cts_settings = frozendict({**test_dlt_run_settings, INPUT_DIR: input_dir})
+    test_cts_settings_reconciled = frozendict({**test_dlt_run_settings_reconciled, INPUT_DIR: input_dir})
     raw_data_dir = test_cts_settings_reconciled[OUTPUT_DIR] / "raw_data" / "api_responses"
     if request.param == "default":
         settings = frozendict(**test_cts_settings, batch_size=BATCH_SIZE_STRING, query_type="")
@@ -210,3 +214,39 @@ def test_cli_fields_parse_correctly(
         expected_value=reconciled[field_name],
         required=test_defaults,
     )
+
+
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        pytest.param(["--use-resource", "cts"], id="use_resource"),
+        pytest.param(["-r", "cts"], id="use_resource_shortcut"),
+        pytest.param(["--buffer-size", "5"], id="buffer_size"),
+        pytest.param(["--log-interval", "5"], id="log_interval"),
+    ],
+)
+def test_settings_fail_unused_cli_fields(test_settings: NcbiRestApiSettings, extra_args: list[str]) -> None:
+    """Fields that the pipeline does not use are rejected on the command line."""
+    with pytest.raises(SettingsError, match="unrecognized arguments"):
+        CliApp.run(NcbiRestApiSettings, cli_args=[*settings_to_argv(test_settings), *extra_args])
+
+
+@pytest.mark.parametrize(
+    "extra_kwargs",
+    [
+        pytest.param({"use_resource": "cts"}, id="use_resource"),
+        pytest.param({"buffer_size": 5}, id="buffer_size"),
+        pytest.param({"log_interval": 5}, id="log_interval"),
+    ],
+)
+def test_settings_fail_unused_init_fields(test_defaults: dict[str, Any], extra_kwargs: dict[str, Any]) -> None:
+    """Fields that the pipeline does not use are rejected as init kwargs."""
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        NcbiRestApiSettings(**test_defaults, **extra_kwargs)
+
+
+def test_settings_fail_missing_input_dir(test_dlt_run_defaults: dict[str, Any]) -> None:
+    """input_dir is required: the pipeline can only read assembly IDs from a local directory."""
+    with pytest.raises(ValidationError) as exc_info:
+        NcbiRestApiSettings(**test_dlt_run_defaults)
+    assert [(err["loc"], err["type"]) for err in exc_info.value.errors()] == [(("input_dir",), "missing")]

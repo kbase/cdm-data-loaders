@@ -27,8 +27,8 @@ from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import NonEmptyStr
 from cdm_data_loaders.core.settings import (
-    CLI_SHORTCUTS,
-    CtsSettings,
+    DLT_RUN_CLI_SHORTCUTS,
+    DltRunSettings,
     default_settings_with_shortcuts,
 )
 from cdm_data_loaders.pipelines.core import (
@@ -57,12 +57,15 @@ EXPECTED_ATB_FIELDNAMES = ["project", "project_id", "filename", "url", "md5", "s
 REQUIRED_ATB_FIELDNAMES = {"project", "filename", "url", "md5"}
 
 
-class AtbSettings(CtsSettings):
-    """Configuration for running the AllTheBacteria import pipeline."""
+class AtbSettings(DltRunSettings):
+    """Configuration for running the AllTheBacteria import pipeline.
+
+    Only fields read by the pipeline are accepted; the pipeline has no input directory.
+    """
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name="all_the_bacteria",
-        cli_shortcuts={VERSION: "v", **CLI_SHORTCUTS},
+        cli_shortcuts={VERSION: "v", **DLT_RUN_CLI_SHORTCUTS},
     )
 
     version: NonEmptyStr = Field(
@@ -94,8 +97,7 @@ class AtbSettings(CtsSettings):
     def pattern_matches(self) -> re.Pattern:
         """The regular expression pattern to be used to select files for download.
 
-        If a pattern_file is supplied, it will read in the file at {input_dir}/{pattern_file}
-        and convert the contents into a regular expression. If no file is supplied or the file is empty
+        If a pattern_file is supplied, its contents are converted into a regular expression. If no file is supplied or the file is empty
         or does not contain any content, the default PROJECT_PART_REGEX will be used instead.
         """
         if self.pattern_file:

@@ -128,11 +128,9 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
         settings,
         {
             "batch_size": MAX_IDS_PER_QUERY,
-            "buffer_size": 100,
             "dlt_dev_mode": bool(dlt_dev_mode),
             "input_dir": input_dir.resolve(),
             "log_config_file": None,
-            "log_interval": 1000,
             "output_dir": resolved_output_dir,
             "pipeline_dir": pipeline_dir,
             "query_type": None,

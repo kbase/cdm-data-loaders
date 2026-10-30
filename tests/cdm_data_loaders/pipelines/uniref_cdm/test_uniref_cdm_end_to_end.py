@@ -106,11 +106,11 @@ def test_integration_uniref_pipeline_entity_and_cluster_content(
     protocols = {row[0] for row in fetch_all_duckdb(pipeline, "SELECT DISTINCT protocol FROM cluster")}
     assert protocols == {f"UniRef {duckdb_uniref_settings.variant}"}
 
-    # entity_x_source_file must reference exactly the fixture file we loaded from
+    # entity_x_source_file must reference exactly the fixture file we loaded from, relative to the input location
     source_files = {
         row[0] for row in fetch_all_duckdb(pipeline, "SELECT DISTINCT source_file FROM entity_x_source_file")
     }
-    assert source_files == {str(UNIREF_FIXTURE_DIR.resolve() / UNIREF_FIXTURE_FILE)}
+    assert source_files == {UNIREF_FIXTURE_FILE}
 
 
 def test_integration_cli_uniref_pipeline_output_validated(

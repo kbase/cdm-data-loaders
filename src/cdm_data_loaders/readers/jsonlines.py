@@ -2,25 +2,17 @@
 
 import json
 from collections.abc import Callable, Generator, Iterator
-from typing import Any, Literal
+from typing import Any
 
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 
-from cdm_data_loaders.core.fields import GZIP_SUFFIX
 from cdm_data_loaders.utils.buffer import DictBuffer
+from cdm_data_loaders.utils.file_items import compression_mode
+
+__all__ = ["LineRecord", "compression_mode", "parse_jsonl_line", "route_jsonl_lines", "stream_jsonl_lines"]
 
 LineRecord = dict[str, Any]
-
-
-def compression_mode(file_name: str) -> Literal["enable", "disable"]:
-    """Return the dlt compression mode for a file name.
-
-    Returns "enable" for names ending in .gz and "disable" otherwise.
-    Auto-detection is not used, since it depends on remote file metadata
-    that local files do not carry.
-    """
-    return "enable" if file_name.endswith(GZIP_SUFFIX) else "disable"
 
 
 def parse_jsonl_line(stripped: str) -> LineRecord:

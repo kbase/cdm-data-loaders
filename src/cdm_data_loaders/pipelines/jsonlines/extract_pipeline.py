@@ -3,9 +3,9 @@
 Reads JSONL files. No validation occurs other than that records are valid JSON.
 
 `table_name` names the destination table for all valid records; files
-may live anywhere under `input_dir`. Records that fail JSON parsing go
-to a `<table_name>_invalid` table. Each invalid record includes source
-file, line number, raw text, and parse error detail.
+may live anywhere under the input location (`input_dir` or `use_resource`).
+Records that fail JSON parsing go to a `<table_name>_invalid` table. Each
+invalid record includes source file, line number, raw text, and parse error detail.
 """
 
 from collections.abc import Generator, Iterator

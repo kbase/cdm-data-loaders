@@ -1,10 +1,11 @@
 """Settings classes for data loading and wrangling pipelines."""
 
+from logging import Logger, getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Final
+from typing import TYPE_CHECKING, Annotated, Any, Final, Self
 
 from frozendict import frozendict
-from pydantic import AliasChoices, AliasPath, Field, computed_field
+from pydantic import AliasChoices, AliasPath, Field, computed_field, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 
@@ -18,6 +19,7 @@ from cdm_data_loaders.core.fields import (
     REPORT_FILE_NAME,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
+    USE_RESOURCE,
     BufferSize,
     DatasetName,
     DltDevMode,
@@ -27,11 +29,17 @@ from cdm_data_loaders.core.fields import (
     LogInterval,
     UseDestination,
     UseOutputDirForPipelineMetadata,
+    UseResource,
 )
 from cdm_data_loaders.core.path_fields import LocalInputDir, LocalOutputDir
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+logger: Logger = getLogger(__name__)
+
+INPUT_SOURCE_MISSING: Final[str] = f"One of {INPUT_DIR} or {USE_RESOURCE} must be set"
+INPUT_DIR_IGNORED: Final[str] = f"{USE_RESOURCE} is set: ignoring {INPUT_DIR} value %r"
 
 
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
@@ -44,12 +52,18 @@ DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
     }
 )
 
-CLI_SHORTCUTS: frozendict[str, str] = frozendict(
+DLT_RUN_CLI_SHORTCUTS: frozendict[str, str] = frozendict(
     {
-        INPUT_DIR: "i",
         OUTPUT_DIR: "o",
         USE_DESTINATION: "d",
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: "p",
+    }
+)
+CLI_SHORTCUTS: frozendict[str, str] = frozendict(
+    {
+        INPUT_DIR: "i",
+        **DLT_RUN_CLI_SHORTCUTS,
+        USE_RESOURCE: "r",
     }
 )
 FILE_FORMAT_CLI_SHORTCUTS: frozendict[str, str] = frozendict(
@@ -189,23 +203,17 @@ class LoggerSettings(CdmDataLoadersBase):
     log_config_file: LogConfigFile
 
 
-class LocalInputOutputSettings(LoggerSettings):
-    """Configuration for a DLT pipeline where both input and output directories are local."""
+class DltRunSettings(LoggerSettings):
+    """Configuration needed to run a dlt pipeline with ``run_pipeline``.
 
-    model_config = default_settings_with_shortcuts(cli_shortcuts={INPUT_DIR: "i", OUTPUT_DIR: "o"})
+    Holds the local output directory (for the run report and, optionally, dlt pipeline metadata) and
+    the dlt destination; input handling is left to subclasses.
+    """
 
-    input_dir: LocalInputDir
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(cli_shortcuts=DLT_RUN_CLI_SHORTCUTS)
+
     output_dir: LocalOutputDir
-
-
-class CtsSettings(LocalInputOutputSettings):
-    """Configuration for running a basic DLT pipeline."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(cli_shortcuts=CLI_SHORTCUTS)
-
-    buffer_size: BufferSize
     dlt_dev_mode: DltDevMode
-    log_interval: LogInterval
     use_destination: UseDestination
     use_output_dir_for_pipeline_metadata: UseOutputDirForPipelineMetadata
 
@@ -232,6 +240,43 @@ class CtsSettings(LocalInputOutputSettings):
         if self.pipeline_dir:
             return self.pipeline_dir / REPORT_FILE_NAME
         return self.output_dir / REPORT_FILE_NAME
+
+
+class CtsSettings(DltRunSettings):
+    """Configuration for a dlt pipeline that ingests files from a local directory or a dlt filesystem source.
+
+    Input files come from ``use_resource`` (a ``[sources.<name>]`` block in the dlt config) if set;
+    otherwise from the local ``input_dir``. If both are supplied, ``input_dir`` is discarded before
+    validation.
+    """
+
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(cli_shortcuts=CLI_SHORTCUTS)
+
+    input_dir: Annotated[LocalInputDir | None, Field(default=None)]
+    use_resource: UseResource
+    buffer_size: BufferSize
+    log_interval: LogInterval
+
+    @model_validator(mode="before")
+    @classmethod
+    def drop_input_dir_if_use_resource(cls, data: Any) -> Any:  # noqa: ANN401
+        """Discard input_dir when use_resource is set, so that an unused input_dir is never validated."""
+        if not isinstance(data, dict):
+            return data
+        use_resource = data.get(USE_RESOURCE)
+        if isinstance(use_resource, str):
+            use_resource = use_resource.strip()
+        if use_resource and data.get(INPUT_DIR) is not None:
+            logger.warning(INPUT_DIR_IGNORED, data[INPUT_DIR])
+            data = {k: v for k, v in data.items() if k != INPUT_DIR}
+        return data
+
+    @model_validator(mode="after")
+    def check_input_source(self) -> Self:
+        """Ensure that there is somewhere to read input files from."""
+        if self.input_dir is None and self.use_resource is None:
+            raise ValueError(INPUT_SOURCE_MISSING)
+        return self
 
 
 class FileFormatIngestSettings(CtsSettings):

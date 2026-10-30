@@ -32,6 +32,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import Cleane
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import clean_validate_file, qsv_check
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import generate_header
 from cdm_data_loaders.utils.buffer import ListBuffer
+from cdm_data_loaders.utils.file_items import local_copy
 
 SCHEMA_CONTRACT: Final[TSchemaContractDict] = DEFAULT_SCHEMA_CONTRACT
 REJECTED_SUFFIX: Final[str] = DEFAULT_REJECTED_SUFFIX
@@ -76,7 +77,27 @@ def _process_xsv_file(
     :yield: rows routed to table_name and/or ``{table_name}_rejected``
     :rtype: Generator[TDataItems, Any, Any]
     """
-    file_path = settings.input_dir / file_item["relative_path"]
+    # qsv is an external binary, so remote files must be copied locally first
+    with local_copy(file_item) as file_path:
+        yield from _clean_validate_and_load(file_path, settings, work_paths)
+
+
+def _clean_validate_and_load(
+    file_path: Path,
+    settings: XsvIngestSettings,
+    work_paths: XsvWorkPaths,
+) -> Generator[TDataItems, Any, Any]:
+    """Clean, validate, and load one local XSV file. Yield rows for table_name and its rejected table.
+
+    :param file_path: path to a local copy of the XSV file
+    :type  file_path: Path
+    :param settings: pipeline configuration
+    :type  settings: XsvIngestSettings
+    :param work_paths: scratch resources shared across the pipeline run
+    :type  work_paths: XsvWorkPaths
+    :yield: rows routed to table_name and/or ``{table_name}_rejected``
+    :rtype: Generator[TDataItems, Any, Any]
+    """
     args = CleanerValidatorArgs(
         qsv_cmd=work_paths.qsv_cmd,
         xsv_file_path=file_path,
@@ -141,7 +162,7 @@ def _read_items(
 
 
 def run_xsv_pipeline(settings: XsvIngestSettings) -> LoadInfo | None:
-    """Run the XSV ingestion pipeline on matching files in settings.input_dir.
+    """Run the XSV ingestion pipeline on matching files in settings.input_dir or settings.use_resource.
 
     :param settings: pipeline configuration
     :type  settings: XsvIngestSettings

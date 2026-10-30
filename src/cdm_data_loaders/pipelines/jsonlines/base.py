@@ -16,13 +16,13 @@ import dlt
 import pyarrow as pa
 from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TSchemaContractDict
-from dlt.sources.filesystem import filesystem
 
 from cdm_data_loaders.pipelines.core import (
     DEFAULT_REJECTED_SUFFIX,
     DEFAULT_SCHEMA_CONTRACT,
     run_pipeline,
 )
+from cdm_data_loaders.pipelines.input_source import build_input_files, input_subdir_exists
 from cdm_data_loaders.readers.jsonlines import stream_jsonl_lines
 from cdm_data_loaders.utils.buffer import ArrowListBuffer, ListBuffer
 
@@ -143,9 +143,9 @@ def build_entity_resource(  # noqa: PLR0913
     A missing entity directory produces no rows. Nested values are preserved
     rather than normalized into child tables.
 
-    :param table_name: table name; also the input_dir subdirectory name
+    :param table_name: table name; also the name of the subdirectory of the input location
     :type  table_name: str
-    :param settings: pipeline configuration with input_dir, file_glob, buffer_size
+    :param settings: pipeline configuration with input_dir or use_resource, file_glob, buffer_size
     :type  settings: Any
     :param resolve_error: function returning None for valid records or error detail
     :type  resolve_error: ParseErrorResolver
@@ -160,11 +160,10 @@ def build_entity_resource(  # noqa: PLR0913
     :return: resource yielding validated and rejected records for this entity
     :rtype: DltResource
     """
-    entity_dir = settings.input_dir / table_name
-    if entity_dir.is_dir():
-        files = filesystem(bucket_url=str(entity_dir), file_glob=settings.file_glob)
+    if input_subdir_exists(settings, table_name):
+        files = build_input_files(settings, file_glob=settings.file_glob, subdir=table_name)
     else:
-        logger.warning("Entity directory does not exist, skipping: %s", entity_dir)
+        logger.warning("Entity directory does not exist, skipping: %s", table_name)
         files = dlt.resource([], name=f"{table_name}_files")
 
     raw = dlt.transformer(

@@ -30,9 +30,21 @@ file_max_items = 100000000
 # files will rotate when file size is greater than 1_000 MB
 file_max_bytes = 1000000000
 
+# input sources, selected with --use-resource <name>
 [sources.cts]
 bucket_url = "/input_dir"
 resource_type = "filesystem"
+
+# Example S3 input source; credentials belong in secrets.toml:
+# [sources.my_s3]
+# bucket_url = "s3://my-bucket/some/prefix"
+# resource_type = "filesystem"
+#
+# secrets.toml:
+# [sources.my_s3.credentials]
+# aws_access_key_id = "..."
+# aws_secret_access_key = "..."
+# endpoint_url = "https://..."
 
 [destination.cts]
 bucket_url = "/output_dir"

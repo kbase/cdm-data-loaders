@@ -23,7 +23,7 @@ Domain logic lives in the top-level packages and is orchestration-free; orchestr
 - IR is a frozen, slotted node tree (`converters/core/ir.py`) that preserves source facts without choosing target policy; emitters make all target-specific decisions.
 - `converters/core/` imports no dlt, PyIceberg, or PySpark modules. The only cross-package import is the `x-xsv-config` contract reusing `X_XSV_CONFIG_SCHEMA` from `cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema`.
 
-Settings hierarchy: pipeline settings in `pipelines/` extend the hierarchy in `core/settings.py`: `CdmDataLoadersBase` -> `LoggerSettings` -> `LocalInputOutputSettings` -> `CtsSettings` -> `FileFormatIngestSettings`. Settings use `env_prefix="CDL_"`, `cli_kebab_case=True`, and `default_settings_with_shortcuts(...)`. `CdmDataLoadersBase.__pydantic_init_subclass__` calls `check_aliases()` at class creation time to verify that CLI argument names, aliases, and `cli_shortcuts` do not collide or claim reserved flags (`h`, `help`). CLI parsing is invoked explicitly via `pydantic_settings.CliApp.run` in `pipelines/core.py` (`PipelineCli` / `run_cli`), not implicitly on model instantiation. Every pipeline registers a `cli` entry point in `pyproject.toml` under `[project.scripts]` (and in `scripts/entrypoint.sh` for Docker execution): `all_the_bacteria`, `jsonl_extract`, `jsonl_jsonschema`, `jsonl_pydantic`, `ncbi_ftp_promote`, `ncbi_ftp_sync`, `ncbi_rest_api`, `uniprot`, `uniref`, `xmltodict`, `xml2db`, `xsv`.
+Settings hierarchy: pipeline settings in `pipelines/` extend the hierarchy in `core/settings.py`: `CdmDataLoadersBase` -> `LoggerSettings` -> `DltRunSettings` (output dir, destination, dev mode, pipeline metadata: what `run_pipeline` needs) -> `CtsSettings` (file input: `input_dir` or `use_resource`, plus `buffer_size`, `log_interval`) -> `FileFormatIngestSettings`. `use_resource` names a `[sources.<name>]` filesystem block in the dlt config and overrides `input_dir` (which is dropped before validation if both are set); input files are resolved via `pipelines/input_source.py`. `AtbSettings` and `NcbiRestApiSettings` extend `DltRunSettings` directly and accept only the fields their pipelines use. Settings use `env_prefix="CDL_"`, `cli_kebab_case=True`, and `default_settings_with_shortcuts(...)`. `CdmDataLoadersBase.__pydantic_init_subclass__` calls `check_aliases()` at class creation time to verify that CLI argument names, aliases, and `cli_shortcuts` do not collide or claim reserved flags (`h`, `help`). CLI parsing is invoked explicitly via `pydantic_settings.CliApp.run` in `pipelines/core.py` (`PipelineCli` / `run_cli`), not implicitly on model instantiation. Every pipeline registers a `cli` entry point in `pyproject.toml` under `[project.scripts]` (and in `scripts/entrypoint.sh` for Docker execution): `all_the_bacteria`, `jsonl_extract`, `jsonl_jsonschema`, `jsonl_pydantic`, `ncbi_ftp_promote`, `ncbi_ftp_sync`, `ncbi_rest_api`, `uniprot`, `uniref`, `xmltodict`, `xml2db`, `xsv`.
 
 ## Package Map
 
@@ -35,7 +35,7 @@ Framework-level foundations:
 
 - `fields.py`: common annotated field types (`BufferSize`, `DatasetName`, `FileGlob`, `LoaderFileFormat`, `TableName`, `WriteDisposition`, etc.), `LoaderFileFormatEnum` (`parquet`, `jsonl`), and `DEFAULTS`.
 - `path_fields.py`: `LocalInputDir` and `LocalOutputDir` path types (`file://` or plain local directory paths) and URL/path validation helpers (`normalize_local_path`, `validate_directory`, `validate_url_protocol`).
-- `settings.py`: `pydantic-settings` base class hierarchy (`CdmDataLoadersBase` -> `LoggerSettings` -> `LocalInputOutputSettings` -> `CtsSettings` -> `FileFormatIngestSettings`), `CLI_SHORTCUTS`, `default_settings_with_shortcuts()`, and CLI flag/shortcut collision checking (`check_aliases()`).
+- `settings.py`: `pydantic-settings` base class hierarchy (`CdmDataLoadersBase` -> `LoggerSettings` -> `DltRunSettings` -> `CtsSettings` -> `FileFormatIngestSettings`), `DLT_RUN_CLI_SHORTCUTS`, `CLI_SHORTCUTS`, `default_settings_with_shortcuts()`, and CLI flag/shortcut collision checking (`check_aliases()`).
 
 ### `converters/`
 
@@ -77,6 +77,7 @@ NCBI FTP assembly domain logic, phased: `manifest.py` (phase 1: assembly summary
 
 dlt-based orchestrators; each exposes a `cli = PipelineCli(...)` registered in `pyproject.toml`:
 
+- `input_source.py`: resolves the input location (`input_dir` or the `use_resource` dlt source, with credentials) and builds the dlt `filesystem` resource (`resolve_input_source`, `build_input_files`, `input_subdir_exists`).
 - `core.py`: `PipelineCli`, `run_cli`, `run_pipeline`, `setup_dlt_Pipeline`, `execute_dlt_pipeline`, and `configure_pipeline_logging`.
 - `all_the_bacteria.py`: All The Bacteria bulk data downloader (excluded from fast test runs).
 - `jsonlines/`: JSONL ingest pipelines (`settings.py`, shared machinery in `base.py`) - `extract_pipeline.py` (`jsonl_extract`, plain load into `<table_name>` / `<table_name>_invalid`), `extract_jsonschema_validate_pipeline.py` (`jsonl_jsonschema`, validates against `ENTITY_SCHEMAS`), `extract_pydantic_validate_pipeline.py` (`jsonl_pydantic`, validates against `ENTITY_MODELS`). See `docs/jsonschema_ingest.md`.
@@ -87,7 +88,7 @@ dlt-based orchestrators; each exposes a `cli = PipelineCli(...)` registered in `
 
 ### `utils/`
 
-Cross-cutting helpers: `batcher.py` (`NumericFileSequenceBatcher`), `buffer.py` (per-table row buffers for dlt: `DictBuffer`, `ListBuffer`, `ArrowDictBuffer`, `ArrowListBuffer`), `cdm_logger.py` (structured JSON logging), `checksums.py`, `gz.py` (`open_maybe_gzip`), `helpers.py`, `progress.py` (tqdm helpers), `spark.py`, `xml_utils.py`, `jsonschema/dereferencer.py` (`$ref` resolution), `dlt/dlt_normalization.py` (lossless parent-linked normalization of dlt table definitions, used by the converters' `DltReader`), and `file_transfer/` - `core.py` (tenacity-retried downloads), `sync_client.py` / `async_client.py` / `ftp_client.py`, and `s3/` (`client.py`, `object_utils.py`, HTTP-to-S3 streaming in `streamer.py`, `transfer_config.py`, `cli.py`).
+Cross-cutting helpers: `batcher.py` (`NumericFileSequenceBatcher`), `buffer.py` (per-table row buffers for dlt: `DictBuffer`, `ListBuffer`, `ArrowDictBuffer`, `ArrowListBuffer`), `cdm_logger.py` (structured JSON logging), `checksums.py`, `file_items.py` (stream local paths or dlt file items: `open_input`, `source_label`, `local_copy`), `gz.py` (`open_maybe_gzip`), `helpers.py`, `progress.py` (tqdm helpers), `spark.py`, `xml_utils.py`, `jsonschema/dereferencer.py` (`$ref` resolution), `dlt/dlt_normalization.py` (lossless parent-linked normalization of dlt table definitions, used by the converters' `DltReader`), and `file_transfer/` - `core.py` (tenacity-retried downloads), `sync_client.py` / `async_client.py` / `ftp_client.py`, and `s3/` (`client.py`, `object_utils.py`, HTTP-to-S3 streaming in `streamer.py`, `transfer_config.py`, `cli.py`).
 
 ### Other Top-Level Directories
 

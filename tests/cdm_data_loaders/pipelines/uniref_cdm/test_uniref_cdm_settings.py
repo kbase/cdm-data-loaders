@@ -35,7 +35,8 @@ def test_no_cli_param_clashes() -> None:
     assert_no_cli_clashes(UnirefSettings)
 
 
-@pytest.mark.parametrize("field_name", list(UnirefSettings.model_fields))
+# use_resource discards input_dir, so it cannot be roundtripped alongside it; see tests/cdm_data_loaders/core/test_settings.py
+@pytest.mark.parametrize("field_name", [f for f in UnirefSettings.model_fields if f != "use_resource"])
 def test_cli_fields_parse_correctly(
     field_name: str,
     test_uniref_settings: frozendict[str, Any],

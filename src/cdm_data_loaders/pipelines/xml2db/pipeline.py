@@ -2,7 +2,6 @@
 
 from collections.abc import Generator, Iterator
 from logging import Logger, getLogger
-from pathlib import Path
 from typing import Any
 
 from dlt.common.pipeline import LoadInfo
@@ -38,11 +37,11 @@ def _read_items(
     :rtype: Generator[TDataItems, Any, Any]
     """
     for file_item in items:
-        yield from process_xml_file_with_xml2db(settings, model, file_path=Path(file_item.local_file_path))
+        yield from process_xml_file_with_xml2db(settings, model, file_path=file_item)
 
 
 def run_xml2db_pipeline(settings: Xml2DbSettings) -> LoadInfo | None:
-    """Run the xml2db pipeline on matching files in settings.input_dir.
+    """Run the xml2db pipeline on matching files in settings.input_dir or settings.use_resource.
 
     :param settings: pipeline configuration
     :type  settings: Xml2DbSettings
