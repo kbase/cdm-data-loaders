@@ -1,7 +1,8 @@
 """Settings classes for data loading and wrangling pipelines."""
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Final
+from typing import Annotated, Any, Final
 
 from frozendict import frozendict
 from pydantic import AliasChoices, AliasPath, Field, computed_field
@@ -31,10 +32,6 @@ from cdm_data_loaders.core.fields import (
     XmlTag,
 )
 from cdm_data_loaders.core.path_fields import LocalInputDir, LocalOutputDir
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
 
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
     {
@@ -85,6 +82,15 @@ def default_settings_with_shortcuts(
             field_name.replace("_", "-"): value for field_name, value in cli_shortcuts.items()
         }
     return SettingsConfigDict(**{**DEFAULT_SETTINGS_CONFIG_DICT, **extra_args})
+
+
+def select_cli_shortcuts(
+    shortcuts: Mapping[str, str],
+    *keys: str,
+    base: Mapping[str, str] = FILE_FORMAT_CLI_SHORTCUTS,
+) -> dict[str, str]:
+    """Merge ``base`` shortcuts with the subset of ``shortcuts`` matching ``keys``."""
+    return {**base, **{k: shortcuts[k] for k in keys if k in shortcuts}}
 
 
 def _alias_names(alias: str | AliasChoices | AliasPath | None) -> set[str]:

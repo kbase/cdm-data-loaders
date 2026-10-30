@@ -11,7 +11,7 @@ from typing import Any
 from lxml.etree import Element
 
 from cdm_data_loaders.utils.helpers import _ensembl_type
-from cdm_data_loaders.utils.xml_utils import dump_xml_element, get_text
+from cdm_data_loaders.utils.xml_utils import dump_xml_element, get_text, make_parse_error
 
 CONTENT = "content"
 DB = "db"
@@ -149,25 +149,32 @@ def parse_cross_references(entry: Element) -> list[dict[str, Any]]:
     return refs
 
 
-def parse_ensembl_dbxref(xref: str, prop_list: list[dict[str, str]], description_suffix: str) -> list[dict[str, str]]:
-    """Parse an Ensembl dbxref."""
-    likely_type = _ensembl_type(xref)
+def _parse_typed_dbxref(  # noqa: PLR0913, PLR0917
+    db: str,
+    label: str,
+    id_type: str,
+    xref: str,
+    prop_list: list[dict[str, str]],
+    description_suffix: str,
+) -> list[dict[str, str]]:
+    """Parse a dbxref with a primary typed ID and property cross-references."""
     return [
-        {DB: "ensembl", XREF: xref, DESCRIPTION: f"Ensembl {likely_type} ID{description_suffix}"},
+        {DB: db, XREF: xref, DESCRIPTION: f"{label} {id_type} ID{description_suffix}"},
         *[
-            {DB: "ensembl", XREF: p["value"], DESCRIPTION: f"Ensembl {p['type']}{description_suffix}"}
+            {DB: db, XREF: p["value"], DESCRIPTION: f"{label} {p['type']}{description_suffix}"}
             for p in prop_list
         ],
     ]
 
 
+def parse_ensembl_dbxref(xref: str, prop_list: list[dict[str, str]], description_suffix: str) -> list[dict[str, str]]:
+    """Parse an Ensembl dbxref."""
+    return _parse_typed_dbxref("ensembl", "Ensembl", _ensembl_type(xref), xref, prop_list, description_suffix)
+
+
 def parse_refseq_dbxref(xref: str, prop_list: list[dict[str, str]], description_suffix: str) -> list[dict[str, str]]:
     """Parse a RefSeq dbxref."""
-    return [
-        {DB: "refseq", XREF: xref, DESCRIPTION: f"RefSeq protein sequence ID{description_suffix}"},
-        # add in refs for each of the properties
-        *[{DB: "refseq", XREF: p["value"], DESCRIPTION: f"RefSeq {p['type']}{description_suffix}"} for p in prop_list],
-    ]
+    return _parse_typed_dbxref("refseq", "RefSeq", "protein sequence", xref, prop_list, description_suffix)
 
 
 def parse_embl_dbxref(xref: str, prop_list: list[dict[str, str]], description_suffix: str) -> list[dict[str, str]]:
@@ -299,6 +306,20 @@ def parse_references(entry: Element) -> dict[str, list[dict[str, str]]]:
     return {"all_xml": all_publications, "publication": [{"publication_id": pub} for pub in publications]}
 
 
+def _dump_child_elements_xml(
+    entry: Element, uniprot_id: str, tag: str, *, include_key: bool = False
+) -> list[dict[str, str]]:
+    """Dump child elements matching ``ns:<tag>`` as XML strings for potential later parsing."""
+    return [
+        {
+            ENTITY_ID: uniprot_id,
+            **({KEY: elem.get("key")} if include_key else {}),
+            CONTENT: dump_xml_element(elem),
+        }
+        for elem in entry.findall(f"ns:{tag}", NS)
+    ]
+
+
 def dump_evidence_xml(entry: Element, uniprot_id: str) -> list[dict[str, str]]:
     """Dump evidence as XML strings for potential later parsing.
 
@@ -309,10 +330,7 @@ def dump_evidence_xml(entry: Element, uniprot_id: str) -> list[dict[str, str]]:
     :return: list of dictionaries containing evidence XML
     :rtype: list[dict[str, str]]
     """
-    return [
-        {ENTITY_ID: uniprot_id, KEY: evidence.get("key"), CONTENT: dump_xml_element(evidence)}
-        for evidence in entry.findall("ns:evidence", NS)
-    ]
+    return _dump_child_elements_xml(entry, uniprot_id, "evidence", include_key=True)
 
 
 def dump_comment_xml(entry: Element, uniprot_id: str) -> list[dict[str, str]]:
@@ -325,7 +343,7 @@ def dump_comment_xml(entry: Element, uniprot_id: str) -> list[dict[str, str]]:
     :return: list of dictionaries containing comment XML
     :rtype: list[dict[str, str]]
     """
-    return [{ENTITY_ID: uniprot_id, CONTENT: dump_xml_element(comment)} for comment in entry.findall("ns:comment", NS)]
+    return _dump_child_elements_xml(entry, uniprot_id, "comment")
 
 
 def parse_uniprot_entry(
@@ -349,11 +367,7 @@ def parse_uniprot_entry(
 
         if not first_acc or not first_acc.strip():
             logger.error("No accession found for entry")
-            return {
-                "_parse_error": [
-                    {"xml": dump_xml_element(entry), "error": "No accession found", "source_file": str(file_path)}
-                ]
-            }
+            return make_parse_error(entry, "No accession found", file_path)
 
         uniprot_id = f"uniprot:{first_acc.strip()}"
         entity = {
@@ -396,4 +410,4 @@ def parse_uniprot_entry(
         }
     except Exception as e:
         logger.exception("Parse error while processing entry")
-        return {"_parse_error": [{"xml": dump_xml_element(entry), "error": str(e), "source_file": str(file_path)}]}
+        return make_parse_error(entry, e, file_path)

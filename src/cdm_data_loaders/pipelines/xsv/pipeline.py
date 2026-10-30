@@ -72,7 +72,7 @@ def _process_xsv_file(
     :yield: rows routed to table_name and/or ``{table_name}_rejected``
     :rtype: Generator[TDataItems, Any, Any]
     """
-    file_path = settings.input_dir / file_item["relative_path"]
+    file_path = Path(file_item.local_file_path)
     args = CleanerValidatorArgs(
         qsv_cmd=work_paths.qsv_cmd,
         xsv_file_path=file_path,

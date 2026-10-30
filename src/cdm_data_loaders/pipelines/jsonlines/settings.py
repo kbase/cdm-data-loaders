@@ -14,9 +14,9 @@ from cdm_data_loaders.core.fields import (
     TableName,
 )
 from cdm_data_loaders.core.settings import (
-    FILE_FORMAT_CLI_SHORTCUTS,
     FileFormatIngestSettings,
     default_settings_with_shortcuts,
+    select_cli_shortcuts,
 )
 
 EXTRACT_PIPELINE_NAME: Final[str] = "jsonlines_extract"
@@ -53,10 +53,7 @@ class JsonlExtractSettings(JsonlIngestSettings):
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=EXTRACT_PIPELINE_NAME,
-        cli_shortcuts={
-            **FILE_FORMAT_CLI_SHORTCUTS,
-            **{k: v for k, v in LOCAL_CLI_SHORTCUTS.items() if k in [FILE_GLOB, TABLE_NAME]},
-        },
+        cli_shortcuts=select_cli_shortcuts(LOCAL_CLI_SHORTCUTS, FILE_GLOB, TABLE_NAME),
     )
 
     table_name: TableName
@@ -84,10 +81,7 @@ class JsonlPydanticIngestSettings(ValidatedJsonlIngestSettings):
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=PYDANTIC_PIPELINE_NAME,
-        cli_shortcuts={
-            **FILE_FORMAT_CLI_SHORTCUTS,
-            **{k: v for k, v in LOCAL_CLI_SHORTCUTS.items() if k in [ENTITY_MODELS_MODULE, FILE_GLOB, TABLE_NAMES]},
-        },
+        cli_shortcuts=select_cli_shortcuts(LOCAL_CLI_SHORTCUTS, ENTITY_MODELS_MODULE, FILE_GLOB, TABLE_NAMES),
     )
 
     entity_models_module: Annotated[
@@ -107,19 +101,7 @@ class JsonlJsonschemaIngestSettings(ValidatedJsonlIngestSettings):
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=JSONSCHEMA_PIPELINE_NAME,
-        cli_shortcuts={
-            **FILE_FORMAT_CLI_SHORTCUTS,
-            **{
-                k: v
-                for k, v in LOCAL_CLI_SHORTCUTS.items()
-                if k
-                in [
-                    FILE_GLOB,
-                    SCHEMA_FILES_MODULE,
-                    TABLE_NAMES,
-                ]
-            },
-        },
+        cli_shortcuts=select_cli_shortcuts(LOCAL_CLI_SHORTCUTS, FILE_GLOB, SCHEMA_FILES_MODULE, TABLE_NAMES),
     )
 
     schema_files_module: Annotated[

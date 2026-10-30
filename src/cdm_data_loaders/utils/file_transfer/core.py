@@ -3,10 +3,15 @@
 from collections.abc import AsyncIterable, Iterable
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any
+from typing import Any, Never
 
 import httpx
 from frozendict import frozendict
+from tenacity import (
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from cdm_data_loaders.utils.checksums import new_hasher, validate_checksum_fn
 
@@ -54,6 +59,25 @@ class DownloadCore:
         httpx.TransportError,
         DownloadError,
     )
+
+    @staticmethod
+    def retry_kwargs(max_attempts: int, min_backoff: int, max_backoff: int) -> dict[str, Any]:
+        """Build common tenacity retry configuration for sync and async downloaders."""
+        return {
+            "retry": retry_if_exception_type(DownloadCore.RETRYABLE_EXCEPTIONS),
+            "stop": stop_after_attempt(max_attempts),
+            "wait": wait_exponential(min=min_backoff, max=max_backoff),
+            "reraise": True,
+        }
+
+    @staticmethod
+    def handle_download_exception(exc: Exception, url: str, log: Logger) -> Never:
+        """Log a download failure and re-raise or wrap it in ``DownloadError``."""
+        if isinstance(exc, NonRetryableDownloadError):
+            log.exception("%s: %s; retry not possible", url, exc.args[0], extra={"url": url})  # noqa: LOG004
+            raise exc
+        log.exception("%s: %s; retry possible", url, exc.args[0], extra={"url": url})  # noqa: LOG004
+        raise DownloadError(str(exc)) from exc
 
     @staticmethod
     def validate_args(

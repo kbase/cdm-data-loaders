@@ -19,7 +19,7 @@ from typing import Any
 
 from lxml.etree import Element
 
-from cdm_data_loaders.utils.xml_utils import dump_xml_element
+from cdm_data_loaders.utils.xml_utils import make_parse_error
 
 UNIREF_URL = "http://uniprot.org/uniref"
 ENTRY_XML_TAG = f"{{{UNIREF_URL}}}entry"
@@ -118,11 +118,7 @@ def parse_uniref_entry(
     cluster_id = cluster.get("cluster_id")
     if not cluster_id:
         logger.debug("No cluster ID found in entry")
-        return {
-            "_parse_error": [
-                {"xml": dump_xml_element(entry), "error": "No cluster ID found in entry", "source_file": str(file_path)}
-            ]
-        }
+        return make_parse_error(entry, "No cluster ID found in entry", file_path)
 
     # add the current timestamp
     entity["updated"] = timestamp
