@@ -1,7 +1,7 @@
 """Emit PyArrow schema objects from immutable typed schema nodes."""
 
 import json
-import logging
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import ClassVar, Final
 
@@ -11,7 +11,6 @@ from jsonschema import Draft202012Validator
 from pydantic import Field, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.inference import decimal_places, json_type_from_enum
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import NodeHints, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.metadata import ConversionContext
@@ -20,11 +19,9 @@ from cdm_data_loaders.converters.emitters._tabular_base import (
     DEFAULT_STRING_FORMATS,
     INT32_WIDTH,
     _TabularEmitterBase,
-    fits_int32_bounds,
+    infer_enum_type,
     merge_format_map_with_defaults,
 )
-
-logger = logging.getLogger(__name__)
 
 INT8_WIDTH: Final = 8
 INT16_WIDTH: Final = 16
@@ -37,6 +34,21 @@ DEFAULT_FORMAT_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
         "date": pa.date32(),
         "date-time": pa.timestamp("us", tz="UTC"),
         **dict.fromkeys(DEFAULT_STRING_FORMATS, pa.string()),
+    }
+)
+SCALAR_TYPE_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
+    {
+        "boolean": pa.bool_(),
+        "null": pa.null(),
+        "collapsed-union": pa.string(),
+    }
+)
+ENUM_TYPE_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
+    {
+        "boolean": pa.bool_(),
+        "integer": pa.int64(),
+        "number": pa.float64(),
+        "string": pa.string(),
     }
 )
 
@@ -62,7 +74,12 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
 
     _error_cls: ClassVar[type[ConversionError]] = PyArrowEmitterError
     _target_name: ClassVar[str] = "Arrow"
+    _decimal_target_label: ClassVar[str] = "Arrow"
     _string_type_label: ClassVar[str] = "string"
+    _struct_type_label: ClassVar[str] = "an Arrow struct"
+    _empty_struct_label: ClassVar[str] = "empty struct"
+    _map_type_label: ClassVar[str] = "an Arrow map"
+    _map_value_label: ClassVar[str] = "map value type"
     _union_approx_reason: ClassVar[str] = "Arrow has no union type compatible with table storage."
     _array_label: ClassVar[str] = "Arrow lists"
     _slot_label: ClassVar[str] = "list's"
@@ -134,92 +151,42 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
     def _string_type(self) -> pa.DataType:
         return pa.string()
 
-    def _scalar_types(self) -> dict[str, pa.DataType]:
-        return {"boolean": pa.bool_(), "null": pa.null(), "collapsed-union": pa.string()}
+    def _int32_type(self) -> pa.DataType:
+        return pa.int32()
+
+    def _int64_type(self) -> pa.DataType:
+        return pa.int64()
+
+    def _float64_type(self) -> pa.DataType:
+        return pa.float64()
+
+    def _decimal128_type(self, precision: int, scale: int) -> pa.DataType:
+        return pa.decimal128(precision, scale)
+
+    def _scalar_types(self) -> Mapping[str, pa.DataType]:
+        return SCALAR_TYPE_MAP
 
     def _infer_enum_type(self, values: list[object]) -> pa.DataType:
         return infer_type_from_enum(values)
 
-    def _emit_object(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> pa.DataType:
-        """Emit fixed fields, a dynamic map, or an empty struct."""
-        if depth >= self.max_nesting:
-            logger.warning("Max nesting limit (%d) reached; collapsing object to string.", self.max_nesting)
-            return pa.string()
-
-        additional = node.additional_properties
-        schema_additional = additional is not None and additional.type not in {"any", "never"}
-        if node.properties:
-            if node.pattern_properties or schema_additional:
-                logger.warning(
-                    "Object schema declares both fixed 'properties' and dynamic 'patternProperties' / "
-                    "'additionalProperties'; an Arrow struct requires fixed field names, so the "
-                    "dynamic keys are ignored."
+    def _struct_type(self, properties: tuple[SchemaField, ...], ctx: ConversionContext, depth: int) -> pa.DataType:
+        return pa.struct(
+            [
+                pa.field(
+                    prop.name,
+                    self.emit_node(prop.node, ctx, depth + 1),
+                    nullable=not prop.required,
+                    metadata=self.build_metadata(prop.node, ctx, prop) or None,
                 )
-            return pa.struct(
-                [
-                    pa.field(
-                        prop.name,
-                        self.emit_node(prop.node, ctx, depth + 1),
-                        nullable=not prop.required,
-                        metadata=self.build_metadata(prop.node, ctx, prop) or None,
-                    )
-                    for prop in node.properties
-                ]
-            )
-        value_node = additional if schema_additional else None
-        if node.pattern_properties:
-            if len(node.pattern_properties) > 1:
-                logger.warning(
-                    "Multiple 'patternProperties' patterns found; only the first pattern's schema is "
-                    "used as the map value type, since an Arrow map has a single value type."
-                )
-            value_node = next(iter(node.pattern_properties.values()))
-        if value_node is not None:
-            return pa.map_(pa.string(), pa.field("value", self.emit_node(value_node, ctx, depth + 1), nullable=True))
-        logger.warning(
-            "Object schema has no 'properties', 'patternProperties', or schema-valued "
-            "'additionalProperties'; converting to an empty struct."
+                for prop in properties
+            ]
         )
-        return pa.struct([])
 
-    def _emit_map(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> pa.MapType:
-        """Emit a map with independently typed keys and values."""
-        if node.key_type is None or node.value_type is None:
-            msg = "Map nodes require both key_type and value_type"
-            raise PyArrowEmitterError(msg)
-        value = pa.field(
-            "value", self.emit_node(node.value_type, ctx, depth + 1), nullable=_element_nullable(node.value_type)
-        )
-        return pa.map_(self.emit_node(node.key_type, ctx, depth + 1), value)
+    def _map_type(self, key_type: pa.DataType, value_type: pa.DataType, *, value_nullable: bool) -> pa.MapType:
+        return pa.map_(key_type, pa.field("value", value_type, nullable=value_nullable))
 
-    def _emit_array(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> pa.ListType:
-        """Emit homogeneous arrays, approximating tuple schemas by their first slot."""
-        element = self._resolve_array_element(node)
-        if element is None:
-            return pa.list_(pa.field("item", pa.string(), nullable=True))
-        return pa.list_(pa.field("item", self.emit_node(element, ctx, depth + 1), nullable=_element_nullable(element)))
-
-    def _emit_string(self, node: TypedNode) -> pa.DataType:
-        """Map recognized formats to Arrow types."""
-        value = node.constraints.get("format")
-        return self.format_map.get(value, pa.string()) if isinstance(value, str) else pa.string()
-
-    @staticmethod
-    def _emit_integer(node: TypedNode) -> pa.DataType:
-        """Use int32 only when both bounds fit."""
-        return pa.int32() if fits_int32_bounds(node) else pa.int64()
-
-    @staticmethod
-    def _emit_number(node: TypedNode) -> pa.DataType:
-        """Derive decimal scale from numeric JSON multipleOf values."""
-        multiple = node.constraints.get("multipleOf")
-        if isinstance(multiple, (int, float, Decimal)):
-            scale = decimal_places(multiple)
-            if scale > DECIMAL128_MAX_PRECISION:
-                msg = f"Unsupported Arrow decimal precision/scale: ({DECIMAL128_MAX_PRECISION}, {scale})"
-                raise PyArrowEmitterError(msg)
-            return pa.decimal128(DECIMAL128_MAX_PRECISION, scale)
-        return pa.float64()
+    def _array_type(self, element_type: pa.DataType, *, element_nullable: bool) -> pa.ListType:
+        return pa.list_(pa.field("item", element_type, nullable=element_nullable))
 
     @staticmethod
     def _emit_logical(node: TypedNode) -> pa.DataType | None:
@@ -250,18 +217,7 @@ def infer_type_from_enum(values: list[object]) -> pa.DataType:
     :return: ``bool_``, ``int64``, ``float64`` or ``string``
     :rtype: pa.DataType
     """
-    return {
-        "boolean": pa.bool_(),
-        "integer": pa.int64(),
-        "number": pa.float64(),
-        "string": pa.string(),
-    }[json_type_from_enum(values)]
-
-
-def _element_nullable(node: TypedNode) -> bool:
-    """Honor non-null element facts from typed sources; JSON item schemas stay nullable."""
-    from_json = node.provenance is None or node.provenance.source == "json-schema"
-    return from_json or node.nullable is not False
+    return infer_enum_type(values, ENUM_TYPE_MAP)
 
 
 def _decimal_type(hints: NodeHints, *, wei: bool) -> pa.DataType:
