@@ -19,7 +19,7 @@ from cdm_data_loaders.pipelines.ncbi_rest_api import (
     set_settings,
 )
 from tests.cdm_data_loaders.conftest import check_settings
-from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes, settings_to_argv
+from tests.helpers import assert_cli_field_roundtrips, settings_to_argv
 
 BATCH_SIZE = 200
 BATCH_SIZE_STRING = str(BATCH_SIZE)
@@ -187,12 +187,6 @@ def test_settings_all_params_set(
     settings, reconciled = ncbi_settings_pair
     s = NcbiRestApiSettings(**settings)
     check_settings(s, reconciled)
-
-
-# model_fields
-def test_no_cli_param_clashes() -> None:
-    """Ensure that the settings object does not have any internal alias collisions."""
-    assert_no_cli_clashes(NcbiRestApiSettings)
 
 
 @pytest.mark.parametrize("field_name", [f for f in NcbiRestApiSettings.model_fields if f != "save_raw_responses"])

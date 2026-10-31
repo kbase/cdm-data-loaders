@@ -8,8 +8,6 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
-from uuid import uuid4
 
 import pytest
 
@@ -23,11 +21,10 @@ from cdm_data_loaders.pipelines.xsv.pipeline import (
     run_xsv_pipeline,
 )
 from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
-from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline
 from tests.cdm_data_loaders.pipelines.helpers import (
-    assert_run_ok,
     fetch_all_duckdb,
     make_file_item,
+    run_with_duckdb_pipeline,
 )
 from tests.cdm_data_loaders.pipelines.xsv.conftest import VALID_SCHEMA_URI
 from tests.helpers import settings_to_argv
@@ -111,26 +108,16 @@ def test_run_xsv_pipeline_pass_end_to_end_via_duckdb(
         },
     )
 
-    pipeline_name = f"test_xsv_pipeline_{uuid4().hex}"
-    captured: dict[str, Any] = {}
+    load_info = run_with_duckdb_pipeline(
+        tmp_path,
+        xsv_pipeline_module,
+        lambda: run_xsv_pipeline(settings),
+        expected_pipeline_name=PIPELINE_NAME,
+        expected_dataset_name="xsv_test_dataset",
+        pipeline_name_prefix="test_xsv_pipeline",
+    )
 
-    def fake_run_pipeline(
-        *,
-        resource: Any,  # noqa: ANN401
-        pipeline_kwargs: dict[str, Any],
-        **_: Any,  # noqa: ANN401
-    ) -> None:
-        assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "xsv_test_dataset"}
-        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "xsv_test_dataset")
-        captured["load_info"] = pipeline.run(resource)
-
-    with patch.object(xsv_pipeline_module, "run_pipeline", fake_run_pipeline):
-        run_xsv_pipeline(settings)
-
-    assert_run_ok(captured["load_info"])
-
-    pipeline = duckdb_pipeline(tmp_path, pipeline_name, "xsv_test_dataset")
-    rows = fetch_all_duckdb(pipeline, "SELECT number, name FROM my_table ORDER BY number")
+    rows = fetch_all_duckdb(load_info.pipeline, "SELECT number, name FROM my_table ORDER BY number")
     assert [tuple(row) for row in rows] == [(1, "alice"), (2, "bob")]
 
 
@@ -142,17 +129,14 @@ def test_run_xsv_pipeline_pass_no_matching_files_loads_nothing(
     """When no data files are present besides the schema, no rows are extracted."""
     settings = settings_factory(SIMPLE_SCHEMA, {}, file_glob="*.csv")
 
-    pipeline_name = f"test_xsv_pipeline_empty_{uuid4().hex}"
-    captured: dict[str, Any] = {}
-
-    def fake_run_pipeline(*, resource: Any, **_: Any) -> None:  # noqa: ANN401
-        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "xsv_test_dataset")
-        captured["load_info"] = pipeline.run(resource)
-
-    with patch.object(xsv_pipeline_module, "run_pipeline", fake_run_pipeline):
-        run_xsv_pipeline(settings)
-
-    load_info = assert_run_ok(captured["load_info"])
+    load_info = run_with_duckdb_pipeline(
+        tmp_path,
+        xsv_pipeline_module,
+        lambda: run_xsv_pipeline(settings),
+        expected_pipeline_name=PIPELINE_NAME,
+        expected_dataset_name="xsv_test_dataset",
+        pipeline_name_prefix="test_xsv_pipeline_empty",
+    )
     assert "my_table" not in load_info.pipeline.default_schema.tables
 
 
@@ -180,24 +164,14 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     )
     monkeypatch.setattr(sys, "argv", ["xsv", *settings_to_argv(settings)])
 
-    pipeline_name = f"test_xsv_cli_pipeline_{uuid4().hex}"
-    captured: dict[str, Any] = {}
+    load_info = run_with_duckdb_pipeline(
+        tmp_path,
+        xsv_pipeline_module,
+        cli.run,
+        expected_pipeline_name=PIPELINE_NAME,
+        expected_dataset_name="cli_dataset",
+        pipeline_name_prefix="test_xsv_cli_pipeline",
+    )
 
-    def fake_run_pipeline(
-        *,
-        resource: Any,  # noqa: ANN401
-        pipeline_kwargs: dict[str, Any],
-        **_: Any,  # noqa: ANN401
-    ) -> None:
-        assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "cli_dataset"}
-        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
-        captured["load_info"] = pipeline.run(resource)
-
-    with patch.object(xsv_pipeline_module, "run_pipeline", fake_run_pipeline):
-        cli.run()
-
-    assert_run_ok(captured["load_info"])
-
-    pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
-    ((row_count,),) = fetch_all_duckdb(pipeline, "SELECT COUNT(*) FROM my_table")
+    ((row_count,),) = fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM my_table")
     assert row_count == 2  # noqa: PLR2004

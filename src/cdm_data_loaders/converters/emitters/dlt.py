@@ -188,6 +188,14 @@ def _scalar_type(node: TypedNode) -> TDataType:
     return SCALARS.get(kind, "text")
 
 
+def validate_non_empty_schema_name(value: str) -> str:
+    """Reject blank schema names."""
+    if not value.strip():
+        msg = "schema_name must be a non-empty string"
+        raise ValueError(msg)
+    return value
+
+
 class DltEmitter(BaseModel):
     """Configure typed emission with JSON-to-dlt compatibility defaults."""
 
@@ -203,10 +211,7 @@ class DltEmitter(BaseModel):
     @classmethod
     def _validate_schema_name(cls, value: str) -> str:
         """Reject blank schema names."""
-        if not value.strip():
-            msg = "schema_name must be a non-empty string"
-            raise ValueError(msg)
-        return value
+        return validate_non_empty_schema_name(value)
 
     def emit(self, document: SchemaDocument) -> TStoredSchema:
         """Emit one document as a stored schema with one root table."""

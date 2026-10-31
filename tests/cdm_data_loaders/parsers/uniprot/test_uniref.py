@@ -2,7 +2,6 @@
 
 import datetime
 import logging
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -17,7 +16,8 @@ from cdm_data_loaders.parsers.uniprot.uniref import (
     parse_uniref_entry,
 )
 from cdm_data_loaders.readers.xml import stream_xml_file
-from cdm_data_loaders.utils.xml_utils import dump_xml_element
+from tests.cdm_data_loaders.parsers.conftest import wrap_entry_xml
+from tests.conftest import TEST_DATA_DIR
 
 NOW = datetime.datetime.now(tz=datetime.UTC)
 PROTOCOL = "uniref_9000"
@@ -25,14 +25,8 @@ FILE_PATH = "/path/to/file"
 
 
 def entry_wrap(xml: str) -> str:
-    """Wrap XML text in an `entry` element.
-
-    :param xml: the XML to wrap
-    :type xml: str
-    :return: XML string with an entry around it.
-    :rtype: str
-    """
-    return f"<entry xmlns='{UNIREF_URL}'>{xml}</entry>"
+    """Wrap XML text in an `entry` element."""
+    return wrap_entry_xml(xml, UNIREF_URL)
 
 
 @pytest.mark.parametrize(
@@ -658,35 +652,6 @@ def test_generate_dbxref(db: str, acc: str, expected: str) -> None:
     assert generate_dbxref(db, acc) == expected
 
 
-@pytest.mark.parametrize(
-    ("xml", "expected"),
-    [
-        # the http uniref namespace declaration is stripped
-        (
-            f"<entry xmlns='{UNIREF_URL}'><name>Cluster: x</name></entry>",
-            "<entry><name>Cluster: x</name></entry>",
-        ),
-        # the https variant of the namespace is also stripped
-        (
-            "<entry xmlns='https://uniprot.org/uniref'><name>Cluster: y</name></entry>",
-            "<entry><name>Cluster: y</name></entry>",
-        ),
-        # the xsi namespace declaration is stripped too
-        (
-            f'<entry xmlns="{UNIREF_URL}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
-            "<name>Cluster: z</name></entry>",
-            "<entry><name>Cluster: z</name></entry>",
-        ),
-        # self-closing element
-        (f"<entry xmlns='{UNIREF_URL}'/>", "<entry/>"),
-    ],
-)
-def test_dump_xml_element(xml: str, expected: str) -> None:
-    """Test that namespace declarations are stripped when dumping XML to a string."""
-    dumped = dump_xml_element(fromstring(xml, parser=XMLParser(remove_blank_text=True)))
-    assert dumped == expected
-
-
 def test_extract_cluster_no_id() -> None:
     """An entry with no id attribute yields empty cluster and entity dicts."""
     xml = f"<entry xmlns='{UNIREF_URL}'><name>Cluster: no id</name></entry>"
@@ -711,10 +676,9 @@ def test_parse_uniref_entry_no_cluster_id() -> None:
     assert error["xml"] == "<entry><name>Cluster: no id</name></entry>"
 
 
-FIXTURE_CHUNK = Path("tests/fixtures/uniref/uniref_chunk_00001.xml")
+FIXTURE_CHUNK = TEST_DATA_DIR / "uniprot" / "uniref" / "integration" / "uniref_chunk_00001.xml"
 
 
-@pytest.mark.skipif(not FIXTURE_CHUNK.exists(), reason="UniRef XML fixture not available")
 def test_parse_uniref_entry_integration() -> None:
     """Integration test: stream real UniRef entries from a fixture file and parse each one.
 

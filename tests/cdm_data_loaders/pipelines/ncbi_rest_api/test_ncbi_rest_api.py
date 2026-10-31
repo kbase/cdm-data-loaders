@@ -321,31 +321,24 @@ RECORDED_ERRORS = {
 }
 
 
+def _patched_get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:
+    """Delegate to get_annotation_report except raise ValueError for INVALID_ID."""
+    if assembly_id == INVALID_ID:
+        err_msg = f"Some error message involving {INVALID_ID}."
+        raise ValueError(err_msg)
+    return get_annotation_report(assembly_id)
+
+
 @mock.patch("tenacity.nap.time.sleep", MagicMock())
 @pytest.mark.default_cassette("test_get_assembly_reports_annotation_report_errors.yaml")
 @pytest.mark.vcr
 def test_get_assembly_reports_annotation_report_errors(test_settings: NcbiRestApiSettings) -> None:
     """Test the retrieval of assembly data when errors occur fetching annotation reports."""
     set_settings(test_settings)
-    original_get_annotation_report = get_annotation_report
-
-    def patched_get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:
-        """Patched version of get_annotation_report that throws a value error with a certain input.
-
-        :param assembly_id: assembly ID
-        :type assembly_id: str
-        :raises ValueError: if the ID is INVALID_ID
-        :return: output from the real get_annotation_report
-        :rtype: list[dict[str, Any]] | None
-        """
-        if assembly_id == INVALID_ID:
-            err_msg = f"Some error message involving {INVALID_ID}."
-            raise ValueError(err_msg)
-        return original_get_annotation_report(assembly_id)
 
     with mock.patch(
         "cdm_data_loaders.pipelines.ncbi_rest_api.get_annotation_report",
-        side_effect=patched_get_annotation_report,
+        side_effect=_patched_get_annotation_report,
     ):
         assembly_reports = get_assembly_reports(ALL_IDS)
 
@@ -387,25 +380,10 @@ def test_get_assembly_reports_dataset_report_errors(test_settings: NcbiRestApiSe
 def test_get_assembly_reports_total_wipeout(test_settings: NcbiRestApiSettings) -> None:
     """Test the retrieval of assembly data when all queries fail."""
     set_settings(test_settings)
-    original_get_annotation_report = get_annotation_report
-
-    def patched_get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:
-        """Patched version of get_annotation_report that throws a value error with a certain input.
-
-        :param assembly_id: assembly ID
-        :type assembly_id: str
-        :raises ValueError: if the ID is INVALID_ID
-        :return: output from the real get_annotation_report
-        :rtype: list[dict[str, Any]] | None
-        """
-        if assembly_id == INVALID_ID:
-            err_msg = f"Some error message involving {INVALID_ID}."
-            raise ValueError(err_msg)
-        return original_get_annotation_report(assembly_id)
 
     with mock.patch(
         "cdm_data_loaders.pipelines.ncbi_rest_api.get_annotation_report",
-        side_effect=patched_get_annotation_report,
+        side_effect=_patched_get_annotation_report,
     ):
         output = get_assembly_reports(ALL_IDS)
 
@@ -542,19 +520,13 @@ def test_assemble_assembly_reports_empty_dict_yields_nothing(
     assert list(assemble_assembly_reports(reports)) == []  # type: ignore[reportArgumentType]
 
 
-def test_assemble_assembly_reports_yields_two_items_when_no_errors(
+def test_assemble_assembly_reports_yields_two_data_items_with_meta_when_no_errors(
     full_assembly_reports: dict[str, Any],
 ) -> None:
-    """When the error list is empty, the generator should yield only two DataItemWithMeta objects."""
-    assert len(list(assemble_assembly_reports(full_assembly_reports))) == 2
-
-
-def test_assemble_assembly_reports_all_items_are_data_item_with_meta(
-    full_assembly_reports: dict[str, Any],
-) -> None:
-    """Every item yielded by the generator should be a DataItemWithMeta instance."""
-    for item in assemble_assembly_reports(full_assembly_reports):
-        assert isinstance(item, DataItemWithMeta)
+    """When the error list is empty, the generator yields two DataItemWithMeta objects."""
+    items = list(assemble_assembly_reports(full_assembly_reports))
+    assert len(items) == 2  # noqa: PLR2004
+    assert all(isinstance(item, DataItemWithMeta) for item in items)
 
 
 def test_assemble_assembly_reports_table_names_when_errors_present(

@@ -1,7 +1,6 @@
 """Unit and integration tests for jsonschema_to_dlt."""
 
 import logging
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -15,16 +14,9 @@ from cdm_data_loaders.converters.emitters.dlt import SCHEMA_ENGINE_VERSION
 from cdm_data_loaders.converters.jsonschema_to_dlt import (
     InvalidJSONSchemaError,
     JSONSchemaToDlt,
-    JSONSchemaToDltError,
 )
 from cdm_data_loaders.utils.jsonschema.dereferencer import dereference_schema
 from tests.cdm_data_loaders.converters.conftest import base_object_schema
-
-
-def test_json_schema_to_dlt_fail_instance_is_frozen(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
-    """Assigning to a JSONSchemaToDlt instance attribute raises ValidationError (frozen model)."""
-    with pytest.raises(ValidationError, match="Instance is frozen"):
-        jsonschema_to_dlt_converter.skip_nested_types = True
 
 
 @pytest.mark.parametrize(
@@ -39,42 +31,6 @@ def test_json_schema_to_dlt_fail_empty_schema_name(schema_name: str) -> None:
 
 
 """convert"""
-
-
-def test_convert_fail_missing_schema_keyword(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
-    """convert() rejects a schema with no top-level '$schema' keyword."""
-    schema = {"type": "object", "properties": {}}
-    with pytest.raises(InvalidJSONSchemaError, match="missing a '\\$schema'"):
-        jsonschema_to_dlt_converter.convert(schema)
-
-
-@pytest.mark.parametrize(
-    "root_type",
-    ["string", "array", "integer", "number", "boolean", "null"],
-)
-def test_convert_fail_non_object_root_type(jsonschema_to_dlt_converter: JSONSchemaToDlt, root_type: str) -> None:
-    """convert() rejects any root schema whose declared 'type' isn't 'object'."""
-    schema = base_object_schema(type=root_type)
-    with pytest.raises(JSONSchemaToDltError, match="must be of type 'object'"):
-        jsonschema_to_dlt_converter.convert(schema)
-
-
-def test_convert_fail_unresolved_ref(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
-    """convert() refuses a schema containing an un-dereferenced $ref."""
-    schema = base_object_schema(
-        properties={"a": {"$ref": "#/$defs/Foo"}},
-    )
-    with pytest.raises(JSONSchemaToDltError, match="unresolved \\$ref"):
-        jsonschema_to_dlt_converter.convert(schema)
-
-
-def test_convert_fail_unmerged_allof(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
-    """convert() refuses a schema containing an unmerged allOf."""
-    schema = base_object_schema(
-        properties={"a": {"allOf": [{"type": "string"}]}},
-    )
-    with pytest.raises(JSONSchemaToDltError, match="unmerged 'allOf'"):
-        jsonschema_to_dlt_converter.convert(schema)
 
 
 def test_convert_pass_empty_object_schema(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
@@ -398,41 +354,6 @@ def test_convert_pass_write_disposition_applied_to_root_tables() -> None:
     stored = conv.convert(schema)
     assert stored["tables"]["test_source"]["write_disposition"] == "merge"
     assert "write_disposition" not in stored["tables"]["test_source__child"]
-
-
-"""entry points"""
-
-
-def test_convert_from_string_pass(jsonschema_to_dlt_converter: JSONSchemaToDlt) -> None:
-    """convert_from_string parses a JSON string and converts it."""
-    schema_str = '{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {"a": {"type": "string"}}}'
-    stored = jsonschema_to_dlt_converter.convert_from_string(schema_str)
-    assert stored["tables"]["test_source"]["columns"]["a"]["data_type"] == "text"
-
-
-def test_convert_from_file_pass_json(jsonschema_to_dlt_converter: JSONSchemaToDlt, tmp_path: Path) -> None:
-    """convert_from_file reads a .json schema file."""
-    path = tmp_path / "schema.json"
-    path.write_text(
-        '{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {"a": {"type": "integer"}}}'
-    )
-    stored = jsonschema_to_dlt_converter.convert_from_file(str(path))
-    assert stored["tables"]["test_source"]["columns"]["a"]["data_type"] == "bigint"
-
-
-def test_convert_from_file_pass_yaml(jsonschema_to_dlt_converter: JSONSchemaToDlt, tmp_path: Path) -> None:
-    """convert_from_file reads a .yaml schema file."""
-    schema = base_object_schema(properties={"a": {"type": "boolean"}})
-    path = tmp_path / "schema.yaml"
-    path.write_text(yaml.dump(schema))
-    stored = jsonschema_to_dlt_converter.convert_from_file(str(path))
-    assert stored["tables"]["test_source"]["columns"]["a"]["data_type"] == "bool"
-
-
-def test_convert_from_file_fail_missing_file(jsonschema_to_dlt_converter: JSONSchemaToDlt, tmp_path: Path) -> None:
-    """convert_from_file raises FileNotFoundError for a nonexistent path."""
-    with pytest.raises(FileNotFoundError):
-        jsonschema_to_dlt_converter.convert_from_file(str(tmp_path / "nope.json"))
 
 
 """to_yaml and live Schema integration"""

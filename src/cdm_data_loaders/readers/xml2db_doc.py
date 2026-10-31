@@ -444,29 +444,30 @@ def process_xml_file_with_xml2db(
     buffer = DictBuffer(max_items=settings.buffer_size)
 
     if settings.xml_tag:
-        n_rows = 0
-        n_chunks = 0
-        for n_chunks, chunk_bytes in enumerate(
-            iter_xml2db_chunk_fragments(file_path, settings.xml_tag, settings.chunk_size), start=1
-        ):
-            document = Document(model)
-            document.parse_xml(BytesIO(chunk_bytes), skip_validation=settings.skip_xml_validation, iterparse=True)
-            tables = flatten_xml2db_document(model, document, file_key=f"{file_path.name}:{n_chunks}")
-            n_rows += sum(len(rows) for rows in tables.values())
-            yield from buffer.add_items(tables)
+        chunks = (
+            (f"{file_path.name}:{idx}", chunk_bytes)
+            for idx, chunk_bytes in enumerate(
+                iter_xml2db_chunk_fragments(file_path, settings.xml_tag, settings.chunk_size), start=1
+            )
+        )
+    else:
+        with open_maybe_gzip(file_path) as file_handle:
+            raw_bytes = file_handle.read()
+        chunks = iter([(file_path.name, raw_bytes)])
 
-        yield from buffer.flush()
-        logger.debug("Processed %d rows across %d chunks from %s", n_rows, n_chunks, file_path.name)
-        return
+    n_rows = 0
+    n_chunks = 0
+    tables: dict[str, list[dict[str, Any]]] = {}
+    for file_key, chunk_bytes in chunks:
+        n_chunks += 1
+        document = Document(model)
+        document.parse_xml(BytesIO(chunk_bytes), skip_validation=settings.skip_xml_validation, iterparse=True)
+        tables = flatten_xml2db_document(model, document, file_key=file_key)
+        n_rows += sum(len(rows) for rows in tables.values())
+        yield from buffer.add_items(tables)
 
-    # parse it all in one go
-    document = Document(model)
-    with open_maybe_gzip(file_path) as file_handle:
-        document.parse_xml(BytesIO(file_handle.read()), skip_validation=settings.skip_xml_validation, iterparse=True)
-
-    tables = flatten_xml2db_document(model, document, file_key=file_path.name)
-    yield from buffer.add_items(tables)
     yield from buffer.flush()
-
-    n_rows = sum(len(rows) for rows in tables.values())
-    logger.debug("Processed %d rows across %d tables from %s", n_rows, len(tables), file_path.name)
+    if settings.xml_tag:
+        logger.debug("Processed %d rows across %d chunks from %s", n_rows, n_chunks, file_path.name)
+    else:
+        logger.debug("Processed %d rows across %d tables from %s", n_rows, len(tables), file_path.name)

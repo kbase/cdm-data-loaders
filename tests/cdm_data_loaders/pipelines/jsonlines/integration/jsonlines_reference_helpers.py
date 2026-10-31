@@ -72,10 +72,6 @@ def canonicalize_entry(entry: dict[str, Any]) -> dict[str, Any]:
     return _canonicalize_value(entry)
 
 
-canonicalize_reference_entry = canonicalize_entry
-canonicalize_pipeline_entry = canonicalize_entry
-
-
 def _canonicalize_value(value: Any, key: str = "") -> Any:
     """Normalize only known storage differences, retaining list order and duplicates."""
     if isinstance(value, dict):

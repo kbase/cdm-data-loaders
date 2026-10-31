@@ -25,10 +25,7 @@ from cdm_data_loaders.utils.checksums import (
     validate_checksum_fn,
 )
 
-TEST_BUCKET: Final[str] = "test-bucket"
-TEST_KEY: Final[str] = "path/to/file.pdf"
 TEST_ECHO_URL: Final[str] = "https://httpbin.org/bytes/1024"  # deterministic-size real
-EXPECTED_CRC64_BYTE_LEN = 8
 
 
 TEST_DATASETS: list[ParameterSet] = [
@@ -58,7 +55,6 @@ HASHLIB_ALGORITHMS: list[str] = [
     "blake2s",
     "md5",
 ]
-CRC64NVME_ALGORITHMS: list[str] = ["crc64nvme", "CRC64NVME", "Crc64Nvme"]
 UNSUPPORTED_ALGORITHMS: list[str] = [
     "",
     "banana",

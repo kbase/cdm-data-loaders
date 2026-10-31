@@ -1,19 +1,13 @@
 """Convert dereferenced JSON Schema through the shared reader and dlt emitter."""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from dlt.common.schema.typing import TStoredSchema
 from pydantic import Field, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.guards import (
-    require_object_root,
-    require_schema_keyword,
-)
 from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase
-from cdm_data_loaders.converters.core.ir import SchemaDocument
-from cdm_data_loaders.converters.emitters.dlt import DltEmitter
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
+from cdm_data_loaders.converters.emitters.dlt import DltEmitter, validate_non_empty_schema_name
 
 if TYPE_CHECKING:
     from dlt.common.schema import Schema
@@ -30,6 +24,12 @@ class InvalidJSONSchemaError(JSONSchemaToDltError):
 class JSONSchemaToDlt(JsonSchemaConverterBase[TStoredSchema]):
     """Read a dereferenced JSON Schema and emit dlt tables."""
 
+    _error_cls: ClassVar[type[ConversionError]] = JSONSchemaToDltError
+    _invalid_schema_error_cls: ClassVar[type[ConversionError]] = InvalidJSONSchemaError
+    _converter_name: ClassVar[str] = "JSONSchemaToDlt"
+    _root_target_label: ClassVar[str] = "a dlt table"
+    _dereference_function: ClassVar[str] = "jsonschema_to_dlt.dereferencing.dereference_schema"
+
     schema_name: str
     skip_nested_types: bool = False
     max_nesting: int = Field(default=10, ge=1)
@@ -40,34 +40,11 @@ class JSONSchemaToDlt(JsonSchemaConverterBase[TStoredSchema]):
     @classmethod
     def _validate_schema_name(cls, value: str) -> str:
         """Reject empty schema names."""
-        if not value.strip():
-            msg = "schema_name must be a non-empty string"
-            raise ValueError(msg)
-        return value
+        return validate_non_empty_schema_name(value)
 
     def _emitter(self) -> DltEmitter:
         """Pass target policy to the emitter."""
         return DltEmitter(**self.model_dump(exclude={"extension_registry"}))
-
-    def _read(self, schema: dict[str, Any]) -> SchemaDocument:
-        """Preserve facade guards and error identity around the reader."""
-        require_schema_keyword(schema, InvalidJSONSchemaError, converter_name="JSONSchemaToDlt")
-        require_object_root(schema, JSONSchemaToDltError, target="a dlt table")
-        try:
-            return JsonSchemaReader(
-                self.extension_registry,
-                error_type=JSONSchemaToDltError,
-                converter_name="JSONSchemaToDlt",
-                dereference_function="jsonschema_to_dlt.dereferencing.dereference_schema",
-            ).read(schema)
-        except ConversionError as error:
-            if isinstance(error, JSONSchemaToDltError):
-                raise
-            raise JSONSchemaToDltError(str(error)) from error
-
-    def convert(self, schema: dict[str, Any]) -> TStoredSchema:
-        """Convert an object document into a dlt stored schema."""
-        return self._emitter().emit(self._read(schema))
 
     def to_yaml(self, schema: dict[str, Any]) -> str:
         """Emit a dlt stored schema as YAML."""

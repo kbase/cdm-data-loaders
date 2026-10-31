@@ -25,19 +25,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from tenacity import (
-    AsyncRetrying,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
+from tenacity import AsyncRetrying
 
 from cdm_data_loaders.utils.file_transfer.core import (
     HTTP_CLIENT_DEFAULTS,
     RETRY_DEFAULTS,
     DownloadCore,
-    DownloadError,
-    NonRetryableDownloadError,
 )
 
 logger: Logger = getLogger(__name__)
@@ -81,15 +74,7 @@ class AsyncFileDownloader:
         self.chunk_size = chunk_size
         self.semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency else None
 
-        self._retry = AsyncRetrying(
-            retry=retry_if_exception_type(self.RETRYABLE_EXCEPTIONS),
-            stop=stop_after_attempt(max_attempts),
-            wait=wait_exponential(
-                min=min_backoff,
-                max=max_backoff,
-            ),
-            reraise=True,
-        )
+        self._retry = AsyncRetrying(**DownloadCore.retry_kwargs(max_attempts, min_backoff, max_backoff))
 
     async def download(
         self,
@@ -188,13 +173,8 @@ class AsyncFileDownloader:
                     checksum_fn=checksum_fn,
                 )
 
-        except NonRetryableDownloadError as exc:
-            logger.exception("%s: %s; retry not possible", url, exc.args[0], extra={"url": url})
-            raise
-
-        except Exception as exc:
-            logger.exception("%s: %s; retry possible", url, exc.args[0], extra={"url": url})
-            raise DownloadError(str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            DownloadCore.handle_download_exception(exc, url, logger)
 
         logger.info("%s: download successful", url, extra={"path": str(destination)})
 

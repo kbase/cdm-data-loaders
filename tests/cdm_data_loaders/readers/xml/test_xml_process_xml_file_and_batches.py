@@ -30,7 +30,6 @@ from cdm_data_loaders.readers.xml import (
 )
 from cdm_data_loaders.readers.xsd import DEFAULT_MAX_RECURSION_DEPTH, generate_pyarrow_schema
 from tests.cdm_data_loaders.readers.xml.conftest import table_and_data, write_xml_file
-from tests.helpers import make_cts_settings
 
 ParseFn = Callable[..., dict[str, list[dict[str, Any]]]]
 
@@ -608,45 +607,12 @@ UNIREF_LIKE_ENTRY_XML: Final[str] = """<?xml version="1.0"?>
 """
 
 
-def _build_real_xmltodict_settings(tmp_path: Path) -> XmlToDictSettings:
-    """Build a real (non-mock) XmlToDictSettings."""
-    return make_cts_settings(
-        XmlToDictSettings,
-        tmp_path,
-        dataset_name="xsd_test_dataset",
-        table_name="entry",
-        xml_tag="entry",
-        buffer_size=100,
-        log_interval=1000,
-        use_destination="whatever",
-    )
-
-
-def _build_real_xmltopyarrow_settings(tmp_path: Path, test_data_dir: Path, xsd_filename: str) -> XmlToPyArrowSettings:
-    """Build a real (non-mock) XmlToPyArrowSettings with an xsd_file copied from tests/data/xsd."""
-    xsd_content = (test_data_dir / "xsd" / xsd_filename).read_text(encoding="utf-8")
-    xsd_path = tmp_path / xsd_filename
-    xsd_path.write_text(xsd_content, encoding="utf-8")
-
-    return make_cts_settings(
-        XmlToPyArrowSettings,
-        tmp_path,
-        dataset_name="xsd_test_dataset",
-        table_name="entry",
-        xml_tag="entry",
-        xsd_file=str(xsd_path),
-        buffer_size=100,
-        log_interval=1000,
-        use_destination="whatever",
-    )
-
-
 def test_process_xml_file_to_dict_pass_keeps_xmltodict_default_dicts(
     tmp_path: Path,
 ) -> None:
     """process_xml_file_to_dict uses xmltodict's ordinary single-occurrence dicts."""
     file_path = write_xml_file(tmp_path, "entry.xml", UNIREF_LIKE_ENTRY_XML)
-    settings = _build_real_xmltodict_settings(tmp_path)
+    settings = fake_xmltodict_settings(table_name="entry", xml_tag="entry", buffer_size=100, log_interval=1000)
 
     items = table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
 
@@ -728,7 +694,13 @@ def test_process_xml_file_to_pyarrow_pass_with_xsd_file_yields_arrow_table_with_
 ) -> None:
     """process_xml_file_to_pyarrow yields a PyArrow Table with schema-driven list and struct fields."""
     file_path = write_xml_file(tmp_path, "entry.xml", UNIREF_LIKE_ENTRY_XML)
-    settings = _build_real_xmltopyarrow_settings(tmp_path, test_data_dir, "uniref_like.xsd")
+    settings = fake_xmltopyarrow_settings(
+        table_name="entry",
+        xml_tag="entry",
+        xsd_text=(test_data_dir / "xsd" / "uniref_like.xsd").read_text(encoding="utf-8"),
+        buffer_size=100,
+        log_interval=1000,
+    )
 
     items = table_and_data(process_xml_file_to_pyarrow(settings, file_path=file_path))
 
@@ -929,10 +901,10 @@ def test_process_xml_file_fail_propagates_stream_xml_file_error(
 
 
 def test_process_xml_file_to_dict_pass_skips_empty_xmltodict_result(
-    xml_path_factory: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify an element whose xmltodict.parse output is empty is skipped and not buffered."""
-    file_path = xml_path_factory(PEOPLE_XML_2, filename="two.xml")
+    file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
     settings = fake_xmltodict_settings(table_name="people", xml_tag="person")
     original_parse = xmltodict.parse
     call_count = 0
@@ -952,7 +924,7 @@ def test_process_xml_file_to_dict_pass_skips_empty_xmltodict_result(
 
 
 def test_process_xml_file_to_pyarrow_pass_clark_notation_tag_skips_head_matter(
-    xml_path_factory: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify process_xml_file_to_pyarrow skips parse_head_matter when xml_tag is already in Clark notation."""
     namespaced_xsd = """<?xml version="1.0" encoding="UTF-8"?>
@@ -981,7 +953,7 @@ def test_process_xml_file_to_pyarrow_pass_clark_notation_tag_skips_head_matter(
     <person id="1"><name>Anne Example</name></person>
 </people>
 """
-    xml_path = xml_path_factory(namespaced_xml, filename="people_ns.xml")
+    xml_path = write_xml_file(tmp_path, "people_ns.xml", namespaced_xml)
     clark_tag = "{http://example.org/ns}person"
     settings = fake_xmltopyarrow_settings(
         table_name="people",

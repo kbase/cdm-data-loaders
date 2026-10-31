@@ -1,6 +1,5 @@
 """Exact checks for the normalization used by JSONL reference comparisons."""
 
-from collections.abc import Callable
 from copy import deepcopy
 from datetime import UTC, date, datetime
 from typing import Any
@@ -9,16 +8,12 @@ import duckdb
 import pytest
 
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.jsonlines_reference_helpers import (
-    canonicalize_pipeline_entry,
-    canonicalize_reference_entry,
+    canonicalize_entry,
     reconstructed_entries,
     reference_entries_from_duckdb,
 )
 
 
-@pytest.mark.parametrize(
-    "canonicalize", [canonicalize_reference_entry, canonicalize_pipeline_entry], ids=["reference", "pipeline"]
-)
 @pytest.mark.parametrize(
     ("entry", "expected"),
     [
@@ -60,14 +55,12 @@ from tests.cdm_data_loaders.pipelines.jsonlines.integration.jsonlines_reference_
         ),
     ],
 )
-def test_canonicalize_entry_pass_exact_storage_normalization(
-    canonicalize: Callable[[dict[str, Any]], dict[str, Any]], entry: dict[str, Any], expected: dict[str, Any]
-) -> None:
+def test_canonicalize_entry_pass_exact_storage_normalization(entry: dict[str, Any], expected: dict[str, Any]) -> None:
     """Canonicalization handles known storage differences without mutation or repeated wrapping."""
     original = deepcopy(entry)
-    result = canonicalize(entry)
+    result = canonicalize_entry(entry)
     assert result == expected
-    assert canonicalize(result) == expected
+    assert canonicalize_entry(result) == expected
     assert entry == original
     if "gc_percent" in expected:
         assert type(result["gc_percent"]) is type(expected["gc_percent"])

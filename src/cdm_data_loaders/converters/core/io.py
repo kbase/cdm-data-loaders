@@ -7,7 +7,11 @@ from typing import Any, ClassVar
 import yaml
 from pydantic import BaseModel, ConfigDict, InstanceOf
 
+from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
+from cdm_data_loaders.converters.core.guards import require_object_root, require_schema_keyword
+from cdm_data_loaders.converters.core.ir import Emitter, SchemaDocument
+from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 
 
 def _require_mapping(document: object, source: str) -> dict[str, Any]:
@@ -53,12 +57,47 @@ class JsonSchemaConverterBase[OutputT](BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     _allow_yaml_in_string: ClassVar[bool] = False
+    _error_cls: ClassVar[type[ConversionError]] = ConversionError
+    _invalid_schema_error_cls: ClassVar[type[ConversionError]] = ConversionError
+    _converter_name: ClassVar[str] = ""
+    _root_target_label: ClassVar[str] = ""
+    _dereference_function: ClassVar[str] = "cdm_data_loaders.utils.jsonschema.dereferencer.dereference_schema"
 
     extension_registry: InstanceOf[ExtensionRegistry] = DEFAULT_EXTENSIONS
 
+    def _reader(self) -> JsonSchemaReader:
+        """Configure reader diagnostics for this public facade."""
+        return JsonSchemaReader(
+            self.extension_registry,
+            error_type=self._error_cls,
+            converter_name=self._converter_name or type(self).__name__,
+            dereference_function=self._dereference_function,
+        )
+
+    def _emitter(self) -> Emitter[OutputT]:
+        """Return the configured emitter for this facade."""
+        raise NotImplementedError
+
+    def _read(self, schema: dict[str, Any]) -> SchemaDocument:
+        """Preserve facade guards and error identity around the reader."""
+        converter_name = self._converter_name or type(self).__name__
+        require_schema_keyword(schema, self._invalid_schema_error_cls, converter_name=converter_name)
+        require_object_root(schema, self._error_cls, target=self._root_target_label)
+        try:
+            return self._reader().read(schema)
+        except ConversionError as error:
+            if isinstance(error, self._error_cls):
+                raise
+            raise self._error_cls(str(error)) from error
+
     def convert(self, schema: dict[str, Any]) -> OutputT:
         """Convert a parsed schema mapping to the target representation."""
-        raise NotImplementedError
+        try:
+            return self._emitter().emit(self._read(schema))
+        except ConversionError as error:
+            if isinstance(error, self._error_cls):
+                raise
+            raise self._error_cls(str(error)) from error
 
     def convert_from_string(self, schema_str: str) -> OutputT:
         """Convert a schema string according to the converter's text parsing policy."""

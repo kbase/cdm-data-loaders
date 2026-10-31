@@ -16,9 +16,6 @@ from cdm_data_loaders.ncbi_ftp.constants import FTP_HOST
 from cdm_data_loaders.ncbi_ftp.manifest import (
     AssemblyRecord,
     compute_diff,
-    download_assembly_summary,
-    filter_by_prefix_range,
-    parse_assembly_summary,
     scan_store_to_synthetic_summary,
     verify_transfer_candidates,
     write_diff_summary,
@@ -26,33 +23,12 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     write_transfer_manifest,
     write_updated_manifest,
 )
+from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREFIX
 from cdm_data_loaders.utils.file_transfer.ftp_client import connect_ftp, ftp_retrieve_text
-
-DEFAULT_LAKEHOUSE_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
-
-# Use a high-numbered prefix range that typically has only a handful of
-# assemblies, keeping FTP traffic minimal.
-STABLE_PREFIX = "900"
+from tests.integration.conftest import STABLE_PREFIX, clone_assemblies, download_and_filter_refseq, s3_backends
 
 # Max number of files to transfer for partial upload
 MAX_PARTIAL_FILES = 2
-
-
-s3_backends = pytest.mark.parametrize("s3_client", ["ceph", "mock"], indirect=True)
-
-
-# Helpers
-
-
-def _download_and_filter() -> tuple[dict[str, AssemblyRecord], dict[str, AssemblyRecord]]:
-    """Download the current refseq summary and filter to the stable prefix range.
-
-    Returns ``(full_parsed, filtered)``.
-    """
-    raw = download_assembly_summary(database="refseq")
-    full = parse_assembly_summary(raw)
-    filtered = filter_by_prefix_range(full, prefix_from=STABLE_PREFIX, prefix_to=STABLE_PREFIX)
-    return full, filtered
 
 
 # Tests
@@ -65,7 +41,7 @@ def test_fresh_sync_no_previous(tmp_path: Path) -> None:
 
     All assemblies in range appear as new when there is no previous snapshot.
     """
-    _full, filtered = _download_and_filter()
+    _full, filtered = download_and_filter_refseq()
     assert len(filtered) > 0, f"Expected assemblies in prefix {STABLE_PREFIX}"
 
     diff = compute_diff(filtered, previous_assemblies=None)
@@ -102,22 +78,14 @@ def test_incremental_diff(tmp_path: Path) -> None:
 
     Phase 1 incremental diff with a manufactured 'previous' snapshot.
     """
-    _full, filtered = _download_and_filter()
+    _full, filtered = download_and_filter_refseq()
     latest = {a: r for a, r in filtered.items() if r.status == "latest"}
     assert len(latest) >= 2, f"Need >=2 latest assemblies in prefix {STABLE_PREFIX}"  # noqa: PLR2004
 
     accs = sorted(latest.keys())
 
     # Build synthetic previous: copy current, then mutate
-    previous: dict[str, AssemblyRecord] = {}
-    for acc, rec in filtered.items():
-        previous[acc] = AssemblyRecord(
-            accession=rec.accession,
-            status=rec.status,
-            seq_rel_date=rec.seq_rel_date,
-            ftp_url=rec.ftp_url,
-            assembly_dir=rec.assembly_dir,
-        )
+    previous = clone_assemblies(filtered)
 
     # Remove the first latest → should appear as "new" in diff
     new_acc = accs[0]
@@ -169,7 +137,7 @@ def test_prunes_existing_matching_md5(
 
     verify_transfer_candidates should prune assemblies already in the store.
     """
-    _full, filtered = _download_and_filter()
+    _full, filtered = download_and_filter_refseq()
     # keep just the first 100 items for testing
     latest = dict(islice(((a, r) for a, r in filtered.items() if r.status == "latest"), 100))
     if not latest:
@@ -195,7 +163,7 @@ def test_prunes_existing_matching_md5(
 
     # Seed CEPH with dummy files that have the right MD5 metadata
     s3 = s3_client
-    path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
+    path_prefix = DEFAULT_DESTINATION_PREFIX
     rel = build_accession_path(rec.assembly_dir)
     for fname, md5 in checksums.items():
         if any(fname.match(f"**{suffix}") for suffix in FILE_FILTERS):
@@ -247,7 +215,7 @@ def test_builds_summary_from_s3_store(
 ) -> None:
     """Verify synthetic summary captures assemblies from CEPH."""
     s3 = s3_client
-    path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
+    path_prefix = DEFAULT_DESTINATION_PREFIX
 
     # Seed CEPH with a couple of assemblies
     assemblies = {
@@ -287,7 +255,7 @@ def test_synthetic_summary_diff_against_current(
 ) -> None:
     """Verify synthetic summary can be used as baseline for diffing."""
     s3 = s3_client
-    path_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX
+    path_prefix = DEFAULT_DESTINATION_PREFIX
 
     # Seed CEPH with one assembly
     key1 = path_prefix / "refseq" / "GCF_000001215.4_old" / "GCF_000001215.4_old_genomic.fna.gz"

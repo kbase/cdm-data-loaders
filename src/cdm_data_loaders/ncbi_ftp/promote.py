@@ -248,6 +248,35 @@ def _write_descriptor_for_assembly(
     return False
 
 
+def _delete_with_warnings(bucket: PurePosixPath, keys: list[str], label: str = "") -> None:
+    """Delete S3 keys from ``bucket``, logging a warning for any per-key deletion error."""
+    prefix = f"Failed to delete {label} " if label else "Failed to delete "
+    for err in delete_objects(str(bucket), keys):
+        logger.warning("%s%s: %s", prefix, err.get("Key"), err.get("Message"))
+
+
+def _dry_run_output(
+    key_pairs: list[tuple[PurePosixPath, PurePosixPath]],
+    log_count: int,
+    action: str = "archive",
+) -> int:
+    """Log source and destination key pairs for a dry run, capped at INFO level.
+
+    :param key_pairs: list of (source_key, dest_key) pairs
+    :param log_count: current count of logged entries
+    :param action: action verb for log messages (e.g. ``"archive"`` or ``"promote"``)
+    :return: updated count of logged entries
+    """
+    _dry_run_log_count = log_count
+    for source_key, dest_key in key_pairs:
+        if _dry_run_log_count < _MAX_DRY_RUN_LOGS:
+            logger.info("[dry-run] would %s: %s -> %s", action, source_key, dest_key)
+        else:
+            logger.debug("[dry-run] would %s: %s -> %s", action, source_key, dest_key)
+        _dry_run_log_count += 1
+    return _dry_run_log_count
+
+
 def _batch_delete(
     promoted_keys: list[PurePosixPath],
     sidecars: set[PurePosixPath],
@@ -266,10 +295,7 @@ def _batch_delete(
         for sidecar_ext in (".md5", ".crc64nvme")
         if key.with_name(f"{key.name}{sidecar_ext}") in sidecars
     )
-    string_keys_to_delete = [str(key) for key in keys_to_delete]
-    del_errors = delete_objects(str(staging_bucket), string_keys_to_delete)
-    for err in del_errors:
-        logger.warning("Failed to delete staged file %s: %s", err.get("Key"), err.get("Message"))
+    _delete_with_warnings(staging_bucket, [str(key) for key in keys_to_delete], label="staged file")
 
 
 def _promote_data_files(  # noqa: PLR0913
@@ -317,16 +343,12 @@ def _promote_data_files(  # noqa: PLR0913
             promoted_keys: list[PurePosixPath] = []
 
             if dry_run:
-                for staged_key in files:
-                    rel_path = staged_key.relative_to(staging_prefix)
-                    final_key = lakehouse_key_prefix / rel_path
-                    if _dry_run_log_count < _MAX_DRY_RUN_LOGS:
-                        logger.info("[dry-run] would promote: %s -> %s", staged_key, final_key)
-                    else:
-                        logger.debug("[dry-run] would promote: %s -> %s", staged_key, final_key)
-                    _dry_run_log_count += 1
-                    promoted += 1
-                    pbar.update(1)
+                pairs = [
+                    (staged_key, lakehouse_key_prefix / staged_key.relative_to(staging_prefix)) for staged_key in files
+                ]
+                _dry_run_log_count = _dry_run_output(pairs, _dry_run_log_count, action="promote")
+                promoted += len(files)
+                pbar.update(len(files))
                 continue
 
             # Download and re-upload all files for this assembly concurrently
@@ -409,23 +431,6 @@ def _get_source_dest_pairs_for_accession(
     ]
 
 
-def _dry_run_output(key_pairs: list[tuple[PurePosixPath, PurePosixPath]], log_count: int) -> int:
-    """Log source and archive key pairs for a dry run, with a limit on how many are logged at INFO level.
-
-    :param key_pairs: list of (source_key, archive_key) pairs
-    :param log_count: current count of logged entries
-    :return: updated count of logged entries
-    """
-    _dry_run_log_count = log_count
-    for source_key, archive_key in key_pairs:
-        if _dry_run_log_count < _MAX_DRY_RUN_LOGS:
-            logger.info("[dry-run] would archive: %s -> %s", source_key, archive_key)
-        else:
-            logger.debug("[dry-run] would archive: %s -> %s", source_key, archive_key)
-        _dry_run_log_count += 1
-    return _dry_run_log_count
-
-
 def _archive_objects(
     key_pairs: list[tuple[PurePosixPath, PurePosixPath]], lakehouse_bucket: PurePosixPath, *, delete_source: bool
 ) -> int:
@@ -462,9 +467,7 @@ def _archive_objects(
                 logger.exception("Failed to archive %s", src)
 
     if delete_source and keys_to_delete:
-        del_errors = delete_objects(str(lakehouse_bucket), keys_to_delete)
-        for err in del_errors:
-            logger.warning("Failed to delete %s: %s", err.get("Key"), err.get("Message"))
+        _delete_with_warnings(lakehouse_bucket, keys_to_delete)
 
     return archived
 

@@ -62,6 +62,40 @@ def _schema_object(*, schema: dict[str, Any] | bool) -> dict[str, Any]:
     return schema
 
 
+def _closed_object_schema(properties: dict[str, Any], node: TypedNode) -> dict[str, Any]:
+    """Build a closed JSON Schema object from rendered properties and node required facts."""
+    result: dict[str, Any] = {
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": False,
+    }
+    required = node.required_names
+    if required is None:
+        required = tuple(field.name for field in node.properties if field.required)
+    if required:
+        result["required"] = list(required)
+    return result
+
+
+def _kv_array_schema(
+    *,
+    key_schema: dict[str, Any] | bool,
+    value_schema: dict[str, Any] | bool,
+    description: str | None = None,
+) -> dict[str, Any]:
+    """Render a map node as an array of closed key/value object items."""
+    result: dict[str, Any] = {"type": "array"}
+    if description is not None:
+        result["description"] = description
+    result["items"] = {
+        "type": "object",
+        "properties": {"key": key_schema, "value": value_schema},
+        "required": ["key", "value"],
+        "additionalProperties": False,
+    }
+    return result
+
+
 @dataclass(frozen=True, slots=True)
 class JsonSchemaEmitter:
     """Render typed trees using the source's JSON Schema compatibility policy."""
@@ -214,29 +248,18 @@ class JsonSchemaEmitter:
         if node.key_type is None or node.value_type is None:
             msg = "Map nodes require key and value types"
             raise ConversionError(msg)
-        return {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {"key": self._json_node(node.key_type), "value": self._json_node(node.value_type)},
-                "required": ["key", "value"],
-                "additionalProperties": False,
-            },
-        }
+        return _kv_array_schema(
+            key_schema=self._json_node(node.key_type),
+            value_schema=self._json_node(node.value_type),
+        )
 
     def _dlt_node(self, node: TypedNode) -> dict[str, Any]:
         """Render table structure separately from nullable columns."""
         if node.type == "object":
-            result: dict[str, Any] = {
-                "type": "object",
-                "properties": {field.name: self._dlt_node(field.node) for field in node.properties},
-                "additionalProperties": False,
-            }
-            required = node.required_names
-            if required is None:
-                required = tuple(field.name for field in node.properties if field.required)
-            if required:
-                result["required"] = list(required)
+            result = _closed_object_schema(
+                {field.name: self._dlt_node(field.node) for field in node.properties},
+                node,
+            )
         elif node.type == "array" and isinstance(node.items, TypedNode):
             result = {"type": "array", "items": self._dlt_node(node.items)}
         else:
@@ -286,32 +309,18 @@ class JsonSchemaEmitter:
     def _iceberg_type(self, node: TypedNode) -> dict[str, Any]:
         """Render structural Iceberg nodes directly from their typed children."""
         if node.type == "object":
-            result: dict[str, Any] = {
-                "type": "object",
-                "properties": {field.name: self._iceberg_field(field) for field in node.properties},
-                "additionalProperties": False,
-            }
-            required = node.required_names
-            if required is None:
-                required = tuple(field.name for field in node.properties if field.required)
-            if required:
-                result["required"] = list(required)
+            result = _closed_object_schema(
+                {field.name: self._iceberg_field(field) for field in node.properties},
+                node,
+            )
         elif node.type == "array" and isinstance(node.items, TypedNode):
             result = {"type": "array", "items": self._iceberg_node(node.items)}
         elif node.type == "map" and node.key_type is not None and node.value_type is not None:
-            result = {
-                "type": "array",
-                "description": "Iceberg map rendered as key/value pairs (JSON object keys must be strings).",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "key": self._iceberg_node(node.key_type),
-                        "value": self._iceberg_node(node.value_type),
-                    },
-                    "required": ["key", "value"],
-                    "additionalProperties": False,
-                },
-            }
+            result = _kv_array_schema(
+                key_schema=self._iceberg_node(node.key_type),
+                value_schema=self._iceberg_node(node.value_type),
+                description="Iceberg map rendered as key/value pairs (JSON object keys must be strings).",
+            )
         else:
             result = self._iceberg_scalar(node)
         return result

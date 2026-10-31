@@ -13,26 +13,25 @@ import pytest
 from types_boto3_s3 import S3Client
 
 from cdm_data_loaders.ncbi_ftp.manifest import (
-    AssemblyRecord,
     compute_diff,
-    download_assembly_summary,
-    filter_by_prefix_range,
-    parse_assembly_summary,
     write_removed_manifest,
     write_transfer_manifest,
     write_updated_manifest,
 )
 from cdm_data_loaders.ncbi_ftp.promote import promote_from_s3
 from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch
-from tests.integration.conftest import get_object_metadata, list_all_keys, stage_files_to_s3
+from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREFIX
+from tests.integration.conftest import (
+    STABLE_PREFIX,
+    clone_assemblies,
+    download_and_filter_refseq,
+    get_object_metadata,
+    list_all_keys,
+    s3_backends,
+    stage_files_to_s3,
+)
 
-DEFAULT_LAKEHOUSE_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
-STABLE_PREFIX = "900"
 STAGING_PREFIX = PurePosixPath("staging") / "run1"
-PATH_PREFIX = DEFAULT_LAKEHOUSE_KEY_PREFIX
-
-
-s3_backends = pytest.mark.parametrize("s3_client", ["ceph", "mock"], indirect=True)
 
 
 @pytest.mark.requires_ceph
@@ -52,9 +51,7 @@ def test_full_pipeline_small_batch(
     s3 = s3_client
 
     # Step 1: Manifest generation
-    raw = download_assembly_summary(database="refseq")
-    full = parse_assembly_summary(raw)
-    filtered = filter_by_prefix_range(full, prefix_from=STABLE_PREFIX, prefix_to=STABLE_PREFIX)
+    _full, filtered = download_and_filter_refseq()
 
     diff = compute_diff(filtered, previous_assemblies=None)
     assert len(diff.new) > 0, f"No new assemblies in prefix {STABLE_PREFIX}"
@@ -84,13 +81,13 @@ def test_full_pipeline_small_batch(
         staging_key_prefix=STAGING_PREFIX,
         staging_bucket=staging_test_bucket,
         lakehouse_bucket=test_bucket,
-        lakehouse_key_prefix=PATH_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
     assert promote_report["promoted"] >= 1
     assert promote_report["failed"] == 0
 
     # Verify final state
-    final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
+    final_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "raw_data")
     assert len(final_keys) >= 1, "Expected files at final Lakehouse path"
 
     # At least one file should have MD5 metadata
@@ -120,9 +117,7 @@ def test_full_pipeline_incremental(
     s3 = s3_client
 
     # First sync: Steps 1 -> 2 -> 3
-    raw = download_assembly_summary(database="refseq")
-    full = parse_assembly_summary(raw)
-    filtered = filter_by_prefix_range(full, prefix_from=STABLE_PREFIX, prefix_to=STABLE_PREFIX)
+    _full, filtered = download_and_filter_refseq()
 
     diff1 = compute_diff(filtered, previous_assemblies=None)
     assert len(diff1.new) > 0, f"No new assemblies in prefix {STABLE_PREFIX}"
@@ -146,25 +141,17 @@ def test_full_pipeline_incremental(
         staging_bucket=staging_test_bucket,
         lakehouse_bucket=test_bucket,
         manifest_s3_key=manifest_key,
-        lakehouse_key_prefix=PATH_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
     assert promote1["promoted"] >= 1
 
-    first_sync_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
+    first_sync_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "raw_data")
     assert len(first_sync_keys) >= 1
 
     # Second sync: Manufacture "previous" with a tweak
     # Treat first-sync state as "previous", but modify one assembly's
     # seq_rel_date so it shows up as "updated".
-    previous: dict[str, AssemblyRecord] = {}
-    for acc, rec in filtered.items():
-        previous[acc] = AssemblyRecord(
-            accession=rec.accession,
-            status=rec.status,
-            seq_rel_date=rec.seq_rel_date,
-            ftp_url=rec.ftp_url,
-            assembly_dir=rec.assembly_dir,
-        )
+    previous = clone_assemblies(filtered)
 
     # Pick the first accession that was actually downloaded
     downloaded_acc = diff1.new[0]
@@ -205,17 +192,19 @@ def test_full_pipeline_incremental(
         lakehouse_bucket=test_bucket,
         updated_manifest_path=updated_manifest,
         ncbi_release="test-incremental",
-        lakehouse_key_prefix=PATH_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
     assert promote2["failed"] == 0
 
     # Verify archive exists
-    archive_keys = list_all_keys(s3, PurePosixPath(test_bucket), PATH_PREFIX / "archive/test-incremental")
+    archive_keys = list_all_keys(
+        s3, PurePosixPath(test_bucket), DEFAULT_DESTINATION_PREFIX / "archive/test-incremental"
+    )
     if promote2["archived"] > 0:
         assert len(archive_keys) >= 1
         for key in archive_keys:
             assert "updated" in key.parts
 
     # Final Lakehouse path should still have files
-    final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
+    final_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "raw_data")
     assert len(final_keys) >= 1

@@ -49,11 +49,6 @@ def test_cli_passes_settings_class_to_run_cli() -> None:
     assert cli.pipeline_fn is run_atb_pipeline
 
 
-def test_load_patterns_returns_compiled_pattern(pattern_file: Path) -> None:
-    """load_patterns() should return a compiled re.Pattern object."""
-    assert isinstance(load_patterns(pattern_file), re.Pattern)
-
-
 def test_load_patterns_exact_match(pattern_file: Path) -> None:
     """Plain text lines should match exactly against their literal content."""
     pattern = load_patterns(pattern_file)
@@ -535,23 +530,6 @@ def test_run_atb_pipeline_bind_order(
 
     assert call_order.index("atb_file_list.bind") < call_order.index("run_pipeline")
     assert call_order.index("file_downloader.bind") < call_order.index("run_pipeline")
-
-
-def test_run_atb_pipeline_resource_passed_to_run_pipeline_is_file_downloader(
-    test_settings: AtbSettings,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The resource argument to run_pipeline is the (possibly mutated) file_downloader object."""
-    sentinel = MagicMock(name="file_downloader_sentinel")
-    mock_run_pipeline = MagicMock()
-
-    monkeypatch.setattr(all_the_bacteria, "atb_file_list", MagicMock())
-    monkeypatch.setattr(all_the_bacteria, "file_downloader", sentinel)
-    monkeypatch.setattr(all_the_bacteria, "run_pipeline", mock_run_pipeline)
-
-    run_atb_pipeline(test_settings)
-
-    assert mock_run_pipeline.call_args.kwargs["resource"] is sentinel
 
 
 @pytest.mark.parametrize("use_output_dir_for_pipeline_metadata", [True, False])

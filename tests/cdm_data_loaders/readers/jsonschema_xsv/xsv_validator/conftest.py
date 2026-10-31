@@ -28,7 +28,6 @@ from tests.xsv_fixtures import (
     WriteFile,
     build_xsv_content,
     make_xsv_writer,
-    write_xsv,
 )
 
 FAKE_QSV_CMD: Final[str] = "mock-qsv"
@@ -304,9 +303,20 @@ def interleave_comments(content: str, comment_char: str) -> str:
     return "\n".join(commented) + "\n"
 
 
-def _write_file(dir_path: Path, content: str | bytes, file_name: str) -> Path:
-    """Write `content` (str or bytes) to `file_name` inside `dir_path`, returning the resulting path."""
-    return write_xsv(dir_path, content, file_name)
+def _write_validator_input_file(
+    args: CleanerValidatorArgs,
+    write_working_file: WriteFile,
+    rows: Sequence[Row] = VALID_ROWS,
+    suffix: str = HEADER_SUFFIX,
+    delimiter: str | None = None,
+) -> str:
+    """Write a working file with the given suffix (e.g. HEADER_SUFFIX, CLEANED_SUFFIX, NORM_SUFFIX)."""
+    input_file_name = f"{args.xsv_file_base_name}{suffix}{args.ext}"
+    write_working_file(
+        build_xsv_content(rows, header=COLUMNS, delimiter=delimiter or args.delimiter),
+        input_file_name,
+    )
+    return input_file_name
 
 
 def _write_header_input_file(
@@ -316,31 +326,14 @@ def _write_header_input_file(
     delimiter: str | None = None,
 ) -> str:
     """Write a `-header`-suffixed working file for `args` and return its name."""
-    input_file_name = f"{args.xsv_file_base_name}{HEADER_SUFFIX}{args.ext}"
-    write_working_file(
-        build_xsv_content(rows, header=COLUMNS, delimiter=delimiter or args.delimiter),
-        input_file_name,
-    )
-    return input_file_name
+    return _write_validator_input_file(args, write_working_file, rows, HEADER_SUFFIX, delimiter=delimiter)
 
 
 def _write_cleaned_input_file(
     args: CleanerValidatorArgs, write_working_file: WriteFile, rows: Sequence[Row], delimiter: str | None = None
 ) -> str:
     """Write a `-cleaned`-suffixed working file for `args` (mimicking run_qsv_input's output) and return its name."""
-    input_file_name = f"{args.xsv_file_base_name}{CLEANED_SUFFIX}{args.ext}"
-    content = build_xsv_content(rows, header=COLUMNS, delimiter=delimiter or args.delimiter)
-    write_working_file(content, input_file_name)
-    return input_file_name
-
-
-def _write_validator_input_file(
-    args: CleanerValidatorArgs, write_working_file: WriteFile, rows: Sequence[Row], suffix: str
-) -> str:
-    """Write a working file with the given suffix (e.g. HEADER_SUFFIX, NORM_SUFFIX) for use as run_qsv_validate input."""
-    input_file_name = f"{args.xsv_file_base_name}{suffix}{args.ext}"
-    write_working_file(build_xsv_content(rows, header=COLUMNS), input_file_name)
-    return input_file_name
+    return _write_validator_input_file(args, write_working_file, rows, CLEANED_SUFFIX, delimiter=delimiter)
 
 
 def snapshot_dir(dir_path: Path) -> set[str]:

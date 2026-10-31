@@ -2,7 +2,6 @@
 
 import datetime
 import re
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -31,21 +30,16 @@ from cdm_data_loaders.parsers.uniprot.uniprot_kb import (
     parse_uniprot_entry,
 )
 from cdm_data_loaders.readers.xml import stream_xml_file
-from cdm_data_loaders.utils.xml_utils import dump_xml_element
+from tests.cdm_data_loaders.parsers.conftest import wrap_entry_xml
+from tests.conftest import TEST_DATA_DIR
 
 TEST_ID = "uniprot:P01Q23"
 FILE_PATH = "/path/to/file"
 
 
 def entry_wrap(xml: str) -> str:
-    """Wrap XML text in an `entry` element.
-
-    :param xml: the XML to wrap
-    :type xml: str
-    :return: XML string with an entry around it.
-    :rtype: str
-    """
-    return f"<entry xmlns='{HTTPS_NS}'>{xml}</entry>"
+    """Wrap XML text in an `entry` element."""
+    return wrap_entry_xml(xml, HTTPS_NS)
 
 
 @pytest.mark.parametrize(
@@ -937,30 +931,6 @@ def test_dump_comment_xml(xml: str, expected: list[dict[str, str]]) -> None:
     assert parsed_comments == [{ENTITY_ID: TEST_ID, **e} for e in expected]
 
 
-@pytest.mark.parametrize(
-    ("xml", "expected"),
-    [
-        # the uniprot namespace declaration is stripped
-        (
-            f"<entry xmlns='{HTTPS_NS}'><name>A4_HUMAN</name></entry>",
-            "<entry><name>A4_HUMAN</name></entry>",
-        ),
-        # the xsi namespace declaration is stripped
-        (
-            f'<entry xmlns="{HTTPS_NS}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
-            "<accession>P12345</accession></entry>",
-            "<entry><accession>P12345</accession></entry>",
-        ),
-        # self-closing element
-        (f"<entry xmlns='{HTTPS_NS}'/>", "<entry/>"),
-    ],
-)
-def test_dump_xml_element(xml: str, expected: str) -> None:
-    """Test that namespace declarations are stripped when dumping XML to a string."""
-    dumped = dump_xml_element(fromstring(xml, parser=XMLParser(remove_blank_text=True)))
-    assert dumped == expected
-
-
 def test_parse_cross_references_multiple_molecules(caplog: pytest.LogCaptureFixture) -> None:
     """Test that a dbReference with multiple molecules logs a warning and uses the first molecule."""
     xml = entry_wrap(
@@ -1194,10 +1164,9 @@ def test_parse_uniprot_entry_unexpected_error(monkeypatch: pytest.MonkeyPatch) -
     assert "P12345" in error["xml"]
 
 
-FIXTURE_CHUNK = Path("tests/fixtures/chunk_5/chunk_00001.xml")
+FIXTURE_CHUNK = TEST_DATA_DIR / "uniprot" / "uniprot_kb" / "chunk_4" / "chunk_00001.xml"
 
 
-@pytest.mark.skipif(not FIXTURE_CHUNK.exists(), reason="UniProt XML fixture not available")
 def test_parse_uniprot_entry_integration() -> None:
     """Integration test: stream real UniProt entries from a fixture file and parse each one.
 

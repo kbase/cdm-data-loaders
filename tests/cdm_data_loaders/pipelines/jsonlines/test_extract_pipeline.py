@@ -3,23 +3,21 @@
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
-from unittest.mock import patch
 
-import dlt
 import pytest
-from dlt.common.pipeline import LoadInfo
-from dlt.extract import DltResource
 
 import cdm_data_loaders.pipelines.jsonlines.extract_pipeline as extract_pipeline_module
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import cli, run_jsonlines_pipeline
 from cdm_data_loaders.pipelines.jsonlines.settings import EXTRACT_PIPELINE_NAME, JsonlExtractSettings
-from tests.cdm_data_loaders.pipelines.conftest import DEFAULT_DLT_TABLES, duckdb_pipeline
+from tests.cdm_data_loaders.pipelines.conftest import DEFAULT_DLT_TABLES
 from tests.cdm_data_loaders.pipelines.helpers import (
+    assert_binds_filesystem_reader,
+    assert_core_run_pipeline_args,
     assert_pipeline_report_written,
     assert_run_ok,
+    run_with_duckdb_pipeline,
 )
 from tests.helpers import settings_to_argv
 
@@ -35,20 +33,7 @@ def test_run_jsonlines_pipeline_pass_sets_core_run_pipeline_args_correctly(
 ) -> None:
     """run_jsonlines_pipeline builds the reader and delegates to run_pipeline with the correct args."""
     settings = extract_settings_factory(loader_file_format=loader_file_format)
-
-    with patch.object(extract_pipeline_module, "run_pipeline") as mock_run_pipeline:
-        run_jsonlines_pipeline(settings)
-
-    assert mock_run_pipeline.call_count == 1
-    _, kwargs = mock_run_pipeline.call_args
-    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
-    assert kwargs["settings"] == settings
-    assert kwargs["pipeline_kwargs"] == {
-        "pipeline_name": EXTRACT_PIPELINE_NAME,
-        "dataset_name": settings.dataset_name,
-    }
-    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": loader_file_format}
-    assert isinstance(kwargs["resource"], DltResource)
+    assert_core_run_pipeline_args(extract_pipeline_module, run_jsonlines_pipeline, settings, EXTRACT_PIPELINE_NAME)
 
 
 def test_run_jsonlines_pipeline_pass_resource_is_reader_piped_into_source(
@@ -56,12 +41,7 @@ def test_run_jsonlines_pipeline_pass_resource_is_reader_piped_into_source(
 ) -> None:
     """The resource passed to run_pipeline combines the filesystem source with the bound reader."""
     settings = extract_settings_factory()
-
-    with patch.object(extract_pipeline_module, "run_pipeline") as mock_run_pipeline:
-        run_jsonlines_pipeline(settings)
-
-    resource = mock_run_pipeline.call_args.kwargs["resource"]
-    assert isinstance(resource, dlt.sources.DltResource)
+    assert_binds_filesystem_reader(extract_pipeline_module, run_jsonlines_pipeline, settings)
 
 
 def test_run_jsonlines_pipeline_pass_routes_lines_by_directory(
@@ -129,15 +109,14 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     (Path(settings.input_dir) / "data.jsonl").write_text(SIMPLE_JSONL, encoding="utf-8")
     monkeypatch.setattr(sys, "argv", [EXTRACT_PIPELINE_NAME, *settings_to_argv(settings)])
 
-    def fake_run_pipeline(
-        *, resource: DltResource, pipeline_kwargs: dict[str, Any], **_: dict[str, Any]
-    ) -> LoadInfo | None:
-        assert pipeline_kwargs == {"pipeline_name": EXTRACT_PIPELINE_NAME, "dataset_name": "cli_dataset"}
-        pipeline = duckdb_pipeline(tmp_path, pipeline_kwargs["pipeline_name"], pipeline_kwargs["dataset_name"])
-        return pipeline.run(resource)
-
-    with patch.object(extract_pipeline_module, "run_pipeline", fake_run_pipeline):
-        load_info = assert_run_ok(cli.run())
+    load_info = run_with_duckdb_pipeline(
+        tmp_path,
+        extract_pipeline_module,
+        cli.run,
+        expected_pipeline_name=EXTRACT_PIPELINE_NAME,
+        expected_dataset_name="cli_dataset",
+        pipeline_name_prefix=EXTRACT_PIPELINE_NAME,
+    )
 
     # n.b. no _load_info due to this being a monkeypatched pipeline
     assert set(load_info.pipeline.dataset().tables) == (DEFAULT_DLT_TABLES - {LOAD_INFO_TABLE_NAME}) | {"widget"}

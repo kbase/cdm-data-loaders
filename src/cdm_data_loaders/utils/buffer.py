@@ -61,6 +61,12 @@ class BufferCore(BaseModel):
         """Construct the page payload for ``table_name`` from buffered ``rows``."""
         return rows
 
+    def _flush_if_full(self, table_name: str) -> Generator[DataItemWithMeta, Any]:
+        """Yield and clear the buffer for ``table_name`` if it has reached ``max_items``."""
+        if len(self._buffers[table_name]) >= self.max_items:
+            yield dlt.mark.with_table_name(self._make_page(table_name, self._buffers[table_name]), table_name)
+            self._buffers[table_name] = []
+
     def _add_item(self, table_name: str, item_to_add: Any) -> Generator[DataItemWithMeta, Any]:  # noqa: ANN401
         """Add an item to a table. Yield a page if the table reaches max_items.
 
@@ -73,9 +79,7 @@ class BufferCore(BaseModel):
         """
         self._validate_table_name(table_name)
         self._buffers[table_name].append(item_to_add)
-        if len(self._buffers[table_name]) >= self.max_items:
-            yield dlt.mark.with_table_name(self._make_page(table_name, self._buffers[table_name]), table_name)
-            self._buffers[table_name] = []
+        yield from self._flush_if_full(table_name)
 
     def _add_items(self, items_to_add: dict[str, list[Any]]) -> Generator[DataItemWithMeta, Any]:
         """Add items to per-table buffers. Yield a page for any table that reaches max_items.
@@ -90,9 +94,7 @@ class BufferCore(BaseModel):
                 continue
             self._validate_table_name(table_name)
             self._buffers[table_name].extend(contents)
-            if len(self._buffers[table_name]) >= self.max_items:
-                yield dlt.mark.with_table_name(self._make_page(table_name, self._buffers[table_name]), table_name)
-                self._buffers[table_name] = []
+            yield from self._flush_if_full(table_name)
 
     def flush(self) -> Generator[DataItemWithMeta, Any]:
         """Yield any remaining buffered rows as final pages and empty the buffers."""

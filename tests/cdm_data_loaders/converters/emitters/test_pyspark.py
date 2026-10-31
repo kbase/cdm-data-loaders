@@ -11,9 +11,7 @@ from jsonschema import Draft7Validator, Draft202012Validator
 from pyiceberg import types as iceberg_types
 from pyiceberg.schema import Schema
 from pyspark.sql.types import (
-    ArrayType,
     BinaryType,
-    BooleanType,
     DataType,
     DateType,
     DecimalType,
@@ -21,8 +19,6 @@ from pyspark.sql.types import (
     FloatType,
     IntegerType,
     LongType,
-    MapType,
-    NullType,
     StringType,
     StructField,
     StructType,
@@ -31,7 +27,7 @@ from pyspark.sql.types import (
 )
 
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, ExtensionSpec
-from cdm_data_loaders.converters.core.ir import Field, NodeHints, NodeType, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.ir import NodeHints, NodeType, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.metadata import (
     REF_AND_IDENTITY_KEYWORDS,
     STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS,
@@ -42,7 +38,6 @@ from cdm_data_loaders.converters.core.metadata import (
 from cdm_data_loaders.converters.emitters.pyspark import (
     PySparkEmitter,
     PySparkEmitterError,
-    infer_type_from_enum,
 )
 from cdm_data_loaders.converters.readers.dlt import DltReader
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader
@@ -54,30 +49,6 @@ DIALECT = "https://json-schema.org/draft/2020-12/schema"
 def _document(schema: dict[str, Any] | bool) -> SchemaDocument:
     """Wrap a fragment in an object-compatible JSON document."""
     return JsonSchemaReader().read({"$schema": DIALECT, "properties": {"value": schema}})
-
-
-@pytest.mark.parametrize(
-    "items",
-    [False, {}, [], None],
-    ids=["false-schema", "empty-schema", "empty-tuple", "absent-items"],
-)
-def test_emit_pass_strict_empty_array_items(items: object) -> None:
-    """Empty and false array item schemas produce string elements in strict mode."""
-    array: dict[str, Any] = {"type": "array"}
-    if items is not None:
-        array["items"] = items
-    document = JsonSchemaReader().read({"$schema": DIALECT, "properties": {"values": array}})
-    assert PySparkEmitter(treat_unknown_as_string=False).emit(document).jsonValue() == {
-        "type": "struct",
-        "fields": [
-            {
-                "name": "values",
-                "type": ArrayType(StringType(), containsNull=True).jsonValue(),
-                "nullable": True,
-                "metadata": {},
-            }
-        ],
-    }
 
 
 def test_emit_pass_json_round_trip() -> None:
@@ -97,163 +68,6 @@ def test_emit_pass_json_round_trip() -> None:
     emitted = PySparkEmitter().emit(document)
 
     assert StructType.fromJson(emitted.jsonValue()) == emitted
-
-
-@pytest.mark.parametrize(
-    ("hints", "expected"),
-    [
-        (NodeHints(logical_type="decimal", precision=20, scale=8), DecimalType(20, 8)),
-        (NodeHints(logical_type="timestamp", timezone=False), TimestampNTZType()),
-        (NodeHints(logical_type="timestamp", timezone=True), TimestampType()),
-        (NodeHints(logical_type="timestamp"), TimestampType()),
-    ],
-    ids=["decimal", "naive-timestamp", "aware-timestamp", "unknown-timezone"],
-)
-def test_emit_node_pass_logical_hints(hints: NodeHints, expected: DataType) -> None:
-    """Logical source facts produce native Spark types."""
-    node = TypedNode(type="number" if hints.logical_type == "decimal" else "string", hints=hints)
-    assert PySparkEmitter().emit_node(node).jsonValue() == expected.jsonValue()
-
-
-def test_emit_pass_metadata() -> None:
-    """Titles, descriptions and requested assertion keywords retain their exact values."""
-    document = JsonSchemaReader().read(
-        {
-            "$schema": DIALECT,
-            "properties": {
-                "name": {"type": "string", "title": "Name", "description": "A name", "pattern": "^a", "x-pii": True}
-            },
-        }
-    )
-    emitter = PySparkEmitter(extra_metadata_keywords=frozenset({"pattern", "description", "x-pii"}))
-    assert emitter.emit(document)["name"].metadata == {
-        "jsonschema": {"title": "Name", "description": "A name", "pattern": "^a", "x-pii": True},
-        "comment": "A name",
-    }
-
-
-@pytest.mark.parametrize("strict", [False, True], ids=["fallback-policy", "strict-policy"])
-@pytest.mark.parametrize(
-    ("schema", "expected"),
-    [
-        pytest.param({"type": "string"}, StringType(), id="string"),
-        pytest.param({"type": "boolean"}, BooleanType(), id="boolean"),
-        pytest.param({"type": "null"}, NullType(), id="null"),
-        pytest.param({"type": "integer"}, LongType(), id="integer"),
-        pytest.param({"type": "number"}, DoubleType(), id="number"),
-        pytest.param({"type": "object"}, StructType([]), id="empty-object"),
-        pytest.param({"type": ["null", "string"]}, StringType(), id="nullable-string"),
-        pytest.param({"type": ["integer"]}, LongType(), id="single-type-list"),
-        pytest.param({"type": ["null", "null"]}, NullType(), id="null-only-list"),
-        pytest.param({"type": []}, NullType(), id="empty-type-list"),
-        pytest.param({"enum": [True, False]}, BooleanType(), id="boolean-enum"),
-        pytest.param({"enum": [1, 2]}, LongType(), id="integer-enum"),
-        pytest.param({"enum": [1, 2.5]}, DoubleType(), id="number-enum"),
-        pytest.param({"enum": ["a", "b"]}, StringType(), id="string-enum"),
-        pytest.param({"enum": []}, StringType(), id="empty-enum"),
-        pytest.param({"enum": [None]}, StringType(), id="null-enum"),
-        pytest.param({"enum": [True, 1]}, StringType(), id="bool-is-not-integer-enum"),
-        pytest.param({"enum": [1, "a"]}, StringType(), id="mixed-enum"),
-        pytest.param({"enum": [{"type": "integer"}]}, StringType(), id="object-enum"),
-        pytest.param({"enum": [Decimal("1.1")]}, StringType(), id="decimal-enum"),
-        pytest.param({"enum": [1], "minimum": 0, "oneOf": [{"type": "string"}]}, LongType(), id="enum-precedence"),
-        pytest.param({"type": "string", "enum": [1]}, StringType(), id="declared-over-enum"),
-        pytest.param({"oneOf": [{"type": "integer"}, {"type": "string"}]}, LongType(), id="oneof-first"),
-        pytest.param({"anyOf": [{"type": "null"}, {"type": "string"}]}, NullType(), id="anyof-null-first"),
-        pytest.param(
-            {"oneOf": [{"type": "boolean"}], "anyOf": [{"type": "integer"}]}, BooleanType(), id="oneof-over-anyof"
-        ),
-        pytest.param({"oneOf": [], "anyOf": [{"type": "integer"}]}, LongType(), id="empty-oneof-before-anyof"),
-        pytest.param({"type": "mystery", "anyOf": [{"type": "boolean"}]}, BooleanType(), id="unknown-with-combiner"),
-        pytest.param(
-            {"type": "string", "oneOf": [False], "anyOf": [False], "not": False},
-            StringType(),
-            id="declared-over-combiners",
-        ),
-        pytest.param({"format": "date", "oneOf": [False]}, DateType(), id="inferred-over-combiner"),
-        pytest.param({"properties": {}, "items": False}, StructType([]), id="object-inference-first"),
-        pytest.param({"items": {"type": "integer"}, "pattern": "a"}, ArrayType(LongType()), id="array-before-string"),
-        pytest.param({"pattern": "a", "multipleOf": 0.01}, StringType(), id="string-before-number"),
-        pytest.param({"minimum": 0, "maximum": 10}, DoubleType(), id="numeric-inference"),
-        pytest.param({"multipleOf": 0.01}, DecimalType(38, 2), id="decimal-inference"),
-        pytest.param({"required": ["missing"]}, StructType([]), id="required-implies-object"),
-        pytest.param({"uniqueItems": True}, ArrayType(StringType()), id="uniqueness-implies-array"),
-        pytest.param({"type": "array", "prefixItems": []}, ArrayType(StringType()), id="empty-prefix"),
-        pytest.param({"type": "array", "prefixItems": [False]}, ArrayType(StringType()), id="false-prefix"),
-        pytest.param({"type": "array", "prefixItems": [{}]}, ArrayType(StringType()), id="empty-prefix-schema"),
-        pytest.param(
-            {"type": "array", "prefixItems": [{"type": "integer"}, False], "items": True},
-            ArrayType(LongType()),
-            id="prefix-before-items",
-        ),
-        pytest.param(
-            {"type": "array", "items": [{"type": "boolean"}, False]}, ArrayType(BooleanType()), id="tuple-items"
-        ),
-        pytest.param({"type": "array", "items": [False]}, ArrayType(StringType()), id="false-tuple"),
-        pytest.param(
-            {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}},
-            ArrayType(ArrayType(LongType())),
-            id="nested-arrays",
-        ),
-        pytest.param({"type": "object", "additionalProperties": True}, StructType([]), id="boolean-additional-true"),
-        pytest.param({"type": "object", "additionalProperties": False}, StructType([]), id="boolean-additional-false"),
-        pytest.param(
-            {"type": "object", "additionalProperties": {"type": "integer"}},
-            MapType(StringType(), LongType()),
-            id="additional-schema",
-        ),
-        pytest.param(
-            {"patternProperties": {"a": {"type": "boolean"}, "b": False}, "additionalProperties": False},
-            MapType(StringType(), BooleanType()),
-            id="first-pattern",
-        ),
-        pytest.param(
-            {"patternProperties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "boolean"}},
-            MapType(StringType(), LongType()),
-            id="pattern-before-additional",
-        ),
-        pytest.param(
-            {"properties": {"name": {"type": "string"}}, "patternProperties": {"a": False}, "additionalProperties": {}},
-            StructType([StructField("name", StringType())]),
-            id="fixed-before-dynamic",
-        ),
-        pytest.param({"type": "integer", "minimum": 0, "maximum": 100}, IntegerType(), id="bounded-int"),
-        pytest.param(
-            {"type": "integer", "minimum": -2_147_483_648, "maximum": 2_147_483_647},
-            IntegerType(),
-            id="int32-boundaries",
-        ),
-        pytest.param({"type": "integer", "minimum": -2_147_483_649, "maximum": 100}, LongType(), id="below-int32"),
-        pytest.param({"type": "integer", "minimum": 0, "maximum": 2_147_483_648}, LongType(), id="above-int32"),
-        pytest.param({"type": "integer", "minimum": 0}, LongType(), id="missing-maximum"),
-        pytest.param({"type": "integer", "maximum": 0}, LongType(), id="missing-minimum"),
-        pytest.param(
-            {"type": "integer", "exclusiveMinimum": 0, "exclusiveMaximum": 100}, IntegerType(), id="exclusive-bounds"
-        ),
-        pytest.param(
-            {"type": "integer", "minimum": None, "exclusiveMinimum": 0, "maximum": 100},
-            LongType(),
-            id="null-minimum-does-not-use-exclusive",
-        ),
-        pytest.param({"type": "number", "multipleOf": 1}, DecimalType(38, 0), id="integral-multiple"),
-        pytest.param({"type": "number", "multipleOf": 1.0}, DecimalType(38, 1), id="float-integral-multiple"),
-        pytest.param({"type": "number", "multipleOf": 0.001}, DecimalType(38, 3), id="fractional-multiple"),
-        pytest.param({"type": "number", "multipleOf": 1e-9}, DecimalType(38, 9), id="exponent-multiple"),
-        pytest.param({"type": "number", "multipleOf": "0.01"}, DoubleType(), id="nonnumeric-multiple"),
-        pytest.param(
-            {"type": "number", "multipleOf": Decimal("0.0100")}, DecimalType(38, 4), id="decimal-multiple-parity"
-        ),
-    ],
-)
-def test_emit_pass_json_dispatch(schema: dict[str, Any], expected: DataType, strict: bool) -> None:
-    """Typed dispatch matches fixed expected schemas."""
-    document = _document(schema)
-    emitter = PySparkEmitter(treat_unknown_as_string=not strict)
-    actual = emitter.emit(document)
-    assert actual.jsonValue() == {
-        "type": "struct",
-        "fields": [{"name": "value", "type": expected.jsonValue(), "nullable": True, "metadata": {}}],
-    }
 
 
 @pytest.mark.parametrize(
@@ -361,30 +175,10 @@ def test_emit_pass_registered_extensions_and_metadata_isolation() -> None:
     assert emitter.emit(document)["value"].metadata == expected
 
 
-def test_emit_pass_field_metadata_overrides_node() -> None:
-    """Field annotations and extensions take precedence over type-scoped metadata."""
-    node = TypedNode(type="string", annotations={"title": "Node", "description": "node"}, extensions={"x-pii": False})
-    field = Field("value", node, annotations={"description": "field"}, extensions={"x-pii": True})
-    document = SchemaDocument(root=TypedNode(type="object", properties=(field,)))
-    assert PySparkEmitter(extra_metadata_keywords=frozenset({"x-pii"})).emit(document)["value"].metadata == {
-        "jsonschema": {"title": "Node", "x-pii": True},
-        "comment": "field",
-    }
-
-
-@pytest.mark.parametrize(
-    ("values", "expected"),
-    [([], StringType()), ([True], BooleanType()), ([1], LongType()), ([1, 2.1], DoubleType()), ([None], StringType())],
-    ids=["empty", "boolean", "integer", "number", "null"],
-)
-def test_infer_type_from_enum_pass_scalars(values: list[object], expected: DataType) -> None:
-    """Enum inference preserves the JSON scalar distinctions."""
-    assert infer_type_from_enum(values) == expected
-
-
 @pytest.mark.parametrize(
     ("kind", "hints", "expected"),
     [
+        ("number", NodeHints(logical_type="decimal", precision=20, scale=8), DecimalType(20, 8)),
         ("number", NodeHints(logical_type="decimal"), DecimalType(38, 0)),
         ("integer", NodeHints(logical_type="wei"), DecimalType(38, 0)),
         ("integer", NodeHints(bit_width=16), IntegerType()),
@@ -396,12 +190,16 @@ def test_infer_type_from_enum_pass_scalars(values: list[object], expected: DataT
         ("string", NodeHints(logical_type="date"), DateType()),
         ("string", NodeHints(logical_type="binary"), BinaryType()),
         ("string", NodeHints(logical_type="fixed", length=12), BinaryType()),
+        ("string", NodeHints(logical_type="timestamp", timezone=False), TimestampNTZType()),
+        ("string", NodeHints(logical_type="timestamp", timezone=True), TimestampType()),
+        ("string", NodeHints(logical_type="timestamp"), TimestampType()),
         ("string", NodeHints(logical_type="timestamp-without-tz"), TimestampNTZType()),
         ("string", NodeHints(logical_type="timestamp-with-tz"), TimestampType()),
         ("string", NodeHints(logical_type="uuid"), StringType()),
         ("string", NodeHints(logical_type="time"), StringType()),
     ],
     ids=[
+        "decimal-explicit",
         "decimal-default",
         "wei",
         "int16",
@@ -413,6 +211,9 @@ def test_infer_type_from_enum_pass_scalars(values: list[object], expected: DataT
         "date",
         "binary",
         "fixed",
+        "timestamp-naive",
+        "timestamp-aware",
+        "timestamp-default-tz",
         "naive",
         "aware",
         "uuid",

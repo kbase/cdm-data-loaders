@@ -4,8 +4,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from dlt.common.pipeline import LoadInfo
-from pandas import DataFrame
 
 from cdm_data_loaders.pipelines.xmltodict.settings import PIPELINE_NAME, XmlToDictSettings
 from tests.cdm_data_loaders.pipelines.conftest import DEFAULT_DLT_TABLES
@@ -14,20 +12,10 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     LOADER_FILE_FORMATS,
     assert_pipeline_report_written,
     assert_run_ok,
+    check_book_list_results,
 )
 from tests.helpers import settings_to_argv
 from tests.xml_samples import SIMPLE_LIBRARY_XML
-
-
-def check_book_list_results(load_info: LoadInfo | None, table_name: str | None = None) -> DataFrame:
-    """Check over the output of parsing SIMPLE_LIBRARY_XML."""
-    load_info = assert_run_ok(load_info)
-    dataset = load_info.pipeline.dataset()
-    table_name = table_name or "book"
-    assert set(dataset.tables) == {table_name, *DEFAULT_DLT_TABLES}
-    book_df = dataset.table(table_name).df()
-    assert set(book_df.columns.tolist()) >= {"book___id", "book__title", "_dlt_id", "_dlt_load_id"}
-    return book_df
 
 
 @pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS)

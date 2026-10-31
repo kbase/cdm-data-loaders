@@ -20,18 +20,18 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
     upload_descriptor,
     validate_descriptor,
 )
+from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREFIX
 from tests.cdm_data_loaders.ncbi_ftp.conftest import TEST_BUCKET
 
 _ACCESSION = "GCF_000001215.4"
 _ASSEMBLY_DIR = PurePosixPath("GCF_000001215.4_Release_6_plus_ISO1_MT")
 _RELEASE_TAG = "2024-01"
-_KEY_PREFIX = PurePosixPath("tenant-general-warehouse") / "kbase" / "datasets" / "ncbi"
 _TIMESTAMP = 1_700_000_000
 
 _SAMPLE_RESOURCES: list[DescriptorResource] = [
     {
         "name": "GCF_000001215.4_genomic.fna.gz",
-        "path": _KEY_PREFIX
+        "path": DEFAULT_DESTINATION_PREFIX
         / "raw_data"
         / "GCF"
         / "000"
@@ -45,7 +45,7 @@ _SAMPLE_RESOURCES: list[DescriptorResource] = [
     },
     {
         "name": "GCF_000001215.4_assembly_report.txt",
-        "path": _KEY_PREFIX
+        "path": DEFAULT_DESTINATION_PREFIX
         / "raw_data"
         / "GCF"
         / "000"
@@ -63,25 +63,27 @@ _SAMPLE_RESOURCES: list[DescriptorResource] = [
 # build_descriptor_key / build_archive_descriptor_key
 
 
-@pytest.mark.parametrize("prefix", [_KEY_PREFIX])
+@pytest.mark.parametrize("prefix", [DEFAULT_DESTINATION_PREFIX])
 def test_build_descriptor_key(prefix: PurePosixPath) -> None:
     """Key is under metadata/, ends with _datapackage.json, trailing slash on prefix is normalized."""
     key = build_descriptor_key(_ASSEMBLY_DIR, prefix)
-    assert key == _KEY_PREFIX / "metadata" / _ASSEMBLY_DIR.with_name(f"{_ASSEMBLY_DIR.name}_datapackage.json")
+    assert key == DEFAULT_DESTINATION_PREFIX / "metadata" / _ASSEMBLY_DIR.with_name(
+        f"{_ASSEMBLY_DIR.name}_datapackage.json"
+    )
 
 
 @pytest.mark.parametrize(
     ("prefix", "tag"),
     [
-        pytest.param(_KEY_PREFIX, _RELEASE_TAG, id="tag"),
-        pytest.param(_KEY_PREFIX, "2025-06", id="different_tag"),
+        pytest.param(DEFAULT_DESTINATION_PREFIX, _RELEASE_TAG, id="tag"),
+        pytest.param(DEFAULT_DESTINATION_PREFIX, "2025-06", id="different_tag"),
     ],
 )
 def test_build_archive_descriptor_key(prefix: PurePosixPath, tag: str) -> None:
     """Archive key includes tag and reason segment."""
     key = build_archive_descriptor_key(_ASSEMBLY_DIR, tag, prefix, "updated")
     expected = (
-        _KEY_PREFIX
+        DEFAULT_DESTINATION_PREFIX
         / "archive"
         / tag
         / "updated"
@@ -210,7 +212,7 @@ def mock_s3_with_descriptor(
 ) -> Generator[tuple[S3Client, MagicMock]]:
     """mock_s3_client with a live descriptor pre-uploaded and copy_object patched."""
     descriptor = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, _SAMPLE_RESOURCES, timestamp=_TIMESTAMP)
-    live_key = build_descriptor_key(_ASSEMBLY_DIR, _KEY_PREFIX)
+    live_key = build_descriptor_key(_ASSEMBLY_DIR, DEFAULT_DESTINATION_PREFIX)
     mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=f"{live_key}", Body=json.dumps(descriptor).encode())
     with patch.object(metadata_mod, "copy_object") as mock_copy:
         yield mock_s3_client, mock_copy
@@ -220,10 +222,10 @@ def mock_s3_with_descriptor(
 def test_upload_descriptor(mock_s3_client: S3Client) -> None:
     """Uploaded object is valid JSON at the expected key with the expected identifier."""
     descriptor = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, _SAMPLE_RESOURCES, timestamp=_TIMESTAMP)
-    key = upload_descriptor(descriptor, _ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX)
-    expected_key = build_descriptor_key(_ASSEMBLY_DIR, _KEY_PREFIX)
+    key = upload_descriptor(descriptor, _ASSEMBLY_DIR, TEST_BUCKET, DEFAULT_DESTINATION_PREFIX)
+    expected_key = build_descriptor_key(_ASSEMBLY_DIR, DEFAULT_DESTINATION_PREFIX)
     assert key == expected_key
-    assert key.is_relative_to(_KEY_PREFIX)
+    assert key.is_relative_to(DEFAULT_DESTINATION_PREFIX)
     assert key.match("**_datapackage.json")
     body = json.loads(mock_s3_client.get_object(Bucket=str(TEST_BUCKET), Key=str(key))["Body"].read())
     assert body["identifier"] == f"NCBI:{_ACCESSION}"
@@ -233,8 +235,8 @@ def test_upload_descriptor(mock_s3_client: S3Client) -> None:
 def test_upload_descriptor_dry_run(mock_s3_client: S3Client) -> None:
     """Dry-run returns the correct key but creates no S3 object."""
     descriptor = create_descriptor(_ASSEMBLY_DIR, _ACCESSION, _SAMPLE_RESOURCES, timestamp=_TIMESTAMP)
-    key = upload_descriptor(descriptor, _ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, dry_run=True)
-    assert key == build_descriptor_key(_ASSEMBLY_DIR, _KEY_PREFIX)
+    key = upload_descriptor(descriptor, _ASSEMBLY_DIR, TEST_BUCKET, DEFAULT_DESTINATION_PREFIX, dry_run=True)
+    assert key == build_descriptor_key(_ASSEMBLY_DIR, DEFAULT_DESTINATION_PREFIX)
     objs = mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET)).get("Contents", [])
     assert not any(o["Key"] == key for o in objs)
 
@@ -243,23 +245,27 @@ def test_upload_descriptor_dry_run(mock_s3_client: S3Client) -> None:
 def test_archive_descriptor(mock_s3_with_descriptor: tuple[S3Client, MagicMock]) -> None:
     """archive_descriptor returns True and calls copy_object with the correct keys."""
     _, mock_copy = mock_s3_with_descriptor
-    result = archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG)
+    result = archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, DEFAULT_DESTINATION_PREFIX, _RELEASE_TAG)
     assert result is True
     mock_copy.assert_called_once()
     args = mock_copy.call_args[0]
-    assert f"{TEST_BUCKET / build_descriptor_key(_ASSEMBLY_DIR, _KEY_PREFIX)}" in args
-    assert f"{TEST_BUCKET / build_archive_descriptor_key(_ASSEMBLY_DIR, _RELEASE_TAG, _KEY_PREFIX)}" in args
+    assert f"{TEST_BUCKET / build_descriptor_key(_ASSEMBLY_DIR, DEFAULT_DESTINATION_PREFIX)}" in args
+    assert (
+        f"{TEST_BUCKET / build_archive_descriptor_key(_ASSEMBLY_DIR, _RELEASE_TAG, DEFAULT_DESTINATION_PREFIX)}" in args
+    )
 
 
 @pytest.mark.s3
 def test_archive_descriptor_dry_run(mock_s3_with_descriptor: tuple[S3Client, MagicMock]) -> None:
     """Dry-run returns True but does not call copy_object."""
     _, mock_copy = mock_s3_with_descriptor
-    assert archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG, dry_run=True) is True
+    assert (
+        archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, DEFAULT_DESTINATION_PREFIX, _RELEASE_TAG, dry_run=True) is True
+    )
     mock_copy.assert_not_called()
 
 
 @pytest.mark.usefixtures("mock_s3_client")
 def test_archive_descriptor_missing_returns_false() -> None:
     """Returns False when no descriptor exists at the live key."""
-    assert archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, _KEY_PREFIX, _RELEASE_TAG) is False
+    assert archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, DEFAULT_DESTINATION_PREFIX, _RELEASE_TAG) is False

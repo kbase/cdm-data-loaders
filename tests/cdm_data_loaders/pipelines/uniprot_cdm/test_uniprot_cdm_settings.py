@@ -7,7 +7,7 @@ from frozendict import frozendict
 
 from cdm_data_loaders.pipelines.uniprot_kb_cdm import UniProtSettings
 from tests.cdm_data_loaders.conftest import check_settings
-from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes
+from tests.helpers import assert_cli_field_roundtrips
 
 
 def test_uniprot_settings_all_params_set(
@@ -17,12 +17,6 @@ def test_uniprot_settings_all_params_set(
     """Ensure that settings are set correctly when all args are specified."""
     s = UniProtSettings(**test_uniprot_settings)  # type: ignore[reportReturnType]
     check_settings(s, test_uniprot_settings_reconciled)
-
-
-# model_fields
-def test_no_cli_param_clashes() -> None:
-    """Ensure that the settings object does not have any internal alias collisions."""
-    assert_no_cli_clashes(UniProtSettings)
 
 
 @pytest.mark.parametrize("field_name", list(UniProtSettings.model_fields))

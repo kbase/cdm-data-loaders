@@ -14,10 +14,8 @@ from frozendict import frozendict
 from pydantic import Field, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.guards import require_object_root, require_schema_keyword
 from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase, coerce_extra_metadata_keywords
 from cdm_data_loaders.converters.emitters.pyarrow import DEFAULT_FORMAT_MAP, PyArrowEmitter, merge_format_map
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 
 DEFAULT_MAX_RECURSION_DEPTH: Final[int] = 2
 
@@ -173,6 +171,11 @@ JSONSCHEMA_TO_PYARROW_ERRORS: Final[tuple[type[JSONSchemaToPyArrowError], ...]] 
 class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
     """Read dereferenced JSON Schema and emit PyArrow schemas and empty tables."""
 
+    _error_cls: ClassVar[type[ConversionError]] = JSONSchemaToPyArrowError
+    _invalid_schema_error_cls: ClassVar[type[ConversionError]] = InvalidJSONSchemaError
+    _converter_name: ClassVar[str] = "JSONSchemaToPyArrow"
+    _root_target_label: ClassVar[str] = "a struct schema"
+
     format_map: frozendict[str, pa.DataType] = Field(default_factory=lambda: DEFAULT_FORMAT_MAP)
     treat_unknown_as_string: bool = True
     emit_unions_as_json: bool = False
@@ -191,15 +194,6 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
         """Normalize supported metadata keyword collections."""
         return coerce_extra_metadata_keywords(value)
 
-    def _reader(self) -> JsonSchemaReader:
-        """Configure reader diagnostics for this public facade."""
-        return JsonSchemaReader(
-            self.extension_registry,
-            error_type=JSONSchemaToPyArrowError,
-            converter_name="JSONSchemaToPyArrow",
-            dereference_function="cdm_data_loaders.utils.jsonschema.dereferencer.dereference_schema",
-        )
-
     def _emitter(self) -> PyArrowEmitter:
         """Pass target policy to the emitter."""
         return PyArrowEmitter(
@@ -209,23 +203,6 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
             extra_metadata_keywords=self.extra_metadata_keywords,
             max_nesting=self.max_nesting,
         )
-
-    def convert(self, schema: dict[str, Any]) -> pa.Schema:
-        """Convert a dereferenced JSON Schema object document to an Arrow schema.
-
-        :param schema: the JSON Schema, which must declare ``$schema`` and have an object root
-        :type schema: dict[str, Any]
-        :return: the Arrow schema
-        :rtype: pa.Schema
-        :raises InvalidJSONSchemaError: if ``$schema`` is missing
-        :raises JSONSchemaToPyArrowError: if the root is not an object or a construct cannot be converted
-        """
-        require_schema_keyword(schema, InvalidJSONSchemaError, converter_name="JSONSchemaToPyArrow")
-        require_object_root(schema, JSONSchemaToPyArrowError, target="a struct schema")
-        try:
-            return self._emitter().emit(self._reader().read(schema))
-        except ConversionError as error:
-            raise JSONSchemaToPyArrowError(str(error)) from error
 
     def convert_to_table(self, schema: dict[str, Any]) -> pa.Table:
         """Convert a dereferenced JSON Schema object document to an empty Arrow table.

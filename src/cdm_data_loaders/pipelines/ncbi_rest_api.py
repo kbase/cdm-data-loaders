@@ -86,7 +86,7 @@ class NcbiRestApiSettings(CtsSettings):
     @computed_field
     @cached_property
     def raw_data_dir(self) -> Path:
-        """Directory to save downloaded raw data files to: ``<output_dir>/raw_data/<version>``."""
+        """Directory to save downloaded raw data files to: ``<output_dir>/raw_data/api_responses``."""
         return self.output_dir / "raw_data" / "api_responses"
 
     @field_validator(QUERY_TYPE, mode="before")
@@ -264,22 +264,25 @@ def get_assembly_reports(assembly_id_list: list[str]) -> dict[str, Any]:
     return output
 
 
+def _fetch_ncbi_pages(endpoint: str) -> list[dict[str, Any]]:
+    """Fetch all paginated results for ``endpoint`` from the NCBI datasets REST API."""
+    results: list[dict[str, Any]] = []
+    for page in ncbi_genome_client.paginate(
+        endpoint,
+        params={"page_size": MAX_RESULTS_PER_PAGE},
+        hooks=REST_CLIENT_HOOKS,  # type: ignore[reportArgumentType]
+    ):
+        results.extend(page)
+    return results
+
+
 def get_dataset_reports(assembly_id_list: list[str]) -> dict[str, dict[str, Any] | None]:
     """Fetch the dataset report for a list of assemblies from the NCBI datasets REST API."""
     if not assembly_id_list:
         return {}
 
     logger.info("fetching dataset reports for:\n%s", ", ".join(sorted(assembly_id_list)))
-    assembly_dataset_reports = []
-
-    for page in ncbi_genome_client.paginate(
-        f"{'%2C'.join(assembly_id_list)}/dataset_report",
-        params={
-            "page_size": MAX_RESULTS_PER_PAGE,
-        },
-        hooks=REST_CLIENT_HOOKS,  # type: ignore[reportArgumentType]
-    ):
-        assembly_dataset_reports.extend(page)
+    assembly_dataset_reports = _fetch_ncbi_pages(f"{'%2C'.join(assembly_id_list)}/dataset_report")
 
     # return dataset reports, indexed by assembly_id
     # invalid IDs are silently dropped by the NCBI REST API
@@ -291,16 +294,7 @@ def get_dataset_reports(assembly_id_list: list[str]) -> dict[str, dict[str, Any]
 def get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:
     """Fetch the annotation report for an assembly from the NCBI datasets REST API."""
     logger.info("fetching annotation report for %s", assembly_id)
-    page_data = []
-
-    for page in ncbi_genome_client.paginate(
-        f"{assembly_id}/annotation_report",
-        params={
-            "page_size": MAX_RESULTS_PER_PAGE,
-        },
-        hooks=REST_CLIENT_HOOKS,  # type: ignore[reportArgumentType]
-    ):
-        page_data.extend(page)
+    page_data = _fetch_ncbi_pages(f"{assembly_id}/annotation_report")
 
     # page_data is empty if the ID is invalid
     return page_data or None

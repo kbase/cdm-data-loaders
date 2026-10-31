@@ -10,10 +10,11 @@ import logging
 import socket
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from ftplib import FTP, error_temp
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from tenacity import (
     before_sleep_log,
@@ -93,6 +94,17 @@ def ftp_noop_keepalive(ftp: FTP, last_activity: float, interval: int = 25) -> fl
     return last_activity
 
 
+def _ftp_retry(retries: int) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Build a tenacity retry decorator for transient FTP errors."""
+    return retry(
+        retry=retry_if_exception_type(error_temp),
+        stop=stop_after_attempt(retries),
+        wait=wait_fixed(2),
+        reraise=True,
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )
+
+
 def ftp_list_dir(ftp: FTP, path: PurePosixPath, retries: int = 3) -> list[PurePosixPath]:
     """List files in an FTP directory with retry on transient errors.
 
@@ -103,13 +115,7 @@ def ftp_list_dir(ftp: FTP, path: PurePosixPath, retries: int = 3) -> list[PurePo
     """
     ftp.cwd(str(path))
 
-    @retry(
-        retry=retry_if_exception_type(error_temp),
-        stop=stop_after_attempt(retries),
-        wait=wait_fixed(2),
-        reraise=True,
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-    )
+    @_ftp_retry(retries)
     def _list() -> list[PurePosixPath]:
         file_strings: list[str] = []
         ftp.retrlines("NLST", file_strings.append)
@@ -127,13 +133,7 @@ def ftp_download_file(ftp: FTP, remote_path: PurePosixPath, local_path: Path, re
     :param retries: number of retry attempts
     """
 
-    @retry(
-        retry=retry_if_exception_type(error_temp),
-        stop=stop_after_attempt(retries),
-        wait=wait_fixed(2),
-        reraise=True,
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-    )
+    @_ftp_retry(retries)
     def _download() -> None:
         with local_path.open("wb") as f:
             ftp.retrbinary(f"RETR {remote_path}", f.write)

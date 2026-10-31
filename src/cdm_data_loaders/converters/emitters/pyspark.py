@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from typing import ClassVar, Final
 
 from frozendict import frozendict
-from jsonschema import Draft202012Validator
 from pydantic import Field, field_validator
 from pyspark.sql.types import (
     ArrayType,
@@ -32,12 +31,12 @@ from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.ir_values import mutable_value
 from cdm_data_loaders.converters.core.metadata import ConversionContext
 from cdm_data_loaders.converters.emitters._tabular_base import (
-    DECIMAL128_MAX_PRECISION,
     DEFAULT_STRING_FORMATS,
     INT32_WIDTH,
     _TabularEmitterBase,
     infer_enum_type,
     merge_format_map_with_defaults,
+    resolve_logical_decimal,
 )
 
 DEFAULT_FORMAT_MAP: Final[frozendict[str, DataType]] = frozendict(
@@ -98,8 +97,7 @@ class PySparkEmitter(_TabularEmitterBase[DataType]):
 
     def emit(self, document: SchemaDocument) -> StructType:
         """Emit a table schema, requiring the result to be a struct."""
-        validator_cls = document.jsonschema_validator_cls or Draft202012Validator
-        result = self.emit_node(document.root, self.build_context(validator_cls))
+        result = self._emit_root_node(document)
         if isinstance(result, StructType):
             return result
         msg = (
@@ -182,11 +180,11 @@ class PySparkEmitter(_TabularEmitterBase[DataType]):
         hints = node.hints
         logical = hints.logical_type
         if logical in {"decimal", "wei"}:
-            precision = hints.precision if hints.precision is not None else DECIMAL128_MAX_PRECISION
-            scale = hints.scale if hints.scale is not None else 0
-            if not 1 <= precision <= DECIMAL128_MAX_PRECISION or scale > precision:
-                msg = f"Unsupported Spark decimal precision/scale: ({precision}, {scale})"
-                raise PySparkEmitterError(msg)
+            precision, scale = resolve_logical_decimal(
+                hints,
+                target_label="Spark",
+                error_cls=PySparkEmitterError,
+            )
             return DecimalType(precision, scale)
         if logical in {"timestamp", "timestamp-with-tz", "timestamp-without-tz"}:
             return (

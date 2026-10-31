@@ -51,7 +51,6 @@ from tests.cdm_data_loaders.pipelines.conftest import (
 from tests.cdm_data_loaders.pipelines.helpers import (
     check_pipeline_report,
     read_destination_rows,
-    read_jsonl_file,
 )
 from tests.conftest import LOCAL_FS, S3
 from tests.dlt_config_isolation import dlt_config_unset, isolated_dlt_config
@@ -84,14 +83,6 @@ def failing_resource() -> DltResource:
         raise RuntimeError(err_msg)
 
     return dlt.resource(_generate, name=TINY_TABLE_NAME)
-
-
-def read_jsonl_rows(base_dir: Path, table_name: str) -> list[dict[str, Any]]:
-    """Read every jsonl row written for table_name anywhere under base_dir."""
-    rows: list[dict[str, Any]] = []
-    for jsonl_file in sorted(base_dir.glob(f"**/{table_name}/*.jsonl*")):
-        rows.extend(read_jsonl_file(jsonl_file))
-    return rows
 
 
 def read_output_jsonl_records(base_dir: Path) -> list[dict[str, Any]]:
@@ -139,52 +130,50 @@ TEST_MESSAGE: Final[str] = "3... 2... 1... testing?"
 @pytest.mark.parametrize(
     ("slack_hook", "message", "err_msg"),
     [
-        ("", TEST_MESSAGE, WEBHOOK_NOT_CONFIGURED),
-        (SLACK_HOOK, "", NO_MESSAGE),
-        ("", "", WEBHOOK_NOT_CONFIGURED),
+        pytest.param(None, TEST_MESSAGE, WEBHOOK_NOT_CONFIGURED, id="hook_none"),
+        pytest.param("", TEST_MESSAGE, WEBHOOK_NOT_CONFIGURED, id="hook_empty"),
+        pytest.param(SLACK_HOOK, "", NO_MESSAGE, id="message_empty"),
+        pytest.param(SLACK_HOOK, "   ", NO_MESSAGE, id="message_spaces"),
+        pytest.param(SLACK_HOOK, "\n\t", NO_MESSAGE, id="message_newline_tab"),
+        pytest.param("", "", WEBHOOK_NOT_CONFIGURED, id="both_empty"),
     ],
 )
 def test_send_slack_message_carefully_params_fail(
-    slack_hook: str,
+    slack_hook: str | None,
     message: str,
     err_msg: str,
     caplog: pytest.LogCaptureFixture,
     slack_mock: MagicMock,
 ) -> None:
-    """Test sending a slack message ever so carefully, but with incorrect parameters."""
-    send_slack_message_carefully(slack_hook, message)
+    """A missing/empty hook or a blank message logs exactly one warning and sends nothing."""
+    send_slack_message_carefully(slack_hook, message)  # pyright: ignore[reportArgumentType]
     slack_mock.assert_not_called()
-    assert len(caplog.records) == 1
-    assert caplog.records[-1].levelno == logging.WARNING
-    assert caplog.records[-1].getMessage() == f"Cannot send slack message: {err_msg}"
+    assert [(record.levelno, record.getMessage()) for record in caplog.records] == [
+        (logging.WARNING, f"Cannot send slack message: {err_msg}")
+    ]
 
 
 @pytest.mark.parametrize("markdown", [True, False, None])
 def test_send_slack_message_carefully_markdown_params(markdown: bool | None, slack_mock: MagicMock) -> None:
-    """Test that the markdown param is correctly passed on to send_slack_message.
-
-    :param markdown: markdown parameter
-    :type markdown: None | bool
-    """
+    """The message is stripped and sent once, with the is_markdown flag passed through."""
     if markdown is None:
-        send_slack_message_carefully(SLACK_HOOK, TEST_MESSAGE)
+        send_slack_message_carefully(SLACK_HOOK, f"  {TEST_MESSAGE} \n")
     else:
-        send_slack_message_carefully(SLACK_HOOK, TEST_MESSAGE, markdown)
+        send_slack_message_carefully(SLACK_HOOK, f"  {TEST_MESSAGE} \n", markdown)
 
-    if markdown:
-        slack_mock.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, True)  # noqa: FBT003
-    else:
-        slack_mock.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, False)  # noqa: FBT003
+    slack_mock.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, bool(markdown))
 
 
-def test_send_slack_message_fail_error_oh_no(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
-    """Ensure that request errors are caught and don't crash the whole ship of fools."""
-    slack_mock = MagicMock(side_effect=RequestException("Oh no! An error!"))
-    monkeypatch.setattr(core, "send_slack_message", slack_mock)
+@pytest.mark.parametrize("exc", [RequestException("Oh no! An error!"), ValueError("bad payload")])
+def test_send_slack_message_fail_error_oh_no(
+    exc: Exception, slack_mock: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Any error from the Slack sender is caught and logged as an error."""
+    slack_mock.side_effect = exc
     send_slack_message_carefully(SLACK_HOOK, TEST_MESSAGE)
-    assert len(caplog.records) == 1
-    assert caplog.records[-1].levelno == logging.ERROR
-    assert caplog.records[-1].getMessage() == "Failed to send slack message"
+    assert [(record.levelno, record.getMessage()) for record in caplog.records] == [
+        (logging.ERROR, "Failed to send slack message")
+    ]
 
 
 def test_settings_missing_sync_attrs_pass_fixture_shape(
@@ -242,6 +231,15 @@ def test_run_pipeline_invalid_destination_config_fails_at_pipeline_run(
 
 
 # tests for run_cli()
+def _settings_kwargs_for(settings_cls: type[CdmDataLoadersBase], tmp_path: Path) -> dict[str, Any]:
+    """Return minimal required kwargs for instantiating `settings_cls` in `run_cli` tests."""
+    if issubclass(settings_cls, CtsSettings):
+        return {"input_dir": tmp_path, "output_dir": tmp_path, "use_destination": LOCAL_FS}
+    if issubclass(settings_cls, LocalInputOutputSettings):
+        return {"input_dir": tmp_path, "output_dir": tmp_path}
+    return {}
+
+
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 def test_run_cli_calls_settings_cls_with_cli_args(settings_cls: type[CtsSettings], tmp_path: Path) -> None:
     """Ensure run_cli instantiates the supplied settings class via CliApp.run."""
@@ -252,14 +250,7 @@ def test_run_cli_calls_settings_cls_with_cli_args(settings_cls: type[CtsSettings
             super().__init__(**data)
             captured.append(self)
 
-    if issubclass(settings_cls, CtsSettings):
-        settings_kwargs: dict[str, Any] = {"input_dir": tmp_path, "output_dir": tmp_path, "use_destination": LOCAL_FS}
-    elif issubclass(settings_cls, LocalInputOutputSettings):
-        settings_kwargs = {"input_dir": tmp_path, "output_dir": tmp_path}
-    else:
-        settings_kwargs = {}
-
-    run_cli(_CaptureCls, MagicMock(), settings_kwargs, cli_args=[])
+    run_cli(_CaptureCls, MagicMock(), _settings_kwargs_for(settings_cls, tmp_path), cli_args=[])
 
     assert len(captured) == 1
     captured_config = captured[0]
@@ -277,7 +268,7 @@ def test_run_cli_pass_does_not_read_dlt_config(tmp_path: Path, *, dlt_config_set
         pipeline_fn_config.append(settings)
         return None
 
-    kwargs: dict[str, Any] = {"input_dir": tmp_path, "output_dir": tmp_path, "use_destination": LOCAL_FS}
+    kwargs = _settings_kwargs_for(CtsSettings, tmp_path)
     if dlt_config_set:
         run_cli(CtsSettings, pipeline_fn, kwargs, cli_args=[])
     else:
@@ -290,46 +281,20 @@ def test_run_cli_pass_does_not_read_dlt_config(tmp_path: Path, *, dlt_config_set
 
 
 @pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
-def test_run_cli_function_calls_args(settings_cls: type[CtsSettings], tmp_path: Path) -> None:
-    """Ensure run_cli instantiates the settings class and dispatches to pipeline_fn with the result."""
-    pipeline_fn_config: list[CtsSettings] = []
-
-    def pipeline_fn(settings: CtsSettings) -> LoadInfo | None:
-        pipeline_fn_config.append(settings)
-        return None
-
-    if issubclass(settings_cls, CtsSettings):
-        settings_kwargs: dict[str, Any] = {"input_dir": tmp_path, "output_dir": tmp_path, "use_destination": LOCAL_FS}
-    elif issubclass(settings_cls, LocalInputOutputSettings):
-        settings_kwargs = {"input_dir": tmp_path, "output_dir": tmp_path}
-    else:
-        settings_kwargs = {}
-
-    returned = run_cli(settings_cls, pipeline_fn, settings_kwargs, cli_args=[])
-
-    assert returned is None
-    assert len(pipeline_fn_config) == 1
-    assert isinstance(pipeline_fn_config[0], settings_cls)
-
-
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
 def test_run_cli_returns_pipeline_fn_result_verbatim(settings_cls: type[CtsSettings], tmp_path: Path) -> None:
-    """run_cli returns whatever pipeline_fn returns verbatim, for every settings class."""
+    """run_cli dispatches the instantiated settings to pipeline_fn and returns its result verbatim."""
     sentinel = {"loads_ids": ["load-1"]}
+    received: list[CtsSettings] = []
 
-    def pipeline_fn(settings: CtsSettings) -> dict[str, Any]:  # noqa: ARG001
+    def pipeline_fn(settings: CtsSettings) -> dict[str, Any]:
+        received.append(settings)
         return sentinel
 
-    if issubclass(settings_cls, CtsSettings):
-        settings_kwargs: dict[str, Any] = {"input_dir": tmp_path, "output_dir": tmp_path, "use_destination": LOCAL_FS}
-    elif issubclass(settings_cls, LocalInputOutputSettings):
-        settings_kwargs = {"input_dir": tmp_path, "output_dir": tmp_path}
-    else:
-        settings_kwargs = {}
-
-    returned = run_cli(settings_cls, pipeline_fn, settings_kwargs, cli_args=[])
+    returned = run_cli(settings_cls, pipeline_fn, _settings_kwargs_for(settings_cls, tmp_path), cli_args=[])
 
     assert returned is sentinel
+    assert len(received) == 1
+    assert isinstance(received[0], settings_cls)
 
 
 # error handling: SettingsError/ValidationError/ValueError
@@ -472,7 +437,7 @@ def test_run_pipeline_minimal(dlt_test_settings: CtsSettings, destination_bucket
     assert load_info is not None
     assert not load_info.has_failed_jobs
     assert read_output_jsonl_records(destination_bucket) == TINY_RESOURCE_DATA
-    assert read_jsonl_rows(Path(dlt_test_settings.output_dir), TINY_TABLE_NAME) == []
+    assert read_destination_rows(Path(dlt_test_settings.output_dir), TINY_TABLE_NAME) == []
 
 
 def test_run_pipeline_pass_destination_kwargs_bucket_url_override(
@@ -487,7 +452,7 @@ def test_run_pipeline_pass_destination_kwargs_bucket_url_override(
     assert load_info is not None
     assert not load_info.has_failed_jobs
     assert read_output_jsonl_records(override_dir) == TINY_RESOURCE_DATA
-    assert read_jsonl_rows(tmp_path / "bucket", TINY_TABLE_NAME) == []
+    assert read_destination_rows(tmp_path / "bucket", TINY_TABLE_NAME) == []
 
 
 def test_run_pipeline_returns_none_on_pipeline_run_failure(
@@ -643,7 +608,7 @@ def test_run_pipeline_saves_load_info_to_dataset(dlt_test_settings: CtsSettings,
 
     assert load_info is not None
     assert not load_info.has_failed_jobs
-    rows = read_jsonl_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
+    rows = read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
     assert len(rows) == 1
     row = rows[0]
     assert row["dataset_name"] == load_info.dataset_name
@@ -664,7 +629,7 @@ def test_run_pipeline_load_info_saved_to_same_dataset(dlt_test_settings: CtsSett
     assert (dataset_dir / TINY_TABLE_NAME).is_dir()
     assert (dataset_dir / LOAD_INFO_TABLE_NAME).is_dir()
     assert read_output_jsonl_records(destination_bucket) == TINY_RESOURCE_DATA
-    assert read_jsonl_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
+    assert read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
 
 
 def test_run_pipeline_load_info_flat_structure(dlt_test_settings: CtsSettings, destination_bucket: Path) -> None:
@@ -674,7 +639,7 @@ def test_run_pipeline_load_info_flat_structure(dlt_test_settings: CtsSettings, d
     assert load_info is not None
     dataset_dir = destination_bucket / load_info.dataset_name
     assert list(dataset_dir.glob("_dlt_load_info__*")) == []
-    rows = read_jsonl_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
+    rows = read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
     assert len(rows) == 1
     row = rows[0]
     for nested in ("load_packages", "outputs", "job_metrics"):
@@ -691,12 +656,14 @@ def test_run_pipeline_load_info_runs_accumulate(dlt_test_settings: CtsSettings, 
     second = run_pipeline(dlt_test_settings, tiny_resource())
     assert second is not None
 
-    rows = read_jsonl_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
+    rows = read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
     assert len(rows) == 2
     saved_load_ids = {tuple(row["loads_ids"]) for row in rows}
     assert len(saved_load_ids) == 2
     # each accumulated row references one of the entity data loads
-    tiny_load_ids = {row["_dlt_load_id"] for row in read_jsonl_rows(destination_bucket, TINY_TABLE_NAME)}
+    tiny_load_ids = {
+        row["_dlt_load_id"] for row in read_destination_rows(destination_bucket, TINY_TABLE_NAME, strip_metadata=False)
+    }
     assert saved_load_ids == {(load_id,) for load_id in tiny_load_ids}
 
 
@@ -709,7 +676,7 @@ def test_run_pipeline_load_info_in_dev_mode(dlt_test_settings: CtsSettings, dest
     assert load_info.dataset_name != "dlt_pipeline_dataset"
     dataset_dir = destination_bucket / load_info.dataset_name
     assert (dataset_dir / TINY_TABLE_NAME).is_dir()
-    rows = read_jsonl_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
+    rows = read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
     assert len(rows) == 1
     assert rows[0]["dataset_name"] == load_info.dataset_name
 
@@ -725,7 +692,7 @@ def test_run_pipeline_load_info_named_pipeline_and_dataset(
     )
 
     assert load_info is not None
-    rows = read_jsonl_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
+    rows = read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
     assert len(rows) == 1
     assert rows[0]["dataset_name"] == "core_test_dataset"
     assert rows[0]["pipeline"] == {"pipeline_name": TINY_PIPELINE_NAME}
@@ -740,7 +707,7 @@ def test_run_pipeline_load_info_returns_original_import_result(
 
     assert load_info is not None
     assert not load_info.has_failed_jobs
-    rows = read_jsonl_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
+    rows = read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME, strip_metadata=False)
     assert len(rows) == 1
     # loads_ids is the original payload; _dlt_load_id is the save run's own load id
     assert rows[0]["loads_ids"] != [rows[0]["_dlt_load_id"]]
@@ -770,7 +737,7 @@ def test_run_pipeline_load_info_save_resource_error_still_returns_load_info(
     assert load_info is not None
     assert not load_info.has_failed_jobs
     assert read_output_jsonl_records(destination_bucket) == TINY_RESOURCE_DATA
-    assert read_jsonl_rows(destination_bucket, LOAD_INFO_TABLE_NAME) == []
+    assert read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME) == []
     error_messages = [record.getMessage() for record in caplog.records if record.levelno == logging.ERROR]
     assert error_messages == [f"{LOAD_INFO_SAVE_FAILED}load info save failed"]
     assert ALL_JOBS_COMPLETED in caplog.messages
@@ -850,50 +817,6 @@ def test_run_pipeline_load_info_save_run_mock_shape(
     assert first_call.args[0] is not None
     assert save_call.args[0] is not None
     assert save_call.kwargs == {"loader_file_format": "jsonl"}
-
-
-# send_slack_message_carefully: blank inputs, stripping and error propagation
-
-
-@pytest.mark.parametrize(
-    ("slack_hook", "message", "reason"),
-    [
-        pytest.param(None, TEST_MESSAGE, WEBHOOK_NOT_CONFIGURED, id="hook_none"),
-        pytest.param(SLACK_HOOK, "   ", NO_MESSAGE, id="message_spaces"),
-        pytest.param(SLACK_HOOK, "\n\t", NO_MESSAGE, id="message_newline_tab"),
-    ],
-)
-def test_send_slack_message_carefully_fail_blank_inputs(
-    slack_hook: str | None,
-    message: str,
-    reason: str,
-    slack_mock: MagicMock,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """A missing hook or a blank message logs exactly one warning and sends nothing."""
-    send_slack_message_carefully(slack_hook, message)  # pyright: ignore[reportArgumentType]
-    slack_mock.assert_not_called()
-    assert [(record.levelno, record.getMessage()) for record in caplog.records] == [
-        (logging.WARNING, f"Cannot send slack message: {reason}")
-    ]
-
-
-@pytest.mark.parametrize("is_markdown", [pytest.param(True, id="markdown"), pytest.param(False, id="plain")])
-def test_send_slack_message_carefully_pass_strips_message(is_markdown: bool, slack_mock: MagicMock) -> None:
-    """The message is stripped and sent once, with the is_markdown flag passed through."""
-    send_slack_message_carefully(SLACK_HOOK, f"  {TEST_MESSAGE} \n", is_markdown=is_markdown)
-    assert slack_mock.call_args_list == [call(SLACK_HOOK, TEST_MESSAGE, is_markdown)]
-
-
-def test_send_slack_message_carefully_fail_other_errors_propagate(
-    slack_mock: MagicMock, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Any error from the Slack sender is caught and logged as an error."""
-    slack_mock.side_effect = ValueError("bad payload")
-    send_slack_message_carefully(SLACK_HOOK, TEST_MESSAGE)
-    assert [(record.levelno, record.getMessage()) for record in caplog.records] == [
-        (logging.ERROR, "Failed to send slack message")
-    ]
 
 
 # PipelineCli
@@ -1047,12 +970,12 @@ def test_run_pipeline_pass_partial_load_worker_failure_filesystem(
     assert read_output_jsonl_records(destination_bucket) == [TINY_RESOURCE_DATA[0]]
 
     # Both the partially-failed data load and the _load_info metadata load are recorded in _dlt_loads as status 0
-    dlt_loads = read_jsonl_rows(destination_bucket, "_dlt_loads")
+    dlt_loads = read_destination_rows(destination_bucket, "_dlt_loads")
     assert [row["status"] for row in dlt_loads] == [0, 0]
-    assert len(read_jsonl_rows(destination_bucket, "_dlt_pipeline_state")) == 1
+    assert len(read_destination_rows(destination_bucket, "_dlt_pipeline_state")) == 1
 
     # _load_info is saved to the filesystem destination and records both completed and failed worker jobs
-    load_info_rows = read_jsonl_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
+    load_info_rows = read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
     assert len(load_info_rows) == 1
     package = load_info_rows[0]["load_packages"][0]
     assert package["state"] == "loaded"
@@ -1112,8 +1035,8 @@ def test_run_pipeline_fail_partial_extract_worker_failure_filesystem(
 
     assert load_info is None
     assert list(destination_bucket.iterdir()) == []
-    assert read_jsonl_rows(destination_bucket, TINY_TABLE_NAME) == []
-    assert read_jsonl_rows(destination_bucket, LOAD_INFO_TABLE_NAME) == []
+    assert read_destination_rows(destination_bucket, TINY_TABLE_NAME) == []
+    assert read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME) == []
     assert caplog.records[-1].levelno == logging.ERROR
     assert caplog.records[-1].getMessage().startswith("Pipeline failed: ")
     assert SINK_ERROR in caplog.records[-1].getMessage()

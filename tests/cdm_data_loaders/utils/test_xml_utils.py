@@ -1,9 +1,9 @@
 """Tests for the xml_utils module."""
 
 import pytest
-from lxml.etree import Element
+from lxml.etree import Element, XMLParser, fromstring
 
-from cdm_data_loaders.utils.xml_utils import get_text, local_name
+from cdm_data_loaders.utils.xml_utils import dump_xml_element, get_text, local_name
 
 
 def make_element_with_text(raw_text: str | None) -> Element:
@@ -42,19 +42,62 @@ def test_get_text_fail_rejects_non_element() -> None:
     ("tag", "expected"),
     [
         ("{http://uniprot.org/uniprot}entry", "entry"),
+        ("{http://uniprot.org/uniref}", ""),
         ("{}entry", "entry"),
         ("{http://example.org/{nested}}item", "item"),
         ("entry", "entry"),
         ("", ""),
+        (None, None),
     ],
     ids=[
         "clark_notation",
+        "namespace_only_empty_string",
         "empty_namespace_braces",
         "nested_braces_in_namespace",
         "unprefixed_tag",
         "empty_string",
+        "non_string_input",
     ],
 )
-def test_local_name_pass_extracts_local_part(tag: str, expected: str) -> None:
+def test_local_name_pass_extracts_local_part(tag: str | None, expected: str | None) -> None:
     """local_name strips Clark-notation namespaces and preserves unprefixed names."""
-    assert local_name(tag) == expected
+    assert local_name(tag) == expected  # pyright: ignore[reportArgumentType]
+
+
+@pytest.mark.parametrize(
+    ("xml", "expected"),
+    [
+        (
+            "<entry xmlns='https://uniprot.org/uniprot'><name>A4_HUMAN</name></entry>",
+            "<entry><name>A4_HUMAN</name></entry>",
+        ),
+        (
+            (
+                '<entry xmlns="https://uniprot.org/uniprot" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+                "<accession>P12345</accession></entry>"
+            ),
+            "<entry><accession>P12345</accession></entry>",
+        ),
+        (
+            "<entry xmlns='http://uniprot.org/uniref'><name>Cluster: x</name></entry>",
+            "<entry><name>Cluster: x</name></entry>",
+        ),
+        (
+            "<entry xmlns='https://uniprot.org/uniref'><name>Cluster: y</name></entry>",
+            "<entry><name>Cluster: y</name></entry>",
+        ),
+        (
+            (
+                '<entry xmlns="http://uniprot.org/uniref" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+                "<name>Cluster: z</name></entry>"
+            ),
+            "<entry><name>Cluster: z</name></entry>",
+        ),
+        ("<entry xmlns='https://uniprot.org/uniprot'/>", "<entry/>"),
+        ("<entry xmlns='http://uniprot.org/uniref'/>", "<entry/>"),
+    ],
+)
+def test_dump_xml_element_pass_strips_namespace_declarations(xml: str, expected: str) -> None:
+    """Test that namespace declarations are stripped when dumping XML to a string."""
+    dumped = dump_xml_element(fromstring(xml, parser=XMLParser(remove_blank_text=True)))
+    assert dumped == expected

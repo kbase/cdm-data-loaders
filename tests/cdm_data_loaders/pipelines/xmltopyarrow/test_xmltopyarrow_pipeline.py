@@ -5,9 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
-from uuid import uuid4
 
-import dlt
 import pytest
 from dlt.common.pipeline import LoadInfo
 from dlt.extract import DltResource
@@ -31,8 +29,13 @@ from cdm_data_loaders.pipelines.xmltopyarrow.uniprot import cli as uniprot_cli
 from cdm_data_loaders.pipelines.xmltopyarrow.uniprot import run_uniprot_pipeline
 from cdm_data_loaders.pipelines.xmltopyarrow.uniref import cli as uniref_cli
 from cdm_data_loaders.pipelines.xmltopyarrow.uniref import run_uniref_pipeline
-from tests.cdm_data_loaders.pipelines.conftest import copy_test_files, duckdb_pipeline
-from tests.cdm_data_loaders.pipelines.helpers import assert_run_ok, fetch_all_duckdb
+from tests.cdm_data_loaders.pipelines.conftest import copy_test_files
+from tests.cdm_data_loaders.pipelines.helpers import (
+    assert_binds_filesystem_reader,
+    assert_core_run_pipeline_args,
+    fetch_all_duckdb,
+    run_with_duckdb_pipeline,
+)
 from tests.helpers import settings_to_argv
 from tests.xml_samples import TWO_BOOK_LIBRARY_XML
 
@@ -44,20 +47,7 @@ def test_run_xmltopyarrow_pipeline_pass_sets_core_run_pipeline_args_correctly(
 ) -> None:
     """run_xmltopyarrow_pipeline builds the reader and delegates to run_pipeline with the correct args."""
     settings = settings_factory(loader_file_format=loader_file_format)
-
-    with patch.object(xmltopyarrow_module, "run_pipeline") as mock_run_pipeline:
-        run_xmltopyarrow_pipeline(settings)
-
-    assert mock_run_pipeline.call_count == 1
-    _, kwargs = mock_run_pipeline.call_args
-    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
-    assert kwargs["settings"] == settings
-    assert kwargs["pipeline_kwargs"] == {
-        "pipeline_name": PIPELINE_NAME,
-        "dataset_name": settings.dataset_name,
-    }
-    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": loader_file_format}
-    assert isinstance(kwargs["resource"], DltResource)
+    assert_core_run_pipeline_args(xmltopyarrow_module, run_xmltopyarrow_pipeline, settings, PIPELINE_NAME)
 
 
 def test_run_xmltopyarrow_pipeline_pass_binds_reader_before_run_pipeline(
@@ -65,15 +55,7 @@ def test_run_xmltopyarrow_pipeline_pass_binds_reader_before_run_pipeline(
 ) -> None:
     """The resource passed to run_pipeline is the bound reader piped into the filesystem source."""
     settings = settings_factory()
-
-    with patch.object(xmltopyarrow_module, "run_pipeline") as mock_run_pipeline:
-        run_xmltopyarrow_pipeline(settings)
-
-    mock_run_pipeline.assert_called_once()
-    resource = mock_run_pipeline.call_args.kwargs["resource"]
-    assert resource.name == "xmltopyarrow_reader"
-    assert resource._pipe.parent.name == "filesystem"  # noqa: SLF001
-    assert isinstance(resource, dlt.sources.DltResource)
+    assert_binds_filesystem_reader(xmltopyarrow_module, run_xmltopyarrow_pipeline, settings, "xmltopyarrow_reader")
 
 
 def test_cli_pass_runs_end_to_end_from_command_line_arguments(
@@ -91,22 +73,14 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     (Path(settings.input_dir) / "library.xml").write_text(TWO_BOOK_LIBRARY_XML, encoding="utf-8")
     monkeypatch.setattr(sys, "argv", [PIPELINE_NAME, *settings_to_argv(settings)])
 
-    # unique pipeline name: the duckdb database file is derived from it, so
-    # repeated runs of the suite do not see rows from previous runs
-    pipeline_name = f"test_xmltopyarrow_cli_pipeline_{uuid4().hex}"
-
-    def fake_run_pipeline(
-        *,
-        resource: DltResource,
-        pipeline_kwargs: dict[str, Any],
-        **_: dict[str, Any],
-    ) -> LoadInfo | None:
-        assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "cli_dataset"}
-        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
-        return pipeline.run(resource)
-
-    with patch.object(xmltopyarrow_module, "run_pipeline", fake_run_pipeline):
-        load_info = assert_run_ok(cli.run())
+    load_info = run_with_duckdb_pipeline(
+        tmp_path,
+        xmltopyarrow_module,
+        cli.run,
+        expected_pipeline_name=PIPELINE_NAME,
+        expected_dataset_name="cli_dataset",
+        pipeline_name_prefix="test_xmltopyarrow_cli_pipeline",
+    )
 
     assert fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM book") == [(2,)]
 
@@ -182,19 +156,13 @@ def test_subclass_cli_pass_runs_end_to_end_with_default_settings(
     copy_test_files(test_data_dir / sample_xml_rel_dir, ["minimal.xml.gz"], Path(base_settings.input_dir))
     monkeypatch.setattr(sys, "argv", [prog_name, *settings_to_argv(base_settings)])
 
-    pipeline_name = f"test_{prog_name}_cli_pipeline_{uuid4().hex}"
-
-    def fake_run_pipeline(
-        *,
-        resource: DltResource,
-        pipeline_kwargs: dict[str, Any],
-        **_: dict[str, Any],
-    ) -> LoadInfo | None:
-        assert pipeline_kwargs == {"pipeline_name": prog_name, "dataset_name": prog_name}
-        pipeline = duckdb_pipeline(tmp_path, pipeline_name, prog_name)
-        return pipeline.run(resource)
-
-    with patch.object(xmltopyarrow_module, "run_pipeline", fake_run_pipeline):
-        load_info = assert_run_ok(cli_obj.run())
+    load_info = run_with_duckdb_pipeline(
+        tmp_path,
+        xmltopyarrow_module,
+        cli_obj.run,
+        expected_pipeline_name=prog_name,
+        expected_dataset_name=prog_name,
+        pipeline_name_prefix=f"test_{prog_name}_cli_pipeline",
+    )
 
     assert fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM entry") == [(1,)]

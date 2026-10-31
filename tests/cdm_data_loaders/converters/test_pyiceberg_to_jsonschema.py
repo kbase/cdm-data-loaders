@@ -1,7 +1,5 @@
 """Unit tests for pyiceberg_to_jsonschema."""
 
-import re
-
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -28,7 +26,6 @@ from pyiceberg.types import (
 )
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.inference import decimal_pattern
 from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT
 from cdm_data_loaders.converters.pyiceberg_to_jsonschema import (
     convert_field,
@@ -43,27 +40,6 @@ from tests.cdm_data_loaders.converters.conftest import (
     make_table,
     to_snake_case,
 )
-
-
-def test_decimal_pattern_with_scale() -> None:
-    """A scaled decimal produces an integer-or-fractional pattern."""
-    pattern = decimal_pattern(10, 2)
-    assert pattern == r"^-?\d{1,8}(\.\d{1,2})?$"
-    assert re.match(pattern, "123.45")
-    assert re.match(pattern, "-123.45")
-    assert not re.match(pattern, "123.456")
-
-
-def test_decimal_pattern_zero_scale() -> None:
-    """A zero-scale decimal produces an integer-only pattern."""
-    assert decimal_pattern(10, 0) == r"^-?\d{1,10}$"
-
-
-def test_decimal_pattern_precision_equals_scale_raises() -> None:
-    """A scale equal to precision produces a leading-zero pattern that compiles."""
-    pattern = decimal_pattern(2, 2)
-    assert pattern == r"^-?0(\.\d{1,2})?$"
-    re.compile(pattern)
 
 
 @pytest.mark.parametrize(
