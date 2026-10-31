@@ -160,10 +160,7 @@ def _parse_typed_dbxref(  # noqa: PLR0913, PLR0917
     """Parse a dbxref with a primary typed ID and property cross-references."""
     return [
         {DB: db, XREF: xref, DESCRIPTION: f"{label} {id_type} ID{description_suffix}"},
-        *[
-            {DB: db, XREF: p["value"], DESCRIPTION: f"{label} {p['type']}{description_suffix}"}
-            for p in prop_list
-        ],
+        *[{DB: db, XREF: p["value"], DESCRIPTION: f"{label} {p['type']}{description_suffix}"} for p in prop_list],
     ]
 
 

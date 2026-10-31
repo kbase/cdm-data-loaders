@@ -344,8 +344,7 @@ def _promote_data_files(  # noqa: PLR0913
 
             if dry_run:
                 pairs = [
-                    (staged_key, lakehouse_key_prefix / staged_key.relative_to(staging_prefix))
-                    for staged_key in files
+                    (staged_key, lakehouse_key_prefix / staged_key.relative_to(staging_prefix)) for staged_key in files
                 ]
                 _dry_run_log_count = _dry_run_output(pairs, _dry_run_log_count, action="promote")
                 promoted += len(files)

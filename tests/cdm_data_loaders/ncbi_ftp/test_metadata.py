@@ -67,9 +67,8 @@ _SAMPLE_RESOURCES: list[DescriptorResource] = [
 def test_build_descriptor_key(prefix: PurePosixPath) -> None:
     """Key is under metadata/, ends with _datapackage.json, trailing slash on prefix is normalized."""
     key = build_descriptor_key(_ASSEMBLY_DIR, prefix)
-    assert (
-        key
-        == DEFAULT_DESTINATION_PREFIX / "metadata" / _ASSEMBLY_DIR.with_name(f"{_ASSEMBLY_DIR.name}_datapackage.json")
+    assert key == DEFAULT_DESTINATION_PREFIX / "metadata" / _ASSEMBLY_DIR.with_name(
+        f"{_ASSEMBLY_DIR.name}_datapackage.json"
     )
 
 
@@ -260,7 +259,9 @@ def test_archive_descriptor(mock_s3_with_descriptor: tuple[S3Client, MagicMock])
 def test_archive_descriptor_dry_run(mock_s3_with_descriptor: tuple[S3Client, MagicMock]) -> None:
     """Dry-run returns True but does not call copy_object."""
     _, mock_copy = mock_s3_with_descriptor
-    assert archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, DEFAULT_DESTINATION_PREFIX, _RELEASE_TAG, dry_run=True) is True
+    assert (
+        archive_descriptor(_ASSEMBLY_DIR, TEST_BUCKET, DEFAULT_DESTINATION_PREFIX, _RELEASE_TAG, dry_run=True) is True
+    )
     mock_copy.assert_not_called()
 
 

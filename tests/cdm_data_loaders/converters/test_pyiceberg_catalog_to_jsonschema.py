@@ -218,9 +218,7 @@ def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
     with caplog.at_level(logging.WARNING):
         target.dump_fn(settings)
 
-    expected_files = (
-        [f"ns{target.suffix}" if group_by_namespace else f"ns.good{target.suffix}"] if include_good else []
-    )
+    expected_files = [f"ns{target.suffix}" if group_by_namespace else f"ns.good{target.suffix}"] if include_good else []
     assert [f.name for f in sorted(out_dir.iterdir())] == expected_files
     if include_good:
         target.assert_table_written(out_dir / expected_files[0], "good", group_by_namespace)

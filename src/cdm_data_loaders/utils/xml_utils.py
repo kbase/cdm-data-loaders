@@ -51,12 +51,6 @@ def local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1] if isinstance(tag, str) and "}" in tag else tag
 
 
-def make_parse_error(
-    entry: Element, error: str | Exception, file_path: str | Path
-) -> dict[str, list[dict[str, str]]]:
+def make_parse_error(entry: Element, error: str | Exception, file_path: str | Path) -> dict[str, list[dict[str, str]]]:
     """Build a single-row ``_parse_error`` table payload for a failed XML entry."""
-    return {
-        "_parse_error": [
-            {"xml": dump_xml_element(entry), "error": str(error), "source_file": str(file_path)}
-        ]
-    }
+    return {"_parse_error": [{"xml": dump_xml_element(entry), "error": str(error), "source_file": str(file_path)}]}

@@ -481,7 +481,9 @@ def test_archive_removed_copies_descriptor(
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
-    archive_key = build_archive_descriptor_key(ASSEMBLY_DIR_A, "2024-01", DEFAULT_DESTINATION_PREFIX, "replaced_or_suppressed")
+    archive_key = build_archive_descriptor_key(
+        ASSEMBLY_DIR_A, "2024-01", DEFAULT_DESTINATION_PREFIX, "replaced_or_suppressed"
+    )
     resp = s3.head_object(Bucket=str(test_bucket), Key=str(archive_key))
     assert resp["ResponseMetadata"]["HTTPStatusCode"] == HTTPStatus.OK
 
@@ -576,7 +578,12 @@ class TestArchiveMultiFileConcurrent:
 
         rel = build_accession_path(ASSEMBLY_DIR_B)
         expected_key = (
-            DEFAULT_DESTINATION_PREFIX / "archive" / "2024-02" / "replaced_or_suppressed" / rel / f"{ASSEMBLY_DIR_B}_genomic.fna.gz"
+            DEFAULT_DESTINATION_PREFIX
+            / "archive"
+            / "2024-02"
+            / "replaced_or_suppressed"
+            / rel
+            / f"{ASSEMBLY_DIR_B}_genomic.fna.gz"
         )
         resp = s3.head_object(Bucket=str(test_bucket), Key=str(expected_key))
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == HTTPStatus.OK
@@ -598,7 +605,9 @@ class TestArchiveDeleteSourceBatch:
             PurePosixPath(f"{ASSEMBLY_DIR_A}_rna.fna.gz"): b"rna",
             PurePosixPath(f"{ASSEMBLY_DIR_A}_assembly_report.txt"): b"report",
         }
-        source_keys = seed_lakehouse(s3, test_bucket, ACCESSION_A, many_files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
+        source_keys = seed_lakehouse(
+            s3, test_bucket, ACCESSION_A, many_files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A
+        )
 
         removed_manifest = write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
         archived = _archive_assemblies(
@@ -901,7 +910,9 @@ class TestArchiveDryRunParallel:
             PurePosixPath(f"{ASSEMBLY_DIR_A}_protein.faa.gz"): b"protein",
             PurePosixPath(f"{ASSEMBLY_DIR_A}_rna.fna.gz"): b"rna",
         }
-        source_keys = seed_lakehouse(s3, test_bucket, ACCESSION_A, many_files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
+        source_keys = seed_lakehouse(
+            s3, test_bucket, ACCESSION_A, many_files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A
+        )
 
         removed_manifest = write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
         archived = _archive_assemblies(

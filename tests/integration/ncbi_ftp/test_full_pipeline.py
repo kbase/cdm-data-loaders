@@ -197,7 +197,9 @@ def test_full_pipeline_incremental(
     assert promote2["failed"] == 0
 
     # Verify archive exists
-    archive_keys = list_all_keys(s3, PurePosixPath(test_bucket), DEFAULT_DESTINATION_PREFIX / "archive/test-incremental")
+    archive_keys = list_all_keys(
+        s3, PurePosixPath(test_bucket), DEFAULT_DESTINATION_PREFIX / "archive/test-incremental"
+    )
     if promote2["archived"] > 0:
         assert len(archive_keys) >= 1
         for key in archive_keys:

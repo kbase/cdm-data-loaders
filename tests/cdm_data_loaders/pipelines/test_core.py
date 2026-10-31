@@ -662,8 +662,7 @@ def test_run_pipeline_load_info_runs_accumulate(dlt_test_settings: CtsSettings, 
     assert len(saved_load_ids) == 2
     # each accumulated row references one of the entity data loads
     tiny_load_ids = {
-        row["_dlt_load_id"]
-        for row in read_destination_rows(destination_bucket, TINY_TABLE_NAME, strip_metadata=False)
+        row["_dlt_load_id"] for row in read_destination_rows(destination_bucket, TINY_TABLE_NAME, strip_metadata=False)
     }
     assert saved_load_ids == {(load_id,) for load_id in tiny_load_ids}
 
