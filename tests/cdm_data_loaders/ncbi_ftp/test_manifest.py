@@ -26,6 +26,7 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     write_transfer_manifest,
     write_updated_manifest,
 )
+from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREFIX
 
 from .conftest import ACC_PATH_215, ACC_PATH_405, SAMPLE_SUMMARY
 
@@ -282,7 +283,6 @@ def test_ftp_dir_from_url(url: str, expected: str | None, kwargs: dict) -> None:
 
 
 _BUCKET: PurePosixPath = PurePosixPath("cdm-lake")
-_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse") / "kbase" / "datasets " / "ncbi"
 
 
 def _assemblies() -> dict:
@@ -317,7 +317,7 @@ def test_verify_transfer_candidates_prunes_when_all_match(
     """Assemblies where every file matches S3 are pruned from the list."""
     mock_connect.return_value = MagicMock()
     mock_head.side_effect = _matching_object_info
-    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == []
+    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX) == []
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
@@ -330,7 +330,9 @@ def test_verify_transfer_candidates_keeps_when_md5_differs(
     """Assembly is kept when at least one file has a different MD5."""
     mock_connect.return_value = MagicMock()
     mock_head.return_value = {"ContentLength": 100, "Metadata": {"md5": "WRONG"}, "ChecksumCRC64NVME": None}
-    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
+    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX) == [
+        "GCF_000001215.4"
+    ]
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
@@ -343,7 +345,9 @@ def test_verify_transfer_candidates_keeps_when_s3_object_missing(
     """Assembly is kept when at least one file doesn't exist in S3."""
     mock_connect.return_value = MagicMock()
     mock_head.side_effect = lambda s3_path: None if "GCF_000001215.4" in s3_path else {}
-    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
+    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX) == [
+        "GCF_000001215.4"
+    ]
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
@@ -356,7 +360,9 @@ def test_verify_transfer_candidates_keeps_when_no_md5_metadata(
     """Assembly is kept when S3 object exists but has no md5 metadata."""
     mock_connect.return_value = MagicMock()
     mock_head.return_value = {"ContentLength": 100, "Metadata": {}, "ChecksumCRC64NVME": None}
-    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
+    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX) == [
+        "GCF_000001215.4"
+    ]
 
 
 @patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
@@ -366,7 +372,9 @@ def test_verify_transfer_candidates_keeps_when_ftp_fails(
     """Assembly is kept (conservative) when md5checksums.txt cannot be fetched."""
     mock_connect.return_value = MagicMock()
     manifest_transfer_mocks.retrieve.side_effect = Exception("FTP error")
-    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX) == ["GCF_000001215.4"]
+    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX) == [
+        "GCF_000001215.4"
+    ]
 
 
 def test_verify_transfer_candidates_empty_input() -> None:
@@ -395,7 +403,7 @@ def test_verify_transfer_candidates_short_circuits_on_first_mismatch(
     """Verification stops checking after the first missing/mismatched file."""
     mock_connect.return_value = MagicMock()
     mock_head.side_effect = lambda s3_path: None if "GCF_000001215.4" in s3_path else {}
-    verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX)
+    verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX)
     assert mock_head.call_count == 1
 
 
@@ -411,7 +419,9 @@ def test_verify_transfer_candidates_mixed(
     mock_head.side_effect = lambda s3_path: (
         _matching_object_info(s3_path) if "GCF_000001215.4_Release_6_plus_ISO1_MT/" in s3_path else None
     )
-    result = verify_transfer_candidates(["GCF_000001215.4", "GCF_000001405.40"], _assemblies(), _BUCKET, _KEY_PREFIX)
+    result = verify_transfer_candidates(
+        ["GCF_000001215.4", "GCF_000001405.40"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX
+    )
     assert result == ["GCF_000001405.40"]
     mock_connect.assert_called_once()
     mock_connect.return_value.quit.assert_called_once()
@@ -425,7 +435,7 @@ def test_verify_transfer_candidates_skips_ftp_when_folder_missing(
 ) -> None:
     """Accessions with no objects in S3 are confirmed without FTP round-trip."""
     manifest_transfer_mocks.list.return_value = []
-    result = verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, _KEY_PREFIX)
+    result = verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX)
     assert result == ["GCF_000001215.4"]
     mock_connect.assert_not_called()
 
@@ -437,13 +447,7 @@ def test_verify_transfer_candidates_skips_ftp_when_folder_missing(
     ("key", "expected"),
     [
         pytest.param(
-            PurePosixPath("tenant-general-warehouse")
-            / "kbase"
-            / "datasets"
-            / "ncbi"
-            / "refseq"
-            / "GCF_000001215.4_Release_6_plus_ISO1_MT"
-            / "file.gz",
+            DEFAULT_DESTINATION_PREFIX / "refseq" / "GCF_000001215.4_Release_6_plus_ISO1_MT" / "file.gz",
             ("GCF_000001215.4_Release_6_plus_ISO1_MT", "GCF_000001215.4"),
             id="long_path",
         ),
@@ -474,31 +478,15 @@ def _make_mock_list_object_return_value() -> list[dict[str, Any]]:
     """Return a response for list objects with two assemblies (GCF_000001215.4, GCF_000005845.2)."""
     return [
         {
-            "Key": PurePosixPath("tenant-general-warehouse")
-            / "kbase"
-            / "datasets"
-            / "ncbi"
-            / "refseq"
-            / "GCF_000001215.4_Release_6/file1.gz",
+            "Key": DEFAULT_DESTINATION_PREFIX / "refseq" / "GCF_000001215.4_Release_6/file1.gz",
             "LastModified": datetime(2024, 1, 15, tzinfo=UTC),
         },
         {
-            "Key": PurePosixPath("tenant-general-warehouse")
-            / "kbase"
-            / "datasets"
-            / "ncbi"
-            / "refseq"
-            / "GCF_000001215.4_Release_6/file2.gz",
+            "Key": DEFAULT_DESTINATION_PREFIX / "refseq" / "GCF_000001215.4_Release_6/file2.gz",
             "LastModified": datetime(2024, 1, 16, tzinfo=UTC),
         },
         {
-            "Key": PurePosixPath("tenant-general-warehouse")
-            / "kbase"
-            / "datasets"
-            / "ncbi"
-            / "refseq"
-            / "GCF_000005845.2_Assembly"
-            / "file.gz",
+            "Key": DEFAULT_DESTINATION_PREFIX / "refseq" / "GCF_000005845.2_Assembly" / "file.gz",
             "LastModified": datetime(2024, 2, 20, tzinfo=UTC),
         },
     ]

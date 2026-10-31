@@ -5,7 +5,6 @@ with various combinations of manifests, archive operations, dry-run mode,
 manifest trimming, and incomplete staging.
 """
 
-import hashlib
 import json
 from http import HTTPStatus
 from pathlib import Path, PurePosixPath
@@ -20,9 +19,9 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
     create_descriptor,
 )
 from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies, promote_from_s3
-from tests.integration.conftest import get_object_metadata, list_all_keys, seed_lakehouse
-
-DEFAULT_LAKEHOUSE_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
+from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREFIX
+from tests.cdm_data_loaders.ncbi_ftp.conftest import md5_hex, stage_files_with_sidecars, write_manifest
+from tests.integration.conftest import get_object_metadata, list_all_keys, s3_backends, seed_lakehouse
 
 # Fake assembly details used across tests
 ACCESSION_A = "GCF_900000001.1"
@@ -33,19 +32,11 @@ ACCESSION_C = "GCF_900000003.1"
 ASSEMBLY_DIR_C: PurePosixPath = PurePosixPath("GCF_900000003.1_FakeAssemblyC")
 
 STAGING_PREFIX: PurePosixPath = PurePosixPath("staging") / "run1"
-PATH_PREFIX: PurePosixPath = DEFAULT_LAKEHOUSE_KEY_PREFIX
-ARCHIVE_PREFIX: PurePosixPath = PATH_PREFIX / "archive" / "2024-01"
+ARCHIVE_PREFIX: PurePosixPath = DEFAULT_DESTINATION_PREFIX / "archive" / "2024-01"
 
 # Fake file contents for staging
 FAKE_GENOMIC = b">seq1\nATCGATCG\n"
 FAKE_PROTEIN = b">prot1\nMKKL\n"
-
-
-def _md5(data: bytes) -> str:
-    return hashlib.md5(data).hexdigest()  # noqa: S324
-
-
-s3_backends = pytest.mark.parametrize("s3_client", ["ceph", "mock"], indirect=True)
 
 
 def _stage_many(
@@ -57,13 +48,13 @@ def _stage_many(
     with_md5: bool = True,
 ) -> None:
     """Stage *files* with optional .md5 sidecars under the standard staging prefix."""
-    rel = build_accession_path(assembly_dir)
-    base = STAGING_PREFIX / rel
-    for fname, content in files.items():
-        key = base / fname
-        s3.put_object(Bucket=str(bucket), Key=str(key), Body=content)
-        if with_md5:
-            s3.put_object(Bucket=str(bucket), Key=f"{key}.md5", Body=_md5(content).encode())
+    stage_files_with_sidecars(
+        s3,
+        STAGING_PREFIX / build_accession_path(assembly_dir),
+        files,
+        bucket=bucket,
+        with_md5=with_md5,
+    )
 
 
 def _stage_assembly(
@@ -83,13 +74,6 @@ def _stage_assembly(
     )
 
 
-def _write_manifest(tmp_path: Path, accessions: list[str], name: str) -> Path:
-    """Write a manifest file (one accession per line)."""
-    path = tmp_path / name
-    path.write_text("\n".join(accessions) + "\n")
-    return path
-
-
 # Tests
 
 
@@ -106,7 +90,7 @@ def test_promote_from_staging(
         staging_key_prefix=STAGING_PREFIX,
         staging_bucket=staging_test_bucket,
         lakehouse_bucket=test_bucket,
-        lakehouse_key_prefix=PATH_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     assert report["promoted"] >= 2  # noqa: PLR2004  # genomic + protein
@@ -114,7 +98,7 @@ def test_promote_from_staging(
     assert report["dry_run"] is False
 
     # Verify files at final path
-    final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
+    final_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "raw_data")
     assert len(final_keys) >= 2  # noqa: PLR2004
 
     # Verify MD5 metadata is set
@@ -141,17 +125,17 @@ def test_promote_idempotent(
         staging_key_prefix=STAGING_PREFIX,
         staging_bucket=staging_test_bucket,
         lakehouse_bucket=test_bucket,
-        lakehouse_key_prefix=PATH_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
-    keys_after_first = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
+    keys_after_first = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "raw_data")
 
     report2 = promote_from_s3(
         staging_key_prefix=STAGING_PREFIX,
         staging_bucket=staging_test_bucket,
         lakehouse_bucket=test_bucket,
-        lakehouse_key_prefix=PATH_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
-    keys_after_second = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
+    keys_after_second = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "raw_data")
 
     assert report1["failed"] == 0
     assert report1["promoted"] >= 1
@@ -173,12 +157,12 @@ def test_archive_updated(
         PurePosixPath(f"{ASSEMBLY_DIR_A}_genomic.fna.gz"): "old genomic content",
         PurePosixPath(f"{ASSEMBLY_DIR_A}_protein.faa.gz"): "old protein content",
     }
-    seed_lakehouse(s3, test_bucket, ACCESSION_A, old_files, PATH_PREFIX, ASSEMBLY_DIR_A)
+    seed_lakehouse(s3, test_bucket, ACCESSION_A, old_files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
 
     # Stage "new" version
     _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
 
-    updated_manifest = _write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
+    updated_manifest = write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
 
     report = promote_from_s3(
         staging_key_prefix=STAGING_PREFIX,
@@ -186,7 +170,7 @@ def test_archive_updated(
         lakehouse_bucket=test_bucket,
         updated_manifest_path=updated_manifest,
         ncbi_release="2024-01",
-        lakehouse_key_prefix=PATH_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     assert report["archived"] >= 2  # noqa: PLR2004
@@ -215,9 +199,9 @@ def test_archive_removed(
     files: dict[PurePosixPath, str | bytes] = {
         PurePosixPath(f"{ASSEMBLY_DIR_A}_genomic.fna.gz"): "content to archive",
     }
-    seed_lakehouse(s3, test_bucket, ACCESSION_A, files, PATH_PREFIX, ASSEMBLY_DIR_A)
+    seed_lakehouse(s3, test_bucket, ACCESSION_A, files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
 
-    removed_manifest = _write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
+    removed_manifest = write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
 
     # Stage something (even empty staging is fine — promote won't find data files for this accession)
     report = promote_from_s3(
@@ -226,7 +210,7 @@ def test_archive_removed(
         lakehouse_bucket=test_bucket,
         removed_manifest_path=removed_manifest,
         ncbi_release="2024-01",
-        lakehouse_key_prefix=PATH_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     assert report["archived"] >= 1
@@ -242,7 +226,7 @@ def test_archive_removed(
 
     # Verify source objects are deleted
     rel = build_accession_path(ASSEMBLY_DIR_A)
-    source_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / rel)
+    source_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / rel)
     assert len(source_keys) == 0, f"Expected source objects deleted, found: {source_keys}"
 
 
@@ -257,7 +241,7 @@ def test_promote_dry_run(s3_client: S3Client, test_bucket: PurePosixPath, stagin
         staging_key_prefix=STAGING_PREFIX,
         staging_bucket=staging_test_bucket,
         lakehouse_bucket=test_bucket,
-        lakehouse_key_prefix=PATH_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         dry_run=True,
     )
 
@@ -265,7 +249,7 @@ def test_promote_dry_run(s3_client: S3Client, test_bucket: PurePosixPath, stagin
     assert report["promoted"] >= 1
 
     # No objects should exist at the final path
-    final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
+    final_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "raw_data")
     assert len(final_keys) == 0, f"Dry-run should not create objects, found: {final_keys}"
 
 
@@ -295,7 +279,7 @@ def test_trims_manifest(
         staging_bucket=staging_test_bucket,
         lakehouse_bucket=test_bucket,
         manifest_s3_key=manifest_key,
-        lakehouse_key_prefix=PATH_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     assert report["failed"] == 0
@@ -323,13 +307,13 @@ def test_incomplete_staging(
     base = STAGING_PREFIX / rel
     fname = PurePosixPath(f"{ASSEMBLY_DIR_A}_genomic.fna.gz")
     md5_key = base / fname.with_name(f"{fname.name}.md5")
-    s3.put_object(Bucket=str(staging_test_bucket), Key=str(md5_key), Body=_md5(FAKE_GENOMIC).encode())
+    s3.put_object(Bucket=str(staging_test_bucket), Key=str(md5_key), Body=md5_hex(FAKE_GENOMIC).encode())
 
     report = promote_from_s3(
         staging_key_prefix=STAGING_PREFIX,
         staging_bucket=staging_test_bucket,
         lakehouse_bucket=test_bucket,
-        lakehouse_key_prefix=PATH_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     # .md5 files are sidecars and should not be promoted as data
@@ -337,7 +321,7 @@ def test_incomplete_staging(
     assert report["failed"] == 0
 
     # No objects at final path
-    final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
+    final_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "raw_data")
     assert len(final_keys) == 0
 
 
@@ -357,10 +341,10 @@ class TestPromoteCreatesDescriptor:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
-        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, PATH_PREFIX)
+        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, DEFAULT_DESTINATION_PREFIX)
         obj = s3.get_object(Bucket=str(test_bucket), Key=str(descriptor_key))
         body = json.loads(obj["Body"].read())
 
@@ -378,17 +362,17 @@ class TestPromoteCreatesDescriptor:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
-        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, PATH_PREFIX)
+        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, DEFAULT_DESTINATION_PREFIX)
         obj = s3.get_object(Bucket=str(test_bucket), Key=str(descriptor_key))
         body = json.loads(obj["Body"].read())
 
         resource_paths = [r["path"] for r in body["resources"]]
-        assert any(f"{PATH_PREFIX / 'raw_data'}/" in p for p in resource_paths)
+        assert any(f"{DEFAULT_DESTINATION_PREFIX / 'raw_data'}/" in p for p in resource_paths)
 
-    def test_descriptor_resources_have_md5(
+    def test_descriptor_resources_havemd5_hex(
         self, s3_client: S3Client, test_bucket: PurePosixPath, staging_test_bucket: PurePosixPath
     ) -> None:
         """Resources with .md5 sidecars include the hash value."""
@@ -399,10 +383,10 @@ class TestPromoteCreatesDescriptor:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
-        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, PATH_PREFIX)
+        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, DEFAULT_DESTINATION_PREFIX)
         obj = s3.get_object(Bucket=str(test_bucket), Key=str(descriptor_key))
         body = json.loads(obj["Body"].read())
 
@@ -422,11 +406,11 @@ class TestPromoteCreatesDescriptor:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
         for assembly_dir, accession in [(ASSEMBLY_DIR_A, ACCESSION_A), (ASSEMBLY_DIR_B, ACCESSION_B)]:
-            key = build_descriptor_key(assembly_dir, PATH_PREFIX)
+            key = build_descriptor_key(assembly_dir, DEFAULT_DESTINATION_PREFIX)
             obj = s3.get_object(Bucket=str(test_bucket), Key=str(key))
             body = json.loads(obj["Body"].read())
             assert body["identifier"] == f"NCBI:{accession}"
@@ -445,15 +429,15 @@ class TestPromoteArchiveUpdatedIncludesDescriptor:
 
         # Seed old version at Lakehouse path *including* a live descriptor
         old_files: dict[PurePosixPath, str | bytes] = {PurePosixPath(f"{ASSEMBLY_DIR_A}_genomic.fna.gz"): "old content"}
-        seed_lakehouse(s3, test_bucket, ACCESSION_A, old_files, PATH_PREFIX, ASSEMBLY_DIR_A)
+        seed_lakehouse(s3, test_bucket, ACCESSION_A, old_files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
         # Pre-upload a descriptor so archive_descriptor can find it
         descriptor = create_descriptor(ASSEMBLY_DIR_A, ACCESSION_A, [])
         # Upload directly to CEPH (not via promote)
-        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, PATH_PREFIX)
+        descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, DEFAULT_DESTINATION_PREFIX)
         s3.put_object(Bucket=str(test_bucket), Key=str(descriptor_key), Body=json.dumps(descriptor).encode())
 
         _stage_assembly(s3, staging_test_bucket, ASSEMBLY_DIR_A)
-        updated_manifest = _write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
+        updated_manifest = write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
@@ -461,10 +445,10 @@ class TestPromoteArchiveUpdatedIncludesDescriptor:
             lakehouse_bucket=test_bucket,
             updated_manifest_path=updated_manifest,
             ncbi_release="2024-01",
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
-        archive_key = build_archive_descriptor_key(ASSEMBLY_DIR_A, "2024-01", PATH_PREFIX, "updated")
+        archive_key = build_archive_descriptor_key(ASSEMBLY_DIR_A, "2024-01", DEFAULT_DESTINATION_PREFIX, "updated")
         # Confirm the archive descriptor object exists
         resp = s3.head_object(Bucket=str(test_bucket), Key=str(archive_key))
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == HTTPStatus.OK
@@ -480,13 +464,13 @@ def test_archive_removed_copies_descriptor(
 
     # Seed the assembly at final Lakehouse path
     files: dict[PurePosixPath, str | bytes] = {PurePosixPath(f"{ASSEMBLY_DIR_A}_genomic.fna.gz"): "content"}
-    seed_lakehouse(s3, test_bucket, ACCESSION_A, files, PATH_PREFIX, ASSEMBLY_DIR_A)
+    seed_lakehouse(s3, test_bucket, ACCESSION_A, files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
     # Pre-upload a descriptor
     descriptor = create_descriptor(ASSEMBLY_DIR_A, ACCESSION_A, [])
-    descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, PATH_PREFIX)
+    descriptor_key = build_descriptor_key(ASSEMBLY_DIR_A, DEFAULT_DESTINATION_PREFIX)
     s3.put_object(Bucket=str(test_bucket), Key=str(descriptor_key), Body=json.dumps(descriptor).encode())
 
-    removed_manifest = _write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
+    removed_manifest = write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
 
     promote_from_s3(
         staging_key_prefix=STAGING_PREFIX,
@@ -494,10 +478,10 @@ def test_archive_removed_copies_descriptor(
         lakehouse_bucket=test_bucket,
         removed_manifest_path=removed_manifest,
         ncbi_release="2024-01",
-        lakehouse_key_prefix=PATH_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
-    archive_key = build_archive_descriptor_key(ASSEMBLY_DIR_A, "2024-01", PATH_PREFIX, "replaced_or_suppressed")
+    archive_key = build_archive_descriptor_key(ASSEMBLY_DIR_A, "2024-01", DEFAULT_DESTINATION_PREFIX, "replaced_or_suppressed")
     resp = s3.head_object(Bucket=str(test_bucket), Key=str(archive_key))
     assert resp["ResponseMetadata"]["HTTPStatusCode"] == HTTPStatus.OK
 
@@ -518,11 +502,11 @@ class TestPromoteDryRunNoDescriptor:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             dry_run=True,
         )
 
-        metadata_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "metadata")
+        metadata_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "metadata")
         assert len(metadata_keys) == 0, f"Dry-run should not create descriptor files, found: {metadata_keys}"
 
 
@@ -549,16 +533,16 @@ class TestArchiveMultiFileConcurrent:
             PurePosixPath(f"{ASSEMBLY_DIR_A}_assembly_stats.txt"): b"ASSEMBLY_STATS",
             PurePosixPath(f"{ASSEMBLY_DIR_A}_cds_from_genomic.fna.gz"): b"CDS_CONTENT",
         }
-        seed_lakehouse(s3, test_bucket, ACCESSION_A, many_files, PATH_PREFIX, ASSEMBLY_DIR_A)
+        seed_lakehouse(s3, test_bucket, ACCESSION_A, many_files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
 
-        updated_manifest = _write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
+        updated_manifest = write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
 
         archived = _archive_assemblies(
             updated_manifest,
             lakehouse_bucket=test_bucket,
             ncbi_release="2024-01",
             archive_reason="updated",
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             delete_source=False,
         )
 
@@ -578,21 +562,21 @@ class TestArchiveMultiFileConcurrent:
         """Archived keys follow the exact ``archive/{release}/{reason}/{rel_path}`` pattern."""
         s3 = s3_client
         files: dict[PurePosixPath, str | bytes] = {PurePosixPath(f"{ASSEMBLY_DIR_B}_genomic.fna.gz"): b"content"}
-        seed_lakehouse(s3, test_bucket, ACCESSION_B, files, PATH_PREFIX, ASSEMBLY_DIR_B)
+        seed_lakehouse(s3, test_bucket, ACCESSION_B, files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_B)
 
-        removed_manifest = _write_manifest(tmp_path, [ACCESSION_B], "removed_manifest.txt")
+        removed_manifest = write_manifest(tmp_path, [ACCESSION_B], "removed_manifest.txt")
         _archive_assemblies(
             removed_manifest,
             lakehouse_bucket=test_bucket,
             ncbi_release="2024-02",
             archive_reason="replaced_or_suppressed",
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             delete_source=False,
         )
 
         rel = build_accession_path(ASSEMBLY_DIR_B)
         expected_key = (
-            PATH_PREFIX / "archive" / "2024-02" / "replaced_or_suppressed" / rel / f"{ASSEMBLY_DIR_B}_genomic.fna.gz"
+            DEFAULT_DESTINATION_PREFIX / "archive" / "2024-02" / "replaced_or_suppressed" / rel / f"{ASSEMBLY_DIR_B}_genomic.fna.gz"
         )
         resp = s3.head_object(Bucket=str(test_bucket), Key=str(expected_key))
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == HTTPStatus.OK
@@ -614,15 +598,15 @@ class TestArchiveDeleteSourceBatch:
             PurePosixPath(f"{ASSEMBLY_DIR_A}_rna.fna.gz"): b"rna",
             PurePosixPath(f"{ASSEMBLY_DIR_A}_assembly_report.txt"): b"report",
         }
-        source_keys = seed_lakehouse(s3, test_bucket, ACCESSION_A, many_files, PATH_PREFIX, ASSEMBLY_DIR_A)
+        source_keys = seed_lakehouse(s3, test_bucket, ACCESSION_A, many_files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
 
-        removed_manifest = _write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
+        removed_manifest = write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
         archived = _archive_assemblies(
             removed_manifest,
             lakehouse_bucket=test_bucket,
             ncbi_release="2024-01",
             archive_reason="replaced_or_suppressed",
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             delete_source=True,
         )
 
@@ -641,15 +625,15 @@ class TestArchiveDeleteSourceBatch:
             PurePosixPath(f"{ASSEMBLY_DIR_A}_genomic.fna.gz"): b"genomic",
             PurePosixPath(f"{ASSEMBLY_DIR_A}_protein.faa.gz"): b"protein",
         }
-        seed_lakehouse(s3, test_bucket, ACCESSION_A, files, PATH_PREFIX, ASSEMBLY_DIR_A)
+        seed_lakehouse(s3, test_bucket, ACCESSION_A, files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
 
-        removed_manifest = _write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
+        removed_manifest = write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
         _archive_assemblies(
             removed_manifest,
             lakehouse_bucket=test_bucket,
             ncbi_release="2024-01",
             archive_reason="replaced_or_suppressed",
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             delete_source=True,
         )
 
@@ -658,7 +642,7 @@ class TestArchiveDeleteSourceBatch:
         archive_keys = list_all_keys(s3, test_bucket, ARCHIVE_PREFIX / "replaced_or_suppressed")
         assert len(archive_keys) == len(files), f"Expected {len(files)} archive keys, got: {archive_keys}"
         # Source keys absent
-        source_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / rel)
+        source_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / rel)
         assert len(source_keys) == 0, f"Source objects remain: {source_keys}"
 
 
@@ -693,19 +677,19 @@ class TestPartialArchiveResume:
             file_b: b"current-protein",
             file_c: b"current-rna",
         }
-        seed_lakehouse(s3, test_bucket, ACCESSION_A, current_content, PATH_PREFIX, ASSEMBLY_DIR_A)
+        seed_lakehouse(s3, test_bucket, ACCESSION_A, current_content, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
 
         # Pre-seed a stale archive copy for file_a (simulating prior partial run)
         archive_prefix = ARCHIVE_PREFIX / "updated" / rel
         s3.put_object(Bucket=str(test_bucket), Key=str(archive_prefix / file_a), Body=b"stale-genomic")
 
-        updated_manifest = _write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
+        updated_manifest = write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
         archived = _archive_assemblies(
             updated_manifest,
             lakehouse_bucket=test_bucket,
             ncbi_release="2024-01",
             archive_reason="updated",
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             delete_source=False,
         )
 
@@ -719,7 +703,7 @@ class TestPartialArchiveResume:
             resp = s3.head_object(Bucket=str(test_bucket), Key=str(archive_prefix / fname))
             assert resp["ResponseMetadata"]["HTTPStatusCode"] == HTTPStatus.OK
         # Sources untouched (delete_source=False)
-        source_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / rel)
+        source_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / rel)
         assert len(source_keys) == len(current_content)
 
     def test_partial_replaced_archive_resumes_and_deletes(
@@ -742,26 +726,26 @@ class TestPartialArchiveResume:
         # Only file_b and file_c remain at source (file_a already gone)
         s3.put_object(
             Bucket=str(test_bucket),
-            Key=str(PATH_PREFIX / rel / file_b),
+            Key=str(DEFAULT_DESTINATION_PREFIX / rel / file_b),
             Body=b"protein",
-            Metadata={"md5": hashlib.md5(b"protein").hexdigest()},  # noqa: S324
+            Metadata={"md5": md5_hex(b"protein")},
         )
         s3.put_object(
             Bucket=str(test_bucket),
-            Key=str(PATH_PREFIX / rel / file_c),
+            Key=str(DEFAULT_DESTINATION_PREFIX / rel / file_c),
             Body=b"rna",
-            Metadata={"md5": hashlib.md5(b"rna").hexdigest()},  # noqa: S324
+            Metadata={"md5": md5_hex(b"rna")},
         )
         # file_a already at archive destination
         s3.put_object(Bucket=str(test_bucket), Key=str(archive_prefix / file_a), Body=b"genomic")
 
-        removed_manifest = _write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
+        removed_manifest = write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
         archived = _archive_assemblies(
             removed_manifest,
             lakehouse_bucket=test_bucket,
             ncbi_release="2024-01",
             archive_reason="replaced_or_suppressed",
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             delete_source=True,
         )
 
@@ -772,7 +756,7 @@ class TestPartialArchiveResume:
             resp = s3.head_object(Bucket=str(test_bucket), Key=str(archive_prefix / fname))
             assert resp["ResponseMetadata"]["HTTPStatusCode"] == HTTPStatus.OK
         # No source keys remain (file_b and file_c were deleted)
-        source_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / rel)
+        source_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / rel)
         assert len(source_keys) == 0, f"Source objects remain: {source_keys}"
         # file_a archive key is still intact
         resp_a = s3.head_object(Bucket=str(test_bucket), Key=str(archive_prefix / file_a))
@@ -787,9 +771,9 @@ class TestPartialArchiveResume:
             PurePosixPath(f"{ASSEMBLY_DIR_A}_genomic.fna.gz"): b"genomic",
             PurePosixPath(f"{ASSEMBLY_DIR_A}_protein.faa.gz"): b"protein",
         }
-        seed_lakehouse(s3, test_bucket, ACCESSION_A, files, PATH_PREFIX, ASSEMBLY_DIR_A)
+        seed_lakehouse(s3, test_bucket, ACCESSION_A, files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
 
-        updated_manifest = _write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
+        updated_manifest = write_manifest(tmp_path, [ACCESSION_A], "updated_manifest.txt")
 
         # First run — archives all files
         archived_1 = _archive_assemblies(
@@ -797,7 +781,7 @@ class TestPartialArchiveResume:
             lakehouse_bucket=test_bucket,
             ncbi_release="2024-01",
             archive_reason="updated",
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             delete_source=False,
         )
 
@@ -807,7 +791,7 @@ class TestPartialArchiveResume:
             lakehouse_bucket=test_bucket,
             ncbi_release="2024-01",
             archive_reason="updated",
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             delete_source=False,
         )
 
@@ -834,17 +818,17 @@ class TestArchiveMultiAccessionManifest:
 
         files_a: dict[PurePosixPath, str | bytes] = {PurePosixPath(f"{ASSEMBLY_DIR_A}_genomic.fna.gz"): b"genomic-A"}
         files_b: dict[PurePosixPath, str | bytes] = {PurePosixPath(f"{ASSEMBLY_DIR_B}_genomic.fna.gz"): b"genomic-B"}
-        seed_lakehouse(s3, test_bucket, ACCESSION_A, files_a, PATH_PREFIX, ASSEMBLY_DIR_A)
-        seed_lakehouse(s3, test_bucket, ACCESSION_B, files_b, PATH_PREFIX, ASSEMBLY_DIR_B)
+        seed_lakehouse(s3, test_bucket, ACCESSION_A, files_a, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
+        seed_lakehouse(s3, test_bucket, ACCESSION_B, files_b, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_B)
 
-        manifest = _write_manifest(tmp_path, [ACCESSION_A, ACCESSION_B], "removed_manifest.txt")
+        manifest = write_manifest(tmp_path, [ACCESSION_A, ACCESSION_B], "removed_manifest.txt")
 
         archived = _archive_assemblies(
             manifest,
             lakehouse_bucket=test_bucket,
             ncbi_release="2024-01",
             archive_reason="replaced_or_suppressed",
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             delete_source=True,
         )
 
@@ -862,8 +846,8 @@ class TestArchiveMultiAccessionManifest:
             == HTTPStatus.OK
         )
         # Sources deleted
-        assert len(list_all_keys(s3, test_bucket, PATH_PREFIX / rel_a)) == 0
-        assert len(list_all_keys(s3, test_bucket, PATH_PREFIX / rel_b)) == 0
+        assert len(list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / rel_a)) == 0
+        assert len(list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / rel_b)) == 0
 
     def test_three_accessions_correct_archive_reason_segment(
         self, s3_client: S3Client, test_bucket: PurePosixPath, staging_test_bucket: PurePosixPath, tmp_path: Path
@@ -881,21 +865,21 @@ class TestArchiveMultiAccessionManifest:
                 test_bucket,
                 accession,
                 {PurePosixPath(f"{assembly_dir}_genomic.fna.gz"): b"data"},
-                PATH_PREFIX,
+                DEFAULT_DESTINATION_PREFIX,
                 assembly_dir,
             )
 
-        manifest = _write_manifest(tmp_path, [acc for acc, _ in accessions_and_dirs], "removed_manifest.txt")
+        manifest = write_manifest(tmp_path, [acc for acc, _ in accessions_and_dirs], "removed_manifest.txt")
         _archive_assemblies(
             manifest,
             lakehouse_bucket=test_bucket,
             ncbi_release="2024-03",
             archive_reason="replaced_or_suppressed",
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             delete_source=False,
         )
 
-        all_archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "archive" / "2024-03")
+        all_archive_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "archive" / "2024-03")
         assert len(all_archive_keys) == 3  # noqa: PLR2004
         for key in all_archive_keys:
             assert "replaced_or_suppressed" in key.parts, f"Archive key missing reason segment: {key}"
@@ -917,22 +901,22 @@ class TestArchiveDryRunParallel:
             PurePosixPath(f"{ASSEMBLY_DIR_A}_protein.faa.gz"): b"protein",
             PurePosixPath(f"{ASSEMBLY_DIR_A}_rna.fna.gz"): b"rna",
         }
-        source_keys = seed_lakehouse(s3, test_bucket, ACCESSION_A, many_files, PATH_PREFIX, ASSEMBLY_DIR_A)
+        source_keys = seed_lakehouse(s3, test_bucket, ACCESSION_A, many_files, DEFAULT_DESTINATION_PREFIX, ASSEMBLY_DIR_A)
 
-        removed_manifest = _write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
+        removed_manifest = write_manifest(tmp_path, [ACCESSION_A], "removed_manifest.txt")
         archived = _archive_assemblies(
             removed_manifest,
             lakehouse_bucket=test_bucket,
             ncbi_release="2024-01",
             archive_reason="replaced_or_suppressed",
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             delete_source=True,
             dry_run=True,
         )
 
         assert archived == len(many_files)
         # No archive keys
-        archive_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "archive")
+        archive_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "archive")
         assert len(archive_keys) == 0, f"Dry-run created archive keys: {archive_keys}"
         # All sources still present
         for key in source_keys:
@@ -967,7 +951,7 @@ class TestPromoteMultiFileConcurrent:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
         assert report["promoted"] == len(many_files)
@@ -975,7 +959,7 @@ class TestPromoteMultiFileConcurrent:
 
         rel = build_accession_path(ASSEMBLY_DIR_A)
         for fname, expected_body in many_files.items():
-            key = PATH_PREFIX / rel / fname
+            key = DEFAULT_DESTINATION_PREFIX / rel / fname
             obj = s3.get_object(Bucket=str(test_bucket), Key=str(key))
             assert obj["Body"].read() == expected_body, f"Content mismatch: {fname}"
 
@@ -995,14 +979,14 @@ class TestPromoteMultiFileConcurrent:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
         rel = build_accession_path(ASSEMBLY_DIR_A)
         for fname, content in files.items():
-            key = PATH_PREFIX / rel / fname
+            key = DEFAULT_DESTINATION_PREFIX / rel / fname
             meta = get_object_metadata(s3, test_bucket, key)
-            assert meta.get("md5") == _md5(content), f"Wrong MD5 metadata on {fname}"
+            assert meta.get("md5") == md5_hex(content), f"Wrong MD5 metadata on {fname}"
 
     def test_file_without_sidecar_has_no_md5_metadata(
         self, s3_client: S3Client, test_bucket: PurePosixPath, staging_test_bucket: PurePosixPath
@@ -1016,11 +1000,11 @@ class TestPromoteMultiFileConcurrent:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
         rel = build_accession_path(ASSEMBLY_DIR_A)
-        meta = get_object_metadata(s3, test_bucket, PATH_PREFIX / rel / fname)
+        meta = get_object_metadata(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / rel / fname)
         assert "md5" not in meta, f"Expected no md5 metadata, got: {meta}"
 
 
@@ -1044,7 +1028,7 @@ class TestPromoteStagingCleanup:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
         remaining_staging = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
@@ -1069,7 +1053,7 @@ class TestPromoteStagingCleanup:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
         after_keys = list_all_keys(s3, staging_test_bucket, STAGING_PREFIX)
@@ -1099,7 +1083,7 @@ class TestPromoteStagingCleanup:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
         assert report["promoted"] == 2  # noqa: PLR2004
@@ -1127,7 +1111,7 @@ class TestPromoteTwoAssembliesBothLand:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
         assert report["promoted"] == 2  # noqa: PLR2004
@@ -1136,10 +1120,10 @@ class TestPromoteTwoAssembliesBothLand:
         rel_a = build_accession_path(ASSEMBLY_DIR_A)
         rel_b = build_accession_path(ASSEMBLY_DIR_B)
         obj_a = s3.get_object(
-            Bucket=str(test_bucket), Key=str(PATH_PREFIX / rel_a / f"{ASSEMBLY_DIR_A}_genomic.fna.gz")
+            Bucket=str(test_bucket), Key=str(DEFAULT_DESTINATION_PREFIX / rel_a / f"{ASSEMBLY_DIR_A}_genomic.fna.gz")
         )
         obj_b = s3.get_object(
-            Bucket=str(test_bucket), Key=str(PATH_PREFIX / rel_b / f"{ASSEMBLY_DIR_B}_genomic.fna.gz")
+            Bucket=str(test_bucket), Key=str(DEFAULT_DESTINATION_PREFIX / rel_b / f"{ASSEMBLY_DIR_B}_genomic.fna.gz")
         )
         assert obj_a["Body"].read() == b"genomic-A"
         assert obj_b["Body"].read() == b"genomic-B"
@@ -1156,13 +1140,13 @@ class TestPromoteTwoAssembliesBothLand:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
         rel_a = build_accession_path(ASSEMBLY_DIR_A)
         rel_b = build_accession_path(ASSEMBLY_DIR_B)
-        keys_a = list_all_keys(s3, test_bucket, PATH_PREFIX / rel_a)
-        keys_b = list_all_keys(s3, test_bucket, PATH_PREFIX / rel_b)
+        keys_a = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / rel_a)
+        keys_b = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / rel_b)
         assert len(keys_a) == 1
         assert len(keys_b) == 1
         assert keys_a[0] != keys_b[0]
@@ -1190,7 +1174,7 @@ class TestPromoteDryRunMultiFile:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             dry_run=True,
         )
 
@@ -1202,7 +1186,7 @@ class TestPromoteDryRunMultiFile:
         assert staging_after == staging_before, "Dry-run should not alter staging"
 
         # Nothing at final path
-        final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
+        final_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "raw_data")
         assert len(final_keys) == 0, f"Dry-run created Lakehouse objects: {final_keys}"
 
     def test_dry_run_two_assemblies_nothing_written(
@@ -1221,11 +1205,11 @@ class TestPromoteDryRunMultiFile:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             dry_run=True,
         )
 
-        final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
+        final_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "raw_data")
         assert len(final_keys) == 0, f"Dry-run created objects: {final_keys}"
 
 
@@ -1251,13 +1235,13 @@ class TestPromoteSecondRunOnEmptyStaging:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
         report2 = promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
 
         assert report1["promoted"] == 1
@@ -1266,7 +1250,7 @@ class TestPromoteSecondRunOnEmptyStaging:
 
         # Final key still present after second run
         rel = build_accession_path(ASSEMBLY_DIR_A)
-        final_keys = list_all_keys(s3, test_bucket, PATH_PREFIX / rel)
+        final_keys = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / rel)
         assert len(final_keys) == 1
 
     def test_lakehouse_unchanged_on_second_run(
@@ -1289,16 +1273,16 @@ class TestPromoteSecondRunOnEmptyStaging:
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
-        keys_after_first = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
+        keys_after_first = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "raw_data")
 
         promote_from_s3(
             staging_key_prefix=STAGING_PREFIX,
             staging_bucket=staging_test_bucket,
             lakehouse_bucket=test_bucket,
-            lakehouse_key_prefix=PATH_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         )
-        keys_after_second = list_all_keys(s3, test_bucket, PATH_PREFIX / "raw_data")
+        keys_after_second = list_all_keys(s3, test_bucket, DEFAULT_DESTINATION_PREFIX / "raw_data")
 
         assert keys_after_first == keys_after_second

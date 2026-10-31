@@ -1,6 +1,5 @@
 """Tests for ncbi_ftp.promote module — S3 promote, archive, manifest trimming."""
 
-import hashlib
 import logging
 from http import HTTPStatus
 from pathlib import Path, PurePosixPath
@@ -19,9 +18,15 @@ from cdm_data_loaders.ncbi_ftp.promote import (
     _trim_manifest,
     promote_from_s3,
 )
-from tests.cdm_data_loaders.ncbi_ftp.conftest import ACC_PATH_215, ACC_PATH_845, TEST_BUCKET
-
-DEFAULT_LAKEHOUSE_KEY_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
+from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREFIX
+from tests.cdm_data_loaders.ncbi_ftp.conftest import (
+    ACC_PATH_215,
+    ACC_PATH_845,
+    TEST_BUCKET,
+    md5_hex,
+    stage_files_with_sidecars,
+    write_manifest,
+)
 
 # Promotion test constants
 
@@ -30,12 +35,12 @@ _STAGE_PREFIX: PurePosixPath = PurePosixPath("staging") / "run1"
 # Assembly 1
 _ACC1: str = "GCF_000001215.4"
 _STG1: PurePosixPath = _STAGE_PREFIX / "raw_data" / ACC_PATH_215
-_LKH1: PurePosixPath = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_215
+_LKH1: PurePosixPath = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215
 
 # Assembly 2
 _ACC2: str = "GCF_000005845.2"
 _STG2: PurePosixPath = _STAGE_PREFIX / "raw_data" / ACC_PATH_845
-_LKH2: PurePosixPath = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_845
+_LKH2: PurePosixPath = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_845
 
 
 class DownloadFileClient(Protocol):
@@ -43,34 +48,6 @@ class DownloadFileClient(Protocol):
 
     def download_file(self, Bucket: str, Key: str, Filename: str, **kw: object) -> None:  #  noqa: N803
         """Download a file from an S3 store."""
-
-
-def _stage(
-    s3: botocore.client.BaseClient,
-    staging_base: PurePosixPath,
-    files: dict[PurePosixPath, bytes],
-    *,
-    with_md5: bool = True,
-    with_crc64: bool = False,
-) -> list[PurePosixPath]:
-    """Stage files at *staging_base*, optionally adding .md5 / .crc64nvme sidecars.
-
-    Returns list of all staged keys (data files only, not sidecars).
-    """
-    keys: list[PurePosixPath] = []
-    for fname, content in files.items():
-        key: PurePosixPath = staging_base / fname
-        s3.put_object(Bucket=str(TEST_BUCKET), Key=str(key), Body=content)
-        keys.append(key)
-        if with_md5:
-            s3.put_object(
-                Bucket=str(TEST_BUCKET),
-                Key=str(key.with_name(f"{key.name}.md5")),
-                Body=hashlib.md5(content).hexdigest().encode(),  # noqa: S324
-            )
-        if with_crc64:
-            s3.put_object(Bucket=str(TEST_BUCKET), Key=str(key.with_name(f"{key.name}.crc64nvme")), Body=b"fake-crc")
-    return keys
 
 
 def _stage_files(s3_client: botocore.client.BaseClient, prefix: PurePosixPath) -> None:
@@ -94,13 +71,13 @@ def test_promote_dry_run_no_writes(mock_s3_client: botocore.client.BaseClient) -
         staging_key_prefix=prefix,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         dry_run=True,
     )
     assert report["promoted"] == 1
     assert report["dry_run"] is True
 
-    final_key = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_215 / "GCF_000001215.4_genomic.fna.gz"
+    final_key = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215 / "GCF_000001215.4_genomic.fna.gz"
     assert mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(final_key)).get("KeyCount", 0) == 0
 
 
@@ -114,12 +91,12 @@ def test_promote_with_metadata(mock_s3_client: botocore.client.BaseClient) -> No
         staging_key_prefix=prefix,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
     assert report["promoted"] == 1  # only .fna.gz, not download_report.json
     assert report["failed"] == 0
 
-    final_key = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_215 / "GCF_000001215.4_genomic.fna.gz"
+    final_key = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215 / "GCF_000001215.4_genomic.fna.gz"
     resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(final_key))
     assert resp["Metadata"].get("md5") == "md5hash123"
 
@@ -409,17 +386,16 @@ def test_archive_objects(
 def test_archive_assemblies_removed(mock_s3_client: botocore.client.BaseClient, tmp_path: Path) -> None:
     """Removed accessions are archived and originals deleted."""
     accession = "GCF_000005845.2"
-    key = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_845 / f"{accession}_genomic.fna.gz"
+    key = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_845 / f"{accession}_genomic.fna.gz"
     mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(key), Body=b"data")
 
-    manifest = tmp_path / "removed.txt"
-    manifest.write_text(f"{accession}\n")
+    manifest = write_manifest(tmp_path, [accession], "removed.txt")
 
     assert (
         _archive_assemblies(
             manifest,
             lakehouse_bucket=TEST_BUCKET,
-            lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             ncbi_release="2024-01",
             archive_reason="replaced_or_suppressed",
             delete_source=True,
@@ -429,7 +405,7 @@ def test_archive_assemblies_removed(mock_s3_client: botocore.client.BaseClient, 
     assert mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(key)).get("KeyCount", 0) == 0
 
     archive_key = (
-        DEFAULT_LAKEHOUSE_KEY_PREFIX
+        DEFAULT_DESTINATION_PREFIX
         / "archive"
         / "2024-01"
         / "replaced_or_suppressed"
@@ -444,17 +420,16 @@ def test_archive_assemblies_removed(mock_s3_client: botocore.client.BaseClient, 
 def test_archive_assemblies_updated_no_delete(mock_s3_client: botocore.client.BaseClient, tmp_path: Path) -> None:
     """Updated accessions are archived but originals remain."""
     accession = "GCF_000001215.4"
-    key = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_215 / f"{accession}_genomic.fna.gz"
+    key = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215 / f"{accession}_genomic.fna.gz"
     mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(key), Body=b"original-data")
 
-    manifest = tmp_path / "updated.txt"
-    manifest.write_text(f"{accession}\n")
+    manifest = write_manifest(tmp_path, [accession], "updated.txt")
 
     assert (
         _archive_assemblies(
             manifest,
             lakehouse_bucket=TEST_BUCKET,
-            lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             ncbi_release="2024-06",
             archive_reason="updated",
             delete_source=False,
@@ -464,7 +439,7 @@ def test_archive_assemblies_updated_no_delete(mock_s3_client: botocore.client.Ba
     assert mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(key)).get("KeyCount", 0) == 1
 
     archive_key = (
-        DEFAULT_LAKEHOUSE_KEY_PREFIX
+        DEFAULT_DESTINATION_PREFIX
         / "archive"
         / "2024-06"
         / "updated"
@@ -482,16 +457,15 @@ def test_archive_assemblies_multiple_releases_no_collision(
 ) -> None:
     """Archiving the same accession in different releases creates distinct folders."""
     accession = "GCF_000001215.4"
-    key = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_215 / f"{accession}_genomic.fna.gz"
+    key = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215 / f"{accession}_genomic.fna.gz"
     mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(key), Body=b"v1-data")
 
-    manifest = tmp_path / "updated.txt"
-    manifest.write_text(f"{accession}\n")
+    manifest = write_manifest(tmp_path, [accession], "updated.txt")
 
     _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         ncbi_release="2024-01",
         archive_reason="updated",
     )
@@ -499,13 +473,13 @@ def test_archive_assemblies_multiple_releases_no_collision(
     _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         ncbi_release="2024-06",
         archive_reason="updated",
     )
 
     archive_key_1 = (
-        DEFAULT_LAKEHOUSE_KEY_PREFIX
+        DEFAULT_DESTINATION_PREFIX
         / "archive"
         / "2024-01"
         / "updated"
@@ -514,7 +488,7 @@ def test_archive_assemblies_multiple_releases_no_collision(
         / f"{accession}_genomic.fna.gz"
     )
     archive_key_2 = (
-        DEFAULT_LAKEHOUSE_KEY_PREFIX
+        DEFAULT_DESTINATION_PREFIX
         / "archive"
         / "2024-06"
         / "updated"
@@ -530,17 +504,16 @@ def test_archive_assemblies_multiple_releases_no_collision(
 def test_archive_assemblies_dry_run(mock_s3_client: botocore.client.BaseClient, tmp_path: Path) -> None:
     """dry_run does not copy or delete anything."""
     accession = "GCF_000005845.2"
-    key = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_845 / f"{accession}_genomic.fna.gz"
+    key = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_845 / f"{accession}_genomic.fna.gz"
     mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(key), Body=b"data")
 
-    manifest = tmp_path / "removed.txt"
-    manifest.write_text(f"{accession}\n")
+    manifest = write_manifest(tmp_path, [accession], "removed.txt")
 
     assert (
         _archive_assemblies(
             manifest,
             lakehouse_bucket=TEST_BUCKET,
-            lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             ncbi_release="2024-01",
             archive_reason="replaced_or_suppressed",
             delete_source=True,
@@ -550,7 +523,7 @@ def test_archive_assemblies_dry_run(mock_s3_client: botocore.client.BaseClient, 
     )
     assert mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(key)).get("KeyCount", 0) == 1
 
-    archive_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX / "archive" / "2024-01"
+    archive_prefix = DEFAULT_DESTINATION_PREFIX / "archive" / "2024-01"
     assert mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(archive_prefix)).get("KeyCount", 0) == 0
 
 
@@ -560,13 +533,12 @@ def test_archive_assemblies_no_objects_skips(
     tmp_path: Path,
 ) -> None:
     """Accessions with no existing S3 objects are silently skipped."""
-    manifest = tmp_path / "updated.txt"
-    manifest.write_text("GCF_000001215.4\n")
+    manifest = write_manifest(tmp_path, ["GCF_000001215.4"], "updated.txt")
     assert (
         _archive_assemblies(
             manifest,
             lakehouse_bucket=TEST_BUCKET,
-            lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
             ncbi_release="2024-01",
         )
         == 0
@@ -579,21 +551,20 @@ def test_archive_assemblies_unknown_release_fallback(
 ) -> None:
     """ncbi_release=None falls back to 'unknown' in the archive path."""
     accession = "GCF_000001215.4"
-    key = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_215 / f"{accession}_genomic.fna.gz"
+    key = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215 / f"{accession}_genomic.fna.gz"
     mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(key), Body=b"data")
 
-    manifest = tmp_path / "updated.txt"
-    manifest.write_text(f"{accession}\n")
+    manifest = write_manifest(tmp_path, [accession], "updated.txt")
 
     assert (
         _archive_assemblies(
-            manifest, lakehouse_bucket=TEST_BUCKET, lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX, ncbi_release=None
+            manifest, lakehouse_bucket=TEST_BUCKET, lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX, ncbi_release=None
         )
         == 1
     )
 
     archive_key = (
-        DEFAULT_LAKEHOUSE_KEY_PREFIX
+        DEFAULT_DESTINATION_PREFIX
         / "archive"
         / "unknown"
         / "unknown"
@@ -611,7 +582,7 @@ def test_archive_assemblies_unknown_release_fallback(
 def test_archive_assemblies_multi_file_all_copied(mock_s3_client: botocore.client.BaseClient, tmp_path: Path) -> None:
     """All files for an accession are copied concurrently — none missed."""
     accession = "GCF_000001215.4"
-    base = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_215
+    base = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215
     file_names = [
         f"{accession}_genomic.fna.gz",
         f"{accession}_protein.faa.gz",
@@ -622,20 +593,19 @@ def test_archive_assemblies_multi_file_all_copied(mock_s3_client: botocore.clien
     for fname in file_names:
         mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(base / fname), Body=fname.encode())
 
-    manifest = tmp_path / "updated.txt"
-    manifest.write_text(f"{accession}\n")
+    manifest = write_manifest(tmp_path, [accession], "updated.txt")
 
     archived = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         ncbi_release="2024-01",
         archive_reason="updated",
         delete_source=False,
     )
 
     assert archived == len(file_names)
-    archive_base = DEFAULT_LAKEHOUSE_KEY_PREFIX / "archive" / "2024-01" / "updated" / "raw_data" / ACC_PATH_215
+    archive_base = DEFAULT_DESTINATION_PREFIX / "archive" / "2024-01" / "updated" / "raw_data" / ACC_PATH_215
     for fname in file_names:
         resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(archive_base / fname))
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == HTTPStatus.OK
@@ -647,7 +617,7 @@ def test_archive_assemblies_multi_file_content_preserved(
 ) -> None:
     """Archive copies preserve byte-for-byte content of each file."""
     accession = "GCF_000001215.4"
-    base = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_215
+    base = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215
     files = {
         f"{accession}_genomic.fna.gz": b"\x1f\x8bGENOMIC",
         f"{accession}_protein.faa.gz": b"\x1f\x8bPROTEIN",
@@ -655,19 +625,18 @@ def test_archive_assemblies_multi_file_content_preserved(
     for fname, body in files.items():
         mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(base / fname), Body=body)
 
-    manifest = tmp_path / "updated.txt"
-    manifest.write_text(f"{accession}\n")
+    manifest = write_manifest(tmp_path, [accession], "updated.txt")
 
     _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         ncbi_release="2024-01",
         archive_reason="updated",
         delete_source=False,
     )
 
-    archive_base = DEFAULT_LAKEHOUSE_KEY_PREFIX / "archive" / "2024-01" / "updated" / "raw_data" / ACC_PATH_215
+    archive_base = DEFAULT_DESTINATION_PREFIX / "archive" / "2024-01" / "updated" / "raw_data" / ACC_PATH_215
     for fname, original_body in files.items():
         obj = mock_s3_client.get_object(Bucket=str(TEST_BUCKET), Key=str(archive_base / fname))
         assert obj["Body"].read() == original_body, f"Content mismatch for {fname}"
@@ -677,7 +646,7 @@ def test_archive_assemblies_multi_file_content_preserved(
 def test_archive_assemblies_multi_file_delete_all(mock_s3_client: botocore.client.BaseClient, tmp_path: Path) -> None:
     """Batch delete removes ALL source files when delete_source=True."""
     accession = "GCF_000005845.2"
-    base = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_845
+    base = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_845
     file_names = [
         f"{accession}_genomic.fna.gz",
         f"{accession}_protein.faa.gz",
@@ -686,13 +655,12 @@ def test_archive_assemblies_multi_file_delete_all(mock_s3_client: botocore.clien
     for fname in file_names:
         mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(base / fname), Body=b"data")
 
-    manifest = tmp_path / "removed.txt"
-    manifest.write_text(f"{accession}\n")
+    manifest = write_manifest(tmp_path, [accession], "removed.txt")
 
     archived = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         ncbi_release="2024-03",
         archive_reason="replaced_or_suppressed",
         delete_source=True,
@@ -705,7 +673,7 @@ def test_archive_assemblies_multi_file_delete_all(mock_s3_client: botocore.clien
         assert result.get("KeyCount", 0) == 0, f"Source not deleted: {fname}"
     # All archives present
     archive_base = (
-        DEFAULT_LAKEHOUSE_KEY_PREFIX / "archive" / "2024-03" / "replaced_or_suppressed" / "raw_data" / ACC_PATH_845
+        DEFAULT_DESTINATION_PREFIX / "archive" / "2024-03" / "replaced_or_suppressed" / "raw_data" / ACC_PATH_845
     )
     for fname in file_names:
         resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(archive_base / fname))
@@ -725,8 +693,8 @@ def test_archive_assemblies_partial_already_archived_overwritten(
     The second run should archive both file_a (overwrite) and file_b.
     """
     accession = "GCF_000001215.4"
-    base = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_215
-    archive_base = DEFAULT_LAKEHOUSE_KEY_PREFIX / "archive" / "2024-01" / "updated" / "raw_data" / ACC_PATH_215
+    base = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215
+    archive_base = DEFAULT_DESTINATION_PREFIX / "archive" / "2024-01" / "updated" / "raw_data" / ACC_PATH_215
 
     file_a = f"{accession}_genomic.fna.gz"
     file_b = f"{accession}_protein.faa.gz"
@@ -736,13 +704,12 @@ def test_archive_assemblies_partial_already_archived_overwritten(
     # Simulate partial prior run: file_a already archived with stale content
     mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=f"{archive_base / file_a}", Body=b"stale-genomic")
 
-    manifest = tmp_path / "updated.txt"
-    manifest.write_text(f"{accession}\n")
+    manifest = write_manifest(tmp_path, [accession], "updated.txt")
 
     archived = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         ncbi_release="2024-01",
         archive_reason="updated",
         delete_source=False,
@@ -766,9 +733,9 @@ def test_archive_assemblies_partial_delete_resumes(mock_s3_client: botocore.clie
     (file_a is gone), archives both, and deletes both.
     """
     accession = "GCF_000005845.2"
-    base = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_845
+    base = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_845
     archive_base = (
-        DEFAULT_LAKEHOUSE_KEY_PREFIX / "archive" / "2024-03" / "replaced_or_suppressed" / "raw_data" / ACC_PATH_845
+        DEFAULT_DESTINATION_PREFIX / "archive" / "2024-03" / "replaced_or_suppressed" / "raw_data" / ACC_PATH_845
     )
 
     file_b = f"{accession}_protein.faa.gz"
@@ -784,13 +751,12 @@ def test_archive_assemblies_partial_delete_resumes(mock_s3_client: botocore.clie
         Bucket=str(TEST_BUCKET), Key=f"{archive_base / accession}_genomic.fna.gz", Body=b"genomic"
     )
 
-    manifest = tmp_path / "removed.txt"
-    manifest.write_text(f"{accession}\n")
+    manifest = write_manifest(tmp_path, [accession], "removed.txt")
 
     archived = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         ncbi_release="2024-03",
         archive_reason="replaced_or_suppressed",
         delete_source=True,
@@ -813,25 +779,24 @@ def test_archive_assemblies_idempotent_updated_reruns_cleanly(
 ) -> None:
     """Running updated archive twice on the same data produces the same result."""
     accession = "GCF_000001215.4"
-    base = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_215
+    base = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215
     file_names = [f"{accession}_genomic.fna.gz", f"{accession}_protein.faa.gz"]
     for fname in file_names:
         mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(base / fname), Body=b"content")
 
-    manifest = tmp_path / "updated.txt"
-    manifest.write_text(f"{accession}\n")
+    manifest = write_manifest(tmp_path, [accession], "updated.txt")
 
     archived_1 = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         ncbi_release="2024-01",
         archive_reason="updated",
     )
     archived_2 = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         ncbi_release="2024-01",
         archive_reason="updated",
     )
@@ -854,16 +819,15 @@ def test_archive_assemblies_multi_accession_manifest(
         ("GCF_000005845.2", "GCF_000005845.2_ASM584v2", "GCF/000/005/845"),
     ]
     for accession, asm_dir, path in accessions:
-        key = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / path / asm_dir / f"{accession}_genomic.fna.gz"
+        key = DEFAULT_DESTINATION_PREFIX / "raw_data" / path / asm_dir / f"{accession}_genomic.fna.gz"
         mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(key), Body=b"data")
 
-    manifest = tmp_path / "updated.txt"
-    manifest.write_text("\n".join(acc for acc, _, _ in accessions) + "\n")
+    manifest = write_manifest(tmp_path, [acc for acc, _, _ in accessions], "updated.txt")
 
     archived = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         ncbi_release="2024-01",
         archive_reason="updated",
     )
@@ -871,7 +835,7 @@ def test_archive_assemblies_multi_accession_manifest(
     assert archived == len(accessions)
     for accession, asm_dir, path in accessions:
         archive_key = (
-            DEFAULT_LAKEHOUSE_KEY_PREFIX
+            DEFAULT_DESTINATION_PREFIX
             / "archive"
             / "2024-01"
             / "updated"
@@ -888,18 +852,17 @@ def test_archive_assemblies_multi_accession_manifest(
 def test_archive_assemblies_dry_run_multi_file(mock_s3_client: botocore.client.BaseClient, tmp_path: Path) -> None:
     """dry_run with multiple files per accession makes no copies and no deletes."""
     accession = "GCF_000005845.2"
-    base = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_845
+    base = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_845
     file_names = [f"{accession}_genomic.fna.gz", f"{accession}_protein.faa.gz", f"{accession}_rna.fna.gz"]
     for fname in file_names:
         mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(base / fname), Body=b"data")
 
-    manifest = tmp_path / "removed.txt"
-    manifest.write_text(f"{accession}\n")
+    manifest = write_manifest(tmp_path, [accession], "removed.txt")
 
     archived = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         ncbi_release="2024-01",
         archive_reason="replaced_or_suppressed",
         delete_source=True,
@@ -909,7 +872,7 @@ def test_archive_assemblies_dry_run_multi_file(mock_s3_client: botocore.client.B
     # Reported count matches
     assert archived == len(file_names)
     # No actual archive keys created
-    archive_prefix = DEFAULT_LAKEHOUSE_KEY_PREFIX / "archive"
+    archive_prefix = DEFAULT_DESTINATION_PREFIX / "archive"
     result = mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(archive_prefix))
     assert result.get("KeyCount", 0) == 0
     # Sources untouched
@@ -924,7 +887,7 @@ def test_archive_assemblies_invalid_accession_skipped(
 ) -> None:
     """Malformed accession lines are skipped; valid ones still archived."""
     accession = "GCF_000001215.4"
-    key = DEFAULT_LAKEHOUSE_KEY_PREFIX / "raw_data" / ACC_PATH_215 / f"{accession}_genomic.fna.gz"
+    key = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215 / f"{accession}_genomic.fna.gz"
     mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(key), Body=b"data")
 
     manifest = tmp_path / "mixed.txt"
@@ -933,7 +896,7 @@ def test_archive_assemblies_invalid_accession_skipped(
     archived = _archive_assemblies(
         manifest,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         ncbi_release="2024-01",
         archive_reason="updated",
     )
@@ -955,13 +918,13 @@ def test_promote_multi_file_all_land_at_final_path(
         f"{_ACC1}_assembly_report.txt",
         f"{_ACC1}_assembly_stats.txt",
     ]
-    _stage(mock_s3_client, _STG1, {PurePosixPath(f): f.encode() for f in file_names})
+    stage_files_with_sidecars(mock_s3_client, _STG1, {PurePosixPath(f): f.encode() for f in file_names})
 
     report = promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     assert report["promoted"] == len(file_names)
@@ -981,13 +944,13 @@ def test_promote_multi_file_content_preserved(
         PurePosixPath(f"{_ACC1}_protein.faa.gz"): b"\x1f\x8bPROTEIN",
         PurePosixPath(f"{_ACC1}_rna.fna.gz"): b"\x1f\x8bRNA",
     }
-    _stage(mock_s3_client, _STG1, files)
+    stage_files_with_sidecars(mock_s3_client, _STG1, files)
 
     promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     for fname, expected in files.items():
@@ -1002,14 +965,14 @@ def test_promote_md5_metadata_set_from_sidecar(
     """MD5 metadata on the promoted object matches the .md5 sidecar value."""
     content = b"\x1f\x8bGENOMIC"
     fname = PurePosixPath(f"{_ACC1}_genomic.fna.gz")
-    _stage(mock_s3_client, _STG1, {fname: content}, with_md5=True)
-    expected_md5 = hashlib.md5(content).hexdigest()  # noqa: S324
+    stage_files_with_sidecars(mock_s3_client, _STG1, {fname: content}, with_md5=True)
+    expected_md5 = md5_hex(content)
 
     promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(_LKH1 / fname))
@@ -1022,13 +985,13 @@ def test_promote_no_sidecar_no_md5_metadata(
 ) -> None:
     """A file staged without a .md5 sidecar is promoted but carries no md5 metadata."""
     fname = PurePosixPath(f"{_ACC1}_genomic.fna.gz")
-    _stage(mock_s3_client, _STG1, {fname: b"data"}, with_md5=False)
+    stage_files_with_sidecars(mock_s3_client, _STG1, {fname: b"data"}, with_md5=False)
 
     promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(_LKH1 / fname))
@@ -1044,13 +1007,13 @@ def test_promote_staging_data_files_deleted_after_promote(
         PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"genomic",
         PurePosixPath(f"{_ACC1}_protein.faa.gz"): b"protein",
     }
-    staged_keys = _stage(mock_s3_client, _STG1, files)
+    staged_keys = stage_files_with_sidecars(mock_s3_client, _STG1, files)
 
     promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     for key in staged_keys:
@@ -1067,13 +1030,13 @@ def test_promote_md5_sidecars_deleted_after_promote(
         PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"genomic",
         PurePosixPath(f"{_ACC1}_protein.faa.gz"): b"protein",
     }
-    staged_keys = _stage(mock_s3_client, _STG1, files, with_md5=True)
+    staged_keys = stage_files_with_sidecars(mock_s3_client, _STG1, files, with_md5=True)
 
     promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     for key in staged_keys:
@@ -1088,13 +1051,13 @@ def test_promote_crc64nvme_sidecars_deleted_after_promote(
 ) -> None:
     """Staged .crc64nvme sidecar files are also batch-deleted after a successful promote."""
     fname = PurePosixPath(f"{_ACC1}_genomic.fna.gz")
-    _stage(mock_s3_client, _STG1, {fname: b"data"}, with_md5=True, with_crc64=True)
+    stage_files_with_sidecars(mock_s3_client, _STG1, {fname: b"data"}, with_md5=True, with_crc64=True)
 
     promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     staged_key = f"{_STG1}{fname}"
@@ -1129,7 +1092,7 @@ def test_promote_partial_failure_staging_not_cleaned(
     """
     file_ok = PurePosixPath(f"{_ACC1}_genomic.fna.gz")
     file_fail = PurePosixPath(f"{_ACC1}_protein.faa.gz")
-    _stage(mock_s3_client, _STG1, {file_ok: b"ok", file_fail: b"fail"})
+    stage_files_with_sidecars(mock_s3_client, _STG1, {file_ok: b"ok", file_fail: b"fail"})
     staged_ok = _STG1 / file_ok
     staged_fail = _STG1 / file_fail
 
@@ -1139,7 +1102,7 @@ def test_promote_partial_failure_staging_not_cleaned(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     assert report["failed"] == 1
@@ -1161,7 +1124,7 @@ def test_promote_partial_failure_failed_count(
         PurePosixPath(f"{_ACC1}_protein.faa.gz"),
         PurePosixPath(f"{_ACC1}_rna.fna.gz"),
     ]
-    _stage(mock_s3_client, _STG1, dict.fromkeys(file_names, b"data"))
+    stage_files_with_sidecars(mock_s3_client, _STG1, dict.fromkeys(file_names, b"data"))
 
     _fail_download_for_key(mock_s3_client, _STG1 / file_names[1])
 
@@ -1169,7 +1132,7 @@ def test_promote_partial_failure_failed_count(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     assert report["failed"] == 1
@@ -1186,13 +1149,13 @@ def test_promote_two_assemblies_independent_cleanup(
     Assembly 2 has one failing file → staging NOT cleared.
     """
     # Assembly 1: two files, both succeed
-    _stage(
+    stage_files_with_sidecars(
         mock_s3_client,
         _STG1,
         {PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"g1", PurePosixPath(f"{_ACC1}_protein.faa.gz"): b"p1"},
     )
     # Assembly 2: two files, one will fail
-    _stage(
+    stage_files_with_sidecars(
         mock_s3_client,
         _STG2,
         {PurePosixPath(f"{_ACC2}_genomic.fna.gz"): b"g2", PurePosixPath(f"{_ACC2}_protein.faa.gz"): b"p2"},
@@ -1203,7 +1166,7 @@ def test_promote_two_assemblies_independent_cleanup(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     assert report["failed"] == 1
@@ -1226,14 +1189,14 @@ def test_promote_multi_assembly_all_succeed_all_cleaned(
     mock_s3_client: botocore.client.BaseClient,
 ) -> None:
     """Two assemblies both fully succeed → all staged files removed for both."""
-    _stage(mock_s3_client, _STG1, {PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"g1"})
-    _stage(mock_s3_client, _STG2, {PurePosixPath(f"{_ACC2}_genomic.fna.gz"): b"g2"})
+    stage_files_with_sidecars(mock_s3_client, _STG1, {PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"g1"})
+    stage_files_with_sidecars(mock_s3_client, _STG2, {PurePosixPath(f"{_ACC2}_genomic.fna.gz"): b"g2"})
 
     report = promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     assert report["promoted"] == 2  # noqa: PLR2004
@@ -1255,13 +1218,13 @@ def test_promote_dry_run_multi_file_no_writes_no_cleanup(
 ) -> None:
     """dry_run with multiple files writes nothing to final path and does not delete staging."""
     file_names = [f"{_ACC1}_genomic.fna.gz", f"{_ACC1}_protein.faa.gz", f"{_ACC1}_rna.fna.gz"]
-    staged_keys = _stage(mock_s3_client, _STG1, {PurePosixPath(f): f.encode() for f in file_names})
+    staged_keys = stage_files_with_sidecars(mock_s3_client, _STG1, {PurePosixPath(f): f.encode() for f in file_names})
 
     report = promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
         dry_run=True,
     )
 
@@ -1284,7 +1247,7 @@ def test_promote_skips_non_raw_data_paths(
 ) -> None:
     """Files outside raw_data/ (e.g. download_report.json) are silently skipped."""
     # Stage a real data file alongside non-promotable files
-    _stage(mock_s3_client, _STG1, {PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"data"})
+    stage_files_with_sidecars(mock_s3_client, _STG1, {PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"data"})
     mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(_STAGE_PREFIX / "download_report.json"), Body=b"{}")
     mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(_STAGE_PREFIX / "logs/run.log"), Body=b"logs")
 
@@ -1292,7 +1255,7 @@ def test_promote_skips_non_raw_data_paths(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     assert report["promoted"] == 1  # only the .fna.gz
@@ -1304,19 +1267,19 @@ def test_promote_idempotent_second_run_on_empty_staging(
     mock_s3_client: botocore.client.BaseClient,
 ) -> None:
     """Second promote run after staging has been cleaned promotes 0 files without error."""
-    _stage(mock_s3_client, _STG1, {PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"data"})
+    stage_files_with_sidecars(mock_s3_client, _STG1, {PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"data"})
 
     report1 = promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
     report2 = promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     assert report1["promoted"] == 1
@@ -1338,16 +1301,16 @@ def test_promote_multi_file_md5_per_file(
         PurePosixPath(f"{_ACC1}_protein.faa.gz"): b"PROTEIN_UNIQUE",
         PurePosixPath(f"{_ACC1}_rna.fna.gz"): b"RNA_UNIQUE",
     }
-    _stage(mock_s3_client, _STG1, files, with_md5=True)
+    stage_files_with_sidecars(mock_s3_client, _STG1, files, with_md5=True)
 
     promote_from_s3(
         staging_key_prefix=_STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
-        lakehouse_key_prefix=DEFAULT_LAKEHOUSE_KEY_PREFIX,
+        lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     for fname, content in files.items():
-        expected_md5 = hashlib.md5(content).hexdigest()  # noqa: S324
+        expected_md5 = md5_hex(content)
         resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(_LKH1 / fname))
         assert resp["Metadata"].get("md5") == expected_md5, f"Wrong MD5 on {fname}"

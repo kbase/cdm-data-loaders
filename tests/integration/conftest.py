@@ -4,9 +4,9 @@ Most tests use moto to mock S3. A subset of tests (marked `requires_ceph`)
 still use a real CEPH instance for end-to-end validation.
 """
 
-import hashlib
 import re
 from collections.abc import Generator
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -19,11 +19,41 @@ from botocore.exceptions import ClientError
 from types_boto3_s3 import S3Client
 
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
+from cdm_data_loaders.ncbi_ftp.manifest import (
+    AssemblyRecord,
+    download_assembly_summary,
+    filter_by_prefix_range,
+    parse_assembly_summary,
+)
 from cdm_data_loaders.utils.file_transfer.s3 import client
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
+from tests.cdm_data_loaders.ncbi_ftp.conftest import md5_hex
 
 # Maximum length of a bucket name per S3/DNS spec
 _MAX_BUCKET_LEN = 63
+
+# High-numbered prefix range that typically has only a handful of assemblies, keeping FTP traffic minimal.
+STABLE_PREFIX = "900"
+
+s3_backends = pytest.mark.parametrize("s3_client", ["ceph", "mock"], indirect=True)
+
+
+def download_and_filter_refseq(
+    prefix: str = STABLE_PREFIX,
+) -> tuple[dict[str, AssemblyRecord], dict[str, AssemblyRecord]]:
+    """Download the current refseq summary and filter to *prefix*.
+
+    Returns ``(full_parsed, filtered)``.
+    """
+    raw = download_assembly_summary(database="refseq")
+    full = parse_assembly_summary(raw)
+    filtered = filter_by_prefix_range(full, prefix_from=prefix, prefix_to=prefix)
+    return full, filtered
+
+
+def clone_assemblies(assemblies: dict[str, AssemblyRecord]) -> dict[str, AssemblyRecord]:
+    """Return a shallow copy of *assemblies* with fresh ``AssemblyRecord`` instances."""
+    return {acc: replace(rec) for acc, rec in assemblies.items()}
 
 
 @lru_cache(maxsize=1)
@@ -92,7 +122,7 @@ def _bucket_name_from_node(node_id: str, prefix: str | None = None) -> str:
     name = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     if len(name) > _MAX_BUCKET_LEN:
         # Truncate but keep it unique via a short hash suffix
-        suffix = hashlib.md5(name.encode()).hexdigest()[:6]  # noqa: S324
+        suffix = md5_hex(name.encode())[:6]
         name = f"{name[: _MAX_BUCKET_LEN - 7]}-{suffix}"
     return name
 
@@ -189,7 +219,7 @@ def seed_lakehouse(
     for fname, content in files.items():
         key = prefix / rel / fname
         body = content.encode() if isinstance(content, str) else content
-        md5 = hashlib.md5(body).hexdigest()  # noqa: S324
+        md5 = md5_hex(body)
         s3.put_object(Bucket=str(bucket), Key=str(key), Body=body, Metadata={"md5": md5})
         keys.append(key)
     return keys

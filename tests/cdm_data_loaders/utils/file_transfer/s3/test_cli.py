@@ -19,33 +19,10 @@ from tests.cdm_data_loaders.utils.file_transfer.s3.conftest import (
     NO_PATH_FOUND,
     SAMPLE_FILES,
     START_WITH_BUCKET_NAME,
+    TEST_MB_ARGS_ERROR,
+    TEST_MB_PARAMS,
+    TEST_PROTOCOLS,
 )
-
-# CLI helper function tests
-
-TEST_PROTOCOLS = [
-    "",
-    "s3://",
-    "s3a://",
-]
-
-TEST_MB_PARAMS = [
-    pytest.param("one-bucket", "one-bucket", id="name only"),
-    pytest.param("two-bucket/", "two-bucket", id="trailing slash"),
-    pytest.param("red-bucket/key", "red-bucket", id="red-bucket"),
-    pytest.param("blue-bucket/foo/bar.txt", "blue-bucket", id="blue-bucket"),
-]
-
-ERROR_MB_USAGE = "Usage: s3_local.py mb s3://BUCKET"
-
-TEST_MB_ARGS_ERROR = [
-    pytest.param([], ERROR_MB_USAGE, id="no args"),
-    pytest.param(["foo", "bar"], ERROR_MB_USAGE, id="two args"),
-    pytest.param(["foo", "bar", "baz"], ERROR_MB_USAGE, id="three args"),
-    pytest.param([""], NO_PATH_FOUND, id="missing bucket"),
-    pytest.param(["/bucket"], START_WITH_BUCKET_NAME, id="preceding slash"),
-    pytest.param(["/"], START_WITH_BUCKET_NAME, id="root"),
-]
 
 
 @pytest.mark.s3
@@ -313,7 +290,7 @@ def test_cmd_head_prints_not_found_for_missing_key(mock_s3_client: S3Client) -> 
 
 
 @pytest.mark.s3
-@pytest.mark.parametrize("protocol", ["", "s3://", "s3a://"])
+@pytest.mark.parametrize("protocol", TEST_PROTOCOLS)
 def test_cmd_head_handles_protocols(mock_s3_client: S3Client, protocol: str) -> None:
     """CLI head helper accepts all valid S3 protocol prefixes."""
     bucket = "proto-bucket"
