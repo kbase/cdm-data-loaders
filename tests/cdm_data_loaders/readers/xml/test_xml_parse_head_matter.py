@@ -5,9 +5,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from lxml.etree import XMLSyntaxError
 
 from cdm_data_loaders.readers.xml import parse_head_matter
+from tests.cdm_data_loaders.readers.xml.conftest import XML_OPEN_ERROR_CASES, prepare_xml_error_path
 
 # XML with no namespace declarations at all.
 NO_NAMESPACE_XML = """<?xml version="1.0"?>
@@ -57,8 +57,6 @@ CHILD_ONLY_NAMESPACE_XML = f"""<?xml version="1.0"?>
     <book xmlns:dc="{DC_NS_URI}" id="1"><dc:title>The Shining</dc:title></book>
 </library>
 """
-
-MISMATCHED_TAG_XML = '<library><book id="1"><title>Broken</title></library>'
 
 
 @pytest.mark.parametrize("as_path", [True, False])
@@ -161,35 +159,18 @@ def test_parse_head_matter_pass_logs_debug_messages(
     assert {r.levelno for r in caplog.records} == {logging.DEBUG}
 
 
-def test_parse_head_matter_fail_missing_file_raises_file_not_found_error(tmp_path: Path) -> None:
-    """Verify a path to a non-existent file raises FileNotFoundError."""
-    missing_path = tmp_path / "does_not_exist.xml"
+@pytest.mark.parametrize(("scenario", "expected_exc", "match"), XML_OPEN_ERROR_CASES)
+def test_parse_head_matter_fail_on_open_or_syntax_error(
+    scenario: str,
+    expected_exc: type[Exception],
+    match: str | None,
+    tmp_path: Path,
+    xml_path_factory: Callable[..., Path],
+) -> None:
+    """Verify missing, empty, malformed, or mis-named gzip files raise the expected error."""
+    path = prepare_xml_error_path(scenario, tmp_path, xml_path_factory)
 
-    with pytest.raises(FileNotFoundError):
-        parse_head_matter(missing_path)
-
-
-def test_parse_head_matter_fail_missing_gzip_file_raises_file_not_found_error(tmp_path: Path) -> None:
-    """Verify a path ending in .gz that doesn't exist raises FileNotFoundError rather than a gzip-specific error."""
-    missing_path = tmp_path / "does_not_exist.xml.gz"
-
-    with pytest.raises(FileNotFoundError):
-        parse_head_matter(missing_path)
-
-
-def test_parse_head_matter_fail_empty_file_raises_syntax_error(xml_path_factory: Callable[..., Path]) -> None:
-    """Verify a zero-byte XML file raises lxml's XMLSyntaxError rather than silently returning an empty dict."""
-    path = xml_path_factory("")
-
-    with pytest.raises(XMLSyntaxError):
-        parse_head_matter(path)
-
-
-def test_parse_head_matter_fail_malformed_root_raises_syntax_error(xml_path_factory: Callable[..., Path]) -> None:
-    """Verify content that is malformed before/at the root element raises lxml's XMLSyntaxError."""
-    path = xml_path_factory("not xml at all <<<")
-
-    with pytest.raises(XMLSyntaxError):
+    with pytest.raises(expected_exc, match=match):
         parse_head_matter(path)
 
 
@@ -205,13 +186,3 @@ def test_parse_head_matter_pass_body_malformation_after_root_is_tolerated(
     path = xml_path_factory(f'<library xmlns="{DEFAULT_NS_URI}"><book></wrong></library>')
 
     assert parse_head_matter(path) == {"": DEFAULT_NS_URI}
-
-
-def test_parse_head_matter_fail_non_gzip_content_with_gz_extension_raises_error(
-    xml_path_factory: Callable[..., Path],
-) -> None:
-    """Verify a file named `*.gz` but containing plain (non-gzip-compressed) text raises an error when read."""
-    fake_gz_path = xml_path_factory(DEFAULT_NAMESPACE_XML, gzip_compress=False, filename="not_really_gzipped.xml.gz")
-
-    with pytest.raises(OSError, match="Not a gzipped file"):
-        parse_head_matter(fake_gz_path)

@@ -158,19 +158,6 @@ def test_validate_jsonschema_pass_validator_does_gaf_about_invalid_schema_uri(
         validate_jsonschema(schema_path)
 
 
-def test_validate_jsonschema_fail_invalid_schema_content_raises_schema_error(
-    make_schema_file: Callable[[Any, str], Path],
-) -> None:
-    """A structurally invalid schema fails with a SchemaError."""
-    schema = {"$schema": VALID_SCHEMA_URI, "type": "not-a-real-type", "required": ["a"]}
-    schema_path = make_schema_file(schema, "schema.json")
-
-    with pytest.raises(
-        jsonschema.exceptions.SchemaError, match="'not-a-real-type' is not valid under any of the given schemas"
-    ):
-        validate_jsonschema(schema_path)
-
-
 def test_validate_jsonschema_fail_invalid_schema_content_logs_and_raises_schema_error(
     make_schema_file: Callable[..., Path], caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -178,7 +165,9 @@ def test_validate_jsonschema_fail_invalid_schema_content_logs_and_raises_schema_
     schema = {"$schema": VALID_SCHEMA_URI, "type": "not-a-real-type", "required": ["a"]}
     schema_path = make_schema_file(schema)
 
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="is not valid under any of the given schemas"):
+    with pytest.raises(
+        jsonschema.exceptions.SchemaError, match="'not-a-real-type' is not valid under any of the given schemas"
+    ):
         validate_jsonschema(schema_path)
 
     assert len(caplog.records) == 1
@@ -271,229 +260,38 @@ def test_register_xsv_validator_pass_idempotent() -> None:
     assert validator_cls.META_SCHEMA == CUSTOM_META_SCHEMA
 
 
-def test_register_xsv_validator_pass_valid_xsv_config_conforms_to_metaschema() -> None:
-    """A schema with a well-formed x-xsv-config block validates cleanly against the custom meta-schema."""
-    register_xsv_validator()
-    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
-
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {
-            "x-has-header": True,
-            "x-delimiter": ",",
-            "x-quote": '"',
-            "x-escape": "\\",
-            "x-quoting-policy": "necessary",
-        },
-    }
-
-    validator_cls.check_schema(schema)  # should not raise
-
-
-def test_register_xsv_validator_fail_additional_property_not_allowed() -> None:
-    """A schema whose x-xsv-config block has an unrecognised key fails the custom meta-schema."""
-    register_xsv_validator()
-    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
-
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-not-a-real-option": True},
-    }
-
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="Additional properties are not allowed"):
-        validator_cls.check_schema(schema)
-
-
-def test_register_xsv_validator_fail_field_exceeds_max_length() -> None:
-    """A schema whose x-delimiter value is longer than one character fails the custom meta-schema."""
-    register_xsv_validator()
-    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
-
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-delimiter": ",;"},
-    }
-
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="is too long"):
-        validator_cls.check_schema(schema)
-
-
-"""register_xsv_validator - x-null-cols"""
-
-
-def test_register_xsv_validator_pass_valid_null_cols_conforms_to_metaschema() -> None:
-    """A schema with a well-formed x-null-cols array of strings validates against the custom meta-schema."""
-    register_xsv_validator()
-    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
-
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-null-cols": ["col_a", "col_b"]},
-    }
-
-    validator_cls.check_schema(schema)  # should not raise
-
-
-def test_register_xsv_validator_fail_null_cols_wrong_type() -> None:
-    """A schema whose x-null-cols value isn't an array fails the custom meta-schema."""
-    register_xsv_validator()
-    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
-
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-null-cols": "col_a"},
-    }
-
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="is not of type 'array'"):
-        validator_cls.check_schema(schema)
-
-
-def test_register_xsv_validator_fail_null_cols_non_string_items() -> None:
-    """A schema whose x-null-cols array contains non-string items fails the custom meta-schema."""
-    register_xsv_validator()
-    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
-
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-null-cols": ["col_a", 42]},
-    }
-
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="is not of type 'string'"):
-        validator_cls.check_schema(schema)
-
-
-"""validate_jsonschema - x-null-cols"""
-
-
-def test_validate_jsonschema_pass_valid_null_cols(make_schema_file: Callable[..., Path]) -> None:
-    """A schema with a well-formed x-null-cols array of strings validates."""
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a", "b"],
-        "x-xsv-config": {"x-null-cols": ["a", "b"]},
-    }
-    schema_path = make_schema_file(schema)
-
-    result = validate_jsonschema(schema_path)
-
-    assert isinstance(result, ValidatedSchema)
-    assert result.jsonschema == schema
-
-
-def test_validate_jsonschema_fail_null_cols_wrong_type(make_schema_file: Callable[..., Path]) -> None:
-    """A schema whose x-null-cols value isn't an array fails validation."""
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-null-cols": "a"},
-    }
-    schema_path = make_schema_file(schema)
-
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="is not of type 'array'"):
-        validate_jsonschema(schema_path)
-
-
-def test_validate_jsonschema_fail_null_cols_non_string_items(make_schema_file: Callable[..., Path]) -> None:
-    """A schema whose x-null-cols array contains non-string items fails validation."""
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-null-cols": [1, 2, 3]},
-    }
-    schema_path = make_schema_file(schema)
-
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="is not of type 'string'"):
-        validate_jsonschema(schema_path)
-
-
-"""register_xsv_validator - x-null-cols minItems"""
-
-
-def test_register_xsv_validator_fail_null_cols_empty_array() -> None:
-    """A schema whose x-null-cols array is empty fails the custom meta-schema."""
-    register_xsv_validator()
-    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
-
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-null-cols": []},
-    }
-
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="should be non-empty"):
-        validator_cls.check_schema(schema)
-
-
-def test_register_xsv_validator_pass_null_cols_single_item() -> None:
-    """A schema whose x-null-cols array has exactly one item conforms to the custom meta-schema."""
-    register_xsv_validator()
-    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
-
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-null-cols": ["col_a"]},
-    }
-
-    validator_cls.check_schema(schema)  # should not raise
-
-
-"""validate_jsonschema - x-null-cols minItems"""
-
-
-def test_validate_jsonschema_fail_null_cols_empty_array(make_schema_file: Callable[..., Path]) -> None:
-    """A schema whose x-null-cols array is empty fails validation."""
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-null-cols": []},
-    }
-    schema_path = make_schema_file(schema)
-
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="should be non-empty"):
-        validate_jsonschema(schema_path)
-
-
-def test_validate_jsonschema_pass_null_cols_single_item(make_schema_file: Callable[..., Path]) -> None:
-    """A schema whose x-null-cols array has exactly one item validates."""
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-null-cols": ["a"]},
-    }
-    schema_path = make_schema_file(schema)
-
-    result = validate_jsonschema(schema_path)
-
-    assert isinstance(result, ValidatedSchema)
-    assert result.jsonschema == schema
-
-
-"""validate_jsonschema - custom xsv metaschema"""
-
-
-def test_validate_jsonschema_pass_conforms_to_custom_xsv_metaschema(
+@pytest.mark.parametrize(
+    "x_xsv_config",
+    [
+        pytest.param(
+            {
+                "x-has-header": True,
+                "x-delimiter": ",",
+                "x-quote": '"',
+                "x-escape": "\\",
+                "x-quoting-policy": "necessary",
+            },
+            id="full-parser-config",
+        ),
+        pytest.param({"x-null-cols": ["a", "b"]}, id="null-cols-multi"),
+        pytest.param({"x-null-cols": ["a"]}, id="null-cols-single"),
+    ],
+)
+def test_custom_xsv_metaschema_pass_accepts_valid_config(
     make_schema_file: Callable[..., Path],
+    x_xsv_config: dict[str, Any],
 ) -> None:
-    """A schema declaring the custom xsv $schema URI with a well-formed x-xsv-config block validates."""
+    """A schema with a well-formed x-xsv-config block passes both check_schema and validate_jsonschema."""
+    register_xsv_validator()
+    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
     schema = {
         "$schema": CUSTOM_META_SCHEMA_URI,
         "required": ["a", "b"],
-        "x-xsv-config": {
-            "x-has-header": True,
-            "x-delimiter": ",",
-            "x-quoting-policy": "necessary",
-        },
+        "x-xsv-config": x_xsv_config,
     }
-    schema_path = make_schema_file(schema)
 
-    result = validate_jsonschema(schema_path)
+    validator_cls.check_schema(schema)
+    result = validate_jsonschema(make_schema_file(schema))
 
     assert isinstance(result, ValidatedSchema)
     assert result.has_xsv_metaschema
@@ -501,49 +299,40 @@ def test_validate_jsonschema_pass_conforms_to_custom_xsv_metaschema(
     assert result.jsonschema == schema
 
 
-def test_validate_jsonschema_fail_violates_custom_xsv_metaschema_additional_property(
+@pytest.mark.parametrize(
+    ("x_xsv_config", "error_match"),
+    [
+        pytest.param(
+            {"x-not-a-real-option": True},
+            "Additional properties are not allowed",
+            id="additional-property-not-allowed",
+        ),
+        pytest.param({"x-delimiter": ",;"}, "is too long", id="field-exceeds-max-length"),
+        pytest.param({"x-null-cols": "col_a"}, "is not of type 'array'", id="null-cols-wrong-type"),
+        pytest.param({"x-null-cols": ["col_a", 42]}, "is not of type 'string'", id="null-cols-non-string-items"),
+        pytest.param({"x-null-cols": []}, "should be non-empty", id="null-cols-empty-array"),
+        pytest.param({"x-has-header": "yes"}, "is not of type 'boolean'", id="has-header-wrong-type"),
+        pytest.param({"x-quoting-policy": "sometimes"}, "is not one of", id="quoting-policy-bad-enum"),
+    ],
+)
+def test_custom_xsv_metaschema_fail_rejects_invalid_config(
     make_schema_file: Callable[..., Path],
+    x_xsv_config: dict[str, Any],
+    error_match: str,
 ) -> None:
-    """A schema whose x-xsv-config block has an unrecognised key fails validation."""
+    """A schema whose x-xsv-config block violates the custom metaschema raises SchemaError."""
+    register_xsv_validator()
+    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
     schema = {
         "$schema": CUSTOM_META_SCHEMA_URI,
         "required": ["a"],
-        "x-xsv-config": {"x-this-is-not-a-real-option": "nope"},
+        "x-xsv-config": x_xsv_config,
     }
-    schema_path = make_schema_file(schema)
 
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="Additional properties are not allowed"):
-        validate_jsonschema(schema_path)
-
-
-def test_validate_jsonschema_fail_violates_custom_xsv_metaschema_bad_type(
-    make_schema_file: Callable[..., Path],
-) -> None:
-    """A schema whose x-has-header value is not a boolean fails validation."""
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-has-header": "yes"},
-    }
-    schema_path = make_schema_file(schema)
-
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="is not of type 'boolean'"):
-        validate_jsonschema(schema_path)
-
-
-def test_validate_jsonschema_fail_violates_custom_xsv_metaschema_bad_enum_value(
-    make_schema_file: Callable[..., Path],
-) -> None:
-    """A schema whose x-quoting-policy value isn't one of the allowed enum values fails validation."""
-    schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "required": ["a"],
-        "x-xsv-config": {"x-quoting-policy": "sometimes"},
-    }
-    schema_path = make_schema_file(schema)
-
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="is not one of"):
-        validate_jsonschema(schema_path)
+    with pytest.raises(jsonschema.exceptions.SchemaError, match=error_match):
+        validator_cls.check_schema(schema)
+    with pytest.raises(jsonschema.exceptions.SchemaError, match=error_match):
+        validate_jsonschema(make_schema_file(schema))
 
 
 """generate_header"""

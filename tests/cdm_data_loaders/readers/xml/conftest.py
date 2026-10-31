@@ -7,6 +7,35 @@ from typing import Any
 
 import pytest
 from dlt.extract.items import DataItemWithMeta, TableNameMeta
+from lxml.etree import XMLSyntaxError
+
+MISMATCHED_TAG_XML = '<library><book id="1"><title>Broken</title></library>'
+
+XML_OPEN_ERROR_CASES = [
+    pytest.param("missing_file", FileNotFoundError, None, id="missing-file"),
+    pytest.param("missing_gzip_file", FileNotFoundError, None, id="missing-gzip-file"),
+    pytest.param("empty_file", XMLSyntaxError, None, id="empty-file"),
+    pytest.param("malformed_xml", XMLSyntaxError, None, id="malformed-xml"),
+    pytest.param("non_gzip_with_gz_ext", OSError, "Not a gzipped file", id="non-gzip-with-gz-ext"),
+]
+
+
+def prepare_xml_error_path(scenario: str, tmp_path: Path, xml_path_factory: Callable[..., Path]) -> Path:
+    """Create or return the path for one of the standard XML open/parse failure scenarios."""
+    if scenario == "missing_file":
+        return tmp_path / "does_not_exist.xml"
+    if scenario == "missing_gzip_file":
+        return tmp_path / "does_not_exist.xml.gz"
+    if scenario == "empty_file":
+        return xml_path_factory("")
+    if scenario == "malformed_xml":
+        return xml_path_factory("not xml at all <<<")
+    if scenario == "mismatched_tag":
+        return xml_path_factory(MISMATCHED_TAG_XML)
+    if scenario == "non_gzip_with_gz_ext":
+        return xml_path_factory("<library/>", gzip_compress=False, filename="not_really_gzipped.xml.gz")
+    msg = f"Unknown scenario: {scenario}"
+    raise ValueError(msg)
 
 
 def write_xml_file(directory: Path, filename: str, content: str, *, gzip_compress: bool = False) -> Path:

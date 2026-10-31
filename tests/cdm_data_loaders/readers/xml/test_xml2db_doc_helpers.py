@@ -4,7 +4,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-import pytest
 from xml2db import DataModel, Document
 
 from cdm_data_loaders.readers.xml2db_doc import (
@@ -14,7 +13,6 @@ from cdm_data_loaders.readers.xml2db_doc import (
     flatten_xml2db_document,
     is_xml2db_content_addressed_table,
 )
-from cdm_data_loaders.utils.xml_utils import local_name
 from tests.xml_samples import TWO_BOOK_LIBRARY_XML
 
 # _xml2db_scalar
@@ -104,23 +102,6 @@ def test_is_xml2db_content_addressed_table_fail_non_reused_table(library_xsd: Pa
     book_table = model.tables["book"]
     assert not book_table.is_reused
     assert not is_xml2db_content_addressed_table(model, book_table)
-
-
-# local_name
-
-
-@pytest.mark.parametrize(
-    ("input_str", "output"),
-    [
-        pytest.param("{http://uniprot.org/uniref}entry", "entry", id="Clark-notation-expanded-name"),
-        pytest.param("entry", "entry", id="bare-tag-no-namespace"),
-        pytest.param("{http://uniprot.org/uniref}", "", id="namespace-only-empty-string"),
-        pytest.param(None, None, id="Non-string input"),
-    ],
-)
-def test_local_name_parsing(input_str: str | None, output: str | None) -> None:
-    """Tests for parsing local names."""
-    assert local_name(tag=input_str) == output  # pyright: ignore[reportArgumentType]
 
 
 # flatten_xml2db_document, non-reused tables

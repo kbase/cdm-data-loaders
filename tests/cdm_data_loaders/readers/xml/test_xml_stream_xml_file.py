@@ -8,6 +8,7 @@ import pytest
 from lxml.etree import XMLSyntaxError, tostring
 
 from cdm_data_loaders.readers.xml import stream_xml_file
+from tests.cdm_data_loaders.readers.xml.conftest import XML_OPEN_ERROR_CASES, prepare_xml_error_path
 from tests.xml_samples import SIMPLE_LIBRARY_XML
 
 MIXED_TAGS_XML = """<?xml version="1.0"?>
@@ -22,8 +23,6 @@ NAMESPACE_URI = "http://example.com/lib"
 NAMESPACED_SIMPLE_XML = SIMPLE_LIBRARY_XML.replace("<library>", f'<library xmlns="{NAMESPACE_URI}">')
 
 NAMESPACED_MIXED_TAG_XML = MIXED_TAGS_XML.replace("<catalog>", f'<catalog xmlns="{NAMESPACE_URI}">')
-
-MISMATCHED_TAG_XML = '<library><book id="1"><title>Broken</title></library>'
 
 EXPECTED_SIMPLE_TAGS_IDS = [("book", "1"), ("book", "2"), ("book", "3")]
 EXPECTED_MIXED_TAGS_IDS = [("book", "1"), ("book", "2")]
@@ -166,45 +165,22 @@ def test_stream_xml_file_pass_logs_debug_message_per_yielded_element(
         assert rec.getMessage().startswith("<Element book at")
 
 
-def test_stream_xml_file_fail_missing_file_raises_file_not_found_error(tmp_path: Path) -> None:
-    """Verify a path to a non-existent file raises FileNotFoundError."""
-    missing_path = tmp_path / "does_not_exist.xml"
+@pytest.mark.parametrize(
+    ("scenario", "expected_exc", "match"),
+    [*XML_OPEN_ERROR_CASES, pytest.param("mismatched_tag", XMLSyntaxError, None, id="mismatched-tag")],
+)
+def test_stream_xml_file_fail_on_open_or_syntax_error(
+    scenario: str,
+    expected_exc: type[Exception],
+    match: str | None,
+    tmp_path: Path,
+    xml_path_factory: Callable[..., Path],
+) -> None:
+    """Verify missing, empty, malformed, or mis-named gzip files raise the expected error."""
+    path = prepare_xml_error_path(scenario, tmp_path, xml_path_factory)
 
-    with pytest.raises(FileNotFoundError):
-        list(stream_xml_file(missing_path, "book"))
-
-
-def test_stream_xml_file_fail_missing_gzip_file_raises_file_not_found_error(tmp_path: Path) -> None:
-    """Verify a path ending in .gz that doesn't exist raises FileNotFoundError rather than a gzip-specific error."""
-    missing_path = tmp_path / "does_not_exist.xml.gz"
-
-    with pytest.raises(FileNotFoundError):
-        list(stream_xml_file(missing_path, "book"))
-
-
-def test_stream_xml_file_fail_malformed_xml_raises_syntax_error(xml_path_factory: Callable[..., Path]) -> None:
-    """Verify malformed XML (mismatched closing tags) raises lxml's XMLSyntaxError."""
-    path = xml_path_factory(MISMATCHED_TAG_XML)
-
-    with pytest.raises(XMLSyntaxError):
+    with pytest.raises(expected_exc, match=match):
         list(stream_xml_file(path, "book"))
-
-
-def test_stream_xml_file_fail_empty_file_raises_syntax_error(xml_path_factory: Callable[..., Path]) -> None:
-    """Verify a zero-byte XML file raises lxml's XMLSyntaxError rather than silently yielding nothing."""
-    path = xml_path_factory("")
-
-    with pytest.raises(XMLSyntaxError):
-        list(stream_xml_file(path, "book"))
-
-
-def test_stream_xml_file_fail_non_gzip_content_with_gz_extension_raises_error(tmp_path: Path) -> None:
-    """Verify a file named `*.gz` but containing plain (non-gzip-compressed) text raises an error when read."""
-    fake_gz_path = tmp_path / "not_really_gzipped.xml.gz"
-    fake_gz_path.write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
-
-    with pytest.raises(OSError, match="Not a gzipped file"):
-        list(stream_xml_file(fake_gz_path, "book"))
 
 
 @pytest.mark.parametrize(

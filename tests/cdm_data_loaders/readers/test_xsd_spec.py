@@ -23,6 +23,7 @@ from cdm_data_loaders.readers.xsd import (
     generate_pyarrow_schema,
     load_schema,
 )
+from cdm_data_loaders.utils.xml_utils import local_name
 from scripts.gen_converter_spec import XSD_TO_PYARROW, render
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
 from tests.pyarrow_spec_helpers import (
@@ -47,18 +48,13 @@ MAXIMAL_RUN_PARAMS: list[ParameterSet] = [
 ERROR_PARAMS: list[ParameterSet] = [pytest.param(err, id=f"{err.code}-{err.file.stem}") for err in ERROR_CASES]
 
 
-def _local_tag(tag: str) -> str:
-    """Strip an optional Clark-notation '{namespace}' prefix from an XML tag."""
-    return tag.rsplit("}", maxsplit=1)[-1] if "}" in tag else tag
-
-
 def _extract_matching_elements(xml_path: Path, xml_tag: str) -> list[Element]:
     """Parse xml_path and return all elements matching xml_tag at the root or as a direct child of root."""
-    local_tag = _local_tag(xml_tag)
+    local_tag = local_name(xml_tag)
     root = parse(str(xml_path)).getroot()
-    if _local_tag(root.tag) == local_tag:
+    if local_name(root.tag) == local_tag:
         return [root]
-    return [child for child in root if isinstance(child.tag, str) and _local_tag(child.tag) == local_tag]
+    return [child for child in root if isinstance(child.tag, str) and local_name(child.tag) == local_tag]
 
 
 def _max_recursion_depth(run: Run) -> int:
@@ -138,7 +134,7 @@ def test_maximal_examples_pass_repeated_elements_have_distinct_content(xml_path:
                 node.text = node.text.strip()
             if node.tail is not None:
                 node.tail = node.tail.strip()
-        by_tag[_local_tag(elem.tag)].append(tostring(clone, encoding="unicode"))
+        by_tag[local_name(elem.tag)].append(tostring(clone, encoding="unicode"))
 
     duplicates = {tag: sigs for tag, sigs in by_tag.items() if len(sigs) > 1 and len(set(sigs)) < len(sigs)}
     assert not duplicates

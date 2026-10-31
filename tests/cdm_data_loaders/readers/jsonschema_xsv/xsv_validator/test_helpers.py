@@ -214,9 +214,18 @@ def test_prepend_header_fail_missing_data_file(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("first_pass_value", [None, True, False])
-@pytest.mark.parametrize("input_file_name", ["some_file_name.tsv", "a_random_sequence_of_chars"])
+@pytest.mark.parametrize(
+    "input_file_name",
+    [
+        "some_file_name.tsv",
+        "a_random_sequence_of_chars",
+        pytest.param("data-header.tsv", id="simple-name"),
+        pytest.param("data.with.dots-header.tsv", id="name-with-embedded-dots"),
+        pytest.param("data-normalised.norm.tsv", id="name-resembling-a-previous-suffix"),
+    ],
+)
 @pytest.mark.parametrize("ext", [".tsv", ".csv", ".tar.gz", ".exe"])
-def test_generate_qsv_validate_file_names(first_pass_value: None | bool, input_file_name: str, ext: str) -> None:
+def test_generate_qsv_validate_file_names(first_pass_value: bool | None, input_file_name: str, ext: str) -> None:
     """Ensure that the appropriate file names are generated for a variety of values.
 
     Parametrizes the file extension, the input file name, and whether or not this is the first pass naming.
@@ -241,51 +250,6 @@ def test_generate_qsv_validate_file_names(first_pass_value: None | bool, input_f
     if first_pass_value is not None and first_pass_value is False:
         valid_output_file_name = f"some_name-normalised-validated{VALID_SUFFIX}{ext}"
         schema_file_name = "some_name-normalised-validated.jsonschema.json"
-
-    assert file_names.valid_output == tmp_path / valid_output_file_name
-    assert file_names.errors == tmp_path / f"{input_file_name}{VALIDATION_ERRORS}"
-    assert file_names.valid_lines == tmp_path / f"{input_file_name}.valid{ext}"
-    assert file_names.invalid_lines == tmp_path / f"{input_file_name}.invalid{ext}"
-    assert file_names.schema == tmp_path / schema_file_name
-
-    names_list = [
-        file_names.valid_output,
-        file_names.errors,
-        file_names.valid_lines,
-        file_names.invalid_lines,
-        file_names.schema,
-    ]
-    # all generated names are different
-    assert len(set(names_list)) == len(names_list)
-
-
-@pytest.mark.parametrize(
-    "input_file_name",
-    [
-        pytest.param("data-header.tsv", id="simple-name"),
-        pytest.param("data.with.dots-header.tsv", id="name-with-embedded-dots"),
-        pytest.param("data-normalised.norm.tsv", id="name-resembling-a-previous-suffix"),
-    ],
-)
-def test_generate_qsv_validate_file_names_pass_handles_various_input_file_names(input_file_name: str) -> None:
-    """input_file_name is used verbatim as a prefix for errors_file/valid_lines_file/invalid_lines_file.
-
-    Embedded dots or substrings that resemble other pipeline suffixes are ignored.
-    """
-    tmp_path = Path("tmp")
-    ext = ".tar.gz"
-    cv_args = MagicMock(
-        ext=ext,
-        tmp_dir_path=tmp_path,
-        xsv_file_base_name="some_name",
-        invalid_file_suffix=f"invalid{ext}",
-        valid_file_suffix=f"valid{ext}",
-    )
-
-    file_names = generate_qsv_validate_file_names(cv_args, input_file_name)
-
-    valid_output_file_name = f"some_name-first-pass{VALID_SUFFIX}{ext}"
-    schema_file_name = "some_name-first-pass.jsonschema.json"
 
     assert file_names.valid_output == tmp_path / valid_output_file_name
     assert file_names.errors == tmp_path / f"{input_file_name}{VALIDATION_ERRORS}"

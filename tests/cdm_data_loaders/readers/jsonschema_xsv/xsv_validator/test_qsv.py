@@ -900,81 +900,40 @@ def test_run_qsv_null_replacement_mocked_qsv_fail_records_error_without_invoking
 
 
 # real qsv!
-def test_run_qsv_null_replacement_pass_replaces_matching_placeholder(
-    make_args: Callable[..., CleanerValidatorArgs], write_source_file: WriteFile, write_working_file: WriteFile
+@pytest.mark.parametrize(
+    ("rows", "regex"),
+    [
+        *(
+            pytest.param(rows_with_null_placeholder(case.placeholder), case.regex, id=case.placeholder)
+            for case in NULL_REGEX_CASES
+        ),
+        pytest.param(ROWS_WITH_MIXED_CASE_NULLS, MIXED_CASE_NULL_REGEX, id="case-insensitive-mixed-spellings"),
+        pytest.param(ROWS_WITH_MULTIPLE_NULL_SPELLINGS, MULTI_SPELLING_NULL_REGEX, id="alternation-multiple-spellings"),
+    ],
+)
+def test_run_qsv_null_replacement_pass_matches_various_placeholder_regex_pairs(
+    make_args: Callable[..., CleanerValidatorArgs],
+    write_source_file: WriteFile,
+    write_working_file: WriteFile,
+    rows: list[list[str]],
+    regex: str,
 ) -> None:
-    """On success, every exact match of null_regex is replaced with an empty string."""
-    source = write_source_file(build_xsv_content(ROWS_WITH_NULLS, header=COLUMNS), "data.tsv")
-    args = make_args(source, null_regex=NULL_REGEX)
-    input_file_name = _write_cleaned_input_file(args, write_working_file, ROWS_WITH_NULLS)
+    """Each documented (placeholder, regex) pair -- including case-insensitive and alternation regexes -- replaces matching cells with empty strings."""
+    source = write_source_file(build_xsv_content(rows, header=COLUMNS), "data.tsv")
+    args = make_args(source, null_regex=regex)
+    input_file_name = _write_cleaned_input_file(args, write_working_file, rows)
 
     result = run_qsv_null_replacement(args, input_file_name)
 
     assert result is not None
     expected_output = f"{args.xsv_file_base_name}{NORM_SUFFIX}{args.ext}"
     assert result == expected_output
-    rows = parse_xsv((args.tmp_dir_path / result).read_text())
-    assert rows[0] == COLUMNS
+    parsed = parse_xsv((args.tmp_dir_path / result).read_text())
+    assert parsed[0] == COLUMNS
     float_col_index = COLUMNS.index("float")
-    for row in rows[1:]:
+    for row in parsed[1:]:
         assert row[float_col_index] == ""
     assert args.errors == []
-
-
-@pytest.mark.parametrize("case", NULL_REGEX_CASES, ids=[c.placeholder for c in NULL_REGEX_CASES])
-def test_run_qsv_null_replacement_pass_matches_various_placeholder_regex_pairs(
-    make_args: Callable[..., CleanerValidatorArgs],
-    write_source_file: WriteFile,
-    write_working_file: WriteFile,
-    case: NullValueCase,
-) -> None:
-    """Each documented (placeholder, regex) pair -- including one requiring escaping -- is matched exactly."""
-    rows = rows_with_null_placeholder(case.placeholder)
-    source = write_source_file(build_xsv_content(rows, header=COLUMNS), "data.tsv")
-    args = make_args(source, null_regex=case.regex)
-    input_file_name = _write_cleaned_input_file(args, write_working_file, rows)
-
-    result = run_qsv_null_replacement(args, input_file_name)
-
-    assert result is not None
-    parsed = parse_xsv((args.tmp_dir_path / result).read_text())
-    float_col_index = COLUMNS.index("float")
-    for row in parsed[1:]:
-        assert row[float_col_index] == ""
-
-
-def test_run_qsv_null_replacement_pass_case_insensitive_regex_matches_all_spellings(
-    make_args: Callable[..., CleanerValidatorArgs], write_source_file: WriteFile, write_working_file: WriteFile
-) -> None:
-    """A single case-insensitive regex replaces differently-cased spellings across different rows."""
-    source = write_source_file(build_xsv_content(ROWS_WITH_MIXED_CASE_NULLS, header=COLUMNS), "data.tsv")
-    args = make_args(source, null_regex=MIXED_CASE_NULL_REGEX)
-    input_file_name = _write_cleaned_input_file(args, write_working_file, ROWS_WITH_MIXED_CASE_NULLS)
-
-    result = run_qsv_null_replacement(args, input_file_name)
-
-    assert result is not None
-    parsed = parse_xsv((args.tmp_dir_path / result).read_text())
-    float_col_index = COLUMNS.index("float")
-    for row in parsed[1:]:
-        assert row[float_col_index] == ""
-
-
-def test_run_qsv_null_replacement_pass_alternation_regex_matches_multiple_spellings(
-    make_args: Callable[..., CleanerValidatorArgs], write_source_file: WriteFile, write_working_file: WriteFile
-) -> None:
-    """A single regex with alternation replaces several distinct null-value spellings in one pass."""
-    source = write_source_file(build_xsv_content(ROWS_WITH_MULTIPLE_NULL_SPELLINGS, header=COLUMNS), "data.tsv")
-    args = make_args(source, null_regex=MULTI_SPELLING_NULL_REGEX)
-    input_file_name = _write_cleaned_input_file(args, write_working_file, ROWS_WITH_MULTIPLE_NULL_SPELLINGS)
-
-    result = run_qsv_null_replacement(args, input_file_name)
-
-    assert result is not None
-    parsed = parse_xsv((args.tmp_dir_path / result).read_text())
-    float_col_index = COLUMNS.index("float")
-    for row in parsed[1:]:
-        assert row[float_col_index] == ""
 
 
 @pytest.mark.parametrize("cols", [["float"], ["float", "string"]])
@@ -1903,39 +1862,22 @@ def test_clean_validate_file_fail_move_safely_failure_returns_none_despite_valid
 
 
 # clean_validate_file, real qsv end-to-end
-def test_clean_validate_file_pass_end_to_end_with_header_present(
-    make_args: Callable[..., CleanerValidatorArgs], write_source_file: WriteFile
+@pytest.mark.parametrize("missing_header", [False, True], ids=["header-present", "missing-header"])
+def test_clean_validate_file_pass_end_to_end(
+    make_args: Callable[..., CleanerValidatorArgs],
+    write_source_file: WriteFile,
+    missing_header: bool,
 ) -> None:
-    """A well-formed file with a header already present passes through the whole pipeline unmolested."""
-    source = write_source_file(build_xsv_content(VALID_ROWS, header=COLUMNS), "data.tsv")
-    args = make_args(source)
+    """A well-formed file (with or without a header) passes through the whole pipeline cleanly."""
+    header = None if missing_header else COLUMNS
+    source = write_source_file(build_xsv_content(VALID_ROWS, header=header), "data.tsv")
+    args = make_args(source, missing_header=missing_header)
 
     result = clean_validate_file(args)
 
     files = generate_qsv_validate_file_names(args, "ignored", first_pass=False)
     output = files.valid_output
 
-    assert result == output.name
-
-    validated_path = args.validated_file_dir_path / output.name
-    assert validated_path.is_file()
-    rows = parse_xsv(validated_path.read_text())
-    assert rows[0] == COLUMNS
-    assert rows[1:] == VALID_ROWS
-    assert args.errors == []
-
-
-def test_clean_validate_file_pass_end_to_end_with_missing_header(
-    make_args: Callable[..., CleanerValidatorArgs], write_source_file: WriteFile
-) -> None:
-    """A headerless file has the header prepended before running through the rest of the pipeline."""
-    source = write_source_file(build_xsv_content(VALID_ROWS), "data.tsv")
-    args = make_args(source, missing_header=True)
-
-    result = clean_validate_file(args)
-
-    files = generate_qsv_validate_file_names(args, "ignored", first_pass=False)
-    output = files.valid_output
     assert result == output.name
 
     validated_path = args.validated_file_dir_path / output.name
