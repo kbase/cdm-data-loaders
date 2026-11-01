@@ -30,6 +30,7 @@ def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None
         lambda file_item, cfg: process_xml_file_to_pyarrow(cfg, file_path=file_item),
         settings,
         name="xmltopyarrow_reader",
+        parallelized=False,
     )
     pipeline_name = str(settings.model_config.get("cli_prog_name") or PIPELINE_NAME)
 

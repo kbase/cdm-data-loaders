@@ -2,6 +2,8 @@
 
 import gzip
 import logging
+import threading
+from collections import defaultdict
 from collections.abc import Callable, Generator, Iterator
 from pathlib import Path
 from typing import Any, Final
@@ -13,10 +15,12 @@ import xmlschema
 import xmltodict
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.extract.items import DataItemWithMeta, TableNameMeta
+from dlt.extract.pipe_iterator import ManagedPipeIterator
 from dlt.sources.filesystem import filesystem
 from lxml.etree import Element, XMLSyntaxError, tostring
 
 import cdm_data_loaders.readers.xml as xml_module
+import cdm_data_loaders.readers.xsd as xsd_module
 import cdm_data_loaders.utils.buffer as buffer_module
 from cdm_data_loaders.core.fields import BUFFER_SIZE, DEFAULT_XML_FILE_GLOB, DEFAULTS, LOG_INTERVAL
 from cdm_data_loaders.core.settings import CtsSettings
@@ -24,6 +28,7 @@ from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from cdm_data_loaders.readers.xml import (
     DEFAULT_XMLTODICT_ARGS,
+    build_xml_file_resource,
     process_xml_file,
     process_xml_file_items,
     process_xml_file_to_dict,
@@ -31,6 +36,7 @@ from cdm_data_loaders.readers.xml import (
 )
 from cdm_data_loaders.readers.xsd import DEFAULT_MAX_RECURSION_DEPTH, generate_pyarrow_schema
 from tests.cdm_data_loaders.readers.xml.conftest import table_and_data, write_xml_file
+from tests.dlt_config_isolation import isolated_dlt_config
 from tests.fs_backends import FsBackend
 
 ParseFn = Callable[..., dict[str, list[dict[str, Any]]]]
@@ -1038,3 +1044,113 @@ def test_process_xml_file_to_pyarrow_pass_clark_notation_tag_skips_head_matter(
     head_matter_mock.assert_not_called()
     assert len(items) == 1
     assert items[0].data.to_pylist() == [{"_id": "1", "name": "Anne Example"}]
+
+
+@pytest.mark.parametrize("mode", XML_PROCESSOR_MODES)
+def test_process_xml_file_pass_clears_element_before_yielding_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """Verify the lxml Element is cleared before a flushed batch is yielded across a generator suspension boundary."""
+    file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
+    seen_elements: list[Element] = []
+    real_stream_xml_file = xml_module.stream_xml_file
+
+    def _tracking_stream_xml_file(fp: Path | str | FileItemDict, tag: str) -> Generator[Element]:
+        for elem in real_stream_xml_file(fp, tag):
+            seen_elements.append(elem)
+            yield elem
+
+    monkeypatch.setattr(xml_module, "stream_xml_file", _tracking_stream_xml_file)
+    gen = _stream_xml_processor(mode, file_path, buffer_size=1)
+
+    first_batch = next(gen)
+
+    assert len(_batch_rows(mode, first_batch.data)) == 1
+    assert len(seen_elements) == 1
+    first_elem = seen_elements[0]
+    assert len(first_elem) == 0
+    assert dict(first_elem.attrib) == {}
+
+
+def test_build_xml_file_resource_pass_single_file_iterparse_stays_on_one_thread_across_batches(
+    tmp_path: Path,
+) -> None:
+    """Verify a single XML file's iterparse stream is not stepped across multiple worker threads."""
+    write_xml_file(tmp_path, "a_00001.xml", PEOPLE_XML_2)
+    write_xml_file(tmp_path, "b_00002.xml", PEOPLE_XML_2)
+    settings = fake_settings(buffer_size=1, input_dir=tmp_path)
+    threads_by_file: dict[str, set[int]] = defaultdict(set)
+    first_thread_for_a: int | None = None
+    second_entry_of_a_dispatched = threading.Event()
+
+    def _thread_recording_parse_fn(entry: Element, file_path: str) -> dict[str, list[dict[str, Any]]]:
+        nonlocal first_thread_for_a
+        tid = threading.get_ident()
+        threads_by_file[file_path].add(tid)
+        if file_path == "a_00001.xml" and entry.get("id") == "1":
+            first_thread_for_a = tid
+        elif file_path == "a_00001.xml" and entry.get("id") == "2":
+            second_entry_of_a_dispatched.set()
+        elif file_path == "b_00002.xml" and entry.get("id") == "1" and tid == first_thread_for_a:
+            second_entry_of_a_dispatched.wait(timeout=1.0)
+        return {"people": [{"id": entry.get("id"), "source_file": file_path}]}
+
+    with isolated_dlt_config({"sources": {"filesystem": {"files_per_page": 1}}}):
+        resource = build_xml_file_resource(
+            settings,  # pyright: ignore[reportArgumentType]
+            "person",
+            _thread_recording_parse_fn,
+            "people_resource",
+        )
+        rows = list(resource)
+
+    assert sorted(row["source_file"] for row in rows) == ["a_00001.xml", "a_00001.xml", "b_00002.xml", "b_00002.xml"]
+    assert len(threads_by_file["a_00001.xml"]) == 1
+    assert len(threads_by_file["b_00002.xml"]) == 1
+
+
+def test_build_xml_file_resource_pass_single_file_iterparse_closed_on_creating_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify an iterparse stream created on a worker thread is not closed on a different thread."""
+    write_xml_file(tmp_path, "five_00001.xml", PEOPLE_XML_5)
+    settings = fake_settings(buffer_size=1, input_dir=tmp_path)
+    lifecycle_threads: list[int] = []
+    real_stream_xml_file = xml_module.stream_xml_file
+
+    def _lifecycle_tracking_stream_xml_file(fp: Path | str | FileItemDict, tag: str) -> Generator[Element]:
+        lifecycle_threads.append(threading.get_ident())
+        try:
+            yield from real_stream_xml_file(fp, tag)
+        finally:
+            lifecycle_threads.append(threading.get_ident())
+
+    monkeypatch.setattr(xml_module, "stream_xml_file", _lifecycle_tracking_stream_xml_file)
+    resource = build_xml_file_resource(
+        settings,  # pyright: ignore[reportArgumentType]
+        "person",
+        parse_person_entry,
+        "people_resource",
+    )
+
+    with ManagedPipeIterator.from_pipes([resource._pipe]) as pipe_iter:  # noqa: SLF001
+        next(pipe_iter)
+
+    start_thread, close_thread = lifecycle_threads
+    assert start_thread == close_thread
+
+
+def test_process_xml_file_to_pyarrow_pass_prepares_xsd_target_traversal_at_most_once_per_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify XSD target resolution and particle validation is not repeated for every XML element."""
+    file_path = write_xml_file(tmp_path, "five.xml", PEOPLE_XML_5)
+    settings = fake_xmltopyarrow_settings(table_name="people", xml_tag="person")
+    prepare_spy = MagicMock(wraps=xsd_module._prepare_target_traversal)  # noqa: SLF001
+    monkeypatch.setattr(xsd_module, "_prepare_target_traversal", prepare_spy)
+
+    tagged = table_and_data(process_xml_file_to_pyarrow(settings, file_path=file_path))
+
+    assert [table_name for table_name, _ in tagged] == ["people"]
+    assert tagged[0][1].to_pylist() == PEOPLE_XML_TO_PYARROW_PARSED
+    assert prepare_spy.call_count <= 1

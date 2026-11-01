@@ -10,7 +10,7 @@ left in its scratch output directory and are not currently surfaced as rows.
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkdtemp
 from typing import Any
 
 from dlt.common.pipeline import LoadInfo
@@ -80,7 +80,10 @@ def _process_xsv_file(
     :yield: rows routed to table_name and/or ``{table_name}_rejected``
     :rtype: Generator[TDataItems, Any, Any]
     """
-    with local_copy(file_item, work_paths.download_dir) as file_path:
+    with (
+        TemporaryDirectory(dir=work_paths.download_dir) as file_download_dir,
+        local_copy(file_item, Path(file_download_dir)) as file_path,
+    ):
         yield from _process_local_xsv_file(file_path, source_id(file_item), settings, work_paths)
 
 
@@ -103,20 +106,23 @@ def _process_local_xsv_file(
     :yield: rows routed to table_name and/or ``{table_name}_rejected``
     :rtype: Generator[TDataItems, Any, Any]
     """
-    args = CleanerValidatorArgs(
-        source_id=file_source_id,
-        qsv_cmd=work_paths.qsv_cmd,
-        xsv_file_path=file_path,
-        header_file_path=work_paths.header_file_path,
-        first_pass_schema=settings.first_pass_schema,
-        post_norm_schema=settings.validated_schema,
-        tmp_dir_path=work_paths.tmp_dir,
-        qsv_output_dir_path=work_paths.qsv_output_dir,
-        validated_file_dir_path=work_paths.validated_dir,
-        **settings.parsing_config,
-    )
+    file_validated_dir = Path(mkdtemp(prefix=f"{file_path.stem}_", dir=work_paths.validated_dir))
+    file_qsv_output_dir = Path(mkdtemp(prefix=f"{file_path.stem}_", dir=work_paths.qsv_output_dir))
+    with TemporaryDirectory(prefix=f"{file_path.stem}_", dir=work_paths.tmp_dir) as file_tmp_dir:
+        args = CleanerValidatorArgs(
+            source_id=file_source_id,
+            qsv_cmd=work_paths.qsv_cmd,
+            xsv_file_path=file_path,
+            header_file_path=work_paths.header_file_path,
+            first_pass_schema=settings.first_pass_schema,
+            post_norm_schema=settings.validated_schema,
+            tmp_dir_path=Path(file_tmp_dir),
+            qsv_output_dir_path=file_qsv_output_dir,
+            validated_file_dir_path=file_validated_dir,
+            **settings.parsing_config,
+        )
 
-    validated_file_name = clean_validate_file(args)
+        validated_file_name = clean_validate_file(args)
 
     valid_buffer = ListBuffer(table_name=settings.table_name, max_items=settings.buffer_size)
     rejected_buffer = ListBuffer(
@@ -127,7 +133,7 @@ def _process_local_xsv_file(
     if validated_file_name:
         properties = settings.validated_schema.jsonschema.get("properties", {})
         rows = read_validated_rows(
-            work_paths.validated_dir / validated_file_name,
+            file_validated_dir / validated_file_name,
             properties,
             delimiter=args.delimiter,
             quote=args.quote,

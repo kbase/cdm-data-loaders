@@ -1,13 +1,22 @@
 """Tests for the NCBI datasets API pipeline functions."""
 
+import copy
+import json
+import threading
+import time
+from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock, call, patch
 
+import dlt
 import pytest
+import requests
 from dlt.extract.items import DataItemWithMeta
-from requests import HTTPError
+from requests import HTTPError, PreparedRequest, Response
 
 from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME, REPORT_FILE_NAME
 from cdm_data_loaders.pipelines import ncbi_rest_api as ncbi_module
@@ -573,3 +582,231 @@ def test_assemble_assembly_reports_multiple_errors_all_yielded() -> None:
     results = collect_results(reports)
     assert results["ncbi_import_error"] == errors
     assert set(results) == {"ncbi_import_error"}
+
+
+def test_get_assembly_reports_pass_thread_local_rest_client_session_across_threads(
+    test_settings: NcbiRestApiSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Concurrent get_assembly_reports calls should isolate requests.Session instances per thread."""
+    set_settings(test_settings)
+    monkeypatch.setattr(
+        ncbi_module.ncbi_genome_client.session,
+        "headers",
+        ncbi_module.ncbi_genome_client.session.headers.copy(),
+    )
+
+    both_in_dataset_send = threading.Barrier(2, timeout=1.0)
+    iterating_headers = threading.Event()
+    mutated_headers = threading.Event()
+    sessions_seen: set[int] = set()
+    lock = threading.Lock()
+
+    class _SyncHeaderKey(str):
+        __slots__ = ()
+
+        def lower(self) -> str:
+            if not iterating_headers.is_set():
+                iterating_headers.set()
+                mutated_headers.wait(timeout=1.0)
+            return super().lower()
+
+    def fake_send(
+        session: requests.Session,
+        request: PreparedRequest,
+        **_kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        with lock:
+            sessions_seen.add(id(session))
+        url = request.url or ""
+        if ID_WITH_2K_ANNOTS in url and "dataset_report" in url:
+            both_in_dataset_send.wait()
+            session.headers._store["x-sync"] = (_SyncHeaderKey("X-Sync"), "1")  # noqa: SLF001
+            session.headers["X-After"] = "2"
+            payload: dict[str, Any] = {"reports": [{"accession": ID_WITH_2K_ANNOTS}]}
+        elif ID_WITH_500_ANNOTS in url and "dataset_report" in url:
+            both_in_dataset_send.wait()
+            iterating_headers.wait(timeout=1.0)
+            session.headers["X-Request-Id"] = ID_WITH_500_ANNOTS
+            mutated_headers.set()
+            payload = {"reports": [{"accession": ID_WITH_500_ANNOTS}]}
+        else:
+            payload = {"reports": [{"row_id": "1"}]}
+
+        resp = Response()
+        resp.status_code = 200
+        resp.url = url
+        resp._content = json.dumps(payload).encode("utf-8")  # noqa: SLF001
+        resp.headers["Content-Type"] = "application/json"
+        resp.request = request
+        return resp
+
+    monkeypatch.setattr(requests.Session, "send", fake_send)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_1 = pool.submit(get_assembly_reports, [ID_WITH_2K_ANNOTS])
+        fut_2 = pool.submit(get_assembly_reports, [ID_WITH_500_ANNOTS])
+        res_1 = fut_1.result()
+        res_2 = fut_2.result()
+
+    assert res_1[ERROR] == []
+    assert res_2[ERROR] == []
+    assert res_1[ANNOTATION][ID_WITH_2K_ANNOTS] == [{"row_id": "1"}]
+    assert res_2[ANNOTATION][ID_WITH_500_ANNOTS] == [{"row_id": "1"}]
+    assert len(sessions_seen) == 2  # noqa: PLR2004
+
+
+@mock.patch("tenacity.nap.time.sleep", MagicMock())
+@pytest.mark.default_cassette("test_get_assembly_reports_dataset_report_errors.yaml")
+@pytest.mark.vcr
+def test_get_assembly_reports_pass_save_raw_responses_hook_preserves_http_errors(
+    test_defaults: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Enabling save_raw_responses should not suppress HTTPError handling on 4xx/5xx responses."""
+    settings = NcbiRestApiSettings(
+        **{
+            **test_defaults,
+            "output_dir": str(tmp_path),
+            "save_raw_responses": True,
+        }
+    )
+    set_settings(settings)
+    monkeypatch.setattr(
+        ncbi_module,
+        "REST_CLIENT_HOOKS",
+        {"response": [partial(ncbi_module.save_raw_response, settings)]},
+    )
+
+    assembly_reports = get_assembly_reports(ALL_IDS)
+    assert assembly_reports[ERROR] == [RECORDED_ERRORS["dataset_404"]]
+
+
+def test_run_ncbi_pipeline_pass_save_raw_responses_hook_does_not_leak_across_runs(
+    test_defaults: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Running run_ncbi_pipeline with save_raw_responses=True should not leak REST_CLIENT_HOOKS to later runs."""
+    monkeypatch.setattr(ncbi_module, "REST_CLIENT_HOOKS", {})
+    hooks_per_run: list[dict[str, Any]] = []
+
+    def fake_run_pipeline(**_kwargs: Any) -> None:  # noqa: ANN401
+        hooks_per_run.append(dict(ncbi_module.REST_CLIENT_HOOKS))
+
+    monkeypatch.setattr(ncbi_module, "run_pipeline", fake_run_pipeline)
+
+    settings_1 = NcbiRestApiSettings(
+        **{
+            **test_defaults,
+            "output_dir": str(tmp_path / "run1"),
+            "save_raw_responses": True,
+        }
+    )
+    settings_2 = NcbiRestApiSettings(
+        **{
+            **test_defaults,
+            "output_dir": str(tmp_path / "run2"),
+            "save_raw_responses": False,
+        }
+    )
+
+    run_ncbi_pipeline(settings_1)
+    run_ncbi_pipeline(settings_2)
+
+    assert "response" in hooks_per_run[0]
+    assert "response" not in hooks_per_run[1]
+
+
+def test_get_assembly_reports_pass_save_raw_responses_bounds_long_batch_filename(
+    test_defaults: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Saving raw responses for a batch of assembly IDs should not fail with OSError: File name too long."""
+    batch_ids = [f"GCF_{idx:09d}.1" for idx in range(20)]
+    settings = NcbiRestApiSettings(
+        **{
+            **test_defaults,
+            "output_dir": str(tmp_path),
+            "save_raw_responses": True,
+        }
+    )
+    set_settings(settings)
+    monkeypatch.setattr(
+        ncbi_module,
+        "REST_CLIENT_HOOKS",
+        {"response": [partial(ncbi_module.save_raw_response, settings)]},
+    )
+
+    def fake_adapter_send(
+        _adapter: requests.adapters.HTTPAdapter,
+        request: PreparedRequest,
+        **_kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        url = request.url or ""
+        if "dataset_report" in url:
+            payload: dict[str, Any] = {"reports": [{"accession": aid} for aid in batch_ids]}
+        else:
+            payload = {"reports": [{"row_id": "1"}]}
+        resp = Response()
+        resp.status_code = 200
+        resp.url = url
+        resp._content = json.dumps(payload).encode("utf-8")  # noqa: SLF001
+        resp.headers["Content-Type"] = "application/json"
+        resp.request = request
+        return resp
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", fake_adapter_send)
+
+    reports = get_assembly_reports(batch_ids)
+    assert reports[ERROR] == []
+    assert len(reports[DATASET]) == len(batch_ids)
+    assert all(reports[DATASET][aid] == {"accession": aid} for aid in batch_ids)
+
+
+def test_assembly_report_parser_pass_parallelized_transformer_runs_on_worker_threads(
+    test_settings: NcbiRestApiSettings,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """assembly_report_parser (parallelized=True) should execute assemble_assembly_reports on worker threads."""
+    set_settings(test_settings)
+
+    @dlt.resource(name="fake_assembly_reports")
+    def fake_assembly_reports() -> Generator[dict[str, Any], Any, Any]:
+        for idx in range(4):
+            aid = f"GCF_00000000{idx}.1"
+            yield {
+                DATASET: {aid: {"accession": aid}},
+                ANNOTATION: {aid: [{"row_id": "1"}]},
+                ERROR: [],
+            }
+
+    main_tid = threading.get_ident()
+    parser_threads: set[int] = set()
+    lock = threading.Lock()
+    orig_assemble = ncbi_module.assemble_assembly_reports
+
+    def recording_assemble_assembly_reports(
+        assembly_reports: dict[str, Any],
+    ) -> Generator[DataItemWithMeta, Any, Any]:
+        with lock:
+            parser_threads.add(threading.get_ident())
+        time.sleep(0.05)
+        yield from orig_assemble(assembly_reports)
+
+    monkeypatch.setattr(ncbi_module, "assemble_assembly_reports", recording_assemble_assembly_reports)
+
+    parser_copy = copy.deepcopy(ncbi_module.assembly_report_parser)
+    pipeline = dlt.pipeline(
+        pipeline_name="test_ncbi_parser_parallel",
+        destination=dlt.destinations.dummy(completed_prob=1.0),
+        pipelines_dir=str(tmp_path / "dlt_pipelines"),
+        dev_mode=True,
+    )
+    pipeline.extract(fake_assembly_reports | parser_copy)
+
+    assert main_tid not in parser_threads
+    assert len(parser_threads) > 1

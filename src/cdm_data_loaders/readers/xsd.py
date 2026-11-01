@@ -3,7 +3,7 @@
 import base64
 import datetime as dt
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar, Final, Literal
@@ -1058,6 +1058,35 @@ def _convert_child_occurrence(
     return _convert_complex_struct(next_ctx, element, elem_type)
 
 
+def make_xml_element_converter(
+    schema: xmlschema.XMLSchema,
+    xml_tag: str,
+    *,
+    max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH,
+) -> Callable[[Element], dict[str, Any]]:
+    """Build a reusable element converter for ``xml_tag`` that resolves the XSD target once.
+
+    :param schema: loaded XMLSchema instance
+    :type  schema: xmlschema.XMLSchema
+    :param xml_tag: target XML element name (local name or Clark-notation ``{ns}local``)
+    :type  xml_tag: str
+    :param max_recursion_depth: maximum structural recursion depth before JSON serialization
+    :type  max_recursion_depth: int
+    :return: function converting an lxml Element into a sparse dictionary
+    :rtype : Callable[[Element], dict[str, Any]]
+    """
+    _, elem_type, ctx = _prepare_target_traversal(
+        schema,
+        xml_tag,
+        max_recursion_depth=max_recursion_depth,
+    )
+
+    def _convert(element: Element) -> dict[str, Any]:
+        return _convert_complex_struct(ctx, element, elem_type) or {}
+
+    return _convert
+
+
 def convert_xml_element(
     element: Element,
     schema: xmlschema.XMLSchema,
@@ -1078,10 +1107,8 @@ def convert_xml_element(
     :return: sparse dictionary of coerced field values matching the generated PyArrow schema
     :rtype : dict[str, Any]
     """
-    _, elem_type, ctx = _prepare_target_traversal(
+    return make_xml_element_converter(
         schema,
         xml_tag,
         max_recursion_depth=max_recursion_depth,
-    )
-    converted = _convert_complex_struct(ctx, element, elem_type)
-    return converted or {}
+    )(element)

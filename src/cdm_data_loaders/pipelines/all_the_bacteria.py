@@ -10,6 +10,7 @@ all_atb_files.tsv: https://osf.io/xv7q9/files/r6gcp (or Rg6cp, casing varies)
 
 """
 
+import copy
 import csv
 import re
 from collections.abc import Generator
@@ -21,6 +22,7 @@ from typing import Any, Final, Self
 import dlt
 from dlt.common.pipeline import LoadInfo
 from dlt.extract.items import DataItemWithMeta
+from dlt.extract.resource import DltResource
 from dlt.sources.helpers.rest_client.client import RESTClient
 from pydantic import Field, FilePath, computed_field, model_validator
 from pydantic_settings import SettingsConfigDict
@@ -232,7 +234,12 @@ def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any
 def atb_file_list(settings: AtbSettings) -> Generator[list[dict[str, Any]], Any, Any]:
     """Generate a list of files to download from the list of all ATB files."""
     atb_files_tsv = download_atb_index_tsv(settings)
-    return get_file_download_links(settings, atb_files_tsv)
+    for batch in get_file_download_links(settings, atb_files_tsv):
+        if isinstance(batch, list) and len(batch) > 1:
+            for row in batch:
+                yield [row]
+        else:
+            yield batch
 
 
 @dlt.transformer(name="file_downloader", data_from=atb_file_list, parallelized=True)
@@ -249,7 +256,7 @@ def file_downloader(
     :return: output of the osf_file_downloader
     :rtype: Generator[DataItemWithMeta]
     """
-    return osf_file_downloader(settings, atb_file_list)
+    yield from osf_file_downloader(settings, atb_file_list)
 
 
 def run_atb_pipeline(settings: AtbSettings) -> LoadInfo | None:
@@ -258,8 +265,12 @@ def run_atb_pipeline(settings: AtbSettings) -> LoadInfo | None:
     :param settings: configuration for the pipeline
     :type settings: AtbSettings
     """
-    atb_file_list.bind(settings)
-    file_downloader.bind(settings)
+    if isinstance(atb_file_list, DltResource) and isinstance(file_downloader, DltResource):
+        file_list_resource, downloader_resource = copy.deepcopy((atb_file_list, file_downloader))
+    else:
+        file_list_resource, downloader_resource = atb_file_list, file_downloader
+    file_list_resource.bind(settings)
+    downloader_resource.bind(settings)
 
     pipeline_kwargs: dict[str, Any] = {
         "pipeline_name": DATASET_NAME,
@@ -268,7 +279,7 @@ def run_atb_pipeline(settings: AtbSettings) -> LoadInfo | None:
 
     return run_pipeline(
         settings=settings,
-        resource=file_downloader,
+        resource=downloader_resource,
         destination_kwargs={"max_table_nesting": 0},
         pipeline_kwargs=pipeline_kwargs,
         pipeline_run_kwargs=None,
