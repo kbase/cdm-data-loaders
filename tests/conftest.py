@@ -23,10 +23,8 @@ from frozendict import frozendict
 from moto import mock_aws
 from pyspark.sql import SparkSession
 from types_boto3_s3.client import S3Client
-from xml2db import DataModel
 
 import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
-from cdm_data_loaders.readers.xml2db_doc import build_xml2db_model
 from cdm_data_loaders.utils import cdm_logger
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
@@ -46,9 +44,7 @@ CASSETTES_DIR: Final[Path] = Path("tests") / "cassettes"
 REFERENCE_XML_NS: Final[str] = "http://uniprot.org/uniref"
 REFERENCE_XML_TAG: Final[str] = f"{{{REFERENCE_XML_NS}}}entry"
 REFERENCE_XML_FIXTURE_DIR: Final[Path] = TEST_DATA_DIR / "uniprot" / "uniref"
-REFERENCE_XSD: Final[Path] = REFERENCE_XML_FIXTURE_DIR / "uniref.xsd"
 N_REFERENCE_XML_ENTRIES: Final[int] = 100
-UNIREF_ROOT_SHORT_NAME: Final[str] = "uniref_test"
 
 DEFAULT_VCR_CONFIG = frozendict(
     {
@@ -69,12 +65,6 @@ DEFAULT_VCR_CONFIG = frozendict(
 def vcr_config() -> dict[str, Any]:
     """VCR configuration for recording/replaying HTTP cassettes."""
     return {**DEFAULT_VCR_CONFIG}
-
-
-@pytest.fixture(scope="session")
-def uniref_model() -> DataModel:
-    """Build the UniRef DataModel once per test session."""
-    return build_xml2db_model(REFERENCE_XSD, short_name=UNIREF_ROOT_SHORT_NAME)
 
 
 @pytest.fixture

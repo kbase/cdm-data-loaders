@@ -32,7 +32,6 @@ dependencies = [
     "pyiceberg[pandas,pyarrow,pyiceberg-core,snappy]>=0.12",
     "smart-open>=8.0.1",
     "tqdm>=4.70.1",
-    "xml2db>=0.14.0",
     "xmlschema>=4.3.1",
     "xmltodict>=1.0.4",
 ]
@@ -53,7 +52,6 @@ uniref100 = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref100_cli"
 uniref_cdm = "cdm_data_loaders.pipelines.uniref_cdm:cli"
 xmltodict = "cdm_data_loaders.pipelines.xmltodict.pipeline:cli"
 xmltopyarrow = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:cli"
-xml2db = "cdm_data_loaders.pipelines.xml2db.pipeline:cli"
 xsv = "cdm_data_loaders.pipelines.xsv.pipeline:cli"
 
 [dependency-groups]

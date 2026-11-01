@@ -39,7 +39,6 @@ CONTAINER_PYMODULES_DIR: Final[str] = "/pymodules"
 FILE_PATH_FLAGS: Final[frozenset[str]] = frozenset(
     {
         "--xsd-file",
-        "--xml2db-config-file",
         "--schema-file",
         "-s",
         "--log-config-file",
@@ -82,7 +81,6 @@ PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
     "uniref_cdm": ("uniref_cdm", "cdm_data_loaders.pipelines.uniref_cdm"),
     "xmltodict": ("xmltodict", "cdm_data_loaders.pipelines.xmltodict.pipeline"),
     "xmltopyarrow": ("xmltopyarrow", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
-    "xml2db": ("xml2db", "cdm_data_loaders.pipelines.xml2db.pipeline"),
     "xsv": ("xsv", "cdm_data_loaders.pipelines.xsv.pipeline"),
 }
 

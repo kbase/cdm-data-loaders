@@ -19,8 +19,8 @@
 
 ### Unreleased
 
-- File readers (XML, xml2db, JSONL, XSV) read input through dlt `FileItemDict` objects, so they work for local and non-local (e.g. S3) filesystem sources. XSV files on non-local filesystems are downloaded to a temporary directory for qsv.
-- `source_file` (UniProt/UniRef), the xml2db key namespace, and the XSV `_rejected.file` column now record the file's path relative to the input location rather than an absolute path or bare file name.
+- File readers (XML, JSONL, XSV) read input through dlt `FileItemDict` objects, so they work for local and non-local (e.g. S3) filesystem sources. XSV files on non-local filesystems are downloaded to a temporary directory for qsv.
+- `source_file` (UniProt/UniRef) and the XSV `_rejected.file` column now record the file's path relative to the input location rather than an absolute path or bare file name.
 - Removed `utils.gz.open_maybe_gzip` and `readers.jsonlines.compression_mode`; gzip handling is done by dlt.
 - Test fixtures (`tests/fs_backends.py`) run reader tests against local, in-memory, moto S3, and (opt-in) Ceph filesystems.
 

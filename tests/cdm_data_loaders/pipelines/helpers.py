@@ -1,6 +1,5 @@
 """Misc helpers for integration tests."""
 
-import gzip
 import json
 from collections import defaultdict
 from collections.abc import Callable, Generator, Mapping
@@ -13,7 +12,6 @@ from uuid import uuid4
 
 import dlt
 import duckdb
-import pyarrow as pa
 import pyarrow.parquet as pq
 import yaml
 from dlt.common.pipeline import LoadInfo
@@ -71,22 +69,6 @@ def read_jsonl_file(file_path: Path) -> list[dict[str, Any]]:
             except json.JSONDecodeError:
                 logger.warning("Skipping unparseable line in %s: %r", file_path, stripped[:200])
     return rows
-
-
-def write_jsonl_gz_file(path: Path, rows: list[dict[str, Any]]) -> Path:
-    """Write rows as gzip-compressed JSONLines to `path`, creating parent directories."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with gzip.open(path, "wt", encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(json.dumps(row) + "\n")
-    return path
-
-
-def write_parquet_file(path: Path, rows: list[dict[str, Any]]) -> Path:
-    """Write rows as a Parquet file to `path`, creating parent directories."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(pa.Table.from_pylist(rows), path)
-    return path
 
 
 def read_parquet_tables(output_dir: Path) -> dict[str, list[dict[str, Any]]]:

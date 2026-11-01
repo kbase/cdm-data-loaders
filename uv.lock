@@ -518,7 +518,6 @@ dependencies = [
     { name = "pyiceberg", extra = ["pandas", "pyarrow", "pyiceberg-core", "snappy"] },
     { name = "smart-open" },
     { name = "tqdm" },
-    { name = "xml2db" },
     { name = "xmlschema" },
     { name = "xmltodict" },
 ]
@@ -576,7 +575,6 @@ requires-dist = [
     { name = "pyiceberg", extras = ["pandas", "pyarrow", "pyiceberg-core", "snappy"], specifier = ">=0.12" },
     { name = "smart-open", specifier = ">=8.0.1" },
     { name = "tqdm", specifier = ">=4.70.1" },
-    { name = "xml2db", specifier = ">=0.14.0" },
     { name = "xmlschema", specifier = ">=4.3.1" },
     { name = "xmltodict", specifier = ">=1.0.4" },
 ]
@@ -5381,21 +5379,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/2f/e4/69efa7c6e8535c5188e041ac278079949fb2daaa97e6f08beb91cf31b3d1/wrapt-2.5.1-cp315-cp315t-win_amd64.whl", hash = "sha256:d5b665a43fe0d3b390cbdd3c003d61c92fa07bd5e3fb1ed3f47920c2d03cd9fd", size = 109928, upload-time = "2026-10-14T00:39:11.156Z" },
     { url = "https://files.pythonhosted.org/packages/13/77/6e414b3388b9f1ecb76107ef4a2aae501f1bdfcab85c8e34ef78f7db22db/wrapt-2.5.1-cp315-cp315t-win_arm64.whl", hash = "sha256:6405ff2160af9d59132ebb076eda0304db44d9d09809582932412ef7c0788a36", size = 106226, upload-time = "2026-10-14T00:39:13.061Z" },
     { url = "https://files.pythonhosted.org/packages/bc/0c/7da7513ddcc8f1d831ec4bfbedc9f7f174ecb91042bc16916fc1e0d06b22/wrapt-2.5.1-py3-none-any.whl", hash = "sha256:c6e6c226b1ca5402d7ae5fb34a0d21f1b49124fe4200e5884d1e19e53c47ac1d", size = 81849, upload-time = "2026-10-14T00:39:37.441Z" },
-]
-
-[[package]]
-name = "xml2db"
-version = "0.14.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "lxml" },
-    { name = "pyyaml" },
-    { name = "sqlalchemy" },
-    { name = "xmlschema" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b2/05/b082016a2f6873c93c7a292cfa2ecc0194a1912db3b8594bd76333e83cd5/xml2db-0.14.0.tar.gz", hash = "sha256:93844280dc61c64ea6e9459e92fa82c5b67bc3095483430a1416a3a303253915", size = 71958, upload-time = "2026-06-26T15:09:11.485Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/39/960a1b3952ec023766468eb5b382652bf7625d6fff4f06d57866a19e061e/xml2db-0.14.0-py3-none-any.whl", hash = "sha256:28418de44d27c69c1816905e2e59806b8243b317481075f3b5b43979cc81aa99", size = 72261, upload-time = "2026-06-26T15:09:10.177Z" },
 ]
 
 [[package]]
