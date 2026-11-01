@@ -1055,9 +1055,7 @@ def test_process_xml_file_pass_clears_element_before_yielding_batch(
     seen_elements: list[Element] = []
     real_stream_xml_file = xml_module.stream_xml_file
 
-    def _tracking_stream_xml_file(
-        fp: Path | str | FileItemDict, tag: str
-    ) -> Generator[Element]:
+    def _tracking_stream_xml_file(fp: Path | str | FileItemDict, tag: str) -> Generator[Element]:
         for elem in real_stream_xml_file(fp, tag):
             seen_elements.append(elem)
             yield elem
@@ -1120,9 +1118,7 @@ def test_build_xml_file_resource_pass_single_file_iterparse_closed_on_creating_t
     lifecycle_threads: list[int] = []
     real_stream_xml_file = xml_module.stream_xml_file
 
-    def _lifecycle_tracking_stream_xml_file(
-        fp: Path | str | FileItemDict, tag: str
-    ) -> Generator[Element]:
+    def _lifecycle_tracking_stream_xml_file(fp: Path | str | FileItemDict, tag: str) -> Generator[Element]:
         lifecycle_threads.append(threading.get_ident())
         try:
             yield from real_stream_xml_file(fp, tag)
@@ -1158,4 +1154,3 @@ def test_process_xml_file_to_pyarrow_pass_prepares_xsd_target_traversal_at_most_
     assert [table_name for table_name, _ in tagged] == ["people"]
     assert tagged[0][1].to_pylist() == PEOPLE_XML_TO_PYARROW_PARSED
     assert prepare_spy.call_count <= 1
-

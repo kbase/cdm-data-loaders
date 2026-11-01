@@ -717,4 +717,3 @@ def test_file_downloader_pass_parallelized_transformer_runs_on_worker_threads(
     assert mock_download_client.download.call_count == len(batches)
     assert main_tid not in download_threads
     assert len(download_threads) > 1
-

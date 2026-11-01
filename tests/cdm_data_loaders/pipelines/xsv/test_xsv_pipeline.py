@@ -159,7 +159,9 @@ def test_process_xsv_file_pass_same_stem_files_do_not_lose_rows_or_rejections(
         },
     )
     work_paths = work_paths_factory(settings)
-    items = {item["relative_path"]: item for item in filesystem(bucket_url=str(settings.input_dir), file_glob="*/*.csv")}
+    items = {
+        item["relative_path"]: item for item in filesystem(bucket_url=str(settings.input_dir), file_glob="*/*.csv")
+    }
 
     results_1 = list(_process_xsv_file(items["batch_1/data.csv"], settings, work_paths))
     results_2 = list(_process_xsv_file(items["batch_2/data.csv"], settings, work_paths))
@@ -167,9 +169,7 @@ def test_process_xsv_file_pass_same_stem_files_do_not_lose_rows_or_rejections(
     assert [(result.meta.table_name, result.data) for result in results_1] == [
         ("my_table", [{"number": 1, "name": "alice"}, {"number": 2, "name": "bob"}]),
     ]
-    assert [
-        (result.meta.table_name, result.data) for result in results_2 if result.meta.table_name == "my_table"
-    ] == [
+    assert [(result.meta.table_name, result.data) for result in results_2 if result.meta.table_name == "my_table"] == [
         ("my_table", [{"number": 3, "name": "carol"}, {"number": 4, "name": "dave"}]),
     ]
     rejected_batches = [
@@ -193,7 +193,9 @@ def test_process_xsv_file_pass_concurrent_same_stem_files_do_not_overwrite_valid
         },
     )
     work_paths = work_paths_factory(settings)
-    items = {item["relative_path"]: item for item in filesystem(bucket_url=str(settings.input_dir), file_glob="*/*.csv")}
+    items = {
+        item["relative_path"]: item for item in filesystem(bucket_url=str(settings.input_dir), file_glob="*/*.csv")
+    }
     item_1 = items["batch_1/data.csv"]
     item_2 = items["batch_2/data.csv"]
 

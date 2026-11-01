@@ -810,4 +810,3 @@ def test_assembly_report_parser_pass_parallelized_transformer_runs_on_worker_thr
 
     assert main_tid not in parser_threads
     assert len(parser_threads) > 1
-
