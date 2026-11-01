@@ -552,10 +552,7 @@ def test_make_page_router_pass_flushes_independent_buffers(widget_schema: dict[s
         ]
         assert all(isinstance(page.data, pa.Table) for page in pages)
         assert [
-            row["line_no"]
-            for page in pages
-            if page.meta.table_name == "_rejected"
-            for row in page.data.to_pylist()
+            row["line_no"] for page in pages if page.meta.table_name == "_rejected" for row in page.data.to_pylist()
         ] == [
             2,
             4,
@@ -590,9 +587,7 @@ def test_build_entity_resource_pass_reads_selected_files(
     assert all(isinstance(item, pa.Table) for item in rows)
     valid_table = next(item for item in rows if "widget_id" in item.schema.names)
     rejected_table = next(item for item in rows if item.schema == REJECTED_PYARROW_SCHEMA)
-    assert valid_table.to_pylist() == [
-        {"widget_id": "a", "count": 0, "collected": None, "label": None, "nested": None}
-    ]
+    assert valid_table.to_pylist() == [{"widget_id": "a", "count": 0, "collected": None, "label": None, "nested": None}]
     expected_error = "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
     assert rejected_table.to_pylist() == [
         {
