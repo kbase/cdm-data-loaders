@@ -11,14 +11,14 @@ from typing import IO, Any
 import xmltodict
 from dlt.extract import DltResource
 from dlt.extract.items import DataItemWithMeta
-from lxml.etree import Element, iterparse, tostring
+from lxml.etree import Element, _Element, iterparse, tostring
 
 from cdm_data_loaders.core.fields import DEFAULT_XML_FILE_GLOB
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.core import build_filesystem_resource, make_per_file_reader
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
-from cdm_data_loaders.readers.xsd import convert_xml_element
+from cdm_data_loaders.readers.xsd import make_xml_element_converter
 from cdm_data_loaders.utils.buffer import ArrowListBuffer, DictBuffer, ListBuffer
 from cdm_data_loaders.utils.file_items import FileSource, open_binary, source_id, source_url
 
@@ -68,6 +68,16 @@ def parse_head_matter(file_path: FileSource | IO[bytes]) -> dict[str, str]:
     return namespaces
 
 
+def _clear_element(elem: Element) -> None:
+    """Clear an XML element's subtree and prune preceding siblings from its parent."""
+    if not isinstance(elem, _Element):
+        return
+    elem.clear()
+    parent = elem.getparent()
+    while parent is not None and elem.getprevious() is not None and len(parent) > 0:
+        del parent[0]
+
+
 def stream_xml_file(file_path: FileSource | IO[bytes], element_with_ns: str) -> Generator[Element, Any]:
     """Stream the outermost matching XML elements from a file.
 
@@ -95,11 +105,8 @@ def stream_xml_file(file_path: FileSource | IO[bytes], element_with_ns: str) -> 
             if depth:
                 # nested match: leave it in place as part of the enclosing match
                 continue
-            logger.debug(elem)
             yield elem
-            elem.clear()
-            while elem.getprevious() is not None:
-                del elem.getparent()[0]
+            _clear_element(elem)
 
 
 def _log_interval_progress(n_entries: int, log_interval: int) -> None:
@@ -168,7 +175,9 @@ def _stream_and_buffer_xml_elements(  # noqa: PLR0913
     logger.info("Reading from %s", source_url(file_path))
     n_entries = -1
     for n_entries, element in enumerate(_stream_elements(file_path, xml_tag, resolve_default_ns=resolve_default_ns)):
-        yield from buffer_element_fn(element)
+        flushed_items = list(buffer_element_fn(element))
+        _clear_element(element)
+        yield from flushed_items
         _log_interval_progress(n_entries, log_interval)
 
     _log_interval_final(n_entries, file_path, log_interval)
@@ -194,19 +203,17 @@ def process_xml_file_to_pyarrow(settings: XmlToPyArrowSettings, file_path: FileS
         table_to_schema_map={settings.table_name: settings.pyarrow_schema},
         max_items=settings.buffer_size,
     )
+    convert_element = make_xml_element_converter(
+        settings.xsd_schema,
+        settings.xml_tag,
+        max_recursion_depth=settings.max_recursion_depth,
+    )
     yield from _stream_and_buffer_xml_elements(
         file_path=file_path,
         xml_tag=settings.xml_tag,
         log_interval=settings.log_interval,
         buffer=arrow_buffer,
-        buffer_element_fn=lambda element: arrow_buffer.add_item(
-            convert_xml_element(
-                element,
-                settings.xsd_schema,
-                settings.xml_tag,
-                max_recursion_depth=settings.max_recursion_depth,
-            )
-        ),
+        buffer_element_fn=lambda element: arrow_buffer.add_item(convert_element(element)),
         resolve_default_ns=True,
     )
 
@@ -318,4 +325,5 @@ def build_xml_file_resource(
         name=resource_name,
         file_glob=DEFAULT_XML_FILE_GLOB,
         file_format="parquet",
+        parallelized=False,
     )

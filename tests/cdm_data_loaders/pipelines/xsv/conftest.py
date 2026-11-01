@@ -50,7 +50,9 @@ def settings_factory(tmp_path: Path, dlt_destination_config: str) -> Callable[..
             (input_dir / "schema.json").write_text(json.dumps(schema), encoding="utf-8")
         if data_files:
             for file_name, content in data_files.items():
-                (input_dir / file_name).write_text(content, encoding="utf-8")
+                file_path = input_dir / file_name
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_text(content, encoding="utf-8")
 
         defaults: dict[str, Any] = {
             "dataset_name": "xsv_test_dataset",

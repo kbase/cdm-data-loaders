@@ -371,10 +371,11 @@ def build_filesystem_resource(
         fs_args["file_glob"] = glob
 
     files = filesystem(**fs_args)
+    parallelized = bool(transformer_kwargs.pop("parallelized", True))
     reader = (
         reader_fn
         if isinstance(reader_fn, DltResource)
-        else dlt.transformer(reader_fn, name=name, parallelized=True, **transformer_kwargs)
+        else dlt.transformer(reader_fn, name=name, parallelized=parallelized, **transformer_kwargs)
     )
     resource: DltResource = files | reader(*reader_args)
     if schema_contract is not None:
