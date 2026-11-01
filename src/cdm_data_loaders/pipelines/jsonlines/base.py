@@ -132,10 +132,7 @@ def run_registry_ingest(
     pipeline_name: str,
     pipeline_run_kwargs: dict[str, Any] | None = None,
 ) -> LoadInfo | None:
-    """Load the requested tables using the shared pipeline runner.
-
-    Defaults to every table in the registry when `settings.table_names` is None.
-    Raises ValueError for unknown table names.
+    """Load tables using the shared pipeline runner.
 
     :param settings: pipeline configuration
     :type  settings: Any
@@ -147,16 +144,12 @@ def run_registry_ingest(
     :type  pipeline_name: str
     :param pipeline_run_kwargs: extra kwargs for pipeline.run
     :type  pipeline_run_kwargs: dict[str, Any] | None
-    :raises ValueError: if settings.table_names includes a name not in the registry
     :return: load information for the pipeline
     :rtype:  LoadInfo | None
     """
-    table_names = settings.table_names or sorted(table_to_schema)
-    unknown = sorted(set(table_names) - set(table_to_schema))
-    if unknown:
-        err_msg = f"Unknown table name(s) requested: {unknown}; available: {sorted(table_to_schema)}"
-        raise ValueError(err_msg)
-    resources = [build_resource(table_name, table_to_schema[table_name], settings) for table_name in table_names]
+    resources = [
+        build_resource(table_name, table_to_schema[table_name], settings) for table_name in sorted(table_to_schema)
+    ]
     ingest_kwargs = build_file_ingest_kwargs(settings, pipeline_name, fallback_dataset_name=True)
     if pipeline_run_kwargs:
         ingest_kwargs["pipeline_run_kwargs"].update(pipeline_run_kwargs)

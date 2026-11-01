@@ -55,7 +55,7 @@ def load_entity_models(module_path: str) -> dict[str, type[BaseModel]]:
     """Import module_path and return its ENTITY_MODELS dict.
 
     :param module_path: dotted import path of the module defining ENTITY_MODELS
-    :type module_path: str
+    :type  module_path: str
     :return: mapping of table name to Pydantic model
     :rtype: dict[str, type[BaseModel]]
     :raises ValueError: if ENTITY_MODELS is missing, empty, or not a dict
@@ -88,11 +88,11 @@ def build_entity_resource(table_name: str, model: type[BaseModel], settings: Jso
     rows, not an error.
 
     :param table_name: entity name; also the input_dir subdirectory name
-    :type table_name: str
+    :type  table_name: str
     :param model: Pydantic model used to validate this entity's records
-    :type model: type[BaseModel]
+    :type  model: type[BaseModel]
     :param settings: pipeline settings
-    :type settings: JsonlPydanticIngestSettings
+    :type  settings: JsonlPydanticIngestSettings
     :return: resource yielding validated and rejected records for this entity
     :rtype: Any
     """
@@ -113,10 +113,9 @@ def run_jsonlines_with_validation_pipeline(settings: JsonlPydanticIngestSettings
     """Run the JSONL validate-and-load pipeline for every requested table.
 
     :param settings: pipeline configuration
-    :type settings: JsonlPydanticIngestSettings
-    :raises ValueError: if settings.table_names includes a name not in ENTITY_MODELS
+    :type  settings: JsonlPydanticIngestSettings
     :return: load information for the pipeline
-    :rtype: LoadInfo | None
+    :rtyp: LoadInfo | None
     """
     entity_models = load_entity_models(settings.entity_models_module)
     return run_registry_ingest(

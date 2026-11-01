@@ -2,7 +2,7 @@
 
 from typing import Annotated, Final
 
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import (
@@ -10,7 +10,6 @@ from cdm_data_loaders.core.fields import (
     FILE_GLOB,
     TABLE_NAME,
     FileGlob,
-    NonEmptyStr,
     TableName,
 )
 from cdm_data_loaders.core.settings import (
@@ -25,14 +24,12 @@ JSONSCHEMA_PIPELINE_NAME: Final[str] = "jsonlines_jsonschema"
 
 ENTITY_MODELS_MODULE: Final[str] = "entity_models_module"
 SCHEMA_FILES_MODULE: Final[str] = "schema_files_module"
-TABLE_NAMES: Final[str] = "table_names"
 
 LOCAL_CLI_SHORTCUTS: Final[dict[str, str]] = {
     ENTITY_MODELS_MODULE: "m",
     FILE_GLOB: "g",
     SCHEMA_FILES_MODULE: "m",
     TABLE_NAME: "t",
-    TABLE_NAMES: "t",
 }
 
 
@@ -59,29 +56,12 @@ class JsonlExtractSettings(JsonlIngestSettings):
     table_name: TableName
 
 
-class ValidatedJsonlIngestSettings(JsonlIngestSettings):
-    """JSONL ingestion pipeline with validation."""
-
-    table_names: list[NonEmptyStr] | None = Field(
-        default=None,
-        description="Table names to process. Defaults to every table in the configured registry.",
-    )
-
-    @field_validator(TABLE_NAMES, mode="before")
-    @classmethod
-    def split_table_names(cls, v: str | list[str] | None) -> list[str] | None:
-        """Split a comma-separated string into a list. Pass lists and None through unchanged."""
-        if v is None or isinstance(v, list):
-            return v
-        return [name.strip() for name in v.split(",") if name.strip()] or None
-
-
-class JsonlPydanticIngestSettings(ValidatedJsonlIngestSettings):
+class JsonlPydanticIngestSettings(JsonlIngestSettings):
     """Pipeline settings for JSONL pipeline that uses Pydantic for validation."""
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=PYDANTIC_PIPELINE_NAME,
-        cli_shortcuts=select_cli_shortcuts(LOCAL_CLI_SHORTCUTS, ENTITY_MODELS_MODULE, FILE_GLOB, TABLE_NAMES),
+        cli_shortcuts=select_cli_shortcuts(LOCAL_CLI_SHORTCUTS, ENTITY_MODELS_MODULE, FILE_GLOB),
     )
 
     entity_models_module: Annotated[
@@ -96,12 +76,12 @@ class JsonlPydanticIngestSettings(ValidatedJsonlIngestSettings):
     ]
 
 
-class JsonlJsonschemaIngestSettings(ValidatedJsonlIngestSettings):
+class JsonlJsonschemaIngestSettings(JsonlIngestSettings):
     """Pipeline settings for JSONL ingestion with JSON Schema validation."""
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=JSONSCHEMA_PIPELINE_NAME,
-        cli_shortcuts=select_cli_shortcuts(LOCAL_CLI_SHORTCUTS, FILE_GLOB, SCHEMA_FILES_MODULE, TABLE_NAMES),
+        cli_shortcuts=select_cli_shortcuts(LOCAL_CLI_SHORTCUTS, FILE_GLOB, SCHEMA_FILES_MODULE),
     )
 
     schema_files_module: Annotated[

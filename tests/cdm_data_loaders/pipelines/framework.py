@@ -74,9 +74,11 @@ PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
     "ncbi_ftp_promote": ("ncbi_ftp_promote", "cdm_data_loaders.pipelines.ncbi_ftp_promote"),
     "ncbi_ftp_sync": ("ncbi_ftp_sync", "cdm_data_loaders.pipelines.ncbi_ftp_download"),
     "ncbi_rest_api": ("ncbi_rest_api", "cdm_data_loaders.pipelines.ncbi_rest_api"),
-    "uniprot": ("uniprot", "cdm_data_loaders.pipelines.xmltopyarrow.uniprot"),
+    "uniprot": ("uniprot", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
     "uniprot_cdm": ("uniprot_cdm", "cdm_data_loaders.pipelines.uniprot_kb_cdm"),
-    "uniref": ("uniref", "cdm_data_loaders.pipelines.xmltopyarrow.uniref"),
+    "uniref50": ("uniref50", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
+    "uniref90": ("uniref90", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
+    "uniref100": ("uniref100", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
     "uniref_cdm": ("uniref_cdm", "cdm_data_loaders.pipelines.uniref_cdm"),
     "xmltodict": ("xmltodict", "cdm_data_loaders.pipelines.xmltodict.pipeline"),
     "xmltopyarrow": ("xmltopyarrow", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
@@ -183,7 +185,7 @@ type PipelineIdentifier = str | ModuleType | PipelineCli[Any] | PipelineSpec | C
 
 def _spec_from_module(cli_command: str, module: ModuleType) -> PipelineSpec:
     """Build a PipelineSpec by inspecting a pipeline module."""
-    cli_attr = getattr(module, "cli", None)
+    cli_attr = getattr(module, f"{cli_command}_cli", None) or getattr(module, "cli", None)
     if isinstance(cli_attr, PipelineCli):
         return PipelineSpec(
             cli_command=cli_command,
@@ -216,10 +218,13 @@ def resolve_pipeline(pipeline: PipelineIdentifier) -> PipelineSpec:
     if isinstance(pipeline, PipelineCli):
         module_path = pipeline.pipeline_fn.__module__
         prog_name = pipeline.settings_cls.model_config.get("cli_prog_name")
-        cli_command = MODULE_TO_CLI_COMMAND.get(
-            module_path,
-            str(prog_name) if prog_name else module_path.rsplit(".", maxsplit=1)[-1],
-        )
+        if prog_name and str(prog_name) in PIPELINE_TARGETS:
+            cli_command = str(prog_name)
+        else:
+            cli_command = MODULE_TO_CLI_COMMAND.get(
+                module_path,
+                str(prog_name) if prog_name else module_path.rsplit(".", maxsplit=1)[-1],
+            )
         return PipelineSpec(
             cli_command=cli_command,
             module_path=module_path,

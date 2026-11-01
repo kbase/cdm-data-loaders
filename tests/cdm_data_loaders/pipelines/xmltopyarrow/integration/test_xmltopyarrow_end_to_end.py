@@ -8,9 +8,13 @@ import pytest
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
     UNIPROT_PIPELINE_NAME,
-    UNIREF_PIPELINE_NAME,
+    UNIREF_FIFTY,
+    UNIREF_HUNDRED,
+    UNIREF_NINETY,
     UniProtXmlToPyArrowSettings,
-    UniRefXmlToPyArrowSettings,
+    UniRef50XmlToPyArrowSettings,
+    UniRef90XmlToPyArrowSettings,
+    UniRef100XmlToPyArrowSettings,
     XmlToPyArrowSettings,
 )
 from tests.cdm_data_loaders.pipelines.conftest import DEFAULT_DLT_TABLES, copy_test_files
@@ -111,7 +115,9 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     ("target_name", "settings_cls", "sample_xml_rel_dir"),
     [
         (UNIPROT_PIPELINE_NAME, UniProtXmlToPyArrowSettings, "xsd/examples/uniprot"),
-        (UNIREF_PIPELINE_NAME, UniRefXmlToPyArrowSettings, "xsd/examples/uniref"),
+        (UNIREF_FIFTY, UniRef50XmlToPyArrowSettings, "xsd/examples/uniref"),
+        (UNIREF_NINETY, UniRef90XmlToPyArrowSettings, "xsd/examples/uniref"),
+        (UNIREF_HUNDRED, UniRef100XmlToPyArrowSettings, "xsd/examples/uniref"),
     ],
 )
 def test_run_subclass_pipeline_pass_end_to_end(

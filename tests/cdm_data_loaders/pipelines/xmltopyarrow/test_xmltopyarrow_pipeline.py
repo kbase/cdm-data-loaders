@@ -7,7 +7,6 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from dlt.common.pipeline import LoadInfo
 from dlt.extract import DltResource
 
 import cdm_data_loaders.pipelines.xmltopyarrow.pipeline as xmltopyarrow_module
@@ -16,19 +15,23 @@ from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import (
     cli,
     run_xmltopyarrow_pipeline,
+    uniprot_cli,
+    uniref50_cli,
+    uniref90_cli,
+    uniref100_cli,
 )
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
     UNIPROT_PIPELINE_NAME,
-    UNIREF_PIPELINE_NAME,
+    UNIREF_FIFTY,
+    UNIREF_HUNDRED,
+    UNIREF_NINETY,
     UniProtXmlToPyArrowSettings,
-    UniRefXmlToPyArrowSettings,
+    UniRef50XmlToPyArrowSettings,
+    UniRef90XmlToPyArrowSettings,
+    UniRef100XmlToPyArrowSettings,
     XmlToPyArrowSettings,
 )
-from cdm_data_loaders.pipelines.xmltopyarrow.uniprot import cli as uniprot_cli
-from cdm_data_loaders.pipelines.xmltopyarrow.uniprot import run_uniprot_pipeline
-from cdm_data_loaders.pipelines.xmltopyarrow.uniref import cli as uniref_cli
-from cdm_data_loaders.pipelines.xmltopyarrow.uniref import run_uniref_pipeline
 from tests.cdm_data_loaders.pipelines.conftest import copy_test_files
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_binds_filesystem_reader,
@@ -105,24 +108,25 @@ def test_cli_fail_missing_required_args_raise(
 
 
 @pytest.mark.parametrize(
-    ("settings_cls", "run_fn", "expected_pipeline_name"),
+    ("settings_cls", "expected_pipeline_name"),
     [
-        (UniProtXmlToPyArrowSettings, run_uniprot_pipeline, UNIPROT_PIPELINE_NAME),
-        (UniRefXmlToPyArrowSettings, run_uniref_pipeline, UNIREF_PIPELINE_NAME),
+        (UniProtXmlToPyArrowSettings, UNIPROT_PIPELINE_NAME),
+        (UniRef50XmlToPyArrowSettings, UNIREF_FIFTY),
+        (UniRef90XmlToPyArrowSettings, UNIREF_NINETY),
+        (UniRef100XmlToPyArrowSettings, UNIREF_HUNDRED),
     ],
 )
 def test_run_subclass_pipeline_pass_sets_core_run_pipeline_args_correctly(
     settings_factory: Callable[..., Any],
     *,
     settings_cls: type[XmlToPyArrowSettings],
-    run_fn: Callable[[Any], LoadInfo | None],
     expected_pipeline_name: str,
 ) -> None:
-    """run_uniprot_pipeline and run_uniref_pipeline delegate to run_pipeline with the subclass pipeline_name."""
+    """run_xmltopyarrow_pipeline delegates to run_pipeline with the subclass pipeline_name."""
     settings = settings_factory(settings_cls)
 
     with patch.object(xmltopyarrow_module, "run_pipeline") as mock_run_pipeline:
-        run_fn(settings)
+        run_xmltopyarrow_pipeline(settings)
 
     mock_run_pipeline.assert_called_once()
     _, kwargs = mock_run_pipeline.call_args
@@ -138,7 +142,9 @@ def test_run_subclass_pipeline_pass_sets_core_run_pipeline_args_correctly(
     ("prog_name", "cli_obj", "sample_xml_rel_dir"),
     [
         (UNIPROT_PIPELINE_NAME, uniprot_cli, "xsd/examples/uniprot"),
-        (UNIREF_PIPELINE_NAME, uniref_cli, "xsd/examples/uniref"),
+        (UNIREF_FIFTY, uniref50_cli, "xsd/examples/uniref"),
+        (UNIREF_NINETY, uniref90_cli, "xsd/examples/uniref"),
+        (UNIREF_HUNDRED, uniref100_cli, "xsd/examples/uniref"),
     ],
 )
 def test_subclass_cli_pass_runs_end_to_end_with_default_settings(
