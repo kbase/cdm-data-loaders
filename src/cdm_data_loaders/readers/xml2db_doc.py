@@ -17,7 +17,7 @@ from xml2db import DataModel, Document
 
 from cdm_data_loaders.pipelines.xml2db.settings import Xml2DbSettings
 from cdm_data_loaders.utils.buffer import DictBuffer
-from cdm_data_loaders.utils.gz import open_maybe_gzip
+from cdm_data_loaders.utils.file_items import FileSource, open_binary, source_id, source_url
 from cdm_data_loaders.utils.xml_utils import local_name
 
 logger: Logger = getLogger(__name__)
@@ -273,7 +273,7 @@ def _rewrite_xml2db_junction_record(
 
 
 def iter_xml2db_chunk_fragments(
-    file_path: str | Path,
+    file_path: FileSource,
     child_tag: str,
     chunk_size: int,
 ) -> Generator[bytes, Any]:
@@ -307,8 +307,8 @@ def iter_xml2db_chunk_fragments(
     handful of already-processed elements at once. Overall memory use is governed by
     `chunk_size`, not by the source file's total size.
 
-    :param file_path: path to the XML file to stream; the file can be gzipped or not.
-    :type file_path: str | Path
+    :param file_path: local path or dlt file item for the XML file to stream; the file can be gzipped or not.
+    :type file_path: FileSource
     :param child_tag: the repeated child element to chunk by. May be a bare local name (e.g.
         `"entry"`) or an lxml Clark-notation expanded name (e.g.
         `"{http://uniprot.org/uniref}entry"`); only the local name is used for matching.
@@ -320,10 +320,8 @@ def iter_xml2db_chunk_fragments(
         `chunk_size` of its `child_tag` children.
     :rtype: Generator[bytes, Any]
     """
-    if isinstance(file_path, Path):
-        file_path = str(file_path)
     child_local_name = local_name(child_tag)
-    with open_maybe_gzip(file_path) as fh:
+    with open_binary(file_path) as fh:
         context = iterparse(fh, events=("start", "end"), remove_blank_text=True)
         try:
             # first event is the root "start"
@@ -400,7 +398,7 @@ def flatten_xml2db_document(model: DataModel, document: Document, file_key: str)
 def process_xml_file_with_xml2db(
     settings: Xml2DbSettings,
     model: DataModel,
-    file_path: Path,
+    file_path: FileSource,
 ) -> Generator[Any, Any]:
     """Parse a whole XML file with xml2db and yield pages of rows, one page per output table.
 
@@ -416,8 +414,10 @@ def process_xml_file_with_xml2db(
     :type settings: Xml2DbSettings
     :param model: the xml2db DataModel built from the target XSD.
     :type model: DataModel
-    :param file_path: path to the XML file to parse; the file can be gzipped or not.
-    :type file_path: Path
+    :param file_path: local path or dlt file item for the XML file to parse; the file can be gzipped or not.
+        Its source id (the item's relative path, or the file name for a local path) namespaces the keys of
+        non-reused tables, so files with the same name in different directories get distinct keys.
+    :type file_path: FileSource
     :yield: pages of table-tagged rows.
 
     .. note::
@@ -440,34 +440,35 @@ def process_xml_file_with_xml2db(
         is set). Many-to-many junction tables have no primary key of their own, so chunking never
         duplicates them either way.
     """
-    logger.info("Reading from %s", str(file_path))
+    logger.info("Reading from %s", source_url(file_path))
     buffer = DictBuffer(max_items=settings.buffer_size)
+    file_key = source_id(file_path)
 
     if settings.xml_tag:
         chunks = (
-            (f"{file_path.name}:{idx}", chunk_bytes)
+            (f"{file_key}:{idx}", chunk_bytes)
             for idx, chunk_bytes in enumerate(
                 iter_xml2db_chunk_fragments(file_path, settings.xml_tag, settings.chunk_size), start=1
             )
         )
     else:
-        with open_maybe_gzip(file_path) as file_handle:
+        with open_binary(file_path) as file_handle:
             raw_bytes = file_handle.read()
-        chunks = iter([(file_path.name, raw_bytes)])
+        chunks = iter([(file_key, raw_bytes)])
 
     n_rows = 0
     n_chunks = 0
     tables: dict[str, list[dict[str, Any]]] = {}
-    for file_key, chunk_bytes in chunks:
+    for chunk_key, chunk_bytes in chunks:
         n_chunks += 1
         document = Document(model)
         document.parse_xml(BytesIO(chunk_bytes), skip_validation=settings.skip_xml_validation, iterparse=True)
-        tables = flatten_xml2db_document(model, document, file_key=file_key)
+        tables = flatten_xml2db_document(model, document, file_key=chunk_key)
         n_rows += sum(len(rows) for rows in tables.values())
         yield from buffer.add_items(tables)
 
     yield from buffer.flush()
     if settings.xml_tag:
-        logger.debug("Processed %d rows across %d chunks from %s", n_rows, n_chunks, file_path.name)
+        logger.debug("Processed %d rows across %d chunks from %s", n_rows, n_chunks, file_key)
     else:
-        logger.debug("Processed %d rows across %d tables from %s", n_rows, len(tables), file_path.name)
+        logger.debug("Processed %d rows across %d tables from %s", n_rows, len(tables), file_key)

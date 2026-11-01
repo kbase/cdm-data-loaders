@@ -16,7 +16,9 @@ import dlt
 import pyarrow as pa
 from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TSchemaContractDict
+from dlt.common.storages.fsspec_filesystem import fsspec_filesystem
 from dlt.sources.filesystem import filesystem
+from fsspec import AbstractFileSystem
 
 from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX
 from cdm_data_loaders.pipelines.core import (
@@ -29,6 +31,7 @@ from cdm_data_loaders.readers.jsonlines import (
     make_page_router,
     stream_jsonl_lines,
 )
+from cdm_data_loaders.utils.file_items import join_url
 
 if TYPE_CHECKING:
     from dlt.extract.resource import DltResource
@@ -57,6 +60,40 @@ def load_registry_dict(module_path: str, attribute_name: str, type_hint: str = "
         err_msg = f"{module_path} does not define a non-empty {attribute_name}{type_hint}"
         raise ValueError(err_msg)
     return registry
+
+
+def entity_files(
+    bucket_url: str,
+    table_name: str,
+    file_glob: str,
+    credentials: AbstractFileSystem | None = None,
+) -> "DltResource":
+    """List the files for one entity, which live in the ``table_name`` subdirectory of ``bucket_url``.
+
+    Works for any filesystem the dlt filesystem source supports. A missing subdirectory produces an
+    empty resource and a warning. On object stores such as S3, which have no real directories, an
+    empty prefix counts as missing.
+
+    :param bucket_url: bucket URL or local directory holding one subdirectory per entity
+    :type  bucket_url: str
+    :param table_name: entity / table name; also the subdirectory name
+    :type  table_name: str
+    :param file_glob: glob for the entity's files, relative to its subdirectory
+    :type  file_glob: str
+    :param credentials: authenticated fsspec filesystem for ``bucket_url``; None uses fsspec defaults
+    :type  credentials: AbstractFileSystem | None
+    :return: dlt filesystem resource listing the entity's files, or an empty resource
+    :rtype: DltResource
+    """
+    entity_url = join_url(bucket_url, table_name)
+    fs = credentials if credentials is not None else fsspec_filesystem(entity_url)[0]
+    if not fs.isdir(entity_url):
+        logger.warning("Entity directory does not exist, skipping: %s", entity_url)
+        return dlt.resource([], name=f"{table_name}_files")
+
+    if credentials is None:
+        return filesystem(bucket_url=entity_url, file_glob=file_glob)
+    return filesystem(bucket_url=entity_url, credentials=credentials, file_glob=file_glob)
 
 
 def build_entity_resource(  # noqa: PLR0913
@@ -91,12 +128,7 @@ def build_entity_resource(  # noqa: PLR0913
     :return: resource yielding validated and rejected records for this entity
     :rtype: DltResource
     """
-    entity_dir = settings.input_dir / table_name
-    if entity_dir.is_dir():
-        files = filesystem(bucket_url=str(entity_dir), file_glob=settings.file_glob)
-    else:
-        logger.warning("Entity directory does not exist, skipping: %s", entity_dir)
-        files = dlt.resource([], name=f"{table_name}_files")
+    files = entity_files(str(settings.input_dir), table_name, settings.file_glob)
 
     raw = dlt.transformer(
         stream_jsonl_lines,

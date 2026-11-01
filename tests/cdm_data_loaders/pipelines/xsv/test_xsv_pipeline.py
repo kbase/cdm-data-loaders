@@ -27,6 +27,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     run_with_duckdb_pipeline,
 )
 from tests.cdm_data_loaders.pipelines.xsv.conftest import VALID_SCHEMA_URI
+from tests.fs_backends import FsBackend
 from tests.helpers import settings_to_argv
 
 SIMPLE_SCHEMA: dict[str, Any] = {
@@ -85,6 +86,59 @@ def test_process_xsv_file_pass_routes_total_failure_to_rejected_table(
     (rejected,) = results[0].data
     assert rejected["file"] == "bad.csv"
     assert rejected["message"]
+
+
+@pytest.mark.parametrize("relative_path", ["data.csv", "sub/dir/data.csv"])
+def test_process_xsv_file_pass_file_item_any_backend(
+    settings_factory: Callable[..., XsvIngestSettings],
+    work_paths_factory: Callable[[XsvIngestSettings], XsvWorkPaths],
+    fs_backend: FsBackend,
+    relative_path: str,
+) -> None:
+    """A file item on any backend is validated and loaded; remote files are downloaded, then deleted."""
+    settings = settings_factory(SIMPLE_SCHEMA, {})
+    work_paths = work_paths_factory(settings)
+    fs_backend.put(relative_path, b"number,name\n1,alice\n2,bob\n")
+
+    results = list(_process_xsv_file(fs_backend.file_item(relative_path), settings, work_paths))
+
+    assert [(result.meta.table_name, result.data) for result in results] == [
+        ("my_table", [{"number": 1, "name": "alice"}, {"number": 2, "name": "bob"}]),
+    ]
+    assert [path for path in work_paths.download_dir.rglob("*") if path.is_file()] == []
+    assert fs_backend.fs.exists(fs_backend.path(relative_path))
+
+
+def test_process_xsv_file_pass_rejected_file_is_relative_path(
+    settings_factory: Callable[..., XsvIngestSettings],
+    work_paths_factory: Callable[[XsvIngestSettings], XsvWorkPaths],
+    fs_backend: FsBackend,
+) -> None:
+    """Rejected rows identify the file by its path relative to the input location, on every backend."""
+    settings = settings_factory(SIMPLE_SCHEMA, {})
+    work_paths = work_paths_factory(settings)
+    fs_backend.put("sub/bad.csv", b"number,name\n1\n2,bob,extra\n")
+
+    results = list(_process_xsv_file(fs_backend.file_item("sub/bad.csv"), settings, work_paths))
+
+    assert [result.meta.table_name for result in results] == [f"my_table{DEFAULT_REJECTED_SUFFIX}"]
+    assert [row["file"] for row in results[0].data] == ["sub/bad.csv"]
+
+
+def test_process_xsv_file_fail_remote_object_missing(
+    settings_factory: Callable[..., XsvIngestSettings],
+    work_paths_factory: Callable[[XsvIngestSettings], XsvWorkPaths],
+    remote_fs_backend: FsBackend,
+) -> None:
+    """A remote file deleted after listing raises FileNotFoundError when it is downloaded."""
+    settings = settings_factory(SIMPLE_SCHEMA, {})
+    work_paths = work_paths_factory(settings)
+    remote_fs_backend.put("gone.csv", b"number,name\n1,alice\n")
+    item = remote_fs_backend.file_item("gone.csv")
+    remote_fs_backend.fs.rm(remote_fs_backend.path("gone.csv"))
+
+    with pytest.raises(FileNotFoundError):
+        list(_process_xsv_file(item, settings, work_paths))
 
 
 """run_xsv_pipeline"""

@@ -1,5 +1,6 @@
 """Tests for `stream_xml_file` from cdm_data_loaders.readers.xml."""
 
+import gzip
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -9,6 +10,7 @@ from lxml.etree import XMLSyntaxError, tostring
 
 from cdm_data_loaders.readers.xml import stream_xml_file
 from tests.cdm_data_loaders.readers.xml.conftest import XML_OPEN_ERROR_CASES, prepare_xml_error_path
+from tests.fs_backends import FsBackend
 from tests.xml_samples import SIMPLE_LIBRARY_XML
 
 MIXED_TAGS_XML = """<?xml version="1.0"?>
@@ -157,12 +159,46 @@ def test_stream_xml_file_pass_logs_debug_message_per_yielded_element(
 
     list(stream_xml_file(path, "book"))
 
-    assert len(caplog.records) == n_expected_records
-    assert caplog.records[0].getMessage().startswith("Streaming XML from")
-    log_levels = {r.levelno for r in caplog.records}
+    # only this module's records: fsspec may also log at DEBUG level when the file is opened
+    records = [r for r in caplog.records if r.name == "cdm_data_loaders.readers.xml"]
+    assert len(records) == n_expected_records
+    assert records[0].getMessage() == f"Streaming XML from {path}"
+    log_levels = {r.levelno for r in records}
     assert log_levels == {logging.DEBUG}
-    for rec in caplog.records[1:]:
+    for rec in records[1:]:
         assert rec.getMessage().startswith("<Element book at")
+
+
+@pytest.mark.parametrize("relative_path", ["library.xml", "nested/dir/library.xml.gz"])
+def test_stream_xml_file_pass_file_item_any_backend(fs_backend: FsBackend, relative_path: str) -> None:
+    """Verify elements are streamed from a file item on every backend, plain or gzipped."""
+    data = SIMPLE_LIBRARY_XML.encode("utf-8")
+    fs_backend.put(relative_path, gzip.compress(data) if relative_path.endswith(".gz") else data)
+
+    tags_ids = [(elem.tag, elem.get("id")) for elem in stream_xml_file(fs_backend.file_item(relative_path), "book")]
+
+    assert tags_ids == EXPECTED_SIMPLE_TAGS_IDS
+
+
+def test_stream_xml_file_pass_open_handle_left_open(xml_path_factory: Callable[..., Path]) -> None:
+    """Verify an open handle is streamed from and left open for the caller to close."""
+    path = xml_path_factory(SIMPLE_LIBRARY_XML)
+
+    with path.open("rb") as fh:
+        tags_ids = [(elem.tag, elem.get("id")) for elem in stream_xml_file(fh, "book")]
+        assert not fh.closed
+
+    assert tags_ids == EXPECTED_SIMPLE_TAGS_IDS
+
+
+def test_stream_xml_file_fail_missing_remote_object(remote_fs_backend: FsBackend) -> None:
+    """Verify a remote object deleted after listing raises FileNotFoundError, as a missing local file does."""
+    remote_fs_backend.put("gone.xml", SIMPLE_LIBRARY_XML.encode("utf-8"))
+    item = remote_fs_backend.file_item("gone.xml")
+    remote_fs_backend.fs.rm(remote_fs_backend.path("gone.xml"))
+
+    with pytest.raises(FileNotFoundError):
+        list(stream_xml_file(item, "book"))
 
 
 @pytest.mark.parametrize(

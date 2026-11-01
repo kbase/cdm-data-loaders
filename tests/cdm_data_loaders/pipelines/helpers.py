@@ -13,7 +13,6 @@ from uuid import uuid4
 
 import dlt
 import duckdb
-import pendulum
 import pyarrow as pa
 import pyarrow.parquet as pq
 import yaml
@@ -27,7 +26,7 @@ from cdm_data_loaders.converters.core.paths import set_nested
 from cdm_data_loaders.core.fields import PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import FileFormatIngestSettings
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
-from cdm_data_loaders.utils.gz import open_maybe_gzip
+from cdm_data_loaders.utils.file_items import as_file_item, open_binary
 from tests.helpers import strip_none_values
 
 logger: Logger = getLogger(__name__)
@@ -62,7 +61,7 @@ def is_metadata_table(table_name: str) -> bool:
 def read_jsonl_file(file_path: Path) -> list[dict[str, Any]]:
     """Read a plain or gzipped JSONLines file."""
     rows: list[dict[str, Any]] = []
-    with open_maybe_gzip(file_path) as f:
+    with open_binary(file_path) as f:
         for raw_line in f:
             stripped = raw_line.decode("utf-8").strip()
             if not stripped:
@@ -253,18 +252,13 @@ def check_book_list_results(
     return book_df
 
 
-def make_file_item(file_path: Path, mime_type: str = "application/octet-stream") -> FileItemDict:
-    """Build a dlt FileItemDict for a local file."""
-    return FileItemDict(
-        {
-            "file_url": file_path.as_uri(),
-            "file_name": file_path.name,
-            "relative_path": file_path.name,
-            "mime_type": mime_type,
-            "modification_date": pendulum.now(),
-            "size_in_bytes": file_path.stat().st_size,
-        }
-    )
+def make_file_item(file_path: Path) -> FileItemDict:
+    """Build a dlt FileItemDict for a local file, as the dlt filesystem resource would list it.
+
+    The item carries an fsspec client and the ``encoding`` that dlt derives from the file name, so it can be
+    opened (with gzip decompression) exactly like an item from a pipeline run.
+    """
+    return as_file_item(file_path)
 
 
 def fetch_all_duckdb(pipeline: dlt.Pipeline, query: str) -> list[tuple[Any, ...]]:

@@ -98,6 +98,9 @@ class CleanerValidatorArgs(BaseModel):
     :type null_regex_cols: list[NonEmptyStr] | None
     :param missing_header: whether or not the xsv file has a missing header, defaults to False
     :type missing_header: bool, optional
+    :param source_id: identifier recorded for the input file in error records, e.g. its path relative to the
+        input location; defaults to the name of ``xsv_file_path``
+    :type source_id: NonEmptyStr | None, optional
     """
 
     qsv_cmd: NonEmptyStr
@@ -121,6 +124,7 @@ class CleanerValidatorArgs(BaseModel):
     null_regex: NonEmptyStr | None = None
     null_regex_cols: list[NonEmptyStr] | None = None
     missing_header: bool = False
+    source_id: NonEmptyStr | None = None
 
     @computed_field
     @cached_property
@@ -137,8 +141,8 @@ class CleanerValidatorArgs(BaseModel):
     @computed_field
     @property
     def file_name(self) -> str:
-        """Name of the input xsv file."""
-        return self.xsv_file_path.name
+        """Identifier of the input xsv file used in error records: ``source_id`` if set, else the file name."""
+        return self.source_id or self.xsv_file_path.name
 
     @computed_field
     @property

@@ -1,13 +1,15 @@
 """Tests for `parse_head_matter` from cdm_data_loaders.readers.xml."""
 
+import gzip
 import logging
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from cdm_data_loaders.readers.xml import parse_head_matter
+from cdm_data_loaders.readers.xml import parse_head_matter, stream_xml_file
 from tests.cdm_data_loaders.readers.xml.conftest import XML_OPEN_ERROR_CASES, prepare_xml_error_path
+from tests.fs_backends import FsBackend
 
 # XML with no namespace declarations at all.
 NO_NAMESPACE_XML = """<?xml version="1.0"?>
@@ -130,6 +132,34 @@ def test_parse_head_matter_pass_gzip_file_matches_plain_file(
     assert gz_result == plain_result == {"": DEFAULT_NS_URI, "xsi": XSI_NS_URI, "dc": DC_NS_URI}
 
 
+@pytest.mark.parametrize("relative_path", ["library.xml", "sub/library.xml.gz"])
+def test_parse_head_matter_pass_file_item_any_backend(fs_backend: FsBackend, relative_path: str) -> None:
+    """Verify the head matter of a file item is parsed on every backend, plain or gzipped."""
+    data = MULTI_NAMESPACE_XML.encode("utf-8")
+    fs_backend.put(relative_path, gzip.compress(data) if relative_path.endswith(".gz") else data)
+
+    result = parse_head_matter(fs_backend.file_item(relative_path))
+
+    assert result == {"": DEFAULT_NS_URI, "xsi": XSI_NS_URI, "dc": DC_NS_URI}
+
+
+@pytest.mark.parametrize("relative_path", ["library.xml", "library.xml.gz"])
+def test_parse_head_matter_pass_open_handle_rewound_and_streamed(fs_backend: FsBackend, relative_path: str) -> None:
+    """Verify an open handle is left open after the head matter, and seek(0) lets the whole file be streamed."""
+    body = "\n".join(f'    <book id="{i}"><title>Book {i}</title></book>' for i in range(5_000))
+    data = f'<?xml version="1.0"?>\n<library xmlns="{DEFAULT_NS_URI}">\n{body}\n</library>\n'.encode()
+    fs_backend.put(relative_path, gzip.compress(data) if relative_path.endswith(".gz") else data)
+
+    with fs_backend.file_item(relative_path).open(mode="rb") as fh:
+        namespaces = parse_head_matter(fh)
+        assert not fh.closed
+        fh.seek(0)
+        ids = [elem.get("id") for elem in stream_xml_file(fh, f"{{{DEFAULT_NS_URI}}}book")]
+
+    assert namespaces == {"": DEFAULT_NS_URI}
+    assert ids == [str(i) for i in range(5_000)]
+
+
 def test_parse_head_matter_pass_does_not_read_whole_document(
     xml_path_factory: Callable[..., Path], caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -154,9 +184,13 @@ def test_parse_head_matter_pass_logs_debug_messages(
 
     parse_head_matter(path)
 
-    assert any(m.startswith("Parsing head matter from") for m in caplog.messages)
-    assert any(m.startswith("Found 3 namespace declaration(s)") for m in caplog.messages)
-    assert {r.levelno for r in caplog.records} == {logging.DEBUG}
+    # only this module's records: fsspec may also log at DEBUG level when the file is opened
+    records = [r for r in caplog.records if r.name == "cdm_data_loaders.readers.xml"]
+    assert [r.getMessage() for r in records] == [
+        f"Parsing head matter from {path}",
+        f"Found 3 namespace declaration(s) in {path}",
+    ]
+    assert {r.levelno for r in records} == {logging.DEBUG}
 
 
 @pytest.mark.parametrize(("scenario", "expected_exc", "match"), XML_OPEN_ERROR_CASES)

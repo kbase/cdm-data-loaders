@@ -74,7 +74,8 @@ def work_paths_factory(tmp_path: Path, qsv_cmd: str) -> Callable[[XsvIngestSetti
         tmp_dir = tmp_path / "tmp"
         qsv_output_dir = tmp_path / "qsv_output"
         validated_dir = tmp_path / "validated"
-        for directory in (tmp_dir, qsv_output_dir, validated_dir):
+        download_dir = tmp_path / "download"
+        for directory in (tmp_dir, qsv_output_dir, validated_dir, download_dir):
             directory.mkdir(exist_ok=True)
         return XsvWorkPaths(
             qsv_cmd=qsv_cmd,
@@ -82,6 +83,7 @@ def work_paths_factory(tmp_path: Path, qsv_cmd: str) -> Callable[[XsvIngestSetti
             tmp_dir=tmp_dir,
             qsv_output_dir=qsv_output_dir,
             validated_dir=validated_dir,
+            download_dir=download_dir,
         )
 
     return _factory
