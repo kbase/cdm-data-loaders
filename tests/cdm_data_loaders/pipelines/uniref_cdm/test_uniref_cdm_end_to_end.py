@@ -1,7 +1,7 @@
-"""Tests for the UniRef DLT pipeline.
+"""End-to-end tests for the UniRef CDM DLT pipelines.
 
 The fixture file contains three clusters; exact per-table counts below are
-derived from that fixture. Every test runs once per valid UniRef variant.
+derived from that fixture. Every test runs once per UniRef CDM variant.
 """
 
 from pathlib import Path
@@ -10,12 +10,8 @@ from typing import Any
 import pytest
 from frozendict import frozendict
 
-from cdm_data_loaders.pipelines.uniref_cdm import (
-    PIPELINE_NAME,
-    UNIREF_VARIANTS,
-    UnirefSettings,
-    parse_uniref,
-)
+from cdm_data_loaders.pipelines.uniref_cdm import UniRefCdmSettings
+from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_destination_table_counts,
@@ -25,10 +21,9 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     duckdb_pipeline,
     fetch_all_duckdb,
 )
+from tests.cdm_data_loaders.pipelines.uniref_cdm.conftest import UNIREF_CDM_VARIANTS
 from tests.conftest import TEST_DATA_DIR
 from tests.helpers import make_cts_settings
-
-TEST_DEFAULT_UNIREF_VARIANT = "50"
 
 UNIREF_FIXTURE_DIR = TEST_DATA_DIR / "uniprot" / "uniref" / "integration"
 UNIREF_FIXTURE_FILE = "uniref_chunk_00001.xml"
@@ -39,39 +34,36 @@ EXPECTED_ROW_COUNTS = frozendict(
         "entity": UNIREF_CLUSTER_COUNT,
         "cluster": UNIREF_CLUSTER_COUNT,
         "clustermember": 4,
-        "entity_x_source_file": UNIREF_CLUSTER_COUNT,
     }
 )
 
 
-# Integration test for the UniRef pipeline
-# Data output goes to a local DuckDB destination.
-@pytest.fixture(params=UNIREF_VARIANTS)
-def duckdb_uniref_settings(tmp_path: Path, request: pytest.FixtureRequest) -> UnirefSettings:
-    """Provide UnirefSettings pointing at the real UniRef XML fixtures, one per variant."""
-    return make_cts_settings(
-        UnirefSettings,
+@pytest.fixture(params=UNIREF_CDM_VARIANTS, ids=[name for _, _, name, _ in UNIREF_CDM_VARIANTS])
+def duckdb_uniref_variant(
+    tmp_path: Path,
+    request: pytest.FixtureRequest,
+) -> tuple[UniRefCdmSettings, str, str]:
+    """Provide (UniRefCdmSettings, cli_name, expected_protocol) pointing at the real UniRef XML fixtures."""
+    settings_cls, _, cli_name, protocol = request.param
+    settings = make_cts_settings(
+        settings_cls,
         tmp_path,
-        variant=request.param,
         input_dir=UNIREF_FIXTURE_DIR,
         use_output_dir_for_pipeline_metadata=True,
     )
+    return settings, cli_name, protocol
 
 
-def _run_uniref_duckdb_pipeline(settings: UnirefSettings, tmp_path: Path, name: str) -> tuple[Any, Any]:
-    """Run ``parse_uniref`` through a real DuckDB pipeline and return (pipeline, load_info).
-
-    dlt writes the duckdb destination file into the working directory and appends
-    on re-runs, so each test gets its own database file and pipeline name under
-    tmp_path to stay isolated from other tests and parametrized cases.
-    """
+def _run_uniref_duckdb_pipeline(settings: UniRefCdmSettings, tmp_path: Path, name: str) -> tuple[Any, Any]:
+    """Run ``process_xml_file_to_pyarrow`` through a real DuckDB pipeline and return (pipeline, load_info)."""
     pipeline = duckdb_pipeline(tmp_path, f"test_uniref_pipeline_{name}", "test_uniref")
-    load_info = pipeline.run(parse_uniref(settings))
+    fixture_path = UNIREF_FIXTURE_DIR / UNIREF_FIXTURE_FILE
+    load_info = pipeline.run(process_xml_file_to_pyarrow(settings, fixture_path))
     return pipeline, load_info
 
 
 def test_integration_uniref_pipeline_loads_into_duckdb(
-    duckdb_uniref_settings: UnirefSettings,
+    duckdb_uniref_variant: tuple[UniRefCdmSettings, str, str],
     tmp_path: Path,
 ) -> None:
     """Full integration test: parse the real fixture files into a DuckDB destination.
@@ -79,18 +71,20 @@ def test_integration_uniref_pipeline_loads_into_duckdb(
     Confirms that the pipeline runs end-to-end without failed jobs and that the
     expected CDM tables are populated with the exact expected row counts.
     """
-    pipeline, load_info = _run_uniref_duckdb_pipeline(duckdb_uniref_settings, tmp_path, "loads")
+    settings, cli_name, _ = duckdb_uniref_variant
+    pipeline, load_info = _run_uniref_duckdb_pipeline(settings, tmp_path, f"loads_{cli_name}")
 
     assert_run_ok(load_info)
     assert_duckdb_table_counts(pipeline, EXPECTED_ROW_COUNTS)
 
 
 def test_integration_uniref_pipeline_entity_and_cluster_content(
-    duckdb_uniref_settings: UnirefSettings,
+    duckdb_uniref_variant: tuple[UniRefCdmSettings, str, str],
     tmp_path: Path,
 ) -> None:
     """Entity rows are UniRef clusters and every cluster carries the injected protocol label."""
-    pipeline, load_info = _run_uniref_duckdb_pipeline(duckdb_uniref_settings, tmp_path, "content")
+    settings, cli_name, expected_protocol = duckdb_uniref_variant
+    pipeline, load_info = _run_uniref_duckdb_pipeline(settings, tmp_path, f"content_{cli_name}")
 
     assert_run_ok(load_info)
 
@@ -102,30 +96,24 @@ def test_integration_uniref_pipeline_entity_and_cluster_content(
 
     # every cluster must carry the injected "UniRef <variant>" protocol label
     protocols = {row[0] for row in fetch_all_duckdb(pipeline, "SELECT DISTINCT protocol FROM cluster")}
-    assert protocols == {f"UniRef {duckdb_uniref_settings.variant}"}
-
-    # entity_x_source_file must reference exactly the fixture file we loaded from
-    source_files = {
-        row[0] for row in fetch_all_duckdb(pipeline, "SELECT DISTINCT source_file FROM entity_x_source_file")
-    }
-    # recorded as a path relative to the input directory, independent of where the input lives
-    assert source_files == {UNIREF_FIXTURE_FILE}
+    assert protocols == {expected_protocol}
 
 
 def test_integration_cli_uniref_pipeline_output_validated(
-    duckdb_uniref_settings: UnirefSettings,
+    duckdb_uniref_variant: tuple[UniRefCdmSettings, str, str],
     pipeline_runner: PipelineTestRunner,
 ) -> None:
-    """Exercise the UniRef pipeline end-to-end across core, cli, and docker execution modes."""
-    load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=duckdb_uniref_settings))
-    assert load_info.pipeline.pipeline_name == PIPELINE_NAME
-    assert load_info.dataset_name == f"uniref_{duckdb_uniref_settings.variant}"
+    """Exercise each UniRef CDM pipeline end-to-end across core, cli, and docker execution modes."""
+    settings, cli_name, _ = duckdb_uniref_variant
+    load_info = assert_run_ok(pipeline_runner.run(cli_name, settings=settings))
+    assert load_info.pipeline.pipeline_name == cli_name
+    assert load_info.dataset_name == cli_name
     assert_pipeline_report_written(
-        Path(duckdb_uniref_settings.output_dir),
+        Path(settings.output_dir),
         load_info,
         metadata_moved=True,
         ingested_files=[UNIREF_FIXTURE_FILE],
     )
 
-    dataset_dir = Path(duckdb_uniref_settings.output_dir) / load_info.dataset_name
+    dataset_dir = Path(settings.output_dir) / load_info.dataset_name
     assert_destination_table_counts(dataset_dir, EXPECTED_ROW_COUNTS)
