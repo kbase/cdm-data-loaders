@@ -9,7 +9,7 @@ import pyarrow as pa
 import pytest
 import xmlschema
 from pydantic import ValidationError
-from pydantic_settings import CliApp
+from pydantic_settings import CliApp, SettingsError
 
 import cdm_data_loaders.pipelines.xmltopyarrow.settings as xmltopyarrow_settings_module
 from cdm_data_loaders.core.fields import DEFAULTS
@@ -19,11 +19,15 @@ from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     ENTRY_XML_TAG,
     UNIPROT_PIPELINE_NAME,
     UNIPROT_XSD_FILE,
-    UNIREF_PIPELINE_NAME,
+    UNIREF_FIFTY,
+    UNIREF_HUNDRED,
+    UNIREF_NINETY,
     UNIREF_XSD_FILE,
     PresetXmlToPyArrowSettings,
     UniProtXmlToPyArrowSettings,
-    UniRefXmlToPyArrowSettings,
+    UniRef50XmlToPyArrowSettings,
+    UniRef90XmlToPyArrowSettings,
+    UniRef100XmlToPyArrowSettings,
     XmlToPyArrowSettings,
 )
 from cdm_data_loaders.readers.xsd import DEFAULT_MAX_RECURSION_DEPTH, generate_pyarrow_schema, load_schema
@@ -132,7 +136,9 @@ def test_xmltopyarrow_settings_fail_xml_tag_not_in_xsd_raises_validation_error(
     ("settings_cls", "expected_dataset_name", "expected_xsd_file", "expected_schema"),
     [
         (UniProtXmlToPyArrowSettings, UNIPROT_PIPELINE_NAME, UNIPROT_XSD_FILE, UNIPROT_SCHEMA),
-        (UniRefXmlToPyArrowSettings, UNIREF_PIPELINE_NAME, UNIREF_XSD_FILE, UNIREF_SCHEMA),
+        (UniRef50XmlToPyArrowSettings, UNIREF_FIFTY, UNIREF_XSD_FILE, UNIREF_SCHEMA),
+        (UniRef90XmlToPyArrowSettings, UNIREF_NINETY, UNIREF_XSD_FILE, UNIREF_SCHEMA),
+        (UniRef100XmlToPyArrowSettings, UNIREF_HUNDRED, UNIREF_XSD_FILE, UNIREF_SCHEMA),
     ],
 )
 def test_subclass_xmltopyarrow_settings_pass_defaults_and_cli(
@@ -156,12 +162,24 @@ def test_subclass_xmltopyarrow_settings_pass_defaults_and_cli(
     assert settings.pyarrow_schema is expected_schema
 
     base_settings = settings_factory(CtsSettings)
-    cli_settings = CliApp.run(settings_cls, cli_args=settings_to_argv(base_settings))
+    base_argv = settings_to_argv(base_settings)
+    cli_settings = CliApp.run(settings_cls, cli_args=base_argv)
     assert cli_settings.dataset_name == expected_dataset_name
     assert cli_settings.table_name == "entry"
     assert cli_settings.xml_tag == "entry"
     assert cli_settings.xsd_file == expected_xsd_file
     assert cli_settings.pyarrow_schema is expected_schema
+
+    for locked_field, flag in (
+        ("dataset_name", "--dataset-name"),
+        ("table_name", "--table-name"),
+        ("xml_tag", "--xml-tag"),
+    ):
+        assert locked_field not in settings_cls.model_fields
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            settings_factory(settings_cls, **{locked_field: "custom"})
+        with pytest.raises(SettingsError, match=f"unrecognized arguments: {flag}"):
+            CliApp.run(settings_cls, cli_args=[*base_argv, flag, "custom"])
 
 
 def test_preset_xmltopyarrow_settings_pass_base_defaults(

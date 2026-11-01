@@ -8,12 +8,7 @@ import xmlschema
 from pydantic import Field, FilePath, PositiveInt, PrivateAttr, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.core.fields import (
-    DatasetName,
-    TableName,
-    XmlTag,
-    XsdFile,
-)
+from cdm_data_loaders.core.fields import XsdFile
 from cdm_data_loaders.core.settings import (
     XML_CLI_SHORTCUTS,
     SingleTableXmlIngestSettings,
@@ -37,6 +32,11 @@ ENTRY_TABLE_NAME: Final[str] = "entry"
 SCHEMAS_DIR: Final[Path] = Path(__file__).resolve().parents[2] / "schemas"
 UNIPROT_XSD_FILE: Final[Path] = SCHEMAS_DIR / "uniprot" / "uniprot.xsd"
 UNIREF_XSD_FILE: Final[Path] = SCHEMAS_DIR / "uniref" / "uniref.xsd"
+
+
+UNIREF_FIFTY: Final[str] = "uniref50"
+UNIREF_NINETY: Final[str] = "uniref90"
+UNIREF_HUNDRED: Final[str] = "uniref100"
 
 
 class XmlToPyArrowSettings(SingleTableXmlIngestSettings):
@@ -94,20 +94,8 @@ class PresetXmlToPyArrowSettings(XmlToPyArrowSettings):
 
     _PRECOMPUTED_SCHEMA: ClassVar[pa.Schema]
 
-    table_name: Annotated[
-        TableName,
-        Field(
-            default=ENTRY_TABLE_NAME,
-            description="The name of the table to export parsed data to",
-        ),
-    ]
-    xml_tag: Annotated[
-        XmlTag,
-        Field(
-            default=ENTRY_XML_TAG,
-            description="XML tag to capture the contents of",
-        ),
-    ]
+    table_name: ClassVar[str] = ENTRY_TABLE_NAME
+    xml_tag: ClassVar[str] = ENTRY_XML_TAG
 
     def _resolve_pyarrow_schema(self) -> pa.Schema:
         """Return the precomputed PyArrow schema for this preset pipeline."""
@@ -124,13 +112,8 @@ class UniProtXmlToPyArrowSettings(PresetXmlToPyArrowSettings):
         cli_shortcuts=XML_CLI_SHORTCUTS,
     )
 
-    dataset_name: Annotated[
-        DatasetName,
-        Field(
-            default=UNIPROT_PIPELINE_NAME,
-            description="The name of the dataset being produced",
-        ),
-    ]
+    dataset_name: ClassVar[str] = UNIPROT_PIPELINE_NAME
+
     xsd_file: Annotated[
         FilePath,
         Field(
@@ -150,13 +133,6 @@ class UniRefXmlToPyArrowSettings(PresetXmlToPyArrowSettings):
         cli_shortcuts=XML_CLI_SHORTCUTS,
     )
 
-    dataset_name: Annotated[
-        DatasetName,
-        Field(
-            default=UNIREF_PIPELINE_NAME,
-            description="The name of the dataset being produced",
-        ),
-    ]
     xsd_file: Annotated[
         FilePath,
         Field(
@@ -164,3 +140,34 @@ class UniRefXmlToPyArrowSettings(PresetXmlToPyArrowSettings):
             description="Path to the UniRef XSD file describing the XML documents to be imported.",
         ),
     ]
+
+
+class UniRef50XmlToPyArrowSettings(UniRefXmlToPyArrowSettings):
+    """UniRef 50 XML to PyArrow ingest settings."""
+
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
+        cli_prog_name=UNIREF_FIFTY,
+        cli_shortcuts=XML_CLI_SHORTCUTS,
+    )
+
+    dataset_name: ClassVar[str] = UNIREF_FIFTY
+
+
+class UniRef90XmlToPyArrowSettings(UniRefXmlToPyArrowSettings):
+    """UniRef 90 XML to PyArrow ingest settings."""
+
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
+        cli_prog_name=UNIREF_NINETY,
+        cli_shortcuts=XML_CLI_SHORTCUTS,
+    )
+    dataset_name: ClassVar[str] = UNIREF_NINETY
+
+
+class UniRef100XmlToPyArrowSettings(UniRefXmlToPyArrowSettings):
+    """UniRef 100 XML to PyArrow ingest settings."""
+
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
+        cli_prog_name=UNIREF_HUNDRED,
+        cli_shortcuts=XML_CLI_SHORTCUTS,
+    )
+    dataset_name: ClassVar[str] = UNIREF_HUNDRED

@@ -117,7 +117,6 @@ def test_settings_to_argv_pass_excludes_computed_fields_and_expands_lists(tmp_pa
         dataset_name="custom_ds",
         loader_file_format="jsonl",
         schema_files_module="some.module",
-        table_names=["alpha", "beta"],
     )
     argv = settings_to_argv(settings)
     assert "--pipeline-dir" not in argv
@@ -126,8 +125,6 @@ def test_settings_to_argv_pass_excludes_computed_fields_and_expands_lists(tmp_pa
     assert "--use-output-dir-for-pipeline-metadata" in argv
     idx_meta = argv.index("--use-output-dir-for-pipeline-metadata")
     assert argv[idx_meta + 1] == "true"
-    idx_tables = argv.index("--table-names")
-    assert argv[idx_tables + 1 : idx_tables + 3] == ["alpha", "beta"]
 
 
 def test_reconstruct_load_info_pass_and_error_cases(tmp_path: Path) -> None:

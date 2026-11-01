@@ -3,11 +3,6 @@
 from collections.abc import Callable
 from pathlib import Path
 
-import pytest
-
-from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
-    load_entity_models,
-)
 from cdm_data_loaders.pipelines.jsonlines.settings import PYDANTIC_PIPELINE_NAME, JsonlPydanticIngestSettings
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
@@ -30,28 +25,6 @@ def test_run_jsonlines_pipeline_pass_writes_expected_parquet(
     assert sorted(dataset.widget.df()["widget_id"].tolist()) == ["a", "c"]
     assert len(dataset.widget_rejected.df()) == 2
     assert_pipeline_report_written(Path(settings.output_dir), load_info)
-
-
-def test_run_jsonlines_pipeline_fail_unknown_table_name_raises(
-    settings_factory: Callable[..., JsonlPydanticIngestSettings],
-    pipeline_runner: PipelineTestRunner,
-) -> None:
-    """A table name in table_names that is not in the entity model registry raises ValueError."""
-    settings = settings_factory(table_names=["not_a_real_table"])
-    with pytest.raises(ValueError, match="Unknown table name"):
-        pipeline_runner.run(PYDANTIC_PIPELINE_NAME, settings=settings)
-
-
-def test_run_jsonlines_pipeline_pass_table_names_none_processes_every_registered_table(
-    settings_factory: Callable[..., JsonlPydanticIngestSettings],
-) -> None:
-    """table_names=None resolves to every entity in entity_models_module."""
-    settings = settings_factory()
-
-    entity_models = load_entity_models(settings.entity_models_module)
-    resolved = settings.table_names or sorted(entity_models)
-
-    assert resolved == ["widget"]
 
 
 def test_cli_pass_runs_end_to_end_from_command_line_arguments(

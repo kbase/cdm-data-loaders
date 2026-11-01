@@ -10,7 +10,14 @@ from cdm_data_loaders.pipelines.core import (
     build_per_file_filesystem_resource,
     run_pipeline,
 )
-from cdm_data_loaders.pipelines.xmltopyarrow.settings import PIPELINE_NAME, XmlToPyArrowSettings
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
+    PIPELINE_NAME,
+    UniProtXmlToPyArrowSettings,
+    UniRef50XmlToPyArrowSettings,
+    UniRef90XmlToPyArrowSettings,
+    UniRef100XmlToPyArrowSettings,
+    XmlToPyArrowSettings,
+)
 from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
 
 
@@ -37,6 +44,13 @@ def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None
 
 cli = PipelineCli(XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 
+uniprot_cli = PipelineCli(UniProtXmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+
+uniref50_cli = PipelineCli(UniRef50XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+
+uniref90_cli = PipelineCli(UniRef90XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+
+uniref100_cli = PipelineCli(UniRef100XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 
 if __name__ == "__main__":
     cli()

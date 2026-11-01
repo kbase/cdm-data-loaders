@@ -618,16 +618,6 @@ def test_run_jsonlines_pipeline_pass_loads_valid_and_rejected_rows(
     assert (dataset_dir / "widget_rejected").is_dir()
 
 
-def test_run_jsonlines_pipeline_fail_unknown_tables(
-    schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
-) -> None:
-    """Unknown tables fail before the shared runner creates pipeline state."""
-    settings = schema_settings_factory(table_names=["unknown"])
-    with pytest.raises(ValueError, match=r"Unknown table name\(s\) requested: \['unknown'\]"):
-        run_jsonlines_pipeline(settings)
-    assert list(Path(settings.output_dir).iterdir()) == []
-
-
 def test_run_jsonlines_pipeline_fail_unconvertible_pyarrow_schema(
     schema_module_factory: Callable[[object], str],
     schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
@@ -646,26 +636,6 @@ def test_run_jsonlines_pipeline_fail_unconvertible_pyarrow_schema(
     with pytest.raises(RuntimeError, match="converting schemas to PyArrow"):
         run_jsonlines_pipeline(settings)
     assert list(Path(settings.output_dir).iterdir()) == []
-
-
-@pytest.mark.parametrize(
-    ("table_names", "expected"),
-    [
-        pytest.param(None, None, id="all-tables"),
-        pytest.param("widget, gadget", ["widget", "gadget"], id="comma-separated"),
-        pytest.param(["widget"], ["widget"], id="list"),
-        pytest.param(" , ", None, id="blank"),
-    ],
-)
-def test_settings_pass_table_selection(
-    schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
-    table_names: str | list[str] | None,
-    expected: list[str] | None,
-) -> None:
-    """JSON Schema settings retain the shared table selection contract."""
-    settings = schema_settings_factory(table_names=table_names)
-    assert settings.table_names == expected
-    assert settings.model_config["cli_prog_name"] == "jsonlines_jsonschema"
 
 
 @pytest.mark.parametrize("buffer_size", [0, -1], ids=["zero", "negative"])

@@ -158,15 +158,17 @@ def test_run_jsonlines_pipeline_pass_all_invalid(
 def test_cli_pass_loads_selected_entity(
     schema_input_dir: Path,
     schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
+    schema_module_factory: Callable[[object], str],
+    widget_schema: dict[str, Any],
     loader_file_format: str,
     pipeline_runner: PipelineTestRunner,
 ) -> None:
-    """The real CTS CLI accepts a registry shortcut, table selection, and the requested file format."""
+    """The real CTS CLI accepts a registry shortcut and the requested file format."""
     settings = schema_settings_factory(
         input_dir=str(schema_input_dir),
         loader_file_format=loader_file_format,
         dataset_name="schema_cli",
-        table_names=["gadget"],
+        schema_files_module=schema_module_factory({"gadget": widget_schema}),
     )
 
     load_info = assert_run_ok(

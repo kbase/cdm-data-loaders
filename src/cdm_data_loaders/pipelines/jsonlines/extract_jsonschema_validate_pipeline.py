@@ -189,7 +189,6 @@ def run_jsonlines_pipeline(settings: JsonlJsonschemaIngestSettings) -> LoadInfo 
 
     :param settings: pipeline configuration
     :type settings:  JsonlJsonschemaIngestSettings
-    :raises ValueError: if settings.table_names includes a name not in ENTITY_SCHEMAS
     :raises RuntimeError: if any schema fails JSON Schema validation or PyArrow conversion
     :return: load information for the pipeline
     :rtype:  LoadInfo | None

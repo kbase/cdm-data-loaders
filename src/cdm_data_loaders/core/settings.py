@@ -40,6 +40,7 @@ DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
         "cli_kebab_case": True,
         "env_prefix": "CDL_",
         "str_strip_whitespace": True,
+        "frozen": True,
     }
 )
 
