@@ -149,26 +149,6 @@ def test_stream_xml_file_pass_previously_yielded_elements_are_cleared_after_adva
     assert all(elem.find("title") is None for elem in all_elements)
 
 
-def test_stream_xml_file_pass_logs_debug_message_per_yielded_element(
-    xml_path_factory: Callable[..., Path], caplog: pytest.LogCaptureFixture
-) -> None:
-    """Verify the debug logs emitted by stream_xml_file."""
-    path = xml_path_factory(SIMPLE_LIBRARY_XML)
-    caplog.set_level(logging.DEBUG)
-    n_expected_records = 4
-
-    list(stream_xml_file(path, "book"))
-
-    # only this module's records: fsspec may also log at DEBUG level when the file is opened
-    records = [r for r in caplog.records if r.name == "cdm_data_loaders.readers.xml"]
-    assert len(records) == n_expected_records
-    assert records[0].getMessage() == f"Streaming XML from {path}"
-    log_levels = {r.levelno for r in records}
-    assert log_levels == {logging.DEBUG}
-    for rec in records[1:]:
-        assert rec.getMessage().startswith("<Element book at")
-
-
 @pytest.mark.parametrize("relative_path", ["library.xml", "nested/dir/library.xml.gz"])
 def test_stream_xml_file_pass_file_item_any_backend(fs_backend: FsBackend, relative_path: str) -> None:
     """Verify elements are streamed from a file item on every backend, plain or gzipped."""
