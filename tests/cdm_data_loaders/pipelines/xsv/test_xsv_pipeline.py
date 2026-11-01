@@ -151,8 +151,7 @@ def test_run_xsv_pipeline_pass_end_to_end_via_duckdb(
 ) -> None:
     """The pipeline discovers data files (excluding the schema file), skipping non-matching files.
 
-    Runs against a real DuckDB destination via a patched run_pipeline, mirroring the xml2db
-    pipeline's end-to-end test pattern.
+    Runs against a real DuckDB destination via a patched run_pipeline.
     """
     settings = settings_factory(
         SIMPLE_SCHEMA,
