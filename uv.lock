@@ -378,7 +378,7 @@ wheels = [
 
 [[package]]
 name = "bioregistry"
-version = "0.15.5"
+version = "0.15.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -393,9 +393,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1c/ab/4ea7b1537369526482a77a635e1725c45ea3f314e29f2c1eb572bb0fa82e/bioregistry-0.15.5.tar.gz", hash = "sha256:63fa06045d906c71edf1c5a8a81afea18d083fb8613d3d81ca7485f79433764b", size = 7275690, upload-time = "2026-10-17T04:33:53.438Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d7/ae/b0d964202c7c7010369a171842219be9eb23d07919ce8040489bef56b093/bioregistry-0.15.6.tar.gz", hash = "sha256:955fa339b7f560fb571d6897e5d7e83f5d7644ad396e2fdeee10097f6a056aeb", size = 7294903, upload-time = "2026-10-24T04:45:24.371Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/b1/6f2e5efbbc62c2bf762b1de5433f51c004d793463fbdd2d3aafe3b515854/bioregistry-0.15.5-py3-none-any.whl", hash = "sha256:342a7a8a98aeccb70655cc4f7ba87e5c1deba16a3ccf0941a06943c662de8aaa", size = 7349749, upload-time = "2026-10-17T04:33:51.748Z" },
+    { url = "https://files.pythonhosted.org/packages/94/f3/f58d7b2b71eb84a12ce0555bba50891ed7ed4785d6ed0139cd25d7e369fb/bioregistry-0.15.6-py3-none-any.whl", hash = "sha256:409cc337aa320f32af7563c7aa0915bd41c8d7a28f6cf4cb5c057d3ece353437", size = 7368816, upload-time = "2026-10-24T04:45:22.524Z" },
 ]
 
 [[package]]
