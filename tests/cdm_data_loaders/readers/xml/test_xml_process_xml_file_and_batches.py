@@ -241,6 +241,8 @@ def fake_settings(
     settings.buffer_size = buffer_size
     settings.log_interval = log_interval
     settings.input_dir = Path(input_dir)
+    if hasattr(settings, "get_table_transform"):
+        settings.get_table_transform.return_value = None
     return settings
 
 

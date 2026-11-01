@@ -37,7 +37,7 @@ def test_jsonlines_validation_pass_reference_records_load(
     """All assembly reports load into the validated dataset without rejections."""
     load_info, output_dir = run_and_read(run_reference_pipeline, "chunk_52", loader_file_format=loader_file_format)
     tables = read_pipeline_tables(output_dir / load_info.dataset_name, loader_file_format)
-    assert "dataset_rejected" not in tables
+    assert "_rejected" not in tables
     assert len(tables["dataset"]) == EXPECTED_ENTRY_COUNT
 
 

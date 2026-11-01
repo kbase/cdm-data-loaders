@@ -91,7 +91,7 @@ def test_run_jsonlines_pipeline_pass_persists_valid_and_rejected_rows(
         ingested_files={"plain.jsonl", "compressed.jsonl.gz", "records.jsonl"},
     )
     tables = read_data_tables(settings, load_info.dataset_name)
-    assert set(tables) == {"widget", "widget_rejected", "gadget"}
+    assert set(tables) == {"widget", "_rejected", "gadget"}
     assert [{key: parse_json_string(value) for key, value in row.items()} for row in tables["widget"]] == [
         EXPECTED_WIDGET_ROW
     ] * 3
@@ -104,21 +104,30 @@ def test_run_jsonlines_pipeline_pass_persists_valid_and_rejected_rows(
         assert parquet_schema.field("collected").type == pa.date32()
         assert parquet_schema.field("label").type == pa.string()
         assert parquet_schema.field("nested").type == pa.struct([pa.field("tags", pa.list_(pa.string()))])
-    assert sorted(tables["widget_rejected"], key=lambda row: (row["source_file"], row["line_no"])) == [
+    assert sorted(tables["_rejected"], key=lambda row: (row["source_file"], row["line_no"])) == [
         {
+            "table_name": "widget",
             "source_file": "compressed.jsonl.gz",
             "line_no": 2,
             "raw_record": FORMAT_ERROR_RAW,
             "error_detail": json.dumps(["'2023-02-29' is not a 'date'"]),
         },
         {
+            "table_name": "widget",
             "source_file": "compressed.jsonl.gz",
             "line_no": 3,
             "raw_record": "null",
             "error_detail": json.dumps(["None is not of type 'object'"]),
         },
-        {"source_file": "plain.jsonl", "line_no": 3, "raw_record": MALFORMED_RAW, "error_detail": PARSE_ERROR},
         {
+            "table_name": "widget",
+            "source_file": "plain.jsonl",
+            "line_no": 3,
+            "raw_record": MALFORMED_RAW,
+            "error_detail": PARSE_ERROR,
+        },
+        {
+            "table_name": "widget",
             "source_file": "plain.jsonl",
             "line_no": 4,
             "raw_record": TYPE_ERROR_RAW,
@@ -143,9 +152,16 @@ def test_run_jsonlines_pipeline_pass_all_invalid(
         Path(settings.output_dir), load_info, metadata_moved=True, ingested_files=["invalid.jsonl"]
     )
     assert read_data_tables(settings, load_info.dataset_name) == {
-        "widget_rejected": [
-            {"source_file": "invalid.jsonl", "line_no": 1, "raw_record": MALFORMED_RAW, "error_detail": PARSE_ERROR},
+        "_rejected": [
             {
+                "table_name": "widget",
+                "source_file": "invalid.jsonl",
+                "line_no": 1,
+                "raw_record": MALFORMED_RAW,
+                "error_detail": PARSE_ERROR,
+            },
+            {
+                "table_name": "widget",
                 "source_file": "invalid.jsonl",
                 "line_no": 2,
                 "raw_record": TYPE_ERROR_RAW,

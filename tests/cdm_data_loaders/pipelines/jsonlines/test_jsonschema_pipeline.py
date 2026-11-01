@@ -16,6 +16,7 @@ from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrowError,
     coerce_record_for_pyarrow,
 )
+from cdm_data_loaders.core.transforms import REJECTED_PYARROW_SCHEMA, TableTransform
 from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
     _make_resolve_error,
     build_entity_resource,
@@ -42,7 +43,6 @@ def make_router(schema: dict[str, Any], buffer_size: int = 2) -> Callable[[list[
         "widget",
         buffer_size,
         _make_resolve_error(schema),
-        transform_valid=lambda record: coerce_record_for_pyarrow(record, pyarrow_schema),
         pyarrow_schema=pyarrow_schema,
     )
 
@@ -60,11 +60,18 @@ def test_make_page_router_pass_parse_error_preserves_raw_record(widget_schema: d
 
     results = list(validate([item]))
 
-    assert [(result.meta.table_name, result.data) for result in results] == [
-        (
-            "widget_rejected",
-            [{"source_file": "data.jsonl", "line_no": 3, "raw_record": "{bad json", "error_detail": "bad json"}],
-        )
+    assert len(results) == 1
+    assert results[0].meta.table_name == "_rejected"
+    assert isinstance(results[0].data, pa.Table)
+    assert results[0].data.schema == REJECTED_PYARROW_SCHEMA
+    assert results[0].data.to_pylist() == [
+        {
+            "table_name": "widget",
+            "source_file": "data.jsonl",
+            "line_no": 3,
+            "raw_record": "{bad json",
+            "error_detail": "bad json",
+        }
     ]
 
 
@@ -80,7 +87,7 @@ def test_make_page_router_fail_uses_declared_draft() -> None:
 
     results = list(validate([item]))
 
-    assert [result.meta.table_name for result in results] == ["widget_rejected"]
+    assert [result.meta.table_name for result in results] == ["_rejected"]
 
 
 def test_load_entity_schemas_pass_returns_registry(
@@ -515,18 +522,18 @@ def test_make_page_router_fail_reports_exact_errors(
     """Invalid records retain their raw text and report every validation error."""
     item = make_item(record, line_no=7)
     results = list(make_router(widget_schema)([item]))
-    assert [(result.meta.table_name, result.data) for result in results] == [
-        (
-            "widget_rejected",
-            [
-                {
-                    "source_file": "file.jsonl",
-                    "line_no": 7,
-                    "raw_record": item["raw_record"],
-                    "error_detail": json.dumps(messages),
-                }
-            ],
-        )
+    assert len(results) == 1
+    assert results[0].meta.table_name == "_rejected"
+    assert isinstance(results[0].data, pa.Table)
+    assert results[0].data.schema == REJECTED_PYARROW_SCHEMA
+    assert results[0].data.to_pylist() == [
+        {
+            "table_name": "widget",
+            "source_file": "file.jsonl",
+            "line_no": 7,
+            "raw_record": item["raw_record"],
+            "error_detail": json.dumps(messages),
+        }
     ]
 
 
@@ -539,12 +546,14 @@ def test_make_page_router_pass_flushes_independent_buffers(widget_schema: dict[s
         pages = list(validate(items))
         assert [(page.meta.table_name, len(page.data)) for page in pages] == [
             ("widget", 2),
-            ("widget_rejected", 2),
+            ("_rejected", 2),
             ("widget", 1),
-            ("widget_rejected", 1),
+            ("_rejected", 1),
         ]
-        assert all(isinstance(page.data, pa.Table) for page in pages if page.meta.table_name == "widget")
-        assert [row["line_no"] for page in pages if page.meta.table_name == "widget_rejected" for row in page.data] == [
+        assert all(isinstance(page.data, pa.Table) for page in pages)
+        assert [
+            row["line_no"] for page in pages if page.meta.table_name == "_rejected" for row in page.data.to_pylist()
+        ] == [
             2,
             4,
             6,
@@ -574,15 +583,21 @@ def test_build_entity_resource_pass_reads_selected_files(
     resource = build_entity_resource("widget", widget_schema, settings)
     rows = list(resource)
 
-    valid_tables = [item for item in rows if isinstance(item, pa.Table)]
-    assert len(valid_tables) == 1
-    assert valid_tables[0].to_pylist() == [
-        {"widget_id": "a", "count": 0, "collected": None, "label": None, "nested": None}
-    ]
-    rejected = next(row for row in rows if isinstance(row, dict) and "error_detail" in row)
+    assert len(rows) == 2
+    assert all(isinstance(item, pa.Table) for item in rows)
+    valid_table = next(item for item in rows if "widget_id" in item.schema.names)
+    rejected_table = next(item for item in rows if item.schema == REJECTED_PYARROW_SCHEMA)
+    assert valid_table.to_pylist() == [{"widget_id": "a", "count": 0, "collected": None, "label": None, "nested": None}]
     expected_error = "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
-    assert rejected == {"source_file": filename, "line_no": 4, "raw_record": "{broken", "error_detail": expected_error}
-    assert len(rows) == len(valid_tables) + 1
+    assert rejected_table.to_pylist() == [
+        {
+            "table_name": "widget",
+            "source_file": filename,
+            "line_no": 4,
+            "raw_record": "{broken",
+            "error_detail": expected_error,
+        }
+    ]
 
 
 @pytest.mark.parametrize("create_directory", [False, True], ids=["missing", "empty"])
@@ -615,7 +630,7 @@ def test_run_jsonlines_pipeline_pass_loads_valid_and_rejected_rows(
     assert_run_ok(run_jsonlines_pipeline(settings))
     dataset_dir = Path(settings.output_dir) / str(settings.dataset_name)
     assert (dataset_dir / "widget").is_dir()
-    assert (dataset_dir / "widget_rejected").is_dir()
+    assert (dataset_dir / "_rejected").is_dir()
 
 
 def test_run_jsonlines_pipeline_fail_unconvertible_pyarrow_schema(
@@ -645,3 +660,67 @@ def test_settings_fail_invalid_buffer_size(
     """Settings reject nonpositive buffers before resource construction."""
     with pytest.raises(ValidationError, match="buffer_size"):
         schema_settings_factory(buffer_size=buffer_size)
+
+
+def test_run_jsonlines_pipeline_pass_filters_and_splits_records_with_transforms_module(
+    schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run_jsonlines_pipeline filters rows and splits records across tables using TABLE_TRANSFORMS."""
+    transform = TableTransform(
+        transform_fn=lambda row: (
+            {}
+            if row["count"] == 0
+            else {
+                "widget": [{"widget_id": row["widget_id"], "count": row["count"]}],
+                "widget_tag": [
+                    {"widget_id": row["widget_id"], "tag": tag} for tag in (row.get("nested") or {}).get("tags", [])
+                ],
+            }
+        ),
+        table_to_schema_map={
+            "widget": pa.schema(
+                [pa.field("widget_id", pa.string(), nullable=False), pa.field("count", pa.int64(), nullable=False)]
+            ),
+            "widget_tag": pa.schema(
+                [pa.field("widget_id", pa.string(), nullable=False), pa.field("tag", pa.string(), nullable=False)]
+            ),
+        },
+    )
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_jsonschema_transforms",
+        TABLE_TRANSFORMS={"widget": transform},
+    )
+    settings = schema_settings_factory(transforms_module=transforms_mod)
+    entity_dir = Path(settings.input_dir) / "widget"
+    entity_dir.mkdir()
+    filtered_record = {"widget_id": "w0", "count": 0, "nested": {"tags": ["ignored"]}}
+    valid_record = {"widget_id": "w1", "count": 3, "nested": {"tags": ["alpha", "beta"]}}
+    invalid_record = {"widget_id": "w2", "count": -1}
+    (entity_dir / "data.jsonl").write_text(
+        f"{json.dumps(filtered_record)}\n{json.dumps(valid_record)}\n{json.dumps(invalid_record)}\n",
+        encoding="utf-8",
+    )
+
+    load_info = assert_run_ok(run_jsonlines_pipeline(settings))
+    dataset = load_info.pipeline.dataset()
+    assert dataset.widget.df().to_dict(orient="records") == [{"widget_id": "w1", "count": 3}]
+    assert sorted(dataset.widget_tag.df()["tag"].tolist()) == ["alpha", "beta"]
+    assert len(dataset.table("_rejected").df()) == 1
+    assert dataset.table("_rejected").df().iloc[0]["table_name"] == "widget"
+
+
+def test_run_jsonlines_pipeline_fail_unknown_transform_table_name(
+    schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run_jsonlines_pipeline fails before running when TABLE_TRANSFORMS references an unknown table."""
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_unknown_table_transforms",
+        TABLE_TRANSFORMS={"unknown_table": TableTransform(transform_fn=lambda r: {"unknown_table": [r]})},
+    )
+    settings = schema_settings_factory(transforms_module=transforms_mod)
+    with pytest.raises(ValueError, match="Unknown table names"):
+        run_jsonlines_pipeline(settings)

@@ -15,7 +15,8 @@ import pytest
 from dlt.sources.filesystem import filesystem
 
 import cdm_data_loaders.pipelines.xsv.pipeline as xsv_pipeline_module
-from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX
+from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.core.transforms import TableTransform
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.xsv.pipeline import (
     XsvWorkPaths,
@@ -33,7 +34,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
 )
 from tests.cdm_data_loaders.pipelines.xsv.conftest import VALID_SCHEMA_URI
 from tests.fs_backends import FsBackend
-from tests.helpers import settings_to_argv
+from tests.helpers import register_temp_module, settings_to_argv
 
 SIMPLE_SCHEMA: dict[str, Any] = {
     "$schema": VALID_SCHEMA_URI,
@@ -87,10 +88,13 @@ def test_process_xsv_file_pass_routes_total_failure_to_rejected_table(
     results = list(_process_xsv_file(make_file_item(Path(settings.input_dir) / "bad.csv"), settings, work_paths))
 
     table_names = [result.meta.table_name for result in results]
-    assert table_names == [f"my_table{DEFAULT_REJECTED_SUFFIX}"]
+    assert table_names == [REJECTED_TABLE_NAME]
     (rejected,) = results[0].data
-    assert rejected["file"] == "bad.csv"
-    assert rejected["message"]
+    assert rejected["table_name"] == "my_table"
+    assert rejected["source_file"] == "bad.csv"
+    assert rejected["line_no"] is None
+    assert rejected["raw_record"] is None
+    assert rejected["error_detail"]
 
 
 @pytest.mark.parametrize("relative_path", ["data.csv", "sub/dir/data.csv"])
@@ -126,8 +130,8 @@ def test_process_xsv_file_pass_rejected_file_is_relative_path(
 
     results = list(_process_xsv_file(fs_backend.file_item("sub/bad.csv"), settings, work_paths))
 
-    assert [result.meta.table_name for result in results] == [f"my_table{DEFAULT_REJECTED_SUFFIX}"]
-    assert [row["file"] for row in results[0].data] == ["sub/bad.csv"]
+    assert [result.meta.table_name for result in results] == [REJECTED_TABLE_NAME]
+    assert [(row["table_name"], row["source_file"]) for row in results[0].data] == [("my_table", "sub/bad.csv")]
 
 
 def test_process_xsv_file_fail_remote_object_missing(
@@ -172,11 +176,11 @@ def test_process_xsv_file_pass_same_stem_files_do_not_lose_rows_or_rejections(
     assert [(result.meta.table_name, result.data) for result in results_2 if result.meta.table_name == "my_table"] == [
         ("my_table", [{"number": 3, "name": "carol"}, {"number": 4, "name": "dave"}]),
     ]
-    rejected_batches = [
-        result.data for result in results_2 if result.meta.table_name == f"my_table{DEFAULT_REJECTED_SUFFIX}"
-    ]
+    rejected_batches = [result.data for result in results_2 if result.meta.table_name == REJECTED_TABLE_NAME]
     assert len(rejected_batches) == 1
-    assert [row["file"] for row in rejected_batches[0]] == ["batch_2/data.csv"]
+    assert [(row["table_name"], row["source_file"]) for row in rejected_batches[0]] == [
+        ("my_table", "batch_2/data.csv"),
+    ]
 
 
 def test_process_xsv_file_pass_concurrent_same_stem_files_do_not_overwrite_validated_output(
@@ -294,9 +298,9 @@ def test_run_xsv_pipeline_pass_same_stem_in_subdirectories_does_not_lose_data(
     ]
     rejected_files = fetch_all_duckdb(
         load_info.pipeline,
-        "SELECT file FROM my_table_rejected",
+        "SELECT table_name, source_file FROM _rejected",
     )
-    assert [row[0] for row in rejected_files] == ["batch_2/data.csv"]
+    assert [tuple(row) for row in rejected_files] == [("my_table", "batch_2/data.csv")]
 
 
 @pytest.mark.usefixtures("qsv_cmd")
@@ -353,3 +357,39 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
 
     ((row_count,),) = fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM my_table")
     assert row_count == 2  # noqa: PLR2004
+
+
+def test_process_xsv_file_pass_filters_and_splits_rows_with_transforms_module(
+    settings_factory: Callable[..., XsvIngestSettings],
+    work_paths_factory: Callable[[XsvIngestSettings], XsvWorkPaths],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_process_xsv_file filters and splits validated CSV rows when transforms_module is configured."""
+    transform = TableTransform(
+        transform_fn=lambda row: (
+            {}
+            if row["number"] == 1
+            else {
+                "my_table": [{"number": row["number"], "name": row["name"].upper()}],
+                "my_table_names": [{"name": row["name"]}],
+            }
+        )
+    )
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_xsv_transforms",
+        TABLE_TRANSFORMS={"my_table": transform},
+    )
+    settings = settings_factory(
+        SIMPLE_SCHEMA,
+        {"data.csv": "number,name\n1,alice\n2,bob\n"},
+        transforms_module=transforms_mod,
+    )
+    work_paths = work_paths_factory(settings)
+
+    results = list(_process_xsv_file(make_file_item(Path(settings.input_dir) / "data.csv"), settings, work_paths))
+
+    assert [(result.meta.table_name, result.data) for result in results] == [
+        ("my_table", [{"number": 2, "name": "BOB"}]),
+        ("my_table_names", [{"name": "bob"}]),
+    ]

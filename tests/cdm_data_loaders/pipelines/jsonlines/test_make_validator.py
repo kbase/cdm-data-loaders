@@ -50,21 +50,21 @@ def test_make_page_router_pass_valid_record_routed_to_main_table(widget_model: A
 
 
 def test_make_page_router_fail_json_parse_error_routed_to_rejected_without_model_validation(widget_model: Any) -> None:
-    """A record with a parse_error goes to <table>_rejected. The model is not called."""
-    validator = make_router(widget_model, include_record=True)
+    """A record with a parse_error goes to _rejected. The model is not called."""
+    validator = make_router(widget_model)
     item = make_item(record=None, raw_record="{not json", parse_error="Expecting value: line 1 column 1 (char 0)")
 
     results = run_validator(validator, item)
 
     assert len(results) == 1
     result = results[0]
-    assert result.meta.table_name == "widget_rejected"
+    assert result.meta.table_name == "_rejected"
     assert result.data == [
         {
+            "table_name": "widget",
             "error_detail": "Expecting value: line 1 column 1 (char 0)",
             "line_no": 1,
             "raw_record": "{not json",
-            "record": None,
             "source_file": "file.jsonl",
         }
     ]
@@ -82,7 +82,7 @@ def test_make_page_router_fail_json_parse_error_routed_to_rejected_without_model
 def test_make_page_router_fail_pydantic_validation_error_routed_to_rejected(
     widget_model: Any, record: dict[str, Any]
 ) -> None:
-    """A record that parses as JSON but fails model validation goes to <table>_rejected, with error detail."""
+    """A record that parses as JSON but fails model validation goes to _rejected, with error detail."""
     validator = make_router(widget_model)
     item = make_item(record=record, raw_record=json.dumps(record))
 
@@ -90,9 +90,10 @@ def test_make_page_router_fail_pydantic_validation_error_routed_to_rejected(
 
     assert len(results) == 1
     result = results[0]
-    assert result.meta.table_name == "widget_rejected"
+    assert result.meta.table_name == "_rejected"
     rejected_rows = result.data
     assert len(rejected_rows) == 1
+    assert rejected_rows[0]["table_name"] == "widget"
     assert rejected_rows[0]["raw_record"] == json.dumps(record)
     error_detail = json.loads(rejected_rows[0]["error_detail"])
     assert isinstance(error_detail, list)
@@ -116,7 +117,7 @@ def test_make_page_router_pass_mixed_batch_routes_each_record_independently(widg
     assert len(valid_rows) == 1
     assert [row["widget_id"] for row in valid_rows[0].data] == ["a", "c"]
 
-    rejected_rows = [r for r in results if r.meta.table_name == "widget_rejected"]
+    rejected_rows = [r for r in results if r.meta.table_name == "_rejected"]
     assert len(rejected_rows) == 1
     assert {row["line_no"] for row in rejected_rows[0].data} == {2, 4}
 
@@ -133,7 +134,7 @@ def test_make_page_router_fail_all_invalid_none_reach_main_table(widget_model: A
     results = list(validator(items))
 
     assert len(results) == 1
-    assert results[0].meta.table_name == "widget_rejected"
+    assert results[0].meta.table_name == "_rejected"
     assert len(results[0].data) == 3
 
 

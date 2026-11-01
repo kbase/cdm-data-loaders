@@ -63,22 +63,21 @@ def test_jsonlines_fail_malformed_rows_preserve_provenance(
     assert sorted(json.dumps(canonicalize_entry(entry), sort_keys=True, default=str) for entry in actual) == sorted(
         json.dumps(canonicalize_entry(prepare_reference(entry)), sort_keys=True, default=str) for entry in entries
     )
-    suffix, error_key = (
-        ("invalid", "parse_error") if pipeline_kind == EXTRACT_PIPELINE_NAME else ("rejected", "error_detail")
-    )
-    rejected = sorted(tables[f"dataset_{suffix}"], key=lambda row: row["source_file"])
+    rejected = sorted(tables["_rejected"], key=lambda row: row["source_file"])
     prefix = "dataset/" if pipeline_kind == EXTRACT_PIPELINE_NAME else ""
     with pytest.raises(json.JSONDecodeError) as error_info:
         json.loads(malformed)
     expected_error = str(error_info.value)
+    assert all("record" not in row for row in rejected)
     assert [
-        (row["source_file"], row["line_no"], row["raw_record"], row.get("record"), row[error_key]) for row in rejected
+        (row["table_name"], row["source_file"], row["line_no"], row["raw_record"], row["error_detail"])
+        for row in rejected
     ] == [
-        (f"{prefix}first.jsonl", 3, malformed, None, expected_error),
-        (f"{prefix}second.jsonl", 1, malformed, None, expected_error),
+        ("dataset", f"{prefix}first.jsonl", 3, malformed, expected_error),
+        ("dataset", f"{prefix}second.jsonl", 1, malformed, expected_error),
     ]
     assert {name for name in tables if "__" not in name and not name.startswith("_dlt")} == (
-        {"dataset", f"dataset_{suffix}"} if include_valid else {f"dataset_{suffix}"}
+        {"dataset", "_rejected"} if include_valid else {"_rejected"}
     )
 
 
@@ -217,19 +216,18 @@ def test_jsonlines_validation_fail_schema_invalid_rows_are_rejected(
     )
     tables = read_pipeline_tables(output_dir / load_info.dataset_name, loader_file_format)
     assert [row["accession"] for row in tables["dataset"]] == [valid["accession"], valid["accession"]]
-    rejected = tables["dataset_rejected"]
+    rejected = tables["_rejected"]
     assert len(rejected) == 1
     row = rejected[0]
-    assert (row["source_file"], row["line_no"]) == ("records.jsonl", 2)
+    assert (row["table_name"], row["source_file"], row["line_no"]) == ("dataset", "records.jsonl", 2)
     assert row["raw_record"] == raw_record
+    assert "record" not in row
     errors = json.loads(row["error_detail"])
     if pipeline_kind == PYDANTIC_PIPELINE_NAME:
-        assert reconstructed_entries(tables, "dataset_rejected")[0].get("record") == record
         assert len(errors) == 1
         assert errors[0]["type"] == error_type
         assert errors[0]["loc"] == location
     else:
-        assert "record" not in row
         assert errors == [error_message]
 
 

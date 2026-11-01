@@ -14,6 +14,7 @@ from cdm_data_loaders.core.fields import (
 )
 from cdm_data_loaders.core.settings import (
     FileFormatIngestSettings,
+    TransformSettingsMixin,
     default_settings_with_shortcuts,
     select_cli_shortcuts,
 )
@@ -33,7 +34,7 @@ LOCAL_CLI_SHORTCUTS: Final[dict[str, str]] = {
 }
 
 
-class JsonlIngestSettings(FileFormatIngestSettings):
+class JsonlIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
     """Settings for the JSONL ingest pipeline."""
 
     file_glob: Annotated[

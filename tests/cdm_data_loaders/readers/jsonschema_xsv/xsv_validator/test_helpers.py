@@ -322,6 +322,19 @@ def test_error_record_from_exception_works_with_arbitrary_exception_types() -> N
     assert record.returncode is None
 
 
+def test_error_record_to_rejected_row_pass_formats_rejected_columns() -> None:
+    """to_rejected_row maps table_name, file, and message to the unified _rejected columns."""
+    record = ErrorRecord(file="sub/data.tsv", message="2 out of 2 records invalid.", returncode=1)
+
+    assert record.to_rejected_row("my_table") == {
+        "table_name": "my_table",
+        "source_file": "sub/data.tsv",
+        "line_no": None,
+        "raw_record": None,
+        "error_detail": "2 out of 2 records invalid.",
+    }
+
+
 """CleanerValidatorArgs -- defaults"""
 
 

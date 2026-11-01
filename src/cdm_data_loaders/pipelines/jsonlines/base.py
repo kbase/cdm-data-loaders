@@ -1,10 +1,10 @@
 """Shared machinery for the JSONL registry-ingest pipelines.
 
 Each pipeline reads one JSONL input subdirectory per table, routes valid records
-to a table named after the entity, and routes failures to ``<table>_rejected``
-(or ``_invalid``) with provenance columns. This module holds the pieces all
-three pipelines share; each pipeline module supplies only its validator and
-registry loader.
+to a table named after the entity, and routes failures to ``_rejected``
+with provenance columns (``table_name``, ``source_file``, ``line_no``, ``raw_record``,
+``error_detail``). This module holds the pieces all registry pipelines share;
+each pipeline module supplies only its validator and registry loader.
 """
 
 from collections.abc import Callable
@@ -20,7 +20,7 @@ from dlt.common.storages.fsspec_filesystem import fsspec_filesystem
 from dlt.sources.filesystem import filesystem
 from fsspec import AbstractFileSystem
 
-from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX
+from cdm_data_loaders.core.transforms import TableTransform
 from cdm_data_loaders.pipelines.core import (
     DEFAULT_SCHEMA_CONTRACT,
     build_file_ingest_kwargs,
@@ -101,10 +101,9 @@ def build_entity_resource(  # noqa: PLR0913
     settings: Any,  # noqa: ANN401
     resolve_error: ParseErrorResolver,
     *,
-    rejected_suffix: str = DEFAULT_REJECTED_SUFFIX,
-    include_record: bool = False,
     transform_valid: Callable[[Any], Any] | None = None,
     pyarrow_schema: pa.Schema | None = None,
+    table_transform: TableTransform | None = None,
 ) -> "DltResource":
     """Read plain or gzip JSONL files for one entity and route validated pages.
 
@@ -117,14 +116,12 @@ def build_entity_resource(  # noqa: PLR0913
     :type  settings: Any
     :param resolve_error: function returning None for valid records or error detail
     :type  resolve_error: ParseErrorResolver
-    :param rejected_suffix: suffix for the rejected table name
-    :type  rejected_suffix: str
-    :param include_record: whether rejected rows carry the parsed record value
-    :type  include_record: bool
     :param transform_valid: function applied to each valid record before yielding
     :type  transform_valid: Callable[[Any], Any] | None
-    :param pyarrow_schema: optional PyArrow schema for buffering valid records as Arrow tables
+    :param pyarrow_schema: optional PyArrow schema for buffering records as Arrow tables
     :type  pyarrow_schema: pa.Schema | None
+    :param table_transform: optional `TableTransform` for filtering, transforming, or splitting records
+    :type  table_transform: TableTransform | None
     :return: resource yielding validated and rejected records for this entity
     :rtype: DltResource
     """
@@ -143,10 +140,9 @@ def build_entity_resource(  # noqa: PLR0913
             table_name,
             settings.buffer_size,
             resolve_error,
-            rejected_suffix=rejected_suffix,
-            include_record=include_record,
             transform_valid=transform_valid,
             pyarrow_schema=pyarrow_schema,
+            table_transform=table_transform,
         ),
         data_from=raw,
         name=f"{table_name}_validated",
@@ -155,6 +151,18 @@ def build_entity_resource(  # noqa: PLR0913
     )
     validated.apply_hints(schema_contract=TSchemaContractDict(**DEFAULT_SCHEMA_CONTRACT))  # pyright: ignore[reportCallIssue]
     return validated
+
+
+def validate_table_transforms(
+    settings: Any,  # noqa: ANN401
+    table_to_schema: dict[str, Any],
+) -> None:
+    """Ensure every key in `settings.table_transforms` matches a registered entity table."""
+    table_transforms = getattr(settings, "table_transforms", None) or {}
+    unknown_transforms = sorted(set(table_transforms) - set(table_to_schema))
+    if unknown_transforms:
+        err_msg = f"Unknown table names in transforms_module: {', '.join(unknown_transforms)}"
+        raise ValueError(err_msg)
 
 
 def run_registry_ingest(
@@ -179,6 +187,7 @@ def run_registry_ingest(
     :return: load information for the pipeline
     :rtype:  LoadInfo | None
     """
+    validate_table_transforms(settings, table_to_schema)
     resources = [
         build_resource(table_name, table_to_schema[table_name], settings) for table_name in sorted(table_to_schema)
     ]

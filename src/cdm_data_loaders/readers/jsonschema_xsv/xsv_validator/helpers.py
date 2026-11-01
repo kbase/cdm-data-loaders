@@ -60,6 +60,16 @@ class ErrorRecord(BaseModel):
         """Build an `ErrorRecord` from a raised exception (e.g. `OSError`)."""
         return cls(file=file_name, message=str(exc))
 
+    def to_rejected_row(self, table_name: str) -> dict[str, str | int | None]:
+        """Format this error record for the ``_rejected`` table."""
+        return {
+            "table_name": table_name,
+            "source_file": self.file,
+            "line_no": None,
+            "raw_record": None,
+            "error_detail": self.message,
+        }
+
 
 class CleanerValidatorArgs(BaseModel):
     """Class containing required parameters for running the XSV file clean/validate functions.

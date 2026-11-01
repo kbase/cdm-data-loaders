@@ -7,12 +7,14 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pyarrow as pa
 import pytest
 from dlt.extract import DltResource
 
 import cdm_data_loaders.pipelines.xmltopyarrow.pipeline as xmltopyarrow_module
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.core.transforms import TableTransform
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import (
     cli,
     run_xmltopyarrow_pipeline,
@@ -41,7 +43,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     run_with_duckdb_pipeline,
 )
 from tests.fs_backends import FsBackend
-from tests.helpers import settings_to_argv
+from tests.helpers import register_temp_module, settings_to_argv
 from tests.xml_samples import TWO_BOOK_LIBRARY_XML
 
 
@@ -195,3 +197,45 @@ def test_run_xmltopyarrow_pipeline_pass_per_file_reader_reads_file_items_any_bac
     items = [item for file_item in fs_backend.file_items() for item in file_fn(file_item, settings)]
 
     assert [(item.meta.table_name, item.data.column("_id").to_pylist()) for item in items] == [("book", ["1", "2"])]
+
+
+def test_run_xmltopyarrow_pipeline_pass_filters_and_splits_with_transforms_module(
+    settings_factory: Callable[..., Any],
+    fs_backend: FsBackend,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The xmltopyarrow pipeline filters and splits elements into Arrow tables using TABLE_TRANSFORMS."""
+    fs_backend.put("library.xml", TWO_BOOK_LIBRARY_XML.encode("utf-8"))
+    transform = TableTransform(
+        transform_fn=lambda row: (
+            {}
+            if row["_id"] == "1"
+            else {
+                "book": [{"_id": row["_id"], "title": row["title"]}],
+                "book_id_only": [{"book_id": row["_id"]}],
+            }
+        ),
+        table_to_schema_map={
+            "book": pa.schema([pa.field("_id", pa.string()), pa.field("title", pa.string())]),
+            "book_id_only": pa.schema([pa.field("book_id", pa.string())]),
+        },
+    )
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_xmltopyarrow_transforms",
+        TABLE_TRANSFORMS={"book": transform},
+    )
+    settings = settings_factory(transforms_module=transforms_mod)
+
+    with (
+        patch.object(xmltopyarrow_module, "build_per_file_filesystem_resource") as mock_build,
+        patch.object(xmltopyarrow_module, "run_pipeline"),
+    ):
+        run_xmltopyarrow_pipeline(settings)
+    file_fn = mock_build.call_args.args[1]
+
+    items = [item for file_item in fs_backend.file_items() for item in file_fn(file_item, settings)]
+    assert [(item.meta.table_name, item.data.to_pylist()) for item in items] == [
+        ("book", [{"_id": "2", "title": "The Stand"}]),
+        ("book_id_only", [{"book_id": "2"}]),
+    ]

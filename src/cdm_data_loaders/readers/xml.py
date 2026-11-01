@@ -15,11 +15,12 @@ from lxml.etree import Element, _Element, iterparse, tostring
 
 from cdm_data_loaders.core.fields import DEFAULT_XML_FILE_GLOB
 from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.core.transforms import resolve_schema_map, route_and_coerce_record
 from cdm_data_loaders.pipelines.core import build_filesystem_resource, make_per_file_reader
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from cdm_data_loaders.readers.xsd import make_xml_element_converter
-from cdm_data_loaders.utils.buffer import ArrowListBuffer, DictBuffer, ListBuffer
+from cdm_data_loaders.utils.buffer import ArrowDictBuffer, DictBuffer, create_dict_buffer
 from cdm_data_loaders.utils.file_items import FileSource, open_binary, source_id, source_url
 
 logger: Logger = getLogger(__name__)
@@ -166,7 +167,7 @@ def _stream_and_buffer_xml_elements(  # noqa: PLR0913
     file_path: FileSource,
     xml_tag: str,
     log_interval: int,
-    buffer: ArrowListBuffer | DictBuffer | ListBuffer,
+    buffer: DictBuffer | ArrowDictBuffer,
     buffer_element_fn: Callable[[Element], Iterable[DataItemWithMeta]],
     *,
     resolve_default_ns: bool = False,
@@ -188,7 +189,7 @@ def process_xml_file_to_pyarrow(settings: XmlToPyArrowSettings, file_path: FileS
     """Convert XML elements to PyArrow table batches using an XSD schema.
 
     Each matching element is converted using ``settings.xsd_schema`` and buffered into PyArrow
-    tables matching ``settings.pyarrow_schema``.
+    tables matching ``settings.pyarrow_schema`` (or the active `TableTransform`'s schema map).
 
     Use process_xml_file for parsing functions that return data spread across several tables.
 
@@ -199,8 +200,17 @@ def process_xml_file_to_pyarrow(settings: XmlToPyArrowSettings, file_path: FileS
     :yield: pages of PyArrow tables
     :rtype: Generator[DataItemWithMeta]
     """
-    arrow_buffer = ArrowListBuffer(
-        table_to_schema_map={settings.table_name: settings.pyarrow_schema},
+    transform = settings.get_table_transform(settings.table_name)
+    schema_map = resolve_schema_map(
+        settings.table_name,
+        transform=transform,
+        default_pyarrow_schema=settings.pyarrow_schema,
+    )
+    if schema_map is None:
+        err_msg = f"Expected PyArrow schema map for table {settings.table_name!r}"
+        raise RuntimeError(err_msg)
+    arrow_buffer = ArrowDictBuffer(
+        table_to_schema_map=schema_map,
         max_items=settings.buffer_size,
     )
     convert_element = make_xml_element_converter(
@@ -213,7 +223,15 @@ def process_xml_file_to_pyarrow(settings: XmlToPyArrowSettings, file_path: FileS
         xml_tag=settings.xml_tag,
         log_interval=settings.log_interval,
         buffer=arrow_buffer,
-        buffer_element_fn=lambda element: arrow_buffer.add_item(convert_element(element)),
+        buffer_element_fn=lambda element: arrow_buffer.add_items(
+            route_and_coerce_record(
+                convert_element(element),
+                settings.table_name,
+                transform=transform,
+                table_to_schema_map=schema_map,
+                coerce_untransformed=False,
+            )
+        ),
         resolve_default_ns=True,
     )
 
@@ -221,7 +239,8 @@ def process_xml_file_to_pyarrow(settings: XmlToPyArrowSettings, file_path: FileS
 def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: FileSource) -> Generator[DataItemWithMeta]:
     """Convert XML elements to dictionary form using ``xmltodict.parse``.
 
-    Each matching element is converted with ``xmltodict.parse`` and buffered as dicts.
+    Each matching element is converted with ``xmltodict.parse`` and buffered as dicts
+    (or PyArrow tables when a `TableTransform` supplies `table_to_schema_map`).
 
     Use process_xml_file for parsing functions that return data spread across several tables.
 
@@ -232,12 +251,21 @@ def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: FileSource)
     :yield: pages of dictionary items
     :rtype: Generator[DataItemWithMeta]
     """
-    buffer = ListBuffer(table_name=settings.table_name, max_items=settings.buffer_size)
+    transform = settings.get_table_transform(settings.table_name)
+    schema_map = resolve_schema_map(settings.table_name, transform=transform)
+    buffer = create_dict_buffer(settings.buffer_size, table_to_schema_map=schema_map)
 
     def _buffer_element(element: Element) -> Generator[DataItemWithMeta]:
         parsed_element = _parse_element_to_dict(element)
         if parsed_element:
-            yield from buffer.add_item(parsed_element)
+            yield from buffer.add_items(
+                route_and_coerce_record(
+                    parsed_element,
+                    settings.table_name,
+                    transform=transform,
+                    table_to_schema_map=schema_map,
+                )
+            )
 
     yield from _stream_and_buffer_xml_elements(
         file_path=file_path,

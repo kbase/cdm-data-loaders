@@ -26,7 +26,7 @@ from tests.xsv_fixtures import (
 
 pytestmark = pytest.mark.usefixtures("qsv_cmd")
 
-REJECTED_TABLE = "my_table_rejected"
+REJECTED_TABLE = "_rejected"
 
 
 def test_run_xsv_pipeline_pass_writes_expected_output(
@@ -91,8 +91,9 @@ def test_run_xsv_pipeline_pass_partial_ragged_file_recovers_valid_rows(
 
     rejected = dataset.table(REJECTED_TABLE).df()
     assert len(rejected) == 1
-    assert rejected.iloc[0]["file"] == "data.csv"
-    assert rejected.iloc[0]["message"] == "1 out of 3 records invalid."
+    assert rejected.iloc[0]["table_name"] == "my_table"
+    assert rejected.iloc[0]["source_file"] == "data.csv"
+    assert rejected.iloc[0]["error_detail"] == "1 out of 3 records invalid."
 
 
 def test_run_xsv_pipeline_pass_fully_ragged_file_is_entirely_rejected(
@@ -111,8 +112,9 @@ def test_run_xsv_pipeline_pass_fully_ragged_file_is_entirely_rejected(
 
     rejected = dataset.table(REJECTED_TABLE).df()
     assert len(rejected) == 1
-    assert rejected.iloc[0]["file"] == "bad.csv"
-    assert rejected.iloc[0]["message"] == "2 out of 2 records invalid."
+    assert rejected.iloc[0]["table_name"] == "my_table"
+    assert rejected.iloc[0]["source_file"] == "bad.csv"
+    assert rejected.iloc[0]["error_detail"] == "2 out of 2 records invalid."
 
 
 def test_run_xsv_pipeline_pass_no_matching_files_yields_no_data_table(

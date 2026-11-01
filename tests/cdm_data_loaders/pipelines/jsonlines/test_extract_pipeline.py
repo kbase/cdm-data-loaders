@@ -8,6 +8,7 @@ import pytest
 
 import cdm_data_loaders.pipelines.jsonlines.extract_pipeline as extract_pipeline_module
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
+from cdm_data_loaders.core.transforms import TableTransform
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import cli, run_jsonlines_pipeline
 from cdm_data_loaders.pipelines.jsonlines.settings import EXTRACT_PIPELINE_NAME, JsonlExtractSettings
@@ -19,7 +20,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     assert_run_ok,
     run_with_duckdb_pipeline,
 )
-from tests.helpers import settings_to_argv
+from tests.helpers import register_temp_module, settings_to_argv
 
 SIMPLE_JSONL = """{"widget_id": "a", "count": 1}
 {"widget_id": "b", "count": 2}
@@ -69,7 +70,7 @@ def test_run_jsonlines_pipeline_pass_routes_lines_by_directory(
 def test_run_jsonlines_pipeline_pass_invalid_rows_routed_to_invalid_table(
     extract_settings_factory: Callable[..., JsonlExtractSettings],
 ) -> None:
-    """Lines that are not valid JSON land in <table_name>_invalid with parse error detail."""
+    """Lines that are not valid JSON land in _rejected with table_name and error detail."""
     settings = extract_settings_factory(file_glob="**/*.jsonl*")
     input_dir = Path(settings.input_dir)
     (input_dir / "widget").mkdir(parents=True)
@@ -79,9 +80,11 @@ def test_run_jsonlines_pipeline_pass_invalid_rows_routed_to_invalid_table(
 
     dataset = load_info.pipeline.dataset()
     assert sorted(dataset.widget.df()["widget_id"].tolist()) == ["a"]
-    invalid_df = dataset.widget_invalid.df()
-    assert len(invalid_df) == 1
-    assert invalid_df.iloc[0]["raw_record"] == "{broken"
+    rejected_df = dataset.table("_rejected").df()
+    assert len(rejected_df) == 1
+    assert rejected_df.iloc[0]["table_name"] == "widget"
+    assert rejected_df.iloc[0]["raw_record"] == "{broken"
+    assert rejected_df.iloc[0]["error_detail"]
     assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files=["widget/data.jsonl"])
 
 
@@ -121,3 +124,37 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     # n.b. no _load_info due to this being a monkeypatched pipeline
     assert set(load_info.pipeline.dataset().tables) == (DEFAULT_DLT_TABLES - {LOAD_INFO_TABLE_NAME}) | {"widget"}
     assert sorted(load_info.pipeline.dataset().widget.df()["widget_id"].tolist()) == ["a", "b"]
+
+
+def test_run_jsonlines_pipeline_pass_filters_and_splits_with_transforms_module(
+    extract_settings_factory: Callable[..., JsonlExtractSettings],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run_jsonlines_pipeline filters and splits parsed records when transforms_module is configured."""
+    transform = TableTransform(
+        transform_fn=lambda row: (
+            {}
+            if row["count"] == 0
+            else {
+                "widget": [{"widget_id": row["widget_id"]}],
+                "widget_counts": [{"widget_id": row["widget_id"], "count": row["count"]}],
+            }
+        )
+    )
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_extract_transforms",
+        TABLE_TRANSFORMS={"widget": transform},
+    )
+    settings = extract_settings_factory(transforms_module=transforms_mod)
+    (Path(settings.input_dir) / "data.jsonl").write_text(
+        '{"widget_id": "skip", "count": 0}\n{"widget_id": "keep", "count": 5}\n',
+        encoding="utf-8",
+    )
+
+    load_info = assert_run_ok(run_jsonlines_pipeline(settings))
+    dataset = load_info.pipeline.dataset()
+    assert dataset.widget.df()["widget_id"].tolist() == ["keep"]
+    assert dataset.widget_counts.df()[["widget_id", "count"]].to_dict(orient="records") == [
+        {"widget_id": "keep", "count": 5}
+    ]

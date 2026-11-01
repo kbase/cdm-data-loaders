@@ -30,7 +30,7 @@ from cdm_data_loaders.pipelines.core import (
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from cdm_data_loaders.readers.jsonlines import stream_jsonl_lines
-from cdm_data_loaders.utils.buffer import DictBuffer, ListBuffer
+from cdm_data_loaders.utils.buffer import DictBuffer
 
 if TYPE_CHECKING:
     from dlt.extract.resource import DltResource
@@ -94,11 +94,11 @@ def list_buffer_step(
     page: list[dict[str, Any]],
     settings: ReferencePipelineSettings,
 ) -> Generator[TDataItems, Any, Any]:
-    """Buffer parsed records from a page using ListBuffer and forward batches unchanged."""
-    buf = ListBuffer(table_name=settings.table_name, max_items=settings.buffer_size)
+    """Buffer parsed records from a page using DictBuffer and forward batches unchanged."""
+    buf = DictBuffer(max_items=settings.buffer_size)
     for item in page:
         if item["parse_error"] is None:
-            yield from buf.add_item(item["record"])
+            yield from buf.add_item(settings.table_name, item["record"])
     yield from buf.flush()
 
 
