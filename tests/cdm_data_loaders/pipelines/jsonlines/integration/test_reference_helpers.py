@@ -74,10 +74,13 @@ def test_reconstructed_entries_pass_rebuilds_ordered_children_and_ignores_metada
             {"_dlt_id": "second", "_dlt_parent_id": "root", "_dlt_list_idx": 1, "value": "b"},
             {"_dlt_id": "first", "_dlt_parent_id": "root", "_dlt_list_idx": 0, "value": "a"},
         ],
-        "dataset_rejected": [{"raw_record": "bad"}],
+        "_rejected": [{"table_name": "dataset", "raw_record": "bad"}],
         "_dlt_loads": [{"load_id": "ignored"}],
     }
     assert reconstructed_entries(tables, "dataset") == [
+        {"accession": "assembly", "organism": {"tax_id": 42}, "tags": [{"value": "a"}, {"value": "b"}]}
+    ]
+    assert reconstructed_entries(tables) == [
         {"accession": "assembly", "organism": {"tax_id": 42}, "tags": [{"value": "a"}, {"value": "b"}]}
     ]
 

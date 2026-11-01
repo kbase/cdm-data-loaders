@@ -25,8 +25,9 @@ table. Example:
 Files may be plain text or gzip-compressed (`.jsonl` or `.jsonl.gz`).
 
 Valid records go to a table named after the entity. Records that fail
-JSON parsing or model validation go to a `<table>_rejected` table. Each
-rejected record includes source file, line number, and error detail.
+JSON parsing or model validation go to the `_rejected` table. Each
+rejected record includes the target table name, source file, line number,
+raw text, and error detail.
 Write disposition is `append` or `replace` only. No merge is performed.
 """
 
@@ -104,8 +105,8 @@ def build_entity_resource(table_name: str, model: type[BaseModel], settings: Jso
         table_name,
         settings,
         resolve_error=_make_resolve_error(model),
-        include_record=True,
         transform_valid=_dump_validated,
+        table_transform=getattr(settings, "get_table_transform", lambda _t: None)(table_name),
     )
 
 

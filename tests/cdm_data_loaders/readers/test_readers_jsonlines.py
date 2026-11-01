@@ -5,8 +5,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
 
+import pyarrow as pa
 from dlt.sources.filesystem import filesystem
 
+from cdm_data_loaders.core.transforms import TableTransform
 from cdm_data_loaders.readers.jsonlines import (
     _iter_file_jsonl_records,
     parse_jsonl_line,
@@ -131,7 +133,7 @@ def test_stream_jsonl_lines_pass_gzip_file_is_decompressed(
 
 
 def test_route_jsonl_lines_pass_routes_valid_and_invalid_rows(tmp_path: Path) -> None:
-    """Valid lines route to the table; parse failures route to <table>_invalid."""
+    """Valid lines route to the table; parse failures route to _rejected."""
     directory = tmp_path / "widget"
     directory.mkdir()
     (directory / "data.jsonl").write_text('{"widget_id": "a"}\n{broken\n{"widget_id": "b"}\n', encoding="utf-8")
@@ -149,13 +151,14 @@ def test_route_jsonl_lines_pass_routes_valid_and_invalid_rows(tmp_path: Path) ->
         by_table.setdefault(page.meta.table_name, []).extend(page.data)
 
     assert list(by_table["widget"]) == [{"widget_id": "a"}, {"widget_id": "b"}]
-    invalid = by_table["widget_invalid"]
-    assert len(invalid) == 1
-    assert invalid[0]["record"] is None
-    assert invalid[0]["raw_record"] == "{broken"
-    assert invalid[0]["line_no"] == 2
-    assert invalid[0]["source_file"] == "data.jsonl"
-    assert invalid[0]["parse_error"] is not None
+    rejected = by_table["_rejected"]
+    assert len(rejected) == 1
+    assert "record" not in rejected[0]
+    assert rejected[0]["table_name"] == "widget"
+    assert rejected[0]["raw_record"] == "{broken"
+    assert rejected[0]["line_no"] == 2
+    assert rejected[0]["source_file"] == "data.jsonl"
+    assert rejected[0]["error_detail"] is not None
 
 
 def test_route_jsonl_lines_pass_skips_blank_lines_and_flushes_at_buffer_size(tmp_path: Path) -> None:
@@ -241,4 +244,55 @@ def test_route_jsonl_lines_pass_file_items_any_backend(fs_backend: FsBackend) ->
     for page in pages:
         by_table.setdefault(page.meta.table_name, []).extend(page.data)
     assert by_table["widget"] == [{"widget_id": "caf\u00e9"}, {"widget_id": "b"}]
-    assert [(r["source_file"], r["line_no"]) for r in by_table["widget_invalid"]] == [("a.jsonl", 3)]
+    assert [(r["table_name"], r["source_file"], r["line_no"]) for r in by_table["_rejected"]] == [
+        ("widget", "a.jsonl", 3),
+    ]
+
+
+def test_route_jsonl_lines_pass_applies_table_transform_and_schema_map(tmp_path: Path) -> None:
+    """route_jsonl_lines filters, transforms, splits, and coerces rows when given a TableTransform."""
+    directory = tmp_path / "widget"
+    directory.mkdir()
+    (directory / "data.jsonl").write_text(
+        '{"widget_id": "a", "count": 0, "tags": ["t1"]}\n'
+        '{"widget_id": "b", "count": 2, "tags": ["t2", "t3"]}\n'
+        "{broken\n",
+        encoding="utf-8",
+    )
+    transform = TableTransform(
+        transform_fn=lambda row: (
+            {}
+            if row["count"] == 0
+            else {
+                "widget": [{"widget_id": row["widget_id"], "count": row["count"]}],
+                "widget_tag": [{"widget_id": row["widget_id"], "tag": tag} for tag in row["tags"]],
+            }
+        ),
+        table_to_schema_map={
+            "widget": pa.schema([pa.field("widget_id", pa.string()), pa.field("count", pa.int64())]),
+            "widget_tag": pa.schema([pa.field("widget_id", pa.string()), pa.field("tag", pa.string())]),
+        },
+    )
+
+    pages = list(
+        route_jsonl_lines(
+            iter(read_items(directory)),
+            buffer_size=10,
+            table_name_of=lambda _: "widget",
+            table_transform=transform,
+        )
+    )
+
+    by_table = {page.meta.table_name: page.data for page in pages}
+    assert isinstance(by_table["widget"], pa.Table)
+    assert by_table["widget"].to_pylist() == [{"widget_id": "b", "count": 2}]
+    assert isinstance(by_table["widget_tag"], pa.Table)
+    assert by_table["widget_tag"].to_pylist() == [
+        {"widget_id": "b", "tag": "t2"},
+        {"widget_id": "b", "tag": "t3"},
+    ]
+    assert isinstance(by_table["_rejected"], pa.Table)
+    rejected_rows = by_table["_rejected"].to_pylist()
+    assert len(rejected_rows) == 1
+    assert rejected_rows[0]["table_name"] == "widget"
+    assert rejected_rows[0]["raw_record"] == "{broken"

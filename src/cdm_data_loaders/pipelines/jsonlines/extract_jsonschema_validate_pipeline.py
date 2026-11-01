@@ -5,12 +5,13 @@ a mapping of table names to JSON Schema dictionaries, each declaring ``$schema``
 Each validated JSON Schema is dereferenced and converted to a ``pyarrow.Schema``
 via ``JSONSchemaToPyArrow``. Files are read from one input subdirectory per
 table. Valid records are coerced to the target ``pyarrow.Schema`` and buffered
-into ``pyarrow.Table`` pages via ``ArrowListBuffer``; parsing and validation
-failures go to ``<table>_rejected`` with source_file, line_no, raw_record, and
-error_detail. Format checks are enabled.
+into ``pyarrow.Table`` pages via ``ArrowDictBuffer``; parsing and validation
+failures go to ``_rejected`` with table_name, source_file, line_no, raw_record,
+and error_detail. Format checks are enabled.
 """
 
 import json
+from collections.abc import Mapping
 from logging import Logger, getLogger
 from typing import Any
 
@@ -24,8 +25,8 @@ from jsonschema.validators import validator_for
 from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrow,
     JSONSchemaToPyArrowError,
-    coerce_record_for_pyarrow,
 )
+from cdm_data_loaders.core.transforms import TableTransform
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.jsonlines.base import (
     build_entity_resource as build_shared_entity_resource,
@@ -33,6 +34,7 @@ from cdm_data_loaders.pipelines.jsonlines.base import (
 from cdm_data_loaders.pipelines.jsonlines.base import (
     load_registry_dict,
     run_registry_ingest,
+    validate_table_transforms,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JSONSCHEMA_PIPELINE_NAME, JsonlJsonschemaIngestSettings
 from cdm_data_loaders.readers.jsonlines import ParseErrorResolver
@@ -105,14 +107,22 @@ def convert_schema_to_pyarrow(schema: dict[str, Any]) -> pa.Schema:
     return JSONSchemaToPyArrow().convert(dereferenced)
 
 
-def build_pyarrow_schemas(table_to_schema: dict[str, dict[str, Any]]) -> dict[str, pa.Schema]:
+def build_pyarrow_schemas(
+    table_to_schema: dict[str, dict[str, Any]],
+    *,
+    table_transforms: Mapping[str, TableTransform] | None = None,
+) -> dict[str, pa.Schema]:
     """Convert all entity JSON Schemas to PyArrow schemas up front.
 
-    Collects any dereferencing or conversion errors across all tables and raises
-    a single ``RuntimeError`` listing every failing table.
+    Skips automatic JSON Schema -> PyArrow conversion for any entity table whose
+    `TableTransform` supplies a `table_to_schema_map`. Collects any dereferencing
+    or conversion errors across all remaining tables and raises a single
+    ``RuntimeError`` listing every failing table.
 
     :param table_to_schema: mapping of table name to validated JSON Schema dictionary
     :type table_to_schema: dict[str, dict[str, Any]]
+    :param table_transforms: optional mapping of entity table name to `TableTransform`
+    :type table_transforms: Mapping[str, TableTransform] | None
     :return: mapping of table name to PyArrow schema
     :rtype: dict[str, pa.Schema]
     :raises RuntimeError: if one or more schemas cannot be converted to PyArrow schemas
@@ -120,6 +130,12 @@ def build_pyarrow_schemas(table_to_schema: dict[str, dict[str, Any]]) -> dict[st
     pyarrow_schemas: dict[str, pa.Schema] = {}
     errors: dict[str, str] = {}
     for table_name, schema in table_to_schema.items():
+        if (
+            table_transforms is not None
+            and (transform := table_transforms.get(table_name)) is not None
+            and transform.table_to_schema_map is not None
+        ):
+            continue
         try:
             pyarrow_schemas[table_name] = convert_schema_to_pyarrow(schema)
         except (DereferencingError, JSONSchemaToPyArrowError) as error:
@@ -155,12 +171,13 @@ def build_entity_resource(
     settings: JsonlJsonschemaIngestSettings,
     *,
     pyarrow_schema: pa.Schema | None = None,
+    table_transform: TableTransform | None = None,
 ) -> DltResource:
     """Read plain or gzip JSONL files for one entity and route validated pages.
 
     A missing entity directory produces no rows. Validated records are coerced
-    to the target PyArrow schema and buffered into ``pyarrow.Table`` pages via
-    ``ArrowListBuffer``. Nested values are preserved rather than normalized into
+    to the target PyArrow schema(s) and buffered into ``pyarrow.Table`` pages via
+    ``ArrowDictBuffer``. Nested values are preserved rather than normalized into
     child tables.
 
     :param table_name: table name
@@ -171,16 +188,28 @@ def build_entity_resource(
     :type  settings: JsonlJsonschemaIngestSettings
     :param pyarrow_schema: precomputed PyArrow schema, or None to convert ``schema``
     :type  pyarrow_schema: pa.Schema | None
+    :param table_transform: optional `TableTransform` override for this entity
+    :type  table_transform: TableTransform | None
     :return: resource yielding validated and rejected records for this entity
     :rtype: DltResource
     """
-    resolved_pa_schema = pyarrow_schema if pyarrow_schema is not None else convert_schema_to_pyarrow(schema)
+    resolved_transform = (
+        table_transform
+        if table_transform is not None
+        else getattr(settings, "get_table_transform", lambda _t: None)(table_name)
+    )
+    has_override_schema_map = resolved_transform is not None and resolved_transform.table_to_schema_map is not None
+    resolved_pa_schema = (
+        None
+        if has_override_schema_map
+        else (pyarrow_schema if pyarrow_schema is not None else convert_schema_to_pyarrow(schema))
+    )
     return build_shared_entity_resource(
         table_name,
         settings,
         resolve_error=_make_resolve_error(schema),
-        transform_valid=lambda record: coerce_record_for_pyarrow(record, resolved_pa_schema),
         pyarrow_schema=resolved_pa_schema,
+        table_transform=resolved_transform,
     )
 
 
@@ -194,7 +223,8 @@ def run_jsonlines_pipeline(settings: JsonlJsonschemaIngestSettings) -> LoadInfo 
     :rtype:  LoadInfo | None
     """
     table_to_schema = load_entity_schemas(settings.schema_files_module)
-    pyarrow_schemas = build_pyarrow_schemas(table_to_schema)
+    validate_table_transforms(settings, table_to_schema)
+    pyarrow_schemas = build_pyarrow_schemas(table_to_schema, table_transforms=settings.table_transforms)
     return run_registry_ingest(
         settings,
         table_to_schema,
@@ -202,7 +232,8 @@ def run_jsonlines_pipeline(settings: JsonlJsonschemaIngestSettings) -> LoadInfo 
             table_name,
             schema,
             cfg,
-            pyarrow_schema=pyarrow_schemas[table_name],
+            pyarrow_schema=pyarrow_schemas.get(table_name),
+            table_transform=cfg.get_table_transform(table_name),
         ),
         pipeline_name=JSONSCHEMA_PIPELINE_NAME,
     )

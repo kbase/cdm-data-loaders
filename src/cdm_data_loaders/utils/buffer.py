@@ -6,7 +6,7 @@ hand back full pages when a table's buffer reaches its size limit.
 """
 
 from collections import defaultdict
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 from typing import Annotated, Any, Self
 
 import dlt
@@ -130,35 +130,6 @@ class DictBuffer(BufferCore):
         yield from super()._add_items(items_to_add)
 
 
-class SingleTableBufferMixin:
-    """Shared single-table `add_item` implementation for `ListBuffer` and `ArrowListBuffer`."""
-
-    @property
-    def _single_table_name(self) -> str:
-        """Return the single target table name for this buffer."""
-        raise NotImplementedError
-
-    def add_item(self, item_to_add: Any) -> Generator[DataItemWithMeta, Any]:  # noqa: ANN401
-        """Add an item to the table. Yield a page if the table reaches max_items.
-
-        :param item_to_add: the item
-        :type  item_to_add: Any
-        :yield: generator that yields collected rows to the appropriate dlt table
-        :rtype: Generator[DataItemWithMeta, Any]
-        """
-        yield from self._add_item(self._single_table_name, item_to_add)  # type: ignore[attr-defined]
-
-
-class ListBuffer(SingleTableBufferMixin, BufferCore):
-    """A single-table buffer for routing one row at a time, e.g. validation results."""
-
-    table_name: Annotated[NonEmptyStr, Field(..., description="Table to save the data to")]
-
-    @property
-    def _single_table_name(self) -> str:
-        return self.table_name
-
-
 class ArrowBufferCore(BufferCore):
     """Accumulates rows per table and yields them as pyarrow tables to dlt."""
 
@@ -189,21 +160,12 @@ class ArrowDictBuffer(ArrowBufferCore, DictBuffer):
     """A pyarrow buffer for parsed results keyed by table name. Results are yielded as pyarrow tables."""
 
 
-class ArrowListBuffer(SingleTableBufferMixin, ArrowBufferCore):
-    """A single-table pyarrow buffer for routing one row at a time. Results are yielded as pyarrow tables."""
-
-    _table_name: NonEmptyStr = PrivateAttr()
-    table_to_schema_map: TableToSchemaMap = Field(min_length=1, max_length=1)
-
-    @model_validator(mode="after")
-    def set_up_table_name(self) -> Self:
-        """Set up the buffers after successfully instantiating the Buffer instance."""
-        if len(self.table_to_schema_map) != 1:
-            err_msg = "ArrowListBuffers can only be used for a single table and schema"
-            raise ValueError(err_msg)
-        self._table_name = next(iter(self.table_to_schema_map.keys()))
-        return self
-
-    @property
-    def _single_table_name(self) -> str:
-        return self._table_name
+def create_dict_buffer(
+    max_items: int = DEFAULT_BUFFER_MAX_ITEMS,
+    *,
+    table_to_schema_map: Mapping[str, pa.Schema] | None = None,
+) -> DictBuffer | ArrowDictBuffer:
+    """Create a `DictBuffer` or `ArrowDictBuffer` depending on whether `table_to_schema_map` is provided."""
+    if table_to_schema_map:
+        return ArrowDictBuffer(table_to_schema_map=dict(table_to_schema_map), max_items=max_items)
+    return DictBuffer(max_items=max_items)

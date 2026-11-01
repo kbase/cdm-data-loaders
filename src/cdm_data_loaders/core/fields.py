@@ -11,7 +11,7 @@ OUTPUT_MOUNT: Final[str] = "/output_dir"
 
 DEFAULT_JSONL_FILE_GLOB: Final[str] = "*.jsonl*"
 DEFAULT_XML_FILE_GLOB: Final[str] = "*.xml*"
-DEFAULT_REJECTED_SUFFIX: Final[str] = "_rejected"
+REJECTED_TABLE_NAME: Final[str] = "_rejected"
 GZIP_SUFFIX: Final[str] = ".gz"
 
 # output file formats
@@ -45,6 +45,7 @@ OUTPUT_DIR: Final[str] = "output_dir"
 PRESERVE_TABLE_NESTING: Final[str] = "preserve_table_nesting"
 SAVE_RAW_RESPONSES: Final[str] = "save_raw_responses"
 TABLE_NAME: Final[str] = "table_name"
+TRANSFORMS_MODULE: Final[str] = "transforms_module"
 USE_DESTINATION: Final[str] = "use_destination"
 USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: Final[str] = "use_output_dir_for_pipeline_metadata"
 
@@ -70,6 +71,7 @@ DEFAULTS = frozendict(
         MAX_TABLE_NESTING: 0,
         PRESERVE_TABLE_NESTING: False,
         SAVE_RAW_RESPONSES: False,
+        TRANSFORMS_MODULE: None,
         USE_DESTINATION: CTS,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: False,
     }
@@ -166,6 +168,17 @@ SaveRawResponses = Annotated[
     ),
 ]
 TableName = Annotated[NonEmptyStr, Field(description="The name of the table to export parsed data to")]
+TransformsModuleSpec = Annotated[
+    NonEmptyStr | None,
+    Field(
+        default=DEFAULTS[TRANSFORMS_MODULE],
+        description=(
+            "Optional Python module path (or 'module:ATTR') exporting TABLE_TRANSFORMS "
+            "(dict[str, TableTransform]) for record filtering, transformation, multi-table "
+            "splitting, and PyArrow schema overrides."
+        ),
+    ),
+]
 UseDestination = Annotated[
     NonEmptyStr,
     Field(

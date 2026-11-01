@@ -1,7 +1,6 @@
 """Tests for `stream_xml_file` from cdm_data_loaders.readers.xml."""
 
 import gzip
-import logging
 from collections.abc import Callable
 from pathlib import Path
 

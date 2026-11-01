@@ -4,8 +4,8 @@ Reads JSONL files. No validation occurs other than that records are valid JSON.
 
 `table_name` names the destination table for all valid records; files
 may live anywhere under `input_dir`. Records that fail JSON parsing go
-to a `<table_name>_invalid` table. Each invalid record includes source
-file, line number, raw text, and parse error detail.
+to the `_rejected` table. Each rejected record includes the target table
+name, source file, line number, raw text, and error detail.
 """
 
 from collections.abc import Generator, Iterator
@@ -39,7 +39,10 @@ def jsonl_reader(items: Iterator[FileItemDict], settings: JsonlExtractSettings) 
     :rtype: Generator[TDataItems, Any, Any]
     """
     yield from route_jsonl_lines(
-        items, buffer_size=settings.buffer_size, table_name_of=lambda _file_item: settings.table_name
+        items,
+        buffer_size=settings.buffer_size,
+        table_name_of=lambda _file_item: settings.table_name,
+        table_transform=settings.get_table_transform(settings.table_name),
     )
 
 

@@ -78,7 +78,7 @@ dlt-based orchestrators; each exposes a `cli = PipelineCli(...)` registered in `
 
 - `core.py`: `PipelineCli`, `run_cli`, `run_pipeline`, `setup_dlt_Pipeline`, `execute_dlt_pipeline`, and `configure_pipeline_logging`.
 - `all_the_bacteria.py`: All The Bacteria bulk data downloader (excluded from fast test runs).
-- `jsonlines/`: JSONL ingest pipelines (`settings.py`, shared machinery in `base.py`) - `extract_pipeline.py` (`jsonl_extract`, plain load into `<table_name>` / `<table_name>_invalid`), `extract_jsonschema_validate_pipeline.py` (`jsonl_jsonschema`, validates against `ENTITY_SCHEMAS`), `extract_pydantic_validate_pipeline.py` (`jsonl_pydantic`, validates against `ENTITY_MODELS`). See `docs/jsonschema_ingest.md`.
+- `jsonlines/`: JSONL ingest pipelines (`settings.py`, shared machinery in `base.py`) - `extract_pipeline.py` (`jsonlines_extract`, plain load into `<table_name>` / `_rejected`), `extract_jsonschema_validate_pipeline.py` (`jsonlines_jsonschema`, validates against `ENTITY_SCHEMAS`), `extract_pydantic_validate_pipeline.py` (`jsonlines_pydantic`, validates against `ENTITY_MODELS`). See `docs/jsonlines_ingest.md`.
 - `ncbi_ftp_download.py` / `ncbi_ftp_promote.py`: phases 2 (`ncbi_ftp_sync`) and 3 (`ncbi_ftp_promote`) of the NCBI FTP flow.
 - `ncbi_rest_api.py`: NCBI REST API import.
 - `uniprot_kb.py` / `uniref.py`: UniProt (`uniprot`) and UniRef (`uniref`) dlt pipelines.
@@ -86,12 +86,12 @@ dlt-based orchestrators; each exposes a `cli = PipelineCli(...)` registered in `
 
 ### `utils/`
 
-Cross-cutting helpers: `file_items.py` (readers take a local path or dlt `FileItemDict` and open it with `FileItemDict.open`, which decompresses `*.gz`; `source_id` = relative path recorded as `source_file`; `local_copy` for tools needing a local file), `batcher.py` (`NumericFileSequenceBatcher`), `buffer.py` (per-table row buffers for dlt: `DictBuffer`, `ListBuffer`, `ArrowDictBuffer`, `ArrowListBuffer`), `cdm_logger.py` (structured JSON logging), `checksums.py`, `gz.py` (gzip compress/decompress CLI), `helpers.py`, `progress.py` (tqdm helpers), `spark.py`, `xml_utils.py`, `jsonschema/dereferencer.py` (`$ref` resolution), `dlt/dlt_normalization.py` (lossless parent-linked normalization of dlt table definitions, used by the converters' `DltReader`), and `file_transfer/` - `core.py` (tenacity-retried downloads), `sync_client.py` / `async_client.py` / `ftp_client.py`, and `s3/` (`client.py`, `object_utils.py`, HTTP-to-S3 streaming in `streamer.py`, `transfer_config.py`, `cli.py`).
+Cross-cutting helpers: `file_items.py` (readers take a local path or dlt `FileItemDict` and open it with `FileItemDict.open`, which decompresses `*.gz`; `source_id` = relative path recorded as `source_file`; `local_copy` for tools needing a local file), `batcher.py` (`NumericFileSequenceBatcher`), `buffer.py` (per-table row buffers for dlt: `DictBuffer`, `ArrowDictBuffer`), `cdm_logger.py` (structured JSON logging), `checksums.py`, `gz.py` (gzip compress/decompress CLI), `helpers.py`, `progress.py` (tqdm helpers), `spark.py`, `xml_utils.py`, `jsonschema/dereferencer.py` (`$ref` resolution), `dlt/dlt_normalization.py` (lossless parent-linked normalization of dlt table definitions, used by the converters' `DltReader`), and `file_transfer/` - `core.py` (tenacity-retried downloads), `sync_client.py` / `async_client.py` / `ftp_client.py`, and `s3/` (`client.py`, `object_utils.py`, HTTP-to-S3 streaming in `streamer.py`, `transfer_config.py`, `cli.py`).
 
 ### Other Top-Level Directories
 
 - `scripts/`: `entrypoint.sh` (container entrypoint dispatching to registered pipeline CLIs), `run_tests.sh` (`unit`, `container`, or `all` test suites), `filter_ncbi_updates.py` (CLI filtering NCBI assembly IDs by modification date), `s3_local.py` (thin S3 CLI for local Ceph testing), `dtd2xsd.pl` (DTD-to-XSD converter), `run_tools.sh`, `parse_index.py`.
-- `docs/`: architecture and pipeline guides (`converters_ir.md`, `jsonschema_ingest.md`, `ncbi_ftp_e2e_walkthrough.md`, `rclone_instructions.md`, `uniprot.md`).
+- `docs/`: architecture and pipeline guides (`converters_ir.md`, `jsonlines_ingest.md`, `table_transforms.md`, `ncbi_ftp_e2e_walkthrough.md`, `rclone_instructions.md`, `uniprot.md`).
 - `cdl_skill/`: skill definition (`SKILL.md`) and generator (`scripts/skill_gen.sh`) for packaging pipeline documentation and schemas.
 
 ## Conventions

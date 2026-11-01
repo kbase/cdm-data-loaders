@@ -8,8 +8,9 @@ import pyarrow as pa
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 
-from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX
-from cdm_data_loaders.utils.buffer import ArrowListBuffer, ListBuffer
+from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.core.transforms import TableTransform, resolve_schema_map, route_and_coerce_record
+from cdm_data_loaders.utils.buffer import create_dict_buffer
 
 LineRecord = dict[str, Any]
 ParseErrorResolver = Callable[[dict[str, Any]], str | None]
@@ -55,7 +56,7 @@ def stream_jsonl_lines(items: Iterator[FileItemDict], buffer_size: int) -> Gener
 
     Each record has: record (parsed JSON, or None on parse failure),
     raw_record, parse_error (None on success), source_file, line_no.
-    Records are accumulated into pages of `buffer_size` before being
+    Records are accumulated into pages of ``buffer_size`` before being
     yielded, so downstream transformers receive pages rather than
     individual rows.
 
@@ -82,69 +83,70 @@ def make_page_router(  # noqa: PLR0913
     buffer_size: int,
     resolve_error: ParseErrorResolver | None = None,
     *,
-    rejected_suffix: str = DEFAULT_REJECTED_SUFFIX,
-    include_record: bool = False,
-    error_column: str = "error_detail",
     transform_valid: Callable[[Any], Any] | None = None,
     pyarrow_schema: pa.Schema | None = None,
+    table_transform: TableTransform | None = None,
 ) -> Callable[[Iterable[dict[str, Any]]], Generator[Any, Any, Any]]:
     """Build a function that routes pages of line records to valid and rejected tables.
 
-    For each item, `resolve_error` (when provided) inspects the record and
+    For each item, ``resolve_error`` (when provided) inspects the record and
     returns None for a valid record, or the error detail string otherwise.
-    Parse errors bypass `resolve_error` entirely. Valid records yield
-    `item["record"]` passed through `transform_valid` (identity when None) into
-    `table_name`; failed records yield a provenance row into
-    ``{table_name}{rejected_suffix}``. With `include_record`, the rejected row
-    also carries the parsed `record` value. When `pyarrow_schema` is supplied,
-    valid records are accumulated in an `ArrowListBuffer` and yielded as
-    `pyarrow.Table` pages.
+    Parse errors bypass ``resolve_error`` entirely. Valid records yield
+    ``item["record"]`` passed through ``transform_valid`` (identity when None) and
+    ``table_transform`` into target table(s); failed records yield a provenance
+    row (``table_name``, ``source_file``, ``line_no``, ``raw_record``,
+    ``error_detail``) into ``_rejected``. When ``pyarrow_schema`` or
+    ``table_transform.table_to_schema_map`` is supplied, records (both valid and
+    rejected) are accumulated in an ``ArrowDictBuffer`` and yielded as
+    ``pyarrow.Table`` pages.
 
-    :param table_name: table name for valid records
+    :param table_name: default table name for valid records
     :type  table_name: str
     :param buffer_size: number of rows to buffer per table before yielding a page
     :type  buffer_size: int
     :param resolve_error: optional function returning None for valid records or error detail
     :type  resolve_error: ParseErrorResolver | None
-    :param rejected_suffix: suffix for the rejected table name
-    :type  rejected_suffix: str
-    :param include_record: whether rejected rows carry the parsed record value
-    :type  include_record: bool
-    :param error_column: column name used to store the error detail in rejected rows
-    :type  error_column: str
-    :param transform_valid: function applied to each valid record before yielding
+    :param transform_valid: function applied to each valid record before routing
     :type  transform_valid: Callable[[Any], Any] | None
-    :param pyarrow_schema: optional PyArrow schema for buffering valid records as Arrow tables
+    :param pyarrow_schema: optional default PyArrow schema for buffering records as Arrow tables
     :type  pyarrow_schema: pa.Schema | None
+    :param table_transform: optional ``TableTransform`` for filtering, transforming, or splitting records
+    :type  table_transform: TableTransform | None
     :return: function taking one page (or iterable) of line records and yielding routed pages
     :rtype : Callable[[Iterable[dict[str, Any]]], Generator[Any, Any, Any]]
     """
-    rejected_table = f"{table_name}{rejected_suffix}"
+    schema_map = resolve_schema_map(
+        table_name,
+        transform=table_transform,
+        default_pyarrow_schema=pyarrow_schema,
+    )
 
     def _route(page: Iterable[dict[str, Any]]) -> Generator[Any, Any, Any]:
-        valid_buffer: ListBuffer | ArrowListBuffer = (
-            ArrowListBuffer(table_to_schema_map={table_name: pyarrow_schema}, max_items=buffer_size)
-            if pyarrow_schema is not None
-            else ListBuffer(table_name=table_name, max_items=buffer_size)
-        )
-        rejected_buffer = ListBuffer(table_name=rejected_table, max_items=buffer_size)
+        buffer = create_dict_buffer(buffer_size, table_to_schema_map=schema_map)
         for item in page:
             error_detail = item["parse_error"]
             if error_detail is None and resolve_error is not None:
                 error_detail = resolve_error(item["record"])
             if error_detail is not None:
-                rejected = {column: item[column] for column in REJECTED_COLUMNS}
-                rejected[error_column] = error_detail
-                if include_record:
-                    rejected["record"] = item["record"]
-                yield from rejected_buffer.add_item(rejected)
+                rejected = {
+                    "table_name": table_name,
+                    **{column: item[column] for column in REJECTED_COLUMNS},
+                    "error_detail": error_detail,
+                }
+                yield from buffer.add_item(REJECTED_TABLE_NAME, rejected)
             else:
                 record = item["record"]
                 if transform_valid is not None:
                     record = transform_valid(record)
-                yield from valid_buffer.add_item(record)
-        yield from valid_buffer.flush()
-        yield from rejected_buffer.flush()
+                yield from buffer.add_items(
+                    route_and_coerce_record(
+                        record,
+                        table_name,
+                        transform=table_transform,
+                        table_to_schema_map=schema_map,
+                    )
+                )
+        yield from buffer.flush()
 
     return _route
 
@@ -153,12 +155,15 @@ def route_jsonl_lines(
     items: Iterator[FileItemDict],
     buffer_size: int,
     table_name_of: Callable[[FileItemDict], str],
+    *,
+    table_transform: TableTransform | None = None,
 ) -> Generator[TDataItems, Any, Any]:
     """Read each file in items and route each line by its file's table name.
 
-    Valid records yield into the file's table with the given name.
-    Records that fail JSON parsing yield into ``{table}_invalid`` with
-    raw_record, record (None), source_file, line_no, and parse_error.
+    Valid records yield into the file's table with the given name (or transformed
+    tables when ``table_transform`` is supplied).
+    Records that fail JSON parsing yield into ``_rejected`` with
+    ``table_name``, ``source_file``, ``line_no``, ``raw_record``, and ``error_detail``.
 
     :param items: file items to read
     :type items: Iterator[FileItemDict]
@@ -166,6 +171,8 @@ def route_jsonl_lines(
     :type buffer_size: int
     :param table_name_of: function returning the table name for a file item
     :type table_name_of: Callable[[FileItemDict], str]
+    :param table_transform: optional ``TableTransform`` for filtering, transforming, or splitting records
+    :type table_transform: TableTransform | None
     :yield: table-tagged rows
     :rtype: Generator[TDataItems, Any, Any]
     """
@@ -173,8 +180,6 @@ def route_jsonl_lines(
         router = make_page_router(
             table_name_of(file_item),
             buffer_size,
-            rejected_suffix="_invalid",
-            include_record=True,
-            error_column="parse_error",
+            table_transform=table_transform,
         )
         yield from router(_iter_file_jsonl_records(file_item))

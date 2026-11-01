@@ -5,11 +5,14 @@ from pathlib import Path
 from typing import Any
 
 import dlt
+import pytest
 from pydantic import BaseModel
 
+from cdm_data_loaders.core.transforms import TableTransform
 from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import build_entity_resource
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
 from tests.conftest import LOCAL_FS
+from tests.helpers import register_temp_module
 
 
 def run_pipeline(table_name: str, model: type[BaseModel], settings: JsonlPydanticIngestSettings) -> Any:
@@ -39,7 +42,7 @@ def test_build_entity_resource_pass_happy_path_all_valid(
 
     rows = dataset.widget.df()
     assert sorted(rows["widget_id"].tolist()) == ["a", "b", "c"]
-    assert "widget_rejected" not in dataset.tables
+    assert "_rejected" not in dataset.tables
 
 
 def test_build_entity_resource_pass_mixed_batch_split_correctly(
@@ -48,15 +51,16 @@ def test_build_entity_resource_pass_mixed_batch_split_correctly(
     widget_model: type[BaseModel],
     tmp_path: Path,
 ) -> None:
-    """A mixed batch puts valid rows in the main table and invalid rows in <table>_rejected."""
+    """A mixed batch puts valid rows in the main table and invalid rows in _rejected."""
     settings = settings_factory(input_dir=scenario_input_dir("mixed"), output_dir=str(tmp_path))
 
     dataset = run_pipeline("widget", widget_model, settings)
 
     valid_rows = dataset.widget.df()
-    rejected_rows = dataset.widget_rejected.df()
+    rejected_rows = dataset.table("_rejected").df()
     assert sorted(valid_rows["widget_id"].tolist()) == ["a", "c"]
     assert len(rejected_rows) == 2
+    assert rejected_rows["table_name"].tolist() == ["widget", "widget"]
 
 
 def test_build_entity_resource_fail_all_invalid_main_table_absent_or_empty(
@@ -70,8 +74,9 @@ def test_build_entity_resource_fail_all_invalid_main_table_absent_or_empty(
 
     dataset = run_pipeline("widget", widget_model, settings)
 
-    rejected_rows = dataset.widget_rejected.df()
+    rejected_rows = dataset.table("_rejected").df()
     assert len(rejected_rows) == 3
+    assert rejected_rows["table_name"].tolist() == ["widget", "widget", "widget"]
     assert "widget" not in dataset.tables or len(dataset.widget.df()) == 0
 
 
@@ -86,7 +91,7 @@ def test_build_entity_resource_pass_empty_input_directory_yields_no_tables(
     dataset = run_pipeline("widget", widget_model, settings)
 
     assert "widget" not in dataset.tables
-    assert "widget_rejected" not in dataset.tables
+    assert "_rejected" not in dataset.tables
 
 
 def test_build_entity_resource_pass_missing_entity_directory_yields_no_tables(
@@ -100,4 +105,40 @@ def test_build_entity_resource_pass_missing_entity_directory_yields_no_tables(
     dataset = run_pipeline("widget", widget_model, settings)
 
     assert "widget" not in dataset.tables
-    assert "widget_rejected" not in dataset.tables
+    assert "_rejected" not in dataset.tables
+
+
+def test_build_entity_resource_pass_filters_and_splits_records_with_transforms_module(
+    scenario_input_dir: Callable[[str], str],
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
+    widget_model: type[BaseModel],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """build_entity_resource applies TableTransform to filter and split validated Pydantic records."""
+    transform = TableTransform(
+        transform_fn=lambda row: (
+            {}
+            if row["widget_id"] == "b"
+            else {
+                "widget": [{"widget_id": row["widget_id"], "count": row["count"]}],
+                "widget_summary": [{"widget_id": row["widget_id"], "doubled": row["count"] * 2}],
+            }
+        )
+    )
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_pydantic_transforms",
+        TABLE_TRANSFORMS={"widget": transform},
+    )
+    settings = settings_factory(
+        input_dir=scenario_input_dir("happy_path"),
+        output_dir=str(tmp_path),
+        transforms_module=transforms_mod,
+    )
+
+    dataset = run_pipeline("widget", widget_model, settings)
+
+    assert sorted(dataset.widget.df()["widget_id"].tolist()) == ["a", "c"]
+    assert sorted(dataset.widget_summary.df()["widget_id"].tolist()) == ["a", "c"]
+    assert "_rejected" not in dataset.tables

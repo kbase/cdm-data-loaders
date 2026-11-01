@@ -3,7 +3,7 @@
 Cleans and validates each XSV file against `settings.schema_file` using qsv (see
 `readers.jsonschema_xsv.xsv_validator`), then loads each valid row, cast to the types declared
 in the schema, into `table_name`. Files that fail cleaning/validation are routed to
-`<table_name>_rejected`, one row per recorded error; qsv's own per-row validation diagnostics are
+`_rejected`, one row per recorded error; qsv's own per-row validation diagnostics are
 left in its scratch output directory and are not currently surfaced as rows.
 """
 
@@ -17,7 +17,8 @@ from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 
-from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX
+from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.core.transforms import resolve_schema_map, route_and_coerce_record
 from cdm_data_loaders.pipelines.core import (
     DEFAULT_SCHEMA_CONTRACT,
     PipelineCli,
@@ -30,7 +31,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import read_validated_ro
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import CleanerValidatorArgs, ErrorRecord
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import clean_validate_file, qsv_check
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import generate_header
-from cdm_data_loaders.utils.buffer import ListBuffer
+from cdm_data_loaders.utils.buffer import create_dict_buffer
 from cdm_data_loaders.utils.file_items import local_copy, source_id
 
 
@@ -77,7 +78,7 @@ def _process_xsv_file(
     :type  settings: XsvIngestSettings
     :param work_paths: scratch resources shared across the pipeline run
     :type  work_paths: XsvWorkPaths
-    :yield: rows routed to table_name and/or ``{table_name}_rejected``
+    :yield: rows routed to table_name and/or ``_rejected``
     :rtype: Generator[TDataItems, Any, Any]
     """
     with (
@@ -103,7 +104,7 @@ def _process_local_xsv_file(
     :type  settings: XsvIngestSettings
     :param work_paths: scratch resources shared across the pipeline run
     :type  work_paths: XsvWorkPaths
-    :yield: rows routed to table_name and/or ``{table_name}_rejected``
+    :yield: rows routed to table_name and/or ``_rejected``
     :rtype: Generator[TDataItems, Any, Any]
     """
     file_validated_dir = Path(mkdtemp(prefix=f"{file_path.stem}_", dir=work_paths.validated_dir))
@@ -124,11 +125,9 @@ def _process_local_xsv_file(
 
         validated_file_name = clean_validate_file(args)
 
-    valid_buffer = ListBuffer(table_name=settings.table_name, max_items=settings.buffer_size)
-    rejected_buffer = ListBuffer(
-        table_name=f"{settings.table_name}{DEFAULT_REJECTED_SUFFIX}",
-        max_items=settings.buffer_size,
-    )
+    transform = settings.get_table_transform(settings.table_name)
+    schema_map = resolve_schema_map(settings.table_name, transform=transform)
+    buffer = create_dict_buffer(settings.buffer_size, table_to_schema_map=schema_map)
 
     if validated_file_name:
         properties = settings.validated_schema.jsonschema.get("properties", {})
@@ -140,7 +139,14 @@ def _process_local_xsv_file(
             escape=args.escape,
         )
         for row in rows:
-            yield from valid_buffer.add_item(row)
+            yield from buffer.add_items(
+                route_and_coerce_record(
+                    row,
+                    settings.table_name,
+                    transform=transform,
+                    table_to_schema_map=schema_map,
+                )
+            )
     elif not args.errors:
         args.errors.append(
             ErrorRecord(
@@ -150,10 +156,9 @@ def _process_local_xsv_file(
         )
 
     for error in args.errors:
-        yield from rejected_buffer.add_item(error.model_dump())
+        yield from buffer.add_item(REJECTED_TABLE_NAME, error.to_rejected_row(settings.table_name))
 
-    yield from valid_buffer.flush()
-    yield from rejected_buffer.flush()
+    yield from buffer.flush()
 
 
 def run_xsv_pipeline(settings: XsvIngestSettings) -> LoadInfo | None:

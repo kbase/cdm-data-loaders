@@ -2,10 +2,10 @@
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, Self
 
 from frozendict import frozendict
-from pydantic import AliasChoices, AliasPath, Field, computed_field
+from pydantic import AliasChoices, AliasPath, Field, PrivateAttr, computed_field, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 
@@ -27,11 +27,13 @@ from cdm_data_loaders.core.fields import (
     LogConfigFile,
     LogInterval,
     TableName,
+    TransformsModuleSpec,
     UseDestination,
     UseOutputDirForPipelineMetadata,
     XmlTag,
 )
 from cdm_data_loaders.core.path_fields import LocalInputDir, LocalOutputDir
+from cdm_data_loaders.core.transforms import TableTransform, load_table_transforms
 
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
     {
@@ -266,7 +268,31 @@ class XmlIngestSettings(FileFormatIngestSettings):
     ]
 
 
-class SingleTableXmlIngestSettings(XmlIngestSettings):
+class TransformSettingsMixin(CdmDataLoadersBase):
+    """Mixin for pipelines that accept a `TABLE_TRANSFORMS` module."""
+
+    _table_transforms: dict[str, TableTransform] = PrivateAttr(default_factory=dict)
+
+    transforms_module: TransformsModuleSpec
+
+    @model_validator(mode="after")
+    def _validate_transforms_module(self) -> Self:
+        """Eagerly load and validate `TABLE_TRANSFORMS` if `transforms_module` is configured."""
+        if self.transforms_module is not None:
+            self._table_transforms = load_table_transforms(self.transforms_module)
+        return self
+
+    @property
+    def table_transforms(self) -> dict[str, TableTransform]:
+        """The loaded `TABLE_TRANSFORMS` mapping (empty dict if not configured)."""
+        return self._table_transforms
+
+    def get_table_transform(self, table_name: str) -> TableTransform | None:
+        """Return the `TableTransform` for `table_name`, if configured."""
+        return self._table_transforms.get(table_name)
+
+
+class SingleTableXmlIngestSettings(XmlIngestSettings, TransformSettingsMixin):
     """Configuration for DLT pipelines that import XML elements into a single target table."""
 
     table_name: TableName

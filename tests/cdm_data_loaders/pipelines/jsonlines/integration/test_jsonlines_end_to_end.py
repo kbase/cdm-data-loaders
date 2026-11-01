@@ -23,7 +23,8 @@ def test_run_jsonlines_pipeline_pass_writes_expected_parquet(
     load_info = assert_run_ok(pipeline_runner.run(PYDANTIC_PIPELINE_NAME, settings=settings))
     dataset = load_info.pipeline.dataset()
     assert sorted(dataset.widget.df()["widget_id"].tolist()) == ["a", "c"]
-    assert len(dataset.widget_rejected.df()) == 2
+    assert len(dataset.table("_rejected").df()) == 2
+    assert set(dataset.table("_rejected").df()["table_name"].tolist()) == {"widget"}
     assert_pipeline_report_written(Path(settings.output_dir), load_info)
 
 

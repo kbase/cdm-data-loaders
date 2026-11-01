@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from pydantic_settings import SettingsError
 from requests import RequestException
 
-from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX, OUTPUT_DIR, PIPELINE_DIR_NAME, USE_DESTINATION
+from cdm_data_loaders.core.fields import OUTPUT_DIR, PIPELINE_DIR_NAME, REJECTED_TABLE_NAME, USE_DESTINATION
 from cdm_data_loaders.core.settings import (
     CdmDataLoadersBase,
     CtsSettings,
@@ -1127,7 +1127,7 @@ def test_build_file_ingest_kwargs_pass(
         fallback_dataset_name=fallback_dataset_name,
     )
 
-    assert DEFAULT_REJECTED_SUFFIX == "_rejected"
+    assert REJECTED_TABLE_NAME == "_rejected"
     assert result == {
         "pipeline_kwargs": {
             "pipeline_name": TINY_PIPELINE_NAME,

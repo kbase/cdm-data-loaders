@@ -14,6 +14,7 @@ from cdm_data_loaders.core.fields import (
 from cdm_data_loaders.core.settings import (
     FILE_FORMAT_CLI_SHORTCUTS,
     FileFormatIngestSettings,
+    TransformSettingsMixin,
     default_settings_with_shortcuts,
 )
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import resolve_xsv_parsing_config
@@ -36,7 +37,7 @@ SHORTCUTS: Final[dict[str, str]] = {
 }
 
 
-class XsvIngestSettings(FileFormatIngestSettings):
+class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
     """Settings for the XSV (CSV/TSV) ingestion pipeline."""
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
