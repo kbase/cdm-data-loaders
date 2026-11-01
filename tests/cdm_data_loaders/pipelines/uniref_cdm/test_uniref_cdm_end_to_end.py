@@ -108,7 +108,8 @@ def test_integration_uniref_pipeline_entity_and_cluster_content(
     source_files = {
         row[0] for row in fetch_all_duckdb(pipeline, "SELECT DISTINCT source_file FROM entity_x_source_file")
     }
-    assert source_files == {str(UNIREF_FIXTURE_DIR.resolve() / UNIREF_FIXTURE_FILE)}
+    # recorded as a path relative to the input directory, independent of where the input lives
+    assert source_files == {UNIREF_FIXTURE_FILE}
 
 
 def test_integration_cli_uniref_pipeline_output_validated(

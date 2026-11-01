@@ -1,5 +1,6 @@
 """Unit tests for run_xmltopyarrow_pipeline and cli wiring."""
 
+import gzip
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -39,6 +40,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     fetch_all_duckdb,
     run_with_duckdb_pipeline,
 )
+from tests.fs_backends import FsBackend
 from tests.helpers import settings_to_argv
 from tests.xml_samples import TWO_BOOK_LIBRARY_XML
 
@@ -172,3 +174,24 @@ def test_subclass_cli_pass_runs_end_to_end_with_default_settings(
     )
 
     assert fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM entry") == [(1,)]
+
+
+@pytest.mark.parametrize("relative_path", ["library.xml", "sub/library.xml.gz"])
+def test_run_xmltopyarrow_pipeline_pass_per_file_reader_reads_file_items_any_backend(
+    settings_factory: Callable[..., Any], fs_backend: FsBackend, relative_path: str
+) -> None:
+    """The pipeline's per-file reader reads file items from any backend, without assuming they are local files."""
+    data = TWO_BOOK_LIBRARY_XML.encode("utf-8")
+    fs_backend.put(relative_path, gzip.compress(data) if relative_path.endswith(".gz") else data)
+    settings = settings_factory()
+
+    with (
+        patch.object(xmltopyarrow_module, "build_per_file_filesystem_resource") as mock_build,
+        patch.object(xmltopyarrow_module, "run_pipeline"),
+    ):
+        run_xmltopyarrow_pipeline(settings)
+    file_fn = mock_build.call_args.args[1]
+
+    items = [item for file_item in fs_backend.file_items() for item in file_fn(file_item, settings)]
+
+    assert [(item.meta.table_name, item.data.column("_id").to_pylist()) for item in items] == [("book", ["1", "2"])]

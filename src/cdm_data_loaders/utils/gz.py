@@ -2,46 +2,14 @@
 
 import gzip
 import shutil
-from collections.abc import Generator
-from contextlib import contextmanager
-from io import BytesIO
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import BinaryIO
 
 import click
 
 from cdm_data_loaders.core.fields import GZIP_SUFFIX
 
 logger: Logger = getLogger(__name__)
-
-
-@contextmanager
-def open_maybe_gzip(file: str | Path, mode: str = "rb") -> Generator[BinaryIO | BytesIO]:
-    """Open a file with gzip transparency for binary reads.
-
-    Opens the file with gzip for names ending in .gz, and normally otherwise.
-    Only binary read modes are supported.
-
-    :param file: file to open; the file can be gzipped or not.
-    :type file: str | Path
-    :param mode: mode to open the file with; must be a binary read mode.
-    :type mode: str
-    :raises ValueError: if mode is not a binary read mode.
-    :yield: an open binary file handle.
-    :rtype: Generator[BinaryIO | BytesIO, None, None]
-    """
-    if mode != "rb":
-        err_msg = f"open_maybe_gzip only supports binary reads, got mode: {mode}"
-        raise ValueError(err_msg)
-
-    path = file if isinstance(file, Path) else Path(file)
-    if path.suffix == GZIP_SUFFIX:
-        with gzip.open(path, "rb") as f_in:
-            yield f_in
-        return
-    with path.open("rb") as f_in:
-        yield f_in
 
 
 def decompress_file(file: str | Path) -> None:

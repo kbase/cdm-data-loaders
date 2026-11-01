@@ -1,7 +1,6 @@
 """xml2db-based XML to relational-table pipeline for the KBase CTS."""
 
 from logging import Logger, getLogger
-from pathlib import Path
 
 from dlt.common.pipeline import LoadInfo
 from xml2db import DataModel, load_config
@@ -20,9 +19,7 @@ from cdm_data_loaders.readers.xml2db_doc import build_xml2db_model, process_xml_
 logger: Logger = getLogger(__name__)
 
 _read_items = make_per_file_reader(
-    lambda file_item, settings, model: process_xml_file_with_xml2db(
-        settings, model, file_path=Path(file_item.local_file_path)
-    )
+    lambda file_item, settings, model: process_xml_file_with_xml2db(settings, model, file_path=file_item)
 )
 
 

@@ -16,7 +16,7 @@ dependencies = [
     "datamodel-code-generator>=0.82.0",
     "defusedxml>=0.7.1",
     "delta-spark>=4.2.0",
-    "dlt[duckdb,filesystem,parquet,pyiceberg]>=1.30.0",
+    "dlt[duckdb,filesystem,parquet,pyiceberg]>=1.32.0",
     "frictionless[aws]>=5.19.0",
     "frozendict>=2.4.7",
     "httpx>=0.28.1",
@@ -59,7 +59,7 @@ xsv = "cdm_data_loaders.pipelines.xsv.pipeline:cli"
 [dependency-groups]
 dev = [
     "linkml>=1.9.5",
-    "moto[s3]>=5.2.1",
+    "moto[s3,server]>=5.2.1",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.1.0",
@@ -272,6 +272,5 @@ DLT_PROJECT_DIR = "/tmp/dlt"
 
 [tool.uv.sources]
 cdm-schema = { git = "https://github.com/kbase/cdm-schema.git" }
-dlt = { git = "https://github.com/dlt-hub/dlt", branch = "devel" }
 cdm-task-service-client = { git = "https://github.com/kbase/cdm-task-service-client.git" }
 # berdl-notebook-utils = { git = "https://github.com/KBaseDataLakehouse/spark_notebook.git", subdirectory = "notebook_utils" }

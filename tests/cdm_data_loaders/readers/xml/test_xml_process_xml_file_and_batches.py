@@ -1,5 +1,6 @@
 """Tests for `process_xml_file`, `process_xml_file_items`, `build_xml_file_resource`, `process_xml_file_to_dict`, and `process_xml_file_to_pyarrow` from cdm_data_loaders.readers.xml."""
 
+import gzip
 import logging
 from collections.abc import Callable, Generator, Iterator
 from pathlib import Path
@@ -30,6 +31,7 @@ from cdm_data_loaders.readers.xml import (
 )
 from cdm_data_loaders.readers.xsd import DEFAULT_MAX_RECURSION_DEPTH, generate_pyarrow_schema
 from tests.cdm_data_loaders.readers.xml.conftest import table_and_data, write_xml_file
+from tests.fs_backends import FsBackend
 
 ParseFn = Callable[..., dict[str, list[dict[str, Any]]]]
 
@@ -313,7 +315,8 @@ def _stream_xml_processor(
 def _expected_people_rows(mode: str, file_path: Path) -> list[dict[str, Any]]:
     """Return the expected parsed rows for ``PEOPLE_XML_5`` under ``mode``."""
     if mode == "xml_file":
-        return [{"source_file": str(file_path), **p_data} for p_data in PEOPLE_PARSED]
+        # parse_fn receives the file's source id: the file name for a local path
+        return [{"source_file": file_path.name, **p_data} for p_data in PEOPLE_PARSED]
     if mode == "dict":
         return PEOPLE_XML_TO_DICT_PARSED
     return PEOPLE_XML_TO_PYARROW_PARSED
@@ -335,7 +338,7 @@ def test_process_xml_file_pass_single_table_single_entry(tmp_path: Path) -> None
     assert len(items) == 1
     parsed = table_and_data(items)
     assert parsed[0][0] == "people"
-    assert parsed[0][1] == [{"source_file": str(file_path), **p_data} for p_data in PEOPLE_PARSED[:2]]
+    assert parsed[0][1] == [{"source_file": "one.xml", **p_data} for p_data in PEOPLE_PARSED[:2]]
 
 
 def test_process_xml_file_pass_multiple_entries(tmp_path: Path) -> None:
@@ -344,7 +347,7 @@ def test_process_xml_file_pass_multiple_entries(tmp_path: Path) -> None:
     items = list(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=file_path))  # pyright: ignore[reportArgumentType]
     parsed = table_and_data(items)
     assert parsed[0][0] == "people"
-    assert parsed[0][1] == [{"source_file": str(file_path), **p_data} for p_data in PEOPLE_PARSED]
+    assert parsed[0][1] == [{"source_file": "five.xml", **p_data} for p_data in PEOPLE_PARSED]
 
 
 @pytest.mark.parametrize("mode", XML_PROCESSOR_MODES)
@@ -414,12 +417,29 @@ def test_process_xml_file_pass_partial_empty_parse_results(tmp_path: Path) -> No
     assert items == [("people", [{"id": "1", "email": "a@example.com"}])]
 
 
-def test_process_xml_file_pass_file_path_passed_through(tmp_path: Path) -> None:
-    """Verify the correct file_path is forwarded to parse_fn for every entry."""
+def test_process_xml_file_pass_source_id_passed_to_parse_fn(tmp_path: Path) -> None:
+    """Verify parse_fn receives the file's source id (its file name for a local path) for every entry."""
     file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
     items = table_and_data(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=file_path))  # pyright: ignore[reportArgumentType]
-    for _, rows in items:
-        assert rows[0]["source_file"] == str(file_path)
+    assert [row["source_file"] for _, rows in items for row in rows] == ["two.xml", "two.xml"]
+
+
+@pytest.mark.parametrize("relative_path", ["people.xml", "sub/dir/people.xml.gz"])
+def test_process_xml_file_pass_file_item_any_backend(fs_backend: FsBackend, relative_path: str) -> None:
+    """Verify a file item from any backend is read, with source_file set to the item's relative path."""
+    data = PEOPLE_XML_2.encode("utf-8")
+    fs_backend.put(relative_path, gzip.compress(data) if relative_path.endswith(".gz") else data)
+
+    items = table_and_data(
+        process_xml_file(
+            fake_settings(),  # pyright: ignore[reportArgumentType]
+            "person",
+            parse_person_entry,
+            file_path=fs_backend.file_item(relative_path),
+        )
+    )
+
+    assert items == [("people", [{"source_file": relative_path, **p_data} for p_data in PEOPLE_PARSED[:2]])]
 
 
 @pytest.mark.parametrize("mode", XML_PROCESSOR_MODES)
@@ -688,6 +708,44 @@ def test_process_xml_file_to_pyarrow_pass_resolves_default_namespace_on_unprefix
     assert tagged[0][1].to_pylist() == PEOPLE_XML_TO_PYARROW_PARSED[:2]
 
 
+@pytest.mark.parametrize("relative_path", ["namespaced.xml", "sub/namespaced.xml.gz"])
+def test_process_xml_file_to_pyarrow_pass_default_namespace_file_item_opened_once(
+    fs_backend: FsBackend, relative_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify default-namespace resolution and streaming share one open handle, on every backend."""
+    namespace = "http://example.com/people"
+    namespaced_xsd = PEOPLE_XSD.replace(
+        'xmlns:xs="http://www.w3.org/2001/XMLSchema"',
+        f'xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="{namespace}" xmlns="{namespace}" '
+        'elementFormDefault="qualified"',
+    )
+    data = PEOPLE_XML_2.replace("<people>", f'<people xmlns="{namespace}">').encode("utf-8")
+    fs_backend.put(relative_path, gzip.compress(data) if relative_path.endswith(".gz") else data)
+    settings = fake_xmltopyarrow_settings(table_name="people", xml_tag="person", xsd_text=namespaced_xsd)
+    item = fs_backend.file_item(relative_path)
+    open_spy = MagicMock(wraps=item.open)
+    monkeypatch.setattr(item, "open", open_spy)
+
+    tagged = table_and_data(process_xml_file_to_pyarrow(settings, file_path=item))
+
+    assert open_spy.call_count == 1
+    assert [table_name for table_name, _ in tagged] == ["people"]
+    assert tagged[0][1].to_pylist() == PEOPLE_XML_TO_PYARROW_PARSED[:2]
+
+
+@pytest.mark.parametrize("relative_path", ["two.xml", "sub/two.xml.gz"])
+def test_process_xml_file_to_dict_pass_file_item_any_backend(fs_backend: FsBackend, relative_path: str) -> None:
+    """Verify process_xml_file_to_dict reads a file item on every backend with the same output as a local file."""
+    data = PEOPLE_XML_2.encode("utf-8")
+    fs_backend.put(relative_path, gzip.compress(data) if relative_path.endswith(".gz") else data)
+
+    tagged = table_and_data(
+        process_xml_file_to_dict(fake_xmltodict_settings(), file_path=fs_backend.file_item(relative_path))
+    )
+
+    assert tagged == [("people", PEOPLE_XML_TO_DICT_PARSED[:2])]
+
+
 def test_process_xml_file_to_pyarrow_pass_with_xsd_file_yields_arrow_table_with_schema_lists(
     tmp_path: Path,
     test_data_dir: Path,
@@ -747,24 +805,31 @@ def test_process_xml_file_items_pass_multiple_files_preserve_order(tmp_path: Pat
     )
 
     sources = [row["source_file"] for _, rows in items for row in rows]
-    assert sources == [str(file_a)] * 2 + [str(file_b)] * 5
+    assert sources == [file_a.name] * 2 + [file_b.name] * 5
 
 
-def test_process_xml_file_items_pass_file_path_is_input_dir_joined_to_relative_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Verify the path given to the parser is input_dir plus the file's path relative to the bucket."""
-    sub_dir = tmp_path / "sub"
-    sub_dir.mkdir()
-    write_xml_file(sub_dir, "nested_00001.xml", PEOPLE_XML_2)
-    items = list(filesystem(bucket_url=str(tmp_path), file_glob="**/*.xml"))
-    process_file_mock = MagicMock(side_effect=lambda *_, **__: iter([]))
-    monkeypatch.setattr(xml_module, "process_xml_file", process_file_mock)
+def test_process_xml_file_items_pass_file_items_any_backend(fs_backend: FsBackend) -> None:
+    """Verify file items from any backend are read without using input_dir, recording their relative paths."""
+    fs_backend.put_all(
+        {
+            "a_00001.xml": PEOPLE_XML_2.encode("utf-8"),
+            "sub/b_00002.xml.gz": gzip.compress(PEOPLE_XML_5.encode("utf-8")),
+        }
+    )
+    settings = fake_settings()
+    del settings.input_dir  # reading input_dir would now raise AttributeError
 
-    list(process_xml_file_items(items, fake_settings(input_dir="relative_dir"), "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
+    items = table_and_data(
+        process_xml_file_items(
+            fs_backend.file_items(),
+            settings,  # pyright: ignore[reportArgumentType]
+            "person",
+            parse_person_entry,
+        )
+    )
 
-    process_file_mock.assert_called_once()
-    assert process_file_mock.call_args.kwargs["file_path"] == Path("relative_dir") / "sub" / "nested_00001.xml"
+    sources = [row["source_file"] for _, rows in items for row in rows]
+    assert sources == ["a_00001.xml"] * 2 + ["sub/b_00002.xml.gz"] * 5
 
 
 def test_process_xml_file_items_pass_no_items_yields_nothing() -> None:
@@ -776,16 +841,17 @@ def test_process_xml_file_items_pass_no_items_yields_nothing() -> None:
 def test_process_xml_file_items_pass_settings_forwarded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, buffer_size: int
 ) -> None:
-    """Verify the settings object (carrying buffer_size/log_interval) and file path reach process_xml_file."""
-    file_path = write_xml_file(tmp_path, "two_00001.xml", PEOPLE_XML_2)
+    """Verify the settings object (carrying buffer_size/log_interval) and file item reach process_xml_file."""
+    write_xml_file(tmp_path, "two_00001.xml", PEOPLE_XML_2)
     settings = fake_settings(buffer_size=buffer_size, log_interval=CUSTOM_LOG_INTERVAL, input_dir=tmp_path)
+    file_items = _file_items(tmp_path)
     spy = MagicMock(wraps=xml_module.process_xml_file)
     monkeypatch.setattr(xml_module, "process_xml_file", spy)
 
-    list(process_xml_file_items(_file_items(tmp_path), settings, "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
+    list(process_xml_file_items(file_items, settings, "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
 
     spy.assert_called_once_with(
-        settings=settings, xml_tag="person", parse_fn=parse_person_entry, file_path=Path(str(file_path))
+        settings=settings, xml_tag="person", parse_fn=parse_person_entry, file_path=file_items[0]
     )
     assert spy.call_args.kwargs["settings"].buffer_size == buffer_size
     assert spy.call_args.kwargs["settings"].log_interval == CUSTOM_LOG_INTERVAL
@@ -793,9 +859,12 @@ def test_process_xml_file_items_pass_settings_forwarded(
 
 def test_process_xml_file_items_fail_missing_file_mid_iteration(tmp_path: Path) -> None:
     """Verify a missing file raises FileNotFoundError after earlier files were fully processed."""
-    good_path = write_xml_file(tmp_path, "a_00001.xml", PEOPLE_XML_2)
+    write_xml_file(tmp_path, "a_00001.xml", PEOPLE_XML_2)
     items = _file_items(tmp_path)
-    missing_item = FileItemDict({**items[0], "relative_path": "missing_00002.xml"})
+    missing_url = items[0]["file_url"].replace("a_00001.xml", "missing_00002.xml")
+    missing_item = FileItemDict(
+        {**items[0], "relative_path": "missing_00002.xml", "file_url": missing_url}, items[0].fsspec
+    )
 
     collected: list[DataItemWithMeta] = []
     with pytest.raises(FileNotFoundError, match="No such file or directory"):  # noqa: PT012
@@ -810,7 +879,7 @@ def test_process_xml_file_items_fail_missing_file_mid_iteration(tmp_path: Path) 
     tagged = table_and_data(collected)
     assert [table for table, _ in tagged] == ["people"]
     assert [row["id"] for row in tagged[0][1]] == ["1", "2"]
-    assert {row["source_file"] for row in tagged[0][1]} == {str(good_path)}
+    assert {row["source_file"] for row in tagged[0][1]} == {"a_00001.xml"}
 
 
 def test_process_xml_file_pass_calls_stream_xml_file_with_correct_args(
@@ -829,15 +898,15 @@ def test_process_xml_file_pass_calls_stream_xml_file_with_correct_args(
 def test_process_xml_file_pass_calls_parse_fn_with_expected_keyword_args(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify parse_fn is invoked once per streamed entry with entry/file_path as kwargs."""
+    """Verify parse_fn is invoked once per streamed entry with the entry and the file's source id as kwargs."""
     fake_entry = MagicMock(spec=Element)
     monkeypatch.setattr(xml_module, "stream_xml_file", lambda _, __: iter([fake_entry]))
     parse_fn = MagicMock(return_value={})
-    file_path = Path("dummy.xml")
+    file_path = Path("some_dir") / "dummy.xml"
 
     list(process_xml_file(fake_settings(), "tag", parse_fn, file_path=file_path))  # pyright: ignore[reportArgumentType]
 
-    parse_fn.assert_called_once_with(entry=fake_entry, file_path=file_path)
+    parse_fn.assert_called_once_with(entry=fake_entry, file_path="dummy.xml")
 
 
 def test_process_xml_file_pass_wraps_each_table_with_dlt_mark(
@@ -896,7 +965,7 @@ def test_process_xml_file_fail_propagates_stream_xml_file_error(
         for item in process_xml_file(fake_settings(), "tag", parse_fn, file_path=file_path):  # pyright: ignore[reportArgumentType]
             collected.append(item)  # noqa: PERF402
 
-    parse_fn.assert_called_once_with(entry=fake_entry, file_path=file_path)
+    parse_fn.assert_called_once_with(entry=fake_entry, file_path="f.xml")
     assert collected == []
 
 

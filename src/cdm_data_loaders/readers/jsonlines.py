@@ -2,29 +2,19 @@
 
 import json
 from collections.abc import Callable, Generator, Iterable, Iterator
-from typing import Any, Final, Literal
+from typing import Any, Final
 
 import pyarrow as pa
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 
-from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX, GZIP_SUFFIX
+from cdm_data_loaders.core.fields import DEFAULT_REJECTED_SUFFIX
 from cdm_data_loaders.utils.buffer import ArrowListBuffer, ListBuffer
 
 LineRecord = dict[str, Any]
 ParseErrorResolver = Callable[[dict[str, Any]], str | None]
 
 REJECTED_COLUMNS: Final[tuple[str, ...]] = ("source_file", "line_no", "raw_record")
-
-
-def compression_mode(file_name: str) -> Literal["enable", "disable"]:
-    """Return the dlt compression mode for a file name.
-
-    Returns "enable" for names ending in .gz and "disable" otherwise.
-    Auto-detection is not used, since it depends on remote file metadata
-    that local files do not carry.
-    """
-    return "enable" if file_name.endswith(GZIP_SUFFIX) else "disable"
 
 
 def parse_jsonl_line(stripped: str) -> LineRecord:
@@ -43,8 +33,12 @@ def parse_jsonl_line(stripped: str) -> LineRecord:
 
 
 def _iter_file_jsonl_records(file_item: FileItemDict) -> Generator[LineRecord]:
-    """Open ``file_item`` and yield parsed ``LineRecord`` dicts for each non-blank line."""
-    with file_item.open(mode="rt", compression=compression_mode(file_item["file_name"]), encoding="utf-8") as fh:
+    """Open ``file_item`` and yield parsed ``LineRecord`` dicts for each non-blank line.
+
+    dlt's default ``compression="auto"`` decompresses files that the listing marked as gzip, which it
+    does from the file name (``*.gz``) for every filesystem.
+    """
+    with file_item.open(mode="rt", encoding="utf-8") as fh:
         for line_no, line in enumerate(fh, start=1):
             stripped = line.strip()
             if not stripped:

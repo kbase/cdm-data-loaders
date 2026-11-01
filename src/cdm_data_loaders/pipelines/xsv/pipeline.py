@@ -31,6 +31,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import Cleane
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import clean_validate_file, qsv_check
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import generate_header
 from cdm_data_loaders.utils.buffer import ListBuffer
+from cdm_data_loaders.utils.file_items import local_copy, source_id
 
 
 @dataclass
@@ -47,6 +48,8 @@ class XsvWorkPaths:
     :type qsv_output_dir: Path
     :param validated_dir: directory the final cleaned, validated file is written to
     :type validated_dir: Path
+    :param download_dir: directory non-local input files are downloaded to before validation (qsv needs local files)
+    :type download_dir: Path
     """
 
     qsv_cmd: str
@@ -54,6 +57,7 @@ class XsvWorkPaths:
     tmp_dir: Path
     qsv_output_dir: Path
     validated_dir: Path
+    download_dir: Path
 
 
 def _process_xsv_file(
@@ -62,6 +66,10 @@ def _process_xsv_file(
     work_paths: XsvWorkPaths,
 ) -> Generator[TDataItems, Any, Any]:
     """Clean, validate, and load one XSV file. Yield rows for table_name and its rejected table.
+
+    qsv works on local files, so a file that is not on the local filesystem (e.g. on S3) is first
+    downloaded to ``work_paths.download_dir`` and deleted once it has been processed. Local files are
+    used in place. Rejected rows record the file's path relative to the input location.
 
     :param file_item: raw XSV file as a FileItemDict
     :type  file_item: FileItemDict
@@ -72,8 +80,31 @@ def _process_xsv_file(
     :yield: rows routed to table_name and/or ``{table_name}_rejected``
     :rtype: Generator[TDataItems, Any, Any]
     """
-    file_path = Path(file_item.local_file_path)
+    with local_copy(file_item, work_paths.download_dir) as file_path:
+        yield from _process_local_xsv_file(file_path, source_id(file_item), settings, work_paths)
+
+
+def _process_local_xsv_file(
+    file_path: Path,
+    file_source_id: str,
+    settings: XsvIngestSettings,
+    work_paths: XsvWorkPaths,
+) -> Generator[TDataItems, Any, Any]:
+    """Clean, validate, and load one local XSV file. Yield rows for table_name and its rejected table.
+
+    :param file_path: local path to the XSV file
+    :type  file_path: Path
+    :param file_source_id: identifier recorded for the file in rejected rows
+    :type  file_source_id: str
+    :param settings: pipeline configuration
+    :type  settings: XsvIngestSettings
+    :param work_paths: scratch resources shared across the pipeline run
+    :type  work_paths: XsvWorkPaths
+    :yield: rows routed to table_name and/or ``{table_name}_rejected``
+    :rtype: Generator[TDataItems, Any, Any]
+    """
     args = CleanerValidatorArgs(
+        source_id=file_source_id,
         qsv_cmd=work_paths.qsv_cmd,
         xsv_file_path=file_path,
         header_file_path=work_paths.header_file_path,
@@ -133,6 +164,7 @@ def run_xsv_pipeline(settings: XsvIngestSettings) -> LoadInfo | None:
         TemporaryDirectory(prefix="xsv_tmp_") as tmp_dir,
         TemporaryDirectory(prefix="xsv_qsv_output_") as qsv_output_dir,
         TemporaryDirectory(prefix="xsv_validated_") as validated_dir,
+        TemporaryDirectory(prefix="xsv_download_") as download_dir,
     ):
         work_paths = XsvWorkPaths(
             qsv_cmd=qsv_cmd,
@@ -140,6 +172,7 @@ def run_xsv_pipeline(settings: XsvIngestSettings) -> LoadInfo | None:
             tmp_dir=Path(tmp_dir),
             qsv_output_dir=Path(qsv_output_dir),
             validated_dir=Path(validated_dir),
+            download_dir=Path(download_dir),
         )
 
         xsv_resource = build_per_file_filesystem_resource(

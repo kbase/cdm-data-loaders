@@ -1,5 +1,6 @@
 """Unit tests for run_xml2db_pipeline, _read_items, _maybe_compact, and cli wiring."""
 
+import gzip
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -22,6 +23,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     make_file_item,
     run_with_duckdb_pipeline,
 )
+from tests.fs_backends import FsBackend
 from tests.helpers import make_cts_settings, settings_to_argv
 from tests.xml_samples import TWO_BOOK_LIBRARY_XML as SIMPLE_LIBRARY_XML
 
@@ -261,3 +263,21 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
 
     ((row_count,),) = fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM book")
     assert row_count == 2  # noqa: PLR2004
+
+
+def test_read_items_pass_file_items_any_backend(
+    tmp_path: Path, library_model: DataModel, fs_backend: FsBackend
+) -> None:
+    """_read_items reads file items from any backend, without assuming they are local files."""
+    fs_backend.put_all(
+        {
+            "a.xml": SIMPLE_LIBRARY_XML.encode("utf-8"),
+            "sub/b.xml.gz": gzip.compress(SIMPLE_LIBRARY_XML.encode("utf-8")),
+        }
+    )
+    settings = fake_settings(tmp_path, tmp_path / "library.xsd")
+
+    items = list(_read_items(iter(fs_backend.file_items()), settings, library_model))
+
+    book_rows = [row for item in items if item.meta.table_name == "book" for row in item.data]
+    assert sorted(row["id"] for row in book_rows) == ["1", "1", "2", "2"]

@@ -27,6 +27,7 @@ from cdm_data_loaders.readers.xml2db_doc import (
     process_xml_file_with_xml2db,
 )
 from tests.cdm_data_loaders.readers.xml.conftest import table_and_data
+from tests.fs_backends import FsBackend
 
 REFERENCE_XML_DIR: Final[Path] = Path("tests") / "data" / "uniprot" / "uniref"
 UNIREF_XSD: Final[Path] = REFERENCE_XML_DIR / "uniref.xsd"
@@ -487,3 +488,57 @@ def test_process_xml_file_with_xml2db_pass_chunk_size_one_still_produces_all_row
         )
     )
     assert len(chunked_rows[ENTRY_TABLE]) == ENTRIES_PER_PART
+
+
+# local and non-local filesystems
+
+
+@pytest.mark.parametrize("xml_tag", [None, ENTRY_LOCAL_NAME], ids=["whole_file", "chunked"])
+def test_process_xml_file_with_xml2db_pass_file_item_matches_local_path(
+    uniref_model: DataModel, fs_backend: FsBackend, xml_tag: str | None
+) -> None:
+    """A file item on any backend produces exactly the rows the same file gives as a local path."""
+    fs_backend.put(PART_01.name, PART_01.read_bytes())
+    settings = fake_xml2db_settings(xml_tag=xml_tag, chunk_size=2)
+
+    expected = _rows_by_table(process_xml_file_with_xml2db(settings, uniref_model, PART_01))
+    actual = _rows_by_table(process_xml_file_with_xml2db(settings, uniref_model, fs_backend.file_item(PART_01.name)))
+
+    assert actual == expected
+
+
+@pytest.mark.parametrize("xml_tag", [None, ENTRY_LOCAL_NAME], ids=["whole_file", "chunked"])
+def test_process_xml_file_with_xml2db_pass_file_key_is_relative_path(
+    uniref_model: DataModel, fs_backend: FsBackend, xml_tag: str | None
+) -> None:
+    """Non-reused table keys are namespaced by the item's relative path, so equal names in different dirs differ."""
+    data = PART_01.read_bytes()
+    fs_backend.put_all({"a/uniref.xml.gz": data, "b/uniref.xml.gz": data})
+    settings = fake_xml2db_settings(xml_tag=xml_tag, chunk_size=2)
+    root_table_name = uniref_model.tables[uniref_model.root_table].name
+    pk_column = f"pk_{root_table_name}"
+
+    root_pks = {
+        relative_path: [
+            row[pk_column]
+            for row in _rows_by_table(
+                process_xml_file_with_xml2db(settings, uniref_model, fs_backend.file_item(relative_path))
+            )[root_table_name]
+        ]
+        for relative_path in ("a/uniref.xml.gz", "b/uniref.xml.gz")
+    }
+
+    for relative_path, pks in root_pks.items():
+        assert pks
+        assert all(pk.startswith(f"{relative_path}:") for pk in pks)
+    assert set(root_pks["a/uniref.xml.gz"]).isdisjoint(root_pks["b/uniref.xml.gz"])
+
+
+def test_iter_xml2db_chunk_fragments_pass_file_item_matches_local_path(fs_backend: FsBackend) -> None:
+    """Fragments streamed from a file item on any backend are identical to those from the local file."""
+    fs_backend.put("sub/part_01.xml.gz", PART_01.read_bytes())
+
+    expected = list(iter_xml2db_chunk_fragments(PART_01, ENTRY_LOCAL_NAME, 2))
+    actual = list(iter_xml2db_chunk_fragments(fs_backend.file_item("sub/part_01.xml.gz"), ENTRY_LOCAL_NAME, 2))
+
+    assert actual == expected

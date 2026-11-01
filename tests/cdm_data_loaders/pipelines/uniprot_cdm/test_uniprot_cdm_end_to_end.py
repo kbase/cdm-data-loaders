@@ -103,7 +103,8 @@ def test_integration_uniprot_pipeline_entity_and_source_file_content(
     source_files = {
         row[0] for row in fetch_all_duckdb(pipeline, "SELECT DISTINCT source_file FROM entity_x_source_file")
     }
-    assert source_files == {str(UNIPROT_FIXTURE_DIR.resolve() / name) for name in UNIPROT_FIXTURE_FILES}
+    # recorded as paths relative to the input directory, independent of where the input lives
+    assert source_files == set(UNIPROT_FIXTURE_FILES)
 
 
 def test_integration_cli_uniprot_pipeline_output_validated(

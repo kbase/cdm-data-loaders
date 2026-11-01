@@ -1,28 +1,19 @@
 """Tests for the JSONL line-reading helpers in readers.jsonlines."""
 
+import gzip
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
-import pytest
 from dlt.sources.filesystem import filesystem
 
 from cdm_data_loaders.readers.jsonlines import (
     _iter_file_jsonl_records,
-    compression_mode,
     parse_jsonl_line,
     route_jsonl_lines,
     stream_jsonl_lines,
 )
-
-
-@pytest.mark.parametrize(
-    ("file_name", "expected"),
-    [pytest.param("data.jsonl.gz", "enable", id="gzip"), pytest.param("data.jsonl", "disable", id="plain")],
-)
-def test_compression_mode_pass_returns_mode_for_suffix(file_name: str, expected: str) -> None:
-    """Gzip-suffixed names enable compression; others disable it."""
-    assert compression_mode(file_name) == expected
+from tests.fs_backends import FsBackend
 
 
 def test_parse_jsonl_line_pass_valid_json_returns_record() -> None:
@@ -216,3 +207,38 @@ def test_iter_file_jsonl_records_pass_yields_records_with_line_numbers_and_skips
         "source_file": "sample.jsonl",
         "line_no": 4,
     }
+
+
+# local and non-local filesystems
+
+BACKEND_FILES: Final[dict[str, bytes]] = {
+    "a.jsonl": b'{"widget_id": "caf\xc3\xa9"}\r\n\r\n{broken\n',
+    "sub/b.jsonl.gz": gzip.compress(b'{"widget_id": "b"}\n'),
+}
+
+
+def test_stream_jsonl_lines_pass_file_items_any_backend(fs_backend: FsBackend) -> None:
+    """Line records from file items on any backend carry relative-path provenance; .gz files are decompressed."""
+    fs_backend.put_all(BACKEND_FILES)
+
+    records = [record for page in stream_jsonl_lines(iter(fs_backend.file_items()), buffer_size=10) for record in page]
+
+    assert [(r["source_file"], r["line_no"], r["record"], r["raw_record"]) for r in records] == [
+        ("a.jsonl", 1, {"widget_id": "caf\u00e9"}, '{"widget_id": "caf\u00e9"}'),
+        ("a.jsonl", 3, None, "{broken"),
+        ("sub/b.jsonl.gz", 1, {"widget_id": "b"}, '{"widget_id": "b"}'),
+    ]
+    assert [r["parse_error"] is None for r in records] == [True, False, True]
+
+
+def test_route_jsonl_lines_pass_file_items_any_backend(fs_backend: FsBackend) -> None:
+    """Routing works the same for file items on any backend, with .gz files decompressed."""
+    fs_backend.put_all(BACKEND_FILES)
+
+    pages = list(route_jsonl_lines(iter(fs_backend.file_items()), buffer_size=10, table_name_of=lambda _: "widget"))
+
+    by_table: dict[str, list[dict[str, Any]]] = {}
+    for page in pages:
+        by_table.setdefault(page.meta.table_name, []).extend(page.data)
+    assert by_table["widget"] == [{"widget_id": "caf\u00e9"}, {"widget_id": "b"}]
+    assert [(r["source_file"], r["line_no"]) for r in by_table["widget_invalid"]] == [("a.jsonl", 3)]

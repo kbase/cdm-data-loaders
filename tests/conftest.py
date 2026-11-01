@@ -32,7 +32,7 @@ from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset
 from tests.dlt_config_isolation import isolated_dlt_config
 from tests.xml_samples import LIBRARY_XSD
 
-pytest_plugins = ["tests.jsonlines_fixtures", "tests.jsonschema_fixtures", "tests.xsv_fixtures"]
+pytest_plugins = ["tests.fs_backends", "tests.jsonlines_fixtures", "tests.jsonschema_fixtures", "tests.xsv_fixtures"]
 
 LOCAL_FS: Final[str] = "local_fs"
 S3: Final[str] = "s3"
@@ -204,7 +204,7 @@ def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
     """Generate a local spark session with spark.sql.warehouse.dir set to the pytest temporary directory."""
     logger = logging.getLogger(__name__)
     try:
-        from berdl_notebook_utils.setup_spark_session import get_spark_session  # pyright: ignore[reportMissingImports]  # noqa: I001, PLC0415
+        from berdl_notebook_utils.setup_spark_session import get_spark_session  # pyright: ignore[reportMissingImports]  # noqa: PLC0415
     except ModuleNotFoundError:
         logger.exception("berdl_notebook_utils not available: cannot create a spark session")
         raise
