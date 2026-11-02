@@ -220,16 +220,17 @@ def check_book_list_results(
 ) -> DataFrame:
     """Check the output of parsing SIMPLE_LIBRARY_XML into a single book table."""
     load_info = assert_run_ok(load_info)
-    dataset = load_info.pipeline.dataset()
+    with load_info.pipeline.destination_client() as client:
+        dataset_dir = Path(client.dataset_path)  # pyright: ignore[reportAttributeAccessIssue]
     table_name = table_name or "book"
-    assert set(dataset.tables) == {
+    assert {p.name for p in dataset_dir.iterdir() if p.is_dir()} == {
         table_name,
         "_dlt_version",
         "_dlt_loads",
         "_dlt_pipeline_state",
         LOAD_INFO_TABLE_NAME,
     }
-    book_df = dataset.table(table_name).df()
+    book_df = DataFrame(read_destination_rows(dataset_dir, table_name, strip_metadata=False))
     required_cols = expected_columns or {"book___id", "book__title", "_dlt_id", "_dlt_load_id"}
     assert set(book_df.columns.tolist()) >= required_cols
     return book_df
