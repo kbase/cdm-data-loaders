@@ -176,24 +176,40 @@ def test_reconstruct_load_info_pass_and_error_cases(tmp_path: Path) -> None:
 
 
 def test_ensure_docker_image_pass_caches_and_fail_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ensure_docker_image builds once per tag and raises RuntimeError when docker build fails."""
+    """ensure_docker_image reuses existing images, builds once per missing tag, and raises on build failure."""
     monkeypatch.setattr(framework, "_built_docker_images", set())
     calls: list[list[str]] = []
 
     def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(cmd)
+        if cmd[:3] == ["docker", "image", "inspect"]:
+            return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="No such image")
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="built", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     tag = ensure_docker_image("custom-image:test")
     assert tag == "custom-image:test"
-    assert len(calls) == 1
-    assert calls[0][:4] == ["docker", "build", "-t", "custom-image:test"]
+    assert [cmd[:4] for cmd in calls] == [
+        ["docker", "image", "inspect", "custom-image:test"],
+        ["docker", "build", "-t", "custom-image:test"],
+    ]
 
     # Second call uses cache without invoking subprocess.run
+    calls.clear()
     assert ensure_docker_image("custom-image:test") == "custom-image:test"
-    assert len(calls) == 1
+    assert not calls
+
+    # Pre-existing local image is reused without running docker build
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, **_kwargs: (
+            calls.append(cmd) or subprocess.CompletedProcess(cmd, returncode=0, stdout="[]", stderr="")
+        ),
+    )
+    assert ensure_docker_image("prebuilt-image:test") == "prebuilt-image:test"
+    assert calls == [["docker", "image", "inspect", "prebuilt-image:test"]]
 
     # Failing build raises RuntimeError
     def fake_fail(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
