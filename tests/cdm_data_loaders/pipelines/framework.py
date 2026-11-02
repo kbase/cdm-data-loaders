@@ -29,7 +29,7 @@ from tests.cdm_data_loaders.pipelines.helpers import read_jsonl_file
 from tests.conftest import BASE_DIR, CONFIG_BUCKET, LOCAL_FS, preserve_logging_state
 from tests.helpers import settings_to_argv
 
-DEFAULT_DOCKER_IMAGE_TAG: Final[str] = "cdm-data-loaders-test:latest"
+DEFAULT_DOCKER_IMAGE_TAG: Final[str] = "ghcr.io/kbase/cdm-data-loaders:test_container"
 CONTAINER_INPUT_DIR: Final[str] = "/input_dir"
 CONTAINER_OUTPUT_DIR: Final[str] = "/output_dir"
 CONTAINER_AUX_DIR: Final[str] = "/aux_dir"
@@ -374,10 +374,21 @@ def reconstruct_load_info(output_dir: Path, bucket_dir: Path | None = None) -> L
     )
 
 
-def ensure_docker_image(image_tag: str | None = None, *, force_rebuild: bool = False) -> str:
-    """Build the Docker image from the repository Dockerfile if not already built in this session.
+def _docker_image_exists(image_tag: str) -> bool:
+    """Return True if ``image_tag`` already exists in the local Docker image store."""
+    result = subprocess.run(  # noqa: S603
+        ["docker", "image", "inspect", image_tag],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
 
-    :param image_tag: optional image tag; defaults to ``cdm-data-loaders-test:latest``
+
+def ensure_docker_image(image_tag: str | None = None, *, force_rebuild: bool = False) -> str:
+    """Build the Docker image from the repository Dockerfile if not already present or built in this session.
+
+    :param image_tag: optional image tag; defaults to ``ghcr.io/kbase/cdm-data-loaders:test_container``
     :type image_tag: str | None
     :param force_rebuild: force running ``docker build`` even if already built in this session
     :type force_rebuild: bool
@@ -386,7 +397,8 @@ def ensure_docker_image(image_tag: str | None = None, *, force_rebuild: bool = F
     :rtype: str
     """
     tag = image_tag or os.environ.get("CDM_TEST_DOCKER_IMAGE") or DEFAULT_DOCKER_IMAGE_TAG
-    if not force_rebuild and tag in _built_docker_images:
+    if not force_rebuild and (tag in _built_docker_images or _docker_image_exists(tag)):
+        _built_docker_images.add(tag)
         return tag
 
     cmd = ["docker", "build", "-t", tag, str(BASE_DIR.resolve())]

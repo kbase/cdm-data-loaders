@@ -80,38 +80,6 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           report_type: test_results
 
-  docker_tests:
-    name: Run docker pipeline tests
-    runs-on: ubuntu-24.04
-    needs: code_format_and_lint
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: "3.14"
-
-      - name: Install dependencies
-        run: uv sync --dev
-
-      - name: Run docker pipeline tests
-        shell: bash
-        continue-on-error: false
-        run: uv run pytest --run-docker -m "docker and not requires_spark and not requires_ceph" --cov --junitxml=junit.xml -o junit_family=legacy tests/cdm_data_loaders/pipelines/
-
-      - name: Send test reports to Codecov
-        id: upload_test_reports
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
-        if: ${{ !cancelled() }}
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          report_type: test_results
-
   tests:
     name: Run local tests (${{ matrix.suite.name }}, ${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
