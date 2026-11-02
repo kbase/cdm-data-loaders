@@ -1,5 +1,6 @@
 """Misc helpers for integration tests."""
 
+import gc
 import json
 from collections import defaultdict
 from collections.abc import Callable, Generator, Mapping
@@ -386,14 +387,16 @@ def run_and_read(
     return (load_info, output_dir)
 
 
+def _df_to_sorted_json(df: DataFrame) -> list[str]:
+    """Convert a table DataFrame into sorted JSON strings, removing the _dlt fields first."""
+    return sorted_json(
+        [{k: v for k, v in datum.items() if not is_metadata_table(k)} for datum in df.to_dict("records")]  # pyright: ignore[reportArgumentType]
+    )
+
+
 def extract_table_data(dataset: dlt.Dataset, table_name: str) -> list[str]:
     """Convert table data into a JSON string, removing the _dlt fields first."""
-    return sorted_json(
-        [
-            {k: v for k, v in datum.items() if not is_metadata_table(k)}
-            for datum in dataset.table(table_name).df().to_dict("records")
-        ]  # pyright: ignore[reportArgumentType]
-    )
+    return _df_to_sorted_json(dataset.table(table_name).df())
 
 
 def get_pipeline(load_info: LoadInfo, output_dir: Path) -> dlt.Pipeline:
@@ -549,35 +552,31 @@ def assert_datasets_equal(
         err_msg = "assert_datasets_equal requires at least two datasets to compare"
         raise ValueError(err_msg)
 
-    datasets = {key: get_pipeline(*v) for key, v in load_info_and_dir.items()}
-
     all_keys = list(load_info_and_dir.keys())
-
-    sorted_row_data = {k: {} for k in all_keys}
     dataset_zero = all_keys[0]
-    table_names = {
-        table_name for table_name in datasets[dataset_zero].dataset().tables if not is_metadata_table(table_name)
-    }
-    rows_per_table = {
-        table_name: datasets[dataset_zero].dataset().table(table_name).df().shape[0] for table_name in table_names
-    }
-    col_names = {t: set(datasets[dataset_zero].dataset().table(t).df().columns) for t in table_names}
-    sorted_row_data[dataset_zero] = {t: extract_table_data(datasets[dataset_zero].dataset(), t) for t in table_names}
+    sorted_row_data: dict[str, dict[str, list[str]]] = {k: {} for k in all_keys}
+
+    with get_pipeline(*load_info_and_dir[dataset_zero]).dataset() as ds_zero:
+        table_names = {table_name for table_name in ds_zero.tables if not is_metadata_table(table_name)}
+        dfs_zero = {t: ds_zero.table(t).df() for t in table_names}
+        rows_per_table = {t: df.shape[0] for t, df in dfs_zero.items()}
+        col_names = {t: set(df.columns) for t, df in dfs_zero.items()}
+        sorted_row_data[dataset_zero] = {t: _df_to_sorted_json(df) for t, df in dfs_zero.items()}
 
     for key in all_keys[1:]:
-        # check the table names are identical
-        assert {
-            table_name for table_name in datasets[key].dataset().tables if not is_metadata_table(table_name)
-        } == table_names
-        # check row counts
-        assert {
-            table_name: datasets[key].dataset().table(table_name).df().shape[0] for table_name in table_names
-        } == rows_per_table
-        # column names
-        for t in table_names:
-            assert set(datasets[key].dataset().table(t).df().columns) == col_names[t]
-            sorted_row_data[key][t] = extract_table_data(datasets[key].dataset(), t)
-            assert sorted_row_data[key][t] == sorted_row_data[dataset_zero][t]
+        with get_pipeline(*load_info_and_dir[key]).dataset() as ds:
+            # check the table names are identical
+            assert {table_name for table_name in ds.tables if not is_metadata_table(table_name)} == table_names
+            dfs = {t: ds.table(t).df() for t in table_names}
+            # check row counts
+            assert {t: df.shape[0] for t, df in dfs.items()} == rows_per_table
+            # column names
+            for t, df in dfs.items():
+                assert set(df.columns) == col_names[t]
+                sorted_row_data[key][t] = _df_to_sorted_json(df)
+                assert sorted_row_data[key][t] == sorted_row_data[dataset_zero][t]
+
+    gc.collect()
 
 
 def assert_dataset_matches_reference(

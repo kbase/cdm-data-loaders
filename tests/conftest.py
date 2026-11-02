@@ -1,5 +1,6 @@
 """Global configuration settings for tests."""
 
+import gc
 import gzip
 import logging
 import os
@@ -31,6 +32,12 @@ from tests.dlt_config_isolation import isolated_dlt_config
 from tests.xml_samples import LIBRARY_XSD
 
 pytest_plugins = ["tests.fs_backends", "tests.jsonlines_fixtures", "tests.jsonschema_fixtures", "tests.xsv_fixtures"]
+
+if hasattr(os, "register_at_fork"):
+    # Collect unreachable reference cycles (such as dlt's WithTableScanners / FilesystemSqlClient
+    # holding an in-memory DuckDB connection) in the parent process before os.fork(), so child
+    # worker processes never run C++ DuckDB finalizers during garbage collection.
+    os.register_at_fork(before=gc.collect)
 
 LOCAL_FS: Final[str] = "local_fs"
 S3: Final[str] = "s3"
@@ -177,6 +184,7 @@ def isolate_dlt_pipelines_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     yield
     if Container()[PipelineContext].is_active():
         Container()[PipelineContext].deactivate()
+    gc.collect()
 
 
 @pytest.fixture(autouse=True)

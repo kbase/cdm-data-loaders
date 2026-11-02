@@ -102,7 +102,7 @@ Cross-cutting helpers: `file_items.py` (readers take a local path or dlt `FileIt
 
 ## Conventions
 
-- Frozen, slotted dataclasses for models; constructors validate and recursively copy mappings.
+- Pydantic for models unless the context requires large numbers of models, in which case use frozen, slotted dataclasses; constructors validate and recursively copy mappings.
 - CLI argument parsing by pydantic-settings
 - Fully type-annotated code (ruff `ANN`); datetime values carry an explicit timezone (`DTZ`); use `Decimal` for exact arithmetic, never constructed from floats.
 - External HTTP calls in tests are recorded and replayed with vcrpy; AWS is mocked with moto; Spark and Ceph tests run in containers via `docker-compose.yml` and are skipped by default (`-m "not requires_spark and not requires_ceph"`).
