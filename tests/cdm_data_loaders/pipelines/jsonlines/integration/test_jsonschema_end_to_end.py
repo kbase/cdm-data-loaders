@@ -151,7 +151,11 @@ def test_run_jsonlines_pipeline_pass_all_invalid(
     assert_pipeline_report_written(
         Path(settings.output_dir), load_info, metadata_moved=True, ingested_files=["invalid.jsonl"]
     )
-    assert read_data_tables(settings, load_info.dataset_name) == {
+    reject_row_data = read_data_tables(settings, load_info.dataset_name)
+    reject_row_data["_rejected"] = sorted(
+        reject_row_data["_rejected"], key=lambda row: (row["source_file"], row["line_no"])
+    )
+    assert reject_row_data == {
         "_rejected": [
             {
                 "table_name": "widget",
