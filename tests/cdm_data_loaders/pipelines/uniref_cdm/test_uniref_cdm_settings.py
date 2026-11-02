@@ -1,110 +1,110 @@
-"""Tests for the UniRef DLT pipeline."""
+"""Tests for the UniRef CDM pipeline settings classes."""
 
 from typing import Any
 
 import pytest
 from frozendict import frozendict
-from pydantic import ValidationError
-from pydantic_settings import CliApp
+from pydantic_settings import CliApp, SettingsError
 
-from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.core.transforms import TableTransform
+from cdm_data_loaders.parsers.uniprot.uniref import UNIREF_CDM_SCHEMA_MAP
 from cdm_data_loaders.pipelines.uniref_cdm import (
-    UNIREF_VARIANTS,
-    VARIANT,
-    UnirefSettings,
+    UNIREF_LOG_INTERVAL,
+    UniRef50CdmSettings,
+    UniRefCdmSettings,
+)
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
+    ENTRY_TABLE_NAME,
+    ENTRY_XML_TAG,
+    UNIREF_SCHEMA,
+    UNIREF_XSD_FILE,
 )
 from tests.cdm_data_loaders.conftest import check_settings
 from tests.cdm_data_loaders.pipelines.uniref_cdm.conftest import (
-    UNIREF_VARIANT_ALIASES,
+    UNIREF_CDM_SETTINGS_CLASSES,
+    UNIREF_CDM_VARIANTS,
 )
-from tests.helpers import assert_cli_field_roundtrips, make_cli_arg, settings_to_argv
+from tests.helpers import assert_cli_field_roundtrips, settings_to_argv
 
 
+@pytest.mark.parametrize("settings_cls", UNIREF_CDM_SETTINGS_CLASSES)
 def test_uniref_settings_all_params_set(
-    test_uniref_settings: frozendict[str, Any],
-    test_uniref_settings_reconciled: frozendict[str, Any],
+    settings_cls: type[UniRefCdmSettings],
+    test_uniref_cdm_settings: frozendict[str, Any],
+    test_uniref_cdm_settings_reconciled: frozendict[str, Any],
 ) -> None:
     """Ensure that settings are set correctly when all args are specified."""
-    s = UnirefSettings(**test_uniref_settings)  # type: ignore[reportReturnType]
-    check_settings(s, test_uniref_settings_reconciled)
+    s = settings_cls(**test_uniref_cdm_settings)
+    check_settings(s, test_uniref_cdm_settings_reconciled)
 
 
-@pytest.mark.parametrize("field_name", list(UnirefSettings.model_fields))
+@pytest.mark.parametrize(
+    ("settings_cls", "_cli_obj", "expected_dataset_name", "expected_protocol"),
+    UNIREF_CDM_VARIANTS,
+)
+def test_uniref_cdm_defaults_and_transform(
+    settings_cls: type[UniRefCdmSettings],
+    _cli_obj: object,
+    expected_dataset_name: str,
+    expected_protocol: str,
+    test_defaults: dict[str, Any],
+) -> None:
+    """Ensure that defaults, locked ClassVars, and the bound TableTransform are configured on each variant."""
+    s = settings_cls(**test_defaults)
+    assert s.dataset_name == expected_dataset_name
+    assert s.table_name == ENTRY_TABLE_NAME
+    assert s.xml_tag == ENTRY_XML_TAG
+    assert s.transforms_module is None
+    assert s.log_interval == UNIREF_LOG_INTERVAL
+    assert s.xsd_file == UNIREF_XSD_FILE
+    assert s.pyarrow_schema == UNIREF_SCHEMA
+
+    transform = s.get_table_transform(ENTRY_TABLE_NAME)
+    assert isinstance(transform, TableTransform)
+    assert transform.table_to_schema_map == UNIREF_CDM_SCHEMA_MAP
+    assert transform.transform_fn is not None
+
+    routed = transform.transform_fn({"_id": "UniRef_TEST", "_updated": "2025-01-01", "name": "Cluster: Test"})
+    assert routed["cluster"][0]["protocol"] == expected_protocol
+
+
+@pytest.mark.parametrize("settings_cls", UNIREF_CDM_SETTINGS_CLASSES)
+@pytest.mark.parametrize("field_name", list(UniRef50CdmSettings.model_fields))
 def test_cli_fields_parse_correctly(
+    settings_cls: type[UniRefCdmSettings],
     field_name: str,
-    test_uniref_settings: frozendict[str, Any],
-    test_uniref_settings_reconciled: frozendict[str, Any],
+    test_uniref_cdm_settings: frozendict[str, Any],
+    test_uniref_cdm_settings_reconciled: frozendict[str, Any],
     test_defaults: dict[str, Any],
 ) -> None:
-    """Ensure that all fields and variants are parsed correctly."""
+    """Ensure that all CLI fields round-trip on every UniRef CDM settings class."""
     assert_cli_field_roundtrips(
-        UnirefSettings,
+        settings_cls,
         field_name,
-        test_uniref_settings[field_name],
-        test_uniref_settings_reconciled[field_name],
-        {**test_defaults, VARIANT: test_uniref_settings[VARIANT]},
-    )
-
-
-def _instantiate_uniref_settings(
-    test_defaults: dict[str, Any],
-    *,
-    use_cli: bool = False,
-    variant_alias: str = VARIANT,
-    variant_value: str | None = None,
-) -> UnirefSettings:
-    """Instantiate UnirefSettings either directly or via CliApp.run."""
-    if not use_cli:
-        kwargs = {**test_defaults, VARIANT: variant_value} if variant_value is not None else test_defaults
-        return UnirefSettings(**kwargs)  # pyright: ignore[reportCallIssue]
-    base_settings = CtsSettings(**test_defaults)
-    cli_args = settings_to_argv(base_settings)
-    if variant_value is not None:
-        cli_args = [*cli_args, make_cli_arg(variant_alias), variant_value]
-    return CliApp.run(UnirefSettings, cli_args=cli_args)
-
-
-@pytest.mark.parametrize("uniref_variant_value", UNIREF_VARIANTS)
-@pytest.mark.parametrize("variant_alias", [None, *UNIREF_VARIANT_ALIASES])
-def test_valid_variants_accepted(
-    uniref_variant_value: str,
-    variant_alias: str | None,
-    test_defaults: dict[str, Any],
-) -> None:
-    """Ensure that each valid uniref variant value is accepted via direct instantiation and CLI."""
-    s = _instantiate_uniref_settings(
+        test_uniref_cdm_settings[field_name],
+        test_uniref_cdm_settings_reconciled[field_name],
         test_defaults,
-        use_cli=variant_alias is not None,
-        variant_alias=variant_alias or VARIANT,
-        variant_value=uniref_variant_value,
     )
-    assert isinstance(s, UnirefSettings)
-    assert s.variant == uniref_variant_value
 
 
-@pytest.mark.parametrize("value", ["25", "75", "uniref50", "", "ALL"])
-@pytest.mark.parametrize("variant_alias", [None, *UNIREF_VARIANT_ALIASES])
-def test_invalid_variant_raises(
-    value: str,
-    variant_alias: str | None,
+@pytest.mark.parametrize("settings_cls", UNIREF_CDM_SETTINGS_CLASSES)
+@pytest.mark.parametrize(
+    ("locked_flag", "locked_value"),
+    [
+        ("--dataset-name", "custom_dataset"),
+        ("--table-name", "custom_table"),
+        ("--xml-tag", "custom_tag"),
+        ("--transforms-module", "some.module"),
+    ],
+)
+def test_locked_fields_rejected_on_cli(
+    settings_cls: type[UniRefCdmSettings],
+    locked_flag: str,
+    locked_value: str,
     test_defaults: dict[str, Any],
 ) -> None:
-    """Ensure that an unrecognised uniref variant raises a ValidationError via direct instantiation and CLI."""
-    with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        _instantiate_uniref_settings(
-            test_defaults,
-            use_cli=variant_alias is not None,
-            variant_alias=variant_alias or VARIANT,
-            variant_value=value,
-        )
-
-    assert "Input should be '50', '90' or '100'" in str(exc_info.value)
-
-
-@pytest.mark.parametrize("use_cliapp", [False, True])
-def test_missing_required_uniref_variant_raises(use_cliapp: bool, test_defaults: dict[str, Any]) -> None:
-    """Ensure that omitting the required uniref variant argument raises a ValidationError."""
-    with pytest.raises(ValidationError, match="1 validation error for UnirefSettings") as exc_info:
-        _instantiate_uniref_settings(test_defaults, use_cli=use_cliapp)
-
-    assert "Field required" in str(exc_info.value)
+    """Locked ClassVar fields must not be accepted as CLI flags."""
+    base = settings_cls(**test_defaults)
+    cli_args = [*settings_to_argv(base), locked_flag, locked_value]
+    with pytest.raises(SettingsError, match=f"unrecognized arguments: {locked_flag}"):
+        CliApp.run(settings_cls, cli_args=cli_args)

@@ -12,14 +12,16 @@ Data goes into the Cluster, ClusterMember and Entity tables.
 
 """
 
-import datetime
+import datetime as dt
+import json
+from collections.abc import Mapping
 from logging import Logger, getLogger
-from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
-from lxml.etree import Element
+import pyarrow as pa
 
-from cdm_data_loaders.utils.xml_utils import make_parse_error
+from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.core.transforms import TableTransform
 
 UNIREF_URL = "http://uniprot.org/uniref"
 ENTRY_XML_TAG = f"{{{UNIREF_URL}}}entry"
@@ -38,6 +40,42 @@ PREFIX_TRANSLATION = {
     "NCBI taxonomy": "NCBITaxon",
 }
 
+CLUSTER_SCHEMA: Final[pa.Schema] = pa.schema(
+    [
+        pa.field("cluster_id", pa.string()),
+        pa.field("name", pa.string()),
+        pa.field("cluster_type", pa.string()),
+        pa.field("protocol", pa.string()),
+        pa.field("description", pa.string()),
+    ]
+)
+
+ENTITY_SCHEMA: Final[pa.Schema] = pa.schema(
+    [
+        pa.field("entity_id", pa.string()),
+        pa.field("entity_type", pa.string()),
+        pa.field("data_source", pa.string()),
+        pa.field("data_source_entity_id", pa.string()),
+        pa.field("data_source_updated", pa.string()),
+        pa.field("updated", pa.timestamp("us", tz="UTC")),
+    ]
+)
+
+CLUSTERMEMBER_SCHEMA: Final[pa.Schema] = pa.schema(
+    [
+        pa.field("entity_id", pa.string()),
+        pa.field("cluster_id", pa.string()),
+        pa.field("is_representative", pa.bool_()),
+        pa.field("is_seed", pa.bool_()),
+    ]
+)
+
+UNIREF_CDM_SCHEMA_MAP: Final[dict[str, pa.Schema]] = {
+    "cluster": CLUSTER_SCHEMA,
+    "entity": ENTITY_SCHEMA,
+    "clustermember": CLUSTERMEMBER_SCHEMA,
+}
+
 logger: Logger = getLogger(__name__)
 
 
@@ -46,15 +84,17 @@ def generate_dbxref(db: str, acc: str) -> str:
     return f"{PREFIX_TRANSLATION.get(db, db)}:{acc}"
 
 
-def extract_cluster(entry: Element) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Extract the UniRef cluster ID and name."""
-    entry_id = entry.get("id")
+def extract_cluster(entry: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Extract the UniRef cluster ID and name from an XSD-converted entry dictionary."""
+    entry_id = entry.get("_id")
     if not entry_id:
         return ({}, {})
     cluster_id = f"uniref:{entry_id}"
+    raw_updated = entry.get("_updated")
+    updated_str = raw_updated.isoformat() if isinstance(raw_updated, dt.date) else raw_updated
     cluster = {
         "cluster_id": cluster_id,
-        "name": entry.findtext("./ns:name", namespaces=UNIREF_NS),
+        "name": entry.get("name"),
         "cluster_type": "Protein",
         "description": None,
         # fill in protocol afterwards
@@ -64,7 +104,7 @@ def extract_cluster(entry: Element) -> tuple[dict[str, Any], dict[str, Any]]:
         "entity_type": "Cluster",
         "data_source": UNIREF,
         "data_source_entity_id": entry_id,
-        "data_source_updated": entry.get("updated"),
+        "data_source_updated": updated_str,
         # fill in other columns later
     }
 
@@ -72,34 +112,42 @@ def extract_cluster(entry: Element) -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def extract_cross_refs(
-    dbref: Element,
+    dbref: Mapping[str, Any],
     cluster_id: str,
     is_representative: bool,  # noqa: FBT001
 ) -> dict[str, Any]:
-    """Extract UniRef90/50/UniParc cross references from a single <dbReference> element."""
-    entity_db = dbref.get("type")
-    entity_xref = dbref.get("id")
+    """Extract UniRef90/50/UniParc cross references from a single ``dbReference`` dictionary."""
+    entity_db = dbref.get("_type")
+    entity_xref = dbref.get("_id")
     if not entity_xref or not entity_db:
         # should never happen!
         logger.warning("Incomplete dbReference in %s", cluster_id)
         return {}
 
     entity_id = generate_dbxref(entity_db, entity_xref)
+    properties = dbref.get("property") or []
 
     # if this is a UniProtKB ID, check whether there is a UniProtKB accession
     if entity_db == "UniProtKB ID":
-        uniprot_id = None
-        uniprot_acc = dbref.find("ns:property[@type='UniProtKB accession']", UNIREF_NS)
-        if uniprot_acc is not None:
-            uniprot_id = uniprot_acc.get("value")
+        uniprot_id = next(
+            (
+                prop.get("_value")
+                for prop in properties
+                if isinstance(prop, Mapping) and prop.get("_type") == "UniProtKB accession"
+            ),
+            None,
+        )
         if uniprot_id:
             entity_id = f"uniprot:{uniprot_id}"
         else:
             logger.warning("Could not find UniProt accession for UniProtKB ID %s", entity_xref)
 
     # is this a seed member?
-    is_seed_prop = dbref.find("ns:property[@type='isSeed']", UNIREF_NS)
-    is_seed = is_seed_prop is not None and is_seed_prop.get("value") == "true"
+    is_seed_val = next(
+        (prop.get("_value") for prop in properties if isinstance(prop, Mapping) and prop.get("_type") == "isSeed"),
+        None,
+    )
+    is_seed = is_seed_val == "true"
 
     return {
         "entity_id": entity_id,
@@ -110,44 +158,70 @@ def extract_cross_refs(
 
 
 def parse_uniref_entry(
-    entry: Element, timestamp: datetime.datetime, file_path: str | Path, uniref_variant: str
-) -> dict[str, list[dict[str, str]]]:
-    """Parse a single UniRef <entry> element into CDM-friendly row tuples."""
+    entry: Mapping[str, Any],
+    timestamp: dt.datetime,
+    uniref_variant: str,
+) -> dict[str, list[dict[str, Any]]]:
+    """Parse a single XSD-converted UniRef ``entry`` dictionary into CDM-friendly rows."""
     # Cluster basic info
     (cluster, entity) = extract_cluster(entry)
     cluster_id = cluster.get("cluster_id")
     if not cluster_id:
         logger.debug("No cluster ID found in entry")
-        return make_parse_error(entry, "No cluster ID found in entry", file_path)
+        return {
+            REJECTED_TABLE_NAME: [
+                {
+                    "table_name": "entry",
+                    "source_file": None,
+                    "line_no": None,
+                    "raw_record": json.dumps(dict(entry), default=str),
+                    "error_detail": "No cluster ID found in entry",
+                }
+            ]
+        }
 
     # add the current timestamp
     entity["updated"] = timestamp
     # add in the protocol (which version of UniRef this is)
     cluster["protocol"] = uniref_variant
 
-    cluster_members = []
+    cluster_members: list[dict[str, Any]] = []
     # Cross references from representative and members
-    repr_db = entry.find("ns:representativeMember/ns:dbReference", UNIREF_NS)
-    if repr_db is not None:
-        cluster_members.append(extract_cross_refs(repr_db, cluster_id, is_representative=True))
+    repr_member = entry.get("representativeMember")
+    if isinstance(repr_member, Mapping):
+        repr_db = repr_member.get("dbReference")
+        if isinstance(repr_db, Mapping):
+            cluster_members.append(extract_cross_refs(repr_db, cluster_id, is_representative=True))
 
-    cluster_members.extend(
-        [
-            extract_cross_refs(mem, cluster_id, is_representative=False)
-            for mem in entry.findall("ns:member/ns:dbReference", UNIREF_NS)
-        ]
-    )
-
-    # save a record of which entry is in which file
-    entity_data_source = {
-        "entity_id": cluster_id,
-        "data_source": entity.get("data_source"),
-        "source_file": str(file_path),
-    }
+    for member in entry.get("member") or []:
+        if isinstance(member, Mapping):
+            mem_db = member.get("dbReference")
+            if isinstance(mem_db, Mapping):
+                cluster_members.append(extract_cross_refs(mem_db, cluster_id, is_representative=False))
 
     return {
         "entity": [entity],
-        "entity_x_source_file": [entity_data_source],
         "cluster": [cluster],
         "clustermember": [c for c in cluster_members if c],
     }
+
+
+def make_uniref_cdm_transform(
+    uniref_variant: str,
+    timestamp: dt.datetime | None = None,
+) -> TableTransform:
+    """Create a ``TableTransform`` that transforms XSD-parsed UniRef ``entry`` dicts into CDM tables.
+
+    :param uniref_variant: protocol label for the UniRef variant (e.g. ``"UniRef 50"``)
+    :param timestamp: UTC timestamp assigned to ``entity.updated`` (defaults to ``datetime.now(UTC)``)
+    :return: ``TableTransform`` with ``transform_fn`` and ``UNIREF_CDM_SCHEMA_MAP``
+    """
+    resolved_ts = timestamp if timestamp is not None else dt.datetime.now(dt.UTC)
+    return TableTransform(
+        transform_fn=lambda entry: parse_uniref_entry(
+            entry=entry,
+            timestamp=resolved_ts,
+            uniref_variant=uniref_variant,
+        ),
+        table_to_schema_map=UNIREF_CDM_SCHEMA_MAP,
+    )
