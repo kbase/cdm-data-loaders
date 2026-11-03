@@ -61,14 +61,23 @@ def promote_from_s3(  # noqa: PLR0913
     with MD5 metadata from ``.md5`` sidecar files.
 
     :param staging_bucket: S3 bucket containing the staged files (e.g. ``"cts"``)
+    :type staging_bucket: PurePosixPath
     :param staging_key_prefix: S3 key prefix where CTS output was written
+    :type staging_key_prefix: PurePosixPath
     :param lakehouse_bucket: S3 bucket for the final Lakehouse destination (e.g. ``"cdm-lake"``)
+    :type lakehouse_bucket: PurePosixPath
     :param lakehouse_key_prefix: S3 key prefix for final Lakehouse locations
+    :type lakehouse_key_prefix: PurePosixPath
     :param removed_manifest_path: local path to the removed_manifest file
+    :type removed_manifest_path: Path | None
     :param updated_manifest_path: local path to the updated_manifest file
+    :type updated_manifest_path: Path | None
     :param manifest_s3_key: S3 object key for transfer_manifest.txt (for trimming)
+    :type manifest_s3_key: PurePosixPath | None
     :param ncbi_release: NCBI release version tag for archiving
+    :type ncbi_release: str | None
     :param dry_run: if True, log actions without side effects
+    :type dry_run: bool
     :return: report dict with counts
     """
     # Get list of objects under the staging prefix
@@ -141,7 +150,9 @@ def _group_files_by_assembly(
     """Group files by assembly; skip download_report.json and non-raw_data paths.
 
     :param data_files: list of S3 keys for staged data files
+    :type data_files: list[PurePosixPath]
     :param staging_prefix: staging prefix in S3
+    :type staging_prefix: PurePosixPath
     :return: dict mapping (assembly_dir, accession) to list of staged keys for that assembly
     """
     assembly_files: defaultdict[tuple[PurePosixPath, str], list[PurePosixPath]] = defaultdict(list)
@@ -168,11 +179,17 @@ def _promote_file(  # noqa: PLR0913
     """Download one staged file, re-upload to Lakehouse with MD5 metadata.
 
     :param staged_key: S3 key of the staged file
+    :type staged_key: PurePosixPath
     :param staging_prefix: staging prefix in S3
+    :type staging_prefix: PurePosixPath
     :param lakehouse_key_prefix: S3 key prefix for final Lakehouse locations
+    :type lakehouse_key_prefix: PurePosixPath
     :param staging_bucket: S3 bucket containing the staged file
+    :type staging_bucket: PurePosixPath
     :param lakehouse_bucket: S3 bucket for the final Lakehouse destination
+    :type lakehouse_bucket: PurePosixPath
     :param sidecars: set of S3 keys for sidecar files (to check for MD5 metadata)
+    :type sidecars: set[PurePosixPath]
     :return: ``(resource_dict, staged_key)`` on success; raises on failure.
     """
     s3 = client.get_s3_client()
@@ -226,10 +243,15 @@ def _write_descriptor_for_assembly(
     """Create and upload a frictionless descriptor for an assembly.
 
     :param assembly_dir: full assembly directory name
+    :type assembly_dir: PurePosixPath
     :param accession: assembly accession (e.g. "GCF_000001405.39")
+    :type accession: str
     :param resources: list of DescriptorResource dicts for the assembly's files
+    :type resources: list[DescriptorResource]
     :param lakehouse_bucket: S3 bucket for the final Lakehouse destination
+    :type lakehouse_bucket: PurePosixPath
     :param lakehouse_key_prefix: S3 key prefix for final Lakehouse locations
+    :type lakehouse_key_prefix: PurePosixPath
     :return: True if the descriptor was successfully written, False otherwise
     """
     try:
@@ -263,8 +285,11 @@ def _dry_run_output(
     """Log source and destination key pairs for a dry run, capped at INFO level.
 
     :param key_pairs: list of (source_key, dest_key) pairs
+    :type key_pairs: list[tuple[PurePosixPath, PurePosixPath]]
     :param log_count: current count of logged entries
+    :type log_count: int
     :param action: action verb for log messages (e.g. ``"archive"`` or ``"promote"``)
+    :type action: str
     :return: updated count of logged entries
     """
     _dry_run_log_count = log_count
@@ -285,8 +310,11 @@ def _batch_delete(
     """Batch-delete all staged data files and their sidecars in one API call.
 
     :param promoted_keys: list of staged keys that were successfully promoted
+    :type promoted_keys: list[PurePosixPath]
     :param sidecars: set of all sidecar keys in staging (to check for existence of sidecars for promoted files)
+    :type sidecars: set[PurePosixPath]
     :param staging_bucket: S3 bucket containing the staged files
+    :type staging_bucket: PurePosixPath
     """
     keys_to_delete = list(promoted_keys)
     keys_to_delete.extend(
@@ -388,7 +416,9 @@ def _get_accession_path_prefix(accession: str, lakehouse_key_prefix: PurePosixPa
     """Get the S3 key prefix for all files related to an accession.
 
     :param accession: assembly accession (e.g. "GCF_000001405.39_Some_description")
+    :type accession: str
     :param lakehouse_key_prefix: S3 key prefix for the Lakehouse dataset root
+    :type lakehouse_key_prefix: PurePosixPath
     :return: S3 key prefix under which all files for the accession are stored, or None if the accession format is invalid
     """
     try:
@@ -408,10 +438,15 @@ def _get_source_dest_pairs_for_accession(
     """Get list of (source_key, archive_key) pairs for all objects related to an accession.
 
     :param accession: assembly accession (e.g. "GCF_000001405.39_Some_description")
+    :type accession: str
     :param lakehouse_bucket: S3 bucket for the Lakehouse (source and archive destination)
+    :type lakehouse_bucket: PurePosixPath
     :param lakehouse_key_prefix: S3 key prefix for the Lakehouse dataset root
+    :type lakehouse_key_prefix: PurePosixPath
     :param release_tag: release tag for the archive
+    :type release_tag: str
     :param archive_reason: reason for archiving
+    :type archive_reason: str
     :return: list of (source_key, archive_key) pairs for all objects related to the accession
     """
     source_prefix = _get_accession_path_prefix(accession, lakehouse_key_prefix)
@@ -437,8 +472,11 @@ def _archive_objects(
     """Copy objects from source keys to archive keys, optionally deleting the source objects.
 
     :param key_pairs: list of (source_key, archive_key) pairs
+    :type key_pairs: list[tuple[PurePosixPath, PurePosixPath]]
     :param lakehouse_bucket: S3 bucket for the Lakehouse (source and archive destination)
+    :type lakehouse_bucket: PurePosixPath
     :param delete_source: if True, delete the source object after copying
+    :type delete_source: bool
     :return: number of objects successfully archived
     """
     archived = 0
@@ -490,12 +528,19 @@ def _archive_assemblies(  # noqa: PLR0913
     originals remain in place to be overwritten by the promote step.
 
     :param manifest_local_path: local path to a manifest file (one accession per line)
+    :type manifest_local_path: Path
     :param lakehouse_bucket: S3 bucket for the Lakehouse (source and archive destination)
+    :type lakehouse_bucket: PurePosixPath
     :param ncbi_release: release tag used in the archive path
+    :type ncbi_release: str | None
     :param lakehouse_key_prefix: S3 key prefix for the Lakehouse dataset root
+    :type lakehouse_key_prefix: PurePosixPath
     :param archive_reason: metadata value describing why the object was archived
+    :type archive_reason: str
     :param delete_source: if True, delete the source object after copying
+    :type delete_source: bool
     :param dry_run: if True, log without making changes
+    :type dry_run: bool
     :return: number of objects archived
     """
     release_tag = ncbi_release or "unknown"
@@ -561,8 +606,11 @@ def _trim_manifest(
     """Remove promoted accessions from the transfer manifest in S3.
 
     :param manifest_s3_key: S3 object key of the transfer_manifest.txt
+    :type manifest_s3_key: PurePosixPath
     :param staging_bucket: S3 bucket containing the transfer manifest
+    :type staging_bucket: PurePosixPath
     :param promoted_accessions: set of accessions that were successfully promoted
+    :type promoted_accessions: set[str]
     """
     s3 = client.get_s3_client()
 

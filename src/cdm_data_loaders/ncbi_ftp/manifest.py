@@ -97,7 +97,9 @@ def download_assembly_summary(database: str = "refseq", ftp_host: str = FTP_HOST
     """Download the assembly summary file from NCBI FTP.
 
     :param database: ``"refseq"`` or ``"genbank"``
+    :type database: str
     :param ftp_host: FTP hostname
+    :type ftp_host: str
     :return: raw text content of the summary file
     """
     ftp_path = SUMMARY_FTP_PATHS.get(database)
@@ -125,6 +127,7 @@ def parse_assembly_summary(source: str | Path | list[str]) -> dict[str, Assembly
         19: ftp_path (full FTP URL or "na")
 
     :param source: file path, raw text, or list of lines
+    :type source: str | Path | list[str]
     :return: dict mapping accession to :class:`AssemblyRecord`
     """
     assemblies: dict[str, AssemblyRecord] = {}
@@ -175,7 +178,9 @@ def get_latest_assembly_paths(
     """Extract FTP directory paths for all assemblies with ``latest`` status.
 
     :param assemblies: parsed assembly records
+    :type assemblies: dict[str, AssemblyRecord]
     :param ftp_host: FTP hostname for URL stripping
+    :type ftp_host: str
     :return: list of ``(accession, ftp_dir_path)`` tuples
     """
     paths: list[tuple[str, PurePosixPath]] = []
@@ -208,8 +213,11 @@ def filter_by_prefix_range(
     Both bounds are inclusive. If neither is set, returns all assemblies.
 
     :param assemblies: dict of parsed assembly records
+    :type assemblies: dict[str, AssemblyRecord]
     :param prefix_from: lower bound (inclusive), e.g. ``"000"``
+    :type prefix_from: str | None
     :param prefix_to: upper bound (inclusive), e.g. ``"003"``
+    :type prefix_to: str | None
     :return: filtered dict
     """
     if prefix_from is None and prefix_to is None:
@@ -238,8 +246,11 @@ def compute_diff(
     """Compute the diff between current and previous assembly state.
 
     :param current: the new NCBI summary (parsed)
+    :type current: dict[str, AssemblyRecord]
     :param previous_assemblies: full parsed previous summary, or None if using fallback
+    :type previous_assemblies: dict[str, AssemblyRecord] | None
     :param previous_accessions: set of known accessions (store-scan fallback)
+    :type previous_accessions: set[str] | None
     :return: diff result with new/updated/replaced/suppressed lists
     """
     diff = DiffResult()
@@ -331,14 +342,19 @@ def scan_store_to_synthetic_summary(
     The function paginates through S3 to handle large stores efficiently.
 
     :param bucket: S3 bucket name
+    :type bucket: PurePosixPath
     :param key_prefix: S3 key prefix (all objects under this prefix are scanned)
+    :type key_prefix: PurePosixPath
     :param release_date: release date string in ``YYYY/MM/DD`` format used for
         all synthetic records
+    :type release_date: str
     :param database: ``"refseq"`` or ``"genbank"`` — controls which accession
         prefix is included (``GCF_`` or ``GCA_`` respectively)
+    :type database: str
     :param progress_callback: optional callable invoked after each accession is
         processed with ``(count, accession)`` where count is the running total
         of unique accessions found
+    :type progress_callback: Callable[[int, str], None] | None
     :return: dict mapping accession to ``AssemblyRecord``
     """
     try:
@@ -402,9 +418,13 @@ def _fetch_accession_checksums_from_ftp(
     """Fetch and parse the md5checksums.txt file for a given accession from FTP.
 
     :param ftp: FTP connection object
+    :type ftp: FTP | None
     :param ftp_host: NCBI FTP hostname
+    :type ftp_host: str
     :param last_activity: timestamp of the last FTP activity
+    :type last_activity: float
     :param current_accession: accession identifier
+    :type current_accession: str
     :return: dictionary mapping file names to MD5 checksums, updated last_activity timestamp, and active FTP client
     """
     if ftp is None:
@@ -429,8 +449,11 @@ def _does_accession_need_update(
     """Check if any file for an accession needs updating by comparing FTP checksums to S3 metadata.
 
     :param target_checksums: dict mapping file names to expected MD5 checksums from FTP
+    :type target_checksums: dict[PurePosixPath, str]
     :param bucket: S3 bucket name
+    :type bucket: PurePosixPath
     :param s3_prefix: S3 key prefix for the assembly in question
+    :type s3_prefix: PurePosixPath
     :return: True if any file is missing or has a checksum mismatch, False otherwise
     """
     for fname, expected_md5 in target_checksums.items():
@@ -467,13 +490,19 @@ def verify_transfer_candidates(  # noqa: PLR0913, PLR0917
     assembly, we skip it if every file in the store already matches.
 
     :param accessions: list of candidate accessions (new + updated from diff)
+    :type accessions: list[str]
     :param current_assemblies: parsed current assembly summary
+    :type current_assemblies: dict[str, AssemblyRecord]
     :param bucket: S3 bucket name
+    :type bucket: PurePosixPath
     :param key_prefix: S3 key prefix for the Lakehouse dataset root
+    :type key_prefix: PurePosixPath
     :param ftp_host: NCBI FTP hostname
+    :type ftp_host: str
     :param progress_callback: optional callable invoked after each accession is
         processed with ``(done, total, accession)`` so callers can display a
         progress bar.  ``done`` is the 1-based count of completed accessions.
+    :type progress_callback: Callable[[int, int, str], None] | None
     :return: filtered list of accessions that actually need downloading
     """
     if not accessions:
@@ -566,9 +595,13 @@ def write_transfer_manifest(
     Each line is an FTP directory path suitable for Phase 2 download.
 
     :param diff: computed diff result
+    :type diff: DiffResult
     :param current_assemblies: parsed current assembly summary
+    :type current_assemblies: dict[str, AssemblyRecord]
     :param output_path: path to write the manifest file
+    :type output_path: Path
     :param ftp_host: FTP hostname for URL stripping
+    :type ftp_host: str
     :return: list of FTP paths written
     """
     to_transfer = diff.new + diff.updated
@@ -588,7 +621,9 @@ def write_removed_manifest(diff: DiffResult, output_path: Path) -> list[str]:
     """Write the removed manifest (replaced + suppressed accessions).
 
     :param diff: computed diff result
+    :type diff: DiffResult
     :param output_path: path to write the manifest file
+    :type output_path: Path
     :return: list of accessions written
     """
     removed = sorted(diff.replaced + diff.suppressed)
@@ -603,7 +638,9 @@ def write_updated_manifest(diff: DiffResult, output_path: Path) -> list[str]:
     before they are overwritten by the new versions.
 
     :param diff: computed diff result
+    :type diff: DiffResult
     :param output_path: path to write the manifest file
+    :type output_path: Path
     :return: list of accessions written
     """
     updated = sorted(diff.updated)
@@ -621,10 +658,15 @@ def write_diff_summary(
     """Write a JSON diff summary file.
 
     :param diff: computed diff result
+    :type diff: DiffResult
     :param output_path: path to write the JSON file
+    :type output_path: Path
     :param database: database name (``"refseq"`` or ``"genbank"``)
+    :type database: str
     :param prefix_from: lower bound of prefix filter (if any)
+    :type prefix_from: str | None
     :param prefix_to: upper bound of prefix filter (if any)
+    :type prefix_to: str | None
     :return: the summary dict that was written
     """
     summary: dict[str, Any] = {

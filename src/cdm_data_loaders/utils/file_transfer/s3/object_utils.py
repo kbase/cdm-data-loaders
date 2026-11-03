@@ -599,7 +599,9 @@ def delete_objects(bucket: str, keys: list[str]) -> list[dict[str, Any]]:
     Splits into batches of 1000 (the S3 API maximum per request).
 
     :param bucket: S3 bucket name (no protocol prefix)
+    :type bucket: str
     :param keys: list of S3 keys to delete
+    :type keys: list[str]
     :return: list of per-key error dicts returned by S3 (empty if all succeeded)
     :rtype: list[dict[str, Any]]
     """

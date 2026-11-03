@@ -26,7 +26,7 @@ from dlt.sources.helpers.rest_client.client import RESTClient
 from dlt.sources.helpers.rest_client.paginators import (
     JSONResponseCursorPaginator,
 )
-from pydantic import Field, computed_field, field_validator
+from pydantic import Field, PositiveInt, computed_field, field_validator
 from pydantic_settings import SettingsConfigDict
 from requests.exceptions import HTTPError
 
@@ -70,10 +70,9 @@ class NcbiRestApiSettings(CtsSettings):
         cli_shortcuts={**CLI_SHORTCUTS, BATCH_SIZE: "b", QUERY_TYPE: "q"},
     )
 
-    batch_size: int = Field(
+    batch_size: PositiveInt = Field(
         default=MAX_IDS_PER_QUERY,
         description="Number of IDs to send in each request to the NCBI REST API.",
-        ge=1,
         le=MAX_IDS_PER_QUERY,
     )
 

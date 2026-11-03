@@ -99,7 +99,7 @@ class FileDownloader:
         :param checksum_fn: function used for calculating the checksum. Set to "sha256" if not supplied.
         :type checksum_fn: str, optional
         :param extra_headers: allow extra headers to be passed, defaults to None
-        :type last_modified: dict[str, Any | None, optional
+        :type extra_headers: dict[str, Any] | None, optional
         :return: either the path to the downloaded file or None if no file was downloaded
         :rtype: Path | None
         """

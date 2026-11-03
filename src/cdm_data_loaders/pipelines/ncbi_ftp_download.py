@@ -19,7 +19,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
 import tqdm
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, PositiveInt
 from pydantic_settings import SettingsConfigDict
 from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -56,9 +56,8 @@ class DownloadSettings(LoggerSettings):
         default=Path(OUTPUT_MOUNT),
         description="Output directory for downloaded assembly files",
     )
-    threads: int = Field(
+    threads: PositiveInt = Field(
         default=4,
-        ge=1,
         le=32,
         description="Number of parallel download threads",
         validation_alias=AliasChoices("t", "threads"),
@@ -67,9 +66,8 @@ class DownloadSettings(LoggerSettings):
         default=FTP_HOST,
         description="NCBI FTP hostname",
     )
-    limit: int | None = Field(
+    limit: PositiveInt | None = Field(
         default=None,
-        ge=1,
         description="Limit to first N assemblies (for testing)",
         validation_alias=AliasChoices("l", "limit"),
     )
@@ -91,9 +89,13 @@ def _upload_assembly_dir(
     returns zero without raising.
 
     :param assembly_dir: local directory for one assembly
+    :type assembly_dir: Path
     :param tmp_root: root of the temp directory (used to compute relative S3 paths)
+    :type tmp_root: Path
     :param bucket: destination S3 bucket
+    :type bucket: PurePosixPath
     :param staging_key_prefix: S3 key prefix within *bucket*
+    :type staging_key_prefix: PurePosixPath
     :return: number of files uploaded
     """
     if not assembly_dir.exists():
@@ -128,12 +130,19 @@ def download_batch(  # noqa: PLR0913
     """Download all assemblies listed in the manifest.
 
     :param manifest_path: path to the transfer manifest file
+    :type manifest_path: Path
     :param output_dir: base output directory
+    :type output_dir: Path
     :param threads: number of parallel download threads
+    :type threads: int
     :param ftp_host: FTP hostname
+    :type ftp_host: str
     :param limit: optional limit for testing
+    :type limit: int | None
     :param on_assembly_downloaded: optional callback invoked with each assembly's FTP path after download succeeds
+    :type on_assembly_downloaded: Callable[[PurePosixPath], None] | None
     :param progress_desc: description shown on the tqdm progress bar
+    :type progress_desc: str
     :return: report dict with overall stats
     """
     with manifest_path.open() as f:
@@ -224,6 +233,7 @@ def run_download(config: DownloadSettings) -> None:
     """Main CTS entry point for Phase 2 download.
 
     :param config: validated download settings
+    :type config: DownloadSettings
     """
     report = download_batch(
         manifest_path=config.manifest,
@@ -261,13 +271,21 @@ def download_and_stage(  # noqa: PLR0913
     exist on disk simultaneously, preventing disk exhaustion on large batches.
 
     :param bucket: destination S3 bucket name
+    :type bucket: PurePosixPath
     :param staging_key_prefix: key prefix inside the bucket (e.g. ``"staging/run1/"``)
+    :type staging_key_prefix: PurePosixPath
     :param manifest_s3_key: S3 object key of the transfer manifest within *bucket*
+    :type manifest_s3_key: PurePosixPath | None
     :param manifest_local_path: local path to the transfer manifest file
+    :type manifest_local_path: Path | None
     :param threads: number of parallel download-and-upload workers
+    :type threads: int
     :param ftp_host: NCBI FTP hostname
+    :type ftp_host: str
     :param limit: optional limit for testing
+    :type limit: int | None
     :param dry_run: when ``True``, download but skip all S3 uploads
+    :type dry_run: bool
     :return: download report extended with ``staged_objects``, ``staging_key_prefix``, ``dry_run``
     """
     if manifest_s3_key is not None and manifest_local_path is not None:

@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from dlt.common.schema.typing import TStoredSchema
-from pydantic import Field, field_validator
+from pydantic import Field, PositiveInt, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase
@@ -32,7 +32,7 @@ class JSONSchemaToDlt(JsonSchemaConverterBase[TStoredSchema]):
 
     schema_name: str
     skip_nested_types: bool = False
-    max_nesting: int = Field(default=10, ge=1)
+    max_nesting: PositiveInt = Field(default=10)
     write_disposition: str | None = None
     flatten_scalars: bool = True
 
