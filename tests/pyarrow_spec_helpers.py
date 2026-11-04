@@ -1,10 +1,11 @@
-"""Shared helpers for XSD-to-PyArrow and JSON Schema-to-PyArrow specification tests."""
+"""Shared helpers for XSD-to-PyArrow, JSON Schema-to-PyArrow, and Pydantic-to-PyArrow specification tests."""
 
 import datetime as dt
 import importlib.util
 import io
 import json
 import sys
+from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -26,17 +27,33 @@ def list_field(
 
 def load_module(module_file: Path) -> ModuleType:
     """Load and execute a Python module from a file path."""
-    spec = importlib.util.spec_from_file_location(module_file.stem, module_file)
+    mod_name = (
+        "expected_schema"
+        if module_file.stem == "expected_schema"
+        else f"_fixture_{module_file.parent.name}_{module_file.stem}"
+    )
+    spec = importlib.util.spec_from_file_location(mod_name, module_file)
     if spec is None or spec.loader is None:
         msg = f"Could not load module from {module_file}"
         raise RuntimeError(msg)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[mod_name] = module
     spec.loader.exec_module(module)
     return module
 
 
 def load_fixture_attr[T](module_file: Path, attr_name: str, expected_type: type[T]) -> T:
-    """Load a typed constant attribute from a fixture Python module."""
+    """Load a typed constant attribute from a fixture Python module.
+
+    :param module_file: Path to the Python fixture module.
+    :type module_file: Path
+    :param attr_name: Name of the module attribute to retrieve.
+    :type attr_name: str
+    :param expected_type: Expected runtime class of the attribute value.
+    :type expected_type: type[T]
+    :return: The loaded attribute value cast to ``T``.
+    :rtype: T
+    """
     module = load_module(module_file)
     value = getattr(module, attr_name)
     if not isinstance(value, expected_type):
@@ -64,9 +81,11 @@ def load_expected_table(table_file: Path, attr_name: str = "EXPECTED_TABLE") -> 
 
 
 def json_default(obj: object) -> str:
-    """Serialize Python date and bytes values from Arrow tables for comparison with expected JSON."""
-    if isinstance(obj, dt.date):
+    """Serialize Python date, time, Decimal, and bytes values from Arrow tables for comparison with expected JSON."""
+    if isinstance(obj, dt.date | dt.time):
         return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return str(obj)
     if isinstance(obj, bytes):
         return obj.decode("utf-8")
     msg = f"Object of type {type(obj)} is not JSON serializable"

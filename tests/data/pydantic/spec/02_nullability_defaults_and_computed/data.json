@@ -1,0 +1,15 @@
+[
+  {
+    "id": "job-10",
+    "required_score": 95,
+    "defaulted_retries": 5,
+    "default_tags": ["urgent", "batch"],
+    "optional_alias": "primary-job",
+    "explicit_nullable": 12
+  },
+  {
+    "id": "job-20",
+    "required_score": 60,
+    "explicit_nullable": null
+  }
+]

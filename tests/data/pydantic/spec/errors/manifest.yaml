@@ -1,0 +1,53 @@
+# Error specification fixtures for the Pydantic v2 -> PyArrow converter.
+# `code` must match the `code` of a PydanticToPyArrowError subclass in
+# cdm_data_loaders.converters.pydantic_to_pyarrow. `file` is relative to this directory.
+# `match` is a regex applied to the exception message.
+errors:
+  - file: e01_invalid_model_input.py
+    code: E1
+    match: BaseModel|subclass
+    description: Input is a stdlib `@dataclass` rather than a `BaseModel` subclass.
+  - file: e02_non_object_root_model.py
+    code: E2
+    match: RootModel|object|root
+    description: '`RootModel[list[int]]` wraps a sequence rather than a `BaseModel`.'
+  - file: e03_empty_model.py
+    code: E3
+    match: empty|zero|fields
+    description: Root `BaseModel` has no declared or computed fields.
+  - file: e04_unconstrained_any_field.py
+    code: E4
+    match: Any|object|unconstrained
+    description: Field annotation is `Any`.
+  - file: e05_open_tuple.py
+    code: E5
+    match: tuple|variadic|open
+    description: Field uses a mixed prefix + variadic tuple `tuple[int, *tuple[str, ...]]`.
+  - file: e06_mixed_extra_allow_or_non_string_map_key.py
+    code: E6
+    match: extra|map|key
+    description: Model declares `model_config = ConfigDict(extra="allow")` with fixed fields.
+  - file: e07_unsupported_field_type.py
+    code: E7
+    match: Callable|unsupported|type
+    description: Field annotation is `Callable[[int], str]`.
+  - file: e08_incompatible_union_shapes.py
+    code: E8
+    match: incompatible|union|shape
+    description: Field annotation mixes a `BaseModel` branch with a `list[int]` branch.
+  - file: e09_unresolved_forward_ref.py
+    code: E9
+    match: ForwardRef|unresolved|UndefinedChild
+    description: Field references a forward annotation `"UndefinedChild"` that cannot be resolved.
+  - file: e10_recursive_non_json_type.py
+    code: E10
+    match: recursive
+    description: Recursive `BaseModel` contains a `datetime.date` field.
+  - file: e11_invalid_decimal_constraints.py
+    code: E11
+    match: Decimal|max_digits|decimal_places|38
+    description: Field declares `Decimal` with `max_digits=50` (> 38).
+  - file: e12_value_field_collision.py
+    code: E12
+    match: _value
+    description: '`BaseModel` branch of a scalar + model union declares a `_value` field.'
