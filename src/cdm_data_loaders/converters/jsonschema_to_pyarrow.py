@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
+from enum import Enum
 from typing import Any, ClassVar, Final
 
 import pyarrow as pa
@@ -861,6 +862,8 @@ def _coerce_scalar_for_pyarrow(
     metadata: dict[bytes, bytes] | None = None,
 ) -> Any:  # noqa: ANN401
     """Coerce a JSON-parsed value to match a PyArrow scalar type."""
+    if isinstance(value, Enum):
+        value = value.value
     if isinstance(value, str):
         return _coerce_string_input_scalar(value, data_type, metadata)
     if pa.types.is_decimal(data_type) and isinstance(value, int | float) and not isinstance(value, bool):
