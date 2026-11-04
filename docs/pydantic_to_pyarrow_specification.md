@@ -395,6 +395,7 @@ from pydantic import (
     SecretStr,
 )
 
+
 class ScalarShowcaseRecord(BaseModel):
     """Comprehensive scalar type mapping showcase."""
 
@@ -420,6 +421,7 @@ class ScalarShowcaseRecord(BaseModel):
     encoded_payload: Base64Bytes
     encoded_text: Base64Str
     optional_note: Annotated[str | None, Field(description="Optional free-text note")] = None
+
 
 MODEL = ScalarShowcaseRecord
 ```
@@ -605,6 +607,7 @@ from functools import partial
 
 from pydantic import BaseModel, Field, computed_field
 
+
 class NullabilityAndDefaultsRecord(BaseModel):
     id: str
     required_score: int
@@ -617,6 +620,7 @@ class NullabilityAndDefaultsRecord(BaseModel):
     @property
     def summary_label(self) -> str:
         return f"{self.id}:r{self.defaulted_retries}"
+
 
 MODEL = NullabilityAndDefaultsRecord
 ```
@@ -720,6 +724,7 @@ EXPECTED_SCHEMA = pa.schema(
 
 from pydantic import BaseModel
 
+
 class SequenceAndTupleRecord(BaseModel):
     id: str
     tags: list[str]
@@ -730,6 +735,7 @@ class SequenceAndTupleRecord(BaseModel):
     variadic_labels: tuple[str, ...]
     point_3d: tuple[str, int, float | None]
     optional_pair: tuple[int, str] | None = None
+
 
 MODEL = SequenceAndTupleRecord
 ```
@@ -947,6 +953,7 @@ from typing import TypedDict
 
 from pydantic import BaseModel
 
+
 class OrganismInfo(BaseModel):
     """Taxonomic organism metadata."""
 
@@ -954,9 +961,11 @@ class OrganismInfo(BaseModel):
     scientific_name: str
     strain: str | None = None
 
+
 class AssemblyStatsDict(TypedDict):
     contigs: int
     gc_percent: float
+
 
 @dataclass
 class SubmitterContact:
@@ -964,6 +973,7 @@ class SubmitterContact:
 
     institution: str
     department: str | None = None
+
 
 class NestedModelsAndMapsRecord(BaseModel):
     id: str
@@ -973,6 +983,7 @@ class NestedModelsAndMapsRecord(BaseModel):
     feature_counts: dict[str, int]
     optional_metrics: dict[str, float | None]
     extra_organisms: dict[str, OrganismInfo]
+
 
 MODEL = NestedModelsAndMapsRecord
 ```
@@ -1195,24 +1206,30 @@ EXPECTED_SCHEMA = pa.schema(
 
 from pydantic import BaseModel, Field, RootModel
 
+
 class BaseEntity(BaseModel):
     id: str
     version: int | str = 1
+
 
 class AuditedEntity(BaseEntity):
     version: int = Field(default=1, description="Overridden integer version")
     updated_by: str
 
+
 class SamplePayload(BaseModel):
     sample_name: str
     depth_m: float
+
 
 class GenericEnvelope[PayloadT](AuditedEntity):
     payload: PayloadT
     secondary_payload: PayloadT | None = None
 
+
 class RootEnvelopeModel(RootModel[GenericEnvelope[SamplePayload]]):
     pass
+
 
 MODEL = RootEnvelopeModel
 ```
@@ -1340,22 +1357,26 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+
 class Strand(StrEnum):
     """Genomic strand orientation."""
 
     PLUS = "+"
     MINUS = "-"
 
+
 class PriorityLevel(IntEnum):
     LOW = 1
     MEDIUM = 2
     HIGH = 3
+
 
 class MixedCodeEnum(Enum):
     """Mixed integer and string status codes."""
 
     OK = 200
     CUSTOM = "custom-ok"
+
 
 class EnumAndLiteralRecord(BaseModel):
     id: str
@@ -1368,6 +1389,7 @@ class EnumAndLiteralRecord(BaseModel):
     num_widened_literal: Literal[1, 2.5]
     heterogeneous_literal: Literal[1, "two", True]
     nullable_literal: Literal["active", None] = None
+
 
 MODEL = EnumAndLiteralRecord
 ```
@@ -1493,30 +1515,36 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
+
 class ShortReadSource(BaseModel):
     shared_id: str = Field(description="Shared source identifier")
     platform: str
     read_length: int
     metric: int
 
+
 class LongReadSource(BaseModel):
     shared_id: str = Field(description="Ignored second description")
     chemistry: str
     metric: float
+
 
 class BlastHit(BaseModel):
     hit_type: Literal["blast"]
     accession: str
     evalue: float
 
+
 class HmmHit(BaseModel):
     hit_type: Literal["hmm"]
     accession: str
     bit_score: float
 
+
 class StructuredCitation(BaseModel):
     pmid: int
     title: str
+
 
 class UnionShowcaseRecord(BaseModel):
     id: str
@@ -1525,6 +1553,7 @@ class UnionShowcaseRecord(BaseModel):
     source: ShortReadSource | LongReadSource
     top_hit: Annotated[BlastHit | HmmHit, Field(discriminator="hit_type")]
     citation: StructuredCitation | str
+
 
 MODEL = UnionShowcaseRecord
 ```
@@ -1698,11 +1727,13 @@ EXPECTED_SCHEMA = pa.schema(
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
+
 class AliasedChild(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     internal_code: str = Field(alias="code")
     score_val: float = Field(serialization_alias="serialized_score")
+
 
 class AliasedRecord(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -1711,6 +1742,7 @@ class AliasedRecord(BaseModel):
     display_name: str = Field(serialization_alias="displayName")
     alt_input: int = Field(validation_alias=AliasChoices("alt_input", "altInput"))
     child: AliasedChild
+
 
 MODEL = AliasedRecord
 ```
@@ -1876,11 +1908,13 @@ type HighPrecisionCoverage = Annotated[
     Field(max_digits=8, decimal_places=3, description="Sequencing depth coverage"),
 ]
 
+
 class AnnotatedShowcaseRecord(BaseModel):
     accession: AccessionStr
     overridden_accession: Annotated[AccessionStr, Field(description="Overridden accession description")]
     coverage: HighPrecisionCoverage
     quality_phred: Annotated[int, Field(ge=0, le=60, description="Phred quality score")]
+
 
 MODEL = AnnotatedShowcaseRecord
 ```
@@ -1983,22 +2017,27 @@ at `max_recursion_depth=1` the second level already collapses to `pa.string()`.
 
 from pydantic import BaseModel, Field
 
+
 class TaxonNode(BaseModel):
     rank: str
     name: str
     children: list["TaxonNode"] = Field(default_factory=list)
 
+
 class PathwayStep(BaseModel):
     step_id: str
     reaction: "ReactionNode | None" = None
+
 
 class ReactionNode(BaseModel):
     ec_number: str
     next_step: PathwayStep | None = None
 
+
 class RecursiveCladeRecord(BaseModel):
     root_taxon: TaxonNode
     entry_step: PathwayStep
+
 
 MODEL = RecursiveCladeRecord
 ```
