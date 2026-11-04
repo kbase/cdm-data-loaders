@@ -7,13 +7,13 @@ from typing import ClassVar, Final
 
 from frozendict import frozendict
 from jsonschema import Draft202012Validator
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.inference import decimal_places, is_unconstrained_node, json_type_from_enum
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import NodeHints, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
+from cdm_data_loaders.converters.core.ir_values import MutableValue, Value, mutable_value
 from cdm_data_loaders.converters.core.metadata import DEFAULT_METADATA_KEYWORDS, ConversionContext
 
 INT32_MIN: Final = -2_147_483_648
@@ -113,7 +113,7 @@ class _TabularEmitterBase[DataTypeT](BaseModel):
     treat_unknown_as_string: bool = True
     emit_unions_as_json: bool = False
     extra_metadata_keywords: frozenset[str] = Field(default_factory=frozenset)
-    max_nesting: int = Field(default=10, ge=1)
+    max_nesting: PositiveInt = Field(default=10)
     format_map: frozendict[str, DataTypeT] = Field(default_factory=frozendict)
 
     def _logger(self) -> logging.Logger:
@@ -161,7 +161,7 @@ class _TabularEmitterBase[DataTypeT](BaseModel):
 
     def _select_metadata_parts(
         self, node: TypedNode, ctx: ConversionContext, field: SchemaField | None = None
-    ) -> tuple[Mapping[str, Value], dict[str, object], list[str] | None]:
+    ) -> tuple[Mapping[str, Value], dict[str, MutableValue], list[str] | None]:
         """Extract raw metadata values, selected JSON Schema keywords, and optional union types."""
         values = node.aggregate_metadata(field)
         selected = DEFAULT_METADATA_KEYWORDS | ctx.allowed_extra_metadata_keywords

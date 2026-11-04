@@ -4,16 +4,17 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, NonNegativeInt
 
+from cdm_data_loaders.core.fields import NonEmptyStr
 from tests.helpers import register_temp_module
 
 
 class Widget(BaseModel):
     """Test model. widget_id must be non-empty. count must be zero or more."""
 
-    widget_id: str = Field(min_length=1)
-    count: int = Field(ge=0)
+    widget_id: NonEmptyStr = Field()
+    count: NonNegativeInt = Field()
 
 
 @pytest.fixture

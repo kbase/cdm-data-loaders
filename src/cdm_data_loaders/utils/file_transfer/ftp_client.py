@@ -33,7 +33,9 @@ def connect_ftp(host: str, timeout: int = DEFAULT_TIMEOUT) -> FTP:
     """Connect and log in to an FTP server with TCP keepalive enabled.
 
     :param host: FTP hostname
+    :type host: str
     :param timeout: connection timeout in seconds
+    :type timeout: int
     :return: logged-in FTP connection
     """
     ftp = FTP(host, timeout=timeout)  # noqa: S321
@@ -47,8 +49,11 @@ def ftp_session(host: str, ftp: FTP | None = None, timeout: int = DEFAULT_TIMEOU
     """Context manager yielding an active FTP connection and closing it on exit if created here.
 
     :param host: FTP hostname
+    :type host: str
     :param ftp: optional existing FTP connection (caller manages lifecycle when provided)
+    :type ftp: FTP | None
     :param timeout: connection timeout in seconds
+    :type timeout: int
     """
     owns_ftp = ftp is None
     active_ftp = connect_ftp(host, timeout=timeout) if ftp is None else ftp
@@ -83,8 +88,11 @@ def ftp_noop_keepalive(ftp: FTP, last_activity: float, interval: int = 25) -> fl
     """Send NOOP if the connection has been idle longer than *interval* seconds.
 
     :param ftp: active FTP connection
+    :type ftp: FTP
     :param last_activity: monotonic timestamp of last FTP activity
+    :type last_activity: float
     :param interval: seconds of idle time before sending NOOP
+    :type interval: int
     :return: updated last-activity timestamp
     """
     if time.monotonic() - last_activity > interval:
@@ -109,8 +117,11 @@ def ftp_list_dir(ftp: FTP, path: PurePosixPath, retries: int = 3) -> list[PurePo
     """List files in an FTP directory with retry on transient errors.
 
     :param ftp: active FTP connection
+    :type ftp: FTP
     :param path: remote directory path
+    :type path: PurePosixPath
     :param retries: number of retry attempts
+    :type retries: int
     :return: list of filenames
     """
     ftp.cwd(str(path))
@@ -128,9 +139,13 @@ def ftp_download_file(ftp: FTP, remote_path: PurePosixPath, local_path: Path, re
     """Download a single file from FTP with retry on transient errors.
 
     :param ftp: active FTP connection
+    :type ftp: FTP
     :param remote_path: full remote file path
+    :type remote_path: PurePosixPath
     :param local_path: local destination path
+    :type local_path: Path
     :param retries: number of retry attempts
+    :type retries: int
     """
 
     @_ftp_retry(retries)
@@ -145,7 +160,9 @@ def ftp_retrieve_text(ftp: FTP, remote_path: PurePosixPath) -> str:
     """Retrieve a text file from FTP, returning its content as a string.
 
     :param ftp: active FTP connection
+    :type ftp: FTP
     :param remote_path: full remote file path
+    :type remote_path: PurePosixPath
     :return: file content
     """
     lines: list[str] = []
@@ -164,7 +181,9 @@ class ThreadLocalFTP:
         """Initialise with FTP host and timeout.
 
         :param host: FTP hostname (required — no default)
+        :type host: str
         :param timeout: connection timeout in seconds
+        :type timeout: int
         """
         self._host = host
         self._timeout = timeout
