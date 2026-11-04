@@ -95,8 +95,8 @@ def test_settings_valid_batch_size(
 @pytest.mark.parametrize(
     ("bad_batch_size", "message"),
     [
-        ("0", "Input should be greater than or equal to 1"),
-        ("-1", "Input should be greater than or equal to 1"),
+        ("0", "Input should be greater than 0"),
+        ("-1", "Input should be greater than 0"),
         ("1001", f"Input should be less than or equal to {MAX_IDS_PER_QUERY}"),
         ("notanint", "Input should be a valid integer"),
         ("", "Input should be a valid integer"),
