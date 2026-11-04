@@ -435,7 +435,9 @@ def render(config: ConverterSpecConfig) -> str:
         f"`{_rel(p, REPO_ROOT)}`"
         for p in (config.data_dir / "rules.yaml", *(config.data_dir / s for s in config.suites))
     )
-    out = [GENERATED_BANNER.format(sources=sources), "", f"# {catalogue.title}", "", catalogue.intro, ""]
+    out = [GENERATED_BANNER.format(sources=sources), "", f"# {catalogue.title}", ""]
+    if catalogue.intro:
+        out += [catalogue.intro, ""]
     contents = (
         "**Contents:** [1. Conversion Rules](#1-conversion-rules) · [2. Cases](#2-cases) · "
         "[3. Errors](#3-errors-unsupported--invalid-input) · [4. Fixture Index](#4-fixture-index)"
@@ -447,10 +449,7 @@ def render(config: ConverterSpecConfig) -> str:
         out += _render_case(case, catalogue, config)
     out += _render_errors(errors, config)
     out += _render_index(cases, config)
-    text = "\n".join(out)
-    while "\n\n\n" in text:
-        text = text.replace("\n\n\n", "\n\n")
-    return text.rstrip() + "\n"
+    return "\n".join(out).rstrip() + "\n"
 
 
 XSD_TO_PYARROW = ConverterSpecConfig(
