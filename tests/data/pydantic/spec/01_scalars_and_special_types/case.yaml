@@ -1,0 +1,26 @@
+title: Scalars, Network/Path Types, Temporal Types, Binary, and Decimals
+rules:
+  - R-MODEL-INPUT
+  - R-UNWRAP
+  - R-NAME-FIELD
+  - R-ORDER
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-SCALAR-TYPE
+  - R-SCALAR-DECIMAL
+  - R-SCALAR-TEMPORAL
+  - R-SCALAR-BINARY
+  - R-SCALAR-ANNOTATED
+  - R-META-PYDANTIC-TYPE
+  - R-META-COMMENT
+  - R-COERCE-INPUT
+  - R-COERCE-SCALAR
+  - R-COERCE-SPARSE
+schema: schema.py
+expected_schema: expected_schema.py
+runs:
+  - id: maximal
+    data: data.json
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_count: 2

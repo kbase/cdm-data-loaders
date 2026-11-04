@@ -1,0 +1,18 @@
+title: Scalar Unions, Model Unions, Discriminated Unions, and Scalar + Model Unions
+rules:
+  - R-UNION-SCALAR
+  - R-UNION-MODEL
+  - R-UNION-DISCRIMINATED
+  - R-UNION-SCALAR-MODEL
+  - R-MERGE-DUPLICATE
+  - R-NULL-UNION-BRANCH
+  - R-COERCE-STRING-FALLBACK
+  - R-COERCE-VALUE
+schema: schema.py
+expected_schema: expected_schema.py
+runs:
+  - id: maximal
+    data: data.json
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_count: 2

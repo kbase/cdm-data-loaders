@@ -1,0 +1,20 @@
+[
+    {
+        "recordId": "rec-a",
+        "displayName": "Alpha",
+        "alt_input": 100,
+        "child": {
+            "code": "c-1",
+            "serialized_score": 9.5
+        }
+    },
+    {
+        "recordId": "rec-b",
+        "displayName": "Beta",
+        "alt_input": 200,
+        "child": {
+            "code": "c-2",
+            "serialized_score": 4.25
+        }
+    }
+]

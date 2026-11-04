@@ -1,0 +1,24 @@
+title: Self-Recursive and Mutually Recursive Models with `max_recursion_depth`
+rules:
+  - R-RECURSION
+  - R-COERCE-STRING-FALLBACK
+notes: |
+  `TaxonNode` is self-recursive (`children: list[TaxonNode]`); `PathwayStep` and `ReactionNode` are mutually
+  recursive. At `max_recursion_depth=2` the third level collapses to `pa.string()` serialized with `json.dumps`;
+  at `max_recursion_depth=1` the second level already collapses to `pa.string()`.
+schema: schema.py
+expected_schema: expected_schema.py
+runs:
+  - id: depth-2
+    params: {max_recursion_depth: 2}
+    data: data.json
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_count: 1
+  - id: depth-1
+    params: {max_recursion_depth: 1}
+    data: data.json
+    expected_json: expected_depth_1.json
+    schema_attr: EXPECTED_SCHEMA_DEPTH_1
+    table_attr: EXPECTED_TABLE_DEPTH_1
+    expected_count: 1

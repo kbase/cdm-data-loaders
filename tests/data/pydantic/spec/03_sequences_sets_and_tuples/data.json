@@ -1,0 +1,24 @@
+[
+  {
+    "id": "seq-1",
+    "tags": ["alpha", "beta"],
+    "nullable_scores": [10, null, 30],
+    "matrix": [[1.0, 2.0], [3.5, 4.5]],
+    "unique_codes": ["c2", "c1", "c3"],
+    "frozen_flags": [2, 1],
+    "variadic_labels": ["x", "y", "z"],
+    "point_3d": ["origin", 0, 1.25],
+    "optional_pair": [7, "seven"]
+  },
+  {
+    "id": "seq-2",
+    "tags": [],
+    "nullable_scores": [5, 15],
+    "matrix": [[0.0]],
+    "unique_codes": ["only"],
+    "frozen_flags": [9],
+    "variadic_labels": ["single"],
+    "point_3d": ["axis", 4, null],
+    "optional_pair": null
+  }
+]

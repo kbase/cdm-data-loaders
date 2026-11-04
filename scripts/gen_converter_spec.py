@@ -7,20 +7,64 @@ Usage::
 """
 
 import argparse
+import datetime as dt
 import json
 import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
+from decimal import Decimal
+from enum import IntEnum, StrEnum
+from ipaddress import IPv4Address, IPv6Address
+from pathlib import Path, PurePath
+from typing import Annotated, Any, Final, Literal
+from uuid import UUID
 
 import pyarrow as pa
+from pydantic import (
+    AnyUrl,
+    AwareDatetime,
+    Base64Bytes,
+    Base64Str,
+    EmailStr,
+    Field,
+    FutureDate,
+    FutureDatetime,
+    HttpUrl,
+    IPvAnyAddress,
+    IPvAnyInterface,
+    IPvAnyNetwork,
+    NaiveDatetime,
+    NameEmail,
+    NegativeFloat,
+    NegativeInt,
+    NonNegativeFloat,
+    NonNegativeInt,
+    NonPositiveFloat,
+    NonPositiveInt,
+    PastDate,
+    PastDatetime,
+    PositiveFloat,
+    PositiveInt,
+    SecretBytes,
+    SecretStr,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+)
 
 from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
     JSONSCHEMA_TO_PYARROW_ERRORS,
     JSONSchemaToPyArrowError,
     resolve_scalar_type,
+)
+from cdm_data_loaders.converters.pydantic_to_pyarrow import (
+    PYDANTIC_TO_PYARROW_ERRORS,
+    PydanticToPyArrowError,
+)
+from cdm_data_loaders.converters.pydantic_to_pyarrow import (
+    resolve_scalar_type as resolve_pydantic_scalar_type,
 )
 from cdm_data_loaders.readers.xsd import (
     BUILTIN_LIST_ITEM_TYPES,
@@ -47,6 +91,9 @@ _PA_CONSTRUCTORS: dict[str, str] = {
     "uint64": "pa.uint64()",
     "double": "pa.float64()",
     "date32[day]": "pa.date32()",
+    "time64[us]": 'pa.time64("us")',
+    "timestamp[us, tz=UTC]": 'pa.timestamp("us", tz="UTC")',
+    "timestamp[us]": 'pa.timestamp("us")',
     "binary": "pa.binary()",
 }
 
@@ -55,6 +102,9 @@ _PY_TYPES: dict[str, str] = {
     "bool": "`bool`",
     "double": "`float`",
     "date32[day]": "`datetime.date`",
+    "time64[us]": "`datetime.time`",
+    "timestamp[us, tz=UTC]": "`datetime.datetime` (UTC)",
+    "timestamp[us]": "`datetime.datetime` (naive)",
     "binary": "`bytes`",
 }
 
@@ -84,12 +134,16 @@ def _code_block(path: Path, lang: str) -> str:
 
 
 def _pa_ctor(dtype: pa.DataType) -> str:
+    if isinstance(dtype, pa.Decimal128Type):
+        return f"pa.decimal128({dtype.precision}, {dtype.scale})"
     return _PA_CONSTRUCTORS.get(str(dtype), f"`{dtype}`")
 
 
 def _py_type(dtype: pa.DataType) -> str:
     if pa.types.is_integer(dtype):
         return "`int`"
+    if isinstance(dtype, pa.Decimal128Type):
+        return "`decimal.Decimal`"
     return _PY_TYPES.get(str(dtype), f"`{dtype}`")
 
 
@@ -146,6 +200,106 @@ def render_jsonschema_scalar_table() -> str:
         dtype, label = resolve_scalar_type(probe)
         cell_label = label.replace("|", "\\|")
         lines.append(f"| `{json.dumps(probe)}` | {_py_type(dtype)} | `{_pa_ctor(dtype)}` | `{cell_label}` |")
+    return "\n".join(lines)
+
+
+class _SampleStrEnum(StrEnum):
+    ALPHA = "alpha"
+    BETA = "beta"
+
+
+class _SampleIntEnum(IntEnum):
+    ONE = 1
+    TWO = 2
+
+
+PYDANTIC_SCALAR_PROBES: Final[tuple[tuple[str, Any], ...]] = (
+    ("`bool`, `StrictBool`", bool),
+    (
+        "`int`, `StrictInt`, `PositiveInt`, `NegativeInt`, `NonNegativeInt`, `NonPositiveInt`",
+        PositiveInt,
+    ),
+    (
+        "`float`, `StrictFloat`, `PositiveFloat`, `NegativeFloat`, `NonNegativeFloat`, `NonPositiveFloat`",
+        PositiveFloat,
+    ),
+    (
+        "`str`, `StrictStr`, `SecretStr`, `EmailStr`, `NameEmail`, `AnyUrl`, `HttpUrl`, `Base64Str`",
+        str,
+    ),
+    ("`Decimal` (unconstrained)", Decimal),
+    (
+        "`Annotated[Decimal, Field(max_digits=10, decimal_places=2)]`",
+        Annotated[Decimal, Field(max_digits=10, decimal_places=2)],
+    ),
+    ("`datetime.date`, `PastDate`, `FutureDate`", dt.date),
+    ("`datetime.datetime`, `AwareDatetime`, `PastDatetime`, `FutureDatetime`", dt.datetime),
+    ("`NaiveDatetime`", NaiveDatetime),
+    ("`datetime.time`", dt.time),
+    ("`datetime.timedelta`", dt.timedelta),
+    ("`UUID`, `UUID1`..`UUID5`", UUID),
+    ("`Path`, `PurePath`, `FilePath`, `DirectoryPath`, `NewPath`", Path),
+    (
+        "`IPv4Address`, `IPv6Address`, `IPv4Network`, `IPv6Network`, `IPvAnyAddress`, `IPvAnyInterface`, `IPvAnyNetwork`",
+        IPv4Address,
+    ),
+    ("`bytes`, `bytearray`, `SecretBytes`", bytes),
+    ("`Base64Bytes`", Base64Bytes),
+    ("`StrEnum`, `Enum` (str values)", _SampleStrEnum),
+    ("`IntEnum`, `Enum` (int values)", _SampleIntEnum),
+    ("`Literal[1, 2]`", Literal[1, 2]),
+    ("`Literal[1, 2.5]`", Literal[1, 2.5]),
+    ('`Literal[1, "two", True]`', Literal[1, "two", True]),
+    ("`int | float`", int | float),
+    ("`int | str`", int | str),
+    ("`str | None`", str | None),
+)
+
+
+def render_pydantic_scalar_table() -> str:
+    """Render the Pydantic scalar mapping table by resolving probe annotations through the converter.
+
+    :return: Markdown table of Pydantic scalar probe mappings.
+    :rtype: str
+    """
+    _ = (
+        AnyUrl,
+        AwareDatetime,
+        Base64Str,
+        EmailStr,
+        FutureDate,
+        FutureDatetime,
+        HttpUrl,
+        IPv6Address,
+        IPvAnyAddress,
+        IPvAnyInterface,
+        IPvAnyNetwork,
+        NameEmail,
+        NegativeFloat,
+        NegativeInt,
+        NonNegativeFloat,
+        NonNegativeInt,
+        NonPositiveFloat,
+        NonPositiveInt,
+        PastDate,
+        PastDatetime,
+        PurePath,
+        SecretBytes,
+        SecretStr,
+        StrictBool,
+        StrictFloat,
+        StrictInt,
+        StrictStr,
+    )
+    lines = [
+        '| Pydantic type / annotation | Python type (coerced) | PyArrow `DataType` | `metadata["pydantic_type"]` |',
+        "| :--- | :--- | :--- | :--- |",
+    ]
+    for display_label, annotation in PYDANTIC_SCALAR_PROBES:
+        dtype, label = resolve_pydantic_scalar_type(annotation)
+        cell_display = display_label.replace("|", "\\|")
+        cell_label = label.replace("|", "\\|")
+        lines.append(f"| {cell_display} | {_py_type(dtype)} | `{_pa_ctor(dtype)}` | `{cell_label}` |")
     return "\n".join(lines)
 
 
@@ -324,7 +478,19 @@ JSONSCHEMA_TO_PYARROW = ConverterSpecConfig(
     generated_tables={"scalar_table": render_jsonschema_scalar_table},
 )
 
-CONFIGS: tuple[ConverterSpecConfig, ...] = (XSD_TO_PYARROW, JSONSCHEMA_TO_PYARROW)
+PYDANTIC_TO_PYARROW = ConverterSpecConfig(
+    data_dir=REPO_ROOT / "tests" / "data" / "pydantic",
+    output=REPO_ROOT / "docs" / "pydantic_to_pyarrow_specification.md",
+    suites=("spec", "examples"),
+    error_manifest=REPO_ROOT / "tests" / "data" / "pydantic" / "spec" / "errors" / "manifest.yaml",
+    error_base=PydanticToPyArrowError,
+    error_classes=PYDANTIC_TO_PYARROW_ERRORS,
+    schema_lang="python",
+    data_lang="json",
+    generated_tables={"scalar_table": render_pydantic_scalar_table},
+)
+
+CONFIGS: tuple[ConverterSpecConfig, ...] = (XSD_TO_PYARROW, JSONSCHEMA_TO_PYARROW, PYDANTIC_TO_PYARROW)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -1,0 +1,14 @@
+[
+  {
+    "accession": "GCF_000005845.2",
+    "overridden_accession": "GCA_000005845.2",
+    "coverage": "125.375",
+    "quality_phred": 40
+  },
+  {
+    "accession": "GCF_000009045.1",
+    "overridden_accession": "GCA_000009045.1",
+    "coverage": "50.000",
+    "quality_phred": 35
+  }
+]
