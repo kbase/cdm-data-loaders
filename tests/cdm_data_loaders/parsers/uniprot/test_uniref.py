@@ -11,7 +11,6 @@ from lxml.etree import XMLParser, fromstring
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.parsers.uniprot.uniref import (
     ENTRY_XML_TAG,
-    UNIREF_CDM_SCHEMA_MAP,
     UNIREF_URL,
     extract_cluster,
     extract_cross_refs,
@@ -683,10 +682,9 @@ def test_parse_uniref_entry_no_cluster_id() -> None:
 
 
 def test_make_uniref_cdm_transform() -> None:
-    """Test that make_uniref_cdm_transform builds a TableTransform with UNIREF_CDM_SCHEMA_MAP."""
-    transform = make_uniref_cdm_transform(PROTOCOL, timestamp=NOW)
-    assert transform.table_to_schema_map == UNIREF_CDM_SCHEMA_MAP
-    assert transform.transform_fn is not None
+    """Test that make_uniref_cdm_transform builds a RecordTransformFn that routes UniRef entries."""
+    transform_fn = make_uniref_cdm_transform(PROTOCOL, timestamp=NOW)
+    assert callable(transform_fn)
 
     entry_dict = {
         "_id": "UniRef50_TEST",
@@ -700,7 +698,7 @@ def test_make_uniref_cdm_transform() -> None:
             }
         },
     }
-    routed = transform.transform_fn(entry_dict)
+    routed = transform_fn(entry_dict)
     assert routed["cluster"] == [
         {
             "cluster_id": "uniref:UniRef50_TEST",

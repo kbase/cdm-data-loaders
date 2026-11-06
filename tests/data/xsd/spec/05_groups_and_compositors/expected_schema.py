@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 05_groups_and_compositors (xml_tag='item')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

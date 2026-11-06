@@ -1,7 +1,5 @@
 """Expected PyArrow table for maximal real-world example cts_job."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 from expected_schema import EXPECTED_SCHEMA
 

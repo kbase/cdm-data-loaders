@@ -52,13 +52,13 @@ def run_reference_pipeline(
         EXTRACT_PIPELINE_NAME: (JsonlExtractSettings, {"table_name": "dataset"}, "jsonl_extract_run", "**/*.jsonl*"),
         PYDANTIC_PIPELINE_NAME: (
             JsonlPydanticIngestSettings,
-            {"entity_models_module": "tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_models"},
+            {"entity_models": "tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_models"},
             "jsonl_extract_validate_run",
             "*.jsonl*",
         ),
         JSONSCHEMA_PIPELINE_NAME: (
             JsonlJsonschemaIngestSettings,
-            {"schema_files_module": "tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas"},
+            {"entity_schemas": "tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas"},
             "jsonschema_run",
             "*.jsonl*",
         ),
@@ -101,20 +101,16 @@ def prepare_reference(pipeline_kind: str) -> PrepareReference:
 @pytest.fixture
 def reference_registry_factory(
     pipeline_kind: str,
-    entity_models_module_factory: Callable[[dict[str, type[BaseModel]]], str],
-    schema_module_factory: Callable[[object], str],
+    entity_models_factory: Callable[[dict[str, type[BaseModel]]], str],
+    entity_schemas_factory: Callable[[object], str],
 ) -> Callable[[list[str]], dict[str, str]]:
     """Register the requested tables using the selected pipeline's assembly contract."""
 
     def _factory(table_names: list[str]) -> dict[str, str]:
         if pipeline_kind == PYDANTIC_PIPELINE_NAME:
-            return {
-                "entity_models_module": entity_models_module_factory(
-                    dict.fromkeys(table_names, ENTITY_MODELS["dataset"])
-                )
-            }
+            return {"entity_models": entity_models_factory(dict.fromkeys(table_names, ENTITY_MODELS["dataset"]))}
         if pipeline_kind == JSONSCHEMA_PIPELINE_NAME:
-            return {"schema_files_module": schema_module_factory(dict.fromkeys(table_names, ENTITY_SCHEMAS["dataset"]))}
+            return {"entity_schemas": entity_schemas_factory(dict.fromkeys(table_names, ENTITY_SCHEMAS["dataset"]))}
         return {}
 
     return _factory

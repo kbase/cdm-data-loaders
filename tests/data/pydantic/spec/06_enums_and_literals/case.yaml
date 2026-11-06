@@ -1,0 +1,12 @@
+title: Enums (StrEnum, IntEnum, General Enum) and Literal Types
+rules:
+  - R-SCALAR-ENUM-LITERAL
+  - R-META-COMMENT
+schema: schema.py
+expected_schema: expected_schema.py
+runs:
+  - id: maximal
+    data: data.json
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_count: 2

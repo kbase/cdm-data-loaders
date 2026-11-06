@@ -170,10 +170,7 @@ def test_coerce_record_for_pyarrow_pass_cases(case: Case, run: Run) -> None:
     """Records coerce to the expected rows, build the expected table and round-trip through Parquet."""
     depth = _max_recursion_depth(run)
     pa_schema = generate_pyarrow_schema(_load_json_object(case.schema), max_recursion_depth=depth)
-    rows = [
-        coerce_record_for_pyarrow(record, pa_schema, max_recursion_depth=depth)
-        for record in _load_json_records(run.data)
-    ]
+    rows = [coerce_record_for_pyarrow(record, pa_schema) for record in _load_json_records(run.data)]
     assert_rows_and_table_match_expected(
         rows, pa_schema, run.expected_json, run.expected_table, table_attr=run.table_attr
     )

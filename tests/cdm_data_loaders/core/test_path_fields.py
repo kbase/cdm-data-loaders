@@ -19,6 +19,7 @@ from cdm_data_loaders.core.path_fields import (
     ensure_dir,
     is_local,
     normalise_dir,
+    to_absolute,
     url_protocol,
 )
 
@@ -145,6 +146,35 @@ def test_check_local_path_fail_empty(value: str) -> None:
     with pytest.raises(ValueError, match="Path must not be empty") as exc_info:
         check_local_path(value)
     assert str(exc_info.value) == PATH_EMPTY
+
+
+@pytest.mark.parametrize(
+    ("rel_input", "expected_parts"),
+    [
+        pytest.param(None, ("real", "sub"), id="already_absolute"),
+        pytest.param(Path("real/sub"), ("real", "sub"), id="relative_path"),
+        pytest.param(Path(), (), id="current_dir"),
+        pytest.param(Path("real/sub/../other/.."), ("real",), id="dot_dot_segments"),
+        pytest.param(Path("symlink_to_sub"), ("real", "sub"), id="symlink"),
+    ],
+)
+def test_to_absolute_pass(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    rel_input: Path | None,
+    expected_parts: tuple[str, ...],
+) -> None:
+    """to_absolute returns the resolved absolute Path for absolute, relative, dot-segment, and symlink paths."""
+    target_dir = tmp_path / "real" / "sub"
+    target_dir.mkdir(parents=True)
+    (tmp_path / "symlink_to_sub").symlink_to(target_dir)
+    monkeypatch.chdir(tmp_path)
+
+    input_path = target_dir if rel_input is None else rel_input
+    result = to_absolute(input_path)
+
+    assert result == tmp_path.joinpath(*expected_parts).resolve()
+    assert result.is_absolute()
 
 
 @pytest.mark.parametrize(

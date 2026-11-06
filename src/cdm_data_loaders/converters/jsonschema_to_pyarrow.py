@@ -7,11 +7,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
+from enum import Enum
 from typing import Any, ClassVar, Final
 
 import pyarrow as pa
 from frozendict import frozendict
-from pydantic import Field, field_validator
+from pydantic import Field, PositiveInt, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase, coerce_extra_metadata_keywords
@@ -180,7 +181,7 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
     treat_unknown_as_string: bool = True
     emit_unions_as_json: bool = False
     extra_metadata_keywords: frozenset[str] = Field(default_factory=frozenset)
-    max_nesting: int = Field(default=10, ge=1)
+    max_nesting: PositiveInt = Field(default=10)
 
     @field_validator("format_map", mode="before")
     @classmethod
@@ -861,6 +862,8 @@ def _coerce_scalar_for_pyarrow(
     metadata: dict[bytes, bytes] | None = None,
 ) -> Any:  # noqa: ANN401
     """Coerce a JSON-parsed value to match a PyArrow scalar type."""
+    if isinstance(value, Enum):
+        value = value.value
     if isinstance(value, str):
         return _coerce_string_input_scalar(value, data_type, metadata)
     if pa.types.is_decimal(data_type) and isinstance(value, int | float) and not isinstance(value, bool):
@@ -922,8 +925,6 @@ def _coerce_value_for_pyarrow(
 def coerce_record_for_pyarrow(
     record: dict[str, Any],
     schema: pa.Schema,
-    *,
-    max_recursion_depth: int | None = DEFAULT_MAX_RECURSION_DEPTH,
 ) -> dict[str, Any]:
     """Coerce a JSON-validated record dictionary to match a PyArrow schema.
 
@@ -934,12 +935,9 @@ def coerce_record_for_pyarrow(
     :type record: dict[str, Any]
     :param schema: target PyArrow schema for the record's table
     :type schema: pa.Schema
-    :param max_recursion_depth: optional recursion depth parameter accepted for caller compatibility
-    :type max_recursion_depth: int | None
-    :return: coerced record dictionary ready for ``ArrowListBuffer`` or ``pa.Table.from_pylist``
+    :return: coerced record dictionary ready for ``DictBuffer`` or ``pa.Table.from_pylist``
     :rtype: dict[str, Any]
     """
-    _ = max_recursion_depth
     return {
         field.name: _coerce_value_for_pyarrow(record[field.name], field.type, field.metadata)
         for field in schema

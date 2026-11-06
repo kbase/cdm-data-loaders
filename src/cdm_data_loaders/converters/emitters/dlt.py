@@ -11,7 +11,7 @@ from dlt.common.data_types.typing import TDataType
 from dlt.common.schema import Schema
 from dlt.common.schema.typing import TColumnSchema, TStoredSchema, TTableSchema
 from dlt.common.schema.utils import new_column, new_table
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.inference import json_type_from_enum
@@ -203,7 +203,7 @@ class DltEmitter(BaseModel):
 
     schema_name: str
     skip_nested_types: bool = False
-    max_nesting: int = Field(default=10, ge=1)
+    max_nesting: PositiveInt = Field(default=10)
     write_disposition: str | None = None
     flatten_scalars: bool = True
 

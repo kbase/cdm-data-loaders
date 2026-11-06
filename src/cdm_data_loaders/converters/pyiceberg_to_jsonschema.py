@@ -49,9 +49,13 @@ def table_to_json_schema(
     """Read loaded table metadata and emit a JSON Schema document without I/O.
 
     :param table: Loaded Iceberg table.
+    :type table: Table
     :param identifier: Namespace and table name.
+    :type identifier: tuple[str, ...]
     :param extension_registry: Registry for Iceberg extensions.
+    :type extension_registry: ExtensionRegistry
     :param schema: Optional namespace document to add the table's schema into, preserving existing entries.
+    :type schema: dict[str, Any] | None
     :returns: JSON Schema document, or the destination namespace document when ``schema`` is given.
     """
     document = IcebergReader(extension_registry, mapping_target="JSON Schema").read_table(table, identifier)

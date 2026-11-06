@@ -1,5 +1,6 @@
 """Global configuration settings for tests."""
 
+import gc
 import gzip
 import logging
 import os
@@ -177,6 +178,7 @@ def isolate_dlt_pipelines_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     yield
     if Container()[PipelineContext].is_active():
         Container()[PipelineContext].deactivate()
+        gc.collect()
 
 
 @pytest.fixture(autouse=True)

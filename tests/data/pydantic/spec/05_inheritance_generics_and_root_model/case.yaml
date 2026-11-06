@@ -1,0 +1,14 @@
+title: Model Inheritance, Parameterized Generics, and RootModel Unwrapping
+rules:
+  - R-ROOT-MODEL-UNWRAP
+  - R-MODEL-INHERITANCE
+  - R-GENERIC-MODEL
+  - R-ORDER
+schema: schema.py
+expected_schema: expected_schema.py
+runs:
+  - id: maximal
+    data: data.json
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_count: 2

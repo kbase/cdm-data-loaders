@@ -1,5 +1,6 @@
 """Tests for the settings classes and helpers in cdm_data_loaders.core.settings."""
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,7 @@ from frozendict import frozendict
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
-from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
+from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME, REPORT_FILE_NAME
 from cdm_data_loaders.core.settings import (
     DEFAULT_SETTINGS_CONFIG_DICT,
     FILE_FORMAT_CLI_SHORTCUTS,
@@ -21,6 +22,7 @@ from cdm_data_loaders.core.settings import (
     SingleTableXmlIngestSettings,
     XmlIngestSettings,
     default_settings_with_shortcuts,
+    select_cli_shortcuts,
 )
 from tests.cdm_data_loaders.conftest import (
     SETTINGS_SOURCES,
@@ -47,6 +49,14 @@ from tests.helpers import (
         XmlIngestSettings,
         SingleTableXmlIngestSettings,
     ],
+    ids=[
+        "logger",
+        "local-io",
+        "cts",
+        "file-format-ingest",
+        "xml-ingest",
+        "single-table-xml-ingest",
+    ],
 )
 def test_settings_pass_no_cli_clashes(settings_cls: type[CdmDataLoadersBase]) -> None:
     """Every core settings class has no CLI argument or alias collisions."""
@@ -61,7 +71,7 @@ def test_cts_settings_pass_all_params_set(
     check_settings(CtsSettings(**test_cts_settings), test_cts_settings_reconciled)
 
 
-@pytest.mark.parametrize("field_name", list(CtsSettings.model_fields))
+@pytest.mark.parametrize("field_name", list(CtsSettings.model_fields), ids=str)
 def test_cts_settings_pass_cli_field_roundtrips(
     field_name: str,
     test_cts_settings: frozendict[str, Any],
@@ -119,7 +129,7 @@ def test_default_settings_with_shortcuts_pass(kwargs: dict[str, Any], extra_expe
     assert default_settings_with_shortcuts(**kwargs) == {**DEFAULT_SETTINGS_CONFIG_DICT, **extra_expected}
 
 
-@pytest.mark.parametrize("source", SETTINGS_SOURCES)
+@pytest.mark.parametrize("source", SETTINGS_SOURCES, ids=str)
 @pytest.mark.parametrize(
     ("values", "expected"),
     [
@@ -137,7 +147,7 @@ def test_logger_settings_pass_sources(
     check_settings(make_settings(LoggerSettings, source, values), expected)
 
 
-@pytest.mark.parametrize("source", SETTINGS_SOURCES)
+@pytest.mark.parametrize("source", SETTINGS_SOURCES, ids=str)
 def test_logger_settings_fail_whitespace_only_log_config_file(make_settings: SettingsFactory, source: str) -> None:
     """Reject a log_config_file that is empty after whitespace stripping."""
     with pytest.raises(ValidationError) as exc_info:
@@ -145,7 +155,7 @@ def test_logger_settings_fail_whitespace_only_log_config_file(make_settings: Set
     assert {err["loc"][0] for err in exc_info.value.errors()} == {"log_config_file"}
 
 
-@pytest.mark.parametrize("source", SETTINGS_SOURCES)
+@pytest.mark.parametrize("source", SETTINGS_SOURCES, ids=str)
 def test_local_input_output_settings_pass_sources(
     make_settings: SettingsFactory, source: str, input_dir: Path, output_dir: Path
 ) -> None:
@@ -162,7 +172,7 @@ def test_local_input_output_settings_pass_cli_shortcuts(input_dir: Path, output_
     check_settings(settings, local_io_expected(input_dir, output_dir))
 
 
-@pytest.mark.parametrize("source", SETTINGS_SOURCES)
+@pytest.mark.parametrize("source", SETTINGS_SOURCES, ids=str)
 @pytest.mark.parametrize(
     ("values", "overrides"),
     [
@@ -290,13 +300,11 @@ def test_file_format_ingest_settings_pass_cli_shortcuts(test_defaults: dict[str,
     )
 
 
-@pytest.mark.parametrize("source", SETTINGS_SOURCES)
-def test_xml_ingest_settings_pass_defaults_and_cli_shortcuts(
+@pytest.mark.parametrize("source", SETTINGS_SOURCES, ids=str)
+def test_xml_ingest_settings_pass_defaults_across_sources(
     make_settings: SettingsFactory, source: str, test_defaults: dict[str, Any]
 ) -> None:
-    """XmlIngestSettings defaults file_glob to '*.xml*' across sources and supports XML_CLI_SHORTCUTS (-f, -g)."""
-    assert XML_CLI_SHORTCUTS["loader_file_format"] == "f"
-    assert XML_CLI_SHORTCUTS["file_glob"] == "g"
+    """XmlIngestSettings defaults file_glob to '*.xml*' and loader_file_format to 'parquet' across sources."""
     default_glob_settings = make_settings(
         XmlIngestSettings,
         source,
@@ -313,10 +321,17 @@ def test_xml_ingest_settings_pass_defaults_and_cli_shortcuts(
             "file_glob": "*.xml*",
         },
     )
+
+
+def test_xml_ingest_settings_pass_cli_shortcuts(test_defaults: dict[str, Any]) -> None:
+    """XmlIngestSettings supports XML_CLI_SHORTCUTS (-f, -g)."""
+    assert XML_CLI_SHORTCUTS["loader_file_format"] == "f"
+    assert XML_CLI_SHORTCUTS["file_glob"] == "g"
+    base = XmlIngestSettings(**test_defaults, dataset_name="xml_dataset")
     cli_settings = CliApp.run(
         XmlIngestSettings,
         cli_args=[
-            *settings_to_argv(default_glob_settings, exclude=["loader_file_format", "file_glob"]),
+            *settings_to_argv(base, exclude=["loader_file_format", "file_glob"]),
             "-f",
             "jsonl",
             "-g",
@@ -333,7 +348,7 @@ def test_xml_ingest_settings_pass_defaults_and_cli_shortcuts(
     )
 
 
-@pytest.mark.parametrize("field", ["buffer_size", "log_interval"])
+@pytest.mark.parametrize("field", ["buffer_size", "log_interval"], ids=["buffer_size", "log_interval"])
 def test_cts_settings_fail_non_positive_int_fields(test_defaults: dict[str, Any], field: str) -> None:
     """buffer_size and log_interval must be positive integers."""
     with pytest.raises(ValidationError):
@@ -346,7 +361,7 @@ def test_cts_settings_fail_s3_output_dir(test_defaults: dict[str, Any]) -> None:
         CtsSettings(**{**test_defaults, "output_dir": "s3://some-bucket/path"})
 
 
-@pytest.mark.parametrize("destination", [S3, "not_a_destination"])
+@pytest.mark.parametrize("destination", [S3, "not_a_destination"], ids=["s3", "custom_destination"])
 def test_cts_settings_pass_any_non_empty_use_destination_accepted_at_construction(
     test_defaults: dict[str, Any], destination: str
 ) -> None:
@@ -355,7 +370,7 @@ def test_cts_settings_pass_any_non_empty_use_destination_accepted_at_constructio
     assert settings.use_destination == destination
 
 
-@pytest.mark.parametrize("dataset_name", [None, ""])
+@pytest.mark.parametrize("dataset_name", [None, ""], ids=["none", "empty"])
 def test_file_format_ingest_settings_fail_missing_or_empty_dataset_name(
     test_defaults: dict[str, Any], dataset_name: str | None
 ) -> None:
@@ -364,8 +379,8 @@ def test_file_format_ingest_settings_fail_missing_or_empty_dataset_name(
         FileFormatIngestSettings(**test_defaults, dataset_name=dataset_name)  # type: ignore[arg-type]
 
 
-def test_single_table_xml_ingest_settings_pass_and_fail_validation(test_defaults: dict[str, Any]) -> None:
-    """SingleTableXmlIngestSettings requires non-empty table_name and xml_tag."""
+def test_single_table_xml_ingest_settings_pass(test_defaults: dict[str, Any]) -> None:
+    """SingleTableXmlIngestSettings populates table_name, xml_tag, and default file_glob."""
     settings = SingleTableXmlIngestSettings(
         **test_defaults,
         dataset_name="xml_ds",
@@ -376,13 +391,113 @@ def test_single_table_xml_ingest_settings_pass_and_fail_validation(test_defaults
     assert settings.xml_tag == "entry"
     assert settings.file_glob == "*.xml*"
 
-    for missing_field in ("table_name", "xml_tag"):
-        kwargs: dict[str, Any] = {
+
+@pytest.mark.parametrize(
+    ("shortcuts", "keys", "base", "expected"),
+    [
+        pytest.param(
+            {"file_glob": "g"},
+            (),
+            FILE_FORMAT_CLI_SHORTCUTS,
+            dict(FILE_FORMAT_CLI_SHORTCUTS),
+            id="no_keys_returns_base",
+        ),
+        pytest.param(
+            {},
+            ("file_glob",),
+            FILE_FORMAT_CLI_SHORTCUTS,
+            dict(FILE_FORMAT_CLI_SHORTCUTS),
+            id="empty_shortcuts_with_keys",
+        ),
+        pytest.param(
+            {"file_glob": "g", "table_name": "t", "extra": "x"},
+            ("file_glob", "table_name"),
+            FILE_FORMAT_CLI_SHORTCUTS,
+            {**FILE_FORMAT_CLI_SHORTCUTS, "file_glob": "g", "table_name": "t"},
+            id="subset_of_keys_selected",
+        ),
+        pytest.param(
+            {"file_glob": "g"},
+            ("file_glob", "nonexistent"),
+            FILE_FORMAT_CLI_SHORTCUTS,
+            {**FILE_FORMAT_CLI_SHORTCUTS, "file_glob": "g"},
+            id="unknown_keys_ignored",
+        ),
+        pytest.param(
+            {"input_dir": "x"},
+            ("input_dir",),
+            FILE_FORMAT_CLI_SHORTCUTS,
+            {**FILE_FORMAT_CLI_SHORTCUTS, "input_dir": "x"},
+            id="overrides_base_key",
+        ),
+        pytest.param(
+            {"file_glob": "g", "table_name": "t"},
+            ("file_glob",),
+            {"custom": "c"},
+            {"custom": "c", "file_glob": "g"},
+            id="custom_base_mapping",
+        ),
+        pytest.param(
+            {"file_glob": "g"},
+            ("file_glob",),
+            {},
+            {"file_glob": "g"},
+            id="empty_base_mapping",
+        ),
+    ],
+)
+def test_select_cli_shortcuts_pass(
+    shortcuts: Mapping[str, str],
+    keys: tuple[str, ...],
+    base: Mapping[str, str],
+    expected: dict[str, str],
+) -> None:
+    """Merge selected shortcut keys over the base shortcut mapping."""
+    assert select_cli_shortcuts(shortcuts, *keys, base=base) == expected
+
+
+@pytest.mark.parametrize(
+    ("use_output_dir_for_pipeline_metadata", "expected_rel_path"),
+    [
+        pytest.param(
+            False,
+            Path(REPORT_FILE_NAME),
+            id="output_dir_root",
+        ),
+        pytest.param(
+            True,
+            Path(PIPELINE_DIR_NAME) / REPORT_FILE_NAME,
+            id="pipeline_metadata_subdir",
+        ),
+    ],
+)
+def test_cts_settings_report_path_pass(
+    test_defaults: dict[str, Any],
+    use_output_dir_for_pipeline_metadata: bool,
+    expected_rel_path: Path,
+) -> None:
+    """Resolve report_path in output_dir or pipeline_dir based on use_output_dir_for_pipeline_metadata."""
+    settings = CtsSettings(
+        **{
             **test_defaults,
-            "dataset_name": "xml_ds",
-            "table_name": "entries",
-            "xml_tag": "entry",
-            missing_field: None,
+            "use_output_dir_for_pipeline_metadata": use_output_dir_for_pipeline_metadata,
         }
-        with pytest.raises(ValidationError):
-            SingleTableXmlIngestSettings(**kwargs)
+    )
+    assert settings.report_path == settings.output_dir / expected_rel_path
+
+
+@pytest.mark.parametrize("missing_field", ["table_name", "xml_tag"], ids=["missing-table-name", "missing-xml-tag"])
+def test_single_table_xml_ingest_settings_fail_missing_required_field(
+    test_defaults: dict[str, Any],
+    missing_field: str,
+) -> None:
+    """SingleTableXmlIngestSettings rejects missing table_name or xml_tag."""
+    kwargs: dict[str, Any] = {
+        **test_defaults,
+        "dataset_name": "xml_ds",
+        "table_name": "entries",
+        "xml_tag": "entry",
+        missing_field: None,
+    }
+    with pytest.raises(ValidationError):
+        SingleTableXmlIngestSettings(**kwargs)

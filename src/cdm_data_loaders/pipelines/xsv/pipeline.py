@@ -13,12 +13,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory, mkdtemp
 from typing import Any
 
+import dlt
 from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-from cdm_data_loaders.core.transforms import resolve_schema_map, route_and_coerce_record
+from cdm_data_loaders.core.transforms import route_and_coerce_record
 from cdm_data_loaders.pipelines.core import (
     DEFAULT_SCHEMA_CONTRACT,
     PipelineCli,
@@ -31,7 +32,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import read_validated_ro
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import CleanerValidatorArgs, ErrorRecord
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import clean_validate_file, qsv_check
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import generate_header
-from cdm_data_loaders.utils.buffer import create_dict_buffer
+from cdm_data_loaders.utils.buffer import DictBuffer
 from cdm_data_loaders.utils.file_items import local_copy, source_id
 
 
@@ -125,28 +126,35 @@ def _process_local_xsv_file(
 
         validated_file_name = clean_validate_file(args)
 
-    transform = settings.get_table_transform(settings.table_name)
-    schema_map = resolve_schema_map(settings.table_name, transform=transform)
-    buffer = create_dict_buffer(settings.buffer_size, table_to_schema_map=schema_map)
+    buffer = DictBuffer(max_items=settings.buffer_size, schema_map=settings.schema_map)
 
     if validated_file_name:
         properties = settings.validated_schema.jsonschema.get("properties", {})
-        rows = read_validated_rows(
+        transform = settings.get_table_transform(settings.table_name)
+        pa_schema = settings.schema_map.registry.get(settings.table_name) if settings.schema_map else None
+        items = read_validated_rows(
             file_validated_dir / validated_file_name,
             properties,
             delimiter=args.delimiter,
             quote=args.quote,
             escape=args.escape,
+            chunk_size=settings.buffer_size,
+            use_pyarrow=transform is None,
+            pa_schema=pa_schema,
         )
-        for row in rows:
-            yield from buffer.add_items(
-                route_and_coerce_record(
-                    row,
-                    settings.table_name,
-                    transform=transform,
-                    table_to_schema_map=schema_map,
+        if transform is None:
+            for table in items:
+                yield dlt.mark.with_table_name(table, settings.table_name)
+        else:
+            for row in items:
+                yield from buffer.add_items(
+                    route_and_coerce_record(
+                        row,  # type: ignore[arg-type]
+                        settings.table_name,
+                        transform=transform,
+                        schema_map=settings.schema_map,
+                    )
                 )
-            )
     elif not args.errors:
         args.errors.append(
             ErrorRecord(
@@ -189,7 +197,6 @@ def run_xsv_pipeline(settings: XsvIngestSettings) -> LoadInfo | None:
         xsv_resource = build_per_file_filesystem_resource(
             settings,
             _process_xsv_file,
-            settings,
             work_paths,
             name="xsv_reader",
             schema_contract=DEFAULT_SCHEMA_CONTRACT,

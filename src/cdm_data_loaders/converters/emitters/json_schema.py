@@ -136,7 +136,9 @@ class JsonSchemaEmitter:
         """Add a document's schema to a namespace document's ``$defs`` without overwriting existing entries.
 
         :param document: Named, table-rooted document to convert.
+        :type document: SchemaDocument
         :param schema: Destination namespace document, updated only after successful conversion.
+        :type schema: dict[str, Any]
         :returns: The destination namespace document.
         """
         if document.name is None:

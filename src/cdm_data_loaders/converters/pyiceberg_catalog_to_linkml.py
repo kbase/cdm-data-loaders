@@ -67,6 +67,7 @@ def dump_catalog_schemas(settings: IcebergToLinkMLSettings) -> None:
     each nonempty namespace produces one file containing its table classes.
 
     :param settings: Catalog name and output directory.
+    :type settings: IcebergToLinkMLSettings
     :returns: None.
     """
     dump_catalog(

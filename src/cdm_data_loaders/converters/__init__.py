@@ -1,1 +1,1 @@
-"""Schema-format translators between JSON Schema, dlt, PyIceberg, PySpark, PyArrow, and LinkML via a shared IR."""
+"""Schema-format translators between JSON Schema, Pydantic, dlt, PyIceberg, PySpark, PyArrow, and LinkML via IR."""

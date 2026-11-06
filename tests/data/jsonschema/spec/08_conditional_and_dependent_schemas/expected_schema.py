@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 08_conditional_and_dependent_schemas."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

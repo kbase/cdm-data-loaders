@@ -42,6 +42,7 @@ def parse_md5_checksums_file(text: str) -> dict[PurePosixPath, str]:
     Each line has the format ``<md5>  ./<filename>`` (two-space separator).
 
     :param text: raw text of the md5checksums.txt file
+    :type text: str
     :return: dict mapping filename to MD5 hex digest
     """
     checksums: dict[PurePosixPath, str] = {}
@@ -67,6 +68,7 @@ def build_accession_path(assembly_dir: PurePosixPath) -> PurePosixPath:
     Produces ``raw_data/{GCF|GCA}/{000}/{001}/{215}/{assembly_dir}/``.
 
     :param assembly_dir: full assembly directory name (e.g. ``GCF_000001215.4_Release_6...``)
+    :type assembly_dir: PurePosixPath
     :return: relative path
     :raises ValueError: if the assembly directory name cannot be parsed
     """
@@ -80,6 +82,7 @@ def parse_assembly_path(assembly_path: PurePosixPath) -> tuple[str, PurePosixPat
     """Extract database, assembly_dir, and accession from an FTP assembly path.
 
     :param assembly_path: FTP directory path (e.g. ``/genomes/all/GCF/000/.../GCF_000001215.4_Rel.../``)
+    :type assembly_path: PurePosixPath
     :return: tuple of ``(database, assembly_dir, accession)``
     :raises ValueError: if the path cannot be parsed
     """
@@ -152,9 +155,13 @@ def download_assembly_to_local(
     sidecar files for downstream metadata.
 
     :param assembly_path: FTP directory path for the assembly
+    :type assembly_path: PurePosixPath
     :param output_dir: base output directory
+    :type output_dir: Path
     :param ftp_host: FTP hostname
+    :type ftp_host: str
     :param ftp: optional existing FTP connection (caller manages lifecycle)
+    :type ftp: FTP | None
     :return: json parsable dict with download statistics
     """
     _database, assembly_dir, accession = parse_assembly_path(assembly_path)

@@ -50,6 +50,7 @@ def dump_catalog_schemas(settings: IcebergToJsonSchemaSettings) -> None:
     each nonempty namespace produces one file whose ``$defs`` holds its table schemas.
 
     :param settings: Catalog name and output directory.
+    :type settings: IcebergToJsonSchemaSettings
     :returns: None.
     """
     dump_catalog(

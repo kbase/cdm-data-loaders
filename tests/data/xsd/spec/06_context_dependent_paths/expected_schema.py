@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 06_context_dependent_paths (xml_tag='root')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

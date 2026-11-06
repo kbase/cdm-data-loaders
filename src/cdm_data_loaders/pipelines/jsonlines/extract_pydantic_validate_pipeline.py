@@ -4,7 +4,7 @@ Reads JSONL files. Validates each record against a Pydantic model.
 Writes valid and invalid records to separate tables.
 
 The entity models come from an external module set by
-`entity_models_module`. That module must define:
+`entity_models`. That module must define:
 
     ENTITY_MODELS: dict[str, type[BaseModel]]
 
@@ -32,19 +32,19 @@ Write disposition is `append` or `replace` only. No merge is performed.
 """
 
 import json
+import threading
+from collections.abc import Callable
 from typing import Any
 
 from dlt.common.pipeline import LoadInfo
+from dlt.extract import DltResource
 from pydantic import BaseModel, ValidationError
 
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.jsonlines.base import (
     build_entity_resource as build_shared_entity_resource,
 )
-from cdm_data_loaders.pipelines.jsonlines.base import (
-    load_registry_dict,
-    run_registry_ingest,
-)
+from cdm_data_loaders.pipelines.jsonlines.base import run_registry_ingest
 from cdm_data_loaders.pipelines.jsonlines.settings import (
     PYDANTIC_PIPELINE_NAME,
     JsonlPydanticIngestSettings,
@@ -52,35 +52,33 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
 from cdm_data_loaders.readers.jsonlines import ParseErrorResolver
 
 
-def load_entity_models(module_path: str) -> dict[str, type[BaseModel]]:
-    """Import module_path and return its ENTITY_MODELS dict.
-
-    :param module_path: dotted import path of the module defining ENTITY_MODELS
-    :type  module_path: str
-    :return: mapping of table name to Pydantic model
-    :rtype: dict[str, type[BaseModel]]
-    :raises ValueError: if ENTITY_MODELS is missing, empty, or not a dict
-    """
-    return load_registry_dict(module_path, "ENTITY_MODELS", type_hint=": dict[str, type[BaseModel]]")
-
-
-def _make_resolve_error(model: type[BaseModel]) -> ParseErrorResolver:
-    """Build the per-record Pydantic validation closure.
-
-    A record that fails `model.model_validate` yields its error list as JSON.
-    """
+def _make_validator_callbacks(
+    model: type[BaseModel],
+) -> tuple[ParseErrorResolver, Callable[[dict[str, Any]], dict[str, Any]]]:
+    """Build paired validation and dump callbacks that validate each record at most once."""
+    state = threading.local()
 
     def _validate(record: dict[str, Any]) -> str | None:
         try:
-            model.model_validate(record)
+            state.validated = (record, model.model_validate(record).model_dump(mode="python"))
         except ValidationError as e:
+            state.validated = None
             return json.dumps(e.errors(), default=str)
         return None
 
-    return _validate
+    def _dump_validated(record: dict[str, Any]) -> dict[str, Any]:
+        cached = getattr(state, "validated", None)
+        state.validated = None
+        if cached is not None and cached[0] is record:
+            return cached[1]
+        return model.model_validate(record).model_dump(mode="python")
+
+    return _validate, _dump_validated
 
 
-def build_entity_resource(table_name: str, model: type[BaseModel], settings: JsonlPydanticIngestSettings) -> Any:  # noqa: ANN401
+def build_entity_resource(
+    table_name: str, model: type[BaseModel], settings: JsonlPydanticIngestSettings
+) -> DltResource:
     """Build the resource that reads, validates, and routes one entity's records.
 
     Reads files matching `settings.file_glob` from
@@ -95,18 +93,15 @@ def build_entity_resource(table_name: str, model: type[BaseModel], settings: Jso
     :param settings: pipeline settings
     :type  settings: JsonlPydanticIngestSettings
     :return: resource yielding validated and rejected records for this entity
-    :rtype: Any
+    :rtype: DltResource
     """
-
-    def _dump_validated(record: dict[str, Any]) -> dict[str, Any]:
-        return model.model_validate(record).model_dump(mode="python")
+    resolve_error, dump_validated = _make_validator_callbacks(model)
 
     return build_shared_entity_resource(
         table_name,
         settings,
-        resolve_error=_make_resolve_error(model),
-        transform_valid=_dump_validated,
-        table_transform=getattr(settings, "get_table_transform", lambda _t: None)(table_name),
+        resolve_error=resolve_error,
+        transform_valid=dump_validated,
     )
 
 
@@ -116,12 +111,11 @@ def run_jsonlines_with_validation_pipeline(settings: JsonlPydanticIngestSettings
     :param settings: pipeline configuration
     :type  settings: JsonlPydanticIngestSettings
     :return: load information for the pipeline
-    :rtyp: LoadInfo | None
+    :rtype: LoadInfo | None
     """
-    entity_models = load_entity_models(settings.entity_models_module)
     return run_registry_ingest(
         settings,
-        table_to_schema=entity_models,
+        registry=settings.model_registry.registry,
         build_resource=build_entity_resource,
         pipeline_name=PYDANTIC_PIPELINE_NAME,
     )

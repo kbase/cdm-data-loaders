@@ -172,7 +172,9 @@ def compute_file_checksum(file_path: str | Path, algorithm: str) -> str:
     """Compute a checksum for a local file using any algorithm new_hasher supports.
 
     :param file_path: path to the file
+    :type file_path: str | Path
     :param algorithm: hashlib algorithm name, or "crc64nvme"
+    :type algorithm: str
     :return: hex digest, or base64 digest for crc64nvme (matching S3's format)
     """
     hasher: Hasher = new_hasher(algorithm)

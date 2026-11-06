@@ -17,7 +17,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema imp
     CUSTOM_META_SCHEMA_URI,
 )
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
-    ValidatedSchema,
+    ValidatedXsvSchema,
     generate_first_pass_schema,
     generate_header,
     get_schema_parsing_metadata,
@@ -51,9 +51,9 @@ INVALID_REQUIRED_LIST = [
 
 
 @pytest.fixture
-def valid_schema() -> ValidatedSchema:
-    """Minimal ValidatedSchema object."""
-    return ValidatedSchema(
+def valid_schema() -> ValidatedXsvSchema:
+    """Minimal ValidatedXsvSchema object."""
+    return ValidatedXsvSchema(
         jsonschema={"$schema": VALID_SCHEMA_URI, "required": COLUMNS},
     )
 
@@ -72,7 +72,7 @@ def test_validate_jsonschema_pass_valid_schema(make_schema_file: Callable[..., P
     schema_path = make_schema_file(schema)
 
     result = validate_jsonschema(schema_path)
-    assert isinstance(result, ValidatedSchema)
+    assert isinstance(result, ValidatedXsvSchema)
     assert {**result.jsonschema} == schema
 
 
@@ -134,27 +134,21 @@ def test_validate_jsonschema_pass_missing_empty_required_list_is_fine_fine_fine(
         validate_jsonschema(schema_path)
 
 
-def test_validate_jsonschema_pass_validator_dgaf_about_unresolvable_schema_uri(
+@pytest.mark.parametrize(
+    "schema_uri",
+    [
+        pytest.param("https://not-a-real-schema.uri", id="unrecognised-uri"),
+        pytest.param("not-a-real-schema-uri", id="invalid-uri"),
+    ],
+)
+def test_validate_jsonschema_fail_unsupported_schema_uri(
     make_schema_file: Callable[..., Path],
+    schema_uri: str,
 ) -> None:
-    """A `$schema` value that doesn't correspond to a known JSON Schema draft does not throw an error.
-
-    The jsonschema module uses the most recent draft to validate against if the metaschema is invalid or absent.
-    """
-    schema = {"$schema": "https://not-a-real-schema.uri", "required": ["a"]}
+    """A `$schema` value that does not correspond to a supported JSON Schema draft raises ValidationError."""
+    schema = {"$schema": schema_uri, "required": ["a"]}
     schema_path = make_schema_file(schema)
-    validated_schema = validate_jsonschema(schema_path)
-    assert isinstance(validated_schema, ValidatedSchema)
-    assert {**validated_schema.jsonschema} == schema
-
-
-def test_validate_jsonschema_pass_validator_does_gaf_about_invalid_schema_uri(
-    make_schema_file: Callable[..., Path],
-) -> None:
-    """A `$schema` value that isn't a valid URI throws a SchemaError."""
-    schema = {"$schema": "not-a-real-schema-uri", "required": ["a"]}
-    schema_path = make_schema_file(schema)
-    with pytest.raises(jsonschema.exceptions.SchemaError, match="'not-a-real-schema-uri' is not a 'uri'"):
+    with pytest.raises(ValidationError, match=f"Unsupported JSON Schema draft: {re.escape(schema_uri)}"):
         validate_jsonschema(schema_path)
 
 
@@ -178,7 +172,7 @@ def test_validate_jsonschema_fail_invalid_schema_content_logs_and_raises_schema_
     "fixture_name", ["first_pass_schema_path", "post_norm_schema_path", "derived_first_pass_schema_path"]
 )
 def test_validate_jsonschema_fixtures_are_valid_schemas(fixture_name: str, request: pytest.FixtureRequest) -> None:
-    """Ensure that all the JSON Schemas used as fixtures are valid!"""
+    """Ensure that all the JSON Schemas used as fixtures are valid."""
     schema = request.getfixturevalue(fixture_name)
     validate_jsonschema(schema)
 
@@ -188,7 +182,7 @@ def test_validate_jsonschema_fixtures_are_valid_schemas(fixture_name: str, reque
 
 def test_get_schema_parsing_metadata_pass_transforms_keys() -> None:
     """Keys prefixed with "x-" are stripped of the prefix and hyphens become underscores."""
-    vs = ValidatedSchema(
+    vs = ValidatedXsvSchema(
         jsonschema={
             "$schema": VALID_SCHEMA_URI,
             "required": ["a"],
@@ -221,7 +215,7 @@ def test_get_schema_parsing_metadata_pass_transforms_keys() -> None:
 
 def test_get_schema_parsing_metadata_fail_no_xsv_config_key() -> None:
     """A schema with no x-xsv-config key raises ValueError."""
-    vs = ValidatedSchema(
+    vs = ValidatedXsvSchema(
         jsonschema={"$schema": VALID_SCHEMA_URI, "required": ["a"]},
     )
 
@@ -231,7 +225,7 @@ def test_get_schema_parsing_metadata_fail_no_xsv_config_key() -> None:
 
 def test_get_schema_parsing_metadata_fail_empty_xsv_config() -> None:
     """A schema with an empty x-xsv-config object raises ValueError."""
-    vs = ValidatedSchema(
+    vs = ValidatedXsvSchema(
         jsonschema={"$schema": VALID_SCHEMA_URI, "required": ["a"], "x-xsv-config": {}},
     )
 
@@ -293,7 +287,7 @@ def test_custom_xsv_metaschema_pass_accepts_valid_config(
     validator_cls.check_schema(schema)
     result = validate_jsonschema(make_schema_file(schema))
 
-    assert isinstance(result, ValidatedSchema)
+    assert isinstance(result, ValidatedXsvSchema)
     assert result.has_xsv_metaschema
     assert result.has_xsv_parser_config
     assert result.jsonschema == schema
@@ -338,7 +332,7 @@ def test_custom_xsv_metaschema_fail_rejects_invalid_config(
 """generate_header"""
 
 
-def test_generate_header_pass_uses_defaults(tmp_path: Path, valid_schema: ValidatedSchema) -> None:
+def test_generate_header_pass_uses_defaults(tmp_path: Path, valid_schema: ValidatedXsvSchema) -> None:
     """With no overrides, the header is written to `header.txt` using a tab delimiter."""
     result = generate_header(valid_schema, tmp_path)
     assert result == tmp_path / "header.txt"
@@ -347,28 +341,28 @@ def test_generate_header_pass_uses_defaults(tmp_path: Path, valid_schema: Valida
 
 @pytest.mark.parametrize("delimiter", DELIMITERS)
 def test_generate_header_pass_with_various_delimiters(
-    tmp_path: Path, delimiter: str, valid_schema: ValidatedSchema
+    tmp_path: Path, delimiter: str, valid_schema: ValidatedXsvSchema
 ) -> None:
     """Every delimiter supported by SEP_TO_EXT produces a correctly-joined header row."""
     result = generate_header(valid_schema, tmp_path, delimiter=delimiter)
     assert result.read_text() == delimiter.join(COLUMNS) + "\n"
 
 
-def test_generate_header_pass_with_custom_file_name(tmp_path: Path, valid_schema: ValidatedSchema) -> None:
+def test_generate_header_pass_with_custom_file_name(tmp_path: Path, valid_schema: ValidatedXsvSchema) -> None:
     """A custom header_file_name is respected in both the returned path and the file written."""
     result = generate_header(valid_schema, tmp_path, header_file_name="custom-header.tsv")
     assert result == tmp_path / "custom-header.tsv"
     assert result.read_text() == "\t".join(COLUMNS) + "\n"
 
 
-def test_generate_header_pass_overwrites_existing_file(tmp_path: Path, valid_schema: ValidatedSchema) -> None:
+def test_generate_header_pass_overwrites_existing_file(tmp_path: Path, valid_schema: ValidatedXsvSchema) -> None:
     """An existing header file at the target path is overwritten."""
     (tmp_path / "header.txt").write_text("stale content\n")
     result = generate_header(valid_schema, tmp_path)
     assert result.read_text() == "\t".join(COLUMNS) + "\n"
 
 
-def test_generate_header_fail_missing_target_dir(tmp_path: Path, valid_schema: ValidatedSchema) -> None:
+def test_generate_header_fail_missing_target_dir(tmp_path: Path, valid_schema: ValidatedXsvSchema) -> None:
     """A target_dir that doesn't exist fails DirectoryPath validation."""
     missing_dir = tmp_path / "no-such-dir"
 
@@ -376,7 +370,7 @@ def test_generate_header_fail_missing_target_dir(tmp_path: Path, valid_schema: V
         generate_header(valid_schema, missing_dir)
 
 
-def test_generate_header_fail_empty_header_file_name(tmp_path: Path, valid_schema: ValidatedSchema) -> None:
+def test_generate_header_fail_empty_header_file_name(tmp_path: Path, valid_schema: ValidatedXsvSchema) -> None:
     """An empty header_file_name fails the NonEmptyStr constraint."""
     with pytest.raises(ValidationError, match="String should have at least 1 character"):
         generate_header(valid_schema, tmp_path, header_file_name="")
@@ -427,17 +421,21 @@ def test_generate_first_pass_schema_pass_bare_minimum(make_schema_file: Callable
     }
 
 
-def test_generate_first_pass_schema_pass_validator_dgaf_about_unresolvable_schema_uri(
+def test_generate_first_pass_schema_pass_custom_xsv_metaschema_uri(
     make_schema_file: Callable[[Any, str], Path],
 ) -> None:
-    """An unrecognised `$schema` draft URI is ignored by the validator."""
-    schema = {"$schema": "https://not-a-real.schema-uri", "required": ["a"]}
+    """A schema using the custom XSV metaschema URI preserves `$schema` in the first-pass schema."""
+    schema = {
+        "$schema": CUSTOM_META_SCHEMA_URI,
+        "required": ["a"],
+        "x-xsv-config": {"x-delimiter": ","},
+    }
     schema_path = make_schema_file(schema, "schema.json")
     vs = validate_jsonschema(schema_path)
 
     validated_schema = generate_first_pass_schema(vs)
     assert validated_schema.jsonschema == {
-        "$schema": "https://not-a-real.schema-uri",
+        "$schema": CUSTOM_META_SCHEMA_URI,
         "required": ["a"],
         "type": "object",
         "properties": {
@@ -461,7 +459,7 @@ def test_generate_first_pass_schema_pass_retains_only_allowed_top_level_keys() -
             "b": {"type": "integer"},
         },
     }
-    vs = ValidatedSchema(jsonschema=schema)
+    vs = ValidatedXsvSchema(jsonschema=schema)
 
     validated_schema = generate_first_pass_schema(vs)
     assert validated_schema.jsonschema == {

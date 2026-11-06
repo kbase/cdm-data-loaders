@@ -356,12 +356,19 @@ def build_filesystem_resource(
     """Build a dlt resource that pipes ``filesystem(settings.input_dir, file_glob)`` into a parallelized transformer.
 
     :param settings: pipeline settings with ``input_dir`` (and optionally ``file_glob``)
-    :param reader_fn: transformer function or resource accepting ``items`` followed by ``*reader_args``
-    :param reader_args: positional arguments bound to the transformer after ``items``
+    :type settings: LocalInputOutputSettings
+    :param reader_fn: transformer function or resource accepting ``(items, settings, *reader_args)``
+    :type reader_fn: Callable[..., Any] | DltResource
+    :param reader_args: positional arguments bound to the transformer after ``settings``
+    :type reader_args: Any
     :param name: name of the resulting dlt transformer resource
-    :param file_glob: glob pattern for files; defaults to ``settings.file_glob`` if present, else ``DEFAULT_XML_FILE_GLOB``
+    :type name: str
+    :param file_glob: glob pattern for files; defaults to ``settings.file_glob`` if present
+    :type file_glob: str | None
     :param schema_contract: optional dlt schema contract hint applied to the resource
+    :type schema_contract: TSchemaContractDict | None
     :param transformer_kwargs: additional keyword arguments passed to ``dlt.transformer``
+    :type transformer_kwargs: Any
     :return: configured ``DltResource``
     """
     fs_args: dict[str, Any] = {"bucket_url": str(settings.input_dir)}
@@ -377,7 +384,7 @@ def build_filesystem_resource(
         if isinstance(reader_fn, DltResource)
         else dlt.transformer(reader_fn, name=name, parallelized=parallelized, **transformer_kwargs)
     )
-    resource: DltResource = files | reader(*reader_args)
+    resource: DltResource = files | reader(settings, *reader_args)
     if schema_contract is not None:
         resource.apply_hints(schema_contract=TSchemaContractDict(**schema_contract))  # pyright: ignore[reportCallIssue]
     return resource
@@ -404,7 +411,7 @@ def build_per_file_filesystem_resource(
     schema_contract: TSchemaContractDict | None = None,
     **transformer_kwargs: Any,  # noqa: ANN401
 ) -> DltResource:
-    """Build a dlt resource that runs a single-file reader ``file_fn(file_item, *reader_args)`` over ``filesystem`` items."""
+    """Build a dlt resource that runs a single-file reader ``file_fn(file_item, settings, *reader_args)`` over ``filesystem`` items."""
     return build_filesystem_resource(
         settings,
         make_per_file_reader(file_fn),
@@ -425,8 +432,11 @@ def build_file_ingest_kwargs(
     """Build the standard ``pipeline_kwargs`` and ``pipeline_run_kwargs`` for a file-ingest pipeline.
 
     :param settings: file-format ingest settings with ``dataset_name`` and ``loader_file_format``
+    :type settings: FileFormatIngestSettings
     :param pipeline_name: name of the dlt pipeline
+    :type pipeline_name: str
     :param fallback_dataset_name: whether to fall back to ``pipeline_name`` when ``settings.dataset_name`` is None
+    :type fallback_dataset_name: bool
     :return: mapping with ``pipeline_kwargs`` and ``pipeline_run_kwargs`` suitable for ``run_pipeline``
     """
     dataset_name = (settings.dataset_name or pipeline_name) if fallback_dataset_name else settings.dataset_name

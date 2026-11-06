@@ -18,7 +18,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     CleanerValidatorArgs,
 )
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
-    ValidatedSchema,
+    ValidatedXsvSchema,
     generate_header,
 )
 from tests.xsv_fixtures import (
@@ -45,9 +45,9 @@ def first_pass_schema_path() -> Path:
 
 
 @pytest.fixture(scope="session")
-def first_pass_validated_schema(first_pass_schema_path: Path) -> ValidatedSchema:
-    """ValidatedSchema object for the first pass schema."""
-    return ValidatedSchema(jsonschema=json.loads(first_pass_schema_path.read_bytes()))
+def first_pass_validated_schema(first_pass_schema_path: Path) -> ValidatedXsvSchema:
+    """ValidatedXsvSchema object for the first pass schema."""
+    return ValidatedXsvSchema(jsonschema=json.loads(first_pass_schema_path.read_bytes()))
 
 
 @pytest.fixture(scope="session")
@@ -57,9 +57,9 @@ def post_norm_schema_path() -> Path:
 
 
 @pytest.fixture(scope="session")
-def post_norm_validated_schema(post_norm_schema_path: Path) -> ValidatedSchema:
-    """ValidatedSchema object for the post-norm schema."""
-    return ValidatedSchema(jsonschema=json.loads(post_norm_schema_path.read_bytes()))
+def post_norm_validated_schema(post_norm_schema_path: Path) -> ValidatedXsvSchema:
+    """ValidatedXsvSchema object for the post-norm schema."""
+    return ValidatedXsvSchema(jsonschema=json.loads(post_norm_schema_path.read_bytes()))
 
 
 @pytest.fixture(scope="session")
@@ -211,8 +211,8 @@ def _make_args_factory(
     qsv_cmd: str,
     tmp_dir_path: Path,
     output_dir_path_derivatives: dict[str, Path],
-    first_pass_schema: ValidatedSchema,
-    post_norm_schema: ValidatedSchema,
+    first_pass_schema: ValidatedXsvSchema,
+    post_norm_schema: ValidatedXsvSchema,
 ) -> Callable[..., CleanerValidatorArgs]:
     """Build a `_make_args` factory closed over a fixed `qsv_cmd`."""
 
@@ -222,10 +222,10 @@ def _make_args_factory(
         comment_char: str = "#",
         null_regex: str | None = None,
         missing_header: bool = False,
-        first_pass_schema_override: ValidatedSchema | None = None,
-        post_norm_schema_override: ValidatedSchema | None = None,
+        first_pass_schema_override: ValidatedXsvSchema | None = None,
+        post_norm_schema_override: ValidatedXsvSchema | None = None,
     ) -> CleanerValidatorArgs:
-        # generate_header expects a (first pass) ValidatedSchema object
+        # generate_header expects a (first pass) ValidatedXsvSchema object
         header_file_path = generate_header(
             first_pass_schema_override or first_pass_schema,
             tmp_dir_path,
@@ -254,8 +254,8 @@ def _make_args_factory(
 def make_args(
     tmp_dir_path: Path,
     output_dir_path_derivatives: dict[str, Path],
-    first_pass_validated_schema: ValidatedSchema,
-    post_norm_validated_schema: ValidatedSchema,
+    first_pass_validated_schema: ValidatedXsvSchema,
+    post_norm_validated_schema: ValidatedXsvSchema,
     qsv_cmd: str,
 ) -> Callable[..., CleanerValidatorArgs]:
     """Factory fixture that builds a CleanerValidatorArgs, generating a matching header on the fly.
@@ -272,8 +272,8 @@ def make_args(
 def make_mock_args(
     tmp_dir_path: Path,
     output_dir_path_derivatives: dict[str, Path],
-    first_pass_validated_schema: ValidatedSchema,
-    post_norm_validated_schema: ValidatedSchema,
+    first_pass_validated_schema: ValidatedXsvSchema,
+    post_norm_validated_schema: ValidatedXsvSchema,
 ) -> Callable[..., CleanerValidatorArgs]:
     """Generate a set of CleanerValidatorArgs with an invalid qsv path.
 

@@ -1,7 +1,5 @@
 """Expected PyArrow table for 02_namespaces_and_nillable (xml_tag='entry')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 from expected_schema import EXPECTED_SCHEMA
 

@@ -1,0 +1,15 @@
+title: Nullability, Non-None Defaults, and Computed Fields
+rules:
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-NULL-DEFAULT
+  - R-COMPUTED-FIELDS
+  - R-COERCE-SPARSE
+schema: schema.py
+expected_schema: expected_schema.py
+runs:
+  - id: maximal
+    data: data.json
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_count: 2

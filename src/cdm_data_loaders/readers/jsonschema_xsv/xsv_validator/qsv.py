@@ -20,7 +20,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     non_header_lines_present,
     prepend_header,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
 
 
 def qsv_check() -> str:
@@ -244,7 +244,7 @@ def run_qsv_null_replacement(args: CleanerValidatorArgs, input_file_name: str) -
 def run_qsv_validate(
     args: CleanerValidatorArgs,
     input_file_name: str,
-    schema: ValidatedSchema,
+    schema: ValidatedXsvSchema,
     first_pass: bool = True,  # noqa: FBT001, FBT002
 ) -> str | None:
     """Run the validator over the file input_file_name.
@@ -253,8 +253,8 @@ def run_qsv_validate(
     :type args: CleanerValidatorArgs
     :param input_file_name: name of the input file
     :type input_file_name: str
-    :param schema: ValidatedSchema object to use for validation
-    :type schema: ValidatedSchema
+    :param schema: ValidatedXsvSchema object to use for validation
+    :type schema: ValidatedXsvSchema
     :param first_pass: if True, this runs the first pass validator, which does not check format
     :type first_pass: bool, defaults to True
     :return: name of the output file if all went ok; otherwise None

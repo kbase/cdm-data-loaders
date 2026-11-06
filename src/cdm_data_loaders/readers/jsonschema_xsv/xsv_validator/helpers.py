@@ -18,7 +18,7 @@ from pydantic import (
 )
 
 from cdm_data_loaders.core.fields import CharStr, NonEmptyStr
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
 
 VALIDATION_ERRORS: Final[str] = ".validation-errors.tsv"
 
@@ -82,9 +82,9 @@ class CleanerValidatorArgs(BaseModel):
     :type header_file_path: FilePath
 
     :param first_pass_schema: schema for initial validation of the data
-    :type first_pass_schema: ValidatedSchema
+    :type first_pass_schema: ValidatedXsvSchema
     :param post_norm_schema: schema for validating data after cleaning and normalisation
-    :type post_norm_schema: ValidatedSchema
+    :type post_norm_schema: ValidatedXsvSchema
 
     :param tmp_dir_path: temporary working directory
     :type tmp_dir_path: DirectoryPath
@@ -118,8 +118,8 @@ class CleanerValidatorArgs(BaseModel):
     xsv_file_path: FilePath
     header_file_path: FilePath
 
-    first_pass_schema: ValidatedSchema
-    post_norm_schema: ValidatedSchema
+    first_pass_schema: ValidatedXsvSchema
+    post_norm_schema: ValidatedXsvSchema
 
     tmp_dir_path: DirectoryPath
     qsv_output_dir_path: DirectoryPath

@@ -1,7 +1,5 @@
 """Expected PyArrow table for 05_defs_and_refs."""
 
-# ruff: noqa: INP001
-
 import datetime as dt
 
 import pyarrow as pa

@@ -1,7 +1,5 @@
 """Expected PyArrow table for 07_combinators_allof_anyof_oneof."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 from expected_schema import EXPECTED_SCHEMA
 

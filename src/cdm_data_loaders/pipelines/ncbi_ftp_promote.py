@@ -68,6 +68,7 @@ def run_promote(config: PromoteSettings) -> None:
     """Main CTS entry point for Phase 3 promotion.
 
     :param config: validated promote settings
+    :type config: PromoteSettings
     """
     report = promote_from_s3(
         staging_bucket=config.staging_bucket,

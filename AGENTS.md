@@ -1,112 +1,22 @@
-# CLAUDE.md
+# AGENTS.md
 
-Guidance for working in this repository. Rules with stricter, active requirements live in `.claude/rules/` (coding-style, testing, heresy) and apply to all changes.
+See `.agents/skills/coding-style` and `.agents/skills/testing` for rules that apply to all code edits.
 
-## Project
+## Documentation Sync Rules (Mandatory)
 
-`cdm-data-loaders`: data loaders and wranglers for the KBase CDM. Python >= 3.13, managed and executed with `uv`. Package source is under `src/cdm_data_loaders/` (~115 files, 8 top-level packages). Tests mirror the source layout under `tests/cdm_data_loaders/` (including pipeline end-to-end suites under `tests/cdm_data_loaders/pipelines/`), with multi-phase NCBI FTP integration tests in `tests/integration/ncbi_ftp/` and vcrpy cassettes in `tests/cassettes/`.
+Every code change that alters CLI flags, settings classes, public APIs, schemas, or converter behavior MUST update documentation in the same task before completion:
 
-Autouse fixtures in `tests/conftest.py` (`_isolated_cli_and_env` and `_isolated_dlt_config` from `tests/dlt_config_isolation.py`) reset `sys.argv = ["pytest"]`, strip `CDL_*` environment variables, and snapshot/restore `dlt.config` between tests. Pipeline end-to-end tests use `PipelineTestRunner` (`tests/cdm_data_loaders/pipelines/framework.py`) to run pipelines across `ExecutionMode.CORE`, `ExecutionMode.CLI`, and `ExecutionMode.DOCKER` (Docker tests are marked `requires_docker` and require `PIPELINE_DOCKER_IMAGE` to be set).
-
-Useful invocations:
-
-- Standard local test run (skips Spark, Ceph, and unset Docker image tests): `uv run pytest -m "not requires_spark and not requires_ceph"`
-- Full pipelines suite, excluding the bulk downloader: `uv run pytest tests/cdm_data_loaders/pipelines --ignore=tests/cdm_data_loaders/pipelines/all_the_bacteria`
-- Unit vs. container test script: `./scripts/run_tests.sh [unit|container|all]`
-- Lint: `uv run ruff check` (line length 120, target py313, full rule selection in `pyproject.toml`).
-
-## Architecture
-
-Domain logic lives in the top-level packages and is orchestration-free; orchestration lives in `pipelines/`. Data flows source -> reader -> intermediate representation (IR) -> emitter -> target:
-
-- Converters: reader (source schema -> IR) + emitter (IR -> target format) + thin facade composing them. See `docs/converters_ir.md` for the full IR contract and package layout.
-- IR is a frozen, slotted node tree (`converters/core/ir.py`) that preserves source facts without choosing target policy; emitters make all target-specific decisions.
-- `converters/core/` imports no dlt, PyIceberg, or PySpark modules. The only cross-package import is the `x-xsv-config` contract reusing `X_XSV_CONFIG_SCHEMA` from `cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema`.
-
-Settings hierarchy: pipeline settings in `pipelines/` extend the hierarchy in `core/settings.py`: `CdmDataLoadersBase` -> `LoggerSettings` -> `LocalInputOutputSettings` -> `CtsSettings` -> `FileFormatIngestSettings`. Settings use `env_prefix="CDL_"`, `cli_kebab_case=True`, and `default_settings_with_shortcuts(...)`. `CdmDataLoadersBase.__pydantic_init_subclass__` calls `check_aliases()` at class creation time to verify that CLI argument names, aliases, and `cli_shortcuts` do not collide or claim reserved flags (`h`, `help`). CLI parsing is invoked explicitly via `pydantic_settings.CliApp.run` in `pipelines/core.py` (`PipelineCli` / `run_cli`), not implicitly on model instantiation. Every pipeline registers a `cli` entry point in `pyproject.toml` under `[project.scripts]` (and in `scripts/entrypoint.sh` for Docker execution): `all_the_bacteria`, `jsonlines_extract`, `jsonlines_jsonschema`, `jsonlines_pydantic`, `ncbi_ftp_promote`, `ncbi_ftp_sync`, `ncbi_rest_api`, `uniprot`, `uniprot_cdm`, `uniref50`, `uniref50_cdm`, `uniref90`, `uniref90_cdm`, `uniref100`, `uniref100_cdm`, `xmltodict`, `xmltopyarrow`, `xsv`.
-
-## Package Map
-
-All paths below are relative to `src/cdm_data_loaders/`.
-
-### `core/`
-
-Framework-level foundations:
-
-- `fields.py`: common annotated field types (`BufferSize`, `DatasetName`, `FileGlob`, `LoaderFileFormat`, `TableName`, `WriteDisposition`, etc.), `LoaderFileFormatEnum` (`parquet`, `jsonl`), and `DEFAULTS`.
-- `path_fields.py`: `LocalInputDir` and `LocalOutputDir` path types (`file://` or plain local directory paths) and URL/path validation helpers (`normalize_local_path`, `validate_directory`, `validate_url_protocol`).
-- `settings.py`: `pydantic-settings` base class hierarchy (`CdmDataLoadersBase` -> `LoggerSettings` -> `LocalInputOutputSettings` -> `CtsSettings` -> `FileFormatIngestSettings` -> `XmlIngestSettings` -> `SingleTableXmlIngestSettings`), `TransformSettingsMixin`, `CLI_SHORTCUTS`, `default_settings_with_shortcuts()`, and CLI flag/shortcut collision checking (`check_aliases()`).
-- `transforms.py`: pluggable record filtering, transformation, multi-table splitting, and PyArrow schema overrides (`TableTransform`, `resolve_schema_map`, `route_and_coerce_record`, `load_table_transforms`).
-
-### `converters/`
-
-Schema-format translation. See `docs/converters_ir.md` for the full contract.
-
-- `core/`: shared, target-independent foundation
-  - `ir.py` (NodeType, Field, SchemaDocument, Reader/Emitter protocols), `ir_values.py` (`freeze_value` and friends), `errors.py` (ConversionError), `extensions.py` (ExtensionRegistry, DEFAULT_EXTENSIONS), `guards.py` (input guards), `inference.py` (type inference, decimal scale), `metadata.py` (draft-specific JSON Schema keyword selection), `io.py` (schema loading), `paths.py` (`set_nested`).
-- `readers/`: source -> IR
-  - `json_schema.py` (JsonSchemaReader), `dlt.py` (DltReader over dlt's normalized table forest), `iceberg.py` (IcebergReader).
-- `emitters/`: IR -> target
-  - `json_schema.py`, `dlt.py`, `pyspark.py`, `pyarrow.py`, `linkml.py`, and `_tabular_base.py` (shared tabular emitter helpers).
-- Facades: `jsonschema_to_dlt.py`, `jsonschema_to_pyspark.py`, `jsonschema_to_pyarrow.py`, `dlt_to_jsonschema.py`, `pyiceberg_to_jsonschema.py`, `pyiceberg_to_linkml.py`, plus CLI dumps `pyiceberg_catalog_to_jsonschema.py` and `pyiceberg_catalog_to_linkml.py` (backed by `_iceberg_catalog_dump.py`).
-
-### `readers/`
-
-File-format readers feeding pipelines:
-
-- `jsonlines.py`: JSONL line parsing (`parse_jsonl_line`), paged streaming (`stream_jsonl_lines`), and table routing (`route_jsonl_lines`).
-- `xml.py`: shared XML streaming, `xmltodict`, and XSD-to-PyArrow helpers (`parse_head_matter`, `stream_xml_file`, `process_xml_file_to_pyarrow`, `process_xml_file_to_dict`, `process_xml_file`, `process_xml_file_items`, and `build_xml_file_resource` over dlt's `filesystem` source).
-- `xsd.py`: XSD schema loading (`load_schema`), PyArrow schema generation (`generate_pyarrow_schema`), XML element conversion (`make_xml_element_converter`, `convert_xml_element`), and `XsdToPyArrowError` specification error classes.
-- `jsonschema_xsv/`: `xsv_reader.py` (casts validated CSV/TSV rows to JSON Schema property types and resolves `x-xsv-config` parsing parameters) plus `xsv_validator/` (`qsv.py` wraps the external `qsv` binary for two-pass validation, normalization, and null replacement; `custom_metaschema.py` defines the `https://json-schema.kbase.us/draft/2020-12-xsv/schema` metaschema and `X_XSV_CONFIG_SCHEMA`, also imported by `converters`; `schema_utils.py` and `helpers.py`).
-
-### `parsers/`
-
-Parsers for third-party outputs and formats:
-
-- `uniprot/`: `uniprot_kb.py` (UniProt XML), `uniref.py` (UniRef XML), `metalink.py`, `relnotes.py`; shared XML helpers in `utils/xml_utils.py`.
-- `ncbi/datasets_api/openapi_pydantic.py`: pydantic models for NCBI Datasets API responses.
-- `ncbi/ftp_mod_times/ftp_mod_times.py`: parser for NCBI FTP modification-time files.
-- `bbmap_stats.py` (bbmap `stats.sh` output), `checkm2.py` (quality reports).
-
-### `schemas/`
-
-Bundled JSON Schemas and XML Schemas (XSD) for biological datasets and file formats:
-
-- `all_the_bacteria/` (`file_list.schema.json`), `gene_association_file/` (`gaf_2.2.schema.json`), `gff/` (`gff_dbxref.schema.json`), `gtdb/` (GTDB metadata and taxonomy JSON Schemas), `ncbi/` (`AnnotationReportResponse.schema.json`, `DatasetReportResponse.schema.json`, `ftp_mod_times.schema.json`), `uniprot/` (`uniprot.xsd`, `idmapping.schema.json`), `uniref/` (`uniref.xsd`).
-
-### `ncbi_ftp/`
-
-NCBI FTP assembly domain logic, phased: `manifest.py` (phase 1: assembly summary diffing and manifest generation), download is the phase 2 pipeline, `promote.py` (phase 3: promote staged files to final Lakehouse paths in S3), plus `assembly.py` (assembly-specific logic), `metadata.py` (frictionless data package descriptors), `constants.py`.
-
-### `pipelines/`
-
-dlt-based orchestrators; each exposes a `cli = PipelineCli(...)` registered in `pyproject.toml`. See `docs/core_cts_execution.md`:
-
-- `core.py`: `PipelineCli`, `PipelineReport`, `run_cli`, `run_pipeline`, `write_pipeline_report`, `save_pipeline_metadata`, `build_filesystem_resource`, `make_per_file_reader`, `build_per_file_filesystem_resource`, and `build_file_ingest_kwargs`.
-- `all_the_bacteria.py`: All The Bacteria bulk data downloader (excluded from fast test runs).
-- `jsonlines/`: JSONL ingest pipelines (`settings.py`, shared machinery in `base.py`) - `extract_pipeline.py` (`jsonlines_extract`, plain load into `<table_name>` / `_rejected`), `extract_jsonschema_validate_pipeline.py` (`jsonlines_jsonschema`, validates against `ENTITY_SCHEMAS`), `extract_pydantic_validate_pipeline.py` (`jsonlines_pydantic`, validates against `ENTITY_MODELS`). See `docs/jsonlines_ingest.md`.
-- `ncbi_ftp_download.py` / `ncbi_ftp_promote.py`: phases 2 (`ncbi_ftp_sync`) and 3 (`ncbi_ftp_promote`) of the NCBI FTP flow.
-- `ncbi_rest_api.py`: NCBI REST API import.
-- `uniprot_kb_cdm.py` / `uniref_cdm.py`: CDM-normalized UniProt (`uniprot_cdm`) and UniRef (`uniref50_cdm`, `uniref90_cdm`, `uniref100_cdm`, built on `xmltopyarrow` + `TableTransform`) dlt pipelines. See `docs/uniprot.md`.
-- `xmltodict/` / `xmltopyarrow/` / `xsv/`: XML-to-dictionary (`xmltodict`), XSD-driven XML-to-PyArrow (`xmltopyarrow` plus presets `uniprot`, `uniref50`, `uniref90`, `uniref100`), and XSV (`xsv`) ingestion, each with `pipeline.py` and `settings.py`.
-
-### `utils/`
-
-Cross-cutting helpers: `file_items.py` (readers take a local path or dlt `FileItemDict` and open it with `FileItemDict.open`, which decompresses `*.gz`; `source_id` = relative path recorded as `source_file`; `local_copy` for tools needing a local file), `batcher.py` (`NumericFileSequenceBatcher`), `buffer.py` (per-table row buffers for dlt: `DictBuffer`, `ArrowDictBuffer`), `cdm_logger.py` (structured JSON logging), `checksums.py`, `gz.py` (gzip compress/decompress CLI), `helpers.py`, `progress.py` (tqdm helpers), `spark.py`, `xml_utils.py`, `jsonschema/dereferencer.py` (`$ref` resolution), `dlt/dlt_normalization.py` (lossless parent-linked normalization of dlt table definitions, used by the converters' `DltReader`), and `file_transfer/` - `core.py` (tenacity-retried downloads), `sync_client.py` / `async_client.py` / `ftp_client.py`, and `s3/` (`client.py`, `object_utils.py`, `transfer_config.py`, `cli.py`).
-
-### Other Top-Level Directories
-
-- `scripts/`: `entrypoint.sh` (container entrypoint dispatching to registered pipeline CLIs), `run_tests.sh` (`unit`, `container`, or `all` test suites), `gen_converter_spec.py` (generates converter specification docs), `gen_docs.py` (generates CLI reference and MkDocs API reference pages), `filter_ncbi_updates.py` (CLI filtering NCBI assembly IDs by modification date), `s3_local.py` (thin S3 CLI for local Ceph testing), `dtd2xsd.pl` (DTD-to-XSD converter), `run_tools.sh`, `parse_index.py`.
-- `docs/`: architecture and pipeline guides (`core_cts_execution.md`, `cli_reference.md`, `converters_ir.md`, `jsonlines_ingest.md`, `jsonschema_to_pyarrow_specification.md`, `xsd_to_pyarrow_specification.md`, `table_transforms.md`, `ncbi_ftp_e2e_walkthrough.md`, `rclone_instructions.md`, `uniprot.md`).
-- `cdm-data-loaders-skill/`: skill definition (`SKILL.md`) and generator (`scripts/skill_gen.sh`) for packaging pipeline documentation and schemas.
-
-## Conventions
-
-- Frozen, slotted dataclasses for models; constructors validate and recursively copy mappings.
-- CLI argument parsing by pydantic-settings
-- Fully type-annotated code (ruff `ANN`); datetime values carry an explicit timezone (`DTZ`); use `Decimal` for exact arithmetic, never constructed from floats.
-- External HTTP calls in tests are recorded and replayed with vcrpy; AWS is mocked with moto; Spark and Ceph tests run in containers via `docker-compose.yml` and are skipped by default (`-m "not requires_spark and not requires_ceph"`).
-- Tests are module-based `def test_*() -> None:` functions with pytest fixtures in `conftest.py`, named `test_<function>_<pass|fail>_<conditions>`.
+1. **CLI & Settings Changes (`core/settings.py`, `core/fields.py`, `core/transforms.py`, `pipelines/**/settings.py`, `pyproject.toml`)**:
+   - Regenerate CLI docs: `uv run python -m scripts.gen_docs`
+   - Search `docs/` and `README.md` for any renamed/removed field names, CLI flags (`--*`), or env vars (`CDL_*`) and update all prose/examples.
+2. **Converter Rules, Scalar Maps, or Error Classes (`converters/`, `readers/xsd.py`, `tests/data/*/rules.yaml`)**:
+   - Regenerate converter specs: `uv run python -m scripts.gen_converter_spec`
+   - If adding a new converter or specification, register it in `scripts/gen_converter_spec.py`, `mkdocs.yml` (`nav`), `docs/index.md`, and `README.md`.
+3. **Public Symbol / Registry Refactors (`core/`, `pipelines/`, `readers/`, `converters/`, `parsers/`, `utils/`)**:
+   - Update module and class/function docstrings in the modified files.
+   - Grep `docs/` and `README.md` for all references to modified or removed symbols and update code examples.
+4. **Pre-Completion Verification**:
+   - Always run `uv run pytest tests/test_gen_docs.py` and `uv run mkdocs build --strict` before finishing any task that touches `src/`, `scripts/`, `pyproject.toml`, or `docs/`.
 
 ## Gotchas
 

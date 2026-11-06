@@ -216,6 +216,9 @@ ignore = [
 # ARG002: unused mock args
 # PLR0913: too many arguments
 "tests/**/*.py" = ["D401", "S101", "T201", "FBT001", "FBT002", "ARG002", "PLR0913", "PLR0917"]
+# specs / examples
+"tests/data/**/spec/**/*.py" = ["INP001", "D101", "D102"]
+"tests/data/**/examples/**/*.py" = ["INP001", "D101", "D102"]
 
 [tool.ruff.lint.mccabe]
 # Flag errors (`C901`) whenever the complexity level exceeds 15.
@@ -245,8 +248,6 @@ markers = [
     "requires_ceph: end-to-end tests requiring a running CEPH instance and network access",
     "external_request: tests that make real network requests to external services (e.g. NCBI FTP)",
     "docker: tests that build and run the pipeline inside a Docker container",
-    "settings_cls(cls): the pydantic-settings class under test for alias parametrization",   
-    "cli_fields: used for restricting cli-related tests to a subset of fields"
 ]
 
 # environment settings for running tests

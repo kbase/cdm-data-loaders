@@ -11,12 +11,12 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
 import pytest
 from dlt.sources.filesystem import filesystem
 
 import cdm_data_loaders.pipelines.xsv.pipeline as xsv_pipeline_module
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-from cdm_data_loaders.core.transforms import TableTransform
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.xsv.pipeline import (
     XsvWorkPaths,
@@ -27,6 +27,7 @@ from cdm_data_loaders.pipelines.xsv.pipeline import (
 from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import CleanerValidatorArgs
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import clean_validate_file
+from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
 from tests.cdm_data_loaders.pipelines.helpers import (
     fetch_all_duckdb,
     make_file_item,
@@ -57,8 +58,12 @@ def test_process_xsv_file_pass_routes_valid_rows_to_table(
 
     results = list(_process_xsv_file(make_file_item(Path(settings.input_dir) / "data.csv"), settings, work_paths))
 
-    assert [(result.meta.table_name, result.data) for result in results] == [
-        ("my_table", [{"number": 1, "name": "alice"}, {"number": 2, "name": "bob"}]),
+    assert len(results) == 1
+    assert results[0].meta.table_name == "my_table"
+    assert isinstance(results[0].data, pa.Table)
+    assert results[0].data.to_pylist() == [
+        {"number": 1, "name": "alice"},
+        {"number": 2, "name": "bob"},
     ]
 
 
@@ -74,7 +79,8 @@ def test_process_xsv_file_pass_replaces_configured_null_placeholder(
 
     results = list(_process_xsv_file(make_file_item(Path(settings.input_dir) / "data.csv"), settings, work_paths))
 
-    assert results[0].data == [{"number": 1, "name": None}, {"number": 2, "name": "bob"}]
+    assert isinstance(results[0].data, pa.Table)
+    assert results[0].data.to_pylist() == [{"number": 1, "name": None}, {"number": 2, "name": "bob"}]
 
 
 def test_process_xsv_file_pass_routes_total_failure_to_rejected_table(
@@ -89,7 +95,9 @@ def test_process_xsv_file_pass_routes_total_failure_to_rejected_table(
 
     table_names = [result.meta.table_name for result in results]
     assert table_names == [REJECTED_TABLE_NAME]
-    (rejected,) = results[0].data
+    assert isinstance(results[0].data, pa.Table)
+    assert results[0].data.schema == REJECTED_PYARROW_SCHEMA
+    (rejected,) = results[0].data.to_pylist()
     assert rejected["table_name"] == "my_table"
     assert rejected["source_file"] == "bad.csv"
     assert rejected["line_no"] is None
@@ -111,8 +119,12 @@ def test_process_xsv_file_pass_file_item_any_backend(
 
     results = list(_process_xsv_file(fs_backend.file_item(relative_path), settings, work_paths))
 
-    assert [(result.meta.table_name, result.data) for result in results] == [
-        ("my_table", [{"number": 1, "name": "alice"}, {"number": 2, "name": "bob"}]),
+    assert len(results) == 1
+    assert results[0].meta.table_name == "my_table"
+    assert isinstance(results[0].data, pa.Table)
+    assert results[0].data.to_pylist() == [
+        {"number": 1, "name": "alice"},
+        {"number": 2, "name": "bob"},
     ]
     assert [path for path in work_paths.download_dir.rglob("*") if path.is_file()] == []
     assert fs_backend.fs.exists(fs_backend.path(relative_path))
@@ -131,7 +143,10 @@ def test_process_xsv_file_pass_rejected_file_is_relative_path(
     results = list(_process_xsv_file(fs_backend.file_item("sub/bad.csv"), settings, work_paths))
 
     assert [result.meta.table_name for result in results] == [REJECTED_TABLE_NAME]
-    assert [(row["table_name"], row["source_file"]) for row in results[0].data] == [("my_table", "sub/bad.csv")]
+    assert isinstance(results[0].data, pa.Table)
+    assert [(row["table_name"], row["source_file"]) for row in results[0].data.to_pylist()] == [
+        ("my_table", "sub/bad.csv")
+    ]
 
 
 def test_process_xsv_file_fail_remote_object_missing(
@@ -170,15 +185,20 @@ def test_process_xsv_file_pass_same_stem_files_do_not_lose_rows_or_rejections(
     results_1 = list(_process_xsv_file(items["batch_1/data.csv"], settings, work_paths))
     results_2 = list(_process_xsv_file(items["batch_2/data.csv"], settings, work_paths))
 
-    assert [(result.meta.table_name, result.data) for result in results_1] == [
+    assert [(result.meta.table_name, result.data.to_pylist()) for result in results_1] == [
         ("my_table", [{"number": 1, "name": "alice"}, {"number": 2, "name": "bob"}]),
     ]
-    assert [(result.meta.table_name, result.data) for result in results_2 if result.meta.table_name == "my_table"] == [
+    assert [
+        (result.meta.table_name, result.data.to_pylist())
+        for result in results_2
+        if result.meta.table_name == "my_table"
+    ] == [
         ("my_table", [{"number": 3, "name": "carol"}, {"number": 4, "name": "dave"}]),
     ]
     rejected_batches = [result.data for result in results_2 if result.meta.table_name == REJECTED_TABLE_NAME]
     assert len(rejected_batches) == 1
-    assert [(row["table_name"], row["source_file"]) for row in rejected_batches[0]] == [
+    assert isinstance(rejected_batches[0], pa.Table)
+    assert [(row["table_name"], row["source_file"]) for row in rejected_batches[0].to_pylist()] == [
         ("my_table", "batch_2/data.csv"),
     ]
 
@@ -224,7 +244,7 @@ def test_process_xsv_file_pass_concurrent_same_stem_files_do_not_overwrite_valid
         (row["number"], row["name"])
         for result in [*results_1, *results_2]
         if result.meta.table_name == "my_table"
-        for row in result.data
+        for row in result.data.to_pylist()
     ]
     assert sorted(rows) == [(1, "alice"), (2, "bob"), (3, "carol"), (4, "dave")]
 
@@ -365,15 +385,13 @@ def test_process_xsv_file_pass_filters_and_splits_rows_with_transforms_module(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """_process_xsv_file filters and splits validated CSV rows when transforms_module is configured."""
-    transform = TableTransform(
-        transform_fn=lambda row: (
-            {}
-            if row["number"] == 1
-            else {
-                "my_table": [{"number": row["number"], "name": row["name"].upper()}],
-                "my_table_names": [{"name": row["name"]}],
-            }
-        )
+    transform = lambda row: (  # noqa: E731
+        {}
+        if row["number"] == 1
+        else {
+            "my_table": [{"number": row["number"], "name": row["name"].upper()}],
+            "my_table_names": [{"name": row["name"]}],
+        }
     )
     transforms_mod = register_temp_module(
         monkeypatch,
@@ -393,3 +411,37 @@ def test_process_xsv_file_pass_filters_and_splits_rows_with_transforms_module(
         ("my_table", [{"number": 2, "name": "BOB"}]),
         ("my_table_names", [{"name": "bob"}]),
     ]
+
+
+@pytest.mark.usefixtures("qsv_cmd")
+def test_run_xsv_pipeline_pass_rejected_table_retains_null_columns(
+    settings_factory: Callable[..., XsvIngestSettings],
+    tmp_path: Path,
+) -> None:
+    """_rejected retains line_no and raw_record columns even when all rejected records have None for those fields."""
+    settings = settings_factory(
+        SIMPLE_SCHEMA,
+        {"bad.csv": "number,name\n1\n"},
+        file_glob="*.csv",
+    )
+
+    load_info = run_with_duckdb_pipeline(
+        tmp_path,
+        xsv_pipeline_module,
+        lambda: run_xsv_pipeline(settings),
+        expected_pipeline_name=PIPELINE_NAME,
+        expected_dataset_name="xsv_test_dataset",
+        pipeline_name_prefix="test_xsv_rejected_columns",
+    )
+
+    rejected_rows = fetch_all_duckdb(
+        load_info.pipeline,
+        "SELECT table_name, source_file, line_no, raw_record, error_detail FROM _rejected",
+    )
+    assert len(rejected_rows) == 1
+    table_name, source_file, line_no, raw_record, error_detail = rejected_rows[0]
+    assert table_name == "my_table"
+    assert source_file == "bad.csv"
+    assert line_no is None
+    assert raw_record is None
+    assert error_detail

@@ -105,28 +105,29 @@ def test_reference_pass_diff_format_same_results(
         )
 
 
+@pytest.mark.parametrize("chunk_dir", CHUNK_DIRS, ids=str)
 @pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS, ids=str)
 def test_reference_pass_output_identical_across_buffer_sizes(
     run_reference_pipeline_fxt: Callable[..., Any],
     sorted_reference_entities: list[str],
+    chunk_dir: str,
     loader_file_format: str,
 ) -> None:
     """Buffer size does not affect pipeline output for any chunk dir."""
-    for chunk_dir in CHUNK_DIRS:
-        run_and_compare_variations(
-            run_reference_pipeline_fxt,
-            {
-                f"{buffer_size}_{loader_file_format}": (
-                    chunk_dir,
-                    {"buffer_size": buffer_size, "loader_file_format": loader_file_format},
-                )
-                for buffer_size in BUFFER_SIZES
-            },
-            sorted_reference_json=sorted_reference_entities,
-            output_format=loader_file_format,
-            reconstruct=reconstructed_entries,
-            canonicalize=canonicalize_entry,
-        )
+    run_and_compare_variations(
+        run_reference_pipeline_fxt,
+        {
+            f"{buffer_size}_{loader_file_format}": (
+                chunk_dir,
+                {"buffer_size": buffer_size, "loader_file_format": loader_file_format},
+            )
+            for buffer_size in BUFFER_SIZES
+        },
+        sorted_reference_json=sorted_reference_entities,
+        output_format=loader_file_format,
+        reconstruct=reconstructed_entries,
+        canonicalize=canonicalize_entry,
+    )
 
 
 @pytest.mark.parametrize(

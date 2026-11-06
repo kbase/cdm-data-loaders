@@ -492,8 +492,6 @@ This document specifies how an XML Schema (`.xsd`) and a target `xml_tag` determ
 ```python
 """Expected PyArrow schema for 01_scalars_and_simple_types (xml_tag='record')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -688,8 +686,6 @@ Covers `targetNamespace` with `elementFormDefault="qualified"` and the three `xs
 ```python
 """Expected PyArrow schema for 02_namespaces_and_nillable (xml_tag='entry')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -828,8 +824,6 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```python
 """Expected PyArrow schema for 03_mixed_content_raw_text (xml_tag='article')."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 
@@ -997,8 +991,6 @@ With `max_recursion_depth=2`, `tree` (depth 1) and its `branch` children (depth 
 
 ```python
 """Expected PyArrow schema for 04_recursion_depth (xml_tag='record')."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 
@@ -1280,8 +1272,6 @@ EXPECTED_SCHEMA_DEPTH_1 = pa.schema(
 ```python
 """Expected PyArrow schema for 05_groups_and_compositors (xml_tag='item')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -1462,8 +1452,6 @@ attribute. The ancestor paths differ, so each `leaf` gets its own type.
 ```python
 """Expected PyArrow schema for 06_context_dependent_paths (xml_tag='root')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -1602,8 +1590,6 @@ resolving `xml_tag="entry"` is unambiguous.
 ```python
 """Expected PyArrow schema for 07_multi_root_shared_type (xml_tag='entry')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -1700,8 +1686,6 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```python
 """Expected PyArrow schema for 08_nullability_and_empty_tags (xml_tag='entry')."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 
@@ -1805,8 +1789,6 @@ markers to `pa.list_(pa.string())`.
 
 ```python
 """Expected PyArrow schema for 09_empty_marker_elements (xml_tag='book')."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 
@@ -2711,8 +2693,6 @@ self-recursive type and `complexContent` extension.
 
 ```python
 """Expected PyArrow schema for 10_combinations (xml_tag='record')."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 

@@ -1,7 +1,5 @@
 """Expected PyArrow table for 09_context_dependent_shared_defs."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 from expected_schema import EXPECTED_SCHEMA
 

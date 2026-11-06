@@ -900,7 +900,7 @@ def test_run_pipeline_pass_filesystem_resource_records_ingested_files_in_report(
     (input_dir / "sub").mkdir()
     (input_dir / "sub" / "second.xml").write_text("two", encoding="utf-8")
 
-    def read_items(items: TDataItems) -> Iterator[dict[str, Any]]:
+    def read_items(items: TDataItems, _settings: CtsSettings) -> Iterator[dict[str, Any]]:
         for item in items:
             text = Path(item["file_url"].removeprefix("file://")).read_text(encoding="utf-8")
             yield {"file": item["relative_path"], "text": text}

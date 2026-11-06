@@ -1,7 +1,5 @@
 """Expected PyArrow schema for pubmed_book_article (xml_tag='PubmedBookArticle')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
