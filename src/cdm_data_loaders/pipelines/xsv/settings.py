@@ -39,28 +39,12 @@ SHORTCUTS: Final[dict[str, str]] = {
 }
 
 
-def _property_allows_null(prop_spec: Any) -> bool:  # noqa: ANN401
-    """Return whether a JSON Schema property definition permits null values."""
-    if not isinstance(prop_spec, dict):
-        return True
-    type_spec = prop_spec.get("type")
-    if isinstance(type_spec, str):
-        return type_spec == "null"
-    if isinstance(type_spec, list):
-        return not type_spec or "null" in type_spec
-    for keyword in ("anyOf", "oneOf"):
-        branches = prop_spec.get(keyword)
-        if isinstance(branches, list):
-            return any(_property_allows_null(branch) for branch in branches)
-    return True
-
-
 def convert_xsv_schema_to_pyarrow(validated_schema: ValidatedXsvSchema) -> pa.Schema:
     """Convert a validated XSV JSON Schema to a PyArrow schema.
 
     In XSV schemas, top-level ``required`` declares the ordered CSV columns,
     unlisted columns default to nullable strings, and any column whose
-    ``type`` permits ``null`` (or is untyped) is nullable in PyArrow.
+    schema permits ``null`` is nullable in PyArrow.
 
     :param validated_schema: validated XSV JSON Schema
     :type validated_schema: ValidatedXsvSchema
@@ -73,13 +57,9 @@ def convert_xsv_schema_to_pyarrow(validated_schema: ValidatedXsvSchema) -> pa.Sc
         dereferenced = {"$schema": raw_schema["$schema"], **dereferenced}
 
     raw_properties = dereferenced.get("properties", {})
-    properties: dict[str, Any] = {}
-    non_nullable_cols: list[str] = []
-    for col in validated_schema.required_cols:
-        prop_spec = raw_properties.get(col, {"type": ["string", "null"]})
-        properties[col] = prop_spec
-        if not _property_allows_null(prop_spec):
-            non_nullable_cols.append(col)
+    properties: dict[str, Any] = {
+        col: raw_properties.get(col, {"type": ["string", "null"]}) for col in validated_schema.required_cols
+    }
     for col, prop_spec in raw_properties.items():
         if col not in properties:
             properties[col] = prop_spec
@@ -88,7 +68,7 @@ def convert_xsv_schema_to_pyarrow(validated_schema: ValidatedXsvSchema) -> pa.Sc
         **dereferenced,
         "type": dereferenced.get("type", "object"),
         "properties": properties,
-        "required": non_nullable_cols,
+        "required": list(validated_schema.required_cols),
     }
     return JSONSchemaToPyArrow().convert(normalized_schema)
 
