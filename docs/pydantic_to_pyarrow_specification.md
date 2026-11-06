@@ -373,8 +373,6 @@ This document specifies how a **Pydantic v2 `BaseModel`** class determines:
 ```python
 """Spec 01: Built-in scalars, Pydantic special types, temporal types, binary, and Decimals."""
 
-# ruff: noqa: INP001
-
 import datetime as dt
 from decimal import Decimal
 from ipaddress import IPv4Address
@@ -541,8 +539,6 @@ MODEL = ScalarShowcaseRecord
 ```python
 """Expected PyArrow schema for 01_scalars_and_special_types."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -600,8 +596,6 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```python
 """Spec 02: Field nullability, non-None defaults, default_factory, and @computed_field."""
-
-# ruff: noqa: D101, D102, INP001
 
 from functools import partial
 
@@ -679,8 +673,6 @@ MODEL = NullabilityAndDefaultsRecord
 ```python
 """Expected PyArrow schema for 02_nullability_defaults_and_computed."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -719,8 +711,6 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```python
 """Spec 03: Lists, sets, frozensets, variadic tuples, and fixed-length tuples."""
-
-# ruff: noqa: D101, INP001
 
 from pydantic import BaseModel
 
@@ -853,8 +843,6 @@ MODEL = SequenceAndTupleRecord
 ```python
 """Expected PyArrow schema for 03_sequences_sets_and_tuples."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -945,8 +933,6 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```python
 """Spec 04: Nested BaseModel, TypedDict, stdlib dataclass, and dict[str, V] maps."""
-
-# ruff: noqa: D101, INP001
 
 from dataclasses import dataclass
 from typing import TypedDict
@@ -1105,8 +1091,6 @@ MODEL = NestedModelsAndMapsRecord
 ```python
 """Expected PyArrow schema for 04_nested_models_and_maps."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -1201,8 +1185,6 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```python
 """Spec 05: Model inheritance, Generic[T] parameterization, and RootModel[T] unwrapping."""
-
-# ruff: noqa: D101, INP001
 
 from pydantic import BaseModel, Field, RootModel
 
@@ -1299,8 +1281,6 @@ MODEL = RootEnvelopeModel
 ```python
 """Expected PyArrow schema for 05_inheritance_generics_and_root_model."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -1349,8 +1329,6 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```python
 """Spec 06: StrEnum, IntEnum, general Enum with docstring, and Literal types."""
-
-# ruff: noqa: D101, INP001, PYI061
 
 from enum import Enum, IntEnum, StrEnum
 from typing import Literal
@@ -1461,8 +1439,6 @@ MODEL = EnumAndLiteralRecord
 ```python
 """Expected PyArrow schema for 06_enums_and_literals."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -1508,8 +1484,6 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```python
 """Spec 07: Scalar unions, BaseModel unions, discriminated unions, and scalar + model unions."""
-
-# ruff: noqa: D101, INP001
 
 from typing import Annotated, Literal
 
@@ -1651,8 +1625,6 @@ MODEL = UnionShowcaseRecord
 ```python
 """Expected PyArrow schema for 07_unions_and_discriminators."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -1722,8 +1694,6 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```python
 """Spec 08: Python field names vs. Field(alias=...) and Field(serialization_alias=...)."""
-
-# ruff: noqa: D101, INP001
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
@@ -1827,8 +1797,6 @@ MODEL = AliasedRecord
 ```python
 """Expected PyArrow schema for 08_aliases_and_field_names."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -1890,8 +1858,6 @@ EXPECTED_SCHEMA_BY_ALIAS = pa.schema(
 
 ```python
 """Spec 09: PEP 695 type aliases, nested Annotated metadata precedence, and functional validators."""
-
-# ruff: noqa: D101, INP001
 
 from decimal import Decimal
 from typing import Annotated
@@ -1962,8 +1928,6 @@ MODEL = AnnotatedShowcaseRecord
 ```python
 """Expected PyArrow schema for 09_annotated_and_custom_types."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -2012,8 +1976,6 @@ at `max_recursion_depth=1` the second level already collapses to `pa.string()`.
 
 ```python
 """Spec 10: Self-recursive and mutually recursive BaseModels."""
-
-# ruff: noqa: D101, INP001
 
 from pydantic import BaseModel, Field
 
@@ -2143,8 +2105,6 @@ MODEL = RecursiveCladeRecord
 
 ```python
 """Expected PyArrow schema for 10_bounded_recursion."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 

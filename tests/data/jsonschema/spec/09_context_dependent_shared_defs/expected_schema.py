@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 09_context_dependent_shared_defs."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 _TAG_STRUCT = pa.struct(

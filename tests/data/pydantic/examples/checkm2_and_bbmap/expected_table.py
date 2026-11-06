@@ -1,7 +1,5 @@
 """Expected PyArrow table for checkm2_and_bbmap."""
 
-# ruff: noqa: INP001
-
 from decimal import Decimal
 
 import pyarrow as pa

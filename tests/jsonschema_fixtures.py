@@ -35,7 +35,7 @@ def widget_schema() -> dict[str, Any]:
 
 
 @pytest.fixture
-def schema_module_factory(monkeypatch: pytest.MonkeyPatch) -> Callable[[object], str]:
+def entity_schemas_factory(monkeypatch: pytest.MonkeyPatch) -> Callable[[object], str]:
     """Register uniquely named schema modules and remove them after each test."""
 
     def _register(registry: object) -> str:
@@ -45,14 +45,14 @@ def schema_module_factory(monkeypatch: pytest.MonkeyPatch) -> Callable[[object],
 
 
 @pytest.fixture
-def schema_module(schema_module_factory: Callable[[object], str], widget_schema: dict[str, Any]) -> str:
+def entity_schemas(entity_schemas_factory: Callable[[object], str], widget_schema: dict[str, Any]) -> str:
     """Provide a registry with two entities and an intentionally absent directory."""
-    return schema_module_factory({"widget": widget_schema, "gadget": widget_schema, "missing": widget_schema})
+    return entity_schemas_factory({"widget": widget_schema, "gadget": widget_schema, "missing": widget_schema})
 
 
 @pytest.fixture
 def schema_settings_factory(
-    tmp_path: Path, dlt_destination_config: str, schema_module: str
+    tmp_path: Path, dlt_destination_config: str, entity_schemas: str
 ) -> Callable[..., JsonlJsonschemaIngestSettings]:
     """Create settings with fresh output and metadata directories for each run."""
     run_counter = count()
@@ -69,7 +69,7 @@ def schema_settings_factory(
             "file_glob": "*.jsonl*",
             "loader_file_format": "parquet",
             "buffer_size": 2,
-            "schema_files_module": schema_module,
+            "entity_schemas": entity_schemas,
         }
         defaults.update(overrides)
         settings = make_cts_settings(JsonlJsonschemaIngestSettings, tmp_path, **defaults)

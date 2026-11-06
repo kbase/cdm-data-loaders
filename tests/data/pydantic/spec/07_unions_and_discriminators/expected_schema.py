@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 07_unions_and_discriminators."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

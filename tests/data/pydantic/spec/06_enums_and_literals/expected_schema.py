@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 06_enums_and_literals."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

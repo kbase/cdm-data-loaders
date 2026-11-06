@@ -22,8 +22,15 @@ from lxml.etree import Element, XMLSyntaxError, tostring
 import cdm_data_loaders.readers.xml as xml_module
 import cdm_data_loaders.readers.xsd as xsd_module
 import cdm_data_loaders.utils.buffer as buffer_module
-from cdm_data_loaders.core.fields import BUFFER_SIZE, DEFAULT_XML_FILE_GLOB, DEFAULTS, LOG_INTERVAL
-from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.core.fields import (
+    BUFFER_SIZE,
+    DEFAULT_XML_FILE_GLOB,
+    DEFAULTS,
+    LOADER_FILE_FORMAT,
+    LOG_INTERVAL,
+)
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry
+from cdm_data_loaders.core.settings import XmlIngestSettings
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from cdm_data_loaders.readers.xml import (
@@ -34,7 +41,11 @@ from cdm_data_loaders.readers.xml import (
     process_xml_file_to_dict,
     process_xml_file_to_pyarrow,
 )
-from cdm_data_loaders.readers.xsd import DEFAULT_MAX_RECURSION_DEPTH, generate_pyarrow_schema
+from cdm_data_loaders.readers.xsd import (
+    DEFAULT_MAX_RECURSION_DEPTH,
+    generate_pyarrow_schema,
+    make_xml_element_converter,
+)
 from tests.cdm_data_loaders.readers.xml.conftest import table_and_data, write_xml_file
 from tests.dlt_config_isolation import isolated_dlt_config
 from tests.fs_backends import FsBackend
@@ -227,22 +238,27 @@ def make_failing_parse_fn(fail_on_call: int) -> ParseFn:
 def fake_settings(
     buffer_size: int = DEFAULTS[BUFFER_SIZE],
     log_interval: int = DEFAULTS[LOG_INTERVAL],
-    settings_class: type = CtsSettings,
+    settings_class: type = XmlIngestSettings,
     input_dir: str | Path = ".",
-) -> CtsSettings | XmlToDictSettings:
-    """Build a MagicMock stand-in for CtsSettings, XmlToDictSettings, etc.
+) -> XmlIngestSettings | XmlToDictSettings:
+    """Build a MagicMock stand-in for XmlIngestSettings, XmlToDictSettings, etc.
 
     ``process_xml_file`` reads ``buffer_size`` and ``log_interval`` off the settings
     object, so these are exposed as real integers (rather than nested mocks) to make
     the arithmetic in the function under test behave correctly. ``process_xml_file_items``
-    also reads ``input_dir``.
+    and ``build_xml_file_resource`` also read ``input_dir``, ``file_glob``, and
+    ``loader_file_format``.
     """
     settings = MagicMock(spec=settings_class)
     settings.buffer_size = buffer_size
     settings.log_interval = log_interval
     settings.input_dir = Path(input_dir)
+    settings.file_glob = DEFAULT_XML_FILE_GLOB
+    settings.loader_file_format = DEFAULTS[LOADER_FILE_FORMAT]
     if hasattr(settings, "get_table_transform"):
         settings.get_table_transform.return_value = None
+    if hasattr(settings, "schema_map"):
+        settings.schema_map = None
     return settings
 
 
@@ -271,7 +287,7 @@ def fake_xmltopyarrow_settings(
     log_interval: int = DEFAULTS[LOG_INTERVAL],
     max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH,
 ) -> XmlToPyArrowSettings:
-    """Build a MagicMock XmlToPyArrowSettings with xsd_schema/pyarrow_schema set, for process_xml_file_to_pyarrow tests."""
+    """Build a MagicMock XmlToPyArrowSettings with xsd_schema/schema_map set, for process_xml_file_to_pyarrow tests."""
     settings: XmlToPyArrowSettings = fake_settings(  # pyright: ignore[reportAssignmentType]
         buffer_size=buffer_size, log_interval=log_interval, settings_class=XmlToPyArrowSettings
     )
@@ -280,7 +296,15 @@ def fake_xmltopyarrow_settings(
     settings.max_recursion_depth = max_recursion_depth
     schema = xmlschema.XMLSchema(xsd_text)
     settings.xsd_schema = schema  # pyright: ignore[reportAttributeAccessIssue]
-    settings.pyarrow_schema = generate_pyarrow_schema(  # pyright: ignore[reportAttributeAccessIssue]
+    pyarrow_schema = generate_pyarrow_schema(
+        schema,
+        xml_tag,
+        max_recursion_depth=max_recursion_depth,
+    )
+    settings.schema_map = ArrowSchemaRegistry(  # pyright: ignore[reportAttributeAccessIssue]
+        registry={table_name: pyarrow_schema}
+    )
+    settings.xml_element_converter = make_xml_element_converter(  # pyright: ignore[reportAttributeAccessIssue]
         schema,
         xml_tag,
         max_recursion_depth=max_recursion_depth,
@@ -774,8 +798,8 @@ def test_process_xml_file_to_pyarrow_pass_with_xsd_file_yields_arrow_table_with_
     table_name, table = items[0]
     assert table_name == "entry"
     assert isinstance(table, pa.Table)
-    assert settings.pyarrow_schema is not None
-    assert table.schema.equals(settings.pyarrow_schema, check_metadata=True)
+    assert settings.schema_map is not None
+    assert table.schema.equals(settings.schema_map.registry["entry"], check_metadata=True)
     assert table.to_pylist() == [
         {
             "property": [{"_type": "member count", "_value": "1"}],
@@ -933,10 +957,8 @@ def test_process_xml_file_pass_wraps_each_table_with_dlt_mark(
 
     mark_mock.assert_any_call(rows_people, "people")
     mark_mock.assert_any_call(rows_emails, "emails")
-    assert len(items) == 2
-    assert items[0].meta.table_name == "people"
+    assert [item.meta.table_name for item in items] == ["people", "emails"]
     assert items[0].data == rows_people
-    assert items[1].meta.table_name == "emails"
     assert items[1].data == rows_emails
 
 
@@ -1099,7 +1121,7 @@ def test_build_xml_file_resource_pass_single_file_iterparse_stays_on_one_thread_
 
     with isolated_dlt_config({"sources": {"filesystem": {"files_per_page": 1}}}):
         resource = build_xml_file_resource(
-            settings,  # pyright: ignore[reportArgumentType]
+            settings,
             "person",
             _thread_recording_parse_fn,
             "people_resource",
@@ -1129,7 +1151,7 @@ def test_build_xml_file_resource_pass_single_file_iterparse_closed_on_creating_t
 
     monkeypatch.setattr(xml_module, "stream_xml_file", _lifecycle_tracking_stream_xml_file)
     resource = build_xml_file_resource(
-        settings,  # pyright: ignore[reportArgumentType]
+        settings,
         "person",
         parse_person_entry,
         "people_resource",
@@ -1156,3 +1178,28 @@ def test_process_xml_file_to_pyarrow_pass_prepares_xsd_target_traversal_at_most_
     assert [table_name for table_name, _ in tagged] == ["people"]
     assert tagged[0][1].to_pylist() == PEOPLE_XML_TO_PYARROW_PARSED
     assert prepare_spy.call_count <= 1
+
+
+def test_process_xml_file_to_pyarrow_pass_uses_dict_buffer_with_table_schema_map(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """process_xml_file_to_pyarrow uses DictBuffer directly with the resolved table schema map."""
+    assert not hasattr(xml_module, "ArrowDictBuffer")
+    assert not hasattr(xml_module, "create_dict_buffer")
+    file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
+    settings = fake_xmltopyarrow_settings(table_name="people", xml_tag="person")
+    captured_schema_maps: list[ArrowSchemaRegistry | None] = []
+    real_dict_buffer = xml_module.DictBuffer
+
+    def _recording_dict_buffer(
+        max_items: int = DEFAULTS[BUFFER_SIZE],
+        schema_map: ArrowSchemaRegistry | None = None,
+    ) -> Any:  # noqa: ANN401
+        captured_schema_maps.append(schema_map)
+        return real_dict_buffer(max_items=max_items, schema_map=schema_map)
+
+    monkeypatch.setattr(xml_module, "DictBuffer", _recording_dict_buffer)
+
+    list(process_xml_file_to_pyarrow(settings, file_path=file_path))
+
+    assert captured_schema_maps == [settings.schema_map]

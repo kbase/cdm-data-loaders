@@ -1,6 +1,22 @@
 # AGENTS.md
 
-See `.agents/rules/` for rules that apply to all code edits.
+See `.agents/skills/coding-style` and `.agents/skills/testing` for rules that apply to all code edits.
+
+## Documentation Sync Rules (Mandatory)
+
+Every code change that alters CLI flags, settings classes, public APIs, schemas, or converter behavior MUST update documentation in the same task before completion:
+
+1. **CLI & Settings Changes (`core/settings.py`, `core/fields.py`, `core/transforms.py`, `pipelines/**/settings.py`, `pyproject.toml`)**:
+   - Regenerate CLI docs: `uv run python -m scripts.gen_docs`
+   - Search `docs/` and `README.md` for any renamed/removed field names, CLI flags (`--*`), or env vars (`CDL_*`) and update all prose/examples.
+2. **Converter Rules, Scalar Maps, or Error Classes (`converters/`, `readers/xsd.py`, `tests/data/*/rules.yaml`)**:
+   - Regenerate converter specs: `uv run python -m scripts.gen_converter_spec`
+   - If adding a new converter or specification, register it in `scripts/gen_converter_spec.py`, `mkdocs.yml` (`nav`), `docs/index.md`, and `README.md`.
+3. **Public Symbol / Registry Refactors (`core/`, `pipelines/`, `readers/`, `converters/`, `parsers/`, `utils/`)**:
+   - Update module and class/function docstrings in the modified files.
+   - Grep `docs/` and `README.md` for all references to modified or removed symbols and update code examples.
+4. **Pre-Completion Verification**:
+   - Always run `uv run pytest tests/test_gen_docs.py` and `uv run mkdocs build --strict` before finishing any task that touches `src/`, `scripts/`, `pyproject.toml`, or `docs/`.
 
 ## Gotchas
 

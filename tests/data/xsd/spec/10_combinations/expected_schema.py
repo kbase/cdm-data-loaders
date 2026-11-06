@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 10_combinations (xml_tag='record')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

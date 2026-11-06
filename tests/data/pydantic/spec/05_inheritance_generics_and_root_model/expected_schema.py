@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 05_inheritance_generics_and_root_model."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

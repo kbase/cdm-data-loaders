@@ -1,7 +1,5 @@
 """Expected PyArrow table for 02_nullability_defaults_and_computed."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 from expected_schema import EXPECTED_SCHEMA
 

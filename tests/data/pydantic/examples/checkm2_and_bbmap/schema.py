@@ -1,7 +1,5 @@
 """Example 3: CheckM2 quality metrics and BBMap stats.sh contigset statistics."""
 
-# ruff: noqa: D101, D102, INP001
-
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated

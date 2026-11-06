@@ -1,7 +1,5 @@
 """Spec 09: PEP 695 type aliases, nested Annotated metadata precedence, and functional validators."""
 
-# ruff: noqa: D101, INP001
-
 from decimal import Decimal
 from typing import Annotated
 

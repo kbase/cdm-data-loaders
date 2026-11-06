@@ -1,7 +1,5 @@
 """Expected PyArrow table for 04_nested_models_and_maps."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 from expected_schema import EXPECTED_SCHEMA
 

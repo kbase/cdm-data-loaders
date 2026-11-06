@@ -1,7 +1,5 @@
 """Expected PyArrow table for 09_annotated_and_custom_types."""
 
-# ruff: noqa: INP001
-
 from decimal import Decimal
 
 import pyarrow as pa

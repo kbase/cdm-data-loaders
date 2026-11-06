@@ -1,95 +1,90 @@
 """Pluggable record filtering, transformation, multi-table splitting, and PyArrow schema overrides."""
 
-import importlib
-from collections.abc import Callable, Mapping, Sequence
-from typing import Annotated, Any, Final
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, Self
 
 import pyarrow as pa
-from pydantic import BaseModel, ConfigDict, Field, InstanceOf, StringConstraints
+from pydantic import PrivateAttr, model_validator
+from pydantic_settings import BaseSettings
 
 from cdm_data_loaders.converters.jsonschema_to_pyarrow import coerce_record_for_pyarrow
-from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-
-DEFAULT_TRANSFORMS_ATTR: Final[str] = "TABLE_TRANSFORMS"
-REJECTED_PYARROW_SCHEMA: Final[pa.Schema] = pa.schema(
-    [
-        pa.field("table_name", pa.string()),
-        pa.field("source_file", pa.string()),
-        pa.field("line_no", pa.int64()),
-        pa.field("raw_record", pa.string()),
-        pa.field("error_detail", pa.string()),
-    ]
+from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME, OutputSchemasModuleSpec, TransformsModuleSpec
+from cdm_data_loaders.core.registry import (
+    ArrowSchemaRegistry,
+    RecordTransformFn,
+    TransformRegistry,
+    load_registry_dict,
 )
-
-type RecordTransformFn = Callable[[dict[str, Any]], Mapping[str, Sequence[dict[str, Any]]]]
-type TableNameKey = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, strict=True)]
-
-
-class TableTransform(BaseModel):
-    """Per-table record transformation and optional PyArrow schema mapping.
-
-    :param transform_fn: callable mapping a single input record dictionary to a mapping of
-        ``{destination_table_name: [row_dict, ...]}``. Returning ``{}`` (or empty row sequences)
-        filters out the record.
-    :param table_to_schema_map: optional mapping of destination table names to ``pyarrow.Schema``
-        instances used to coerce emitted rows and construct ``ArrowDictBuffer`` pages.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    transform_fn: RecordTransformFn | None = None
-    table_to_schema_map: Annotated[
-        dict[TableNameKey, InstanceOf[pa.Schema]] | None,
-        Field(default=None, min_length=1),
-    ] = None
 
 
 def resolve_schema_map(
     default_table: str,
     *,
-    transform: TableTransform | None = None,
+    transform: RecordTransformFn | None = None,
+    unreconciled_output_schemas: ArrowSchemaRegistry | None = None,
     default_pyarrow_schema: pa.Schema | None = None,
-) -> dict[str, pa.Schema] | None:
-    """Resolve the active table-to-PyArrow-schema mapping for a reader.
-
-    Automatically includes ``_rejected`` mapped to ``REJECTED_PYARROW_SCHEMA``
-    whenever a PyArrow schema map is active.
+) -> ArrowSchemaRegistry | None:
+    """Resolve the active table-to-PyArrow-schema registry for a reader.
 
     :param default_table: default target table name for the pipeline/entity
-    :param transform: optional ``TableTransform`` configured for ``default_table``
+    :type default_table: str
+    :param transform: optional ``RecordTransformFn`` configured for ``default_table``
+    :type transform: RecordTransformFn | None
+    :param unreconciled_output_schemas: optional ``ArrowSchemaRegistry``
+    :type unreconciled_output_schemas: ArrowSchemaRegistry | None
     :param default_pyarrow_schema: default PyArrow schema when no override is configured
-    :return: dictionary mapping destination table names to ``pa.Schema`` objects, or ``None``
+    :type default_pyarrow_schema: pa.Schema | None
+    :return: ``ArrowSchemaRegistry`` mapping destination table names to ``pa.Schema`` objects, or ``None``
     """
-    if transform is not None and transform.table_to_schema_map is not None:
-        return {REJECTED_TABLE_NAME: REJECTED_PYARROW_SCHEMA, **transform.table_to_schema_map}
-    if default_pyarrow_schema is not None:
-        return {
-            default_table: default_pyarrow_schema,
-            REJECTED_TABLE_NAME: REJECTED_PYARROW_SCHEMA,
-        }
+    if unreconciled_output_schemas is not None:
+        if transform is None and default_table not in unreconciled_output_schemas.registry:
+            err_msg = f"unreconciled_output_schemas for {default_table!r} must include {default_table!r} when transform is None"
+            raise ValueError(err_msg)
+        return unreconciled_output_schemas
+    if default_pyarrow_schema is not None and transform is None:
+        return ArrowSchemaRegistry(
+            registry={
+                default_table: default_pyarrow_schema,
+            }
+        )
     return None
 
 
-def _validate_routed_output(raw_routed: object) -> dict[str, list[dict[str, Any]]]:
-    """Validate the return value of ``transform_fn`` and strip empty table lists."""
-    if not isinstance(raw_routed, Mapping):
-        err_msg = "transform_fn must return a mapping of table names to sequences of row dicts"
-        raise TypeError(err_msg)
+def validate_routed_output(raw_routed: object) -> dict[str, list[dict[str, Any]]]:
+    """Validate the return value of ``transform_fn`` and strip empty table lists.
 
+    :param raw_routed: raw output from ``transform_fn`` for a single record
+    :type  raw_routed: object
+    :raises ValueError: if ``raw_routed`` is not a mapping, any table name is empty or reserved,
+        or rows for any table are not a sequence of non-empty dicts
+    :return: validated dictionary mapping destination table names to non-empty lists of row dictionaries
+    :rtype : dict[str, list[dict[str, Any]]]
+    """
     routed: dict[str, list[dict[str, Any]]] = {}
-    for table_name, rows in raw_routed.items():
-        if not isinstance(table_name, str) or not table_name.strip():
-            err_msg = "transform_fn output keys must be non-empty table names"
-            raise ValueError(err_msg)
-        if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes, bytearray, Mapping)):
-            err_msg = f"transform_fn rows for table {table_name!r} must be a sequence of dicts"
-            raise TypeError(err_msg)
-        row_list = list(rows)
-        if not all(isinstance(row, dict) for row in row_list):
-            err_msg = f"transform_fn rows for table {table_name!r} must be dicts"
-            raise TypeError(err_msg)
-        if row_list:
-            routed[table_name] = row_list
+    errors: list[str] = []
+    if not isinstance(raw_routed, Mapping):
+        errors.append("transform_fn must return a mapping of table names to sequences of row dicts")
+    else:
+        for table_name, rows in raw_routed.items():
+            if not isinstance(table_name, str) or not table_name.strip():
+                errors.append("transform_fn output keys must be non-empty table names")
+            elif table_name.strip() == REJECTED_TABLE_NAME:
+                errors.append(f"transform_fn cannot route rows to reserved table {REJECTED_TABLE_NAME!r}")
+
+            if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes, bytearray, Mapping)):
+                errors.append(f"transform_fn rows for table {table_name!r} must be a sequence of dicts")
+                continue
+
+            row_list = list(rows)
+            if not all(isinstance(row, dict) for row in row_list) or not all(row for row in row_list):
+                errors.append(f"transform_fn rows for table {table_name!r} must be non-empty dicts")
+                continue
+
+            if not errors and row_list:
+                routed[table_name.strip()] = row_list
+
+    if errors:
+        raise ValueError("\n".join(errors))
     return routed
 
 
@@ -97,75 +92,116 @@ def route_and_coerce_record(
     record: dict[str, Any],
     default_table: str,
     *,
-    transform: TableTransform | None = None,
-    table_to_schema_map: Mapping[str, pa.Schema] | None = None,
-    coerce_untransformed: bool = True,
+    transform: RecordTransformFn | None = None,
+    schema_map: ArrowSchemaRegistry | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Route a validated record through ``transform`` and optionally coerce rows for PyArrow.
 
     :param record: parsed and validated input record dictionary
-    :param default_table: destination table name when ``transform`` or ``transform.transform_fn`` is ``None``
-    :param transform: optional ``TableTransform`` for ``default_table``
-    :param table_to_schema_map: active destination table-to-PyArrow schema mapping, if any
-    :param coerce_untransformed: whether to run ``coerce_record_for_pyarrow`` when no transform modified the record
+    :type record: dict[str, Any]
+    :param default_table: destination table name when ``transform`` is ``None``
+    :type default_table: str
+    :param transform: optional ``RecordTransformFn`` for ``default_table``
+    :type transform: RecordTransformFn | None
+    :param schema_map: active destination ``ArrowSchemaRegistry``, if any
+    :type schema_map: ArrowSchemaRegistry | None
     :return: dictionary mapping destination table names to non-empty lists of row dictionaries
     """
-    if transform is not None and transform.transform_fn is not None:
-        routed = _validate_routed_output(transform.transform_fn(record))
-    else:
-        routed = {default_table: [record]}
+    routed = validate_routed_output(transform(record)) if transform is not None else {default_table: [record]}
 
     if not routed:
         return {}
 
-    has_transform_override = transform is not None and (
-        transform.transform_fn is not None or transform.table_to_schema_map is not None
-    )
-    if table_to_schema_map is not None and (coerce_untransformed or has_transform_override):
-        coerced: dict[str, list[dict[str, Any]]] = {}
-        for out_table, rows in routed.items():
-            if out_table not in table_to_schema_map:
-                err_msg = f"Cannot coerce data for {out_table!r} table: no PyArrow schema supplied"
-                raise ValueError(err_msg)
-            target_schema = table_to_schema_map[out_table]
-            coerced[out_table] = [coerce_record_for_pyarrow(row, target_schema) for row in rows]
-        return coerced
+    if schema_map is not None:
+        return {
+            out_table: (
+                [coerce_record_for_pyarrow(row, schema_map.registry[out_table]) for row in rows]
+                if out_table in schema_map.registry
+                else rows
+            )
+            for out_table, rows in routed.items()
+        }
 
     return routed
 
 
-def load_table_transforms(
-    spec: str,
-    default_attr: str = DEFAULT_TRANSFORMS_ATTR,
-) -> dict[str, TableTransform]:
-    """Import a module spec (``module`` or ``module:ATTR``) and load its ``TableTransform`` mapping.
+def validate_table_transforms(
+    settings: Any,  # noqa: ANN401
+    valid_tables: Iterable[str],
+) -> None:
+    """Ensure every key in ``settings.table_transforms`` matches a configured input table."""
+    table_transforms: TransformRegistry | None = getattr(settings, "table_transforms", None)
+    if table_transforms is None:
+        return
+    unknown_transforms = sorted(set(table_transforms.registry) - set(valid_tables))
+    if unknown_transforms:
+        err_msg = f"Unknown table names in transforms_module: {', '.join(unknown_transforms)}"
+        raise ValueError(err_msg)
 
-    :param spec: dotted module path, optionally suffixed with ``:ATTRIBUTE_NAME``
-    :param default_attr: attribute name to load when ``spec`` does not include ``:ATTRIBUTE_NAME``
-    :return: dictionary mapping input table names to ``TableTransform`` instances
-    :raises ValueError: if ``spec`` is malformed or the target attribute is missing/empty
-    :raises TypeError: if the target attribute is not a mapping of ``str`` to ``TableTransform``
+
+class TransformSettingsMixin(BaseSettings):
+    """Mixin for pipelines that accept `TABLE_TRANSFORMS` and `OUTPUT_SCHEMAS` modules."""
+
+    _table_transforms: TransformRegistry | None = PrivateAttr(default=None)
+    _unreconciled_output_schemas: ArrowSchemaRegistry | None = PrivateAttr(default=None)
+
+    """User-supplied output table schemas in pyarrow format."""
+
+    _schema_map: ArrowSchemaRegistry | None = PrivateAttr(default=None)
+
+    """Output table schemas, derived from the user-supplied schemas and/or from the input schema.
+
+    Tables without a user-supplied schema and with a transform specified will not have their
+    schema generated from the input schema, since the transform may change the output fields.
     """
-    module_path, sep, attr_name = spec.partition(":")
-    module_path = module_path.strip()
-    resolved_attr = attr_name.strip() if sep else default_attr
-    if not module_path or not resolved_attr:
-        err_msg = f"Invalid transforms module specification: {spec!r}"
-        raise ValueError(err_msg)
 
-    module = importlib.import_module(module_path)
-    raw = getattr(module, resolved_attr, None)
-    if not isinstance(raw, Mapping) or not raw:
-        err_msg = f"{module_path} does not define a non-empty {resolved_attr}: dict[str, TableTransform]"
-        raise ValueError(err_msg)
+    transforms_module: TransformsModuleSpec
+    output_schemas_module: OutputSchemasModuleSpec
 
-    transforms: dict[str, TableTransform] = {}
-    for table_name, transform in raw.items():
-        if not isinstance(table_name, str) or not table_name.strip():
-            err_msg = f"{resolved_attr} keys in {module_path} must be non-empty table names"
-            raise ValueError(err_msg)
-        if not isinstance(transform, TableTransform):
-            err_msg = f"{resolved_attr}[{table_name!r}] in {module_path} must be a TableTransform instance"
-            raise TypeError(err_msg)
-        transforms[table_name] = transform
-    return transforms
+    @model_validator(mode="after")
+    def _validate_transforms_module(self) -> Self:
+        """Eagerly load and validate `TABLE_TRANSFORMS` and `OUTPUT_SCHEMAS` if configured."""
+        if self.transforms_module is not None:
+            self._table_transforms = load_registry_dict(self.transforms_module, "TABLE_TRANSFORMS")
+        if self.output_schemas_module is not None:
+            self._unreconciled_output_schemas = load_registry_dict(self.output_schemas_module, "OUTPUT_SCHEMAS")
+        self._resolve_settings_schema_map()
+        return self
+
+    def _needs_default_pyarrow_schema(self, table_name: str) -> bool:
+        """Return whether ``table_name`` needs its PyArrow schema generated from the input schema."""
+        if self.get_table_transform(table_name) is not None:
+            return False
+        return not (
+            self._unreconciled_output_schemas is not None and table_name in self._unreconciled_output_schemas.registry
+        )
+
+    def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
+        """Resolve `_schema_map` from `_unreconciled_output_schemas`, `_table_transforms`, and any default PyArrow schema."""
+        table_name = getattr(self, "table_name", None)
+        if isinstance(table_name, str):
+            validate_table_transforms(self, {table_name})
+            self._schema_map = resolve_schema_map(
+                table_name,
+                transform=self.get_table_transform(table_name),
+                unreconciled_output_schemas=self._unreconciled_output_schemas,
+                default_pyarrow_schema=default_pyarrow_schema,
+            )
+        else:
+            self._schema_map = self._unreconciled_output_schemas
+
+    @property
+    def table_transforms(self) -> TransformRegistry | None:
+        """The loaded `TABLE_TRANSFORMS` registry (`None` if not configured)."""
+        return self._table_transforms
+
+    @property
+    def schema_map(self) -> ArrowSchemaRegistry | None:
+        """The resolved `ArrowSchemaRegistry` for this pipeline (`None` if unschematized)."""
+        return self._schema_map
+
+    def get_table_transform(self, table_name: str) -> RecordTransformFn | None:
+        """Return the `RecordTransformFn` for `table_name`, if configured."""
+        if self._table_transforms is None:
+            return None
+        return self._table_transforms.registry.get(table_name)

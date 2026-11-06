@@ -28,7 +28,6 @@ def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None
     xmltopyarrow_resource = build_per_file_filesystem_resource(
         settings,
         lambda file_item, cfg: process_xml_file_to_pyarrow(cfg, file_path=file_item),
-        settings,
         name="xmltopyarrow_reader",
         parallelized=False,
     )

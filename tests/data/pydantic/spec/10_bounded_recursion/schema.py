@@ -1,7 +1,5 @@
 """Spec 10: Self-recursive and mutually recursive BaseModels."""
 
-# ruff: noqa: D101, INP001
-
 from pydantic import BaseModel, Field
 
 

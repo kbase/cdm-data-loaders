@@ -78,7 +78,7 @@ class ReferencePipelineSettings(JsonlExtractSettings):
         bool,
         Field(
             default=True,
-            description="Whether transformer step 2 (ListBuffer) is parallelized",
+            description="Whether transformer step 2 (DictBuffer) is parallelized",
         ),
     ]
     parallel_step_3: Annotated[

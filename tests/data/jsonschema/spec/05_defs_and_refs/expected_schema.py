@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 05_defs_and_refs."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 _AUTHOR_STRUCT = pa.struct(

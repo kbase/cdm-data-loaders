@@ -1,7 +1,5 @@
 """Spec 01: Built-in scalars, Pydantic special types, temporal types, binary, and Decimals."""
 
-# ruff: noqa: INP001
-
 import datetime as dt
 from decimal import Decimal
 from ipaddress import IPv4Address

@@ -8,13 +8,7 @@ to the `_rejected` table. Each rejected record includes the target table
 name, source file, line number, raw text, and error detail.
 """
 
-from collections.abc import Generator, Iterator
-from typing import Any
-
-import dlt
 from dlt.common.pipeline import LoadInfo
-from dlt.common.storages.fsspec_filesystem import FileItemDict
-from dlt.common.typing import TDataItems
 
 from cdm_data_loaders.pipelines.core import (
     PipelineCli,
@@ -29,23 +23,6 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
 from cdm_data_loaders.readers.jsonlines import route_jsonl_lines
 
 
-@dlt.transformer(name="jsonl_reader", parallelized=True)
-def jsonl_reader(items: Iterator[FileItemDict], settings: JsonlExtractSettings) -> Generator[TDataItems, Any, Any]:
-    """Read each file in items and route each line by the configured table name.
-
-    :param items: file items to read
-    :type  items: Iterator[FileItemDict]
-    :yield: one dict per line
-    :rtype: Generator[TDataItems, Any, Any]
-    """
-    yield from route_jsonl_lines(
-        items,
-        buffer_size=settings.buffer_size,
-        table_name_of=lambda _file_item: settings.table_name,
-        table_transform=settings.get_table_transform(settings.table_name),
-    )
-
-
 def run_jsonlines_pipeline(settings: JsonlExtractSettings) -> LoadInfo | None:
     """Run the JSONL pipeline.
 
@@ -54,7 +31,7 @@ def run_jsonlines_pipeline(settings: JsonlExtractSettings) -> LoadInfo | None:
     :return: load information for the pipeline
     :rtype: LoadInfo | None
     """
-    jsonl_resource = build_filesystem_resource(settings, jsonl_reader, settings, name="jsonl_reader")
+    jsonl_resource = build_filesystem_resource(settings, route_jsonl_lines, name="jsonl_reader")
 
     return run_pipeline(
         settings=settings,

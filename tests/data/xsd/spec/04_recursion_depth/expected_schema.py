@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 04_recursion_depth (xml_tag='record')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

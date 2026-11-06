@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 03_mixed_content_raw_text (xml_tag='article')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

@@ -1,7 +1,5 @@
 """Expected PyArrow schema for ncbi_annotation_report."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

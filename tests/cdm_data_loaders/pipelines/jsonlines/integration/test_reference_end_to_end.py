@@ -35,7 +35,6 @@ pytestmark = pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS, 
 def test_jsonlines_fail_malformed_rows_preserve_provenance(
     *,
     run_reference_pipeline: Callable[..., Any],
-    pipeline_kind: str,
     tmp_path: Path,
     loader_file_format: str,
     include_valid: bool,
@@ -64,7 +63,6 @@ def test_jsonlines_fail_malformed_rows_preserve_provenance(
         json.dumps(canonicalize_entry(prepare_reference(entry)), sort_keys=True, default=str) for entry in entries
     )
     rejected = sorted(tables["_rejected"], key=lambda row: row["source_file"])
-    prefix = "dataset/" if pipeline_kind == EXTRACT_PIPELINE_NAME else ""
     with pytest.raises(json.JSONDecodeError) as error_info:
         json.loads(malformed)
     expected_error = str(error_info.value)
@@ -73,8 +71,8 @@ def test_jsonlines_fail_malformed_rows_preserve_provenance(
         (row["table_name"], row["source_file"], row["line_no"], row["raw_record"], row["error_detail"])
         for row in rejected
     ] == [
-        ("dataset", f"{prefix}first.jsonl", 3, malformed, expected_error),
-        ("dataset", f"{prefix}second.jsonl", 1, malformed, expected_error),
+        ("dataset", "dataset/first.jsonl", 3, malformed, expected_error),
+        ("dataset", "dataset/second.jsonl", 1, malformed, expected_error),
     ]
     assert {name for name in tables if "__" not in name and not name.startswith("_dlt")} == (
         {"dataset", "_rejected"} if include_valid else {"_rejected"}
@@ -136,14 +134,20 @@ def test_jsonlines_pass_multiple_entities_and_file_glob(
     loader_file_format: str,
     reference_registry_factory: Callable[[list[str]], dict[str, str]],
 ) -> None:
-    """Matching files route to configured tables and a custom glob excludes malformed files."""
+    """Matching top-level and deeply nested files route to configured tables and a custom glob excludes malformed files."""
     input_dir = tmp_path / "entities"
-    expected = {"dataset": "GCA_000003115.1", "other": "GCF_002271065.1"}
-    for table_name, accession in expected.items():
+    expected = {
+        "dataset": ["GCA_000003115.1", "GCA_000003115.2"],
+        "other": ["GCF_002271065.1", "GCF_002271065.2"],
+    }
+    for table_name, (top_accession, deep_accession) in expected.items():
         table_dir = input_dir / table_name
-        table_dir.mkdir(parents=True)
-        (table_dir / "keep.jsonl").write_text(json.dumps({"accession": accession}), encoding="utf-8")
+        deep_dir = table_dir / "a" / "b" / "c"
+        deep_dir.mkdir(parents=True)
+        (table_dir / "keep.jsonl").write_text(json.dumps({"accession": top_accession}), encoding="utf-8")
         (table_dir / "ignore.jsonl").write_text("{bad json", encoding="utf-8")
+        (deep_dir / "keep.jsonl").write_text(json.dumps({"accession": deep_accession}), encoding="utf-8")
+        (deep_dir / "ignore.jsonl").write_text("{bad json", encoding="utf-8")
     load_info, output_dir = run_and_read(
         run_reference_pipeline,
         "chunk_52",
@@ -154,9 +158,9 @@ def test_jsonlines_pass_multiple_entities_and_file_glob(
     )
     tables = read_pipeline_tables(output_dir / load_info.dataset_name, loader_file_format)
     expected_tables = (
-        {"dataset": sorted(expected.values())}
+        {"dataset": sorted(acc for accessions in expected.values() for acc in accessions)}
         if pipeline_kind == EXTRACT_PIPELINE_NAME
-        else {table_name: [accession] for table_name, accession in expected.items()}
+        else {table_name: sorted(accessions) for table_name, accessions in expected.items()}
     )
     assert {
         name: sorted(row["accession"] for row in rows) for name, rows in tables.items() if not name.startswith("_dlt")
@@ -219,7 +223,7 @@ def test_jsonlines_validation_fail_schema_invalid_rows_are_rejected(
     rejected = tables["_rejected"]
     assert len(rejected) == 1
     row = rejected[0]
-    assert (row["table_name"], row["source_file"], row["line_no"]) == ("dataset", "records.jsonl", 2)
+    assert (row["table_name"], row["source_file"], row["line_no"]) == ("dataset", "dataset/records.jsonl", 2)
     assert row["raw_record"] == raw_record
     assert "record" not in row
     errors = json.loads(row["error_detail"])
@@ -247,11 +251,11 @@ def test_jsonlines_cli_pass_reference_dataset_loads(
         EXTRACT_PIPELINE_NAME: (JsonlExtractSettings, {"table_name": "dataset"}),
         PYDANTIC_PIPELINE_NAME: (
             JsonlPydanticIngestSettings,
-            {"entity_models_module": "tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_models"},
+            {"entity_models": "tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_models"},
         ),
         JSONSCHEMA_PIPELINE_NAME: (
             JsonlJsonschemaIngestSettings,
-            {"schema_files_module": "tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas"},
+            {"entity_schemas": "tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas"},
         ),
     }[pipeline_kind]
     settings = make_cts_settings(

@@ -6,7 +6,7 @@ import pytest
 from frozendict import frozendict
 from pydantic_settings import CliApp, SettingsError
 
-from cdm_data_loaders.core.transforms import TableTransform
+from cdm_data_loaders.core.registry import TransformRegistry
 from cdm_data_loaders.parsers.uniprot.uniref import UNIREF_CDM_SCHEMA_MAP
 from cdm_data_loaders.pipelines.uniref_cdm import (
     UNIREF_LOG_INTERVAL,
@@ -16,7 +16,6 @@ from cdm_data_loaders.pipelines.uniref_cdm import (
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     ENTRY_TABLE_NAME,
     ENTRY_XML_TAG,
-    UNIREF_SCHEMA,
     UNIREF_XSD_FILE,
 )
 from tests.cdm_data_loaders.conftest import check_settings
@@ -49,22 +48,22 @@ def test_uniref_cdm_defaults_and_transform(
     expected_protocol: str,
     test_defaults: dict[str, Any],
 ) -> None:
-    """Ensure that defaults, locked ClassVars, and the bound TableTransform are configured on each variant."""
+    """Ensure that defaults, locked ClassVars, and the bound transform/schema registries are configured."""
     s = settings_cls(**test_defaults)
     assert s.dataset_name == expected_dataset_name
     assert s.table_name == ENTRY_TABLE_NAME
     assert s.xml_tag == ENTRY_XML_TAG
     assert s.transforms_module is None
+    assert s.output_schemas_module is None
     assert s.log_interval == UNIREF_LOG_INTERVAL
     assert s.xsd_file == UNIREF_XSD_FILE
-    assert s.pyarrow_schema == UNIREF_SCHEMA
 
+    assert isinstance(s.table_transforms, TransformRegistry)
     transform = s.get_table_transform(ENTRY_TABLE_NAME)
-    assert isinstance(transform, TableTransform)
-    assert transform.table_to_schema_map == UNIREF_CDM_SCHEMA_MAP
-    assert transform.transform_fn is not None
+    assert callable(transform)
+    assert s.schema_map == UNIREF_CDM_SCHEMA_MAP
 
-    routed = transform.transform_fn({"_id": "UniRef_TEST", "_updated": "2025-01-01", "name": "Cluster: Test"})
+    routed = transform({"_id": "UniRef_TEST", "_updated": "2025-01-01", "name": "Cluster: Test"})
     assert routed["cluster"][0]["protocol"] == expected_protocol
 
 
@@ -95,6 +94,7 @@ def test_cli_fields_parse_correctly(
         ("--table-name", "custom_table"),
         ("--xml-tag", "custom_tag"),
         ("--transforms-module", "some.module"),
+        ("--output-schemas-module", "some.module"),
     ],
 )
 def test_locked_fields_rejected_on_cli(

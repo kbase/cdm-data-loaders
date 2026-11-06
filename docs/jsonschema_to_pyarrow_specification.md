@@ -536,8 +536,6 @@ This document specifies how a **JSON Schema Draft 2020-12** document determines:
 ```python
 """Expected PyArrow schema for 01_scalars_and_formats."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -783,8 +781,6 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```python
 """Expected PyArrow schema for 02_nullability_and_required."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 
@@ -1062,8 +1058,6 @@ nullable. `[10.5, 20.25, 30.0]` becomes `{"item_0": 10.5, "item_1": 20.25, "item
 
 ```python
 """Expected PyArrow schema for 03_arrays_and_tuples."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 
@@ -1349,8 +1343,6 @@ uses `patternProperties`.
 ```python
 """Expected PyArrow schema for 04_objects_and_maps."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -1559,8 +1551,6 @@ The root is `"$ref": "#/$defs/Document"`. `lead_author` declares its own `descri
 
 ```python
 """Expected PyArrow schema for 05_defs_and_refs."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 
@@ -1816,8 +1806,6 @@ At depth 2 the third `TreeNode` level becomes JSON strings; at depth 1 the secon
 
 ```python
 """Expected PyArrow schema for 06_recursion_depth."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 
@@ -2235,8 +2223,6 @@ EXPECTED_SCHEMA_DEPTH_1 = pa.schema(
 ```python
 """Expected PyArrow schema for 07_combinators_allof_anyof_oneof."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(
@@ -2422,8 +2408,6 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```python
 """Expected PyArrow schema for 08_conditional_and_dependent_schemas."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 
@@ -2627,8 +2611,6 @@ required-but-nullable `anyOf` property (`fallback_tag`), an array item (`tag_lis
 
 ```python
 """Expected PyArrow schema for 09_context_dependent_shared_defs."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 
@@ -3009,8 +2991,6 @@ Stress test combining `allOf` inheritance, `const`, date / date-time / Base64 sc
 
 ```python
 """Expected PyArrow schema for 10_combinations."""
-
-# ruff: noqa: INP001
 
 import pyarrow as pa
 

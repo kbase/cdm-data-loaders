@@ -31,7 +31,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import (
     run_qsv_null_replacement,
     run_qsv_validate,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
 from tests.cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.conftest import (
     DELIMITERS,
     FAKE_QSV_CMD,
@@ -1349,7 +1349,7 @@ def test_run_qsv_validate_mocked_qsv_fail_records_error_without_invoking_qsv_whe
     make_mock_args: Callable[..., CleanerValidatorArgs],
     write_source_file: WriteFile,
     mock_qsv_run: Callable[..., MagicMock],
-    first_pass_validated_schema: ValidatedSchema,
+    first_pass_validated_schema: ValidatedXsvSchema,
 ) -> None:
     """A missing input file records an error and the mocked subprocess.run is never called."""
     source = write_source_file(build_xsv_content(VALID_ROWS, header=COLUMNS), "data.tsv")

@@ -1,7 +1,5 @@
 """Expected PyArrow table for 08_aliases_and_field_names."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 from expected_schema import EXPECTED_SCHEMA, EXPECTED_SCHEMA_BY_ALIAS
 

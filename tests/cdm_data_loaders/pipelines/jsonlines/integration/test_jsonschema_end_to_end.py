@@ -88,7 +88,7 @@ def test_run_jsonlines_pipeline_pass_persists_valid_and_rejected_rows(
         Path(settings.output_dir),
         load_info,
         metadata_moved=True,
-        ingested_files={"plain.jsonl", "compressed.jsonl.gz", "records.jsonl"},
+        ingested_files={"widget/plain.jsonl", "widget/compressed.jsonl.gz", "gadget/records.jsonl"},
     )
     tables = read_data_tables(settings, load_info.dataset_name)
     assert set(tables) == {"widget", "_rejected", "gadget"}
@@ -107,28 +107,28 @@ def test_run_jsonlines_pipeline_pass_persists_valid_and_rejected_rows(
     assert sorted(tables["_rejected"], key=lambda row: (row["source_file"], row["line_no"])) == [
         {
             "table_name": "widget",
-            "source_file": "compressed.jsonl.gz",
+            "source_file": "widget/compressed.jsonl.gz",
             "line_no": 2,
             "raw_record": FORMAT_ERROR_RAW,
             "error_detail": json.dumps(["'2023-02-29' is not a 'date'"]),
         },
         {
             "table_name": "widget",
-            "source_file": "compressed.jsonl.gz",
+            "source_file": "widget/compressed.jsonl.gz",
             "line_no": 3,
             "raw_record": "null",
             "error_detail": json.dumps(["None is not of type 'object'"]),
         },
         {
             "table_name": "widget",
-            "source_file": "plain.jsonl",
+            "source_file": "widget/plain.jsonl",
             "line_no": 3,
             "raw_record": MALFORMED_RAW,
             "error_detail": PARSE_ERROR,
         },
         {
             "table_name": "widget",
-            "source_file": "plain.jsonl",
+            "source_file": "widget/plain.jsonl",
             "line_no": 4,
             "raw_record": TYPE_ERROR_RAW,
             "error_detail": json.dumps(["'2' is not of type 'integer'"]),
@@ -149,7 +149,7 @@ def test_run_jsonlines_pipeline_pass_all_invalid(
 
     load_info = assert_run_ok(pipeline_runner.run(JSONSCHEMA_PIPELINE_NAME, settings=settings))
     assert_pipeline_report_written(
-        Path(settings.output_dir), load_info, metadata_moved=True, ingested_files=["invalid.jsonl"]
+        Path(settings.output_dir), load_info, metadata_moved=True, ingested_files=["widget/invalid.jsonl"]
     )
     reject_row_data = read_data_tables(settings, load_info.dataset_name)
     reject_row_data["_rejected"] = sorted(
@@ -159,14 +159,14 @@ def test_run_jsonlines_pipeline_pass_all_invalid(
         "_rejected": [
             {
                 "table_name": "widget",
-                "source_file": "invalid.jsonl",
+                "source_file": "widget/invalid.jsonl",
                 "line_no": 1,
                 "raw_record": MALFORMED_RAW,
                 "error_detail": PARSE_ERROR,
             },
             {
                 "table_name": "widget",
-                "source_file": "invalid.jsonl",
+                "source_file": "widget/invalid.jsonl",
                 "line_no": 2,
                 "raw_record": TYPE_ERROR_RAW,
                 "error_detail": json.dumps(["'2' is not of type 'integer'"]),
@@ -178,7 +178,7 @@ def test_run_jsonlines_pipeline_pass_all_invalid(
 def test_cli_pass_loads_selected_entity(
     schema_input_dir: Path,
     schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
-    schema_module_factory: Callable[[object], str],
+    entity_schemas_factory: Callable[[object], str],
     widget_schema: dict[str, Any],
     loader_file_format: str,
     pipeline_runner: PipelineTestRunner,
@@ -188,21 +188,21 @@ def test_cli_pass_loads_selected_entity(
         input_dir=str(schema_input_dir),
         loader_file_format=loader_file_format,
         dataset_name="schema_cli",
-        schema_files_module=schema_module_factory({"gadget": widget_schema}),
+        entity_schemas=entity_schemas_factory({"gadget": widget_schema}),
     )
 
     load_info = assert_run_ok(
         pipeline_runner.run(
             JSONSCHEMA_PIPELINE_NAME,
             cli_args=[
-                *settings_to_argv(settings, exclude=["schema_files_module"]),
+                *settings_to_argv(settings, exclude=["entity_schemas"]),
                 "-m",
-                settings.schema_files_module,
+                settings.entity_schemas,
             ],
         )
     )
     assert load_info.dataset_name == "schema_cli"
     assert_pipeline_report_written(
-        Path(settings.output_dir), load_info, metadata_moved=True, ingested_files=["records.jsonl"]
+        Path(settings.output_dir), load_info, metadata_moved=True, ingested_files=["gadget/records.jsonl"]
     )
     assert read_data_tables(settings, load_info.dataset_name) == {"gadget": [EXPECTED_GADGET_ROW]}

@@ -1,7 +1,5 @@
 """Spec 04: Nested BaseModel, TypedDict, stdlib dataclass, and dict[str, V] maps."""
 
-# ruff: noqa: D101, INP001
-
 from dataclasses import dataclass
 from typing import TypedDict
 

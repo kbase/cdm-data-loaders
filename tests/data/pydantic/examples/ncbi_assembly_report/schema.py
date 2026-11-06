@@ -1,7 +1,5 @@
 """Example 2: NCBI Datasets API Assembly Dataset Report model."""
 
-# ruff: noqa: D101, INP001
-
 import datetime as dt
 from enum import StrEnum
 

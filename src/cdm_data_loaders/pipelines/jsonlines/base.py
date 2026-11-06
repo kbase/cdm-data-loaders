@@ -7,23 +7,24 @@ with provenance columns (``table_name``, ``source_file``, ``line_no``, ``raw_rec
 each pipeline module supplies only its validator and registry loader.
 """
 
-from collections.abc import Callable
-from importlib import import_module
-from logging import Logger, getLogger
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Generator, Iterator
+from typing import Any
 
 import dlt
-import pyarrow as pa
 from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TSchemaContractDict
-from dlt.common.storages.fsspec_filesystem import fsspec_filesystem
-from dlt.sources.filesystem import filesystem
-from fsspec import AbstractFileSystem
+from dlt.common.storages.fsspec_filesystem import FileItemDict
+from dlt.common.typing import TDataItems
+from dlt.extract.resource import DltResource
+from pydantic import BaseModel
 
-from cdm_data_loaders.core.transforms import TableTransform
+from cdm_data_loaders.core.registry import (
+    RegistryKey,
+)
 from cdm_data_loaders.pipelines.core import (
     DEFAULT_SCHEMA_CONTRACT,
     build_file_ingest_kwargs,
+    build_filesystem_resource,
     run_pipeline,
 )
 from cdm_data_loaders.readers.jsonlines import (
@@ -31,80 +32,23 @@ from cdm_data_loaders.readers.jsonlines import (
     make_page_router,
     stream_jsonl_lines,
 )
-from cdm_data_loaders.utils.file_items import join_url
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
 
-if TYPE_CHECKING:
-    from dlt.extract.resource import DltResource
-
-logger: Logger = getLogger(__name__)
-
-ResourceFactory = Callable[[str, dict[str, Any], Any], "DltResource"]
+ResourceFactory = Callable[[str, Any, Any], DltResource]
 
 
-def load_registry_dict(module_path: str, attribute_name: str, type_hint: str = "") -> dict[str, Any]:
-    """Import ``module_path`` and return its non-empty dictionary attribute ``attribute_name``.
-
-    :param module_path: dotted import path of the registry module
-    :type module_path: str
-    :param attribute_name: name of the dictionary attribute on the module
-    :type attribute_name: str
-    :param type_hint: optional suffix included in the ValueError message when missing or empty
-    :type type_hint: str
-    :return: the registry dictionary
-    :rtype: dict[str, Any]
-    :raises ValueError: if the attribute is missing, empty, or not a dict
-    """
-    module = import_module(module_path)
-    registry = getattr(module, attribute_name, None)
-    if not isinstance(registry, dict) or not registry:
-        err_msg = f"{module_path} does not define a non-empty {attribute_name}{type_hint}"
-        raise ValueError(err_msg)
-    return registry
+def _stream_entity_lines(items: Iterator[FileItemDict], settings: Any) -> Generator[TDataItems, Any, Any]:  # noqa: ANN401
+    """Stream pages of JSONL line records using ``settings.buffer_size``."""
+    yield from stream_jsonl_lines(items, settings.buffer_size)
 
 
-def entity_files(
-    bucket_url: str,
-    table_name: str,
-    file_glob: str,
-    credentials: AbstractFileSystem | None = None,
-) -> "DltResource":
-    """List the files for one entity, which live in the ``table_name`` subdirectory of ``bucket_url``.
-
-    Works for any filesystem the dlt filesystem source supports. A missing subdirectory produces an
-    empty resource and a warning. On object stores such as S3, which have no real directories, an
-    empty prefix counts as missing.
-
-    :param bucket_url: bucket URL or local directory holding one subdirectory per entity
-    :type  bucket_url: str
-    :param table_name: entity / table name; also the subdirectory name
-    :type  table_name: str
-    :param file_glob: glob for the entity's files, relative to its subdirectory
-    :type  file_glob: str
-    :param credentials: authenticated fsspec filesystem for ``bucket_url``; None uses fsspec defaults
-    :type  credentials: AbstractFileSystem | None
-    :return: dlt filesystem resource listing the entity's files, or an empty resource
-    :rtype: DltResource
-    """
-    entity_url = join_url(bucket_url, table_name)
-    fs = credentials if credentials is not None else fsspec_filesystem(entity_url)[0]
-    if not fs.isdir(entity_url):
-        logger.warning("Entity directory does not exist, skipping: %s", entity_url)
-        return dlt.resource([], name=f"{table_name}_files")
-
-    if credentials is None:
-        return filesystem(bucket_url=entity_url, file_glob=file_glob)
-    return filesystem(bucket_url=entity_url, credentials=credentials, file_glob=file_glob)
-
-
-def build_entity_resource(  # noqa: PLR0913
+def build_entity_resource(
     table_name: str,
     settings: Any,  # noqa: ANN401
     resolve_error: ParseErrorResolver,
     *,
     transform_valid: Callable[[Any], Any] | None = None,
-    pyarrow_schema: pa.Schema | None = None,
-    table_transform: TableTransform | None = None,
-) -> "DltResource":
+) -> DltResource:
     """Read plain or gzip JSONL files for one entity and route validated pages.
 
     A missing entity directory produces no rows. Nested values are preserved
@@ -116,33 +60,26 @@ def build_entity_resource(  # noqa: PLR0913
     :type  settings: Any
     :param resolve_error: function returning None for valid records or error detail
     :type  resolve_error: ParseErrorResolver
-    :param transform_valid: function applied to each valid record before yielding
+    :param transform_valid: validation function applied to each record before yielding
     :type  transform_valid: Callable[[Any], Any] | None
-    :param pyarrow_schema: optional PyArrow schema for buffering records as Arrow tables
-    :type  pyarrow_schema: pa.Schema | None
-    :param table_transform: optional `TableTransform` for filtering, transforming, or splitting records
-    :type  table_transform: TableTransform | None
     :return: resource yielding validated and rejected records for this entity
     :rtype: DltResource
     """
-    files = entity_files(str(settings.input_dir), table_name, settings.file_glob)
-
-    raw = dlt.transformer(
-        stream_jsonl_lines,
-        data_from=files,
+    raw = build_filesystem_resource(
+        settings,
+        _stream_entity_lines,
         name=f"{table_name}_raw",
+        file_glob=f"{table_name}/{settings.file_glob}",
         max_table_nesting=0,
-        parallelized=True,
     )
-    raw.bind(settings.buffer_size)
     validated = dlt.transformer(
         make_page_router(
             table_name,
             settings.buffer_size,
             resolve_error,
             transform_valid=transform_valid,
-            pyarrow_schema=pyarrow_schema,
-            table_transform=table_transform,
+            table_transform=settings.get_table_transform(table_name),
+            schema_map=settings.schema_map,
         ),
         data_from=raw,
         name=f"{table_name}_validated",
@@ -153,21 +90,9 @@ def build_entity_resource(  # noqa: PLR0913
     return validated
 
 
-def validate_table_transforms(
-    settings: Any,  # noqa: ANN401
-    table_to_schema: dict[str, Any],
-) -> None:
-    """Ensure every key in `settings.table_transforms` matches a registered entity table."""
-    table_transforms = getattr(settings, "table_transforms", None) or {}
-    unknown_transforms = sorted(set(table_transforms) - set(table_to_schema))
-    if unknown_transforms:
-        err_msg = f"Unknown table names in transforms_module: {', '.join(unknown_transforms)}"
-        raise ValueError(err_msg)
-
-
 def run_registry_ingest(
     settings: Any,  # noqa: ANN401
-    table_to_schema: dict[str, dict[str, Any]],
+    registry: dict[RegistryKey, type[BaseModel] | ValidatedSchema],
     build_resource: ResourceFactory,
     pipeline_name: str,
     pipeline_run_kwargs: dict[str, Any] | None = None,
@@ -176,8 +101,8 @@ def run_registry_ingest(
 
     :param settings: pipeline configuration
     :type  settings: Any
-    :param table_to_schema: mapping of table name to its schema entry
-    :type  table_to_schema: dict[str, dict[str, Any]]
+    :param registry: registry of table name to its schema/model entry
+    :type  registry: dict[RegistryKey, type[BaseModel] | ValidatedSchema]
     :param build_resource: function building one entity's resource
     :type  build_resource: ResourceFactory
     :param pipeline_name: registered pipeline name
@@ -187,10 +112,7 @@ def run_registry_ingest(
     :return: load information for the pipeline
     :rtype:  LoadInfo | None
     """
-    validate_table_transforms(settings, table_to_schema)
-    resources = [
-        build_resource(table_name, table_to_schema[table_name], settings) for table_name in sorted(table_to_schema)
-    ]
+    resources = [build_resource(table_name, registry[table_name], settings) for table_name in sorted(registry)]
     ingest_kwargs = build_file_ingest_kwargs(settings, pipeline_name, fallback_dataset_name=True)
     if pipeline_run_kwargs:
         ingest_kwargs["pipeline_run_kwargs"].update(pipeline_run_kwargs)

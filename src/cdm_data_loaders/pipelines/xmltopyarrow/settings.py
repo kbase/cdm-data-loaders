@@ -1,11 +1,13 @@
 """Settings class for the XML to PyArrow pipeline for the KBase CTS."""
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, ClassVar, Final, Self
+from typing import Annotated, Any, ClassVar, Final
 
 import pyarrow as pa
 import xmlschema
-from pydantic import Field, FilePath, PositiveInt, PrivateAttr, model_validator
+from lxml.etree import Element
+from pydantic import Field, FilePath, PositiveInt, PrivateAttr
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import XsdFile
@@ -18,6 +20,7 @@ from cdm_data_loaders.readers.xsd import (
     DEFAULT_MAX_RECURSION_DEPTH,
     generate_pyarrow_schema,
     load_schema,
+    make_xml_element_converter,
 )
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMA as UNIPROT_SCHEMA
 from cdm_data_loaders.schemas.uniref.schema import SCHEMA as UNIREF_SCHEMA
@@ -48,7 +51,7 @@ class XmlToPyArrowSettings(SingleTableXmlIngestSettings):
     )
 
     _xsd_schema: xmlschema.XMLSchema = PrivateAttr()
-    _pyarrow_schema: pa.Schema = PrivateAttr()
+    _xml_element_converter: Callable[[Element], dict[str, Any]] = PrivateAttr()
     xsd_file: XsdFile
     max_recursion_depth: Annotated[
         PositiveInt,
@@ -58,17 +61,25 @@ class XmlToPyArrowSettings(SingleTableXmlIngestSettings):
         ),
     ]
 
-    @model_validator(mode="after")
-    def check_xsd_file(self) -> Self:
-        """Check whether the schema file is present and valid; load the XSD and resolve the PyArrow schema."""
+    def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
+        """Check whether the schema file is present and valid; load the XSD and resolve `_schema_map`."""
         try:
             self._xsd_schema = load_schema(self.xsd_file)
-            self._pyarrow_schema = self._resolve_pyarrow_schema()
+            self._xml_element_converter = make_xml_element_converter(
+                self._xsd_schema,
+                self.xml_tag,
+                max_recursion_depth=self.max_recursion_depth,
+            )
+            pyarrow_schema = (
+                default_pyarrow_schema
+                if default_pyarrow_schema is not None or not self._needs_default_pyarrow_schema(self.table_name)
+                else self._resolve_pyarrow_schema()
+            )
         except Exception as e:
             err_msg = f"Could not generate PyArrow schema from XSD: {e!s}"
             raise ValueError(err_msg) from e
 
-        return self
+        super()._resolve_settings_schema_map(default_pyarrow_schema=pyarrow_schema)
 
     def _resolve_pyarrow_schema(self) -> pa.Schema:
         """Return the PyArrow schema for this settings instance."""
@@ -84,9 +95,9 @@ class XmlToPyArrowSettings(SingleTableXmlIngestSettings):
         return self._xsd_schema
 
     @property
-    def pyarrow_schema(self) -> pa.Schema:
-        """Return the generated PyArrow schema for xml_tag."""
-        return self._pyarrow_schema
+    def xml_element_converter(self) -> Callable[[Element], dict[str, Any]]:
+        """Return the precomputed XML-element-to-dict converter for `xml_tag`."""
+        return self._xml_element_converter
 
 
 class PresetXmlToPyArrowSettings(XmlToPyArrowSettings):
