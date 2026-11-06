@@ -143,13 +143,23 @@ def test_convert_schema_to_pyarrow_pass_flat_and_nested_schema(widget_schema: di
 
     assert pa_schema == pa.schema(
         [
-            pa.field("widget_id", pa.string(), nullable=False),
-            pa.field("count", pa.int64(), nullable=False),
-            pa.field("collected", pa.date32(), nullable=True),
-            pa.field("label", pa.string(), nullable=True),
+            pa.field("widget_id", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
+            pa.field("count", pa.int64(), nullable=False, metadata={"jsonschema_type": "integer"}),
+            pa.field("collected", pa.date32(), nullable=True, metadata={"jsonschema_type": "string (date)"}),
+            pa.field("label", pa.string(), nullable=True, metadata={"jsonschema_type": "string"}),
             pa.field(
                 "nested",
-                pa.struct([pa.field("tags", pa.list_(pa.string()), nullable=True)]),
+                pa.struct(
+                    [
+                        pa.field(
+                            "tags",
+                            pa.list_(
+                                pa.field("item", pa.string(), nullable=False, metadata={"jsonschema_type": "string"})
+                            ),
+                            nullable=True,
+                        )
+                    ]
+                ),
                 nullable=True,
             ),
         ]
@@ -158,10 +168,10 @@ def test_convert_schema_to_pyarrow_pass_flat_and_nested_schema(widget_schema: di
 
 def test_convert_schema_to_pyarrow_pass_dereferences_root_and_allof_refs() -> None:
     """Schemas using root $ref, nested definitions, and allOf dereference while preserving draft before PyArrow conversion."""
-    draft7_root_ref_schema: dict[str, Any] = {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "$ref": "#/definitions/RootItem",
-        "definitions": {
+    root_ref_schema: dict[str, Any] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$ref": "#/$defs/RootItem",
+        "$defs": {
             "Base": {
                 "type": "object",
                 "required": ["id"],
@@ -169,7 +179,7 @@ def test_convert_schema_to_pyarrow_pass_dereferences_root_and_allof_refs() -> No
             },
             "RootItem": {
                 "allOf": [
-                    {"$ref": "#/definitions/Base"},
+                    {"$ref": "#/$defs/Base"},
                     {
                         "type": "object",
                         "properties": {"score": {"type": "number", "multipleOf": 0.01}},
@@ -179,11 +189,11 @@ def test_convert_schema_to_pyarrow_pass_dereferences_root_and_allof_refs() -> No
         },
     }
 
-    pa_schema = convert_schema_to_pyarrow(ValidatedSchema(jsonschema=draft7_root_ref_schema))
+    pa_schema = convert_schema_to_pyarrow(ValidatedSchema(jsonschema=root_ref_schema))
     assert pa_schema == pa.schema(
         [
-            pa.field("id", pa.string(), nullable=False),
-            pa.field("score", pa.decimal128(38, 2), nullable=True),
+            pa.field("id", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
+            pa.field("score", pa.float64(), nullable=True, metadata={"jsonschema_type": "number"}),
         ]
     )
 
@@ -193,24 +203,6 @@ def test_convert_schema_to_pyarrow_pass_dataset_entity_schema() -> None:
     dataset_pa_schema = convert_schema_to_pyarrow(ValidatedSchema(jsonschema=DATASET_ENTITY_SCHEMAS["dataset"]))
     assert "accession" in dataset_pa_schema.names
     assert dataset_pa_schema.field("accession").type == pa.string()
-
-
-@pytest.mark.parametrize(
-    "schema",
-    [
-        pytest.param(
-            {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {}},
-            id="empty-properties",
-        ),
-        pytest.param(
-            {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"},
-            id="missing-properties",
-        ),
-    ],
-)
-def test_convert_schema_to_pyarrow_pass_empty_object_schema(schema: dict[str, Any]) -> None:
-    """Object schemas with empty or omitted properties convert to an empty PyArrow schema."""
-    assert convert_schema_to_pyarrow(ValidatedSchema(jsonschema=schema)) == pa.schema([])
 
 
 @pytest.mark.parametrize(
@@ -264,10 +256,18 @@ def test_convert_schema_to_pyarrow_pass_empty_object_schema(schema: dict[str, An
             {
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
-                "properties": {"val": {"type": "number", "multipleOf": Decimal("1e-39")}},
+                "properties": {},
             },
             JSONSchemaToPyArrowError,
-            id="decimal-scale-exceeds-precision",
+            id="empty-properties",
+        ),
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+            },
+            JSONSchemaToPyArrowError,
+            id="missing-properties",
         ),
         pytest.param(
             {

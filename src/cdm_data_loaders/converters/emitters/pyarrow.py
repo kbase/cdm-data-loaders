@@ -3,6 +3,7 @@
 import json
 from collections.abc import Mapping
 from decimal import Decimal
+from pathlib import Path
 from typing import ClassVar, Final
 
 import pyarrow as pa
@@ -13,11 +14,16 @@ from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import NodeHints, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.metadata import ConversionContext
+from cdm_data_loaders.converters.emitters._pyarrow_codegen import (
+    render_python_schema_module,
+    write_python_schema_file,
+)
 from cdm_data_loaders.converters.emitters._tabular_base import (
     DECIMAL128_MAX_PRECISION,
     DEFAULT_STRING_FORMATS,
     INT32_WIDTH,
     _TabularEmitterBase,
+    element_nullable,
     infer_enum_type,
     merge_format_map_with_defaults,
     resolve_logical_decimal,
@@ -122,6 +128,45 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
         """
         return self.emit(document).empty_table()
 
+    def emit_python(
+        self,
+        document: SchemaDocument | Mapping[str, SchemaDocument],
+        *,
+        docstring: str | None = None,
+    ) -> str:
+        """Render a static Python module defining PyArrow struct components and schemas.
+
+        :param document: A single ``SchemaDocument`` or a mapping of table names to ``SchemaDocument``s.
+        :type document: SchemaDocument | Mapping[str, SchemaDocument]
+        :param docstring: Optional module docstring header.
+        :type docstring: str | None
+        :return: Formatted Python source code defining ``*_STRUCT``, ``*_SCHEMA``, ``SCHEMA``, and ``SCHEMAS``.
+        :rtype: str
+        :raises PyArrowEmitterError: If any document root does not resolve to a struct.
+        """
+        return render_python_schema_module(self, document, docstring=docstring)
+
+    def emit_python_file(
+        self,
+        document: SchemaDocument | Mapping[str, SchemaDocument],
+        output: str | Path,
+        *,
+        docstring: str | None = None,
+    ) -> Path:
+        """Render and write a static Python schema module to ``output``.
+
+        :param document: A single ``SchemaDocument`` or a mapping of table names to ``SchemaDocument``s.
+        :type document: SchemaDocument | Mapping[str, SchemaDocument]
+        :param output: Destination file path for the generated Python module.
+        :type output: str | Path
+        :param docstring: Optional module docstring header.
+        :type docstring: str | None
+        :return: Resolved output ``Path``.
+        :rtype: Path
+        :raises PyArrowEmitterError: If any document root does not resolve to a struct.
+        """
+        return write_python_schema_file(self, document, output, docstring=docstring)
+
     def build_metadata(
         self, node: TypedNode, ctx: ConversionContext, field: SchemaField | None = None
     ) -> dict[str, str]:
@@ -143,6 +188,12 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
         description = values.get("description")
         if isinstance(description, str):
             metadata["comment"] = description
+        for prov in (field.provenance if field is not None else None, node.provenance):
+            if prov is not None:
+                for key in ("jsonschema_type", "pydantic_type", "xsd_type"):
+                    val = prov.metadata.get(key)
+                    if isinstance(val, str):
+                        metadata.setdefault(key, val)
         if original_union is not None:
             metadata["original_union"] = _dump_json(original_union)
         return metadata
@@ -187,11 +238,51 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
     def _array_type(self, element_type: pa.DataType, *, element_nullable: bool) -> pa.ListType:
         return pa.list_(pa.field("item", element_type, nullable=element_nullable))
 
+    def _emit_map(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> pa.MapType:
+        """Emit a map with independently typed keys, values, and value field metadata."""
+        if node.key_type is None or node.value_type is None:
+            msg = "Map nodes require both key_type and value_type"
+            raise self._error_cls(msg)
+        return pa.map_(
+            self.emit_node(node.key_type, ctx, depth + 1),
+            pa.field(
+                "value",
+                self.emit_node(node.value_type, ctx, depth + 1),
+                nullable=element_nullable(node.value_type),
+                metadata=self.build_metadata(node.value_type, ctx) or None,
+            ),
+        )
+
+    def _emit_array(self, node: TypedNode, ctx: ConversionContext, depth: int = 0) -> pa.ListType:
+        """Emit homogeneous arrays, preserving element field nullability and metadata."""
+        element = self._resolve_array_element(node)
+        if element is None:
+            return self._array_type(self._string_type(), element_nullable=True)
+        return pa.list_(
+            pa.field(
+                "item",
+                self.emit_node(element, ctx, depth + 1),
+                nullable=element_nullable(element),
+                metadata=self.build_metadata(element, ctx) or None,
+            )
+        )
+
     @staticmethod
     def _emit_logical(node: TypedNode) -> pa.DataType | None:
         """Preserve physical widths and logical source types without a JSON encoding."""
         if node.provenance is not None and node.provenance.source == "json-schema":
-            return None
+            return (
+                {
+                    "boolean": pa.bool_(),
+                    "long": pa.int64(),
+                    "double": pa.float64(),
+                    "date": pa.date32(),
+                    "binary": pa.binary(),
+                    "string": pa.string(),
+                }.get(node.hints.logical_type)
+                if "jsonschema_type" in node.provenance.metadata
+                else None
+            )
         hints = node.hints
         logical = hints.logical_type
         if logical in {"decimal", "wei"}:
@@ -200,12 +291,21 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
             unit = _timestamp_unit(hints.precision)
             naive = hints.timezone is False or logical == "timestamp-without-tz"
             return pa.timestamp(unit) if naive else pa.timestamp(unit, tz="UTC")
-        if node.type == "integer" and hints.bit_width is not None:
-            return _integer_type(hints.bit_width)
+        if node.type == "integer":
+            return _emit_logical_integer(hints)
         if node.type == "number" and (logical == "float" or hints.bit_width == INT32_WIDTH):
             return pa.float32()
         fixed = pa.binary(hints.length) if hints.length is not None else pa.binary()
         return {"date": pa.date32(), "time": pa.time64("us"), "binary": pa.binary(), "fixed": fixed}.get(logical)
+
+
+def _emit_logical_integer(hints: NodeHints) -> pa.DataType | None:
+    """Resolve signed or unsigned physical integer width from logical hints."""
+    if hints.logical_type in {"uint8", "uint16", "uint32", "uint64"}:
+        return {"uint8": pa.uint8(), "uint16": pa.uint16(), "uint32": pa.uint32(), "uint64": pa.uint64()}[
+            hints.logical_type
+        ]
+    return _integer_type(hints.bit_width) if hints.bit_width is not None else None
 
 
 def infer_type_from_enum(values: list[object]) -> pa.DataType:

@@ -103,7 +103,9 @@ def test_run_jsonlines_pipeline_pass_persists_valid_and_rejected_rows(
         assert parquet_schema.field("count").type == pa.int64()
         assert parquet_schema.field("collected").type == pa.date32()
         assert parquet_schema.field("label").type == pa.string()
-        assert parquet_schema.field("nested").type == pa.struct([pa.field("tags", pa.list_(pa.string()))])
+        assert parquet_schema.field("nested").type == pa.struct(
+            [pa.field("tags", pa.list_(pa.field("element", pa.string(), nullable=False)))]
+        )
     assert sorted(tables["_rejected"], key=lambda row: (row["source_file"], row["line_no"])) == [
         {
             "table_name": "widget",

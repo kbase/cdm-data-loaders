@@ -1,4 +1,4 @@
-"""Tests for `process_xml_file`, `process_xml_file_items`, `build_xml_file_resource`, `process_xml_file_to_dict`, and `process_xml_file_to_pyarrow` from cdm_data_loaders.readers.xml."""
+"""Tests for `process_xml_file`, `build_xml_file_resource`, `process_xml_file_to_dict`, and `process_xml_file_to_pyarrow` from cdm_data_loaders.readers.xml."""
 
 import gzip
 import logging
@@ -16,12 +16,18 @@ import xmltodict
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.extract.items import DataItemWithMeta, TableNameMeta
 from dlt.extract.pipe_iterator import ManagedPipeIterator
-from dlt.sources.filesystem import filesystem
 from lxml.etree import Element, XMLSyntaxError, tostring
 
+import cdm_data_loaders.converters.xsd_to_pyarrow as xsd_module
 import cdm_data_loaders.readers.xml as xml_module
-import cdm_data_loaders.readers.xsd as xsd_module
 import cdm_data_loaders.utils.buffer as buffer_module
+from cdm_data_loaders.converters.xsd_to_pyarrow import (
+    DEFAULT_MAX_RECURSION_DEPTH,
+    generate_pyarrow_schema,
+    generate_pyarrow_schemas_at_level,
+    make_xml_element_converter,
+    make_xml_level_converters,
+)
 from cdm_data_loaders.core.fields import (
     BUFFER_SIZE,
     DEFAULT_XML_FILE_GLOB,
@@ -37,14 +43,8 @@ from cdm_data_loaders.readers.xml import (
     DEFAULT_XMLTODICT_ARGS,
     build_xml_file_resource,
     process_xml_file,
-    process_xml_file_items,
     process_xml_file_to_dict,
     process_xml_file_to_pyarrow,
-)
-from cdm_data_loaders.readers.xsd import (
-    DEFAULT_MAX_RECURSION_DEPTH,
-    generate_pyarrow_schema,
-    make_xml_element_converter,
 )
 from tests.cdm_data_loaders.readers.xml.conftest import table_and_data, write_xml_file
 from tests.dlt_config_isolation import isolated_dlt_config
@@ -245,8 +245,8 @@ def fake_settings(
 
     ``process_xml_file`` reads ``buffer_size`` and ``log_interval`` off the settings
     object, so these are exposed as real integers (rather than nested mocks) to make
-    the arithmetic in the function under test behave correctly. ``process_xml_file_items``
-    and ``build_xml_file_resource`` also read ``input_dir``, ``file_glob``, and
+    the arithmetic in the function under test behave correctly.
+    ``build_xml_file_resource`` also reads ``input_dir``, ``file_glob``, and
     ``loader_file_format``.
     """
     settings = MagicMock(spec=settings_class)
@@ -293,6 +293,8 @@ def fake_xmltopyarrow_settings(
     )
     settings.table_name = table_name
     settings.xml_tag = xml_tag
+    settings.xml_level = None
+    settings.root_tag = None
     settings.max_recursion_depth = max_recursion_depth
     schema = xmlschema.XMLSchema(xsd_text)
     settings.xsd_schema = schema  # pyright: ignore[reportAttributeAccessIssue]
@@ -301,6 +303,8 @@ def fake_xmltopyarrow_settings(
         xml_tag,
         max_recursion_depth=max_recursion_depth,
     )
+    settings.pyarrow_schema = pyarrow_schema  # pyright: ignore[reportAttributeAccessIssue]
+    settings.pyarrow_schemas = None  # pyright: ignore[reportAttributeAccessIssue]
     settings.schema_map = ArrowSchemaRegistry(  # pyright: ignore[reportAttributeAccessIssue]
         registry={table_name: pyarrow_schema}
     )
@@ -309,6 +313,7 @@ def fake_xmltopyarrow_settings(
         xml_tag,
         max_recursion_depth=max_recursion_depth,
     )
+    settings.xml_level_converters = None  # pyright: ignore[reportAttributeAccessIssue]
     return settings
 
 
@@ -325,20 +330,20 @@ def _stream_xml_processor(
     """Invoke one of the three XML file processors for shared behavioural tests."""
     if mode == "xml_file":
         return process_xml_file(
+            file_path,
             fake_settings(buffer_size=buffer_size, log_interval=log_interval),  # pyright: ignore[reportArgumentType]
             "person",
             parse_person_entry,
-            file_path=file_path,
         )
     if mode == "dict":
         return process_xml_file_to_dict(
+            file_path,
             fake_xmltodict_settings(buffer_size=buffer_size, log_interval=log_interval),
-            file_path=file_path,
         )
     if mode == "pyarrow":
         return process_xml_file_to_pyarrow(
+            file_path,
             fake_xmltopyarrow_settings(buffer_size=buffer_size, log_interval=log_interval),
-            file_path=file_path,
         )
     msg = f"Unknown mode: {mode}"
     raise ValueError(msg)
@@ -366,7 +371,7 @@ def _batch_rows(mode: str, batch: list[dict[str, Any]] | pa.Table) -> list[dict[
 def test_process_xml_file_pass_single_table_single_entry(tmp_path: Path) -> None:
     """Verify a single matching element is parsed into one correctly table-tagged row."""
     file_path = write_xml_file(tmp_path, "one.xml", PEOPLE_XML_2)
-    items = list(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=file_path))  # pyright: ignore[reportArgumentType]
+    items = list(process_xml_file(file_path, fake_settings(), "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
     assert len(items) == 1
     parsed = table_and_data(items)
     assert parsed[0][0] == "people"
@@ -376,7 +381,7 @@ def test_process_xml_file_pass_single_table_single_entry(tmp_path: Path) -> None
 def test_process_xml_file_pass_multiple_entries(tmp_path: Path) -> None:
     """Verify all entries in a multi-entry XML file are streamed and parsed in document order."""
     file_path = write_xml_file(tmp_path, "five.xml", PEOPLE_XML_5)
-    items = list(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=file_path))  # pyright: ignore[reportArgumentType]
+    items = list(process_xml_file(file_path, fake_settings(), "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
     parsed = table_and_data(items)
     assert parsed[0][0] == "people"
     assert parsed[0][1] == [{"source_file": "five.xml", **p_data} for p_data in PEOPLE_PARSED]
@@ -409,7 +414,7 @@ def test_process_xml_file_pass_buffer_size_controls_batching(
 def test_process_xml_file_pass_multiple_tables_per_entry(tmp_path: Path) -> None:
     """Verify a parse_fn returning multiple tables yields one buffered item per table."""
     file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
-    items = list(process_xml_file(fake_settings(), "person", parse_person_multi_table, file_path=file_path))  # pyright: ignore[reportArgumentType]
+    items = list(process_xml_file(file_path, fake_settings(), "person", parse_person_multi_table))  # pyright: ignore[reportArgumentType]
     tagged = table_and_data(items)
     assert [table for table, _ in tagged] == ["people", "emails"]
     assert [row["id"] for row in tagged[0][1]] == ["1", "2"]
@@ -435,7 +440,7 @@ def test_process_xml_file_pass_namespaced_tag(tmp_path: Path) -> None:
     """Verify namespace-qualified tags (e.g. UniProt-style {ns}entry) are matched and parsed."""
     file_path = write_xml_file(tmp_path, "uniprot.xml", UNIPROT_XML_2)
     xml_tag = f"{{{UNIPROT_NS}}}entry"
-    items = table_and_data(process_xml_file(fake_settings(), xml_tag, parse_uniprot_entry, file_path=file_path))  # pyright: ignore[reportArgumentType]
+    items = table_and_data(process_xml_file(file_path, fake_settings(), xml_tag, parse_uniprot_entry))  # pyright: ignore[reportArgumentType]
     accessions = [row["accession"] for _, rows in items for row in rows]
     assert accessions == ["P12345", "Q67890"]
 
@@ -444,7 +449,7 @@ def test_process_xml_file_pass_partial_empty_parse_results(tmp_path: Path) -> No
     """Verify entries for which parse_fn returns an empty dict contribute nothing, and surviving rows are exact."""
     file_path = write_xml_file(tmp_path, "missing_email.xml", PEOPLE_XML_2_ONE_MISSING_EMAIL)
     items = table_and_data(
-        process_xml_file(fake_settings(), "person", parse_person_skip_missing_email, file_path=file_path)  # pyright: ignore[reportArgumentType]
+        process_xml_file(file_path, fake_settings(), "person", parse_person_skip_missing_email)  # pyright: ignore[reportArgumentType]
     )
     assert items == [("people", [{"id": "1", "email": "a@example.com"}])]
 
@@ -452,7 +457,7 @@ def test_process_xml_file_pass_partial_empty_parse_results(tmp_path: Path) -> No
 def test_process_xml_file_pass_source_id_passed_to_parse_fn(tmp_path: Path) -> None:
     """Verify parse_fn receives the file's source id (its file name for a local path) for every entry."""
     file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
-    items = table_and_data(process_xml_file(fake_settings(), "person", parse_person_entry, file_path=file_path))  # pyright: ignore[reportArgumentType]
+    items = table_and_data(process_xml_file(file_path, fake_settings(), "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
     assert [row["source_file"] for _, rows in items for row in rows] == ["two.xml", "two.xml"]
 
 
@@ -464,10 +469,10 @@ def test_process_xml_file_pass_file_item_any_backend(fs_backend: FsBackend, rela
 
     items = table_and_data(
         process_xml_file(
+            fs_backend.file_item(relative_path),
             fake_settings(),  # pyright: ignore[reportArgumentType]
             "person",
             parse_person_entry,
-            file_path=fs_backend.file_item(relative_path),
         )
     )
 
@@ -558,10 +563,10 @@ def test_process_xml_file_fail_parse_fn_raises_mid_stream(tmp_path: Path) -> Non
     file_path = write_xml_file(tmp_path, "five.xml", PEOPLE_XML_5)
     failing_parse_fn = make_failing_parse_fn(fail_on_call=3)
     generator: Generator[DataItemWithMeta, Any] = process_xml_file(
+        file_path,
         fake_settings(),  # pyright: ignore[reportArgumentType]
         "person",
         failing_parse_fn,
-        file_path=file_path,  # pyright: ignore[reportArgumentType]
     )
 
     collected: list[DataItemWithMeta] = []
@@ -576,7 +581,7 @@ def test_process_xml_file_fail_parse_fn_returns_non_dict(tmp_path: Path) -> None
     """Verify a parse_fn violating its dict[str, rows] contract raises AttributeError on .items()."""
     file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
     with pytest.raises(AttributeError, match="'list' object has no attribute 'items'"):
-        list(process_xml_file(fake_settings(), "person", parse_returns_non_dict, file_path=file_path))  # pyright: ignore[reportArgumentType]
+        list(process_xml_file(file_path, fake_settings(), "person", parse_returns_non_dict))  # pyright: ignore[reportArgumentType]
 
 
 """process_xml_file_to_dict"""
@@ -599,7 +604,7 @@ def test_process_xml_file_to_dict_pass_matches_xmltodict_reference(tmp_path: Pat
     expected_rows = [{"entry": {k: v for k, v in entry.items() if not k.startswith("_xmlns")}} for entry in raw_entries]
 
     settings = fake_xmltodict_settings(table_name="some_table", xml_tag=xml_tag)
-    tagged = table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
+    tagged = table_and_data(process_xml_file_to_dict(file_path, settings))
 
     assert tagged == [("some_table", expected_rows)]
 
@@ -615,7 +620,7 @@ def test_process_xml_file_to_dict_pass_strips_only_xmlns_prefixed_keys(tmp_path:
     file_path = write_xml_file(tmp_path, "namespaced.xml", xml_with_xmlns_and_lookalike)
     settings = fake_xmltodict_settings(xml_tag=f"{{{namespace}}}person")
 
-    items = table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
+    items = table_and_data(process_xml_file_to_dict(file_path, settings))
 
     # "_xmlns" and "_xmlns:xsi" (the real namespace declarations) are stripped; "_id" and the
     # underscore-prefixed-but-unrelated "_xsinil" (from a plain, non-namespace "xsinil" attribute)
@@ -633,7 +638,7 @@ def test_process_xml_file_to_dict_pass_custom_table_name_and_xml_tag_are_respect
     file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
     settings = fake_xmltodict_settings(table_name="library_entries", xml_tag="person")
 
-    tagged = table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
+    tagged = table_and_data(process_xml_file_to_dict(file_path, settings))
 
     assert [table_name for table_name, _ in tagged] == ["library_entries"]
     assert tagged[0][1] == PEOPLE_XML_TO_DICT_PARSED[:2]
@@ -666,7 +671,7 @@ def test_process_xml_file_to_dict_pass_keeps_xmltodict_default_dicts(
     file_path = write_xml_file(tmp_path, "entry.xml", UNIREF_LIKE_ENTRY_XML)
     settings = fake_xmltodict_settings(table_name="entry", xml_tag="entry", buffer_size=100, log_interval=1000)
 
-    items = table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
+    items = table_and_data(process_xml_file_to_dict(file_path, settings))
 
     assert items == [
         (
@@ -693,7 +698,7 @@ def test_process_xml_file_to_pyarrow_pass_custom_table_name_and_xml_tag_are_resp
     file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
     settings = fake_xmltopyarrow_settings(table_name="library_entries", xml_tag="person")
 
-    tagged = table_and_data(process_xml_file_to_pyarrow(settings, file_path=file_path))
+    tagged = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
 
     assert [table_name for table_name, _ in tagged] == ["library_entries"]
     assert isinstance(tagged[0][1], pa.Table)
@@ -734,7 +739,7 @@ def test_process_xml_file_to_pyarrow_pass_resolves_default_namespace_on_unprefix
     file_path = write_xml_file(tmp_path, "namespaced.xml", namespaced_xml)
     settings = fake_xmltopyarrow_settings(table_name="people", xml_tag="person", xsd_text=namespaced_xsd)
 
-    tagged = table_and_data(process_xml_file_to_pyarrow(settings, file_path=file_path))
+    tagged = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
 
     assert [table_name for table_name, _ in tagged] == ["people"]
     assert tagged[0][1].to_pylist() == PEOPLE_XML_TO_PYARROW_PARSED[:2]
@@ -758,7 +763,7 @@ def test_process_xml_file_to_pyarrow_pass_default_namespace_file_item_opened_onc
     open_spy = MagicMock(wraps=item.open)
     monkeypatch.setattr(item, "open", open_spy)
 
-    tagged = table_and_data(process_xml_file_to_pyarrow(settings, file_path=item))
+    tagged = table_and_data(process_xml_file_to_pyarrow(item, settings))
 
     assert open_spy.call_count == 1
     assert [table_name for table_name, _ in tagged] == ["people"]
@@ -771,9 +776,7 @@ def test_process_xml_file_to_dict_pass_file_item_any_backend(fs_backend: FsBacke
     data = PEOPLE_XML_2.encode("utf-8")
     fs_backend.put(relative_path, gzip.compress(data) if relative_path.endswith(".gz") else data)
 
-    tagged = table_and_data(
-        process_xml_file_to_dict(fake_xmltodict_settings(), file_path=fs_backend.file_item(relative_path))
-    )
+    tagged = table_and_data(process_xml_file_to_dict(fs_backend.file_item(relative_path), fake_xmltodict_settings()))
 
     assert tagged == [("people", PEOPLE_XML_TO_DICT_PARSED[:2])]
 
@@ -792,7 +795,7 @@ def test_process_xml_file_to_pyarrow_pass_with_xsd_file_yields_arrow_table_with_
         log_interval=1000,
     )
 
-    items = table_and_data(process_xml_file_to_pyarrow(settings, file_path=file_path))
+    items = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
 
     assert len(items) == 1
     table_name, table = items[0]
@@ -812,106 +815,31 @@ def test_process_xml_file_to_pyarrow_pass_with_xsd_file_yields_arrow_table_with_
     ]
 
 
-"""process_xml_file_items"""
-
-
-def _file_items(directory: Path) -> list[FileItemDict]:
-    """Collect the file items emitted by the dlt filesystem source for XML files in a directory, in name order."""
-    items = list(filesystem(bucket_url=str(directory), file_glob=DEFAULT_XML_FILE_GLOB))
-    assert all(isinstance(item, FileItemDict) for item in items)
-    return sorted(items, key=lambda item: item["file_name"])
-
-
-def test_process_xml_file_items_pass_multiple_files_preserve_order(tmp_path: Path) -> None:
-    """Verify files are processed in the order they are supplied, including gzipped files."""
-    file_a = write_xml_file(tmp_path, "a_00001.xml", PEOPLE_XML_2)
-    file_b = write_xml_file(tmp_path, "b_00002.xml.gz", PEOPLE_XML_5, gzip_compress=True)
-
-    items = table_and_data(
-        process_xml_file_items(
-            _file_items(tmp_path),
-            fake_settings(input_dir=tmp_path),  # pyright: ignore[reportArgumentType]
-            "person",
-            parse_person_entry,
-        )
-    )
-
-    sources = [row["source_file"] for _, rows in items for row in rows]
-    assert sources == [file_a.name] * 2 + [file_b.name] * 5
-
-
-def test_process_xml_file_items_pass_file_items_any_backend(fs_backend: FsBackend) -> None:
-    """Verify file items from any backend are read without using input_dir, recording their relative paths."""
-    fs_backend.put_all(
-        {
-            "a_00001.xml": PEOPLE_XML_2.encode("utf-8"),
-            "sub/b_00002.xml.gz": gzip.compress(PEOPLE_XML_5.encode("utf-8")),
-        }
-    )
-    settings = fake_settings()
-    del settings.input_dir  # reading input_dir would now raise AttributeError
-
-    items = table_and_data(
-        process_xml_file_items(
-            fs_backend.file_items(),
-            settings,  # pyright: ignore[reportArgumentType]
-            "person",
-            parse_person_entry,
-        )
-    )
-
-    sources = [row["source_file"] for _, rows in items for row in rows]
-    assert sources == ["a_00001.xml"] * 2 + ["sub/b_00002.xml.gz"] * 5
-
-
-def test_process_xml_file_items_pass_no_items_yields_nothing() -> None:
-    """Verify an empty iterable of file items produces no output."""
-    assert list(process_xml_file_items([], fake_settings(), "person", parse_person_entry)) == []  # pyright: ignore[reportArgumentType]
+"""build_xml_file_resource"""
 
 
 @pytest.mark.parametrize("buffer_size", [1, 2, 50])
-def test_process_xml_file_items_pass_settings_forwarded(
+def test_build_xml_file_resource_pass_settings_forwarded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, buffer_size: int
 ) -> None:
     """Verify the settings object (carrying buffer_size/log_interval) and file item reach process_xml_file."""
     write_xml_file(tmp_path, "two_00001.xml", PEOPLE_XML_2)
     settings = fake_settings(buffer_size=buffer_size, log_interval=CUSTOM_LOG_INTERVAL, input_dir=tmp_path)
-    file_items = _file_items(tmp_path)
     spy = MagicMock(wraps=xml_module.process_xml_file)
     monkeypatch.setattr(xml_module, "process_xml_file", spy)
 
-    list(process_xml_file_items(file_items, settings, "person", parse_person_entry))  # pyright: ignore[reportArgumentType]
+    rows = list(build_xml_file_resource(settings, "person", parse_person_entry, "people_resource"))  # pyright: ignore[reportArgumentType]
 
-    spy.assert_called_once_with(
-        settings=settings, xml_tag="person", parse_fn=parse_person_entry, file_path=file_items[0]
-    )
-    assert spy.call_args.kwargs["settings"].buffer_size == buffer_size
-    assert spy.call_args.kwargs["settings"].log_interval == CUSTOM_LOG_INTERVAL
-
-
-def test_process_xml_file_items_fail_missing_file_mid_iteration(tmp_path: Path) -> None:
-    """Verify a missing file raises FileNotFoundError after earlier files were fully processed."""
-    write_xml_file(tmp_path, "a_00001.xml", PEOPLE_XML_2)
-    items = _file_items(tmp_path)
-    missing_url = items[0]["file_url"].replace("a_00001.xml", "missing_00002.xml")
-    missing_item = FileItemDict(
-        {**items[0], "relative_path": "missing_00002.xml", "file_url": missing_url}, items[0].fsspec
-    )
-
-    collected: list[DataItemWithMeta] = []
-    with pytest.raises(FileNotFoundError, match="No such file or directory"):  # noqa: PT012
-        for item in process_xml_file_items(
-            [*items, missing_item],
-            fake_settings(input_dir=tmp_path),  # pyright: ignore[reportArgumentType]
-            "person",
-            parse_person_entry,
-        ):
-            collected.append(item)  # noqa: PERF402
-
-    tagged = table_and_data(collected)
-    assert [table for table, _ in tagged] == ["people"]
-    assert [row["id"] for row in tagged[0][1]] == ["1", "2"]
-    assert {row["source_file"] for row in tagged[0][1]} == {"a_00001.xml"}
+    assert [row["id"] for row in rows] == ["1", "2"]
+    assert spy.call_count == 1
+    file_item_arg, settings_arg, xml_tag_arg, parse_fn_arg = spy.call_args.args
+    assert isinstance(file_item_arg, FileItemDict)
+    assert file_item_arg["relative_path"] == "two_00001.xml"
+    assert settings_arg is settings
+    assert settings_arg.buffer_size == buffer_size
+    assert settings_arg.log_interval == CUSTOM_LOG_INTERVAL
+    assert xml_tag_arg == "person"
+    assert parse_fn_arg is parse_person_entry
 
 
 def test_process_xml_file_pass_calls_stream_xml_file_with_correct_args(
@@ -922,7 +850,7 @@ def test_process_xml_file_pass_calls_stream_xml_file_with_correct_args(
     monkeypatch.setattr(xml_module, "stream_xml_file", stream_mock)
     file_path = Path("dummy.xml")
 
-    list(process_xml_file(fake_settings(), "tag", MagicMock(), file_path=file_path))  # pyright: ignore[reportArgumentType]
+    list(process_xml_file(file_path, fake_settings(), "tag", MagicMock()))  # pyright: ignore[reportArgumentType]
 
     stream_mock.assert_called_once_with(file_path, "tag")
 
@@ -936,7 +864,7 @@ def test_process_xml_file_pass_calls_parse_fn_with_expected_keyword_args(
     parse_fn = MagicMock(return_value={})
     file_path = Path("some_dir") / "dummy.xml"
 
-    list(process_xml_file(fake_settings(), "tag", parse_fn, file_path=file_path))  # pyright: ignore[reportArgumentType]
+    list(process_xml_file(file_path, fake_settings(), "tag", parse_fn))  # pyright: ignore[reportArgumentType]
 
     parse_fn.assert_called_once_with(entry=fake_entry, file_path="dummy.xml")
 
@@ -953,7 +881,7 @@ def test_process_xml_file_pass_wraps_each_table_with_dlt_mark(
     mark_mock = MagicMock(side_effect=lambda rows, table: DataItemWithMeta(TableNameMeta(table), rows))
     monkeypatch.setattr(buffer_module.dlt.mark, "with_table_name", mark_mock)
 
-    items = list(process_xml_file(fake_settings(), "tag", parse_fn, file_path=Path("f.xml")))  # pyright: ignore[reportArgumentType]
+    items = list(process_xml_file(Path("f.xml"), fake_settings(), "tag", parse_fn))  # pyright: ignore[reportArgumentType]
 
     mark_mock.assert_any_call(rows_people, "people")
     mark_mock.assert_any_call(rows_emails, "emails")
@@ -969,7 +897,7 @@ def test_process_xml_file_pass_skips_parse_fn_when_no_entries(
     monkeypatch.setattr(xml_module, "stream_xml_file", lambda _fp, _tag: iter([]))
     parse_fn = MagicMock()
 
-    items = list(process_xml_file(fake_settings(), "tag", parse_fn, file_path=Path("f.xml")))  # pyright: ignore[reportArgumentType]
+    items = list(process_xml_file(Path("f.xml"), fake_settings(), "tag", parse_fn))  # pyright: ignore[reportArgumentType]
 
     parse_fn.assert_not_called()
     assert items == []
@@ -992,7 +920,7 @@ def test_process_xml_file_fail_propagates_stream_xml_file_error(
 
     collected: list[DataItemWithMeta] = []
     with pytest.raises(OSError, match="disk read error"):  # noqa: PT012
-        for item in process_xml_file(fake_settings(), "tag", parse_fn, file_path=file_path):  # pyright: ignore[reportArgumentType]
+        for item in process_xml_file(file_path, fake_settings(), "tag", parse_fn):  # pyright: ignore[reportArgumentType]
             collected.append(item)  # noqa: PERF402
 
     parse_fn.assert_called_once_with(entry=fake_entry, file_path="f.xml")
@@ -1017,7 +945,7 @@ def test_process_xml_file_to_dict_pass_skips_empty_xmltodict_result(
 
     monkeypatch.setattr(xml_module.xmltodict, "parse", _parse_skipping_first)
 
-    items = table_and_data(process_xml_file_to_dict(settings, file_path=file_path))
+    items = table_and_data(process_xml_file_to_dict(file_path, settings))
 
     assert items == [("people", [PEOPLE_XML_TO_DICT_PARSED[1]])]
 
@@ -1063,7 +991,7 @@ def test_process_xml_file_to_pyarrow_pass_clark_notation_tag_skips_head_matter(
     head_matter_mock = MagicMock()
     monkeypatch.setattr(xml_module, "parse_head_matter", head_matter_mock)
 
-    items = list(process_xml_file_to_pyarrow(settings, file_path=xml_path))
+    items = list(process_xml_file_to_pyarrow(xml_path, settings))
 
     head_matter_mock.assert_not_called()
     assert len(items) == 1
@@ -1173,7 +1101,7 @@ def test_process_xml_file_to_pyarrow_pass_prepares_xsd_target_traversal_at_most_
     prepare_spy = MagicMock(wraps=xsd_module._prepare_target_traversal)  # noqa: SLF001
     monkeypatch.setattr(xsd_module, "_prepare_target_traversal", prepare_spy)
 
-    tagged = table_and_data(process_xml_file_to_pyarrow(settings, file_path=file_path))
+    tagged = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
 
     assert [table_name for table_name, _ in tagged] == ["people"]
     assert tagged[0][1].to_pylist() == PEOPLE_XML_TO_PYARROW_PARSED
@@ -1200,6 +1128,130 @@ def test_process_xml_file_to_pyarrow_pass_uses_dict_buffer_with_table_schema_map
 
     monkeypatch.setattr(xml_module, "DictBuffer", _recording_dict_buffer)
 
-    list(process_xml_file_to_pyarrow(settings, file_path=file_path))
+    list(process_xml_file_to_pyarrow(file_path, settings))
 
     assert captured_schema_maps == [settings.schema_map]
+
+
+MULTI_ENTITY_XSD: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+    <xs:element name="catalog">
+        <xs:complexType>
+            <xs:choice maxOccurs="unbounded">
+                <xs:element name="book">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="title" type="xs:string"/>
+                        </xs:sequence>
+                        <xs:attribute name="id" type="xs:string" use="required"/>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="magazine">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="issue" type="xs:integer"/>
+                        </xs:sequence>
+                        <xs:attribute name="id" type="xs:string" use="required"/>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="copyright" type="xs:string"/>
+            </xs:choice>
+        </xs:complexType>
+    </xs:element>
+</xs:schema>
+"""
+
+MULTI_ENTITY_XML: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
+<catalog>
+    <book id="b1"><title>Dune</title></book>
+    <magazine id="m1"><issue>42</issue></magazine>
+    <book id="b2"><title>Foundation</title></book>
+    <copyright>Copyright 2026</copyright>
+</catalog>
+"""
+
+
+def fake_xmltopyarrow_level_settings(
+    *,
+    xml_level: int = 1,
+    root_tag: str | None = None,
+    xsd_text: str = MULTI_ENTITY_XSD,
+    buffer_size: int = DEFAULTS[BUFFER_SIZE],
+    log_interval: int = DEFAULTS[LOG_INTERVAL],
+    max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH,
+) -> XmlToPyArrowSettings:
+    """Build a MagicMock XmlToPyArrowSettings configured for level-based multi-table mode."""
+    settings: XmlToPyArrowSettings = fake_settings(  # pyright: ignore[reportAssignmentType]
+        buffer_size=buffer_size, log_interval=log_interval, settings_class=XmlToPyArrowSettings
+    )
+    settings.table_name = None
+    settings.xml_tag = None
+    settings.xml_level = xml_level
+    settings.root_tag = root_tag
+    settings.max_recursion_depth = max_recursion_depth
+    schema = xmlschema.XMLSchema(xsd_text)
+    settings.xsd_schema = schema  # pyright: ignore[reportAttributeAccessIssue]
+    settings.pyarrow_schema = None  # pyright: ignore[reportAttributeAccessIssue]
+    pyarrow_schemas = generate_pyarrow_schemas_at_level(
+        schema,
+        xml_level,
+        root_tag=root_tag,
+        max_recursion_depth=max_recursion_depth,
+    )
+    settings.pyarrow_schemas = pyarrow_schemas  # pyright: ignore[reportAttributeAccessIssue]
+    settings.schema_map = ArrowSchemaRegistry(registry=pyarrow_schemas)  # pyright: ignore[reportAttributeAccessIssue]
+    settings.xml_element_converter = None  # pyright: ignore[reportAttributeAccessIssue]
+    settings.xml_level_converters = make_xml_level_converters(  # pyright: ignore[reportAttributeAccessIssue]
+        schema,
+        xml_level,
+        root_tag=root_tag,
+        max_recursion_depth=max_recursion_depth,
+    )
+    return settings
+
+
+def test_process_xml_file_to_pyarrow_pass_level_mode_routes_elements_to_tables_by_tag(tmp_path: Path) -> None:
+    """process_xml_file_to_pyarrow in xml_level=1 mode routes heterogeneous child elements to tag-named Arrow tables."""
+    file_path = write_xml_file(tmp_path, "catalog.xml", MULTI_ENTITY_XML)
+    settings = fake_xmltopyarrow_level_settings(xml_level=1)
+
+    tagged = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
+    by_table = dict(tagged)
+
+    assert set(by_table.keys()) == {"book", "magazine", "copyright"}
+    assert by_table["book"].schema.equals(settings.pyarrow_schemas["book"], check_metadata=True)
+    assert by_table["magazine"].schema.equals(settings.pyarrow_schemas["magazine"], check_metadata=True)
+    assert by_table["copyright"].schema.equals(settings.pyarrow_schemas["copyright"], check_metadata=True)
+    assert by_table["book"].to_pylist() == [
+        {"_id": "b1", "title": "Dune"},
+        {"_id": "b2", "title": "Foundation"},
+    ]
+    assert by_table["magazine"].to_pylist() == [{"_id": "m1", "issue": 42}]
+    assert by_table["copyright"].to_pylist() == [{"#text": "Copyright 2026"}]
+
+
+def test_process_xml_file_to_pyarrow_pass_level_2_routes_grandchildren_to_tables(tmp_path: Path) -> None:
+    """process_xml_file_to_pyarrow in xml_level=2 mode routes grandchildren to tag-named Arrow tables."""
+    file_path = write_xml_file(tmp_path, "catalog.xml", MULTI_ENTITY_XML)
+    settings = fake_xmltopyarrow_level_settings(xml_level=2)
+
+    tagged = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
+    by_table = dict(tagged)
+
+    assert set(by_table.keys()) == {"title", "issue"}
+    assert by_table["title"].to_pylist() == [{"#text": "Dune"}, {"#text": "Foundation"}]
+    assert by_table["issue"].to_pylist() == [{"#text": 42}]
+
+
+def test_process_xml_file_to_pyarrow_fail_level_mode_unexpected_xml_tag(tmp_path: Path) -> None:
+    """process_xml_file_to_pyarrow in level mode raises ValueError when an XML element tag is not declared at that level."""
+    xml_with_unknown = """<?xml version="1.0" encoding="UTF-8"?>
+<catalog>
+    <newspaper id="n1"/>
+</catalog>
+"""
+    file_path = write_xml_file(tmp_path, "bad_catalog.xml", xml_with_unknown)
+    settings = fake_xmltopyarrow_level_settings(xml_level=1)
+
+    with pytest.raises(ValueError, match="Unexpected XML element <newspaper> at level 1"):
+        list(process_xml_file_to_pyarrow(file_path, settings))

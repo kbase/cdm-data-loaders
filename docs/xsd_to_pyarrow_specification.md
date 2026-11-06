@@ -258,13 +258,56 @@ This document specifies how an XML Schema (`.xsd`) and a target `xml_tag` determ
 | `xs:base64Binary`, `xs:hexBinary` | `bytes` | `pa.binary()` |
 | `xs:NMTOKENS` (items `xs:NMTOKEN`), `xs:IDREFS` (items `xs:IDREF`), `xs:ENTITIES` (items `xs:ENTITY`) | `list[str]` | `pa.list_(pa.string())` |
 
+### 1.6 Component-Based Python Schema Code Generation (`scripts.gen_pyarrow_schema`)
+
+<a id="r-codegen-component"></a>
+
+- **R-CODEGEN-COMPONENT**: Each non-recursive complex type (`XsdComplexType` with attributes or child elements) is emitted
+  once as a top-level `<NAME>_STRUCT: Final[pa.StructType] = pa.struct([...])` constant in
+  post-order (dependency order) and referenced by name in enclosing structs and `assemble_pyarrow_schema(...)`.
+
+  *Cases:* [01_scalars_and_simple_types](#case-spec-01-scalars-and-simple-types), [pubmed_article](#case-examples-pubmed-article), [uniprot](#case-examples-uniprot), [uniref](#case-examples-uniref)
+
+<a id="r-codegen-recursive"></a>
+
+- **R-CODEGEN-RECURSIVE**: Self- or mutually-recursive complex types that can reach an active ancestor type are expanded inline
+  as `pa.struct([...])` up to `max_recursion_depth` occurrences and truncated to `pa.string()` beyond that depth.
+
+  *Cases:* [04_recursion_depth](#case-spec-04-recursion-depth), [pubmed_article](#case-examples-pubmed-article)
+
+<a id="r-codegen-naming"></a>
+
+- **R-CODEGEN-NAMING**: Component constant names are derived in `UPPER_SNAKE_CASE` from the XSD complex type name (stripping a
+  trailing `Type` suffix) or element local name. When an anonymous element name maps to multiple distinct
+  complex types, the parent element name is prefixed; when the same complex type appears in both
+  non-nillable and `nillable="true"` contexts, the nillable variant appends `_NILLABLE`; any remaining
+  collisions append `_2`, `_3`, ...
+
+  *Cases:* [06_context_dependent_paths](#case-spec-06-context-dependent-paths), [uniprot](#case-examples-uniprot), [uniref](#case-examples-uniref)
+
+<a id="r-codegen-level"></a>
+
+- **R-CODEGEN-LEVEL**: In level mode (`xml_level`), every element at that depth emits `<TAG>_SCHEMA: Final[pa.Schema]`
+  (`SCHEMA` for `entry`), using `assemble_pyarrow_schema(<COMP>_STRUCT)` for struct elements and
+  `assemble_pyarrow_schema([pa.field("#text", ...)])` for scalar or mixed-text leaf elements, along with
+  `SCHEMAS: Final[dict[str, pa.Schema]]`.
+
+  *Cases:* [pubmed_article](#case-examples-pubmed-article), [uniprot](#case-examples-uniprot), [uniref](#case-examples-uniref)
+
+<a id="r-codegen-single-tag"></a>
+
+- **R-CODEGEN-SINGLE-TAG**: In single-tag mode (`xml_tag`), when the target element is not named `entry`, the module emits both
+  `<TAG>_SCHEMA: Final[pa.Schema]` and the alias `SCHEMA: Final[pa.Schema] = <TAG>_SCHEMA` alongside `SCHEMAS`.
+
+  *Cases:* [01_scalars_and_simple_types](#case-spec-01-scalars-and-simple-types)
+
 ## 2. Cases
 
 <a id="case-spec-01-scalars-and-simple-types"></a>
 
 ### Scalar Types, Restrictions, Lists and Unions (`spec/01_scalars_and_simple_types`)
 
-**Rules:** [R-UNWRAP](#r-unwrap), [R-NAME-ATTR](#r-name-attr), [R-ORDER](#r-order), [R-SHAPE-XSLIST](#r-shape-xslist), [R-SCALAR-BUILTIN](#r-scalar-builtin), [R-SCALAR-RESTRICTION](#r-scalar-restriction), [R-SCALAR-UNION](#r-scalar-union), [R-META-XSD-TYPE](#r-meta-xsd-type), [R-META-COMMENT](#r-meta-comment), [R-NULL-ATTR](#r-null-attr)
+**Rules:** [R-UNWRAP](#r-unwrap), [R-NAME-ATTR](#r-name-attr), [R-ORDER](#r-order), [R-SHAPE-XSLIST](#r-shape-xslist), [R-SCALAR-BUILTIN](#r-scalar-builtin), [R-SCALAR-RESTRICTION](#r-scalar-restriction), [R-SCALAR-UNION](#r-scalar-union), [R-META-XSD-TYPE](#r-meta-xsd-type), [R-META-COMMENT](#r-meta-comment), [R-NULL-ATTR](#r-null-attr), [R-CODEGEN-COMPONENT](#r-codegen-component), [R-CODEGEN-SINGLE-TAG](#r-codegen-single-tag)
 
 **Target:** `xml_tag='record'`
 
@@ -856,7 +899,7 @@ EXPECTED_SCHEMA = pa.schema(
 
 ### Structural Recursion with Configurable `max_recursion_depth` (`spec/04_recursion_depth`)
 
-**Rules:** [R-RECURSION](#r-recursion), [R-SHAPE-CARDINALITY](#r-shape-cardinality)
+**Rules:** [R-RECURSION](#r-recursion), [R-SHAPE-CARDINALITY](#r-shape-cardinality), [R-CODEGEN-RECURSIVE](#r-codegen-recursive)
 
 **Target:** `xml_tag='record'`
 
@@ -1346,7 +1389,7 @@ EXPECTED_SCHEMA = pa.schema(
 
 ### Context-Dependent Same `(parent, child)` Names with Different Types (`spec/06_context_dependent_paths`)
 
-**Rules:** [R-SHAPE-CONTEXT-PATH](#r-shape-context-path), [R-SHAPE-SIMPLECONTENT](#r-shape-simplecontent), [R-NULL-CHILD](#r-null-child)
+**Rules:** [R-SHAPE-CONTEXT-PATH](#r-shape-context-path), [R-SHAPE-SIMPLECONTENT](#r-shape-simplecontent), [R-NULL-CHILD](#r-null-child), [R-CODEGEN-NAMING](#r-codegen-naming)
 
 **Target:** `xml_tag='root'`
 
@@ -3119,7 +3162,7 @@ EXPECTED_SCHEMA = pa.schema(
 
 ### PubMed (`PubmedArticle`) (`examples/pubmed_article`)
 
-**Rules:** [R-SHAPE-MIXED](#r-shape-mixed), [R-RECURSION](#r-recursion), [R-SHAPE-EMPTY-MARKER](#r-shape-empty-marker), [R-NULL-CHOICE](#r-null-choice)
+**Rules:** [R-SHAPE-MIXED](#r-shape-mixed), [R-RECURSION](#r-recursion), [R-SHAPE-EMPTY-MARKER](#r-shape-empty-marker), [R-NULL-CHOICE](#r-null-choice), [R-CODEGEN-COMPONENT](#r-codegen-component), [R-CODEGEN-RECURSIVE](#r-codegen-recursive), [R-CODEGEN-LEVEL](#r-codegen-level)
 
 **Target:** `xml_tag='PubmedArticle'`
 
@@ -3159,7 +3202,7 @@ Book article variant of the PubMed schema, including recursive `Section` element
 
 ### UniProtKB (`examples/uniprot`)
 
-**Rules:** [R-SHAPE-XSLIST](#r-shape-xslist), [R-SCALAR-UNION](#r-scalar-union), [R-NIL](#r-nil), [R-NULL-NILLABLE-PARENT](#r-null-nillable-parent), [R-META-COMMENT](#r-meta-comment)
+**Rules:** [R-SHAPE-XSLIST](#r-shape-xslist), [R-SCALAR-UNION](#r-scalar-union), [R-NIL](#r-nil), [R-NULL-NILLABLE-PARENT](#r-null-nillable-parent), [R-META-COMMENT](#r-meta-comment), [R-CODEGEN-COMPONENT](#r-codegen-component), [R-CODEGEN-NAMING](#r-codegen-naming), [R-CODEGEN-LEVEL](#r-codegen-level)
 
 **Target:** `xml_tag='entry'`
 
@@ -3179,7 +3222,7 @@ with attributes.
 
 ### UniRef (`examples/uniref`)
 
-**Rules:** [R-RESOLVE-DEPTH](#r-resolve-depth), [R-META-COMMENT](#r-meta-comment)
+**Rules:** [R-RESOLVE-DEPTH](#r-resolve-depth), [R-META-COMMENT](#r-meta-comment), [R-CODEGEN-COMPONENT](#r-codegen-component), [R-CODEGEN-NAMING](#r-codegen-naming), [R-CODEGEN-LEVEL](#r-codegen-level)
 
 **Target:** `xml_tag='entry'`
 

@@ -26,28 +26,33 @@ def test_convert_fail_root_resolves_to_map(jsonschema_to_pyarrow_converter: JSON
 
 
 def test_convert_fail_strict_unknown_type_is_wrapped() -> None:
-    """Emitter errors surface as the facade's own error type."""
-    schema = base_object_schema(properties={"value": {"type": ["string", "integer"]}})
+    """Incompatible multi-type unions raise JSONSchemaToPyArrowError."""
+    schema = base_object_schema(properties={"value": {"type": ["string", "object"]}})
     with pytest.raises(JSONSchemaToPyArrowError, match="multi-type union"):
         JSONSchemaToPyArrow(treat_unknown_as_string=False).convert(schema)
 
 
 def test_convert_pass_simple_object(jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow) -> None:
-    """convert() produces a schema with correct nullability and no metadata for a flat object."""
+    """convert() produces a schema with correct nullability and jsonschema_type metadata for a flat object."""
     schema = base_object_schema(properties={"name": {"type": "string"}, "age": {"type": "integer"}}, required=["name"])
     assert jsonschema_to_pyarrow_converter.convert(schema) == pa.schema(
-        [pa.field("name", pa.string(), nullable=False), pa.field("age", pa.int64())]
+        [
+            pa.field("name", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
+            pa.field("age", pa.int64(), metadata={"jsonschema_type": "integer"}),
+        ]
     )
 
 
 def test_convert_pass_root_without_type_infers_object(jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow) -> None:
     """convert() accepts a root that omits 'type' but declares 'properties'."""
     schema = {"$schema": "https://json-schema.org/draft/2020-12/schema", "properties": {"a": {"type": "string"}}}
-    assert jsonschema_to_pyarrow_converter.convert(schema) == pa.schema([pa.field("a", pa.string())])
+    assert jsonschema_to_pyarrow_converter.convert(schema) == pa.schema(
+        [pa.field("a", pa.string(), metadata={"jsonschema_type": "string"})]
+    )
 
 
 def test_convert_pass_nested_schema() -> None:
-    """Nested objects, arrays, dynamic maps, formats and decimals convert together."""
+    """Nested objects, arrays, dynamic maps, formats and numbers convert together."""
     schema = base_object_schema(
         properties={
             "id": {"type": "integer", "minimum": 0, "maximum": 10, "title": "Identifier"},
@@ -66,18 +71,32 @@ def test_convert_pass_nested_schema() -> None:
     schema_out = JSONSchemaToPyArrow().convert(schema)
     assert schema_out == pa.schema(
         [
-            pa.field("id", pa.int32(), nullable=False),
-            pa.field("created", pa.timestamp("us", tz="UTC")),
-            pa.field("price", pa.decimal128(38, 2)),
-            pa.field("tags", pa.list_(pa.string())),
-            pa.field("labels", pa.map_(pa.string(), pa.string())),
+            pa.field("id", pa.int64(), nullable=False, metadata={"jsonschema_type": "integer"}),
+            pa.field("created", pa.string(), metadata={"jsonschema_type": "string (date-time)"}),
+            pa.field("price", pa.float64(), metadata={"jsonschema_type": "number"}),
+            pa.field(
+                "tags",
+                pa.list_(pa.field("item", pa.string(), nullable=False, metadata={"jsonschema_type": "string"})),
+            ),
+            pa.field(
+                "labels",
+                pa.map_(
+                    pa.string(),
+                    pa.field("value", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
+                ),
+            ),
             pa.field(
                 "owner",
-                pa.struct([pa.field("name", pa.string(), nullable=False), pa.field("active", pa.bool_())]),
+                pa.struct(
+                    [
+                        pa.field("name", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
+                        pa.field("active", pa.bool_(), metadata={"jsonschema_type": "boolean"}),
+                    ]
+                ),
             ),
         ]
     )
-    assert schema_out.field("id").metadata == {b"jsonschema": b'{"title": "Identifier"}'}
+    assert schema_out.field("id").metadata == {b"jsonschema_type": b"integer"}
 
 
 def test_convert_pass_dereferenced_schema() -> None:
@@ -87,12 +106,17 @@ def test_convert_pass_dereferenced_schema() -> None:
         **{"$defs": {"Person": {"type": "object", "properties": {"name": {"type": "string"}}}}},
     )
     result = JSONSchemaToPyArrow().convert(dereference_schema(schema))
-    assert result == pa.schema([pa.field("owner", pa.struct([pa.field("name", pa.string())]))])
+    assert result == pa.schema(
+        [pa.field("owner", pa.struct([pa.field("name", pa.string(), metadata={"jsonschema_type": "string"})]))]
+    )
 
 
 def test_convert_to_table_pass_empty_table(jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow) -> None:
     """convert_to_table() returns a zero-row table with the converted schema."""
-    schema = base_object_schema(properties={"id": {"type": "integer"}, "tags": {"type": "array"}}, required=["id"])
+    schema = base_object_schema(
+        properties={"id": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}},
+        required=["id"],
+    )
     table = jsonschema_to_pyarrow_converter.convert_to_table(schema)
     assert table.num_rows == 0
     assert table.schema == jsonschema_to_pyarrow_converter.convert(schema)
@@ -128,8 +152,14 @@ def test_jsonschema_to_pyarrow_pass_options_reach_emitter() -> None:
     result = converter.convert(schema)
     assert converter.extra_metadata_keywords == frozenset({"pattern"})
     assert result.field("when").type == pa.string()
-    assert result.field("when").metadata == {b"jsonschema": b'{"pattern": "^2"}'}
-    assert result.field("either").metadata == {b"original_union": b'["string", "integer"]'}
+    assert result.field("when").metadata == {
+        b"jsonschema_type": b"string (date-time)",
+        b"jsonschema": b'{"pattern": "^2"}',
+    }
+    assert result.field("either").metadata == {
+        b"jsonschema_type": b"string | integer",
+        b"original_union": b'["string", "integer"]',
+    }
     assert result.field("nested").type == pa.string()
 
 

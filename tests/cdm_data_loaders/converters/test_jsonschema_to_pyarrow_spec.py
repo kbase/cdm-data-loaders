@@ -9,12 +9,15 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
 import pytest
 from _pytest.mark.structures import ParameterSet
 from jsonschema import Draft202012Validator
 
+from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
 from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
     JSONSCHEMA_TO_PYARROW_ERRORS,
+    JSONSchemaToPyArrow,
     JSONSchemaToPyArrowError,
     RecursiveNonJsonTypeError,
     coerce_record_for_pyarrow,
@@ -164,6 +167,53 @@ def test_generate_pyarrow_schema_pass_cases(case: Case, run: Run) -> None:
     """generate_pyarrow_schema produces the exact expected PyArrow schema."""
     pa_schema = generate_pyarrow_schema(_load_json_object(case.schema), max_recursion_depth=_max_recursion_depth(run))
     assert_schema_matches_expected(pa_schema, case.expected_schema, run.schema_attr)
+
+
+@pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
+def test_convert_to_python_pass_cases(case: Case, run: Run) -> None:
+    """JSONSchemaToPyArrow.convert_to_python renders an executable module whose SCHEMA matches convert()."""
+    converter = JSONSchemaToPyArrow(max_recursion_depth=_max_recursion_depth(run))
+    raw_schema = _load_json_object(case.schema)
+    expected = converter.convert(raw_schema)
+    py_source = converter.convert_to_python(raw_schema)
+    ns: dict[str, object] = {}
+    exec(py_source, ns)  # noqa: S102
+    assert isinstance(ns["SCHEMA"], pa.Schema)
+    assert ns["SCHEMA"].equals(expected, check_metadata=True)
+
+
+def test_convert_to_python_file_and_shared_defs_pass(tmp_path: Path) -> None:
+    """JSONSchemaToPyArrow.convert_to_python_file writes shared $defs struct constants and validates empty mappings."""
+    schema: dict[str, Any] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "primary": {"$ref": "#/$defs/Address"},
+            "secondary": {"$ref": "#/$defs/Address"},
+        },
+        "required": ["primary"],
+        "$defs": {
+            "Address": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"],
+            },
+        },
+    }
+    converter = JSONSchemaToPyArrow()
+    out_path = tmp_path / "address_schema.py"
+    assert converter.convert_to_python_file(schema, out_path, docstring="Address schema.") == out_path
+    source = out_path.read_text(encoding="utf-8")
+    assert '"""Address schema."""' in source
+    assert "ADDRESS_STRUCT: Final[pa.StructType]" in source
+
+    ns: dict[str, object] = {}
+    exec(source, ns)  # noqa: S102
+    assert isinstance(ns["SCHEMA"], pa.Schema)
+    assert ns["SCHEMA"].equals(converter.convert(schema), check_metadata=True)
+
+    with pytest.raises(ValueError, match="empty SchemaDocument mapping"):
+        PyArrowEmitter().emit_python({})
 
 
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)

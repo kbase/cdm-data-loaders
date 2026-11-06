@@ -465,3 +465,41 @@ def test_coerce_record_for_pyarrow_pass_unvalidated_and_boundary_coercions() -> 
 
     table = pa.Table.from_pylist([coerced], schema=pa_schema)
     assert table.num_rows == 1
+
+
+@pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
+def test_convert_to_python_pass_cases(case: Case, run: Run) -> None:
+    """PydanticToPyArrow.convert_to_python renders an executable module whose SCHEMA matches convert()."""
+    model_cls = _load_model_class(case.schema)
+    converter = PydanticToPyArrow(max_recursion_depth=_max_recursion_depth(run), by_alias=_by_alias(run))
+    expected = converter.convert(model_cls)
+    py_source = converter.convert_to_python(model_cls)
+    ns: dict[str, object] = {}
+    exec(py_source, ns)  # noqa: S102
+    assert isinstance(ns["SCHEMA"], pa.Schema)
+    assert ns["SCHEMA"].equals(expected, check_metadata=True)
+
+
+def test_convert_to_python_file_pass_shared_models(tmp_path: Path) -> None:
+    """PydanticToPyArrow.convert_to_python_file emits shared BaseModel struct components to disk."""
+
+    class SharedLocation(BaseModel):
+        lat: float
+        lon: float
+
+    class Shipment(BaseModel):
+        origin: SharedLocation
+        destination: SharedLocation | None = None
+
+    converter = PydanticToPyArrow()
+    out_path = tmp_path / "shipment_schema.py"
+    assert converter.convert_to_python_file(Shipment, out_path, docstring="Shipment schema.") == out_path
+    source = out_path.read_text(encoding="utf-8")
+    assert '"""Shipment schema."""' in source
+    assert "SHARED_LOCATION_STRUCT: Final[pa.StructType]" in source
+    assert "SHIPMENT_STRUCT: Final[pa.StructType]" in source
+
+    ns: dict[str, object] = {}
+    exec(source, ns)  # noqa: S102
+    assert isinstance(ns["SCHEMA"], pa.Schema)
+    assert ns["SCHEMA"].equals(converter.convert(Shipment), check_metadata=True)

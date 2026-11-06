@@ -8,9 +8,9 @@ from pathlib import Path
 import pyarrow as pa
 import pytest
 
+from cdm_data_loaders.converters.xsd_to_pyarrow import generate_pyarrow_schema, load_schema
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
-from cdm_data_loaders.readers.xsd import generate_pyarrow_schema, load_schema
 from tests.helpers import strip_none_values
 
 
@@ -175,7 +175,7 @@ def test_process_xml_file_to_pyarrow_pass_yields_arrow_tables_for_spec_and_examp
         xsd_file=str(xsd_path),
     )
 
-    items = list(process_xml_file_to_pyarrow(settings, file_path=xml_path))
+    items = list(process_xml_file_to_pyarrow(xml_path, settings))
     assert len(items) == 1
     assert items[0].meta.table_name == xml_tag
     assert isinstance(items[0].data, pa.Table)
@@ -187,3 +187,101 @@ def test_process_xml_file_to_pyarrow_pass_yields_arrow_tables_for_spec_and_examp
 
     actual_rows = json.loads(json.dumps(strip_none_values(table.to_pylist()), default=_json_default))
     assert actual_rows == expected
+
+
+def test_process_xml_file_to_pyarrow_pass_pubmed_level_1_multi_table_files(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    test_data_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """Level-1 parsing of PubMed XML routes PubmedArticle, PubmedBookArticle, and DeleteCitation into typed Arrow tables."""
+    xsd_path = test_data_dir / "pubmed" / "pubmed.xsd"
+    article_xml = (test_data_dir / "xsd" / "examples" / "pubmed_article" / "minimal.xml").read_text(encoding="utf-8")
+    book_xml = (test_data_dir / "xsd" / "examples" / "pubmed_book_article" / "minimal.xml").read_text(encoding="utf-8")
+
+    article_body = article_xml.split('<PubmedArticleSet xmlns="http://www.w3.org/namespace/">', 1)[1].rsplit(
+        "</PubmedArticleSet>", 1
+    )[0]
+    book_body = book_xml.split('<PubmedBookArticleSet xmlns="http://www.w3.org/namespace/">', 1)[1].rsplit(
+        "</PubmedBookArticleSet>", 1
+    )[0]
+    combined_xml_path = tmp_path / "pubmed_combined.xml"
+    combined_xml_path.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<PubmedArticleSet xmlns="http://www.w3.org/namespace/">\n'
+        f"{article_body}"
+        f"{book_body}"
+        '  <DeleteCitation>\n    <PMID Version="1">99999999</PMID>\n  </DeleteCitation>\n'
+        "</PubmedArticleSet>\n",
+        encoding="utf-8",
+    )
+
+    settings = settings_factory(
+        xsd_file=str(xsd_path),
+        xml_level=1,
+        root_tag="PubmedArticleSet",
+    )
+
+    items = list(process_xml_file_to_pyarrow(combined_xml_path, settings))
+    by_table: dict[str, pa.Table] = {item.meta.table_name: item.data for item in items}
+
+    assert {name: table.num_rows for name, table in by_table.items()} == {
+        "PubmedArticle": 1,
+        "PubmedBookArticle": 1,
+        "DeleteCitation": 1,
+    }
+    for table_name, table in by_table.items():
+        assert table.schema.equals(settings.pyarrow_schemas[table_name], check_metadata=True)
+    assert strip_none_values(by_table["DeleteCitation"].to_pylist()) == [
+        {"PMID": [{"_Version": "1", "#text": "99999999"}]}
+    ]
+
+
+def test_process_xml_file_to_pyarrow_pass_uniprot_level_1_and_uniref_level_2(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    test_data_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """Level-1 parsing on UniProt yields entry and copyright tables; level-2 parsing on UniRef yields child tables."""
+    minimal_uniprot = (test_data_dir / "xsd" / "examples" / "uniprot" / "minimal.xml").read_text(encoding="utf-8")
+    uniprot_with_copyright = tmp_path / "uniprot_with_copyright.xml"
+    uniprot_with_copyright.write_text(
+        minimal_uniprot.replace(
+            "</uniprot>",
+            "  <copyright>Copyrighted by the UniProt Consortium</copyright>\n</uniprot>",
+        ),
+        encoding="utf-8",
+    )
+
+    uniprot_settings = settings_factory(
+        xsd_file=str(test_data_dir / "uniprot" / "uniprot_kb" / "uniprot.xsd"),
+        xml_level=1,
+    )
+    uniprot_items = list(
+        process_xml_file_to_pyarrow(
+            uniprot_with_copyright,
+            uniprot_settings,
+        )
+    )
+    uniprot_tables: dict[str, pa.Table] = {item.meta.table_name: item.data for item in uniprot_items}
+    assert set(uniprot_tables.keys()) == {"entry", "copyright"}
+    assert uniprot_tables["entry"].num_rows == 1
+    assert uniprot_tables["copyright"].to_pylist() == [{"#text": "Copyrighted by the UniProt Consortium"}]
+    assert uniprot_tables["copyright"].schema.equals(uniprot_settings.pyarrow_schemas["copyright"], check_metadata=True)
+
+    uniref_l2_settings = settings_factory(
+        xsd_file=str(test_data_dir / "uniprot" / "uniref" / "uniref.xsd"),
+        xml_level=2,
+    )
+    uniref_l2_items = list(
+        process_xml_file_to_pyarrow(
+            test_data_dir / "xsd" / "examples" / "uniref" / "minimal.xml",
+            uniref_l2_settings,
+        )
+    )
+    uniref_l2_tables: dict[str, pa.Table] = {item.meta.table_name: item.data for item in uniref_l2_items}
+    assert set(uniref_l2_tables.keys()) == {"name", "representativeMember"}
+    assert uniref_l2_tables["name"].to_pylist() == [{"#text": "Cluster: Glycogen synthase"}]
+    assert uniref_l2_tables["representativeMember"].num_rows == 1
+    for table_name, table in uniref_l2_tables.items():
+        assert table.schema.equals(uniref_l2_settings.pyarrow_schemas[table_name], check_metadata=True)

@@ -13,7 +13,7 @@ from cdm_data_loaders.converters.core.ir_values import Value, freeze_mapping
 type NodeType = Literal[
     "object", "map", "array", "string", "integer", "number", "boolean", "null", "any", "never", "unknown"
 ]
-type Source = Literal["json-schema", "dlt", "iceberg", "pydantic"]
+type Source = Literal["json-schema", "dlt", "iceberg", "pydantic", "xsd"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +26,7 @@ class Provenance:
 
     def __post_init__(self) -> None:
         """Isolate source paths and metadata."""
-        if self.source not in {"json-schema", "dlt", "iceberg", "pydantic"}:
+        if self.source not in {"json-schema", "dlt", "iceberg", "pydantic", "xsd"}:
             msg = f"Unknown schema source: {self.source}"
             raise ValueError(msg)
         if any(not isinstance(part, (str, int)) or isinstance(part, bool) for part in self.path):

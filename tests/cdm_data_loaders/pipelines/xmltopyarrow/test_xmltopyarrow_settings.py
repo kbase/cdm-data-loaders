@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Final
 from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
@@ -12,31 +12,44 @@ from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
 import cdm_data_loaders.pipelines.xmltopyarrow.settings as xmltopyarrow_settings_module
+from cdm_data_loaders.converters.xsd_to_pyarrow import (
+    DEFAULT_MAX_RECURSION_DEPTH,
+    generate_pyarrow_schema,
+    generate_pyarrow_schemas_at_level,
+    load_schema,
+)
 from cdm_data_loaders.core.fields import DEFAULTS
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     ENTRY_TABLE_NAME,
     ENTRY_XML_TAG,
+    PUBMED_PIPELINE_NAME,
+    PUBMED_ROOT_TAG,
+    PUBMED_XSD_FILE,
     UNIPROT_PIPELINE_NAME,
     UNIPROT_XSD_FILE,
     UNIREF_FIFTY,
     UNIREF_HUNDRED,
     UNIREF_NINETY,
     UNIREF_XSD_FILE,
+    LevelPresetXmlToPyArrowSettings,
     PresetXmlToPyArrowSettings,
+    PubMedXmlToPyArrowSettings,
     UniProtXmlToPyArrowSettings,
     UniRef50XmlToPyArrowSettings,
     UniRef90XmlToPyArrowSettings,
     UniRef100XmlToPyArrowSettings,
     XmlToPyArrowSettings,
 )
-from cdm_data_loaders.readers.xsd import DEFAULT_MAX_RECURSION_DEPTH, generate_pyarrow_schema, load_schema
+from cdm_data_loaders.schemas.pubmed.schema import SCHEMAS as PUBMED_SCHEMAS
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMA as UNIPROT_SCHEMA
+from cdm_data_loaders.schemas.uniprot.schema import SCHEMAS as UNIPROT_SCHEMAS
 from cdm_data_loaders.schemas.uniref.schema import SCHEMA as UNIREF_SCHEMA
+from cdm_data_loaders.schemas.uniref.schema import SCHEMAS as UNIREF_SCHEMAS
 from tests.helpers import register_temp_module, settings_to_argv
 
-UNIREF_LIKE_XSD: str = "uniref_like.xsd"
+UNIREF_LIKE_XSD: Final[str] = "uniref_like.xsd"
 
 
 def test_xmltopyarrow_settings_pass_defaults(settings_factory: Callable[..., XmlToPyArrowSettings]) -> None:
@@ -332,3 +345,116 @@ def test_xmltopyarrow_settings_fail_unknown_transform_table_name(
     )
     with pytest.raises(ValidationError, match="Unknown table names"):
         settings_factory(transforms_module=transforms_mod)
+
+
+def test_xmltopyarrow_settings_pass_level_mode_populates_pyarrow_schemas(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+) -> None:
+    """In level mode, XmlToPyArrowSettings populates pyarrow_schemas for all tags at xml_level and sets pyarrow_schema to None."""
+    settings = settings_factory(
+        xsd_file=str(PUBMED_XSD_FILE),
+        xml_level=1,
+        root_tag=PUBMED_ROOT_TAG,
+    )
+    assert settings.xml_level == 1
+    assert settings.root_tag == PUBMED_ROOT_TAG
+    assert settings.table_name is None
+    assert settings.xml_tag is None
+    assert settings.pyarrow_schema is None
+    assert set(settings.pyarrow_schemas.keys()) == {"PubmedArticle", "PubmedBookArticle", "DeleteCitation"}
+    expected_schemas = generate_pyarrow_schemas_at_level(
+        load_schema(PUBMED_XSD_FILE),
+        1,
+        root_tag=PUBMED_ROOT_TAG,
+    )
+    for tag, expected_schema in expected_schemas.items():
+        assert settings.pyarrow_schemas[tag].equals(expected_schema, check_metadata=True)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected_match"),
+    [
+        pytest.param(
+            {"xml_level": 1, "xml_tag": "entry"},
+            "xml_level cannot be combined with xml_tag or table_name",
+            id="xml_level_with_xml_tag",
+        ),
+        pytest.param(
+            {"xml_level": 1, "table_name": "entry"},
+            "xml_level cannot be combined with xml_tag or table_name",
+            id="xml_level_with_table_name",
+        ),
+        pytest.param(
+            {"xml_tag": "entry", "table_name": "entry", "root_tag": "UniRef50"},
+            "root_tag can only be specified when xml_level is set",
+            id="root_tag_without_xml_level",
+        ),
+        pytest.param(
+            {"xml_level": 99},
+            "Could not generate PyArrow schema from XSD",
+            id="unreachable_xml_level",
+        ),
+    ],
+)
+def test_xmltopyarrow_settings_fail_mutually_exclusive_or_invalid_level_args(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    copy_xsd_fixture: Callable[[str], str],
+    *,
+    kwargs: dict[str, Any],
+    expected_match: str,
+) -> None:
+    """Passing xml_level with xml_tag/table_name or root_tag without xml_level raises ValidationError."""
+    xsd_file = copy_xsd_fixture(UNIREF_LIKE_XSD)
+    with pytest.raises(ValidationError, match=expected_match):
+        settings_factory(xsd_file=xsd_file, **kwargs)
+
+
+def test_pubmed_xmltopyarrow_settings_pass_defaults_and_cli(
+    settings_factory: Callable[..., Any],
+    copy_xsd_fixture: Callable[[str], str],
+) -> None:
+    """PubMedXmlToPyArrowSettings defaults dataset_name, xml_level, root_tag, xsd_file, and precomputed SCHEMAS."""
+    with patch.object(xmltopyarrow_settings_module, "generate_pyarrow_schemas_at_level") as mock_gen_schemas:
+        settings = settings_factory(PubMedXmlToPyArrowSettings)
+
+    mock_gen_schemas.assert_not_called()
+    assert settings.dataset_name == PUBMED_PIPELINE_NAME
+    assert settings.xml_level == 1
+    assert settings.root_tag == PUBMED_ROOT_TAG
+    assert settings.table_name is None
+    assert settings.xml_tag is None
+    assert settings.xsd_file == PUBMED_XSD_FILE
+    assert isinstance(settings.xsd_schema, xmlschema.XMLSchema)
+    assert settings.pyarrow_schema is None
+    assert settings.pyarrow_schemas == dict(PUBMED_SCHEMAS)
+
+    base_settings = settings_factory(CtsSettings)
+    base_argv = settings_to_argv(base_settings)
+    cli_settings = CliApp.run(PubMedXmlToPyArrowSettings, cli_args=base_argv)
+    assert cli_settings.dataset_name == PUBMED_PIPELINE_NAME
+    assert cli_settings.xml_level == 1
+    assert cli_settings.root_tag == PUBMED_ROOT_TAG
+    assert cli_settings.pyarrow_schemas == dict(PUBMED_SCHEMAS)
+
+    for locked_field, flag in (
+        ("dataset_name", "--dataset-name"),
+        ("table_name", "--table-name"),
+        ("xml_tag", "--xml-tag"),
+        ("xml_level", "--xml-level"),
+        ("root_tag", "--root-tag"),
+    ):
+        assert locked_field not in PubMedXmlToPyArrowSettings.model_fields
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            settings_factory(PubMedXmlToPyArrowSettings, **{locked_field: "custom"})
+        with pytest.raises(SettingsError, match=f"unrecognized arguments: {flag}"):
+            CliApp.run(PubMedXmlToPyArrowSettings, cli_args=[*base_argv, flag, "custom"])
+
+    xsd_path = copy_xsd_fixture(UNIREF_LIKE_XSD)
+    with pytest.raises(ValidationError, match="_PRECOMPUTED_SCHEMAS"):
+        settings_factory(
+            LevelPresetXmlToPyArrowSettings,
+            dataset_name="preset_ds",
+            xsd_file=xsd_path,
+        )
+    assert UNIPROT_SCHEMAS["entry"] is UNIPROT_SCHEMA
+    assert UNIREF_SCHEMAS["entry"] is UNIREF_SCHEMA
