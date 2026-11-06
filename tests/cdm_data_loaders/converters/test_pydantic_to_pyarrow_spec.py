@@ -89,8 +89,8 @@ def _by_alias(run: Run) -> bool:
     return bool(run.params.get("by_alias", False))
 
 
-def test_manifests_pass_consistency_and_spec_up_to_date() -> None:
-    """Verify rule coverage, fixture file existence, error code coverage, and specification document freshness."""
+def test_manifests_pass_consistency() -> None:
+    """Verify rule coverage, fixture file existence, and error code coverage."""
     unknown = {f"{case.suite}/{case.name}": sorted(set(case.rules) - RULES.rules.keys()) for case in CASES}
     assert {name: ids for name, ids in unknown.items() if ids} == {}
 
@@ -112,6 +112,10 @@ def test_manifests_pass_consistency_and_spec_up_to_date() -> None:
     assert sorted(manifest_codes - ERRORS_BY_CODE.keys()) == []
     assert sorted(ERRORS_BY_CODE.keys() - manifest_codes) == []
 
+
+@pytest.mark.docs
+def test_specification_document_pass_up_to_date() -> None:
+    """Verify the committed specification document matches the output of scripts/gen_converter_spec.py."""
     assert PYDANTIC_TO_PYARROW.output.read_text(encoding="utf-8") == render(PYDANTIC_TO_PYARROW), (
         "docs are stale: run `uv run python -m scripts.gen_converter_spec`"
     )

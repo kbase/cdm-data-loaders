@@ -16,7 +16,7 @@ Every code change that alters CLI flags, settings classes, public APIs, schemas,
    - Update module and class/function docstrings in the modified files.
    - Grep `docs/` and `README.md` for all references to modified or removed symbols and update code examples.
 4. **Pre-Completion Verification**:
-   - Always run `uv run pytest tests/test_gen_docs.py` and `uv run mkdocs build --strict` before finishing any task that touches `src/`, `scripts/`, `pyproject.toml`, or `docs/`.
+   - Always run `uv run pytest -m docs` and `uv run mkdocs build --strict` before finishing any task that touches `src/`, `scripts/`, `pyproject.toml`, or `docs/`.
 
 ## Gotchas
 

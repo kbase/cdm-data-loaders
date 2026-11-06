@@ -29,6 +29,8 @@ from scripts.gen_docs import (
 )
 from tests.cdm_data_loaders.pipelines.reference.pipeline import ReferencePipelineSettings
 
+pytestmark = pytest.mark.docs
+
 MIN_EXPECTED_CLIS = 16
 DOCS_DIR = REPO_ROOT / "docs"
 MKDOCS_PATH = REPO_ROOT / "mkdocs.yml"
