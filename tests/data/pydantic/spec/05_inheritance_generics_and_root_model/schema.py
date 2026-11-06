@@ -1,7 +1,5 @@
 """Spec 05: Model inheritance, Generic[T] parameterization, and RootModel[T] unwrapping."""
 
-# ruff: noqa: D101, INP001
-
 from pydantic import BaseModel, Field, RootModel
 
 

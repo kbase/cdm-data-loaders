@@ -1,7 +1,5 @@
 """Spec 08: Python field names vs. Field(alias=...) and Field(serialization_alias=...)."""
 
-# ruff: noqa: D101, INP001
-
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 

@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 09_annotated_and_custom_types."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

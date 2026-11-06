@@ -1,7 +1,5 @@
 """Expected PyArrow table for ncbi_assembly_report."""
 
-# ruff: noqa: INP001
-
 import datetime as dt
 
 import pyarrow as pa

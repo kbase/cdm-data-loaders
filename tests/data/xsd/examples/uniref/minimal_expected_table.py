@@ -1,7 +1,5 @@
 """Expected PyArrow table for uniref minimal.xml (xml_tag='entry')."""
 
-# ruff: noqa: INP001
-
 import datetime as dt
 
 import pyarrow as pa

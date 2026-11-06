@@ -1,7 +1,5 @@
 """Expected PyArrow table for 01_scalars_and_simple_types (xml_tag='record')."""
 
-# ruff: noqa: INP001
-
 import datetime as dt
 
 import pyarrow as pa

@@ -357,13 +357,13 @@ def build_filesystem_resource(
 
     :param settings: pipeline settings with ``input_dir`` (and optionally ``file_glob``)
     :type settings: LocalInputOutputSettings
-    :param reader_fn: transformer function or resource accepting ``items`` followed by ``*reader_args``
+    :param reader_fn: transformer function or resource accepting ``(items, settings, *reader_args)``
     :type reader_fn: Callable[..., Any] | DltResource
-    :param reader_args: positional arguments bound to the transformer after ``items``
+    :param reader_args: positional arguments bound to the transformer after ``settings``
     :type reader_args: Any
     :param name: name of the resulting dlt transformer resource
     :type name: str
-    :param file_glob: glob pattern for files; defaults to ``settings.file_glob`` if present, else ``DEFAULT_XML_FILE_GLOB``
+    :param file_glob: glob pattern for files; defaults to ``settings.file_glob`` if present
     :type file_glob: str | None
     :param schema_contract: optional dlt schema contract hint applied to the resource
     :type schema_contract: TSchemaContractDict | None
@@ -384,7 +384,7 @@ def build_filesystem_resource(
         if isinstance(reader_fn, DltResource)
         else dlt.transformer(reader_fn, name=name, parallelized=parallelized, **transformer_kwargs)
     )
-    resource: DltResource = files | reader(*reader_args)
+    resource: DltResource = files | reader(settings, *reader_args)
     if schema_contract is not None:
         resource.apply_hints(schema_contract=TSchemaContractDict(**schema_contract))  # pyright: ignore[reportCallIssue]
     return resource
@@ -411,7 +411,7 @@ def build_per_file_filesystem_resource(
     schema_contract: TSchemaContractDict | None = None,
     **transformer_kwargs: Any,  # noqa: ANN401
 ) -> DltResource:
-    """Build a dlt resource that runs a single-file reader ``file_fn(file_item, *reader_args)`` over ``filesystem`` items."""
+    """Build a dlt resource that runs a single-file reader ``file_fn(file_item, settings, *reader_args)`` over ``filesystem`` items."""
     return build_filesystem_resource(
         settings,
         make_per_file_reader(file_fn),

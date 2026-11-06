@@ -1,7 +1,5 @@
 """Expected PyArrow table for 10_bounded_recursion."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 from expected_schema import EXPECTED_SCHEMA, EXPECTED_SCHEMA_DEPTH_1
 

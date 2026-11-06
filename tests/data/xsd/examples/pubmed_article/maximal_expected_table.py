@@ -1,7 +1,5 @@
 """Expected PyArrow table for pubmed_article maximal.xml (xml_tag='PubmedArticle')."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 from expected_schema import EXPECTED_SCHEMA
 

@@ -1,7 +1,5 @@
 """Spec 03: Lists, sets, frozensets, variadic tuples, and fixed-length tuples."""
 
-# ruff: noqa: D101, INP001
-
 from pydantic import BaseModel
 
 

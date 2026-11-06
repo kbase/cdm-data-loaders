@@ -1,257 +1,619 @@
 """Tests for `cdm_data_loaders.core.transforms` and `TransformSettingsMixin`."""
 
-import sys
-from pathlib import Path
-from types import ModuleType
+from collections.abc import Iterable
+from types import SimpleNamespace
 from typing import Any
 
 import pyarrow as pa
 import pytest
+from frozendict import frozendict
 from pydantic import ValidationError
 
+from cdm_data_loaders.core.registry import (
+    ArrowSchemaRegistry,
+    RecordTransformFn,
+    TransformRegistry,
+)
 from cdm_data_loaders.core.transforms import (
-    REJECTED_PYARROW_SCHEMA,
-    TableTransform,
-    load_table_transforms,
     resolve_schema_map,
     route_and_coerce_record,
+    validate_routed_output,
+    validate_table_transforms,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
+from tests.helpers import register_temp_module
 
 
-def test_table_transform_pass_defaults_and_copies_schema_map() -> None:
-    """TableTransform accepts defaults and defensively copies table_to_schema_map."""
-    no_op = TableTransform()
-    assert no_op.transform_fn is None
-    assert no_op.table_to_schema_map is None
-
-    schema = pa.schema([pa.field("id", pa.string())])
-    source_map = {"items": schema}
-    transform = TableTransform(
-        transform_fn=lambda row: {"items": [row]},
-        table_to_schema_map=source_map,
-    )
-    source_map["other"] = schema
-    assert transform.table_to_schema_map == {"items": schema}
+def _identity_items_transform(record: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Route a single record to the items table."""
+    return {"items": [record]}
 
 
-def test_table_transform_fail_invalid_transform_fn() -> None:
-    """TableTransform rejects non-callable transform_fn values."""
-    with pytest.raises(ValidationError, match="Input should be callable"):
-        TableTransform(transform_fn="not_a_callable")  # type: ignore[arg-type]
+def _custom_table_transform(record: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Route a single record to the custom table."""
+    return {"custom": [record]}
 
 
-@pytest.mark.parametrize(
-    ("schema_map", "match"),
-    [
-        ("not_a_mapping", "Input should be a valid dictionary"),
-        ({}, "Dictionary should have at least 1 item"),
-        ({"": pa.schema([])}, "String should have at least 1 character"),
-        ({"   ": pa.schema([])}, "String should have at least 1 character"),
-        ({123: pa.schema([])}, "Input should be a valid string"),
-        ({"items": "not_a_schema"}, "Input should be an instance of Schema"),
-    ],
+def _split_parent_child_transform(record: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Filter empty records and split non-empty records into parent and child tables."""
+    if record.get("total_count") == 0:
+        return {}
+    return {
+        "parent": [{"id": record["id"]}],
+        "child": [{"parent_id": record["id"], "tag": t} for t in record.get("tags", [])],
+        "empty_table": [],
+    }
+
+
+ITEMS_SCHEMA = pa.schema([pa.field("id", pa.string())])
+ITEMS_EXTRA_SCHEMA = pa.schema([pa.field("id", pa.string()), pa.field("extra", pa.int64())])
+DEFAULT_SCHEMA = pa.schema([pa.field("a", pa.int64())])
+OVERRIDE_SCHEMA = pa.schema([pa.field("b", pa.string())])
+PARENT_SCHEMA = pa.schema([pa.field("id", pa.string()), pa.field("note", pa.string())])
+CHILD_SCHEMA = pa.schema([pa.field("parent_id", pa.string()), pa.field("tag", pa.string())])
+
+ITEMS_SCHEMA_REGISTRY = ArrowSchemaRegistry(registry={"items": ITEMS_SCHEMA})
+ITEMS_EXTRA_SCHEMA_REGISTRY = ArrowSchemaRegistry(registry={"items": ITEMS_EXTRA_SCHEMA})
+DEFAULT_SCHEMA_REGISTRY = ArrowSchemaRegistry(registry={"items": DEFAULT_SCHEMA})
+OVERRIDE_SCHEMA_REGISTRY = ArrowSchemaRegistry(registry={"custom": OVERRIDE_SCHEMA})
+SPLIT_SCHEMA_REGISTRY = ArrowSchemaRegistry(
+    registry={"parent": PARENT_SCHEMA, "child": CHILD_SCHEMA, "empty_table": PARENT_SCHEMA}
 )
-def test_table_transform_fail_invalid_schema_map(
-    schema_map: Any,  # noqa: ANN401
-    match: str,
-) -> None:
-    """TableTransform validates table_to_schema_map structure and types."""
-    with pytest.raises(ValidationError, match=match):
-        TableTransform(table_to_schema_map=schema_map)
-
-
-def test_resolve_schema_map_pass_precedence() -> None:
-    """resolve_schema_map prefers transform.table_to_schema_map over default_pyarrow_schema and includes rejected."""
-    default_schema = pa.schema([pa.field("a", pa.int64())])
-    override_schema = pa.schema([pa.field("b", pa.string())])
-    transform_with_schema = TableTransform(table_to_schema_map={"custom": override_schema})
-    transform_without_schema = TableTransform(transform_fn=lambda r: {"items": [r]})
-
-    assert resolve_schema_map("items") is None
-    assert resolve_schema_map("items", default_pyarrow_schema=default_schema) == {
-        "items": default_schema,
-        "_rejected": REJECTED_PYARROW_SCHEMA,
-    }
-    assert resolve_schema_map(
-        "items",
-        transform=transform_without_schema,
-        default_pyarrow_schema=default_schema,
-    ) == {
-        "items": default_schema,
-        "_rejected": REJECTED_PYARROW_SCHEMA,
-    }
-    assert resolve_schema_map(
-        "items",
-        transform=transform_with_schema,
-        default_pyarrow_schema=default_schema,
-    ) == {
-        "custom": override_schema,
-        "_rejected": REJECTED_PYARROW_SCHEMA,
-    }
-
-
-def test_route_and_coerce_record_pass_untransformed_and_coerced() -> None:
-    """route_and_coerce_record routes untransformed records and optionally coerces for PyArrow."""
-    schema = pa.schema([pa.field("id", pa.string()), pa.field("extra", pa.int64())])
-    record = {"id": "r1", "extra": 5.0, "undeclared": "drop"}
-
-    coerced = route_and_coerce_record(
-        record,
-        "items",
-        table_to_schema_map={"items": schema},
-        coerce_untransformed=True,
-    )
-    assert coerced == {"items": [{"id": "r1", "extra": 5}]}
-
-    uncoerced = route_and_coerce_record(
-        record,
-        "items",
-        table_to_schema_map={"items": schema},
-        coerce_untransformed=False,
-    )
-    assert uncoerced == {"items": [record]}
-
-
-def test_route_and_coerce_record_pass_filter_transform_and_split() -> None:
-    """route_and_coerce_record supports filtering, 1-to-N row transforms, and multi-table splits."""
-    parent_schema = pa.schema([pa.field("id", pa.string()), pa.field("note", pa.string())])
-    child_schema = pa.schema([pa.field("parent_id", pa.string()), pa.field("tag", pa.string())])
-
-    def _split(record: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-        if record.get("total_count") == 0:
-            return {}
-        return {
-            "parent": [{"id": record["id"]}],
-            "child": [{"parent_id": record["id"], "tag": t} for t in record.get("tags", [])],
-            "empty_table": [],
-        }
-
-    transform = TableTransform(
-        transform_fn=_split,
-        table_to_schema_map={"parent": parent_schema, "child": child_schema, "empty_table": parent_schema},
-    )
-
-    assert (
-        route_and_coerce_record(
-            {"id": "p0", "total_count": 0},
-            "raw",
-            transform=transform,
-            table_to_schema_map=transform.table_to_schema_map,
-        )
-        == {}
-    )
-
-    routed = route_and_coerce_record(
-        {"id": "p1", "total_count": 2, "tags": ["a", "b"]},
-        "raw",
-        transform=transform,
-        table_to_schema_map=transform.table_to_schema_map,
-    )
-    assert routed == {
-        "parent": [{"id": "p1"}],
-        "child": [
-            {"parent_id": "p1", "tag": "a"},
-            {"parent_id": "p1", "tag": "b"},
-        ],
-    }
+ITEMS_TRANSFORM_REGISTRY = TransformRegistry(registry={"items": _identity_items_transform})
 
 
 @pytest.mark.parametrize(
-    ("return_value", "schema_map", "exc_type", "match"),
+    ("kwargs", "expected"),
     [
-        (["not_a_mapping"], None, TypeError, "transform_fn must return a mapping"),
-        ({"": [{"id": 1}]}, None, ValueError, "transform_fn output keys must be non-empty table names"),
-        ({"items": "not_a_sequence_of_dicts"}, None, TypeError, "must be a sequence of dicts"),
-        ({"items": ["not_a_dict"]}, None, TypeError, "must be dicts"),
-        (
-            {"unmapped": [{"id": "1"}]},
-            {"items": pa.schema([pa.field("id", pa.string())])},
-            ValueError,
-            "no PyArrow schema supplied",
+        pytest.param({}, None, id="unschematized_default"),
+        pytest.param(
+            {"default_pyarrow_schema": DEFAULT_SCHEMA},
+            DEFAULT_SCHEMA_REGISTRY,
+            id="default_pyarrow_schema_without_transform",
+        ),
+        pytest.param(
+            {
+                "transform": _identity_items_transform,
+                "default_pyarrow_schema": DEFAULT_SCHEMA,
+            },
+            None,
+            id="transform_skips_default_pyarrow_schema",
+        ),
+        pytest.param(
+            {
+                "transform": _custom_table_transform,
+                "unreconciled_output_schemas": OVERRIDE_SCHEMA_REGISTRY,
+                "default_pyarrow_schema": DEFAULT_SCHEMA,
+            },
+            OVERRIDE_SCHEMA_REGISTRY,
+            id="unreconciled_output_schemas_takes_precedence",
         ),
     ],
 )
-def test_route_and_coerce_record_fail_invalid_transform_fn_output(
-    return_value: Any,  # noqa: ANN401
-    schema_map: dict[str, pa.Schema] | None,
-    exc_type: type[Exception],
-    match: str,
+def test_resolve_schema_map_pass_precedence(
+    kwargs: dict[str, Any],
+    expected: ArrowSchemaRegistry | None,
 ) -> None:
-    """route_and_coerce_record validates the structure returned by transform_fn."""
-    transform = TableTransform(transform_fn=lambda _r: return_value)
-    with pytest.raises(exc_type, match=match):
-        route_and_coerce_record(
-            {"id": "1"},
+    """resolve_schema_map prefers unreconciled_output_schemas and skips default_pyarrow_schema when transform is set."""
+    assert resolve_schema_map("items", **kwargs) == expected
+
+
+def test_resolve_schema_map_fail_unmapped_default_table_without_transform_fn() -> None:
+    """resolve_schema_map rejects an unreconciled_output_schemas that omits default_table when transform is None."""
+    with pytest.raises(
+        ValueError,
+        match="unreconciled_output_schemas for 'items' must include 'items' when transform is None",
+    ):
+        resolve_schema_map(
             "items",
-            transform=transform,
-            table_to_schema_map=schema_map,
+            unreconciled_output_schemas=OVERRIDE_SCHEMA_REGISTRY,
         )
 
 
-def test_load_table_transforms_pass_and_fail(monkeypatch: pytest.MonkeyPatch) -> None:
-    """load_table_transforms validates TABLE_TRANSFORMS module exports."""
-    valid_mod = ModuleType("_test_valid_transforms_mod")
-    expected_transform = TableTransform(transform_fn=lambda r: {"items": [r]})
-    valid_mod.TABLE_TRANSFORMS = {"items": expected_transform}  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, valid_mod.__name__, valid_mod)
+@pytest.mark.parametrize(
+    ("schema_map", "expected"),
+    [
+        pytest.param(
+            ITEMS_EXTRA_SCHEMA_REGISTRY,
+            {"items": [{"id": "r1", "extra": 5}]},
+            id="coerced_with_schema_map",
+        ),
+        pytest.param(
+            None,
+            {"items": [{"id": "r1", "extra": 5.0, "undeclared": "drop"}]},
+            id="uncoerced_without_schema_map",
+        ),
+    ],
+)
+def test_route_and_coerce_record_pass_untransformed_and_coerced(
+    schema_map: ArrowSchemaRegistry | None,
+    expected: dict[str, list[dict[str, Any]]],
+) -> None:
+    """route_and_coerce_record routes untransformed records and optionally coerces for PyArrow."""
+    record = {"id": "r1", "extra": 5.0, "undeclared": "drop"}
+    assert (
+        route_and_coerce_record(
+            record,
+            "items",
+            schema_map=schema_map,
+        )
+        == expected
+    )
 
-    loaded = load_table_transforms(valid_mod.__name__)
-    assert loaded == {"items": expected_transform}
 
-    empty_mod = ModuleType("_test_empty_transforms_mod")
-    empty_mod.TABLE_TRANSFORMS = {}  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, empty_mod.__name__, empty_mod)
-    with pytest.raises(ValueError, match="does not define a non-empty TABLE_TRANSFORMS"):
-        load_table_transforms(empty_mod.__name__)
+@pytest.mark.parametrize(
+    ("record", "expected"),
+    [
+        pytest.param(
+            {"id": "p0", "total_count": 0},
+            {},
+            id="filtered_record_returns_empty_dict",
+        ),
+        pytest.param(
+            {"id": "p1", "total_count": 2, "tags": ["a", "b"]},
+            {
+                "parent": [{"id": "p1"}],
+                "child": [
+                    {"parent_id": "p1", "tag": "a"},
+                    {"parent_id": "p1", "tag": "b"},
+                ],
+            },
+            id="multi_table_split_and_empty_table_dropped",
+        ),
+    ],
+)
+def test_route_and_coerce_record_pass_filter_transform_and_split(
+    record: dict[str, Any],
+    expected: dict[str, list[dict[str, Any]]],
+) -> None:
+    """route_and_coerce_record supports filtering, 1-to-N row transforms, and multi-table splits."""
+    assert (
+        route_and_coerce_record(
+            record,
+            "raw",
+            transform=_split_parent_child_transform,
+            schema_map=SPLIT_SCHEMA_REGISTRY,
+        )
+        == expected
+    )
 
-    bad_key_mod = ModuleType("_test_bad_key_transforms_mod")
-    bad_key_mod.TABLE_TRANSFORMS = {"": expected_transform}  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, bad_key_mod.__name__, bad_key_mod)
-    with pytest.raises(ValueError, match="must be non-empty table names"):
-        load_table_transforms(bad_key_mod.__name__)
 
-    bad_val_mod = ModuleType("_test_bad_val_transforms_mod")
-    bad_val_mod.TABLE_TRANSFORMS = {"items": "not_a_transform"}  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, bad_val_mod.__name__, bad_val_mod)
-    with pytest.raises(TypeError, match="must be a TableTransform"):
-        load_table_transforms(bad_val_mod.__name__)
+VALID_ROUTED_OUTPUT_CASES = [
+    pytest.param({}, {}, id="empty_mapping"),
+    pytest.param({"items": [], "other": ()}, {}, id="only_empty_sequences"),
+    pytest.param({"items": [{"id": "1"}]}, {"items": [{"id": "1"}]}, id="single_table_list"),
+    pytest.param({"  items \n": [{"id": "1"}]}, {"items": [{"id": "1"}]}, id="whitespace_padded_table_name"),
+    pytest.param(
+        {"items": ({"id": "1"}, {"id": "2"})},
+        {"items": [{"id": "1"}, {"id": "2"}]},
+        id="tuple_of_dicts_coerced_to_list",
+    ),
+    pytest.param(
+        {"parent": [{"id": "p1"}], "child": [{"id": "c1"}, {"id": "c2"}], "empty": []},
+        {"parent": [{"id": "p1"}], "child": [{"id": "c1"}, {"id": "c2"}]},
+        id="multi_table_with_empty_stripped",
+    ),
+    pytest.param(
+        frozendict({"items": [{"id": "1"}]}),
+        {"items": [{"id": "1"}]},
+        id="frozendict_mapping",
+    ),
+]
+
+INVALID_ROUTED_OUTPUT_CASES = [
+    pytest.param(
+        None,
+        "transform_fn must return a mapping of table names to sequences of row dicts",
+        id="not_mapping_none",
+    ),
+    pytest.param(
+        ["not_a_mapping"],
+        "transform_fn must return a mapping of table names to sequences of row dicts",
+        id="not_mapping_list",
+    ),
+    pytest.param(
+        "not_a_mapping",
+        "transform_fn must return a mapping of table names to sequences of row dicts",
+        id="not_mapping_str",
+    ),
+    pytest.param(
+        123,
+        "transform_fn must return a mapping of table names to sequences of row dicts",
+        id="not_mapping_int",
+    ),
+    pytest.param(
+        {123: [{"id": 1}]},
+        "transform_fn output keys must be non-empty table names",
+        id="non_str_key_int",
+    ),
+    pytest.param(
+        {None: [{"id": 1}]},
+        "transform_fn output keys must be non-empty table names",
+        id="non_str_key_none",
+    ),
+    pytest.param(
+        {"": [{"id": 1}]},
+        "transform_fn output keys must be non-empty table names",
+        id="empty_key",
+    ),
+    pytest.param(
+        {"   \t\n": [{"id": 1}]},
+        "transform_fn output keys must be non-empty table names",
+        id="whitespace_key",
+    ),
+    pytest.param(
+        {"_rejected": [{"id": 1}]},
+        "transform_fn cannot route rows to reserved table '_rejected'",
+        id="reserved_rejected_key",
+    ),
+    pytest.param(
+        {"  _rejected \n": [{"id": 1}]},
+        "transform_fn cannot route rows to reserved table '_rejected'",
+        id="reserved_rejected_key_whitespace",
+    ),
+    pytest.param(
+        {"items": None},
+        "transform_fn rows for table 'items' must be a sequence of dicts",
+        id="rows_none",
+    ),
+    pytest.param(
+        {"items": 123},
+        "transform_fn rows for table 'items' must be a sequence of dicts",
+        id="rows_int",
+    ),
+    pytest.param(
+        {"items": {"a"}},
+        "transform_fn rows for table 'items' must be a sequence of dicts",
+        id="rows_set",
+    ),
+    pytest.param(
+        {"items": "not_a_sequence_of_dicts"},
+        "transform_fn rows for table 'items' must be a sequence of dicts",
+        id="rows_str",
+    ),
+    pytest.param(
+        {"items": b"not_a_sequence_of_dicts"},
+        "transform_fn rows for table 'items' must be a sequence of dicts",
+        id="rows_bytes",
+    ),
+    pytest.param(
+        {"items": bytearray(b"not_a_sequence_of_dicts")},
+        "transform_fn rows for table 'items' must be a sequence of dicts",
+        id="rows_bytearray",
+    ),
+    pytest.param(
+        {"items": {"id": 1}},
+        "transform_fn rows for table 'items' must be a sequence of dicts",
+        id="rows_dict",
+    ),
+    pytest.param(
+        {"items": ["not_a_dict"]},
+        "transform_fn rows for table 'items' must be non-empty dicts",
+        id="row_not_dict_str",
+    ),
+    pytest.param(
+        {"items": [{"id": 1}, 123]},
+        "transform_fn rows for table 'items' must be non-empty dicts",
+        id="row_not_dict_after_valid",
+    ),
+    pytest.param(
+        {"items": [{}]},
+        "transform_fn rows for table 'items' must be non-empty dicts",
+        id="row_empty_dict",
+    ),
+    pytest.param(
+        {"items": [{"id": 1}, {}]},
+        "transform_fn rows for table 'items' must be non-empty dicts",
+        id="row_empty_dict_after_valid",
+    ),
+    pytest.param(
+        {"": "not_a_seq"},
+        "transform_fn output keys must be non-empty table names\n"
+        "transform_fn rows for table '' must be a sequence of dicts",
+        id="empty_key_and_bad_rows_sequence",
+    ),
+    pytest.param(
+        {123: [{}]},
+        "transform_fn output keys must be non-empty table names\n"
+        "transform_fn rows for table 123 must be non-empty dicts",
+        id="non_str_key_and_empty_row_dict",
+    ),
+    pytest.param(
+        {"_rejected": "not_a_seq"},
+        "transform_fn cannot route rows to reserved table '_rejected'\n"
+        "transform_fn rows for table '_rejected' must be a sequence of dicts",
+        id="reserved_key_and_bad_rows_sequence",
+    ),
+    pytest.param(
+        {" _rejected ": ["not_a_dict"]},
+        "transform_fn cannot route rows to reserved table '_rejected'\n"
+        "transform_fn rows for table ' _rejected ' must be non-empty dicts",
+        id="reserved_key_and_non_dict_row",
+    ),
+    pytest.param(
+        {
+            "": [{"id": 1}],
+            "valid_before": [{"id": 2}],
+            123: "bad_seq",
+            "_rejected": [{"id": 3}],
+            "  _rejected\n": [{}],
+            "bad_rows": 456,
+            "non_dict_row": [{"id": 4}, "bad"],
+            "empty_dict_row": [{}],
+            "valid_after": [{"id": 5}],
+        },
+        (
+            "transform_fn output keys must be non-empty table names\n"
+            "transform_fn output keys must be non-empty table names\n"
+            "transform_fn rows for table 123 must be a sequence of dicts\n"
+            "transform_fn cannot route rows to reserved table '_rejected'\n"
+            "transform_fn cannot route rows to reserved table '_rejected'\n"
+            "transform_fn rows for table '  _rejected\\n' must be non-empty dicts\n"
+            "transform_fn rows for table 'bad_rows' must be a sequence of dicts\n"
+            "transform_fn rows for table 'non_dict_row' must be non-empty dicts\n"
+            "transform_fn rows for table 'empty_dict_row' must be non-empty dicts"
+        ),
+        id="all_errors_collected_across_entries",
+    ),
+]
 
 
+@pytest.mark.parametrize(("raw_routed", "expected"), VALID_ROUTED_OUTPUT_CASES)
+def test_validate_routed_output_pass(
+    raw_routed: object,
+    expected: dict[str, list[dict[str, Any]]],
+) -> None:
+    """validate_routed_output strips table name whitespace, drops empty row sequences, and returns row lists."""
+    assert validate_routed_output(raw_routed) == expected
+
+
+@pytest.mark.parametrize(("raw_routed", "expected_error"), INVALID_ROUTED_OUTPUT_CASES)
+def test_validate_routed_output_fail(raw_routed: object, expected_error: str) -> None:
+    """validate_routed_output collects all validation errors in raw_routed and raises ValueError."""
+    with pytest.raises(ValueError) as exc_info:  # noqa: PT011
+        validate_routed_output(raw_routed)
+    assert str(exc_info.value) == expected_error
+
+
+@pytest.mark.parametrize(("raw_routed", "expected"), VALID_ROUTED_OUTPUT_CASES)
+def test_route_and_coerce_record_pass_validates_routed_output(
+    raw_routed: Any,  # noqa: ANN401
+    expected: dict[str, list[dict[str, Any]]],
+) -> None:
+    """route_and_coerce_record accepts all valid transform_fn outputs accepted by validate_routed_output."""
+    transform = lambda _r: raw_routed  # noqa: E731
+    assert route_and_coerce_record({"id": "1"}, "items", transform=transform) == expected
+
+
+@pytest.mark.parametrize(("return_value", "expected_error"), INVALID_ROUTED_OUTPUT_CASES)
+def test_route_and_coerce_record_fail_invalid_transform_fn_output(
+    return_value: Any,  # noqa: ANN401
+    expected_error: str,
+) -> None:
+    """route_and_coerce_record propagates all ValueError paths from validate_routed_output."""
+    transform = lambda _r: return_value  # noqa: E731
+    with pytest.raises(ValueError) as exc_info:  # noqa: PT011
+        route_and_coerce_record({"id": "1"}, "items", transform=transform)
+    assert str(exc_info.value) == expected_error
+
+
+def test_route_and_coerce_record_pass_unmapped_output_table_left_uncoerced() -> None:
+    """route_and_coerce_record coerces mapped tables and leaves unmapped output tables as uncoerced dicts."""
+    transform = lambda r: {"items": [r], "unmapped": [r]}  # noqa: E731
+    record = {"id": "1", "extra": 5.0, "undeclared": "keep_on_unmapped"}
+    assert route_and_coerce_record(
+        record,
+        "items",
+        transform=transform,
+        schema_map=ITEMS_EXTRA_SCHEMA_REGISTRY,
+    ) == {
+        "items": [{"id": "1", "extra": 5}],
+        "unmapped": [record],
+    }
+
+
+@pytest.mark.parametrize(
+    ("settings", "valid_tables"),
+    [
+        pytest.param(SimpleNamespace(), (), id="missing_table_transforms_attribute"),
+        pytest.param(SimpleNamespace(table_transforms=None), (), id="table_transforms_is_none"),
+        pytest.param(
+            SimpleNamespace(table_transforms=ITEMS_TRANSFORM_REGISTRY),
+            ["items"],
+            id="exact_table_match",
+        ),
+        pytest.param(
+            SimpleNamespace(table_transforms=ITEMS_TRANSFORM_REGISTRY),
+            {"items", "other"},
+            id="subset_of_valid_tables",
+        ),
+        pytest.param(
+            SimpleNamespace(
+                table_transforms=TransformRegistry(
+                    registry={"items": _identity_items_transform, "custom": _custom_table_transform}
+                )
+            ),
+            ("items", "custom", "extra"),
+            id="multiple_transforms_all_valid",
+        ),
+    ],
+)
+def test_validate_table_transforms_pass(
+    settings: Any,  # noqa: ANN401
+    valid_tables: Iterable[str],
+) -> None:
+    """validate_table_transforms succeeds when table_transforms is absent or all transform keys are in valid_tables."""
+    validate_table_transforms(settings, iter(valid_tables))
+
+
+@pytest.mark.parametrize(
+    ("table_transforms", "valid_tables", "match"),
+    [
+        pytest.param(
+            ITEMS_TRANSFORM_REGISTRY,
+            ["other"],
+            r"^Unknown table names in transforms_module: items$",
+            id="single_unknown_table",
+        ),
+        pytest.param(
+            TransformRegistry(
+                registry={
+                    "zeta": _identity_items_transform,
+                    "items": _identity_items_transform,
+                    "alpha": _custom_table_transform,
+                }
+            ),
+            ["items"],
+            r"^Unknown table names in transforms_module: alpha, zeta$",
+            id="multiple_unknown_tables_sorted",
+        ),
+        pytest.param(
+            ITEMS_TRANSFORM_REGISTRY,
+            (),
+            r"^Unknown table names in transforms_module: items$",
+            id="empty_valid_tables",
+        ),
+    ],
+)
+def test_validate_table_transforms_fail_unknown_tables(
+    table_transforms: TransformRegistry,
+    valid_tables: Iterable[str],
+    match: str,
+) -> None:
+    """validate_table_transforms raises ValueError with sorted unknown table names."""
+    settings = SimpleNamespace(table_transforms=table_transforms)
+    with pytest.raises(ValueError, match=match):
+        validate_table_transforms(settings, valid_tables)
+
+
+@pytest.mark.parametrize(
+    (
+        "use_transforms_module",
+        "use_output_schemas_module",
+        "expected_transforms",
+        "expected_schema_map",
+        "expected_item_transform",
+    ),
+    [
+        pytest.param(False, False, None, None, None, id="unconfigured_defaults"),
+        pytest.param(
+            True,
+            False,
+            ITEMS_TRANSFORM_REGISTRY,
+            None,
+            _identity_items_transform,
+            id="transforms_module_only",
+        ),
+        pytest.param(
+            False,
+            True,
+            None,
+            ITEMS_SCHEMA_REGISTRY,
+            None,
+            id="output_schemas_module_only",
+        ),
+        pytest.param(
+            True,
+            True,
+            ITEMS_TRANSFORM_REGISTRY,
+            ITEMS_SCHEMA_REGISTRY,
+            _identity_items_transform,
+            id="both_modules_configured",
+        ),
+    ],
+)
 def test_transform_settings_mixin_pass_loads_transforms(
-    tmp_path: Path,
+    test_defaults: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    use_transforms_module: bool,
+    use_output_schemas_module: bool,
+    expected_transforms: TransformRegistry | None,
+    expected_schema_map: ArrowSchemaRegistry | None,
+    expected_item_transform: RecordTransformFn | None,
+) -> None:
+    """TransformSettingsMixin loads TABLE_TRANSFORMS and OUTPUT_SCHEMAS when configured."""
+    mod_name = register_temp_module(
+        monkeypatch,
+        "_test_settings_transforms_mod",
+        TABLE_TRANSFORMS={"items": _identity_items_transform},
+        OUTPUT_SCHEMAS={"items": ITEMS_SCHEMA},
+    )
+    transforms_module = mod_name if use_transforms_module else None
+    output_schemas_module = mod_name if use_output_schemas_module else None
+
+    settings = JsonlExtractSettings(
+        **test_defaults,
+        dataset_name="test_ds",
+        table_name="items",
+        transforms_module=transforms_module,
+        output_schemas_module=output_schemas_module,
+    )
+
+    assert settings.transforms_module == transforms_module
+    assert settings.output_schemas_module == output_schemas_module
+    assert settings.table_transforms == expected_transforms
+    assert settings.schema_map == expected_schema_map
+    assert settings.get_table_transform("items") is expected_item_transform
+    assert settings.get_table_transform("other") is None
+
+
+@pytest.mark.parametrize(
+    ("module_attrs", "use_transforms_module", "use_output_schemas_module", "match"),
+    [
+        pytest.param(
+            {"OUTPUT_SCHEMAS": {"other": ITEMS_SCHEMA}},
+            False,
+            True,
+            "unreconciled_output_schemas for 'items' must include 'items' when transform is None",
+            id="unmapped_default_table_without_transform",
+        ),
+        pytest.param(
+            {"TABLE_TRANSFORMS": {"other": _identity_items_transform}},
+            True,
+            False,
+            "Unknown table names in transforms_module: other",
+            id="unknown_table_in_transforms_module",
+        ),
+    ],
+)
+def test_transform_settings_mixin_fail_invalid_table_mapping(
+    test_defaults: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    module_attrs: dict[str, Any],
+    use_transforms_module: bool,
+    use_output_schemas_module: bool,
+    match: str,
+) -> None:
+    """TransformSettingsMixin rejects unmapped output schemas and unknown transform table names."""
+    mod_name = register_temp_module(monkeypatch, "_test_invalid_settings_transforms_mod", **module_attrs)
+    with pytest.raises(ValidationError, match=match):
+        JsonlExtractSettings(
+            **test_defaults,
+            dataset_name="test_ds",
+            table_name="items",
+            transforms_module=mod_name if use_transforms_module else None,
+            output_schemas_module=mod_name if use_output_schemas_module else None,
+        )
+
+
+def test_transform_settings_mixin_pass_table_transforms_is_immutable(
+    test_defaults: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TransformSettingsMixin loads TABLE_TRANSFORMS when transforms_module is configured."""
-    input_dir = tmp_path / "input"
-    output_dir = tmp_path / "output"
-    input_dir.mkdir()
-    output_dir.mkdir()
-
-    mod = ModuleType("_test_settings_transforms_mod")
-    expected_transform = TableTransform(transform_fn=lambda r: {"items": [r]})
-    mod.TABLE_TRANSFORMS = {"items": expected_transform}  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, mod.__name__, mod)
-
-    default_settings = JsonlExtractSettings(
-        input_dir=input_dir,
-        output_dir=output_dir,
-        dataset_name="test_ds",
-        use_destination="local_fs",
-        table_name="items",
+    """TransformSettingsMixin.table_transforms cannot be mutated in place."""
+    mod_name = register_temp_module(
+        monkeypatch,
+        "_test_immutable_settings_transforms_mod",
+        TABLE_TRANSFORMS={"items": _identity_items_transform},
     )
-    assert default_settings.transforms_module is None
-    assert default_settings.table_transforms == {}
-    assert default_settings.get_table_transform("items") is None
 
     configured_settings = JsonlExtractSettings(
-        input_dir=input_dir,
-        output_dir=output_dir,
+        **test_defaults,
         dataset_name="test_ds",
-        use_destination="local_fs",
         table_name="items",
-        transforms_module=mod.__name__,
+        transforms_module=mod_name,
     )
-    assert configured_settings.table_transforms == {"items": expected_transform}
-    assert configured_settings.get_table_transform("items") is expected_transform
-    assert configured_settings.get_table_transform("other") is None
+    assert configured_settings.table_transforms is not None
+    with pytest.raises(TypeError):
+        configured_settings.table_transforms.registry["injected"] = _identity_items_transform  # type: ignore[index]
+    assert "injected" not in configured_settings.table_transforms.registry

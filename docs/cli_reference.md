@@ -57,11 +57,12 @@ Configuration for running the AllTheBacteria import pipeline.
 Settings for the JSONL extraction-only pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.jsonlines.extract_pipeline:cli`
-- **Settings hierarchy**: `JsonlExtractSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `JsonlExtractSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path (or 'module:ATTR') exporting TABLE_TRANSFORMS (dict[str, TableTransform]) for record filtering, transformation, multi-table splitting, and PyArrow schema overrides. |
+| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
+| `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -80,11 +81,12 @@ Settings for the JSONL extraction-only pipeline.
 Pipeline settings for JSONL ingestion with JSON Schema validation.
 
 - **Entry point**: `cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:cli`
-- **Settings hierarchy**: `JsonlJsonschemaIngestSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `JsonlJsonschemaIngestSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path (or 'module:ATTR') exporting TABLE_TRANSFORMS (dict[str, TableTransform]) for record filtering, transformation, multi-table splitting, and PyArrow schema overrides. |
+| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
+| `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -96,18 +98,19 @@ Pipeline settings for JSONL ingestion with JSON Schema validation.
 | `--dataset-name` | — | `CDL_DATASET_NAME` | `str` | *(Required)* | The name of the dataset being produced |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['jsonl', 'parquet'] |
 | `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.jsonl*'` | Glob pattern for JSONL files |
-| `--schema-files-module` | `-m` | `CDL_SCHEMA_FILES_MODULE` | `str` | *(Required)* | Dotted import path to a module that defines `ENTITY_SCHEMAS: dict[str, dict]`. Each key is a table name and a subdirectory of `input_dir`. Each value is a JSON Schema dictionary declaring its draft with `$schema`. |
+| `--entity-schemas` | `-m` | `CDL_ENTITY_SCHEMAS` | `str` | *(Required)* | Dotted import path to a module that defines `ENTITY_SCHEMAS: dict[str, dict]`. Each key is a table name and a subdirectory of `input_dir`. Each value is a JSON Schema dictionary declaring its draft with `$schema`. |
 
 ## `jsonlines_pydantic`
 
 Pipeline settings for JSONL pipeline that uses Pydantic for validation.
 
 - **Entry point**: `cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline:cli`
-- **Settings hierarchy**: `JsonlPydanticIngestSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `JsonlPydanticIngestSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path (or 'module:ATTR') exporting TABLE_TRANSFORMS (dict[str, TableTransform]) for record filtering, transformation, multi-table splitting, and PyArrow schema overrides. |
+| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
+| `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -119,7 +122,7 @@ Pipeline settings for JSONL pipeline that uses Pydantic for validation.
 | `--dataset-name` | — | `CDL_DATASET_NAME` | `str` | *(Required)* | The name of the dataset being produced |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['jsonl', 'parquet'] |
 | `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.jsonl*'` | Glob pattern for JSONL files |
-| `--entity-models-module` | `-m` | `CDL_ENTITY_MODELS_MODULE` | `str` | *(Required)* | Dotted import path to a module that defines `ENTITY_MODELS: dict[str, type[BaseModel]]`. Each key is a table name and a subdirectory of `input_dir`. Each value is the Pydantic model for that table. |
+| `--entity-models` | `-m` | `CDL_ENTITY_MODELS` | `str` | *(Required)* | Dotted import path to a module that defines `ENTITY_MODELS: dict[str, type[BaseModel]]`. Each key is a table name and a subdirectory of `input_dir`. Each value is the Pydantic model for that table. |
 
 ## `ncbi_ftp_promote`
 
@@ -182,11 +185,12 @@ Configuration for running the NCBI REST API import pipeline.
 Settings for the UniProt XML to PyArrow ingestion pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniprot_cli`
-- **Settings hierarchy**: `UniProtXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniProtXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path (or 'module:ATTR') exporting TABLE_TRANSFORMS (dict[str, TableTransform]) for record filtering, transformation, multi-table splitting, and PyArrow schema overrides. |
+| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
+| `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -205,7 +209,7 @@ Settings for the UniProt XML to PyArrow ingestion pipeline.
 Configuration for running the UniProt KB import pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.uniprot_kb_cdm:cli`
-- **Settings hierarchy**: `UniProtSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniProtSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -217,17 +221,20 @@ Configuration for running the UniProt KB import pipeline.
 | `--log-interval` | — | `CDL_LOG_INTERVAL` | `int` | `1000` | How often (in number of processed entries) to emit a progress log message. |
 | `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
+| `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['jsonl', 'parquet'] |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
 
 ## `uniref100`
 
 UniRef 100 XML to PyArrow ingest settings.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref100_cli`
-- **Settings hierarchy**: `UniRef100XmlToPyArrowSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniRef100XmlToPyArrowSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path (or 'module:ATTR') exporting TABLE_TRANSFORMS (dict[str, TableTransform]) for record filtering, transformation, multi-table splitting, and PyArrow schema overrides. |
+| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
+| `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -246,7 +253,7 @@ UniRef 100 XML to PyArrow ingest settings.
 UniRef 100 CDM XML-to-PyArrow ingest settings.
 
 - **Entry point**: `cdm_data_loaders.pipelines.uniref_cdm:uniref100_cdm_cli`
-- **Settings hierarchy**: `UniRef100CdmSettings` -> `UniRefCdmSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniRef100CdmSettings` -> `UniRefCdmSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -268,11 +275,12 @@ UniRef 100 CDM XML-to-PyArrow ingest settings.
 UniRef 50 XML to PyArrow ingest settings.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref50_cli`
-- **Settings hierarchy**: `UniRef50XmlToPyArrowSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniRef50XmlToPyArrowSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path (or 'module:ATTR') exporting TABLE_TRANSFORMS (dict[str, TableTransform]) for record filtering, transformation, multi-table splitting, and PyArrow schema overrides. |
+| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
+| `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -291,7 +299,7 @@ UniRef 50 XML to PyArrow ingest settings.
 UniRef 50 CDM XML-to-PyArrow ingest settings.
 
 - **Entry point**: `cdm_data_loaders.pipelines.uniref_cdm:uniref50_cdm_cli`
-- **Settings hierarchy**: `UniRef50CdmSettings` -> `UniRefCdmSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniRef50CdmSettings` -> `UniRefCdmSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -313,11 +321,12 @@ UniRef 50 CDM XML-to-PyArrow ingest settings.
 UniRef 90 XML to PyArrow ingest settings.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref90_cli`
-- **Settings hierarchy**: `UniRef90XmlToPyArrowSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniRef90XmlToPyArrowSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path (or 'module:ATTR') exporting TABLE_TRANSFORMS (dict[str, TableTransform]) for record filtering, transformation, multi-table splitting, and PyArrow schema overrides. |
+| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
+| `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -336,7 +345,7 @@ UniRef 90 XML to PyArrow ingest settings.
 UniRef 90 CDM XML-to-PyArrow ingest settings.
 
 - **Entry point**: `cdm_data_loaders.pipelines.uniref_cdm:uniref90_cdm_cli`
-- **Settings hierarchy**: `UniRef90CdmSettings` -> `UniRefCdmSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniRef90CdmSettings` -> `UniRefCdmSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -358,11 +367,12 @@ UniRef 90 CDM XML-to-PyArrow ingest settings.
 Settings for the XML ingestion pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltodict.pipeline:cli`
-- **Settings hierarchy**: `XmlToDictSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `XmlToDictSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path (or 'module:ATTR') exporting TABLE_TRANSFORMS (dict[str, TableTransform]) for record filtering, transformation, multi-table splitting, and PyArrow schema overrides. |
+| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
+| `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -382,11 +392,12 @@ Settings for the XML ingestion pipeline.
 Settings for the XML to PyArrow ingestion pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:cli`
-- **Settings hierarchy**: `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `XmlToPyArrowSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path (or 'module:ATTR') exporting TABLE_TRANSFORMS (dict[str, TableTransform]) for record filtering, transformation, multi-table splitting, and PyArrow schema overrides. |
+| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
+| `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -408,11 +419,12 @@ Settings for the XML to PyArrow ingestion pipeline.
 Settings for the XSV (CSV/TSV) ingestion pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xsv.pipeline:cli`
-- **Settings hierarchy**: `XsvIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `TransformSettingsMixin` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `XsvIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path (or 'module:ATTR') exporting TABLE_TRANSFORMS (dict[str, TableTransform]) for record filtering, transformation, multi-table splitting, and PyArrow schema overrides. |
+| `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
+| `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |

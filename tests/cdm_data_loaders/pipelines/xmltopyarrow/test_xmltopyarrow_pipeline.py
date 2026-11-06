@@ -14,7 +14,6 @@ from dlt.extract import DltResource
 import cdm_data_loaders.pipelines.xmltopyarrow.pipeline as xmltopyarrow_module
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import CtsSettings
-from cdm_data_loaders.core.transforms import TableTransform
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import (
     cli,
     run_xmltopyarrow_pipeline,
@@ -206,26 +205,28 @@ def test_run_xmltopyarrow_pipeline_pass_filters_and_splits_with_transforms_modul
 ) -> None:
     """The xmltopyarrow pipeline filters and splits elements into Arrow tables using TABLE_TRANSFORMS."""
     fs_backend.put("library.xml", TWO_BOOK_LIBRARY_XML.encode("utf-8"))
-    transform = TableTransform(
-        transform_fn=lambda row: (
+
+    def transform(row: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+        return (
             {}
             if row["_id"] == "1"
             else {
                 "book": [{"_id": row["_id"], "title": row["title"]}],
                 "book_id_only": [{"book_id": row["_id"]}],
             }
-        ),
-        table_to_schema_map={
-            "book": pa.schema([pa.field("_id", pa.string()), pa.field("title", pa.string())]),
-            "book_id_only": pa.schema([pa.field("book_id", pa.string())]),
-        },
-    )
+        )
+
+    output_schemas = {
+        "book": pa.schema([pa.field("_id", pa.string()), pa.field("title", pa.string())]),
+        "book_id_only": pa.schema([pa.field("book_id", pa.string())]),
+    }
     transforms_mod = register_temp_module(
         monkeypatch,
         "_test_xmltopyarrow_transforms",
         TABLE_TRANSFORMS={"book": transform},
+        OUTPUT_SCHEMAS=output_schemas,
     )
-    settings = settings_factory(transforms_module=transforms_mod)
+    settings = settings_factory(transforms_module=transforms_mod, output_schemas_module=transforms_mod)
 
     with (
         patch.object(xmltopyarrow_module, "build_per_file_filesystem_resource") as mock_build,

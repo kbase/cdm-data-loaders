@@ -1,7 +1,5 @@
 """Expected PyArrow table for maximal real-world example uniprot_search."""
 
-# ruff: noqa: INP001
-
 import datetime as dt
 
 import pyarrow as pa

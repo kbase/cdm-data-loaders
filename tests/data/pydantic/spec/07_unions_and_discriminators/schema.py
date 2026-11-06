@@ -1,7 +1,5 @@
 """Spec 07: Scalar unions, BaseModel unions, discriminated unions, and scalar + model unions."""
 
-# ruff: noqa: D101, INP001
-
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field

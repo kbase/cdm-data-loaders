@@ -1,7 +1,5 @@
 """Example 1: NCBI Datasets API Genome Annotation Report model."""
 
-# ruff: noqa: D101, INP001
-
 from enum import StrEnum
 
 from pydantic import BaseModel, Field

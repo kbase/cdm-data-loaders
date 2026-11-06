@@ -1,7 +1,5 @@
 """Expected PyArrow schema for real-world example uniprot_search."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

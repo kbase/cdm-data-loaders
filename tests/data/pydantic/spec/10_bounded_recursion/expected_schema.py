@@ -1,7 +1,5 @@
 """Expected PyArrow schema for 10_bounded_recursion."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

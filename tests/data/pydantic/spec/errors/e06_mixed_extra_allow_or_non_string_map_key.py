@@ -1,7 +1,5 @@
 """E6 fixture: Model with fixed fields and extra='allow'."""
 
-# ruff: noqa: D101, INP001
-
 from pydantic import BaseModel, ConfigDict
 
 

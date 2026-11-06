@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import Annotated, Final
 
 from frozendict import frozendict
-from pydantic import Field, FilePath, PositiveInt, StringConstraints
+from pydantic import AfterValidator, Field, FilePath, NonNegativeInt, PositiveInt, StringConstraints
 
 INPUT_MOUNT: Final[str] = "/input_dir"
 OUTPUT_MOUNT: Final[str] = "/output_dir"
@@ -42,6 +42,7 @@ LOG_CONFIG_FILE: Final[str] = "log_config_file"
 LOG_INTERVAL: Final[str] = "log_interval"
 MAX_TABLE_NESTING: Final[str] = "max_table_nesting"
 OUTPUT_DIR: Final[str] = "output_dir"
+OUTPUT_SCHEMAS_MODULE: Final[str] = "output_schemas_module"
 PRESERVE_TABLE_NESTING: Final[str] = "preserve_table_nesting"
 SAVE_RAW_RESPONSES: Final[str] = "save_raw_responses"
 TABLE_NAME: Final[str] = "table_name"
@@ -69,6 +70,7 @@ DEFAULTS = frozendict(
         LOG_CONFIG_FILE: None,
         LOG_INTERVAL: 1000,
         MAX_TABLE_NESTING: 0,
+        OUTPUT_SCHEMAS_MODULE: None,
         PRESERVE_TABLE_NESTING: False,
         SAVE_RAW_RESPONSES: False,
         TRANSFORMS_MODULE: None,
@@ -80,6 +82,8 @@ DEFAULTS = frozendict(
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 CharStr = Annotated[str, StringConstraints(min_length=1, max_length=1)]
+type TableNameKey = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, strict=True)]
+
 
 BatchSize = Annotated[
     PositiveInt,
@@ -140,17 +144,26 @@ LogInterval = Annotated[
     ),
 ]
 MaxTableNesting = Annotated[
-    int,
+    NonNegativeInt,
     Field(
         default=DEFAULTS[MAX_TABLE_NESTING],
         description="Maximum level of nesting of output datasets. For infinite nesting, set to 0.",
-        ge=0,
     ),
 ]
 OutputDir = Annotated[
     NonEmptyStr | None,
     Field(
         description="Location to save raw data files and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Has no effect on where the dlt destination loads data.",
+    ),
+]
+OutputSchemasModuleSpec = Annotated[
+    NonEmptyStr | None,
+    Field(
+        default=DEFAULTS[OUTPUT_SCHEMAS_MODULE],
+        description=(
+            "Optional Python module path exporting OUTPUT_SCHEMAS "
+            "(dict[str, pyarrow.Schema]) for PyArrow schema overrides."
+        ),
     ),
 ]
 PreserveTableNesting = Annotated[
@@ -167,15 +180,29 @@ SaveRawResponses = Annotated[
         description="Whether or not to save the raw responses from the API to the output directory.",
     ),
 ]
-TableName = Annotated[NonEmptyStr, Field(description="The name of the table to export parsed data to")]
+
+
+def _reject_reserved_table_name(value: str) -> str:
+    """Reject the reserved _rejected table name."""
+    if value == REJECTED_TABLE_NAME:
+        msg = f"Table name {REJECTED_TABLE_NAME!r} is reserved for pipeline error records."
+        raise ValueError(msg)
+    return value
+
+
+TableName = Annotated[
+    NonEmptyStr,
+    AfterValidator(_reject_reserved_table_name),
+    Field(description="The name of the table to export parsed data to"),
+]
 TransformsModuleSpec = Annotated[
     NonEmptyStr | None,
     Field(
         default=DEFAULTS[TRANSFORMS_MODULE],
         description=(
-            "Optional Python module path (or 'module:ATTR') exporting TABLE_TRANSFORMS "
-            "(dict[str, TableTransform]) for record filtering, transformation, multi-table "
-            "splitting, and PyArrow schema overrides."
+            "Optional Python module path exporting TABLE_TRANSFORMS "
+            "(dict[str, RecordTransformFn]) for record filtering, transformation, "
+            "and multi-table splitting."
         ),
     ),
 ]

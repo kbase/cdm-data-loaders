@@ -13,14 +13,12 @@ from dlt.extract import DltResource
 from dlt.extract.items import DataItemWithMeta
 from lxml.etree import Element, _Element, iterparse, tostring
 
-from cdm_data_loaders.core.fields import DEFAULT_XML_FILE_GLOB
-from cdm_data_loaders.core.settings import CtsSettings
-from cdm_data_loaders.core.transforms import resolve_schema_map, route_and_coerce_record
+from cdm_data_loaders.core.settings import CtsSettings, XmlIngestSettings
+from cdm_data_loaders.core.transforms import route_and_coerce_record
 from cdm_data_loaders.pipelines.core import build_filesystem_resource, make_per_file_reader
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
-from cdm_data_loaders.readers.xsd import make_xml_element_converter
-from cdm_data_loaders.utils.buffer import ArrowDictBuffer, DictBuffer, create_dict_buffer
+from cdm_data_loaders.utils.buffer import DictBuffer
 from cdm_data_loaders.utils.file_items import FileSource, open_binary, source_id, source_url
 
 logger: Logger = getLogger(__name__)
@@ -167,7 +165,7 @@ def _stream_and_buffer_xml_elements(  # noqa: PLR0913
     file_path: FileSource,
     xml_tag: str,
     log_interval: int,
-    buffer: DictBuffer | ArrowDictBuffer,
+    buffer: DictBuffer,
     buffer_element_fn: Callable[[Element], Iterable[DataItemWithMeta]],
     *,
     resolve_default_ns: bool = False,
@@ -188,48 +186,31 @@ def _stream_and_buffer_xml_elements(  # noqa: PLR0913
 def process_xml_file_to_pyarrow(settings: XmlToPyArrowSettings, file_path: FileSource) -> Generator[DataItemWithMeta]:
     """Convert XML elements to PyArrow table batches using an XSD schema.
 
-    Each matching element is converted using ``settings.xsd_schema`` and buffered into PyArrow
-    tables matching ``settings.pyarrow_schema`` (or the active `TableTransform`'s schema map).
-
-    Use process_xml_file for parsing functions that return data spread across several tables.
-
-    :param settings: pipeline config, including xml_tag, table_name, xsd_schema, pyarrow_schema, and buffer_size
-    :type settings: XmlToPyArrowSettings
+    :param settings: pipeline config, including xml_tag, table_name, xsd_schema, schema_map, and buffer_size
+    :type  settings: XmlToPyArrowSettings
     :param file_path: local path or dlt file item
-    :type file_path: FileSource
+    :type  file_path: FileSource
     :yield: pages of PyArrow tables
     :rtype: Generator[DataItemWithMeta]
     """
     transform = settings.get_table_transform(settings.table_name)
-    schema_map = resolve_schema_map(
-        settings.table_name,
-        transform=transform,
-        default_pyarrow_schema=settings.pyarrow_schema,
-    )
-    if schema_map is None:
-        err_msg = f"Expected PyArrow schema map for table {settings.table_name!r}"
-        raise RuntimeError(err_msg)
-    arrow_buffer = ArrowDictBuffer(
-        table_to_schema_map=schema_map,
+    schema_map = settings.schema_map
+    buffer = DictBuffer(
+        schema_map=schema_map,
         max_items=settings.buffer_size,
     )
-    convert_element = make_xml_element_converter(
-        settings.xsd_schema,
-        settings.xml_tag,
-        max_recursion_depth=settings.max_recursion_depth,
-    )
+    convert_element = settings.xml_element_converter
     yield from _stream_and_buffer_xml_elements(
         file_path=file_path,
         xml_tag=settings.xml_tag,
         log_interval=settings.log_interval,
-        buffer=arrow_buffer,
-        buffer_element_fn=lambda element: arrow_buffer.add_items(
+        buffer=buffer,
+        buffer_element_fn=lambda element: buffer.add_items(
             route_and_coerce_record(
                 convert_element(element),
                 settings.table_name,
                 transform=transform,
-                table_to_schema_map=schema_map,
-                coerce_untransformed=False,
+                schema_map=schema_map,
             )
         ),
         resolve_default_ns=True,
@@ -239,21 +220,16 @@ def process_xml_file_to_pyarrow(settings: XmlToPyArrowSettings, file_path: FileS
 def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: FileSource) -> Generator[DataItemWithMeta]:
     """Convert XML elements to dictionary form using ``xmltodict.parse``.
 
-    Each matching element is converted with ``xmltodict.parse`` and buffered as dicts
-    (or PyArrow tables when a `TableTransform` supplies `table_to_schema_map`).
-
-    Use process_xml_file for parsing functions that return data spread across several tables.
-
     :param settings: pipeline config, including xml_tag, table_name, and buffer_size
-    :type settings: XmlToDictSettings
+    :type  settings: XmlToDictSettings
     :param file_path: local path or dlt file item
-    :type file_path: FileSource
+    :type  file_path: FileSource
     :yield: pages of dictionary items
     :rtype: Generator[DataItemWithMeta]
     """
     transform = settings.get_table_transform(settings.table_name)
-    schema_map = resolve_schema_map(settings.table_name, transform=transform)
-    buffer = create_dict_buffer(settings.buffer_size, table_to_schema_map=schema_map)
+    schema_map = settings.schema_map
+    buffer = DictBuffer(max_items=settings.buffer_size, schema_map=schema_map)
 
     def _buffer_element(element: Element) -> Generator[DataItemWithMeta]:
         parsed_element = _parse_element_to_dict(element)
@@ -263,7 +239,7 @@ def process_xml_file_to_dict(settings: XmlToDictSettings, file_path: FileSource)
                     parsed_element,
                     settings.table_name,
                     transform=transform,
-                    table_to_schema_map=schema_map,
+                    schema_map=schema_map,
                 )
             )
 
@@ -324,7 +300,7 @@ process_xml_file_items = make_per_file_reader(
 
 
 def build_xml_file_resource(
-    settings: CtsSettings,
+    settings: XmlIngestSettings,
     xml_tag: str,
     parse_fn: Callable,
     resource_name: str,
@@ -333,8 +309,8 @@ def build_xml_file_resource(
 
     Files are read using the dlt filesystem source.
 
-    :param settings: pipeline config with input_dir, buffer_size and log_interval
-    :type  settings: CtsSettings
+    :param settings: pipeline config with input_dir, file_glob, loader_file_format, buffer_size and log_interval
+    :type  settings: XmlIngestSettings
     :param xml_tag: XML element tag to stream
     :type  xml_tag: str
     :param parse_fn: function for parsing the XML
@@ -347,11 +323,9 @@ def build_xml_file_resource(
     return build_filesystem_resource(
         settings,
         process_xml_file_items,
-        settings,
         xml_tag,
         parse_fn,
         name=resource_name,
-        file_glob=DEFAULT_XML_FILE_GLOB,
-        file_format="parquet",
+        file_format=str(settings.loader_file_format),
         parallelized=False,
     )

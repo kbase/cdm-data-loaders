@@ -1,16 +1,18 @@
 """DLT pipelines to import UniRef data into KBase CDM tables via XML-to-PyArrow."""
 
-from typing import Annotated, ClassVar, Final, Self
+from typing import Annotated, ClassVar, Final
 
-from pydantic import Field, model_validator
+import pyarrow as pa
+from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import LogInterval
+from cdm_data_loaders.core.registry import TransformRegistry
 from cdm_data_loaders.core.settings import (
     XML_CLI_SHORTCUTS,
     default_settings_with_shortcuts,
 )
-from cdm_data_loaders.parsers.uniprot.uniref import make_uniref_cdm_transform
+from cdm_data_loaders.parsers.uniprot.uniref import UNIREF_CDM_SCHEMA_MAP, make_uniref_cdm_transform
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import UniRefXmlToPyArrowSettings
@@ -33,6 +35,7 @@ class UniRefCdmSettings(UniRefXmlToPyArrowSettings):
     )
 
     transforms_module: ClassVar[str | None] = None
+    output_schemas_module: ClassVar[str | None] = None
 
     log_interval: Annotated[
         LogInterval,
@@ -41,11 +44,13 @@ class UniRefCdmSettings(UniRefXmlToPyArrowSettings):
         ),
     ]
 
-    @model_validator(mode="after")
-    def _configure_uniref_cdm_transform(self) -> Self:
-        """Bind the variant-specific UniRef CDM TableTransform to the entry table."""
-        self._table_transforms = {self.table_name: make_uniref_cdm_transform(self._PROTOCOL)}
-        return self
+    def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
+        """Bind the variant-specific UniRef CDM transform and schemas to the entry table."""
+        self._table_transforms = TransformRegistry(
+            registry={self.table_name: make_uniref_cdm_transform(self._PROTOCOL)}
+        )
+        self._unreconciled_output_schemas = UNIREF_CDM_SCHEMA_MAP
+        super()._resolve_settings_schema_map(default_pyarrow_schema=default_pyarrow_schema)
 
 
 class UniRef50CdmSettings(UniRefCdmSettings):

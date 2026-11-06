@@ -48,8 +48,8 @@ FILE_PATH_FLAGS: Final[frozenset[str]] = frozenset(
 # Flags whose values are Python module paths that may be dynamically created in sys.modules
 MODULE_PATH_FLAGS: Final[frozenset[str]] = frozenset(
     {
-        "--entity-models-module",
-        "--schema-files-module",
+        "--entity-models",
+        "--entity-schemas",
         "-m",
     }
 )

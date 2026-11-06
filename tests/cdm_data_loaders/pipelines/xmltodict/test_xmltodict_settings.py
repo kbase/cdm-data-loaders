@@ -8,7 +8,7 @@ from pydantic_settings import CliApp
 
 from cdm_data_loaders.core.fields import DEFAULTS
 from cdm_data_loaders.pipelines.xmltodict.settings import PIPELINE_NAME, XmlToDictSettings
-from tests.helpers import settings_to_argv
+from tests.helpers import register_temp_module, settings_to_argv
 
 
 def test_xmltodict_settings_pass_defaults(settings_factory: Callable[..., XmlToDictSettings]) -> None:
@@ -57,3 +57,17 @@ def test_xmltodict_settings_pass_xml_tag_shortcut(
     settings = CliApp.run(XmlToDictSettings, cli_args=argv)
     assert settings.file_glob == "*.xml.gz"
     assert settings.xml_tag == "entry"
+
+
+def test_xmltodict_settings_fail_unknown_transform_table_name(
+    settings_factory: Callable[..., XmlToDictSettings],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """XmlToDictSettings rejects TABLE_TRANSFORMS that reference an unknown table name."""
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_xmltodict_unknown_table_transforms",
+        TABLE_TRANSFORMS={"unknown_table": lambda r: {"unknown_table": [r]}},
+    )
+    with pytest.raises(ValidationError, match="Unknown table names"):
+        settings_factory(transforms_module=transforms_mod)

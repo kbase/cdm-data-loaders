@@ -1,7 +1,5 @@
 """Expected PyArrow table for 10_combinations."""
 
-# ruff: noqa: INP001
-
 import datetime as dt
 
 import pyarrow as pa

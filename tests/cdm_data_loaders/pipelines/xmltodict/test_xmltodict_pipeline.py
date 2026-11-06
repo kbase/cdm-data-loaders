@@ -10,7 +10,6 @@ import pytest
 
 import cdm_data_loaders.pipelines.xmltodict.pipeline as xmltodict_module
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
-from cdm_data_loaders.core.transforms import TableTransform
 from cdm_data_loaders.pipelines.xmltodict.pipeline import (
     cli,
     run_xmltodict_pipeline,
@@ -121,8 +120,9 @@ def test_run_xmltodict_pipeline_pass_filters_and_splits_with_transforms_module(
 ) -> None:
     """The xmltodict pipeline filters and splits elements when transforms_module is configured."""
     fs_backend.put("library.xml", TWO_BOOK_LIBRARY_XML.encode("utf-8"))
-    transform = TableTransform(
-        transform_fn=lambda row: (
+
+    def transform(row: dict) -> dict:
+        return (
             {}
             if row["book"]["_id"] == "1"
             else {
@@ -130,7 +130,7 @@ def test_run_xmltodict_pipeline_pass_filters_and_splits_with_transforms_module(
                 "book_id_only": [{"book_id": row["book"]["_id"]}],
             }
         )
-    )
+
     transforms_mod = register_temp_module(
         monkeypatch,
         "_test_xmltodict_transforms",

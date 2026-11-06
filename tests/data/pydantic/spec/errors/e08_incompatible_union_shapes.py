@@ -1,7 +1,5 @@
 """E8 fixture: Union mixing incompatible structural shapes (BaseModel and list)."""
 
-# ruff: noqa: D101, INP001
-
 from pydantic import BaseModel
 
 

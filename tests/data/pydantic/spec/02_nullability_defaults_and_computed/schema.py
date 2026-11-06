@@ -1,7 +1,5 @@
 """Spec 02: Field nullability, non-None defaults, default_factory, and @computed_field."""
 
-# ruff: noqa: D101, D102, INP001
-
 from functools import partial
 
 from pydantic import BaseModel, Field, computed_field

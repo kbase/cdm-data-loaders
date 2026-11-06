@@ -294,7 +294,7 @@ Explicit registration example:
 
 ```python
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
-from cdm_data_loaders.converters.jsonschema_to_pyspark.converter import JSONSchemaToPySpark
+from cdm_data_loaders.converters.jsonschema_to_pyspark import JSONSchemaToPySpark
 
 registry = DEFAULT_EXTENSIONS.register(
     ExtensionSpec(

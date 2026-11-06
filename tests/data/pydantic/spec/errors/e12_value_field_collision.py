@@ -1,7 +1,5 @@
 """E12 fixture: Scalar + model union where the model branch declares '_value'."""
 
-# ruff: noqa: D101, INP001
-
 from pydantic import BaseModel
 
 

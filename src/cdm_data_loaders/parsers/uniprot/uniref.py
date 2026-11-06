@@ -21,7 +21,7 @@ from typing import Any, Final
 import pyarrow as pa
 
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-from cdm_data_loaders.core.transforms import TableTransform
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformFn
 
 UNIREF_URL = "http://uniprot.org/uniref"
 ENTRY_XML_TAG = f"{{{UNIREF_URL}}}entry"
@@ -70,11 +70,13 @@ CLUSTERMEMBER_SCHEMA: Final[pa.Schema] = pa.schema(
     ]
 )
 
-UNIREF_CDM_SCHEMA_MAP: Final[dict[str, pa.Schema]] = {
-    "cluster": CLUSTER_SCHEMA,
-    "entity": ENTITY_SCHEMA,
-    "clustermember": CLUSTERMEMBER_SCHEMA,
-}
+UNIREF_CDM_SCHEMA_MAP: Final[ArrowSchemaRegistry] = ArrowSchemaRegistry(
+    registry={
+        "cluster": CLUSTER_SCHEMA,
+        "entity": ENTITY_SCHEMA,
+        "clustermember": CLUSTERMEMBER_SCHEMA,
+    }
+)
 
 logger: Logger = getLogger(__name__)
 
@@ -209,19 +211,18 @@ def parse_uniref_entry(
 def make_uniref_cdm_transform(
     uniref_variant: str,
     timestamp: dt.datetime | None = None,
-) -> TableTransform:
-    """Create a ``TableTransform`` that transforms XSD-parsed UniRef ``entry`` dicts into CDM tables.
+) -> RecordTransformFn:
+    """Create a ``RecordTransformFn`` that transforms XSD-parsed UniRef ``entry`` dicts into CDM tables.
 
     :param uniref_variant: protocol label for the UniRef variant (e.g. ``"UniRef 50"``)
+    :type uniref_variant: str
     :param timestamp: UTC timestamp assigned to ``entity.updated`` (defaults to ``datetime.now(UTC)``)
-    :return: ``TableTransform`` with ``transform_fn`` and ``UNIREF_CDM_SCHEMA_MAP``
+    :type timestamp: dt.datetime | None
+    :return: ``RecordTransformFn`` transforming ``entry`` records into CDM table rows
     """
     resolved_ts = timestamp if timestamp is not None else dt.datetime.now(dt.UTC)
-    return TableTransform(
-        transform_fn=lambda entry: parse_uniref_entry(
-            entry=entry,
-            timestamp=resolved_ts,
-            uniref_variant=uniref_variant,
-        ),
-        table_to_schema_map=UNIREF_CDM_SCHEMA_MAP,
+    return lambda entry: parse_uniref_entry(
+        entry=entry,
+        timestamp=resolved_ts,
+        uniref_variant=uniref_variant,
     )

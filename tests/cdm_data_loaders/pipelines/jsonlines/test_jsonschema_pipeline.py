@@ -1,49 +1,41 @@
-"""Tests for JSON Schema validation, PyArrow conversion, and rejected-record routing."""
+"""Tests for the JSON Schema validation JSONL pipeline."""
 
 import json
 from collections.abc import Callable
-from datetime import UTC, date, datetime, time
-from decimal import Decimal
+from datetime import date
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 import pyarrow as pa
 import pytest
-from pydantic import ValidationError
 
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
-    JSONSchemaToPyArrowError,
-    coerce_record_for_pyarrow,
-)
-from cdm_data_loaders.core.transforms import REJECTED_PYARROW_SCHEMA, TableTransform
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
     _make_resolve_error,
     build_entity_resource,
-    build_pyarrow_schemas,
-    convert_schema_to_pyarrow,
-    load_entity_schemas,
     run_jsonlines_pipeline,
 )
-from cdm_data_loaders.pipelines.jsonlines.settings import JsonlJsonschemaIngestSettings
+from cdm_data_loaders.pipelines.jsonlines.settings import (
+    JsonlJsonschemaIngestSettings,
+    convert_schema_to_pyarrow,
+)
 from cdm_data_loaders.readers.jsonlines import make_page_router
-from cdm_data_loaders.utils.jsonschema.dereferencer import DereferencingError
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
 from tests.cdm_data_loaders.pipelines.helpers import assert_run_ok
 from tests.cdm_data_loaders.pipelines.jsonlines.conftest import make_item
-from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas import (
-    ENTITY_SCHEMAS as DATASET_ENTITY_SCHEMAS,
-)
 from tests.helpers import register_temp_module
 
 
 def make_router(schema: dict[str, Any], buffer_size: int = 2) -> Callable[[list[dict[str, Any]]], Any]:
     """Build the router the jsonschema pipeline uses for the widget table."""
-    pyarrow_schema = convert_schema_to_pyarrow(schema)
+    validated_schema = ValidatedSchema(jsonschema=schema)
+    pyarrow_schema = convert_schema_to_pyarrow(validated_schema)
     return make_page_router(
         "widget",
         buffer_size,
-        _make_resolve_error(schema),
-        pyarrow_schema=pyarrow_schema,
+        _make_resolve_error(validated_schema),
+        schema_map=ArrowSchemaRegistry(registry={"widget": pyarrow_schema}),
     )
 
 
@@ -90,387 +82,7 @@ def test_make_page_router_fail_uses_declared_draft() -> None:
     assert [result.meta.table_name for result in results] == ["_rejected"]
 
 
-def test_load_entity_schemas_pass_returns_registry(
-    schema_module_factory: Callable[[object], str], widget_schema: dict[str, Any]
-) -> None:
-    """Valid schemas from multiple supported drafts are returned unchanged."""
-    registry = {
-        "widget": widget_schema,
-        "older": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "object"},
-    }
-    assert load_entity_schemas(schema_module_factory(registry)) is registry
-
-
-@pytest.mark.parametrize(
-    ("registry", "message"),
-    [
-        pytest.param(None, "non-empty ENTITY_SCHEMAS", id="none"),
-        pytest.param({}, "non-empty ENTITY_SCHEMAS", id="empty"),
-        pytest.param([], "non-empty ENTITY_SCHEMAS", id="list"),
-        pytest.param({"": {}}, "non-empty table names", id="empty-table"),
-        pytest.param({1: {}}, "non-empty table names", id="non-string-table"),
-        pytest.param({"widget": {}}, r"missing the \$schema keyword", id="missing-draft"),
-        pytest.param({"widget": {"$schema": "https://example.invalid/schema"}}, "Unsupported", id="unknown-draft"),
-    ],
-)
-def test_load_entity_schemas_fail_malformed_registry(
-    schema_module_factory: Callable[[object], str], registry: object, message: str
-) -> None:
-    """Malformed registries and unsupported drafts fail before extraction."""
-    with pytest.raises(ValueError, match=message):
-        load_entity_schemas(schema_module_factory(registry))
-
-
-@pytest.mark.parametrize(
-    "schema",
-    [pytest.param(True, id="boolean-schema"), pytest.param({"$schema": []}, id="non-string-draft")],
-)
-def test_load_entity_schemas_fail_invalid_types(schema_module_factory: Callable[[object], str], schema: object) -> None:
-    """Schema dictionaries and draft declarations must have the documented types."""
-    with pytest.raises(TypeError, match="JSON Schema for widget must"):
-        load_entity_schemas(schema_module_factory({"widget": schema}))
-
-
-def test_load_entity_schemas_fail_missing_registry(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A module must explicitly provide ENTITY_SCHEMAS."""
-    module_name = register_temp_module(monkeypatch, "_test_missing_registry")
-    with pytest.raises(ValueError, match="non-empty ENTITY_SCHEMAS"):
-        load_entity_schemas(module_name)
-
-
-def test_load_entity_schemas_fail_missing_module() -> None:
-    """Import failures retain their original exception."""
-    with pytest.raises(ModuleNotFoundError):
-        load_entity_schemas(f"_missing_schema_module_{uuid4().hex}")
-
-
-def test_load_entity_schemas_fail_reports_all_invalid_schemas(
-    schema_module_factory: Callable[[object], str], widget_schema: dict[str, Any]
-) -> None:
-    """Schema errors identify every failing table, not just the first."""
-    module_name = schema_module_factory(
-        {"first": {**widget_schema, "type": "invalid"}, "second": {**widget_schema, "required": 7}}
-    )
-    with pytest.raises(RuntimeError, match="errors were found") as error:
-        load_entity_schemas(module_name)
-    assert all(text in str(error.value) for text in [module_name, "first:", "second:"])
-
-
-def test_convert_schema_to_pyarrow_pass_flat_and_nested_schema(widget_schema: dict[str, Any]) -> None:
-    """Validated JSON Schemas convert to PyArrow schemas with expected types and nullability."""
-    pa_schema = convert_schema_to_pyarrow(widget_schema)
-
-    assert pa_schema == pa.schema(
-        [
-            pa.field("widget_id", pa.string(), nullable=False),
-            pa.field("count", pa.int64(), nullable=False),
-            pa.field("collected", pa.date32(), nullable=True),
-            pa.field("label", pa.string(), nullable=True),
-            pa.field(
-                "nested",
-                pa.struct([pa.field("tags", pa.list_(pa.string()), nullable=True)]),
-                nullable=True,
-            ),
-        ]
-    )
-
-
-def test_convert_schema_to_pyarrow_pass_dereferences_root_and_nested_refs() -> None:
-    """Schemas using root $ref, nested $defs, and allOf dereference before PyArrow conversion."""
-    draft7_root_ref_schema: dict[str, Any] = {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "$ref": "#/definitions/RootItem",
-        "definitions": {
-            "Base": {
-                "type": "object",
-                "required": ["id"],
-                "properties": {"id": {"type": "string"}},
-            },
-            "RootItem": {
-                "allOf": [
-                    {"$ref": "#/definitions/Base"},
-                    {
-                        "type": "object",
-                        "properties": {"score": {"type": "number", "multipleOf": 0.01}},
-                    },
-                ]
-            },
-        },
-    }
-
-    pa_schema = convert_schema_to_pyarrow(draft7_root_ref_schema)
-    assert pa_schema == pa.schema(
-        [
-            pa.field("id", pa.string(), nullable=False),
-            pa.field("score", pa.decimal128(38, 2), nullable=True),
-        ]
-    )
-
-    dataset_pa_schema = convert_schema_to_pyarrow(DATASET_ENTITY_SCHEMAS["dataset"])
-    assert "accession" in dataset_pa_schema.names
-    assert dataset_pa_schema.field("accession").type == pa.string()
-
-
-@pytest.mark.parametrize(
-    "schema",
-    [
-        pytest.param(
-            {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {}},
-            id="empty-properties",
-        ),
-        pytest.param(
-            {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"},
-            id="missing-properties",
-        ),
-    ],
-)
-def test_convert_schema_to_pyarrow_pass_empty_object_schema(schema: dict[str, Any]) -> None:
-    """Object schemas with empty or omitted properties convert to an empty PyArrow schema."""
-    assert convert_schema_to_pyarrow(schema) == pa.schema([])
-
-
-@pytest.mark.parametrize(
-    ("schema", "exc_type"),
-    [
-        pytest.param(
-            {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": "object",
-                "properties": {"item": {"$ref": "#/$defs/Missing"}},
-            },
-            DereferencingError,
-            id="unresolvable-ref",
-        ),
-        pytest.param(
-            {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "$ref": "#/$defs/Loop",
-                "$defs": {"Loop": {"$ref": "#/$defs/Loop"}},
-            },
-            DereferencingError,
-            id="circular-ref",
-        ),
-        pytest.param(
-            {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": "string",
-            },
-            JSONSchemaToPyArrowError,
-            id="non-object-root",
-        ),
-        pytest.param(
-            {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": ["object", "null"],
-                "properties": {"id": {"type": "string"}},
-            },
-            JSONSchemaToPyArrowError,
-            id="nullable-object-root",
-        ),
-        pytest.param(
-            {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": "object",
-                "additionalProperties": {"type": "string"},
-            },
-            JSONSchemaToPyArrowError,
-            id="root-map-without-properties",
-        ),
-        pytest.param(
-            {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": "object",
-                "properties": {"val": {"type": "number", "multipleOf": Decimal("1e-39")}},
-            },
-            JSONSchemaToPyArrowError,
-            id="decimal-scale-exceeds-precision",
-        ),
-        pytest.param(
-            {
-                "type": "object",
-                "properties": {"id": {"type": "string"}},
-            },
-            JSONSchemaToPyArrowError,
-            id="missing-schema-draft",
-        ),
-    ],
-)
-def test_convert_schema_to_pyarrow_fail_invalid_schemas(schema: dict[str, Any], exc_type: type[Exception]) -> None:
-    """Dereferencing and PyArrow conversion failures raise their documented exception types."""
-    with pytest.raises(exc_type):
-        convert_schema_to_pyarrow(schema)
-
-
-def test_build_pyarrow_schemas_pass_multiple_and_empty_registries(widget_schema: dict[str, Any]) -> None:
-    """Valid registries convert every table to a PyArrow schema, and an empty mapping returns empty."""
-    assert build_pyarrow_schemas({}) == {}
-    schemas = build_pyarrow_schemas({"widget": widget_schema, "dataset": DATASET_ENTITY_SCHEMAS["dataset"]})
-    assert set(schemas) == {"widget", "dataset"}
-    assert schemas["widget"] == convert_schema_to_pyarrow(widget_schema)
-    assert "accession" in schemas["dataset"].names
-
-
-def test_build_pyarrow_schemas_fail_reports_all_unconvertible_schemas() -> None:
-    """Conversion errors across multiple tables are aggregated into a single RuntimeError."""
-    table_to_schema: dict[str, dict[str, Any]] = {
-        "broken_ref": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "object",
-            "properties": {"item": {"$ref": "#/$defs/Missing"}},
-        },
-        "non_struct_root": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "string",
-        },
-    }
-
-    with pytest.raises(RuntimeError, match="converting schemas to PyArrow") as error:
-        build_pyarrow_schemas(table_to_schema)
-    assert all(name in str(error.value) for name in ["broken_ref:", "non_struct_root:"])
-
-
-def test_coerce_record_for_pyarrow_pass_temporal_decimal_and_nested_types() -> None:
-    """JSON-parsed values are coerced to match temporal, decimal, numeric, struct, list, map, and string fields."""
-    pa_schema = pa.schema(
-        [
-            pa.field("day", pa.date32()),
-            pa.field("ts_z", pa.timestamp("us", tz="UTC")),
-            pa.field("ts_naive", pa.timestamp("us", tz="UTC")),
-            pa.field("tod", pa.time64("us")),
-            pa.field("price", pa.decimal128(38, 2)),
-            pa.field("ratio", pa.float64()),
-            pa.field("whole", pa.int64()),
-            pa.field("collapsed_obj", pa.string()),
-            pa.field("collapsed_num", pa.string()),
-            pa.field("nested", pa.struct([pa.field("when", pa.date32())])),
-            pa.field("items", pa.list_(pa.decimal128(38, 1))),
-            pa.field("attrs", pa.map_(pa.string(), pa.date32())),
-        ]
-    )
-    raw_record: dict[str, Any] = {
-        "day": "2024-02-29",
-        "ts_z": "2024-02-29T12:30:00Z",
-        "ts_naive": "2024-02-29T12:30:00",
-        "tod": "08:15:30",
-        "price": 19.95,
-        "ratio": 2,
-        "whole": 7.0,
-        "collapsed_obj": {"a": 1},
-        "collapsed_num": 42,
-        "nested": {"when": "2024-03-01", "extra": "dropped"},
-        "items": [1.5, 2],
-        "attrs": {"start": "2024-01-01"},
-        "undeclared_top": "dropped",
-    }
-
-    coerced = coerce_record_for_pyarrow(raw_record, pa_schema)
-
-    assert coerced == {
-        "day": date(2024, 2, 29),
-        "ts_z": datetime(2024, 2, 29, 12, 30, tzinfo=UTC),
-        "ts_naive": datetime(2024, 2, 29, 12, 30, tzinfo=UTC),
-        "tod": time(8, 15, 30),
-        "price": Decimal("19.95"),
-        "ratio": 2.0,
-        "whole": 7,
-        "collapsed_obj": json.dumps({"a": 1}),
-        "collapsed_num": "42",
-        "nested": {"when": date(2024, 3, 1)},
-        "items": [Decimal("1.5"), Decimal(2)],
-        "attrs": {"start": date(2024, 1, 1)},
-    }
-    table = pa.Table.from_pylist([coerced], schema=pa_schema)
-    assert table.num_rows == 1
-    assert table.schema == pa_schema
-
-
-def test_coerce_record_for_pyarrow_pass_nulls_empty_and_boundary_values() -> None:
-    """Nulls, empty containers, zero/negative numbers, tz-naive timestamps, large types, and pre-coerced values pass."""
-    pa_schema = pa.schema(
-        [
-            pa.field("day", pa.date32()),
-            pa.field("ts_naive_target", pa.timestamp("us")),
-            pa.field("tod", pa.time64("us")),
-            pa.field("zero_dec", pa.decimal128(38, 2)),
-            pa.field("neg_dec", pa.decimal128(38, 2)),
-            pa.field("neg_float", pa.float64()),
-            pa.field("neg_int", pa.int64()),
-            pa.field("large_text", pa.large_string()),
-            pa.field("collapsed_list", pa.large_string()),
-            pa.field("nested", pa.struct([pa.field("when", pa.date32())])),
-            pa.field("large_items", pa.large_list(pa.decimal128(38, 1))),
-            pa.field("attrs", pa.map_(pa.string(), pa.date32())),
-        ]
-    )
-
-    assert coerce_record_for_pyarrow({}, pa_schema) == {}
-
-    all_nulls = dict.fromkeys(pa_schema.names)
-    assert coerce_record_for_pyarrow(all_nulls, pa_schema) == all_nulls
-
-    boundary_record: dict[str, Any] = {
-        "day": date(2024, 1, 1),
-        "ts_naive_target": "2024-02-29T12:30:00",
-        "tod": time(0, 0, 0),
-        "zero_dec": 0,
-        "neg_dec": "-0.05",
-        "neg_float": -3,
-        "neg_int": -7.0,
-        "large_text": "already-string",
-        "collapsed_list": [1, "two"],
-        "nested": {"when": None},
-        "large_items": [None, Decimal("-1.5")],
-        "attrs": {"none_val": None},
-    }
-    coerced = coerce_record_for_pyarrow(boundary_record, pa_schema)
-    assert coerced == {
-        "day": date(2024, 1, 1),
-        "ts_naive_target": datetime(2024, 2, 29, 12, 30),  # noqa: DTZ001
-        "tod": time(0, 0, 0),
-        "zero_dec": Decimal(0),
-        "neg_dec": Decimal("-0.05"),
-        "neg_float": -3.0,
-        "neg_int": -7,
-        "large_text": "already-string",
-        "collapsed_list": json.dumps([1, "two"]),
-        "nested": {"when": None},
-        "large_items": [None, Decimal("-1.5")],
-        "attrs": {"none_val": None},
-    }
-    rows_to_write = [coerced, all_nulls]
-    table = pa.Table.from_pylist(rows_to_write, schema=pa_schema)
-    assert table.num_rows == len(rows_to_write)
-
-    empty_containers = {"nested": {}, "large_items": [], "attrs": {}}
-    assert coerce_record_for_pyarrow(empty_containers, pa_schema) == empty_containers
-
-
-def test_coerce_record_for_pyarrow_pass_preserves_boolean_and_non_integral_float_guards() -> None:
-    """Booleans are not coerced to numeric/decimal types, and non-integral floats are not truncated to int."""
-    pa_schema = pa.schema(
-        [
-            pa.field("dec", pa.decimal128(38, 2)),
-            pa.field("flt", pa.float64()),
-            pa.field("integer_from_bool", pa.int64()),
-            pa.field("integer_from_frac", pa.int64()),
-        ]
-    )
-    fractional_value = 7.5
-    raw = {
-        "dec": True,
-        "flt": False,
-        "integer_from_bool": True,
-        "integer_from_frac": fractional_value,
-    }
-    coerced = coerce_record_for_pyarrow(raw, pa_schema)
-    assert coerced == raw
-    assert isinstance(coerced["dec"], bool)
-    assert isinstance(coerced["flt"], bool)
-    assert isinstance(coerced["integer_from_bool"], bool)
-    assert coerced["integer_from_frac"] == fractional_value
-
-
-def test_make_page_router_pass_preserves_records_and_empty_pages(widget_schema: dict[str, Any]) -> None:
+def test_make_page_router_pass_preserves_records_without_inserting_defaults(widget_schema: dict[str, Any]) -> None:
     """Valid data is coerced into a PyArrow Table matching the schema without inserted defaults."""
     record = {
         "widget_id": "a",
@@ -484,7 +96,7 @@ def test_make_page_router_pass_preserves_records_and_empty_pages(widget_schema: 
     assert len(results) == 1
     assert results[0].meta.table_name == "widget"
     assert isinstance(results[0].data, pa.Table)
-    assert results[0].data.schema == convert_schema_to_pyarrow(widget_schema)
+    assert results[0].data.schema == convert_schema_to_pyarrow(ValidatedSchema(jsonschema=widget_schema))
     assert results[0].data.to_pylist() == [
         {
             "widget_id": "a",
@@ -495,6 +107,11 @@ def test_make_page_router_pass_preserves_records_and_empty_pages(widget_schema: 
         }
     ]
     assert "label" not in record
+
+
+def test_make_page_router_pass_empty_page(widget_schema: dict[str, Any]) -> None:
+    """An empty page yields no routed output items."""
+    validate = make_router(widget_schema)
     assert list(validate([])) == []
 
 
@@ -580,10 +197,11 @@ def test_build_entity_resource_pass_reads_selected_files(
         (entity_dir / filename).write_text(contents, encoding="utf-8")
     (entity_dir / "ignored.txt").write_text("not JSON", encoding="utf-8")
 
-    resource = build_entity_resource("widget", widget_schema, settings)
+    resource = build_entity_resource("widget", ValidatedSchema(jsonschema=widget_schema), settings)
     rows = list(resource)
 
-    assert len(rows) == 2
+    expected_page_count = 2
+    assert len(rows) == expected_page_count
     assert all(isinstance(item, pa.Table) for item in rows)
     valid_table = next(item for item in rows if "widget_id" in item.schema.names)
     rejected_table = next(item for item in rows if item.schema == REJECTED_PYARROW_SCHEMA)
@@ -592,7 +210,7 @@ def test_build_entity_resource_pass_reads_selected_files(
     assert rejected_table.to_pylist() == [
         {
             "table_name": "widget",
-            "source_file": filename,
+            "source_file": f"widget/{filename}",
             "line_no": 4,
             "raw_record": "{broken",
             "error_detail": expected_error,
@@ -610,7 +228,7 @@ def test_build_entity_resource_pass_no_files(
     settings = schema_settings_factory()
     if create_directory:
         (Path(settings.input_dir) / "widget").mkdir()
-    assert list(build_entity_resource("widget", widget_schema, settings)) == []
+    assert list(build_entity_resource("widget", ValidatedSchema(jsonschema=widget_schema), settings)) == []
 
 
 def test_run_jsonlines_pipeline_pass_loads_valid_and_rejected_rows(
@@ -633,42 +251,14 @@ def test_run_jsonlines_pipeline_pass_loads_valid_and_rejected_rows(
     assert (dataset_dir / "_rejected").is_dir()
 
 
-def test_run_jsonlines_pipeline_fail_unconvertible_pyarrow_schema(
-    schema_module_factory: Callable[[object], str],
-    schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
-) -> None:
-    """Valid JSON Schemas that cannot convert to PyArrow fail before creating pipeline output."""
-    module_name = schema_module_factory(
-        {
-            "map_root": {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": "object",
-                "additionalProperties": {"type": "string"},
-            }
-        }
-    )
-    settings = schema_settings_factory(schema_files_module=module_name)
-    with pytest.raises(RuntimeError, match="converting schemas to PyArrow"):
-        run_jsonlines_pipeline(settings)
-    assert list(Path(settings.output_dir).iterdir()) == []
-
-
-@pytest.mark.parametrize("buffer_size", [0, -1], ids=["zero", "negative"])
-def test_settings_fail_invalid_buffer_size(
-    schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings], buffer_size: int
-) -> None:
-    """Settings reject nonpositive buffers before resource construction."""
-    with pytest.raises(ValidationError, match="buffer_size"):
-        schema_settings_factory(buffer_size=buffer_size)
-
-
 def test_run_jsonlines_pipeline_pass_filters_and_splits_records_with_transforms_module(
     schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """run_jsonlines_pipeline filters rows and splits records across tables using TABLE_TRANSFORMS."""
-    transform = TableTransform(
-        transform_fn=lambda row: (
+    """run_jsonlines_pipeline filters rows and splits records across tables using TABLE_TRANSFORMS and OUTPUT_SCHEMAS."""
+
+    def transform(row: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+        return (
             {}
             if row["count"] == 0
             else {
@@ -677,22 +267,26 @@ def test_run_jsonlines_pipeline_pass_filters_and_splits_records_with_transforms_
                     {"widget_id": row["widget_id"], "tag": tag} for tag in (row.get("nested") or {}).get("tags", [])
                 ],
             }
+        )
+
+    output_schemas = {
+        "widget": pa.schema(
+            [pa.field("widget_id", pa.string(), nullable=False), pa.field("count", pa.int64(), nullable=False)]
         ),
-        table_to_schema_map={
-            "widget": pa.schema(
-                [pa.field("widget_id", pa.string(), nullable=False), pa.field("count", pa.int64(), nullable=False)]
-            ),
-            "widget_tag": pa.schema(
-                [pa.field("widget_id", pa.string(), nullable=False), pa.field("tag", pa.string(), nullable=False)]
-            ),
-        },
-    )
+        "widget_tag": pa.schema(
+            [pa.field("widget_id", pa.string(), nullable=False), pa.field("tag", pa.string(), nullable=False)]
+        ),
+    }
     transforms_mod = register_temp_module(
         monkeypatch,
         "_test_jsonschema_transforms",
         TABLE_TRANSFORMS={"widget": transform},
+        OUTPUT_SCHEMAS=output_schemas,
     )
-    settings = schema_settings_factory(transforms_module=transforms_mod)
+    settings = schema_settings_factory(
+        transforms_module=transforms_mod,
+        output_schemas_module=transforms_mod,
+    )
     entity_dir = Path(settings.input_dir) / "widget"
     entity_dir.mkdir()
     filtered_record = {"widget_id": "w0", "count": 0, "nested": {"tags": ["ignored"]}}
@@ -709,18 +303,3 @@ def test_run_jsonlines_pipeline_pass_filters_and_splits_records_with_transforms_
     assert sorted(dataset.widget_tag.df()["tag"].tolist()) == ["alpha", "beta"]
     assert len(dataset.table("_rejected").df()) == 1
     assert dataset.table("_rejected").df().iloc[0]["table_name"] == "widget"
-
-
-def test_run_jsonlines_pipeline_fail_unknown_transform_table_name(
-    schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """run_jsonlines_pipeline fails before running when TABLE_TRANSFORMS references an unknown table."""
-    transforms_mod = register_temp_module(
-        monkeypatch,
-        "_test_unknown_table_transforms",
-        TABLE_TRANSFORMS={"unknown_table": TableTransform(transform_fn=lambda r: {"unknown_table": [r]})},
-    )
-    settings = schema_settings_factory(transforms_module=transforms_mod)
-    with pytest.raises(ValueError, match="Unknown table names"):
-        run_jsonlines_pipeline(settings)

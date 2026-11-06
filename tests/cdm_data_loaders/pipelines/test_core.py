@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from pydantic_settings import SettingsError
 from requests import RequestException
 
-from cdm_data_loaders.core.fields import OUTPUT_DIR, PIPELINE_DIR_NAME, REJECTED_TABLE_NAME, USE_DESTINATION
+from cdm_data_loaders.core.fields import OUTPUT_DIR, PIPELINE_DIR_NAME, USE_DESTINATION
 from cdm_data_loaders.core.settings import (
     CdmDataLoadersBase,
     CtsSettings,
@@ -39,6 +39,8 @@ from cdm_data_loaders.pipelines.core import (
     PipelineCli,
     build_file_ingest_kwargs,
     build_filesystem_resource,
+    build_per_file_filesystem_resource,
+    make_per_file_reader,
     run_cli,
     run_pipeline,
     send_slack_message_carefully,
@@ -67,6 +69,7 @@ ALL_JOBS_COMPLETED: Final[str] = "All pipeline jobs completed successfully"
 FAILED_JOBS_WARNING: Final[str] = "Pipeline contains failed jobs"
 
 SETTINGS_CLASSES: Final[list[type[CdmDataLoadersBase]]] = [LoggerSettings, LocalInputOutputSettings, CtsSettings]
+SETTINGS_CLASS_IDS: Final[list[str]] = ["logger-settings", "local-io-settings", "cts-settings"]
 
 
 def tiny_resource() -> DltResource:
@@ -153,7 +156,7 @@ def test_send_slack_message_carefully_params_fail(
     ]
 
 
-@pytest.mark.parametrize("markdown", [True, False, None])
+@pytest.mark.parametrize("markdown", [True, False, None], ids=["markdown-true", "markdown-false", "markdown-default"])
 def test_send_slack_message_carefully_markdown_params(markdown: bool | None, slack_mock: MagicMock) -> None:
     """The message is stripped and sent once, with the is_markdown flag passed through."""
     if markdown is None:
@@ -164,7 +167,11 @@ def test_send_slack_message_carefully_markdown_params(markdown: bool | None, sla
     slack_mock.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, bool(markdown))
 
 
-@pytest.mark.parametrize("exc", [RequestException("Oh no! An error!"), ValueError("bad payload")])
+@pytest.mark.parametrize(
+    "exc",
+    [RequestException("Oh no! An error!"), ValueError("bad payload")],
+    ids=["request-exception", "value-error"],
+)
 def test_send_slack_message_fail_error_oh_no(
     exc: Exception, slack_mock: MagicMock, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -240,7 +247,7 @@ def _settings_kwargs_for(settings_cls: type[CdmDataLoadersBase], tmp_path: Path)
     return {}
 
 
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES, ids=SETTINGS_CLASS_IDS)
 def test_run_cli_calls_settings_cls_with_cli_args(settings_cls: type[CtsSettings], tmp_path: Path) -> None:
     """Ensure run_cli instantiates the supplied settings class via CliApp.run."""
     captured: list[CtsSettings] = []
@@ -280,7 +287,7 @@ def test_run_cli_pass_does_not_read_dlt_config(tmp_path: Path, *, dlt_config_set
     assert pipeline_fn_config[0].use_destination == LOCAL_FS
 
 
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES, ids=SETTINGS_CLASS_IDS)
 def test_run_cli_returns_pipeline_fn_result_verbatim(settings_cls: type[CtsSettings], tmp_path: Path) -> None:
     """run_cli dispatches the instantiated settings to pipeline_fn and returns its result verbatim."""
     sentinel = {"loads_ids": ["load-1"]}
@@ -298,7 +305,7 @@ def test_run_cli_returns_pipeline_fn_result_verbatim(settings_cls: type[CtsSetti
 
 
 # error handling: SettingsError/ValidationError/ValueError
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES, ids=SETTINGS_CLASS_IDS)
 def test_run_cli_reraises_settings_error(
     settings_cls: type[CtsSettings],
     caplog: pytest.LogCaptureFixture,
@@ -318,7 +325,7 @@ def test_run_cli_reraises_settings_error(
 
 
 # error handling: unexpected Exception
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES, ids=SETTINGS_CLASS_IDS)
 def test_run_cli_reraises_unexpected_exception(
     settings_cls: type[CtsSettings], caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -345,8 +352,9 @@ def test_run_cli_reraises_unexpected_exception(
         SettingsError("bad"),
         ValueError("bad value"),
     ],
+    ids=["settings-error", "value-error"],
 )
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES)
+@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES, ids=SETTINGS_CLASS_IDS)
 def test_run_cli_pipeline_fn_not_called_on_settings_instantiation_error(
     exc: Exception,
     settings_cls: type[CtsSettings],
@@ -483,7 +491,7 @@ def test_run_pipeline_returns_none_on_pipeline_run_failure(
     assert report_data["started"] <= report_data["finished"]
 
 
-@pytest.mark.parametrize("slack_configured", [True, False])
+@pytest.mark.parametrize("slack_configured", [True, False], ids=["slack-configured", "slack-unconfigured"])
 def test_run_pipeline_slack_configured(
     dlt_test_settings: CtsSettings,
     slack_mock: MagicMock,
@@ -512,7 +520,7 @@ def test_run_pipeline_slack_configured(
     assert ALL_JOBS_COMPLETED in caplog.messages
 
 
-@pytest.mark.parametrize("slack_configured", [True, False])
+@pytest.mark.parametrize("slack_configured", [True, False], ids=["slack-configured", "slack-unconfigured"])
 def test_run_pipeline_slack_configured_on_failure(
     dlt_test_settings: CtsSettings,
     slack_mock: MagicMock,
@@ -603,49 +611,32 @@ def test_run_pipeline_passes_kwargs_to_real_pipeline(
 
 # load_info saved as part of the dataset
 def test_run_pipeline_saves_load_info_to_dataset(dlt_test_settings: CtsSettings, destination_bucket: Path) -> None:
-    """The pipeline's load_info is saved as a table in the same dataset."""
+    """The pipeline's load_info is saved as a flat table in the same dataset and returns the original import result."""
     load_info = run_pipeline(dlt_test_settings, tiny_resource())
 
     assert load_info is not None
     assert not load_info.has_failed_jobs
-    rows = read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
+    dataset_dir = destination_bucket / load_info.dataset_name
+    assert (dataset_dir / TINY_TABLE_NAME).is_dir()
+    assert (dataset_dir / LOAD_INFO_TABLE_NAME).is_dir()
+    assert list(dataset_dir.glob("_dlt_load_info__*")) == []
+    assert read_output_jsonl_records(destination_bucket) == TINY_RESOURCE_DATA
+
+    rows = read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME, strip_metadata=False)
     assert len(rows) == 1
     row = rows[0]
     assert row["dataset_name"] == load_info.dataset_name
     assert row["destination_name"] == dlt_test_settings.use_destination
     assert row["first_run"] is not None
-    assert row["load_packages"]
-    assert isinstance(row["load_packages"][0], dict)
-    assert "load_id" in row["load_packages"][0]
     assert set(row["pipeline"]) == {"pipeline_name"}
-
-
-def test_run_pipeline_load_info_saved_to_same_dataset(dlt_test_settings: CtsSettings, destination_bucket: Path) -> None:
-    """The load info table lands in the same dataset directory as the resource tables."""
-    load_info = run_pipeline(dlt_test_settings, tiny_resource())
-
-    assert load_info is not None
-    dataset_dir = destination_bucket / load_info.dataset_name
-    assert (dataset_dir / TINY_TABLE_NAME).is_dir()
-    assert (dataset_dir / LOAD_INFO_TABLE_NAME).is_dir()
-    assert read_output_jsonl_records(destination_bucket) == TINY_RESOURCE_DATA
-    assert read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
-
-
-def test_run_pipeline_load_info_flat_structure(dlt_test_settings: CtsSettings, destination_bucket: Path) -> None:
-    """max_table_nesting=0 keeps nested structures as json columns; no child tables."""
-    load_info = run_pipeline(dlt_test_settings, tiny_resource())
-
-    assert load_info is not None
-    dataset_dir = destination_bucket / load_info.dataset_name
-    assert list(dataset_dir.glob("_dlt_load_info__*")) == []
-    rows = read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
-    assert len(rows) == 1
-    row = rows[0]
+    # loads_ids is the original payload; _dlt_load_id is the save run's own load id
+    assert row["loads_ids"] != [row["_dlt_load_id"]]
+    assert load_info.loads_ids == row["loads_ids"]
     for nested in ("load_packages", "outputs", "job_metrics"):
         assert isinstance(row[nested], list)
         assert row[nested], f"{nested} must not be normalized into a child table"
         assert all(isinstance(item, dict) for item in row[nested])
+    assert "load_id" in row["load_packages"][0]
 
 
 def test_run_pipeline_load_info_runs_accumulate(dlt_test_settings: CtsSettings, destination_bucket: Path) -> None:
@@ -699,22 +690,6 @@ def test_run_pipeline_load_info_named_pipeline_and_dataset(
     assert (destination_bucket / "core_test_dataset" / LOAD_INFO_TABLE_NAME).is_dir()
 
 
-def test_run_pipeline_load_info_returns_original_import_result(
-    dlt_test_settings: CtsSettings, destination_bucket: Path
-) -> None:
-    """run_pipeline returns the original resource load; the saved row references it, not the save load."""
-    load_info = run_pipeline(dlt_test_settings, tiny_resource())
-
-    assert load_info is not None
-    assert not load_info.has_failed_jobs
-    rows = read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME, strip_metadata=False)
-    assert len(rows) == 1
-    # loads_ids is the original payload; _dlt_load_id is the save run's own load id
-    assert rows[0]["loads_ids"] != [rows[0]["_dlt_load_id"]]
-    assert load_info.loads_ids == rows[0]["loads_ids"]
-    assert load_info.dataset_name == rows[0]["dataset_name"]
-
-
 def test_run_pipeline_load_info_save_resource_error_still_returns_load_info(
     dlt_test_settings: CtsSettings,
     destination_bucket: Path,
@@ -747,7 +722,7 @@ def test_run_pipeline_load_info_save_resource_error_still_returns_load_info(
     )
 
 
-@pytest.mark.parametrize("slack_configured", [True, False])
+@pytest.mark.parametrize("slack_configured", [True, False], ids=["slack-configured", "slack-unconfigured"])
 def test_run_pipeline_load_info_save_run_error_still_returns_load_info(
     dlt_test_settings: CtsSettings,
     careful_slack_mock: MagicMock,
@@ -1056,12 +1031,17 @@ def test_run_pipeline_fail_partial_extract_worker_failure_filesystem(
 def test_build_filesystem_resource_pass_default_glob_and_callable_transformer(
     input_dir: Path, output_dir: Path
 ) -> None:
-    """build_filesystem_resource uses settings.file_glob or DEFAULT_XML_FILE_GLOB and wraps a callable in dlt.transformer."""
+    """build_filesystem_resource uses settings.file_glob and wraps a callable in dlt.transformer with settings bound."""
     file_path = input_dir / "sample.xml"
     file_path.write_text("hello", encoding="utf-8")
     settings = LocalInputOutputSettings(input_dir=input_dir, output_dir=output_dir)
 
-    def read_items(items: TDataItems, prefix: str) -> Iterator[dict[str, Any]]:
+    def read_items(
+        items: TDataItems,
+        cfg: LocalInputOutputSettings,
+        prefix: str,
+    ) -> Iterator[dict[str, Any]]:
+        assert cfg is settings
         for item in items:
             text = Path(item["file_url"].removeprefix("file://")).read_text(encoding="utf-8")
             yield {"text": f"{prefix}:{text}"}
@@ -1082,7 +1062,11 @@ def test_build_filesystem_resource_pass_custom_glob_resource_transformer_and_con
     settings = LocalInputOutputSettings(input_dir=input_dir, output_dir=output_dir)
 
     @dlt.transformer(name="jsonl_test_reader")
-    def read_jsonl_items(items: TDataItems) -> Iterator[dict[str, Any]]:
+    def read_jsonl_items(
+        items: TDataItems,
+        cfg: LocalInputOutputSettings,
+    ) -> Iterator[dict[str, Any]]:
+        assert cfg is settings
         for item in items:
             yield {"name": Path(item["file_url"].removeprefix("file://")).name}
 
@@ -1095,6 +1079,139 @@ def test_build_filesystem_resource_pass_custom_glob_resource_transformer_and_con
     )
     rows = list(resource)
     assert rows == [{"name": "data.jsonl"}]
+
+
+@pytest.mark.parametrize(
+    ("file_items", "extra_args", "expected_rows", "expected_calls"),
+    [
+        pytest.param([], (), [], [], id="empty_items"),
+        pytest.param(
+            [{"relative_path": "one.txt", "rows": [{"id": 1}]}],
+            (),
+            [{"id": 1}],
+            [(({"relative_path": "one.txt", "rows": [{"id": 1}]},),)],
+            id="single_item_no_extra_args",
+        ),
+        pytest.param(
+            [
+                {"relative_path": "first.txt", "rows": [{"id": 1}, {"id": 2}]},
+                {"relative_path": "empty.txt", "rows": []},
+                {"relative_path": "second.txt", "rows": [{"id": 3}]},
+            ],
+            ("prefix", 99),
+            [{"id": 1}, {"id": 2}, {"id": 3}],
+            [
+                (({"relative_path": "first.txt", "rows": [{"id": 1}, {"id": 2}]}, "prefix", 99),),
+                (({"relative_path": "empty.txt", "rows": []}, "prefix", 99),),
+                (({"relative_path": "second.txt", "rows": [{"id": 3}]}, "prefix", 99),),
+            ],
+            id="multiple_items_with_extra_args_and_empty_file",
+        ),
+    ],
+)
+def test_make_per_file_reader_pass(
+    file_items: list[dict[str, Any]],
+    extra_args: tuple[Any, ...],
+    expected_rows: list[dict[str, Any]],
+    expected_calls: list[tuple[tuple[Any, ...], ...]],
+) -> None:
+    """make_per_file_reader calls file_fn(file_item, *args) for each item and yields all resulting records."""
+    recorded_calls: list[tuple[tuple[Any, ...], ...]] = []
+
+    def file_fn(file_item: dict[str, Any], *args: Any) -> list[dict[str, Any]]:  # noqa: ANN401
+        recorded_calls.append(((file_item, *args),))
+        return list(file_item["rows"])
+
+    reader = make_per_file_reader(file_fn)
+    assert list(reader(file_items, *extra_args)) == expected_rows
+    assert recorded_calls == expected_calls
+
+
+def test_make_per_file_reader_fail_propagates_file_fn_error() -> None:
+    """make_per_file_reader propagates exceptions raised by file_fn when iterating."""
+
+    def failing_file_fn(file_item: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        if file_item["relative_path"] == "bad.txt":
+            err_msg = "corrupt file"
+            raise ValueError(err_msg)
+        yield {"path": file_item["relative_path"]}
+
+    reader = make_per_file_reader(failing_file_fn)
+    gen = reader([{"relative_path": "good.txt"}, {"relative_path": "bad.txt"}])
+    assert next(gen) == {"path": "good.txt"}
+    with pytest.raises(ValueError, match="corrupt file"):
+        next(gen)
+
+
+@pytest.mark.parametrize(
+    ("file_glob", "reader_args", "schema_contract", "transformer_kwargs", "expected"),
+    [
+        pytest.param(
+            None,
+            ("tag",),
+            None,
+            {},
+            [
+                {"file": "a.xml", "arg": "tag", "content": "alpha"},
+                {"file": "b.txt", "arg": "tag", "content": "beta"},
+            ],
+            id="default_glob_with_reader_args",
+        ),
+        pytest.param(
+            "*.txt",
+            ("custom",),
+            DEFAULT_SCHEMA_CONTRACT,
+            {"parallelized": False, "max_table_nesting": 0},
+            [{"file": "b.txt", "arg": "custom", "content": "beta"}],
+            id="explicit_glob_contract_and_transformer_kwargs",
+        ),
+        pytest.param(
+            "*.missing",
+            ("none",),
+            None,
+            {},
+            [],
+            id="no_matching_files",
+        ),
+    ],
+)
+def test_build_per_file_filesystem_resource_pass(
+    input_dir: Path,
+    output_dir: Path,
+    file_glob: str | None,
+    reader_args: tuple[str, ...],
+    schema_contract: dict[str, str] | None,
+    transformer_kwargs: dict[str, Any],
+    expected: list[dict[str, Any]],
+) -> None:
+    """build_per_file_filesystem_resource wraps file_fn via make_per_file_reader and reads matching files."""
+    (input_dir / "a.xml").write_text("alpha", encoding="utf-8")
+    (input_dir / "b.txt").write_text("beta", encoding="utf-8")
+    settings = LocalInputOutputSettings(input_dir=input_dir, output_dir=output_dir)
+
+    def read_single_file(
+        file_item: dict[str, Any],
+        cfg: LocalInputOutputSettings,
+        label: str,
+    ) -> Iterator[dict[str, Any]]:
+        assert cfg is settings
+        path = Path(file_item["file_url"].removeprefix("file://"))
+        yield {"file": path.name, "arg": label, "content": path.read_text(encoding="utf-8")}
+
+    resource = build_per_file_filesystem_resource(
+        settings,
+        read_single_file,
+        *reader_args,
+        name="per_file_test_reader",
+        file_glob=file_glob,
+        schema_contract=schema_contract,  # type: ignore[arg-type]
+        **transformer_kwargs,
+    )
+    assert resource.name == "per_file_test_reader"
+    assert resource.schema_contract == schema_contract
+    if "max_table_nesting" in transformer_kwargs:
+        assert resource.max_table_nesting == transformer_kwargs["max_table_nesting"]
+    assert sorted(resource, key=lambda row: row["file"]) == expected
 
 
 @pytest.mark.parametrize(
@@ -1127,7 +1244,6 @@ def test_build_file_ingest_kwargs_pass(
         fallback_dataset_name=fallback_dataset_name,
     )
 
-    assert REJECTED_TABLE_NAME == "_rejected"
     assert result == {
         "pipeline_kwargs": {
             "pipeline_name": TINY_PIPELINE_NAME,

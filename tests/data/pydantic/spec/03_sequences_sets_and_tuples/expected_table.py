@@ -1,7 +1,5 @@
 """Expected PyArrow table for 03_sequences_sets_and_tuples."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 from expected_schema import EXPECTED_SCHEMA
 

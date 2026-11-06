@@ -1,7 +1,5 @@
 """Expected PyArrow schema for checkm2_and_bbmap."""
 
-# ruff: noqa: INP001
-
 import pyarrow as pa
 
 EXPECTED_SCHEMA = pa.schema(

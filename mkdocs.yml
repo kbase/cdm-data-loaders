@@ -71,6 +71,7 @@ nav:
   - Converters & Specifications:
       - Converter IR Architecture: converters_ir.md
       - JSON Schema to PyArrow Spec: jsonschema_to_pyarrow_specification.md
+      - Pydantic to PyArrow Spec: pydantic_to_pyarrow_specification.md
       - XSD to PyArrow Spec: xsd_to_pyarrow_specification.md
   - API & Schema Reference: api/
 

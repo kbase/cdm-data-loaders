@@ -1,7 +1,5 @@
 """Spec 06: StrEnum, IntEnum, general Enum with docstring, and Literal types."""
 
-# ruff: noqa: D101, INP001, PYI061
-
 from enum import Enum, IntEnum, StrEnum
 from typing import Literal
 
