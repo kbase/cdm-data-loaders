@@ -22,4 +22,4 @@ uv venv --python "$SYSTEM_PYTHON" "$VENV"
 
 uv pip install --python "$VENV/bin/python" --constraint "$CONSTRAINTS" -e . --group dev
 
-"$VENV/bin/python" -m pytest -m "not requires_ceph" --cov=src --cov-report=xml "$@"
+"$VENV/bin/python" -m pytest -m "not requires_ceph and not docs" --cov=src --cov-report=xml "$@"

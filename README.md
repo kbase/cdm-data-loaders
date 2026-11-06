@@ -3,17 +3,40 @@
 Repo for CDM input data loading and wrangling
 
 - [cdm-data-loaders](#cdm-data-loaders)
+  - [Documentation](#documentation)
   - [Environment and python management](#environment-and-python-management)
   - [Installation](#installation)
     - [Lakehouse and Use with Jupyter notebooks](#lakehouse-and-use-with-jupyter-notebooks)
       - [Jupyter Kernel Environment Variables](#jupyter-kernel-environment-variables)
   - [Running import pipelines](#running-import-pipelines)
+    - [Container Entrypoint Modes (`scripts/entrypoint.sh`)](#container-entrypoint-modes-scriptsentrypointsh)
+    - [Registered Pipeline CLIs](#registered-pipeline-clis)
   - [Development](#development)
     - [Spark and other non-python dependencies](#spark-and-other-non-python-dependencies)
     - [Tests](#tests)
       - [CEPH-Backed integration tests (CEPH + NCBI FTP)](#ceph-backed-integration-tests-ceph--ncbi-ftp)
-  - [Loading genomes, contigs, and features](#loading-genomes-contigs-and-features)
   - [Running bbmap stats and checkm2 on genome or contigset files](#running-bbmap-stats-and-checkm2-on-genome-or-contigset-files)
+
+
+## Documentation
+
+Architecture, pipeline execution, schema conversion, and CLI reference guides live in [`docs/`](docs/):
+
+- **[Core & CTS Pipeline Execution Guide](docs/core_cts_execution.md)**: Settings hierarchy (`CdmDataLoadersBase` / `CtsSettings`), `CDL_*` environment variables, `dlt` destination configuration (`/input_dir/dlt_conf`), output artifacts (`report.txt`, `_load_info`, `log.json`), and the KBase Container Task Service (CTS) exit-code-0 contract.
+- **[CLI & Settings Reference](docs/cli_reference.md)**: Auto-generated reference for all 18 pipeline CLI entry points, their flags, shortcuts, environment variables, defaults, and settings models.
+- **[JSONL Ingest Pipelines](docs/jsonlines_ingest.md)**: Guide to `jsonlines_extract`, `jsonlines_jsonschema`, and `jsonlines_pydantic`.
+- **[Table Transforms Guide](docs/table_transforms.md)**: Pluggable record filtering, transformation, multi-table splitting, and PyArrow schema overrides (`--transforms-module`, `--output-schemas-module`).
+- **[UniProt & UniRef Ingestion Guide](docs/uniprot.md)**: XSD-driven XML-to-PyArrow pipelines (`uniprot`, `uniref50`, `uniref90`, `uniref100`) and CDM-normalized multi-table pipelines (`uniprot_cdm`, `uniref50_cdm`, `uniref90_cdm`, `uniref100_cdm`).
+- **[Converters IR & Package Architecture](docs/converters_ir.md)**: Intermediate representation (IR) contract for translating between JSON Schema, Pydantic, `dlt`, PyIceberg, PySpark, PyArrow, and LinkML.
+- **[JSON Schema to PyArrow Specification](docs/jsonschema_to_pyarrow_specification.md)**, **[Pydantic to PyArrow Specification](docs/pydantic_to_pyarrow_specification.md)** & **[XSD to PyArrow Specification](docs/xsd_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalogs.
+- **[NCBI FTP End-to-End Walkthrough](docs/ncbi_ftp_e2e_walkthrough.md)** & **[rclone Instructions](docs/rclone_instructions.md)**: Three-phase NCBI assembly synchronization and S3 Lakehouse promotion.
+
+To build or preview the full documentation website locally (including auto-generated Python API reference pages):
+
+```sh
+uv sync --group docs
+uv run --group docs mkdocs serve
+```
 
 
 
@@ -90,13 +113,38 @@ If you would like to include environment variables for your kernel that are not 
 
 ## Running import pipelines
 
-The repo provides a Docker container that can be used to run several import pipelines or to run unit tests for the repo. The [entrypoint script](scripts/entrypoint.sh) parses the container `run` arguments and launches the appropriate functions.
+Pipelines can be run directly via `uv run <pipeline_cli> [args...]` or inside the Docker container via [`scripts/entrypoint.sh`](scripts/entrypoint.sh). See the [Core & CTS Pipeline Execution Guide](docs/core_cts_execution.md) and the [CLI & Settings Reference](docs/cli_reference.md) for full configuration details.
 
-Current endpoints include:
+### Container Entrypoint Modes (`scripts/entrypoint.sh`)
 
-- `test`: run the unit tests that do _not_ require external dependencies like Spark
-- `uniprot`: run the UniProtKB (UniProt protein database) import pipeline; see [the UniProtKB pipeline](src/cdm_data_loaders/pipelines/uniprot_kb.py) for arguments
-- `uniref`: run the UniRef import pipeline; the [the UniRef pipeline](src/cdm_data_loaders/pipelines/uniref.py) for arguments
+- `pipeline <pipeline_cli> [args...]`: copies `/input_dir/dlt_conf/{config.toml,secrets.toml}` (if present) into `$HOME/.dlt` and executes `uv run <pipeline_cli> [args...]`.
+- `xml_split <n_elements> <tag> <file_1> [<file_2> ...]`: splits XML files into chunks of `<n_elements>` `<tag>` elements using `xml_split`.
+- `test`: runs unit tests (`scripts/run_tests.sh unit`).
+- `ceph_integration_test`: runs Ceph-backed S3 and NCBI FTP integration tests.
+- `bash`: launches an interactive shell inside the container.
+
+### Registered Pipeline CLIs
+
+| CLI Entry Point        | Description                                                                | Source Module                                                                                                                                     | Guide                                                       |
+| :--------------------- | :------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------ | :---------------------------------------------------------- |
+| `all_the_bacteria`     | All The Bacteria bulk data downloader from OSF                             | [`pipelines/all_the_bacteria.py`](src/cdm_data_loaders/pipelines/all_the_bacteria.py)                                                             | [CLI Reference](docs/cli_reference.md#all_the_bacteria)     |
+| `jsonlines_extract`    | Plain JSONL extraction into `<table_name>` and `_rejected`                 | [`pipelines/jsonlines/extract_pipeline.py`](src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | [JSONL Ingest](docs/jsonlines_ingest.md)                    |
+| `jsonlines_jsonschema` | Multi-table JSONL ingestion validated against `ENTITY_SCHEMAS`             | [`pipelines/jsonlines/extract_jsonschema_validate_pipeline.py`](src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | [JSONL Ingest](docs/jsonlines_ingest.md)                    |
+| `jsonlines_pydantic`   | Multi-table JSONL ingestion validated against `ENTITY_MODELS`              | [`pipelines/jsonlines/extract_pydantic_validate_pipeline.py`](src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | [JSONL Ingest](docs/jsonlines_ingest.md)                    |
+| `ncbi_ftp_sync`        | NCBI FTP assembly batch download (Phase 2)                                 | [`pipelines/ncbi_ftp_download.py`](src/cdm_data_loaders/pipelines/ncbi_ftp_download.py)                                                           | [NCBI FTP Walkthrough](docs/ncbi_ftp_e2e_walkthrough.md)    |
+| `ncbi_ftp_promote`     | NCBI FTP staged file promotion to Lakehouse S3 (Phase 3)                   | [`pipelines/ncbi_ftp_promote.py`](src/cdm_data_loaders/pipelines/ncbi_ftp_promote.py)                                                             | [NCBI FTP Walkthrough](docs/ncbi_ftp_e2e_walkthrough.md)    |
+| `ncbi_rest_api`        | NCBI Datasets v2 REST API importer (`dataset_report`, `annotation_report`) | [`pipelines/ncbi_rest_api.py`](src/cdm_data_loaders/pipelines/ncbi_rest_api.py)                                                                   | [CLI Reference](docs/cli_reference.md#ncbi_rest_api)        |
+| `uniprot`              | Preset XSD-to-PyArrow ingestion for UniProtKB XML (`uniprot.xsd`)          | [`pipelines/xmltopyarrow/pipeline.py`](src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                                   | [UniProt Guide](docs/uniprot.md)                            |
+| `uniprot_cdm`          | CDM-normalized multi-table UniProtKB XML pipeline                          | [`pipelines/uniprot_kb_cdm.py`](src/cdm_data_loaders/pipelines/uniprot_kb_cdm.py)                                                                 | [UniProt Guide](docs/uniprot.md)                            |
+| `uniref50`             | Preset XSD-to-PyArrow ingestion for UniRef50 XML (`uniref.xsd`)            | [`pipelines/xmltopyarrow/pipeline.py`](src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                                   | [UniProt Guide](docs/uniprot.md)                            |
+| `uniref50_cdm`         | CDM-normalized multi-table UniRef50 XML pipeline                           | [`pipelines/uniref_cdm.py`](src/cdm_data_loaders/pipelines/uniref_cdm.py)                                                                         | [UniProt Guide](docs/uniprot.md)                            |
+| `uniref90`             | Preset XSD-to-PyArrow ingestion for UniRef90 XML (`uniref.xsd`)            | [`pipelines/xmltopyarrow/pipeline.py`](src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                                   | [UniProt Guide](docs/uniprot.md)                            |
+| `uniref90_cdm`         | CDM-normalized multi-table UniRef90 XML pipeline                           | [`pipelines/uniref_cdm.py`](src/cdm_data_loaders/pipelines/uniref_cdm.py)                                                                         | [UniProt Guide](docs/uniprot.md)                            |
+| `uniref100`            | Preset XSD-to-PyArrow ingestion for UniRef100 XML (`uniref.xsd`)           | [`pipelines/xmltopyarrow/pipeline.py`](src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                                   | [UniProt Guide](docs/uniprot.md)                            |
+| `uniref100_cdm`        | CDM-normalized multi-table UniRef100 XML pipeline                          | [`pipelines/uniref_cdm.py`](src/cdm_data_loaders/pipelines/uniref_cdm.py)                                                                         | [UniProt Guide](docs/uniprot.md)                            |
+| `xmltodict`            | Generic XML-to-dictionary ingestion using `xmltodict`                      | [`pipelines/xmltodict/pipeline.py`](src/cdm_data_loaders/pipelines/xmltodict/pipeline.py)                                                         | [CLI Reference](docs/cli_reference.md#xmltodict)            |
+| `xmltopyarrow`         | Generic XSD-driven XML-to-PyArrow ingestion                                | [`pipelines/xmltopyarrow/pipeline.py`](src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                                   | [XSD to PyArrow Spec](docs/xsd_to_pyarrow_specification.md) |
+| `xsv`                  | CSV/TSV ingestion with `qsv` two-pass validation and JSON Schema casting   | [`pipelines/xsv/pipeline.py`](src/cdm_data_loaders/pipelines/xsv/pipeline.py)                                                                     | [CLI Reference](docs/cli_reference.md#xsv)                  |
 
 
 ## Development
@@ -149,10 +197,16 @@ To run all tests (requires a running Spark instance and a running CEPH test cont
 > uv run pytest
 ```
 
-To run only tests that do not require Spark or CEPH, run
+To run the standard test suite (excluding tests that require Spark, CEPH, or documentation verification), run
 
 ```sh
-> uv run pytest -m "not requires_spark and not requires_ceph"
+> uv run pytest -m "not requires_spark and not requires_ceph and not docs"
+```
+
+To run the documentation tests, run
+
+```sh
+> uv run pytest -m docs
 ```
 
 To generate coverage for the tests, run
@@ -225,9 +279,9 @@ docker stop ceph && docker rm ceph
 > **Note:** These tests download real assemblies from NCBI FTP and are inherently slow (~30–60s per assembly). They are also marked `slow_test` so you can exclude them independently: `uv run pytest -m "not slow_test"`.
 
 
-## Loading genomes, contigs, and features
+## Running bbmap stats and checkm2 on genome or contigset files
 
-The [genome loader](src/cdm_data_loaders/parsers/genome_loader.py) can be used to load and integrate data from related GFF and FASTA files. Currently, the loader requires a GFF file and two FASTA files (one for amino acid seqs, one for nucleic acid seqs) for each genome. The list of files to be processed should be specified in the genome paths file, which has the following format:
+[`scripts/run_tools.sh`](scripts/run_tools.sh) runs the stats script from [bbmap](https://sourceforge.net/projects/bbmap/) and [checkm2](https://github.com/chklovski/CheckM2) on genome FASTA (`fna`) files listed in a genome paths JSON file (parsed downstream by [`bbmap_stats.py`](src/cdm_data_loaders/parsers/bbmap_stats.py) and [`checkm2.py`](src/cdm_data_loaders/parsers/checkm2.py)):
 
 ```json
 {
@@ -244,9 +298,7 @@ The [genome loader](src/cdm_data_loaders/parsers/genome_loader.py) can be used t
 }
 ```
 
-## Running bbmap stats and checkm2 on genome or contigset files
-
-[run_tools.sh](scripts/run_tools.sh) runs the stats script from [bbmap](https://sourceforge.net/projects/bbmap/) and [checkm2](https://github.com/chklovski/CheckM2) on files with the suffix "fna". These tools can be installed using conda:
+These tools can be installed using conda:
 
 ```sh
 conda env create -f env.yml

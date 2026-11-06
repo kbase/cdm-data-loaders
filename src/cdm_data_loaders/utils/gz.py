@@ -4,12 +4,37 @@ import gzip
 import shutil
 from logging import Logger, getLogger
 from pathlib import Path
+from typing import Annotated, Final
 
-import click
+from frozendict import frozendict
+from pydantic import BeforeValidator, Field
+from pydantic_settings import CliApp, SettingsConfigDict
 
-from cdm_data_loaders.core.fields import GZIP_SUFFIX
+from cdm_data_loaders.core.fields import FILE_GLOB, GZIP_SUFFIX, FileGlob
+from cdm_data_loaders.core.path_fields import check_local_path
+from cdm_data_loaders.core.settings import CdmDataLoadersBase, default_settings_with_shortcuts
 
 logger: Logger = getLogger(__name__)
+
+GZ_CLI_SHORTCUTS: Final[frozendict[str, str]] = frozendict(
+    {
+        "source": "i",
+        FILE_GLOB: "f",
+    }
+)
+
+
+class GzSettings(CdmDataLoadersBase):
+    """Settings for compressing a file or directory from the command line."""
+
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(cli_shortcuts=GZ_CLI_SHORTCUTS)
+
+    source: Annotated[
+        Path,
+        Field(description="Input file(s) to process"),
+        BeforeValidator(check_local_path),
+    ]
+    file_glob: FileGlob
 
 
 def decompress_file(file: str | Path) -> None:
@@ -85,20 +110,22 @@ def compress_file(file: Path) -> None:
     logger.info("Created output file %s.gz", str(file))
 
 
-@click.command()
-@click.option("--source", "-i", required=True, help="input file(s) to process")
-@click.option("--file-glob", "-f", default="*", help="glob for files in a directory")
-def main(source: str, file_glob: str) -> None:
-    """Compress a file or directory from the command line."""
-    source_path = Path(source)
-    if not source_path.exists():
-        msg = f"Path {source} does not exist"
+def main(cli_args: list[str] | None = None) -> None:
+    """Compress a file or directory from the command line.
+
+    :param cli_args: command-line arguments; defaults to ``sys.argv[1:]`` when None
+    :type cli_args: list[str] | None
+    :raises RuntimeError: if the source path does not exist
+    """
+    settings = CliApp.run(GzSettings, cli_args=cli_args)
+    if not settings.source.exists():
+        msg = f"Path {settings.source} does not exist"
         raise RuntimeError(msg)
 
-    if source_path.is_dir():
-        compress_files(source_path, file_glob or "*")
+    if settings.source.is_dir():
+        compress_files(settings.source, settings.file_glob or "*")
     else:
-        compress_file(source_path)
+        compress_file(settings.source)
 
 
 if __name__ == "__main__":
