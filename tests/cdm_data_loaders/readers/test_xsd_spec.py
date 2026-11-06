@@ -98,6 +98,7 @@ def test_manifests_pass_error_codes_unique_and_covered() -> None:
     assert sorted(ERRORS_BY_CODE.keys() - manifest_codes) == []
 
 
+@pytest.mark.docs
 def test_specification_document_pass_up_to_date() -> None:
     """The committed specification document matches the output of scripts/gen_converter_spec.py."""
     assert XSD_TO_PYARROW.output.read_text(encoding="utf-8") == render(XSD_TO_PYARROW), (
