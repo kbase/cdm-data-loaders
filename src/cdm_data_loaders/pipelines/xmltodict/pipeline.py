@@ -20,7 +20,7 @@ def run_xmltodict_pipeline(settings: XmlToDictSettings) -> LoadInfo | None:
     """
     xmltodict_resource = build_per_file_filesystem_resource(
         settings,
-        lambda file_item, cfg: process_xml_file_to_dict(cfg, file_path=file_item),
+        process_xml_file_to_dict,
         name="xmltodict_reader",
         parallelized=False,
     )

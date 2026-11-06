@@ -1,7 +1,7 @@
 title: UniRef
 xml_tag: entry
 schema: ../../../uniprot/uniref/uniref.xsd
-rules: [R-RESOLVE-DEPTH, R-META-COMMENT]
+rules: [R-RESOLVE-DEPTH, R-META-COMMENT, R-CODEGEN-COMPONENT, R-CODEGEN-NAMING, R-CODEGEN-LEVEL]
 notes: |
   Four root elements (`UniRef100`, `UniRef90`, `UniRef50`, `UniRef`) declare `entry` with the shared
   `entryType`, so resolution succeeds.

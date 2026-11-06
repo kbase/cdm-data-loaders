@@ -178,7 +178,13 @@ def test_settings_to_argv_pass_excludes_computed_fields_and_expands_lists(
     entity_schemas = register_temp_module(
         monkeypatch,
         name="_test_argv_schema_mod",
-        ENTITY_SCHEMAS={"widget": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"}},
+        ENTITY_SCHEMAS={
+            "widget": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+            }
+        },
     )
     settings = make_cts_settings(
         JsonlJsonschemaIngestSettings,

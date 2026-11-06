@@ -66,7 +66,7 @@ from cdm_data_loaders.converters.pydantic_to_pyarrow import (
 from cdm_data_loaders.converters.pydantic_to_pyarrow import (
     resolve_scalar_type as resolve_pydantic_scalar_type,
 )
-from cdm_data_loaders.readers.xsd import (
+from cdm_data_loaders.converters.xsd_to_pyarrow import (
     BUILTIN_LIST_ITEM_TYPES,
     SCALAR_ARROW_TYPES,
     XSD_TO_PYARROW_ERRORS,

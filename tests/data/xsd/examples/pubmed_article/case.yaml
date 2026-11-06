@@ -1,7 +1,7 @@
 title: PubMed (`PubmedArticle`)
 xml_tag: PubmedArticle
 schema: ../../../pubmed/pubmed.xsd
-rules: [R-SHAPE-MIXED, R-RECURSION, R-SHAPE-EMPTY-MARKER, R-NULL-CHOICE]
+rules: [R-SHAPE-MIXED, R-RECURSION, R-SHAPE-EMPTY-MARKER, R-NULL-CHOICE, R-CODEGEN-COMPONENT, R-CODEGEN-RECURSIVE, R-CODEGEN-LEVEL]
 notes: |
   DTD-derived schema with mixed-content titles and abstracts, the `(StartPage, EndPage?, MedlinePgn?) | MedlinePgn`
   pagination choice and element-`ref` self-recursion.

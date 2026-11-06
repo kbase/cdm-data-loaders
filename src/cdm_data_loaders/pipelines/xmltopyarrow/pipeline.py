@@ -10,6 +10,7 @@ from cdm_data_loaders.pipelines.core import (
 )
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
+    PubMedXmlToPyArrowSettings,
     UniProtXmlToPyArrowSettings,
     UniRef50XmlToPyArrowSettings,
     UniRef90XmlToPyArrowSettings,
@@ -24,10 +25,12 @@ def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None
 
     :param settings: pipeline configuration
     :type  settings: XmlToPyArrowSettings
+    :return: DLT pipeline LoadInfo or None
+    :rtype : LoadInfo | None
     """
     xmltopyarrow_resource = build_per_file_filesystem_resource(
         settings,
-        lambda file_item, cfg: process_xml_file_to_pyarrow(cfg, file_path=file_item),
+        process_xml_file_to_pyarrow,
         name="xmltopyarrow_reader",
         parallelized=False,
     )
@@ -41,6 +44,8 @@ def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None
 
 
 cli = PipelineCli(XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+
+pubmed_cli = PipelineCli(PubMedXmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 
 uniprot_cli = PipelineCli(UniProtXmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 

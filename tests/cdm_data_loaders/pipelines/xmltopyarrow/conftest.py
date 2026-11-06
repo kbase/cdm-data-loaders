@@ -29,11 +29,16 @@ def settings_factory(tmp_path: Path, library_xsd: Path) -> Callable[..., Any]:
             defaults.update(
                 {
                     "dataset_name": "xml_test_dataset",
-                    "table_name": "book",
-                    "xml_tag": "book",
                     "xsd_file": str(library_xsd),
                 }
             )
+            if overrides.get("xml_level") is None:
+                defaults.update(
+                    {
+                        "table_name": "book",
+                        "xml_tag": "book",
+                    }
+                )
         defaults.update(overrides)
         return make_cts_settings(settings_cls, tmp_path, **defaults)
 

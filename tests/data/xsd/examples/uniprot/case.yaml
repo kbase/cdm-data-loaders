@@ -1,7 +1,7 @@
 title: UniProtKB
 xml_tag: entry
 schema: ../../../uniprot/uniprot_kb/uniprot.xsd
-rules: [R-SHAPE-XSLIST, R-SCALAR-UNION, R-NIL, R-NULL-NILLABLE-PARENT, R-META-COMMENT]
+rules: [R-SHAPE-XSLIST, R-SCALAR-UNION, R-NIL, R-NULL-NILLABLE-PARENT, R-META-COMMENT, R-CODEGEN-COMPONENT, R-CODEGEN-NAMING, R-CODEGEN-LEVEL]
 notes: |
   Exercises `intListType` (`xs:list`), the `date | gYearMonth | gYear` union and nillable `comment` elements
   with attributes.

@@ -16,6 +16,7 @@ from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import (
     cli,
+    pubmed_cli,
     run_xmltopyarrow_pipeline,
     uniprot_cli,
     uniref50_cli,
@@ -24,10 +25,12 @@ from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import (
 )
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
+    PUBMED_PIPELINE_NAME,
     UNIPROT_PIPELINE_NAME,
     UNIREF_FIFTY,
     UNIREF_HUNDRED,
     UNIREF_NINETY,
+    PubMedXmlToPyArrowSettings,
     UniProtXmlToPyArrowSettings,
     UniRef50XmlToPyArrowSettings,
     UniRef90XmlToPyArrowSettings,
@@ -113,11 +116,13 @@ def test_cli_fail_missing_required_args_raise(
 @pytest.mark.parametrize(
     ("settings_cls", "expected_pipeline_name"),
     [
+        (PubMedXmlToPyArrowSettings, PUBMED_PIPELINE_NAME),
         (UniProtXmlToPyArrowSettings, UNIPROT_PIPELINE_NAME),
         (UniRef50XmlToPyArrowSettings, UNIREF_FIFTY),
         (UniRef90XmlToPyArrowSettings, UNIREF_NINETY),
         (UniRef100XmlToPyArrowSettings, UNIREF_HUNDRED),
     ],
+    ids=["pubmed", "uniprot", "uniref50", "uniref90", "uniref100"],
 )
 def test_run_subclass_pipeline_pass_sets_core_run_pipeline_args_correctly(
     settings_factory: Callable[..., Any],
@@ -149,6 +154,7 @@ def test_run_subclass_pipeline_pass_sets_core_run_pipeline_args_correctly(
         (UNIREF_NINETY, uniref90_cli, "xsd/examples/uniref"),
         (UNIREF_HUNDRED, uniref100_cli, "xsd/examples/uniref"),
     ],
+    ids=["uniprot", "uniref50", "uniref90", "uniref100"],
 )
 def test_subclass_cli_pass_runs_end_to_end_with_default_settings(
     tmp_path: Path,
@@ -175,6 +181,33 @@ def test_subclass_cli_pass_runs_end_to_end_with_default_settings(
     )
 
     assert fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM entry") == [(1,)]
+
+
+def test_pubmed_cli_pass_runs_end_to_end_with_default_settings(
+    tmp_path: Path,
+    test_data_dir: Path,
+    settings_factory: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pubmed_cli loads PubmedArticle and PubmedBookArticle tables end-to-end using its default level-1 settings."""
+    base_settings = settings_factory(CtsSettings, dlt_dev_mode=False)
+    copy_test_files(
+        test_data_dir / "xsd" / "examples" / "pubmed_article",
+        ["minimal.xml.gz"],
+        Path(base_settings.input_dir),
+    )
+    monkeypatch.setattr(sys, "argv", [PUBMED_PIPELINE_NAME, *settings_to_argv(base_settings)])
+
+    load_info = run_with_duckdb_pipeline(
+        tmp_path,
+        xmltopyarrow_module,
+        pubmed_cli.run,
+        expected_pipeline_name=PUBMED_PIPELINE_NAME,
+        expected_dataset_name=PUBMED_PIPELINE_NAME,
+        pipeline_name_prefix="test_pubmed_cli_pipeline",
+    )
+
+    assert fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM pubmed_article") == [(1,)]
 
 
 @pytest.mark.parametrize("relative_path", ["library.xml", "sub/library.xml.gz"])

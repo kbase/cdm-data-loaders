@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from lxml.etree import XMLSyntaxError, tostring
 
-from cdm_data_loaders.readers.xml import stream_xml_file
+from cdm_data_loaders.readers.xml import stream_xml_file, stream_xml_file_at_level
 from tests.cdm_data_loaders.readers.xml.conftest import XML_OPEN_ERROR_CASES, prepare_xml_error_path
 from tests.fs_backends import FsBackend
 from tests.xml_samples import SIMPLE_LIBRARY_XML
@@ -269,3 +269,70 @@ def test_stream_xml_file_pass_yields_outermost_matches(
         file_path.write_text(xml, encoding="utf-8")
 
     assert [tostring(elem, with_tail=False) for elem in stream_xml_file(file_path, tag)] == expected
+
+
+@pytest.mark.parametrize(
+    ("xml", "level", "expected"),
+    [
+        pytest.param(
+            '<root><a id="1"/><b id="2"/></root>',
+            0,
+            [b'<root><a id="1"/><b id="2"/></root>'],
+            id="level-0-root",
+        ),
+        pytest.param(
+            '<root><book id="1"><title>Cell</title></book><magazine id="1"/><book id="2"/></root>',
+            1,
+            [b'<book id="1"><title>Cell</title></book>', b'<magazine id="1"/>', b'<book id="2"/>'],
+            id="level-1-heterogeneous-siblings",
+        ),
+        pytest.param(
+            '<root><a id="1"><x>1</x><y>2</y></a><b id="2"><z>3</z></b></root>',
+            2,
+            [b"<x>1</x>", b"<y>2</y>", b"<z>3</z>"],
+            id="level-2-grandchildren",
+        ),
+        pytest.param(
+            "<root><a><b/></a></root>",
+            3,
+            [],
+            id="level-beyond-max-depth",
+        ),
+    ],
+)
+@pytest.mark.parametrize("compressed", [False, True], ids=["plain", "gzip"])
+def test_stream_xml_file_at_level_pass_yields_all_elements_at_depth(
+    tmp_path: Path,
+    write_gzip_file: Callable[[Path, str, str], Path],
+    xml: str,
+    level: int,
+    expected: list[bytes],
+    compressed: bool,
+) -> None:
+    """stream_xml_file_at_level yields every element at exact depth `level` in document order."""
+    if compressed:
+        file_path = write_gzip_file(tmp_path, "doc.xml.gz", xml)
+    else:
+        file_path = tmp_path / "doc.xml"
+        file_path.write_text(xml, encoding="utf-8")
+
+    assert [tostring(elem, with_tail=False) for elem in stream_xml_file_at_level(file_path, level)] == expected
+
+
+def test_stream_xml_file_at_level_pass_clears_elements_and_ancestors_after_advancing(
+    xml_path_factory: Callable[..., Path],
+) -> None:
+    """stream_xml_file_at_level clears yielded elements once the generator advances past them."""
+    path = xml_path_factory(MIXED_TAGS_XML)
+    all_elements = list(stream_xml_file_at_level(path, 1))
+
+    assert [elem.tag for elem in all_elements] == ["book", "magazine", "book"]
+    assert all(elem.text is None for elem in all_elements)
+    assert all(len(elem) == 0 for elem in all_elements)
+
+
+def test_stream_xml_file_at_level_fail_negative_level(xml_path_factory: Callable[..., Path]) -> None:
+    """stream_xml_file_at_level raises ValueError when level < 0."""
+    path = xml_path_factory(SIMPLE_LIBRARY_XML)
+    with pytest.raises(ValueError, match="level must be >= 0"):
+        list(stream_xml_file_at_level(path, -1))

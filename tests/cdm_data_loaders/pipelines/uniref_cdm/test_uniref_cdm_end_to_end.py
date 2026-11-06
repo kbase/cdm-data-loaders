@@ -58,7 +58,7 @@ def _run_uniref_duckdb_pipeline(settings: UniRefCdmSettings, tmp_path: Path, nam
     """Run ``process_xml_file_to_pyarrow`` through a real DuckDB pipeline and return (pipeline, load_info)."""
     pipeline = duckdb_pipeline(tmp_path, f"test_uniref_pipeline_{name}", "test_uniref")
     fixture_path = UNIREF_FIXTURE_DIR / UNIREF_FIXTURE_FILE
-    load_info = pipeline.run(process_xml_file_to_pyarrow(settings, fixture_path))
+    load_info = pipeline.run(process_xml_file_to_pyarrow(fixture_path, settings))
     return pipeline, load_info
 
 

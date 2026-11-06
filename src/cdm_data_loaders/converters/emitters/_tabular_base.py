@@ -67,8 +67,8 @@ def fits_int32_bounds(node: TypedNode) -> bool:
 
 def element_nullable(node: TypedNode) -> bool:
     """Honor non-null element facts from typed sources; JSON item schemas stay nullable."""
-    from_json = node.provenance is None or node.provenance.source == "json-schema"
-    return from_json or node.nullable is not False
+    raw_json = node.provenance is None or (node.provenance.source == "json-schema" and node.hints.logical_type is None)
+    return raw_json or node.nullable is not False
 
 
 def infer_enum_type[DataTypeT](values: list[object], type_map: Mapping[str, DataTypeT]) -> DataTypeT:

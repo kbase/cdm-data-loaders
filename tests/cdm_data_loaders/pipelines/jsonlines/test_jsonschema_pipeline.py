@@ -27,15 +27,17 @@ from tests.cdm_data_loaders.pipelines.jsonlines.conftest import make_item
 from tests.helpers import register_temp_module
 
 
-def make_router(schema: dict[str, Any], buffer_size: int = 2) -> Callable[[list[dict[str, Any]]], Any]:
+def make_router(
+    schema: dict[str, Any], buffer_size: int = 2, *, pyarrow_schema: pa.Schema | None = None
+) -> Callable[[list[dict[str, Any]]], Any]:
     """Build the router the jsonschema pipeline uses for the widget table."""
     validated_schema = ValidatedSchema(jsonschema=schema)
-    pyarrow_schema = convert_schema_to_pyarrow(validated_schema)
+    resolved_pa_schema = pyarrow_schema if pyarrow_schema is not None else convert_schema_to_pyarrow(validated_schema)
     return make_page_router(
         "widget",
         buffer_size,
         _make_resolve_error(validated_schema),
-        schema_map=ArrowSchemaRegistry(registry={"widget": pyarrow_schema}),
+        schema_map=ArrowSchemaRegistry(registry={"widget": resolved_pa_schema}),
     )
 
 
@@ -74,7 +76,7 @@ def test_make_page_router_fail_uses_declared_draft() -> None:
         "type": "object",
         "properties": {"count": {"type": "number", "minimum": 5, "exclusiveMinimum": True}},
     }
-    validate = make_router(schema)
+    validate = make_router(schema, pyarrow_schema=pa.schema([pa.field("count", pa.float64())]))
     item = make_item({"count": 5})
 
     results = list(validate([item]))
