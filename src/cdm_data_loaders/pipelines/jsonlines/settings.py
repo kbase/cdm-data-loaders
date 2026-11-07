@@ -252,4 +252,3 @@ class NcbiDatasetsSettings(JsonlJsonschemaIngestSettings):
     entity_schemas: ClassVar[str] = NCBI_DATASETS_SCHEMA_MODULE
     transforms_module: ClassVar[str | None] = NCBI_DATASETS_SCHEMA_MODULE
     output_schemas_module: ClassVar[str | None] = NCBI_DATASETS_SCHEMA_MODULE
-

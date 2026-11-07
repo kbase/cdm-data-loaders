@@ -783,17 +783,11 @@ def test_ncbi_datasets_settings_pass_defaults_and_precomputed_schemas(
     assert settings.loader_file_format == LoaderFileFormatEnum.PARQUET
     assert settings.schema_registry == SchemaRegistry(
         registry={
-            ANNOTATION_REPORT_TABLE: ValidatedSchema(
-                jsonschema=NCBI_DATASETS_ENTITY_SCHEMAS[ANNOTATION_REPORT_TABLE]
-            ),
-            DATASET_REPORT_TABLE: ValidatedSchema(
-                jsonschema=NCBI_DATASETS_ENTITY_SCHEMAS[DATASET_REPORT_TABLE]
-            ),
+            ANNOTATION_REPORT_TABLE: ValidatedSchema(jsonschema=NCBI_DATASETS_ENTITY_SCHEMAS[ANNOTATION_REPORT_TABLE]),
+            DATASET_REPORT_TABLE: ValidatedSchema(jsonschema=NCBI_DATASETS_ENTITY_SCHEMAS[DATASET_REPORT_TABLE]),
         }
     )
-    assert settings.table_transforms == TransformRegistry(
-        registry={ANNOTATION_REPORT_TABLE: filter_annotation_report}
-    )
+    assert settings.table_transforms == TransformRegistry(registry={ANNOTATION_REPORT_TABLE: filter_annotation_report})
     assert settings.schema_map == ArrowSchemaRegistry(registry=NCBI_DATASETS_SCHEMAS)
 
 
@@ -821,4 +815,3 @@ def test_ncbi_datasets_settings_fail_locked_fields_rejected(
     cli_args = [*settings_to_argv(base), locked_flag, locked_value]
     with pytest.raises(SettingsError, match=f"unrecognized arguments: {locked_flag}"):
         CliApp.run(NcbiDatasetsSettings, cli_args=cli_args)
-
