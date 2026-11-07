@@ -493,7 +493,7 @@ wheels = [
 
 [[package]]
 name = "cdm-data-loaders"
-version = "0.1.12"
+version = "0.1.13"
 source = { editable = "." }
 dependencies = [
     { name = "bioregistry" },
