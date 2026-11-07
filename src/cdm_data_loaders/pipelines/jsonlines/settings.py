@@ -1,7 +1,7 @@
 """Setting for the JSONL validate-and-load pipeline for the KBase CTS."""
 
 from logging import Logger, getLogger
-from typing import TYPE_CHECKING, Annotated, Any, Final
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Final
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -50,6 +50,8 @@ logger: Logger = getLogger(__name__)
 EXTRACT_PIPELINE_NAME: Final[str] = "jsonlines_extract"
 PYDANTIC_PIPELINE_NAME: Final[str] = "jsonlines_pydantic"
 JSONSCHEMA_PIPELINE_NAME: Final[str] = "jsonlines_jsonschema"
+NCBI_DATASETS_PIPELINE_NAME: Final[str] = "ncbi_datasets"
+NCBI_DATASETS_SCHEMA_MODULE: Final[str] = "cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi"
 
 ENTITY_MODELS_MODULE: Final[str] = "entity_models"
 ENTITY_SCHEMAS_MODULE: Final[str] = "entity_schemas"
@@ -236,3 +238,18 @@ class JsonlJsonschemaIngestSettings(JsonlIngestSettings, TransformSettingsMixin)
     def schema_registry(self) -> SchemaRegistry:
         """The loaded `ENTITY_SCHEMAS` mapping."""
         return self._schema_registry
+
+
+class NcbiDatasetsSettings(JsonlJsonschemaIngestSettings):
+    """Pipeline settings for NCBI Datasets JSONL ingestion (`annotation_report` and `dataset_report`)."""
+
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
+        cli_prog_name=NCBI_DATASETS_PIPELINE_NAME,
+        cli_shortcuts=select_cli_shortcuts(LOCAL_CLI_SHORTCUTS, FILE_GLOB),  # pyright: ignore[reportArgumentType]
+    )
+
+    dataset_name: ClassVar[str] = NCBI_DATASETS_PIPELINE_NAME
+    entity_schemas: ClassVar[str] = NCBI_DATASETS_SCHEMA_MODULE
+    transforms_module: ClassVar[str | None] = NCBI_DATASETS_SCHEMA_MODULE
+    output_schemas_module: ClassVar[str | None] = NCBI_DATASETS_SCHEMA_MODULE
+

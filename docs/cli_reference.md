@@ -17,6 +17,7 @@ Auto-generated reference for all registered pipeline CLIs in `pyproject.toml` (`
 | [`jsonlines_extract`](#jsonlines_extract) | `JsonlExtractSettings` | `cdm_data_loaders.pipelines.jsonlines.extract_pipeline:cli` | Settings for the JSONL extraction-only pipeline. |
 | [`jsonlines_jsonschema`](#jsonlines_jsonschema) | `JsonlJsonschemaIngestSettings` | `cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:cli` | Pipeline settings for JSONL ingestion with JSON Schema validation. |
 | [`jsonlines_pydantic`](#jsonlines_pydantic) | `JsonlPydanticIngestSettings` | `cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline:cli` | Pipeline settings for JSONL pipeline that uses Pydantic for validation. |
+| [`ncbi_datasets`](#ncbi_datasets) | `NcbiDatasetsSettings` | `cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:ncbi_datasets_cli` | Pipeline settings for NCBI Datasets JSONL ingestion (`annotation_report` and `dataset_report`). |
 | [`ncbi_ftp_promote`](#ncbi_ftp_promote) | `PromoteSettings` | `cdm_data_loaders.pipelines.ncbi_ftp_promote:cli` | Configuration for the NCBI FTP file promotion pipeline. |
 | [`ncbi_ftp_sync`](#ncbi_ftp_sync) | `DownloadSettings` | `cdm_data_loaders.pipelines.ncbi_ftp_download:cli` | Configuration for the NCBI FTP assembly download pipeline. |
 | [`ncbi_rest_api`](#ncbi_rest_api) | `NcbiRestApiSettings` | `cdm_data_loaders.pipelines.ncbi_rest_api:cli` | Configuration for running the NCBI REST API import pipeline. |
@@ -127,6 +128,27 @@ Pipeline settings for JSONL pipeline that uses Pydantic for validation.
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['jsonl', 'parquet'] |
 | `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.jsonl*'` | Glob pattern for JSONL files |
 | `--entity-models` | `-m` | `CDL_ENTITY_MODELS` | `str` | *(Required)* | Dotted import path to a module that defines `ENTITY_MODELS: dict[str, type[BaseModel]]`. Each key is a table name and a subdirectory of `input_dir`. Each value is the Pydantic model for that table. |
+
+## `ncbi_datasets`
+
+Pipeline settings for NCBI Datasets JSONL ingestion (`annotation_report` and `dataset_report`).
+
+- **Entry point**: `cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:ncbi_datasets_cli`
+- **Settings hierarchy**: `NcbiDatasetsSettings` -> `JsonlJsonschemaIngestSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+
+| CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
+| `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
+| `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
+| `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
+| `--log-interval` | — | `CDL_LOG_INTERVAL` | `int` | `1000` | How often (in number of processed entries) to emit a progress log message. |
+| `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
+| `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
+| `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['jsonl', 'parquet'] |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.jsonl*'` | Glob pattern for JSONL files |
 
 ## `ncbi_ftp_promote`
 

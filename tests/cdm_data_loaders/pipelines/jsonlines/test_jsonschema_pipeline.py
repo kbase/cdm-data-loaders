@@ -1,6 +1,7 @@
 """Tests for the JSON Schema validation JSONL pipeline."""
 
 import json
+import shutil
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -13,18 +14,31 @@ from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
     _make_resolve_error,
     build_entity_resource,
+    ncbi_datasets_cli,
     run_jsonlines_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlJsonschemaIngestSettings,
+    NcbiDatasetsSettings,
     convert_schema_to_pyarrow,
 )
 from cdm_data_loaders.readers.jsonlines import make_page_router
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi import (
+    ANNOTATION_REPORT_TABLE,
+    DATASET_REPORT_TABLE,
+    filter_annotation_report,
+)
+from cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi import (
+    ENTITY_SCHEMAS as NCBI_DATASETS_ENTITY_SCHEMAS,
+)
+from cdm_data_loaders.schemas.ncbi_datasets.schema import SCHEMAS as NCBI_DATASETS_SCHEMAS
 from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
-from tests.cdm_data_loaders.pipelines.helpers import assert_run_ok
+from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
+from tests.cdm_data_loaders.pipelines.helpers import assert_run_ok, read_pipeline_tables
 from tests.cdm_data_loaders.pipelines.jsonlines.conftest import make_item
-from tests.helpers import register_temp_module
+from tests.conftest import TEST_DATA_DIR
+from tests.helpers import make_cts_settings, register_temp_module, settings_to_argv
 
 
 def make_router(
@@ -305,3 +319,142 @@ def test_run_jsonlines_pipeline_pass_filters_and_splits_records_with_transforms_
     assert sorted(dataset.widget_tag.df()["tag"].tolist()) == ["alpha", "beta"]
     assert len(dataset.table("_rejected").df()) == 1
     assert dataset.table("_rejected").df().iloc[0]["table_name"] == "widget"
+
+
+@pytest.mark.parametrize(
+    ("record", "expected_kept"),
+    [
+        pytest.param({"total_count": 0}, False, id="missing-reports"),
+        pytest.param({"messages": [{"warning": {"message": "no annotations"}}]}, False, id="messages-only"),
+        pytest.param({"reports": [], "total_count": 0}, False, id="empty-reports"),
+        pytest.param(
+            {"reports": [{"row_id": "1", "annotation": {"name": "int"}}], "total_count": 1},
+            True,
+            id="non-empty-reports",
+        ),
+    ],
+)
+def test_filter_annotation_report_pass_discards_missing_or_empty_reports(
+    record: dict[str, Any],
+    expected_kept: bool,
+) -> None:
+    """filter_annotation_report drops records without a non-empty top-level reports list."""
+    result = filter_annotation_report(record)
+    if expected_kept:
+        assert result == {ANNOTATION_REPORT_TABLE: [record]}
+    else:
+        assert result == {}
+
+
+@pytest.mark.parametrize("table_name", [ANNOTATION_REPORT_TABLE, DATASET_REPORT_TABLE], ids=str)
+def test_ncbi_datasets_precomputed_schemas_match_converter(table_name: str) -> None:
+    """Precomputed NCBI Datasets PyArrow schemas match convert_schema_to_pyarrow output."""
+    expected = convert_schema_to_pyarrow(ValidatedSchema(jsonschema=NCBI_DATASETS_ENTITY_SCHEMAS[table_name]))
+    assert NCBI_DATASETS_SCHEMAS[table_name] == expected
+
+
+@pytest.mark.parametrize(
+    "annotation_fixture_name",
+    ["annotations.jsonl", "synthesized_annotations.jsonl"],
+    ids=["three-example-responses", "synthesized-twenty-responses"],
+)
+def test_ncbi_datasets_pipeline_pass_loads_realistic_data_and_discards_empty_annotations(
+    tmp_path: Path,
+    dlt_destination_config: str,
+    pipeline_runner: PipelineTestRunner,
+    annotation_fixture_name: str,
+) -> None:
+    """ncbi_datasets loads dataset_report and annotation_report records while discarding responses without 'reports'."""
+    ncbi_data_dir = TEST_DATA_DIR / "ncbi_datasets"
+    source_ann_file = ncbi_data_dir / "annotation_report" / annotation_fixture_name
+    source_ds_file = ncbi_data_dir / "dataset_report" / "chunk_4" / "dataset" / "dataset_reports_0000.jsonl"
+
+    ann_records = [
+        json.loads(line) for line in source_ann_file.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+    expected_kept_ann = [rec for rec in ann_records if rec.get("reports")]
+    expected_dropped_count = len(ann_records) - len(expected_kept_ann)
+    min_empty_response_ratio = 0.25
+    assert expected_dropped_count >= 1
+    assert expected_dropped_count / len(ann_records) >= min_empty_response_ratio
+
+    ds_records = [json.loads(line) for line in source_ds_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "bucket"
+    ann_input_dir = input_dir / ANNOTATION_REPORT_TABLE
+    ds_input_dir = input_dir / DATASET_REPORT_TABLE
+    ann_input_dir.mkdir(parents=True)
+    ds_input_dir.mkdir(parents=True)
+
+    shutil.copyfile(source_ann_file, ann_input_dir / annotation_fixture_name)
+    shutil.copyfile(source_ds_file, ds_input_dir / source_ds_file.name)
+
+    settings = make_cts_settings(
+        NcbiDatasetsSettings,
+        tmp_path,
+        input_dir=str(input_dir),
+        output_dir=str(output_dir),
+        use_destination=dlt_destination_config,
+        use_output_dir_for_pipeline_metadata=True,
+    )
+    load_info = assert_run_ok(pipeline_runner.run(ncbi_datasets_cli, cli_args=settings_to_argv(settings)))
+    tables = read_pipeline_tables(output_dir / load_info.dataset_name, str(settings.loader_file_format))
+
+    assert "_rejected" not in tables
+    assert len(tables[ANNOTATION_REPORT_TABLE]) == len(expected_kept_ann)
+    assert [row["total_count"] for row in tables[ANNOTATION_REPORT_TABLE]] == [
+        rec["total_count"] for rec in expected_kept_ann
+    ]
+    assert [len(row["reports"]) for row in tables[ANNOTATION_REPORT_TABLE]] == [
+        len(rec["reports"]) for rec in expected_kept_ann
+    ]
+    assert len(tables[DATASET_REPORT_TABLE]) == len(ds_records)
+    assert [row["accession"] for row in tables[DATASET_REPORT_TABLE]] == [rec["accession"] for rec in ds_records]
+
+
+def test_ncbi_datasets_pipeline_pass_routes_invalid_records_to_rejected(
+    tmp_path: Path,
+    dlt_destination_config: str,
+) -> None:
+    """Invalid JSON or schema-invalid records in ncbi_datasets route to _rejected while no-reports rows are dropped."""
+    ncbi_data_dir = TEST_DATA_DIR / "ncbi_datasets"
+    ann_lines = (ncbi_data_dir / "annotation_report" / "annotations.jsonl").read_text(encoding="utf-8").splitlines()
+
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "bucket"
+    ann_input_dir = input_dir / ANNOTATION_REPORT_TABLE
+    ds_input_dir = input_dir / DATASET_REPORT_TABLE
+    ann_input_dir.mkdir(parents=True)
+    ds_input_dir.mkdir(parents=True)
+
+    # Line 1: {"total_count": 0} (dropped), Line 2: 1-report valid, Line 3: invalid type for total_count
+    (ann_input_dir / "batch.jsonl").write_text(
+        f"{ann_lines[0]}\n{ann_lines[1]}\n{json.dumps({'total_count': 'not-an-int'})}\n",
+        encoding="utf-8",
+    )
+    (ds_input_dir / "batch.jsonl").write_text(
+        f"{json.dumps({'accession': 'GCF_000005845.2'})}\n{{malformed json\n",
+        encoding="utf-8",
+    )
+
+    settings = make_cts_settings(
+        NcbiDatasetsSettings,
+        tmp_path,
+        input_dir=str(input_dir),
+        output_dir=str(output_dir),
+        use_destination=dlt_destination_config,
+        use_output_dir_for_pipeline_metadata=True,
+    )
+    load_info = assert_run_ok(run_jsonlines_pipeline(settings))
+    tables = read_pipeline_tables(output_dir / load_info.dataset_name, str(settings.loader_file_format))
+
+    assert len(tables[ANNOTATION_REPORT_TABLE]) == 1
+    assert tables[ANNOTATION_REPORT_TABLE][0]["total_count"] == 1
+    assert len(tables[DATASET_REPORT_TABLE]) == 1
+    assert tables[DATASET_REPORT_TABLE][0]["accession"] == "GCF_000005845.2"
+    rejected = sorted(tables["_rejected"], key=lambda row: row["table_name"])
+    assert [(row["table_name"], row["line_no"]) for row in rejected] == [
+        (ANNOTATION_REPORT_TABLE, 3),
+        (DATASET_REPORT_TABLE, 2),
+    ]

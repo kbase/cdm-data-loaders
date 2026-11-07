@@ -85,7 +85,7 @@ def check_annotation_report(annotation_report: list[dict[str, Any]] | None, asse
 def test_assembly_list_resource(test_defaults: dict[str, Any]) -> None:
     """Test that the assembly list resource yields the expected assembly IDs."""
     settings: NcbiRestApiSettings = NcbiRestApiSettings(
-        **{**test_defaults, "input_dir": "tests/data/ncbi_rest_api/input"}
+        **{**test_defaults, "input_dir": "tests/data/ncbi_datasets/input"}
     )  # type: ignore[reportAssignmentType]
     set_settings(settings)
 
@@ -117,7 +117,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
     mock_assembly_list = MagicMock()
     monkeypatch.setattr(ncbi_module, "assembly_list", mock_assembly_list)
 
-    input_dir = Path("tests/data/ncbi_rest_api/input")
+    input_dir = Path("tests/data/ncbi_datasets/input")
     output_dir = tmp_path / "some_dir"
     base_settings: dict[str, str | bool] = {
         "input_dir": str(input_dir),
@@ -414,7 +414,7 @@ def test_get_assembly_report_parser_with_cassette(tmp_path: Path) -> None:
     """Get assembly reports with a cassette."""
     with patch("dlt.mark"):
         settings: NcbiRestApiSettings = NcbiRestApiSettings(
-            input_dir="tests/data/ncbi_rest_api/input", output_dir=str(tmp_path)
+            input_dir="tests/data/ncbi_datasets/input", output_dir=str(tmp_path)
         )  # type: ignore[reportAssignmentType]
         run_ncbi_pipeline(settings)
 

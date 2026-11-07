@@ -2,11 +2,11 @@
 
 Three pipelines under `pipelines/jsonlines/` load JSONL files (`.jsonl` and gzip-compressed `.jsonl.gz`) through the shared CTS runner. They share settings, file discovery, table transformation hooks, and error routing, and differ in how (or whether) records are validated and buffered before loading:
 
-| Pipeline                                                                                                                       | CLI Entry Point        | Validation                        | Default Output Format                            |
-| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | --------------------------------- | ------------------------------------------------ |
-| [extract_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | `jsonlines_extract`    | None beyond valid JSON            | `list[dict]` (`pyarrow.Table` if schema map set) |
-| [extract_jsonschema_validate_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema` | JSON Schema, per entity table     | `pyarrow.Table` (`JSONSchemaToPyArrow`)          |
-| [extract_pydantic_validate_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`   | Pydantic models, per entity table | `pyarrow.Table` (`PydanticToPyArrow`)            |
+| Pipeline                                                                                                                       | CLI Entry Point                        | Validation                        | Default Output Format                            |
+| ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- | --------------------------------- | ------------------------------------------------ |
+| [extract_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | `jsonlines_extract`                    | None beyond valid JSON            | `list[dict]` (`pyarrow.Table` if schema map set) |
+| [extract_jsonschema_validate_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema`, `ncbi_datasets` | JSON Schema, per entity table     | `pyarrow.Table` (`JSONSchemaToPyArrow`)          |
+| [extract_pydantic_validate_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`                   | Pydantic models, per entity table | `pyarrow.Table` (`PydanticToPyArrow`)            |
 
 All three support plain and gzip-compressed inputs, Parquet or JSONL output, optional record-level transforms (`--transforms-module`), and a unified `_rejected` table for parse and validation failures.
 
@@ -94,6 +94,13 @@ uv run jsonlines_jsonschema \
   --use-output-dir-for-pipeline-metadata true \
   --loader-file-format parquet
 ```
+
+#### NCBI Datasets Preset (`ncbi_datasets`)
+
+The `ncbi_datasets` CLI entry point runs `jsonlines_jsonschema` with `dataset_name` locked to `"ncbi_datasets"` and precomputed JSON Schemas, PyArrow schemas, and record transforms from `cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi`:
+
+- `dataset_report`: validates `<input_dir>/dataset_report/` records against `datasetReport.schema.json` and loads them into `dataset_report`.
+- `annotation_report`: validates `<input_dir>/annotation_report/` records against `annotationReport.schema.json`, discards records without a non-empty top-level `reports` array via `filter_annotation_report`, and loads the remaining records into `annotation_report`.
 
 ### Pydantic Pipeline (`jsonlines_pydantic`)
 
@@ -234,8 +241,8 @@ Standard CTS settings and `CDL_`-prefixed environment variables apply to all thr
 | `--output-dir`, `-o`                           | `CDL_OUTPUT_DIR`                           | all                    | Local output directory for `report.txt` and optional pipeline metadata.                                                                                                             |
 | `--dataset-name`                               | `CDL_DATASET_NAME`                         | all                    | Non-empty destination dataset name.                                                                                                                                                 |
 | `--table-name`, `-t`                           | `CDL_TABLE_NAME`                           | `jsonlines_extract`    | Destination table name for valid records (and `table_name` value in `_rejected`).                                                                                                   |
-| `--entity-schemas`, `-m`                       | `CDL_SCHEMA_MODULE`                        | `jsonlines_jsonschema` | Dotted import path to a module defining `ENTITY_SCHEMAS: dict[str, dict]`.                                                                                                          |
-| `--entity-models`, `-m`                        | `CDL_ENTITY_MODELS_MODULE`                 | `jsonlines_pydantic`   | Dotted import path to a module defining `ENTITY_MODELS: dict[str, type[BaseModel]]`.                                                                                                |
+| `--entity-schemas`, `-m`                       | `CDL_ENTITY_SCHEMAS`                       | `jsonlines_jsonschema` | Dotted import path to a module defining `ENTITY_SCHEMAS: dict[str, dict]`.                                                                                                          |
+| `--entity-models`, `-m`                        | `CDL_ENTITY_MODELS`                        | `jsonlines_pydantic`   | Dotted import path to a module defining `ENTITY_MODELS: dict[str, type[BaseModel]]`.                                                                                                |
 | `--transforms-module`                          | `CDL_TRANSFORMS_MODULE`                    | all                    | Optional module path defining `TABLE_TRANSFORMS: dict[str, RecordTransformFn]`.                                                                                                     |
 | `--output-schemas-module`                      | `CDL_OUTPUT_SCHEMAS_MODULE`                | all                    | Optional module path defining `OUTPUT_SCHEMAS: dict[str, pa.Schema]`.                                                                                                               |
 | `--file-glob`, `-g`                            | `CDL_FILE_GLOB`                            | all                    | File glob pattern within each input directory; defaults to `*.jsonl*`.                                                                                                              |

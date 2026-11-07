@@ -73,13 +73,13 @@ def dlt_test_settings(tmp_path: Path, dlt_destination_config: str) -> CtsSetting
 @pytest.fixture
 def reference_data_dir() -> Path:
     """Return the directory containing all reference chunk configurations."""
-    return TEST_DATA_DIR / "ncbi_rest_api" / "dataset_report"
+    return TEST_DATA_DIR / "ncbi_datasets" / "dataset_report"
 
 
 @pytest.fixture(scope="session")
 def reference_jsonl() -> Path:
     """Path to the reference JSONL file."""
-    return TEST_DATA_DIR / "ncbi_rest_api" / "dataset_report" / "chunk_52" / "dataset" / "dataset_reports_52.jsonl"
+    return TEST_DATA_DIR / "ncbi_datasets" / "dataset_report" / "chunk_52" / "dataset" / "dataset_reports_52.jsonl"
 
 
 @pytest.fixture(scope="session")
