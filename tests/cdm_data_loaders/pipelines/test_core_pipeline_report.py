@@ -24,7 +24,8 @@ from dlt.common.storages.load_package import (
 from dlt.common.typing import TDataItems
 from dlt.sources.filesystem import filesystem
 
-from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME, REPORT_FILE_NAME
+from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME, REJECTED_TABLE_NAME, REPORT_FILE_NAME
+from cdm_data_loaders.core.preprocessors import FilePreprocessError
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.core import (
     PipelineReport,
@@ -33,11 +34,16 @@ from cdm_data_loaders.pipelines.core import (
     save_pipeline_metadata,
     write_pipeline_report,
 )
+from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from tests.cdm_data_loaders.pipelines.conftest import (
     LOAD_INFO_SAVE_FAILED,
     LOAD_INFO_SAVE_FAILED_JOBS,
 )
-from tests.cdm_data_loaders.pipelines.helpers import check_pipeline_report
+from tests.cdm_data_loaders.pipelines.helpers import (
+    check_pipeline_report,
+    read_destination_rows,
+)
+from tests.helpers import register_temp_module
 
 TEST_PIPELINE_NAME: Final[str] = "test_pipeline"
 TEST_DATASET_NAME: Final[str] = "test_dataset"
@@ -975,6 +981,97 @@ def test_run_pipeline_pass_shared_and_multiple_filesystem_roots_deduplicated(
             "dataset": "multi_fs_ds",
             "status": "completed",
             "ingested_files": ["a.txt", "b.txt"],
+            "pipeline_load_info_errs": None,
+        },
+    )
+
+
+def test_run_pipeline_pass_file_preprocessors_reject_skip_and_record_report_errors(
+    dlt_test_settings: CtsSettings,
+    destination_bucket: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """File pre-processing failures emit to _rejected, log an error, skip the file, and record load_errors in report.txt."""
+    input_dir = Path(dlt_test_settings.input_dir)
+    (input_dir / "good.jsonl").write_text('{"id": "1"}\n', encoding="utf-8")
+    (input_dir / "skip.jsonl").write_text('{"id": "2"}\n', encoding="utf-8")
+    (input_dir / "bad.jsonl").write_text('{"id": "3"}\n', encoding="utf-8")
+
+    def preprocess_file(file_item: Any) -> Any:  # noqa: ANN401
+        rel = file_item["relative_path"]
+        if rel == "skip.jsonl":
+            return None
+        if rel == "bad.jsonl":
+            msg = "checksum mismatch"
+            raise FilePreprocessError(msg)
+        return file_item
+
+    pre_mod = register_temp_module(
+        monkeypatch,
+        "_test_pipeline_report_preprocessors",
+        FILE_PREPROCESSORS=[preprocess_file],
+    )
+    settings = JsonlExtractSettings(
+        **dlt_test_settings.model_dump(exclude={"pipeline_dir", "report_path"}),
+        dataset_name="preprocess_report_ds",
+        table_name="items",
+        loader_file_format="jsonl",
+        preprocessors_module=pre_mod,
+    )
+
+    read_files: list[str] = []
+
+    def read_items(items: TDataItems, cfg: JsonlExtractSettings) -> Iterator[Any]:
+        for item in items:
+            read_files.append(item["relative_path"])
+            yield dlt.mark.with_table_name({"file": item["relative_path"]}, cfg.table_name)
+
+    resource = build_filesystem_resource(
+        settings,
+        read_items,
+        name="jsonl_items",
+        parallelized=False,
+    )
+
+    load_info = run_pipeline(
+        settings,
+        resource,
+        pipeline_kwargs={"pipeline_name": TEST_PIPELINE_NAME, "dataset_name": "preprocess_report_ds"},
+        pipeline_run_kwargs={"loader_file_format": "jsonl"},
+    )
+
+    assert load_info is not None
+    assert read_files == ["good.jsonl"]
+
+    error_logs = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert error_logs == ["File pre-processing failed for bad.jsonl: checksum mismatch"]
+
+    valid_rows = read_destination_rows(destination_bucket, "items")
+    assert valid_rows == [{"file": "good.jsonl"}]
+
+    rejected_rows = read_destination_rows(
+        destination_bucket,
+        REJECTED_TABLE_NAME,
+    )
+    assert rejected_rows == [
+        {
+            "table_name": "items",
+            "source_file": "bad.jsonl",
+            "line_no": None,
+            "raw_record": None,
+            "error_detail": "checksum mismatch",
+        }
+    ]
+
+    check_pipeline_report(
+        settings.report_path,
+        {
+            "pipeline": TEST_PIPELINE_NAME,
+            "dataset": "preprocess_report_ds",
+            "status": "completed with errors",
+            "ingested_files": ["good.jsonl"],
+            "load_errors": ["File pre-processing failed for bad.jsonl: checksum mismatch"],
             "pipeline_load_info_errs": None,
         },
     )

@@ -18,8 +18,9 @@ from cdm_data_loaders.converters.xsd_to_pyarrow import (
     make_xml_element_converter,
     make_xml_level_converters,
 )
-from cdm_data_loaders.core.fields import NonEmptyStr, XsdFile
-from cdm_data_loaders.core.registry import ArrowSchemaRegistry
+from cdm_data_loaders.core.fields import XML_GZ_FILE_GLOB, FileGlob, NonEmptyStr, XsdFile
+from cdm_data_loaders.core.preprocessors import validate_file_preprocessors, validate_md5_sidecar
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry, FilePreprocessFn
 from cdm_data_loaders.core.settings import (
     XML_CLI_SHORTCUTS,
     XmlIngestSettings,
@@ -118,14 +119,21 @@ class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin):
             raise ValueError(err_msg)
 
     def _resolve_level_schema_map(self) -> None:
-        """Validate `table_transforms` and populate `_schema_map` for level-based mode."""
+        """Validate `file_preprocessors` and `table_transforms`, and populate `_schema_map` for level-based mode."""
+        validate_file_preprocessors(self, self._pyarrow_schemas)
         validate_table_transforms(self, self._pyarrow_schemas)
-        resolved_schemas: dict[str, pa.Schema] = (
-            dict(self._unreconciled_output_schemas.registry) if self._unreconciled_output_schemas is not None else {}
-        )
-        for table_name, table_schema in self._pyarrow_schemas.items():
-            if self._needs_default_pyarrow_schema(table_name):
-                resolved_schemas[table_name] = table_schema
+        resolved_schemas: dict[str, pa.Schema] = {
+            **(
+                dict(self._unreconciled_output_schemas.registry)
+                if self._unreconciled_output_schemas is not None
+                else {}
+            ),
+            **{
+                table_name: table_schema
+                for table_name, table_schema in self._pyarrow_schemas.items()
+                if self._needs_default_pyarrow_schema(table_name)
+            },
+        }
         self._schema_map = ArrowSchemaRegistry(registry=resolved_schemas) if resolved_schemas else None
 
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
@@ -272,6 +280,7 @@ class PubMedXmlToPyArrowSettings(LevelPresetXmlToPyArrowSettings):
     """Settings for the PubMed XML to PyArrow ingestion pipeline."""
 
     _PRECOMPUTED_SCHEMAS: ClassVar[Mapping[str, pa.Schema]] = PUBMED_SCHEMAS
+    _DEFAULT_FILE_PREPROCESSORS: ClassVar[tuple[FilePreprocessFn, ...]] = (validate_md5_sidecar,)
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=PUBMED_PIPELINE_NAME,
@@ -281,6 +290,13 @@ class PubMedXmlToPyArrowSettings(LevelPresetXmlToPyArrowSettings):
     dataset_name: ClassVar[str] = PUBMED_PIPELINE_NAME
     root_tag: ClassVar[str | None] = PUBMED_ROOT_TAG
 
+    file_glob: Annotated[
+        FileGlob,
+        Field(
+            default=XML_GZ_FILE_GLOB,
+            description="Glob pattern for PubMed XML files",
+        ),
+    ]
     xsd_file: Annotated[
         FilePath,
         Field(

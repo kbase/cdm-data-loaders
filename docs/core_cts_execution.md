@@ -191,10 +191,11 @@ Mixed into `JsonlIngestSettings`, `XsvIngestSettings`, and `SingleTableXmlIngest
 
 | Field                   | CLI Flag                  | Shortcut | Default | Description                                                                                             |
 | :---------------------- | :------------------------ | :------- | :------ | :------------------------------------------------------------------------------------------------------ |
+| `preprocessors_module`  | `--preprocessors-module`  | —        | `None`  | Optional Python module path exporting `FILE_PREPROCESSORS` (`Sequence[FilePreprocessFn]` or `dict`).    |
 | `transforms_module`     | `--transforms-module`     | —        | `None`  | Optional Python module path exporting `TABLE_TRANSFORMS` (`dict[str, RecordTransformFn]`).              |
 | `output_schemas_module` | `--output-schemas-module` | —        | `None`  | Optional Python module path exporting `OUTPUT_SCHEMAS` (`dict[str, pa.Schema]`) for destination tables. |
 
-See [Table & Column Transformations](table_transforms.md) for full details on `TABLE_TRANSFORMS` and `OUTPUT_SCHEMAS`.
+See [Table & Column Transformations](table_transforms.md) for full details on `FILE_PREPROCESSORS`, `TABLE_TRANSFORMS`, and `OUTPUT_SCHEMAS`.
 
 ---
 

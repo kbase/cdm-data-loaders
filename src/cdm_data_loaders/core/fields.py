@@ -10,6 +10,7 @@ INPUT_MOUNT: Final[str] = "/input_dir"
 OUTPUT_MOUNT: Final[str] = "/output_dir"
 
 DEFAULT_JSONL_FILE_GLOB: Final[str] = "*.jsonl*"
+XML_GZ_FILE_GLOB: Final[str] = "*.xml.gz"
 DEFAULT_XML_FILE_GLOB: Final[str] = "*.xml*"
 REJECTED_TABLE_NAME: Final[str] = "_rejected"
 GZIP_SUFFIX: Final[str] = ".gz"
@@ -43,6 +44,7 @@ LOG_INTERVAL: Final[str] = "log_interval"
 MAX_TABLE_NESTING: Final[str] = "max_table_nesting"
 OUTPUT_DIR: Final[str] = "output_dir"
 OUTPUT_SCHEMAS_MODULE: Final[str] = "output_schemas_module"
+PREPROCESSORS_MODULE: Final[str] = "preprocessors_module"
 PRESERVE_TABLE_NESTING: Final[str] = "preserve_table_nesting"
 SAVE_RAW_RESPONSES: Final[str] = "save_raw_responses"
 TABLE_NAME: Final[str] = "table_name"
@@ -71,6 +73,7 @@ DEFAULTS = frozendict(
         LOG_INTERVAL: 1000,
         MAX_TABLE_NESTING: 0,
         OUTPUT_SCHEMAS_MODULE: None,
+        PREPROCESSORS_MODULE: None,
         PRESERVE_TABLE_NESTING: False,
         SAVE_RAW_RESPONSES: False,
         TRANSFORMS_MODULE: None,
@@ -163,6 +166,17 @@ OutputSchemasModuleSpec = Annotated[
         description=(
             "Optional Python module path exporting OUTPUT_SCHEMAS "
             "(dict[str, pyarrow.Schema]) for PyArrow schema overrides."
+        ),
+    ),
+]
+PreprocessorsModuleSpec = Annotated[
+    NonEmptyStr | None,
+    Field(
+        default=DEFAULTS[PREPROCESSORS_MODULE],
+        description=(
+            "Optional Python module path exporting FILE_PREPROCESSORS "
+            "(Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] | FilePreprocessFn]) "
+            "for file-level validation and filtering before opening and parsing."
         ),
     ),
 ]

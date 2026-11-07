@@ -1,18 +1,27 @@
 """Pluggable record filtering, transformation, multi-table splitting, and PyArrow schema overrides."""
 
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 
 import pyarrow as pa
 from pydantic import PrivateAttr, model_validator
 from pydantic_settings import BaseSettings
 
 from cdm_data_loaders.converters.jsonschema_to_pyarrow import coerce_record_for_pyarrow
-from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME, OutputSchemasModuleSpec, TransformsModuleSpec
+from cdm_data_loaders.core.fields import (
+    REJECTED_TABLE_NAME,
+    OutputSchemasModuleSpec,
+    PreprocessorsModuleSpec,
+    TransformsModuleSpec,
+)
+from cdm_data_loaders.core.preprocessors import validate_file_preprocessors
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
+    FilePreprocessFn,
+    PreprocessorRegistry,
     RecordTransformFn,
     TransformRegistry,
+    load_file_preprocessors,
     load_registry_dict,
 )
 
@@ -140,8 +149,11 @@ def validate_table_transforms(
 
 
 class TransformSettingsMixin(BaseSettings):
-    """Mixin for pipelines that accept `TABLE_TRANSFORMS` and `OUTPUT_SCHEMAS` modules."""
+    """Mixin for pipelines that accept `FILE_PREPROCESSORS`, `TABLE_TRANSFORMS`, and `OUTPUT_SCHEMAS` modules."""
 
+    _DEFAULT_FILE_PREPROCESSORS: ClassVar[tuple[FilePreprocessFn, ...]] = ()
+
+    _file_preprocessors: PreprocessorRegistry | None = PrivateAttr(default=None)
     _table_transforms: TransformRegistry | None = PrivateAttr(default=None)
     _unreconciled_output_schemas: ArrowSchemaRegistry | None = PrivateAttr(default=None)
 
@@ -155,12 +167,17 @@ class TransformSettingsMixin(BaseSettings):
     schema generated from the input schema, since the transform may change the output fields.
     """
 
+    preprocessors_module: PreprocessorsModuleSpec
     transforms_module: TransformsModuleSpec
     output_schemas_module: OutputSchemasModuleSpec
 
     @model_validator(mode="after")
     def _validate_transforms_module(self) -> Self:
-        """Eagerly load and validate `TABLE_TRANSFORMS` and `OUTPUT_SCHEMAS` if configured."""
+        """Load and validate `FILE_PREPROCESSORS`, `TABLE_TRANSFORMS`, and `OUTPUT_SCHEMAS` if configured."""
+        if self.preprocessors_module is not None:
+            self._file_preprocessors = load_file_preprocessors(self.preprocessors_module)
+        elif self._DEFAULT_FILE_PREPROCESSORS:
+            self._file_preprocessors = PreprocessorRegistry(default=self._DEFAULT_FILE_PREPROCESSORS)
         if self.transforms_module is not None:
             self._table_transforms = load_registry_dict(self.transforms_module, "TABLE_TRANSFORMS")
         if self.output_schemas_module is not None:
@@ -180,6 +197,7 @@ class TransformSettingsMixin(BaseSettings):
         """Resolve `_schema_map` from `_unreconciled_output_schemas`, `_table_transforms`, and any default PyArrow schema."""
         table_name = getattr(self, "table_name", None)
         if isinstance(table_name, str):
+            validate_file_preprocessors(self, {table_name})
             validate_table_transforms(self, {table_name})
             self._schema_map = resolve_schema_map(
                 table_name,
@@ -191,6 +209,11 @@ class TransformSettingsMixin(BaseSettings):
             self._schema_map = self._unreconciled_output_schemas
 
     @property
+    def file_preprocessors(self) -> PreprocessorRegistry | None:
+        """The loaded `FILE_PREPROCESSORS` registry (`None` if not configured)."""
+        return self._file_preprocessors
+
+    @property
     def table_transforms(self) -> TransformRegistry | None:
         """The loaded `TABLE_TRANSFORMS` registry (`None` if not configured)."""
         return self._table_transforms
@@ -199,6 +222,12 @@ class TransformSettingsMixin(BaseSettings):
     def schema_map(self) -> ArrowSchemaRegistry | None:
         """The resolved `ArrowSchemaRegistry` for this pipeline (`None` if unschematized)."""
         return self._schema_map
+
+    def get_file_preprocessors(self, table_name: str | None = None) -> tuple[FilePreprocessFn, ...]:
+        """Return the `FilePreprocessFn` sequence for `table_name`, if configured."""
+        if self._file_preprocessors is None:
+            return ()
+        return self._file_preprocessors.get(table_name)
 
     def get_table_transform(self, table_name: str) -> RecordTransformFn | None:
         """Return the `RecordTransformFn` for `table_name`, if configured."""

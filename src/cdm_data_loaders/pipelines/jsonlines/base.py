@@ -70,6 +70,7 @@ def build_entity_resource(
         _stream_entity_lines,
         name=f"{table_name}_raw",
         file_glob=f"{table_name}/{settings.file_glob}",
+        table_name=table_name,
         max_table_nesting=0,
     )
     validated = dlt.transformer(
