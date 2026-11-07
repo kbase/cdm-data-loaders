@@ -7,11 +7,11 @@ from typing import Any
 import pytest
 from pyspark.sql.types import ArrayType, DataType, DoubleType, LongType, NullType, StringType, StructType
 
-from cdm_data_loaders.converters import dlt_to_jsonschema as reverse_module
-from cdm_data_loaders.converters import jsonschema_to_dlt as dlt_module
-from cdm_data_loaders.converters import jsonschema_to_pyspark as spark_module
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.inference import decimal_places, infer_implicit_type
+from cdm_data_loaders.converters.facades import dlt_to_jsonschema as reverse_module
+from cdm_data_loaders.converters.facades import jsonschema_to_dlt as dlt_module
+from cdm_data_loaders.converters.facades import jsonschema_to_pyspark as spark_module
 
 
 def property_schema(fragment: dict[str, Any]) -> dict[str, Any]:

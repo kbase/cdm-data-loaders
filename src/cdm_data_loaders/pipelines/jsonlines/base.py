@@ -32,7 +32,7 @@ from cdm_data_loaders.readers.jsonlines import (
     make_page_router,
     stream_jsonl_lines,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.schemas.jsonschema import ValidatedSchema
 
 ResourceFactory = Callable[[str, Any, Any], DltResource]
 

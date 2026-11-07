@@ -357,6 +357,7 @@ def discover_api_modules(src_root: Path = SRC_ROOT) -> list[ModuleDoc]:
             )
         )
 
+    modules.sort(key=lambda m: (m.nav_parts if m.is_package else m.nav_parts[:-1], not m.is_package, m.nav_parts[-1]))
     return modules
 
 
@@ -410,12 +411,22 @@ def write_mkdocs_api_tree(
     assets = discover_schema_assets(src_root)
     written: list[Path] = []
     summary_lines: list[str] = ["# API Reference", ""]
+    emitted_prefixes: set[tuple[str, ...]] = set()
 
     for mod in modules:
+        for depth in range(1, len(mod.nav_parts)):
+            prefix = mod.nav_parts[:depth]
+            if prefix not in emitted_prefixes:
+                prefix_indent = "    " * (depth - 1)
+                prefix_label = prefix[-1] if depth > 1 else prefix[0]
+                summary_lines.append(f"{prefix_indent}* {prefix_label}")
+                emitted_prefixes.add(prefix)
+
         page_path = Path("api") / mod.doc_rel_path
         indent = "    " * (len(mod.nav_parts) - 1)
         label = mod.nav_parts[-1] if len(mod.nav_parts) > 1 else mod.module_path
         summary_lines.append(f"{indent}* [`{label}`]({mod.doc_rel_path.as_posix()})")
+        emitted_prefixes.add(mod.nav_parts)
 
         page_lines = [
             f"# `{mod.module_path}`",

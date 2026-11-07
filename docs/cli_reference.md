@@ -22,6 +22,8 @@ Auto-generated reference for all registered pipeline CLIs in `pyproject.toml` (`
 | [`ncbi_ftp_sync`](#ncbi_ftp_sync) | `DownloadSettings` | `cdm_data_loaders.pipelines.ncbi_ftp_download:cli` | Configuration for the NCBI FTP assembly download pipeline. |
 | [`ncbi_rest_api`](#ncbi_rest_api) | `NcbiRestApiSettings` | `cdm_data_loaders.pipelines.ncbi_rest_api:cli` | Configuration for running the NCBI REST API import pipeline. |
 | [`pubmed`](#pubmed) | `PubMedXmlToPyArrowSettings` | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:pubmed_cli` | Settings for the PubMed XML to PyArrow ingestion pipeline. |
+| [`pyiceberg_to_jsonschema`](#pyiceberg_to_jsonschema) | `IcebergToJsonSchemaSettings` | `cdm_data_loaders.converters.cli.pyiceberg_to_jsonschema:cli` | Settings for generating a set of JSONSchemas from an Iceberg data catalog. |
+| [`pyiceberg_to_linkml`](#pyiceberg_to_linkml) | `IcebergToLinkMLSettings` | `cdm_data_loaders.converters.cli.pyiceberg_to_linkml:cli` | Settings for generating a set of LinkML schemas from an Iceberg data catalog. |
 | [`uniprot`](#uniprot) | `UniProtXmlToPyArrowSettings` | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniprot_cli` | Settings for the UniProt XML to PyArrow ingestion pipeline. |
 | [`uniprot_cdm`](#uniprot_cdm) | `UniProtSettings` | `cdm_data_loaders.pipelines.uniprot_kb_cdm:cli` | Configuration for running the UniProt KB import pipeline. |
 | [`uniref100`](#uniref100) | `UniRef100XmlToPyArrowSettings` | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref100_cli` | UniRef 100 XML to PyArrow ingest settings. |
@@ -32,6 +34,7 @@ Auto-generated reference for all registered pipeline CLIs in `pyproject.toml` (`
 | [`uniref90_cdm`](#uniref90_cdm) | `UniRef90CdmSettings` | `cdm_data_loaders.pipelines.uniref_cdm:uniref90_cdm_cli` | UniRef 90 CDM XML-to-PyArrow ingest settings. |
 | [`xmltodict`](#xmltodict) | `XmlToDictSettings` | `cdm_data_loaders.pipelines.xmltodict.pipeline:cli` | Settings for the XML ingestion pipeline. |
 | [`xmltopyarrow`](#xmltopyarrow) | `XmlToPyArrowSettings` | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:cli` | Settings for the XML to PyArrow ingestion pipeline. |
+| [`xsd_to_pyarrow`](#xsd_to_pyarrow) | `XsdToPyArrowCliSettings` | `cdm_data_loaders.converters.cli.xsd_to_pyarrow:cli` | Settings for generating a static Python PyArrow schema module from an XSD file. |
 | [`xsv`](#xsv) | `XsvIngestSettings` | `cdm_data_loaders.pipelines.xsv.pipeline:cli` | Settings for the XSV (CSV/TSV) ingestion pipeline. |
 
 ## `all_the_bacteria`
@@ -230,6 +233,34 @@ Settings for the PubMed XML to PyArrow ingestion pipeline.
 | `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml.gz'` | Glob pattern for PubMed XML files |
 | `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | `src/cdm_data_loaders/schemas/pubmed/pubmed.xsd` | Path to the PubMed XSD file describing the XML documents to be imported. |
 | `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
+
+## `pyiceberg_to_jsonschema`
+
+Settings for generating a set of JSONSchemas from an Iceberg data catalog.
+
+- **Entry point**: `cdm_data_loaders.converters.cli.pyiceberg_to_jsonschema:cli`
+- **Settings hierarchy**: `IcebergToJsonSchemaSettings` -> `IcebergCatalogDumpSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+
+| CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
+| `--catalog` | `-c` | `CDL_CATALOG` | `str` | *(Required)* | Name of the catalog to retrieve schemas from |
+| `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
+| `--group-by-namespace` | `-g` | `CDL_GROUP_BY_NAMESPACE` | `bool` | `False` | Export one JSON Schema per namespace |
+
+## `pyiceberg_to_linkml`
+
+Settings for generating a set of LinkML schemas from an Iceberg data catalog.
+
+- **Entry point**: `cdm_data_loaders.converters.cli.pyiceberg_to_linkml:cli`
+- **Settings hierarchy**: `IcebergToLinkMLSettings` -> `IcebergCatalogDumpSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+
+| CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
+| `--catalog` | `-c` | `CDL_CATALOG` | `str` | *(Required)* | Name of the catalog to retrieve schemas from |
+| `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
+| `--group-by-namespace` | `-g` | `CDL_GROUP_BY_NAMESPACE` | `bool` | `False` | Export one LinkML schema per namespace |
 
 ## `uniprot`
 
@@ -475,6 +506,23 @@ Settings for the XML to PyArrow ingestion pipeline.
 | `--root-tag` | — | `CDL_ROOT_TAG` | `str \| None` | `None` | Optional root XML element tag name used to anchor level-based XSD element resolution. |
 | `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | *(Required)* | Path to the XSD file describing the XML documents to be imported. |
 | `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
+
+## `xsd_to_pyarrow`
+
+Settings for generating a static Python PyArrow schema module from an XSD file.
+
+- **Entry point**: `cdm_data_loaders.converters.cli.xsd_to_pyarrow:cli`
+- **Settings hierarchy**: `XsdToPyArrowCliSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+
+| CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
+| `--xsd-file` | `-x` | `CDL_XSD_FILE` | `Path` | *(Required)* | Path to the input XSD file |
+| `--output` | `-o` | `CDL_OUTPUT` | `Path` | *(Required)* | Destination Python file path for the generated schema module |
+| `--xml-level` | `-v` | `CDL_XML_LEVEL` | `int` | `1` | Element depth relative to root (default: 1) |
+| `--xml-tag` | `-m` | `CDL_XML_TAG` | `str \| None` | `None` | Single target XML tag (overrides --xml-level) |
+| `--root-tag` | `-r` | `CDL_ROOT_TAG` | `str \| None` | `None` | Explicit root XML tag for level discovery |
+| `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth before JSON string truncation |
 
 ## `xsv`
 

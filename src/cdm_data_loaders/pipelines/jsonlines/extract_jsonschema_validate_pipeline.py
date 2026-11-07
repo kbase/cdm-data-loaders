@@ -29,7 +29,7 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     NcbiDatasetsSettings,
 )
 from cdm_data_loaders.readers.jsonlines import ParseErrorResolver
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.schemas.jsonschema import ValidatedSchema
 
 
 def _make_resolve_error(schema: ValidatedSchema) -> ParseErrorResolver:

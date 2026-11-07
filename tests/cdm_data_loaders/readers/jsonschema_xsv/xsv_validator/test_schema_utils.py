@@ -12,17 +12,17 @@ import jsonschema.validators
 import pytest
 from pydantic import ValidationError
 
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema import (
-    CUSTOM_META_SCHEMA,
-    CUSTOM_META_SCHEMA_URI,
-)
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
     ValidatedXsvSchema,
     generate_first_pass_schema,
     generate_header,
     get_schema_parsing_metadata,
-    register_xsv_validator,
     validate_jsonschema,
+)
+from cdm_data_loaders.schemas.jsonschema import (
+    CUSTOM_META_SCHEMA,
+    CUSTOM_META_SCHEMA_URI,
+    register_xsv_validator,
 )
 from tests.cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.conftest import (
     DELIMITERS,

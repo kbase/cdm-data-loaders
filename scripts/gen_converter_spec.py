@@ -54,21 +54,21 @@ from pydantic import (
     StrictStr,
 )
 
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSCHEMA_TO_PYARROW_ERRORS,
     JSONSchemaToPyArrowError,
     resolve_scalar_type,
 )
-from cdm_data_loaders.converters.pydantic_to_pyarrow import (
+from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import (
+    resolve_scalar_type as resolve_pydantic_scalar_type,
+)
+from cdm_data_loaders.converters.facades.xsd_to_pyarrow import SCALAR_ARROW_TYPES
+from cdm_data_loaders.converters.readers.pydantic import (
     PYDANTIC_TO_PYARROW_ERRORS,
     PydanticToPyArrowError,
 )
-from cdm_data_loaders.converters.pydantic_to_pyarrow import (
-    resolve_scalar_type as resolve_pydantic_scalar_type,
-)
-from cdm_data_loaders.converters.xsd_to_pyarrow import (
+from cdm_data_loaders.converters.readers.xsd import (
     BUILTIN_LIST_ITEM_TYPES,
-    SCALAR_ARROW_TYPES,
     XSD_TO_PYARROW_ERRORS,
     XsdToPyArrowError,
 )

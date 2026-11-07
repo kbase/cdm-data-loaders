@@ -61,7 +61,7 @@ class JsonSchemaConverterBase[OutputT](BaseModel):
     _invalid_schema_error_cls: ClassVar[type[ConversionError]] = ConversionError
     _converter_name: ClassVar[str] = ""
     _root_target_label: ClassVar[str] = ""
-    _dereference_function: ClassVar[str] = "cdm_data_loaders.utils.jsonschema.dereferencer.dereference_schema"
+    _dereference_function: ClassVar[str] = "cdm_data_loaders.schemas.jsonschema.dereference_schema"
 
     extension_registry: InstanceOf[ExtensionRegistry] = DEFAULT_EXTENSIONS
 

@@ -7,7 +7,7 @@ import pyarrow as pa
 from pydantic import Field, FilePath, PrivateAttr
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrow
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import convert_xsv_schema_to_pyarrow
 from cdm_data_loaders.core.fields import (
     FileGlob,
     TableName,
@@ -24,7 +24,6 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
     generate_first_pass_schema,
     validate_jsonschema,
 )
-from cdm_data_loaders.utils.jsonschema.dereferencer import dereference_schema
 
 PIPELINE_NAME: Final[str] = "xsv"
 
@@ -37,40 +36,6 @@ SHORTCUTS: Final[dict[str, str]] = {
     "schema_file": "s",
     "table_name": "t",
 }
-
-
-def convert_xsv_schema_to_pyarrow(validated_schema: ValidatedXsvSchema) -> pa.Schema:
-    """Convert a validated XSV JSON Schema to a PyArrow schema.
-
-    In XSV schemas, top-level ``required`` declares the ordered CSV columns,
-    unlisted columns default to nullable strings, and any column whose
-    schema permits ``null`` is nullable in PyArrow.
-
-    :param validated_schema: validated XSV JSON Schema
-    :type validated_schema: ValidatedXsvSchema
-    :return: PyArrow schema for the XSV table
-    :rtype: pa.Schema
-    """
-    raw_schema = validated_schema.jsonschema
-    dereferenced = dereference_schema(raw_schema)
-    if "$schema" not in dereferenced and "$schema" in raw_schema:
-        dereferenced = {"$schema": raw_schema["$schema"], **dereferenced}
-
-    raw_properties = dereferenced.get("properties", {})
-    properties: dict[str, Any] = {
-        col: raw_properties.get(col, {"type": ["string", "null"]}) for col in validated_schema.required_cols
-    }
-    for col, prop_spec in raw_properties.items():
-        if col not in properties:
-            properties[col] = prop_spec
-
-    normalized_schema = {
-        **dereferenced,
-        "type": dereferenced.get("type", "object"),
-        "properties": properties,
-        "required": list(validated_schema.required_cols),
-    }
-    return JSONSchemaToPyArrow().convert(normalized_schema)
 
 
 class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):

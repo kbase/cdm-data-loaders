@@ -17,7 +17,7 @@
 
 ## 1. XSD-Driven XML-to-PyArrow Pipelines (`uniprot`, `uniref50`, `uniref90`, `uniref100`)
 
-The preset XML-to-PyArrow pipelines stream `<entry>` elements from UniProtKB or UniRef XML files, validate and coerce each element against its bundled XML Schema (XSD) via `cdm_data_loaders.converters.xsd_to_pyarrow`, and emit nested PyArrow tables matching the generated `pyarrow.Schema` (see [`xsd_to_pyarrow_specification.md`](xsd_to_pyarrow_specification.md) for the complete XSD-to-PyArrow conversion rules).
+The preset XML-to-PyArrow pipelines stream `<entry>` elements from UniProtKB or UniRef XML files, validate and coerce each element against its bundled XML Schema (XSD) via `cdm_data_loaders.converters.facades.xsd_to_pyarrow`, and emit nested PyArrow tables matching the generated `pyarrow.Schema` (see [`xsd_to_pyarrow_specification.md`](xsd_to_pyarrow_specification.md) for the complete XSD-to-PyArrow conversion rules).
 
 ### Preset Configuration
 

@@ -10,7 +10,7 @@ from dlt.common.storages.fsspec_filesystem import FileItemDict
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, InstanceOf, StringConstraints, model_validator
 
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.schemas.jsonschema import ValidatedSchema
 
 DEFAULT_TRANSFORMS_ATTR: Final[str] = "TABLE_TRANSFORMS"
 DEFAULT_OUTPUT_SCHEMAS_ATTR: Final[str] = "OUTPUT_SCHEMAS"

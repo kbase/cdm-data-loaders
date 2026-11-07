@@ -8,7 +8,8 @@ from typing import Any
 import pytest
 from lxml.etree import XMLParser, fromstring
 
-from cdm_data_loaders.converters.xsd_to_pyarrow import load_schema, make_xml_element_converter
+from cdm_data_loaders.coercion.xml import make_xml_element_converter
+from cdm_data_loaders.converters.readers.xsd import load_schema
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.parsers.uniprot.uniref import (
     ENTRY_XML_TAG,

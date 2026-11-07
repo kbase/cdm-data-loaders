@@ -488,7 +488,7 @@ def copy_object(
     ``MetadataDirective`` is omitted, which defaults to ``COPY``.
 
     A successful copy operation will return a response where
-    resp["ResponseMetadata"]["HTTPStatusCode"] == 200
+    ``resp["ResponseMetadata"]["HTTPStatusCode"] == 200``.
 
     Errors (e.g, buckets or keys not existing, wrong credentials, etc.) are passed
     directly to the user without being caught.
@@ -578,7 +578,7 @@ def delete_object(s3_path: str) -> dict[str, Any]:
     """Delete an object from s3.
 
     A successful deletion will return a response where
-    resp["ResponseMetadata"]["HTTPStatusCode"] == 204.
+    ``resp["ResponseMetadata"]["HTTPStatusCode"] == 204``.
 
     Errors (e.g, buckets or keys not existing, wrong credentials, etc.) are passed
     directly to the user without being caught.
