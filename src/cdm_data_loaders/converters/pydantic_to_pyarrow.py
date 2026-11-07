@@ -135,9 +135,19 @@ def _extract_dataclass_dict(instance: Any) -> dict[str, Any]:  # noqa: ANN401
     return result
 
 
-def _comparable_sort_key(value: Any) -> tuple[bool, Any]:  # noqa: ANN401
+def _comparable_sort_key(value: Any) -> tuple[bool, int, Any]:  # noqa: ANN401
     """Return a deterministic sort key for set elements during record coercion."""
-    return (value is None, value if isinstance(value, int | float | str | bytes) else str(value))
+    if value is None:
+        return (True, 0, "")
+    if isinstance(value, bool):
+        return (False, 0, int(value))
+    if isinstance(value, int | float):
+        return (False, 1, value)
+    if isinstance(value, bytes):
+        return (False, 2, value)
+    if isinstance(value, str):
+        return (False, 3, value)
+    return (False, 4, str(value))
 
 
 def _to_jsonable_scalar(value: Any) -> Any:  # noqa: ANN401

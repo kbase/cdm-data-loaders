@@ -56,6 +56,7 @@ xsv = "cdm_data_loaders.pipelines.xsv.pipeline:cli"
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.130.0",
     "moto[s3,server]>=5.2.5",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.4.1.post1",
@@ -242,6 +243,7 @@ markers = [
     "external_request: tests that make real network requests to external services (e.g. NCBI FTP)",
     "docker: tests that build and run the pipeline inside a Docker container",
     "docs: tests that verify documentation generation and drift across docs/ and README.md",
+    "pbt: property-based tests powered by Hypothesis",
 ]
 
 # environment settings for running tests

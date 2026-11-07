@@ -21,6 +21,7 @@ import pytest
 from dlt.common.configuration.container import Container
 from dlt.common.pipeline import PipelineContext
 from frozendict import frozendict
+from hypothesis import HealthCheck, settings
 from moto import mock_aws
 from pyspark.sql import SparkSession
 from types_boto3_s3.client import S3Client
@@ -30,6 +31,20 @@ from cdm_data_loaders.utils import cdm_logger
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
 from tests.xml_samples import LIBRARY_XSD
+
+settings.register_profile(
+    "default",
+    max_examples=25,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow],
+)
+settings.register_profile(
+    "ci_thorough",
+    max_examples=100,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow],
+)
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
 
 pytest_plugins = ["tests.fs_backends", "tests.jsonlines_fixtures", "tests.jsonschema_fixtures", "tests.xsv_fixtures"]
 
