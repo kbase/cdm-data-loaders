@@ -74,6 +74,7 @@ COPY --chown=nonroot:nonroot .dlt /app/.dlt
 COPY --chown=nonroot:nonroot docs /app/docs
 COPY --chown=nonroot:nonroot notebooks /app/notebooks
 COPY --chown=nonroot:nonroot scripts /app/scripts
+COPY --chown=nonroot:nonroot specs /app/specs
 COPY --chown=nonroot:nonroot src /app/src
 COPY --chown=nonroot:nonroot tests /app/tests
 COPY --chown=nonroot:nonroot README.md /app/README.md

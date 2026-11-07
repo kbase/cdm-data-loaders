@@ -44,6 +44,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     fetch_all_duckdb,
     run_with_duckdb_pipeline,
 )
+from tests.conftest import XSD_SPEC_DIR
 from tests.fs_backends import FsBackend
 from tests.helpers import register_temp_module, settings_to_argv
 from tests.xml_samples import TWO_BOOK_LIBRARY_XML
@@ -149,16 +150,15 @@ def test_run_subclass_pipeline_pass_sets_core_run_pipeline_args_correctly(
 @pytest.mark.parametrize(
     ("prog_name", "cli_obj", "sample_xml_rel_dir"),
     [
-        (UNIPROT_PIPELINE_NAME, uniprot_cli, "xsd/examples/uniprot"),
-        (UNIREF_FIFTY, uniref50_cli, "xsd/examples/uniref"),
-        (UNIREF_NINETY, uniref90_cli, "xsd/examples/uniref"),
-        (UNIREF_HUNDRED, uniref100_cli, "xsd/examples/uniref"),
+        (UNIPROT_PIPELINE_NAME, uniprot_cli, "examples/uniprot"),
+        (UNIREF_FIFTY, uniref50_cli, "examples/uniref"),
+        (UNIREF_NINETY, uniref90_cli, "examples/uniref"),
+        (UNIREF_HUNDRED, uniref100_cli, "examples/uniref"),
     ],
     ids=["uniprot", "uniref50", "uniref90", "uniref100"],
 )
 def test_subclass_cli_pass_runs_end_to_end_with_default_settings(
     tmp_path: Path,
-    test_data_dir: Path,
     settings_factory: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -168,7 +168,7 @@ def test_subclass_cli_pass_runs_end_to_end_with_default_settings(
 ) -> None:
     """UniProt and UniRef CLIs load entry rows end-to-end using their default settings."""
     base_settings = settings_factory(CtsSettings, dlt_dev_mode=False)
-    copy_test_files(test_data_dir / sample_xml_rel_dir, ["minimal.xml.gz"], Path(base_settings.input_dir))
+    copy_test_files(XSD_SPEC_DIR / sample_xml_rel_dir, ["minimal.xml.gz"], Path(base_settings.input_dir))
     monkeypatch.setattr(sys, "argv", [prog_name, *settings_to_argv(base_settings)])
 
     load_info = run_with_duckdb_pipeline(
@@ -185,14 +185,13 @@ def test_subclass_cli_pass_runs_end_to_end_with_default_settings(
 
 def test_pubmed_cli_pass_runs_end_to_end_with_default_settings(
     tmp_path: Path,
-    test_data_dir: Path,
     settings_factory: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """pubmed_cli loads PubmedArticle and PubmedBookArticle tables end-to-end using its default level-1 settings."""
     base_settings = settings_factory(CtsSettings, dlt_dev_mode=False)
     copy_test_files(
-        test_data_dir / "xsd" / "examples" / "pubmed_article",
+        XSD_SPEC_DIR / "examples" / "pubmed_article",
         ["minimal.xml.gz"],
         Path(base_settings.input_dir),
     )

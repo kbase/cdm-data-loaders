@@ -25,6 +25,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     assert_run_ok,
     check_book_list_results,
 )
+from tests.conftest import XSD_SPEC_DIR
 from tests.helpers import settings_to_argv
 from tests.xml_samples import SIMPLE_LIBRARY_XML
 
@@ -114,15 +115,14 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
 @pytest.mark.parametrize(
     ("target_name", "settings_cls", "sample_xml_rel_dir"),
     [
-        (UNIPROT_PIPELINE_NAME, UniProtXmlToPyArrowSettings, "xsd/examples/uniprot"),
-        (UNIREF_FIFTY, UniRef50XmlToPyArrowSettings, "xsd/examples/uniref"),
-        (UNIREF_NINETY, UniRef90XmlToPyArrowSettings, "xsd/examples/uniref"),
-        (UNIREF_HUNDRED, UniRef100XmlToPyArrowSettings, "xsd/examples/uniref"),
+        (UNIPROT_PIPELINE_NAME, UniProtXmlToPyArrowSettings, "examples/uniprot"),
+        (UNIREF_FIFTY, UniRef50XmlToPyArrowSettings, "examples/uniref"),
+        (UNIREF_NINETY, UniRef90XmlToPyArrowSettings, "examples/uniref"),
+        (UNIREF_HUNDRED, UniRef100XmlToPyArrowSettings, "examples/uniref"),
     ],
 )
 def test_run_subclass_pipeline_pass_end_to_end(
     settings_factory: Callable[..., XmlToPyArrowSettings],
-    test_data_dir: Path,
     pipeline_runner: PipelineTestRunner,
     *,
     target_name: str,
@@ -131,7 +131,7 @@ def test_run_subclass_pipeline_pass_end_to_end(
 ) -> None:
     """UniProt and UniRef pipelines load XML entries into the 'entry' table using precomputed PyArrow schemas."""
     settings = settings_factory(settings_cls)
-    copy_test_files(test_data_dir / sample_xml_rel_dir, ["minimal.xml.gz"], Path(settings.input_dir))
+    copy_test_files(XSD_SPEC_DIR / sample_xml_rel_dir, ["minimal.xml.gz"], Path(settings.input_dir))
 
     load_info = assert_run_ok(pipeline_runner.run(target_name, settings=settings))
     dataset = load_info.pipeline.dataset()

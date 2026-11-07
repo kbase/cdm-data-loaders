@@ -41,6 +41,8 @@ SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 BASE_DIR: Final[Path] = Path("tests").parent
 TEST_DATA_DIR: Final[Path] = Path("tests") / "data"
 CASSETTES_DIR: Final[Path] = Path("tests") / "cassettes"
+SCHEMA_CONVERTER_SPECS_DIR: Final[Path] = BASE_DIR / "specs" / "schema_converters"
+XSD_SPEC_DIR: Final[Path] = SCHEMA_CONVERTER_SPECS_DIR / "xsd_to_pyarrow"
 
 REFERENCE_XML_NS: Final[str] = "http://uniprot.org/uniref"
 REFERENCE_XML_TAG: Final[str] = f"{{{REFERENCE_XML_NS}}}entry"

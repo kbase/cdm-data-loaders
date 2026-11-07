@@ -1,7 +1,7 @@
 """Specification tests for XSD-to-PyArrow schema generation and XML-to-Arrow conversion.
 
-Cases, rules and error fixtures are declared in manifests under ``tests/data/xsd`` (``rules.yaml``,
-``*/case.yaml`` and ``spec/errors/manifest.yaml``). The same manifests generate
+Cases, rules and error fixtures are declared in manifests under ``specs/schema_converters/xsd_to_pyarrow``
+(``rules.yaml``, ``*/case.yaml`` and ``spec/errors/manifest.yaml``). The same manifests generate
 ``docs/xsd_to_pyarrow_specification.md`` via ``scripts/gen_converter_spec.py``.
 """
 
@@ -91,6 +91,7 @@ from scripts.gen_pyarrow_schema import (
 from scripts.gen_pyarrow_schema import (
     main as gen_pyarrow_schema_main,
 )
+from tests.conftest import BASE_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
 from tests.pyarrow_spec_helpers import (
     assert_expected_table_valid,
@@ -99,7 +100,7 @@ from tests.pyarrow_spec_helpers import (
     list_field,
 )
 
-XSD_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "xsd"
+XSD_DATA_DIR = (BASE_DIR / "specs" / "schema_converters" / "xsd_to_pyarrow").resolve()
 RULES = load_rules(XSD_DATA_DIR / "rules.yaml")
 CASES: list[Case] = load_cases(XSD_DATA_DIR / "spec") + load_cases(XSD_DATA_DIR / "examples")
 ERROR_CASES: list[ErrorCase] = load_error_cases(XSD_DATA_DIR / "spec" / "errors" / "manifest.yaml")
@@ -153,6 +154,13 @@ def test_manifests_pass_every_case_file_exists() -> None:
     paths += [p for case in CASES for run in case.runs for p in (run.data, run.expected_json, run.expected_table)]
     paths += [err.file for err in ERROR_CASES]
     assert [str(p) for p in paths if not p.is_file()] == []
+
+
+def test_manifests_pass_every_error_fixture_listed() -> None:
+    """Every XSD file in spec/errors is listed in the error manifest."""
+    listed = {err.file for err in ERROR_CASES}
+    on_disk = set((XSD_DATA_DIR / "spec" / "errors").glob("*.xsd"))
+    assert sorted(str(p) for p in on_disk - listed) == []
 
 
 def test_manifests_pass_error_codes_unique_and_covered() -> None:
@@ -270,10 +278,10 @@ def test_convert_xml_element_pass_cases(case: Case, run: Run) -> None:
     )
 
 
-def test_generate_pyarrow_schema_pass_mutual_and_self_referential_xsds(test_data_dir: Path) -> None:
+def test_generate_pyarrow_schema_pass_mutual_and_self_referential_xsds() -> None:
     """self_referential.xsd and mutual_recursion.xsd terminate at max_recursion_depth."""
     pa_self = generate_pyarrow_schema(
-        load_schema(test_data_dir / "xsd" / "self_referential.xsd"), "node", max_recursion_depth=2
+        load_schema(XSD_DATA_DIR / "spec" / "self_referential.xsd"), "node", max_recursion_depth=2
     )
     expected_self = pa.schema(
         [list_field("child", pa.struct([list_field("child", pa.string(), nullable=True)]), nullable=True)]
@@ -281,7 +289,7 @@ def test_generate_pyarrow_schema_pass_mutual_and_self_referential_xsds(test_data
     assert pa_self.equals(expected_self, check_metadata=True)
 
     pa_mutual = generate_pyarrow_schema(
-        load_schema(test_data_dir / "xsd" / "mutual_recursion.xsd"), "a", max_recursion_depth=1
+        load_schema(XSD_DATA_DIR / "spec" / "mutual_recursion.xsd"), "a", max_recursion_depth=1
     )
     expected_mutual = pa.schema(
         [list_field("b", pa.struct([pa.field("a", pa.string(), nullable=True)]), nullable=True)]
@@ -354,21 +362,21 @@ def test_generate_pyarrow_schema_fail_non_json_serializable_type_under_recursion
 @pytest.mark.parametrize(
     ("xsd_rel_path", "root_tag", "expected_roots"),
     [
-        pytest.param("uniprot/uniprot_kb/uniprot.xsd", None, ["uniprot"], id="uniprot-deduced"),
+        pytest.param("examples/uniprot/uniprot.xsd", None, ["uniprot"], id="uniprot-deduced"),
         pytest.param(
-            "uniprot/uniref/uniref.xsd",
+            "examples/uniref/uniref.xsd",
             None,
             ["UniRef100", "UniRef90", "UniRef50", "UniRef"],
             id="uniref-deduced",
         ),
         pytest.param(
-            "pubmed/pubmed.xsd",
+            "examples/pubmed_article/pubmed.xsd",
             None,
             ["PubmedArticleSet", "BookDocumentSet", "PubmedBookArticleSet", "ContractNumber", "URL"],
             id="pubmed-deduced",
         ),
         pytest.param(
-            "pubmed/pubmed.xsd",
+            "examples/pubmed_article/pubmed.xsd",
             "PubmedArticleSet",
             ["PubmedArticleSet"],
             id="pubmed-explicit-root-tag",
@@ -376,13 +384,12 @@ def test_generate_pyarrow_schema_fail_non_json_serializable_type_under_recursion
     ],
 )
 def test_resolve_root_elements_pass_deduces_or_resolves_roots(
-    test_data_dir: Path,
     xsd_rel_path: str,
     root_tag: str | None,
     expected_roots: list[str],
 ) -> None:
     """resolve_root_elements deduces unreferenced global roots or resolves an explicit root_tag."""
-    schema = load_schema(test_data_dir / xsd_rel_path)
+    schema = load_schema(XSD_DATA_DIR / xsd_rel_path)
     roots = resolve_root_elements(schema, root_tag=root_tag)
     assert [local_name(elem.name) for elem in roots if elem.name is not None] == expected_roots
 
@@ -391,28 +398,28 @@ def test_resolve_root_elements_pass_deduces_or_resolves_roots(
     ("xsd_rel_path", "level", "root_tag", "expected_tags"),
     [
         pytest.param(
-            "pubmed/pubmed.xsd",
+            "examples/pubmed_article/pubmed.xsd",
             1,
             "PubmedArticleSet",
             ["PubmedArticle", "PubmedBookArticle", "DeleteCitation"],
             id="pubmed-level-1",
         ),
         pytest.param(
-            "pubmed/pubmed.xsd",
+            "examples/pubmed_article/pubmed.xsd",
             2,
             "PubmedArticleSet",
             ["MedlineCitation", "PubmedData", "BookDocument", "PubmedBookData", "PMID"],
             id="pubmed-level-2",
         ),
         pytest.param(
-            "uniprot/uniprot_kb/uniprot.xsd",
+            "examples/uniprot/uniprot.xsd",
             1,
             None,
             ["entry", "copyright"],
             id="uniprot-level-1",
         ),
         pytest.param(
-            "uniprot/uniprot_kb/uniprot.xsd",
+            "examples/uniprot/uniprot.xsd",
             2,
             None,
             [
@@ -435,14 +442,14 @@ def test_resolve_root_elements_pass_deduces_or_resolves_roots(
             id="uniprot-level-2",
         ),
         pytest.param(
-            "uniprot/uniref/uniref.xsd",
+            "examples/uniref/uniref.xsd",
             1,
             None,
             ["entry"],
             id="uniref-level-1",
         ),
         pytest.param(
-            "uniprot/uniref/uniref.xsd",
+            "examples/uniref/uniref.xsd",
             2,
             None,
             ["name", "property", "representativeMember", "member"],
@@ -451,21 +458,20 @@ def test_resolve_root_elements_pass_deduces_or_resolves_roots(
     ],
 )
 def test_resolve_elements_at_level_pass_level_1_and_level_2(
-    test_data_dir: Path,
     xsd_rel_path: str,
     level: int,
     root_tag: str | None,
     expected_tags: list[str],
 ) -> None:
     """resolve_elements_at_level deduces all element declarations at level 1 and level 2."""
-    schema = load_schema(test_data_dir / xsd_rel_path)
+    schema = load_schema(XSD_DATA_DIR / xsd_rel_path)
     elements = resolve_elements_at_level(schema, level, root_tag=root_tag)
     assert list(elements.keys()) == expected_tags
 
 
-def test_resolve_elements_at_level_fail_invalid_or_empty_level(test_data_dir: Path) -> None:
+def test_resolve_elements_at_level_fail_invalid_or_empty_level() -> None:
     """resolve_elements_at_level raises ValueError for level < 0 and XmlTagNotFoundError beyond max depth."""
-    schema = load_schema(test_data_dir / "uniprot" / "uniref" / "uniref.xsd")
+    schema = load_schema(XSD_DATA_DIR / "examples" / "uniref" / "uniref.xsd")
     assert list(resolve_elements_at_level(schema, 0, root_tag="UniRef50").keys()) == ["UniRef50"]
     with pytest.raises(ValueError, match="level must be >= 0"):
         resolve_elements_at_level(schema, -1)
@@ -501,9 +507,9 @@ def test_resolve_root_elements_fail_or_cyclic_global_elements() -> None:
     assert [local_name(e.name) for e in resolve_root_elements(cyclic_schema) if e.name] == ["alpha", "beta"]
 
 
-def test_generate_pyarrow_struct_and_assemble_pyarrow_schema_pass_components(test_data_dir: Path) -> None:
+def test_generate_pyarrow_struct_and_assemble_pyarrow_schema_pass_components() -> None:
     """generate_pyarrow_struct builds reusable pa.StructType components that assemble into table schemas."""
-    uniref_xsd = load_schema(test_data_dir / "uniprot" / "uniref" / "uniref.xsd")
+    uniref_xsd = load_schema(XSD_DATA_DIR / "examples" / "uniref" / "uniref.xsd")
     cache: dict[object, pa.StructType] = {}
     prop_struct = generate_pyarrow_struct(uniref_xsd, "property", struct_cache=cache)
     entry_struct = generate_pyarrow_struct(uniref_xsd, "entry", struct_cache=cache)
@@ -515,7 +521,7 @@ def test_generate_pyarrow_struct_and_assemble_pyarrow_schema_pass_components(tes
     assert MEMBER_STRUCT.field("sequence").type == SEQUENCE_STRUCT
     assert assemble_pyarrow_schema(entry_struct).equals(UNIREF_SCHEMAS["entry"], check_metadata=True)
 
-    pubmed_xsd = load_schema(test_data_dir / "pubmed" / "pubmed.xsd")
+    pubmed_xsd = load_schema(XSD_DATA_DIR / "examples" / "pubmed_article" / "pubmed.xsd")
     pubmed_level_1 = generate_pyarrow_schemas_at_level(pubmed_xsd, 1, root_tag="PubmedArticleSet")
     assert set(pubmed_level_1.keys()) == {"PubmedArticle", "PubmedBookArticle", "DeleteCitation"}
     for tag, expected_schema in PUBMED_SCHEMAS.items():
@@ -525,7 +531,7 @@ def test_generate_pyarrow_struct_and_assemble_pyarrow_schema_pass_components(tes
     assert PUBMED_BOOK_ARTICLE_STRUCT.field("PubmedBookData").type == PUBMED_BOOK_DATA_STRUCT
     assert DELETE_CITATION_STRUCT.field("PMID").type.value_type == PMID_STRUCT
 
-    uniprot_xsd = load_schema(test_data_dir / "uniprot" / "uniprot_kb" / "uniprot.xsd")
+    uniprot_xsd = load_schema(XSD_DATA_DIR / "examples" / "uniprot" / "uniprot.xsd")
     uniprot_level_1 = generate_pyarrow_schemas_at_level(uniprot_xsd, 1)
     assert set(uniprot_level_1.keys()) == {"entry", "copyright"}
     for tag, expected_schema in UNIPROT_SCHEMAS.items():
@@ -534,12 +540,12 @@ def test_generate_pyarrow_struct_and_assemble_pyarrow_schema_pass_components(tes
     assert PROTEIN_STRUCT.field("allergenName").type == EVIDENCED_STRING_STRUCT
 
 
-def test_component_schema_helpers_fail_non_struct_or_empty_inputs(test_data_dir: Path) -> None:
+def test_component_schema_helpers_fail_non_struct_or_empty_inputs() -> None:
     """assemble_pyarrow_schema, generate_pyarrow_struct, and generate_pyarrow_schemas_at_level reject invalid inputs."""
     with pytest.raises(ValueError, match="Cannot assemble a PyArrow schema from an empty component"):
         assemble_pyarrow_schema([])
 
-    uniprot_xsd = load_schema(test_data_dir / "uniprot" / "uniprot_kb" / "uniprot.xsd")
+    uniprot_xsd = load_schema(XSD_DATA_DIR / "examples" / "uniprot" / "uniprot.xsd")
     with pytest.raises(NonStructXmlTagError, match="must have a complex type with attributes or child elements"):
         generate_pyarrow_struct(uniprot_xsd, "copyright")
 
@@ -572,14 +578,13 @@ def test_precomputed_schema_modules_pass_match_generator_output(config: SchemaCo
 
 def test_gen_pyarrow_schema_cli_pass_and_fail(
     tmp_path: Path,
-    test_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """scripts.gen_pyarrow_schema.main supports --check, default write mode, custom CLI args, and validates --output."""
     assert gen_pyarrow_schema_main(["--check"]) == 0
 
-    uniref_xsd = test_data_dir / "uniprot" / "uniref" / "uniref.xsd"
+    uniref_xsd = XSD_DATA_DIR / "examples" / "uniref" / "uniref.xsd"
     level_out = tmp_path / "uniref_level.py"
     assert gen_pyarrow_schema_main(["--xsd-file", str(uniref_xsd), "--output", str(level_out)]) == 0
     assert "ENTRY_STRUCT: Final[pa.StructType]" in level_out.read_text(encoding="utf-8")
@@ -853,9 +858,9 @@ def test_struct_field_specs_pass_defensive_fallbacks(
     assert struct_type[expected_field_names[-1]].type == expected_pa_type
 
 
-def test_make_xml_level_converters_pass_struct_and_leaf_elements(test_data_dir: Path) -> None:
+def test_make_xml_level_converters_pass_struct_and_leaf_elements() -> None:
     """make_xml_level_converters converts both complex struct elements and scalar leaf elements at a level."""
-    uniprot_xsd = load_schema(test_data_dir / "uniprot" / "uniprot_kb" / "uniprot.xsd")
+    uniprot_xsd = load_schema(XSD_DATA_DIR / "examples" / "uniprot" / "uniprot.xsd")
     converters = make_xml_level_converters(uniprot_xsd, 1)
     assert set(converters.keys()) == {"entry", "copyright"}
 
@@ -868,11 +873,10 @@ def test_make_xml_level_converters_pass_struct_and_leaf_elements(test_data_dir: 
 
 
 def test_xsd_reader_and_xsd_to_pyarrow_facade_pass_ir_and_emitters(
-    test_data_dir: Path,
     tmp_path: Path,
 ) -> None:
     """XsdReader builds SchemaDocument IR with source='xsd' provenance and emits to PyArrow, Python files, PySpark, dlt, and JSON Schema."""
-    uniref_path = test_data_dir / "uniprot" / "uniref" / "uniref.xsd"
+    uniref_path = XSD_DATA_DIR / "examples" / "uniref" / "uniref.xsd"
     reader = XsdReader(xml_tag="entry")
     doc = reader.read(uniref_path)
 

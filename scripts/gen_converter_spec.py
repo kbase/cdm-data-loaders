@@ -453,10 +453,10 @@ def render(config: ConverterSpecConfig) -> str:
 
 
 XSD_TO_PYARROW = ConverterSpecConfig(
-    data_dir=REPO_ROOT / "tests" / "data" / "xsd",
+    data_dir=REPO_ROOT / "specs" / "schema_converters" / "xsd_to_pyarrow",
     output=REPO_ROOT / "docs" / "xsd_to_pyarrow_specification.md",
     suites=("spec", "examples"),
-    error_manifest=REPO_ROOT / "tests" / "data" / "xsd" / "spec" / "errors" / "manifest.yaml",
+    error_manifest=REPO_ROOT / "specs" / "schema_converters" / "xsd_to_pyarrow" / "spec" / "errors" / "manifest.yaml",
     error_base=XsdToPyArrowError,
     error_classes=XSD_TO_PYARROW_ERRORS,
     schema_lang="xml",
@@ -466,10 +466,12 @@ XSD_TO_PYARROW = ConverterSpecConfig(
 )
 
 JSONSCHEMA_TO_PYARROW = ConverterSpecConfig(
-    data_dir=REPO_ROOT / "tests" / "data" / "jsonschema",
+    data_dir=REPO_ROOT / "specs" / "schema_converters" / "jsonschema_to_pyarrow",
     output=REPO_ROOT / "docs" / "jsonschema_to_pyarrow_specification.md",
     suites=("spec", "examples"),
-    error_manifest=REPO_ROOT / "tests" / "data" / "jsonschema" / "spec" / "errors" / "manifest.yaml",
+    error_manifest=(
+        REPO_ROOT / "specs" / "schema_converters" / "jsonschema_to_pyarrow" / "spec" / "errors" / "manifest.yaml"
+    ),
     error_base=JSONSchemaToPyArrowError,
     error_classes=JSONSCHEMA_TO_PYARROW_ERRORS,
     schema_lang="json",
@@ -478,10 +480,12 @@ JSONSCHEMA_TO_PYARROW = ConverterSpecConfig(
 )
 
 PYDANTIC_TO_PYARROW = ConverterSpecConfig(
-    data_dir=REPO_ROOT / "tests" / "data" / "pydantic",
+    data_dir=REPO_ROOT / "specs" / "schema_converters" / "pydantic_to_pyarrow",
     output=REPO_ROOT / "docs" / "pydantic_to_pyarrow_specification.md",
     suites=("spec", "examples"),
-    error_manifest=REPO_ROOT / "tests" / "data" / "pydantic" / "spec" / "errors" / "manifest.yaml",
+    error_manifest=(
+        REPO_ROOT / "specs" / "schema_converters" / "pydantic_to_pyarrow" / "spec" / "errors" / "manifest.yaml"
+    ),
     error_base=PydanticToPyArrowError,
     error_classes=PYDANTIC_TO_PYARROW_ERRORS,
     schema_lang="python",

@@ -1,10 +1,10 @@
-title: UniRef
-xml_tag: entry
-schema: ../../../uniprot/uniref/uniref.xsd
-rules: [R-RESOLVE-DEPTH, R-META-COMMENT, R-CODEGEN-COMPONENT, R-CODEGEN-NAMING, R-CODEGEN-LEVEL]
+title: PubMed (`PubmedBookArticle`)
+xml_tag: PubmedBookArticle
+schema: pubmed.xsd
+rules: [R-SHAPE-MIXED, R-RECURSION, R-SHAPE-EMPTY-MARKER]
 notes: |
-  Four root elements (`UniRef100`, `UniRef90`, `UniRef50`, `UniRef`) declare `entry` with the shared
-  `entryType`, so resolution succeeds.
+  Book article variant of the PubMed schema, including recursive `Section` elements and the empty
+  `BookInProcess` marker.
 runs:
   - id: minimal
     data: minimal.xml
