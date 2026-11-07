@@ -1,0 +1,10 @@
+title: Nested Fixed Objects and Dynamic Maps
+schema: schema.json
+rules: [R-SHAPE-OBJECT, R-SHAPE-MAP, R-NULL-ITEMS]
+notes: |
+  `closed_meta` (`additionalProperties: false`) and `open_meta` (`additionalProperties: true`) are both structs.
+  `string_to_int_map`, `nullable_score_map` and `struct_map` use `additionalProperties`; `pattern_metric_map`
+  uses `patternProperties`.
+runs:
+  - id: default
+    data: data.json

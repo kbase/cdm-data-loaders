@@ -1,0 +1,39 @@
+"""Expected PyArrow table for ncbi_annotation_report."""
+
+import pyarrow as pa
+from expected_schema import EXPECTED_SCHEMA
+
+EXPECTED_TABLE = pa.Table.from_pylist(
+    [
+        {
+            "gene_id": 944742,
+            "symbol": "thrL",
+            "description": "thr operon leader peptide",
+            "gene_type": "PROTEIN_CODING",
+            "tax_id": 511145,
+            "synonyms": ["b0001", "ECK0001"],
+            "genomic_regions": [{"accession_version": "NC_000913.3", "begin": 190, "end": 255, "orientation": "plus"}],
+            "transcripts": [
+                {
+                    "accession_version": "NP_414542.1",
+                    "name": "thr operon leader peptide",
+                    "length": 21,
+                    "cds_range": {"accession_version": "NC_000913.3", "begin": 190, "end": 255, "orientation": "plus"},
+                },
+            ],
+        },
+        {
+            "gene_id": 945803,
+            "symbol": "dnaA",
+            "description": "chromosomal replication initiator protein DnaA",
+            "gene_type": "PROTEIN_CODING",
+            "tax_id": 511145,
+            "synonyms": ["b3702"],
+            "genomic_regions": [
+                {"accession_version": "NC_000913.3", "begin": 3882326, "end": 3883729, "orientation": "minus"}
+            ],
+            "transcripts": [],
+        },
+    ],
+    schema=EXPECTED_SCHEMA,
+)

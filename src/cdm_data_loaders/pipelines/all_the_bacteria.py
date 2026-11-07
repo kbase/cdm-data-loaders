@@ -10,22 +10,24 @@ all_atb_files.tsv: https://osf.io/xv7q9/files/r6gcp (or Rg6cp, casing varies)
 
 """
 
+import copy
 import csv
 import re
 from collections.abc import Generator
 from functools import cached_property
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Annotated, Any, Final, Self
+from typing import Any, Final, Self
 
 import dlt
-import dlt.sources.helpers.requests
 from dlt.common.pipeline import LoadInfo
 from dlt.extract.items import DataItemWithMeta
+from dlt.extract.resource import DltResource
 from dlt.sources.helpers.rest_client.client import RESTClient
-from pydantic import Field, StringConstraints, computed_field, model_validator
+from pydantic import Field, FilePath, computed_field, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.fields import NonEmptyStr
 from cdm_data_loaders.core.settings import (
     CLI_SHORTCUTS,
     CtsSettings,
@@ -38,8 +40,6 @@ from cdm_data_loaders.pipelines.core import (
 from cdm_data_loaders.utils.file_transfer.sync_client import FileDownloader
 
 logger: Logger = getLogger(__name__)
-
-NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 
 
 DATASET_NAME = "all_the_bacteria"
@@ -72,9 +72,9 @@ class AtbSettings(CtsSettings):
         description="Name of the current AllTheBacteria version",
     )
 
-    pattern_file: NonEmptyStr | None = Field(
+    pattern_file: FilePath | None = Field(
         default=None,
-        description="Path, relative to the input dir, of a file containing patterns to match when downloading ATB files",
+        description="Path to a file containing patterns to match when downloading ATB files",
     )
 
     @model_validator(mode="after")
@@ -101,10 +101,9 @@ class AtbSettings(CtsSettings):
         or does not contain any content, the default PROJECT_PART_REGEX will be used instead.
         """
         if self.pattern_file:
-            pattern_file = self.input_dir / self.pattern_file
-            regex = load_patterns(pattern_file)
+            regex = load_patterns(self.pattern_file)
             if regex is None:
-                err_msg = f"No patterns found in {pattern_file!s}"
+                err_msg = f"No patterns found in {self.pattern_file!s}"
                 raise ValueError(err_msg)
             # return the compiled regexes from the file
             return regex
@@ -235,7 +234,12 @@ def osf_file_downloader(settings: AtbSettings, atb_file_list: list[dict[str, Any
 def atb_file_list(settings: AtbSettings) -> Generator[list[dict[str, Any]], Any, Any]:
     """Generate a list of files to download from the list of all ATB files."""
     atb_files_tsv = download_atb_index_tsv(settings)
-    return get_file_download_links(settings, atb_files_tsv)
+    for batch in get_file_download_links(settings, atb_files_tsv):
+        if isinstance(batch, list) and len(batch) > 1:
+            for row in batch:
+                yield [row]
+        else:
+            yield batch
 
 
 @dlt.transformer(name="file_downloader", data_from=atb_file_list, parallelized=True)
@@ -252,7 +256,7 @@ def file_downloader(
     :return: output of the osf_file_downloader
     :rtype: Generator[DataItemWithMeta]
     """
-    return osf_file_downloader(settings, atb_file_list)
+    yield from osf_file_downloader(settings, atb_file_list)
 
 
 def run_atb_pipeline(settings: AtbSettings) -> LoadInfo | None:
@@ -261,8 +265,12 @@ def run_atb_pipeline(settings: AtbSettings) -> LoadInfo | None:
     :param settings: configuration for the pipeline
     :type settings: AtbSettings
     """
-    atb_file_list.bind(settings)
-    file_downloader.bind(settings)
+    if isinstance(atb_file_list, DltResource) and isinstance(file_downloader, DltResource):
+        file_list_resource, downloader_resource = copy.deepcopy((atb_file_list, file_downloader))
+    else:
+        file_list_resource, downloader_resource = atb_file_list, file_downloader
+    file_list_resource.bind(settings)
+    downloader_resource.bind(settings)
 
     pipeline_kwargs: dict[str, Any] = {
         "pipeline_name": DATASET_NAME,
@@ -271,7 +279,7 @@ def run_atb_pipeline(settings: AtbSettings) -> LoadInfo | None:
 
     return run_pipeline(
         settings=settings,
-        resource=file_downloader,
+        resource=downloader_resource,
         destination_kwargs={"max_table_nesting": 0},
         pipeline_kwargs=pipeline_kwargs,
         pipeline_run_kwargs=None,

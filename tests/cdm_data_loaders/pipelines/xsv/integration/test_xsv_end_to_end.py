@@ -13,12 +13,12 @@ from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_pipeline_report_written,
     assert_run_ok,
-    settings_to_argv,
 )
-from tests.cdm_data_loaders.pipelines.xsv.conftest import (
+from tests.cdm_data_loaders.pipelines.xsv.conftest import DEFAULT_XSV_SCHEMA
+from tests.helpers import settings_to_argv
+from tests.xsv_fixtures import (
     ALL_RAGGED_ROWS,
     COLUMNS,
-    DEFAULT_XSV_SCHEMA,
     PARTIAL_RAGGED_ROWS,
     VALID_ROWS,
     rows_to_csv,
@@ -26,7 +26,7 @@ from tests.cdm_data_loaders.pipelines.xsv.conftest import (
 
 pytestmark = pytest.mark.usefixtures("qsv_cmd")
 
-REJECTED_TABLE = "my_table_rejected"
+REJECTED_TABLE = "_rejected"
 
 
 def test_run_xsv_pipeline_pass_writes_expected_output(
@@ -48,7 +48,7 @@ def test_run_xsv_pipeline_pass_writes_expected_output(
         {"number": 2, "date": "2023-01-15", "float": "3.14", "boolean": True, "string": "key:value1"},
         {"number": 3, "date": "2023-02-20", "float": "1.11", "boolean": False, "string": "key:value2"},
     ]
-    assert_pipeline_report_written(Path(settings.output_dir), load_info)
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files={"data.csv", "schema.json"})
 
 
 def test_run_xsv_pipeline_pass_multiple_files_loaded_together(
@@ -91,8 +91,9 @@ def test_run_xsv_pipeline_pass_partial_ragged_file_recovers_valid_rows(
 
     rejected = dataset.table(REJECTED_TABLE).df()
     assert len(rejected) == 1
-    assert rejected.iloc[0]["file"] == "data.csv"
-    assert rejected.iloc[0]["message"] == "1 out of 3 records invalid."
+    assert rejected.iloc[0]["table_name"] == "my_table"
+    assert rejected.iloc[0]["source_file"] == "data.csv"
+    assert rejected.iloc[0]["error_detail"] == "1 out of 3 records invalid."
 
 
 def test_run_xsv_pipeline_pass_fully_ragged_file_is_entirely_rejected(
@@ -111,8 +112,9 @@ def test_run_xsv_pipeline_pass_fully_ragged_file_is_entirely_rejected(
 
     rejected = dataset.table(REJECTED_TABLE).df()
     assert len(rejected) == 1
-    assert rejected.iloc[0]["file"] == "bad.csv"
-    assert rejected.iloc[0]["message"] == "2 out of 2 records invalid."
+    assert rejected.iloc[0]["table_name"] == "my_table"
+    assert rejected.iloc[0]["source_file"] == "bad.csv"
+    assert rejected.iloc[0]["error_detail"] == "2 out of 2 records invalid."
 
 
 def test_run_xsv_pipeline_pass_no_matching_files_yields_no_data_table(
@@ -188,4 +190,4 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
 
     df = load_info.pipeline.dataset().table("my_table").df()
     assert sorted(df["number"].tolist()) == [2, 3]
-    assert_pipeline_report_written(Path(settings.output_dir), load_info)
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files={"data.csv", "schema.json"})

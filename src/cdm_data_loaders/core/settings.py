@@ -1,33 +1,38 @@
 """Settings classes for data loading and wrangling pipelines."""
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final
+from typing import Annotated, Any, Final
 
 from frozendict import frozendict
-from pydantic import AliasChoices, AliasPath, computed_field
+from pydantic import AliasChoices, AliasPath, Field, computed_field
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 
 from cdm_data_loaders.core.fields import (
+    DEFAULT_XML_FILE_GLOB,
+    FILE_GLOB,
     INPUT_DIR,
     LOADER_FILE_FORMAT,
     OUTPUT_DIR,
+    PIPELINE_DIR_NAME,
+    REPORT_FILE_NAME,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
     BufferSize,
     DatasetName,
     DltDevMode,
+    FileGlob,
     LoaderFileFormat,
     LogConfigFile,
     LogInterval,
+    TableName,
     UseDestination,
     UseOutputDirForPipelineMetadata,
+    XmlTag,
 )
 from cdm_data_loaders.core.path_fields import LocalInputDir, LocalOutputDir
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
+from cdm_data_loaders.core.transforms import TransformSettingsMixin
 
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
     {
@@ -36,6 +41,7 @@ DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
         "cli_kebab_case": True,
         "env_prefix": "CDL_",
         "str_strip_whitespace": True,
+        "frozen": True,
     }
 )
 
@@ -47,11 +53,21 @@ CLI_SHORTCUTS: frozendict[str, str] = frozendict(
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: "p",
     }
 )
+FILE_FORMAT_CLI_SHORTCUTS: frozendict[str, str] = frozendict(
+    {
+        **CLI_SHORTCUTS,
+        LOADER_FILE_FORMAT: "f",
+    }
+)
+XML_CLI_SHORTCUTS: frozendict[str, str] = frozendict(
+    {
+        **FILE_FORMAT_CLI_SHORTCUTS,
+        FILE_GLOB: "g",
+    }
+)
 
 # argparse registers -h/--help on every parser; claiming either makes the parser fail to build
 RESERVED_CLI_NAMES: Final[frozenset[str]] = frozenset({"h", "help"})
-# dir where dlt will put run metadata, schemas, etc.
-PIPELINE_DIR_NAME: Final[str] = ".dlt_conf"
 
 
 def default_settings_with_shortcuts(
@@ -68,6 +84,15 @@ def default_settings_with_shortcuts(
             field_name.replace("_", "-"): value for field_name, value in cli_shortcuts.items()
         }
     return SettingsConfigDict(**{**DEFAULT_SETTINGS_CONFIG_DICT, **extra_args})
+
+
+def select_cli_shortcuts(
+    shortcuts: Mapping[str, str],
+    *keys: str,
+    base: Mapping[str, str] = FILE_FORMAT_CLI_SHORTCUTS,
+) -> dict[str, str]:
+    """Merge ``base`` shortcuts with the subset of ``shortcuts`` matching ``keys``."""
+    return {**base, **{k: shortcuts[k] for k in keys if k in shortcuts}}
 
 
 def _alias_names(alias: str | AliasChoices | AliasPath | None) -> set[str]:
@@ -199,20 +224,51 @@ class CtsSettings(LocalInputOutputSettings):
     def pipeline_dir(self) -> Path | None:
         """Custom directory to save pipeline metadata to.
 
-        If use_output_dir_for_pipeline_metadata is true, this is ``<output_dir>/.dlt_conf``;
+        If use_output_dir_for_pipeline_metadata is true, this is ``<output_dir>/<PIPELINE_DIR_NAME>``;
         otherwise None, and dlt uses its default.
         """
         if self.use_output_dir_for_pipeline_metadata:
             return self.output_dir / PIPELINE_DIR_NAME
         return None
 
+    @computed_field
+    @property
+    def report_path(self) -> Path:
+        """Path to the report file.
+
+        If use_output_dir_for_pipeline_metadata is true, the report is saved in the pipelines dir;
+        Otherwise, it is saved directly to the output directory.
+        """
+        if self.pipeline_dir:
+            return self.pipeline_dir / REPORT_FILE_NAME
+        return self.output_dir / REPORT_FILE_NAME
+
 
 class FileFormatIngestSettings(CtsSettings):
     """Configuration for DLT pipelines that import a particular file format."""
 
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_shortcuts={**CLI_SHORTCUTS, LOADER_FILE_FORMAT: "f"}
-    )
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(cli_shortcuts=FILE_FORMAT_CLI_SHORTCUTS)
 
     dataset_name: DatasetName
     loader_file_format: LoaderFileFormat
+
+
+class XmlIngestSettings(FileFormatIngestSettings):
+    """Configuration for DLT pipelines that import XML files."""
+
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(cli_shortcuts=XML_CLI_SHORTCUTS)
+
+    file_glob: Annotated[
+        FileGlob,
+        Field(
+            default=DEFAULT_XML_FILE_GLOB,
+            description="Glob pattern for XML files",
+        ),
+    ]
+
+
+class SingleTableXmlIngestSettings(XmlIngestSettings, TransformSettingsMixin):
+    """Configuration for DLT pipelines that import XML elements into a single target table."""
+
+    table_name: TableName
+    xml_tag: XmlTag

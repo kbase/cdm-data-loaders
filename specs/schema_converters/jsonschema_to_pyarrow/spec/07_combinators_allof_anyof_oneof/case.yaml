@@ -1,0 +1,11 @@
+title: Combinators — `allOf`, `anyOf` and `oneOf`
+schema: schema.json
+rules: [R-ORDER, R-MERGE-DUPLICATE, R-UNION-OBJECT, R-UNION-SCALAR, R-UNION-SCALAR-OBJECT, R-NULL-REQUIRED, R-COERCE-VALUE]
+notes: |
+  - `allOf: [BaseEntity]` puts `entity_id` and `created_by` before the direct properties.
+  - `location` merges two `oneOf` object branches. `storage_kind` is required in both, so it is non-nullable; it is
+    declared with different `const` values, which merge to `string`.
+  - `note` is `string | object`; the plain string `"plain text note"` becomes `{"_value": "plain text note"}`.
+runs:
+  - id: default
+    data: data.json

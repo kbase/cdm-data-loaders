@@ -1,0 +1,9 @@
+title: Shared Definitions, `$ref` Reuse and Root `$ref`
+schema: schema.json
+rules: [R-ROOT-REF, R-SHAPE-REF, R-META-COMMENT]
+notes: |
+  The root is `"$ref": "#/$defs/Document"`. `lead_author` declares its own `description`, overriding the
+  `Author` definition's; `reviewer` and `co_authors` items inherit it.
+runs:
+  - id: default
+    data: data.json

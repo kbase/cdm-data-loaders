@@ -24,12 +24,8 @@ from cdm_data_loaders.utils.checksums import (
     new_hasher,
     validate_checksum_fn,
 )
-from tests.conftest import DEFAULT_VCR_CONFIG
 
-TEST_BUCKET: Final[str] = "test-bucket"
-TEST_KEY: Final[str] = "path/to/file.pdf"
 TEST_ECHO_URL: Final[str] = "https://httpbin.org/bytes/1024"  # deterministic-size real
-EXPECTED_CRC64_BYTE_LEN = 8
 
 
 TEST_DATASETS: list[ParameterSet] = [
@@ -59,7 +55,6 @@ HASHLIB_ALGORITHMS: list[str] = [
     "blake2s",
     "md5",
 ]
-CRC64NVME_ALGORITHMS: list[str] = ["crc64nvme", "CRC64NVME", "Crc64Nvme"]
 UNSUPPORTED_ALGORITHMS: list[str] = [
     "",
     "banana",
@@ -74,12 +69,6 @@ def requests_session() -> Generator[requests.Session, Any]:
     """A requests session."""
     with requests.Session() as s:
         yield s
-
-
-@pytest.fixture(scope="module")
-def vcr_config() -> dict[str, Any]:
-    """VCR config for tests that make HTTP requests."""
-    return {**DEFAULT_VCR_CONFIG}
 
 
 """Completely crap test for the EXTRA_ALGORITHMS constant"""

@@ -11,7 +11,7 @@ from dlt.common.data_types.typing import TDataType
 from dlt.common.schema import Schema
 from dlt.common.schema.typing import TColumnSchema, TStoredSchema, TTableSchema
 from dlt.common.schema.utils import new_column, new_table
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.inference import json_type_from_enum
@@ -188,6 +188,14 @@ def _scalar_type(node: TypedNode) -> TDataType:
     return SCALARS.get(kind, "text")
 
 
+def validate_non_empty_schema_name(value: str) -> str:
+    """Reject blank schema names."""
+    if not value.strip():
+        msg = "schema_name must be a non-empty string"
+        raise ValueError(msg)
+    return value
+
+
 class DltEmitter(BaseModel):
     """Configure typed emission with JSON-to-dlt compatibility defaults."""
 
@@ -195,7 +203,7 @@ class DltEmitter(BaseModel):
 
     schema_name: str
     skip_nested_types: bool = False
-    max_nesting: int = Field(default=10, ge=1)
+    max_nesting: PositiveInt = Field(default=10)
     write_disposition: str | None = None
     flatten_scalars: bool = True
 
@@ -203,10 +211,7 @@ class DltEmitter(BaseModel):
     @classmethod
     def _validate_schema_name(cls, value: str) -> str:
         """Reject blank schema names."""
-        if not value.strip():
-            msg = "schema_name must be a non-empty string"
-            raise ValueError(msg)
-        return value
+        return validate_non_empty_schema_name(value)
 
     def emit(self, document: SchemaDocument) -> TStoredSchema:
         """Emit one document as a stored schema with one root table."""

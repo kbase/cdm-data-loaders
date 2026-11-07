@@ -3,7 +3,7 @@
 :+1: First of all: Thank you for taking the time to contribute!
 
 The following is a set of guidelines for contributing to
-cdm-schema. These guidelines are not strict rules.
+`cdm-data-loaders`. These guidelines are not strict rules.
 Use your best judgment, and feel free to propose changes to this document
 in a pull request.
 
@@ -12,8 +12,9 @@ in a pull request.
 - [Contributing to the codebase](#contributing-to-the-codebase)
   - [Table Of Contents](#table-of-contents)
   - [Code of Conduct](#code-of-conduct)
+  - [Development Workflow](#development-workflow)
   - [Guidelines for Contributions and Requests](#guidelines-for-contributions-and-requests)
-    - [Reporting problems and suggesting changes to with the data model](#reporting-problems-and-suggesting-changes-to-with-the-data-model)
+    - [Reporting problems and suggesting changes](#reporting-problems-and-suggesting-changes)
     - [Questions and Discussions](#questions-and-discussions)
     - [Adding new code or bug fixes](#adding-new-code-or-bug-fixes)
   - [GitHub Best Practices](#github-best-practices)
@@ -28,13 +29,37 @@ in a pull request.
 The KBase CDM team strives to create a welcoming environment for editors, users and other contributors.
 Please carefully read our [Code of Conduct](CODE_OF_CONDUCT.md).
 
+<a id="development-workflow"></a>
+
+## Development Workflow
+
+This repository requires Python >= 3.13 and is managed with [`uv`](https://docs.astral.sh/uv/):
+
+1. Install dependencies (including development and documentation groups):
+   ```bash
+   uv sync --all-groups
+   ```
+2. Run lint and formatting checks with Ruff:
+   ```bash
+   uv run ruff check
+   ```
+3. Run the local unit test suite (skipping container-only Spark and Ceph tests):
+   ```bash
+   uv run pytest -m "not requires_spark and not requires_ceph"
+   ```
+4. Regenerate and verify documentation artifacts if converter rules, CLI settings, or docstrings change:
+   ```bash
+   uv run python -m scripts.gen_converter_spec
+   uv run python -m scripts.gen_docs
+   ```
+
 <a id="contributions"></a>
 
 ## Guidelines for Contributions and Requests
 
 <a id="reporting-issues"></a>
 
-### Reporting problems and suggesting changes to with the data model
+### Reporting problems and suggesting changes
 
 Please use our [Issue Tracker][issues] for any of the following:
 
@@ -82,7 +107,7 @@ Please submit a [Pull Request][pulls] to submit new code or to add a bug fix for
 [about-branches]: https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-branches
 [about-issues]: https://docs.github.com/en/issues/tracking-your-work-with-issues/about-issues
 [about-pulls]: https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests
-[issues]: https://github.com/kbase/cdm-schema/issues/
-[pulls]: https://github.com/kbase/cdm-schema/pulls/
+[issues]: https://github.com/kbase/cdm-data-loaders/issues/
+[pulls]: https://github.com/kbase/cdm-data-loaders/pulls/
 
 We recommend also reading [GitHub Pull Requests: 10 Tips to Know](https://blog.mergify.com/github-pull-requests-10-tips-to-know/)

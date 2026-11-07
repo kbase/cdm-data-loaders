@@ -1,23 +1,32 @@
 """Common reusable pipeline elements."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from logging import Logger, getLogger
 from pathlib import Path
-from shutil import move
 from typing import Any, Final
 
 import dlt
+import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.common.runtime.slack import send_slack_message
+from dlt.common.schema.typing import TSchemaContractDict
+from dlt.common.storages.fsspec_filesystem import FileItemDict
+from dlt.common.typing import TDataItems
 from dlt.extract import DltResource
 from dlt.pipeline.exceptions import PipelineStepFailed
+from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
 from cdm_data_loaders.core.fields import JSONL
-from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
+from cdm_data_loaders.core.settings import (
+    CtsSettings,
+    FileFormatIngestSettings,
+    LocalInputOutputSettings,
+    LoggerSettings,
+)
 from cdm_data_loaders.utils.cdm_logger import init_logger
 
 WEBHOOK_NOT_CONFIGURED: Final[str] = "Slack webhook not configured"
@@ -27,6 +36,13 @@ DISABLE_COMPRESSION_ENV_VAR: Final[str] = "NORMALIZE__DATA_WRITER__DISABLE_COMPR
 DESTINATION_NOT_CONFIGURED: Final[str] = (
     "Destination {name!r} is not configured: set destination.{name}.destination_type in the dlt config."
 )
+DEFAULT_SCHEMA_CONTRACT: Final[TSchemaContractDict] = {
+    "tables": "evolve",
+    "columns": "evolve",
+    "data_type": "discard_row",
+}
+
+yaml.SafeDumper.add_multi_representer(datetime, yaml.SafeDumper.represent_datetime)
 
 logger: Logger = getLogger(__name__)
 
@@ -42,7 +58,7 @@ class PipelineCli[S: LoggerSettings]:
         """Parse sys.argv and run the pipeline. Returns None so the process exits with 0."""
         self.run()
 
-    def run(self, cli_args: list[str] | None = None, **settings_kwargs: Any) -> LoadInfo | None:
+    def run(self, cli_args: list[str] | None = None, **settings_kwargs: Any) -> LoadInfo | None:  # noqa: ANN401
         """Parse ``cli_args`` (default ``sys.argv[1:]``), run the pipeline and return its LoadInfo."""
         return run_cli(self.settings_cls, self.pipeline_fn, settings_kwargs, cli_args)
 
@@ -55,10 +71,10 @@ class PipelineReport:
     dataset_name: str
     started_at: datetime
     finished_at: datetime
-    loads_ids: list[str] | None = None
-    failed_messages: list[str] | None = None
-    err_msg: str | None = None
+    pipeline_load_info: LoadInfo | None = None
+    pipeline_err_msg: str | None = None
     info_load_err_msg: str | None = None
+    ingested_files: list[str] | None = None
 
 
 def send_slack_message_carefully(
@@ -130,36 +146,50 @@ def write_pipeline_report(
     :param report: pipeline report information to write
     :type  report: PipelineReport
     """
-    lines = [
-        f"Pipeline: {report.pipeline_name}",
-        f"Dataset: {report.dataset_name}",
-        f"Started: {report.started_at}",
-        f"Finished: {report.finished_at}",
-    ]
-    if report.loads_ids is None:
-        lines.append("Status: error")
-        if report.err_msg:
-            lines.append(report.err_msg)
+    report_data = {
+        "pipeline": report.pipeline_name,
+        "dataset": report.dataset_name,
+        "started": report.started_at,
+        "finished": report.finished_at,
+    }
+
+    if report.pipeline_load_info is None or report.pipeline_load_info.loads_ids is None:
+        report_data["status"] = "error"
+        if report.pipeline_err_msg:
+            report_data["pipeline_err_msg"] = report.pipeline_err_msg
     else:
-        failed_messages = [msg for msg in (report.failed_messages or []) if msg]
+        failed_messages = [
+            failed_job.failed_message
+            for load_package in report.pipeline_load_info.load_packages
+            for failed_job in load_package.jobs["failed_jobs"]
+            if failed_job.failed_message
+        ]
         status = "completed with errors" if failed_messages else "completed"
-        lines.append(f"Status: {status}")
-        lines.append(f"Completed loads: {', '.join(report.loads_ids)}")
-        lines.extend(failed_messages)
+        report_data["status"] = status
+        report_data["load_ids"] = report.pipeline_load_info.loads_ids
+        if report.ingested_files:
+            report_data["ingested_files"] = report.ingested_files
+        if failed_messages:
+            report_data["load_errors"] = failed_messages
         if report.info_load_err_msg is None:
-            lines.append("Pipeline load info saved")
+            report_data["pipeline_load_info_errs"] = None
         else:
-            lines.append(f"Pipeline load info not saved: {report.info_load_err_msg!s}")
+            report_data["pipeline_load_info_errs"] = report.info_load_err_msg
 
     try:
-        report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        with report_path.open("w", encoding="utf-8") as fh:
+            yaml.safe_dump(report_data, fh, default_flow_style=False, sort_keys=False)
     except Exception as err:
         report_err_msg = f"Could not write pipeline report file: {err!s}"
         logger.exception(report_err_msg)
 
 
 def save_pipeline_metadata(
-    settings: CtsSettings, pipeline: dlt.Pipeline, load_info: LoadInfo | None, err_msg: str | None
+    settings: CtsSettings,
+    pipeline: dlt.Pipeline,
+    load_info: LoadInfo | None,
+    err_msg: str | None,
+    ingested_files: list[str] | None = None,
 ) -> None:
     """Save the pipeline metadata to a unique directory in settings.output_dir.
 
@@ -173,18 +203,30 @@ def save_pipeline_metadata(
     :type  load_info: LoadInfo | None
     :param err_msg: error message indicating why pipeline failed, or None if the pipeline was successful
     :type  err_msg: str | None
+    :param ingested_files: relative paths of files ingested from the filesystem resource, if any
+    :type  ingested_files: list[str] | None, optional
     """
     started_at = pipeline.last_trace.started_at
-    base_id = load_info.loads_ids[0] if load_info and load_info.loads_ids else str(started_at.timestamp())
     finished_at = pipeline.last_trace.finished_at
-    pipeline_e2e_id = f"{base_id}__{finished_at}"
 
     info_load_err_msg: str | None = None
     if load_info is not None:
         try:
             # save the load info as JSONL in the same destination as the ingested data
             load_info_resource: DltResource = dlt.resource(
-                [load_info.asdict()], name=LOAD_INFO_TABLE_NAME, max_table_nesting=0
+                [load_info.asdict()],
+                name=LOAD_INFO_TABLE_NAME,
+                max_table_nesting=0,
+                columns={
+                    k: {"data_type": "text"}
+                    for k in [
+                        "environment",
+                        "staging_type",
+                        "staging_name",
+                        "staging_displayable_credentials",
+                        "dataset_name",
+                    ]
+                },
             )
             load_info_save_info: LoadInfo = pipeline.run(load_info_resource, loader_file_format=str(JSONL))
             if load_info_save_info.has_failed_jobs:
@@ -194,40 +236,39 @@ def save_pipeline_metadata(
             info_load_err_msg = f"Loading pipeline load info failed: {e!s}"
             logger.exception(info_load_err_msg)
 
-    if settings.use_output_dir_for_pipeline_metadata and settings.pipeline_dir is not None:
-        # copy the pipeline directory so that it is named according to the first load_id
-        try:
-            move(settings.pipeline_dir, settings.output_dir / pipeline_e2e_id)
-        except OSError as e:
-            move_err_msg = f"Could not move pipelines dir: {e!s}"
-            logger.exception(move_err_msg)
-
     # write a summary and save it to the output directory
-    if load_info is None:
-        report = PipelineReport(
-            pipeline_name=pipeline.pipeline_name,
-            dataset_name=pipeline.dataset_name,
-            started_at=started_at,
-            finished_at=finished_at,
-            err_msg=err_msg,
-        )
-    else:
-        report = PipelineReport(
-            pipeline_name=pipeline.pipeline_name,
-            dataset_name=pipeline.dataset_name,
-            started_at=started_at,
-            finished_at=finished_at,
-            err_msg=err_msg,
-            loads_ids=load_info.loads_ids,
-            failed_messages=[
-                failed_job.failed_message
-                for load_package in load_info.load_packages
-                for failed_job in load_package.jobs["failed_jobs"]
-                if failed_job.failed_message
-            ],
-            info_load_err_msg=info_load_err_msg,
-        )
-    write_pipeline_report(settings.output_dir / f"report_{pipeline_e2e_id}.txt", report)
+    report = PipelineReport(
+        pipeline_name=pipeline.pipeline_name,
+        dataset_name=pipeline.dataset_name,
+        started_at=started_at,
+        finished_at=finished_at,
+        pipeline_load_info=load_info,
+        pipeline_err_msg=err_msg,
+        info_load_err_msg=info_load_err_msg,
+        ingested_files=ingested_files,
+    )
+    write_pipeline_report(settings.report_path, report)
+
+
+def _attach_file_collector(resource: DltResource | list[DltResource]) -> list[str]:
+    """Attach a map step to any root ``filesystem`` resource to record ingested file paths."""
+    ingested_files: list[str] = []
+    seen_pipes: set[str] = set()
+    resources = resource if isinstance(resource, list) else [resource]
+
+    def _record_file(item: Any) -> Any:  # noqa: ANN401
+        if isinstance(item, dict) and "relative_path" in item:
+            ingested_files.append(item["relative_path"])
+        return item
+
+    for res in resources:
+        curr: DltResource | None = res
+        while isinstance(curr, DltResource):
+            if curr.name == "filesystem" and curr._pipe.instance_id not in seen_pipes:  # noqa: SLF001
+                seen_pipes.add(curr._pipe.instance_id)  # noqa: SLF001
+                curr.add_map(_record_file)
+            curr = curr._parent  # noqa: SLF001
+    return ingested_files
 
 
 def run_pipeline(
@@ -277,6 +318,7 @@ def run_pipeline(
     if not slack_hook:
         logger.info("No Slack alerts will be sent: %s", WEBHOOK_NOT_CONFIGURED)
 
+    ingested_files = _attach_file_collector(resource)
     load_info: LoadInfo | None = None
     err_msg: str | None = None
     try:
@@ -293,10 +335,117 @@ def run_pipeline(
         else:
             logger.info("All pipeline jobs completed successfully")
 
-    save_pipeline_metadata(settings, pipeline, load_info, err_msg)
+    save_pipeline_metadata(settings, pipeline, load_info, err_msg, ingested_files=ingested_files or None)
 
     if slack_hook:
         msg = err_msg or f"Pipeline completed {'with errors' if load_info.has_failed_jobs else 'successfully!'}"
         send_slack_message_carefully(slack_hook, msg)
 
     return load_info
+
+
+def build_filesystem_resource(
+    settings: LocalInputOutputSettings,
+    reader_fn: Callable[..., Any] | DltResource,
+    *reader_args: Any,  # noqa: ANN401
+    name: str,
+    file_glob: str | None = None,
+    schema_contract: TSchemaContractDict | None = None,
+    **transformer_kwargs: Any,  # noqa: ANN401
+) -> DltResource:
+    """Build a dlt resource that pipes ``filesystem(settings.input_dir, file_glob)`` into a parallelized transformer.
+
+    :param settings: pipeline settings with ``input_dir`` (and optionally ``file_glob``)
+    :type settings: LocalInputOutputSettings
+    :param reader_fn: transformer function or resource accepting ``(items, settings, *reader_args)``
+    :type reader_fn: Callable[..., Any] | DltResource
+    :param reader_args: positional arguments bound to the transformer after ``settings``
+    :type reader_args: Any
+    :param name: name of the resulting dlt transformer resource
+    :type name: str
+    :param file_glob: glob pattern for files; defaults to ``settings.file_glob`` if present
+    :type file_glob: str | None
+    :param schema_contract: optional dlt schema contract hint applied to the resource
+    :type schema_contract: TSchemaContractDict | None
+    :param transformer_kwargs: additional keyword arguments passed to ``dlt.transformer``
+    :type transformer_kwargs: Any
+    :return: configured ``DltResource``
+    """
+    fs_args: dict[str, Any] = {"bucket_url": str(settings.input_dir)}
+    if file_glob is not None:
+        fs_args["file_glob"] = file_glob
+    elif glob := getattr(settings, "file_glob", None):
+        fs_args["file_glob"] = glob
+
+    files = filesystem(**fs_args)
+    parallelized = bool(transformer_kwargs.pop("parallelized", True))
+    reader = (
+        reader_fn
+        if isinstance(reader_fn, DltResource)
+        else dlt.transformer(reader_fn, name=name, parallelized=parallelized, **transformer_kwargs)
+    )
+    resource: DltResource = files | reader(settings, *reader_args)
+    if schema_contract is not None:
+        resource.apply_hints(schema_contract=TSchemaContractDict(**schema_contract))  # pyright: ignore[reportCallIssue]
+    return resource
+
+
+def make_per_file_reader(
+    file_fn: Callable[..., Iterable[Any]],
+) -> Callable[..., Generator[TDataItems, Any, Any]]:
+    """Wrap a single-file reader ``file_fn(file_item, *args)`` into a dlt transformer function over ``items``."""
+
+    def _read_items(items: Iterable[FileItemDict], *args: Any) -> Generator[TDataItems, Any, Any]:  # noqa: ANN401
+        for file_item in items:
+            yield from file_fn(file_item, *args)
+
+    return _read_items
+
+
+def build_per_file_filesystem_resource(
+    settings: LocalInputOutputSettings,
+    file_fn: Callable[..., Iterable[Any]],
+    *reader_args: Any,  # noqa: ANN401
+    name: str,
+    file_glob: str | None = None,
+    schema_contract: TSchemaContractDict | None = None,
+    **transformer_kwargs: Any,  # noqa: ANN401
+) -> DltResource:
+    """Build a dlt resource that runs a single-file reader ``file_fn(file_item, settings, *reader_args)`` over ``filesystem`` items."""
+    return build_filesystem_resource(
+        settings,
+        make_per_file_reader(file_fn),
+        *reader_args,
+        name=name,
+        file_glob=file_glob,
+        schema_contract=schema_contract,
+        **transformer_kwargs,
+    )
+
+
+def build_file_ingest_kwargs(
+    settings: FileFormatIngestSettings,
+    pipeline_name: str,
+    *,
+    fallback_dataset_name: bool = False,
+) -> dict[str, dict[str, Any]]:
+    """Build the standard ``pipeline_kwargs`` and ``pipeline_run_kwargs`` for a file-ingest pipeline.
+
+    :param settings: file-format ingest settings with ``dataset_name`` and ``loader_file_format``
+    :type settings: FileFormatIngestSettings
+    :param pipeline_name: name of the dlt pipeline
+    :type pipeline_name: str
+    :param fallback_dataset_name: whether to fall back to ``pipeline_name`` when ``settings.dataset_name`` is None
+    :type fallback_dataset_name: bool
+    :return: mapping with ``pipeline_kwargs`` and ``pipeline_run_kwargs`` suitable for ``run_pipeline``
+    """
+    dataset_name = (settings.dataset_name or pipeline_name) if fallback_dataset_name else settings.dataset_name
+    return {
+        "pipeline_kwargs": {
+            "pipeline_name": pipeline_name,
+            "dataset_name": dataset_name,
+        },
+        "pipeline_run_kwargs": {
+            "loader_file_format": str(settings.loader_file_format),
+        },
+    }

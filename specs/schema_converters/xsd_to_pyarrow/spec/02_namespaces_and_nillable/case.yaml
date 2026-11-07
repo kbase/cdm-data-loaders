@@ -1,0 +1,16 @@
+title: Namespaces and `nillable="true"`
+xml_tag: entry
+schema: schema.xsd
+rules: [R-RESOLVE-CLARK, R-NAME-ATTR, R-NAME-TEXT, R-SHAPE-SIMPLECONTENT, R-NIL, R-NULL-NILLABLE-PARENT, R-NULL-TEXT]
+notes: |
+  Covers `targetNamespace` with `elementFormDefault="qualified"` and the three `xsi:nil="true"` cases:
+
+  1. Nillable element with no attributes (`<title xsi:nil="true"/>`) -> `None`.
+  2. Nillable complex element with attributes (`<comment type="function" xsi:nil="true"/>`) -> `{"_type": "function"}`.
+  3. Nillable `simpleContent` element with attributes (`<label lang="en" xsi:nil="true"/>`) -> `{"_lang": "en"}`.
+runs:
+  - id: default
+    data: data.xml
+  - id: clark-notation
+    xml_tag: "{http://example.org/ns}entry"
+    data: data.xml

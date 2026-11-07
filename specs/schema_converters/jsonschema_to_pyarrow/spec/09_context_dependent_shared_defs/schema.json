@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/spec/09_context_dependent_shared_defs.schema.json",
+  "title": "ContextDependentSharedDefsRecord",
+  "type": "object",
+  "required": [
+    "id",
+    "primary_tag",
+    "fallback_tag"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "primary_tag": {
+      "$ref": "#/$defs/Tag"
+    },
+    "secondary_tag": {
+      "$ref": "#/$defs/Tag"
+    },
+    "fallback_tag": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Tag"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tag_list": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Tag"
+      }
+    },
+    "tag_lookup": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Tag"
+      }
+    }
+  },
+  "$defs": {
+    "Tag": {
+      "type": "object",
+      "description": "Reusable key-value tag structure.",
+      "required": [
+        "key"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
+

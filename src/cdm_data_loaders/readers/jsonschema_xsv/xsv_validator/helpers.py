@@ -2,26 +2,23 @@
 
 import os
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 from shutil import copy, move
-from typing import Annotated, Final, Self
+from typing import Any, Final, Self
 
 from pydantic import (
     BaseModel,
     DirectoryPath,
     Field,
     FilePath,
-    StringConstraints,
     computed_field,
 )
 
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
-
-NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
-CharStr = Annotated[str, StringConstraints(min_length=1, max_length=1)]
-
+from cdm_data_loaders.core.fields import CharStr, NonEmptyStr
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
 
 VALIDATION_ERRORS: Final[str] = ".validation-errors.tsv"
 
@@ -63,6 +60,16 @@ class ErrorRecord(BaseModel):
         """Build an `ErrorRecord` from a raised exception (e.g. `OSError`)."""
         return cls(file=file_name, message=str(exc))
 
+    def to_rejected_row(self, table_name: str) -> dict[str, str | int | None]:
+        """Format this error record for the ``_rejected`` table."""
+        return {
+            "table_name": table_name,
+            "source_file": self.file,
+            "line_no": None,
+            "raw_record": None,
+            "error_detail": self.message,
+        }
+
 
 class CleanerValidatorArgs(BaseModel):
     """Class containing required parameters for running the XSV file clean/validate functions.
@@ -75,9 +82,9 @@ class CleanerValidatorArgs(BaseModel):
     :type header_file_path: FilePath
 
     :param first_pass_schema: schema for initial validation of the data
-    :type first_pass_schema: ValidatedSchema
+    :type first_pass_schema: ValidatedXsvSchema
     :param post_norm_schema: schema for validating data after cleaning and normalisation
-    :type post_norm_schema: ValidatedSchema
+    :type post_norm_schema: ValidatedXsvSchema
 
     :param tmp_dir_path: temporary working directory
     :type tmp_dir_path: DirectoryPath
@@ -101,6 +108,9 @@ class CleanerValidatorArgs(BaseModel):
     :type null_regex_cols: list[NonEmptyStr] | None
     :param missing_header: whether or not the xsv file has a missing header, defaults to False
     :type missing_header: bool, optional
+    :param source_id: identifier recorded for the input file in error records, e.g. its path relative to the
+        input location; defaults to the name of ``xsv_file_path``
+    :type source_id: NonEmptyStr | None, optional
     """
 
     qsv_cmd: NonEmptyStr
@@ -108,8 +118,8 @@ class CleanerValidatorArgs(BaseModel):
     xsv_file_path: FilePath
     header_file_path: FilePath
 
-    first_pass_schema: ValidatedSchema
-    post_norm_schema: ValidatedSchema
+    first_pass_schema: ValidatedXsvSchema
+    post_norm_schema: ValidatedXsvSchema
 
     tmp_dir_path: DirectoryPath
     qsv_output_dir_path: DirectoryPath
@@ -124,6 +134,7 @@ class CleanerValidatorArgs(BaseModel):
     null_regex: NonEmptyStr | None = None
     null_regex_cols: list[NonEmptyStr] | None = None
     missing_header: bool = False
+    source_id: NonEmptyStr | None = None
 
     @computed_field
     @cached_property
@@ -140,8 +151,8 @@ class CleanerValidatorArgs(BaseModel):
     @computed_field
     @property
     def file_name(self) -> str:
-        """Name of the input xsv file."""
-        return self.xsv_file_path.name
+        """Identifier of the input xsv file used in error records: ``source_id`` if set, else the file name."""
+        return self.source_id or self.xsv_file_path.name
 
     @computed_field
     @property
@@ -162,6 +173,21 @@ class CleanerValidatorArgs(BaseModel):
         return f"invalid{self.ext}"
 
 
+def _transfer_safely(
+    op: Callable[[Path, Path], Any],
+    src: Path,
+    dst: Path,
+    args: "CleanerValidatorArgs",
+) -> bool:
+    """Execute a file transfer operation (`copy` or `move`), recording an `ErrorRecord` on `OSError`."""
+    try:
+        op(src, dst)
+    except OSError as exc:
+        args.errors.append(ErrorRecord.from_exception(args.file_name, exc))
+        return False
+    return True
+
+
 def copy_safely(src: Path, dst: Path, args: "CleanerValidatorArgs") -> bool:
     """Copy `src` to `dst`, recording an `ErrorRecord` and returning False on failure.
 
@@ -174,12 +200,7 @@ def copy_safely(src: Path, dst: Path, args: "CleanerValidatorArgs") -> bool:
     :return: True if the copy succeeded, False otherwise
     :rtype: bool
     """
-    try:
-        copy(src, dst)
-    except OSError as exc:
-        args.errors.append(ErrorRecord.from_exception(args.file_name, exc))
-        return False
-    return True
+    return _transfer_safely(copy, src, dst, args)
 
 
 def move_safely(src: Path, dst: Path, args: "CleanerValidatorArgs") -> bool:
@@ -194,12 +215,7 @@ def move_safely(src: Path, dst: Path, args: "CleanerValidatorArgs") -> bool:
     :return: True if the move succeeded, False otherwise
     :rtype: bool
     """
-    try:
-        move(src, dst)
-    except OSError as exc:
-        args.errors.append(ErrorRecord.from_exception(args.file_name, exc))
-        return False
-    return True
+    return _transfer_safely(move, src, dst, args)
 
 
 def non_header_lines_present(path: Path) -> bool:

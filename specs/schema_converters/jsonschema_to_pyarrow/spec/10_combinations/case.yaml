@@ -1,0 +1,10 @@
+title: Combinations
+schema: schema.json
+rules: [R-ORDER, R-SCALAR-TYPE, R-UNION-SCALAR, R-UNION-OBJECT, R-SHAPE-TUPLE, R-SHAPE-MAP, R-RECURSION, R-NULL-CONDITIONAL, R-SCALAR-ENUM-CONST, R-COERCE-SCALAR]
+notes: |
+  Stress test combining `allOf` inheritance, `const`, date / date-time / Base64 scalars, a nullable
+  `["number", "string", "null"]` union, a closed tuple, a string map, a `oneOf` object choice, a recursive
+  `TaxNode` and a `dependentSchemas` property.
+runs:
+  - id: default
+    data: data.json

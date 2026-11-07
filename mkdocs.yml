@@ -1,0 +1,77 @@
+site_name: CDM Data Loaders
+site_description: Data loaders, schema converters, and ingestion wranglers for the KBase CDM
+site_url: https://kbase.github.io/cdm-data-loaders/
+repo_url: https://github.com/kbase/cdm-data-loaders
+repo_name: kbase/cdm-data-loaders
+
+exclude_docs: |
+  implementation_plan.md
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.expand
+    - navigation.indexes
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - search.highlight
+    - search.suggest
+
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - scripts/gen_docs.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: sphinx
+            heading_level: 2
+            members_order: source
+            separate_signature: true
+            show_root_heading: true
+            show_signature_annotations: true
+            show_source: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - Guides:
+      - Core & CTS Execution: core_cts_execution.md
+      - CLI Reference: cli_reference.md
+      - JSONLines Ingestion: jsonlines_ingest.md
+      - Table & Column Transforms: table_transforms.md
+      - UniProt & UniRef Ingestion: uniprot.md
+      - NCBI FTP E2E Walkthrough: ncbi_ftp_e2e_walkthrough.md
+      - Rclone Bulk Transfer: rclone_instructions.md
+  - Converters & Specifications:
+      - Converter IR Architecture: converters_ir.md
+      - JSON Schema to PyArrow Spec: jsonschema_to_pyarrow_specification.md
+      - Pydantic to PyArrow Spec: pydantic_to_pyarrow_specification.md
+      - XSD to PyArrow Spec: xsd_to_pyarrow_specification.md
+  - API & Schema Reference: api/
+

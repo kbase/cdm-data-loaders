@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+from pathlib import Path
 
 from pydantic import validate_call
 
@@ -19,7 +20,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     non_header_lines_present,
     prepend_header,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
 
 
 def qsv_check() -> str:
@@ -127,6 +128,39 @@ def _run_qsv_step(cmd: list[str], args: "CleanerValidatorArgs") -> subprocess.Co
     return None
 
 
+def _require_input_file(args: CleanerValidatorArgs, input_file_name: str) -> Path | None:
+    """Return ``args.tmp_dir_path / input_file_name`` if it exists, or record a ``FileNotFoundError`` and return ``None``."""
+    input_path = args.tmp_dir_path / input_file_name
+    if not input_path.is_file():
+        err_msg = f"Input file not found at {input_path!s}"
+        args.errors.append(ErrorRecord.from_exception(args.file_name, FileNotFoundError(err_msg)))
+        return None
+    return input_path
+
+
+def _run_qsv_transform_step(
+    cmd: list[str],
+    output_file_name: str,
+    args: CleanerValidatorArgs,
+    *,
+    failed_input_to_copy: Path | None = None,
+) -> str | None:
+    """Execute a qsv transformation command and return ``output_file_name`` on exit code 0."""
+    result = _run_qsv_step(cmd, args)
+    if result is None:
+        return None
+
+    if result.returncode == 0:
+        return output_file_name
+
+    # any other return code: record the error
+    # note: the output file may still exist, but it is ignored
+    args.errors.append(ErrorRecord.from_qsv_result(args.file_name, result))
+    if failed_input_to_copy is not None:
+        copy_safely(failed_input_to_copy, args.qsv_output_dir_path / failed_input_to_copy.name, args)
+    return None
+
+
 def run_qsv_input(args: CleanerValidatorArgs, input_file_name: str) -> str | None:
     """Run qsv input to normalise the file input_file_name.
 
@@ -141,9 +175,8 @@ def run_qsv_input(args: CleanerValidatorArgs, input_file_name: str) -> str | Non
     :return: name of the output file if all went ok; otherwise None
     :rtype: str | None
     """
-    if not (args.tmp_dir_path / input_file_name).is_file():
-        err_msg = f"Input file not found at {(args.tmp_dir_path / input_file_name)!s}"
-        args.errors.append(ErrorRecord.from_exception(args.file_name, FileNotFoundError(err_msg)))
+    input_path = _require_input_file(args, input_file_name)
+    if input_path is None:
         return None
 
     output_file_name = f"{args.xsv_file_base_name}{CLEANED_SUFFIX}{args.ext}"
@@ -166,19 +199,9 @@ def run_qsv_input(args: CleanerValidatorArgs, input_file_name: str) -> str | Non
         "--output",
         str(output_path),
         # input file
-        str(args.tmp_dir_path / input_file_name),
+        str(input_path),
     ]
-    result = _run_qsv_step(cmd, args)
-    if result is None:
-        return None
-
-    if result.returncode == 0:
-        return output_file_name
-
-    # any other return code: record the error
-    # note: the output file will still exist, but it is ignored
-    args.errors.append(ErrorRecord.from_qsv_result(args.file_name, result))
-    return None
+    return _run_qsv_transform_step(cmd, output_file_name, args)
 
 
 def run_qsv_null_replacement(args: CleanerValidatorArgs, input_file_name: str) -> str | None:
@@ -191,9 +214,8 @@ def run_qsv_null_replacement(args: CleanerValidatorArgs, input_file_name: str) -
     :return: name of the output file if all went ok; otherwise None
     :rtype: str | None
     """
-    if not (args.tmp_dir_path / input_file_name).is_file():
-        err_msg = f"Input file not found at {(args.tmp_dir_path / input_file_name)!s}"
-        args.errors.append(ErrorRecord.from_exception(args.file_name, FileNotFoundError(err_msg)))
+    input_path = _require_input_file(args, input_file_name)
+    if input_path is None:
         return None
 
     output_file_name = f"{args.xsv_file_base_name}{NORM_SUFFIX}{args.ext}"
@@ -214,26 +236,15 @@ def run_qsv_null_replacement(args: CleanerValidatorArgs, input_file_name: str) -
         # replacement
         "",
         # input file
-        str(args.tmp_dir_path / input_file_name),
+        str(input_path),
     ]
-    result = _run_qsv_step(cmd, args)
-    if result is None:
-        return None
-
-    if result.returncode == 0:
-        return output_file_name
-    # any other return code: record the error
-    # note: the output file may still exist, but it is ignored
-    args.errors.append(ErrorRecord.from_qsv_result(args.file_name, result))
-    # copy the input file to the output directory for later perusal
-    copy_safely(args.tmp_dir_path / input_file_name, args.qsv_output_dir_path / input_file_name, args)
-    return None
+    return _run_qsv_transform_step(cmd, output_file_name, args, failed_input_to_copy=input_path)
 
 
 def run_qsv_validate(
     args: CleanerValidatorArgs,
     input_file_name: str,
-    schema: ValidatedSchema,
+    schema: ValidatedXsvSchema,
     first_pass: bool = True,  # noqa: FBT001, FBT002
 ) -> str | None:
     """Run the validator over the file input_file_name.
@@ -242,16 +253,15 @@ def run_qsv_validate(
     :type args: CleanerValidatorArgs
     :param input_file_name: name of the input file
     :type input_file_name: str
-    :param schema: ValidatedSchema object to use for validation
-    :type schema: ValidatedSchema
+    :param schema: ValidatedXsvSchema object to use for validation
+    :type schema: ValidatedXsvSchema
     :param first_pass: if True, this runs the first pass validator, which does not check format
     :type first_pass: bool, defaults to True
     :return: name of the output file if all went ok; otherwise None
     :rtype: str | None
     """
-    if not (args.tmp_dir_path / input_file_name).is_file():
-        err_msg = f"Input file not found at {(args.tmp_dir_path / input_file_name)!s}"
-        args.errors.append(ErrorRecord.from_exception(args.file_name, FileNotFoundError(err_msg)))
+    input_path = _require_input_file(args, input_file_name)
+    if input_path is None:
         return None
 
     # generate the full paths for the derived files
@@ -278,7 +288,7 @@ def run_qsv_validate(
         "--valid-output",
         str(files.valid_output),
         # file to validate
-        str(args.tmp_dir_path / input_file_name),
+        str(input_path),
         # the schema
         str(files.schema),
     ]

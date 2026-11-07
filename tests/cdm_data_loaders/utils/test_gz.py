@@ -5,9 +5,10 @@ import logging
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
+from pydantic import ValidationError
 
-from cdm_data_loaders.utils.gz import compress_file, compress_files, decompress_file, main, open_maybe_gzip
+from cdm_data_loaders.utils.gz import GzSettings, compress_file, compress_files, decompress_file, main
+from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes
 
 TEMP_FILE_CONTENT = b"Hello, world!\nThis is a test."
 
@@ -33,23 +34,6 @@ def read_gz(path: Path) -> bytes:
     """Utility function to read a ``.gz`` file and return its decompressed bytes."""
     with gzip.open(path, "rb") as f:
         return f.read()
-
-
-@pytest.mark.parametrize("file_path", ["temporary_file", "temporary_gz"])
-@pytest.mark.parametrize("str_or_path", [str, Path])
-def test_open_maybe_gzip_pass_reads_files(file_path: str, str_or_path: type, request: pytest.FixtureRequest) -> None:
-    """Test that both plain and gzipped files can be read, and string or Path file paths are accepted."""
-    file_path = request.getfixturevalue(file_path)
-    with open_maybe_gzip(str_or_path(file_path)) as fh:
-        assert fh.read() == TEMP_FILE_CONTENT
-
-
-@pytest.mark.parametrize("mode", ["w", "rt", "wb", "rb+", "a+b"])
-def test_open_maybe_gzip_fail_rejects_non_read_mode(temporary_file: Path, mode: str) -> None:
-    """Only binary read modes are supported."""
-    err_msg = f"open_maybe_gzip incorrectly accepts {mode} mode"
-    with pytest.raises(ValueError, match="only supports binary reads"), open_maybe_gzip(temporary_file, mode=mode):
-        raise AssertionError(err_msg)
 
 
 def test_compress_file_creates_gzip(temporary_file: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -250,31 +234,58 @@ def test_decompress_file_skips_existing_decompressed_file(
     assert f"Found existing file {file_path!s}: skipping decompression" in caplog.records[0].getMessage()
 
 
-@pytest.mark.skip("CliRunner conflicts with logging, causing a ValueError")
-def test_cli_single_file(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_gz_settings_pass_no_cli_clashes() -> None:
+    """GzSettings has no CLI argument or shortcut collisions."""
+    assert_no_cli_clashes(GzSettings)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "raw_value", "expected_value"),
+    [
+        ("source", "some/file.txt", Path("some/file.txt")),
+        ("file_glob", "*.txt", "*.txt"),
+    ],
+    ids=["source", "file_glob"],
+)
+def test_gz_settings_pass_cli_field_roundtrips(
+    field_name: str,
+    raw_value: str,
+    expected_value: Path | str,
+) -> None:
+    """Every registered CLI option and shortcut for each GzSettings field roundtrips to the expected value."""
+    assert_cli_field_roundtrips(
+        GzSettings,
+        field_name,
+        raw_value,
+        expected_value,
+        required={"source": "default.txt"},
+    )
+
+
+@pytest.mark.parametrize("source_flag", ["--source", "-i"])
+def test_cli_single_file(tmp_path: Path, source_flag: str) -> None:
     """Test the CLI with a valid file."""
-    # ensure that the logger does not produce any output
-    caplog.set_level(logging.CRITICAL)
-    runner = CliRunner()
-    # Create a single file and test CLI compression of a file
     file_path = tmp_path / "single.txt"
     file_path.write_text("single file content")
-    result = runner.invoke(main, ["--source", str(file_path)])
-    assert result.exit_code == 0
+    main([source_flag, str(file_path)])
     assert (file_path.with_suffix(file_path.suffix + ".gz")).exists()
 
 
-@pytest.mark.skip("CliRunner conflicts with logging, causing a ValueError")
-def test_cli_directory_with_glob(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    """Test the CLI with a directory and some globbery action."""
-    caplog.set_level(logging.CRITICAL)
+@pytest.mark.parametrize(
+    ("source_flag", "glob_flag"),
+    [
+        ("--source", "--file-glob"),
+        ("-i", "-f"),
+    ],
+    ids=["long_flags", "short_flags"],
+)
+def test_cli_directory_with_glob(tmp_path: Path, source_flag: str, glob_flag: str) -> None:
+    """Test the CLI with a directory and glob pattern."""
     sub_dir = tmp_path / "sub"
     sub_dir.mkdir()
     for name in ["a.txt", "b.log"]:
         (sub_dir / name).write_text(name)
-    runner = CliRunner()
-    result = runner.invoke(main, ["--source", str(sub_dir), "--file-glob", "*.txt"])
-    assert result.exit_code == 0
+    main([source_flag, str(sub_dir), glob_flag, "*.txt"])
     # Only the .txt file should be gzipped
     assert (sub_dir / "a.txt.gz").exists()
     assert not (sub_dir / "b.log.gz").exists()
@@ -282,7 +293,12 @@ def test_cli_directory_with_glob(tmp_path: Path, caplog: pytest.LogCaptureFixtur
 
 def test_cli_main_nonexistent_source(tmp_path: Path) -> None:
     """Test the CLI interface with a missing source."""
-    runner = CliRunner()
-    result = runner.invoke(main, ["--source", str(tmp_path / "doesnotexist")])
-    assert result.exit_code != 0
-    assert isinstance(result.exception, RuntimeError)
+    missing = tmp_path / "doesnotexist"
+    with pytest.raises(RuntimeError, match=f"Path {missing} does not exist"):
+        main(["--source", str(missing)])
+
+
+def test_cli_main_missing_source_arg() -> None:
+    """Test the CLI interface when --source is omitted."""
+    with pytest.raises(ValidationError):
+        main([])

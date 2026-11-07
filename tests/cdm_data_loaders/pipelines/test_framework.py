@@ -1,13 +1,14 @@
 """Unit and integration tests for the unified pipeline test execution framework."""
 
 import subprocess
-import sys
 from pathlib import Path
 from types import ModuleType
 
+import dlt
 import pytest
 from pydantic import BaseModel
 
+from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines import uniprot_kb_cdm
 from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import (
     cli as jsonl_extract_cli,
@@ -36,9 +37,13 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     assert_pipeline_report_written,
     assert_run_ok,
     read_data_rows,
-    settings_to_argv,
 )
-from tests.conftest import LOCAL_FS
+from tests.cdm_data_loaders.pipelines.reference import pipeline as reference_pipeline_mod
+from tests.cdm_data_loaders.pipelines.reference.pipeline import (
+    ReferencePipelineSettings,
+    run_reference_pipeline,
+)
+from tests.helpers import make_cts_settings, register_temp_module, settings_to_argv
 
 
 class _SampleEntityModel(BaseModel):
@@ -47,7 +52,7 @@ class _SampleEntityModel(BaseModel):
     record_id: str
 
 
-@pytest.mark.parametrize("target_key", sorted(PIPELINE_TARGETS))
+@pytest.mark.parametrize("target_key", sorted(PIPELINE_TARGETS), ids=str)
 def test_resolve_pipeline_pass_all_registered_targets(target_key: str) -> None:
     """Every registered pipeline resolves to a valid PipelineSpec with a synchronized cli_prog_name."""
     spec = resolve_pipeline(target_key)
@@ -59,99 +64,189 @@ def test_resolve_pipeline_pass_all_registered_targets(target_key: str) -> None:
     assert spec.settings_cls.model_config.get("cli_prog_name") == expected_cli
 
 
-def test_resolve_pipeline_pass_from_module_cli_spec_and_callable() -> None:
+_PRE_RESOLVED_CLI_SPEC = PipelineSpec(
+    cli_command="jsonlines_extract",
+    module_path="cdm_data_loaders.pipelines.jsonlines.extract_pipeline",
+    settings_cls=JsonlExtractSettings,
+    pipeline_fn=run_jsonlines_pipeline,
+    cli_callable=jsonl_extract_cli,
+)
+
+
+@pytest.mark.parametrize(
+    ("target", "expected_cli", "expected_settings_cls", "expected_pipeline_fn", "expected_cli_callable"),
+    [
+        pytest.param(
+            uniprot_kb_cdm,
+            "uniprot_cdm",
+            uniprot_kb_cdm.UniProtSettings,
+            uniprot_kb_cdm.run_uniprot_pipeline,
+            uniprot_kb_cdm.cli,
+            id="module",
+        ),
+        pytest.param(
+            jsonl_extract_cli,
+            "jsonlines_extract",
+            JsonlExtractSettings,
+            run_jsonlines_pipeline,
+            jsonl_extract_cli,
+            id="pipeline-cli",
+        ),
+        pytest.param(
+            run_jsonlines_pipeline,
+            "jsonlines_extract",
+            JsonlExtractSettings,
+            run_jsonlines_pipeline,
+            jsonl_extract_cli,
+            id="callable",
+        ),
+        pytest.param(
+            "cdm_data_loaders.pipelines.uniprot_kb_cdm",
+            "uniprot_cdm",
+            uniprot_kb_cdm.UniProtSettings,
+            uniprot_kb_cdm.run_uniprot_pipeline,
+            uniprot_kb_cdm.cli,
+            id="dotted-module-path",
+        ),
+        pytest.param(
+            _PRE_RESOLVED_CLI_SPEC,
+            "jsonlines_extract",
+            JsonlExtractSettings,
+            run_jsonlines_pipeline,
+            jsonl_extract_cli,
+            id="pipeline-spec",
+        ),
+        pytest.param(
+            run_reference_pipeline,
+            "reference_pipeline",
+            ReferencePipelineSettings,
+            run_reference_pipeline,
+            reference_pipeline_mod.cli,
+            id="test-callable",
+        ),
+        pytest.param(
+            reference_pipeline_mod,
+            "reference_pipeline",
+            ReferencePipelineSettings,
+            run_reference_pipeline,
+            reference_pipeline_mod.cli,
+            id="test-module",
+        ),
+    ],
+)
+def test_resolve_pipeline_pass_from_module_cli_spec_and_callable(
+    target: object,
+    expected_cli: str,
+    expected_settings_cls: type[CtsSettings],
+    expected_pipeline_fn: object,
+    expected_cli_callable: object,
+) -> None:
     """resolve_pipeline accepts ModuleType, PipelineCli, PipelineSpec, and pipeline run functions."""
-    from_module = resolve_pipeline(uniprot_kb_cdm)
-    assert from_module.cli_command == "uniprot_cdm"
-    assert from_module.settings_cls is uniprot_kb_cdm.UniProtSettings
-    assert from_module.pipeline_fn is uniprot_kb_cdm.run_uniprot_pipeline
-
-    from_cli = resolve_pipeline(jsonl_extract_cli)
-    assert from_cli.cli_command == "jsonlines_extract"
-    assert from_cli.settings_cls is JsonlExtractSettings
-    assert from_cli.pipeline_fn is run_jsonlines_pipeline
-
-    from_callable = resolve_pipeline(run_jsonlines_pipeline)
-    assert from_callable.cli_command == "jsonlines_extract"
-    assert from_callable.pipeline_fn is run_jsonlines_pipeline
-
-    from_full_module_str = resolve_pipeline("cdm_data_loaders.pipelines.uniprot_kb_cdm")
-    assert from_full_module_str.cli_command == "uniprot_cdm"
-
-    from_spec = resolve_pipeline(from_cli)
-    assert from_spec is from_cli
+    spec = resolve_pipeline(target)  # type: ignore[arg-type]
+    assert spec.cli_command == expected_cli
+    assert spec.settings_cls is expected_settings_cls
+    assert spec.pipeline_fn is expected_pipeline_fn
+    assert spec.cli_callable is expected_cli_callable
 
 
-def test_resolve_pipeline_fail_unknown_identifier() -> None:
+@pytest.mark.parametrize(
+    ("target", "match"),
+    [
+        pytest.param(
+            "nonexistent_pipeline",
+            "Unknown pipeline 'nonexistent_pipeline'",
+            id="unknown-string",
+        ),
+        pytest.param(
+            lambda _settings: None,
+            "Cannot resolve pipeline from callable",
+            id="unmapped-callable",
+        ),
+    ],
+)
+def test_resolve_pipeline_fail_unknown_identifier(target: object, match: str) -> None:
     """resolve_pipeline raises ValueError for unknown pipeline names or unmapped callables."""
-    with pytest.raises(ValueError, match="Unknown pipeline 'nonexistent_pipeline'"):
-        resolve_pipeline("nonexistent_pipeline")
-
-    with pytest.raises(ValueError, match="Cannot resolve pipeline from callable"):
-        resolve_pipeline(lambda _settings: None)
+    with pytest.raises(ValueError, match=match):
+        resolve_pipeline(target)  # type: ignore[arg-type]
 
 
-def test_settings_to_argv_pass_excludes_computed_fields_and_expands_lists(tmp_path: Path) -> None:
+def test_settings_to_argv_pass_excludes_computed_fields_and_expands_lists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """settings_to_argv omits computed fields and None values, formats bools, and expands list fields."""
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
-    settings = JsonlJsonschemaIngestSettings(
-        input_dir=str(input_dir),
-        output_dir=str(output_dir),
-        use_destination=LOCAL_FS,
+    entity_schemas = register_temp_module(
+        monkeypatch,
+        name="_test_argv_schema_mod",
+        ENTITY_SCHEMAS={
+            "widget": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+            }
+        },
+    )
+    settings = make_cts_settings(
+        JsonlJsonschemaIngestSettings,
+        tmp_path,
+        log_config_file=None,
         use_output_dir_for_pipeline_metadata=True,
         dlt_dev_mode=False,
         dataset_name="custom_ds",
         loader_file_format="jsonl",
-        schema_files_module="some.module",
-        table_names=["alpha", "beta"],
+        entity_schemas=entity_schemas,
     )
     argv = settings_to_argv(settings)
     assert "--pipeline-dir" not in argv
+    assert "--report-path" not in argv
     assert "--log-config-file" not in argv
     assert "--use-output-dir-for-pipeline-metadata" in argv
     idx_meta = argv.index("--use-output-dir-for-pipeline-metadata")
     assert argv[idx_meta + 1] == "true"
-    idx_tables = argv.index("--table-names")
-    assert argv[idx_tables + 1 : idx_tables + 3] == ["alpha", "beta"]
 
 
-def test_reconstruct_load_info_pass_and_error_cases(tmp_path: Path) -> None:
-    """reconstruct_load_info returns None on missing or error reports and reconstructs completed reports."""
-    empty_dir = tmp_path / "empty"
-    empty_dir.mkdir()
-    assert reconstruct_load_info(empty_dir) is None
+@pytest.mark.parametrize(
+    "report_text",
+    [
+        pytest.param(None, id="missing-report"),
+        pytest.param(
+            "pipeline: test_pipe\n"
+            "dataset: test_ds\n"
+            "started: 2026-01-01 00:00:00+00:00\n"
+            "finished: 2026-01-01 00:00:05+00:00\n"
+            "status: error\n"
+            "pipeline_err_msg: Pipeline failed\n",
+            id="error-status-report",
+        ),
+    ],
+)
+def test_reconstruct_load_info_pass_returns_none_for_missing_or_error_report(
+    tmp_path: Path,
+    report_text: str | None,
+) -> None:
+    """reconstruct_load_info returns None when report.txt is missing or has status 'error'."""
+    if report_text is not None:
+        (tmp_path / "report.txt").write_text(report_text, encoding="utf-8")
+    assert reconstruct_load_info(tmp_path) is None
 
-    error_dir = tmp_path / "error_out"
-    error_dir.mkdir()
-    (error_dir / "report_123_456.txt").write_text(
-        "Pipeline: test_pipe\n"
-        "Dataset: test_ds\n"
-        "Started: 2026-01-01 00:00:00+00:00\n"
-        "Finished: 2026-01-01 00:00:05+00:00\n"
-        "Status: error\n"
-        "Pipeline failed\n",
-        encoding="utf-8",
-    )
-    assert reconstruct_load_info(error_dir) is None
 
-    completed_dir = tmp_path / "completed_out"
-    completed_dir.mkdir()
+def test_reconstruct_load_info_pass_completed_report(tmp_path: Path) -> None:
+    """reconstruct_load_info reconstructs LoadInfo fields and asdict() output from a completed report."""
     started_str = "2026-01-01 12:34:56.789000+00:00"
-    finished_str = "2026-01-01 12:35:00.000000+00:00"
-    (completed_dir / "report_111_222.txt").write_text(
-        f"Pipeline: test_pipe\n"
-        f"Dataset: test_ds\n"
-        f"Started: {started_str}\n"
-        f"Finished: {finished_str}\n"
-        f"Status: completed with errors\n"
-        f"Completed loads: 111, 222\n"
-        f"Pipeline load info saved\n",
+    finished_str = "2026-01-01 12:35:00+00:00"
+    (tmp_path / "report.txt").write_text(
+        f"pipeline: test_pipe\n"
+        f"dataset: test_ds\n"
+        f"started: {started_str}\n"
+        f"finished: {finished_str}\n"
+        f"status: completed with errors\n"
+        f"load_ids:\n"
+        f"  - '111'\n"
+        f"  - '222'\n"
+        f"pipeline_load_info_errs: null\n",
         encoding="utf-8",
     )
-    reconstructed = reconstruct_load_info(completed_dir)
+    reconstructed = reconstruct_load_info(tmp_path)
     assert reconstructed is not None
     assert reconstructed.pipeline.pipeline_name == "test_pipe"
     assert reconstructed.dataset_name == "test_ds"
@@ -164,31 +259,63 @@ def test_reconstruct_load_info_pass_and_error_cases(tmp_path: Path) -> None:
     assert as_dict["loads_ids"] == ["111", "222"]
 
 
-def test_ensure_docker_image_pass_caches_and_fail_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ensure_docker_image builds once per tag and raises RuntimeError when docker build fails."""
-    monkeypatch.setattr(framework, "_built_docker_images", set())
+def test_ensure_docker_image_pass_builds_and_caches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ensure_docker_image builds a missing image and records it in the session cache."""
+    built_cache: set[str] = set()
+    monkeypatch.setattr(framework, "_built_docker_images", built_cache)
     calls: list[list[str]] = []
 
     def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(cmd)
+        if cmd[:3] == ["docker", "image", "inspect"]:
+            return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="No such image")
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="built", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     tag = ensure_docker_image("custom-image:test")
     assert tag == "custom-image:test"
-    assert len(calls) == 1
-    assert calls[0][:4] == ["docker", "build", "-t", "custom-image:test"]
+    assert [cmd[:4] for cmd in calls] == [
+        ["docker", "image", "inspect", "custom-image:test"],
+        ["docker", "build", "-t", "custom-image:test"],
+    ]
+    assert "custom-image:test" in built_cache
 
-    # Second call uses cache without invoking subprocess.run
-    assert ensure_docker_image("custom-image:test") == "custom-image:test"
-    assert len(calls) == 1
 
-    # Failing build raises RuntimeError
-    def fake_fail(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="build boom")
+@pytest.mark.parametrize(
+    ("cached_tags", "expected_calls"),
+    [
+        pytest.param({"prebuilt-image:test"}, [], id="in-memory-session-cache"),
+        pytest.param(set(), [["docker", "image", "inspect", "prebuilt-image:test"]], id="local-docker-daemon"),
+    ],
+)
+def test_ensure_docker_image_pass_reuses_existing_image(
+    monkeypatch: pytest.MonkeyPatch,
+    cached_tags: set[str],
+    expected_calls: list[list[str]],
+) -> None:
+    """ensure_docker_image skips building when the image is already cached or present in the local daemon."""
+    monkeypatch.setattr(framework, "_built_docker_images", set(cached_tags))
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, **_kwargs: (
+            calls.append(cmd) or subprocess.CompletedProcess(cmd, returncode=0, stdout="[]", stderr="")
+        ),
+    )
+    assert ensure_docker_image("prebuilt-image:test") == "prebuilt-image:test"
+    assert calls == expected_calls
 
-    monkeypatch.setattr(subprocess, "run", fake_fail)
+
+def test_ensure_docker_image_fail_build_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ensure_docker_image raises RuntimeError when docker build exits with a non-zero status."""
+    monkeypatch.setattr(framework, "_built_docker_images", set())
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="build boom"),
+    )
     with pytest.raises(RuntimeError, match="Docker image build failed"):
         ensure_docker_image("failing-image:test")
 
@@ -199,25 +326,19 @@ def test_pipeline_test_runner_pass_core_and_cli_modes_end_to_end(
     mode: ExecutionMode,
 ) -> None:
     """PipelineTestRunner executes a pipeline in core and cli modes and hooks into all result assertions."""
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    expected_records = [{"id": "rec_1", "value": 10}, {"id": "rec_2", "value": 20}]
-    (input_dir / "data.jsonl").write_text(
-        "\n".join(f'{{"id": "{r["id"]}", "value": {r["value"]}}}' for r in expected_records) + "\n",
-        encoding="utf-8",
-    )
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
-
-    settings = JsonlExtractSettings(
-        input_dir=str(input_dir),
-        output_dir=str(output_dir),
-        use_destination=LOCAL_FS,
+    settings = make_cts_settings(
+        JsonlExtractSettings,
+        tmp_path,
         use_output_dir_for_pipeline_metadata=True,
         dlt_dev_mode=False,
         dataset_name="framework_test_ds",
         table_name="items",
         loader_file_format="jsonl",
+    )
+    expected_records = [{"id": "rec_1", "value": 10}, {"id": "rec_2", "value": 20}]
+    (settings.input_dir / "data.jsonl").write_text(
+        "\n".join(f'{{"id": "{r["id"]}", "value": {r["value"]}}}' for r in expected_records) + "\n",
+        encoding="utf-8",
     )
 
     runner = PipelineTestRunner(mode=mode)
@@ -228,9 +349,9 @@ def test_pipeline_test_runner_pass_core_and_cli_modes_end_to_end(
         )
     )
 
-    assert_pipeline_report_written(output_dir, load_info, metadata_moved=True)
+    assert_pipeline_report_written(settings.output_dir, load_info, metadata_moved=True, ingested_files=["data.jsonl"])
     assert set(load_info.pipeline.dataset().tables) >= set(DEFAULT_DLT_TABLES)
-    assert read_data_rows(output_dir / settings.dataset_name) == {"items": expected_records}
+    assert read_data_rows(settings.output_dir / settings.dataset_name) == {"items": expected_records}
 
 
 def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
@@ -238,49 +359,9 @@ def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Docker mode stages input, dlt config, auxiliary files, dynamic modules, and reconstructs LoadInfo."""
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    (input_dir / "sample.xml").write_text("<root><entry><id>1</id></entry></root>", encoding="utf-8")
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
-    xsd_file = tmp_path / "schema.xsd"
-    xsd_file.write_text("<xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema'/>", encoding="utf-8")
-
-    # Create dynamic in-memory modules for both ENTITY_SCHEMAS and ENTITY_MODELS
-    dyn_schema_mod_name = "_test_dynamic_schema_mod"
-    dyn_schema_mod = ModuleType(dyn_schema_mod_name)
-    dyn_schema_mod.ENTITY_SCHEMAS = {"widget": {"type": "object"}}  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, dyn_schema_mod_name, dyn_schema_mod)
-
-    dyn_model_mod_name = "_test_dynamic_model_mod"
-    dyn_model_mod = ModuleType(dyn_model_mod_name)
-    dyn_model_mod.ENTITY_MODELS = {"widget": _SampleEntityModel}  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, dyn_model_mod_name, dyn_model_mod)
-
-    monkeypatch.setattr(framework, "_built_docker_images", {"test-image:latest"})
-    captured_cmds: list[list[str]] = []
-
-    def fake_docker_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        captured_cmds.append(cmd)
-        # Simulate the container writing a completed report to the mounted output_dir
-        (output_dir / "report_999_1000.txt").write_text(
-            "Pipeline: xmltodict\n"
-            "Dataset: xml_docker_ds\n"
-            "Started: 2026-02-01 00:00:00+00:00\n"
-            "Finished: 2026-02-01 00:00:05+00:00\n"
-            "Status: completed\n"
-            "Completed loads: 999\n"
-            "Pipeline load info saved\n",
-            encoding="utf-8",
-        )
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout="ok", stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_docker_run)
-
-    settings = XmlToDictSettings(
-        input_dir=str(input_dir),
-        output_dir=str(output_dir),
-        use_destination=LOCAL_FS,
+    settings = make_cts_settings(
+        XmlToDictSettings,
+        tmp_path,
         use_output_dir_for_pipeline_metadata=True,
         dlt_dev_mode=False,
         dataset_name="xml_docker_ds",
@@ -288,15 +369,48 @@ def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
         xml_tag="entry",
         loader_file_format="parquet",
     )
+    (settings.input_dir / "sample.xml").write_text("<root><entry><id>1</id></entry></root>", encoding="utf-8")
+    output_dir = settings.output_dir
+    xsd_file = tmp_path / "schema.xsd"
+    xsd_file.write_text("<xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema'/>", encoding="utf-8")
+
+    # Create dynamic in-memory modules for both ENTITY_SCHEMAS and ENTITY_MODELS
+    dyn_schema_mod_name = register_temp_module(
+        monkeypatch, name="_test_dynamic_schema_mod", ENTITY_SCHEMAS={"widget": {"type": "object"}}
+    )
+    dyn_model_mod_name = register_temp_module(
+        monkeypatch, name="_test_dynamic_model_mod", ENTITY_MODELS={"widget": _SampleEntityModel}
+    )
+
+    monkeypatch.setattr(framework, "_built_docker_images", {"test-image:latest"})
+    captured_cmds: list[list[str]] = []
+
+    def fake_docker_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured_cmds.append(cmd)
+        # Simulate the container writing a completed report to the mounted output_dir
+        (output_dir / "report.txt").write_text(
+            "pipeline: xmltodict\n"
+            "dataset: xml_docker_ds\n"
+            "started: 2026-02-01 00:00:00+00:00\n"
+            "finished: 2026-02-01 00:00:05+00:00\n"
+            "status: completed\n"
+            "load_ids:\n"
+            "  - '999'\n"
+            "pipeline_load_info_errs: null\n",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_docker_run)
 
     runner = PipelineTestRunner(mode=ExecutionMode.DOCKER, docker_image="test-image:latest")
     cli_args = [
         *settings_to_argv(settings),
         "--xsd-file",
         str(xsd_file),
-        "--schema-files-module",
+        "--entity-schemas",
         dyn_schema_mod_name,
-        "--entity-models-module",
+        "--entity-models",
         dyn_model_mod_name,
     ]
     load_info = runner.run("xmltodict", cli_args=cli_args)
@@ -321,64 +435,160 @@ def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
     assert f"PYTHONPATH={CONTAINER_PYMODULES_DIR}:/app/src:/app" in docker_cmd
 
 
-def test_pipeline_test_runner_fail_docker_mode_nonzero_exit(
+def test_pipeline_test_runner_pass_docker_mode_test_pipeline_and_workers(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Docker mode raises ValueError on validation errors and RuntimeError on general container failures."""
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    """Docker mode dispatches test-only pipeline modules via script path and forwards worker config to config.toml."""
+    ref_settings = make_cts_settings(
+        ReferencePipelineSettings,
+        tmp_path,
+        use_output_dir_for_pipeline_metadata=True,
+        dlt_dev_mode=False,
+        dataset_name="ref_docker_ds",
+    )
+    output_dir = ref_settings.output_dir
     monkeypatch.setattr(framework, "_built_docker_images", {"test-image:latest"})
+    captured_cmds: list[list[str]] = []
 
-    def fake_fail_runtime(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(cmd, returncode=2, stdout="", stderr="container crashed")
+    def fake_docker_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured_cmds.append(cmd)
+        (output_dir / "report.txt").write_text(
+            "pipeline: reference_pipeline\n"
+            "dataset: ref_docker_ds\n"
+            "started: 2026-02-01 00:00:00+00:00\n"
+            "finished: 2026-02-01 00:00:05+00:00\n"
+            "status: completed\n"
+            "load_ids:\n"
+            "  - '999'\n"
+            "pipeline_load_info_errs: null\n",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout="ok", stderr="")
 
-    monkeypatch.setattr(subprocess, "run", fake_fail_runtime)
+    monkeypatch.setattr(subprocess, "run", fake_docker_run)
     runner = PipelineTestRunner(mode=ExecutionMode.DOCKER, docker_image="test-image:latest")
-    with pytest.raises(RuntimeError, match="failed with exit code 2"):
-        runner.run(
-            "jsonlines_extract",
-            cli_args=["--input-dir", str(input_dir), "--output-dir", str(output_dir)],
+    with dlt.config.values({"extract.workers": 3, "normalize.workers": 2, "load.workers": 4}):
+        load_info = runner.run(
+            run_reference_pipeline,
+            settings=ref_settings,
         )
+    assert load_info is not None
+    ref_docker_cmd = captured_cmds[0]
+    idx_ref_image = ref_docker_cmd.index("test-image:latest")
+    assert ref_docker_cmd[idx_ref_image : idx_ref_image + 3] == [
+        "test-image:latest",
+        "pipeline",
+        "tests/cdm_data_loaders/pipelines/reference/pipeline.py",
+    ]
+    stage_dirs = sorted(output_dir.parent.glob(".docker_stage_*"))
+    config_text = (stage_dirs[-1] / "input_dir" / "dlt_conf" / "config.toml").read_text(encoding="utf-8")
+    assert "[extract]\nworkers = 3" in config_text
+    assert "[normalize]\nworkers = 2" in config_text
+    assert "[load]\nworkers = 4" in config_text
 
-    def fake_fail_value_error(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="ValueError: Unknown table name: foo")
 
-    monkeypatch.setattr(subprocess, "run", fake_fail_value_error)
-    with pytest.raises(ValueError, match="Unknown table name"):
-        runner.run(
-            "jsonlines_extract",
-            cli_args=["--input-dir", str(input_dir), "--output-dir", str(output_dir)],
-        )
-
-
-def test_pipeline_test_runner_fail_missing_required_arguments(tmp_path: Path) -> None:
-    """PipelineTestRunner raises ValueError when output_dir or input_dir (in docker mode) is missing."""
-    runner = PipelineTestRunner(mode=ExecutionMode.CORE)
-    with pytest.raises(ValueError, match="Could not determine output_dir"):
-        runner.run("jsonlines_extract", cli_args=["--input-dir", str(tmp_path)])
-
-    spec_no_settings = PipelineSpec(cli_command="custom", module_path="custom.mod")
-    with pytest.raises(ValueError, match="has no settings_cls"):
-        runner.run(spec_no_settings)
-
-    with pytest.raises(ValueError, match="does not expose settings_cls and pipeline_fn"):
-        runner.run(spec_no_settings, cli_args=["--output-dir", str(tmp_path)])
-
-    cli_runner = PipelineTestRunner(mode=ExecutionMode.CLI)
-    with pytest.raises(ValueError, match="does not expose a cli\\(\\) entry point"):
-        cli_runner.run(spec_no_settings, cli_args=["--output-dir", str(tmp_path)])
-
-    docker_runner = PipelineTestRunner(mode=ExecutionMode.DOCKER, docker_image="test-image:latest")
-    monkeypatch = pytest.MonkeyPatch()
+@pytest.mark.parametrize(
+    ("returncode", "stderr", "exc_type", "match"),
+    [
+        pytest.param(2, "container crashed", RuntimeError, "failed with exit code 2", id="nonzero-runtime-error"),
+        pytest.param(
+            1,
+            "ValueError: Unknown table name: foo",
+            ValueError,
+            "Unknown table name",
+            id="nonzero-value-error",
+        ),
+        pytest.param(
+            0,
+            "ValueError: Unknown table name: foo\nWarning: pipeline 'jsonl_pydantic' exited with status 1",
+            ValueError,
+            "Unknown table name",
+            id="swallowed-value-error",
+        ),
+    ],
+)
+def test_pipeline_test_runner_fail_docker_mode_nonzero_exit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int,
+    stderr: str,
+    exc_type: type[Exception],
+    match: str,
+) -> None:
+    """Docker mode raises ValueError on validation errors and RuntimeError on general container failures."""
+    settings = make_cts_settings(CtsSettings, tmp_path)
     monkeypatch.setattr(framework, "_built_docker_images", {"test-image:latest"})
-    try:
-        with pytest.raises(ValueError, match="Docker execution mode requires --input-dir"):
-            docker_runner.run("jsonlines_extract", cli_args=["--output-dir", str(tmp_path)])
-    finally:
-        monkeypatch.undo()
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, returncode=returncode, stdout="", stderr=stderr),
+    )
+    runner = PipelineTestRunner(mode=ExecutionMode.DOCKER, docker_image="test-image:latest")
+    with pytest.raises(exc_type, match=match):
+        runner.run(
+            "jsonlines_extract",
+            cli_args=settings_to_argv(settings),
+        )
+
+
+_SPEC_NO_SETTINGS = PipelineSpec(cli_command="custom", module_path="custom.mod")
+
+
+@pytest.mark.parametrize(
+    ("mode", "target", "cli_args_flag", "match"),
+    [
+        pytest.param(
+            ExecutionMode.CORE,
+            "jsonlines_extract",
+            "--input-dir",
+            "Could not determine output_dir",
+            id="core-missing-output-dir",
+        ),
+        pytest.param(
+            ExecutionMode.CORE,
+            _SPEC_NO_SETTINGS,
+            None,
+            "has no settings_cls",
+            id="core-no-settings-cls",
+        ),
+        pytest.param(
+            ExecutionMode.CORE,
+            _SPEC_NO_SETTINGS,
+            "--output-dir",
+            "does not expose settings_cls and pipeline_fn",
+            id="core-missing-pipeline-fn",
+        ),
+        pytest.param(
+            ExecutionMode.CLI,
+            _SPEC_NO_SETTINGS,
+            "--output-dir",
+            r"does not expose a cli\(\) entry point",
+            id="cli-missing-cli-callable",
+        ),
+        pytest.param(
+            ExecutionMode.DOCKER,
+            "jsonlines_extract",
+            "--output-dir",
+            "Docker execution mode requires --input-dir",
+            id="docker-missing-input-dir",
+        ),
+    ],
+)
+def test_pipeline_test_runner_fail_missing_required_arguments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: ExecutionMode,
+    target: str | PipelineSpec,
+    cli_args_flag: str | None,
+    match: str,
+) -> None:
+    """PipelineTestRunner raises ValueError when required CLI paths or spec callables are missing."""
+    monkeypatch.setattr(framework, "_built_docker_images", {"test-image:latest"})
+    runner = PipelineTestRunner(mode=mode, docker_image="test-image:latest")
+    cli_args = [cli_args_flag, str(tmp_path)] if cli_args_flag is not None else None
+    with pytest.raises(ValueError, match=match):
+        runner.run(target, cli_args=cli_args)
 
 
 def test_resolve_pipeline_pass_legacy_module_without_pipeline_cli() -> None:
@@ -397,27 +607,21 @@ def test_resolve_pipeline_pass_legacy_module_without_pipeline_cli() -> None:
 @pytest.mark.docker
 def test_pipeline_test_runner_pass_real_docker_container(tmp_path: Path, docker_image: str) -> None:
     """Execute a real Docker container run via PipelineTestRunner when --run-docker is enabled."""
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    expected_records = [{"id": "docker_1", "value": 42}]
-    (input_dir / "data.jsonl").write_text('{"id": "docker_1", "value": 42}\n', encoding="utf-8")
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
-
-    settings = JsonlExtractSettings(
-        input_dir=str(input_dir),
-        output_dir=str(output_dir),
-        use_destination=LOCAL_FS,
+    settings = make_cts_settings(
+        JsonlExtractSettings,
+        tmp_path,
         use_output_dir_for_pipeline_metadata=True,
         dlt_dev_mode=False,
         dataset_name="docker_framework_ds",
         table_name="items",
         loader_file_format="jsonl",
     )
+    expected_records = [{"id": "docker_1", "value": 42}]
+    (settings.input_dir / "data.jsonl").write_text('{"id": "docker_1", "value": 42}\n', encoding="utf-8")
 
     runner = PipelineTestRunner(mode=ExecutionMode.DOCKER, docker_image=docker_image)
     load_info = assert_run_ok(runner.run("jsonlines_extract", settings=settings))
 
-    assert_pipeline_report_written(output_dir, load_info, metadata_moved=True)
+    assert_pipeline_report_written(settings.output_dir, load_info, metadata_moved=True, ingested_files=["data.jsonl"])
     assert set(load_info.pipeline.dataset().tables) >= set(DEFAULT_DLT_TABLES)
-    assert read_data_rows(output_dir / settings.dataset_name) == {"items": expected_records}
+    assert read_data_rows(settings.output_dir / settings.dataset_name) == {"items": expected_records}

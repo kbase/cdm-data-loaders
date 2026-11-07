@@ -5,8 +5,10 @@ expects input files with the naming format `{text_string}_{digits}.{ext}`, e.g.
 batch_001.txt, batch_002.txt, batch_003.txt.
 """
 
+import hashlib
 import os
 import re
+import threading
 from collections.abc import Generator
 from functools import cached_property, partial
 from itertools import islice
@@ -18,13 +20,13 @@ from urllib.parse import parse_qs, urlparse
 import dlt
 from dlt.common.pipeline import LoadInfo
 from dlt.extract.items import DataItemWithMeta
-from dlt.sources.helpers.requests import Response
+from dlt.sources.helpers.requests import Client, Response
 from dlt.sources.helpers.rest_client.auth import APIKeyAuth
 from dlt.sources.helpers.rest_client.client import RESTClient
 from dlt.sources.helpers.rest_client.paginators import (
     JSONResponseCursorPaginator,
 )
-from pydantic import Field, computed_field, field_validator
+from pydantic import Field, PositiveInt, computed_field, field_validator
 from pydantic_settings import SettingsConfigDict
 from requests.exceptions import HTTPError
 
@@ -68,10 +70,9 @@ class NcbiRestApiSettings(CtsSettings):
         cli_shortcuts={**CLI_SHORTCUTS, BATCH_SIZE: "b", QUERY_TYPE: "q"},
     )
 
-    batch_size: int = Field(
+    batch_size: PositiveInt = Field(
         default=MAX_IDS_PER_QUERY,
         description="Number of IDs to send in each request to the NCBI REST API.",
-        ge=1,
         le=MAX_IDS_PER_QUERY,
     )
 
@@ -86,7 +87,7 @@ class NcbiRestApiSettings(CtsSettings):
     @computed_field
     @cached_property
     def raw_data_dir(self) -> Path:
-        """Directory to save downloaded raw data files to: ``<output_dir>/raw_data/<version>``."""
+        """Directory to save downloaded raw data files to: ``<output_dir>/raw_data/api_responses``."""
         return self.output_dir / "raw_data" / "api_responses"
 
     @field_validator(QUERY_TYPE, mode="before")
@@ -120,11 +121,17 @@ def generate_file_path_name_from_url(settings: NcbiRestApiSettings, url_string: 
     # save_parts 2 is the value of the PID
     # any subsequent parts are the specific data type being accessed
     save_parts = url.path.replace("/datasets/v2/", "").split("/")
+    pid_label = save_parts[2]
+    candidate_file_name = f"{pid_label}__{page_token}.json" if page_token else f"{pid_label}.json"
+    if len(pid_label.encode("utf-8")) > 255 or len(candidate_file_name.encode("utf-8")) > 255:  # noqa: PLR2004
+        ids = pid_label.split("%2C")
+        digest = hashlib.sha256(pid_label.encode("utf-8")).hexdigest()[:12]
+        pid_label = f"{ids[0]}__{ids[-1]}__{len(ids)}_{digest}" if len(ids) > 1 else f"{pid_label[:64]}_{digest}"
     # make a directory for this ID
-    save_dir = settings.raw_data_dir / save_parts[3] / save_parts[2]
+    save_dir = settings.raw_data_dir / save_parts[3] / pid_label
     save_dir.mkdir(parents=True, exist_ok=True)
     # file name is the PID plus optional page token if this was a multi-request PID
-    file_name = f"{save_parts[2]}__{page_token}.json" if page_token else f"{save_parts[2]}.json"
+    file_name = f"{pid_label}__{page_token}.json" if page_token else f"{pid_label}.json"
     return save_dir / file_name
 
 
@@ -167,7 +174,27 @@ def get_settings() -> NcbiRestApiSettings:
     return PIPELINE_SETTINGS
 
 
-ncbi_genome_client = RESTClient(
+class _ThreadLocalRESTClient(RESTClient):
+    """RESTClient whose requests.Session is isolated per thread."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
+        self._thread_local = threading.local()
+        super().__init__(*args, **kwargs)
+
+    @property
+    def session(self) -> Any:  # noqa: ANN401
+        session = getattr(self._thread_local, "session", None)
+        if session is None:
+            session = Client(raise_for_status=False).session
+            self._thread_local.session = session
+        return session
+
+    @session.setter
+    def session(self, value: Any) -> None:  # noqa: ANN401
+        self._thread_local.session = value
+
+
+ncbi_genome_client = _ThreadLocalRESTClient(
     base_url="https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/",
     headers={"accept": "application/json"},
     auth=APIKeyAuth(name="api_key", api_key=NCBI_API_KEY),
@@ -264,22 +291,32 @@ def get_assembly_reports(assembly_id_list: list[str]) -> dict[str, Any]:
     return output
 
 
+def _fetch_ncbi_pages(endpoint: str) -> list[dict[str, Any]]:
+    """Fetch all paginated results for ``endpoint`` from the NCBI datasets REST API."""
+    hooks: dict[str, Any] = dict(REST_CLIENT_HOOKS)
+    if "response" in hooks:
+        response_hooks = hooks["response"]
+        hooks["response"] = [
+            *(response_hooks if isinstance(response_hooks, list) else [response_hooks]),
+            ncbi_genome_client._create_response_handler(),  # noqa: SLF001
+        ]
+    results: list[dict[str, Any]] = []
+    for page in ncbi_genome_client.paginate(
+        endpoint,
+        params={"page_size": MAX_RESULTS_PER_PAGE},
+        hooks=hooks,  # type: ignore[reportArgumentType]
+    ):
+        results.extend(page)
+    return results
+
+
 def get_dataset_reports(assembly_id_list: list[str]) -> dict[str, dict[str, Any] | None]:
     """Fetch the dataset report for a list of assemblies from the NCBI datasets REST API."""
     if not assembly_id_list:
         return {}
 
     logger.info("fetching dataset reports for:\n%s", ", ".join(sorted(assembly_id_list)))
-    assembly_dataset_reports = []
-
-    for page in ncbi_genome_client.paginate(
-        f"{'%2C'.join(assembly_id_list)}/dataset_report",
-        params={
-            "page_size": MAX_RESULTS_PER_PAGE,
-        },
-        hooks=REST_CLIENT_HOOKS,  # type: ignore[reportArgumentType]
-    ):
-        assembly_dataset_reports.extend(page)
+    assembly_dataset_reports = _fetch_ncbi_pages(f"{'%2C'.join(assembly_id_list)}/dataset_report")
 
     # return dataset reports, indexed by assembly_id
     # invalid IDs are silently dropped by the NCBI REST API
@@ -291,16 +328,7 @@ def get_dataset_reports(assembly_id_list: list[str]) -> dict[str, dict[str, Any]
 def get_annotation_report(assembly_id: str) -> list[dict[str, Any]] | None:
     """Fetch the annotation report for an assembly from the NCBI datasets REST API."""
     logger.info("fetching annotation report for %s", assembly_id)
-    page_data = []
-
-    for page in ncbi_genome_client.paginate(
-        f"{assembly_id}/annotation_report",
-        params={
-            "page_size": MAX_RESULTS_PER_PAGE,
-        },
-        hooks=REST_CLIENT_HOOKS,  # type: ignore[reportArgumentType]
-    ):
-        page_data.extend(page)
+    page_data = _fetch_ncbi_pages(f"{assembly_id}/annotation_report")
 
     # page_data is empty if the ID is invalid
     return page_data or None
@@ -371,7 +399,7 @@ def assembly_report_parser(
     assembly_reports: dict[str, dict[str, Any]],
 ) -> Generator[DataItemWithMeta, Any]:
     """Parse and export assembly data from the REST API."""
-    return assemble_assembly_reports(assembly_reports)
+    yield from assemble_assembly_reports(assembly_reports)
 
 
 def run_ncbi_pipeline(settings: NcbiRestApiSettings) -> LoadInfo | None:
@@ -382,6 +410,7 @@ def run_ncbi_pipeline(settings: NcbiRestApiSettings) -> LoadInfo | None:
     """
     set_settings(settings)
 
+    REST_CLIENT_HOOKS.clear()
     if settings.save_raw_responses:
         REST_CLIENT_HOOKS["response"] = [partial(save_raw_response, settings)]
 

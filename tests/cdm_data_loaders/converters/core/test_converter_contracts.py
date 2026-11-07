@@ -117,7 +117,7 @@ def test_convert_from_string_fail_forward_yaml(
         "combiner-only",
     ],
 )
-def test_convert_type_pass_combiner_precedence(  # noqa: PLR0917
+def test_convert_type_pass_combiner_precedence(
     combiner: str,
     fragment: dict[str, Any],
     dlt_type: str,

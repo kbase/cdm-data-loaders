@@ -4,39 +4,23 @@ Reads JSONL files. No validation occurs other than that records are valid JSON.
 
 `table_name` names the destination table for all valid records; files
 may live anywhere under `input_dir`. Records that fail JSON parsing go
-to a `<table_name>_invalid` table. Each invalid record includes source
-file, line number, raw text, and parse error detail.
+to the `_rejected` table. Each rejected record includes the target table
+name, source file, line number, raw text, and error detail.
 """
 
-from collections.abc import Generator, Iterator
-from typing import Any
-
-import dlt
 from dlt.common.pipeline import LoadInfo
-from dlt.common.storages.fsspec_filesystem import FileItemDict
-from dlt.common.typing import TDataItems
-from dlt.sources.filesystem import filesystem
 
-from cdm_data_loaders.pipelines.core import PipelineCli, run_pipeline
+from cdm_data_loaders.pipelines.core import (
+    PipelineCli,
+    build_file_ingest_kwargs,
+    build_filesystem_resource,
+    run_pipeline,
+)
 from cdm_data_loaders.pipelines.jsonlines.settings import (
     EXTRACT_PIPELINE_NAME,
     JsonlExtractSettings,
 )
 from cdm_data_loaders.readers.jsonlines import route_jsonl_lines
-
-
-@dlt.transformer(name="jsonl_reader", parallelized=True)
-def jsonl_reader(items: Iterator[FileItemDict], settings: JsonlExtractSettings) -> Generator[TDataItems, Any, Any]:
-    """Read each file in items and route each line by the configured table name.
-
-    :param items: file items to read
-    :type  items: Iterator[FileItemDict]
-    :yield: one dict per line
-    :rtype: Generator[TDataItems, Any, Any]
-    """
-    yield from route_jsonl_lines(
-        items, buffer_size=settings.buffer_size, table_name_of=lambda _file_item: settings.table_name
-    )
 
 
 def run_jsonlines_pipeline(settings: JsonlExtractSettings) -> LoadInfo | None:
@@ -47,20 +31,12 @@ def run_jsonlines_pipeline(settings: JsonlExtractSettings) -> LoadInfo | None:
     :return: load information for the pipeline
     :rtype: LoadInfo | None
     """
-    files = filesystem(bucket_url=str(settings.input_dir), file_glob=settings.file_glob)
-
-    jsonl_resource = files | jsonl_reader(settings)
+    jsonl_resource = build_filesystem_resource(settings, route_jsonl_lines, name="jsonl_reader")
 
     return run_pipeline(
         settings=settings,
         resource=jsonl_resource,
-        pipeline_kwargs={
-            "pipeline_name": EXTRACT_PIPELINE_NAME,
-            "dataset_name": settings.dataset_name or EXTRACT_PIPELINE_NAME,
-        },
-        pipeline_run_kwargs={
-            "loader_file_format": str(settings.loader_file_format),
-        },
+        **build_file_ingest_kwargs(settings, EXTRACT_PIPELINE_NAME, fallback_dataset_name=True),
     )
 
 

@@ -1,0 +1,32 @@
+"""Expected PyArrow table for 03_sequences_sets_and_tuples."""
+
+import pyarrow as pa
+from expected_schema import EXPECTED_SCHEMA
+
+EXPECTED_TABLE = pa.Table.from_pylist(
+    [
+        {
+            "id": "seq-1",
+            "tags": ["alpha", "beta"],
+            "nullable_scores": [10, None, 30],
+            "matrix": [[1.0, 2.0], [3.5, 4.5]],
+            "unique_codes": ["c1", "c2", "c3"],
+            "frozen_flags": [1, 2],
+            "variadic_labels": ["x", "y", "z"],
+            "point_3d": {"item_0": "origin", "item_1": 0, "item_2": 1.25},
+            "optional_pair": {"item_0": 7, "item_1": "seven"},
+        },
+        {
+            "id": "seq-2",
+            "tags": [],
+            "nullable_scores": [5, 15],
+            "matrix": [[0.0]],
+            "unique_codes": ["only"],
+            "frozen_flags": [9],
+            "variadic_labels": ["single"],
+            "point_3d": {"item_0": "axis", "item_1": 4},
+            "optional_pair": None,
+        },
+    ],
+    schema=EXPECTED_SCHEMA,
+)

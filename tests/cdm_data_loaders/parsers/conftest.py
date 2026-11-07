@@ -48,3 +48,8 @@ def genome_paths_file() -> str:
 def checkm2_stats_results() -> dict[str, Any]:
     """Expected results from parsing checkm2 and bbmap stats files."""
     return RESULTS
+
+
+def wrap_entry_xml(xml: str, namespace: str) -> str:
+    """Wrap XML text in an ``<entry xmlns='...'>`` element."""
+    return f"<entry xmlns='{namespace}'>{xml}</entry>"

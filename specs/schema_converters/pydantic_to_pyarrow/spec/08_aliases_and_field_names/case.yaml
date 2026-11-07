@@ -1,0 +1,20 @@
+title: Field Naming, `alias`, `serialization_alias`, and `by_alias` Mode
+rules:
+  - R-NAME-FIELD
+  - R-COERCE-INPUT
+schema: schema.py
+expected_schema: expected_schema.py
+runs:
+  - id: field-names
+    params: {by_alias: false}
+    data: data.json
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_count: 2
+  - id: by-alias
+    params: {by_alias: true}
+    data: data.json
+    expected_json: expected_by_alias.json
+    schema_attr: EXPECTED_SCHEMA_BY_ALIAS
+    table_attr: EXPECTED_TABLE_BY_ALIAS
+    expected_count: 2

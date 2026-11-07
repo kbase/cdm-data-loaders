@@ -12,6 +12,7 @@ from contextlib import suppress
 from datetime import UTC, date, datetime
 from typing import Any, Final
 
+from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from tests.cdm_data_loaders.pipelines.helpers import reconstruct_entries
 
 EXPECTED_ENTRY_COUNT: Final[int] = 52
@@ -38,6 +39,7 @@ def reconstructed_entries(
         name: rows
         for name, rows in tables.items()
         if not name.startswith("_dlt")
+        and name != REJECTED_TABLE_NAME
         and (root_table is None or name == root_table or name.startswith(f"{root_table}__"))
     }
     if not tables:
@@ -70,10 +72,6 @@ def canonicalize_entry(entry: dict[str, Any]) -> dict[str, Any]:
       jsonl output (which stores coerced timestamps as strings) matches.
     """
     return _canonicalize_value(entry)
-
-
-canonicalize_reference_entry = canonicalize_entry
-canonicalize_pipeline_entry = canonicalize_entry
 
 
 def _canonicalize_value(value: Any, key: str = "") -> Any:

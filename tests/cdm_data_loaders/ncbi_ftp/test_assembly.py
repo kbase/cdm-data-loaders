@@ -41,24 +41,13 @@ def test_build_accession_path_invalid() -> None:
         build_accession_path(PurePosixPath("invalid_name"))
 
 
-@pytest.mark.parametrize(
-    ("path", "expected"),
-    [
-        pytest.param(
-            PurePosixPath("/") / "genomes" / "all" / ACC_PATH_215,
-            ("GCF", PurePosixPath("GCF_000001215.4_Release_6_plus_ISO1_MT"), "GCF_000001215.4"),
-            id="with_trailing_slash",
-        ),
-        pytest.param(
-            PurePosixPath("/") / "genomes" / "all" / ACC_PATH_215,
-            ("GCF", PurePosixPath("GCF_000001215.4_Release_6_plus_ISO1_MT"), "GCF_000001215.4"),
-            id="without_trailing_slash",
-        ),
-    ],
-)
-def test_parse_assembly_path(path: PurePosixPath, expected: tuple[str, PurePosixPath, str]) -> None:
+def test_parse_assembly_path() -> None:
     """Verify db, assembly_dir, and accession are parsed correctly."""
-    assert parse_assembly_path(path) == expected
+    assert parse_assembly_path(PurePosixPath("/") / "genomes" / "all" / ACC_PATH_215) == (
+        "GCF",
+        PurePosixPath("GCF_000001215.4_Release_6_plus_ISO1_MT"),
+        "GCF_000001215.4",
+    )
 
 
 def test_parse_assembly_path_invalid() -> None:

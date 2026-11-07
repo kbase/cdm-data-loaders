@@ -1,0 +1,54 @@
+[
+    {
+        "id": "arr1",
+        "tags": [
+            "genomics",
+            "assembly"
+        ],
+        "measurements": [
+            {
+                "label": "gc_content",
+                "value": 0.512,
+                "unit": "ratio"
+            },
+            {
+                "label": "n50",
+                "value": 4500000.0
+            }
+        ],
+        "matrix_2d": [
+            [
+                1.0,
+                2.0
+            ],
+            [
+                3.5,
+                4.5
+            ]
+        ],
+        "coord_3d": {
+            "item_0": 10.5,
+            "item_1": 20.25,
+            "item_2": 30.0
+        },
+        "pair_tuple_list": [
+            {
+                "item_0": "chr1",
+                "item_1": 248956422
+            },
+            {
+                "item_0": "chr2",
+                "item_1": 242193529
+            }
+        ]
+    },
+    {
+        "id": "arr2",
+        "tags": [],
+        "coord_3d": {
+            "item_0": -1.0,
+            "item_1": 2.0
+        }
+    }
+]
+

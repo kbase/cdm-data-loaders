@@ -1,0 +1,17 @@
+title: NCBI Datasets `AnnotationReportResponse`
+schema: schema.json
+rules: [R-ROOT-REF, R-SHAPE-REF, R-SHAPE-ARRAY, R-SCALAR-ENUM-CONST]
+notes: |
+  Deeply nested NCBI Datasets v2 schema (`parsers/ncbi/datasets_api/AnnotationReportResponse.schema.json`) with a
+  root `$ref`, many `$defs`, arrays of structs, enums, integers and booleans.
+runs:
+  - id: minimal
+    data: minimal.json
+    expected_json: minimal_expected.json
+    expected_table: minimal_expected_table.py
+    expected_count: 1
+  - id: maximal
+    data: maximal.json
+    expected_json: maximal_expected.json
+    expected_table: maximal_expected_table.py
+    expected_count: 1

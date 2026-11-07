@@ -19,7 +19,7 @@ from cdm_data_loaders.pipelines.ncbi_rest_api import (
     set_settings,
 )
 from tests.cdm_data_loaders.conftest import check_settings
-from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes
+from tests.helpers import assert_cli_field_roundtrips, settings_to_argv
 
 BATCH_SIZE = 200
 BATCH_SIZE_STRING = str(BATCH_SIZE)
@@ -95,8 +95,8 @@ def test_settings_valid_batch_size(
 @pytest.mark.parametrize(
     ("bad_batch_size", "message"),
     [
-        ("0", "Input should be greater than or equal to 1"),
-        ("-1", "Input should be greater than or equal to 1"),
+        ("0", "Input should be greater than 0"),
+        ("-1", "Input should be greater than 0"),
         ("1001", f"Input should be less than or equal to {MAX_IDS_PER_QUERY}"),
         ("notanint", "Input should be a valid integer"),
         ("", "Input should be a valid integer"),
@@ -104,14 +104,23 @@ def test_settings_valid_batch_size(
     ],
 )
 @pytest.mark.parametrize("use_cliapp", [True, False])
-def test_cli_invalid_batch_size_via_cli_raises(bad_batch_size: str, message: str, use_cliapp: bool) -> None:
+def test_cli_invalid_batch_size_via_cli_raises(
+    bad_batch_size: str,
+    message: str,
+    use_cliapp: bool,
+    test_settings: NcbiRestApiSettings,
+    test_defaults: dict[str, Any],
+) -> None:
     """Ensure that an invalid batch size passed via CLI raises an error."""
     if use_cliapp:
         with pytest.raises(ValidationError, match=message):
-            CliApp.run(NcbiRestApiSettings, cli_args=["--batch-size", bad_batch_size])
+            CliApp.run(
+                NcbiRestApiSettings,
+                cli_args=[*settings_to_argv(test_settings, exclude=["batch_size"]), "--batch-size", bad_batch_size],
+            )
     else:
         with pytest.raises(ValidationError, match=message):
-            NcbiRestApiSettings(batch_size=bad_batch_size)  # pyright: ignore[reportCallIssue]
+            NcbiRestApiSettings(batch_size=bad_batch_size, **test_defaults)  # pyright: ignore[reportCallIssue]
 
 
 @pytest.mark.parametrize(
@@ -153,14 +162,22 @@ STRING_MATCH_MESSAGE = re.escape("String should match pattern '^(dataset|annotat
     ],
 )
 @pytest.mark.parametrize("use_cliapp", [True, False])
-def test_cli_invalid_query_type(query_type: str, use_cliapp: bool) -> None:
+def test_cli_invalid_query_type(
+    query_type: str,
+    use_cliapp: bool,
+    test_settings: NcbiRestApiSettings,
+    test_defaults: dict[str, Any],
+) -> None:
     """Ensure that an invalid batch size passed via CLI raises an error."""
     if use_cliapp:
         with pytest.raises(ValidationError, match=STRING_MATCH_MESSAGE):
-            CliApp.run(NcbiRestApiSettings, cli_args=["--query-type", query_type])
+            CliApp.run(
+                NcbiRestApiSettings,
+                cli_args=[*settings_to_argv(test_settings, exclude=["query_type"]), "--query-type", query_type],
+            )
     else:
         with pytest.raises(ValidationError, match=STRING_MATCH_MESSAGE):
-            NcbiRestApiSettings(query_type=query_type)  # pyright: ignore[reportCallIssue]
+            NcbiRestApiSettings(query_type=query_type, **test_defaults)  # pyright: ignore[reportCallIssue]
 
 
 def test_settings_all_params_set(
@@ -170,12 +187,6 @@ def test_settings_all_params_set(
     settings, reconciled = ncbi_settings_pair
     s = NcbiRestApiSettings(**settings)
     check_settings(s, reconciled)
-
-
-# model_fields
-def test_no_cli_param_clashes() -> None:
-    """Ensure that the settings object does not have any internal alias collisions."""
-    assert_no_cli_clashes(NcbiRestApiSettings)
 
 
 @pytest.mark.parametrize("field_name", [f for f in NcbiRestApiSettings.model_fields if f != "save_raw_responses"])

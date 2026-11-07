@@ -1,13 +1,15 @@
 """Tests for `stream_xml_file` from cdm_data_loaders.readers.xml."""
 
-import logging
+import gzip
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from lxml.etree import XMLSyntaxError, tostring
 
-from cdm_data_loaders.readers.xml import stream_xml_file
+from cdm_data_loaders.readers.xml import stream_xml_file, stream_xml_file_at_level
+from tests.cdm_data_loaders.readers.xml.conftest import XML_OPEN_ERROR_CASES, prepare_xml_error_path
+from tests.fs_backends import FsBackend
 from tests.xml_samples import SIMPLE_LIBRARY_XML
 
 MIXED_TAGS_XML = """<?xml version="1.0"?>
@@ -22,8 +24,6 @@ NAMESPACE_URI = "http://example.com/lib"
 NAMESPACED_SIMPLE_XML = SIMPLE_LIBRARY_XML.replace("<library>", f'<library xmlns="{NAMESPACE_URI}">')
 
 NAMESPACED_MIXED_TAG_XML = MIXED_TAGS_XML.replace("<catalog>", f'<catalog xmlns="{NAMESPACE_URI}">')
-
-MISMATCHED_TAG_XML = '<library><book id="1"><title>Broken</title></library>'
 
 EXPECTED_SIMPLE_TAGS_IDS = [("book", "1"), ("book", "2"), ("book", "3")]
 EXPECTED_MIXED_TAGS_IDS = [("book", "1"), ("book", "2")]
@@ -148,63 +148,54 @@ def test_stream_xml_file_pass_previously_yielded_elements_are_cleared_after_adva
     assert all(elem.find("title") is None for elem in all_elements)
 
 
-def test_stream_xml_file_pass_logs_debug_message_per_yielded_element(
-    xml_path_factory: Callable[..., Path], caplog: pytest.LogCaptureFixture
-) -> None:
-    """Verify the debug logs emitted by stream_xml_file."""
+@pytest.mark.parametrize("relative_path", ["library.xml", "nested/dir/library.xml.gz"])
+def test_stream_xml_file_pass_file_item_any_backend(fs_backend: FsBackend, relative_path: str) -> None:
+    """Verify elements are streamed from a file item on every backend, plain or gzipped."""
+    data = SIMPLE_LIBRARY_XML.encode("utf-8")
+    fs_backend.put(relative_path, gzip.compress(data) if relative_path.endswith(".gz") else data)
+
+    tags_ids = [(elem.tag, elem.get("id")) for elem in stream_xml_file(fs_backend.file_item(relative_path), "book")]
+
+    assert tags_ids == EXPECTED_SIMPLE_TAGS_IDS
+
+
+def test_stream_xml_file_pass_open_handle_left_open(xml_path_factory: Callable[..., Path]) -> None:
+    """Verify an open handle is streamed from and left open for the caller to close."""
     path = xml_path_factory(SIMPLE_LIBRARY_XML)
-    caplog.set_level(logging.DEBUG)
-    n_expected_records = 4
 
-    list(stream_xml_file(path, "book"))
+    with path.open("rb") as fh:
+        tags_ids = [(elem.tag, elem.get("id")) for elem in stream_xml_file(fh, "book")]
+        assert not fh.closed
 
-    assert len(caplog.records) == n_expected_records
-    assert caplog.records[0].getMessage().startswith("Streaming XML from")
-    log_levels = {r.levelno for r in caplog.records}
-    assert log_levels == {logging.DEBUG}
-    for rec in caplog.records[1:]:
-        assert rec.getMessage().startswith("<Element book at")
+    assert tags_ids == EXPECTED_SIMPLE_TAGS_IDS
 
 
-def test_stream_xml_file_fail_missing_file_raises_file_not_found_error(tmp_path: Path) -> None:
-    """Verify a path to a non-existent file raises FileNotFoundError."""
-    missing_path = tmp_path / "does_not_exist.xml"
+def test_stream_xml_file_fail_missing_remote_object(remote_fs_backend: FsBackend) -> None:
+    """Verify a remote object deleted after listing raises FileNotFoundError, as a missing local file does."""
+    remote_fs_backend.put("gone.xml", SIMPLE_LIBRARY_XML.encode("utf-8"))
+    item = remote_fs_backend.file_item("gone.xml")
+    remote_fs_backend.fs.rm(remote_fs_backend.path("gone.xml"))
 
     with pytest.raises(FileNotFoundError):
-        list(stream_xml_file(missing_path, "book"))
+        list(stream_xml_file(item, "book"))
 
 
-def test_stream_xml_file_fail_missing_gzip_file_raises_file_not_found_error(tmp_path: Path) -> None:
-    """Verify a path ending in .gz that doesn't exist raises FileNotFoundError rather than a gzip-specific error."""
-    missing_path = tmp_path / "does_not_exist.xml.gz"
+@pytest.mark.parametrize(
+    ("scenario", "expected_exc", "match"),
+    [*XML_OPEN_ERROR_CASES, pytest.param("mismatched_tag", XMLSyntaxError, None, id="mismatched-tag")],
+)
+def test_stream_xml_file_fail_on_open_or_syntax_error(
+    scenario: str,
+    expected_exc: type[Exception],
+    match: str | None,
+    tmp_path: Path,
+    xml_path_factory: Callable[..., Path],
+) -> None:
+    """Verify missing, empty, malformed, or mis-named gzip files raise the expected error."""
+    path = prepare_xml_error_path(scenario, tmp_path, xml_path_factory)
 
-    with pytest.raises(FileNotFoundError):
-        list(stream_xml_file(missing_path, "book"))
-
-
-def test_stream_xml_file_fail_malformed_xml_raises_syntax_error(xml_path_factory: Callable[..., Path]) -> None:
-    """Verify malformed XML (mismatched closing tags) raises lxml's XMLSyntaxError."""
-    path = xml_path_factory(MISMATCHED_TAG_XML)
-
-    with pytest.raises(XMLSyntaxError):
+    with pytest.raises(expected_exc, match=match):
         list(stream_xml_file(path, "book"))
-
-
-def test_stream_xml_file_fail_empty_file_raises_syntax_error(xml_path_factory: Callable[..., Path]) -> None:
-    """Verify a zero-byte XML file raises lxml's XMLSyntaxError rather than silently yielding nothing."""
-    path = xml_path_factory("")
-
-    with pytest.raises(XMLSyntaxError):
-        list(stream_xml_file(path, "book"))
-
-
-def test_stream_xml_file_fail_non_gzip_content_with_gz_extension_raises_error(tmp_path: Path) -> None:
-    """Verify a file named `*.gz` but containing plain (non-gzip-compressed) text raises an error when read."""
-    fake_gz_path = tmp_path / "not_really_gzipped.xml.gz"
-    fake_gz_path.write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
-
-    with pytest.raises(OSError, match="Not a gzipped file"):
-        list(stream_xml_file(fake_gz_path, "book"))
 
 
 @pytest.mark.parametrize(
@@ -262,7 +253,7 @@ def test_stream_xml_file_fail_non_gzip_content_with_gz_extension_raises_error(tm
     ],
 )
 @pytest.mark.parametrize("compressed", [False, True], ids=["plain", "gzip"])
-def test_stream_xml_file_pass_yields_outermost_matches(  # noqa: PLR0917
+def test_stream_xml_file_pass_yields_outermost_matches(
     tmp_path: Path,
     write_gzip_file: Callable[[Path, str, str], Path],
     xml: str,
@@ -278,3 +269,70 @@ def test_stream_xml_file_pass_yields_outermost_matches(  # noqa: PLR0917
         file_path.write_text(xml, encoding="utf-8")
 
     assert [tostring(elem, with_tail=False) for elem in stream_xml_file(file_path, tag)] == expected
+
+
+@pytest.mark.parametrize(
+    ("xml", "level", "expected"),
+    [
+        pytest.param(
+            '<root><a id="1"/><b id="2"/></root>',
+            0,
+            [b'<root><a id="1"/><b id="2"/></root>'],
+            id="level-0-root",
+        ),
+        pytest.param(
+            '<root><book id="1"><title>Cell</title></book><magazine id="1"/><book id="2"/></root>',
+            1,
+            [b'<book id="1"><title>Cell</title></book>', b'<magazine id="1"/>', b'<book id="2"/>'],
+            id="level-1-heterogeneous-siblings",
+        ),
+        pytest.param(
+            '<root><a id="1"><x>1</x><y>2</y></a><b id="2"><z>3</z></b></root>',
+            2,
+            [b"<x>1</x>", b"<y>2</y>", b"<z>3</z>"],
+            id="level-2-grandchildren",
+        ),
+        pytest.param(
+            "<root><a><b/></a></root>",
+            3,
+            [],
+            id="level-beyond-max-depth",
+        ),
+    ],
+)
+@pytest.mark.parametrize("compressed", [False, True], ids=["plain", "gzip"])
+def test_stream_xml_file_at_level_pass_yields_all_elements_at_depth(
+    tmp_path: Path,
+    write_gzip_file: Callable[[Path, str, str], Path],
+    xml: str,
+    level: int,
+    expected: list[bytes],
+    compressed: bool,
+) -> None:
+    """stream_xml_file_at_level yields every element at exact depth `level` in document order."""
+    if compressed:
+        file_path = write_gzip_file(tmp_path, "doc.xml.gz", xml)
+    else:
+        file_path = tmp_path / "doc.xml"
+        file_path.write_text(xml, encoding="utf-8")
+
+    assert [tostring(elem, with_tail=False) for elem in stream_xml_file_at_level(file_path, level)] == expected
+
+
+def test_stream_xml_file_at_level_pass_clears_elements_and_ancestors_after_advancing(
+    xml_path_factory: Callable[..., Path],
+) -> None:
+    """stream_xml_file_at_level clears yielded elements once the generator advances past them."""
+    path = xml_path_factory(MIXED_TAGS_XML)
+    all_elements = list(stream_xml_file_at_level(path, 1))
+
+    assert [elem.tag for elem in all_elements] == ["book", "magazine", "book"]
+    assert all(elem.text is None for elem in all_elements)
+    assert all(len(elem) == 0 for elem in all_elements)
+
+
+def test_stream_xml_file_at_level_fail_negative_level(xml_path_factory: Callable[..., Path]) -> None:
+    """stream_xml_file_at_level raises ValueError when level < 0."""
+    path = xml_path_factory(SIMPLE_LIBRARY_XML)
+    with pytest.raises(ValueError, match="level must be >= 0"):
+        list(stream_xml_file_at_level(path, -1))

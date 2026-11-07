@@ -27,15 +27,15 @@ def atb_settings_pair(
         )
         return settings, reconciled
 
-    pattern_rel = "some/path/or/other.txt"
-    pattern_path = test_cts_settings_reconciled[INPUT_DIR] / pattern_rel
+    pattern_path = test_cts_settings_reconciled[INPUT_DIR] / "pattern_file.txt"
+    pattern_path_str = str(pattern_path)
     pattern_path.parent.mkdir(parents=True, exist_ok=True)
     pattern_path.write_text("hello world\n")
-    settings = frozendict(**test_cts_settings, version=1, pattern_file=pattern_rel)
+    settings = frozendict(**test_cts_settings, version=1, pattern_file=pattern_path)
     reconciled = frozendict(
         **test_cts_settings_reconciled,
         version="1",
-        pattern_file=pattern_rel,
+        pattern_file=pattern_path,
         raw_data_dir=output_dir / "raw_data" / "1",
         pattern_matches=load_patterns(pattern_path),
     )

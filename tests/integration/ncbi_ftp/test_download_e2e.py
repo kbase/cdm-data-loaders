@@ -14,15 +14,10 @@ from types_boto3_s3 import S3Client
 
 from cdm_data_loaders.ncbi_ftp.manifest import (
     compute_diff,
-    download_assembly_summary,
-    filter_by_prefix_range,
-    parse_assembly_summary,
     write_transfer_manifest,
 )
 from cdm_data_loaders.pipelines.ncbi_ftp_download import download_and_stage, download_batch
-
-# Use same stable prefix as manifest tests
-STABLE_PREFIX = "900"
+from tests.integration.conftest import STABLE_PREFIX, download_and_filter_refseq, list_all_keys, s3_backends
 
 
 @lru_cache
@@ -32,9 +27,7 @@ def _manifest_for_one_assembly(tmp_path: Path) -> tuple[Path, str]:
     Returns ``(manifest_path, accession)`` for the first latest assembly
     in the stable prefix range.
     """
-    raw = download_assembly_summary(database="refseq")
-    full = parse_assembly_summary(raw)
-    filtered = filter_by_prefix_range(full, prefix_from=STABLE_PREFIX, prefix_to=STABLE_PREFIX)
+    _full, filtered = download_and_filter_refseq()
     diff = compute_diff(filtered, previous_assemblies=None)
 
     assert len(diff.new) > 0, f"No new assemblies in prefix {STABLE_PREFIX}"
@@ -127,7 +120,7 @@ def test_download_resume(tmp_path: Path) -> None:
 @pytest.mark.requires_ceph
 @pytest.mark.slow_test
 @pytest.mark.external_request
-@pytest.mark.parametrize("s3_client", ["ceph", "mock"], indirect=True)
+@s3_backends
 def test_download_and_stage_e2e(
     tmp_path: Path,
     s3_client: S3Client,
@@ -162,12 +155,7 @@ def test_download_and_stage_e2e(
     assert report["dry_run"] is False
 
     # Verify raw_data/ files and .md5 sidecars are staged
-    paginator = s3_client.get_paginator("list_objects_v2")
-    staged_keys = [
-        obj["Key"]
-        for page in paginator.paginate(Bucket=str(test_bucket), Prefix=str(staging_prefix / "raw_data"))
-        for obj in page.get("Contents", [])
-    ]
+    staged_keys = [str(k) for k in list_all_keys(s3_client, test_bucket, staging_prefix / "raw_data")]
     assert len(staged_keys) > 0, "Expected staged files under raw_data/"
 
     data_files = [k for k in staged_keys if not k.endswith(".md5")]

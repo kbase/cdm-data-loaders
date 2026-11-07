@@ -37,6 +37,7 @@ RUN ARCH=$(uname -m) && \
     wget https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-${ARCH}-unknown-linux-gnu.zip && \
     unzip qsv-${QSV_VERSION}-${ARCH}-unknown-linux-gnu.zip -d /tmp/qsv && \
     mv /tmp/qsv/qsv /usr/local/bin/ && \
+    chmod +x /usr/local/bin/xml_file_splitter /usr/local/bin/qsv && \
     rm -rf /tmp/*
 
 # Setup a non-root user
@@ -73,6 +74,7 @@ COPY --chown=nonroot:nonroot .dlt /app/.dlt
 COPY --chown=nonroot:nonroot docs /app/docs
 COPY --chown=nonroot:nonroot notebooks /app/notebooks
 COPY --chown=nonroot:nonroot scripts /app/scripts
+COPY --chown=nonroot:nonroot specs /app/specs
 COPY --chown=nonroot:nonroot src /app/src
 COPY --chown=nonroot:nonroot tests /app/tests
 COPY --chown=nonroot:nonroot README.md /app/README.md
@@ -94,6 +96,7 @@ ENV HOME="/home/nonroot"
 
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
 
 USER nonroot
 ENTRYPOINT ["./scripts/entrypoint.sh"]

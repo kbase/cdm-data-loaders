@@ -1,14 +1,21 @@
 """Tests for the constrained field types in cdm_data_loaders.core.fields that the core settings classes do not use.
 
 Fields used by the classes in cdm_data_loaders.core.settings are exercised via those classes in test_settings.py.
-BatchSize is the same PositiveInt construct as BufferSize/LogInterval. FileGlob, PreserveTableNesting and TableName
+BatchSize is the same PositiveInt construct as BufferSize/LogInterval. FileGlob and PreserveTableNesting
 are unconstrained str/bool fields, and the module constants are plain values, so none of those are tested here.
 """
 
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from cdm_data_loaders.core.fields import DatasetName, LoaderFileFormat, LoaderFileFormatEnum, MaxTableNesting
+from cdm_data_loaders.core.fields import (
+    REJECTED_TABLE_NAME,
+    DatasetName,
+    LoaderFileFormat,
+    LoaderFileFormatEnum,
+    MaxTableNesting,
+    TableName,
+)
 
 FORMAT_ERROR = "Input should be 'jsonl' or 'parquet'"
 
@@ -82,3 +89,16 @@ def test_pipeline_fields_fail_invalid_values(
     with pytest.raises(ValidationError) as exc_info:
         PipelineFieldsModel.model_validate(kwargs)
     assert [(err["loc"], err["msg"]) for err in exc_info.value.errors()] == expected_errors
+
+
+class TableNameModel(BaseModel):
+    """Model holding the TableName field type."""
+
+    table_name: TableName
+
+
+def test_table_name_fail_reserved_rejected_table_name() -> None:
+    """TableName rejects the reserved _rejected table name."""
+    assert REJECTED_TABLE_NAME == "_rejected"
+    with pytest.raises(ValidationError, match=REJECTED_TABLE_NAME):
+        TableNameModel.model_validate({"table_name": REJECTED_TABLE_NAME})

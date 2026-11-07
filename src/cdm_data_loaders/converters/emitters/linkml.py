@@ -53,6 +53,7 @@ class LinkMLEmitter:
         """Emit a standalone LinkML schema model.
 
         :param document: Typed schema document to convert.
+        :type document: SchemaDocument
         :returns: Schema model suitable for LinkML's YAML dumper.
         """
         if document.root.type != "object":
@@ -86,6 +87,7 @@ class LinkMLEmitter:
         """Emit a single node as a slot definition.
 
         :param node: Typed value node to convert.
+        :type node: TypedNode
         :returns: LinkML slot definition named ``node``.
         """
         return self._node_expression(node, "Node", "node")
@@ -94,7 +96,9 @@ class LinkMLEmitter:
         """Add a document's classes to a schema without overwriting existing definitions.
 
         :param document: Object-rooted document to convert.
+        :type document: SchemaDocument
         :param schema: Destination schema, updated only after successful conversion.
+        :type schema: SchemaDefinition
         :returns: The destination schema.
         """
         if document.root.type != "object":
@@ -119,6 +123,7 @@ class LinkMLEmitter:
         """Emit a single field attribute.
 
         :param field: Typed field to convert.
+        :type field: SchemaField
         :returns: Named LinkML slot definition.
         """
         return self._emit_attribute(field, "Field")

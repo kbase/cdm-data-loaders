@@ -1,38 +1,40 @@
 """Tests for the UniRef Parser."""
 
-import datetime
+import datetime as dt
+import json
 import logging
-from pathlib import Path
 from typing import Any
 
 import pytest
 from lxml.etree import XMLParser, fromstring
 
+from cdm_data_loaders.converters.xsd_to_pyarrow import load_schema, make_xml_element_converter
+from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.parsers.uniprot.uniref import (
     ENTRY_XML_TAG,
     UNIREF_URL,
-    dump_xml_element,
     extract_cluster,
     extract_cross_refs,
     generate_dbxref,
+    make_uniref_cdm_transform,
     parse_uniref_entry,
 )
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import UNIREF_XSD_FILE
 from cdm_data_loaders.readers.xml import stream_xml_file
+from tests.cdm_data_loaders.parsers.conftest import wrap_entry_xml
+from tests.conftest import TEST_DATA_DIR
 
-NOW = datetime.datetime.now(tz=datetime.UTC)
+NOW = dt.datetime.now(tz=dt.UTC)
 PROTOCOL = "uniref_9000"
-FILE_PATH = "/path/to/file"
+
+UNIREF_XSD = load_schema(UNIREF_XSD_FILE)
+CONVERT_ENTRY = make_xml_element_converter(UNIREF_XSD, "entry")
+CONVERT_DBREF = make_xml_element_converter(UNIREF_XSD, "dbReference")
 
 
 def entry_wrap(xml: str) -> str:
-    """Wrap XML text in an `entry` element.
-
-    :param xml: the XML to wrap
-    :type xml: str
-    :return: XML string with an entry around it.
-    :rtype: str
-    """
-    return f"<entry xmlns='{UNIREF_URL}'>{xml}</entry>"
+    """Wrap XML text in an `entry` element."""
+    return wrap_entry_xml(xml, UNIREF_URL)
 
 
 @pytest.mark.parametrize(
@@ -146,9 +148,9 @@ def entry_wrap(xml: str) -> str:
     ],
 )
 def test_extract_cluster(xml: str, expected: tuple[dict[str, Any], dict[str, Any]]) -> None:
-    """Test the extraction of cluster information from an entry."""
-    elem = fromstring(xml)
-    (cluster, entity) = extract_cluster(elem)
+    """Test the extraction of cluster information from an XSD-converted entry dict."""
+    entry_dict = CONVERT_ENTRY(fromstring(xml))
+    (cluster, entity) = extract_cluster(entry_dict)
     assert (cluster, entity) == expected
 
 
@@ -239,9 +241,9 @@ def test_extract_cross_refs_param(
     """Test that extract_cross_refs correctly extracts all UniRef cross-reference fields."""
     # edit the cluster member as appropriate
     if expected:
-        expected["is_representative"] = is_representative
+        expected = {**expected, "is_representative": is_representative}
 
-    db_ref = extract_cross_refs(fromstring(xml), "cluster:id", is_representative)
+    db_ref = extract_cross_refs(CONVERT_DBREF(fromstring(xml)), "cluster:id", is_representative)
     assert db_ref == expected
 
     if warning:
@@ -626,16 +628,12 @@ def test_extract_cross_refs_param(
 )
 def test_parse_whole_uniref_entry(entry: dict[str, Any]) -> None:
     """Ensure that parsing the whole entry results in the expected tables being yielded."""
-    parsed = parse_uniref_entry(fromstring(entry["xml"]), NOW, "/path/to/file", PROTOCOL)
+    entry_dict = CONVERT_ENTRY(fromstring(entry["xml"]))
+    parsed = parse_uniref_entry(entry_dict, NOW, PROTOCOL)
+    assert set(parsed.keys()) == {"entity", "cluster", "clustermember"}
     assert parsed["entity"] == entry["exp"]["entity"]
     assert parsed["cluster"] == entry["exp"]["cluster"]
     assert parsed["clustermember"] == entry["exp"]["clustermember"]
-    assert parsed["entity_x_source_file"] == [
-        {
-            "source_file": "/path/to/file",
-            **{k: entry["exp"]["entity"][0][k] for k in ["entity_id", "data_source"]},
-        }
-    ]
 
 
 @pytest.mark.parametrize(
@@ -658,63 +656,81 @@ def test_generate_dbxref(db: str, acc: str, expected: str) -> None:
     assert generate_dbxref(db, acc) == expected
 
 
-@pytest.mark.parametrize(
-    ("xml", "expected"),
-    [
-        # the http uniref namespace declaration is stripped
-        (
-            f"<entry xmlns='{UNIREF_URL}'><name>Cluster: x</name></entry>",
-            "<entry><name>Cluster: x</name></entry>",
-        ),
-        # the https variant of the namespace is also stripped
-        (
-            "<entry xmlns='https://uniprot.org/uniref'><name>Cluster: y</name></entry>",
-            "<entry><name>Cluster: y</name></entry>",
-        ),
-        # the xsi namespace declaration is stripped too
-        (
-            f'<entry xmlns="{UNIREF_URL}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
-            "<name>Cluster: z</name></entry>",
-            "<entry><name>Cluster: z</name></entry>",
-        ),
-        # self-closing element
-        (f"<entry xmlns='{UNIREF_URL}'/>", "<entry/>"),
-    ],
-)
-def test_dump_xml_element(xml: str, expected: str) -> None:
-    """Test that namespace declarations are stripped when dumping XML to a string."""
-    dumped = dump_xml_element(fromstring(xml, parser=XMLParser(remove_blank_text=True)))
-    assert dumped == expected
-
-
 def test_extract_cluster_no_id() -> None:
     """An entry with no id attribute yields empty cluster and entity dicts."""
     xml = f"<entry xmlns='{UNIREF_URL}'><name>Cluster: no id</name></entry>"
-    assert extract_cluster(fromstring(xml)) == ({}, {})
+    assert extract_cluster(CONVERT_ENTRY(fromstring(xml))) == ({}, {})
 
 
 def test_parse_uniref_entry_no_cluster_id() -> None:
-    """An entry with no id attribute is reported as a _parse_error rather than parsed."""
+    """An entry with no id attribute is routed to _rejected rather than parsed."""
     xml = f"<entry xmlns='{UNIREF_URL}'><name>Cluster: no id</name></entry>"
+    entry_dict = CONVERT_ENTRY(fromstring(xml, parser=XMLParser(remove_blank_text=True)))
     result = parse_uniref_entry(
-        fromstring(xml, parser=XMLParser(remove_blank_text=True)),
+        entry_dict,
         NOW,
-        FILE_PATH,
         PROTOCOL,
     )
 
-    assert list(result.keys()) == ["_parse_error"]
-    error = result["_parse_error"][0]
-    assert error["error"] == "No cluster ID found in entry"
-    assert error["source_file"] == FILE_PATH
-    # the raw XML (namespace-stripped) is retained for later inspection
-    assert error["xml"] == "<entry><name>Cluster: no id</name></entry>"
+    assert list(result.keys()) == [REJECTED_TABLE_NAME]
+    error = result[REJECTED_TABLE_NAME][0]
+    assert error["table_name"] == "entry"
+    assert error["source_file"] is None
+    assert error["line_no"] is None
+    assert error["error_detail"] == "No cluster ID found in entry"
+    assert json.loads(error["raw_record"]) == {"name": "Cluster: no id"}
 
 
-FIXTURE_CHUNK = Path("tests/fixtures/uniref/uniref_chunk_00001.xml")
+def test_make_uniref_cdm_transform() -> None:
+    """Test that make_uniref_cdm_transform builds a RecordTransformFn that routes UniRef entries."""
+    transform_fn = make_uniref_cdm_transform(PROTOCOL, timestamp=NOW)
+    assert callable(transform_fn)
+
+    entry_dict = {
+        "_id": "UniRef50_TEST",
+        "_updated": dt.date(2025, 1, 15),
+        "name": "Cluster: Test",
+        "representativeMember": {
+            "dbReference": {
+                "_type": "UniParc ID",
+                "_id": "UPI0001",
+                "property": [{"_type": "isSeed", "_value": "true"}],
+            }
+        },
+    }
+    routed = transform_fn(entry_dict)
+    assert routed["cluster"] == [
+        {
+            "cluster_id": "uniref:UniRef50_TEST",
+            "name": "Cluster: Test",
+            "cluster_type": "Protein",
+            "protocol": PROTOCOL,
+            "description": None,
+        }
+    ]
+    assert routed["entity"] == [
+        {
+            "entity_id": "uniref:UniRef50_TEST",
+            "entity_type": "Cluster",
+            "data_source": "UniRef",
+            "data_source_entity_id": "UniRef50_TEST",
+            "data_source_updated": "2025-01-15",
+            "updated": NOW,
+        }
+    ]
+    assert routed["clustermember"] == [
+        {
+            "entity_id": "uniparc:UPI0001",
+            "cluster_id": "uniref:UniRef50_TEST",
+            "is_representative": True,
+            "is_seed": True,
+        }
+    ]
 
 
-@pytest.mark.skipif(not FIXTURE_CHUNK.exists(), reason="UniRef XML fixture not available")
+FIXTURE_CHUNK = TEST_DATA_DIR / "uniprot" / "uniref" / "integration" / "uniref_chunk_00001.xml"
+
+
 def test_parse_uniref_entry_integration() -> None:
     """Integration test: stream real UniRef entries from a fixture file and parse each one.
 
@@ -727,10 +743,11 @@ def test_parse_uniref_entry_integration() -> None:
     seen_cluster_ids: set[str] = set()
     for entry in stream_xml_file(FIXTURE_CHUNK, ENTRY_XML_TAG):
         entry_count += 1
-        parsed = parse_uniref_entry(entry, NOW, str(FIXTURE_CHUNK), PROTOCOL)
+        parsed = parse_uniref_entry(CONVERT_ENTRY(entry), NOW, PROTOCOL)
 
         # every real entry should parse cleanly
-        assert "_parse_error" not in parsed, f"unexpected parse error: {parsed.get('_parse_error')}"
+        assert REJECTED_TABLE_NAME not in parsed, f"unexpected parse error: {parsed.get(REJECTED_TABLE_NAME)}"
+        assert set(parsed.keys()) == {"entity", "cluster", "clustermember"}
 
         # cluster + entity rows present and consistent
         assert len(parsed["cluster"]) == 1
@@ -752,11 +769,6 @@ def test_parse_uniref_entry_integration() -> None:
         assert parsed["clustermember"], f"no cluster members for {cluster_id}"
         assert any(m["is_representative"] for m in parsed["clustermember"])
         assert all(m["cluster_id"] == cluster_id for m in parsed["clustermember"])
-
-        # source-file linkage present
-        assert parsed["entity_x_source_file"] == [
-            {"entity_id": cluster_id, "data_source": "UniRef", "source_file": str(FIXTURE_CHUNK)}
-        ]
 
     assert entry_count > 0, "expected at least one entry in the fixture"
     # the three distinct clusters in the fixture should each be parsed exactly once

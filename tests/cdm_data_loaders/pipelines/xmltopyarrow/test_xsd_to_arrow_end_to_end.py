@@ -8,9 +8,11 @@ from pathlib import Path
 import pyarrow as pa
 import pytest
 
+from cdm_data_loaders.converters.xsd_to_pyarrow import generate_pyarrow_schema, load_schema
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
-from cdm_data_loaders.readers.xsd import generate_pyarrow_schema, load_schema
+from tests.conftest import XSD_SPEC_DIR
+from tests.helpers import strip_none_values
 
 
 def _json_default(obj: object) -> str:
@@ -23,141 +25,132 @@ def _json_default(obj: object) -> str:
     raise TypeError(msg)
 
 
-def _strip_none(value: object) -> object:
-    """Recursively remove keys with None values from dicts to compare Arrow-materialized rows with sparse expected.json."""
-    if isinstance(value, dict):
-        return {k: _strip_none(v) for k, v in value.items() if v is not None}
-    if isinstance(value, list):
-        return [_strip_none(item) for item in value]
-    return value
-
-
 @pytest.mark.parametrize(
     ("xsd_rel_path", "xml_rel_path", "expected_rel_path", "xml_tag"),
     [
         pytest.param(
-            "xsd/spec/01_scalars_and_simple_types/schema.xsd",
-            "xsd/spec/01_scalars_and_simple_types/data.xml",
-            "xsd/spec/01_scalars_and_simple_types/expected.json",
+            "spec/01_scalars_and_simple_types/schema.xsd",
+            "spec/01_scalars_and_simple_types/data.xml",
+            "spec/01_scalars_and_simple_types/expected.json",
             "record",
             id="spec-01-scalars-and-simple-types",
         ),
         pytest.param(
-            "xsd/spec/02_namespaces_and_nillable/schema.xsd",
-            "xsd/spec/02_namespaces_and_nillable/data.xml",
-            "xsd/spec/02_namespaces_and_nillable/expected.json",
+            "spec/02_namespaces_and_nillable/schema.xsd",
+            "spec/02_namespaces_and_nillable/data.xml",
+            "spec/02_namespaces_and_nillable/expected.json",
             "entry",
             id="spec-02-namespaces-and-nillable",
         ),
         pytest.param(
-            "xsd/spec/03_mixed_content_raw_text/schema.xsd",
-            "xsd/spec/03_mixed_content_raw_text/data.xml",
-            "xsd/spec/03_mixed_content_raw_text/expected.json",
+            "spec/03_mixed_content_raw_text/schema.xsd",
+            "spec/03_mixed_content_raw_text/data.xml",
+            "spec/03_mixed_content_raw_text/expected.json",
             "article",
             id="spec-03-mixed-content-raw-text",
         ),
         pytest.param(
-            "xsd/spec/04_recursion_depth/schema.xsd",
-            "xsd/spec/04_recursion_depth/data.xml",
-            "xsd/spec/04_recursion_depth/expected.json",
+            "spec/04_recursion_depth/schema.xsd",
+            "spec/04_recursion_depth/data.xml",
+            "spec/04_recursion_depth/expected.json",
             "record",
             id="spec-04-recursion-depth",
         ),
         pytest.param(
-            "xsd/spec/05_groups_and_compositors/schema.xsd",
-            "xsd/spec/05_groups_and_compositors/data.xml",
-            "xsd/spec/05_groups_and_compositors/expected.json",
+            "spec/05_groups_and_compositors/schema.xsd",
+            "spec/05_groups_and_compositors/data.xml",
+            "spec/05_groups_and_compositors/expected.json",
             "item",
             id="spec-05-groups-and-compositors",
         ),
         pytest.param(
-            "xsd/spec/06_context_dependent_paths/schema.xsd",
-            "xsd/spec/06_context_dependent_paths/data.xml",
-            "xsd/spec/06_context_dependent_paths/expected.json",
+            "spec/06_context_dependent_paths/schema.xsd",
+            "spec/06_context_dependent_paths/data.xml",
+            "spec/06_context_dependent_paths/expected.json",
             "root",
             id="spec-06-context-dependent-paths",
         ),
         pytest.param(
-            "xsd/spec/07_multi_root_shared_type/schema.xsd",
-            "xsd/spec/07_multi_root_shared_type/data.xml",
-            "xsd/spec/07_multi_root_shared_type/expected.json",
+            "spec/07_multi_root_shared_type/schema.xsd",
+            "spec/07_multi_root_shared_type/data.xml",
+            "spec/07_multi_root_shared_type/expected.json",
             "entry",
             id="spec-07-multi-root-shared-type",
         ),
         pytest.param(
-            "xsd/spec/08_nullability_and_empty_tags/schema.xsd",
-            "xsd/spec/08_nullability_and_empty_tags/data.xml",
-            "xsd/spec/08_nullability_and_empty_tags/expected.json",
+            "spec/08_nullability_and_empty_tags/schema.xsd",
+            "spec/08_nullability_and_empty_tags/data.xml",
+            "spec/08_nullability_and_empty_tags/expected.json",
             "entry",
             id="spec-08-nullability-and-empty-tags",
         ),
         pytest.param(
-            "xsd/spec/09_empty_marker_elements/schema.xsd",
-            "xsd/spec/09_empty_marker_elements/data.xml",
-            "xsd/spec/09_empty_marker_elements/expected.json",
+            "spec/09_empty_marker_elements/schema.xsd",
+            "spec/09_empty_marker_elements/data.xml",
+            "spec/09_empty_marker_elements/expected.json",
             "book",
             id="spec-09-empty-marker-elements",
         ),
         pytest.param(
-            "xsd/spec/10_combinations/schema.xsd",
-            "xsd/spec/10_combinations/data.xml",
-            "xsd/spec/10_combinations/expected.json",
+            "spec/10_combinations/schema.xsd",
+            "spec/10_combinations/data.xml",
+            "spec/10_combinations/expected.json",
             "record",
             id="spec-10-combinations",
         ),
         pytest.param(
-            "uniprot/uniref/uniref.xsd",
-            "xsd/examples/uniref/minimal.xml",
-            "xsd/examples/uniref/minimal_expected.json",
+            "examples/uniref/uniref.xsd",
+            "examples/uniref/minimal.xml",
+            "examples/uniref/minimal_expected.json",
             "entry",
             id="example-uniref-minimal",
         ),
         pytest.param(
-            "uniprot/uniref/uniref.xsd",
-            "xsd/examples/uniref/maximal.xml",
-            "xsd/examples/uniref/maximal_expected.json",
+            "examples/uniref/uniref.xsd",
+            "examples/uniref/maximal.xml",
+            "examples/uniref/maximal_expected.json",
             "entry",
             id="example-uniref-maximal",
         ),
         pytest.param(
-            "uniprot/uniprot_kb/uniprot.xsd",
-            "xsd/examples/uniprot/minimal.xml",
-            "xsd/examples/uniprot/minimal_expected.json",
+            "examples/uniprot/uniprot.xsd",
+            "examples/uniprot/minimal.xml",
+            "examples/uniprot/minimal_expected.json",
             "entry",
             id="example-uniprot-minimal",
         ),
         pytest.param(
-            "uniprot/uniprot_kb/uniprot.xsd",
-            "xsd/examples/uniprot/maximal.xml",
-            "xsd/examples/uniprot/maximal_expected.json",
+            "examples/uniprot/uniprot.xsd",
+            "examples/uniprot/maximal.xml",
+            "examples/uniprot/maximal_expected.json",
             "entry",
             id="example-uniprot-maximal",
         ),
         pytest.param(
-            "pubmed/pubmed.xsd",
-            "xsd/examples/pubmed_article/minimal.xml",
-            "xsd/examples/pubmed_article/minimal_expected.json",
+            "examples/pubmed_article/pubmed.xsd",
+            "examples/pubmed_article/minimal.xml",
+            "examples/pubmed_article/minimal_expected.json",
             "PubmedArticle",
             id="example-pubmed-article-minimal",
         ),
         pytest.param(
-            "pubmed/pubmed.xsd",
-            "xsd/examples/pubmed_article/maximal.xml",
-            "xsd/examples/pubmed_article/maximal_expected.json",
+            "examples/pubmed_article/pubmed.xsd",
+            "examples/pubmed_article/maximal.xml",
+            "examples/pubmed_article/maximal_expected.json",
             "PubmedArticle",
             id="example-pubmed-article-maximal",
         ),
         pytest.param(
-            "pubmed/pubmed.xsd",
-            "xsd/examples/pubmed_book_article/minimal.xml",
-            "xsd/examples/pubmed_book_article/minimal_expected.json",
+            "examples/pubmed_book_article/pubmed.xsd",
+            "examples/pubmed_book_article/minimal.xml",
+            "examples/pubmed_book_article/minimal_expected.json",
             "PubmedBookArticle",
             id="example-pubmed-book-article-minimal",
         ),
         pytest.param(
-            "pubmed/pubmed.xsd",
-            "xsd/examples/pubmed_book_article/maximal.xml",
-            "xsd/examples/pubmed_book_article/maximal_expected.json",
+            "examples/pubmed_book_article/pubmed.xsd",
+            "examples/pubmed_book_article/maximal.xml",
+            "examples/pubmed_book_article/maximal_expected.json",
             "PubmedBookArticle",
             id="example-pubmed-book-article-maximal",
         ),
@@ -165,7 +158,6 @@ def _strip_none(value: object) -> object:
 )
 def test_process_xml_file_to_pyarrow_pass_yields_arrow_tables_for_spec_and_examples(
     settings_factory: Callable[..., XmlToPyArrowSettings],
-    test_data_dir: Path,
     *,
     xsd_rel_path: str,
     xml_rel_path: str,
@@ -173,9 +165,9 @@ def test_process_xml_file_to_pyarrow_pass_yields_arrow_tables_for_spec_and_examp
     xml_tag: str,
 ) -> None:
     """process_xml_file_to_pyarrow yields pa.Table batches matching the XSD PyArrow schema and expected JSON."""
-    xsd_path = test_data_dir / xsd_rel_path
-    xml_path = test_data_dir / xml_rel_path
-    expected = json.loads((test_data_dir / expected_rel_path).read_text(encoding="utf-8"))
+    xsd_path = XSD_SPEC_DIR / xsd_rel_path
+    xml_path = XSD_SPEC_DIR / xml_rel_path
+    expected = json.loads((XSD_SPEC_DIR / expected_rel_path).read_text(encoding="utf-8"))
 
     settings = settings_factory(
         table_name=xml_tag,
@@ -183,7 +175,7 @@ def test_process_xml_file_to_pyarrow_pass_yields_arrow_tables_for_spec_and_examp
         xsd_file=str(xsd_path),
     )
 
-    items = list(process_xml_file_to_pyarrow(settings, file_path=xml_path))
+    items = list(process_xml_file_to_pyarrow(xml_path, settings))
     assert len(items) == 1
     assert items[0].meta.table_name == xml_tag
     assert isinstance(items[0].data, pa.Table)
@@ -193,5 +185,101 @@ def test_process_xml_file_to_pyarrow_pass_yields_arrow_tables_for_spec_and_examp
     assert table.schema.equals(expected_pa_schema, check_metadata=True)
     assert table.num_rows == len(expected)
 
-    actual_rows = json.loads(json.dumps(_strip_none(table.to_pylist()), default=_json_default))
+    actual_rows = json.loads(json.dumps(strip_none_values(table.to_pylist()), default=_json_default))
     assert actual_rows == expected
+
+
+def test_process_xml_file_to_pyarrow_pass_pubmed_level_1_multi_table_files(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    tmp_path: Path,
+) -> None:
+    """Level-1 parsing of PubMed XML routes PubmedArticle, PubmedBookArticle, and DeleteCitation into typed Arrow tables."""
+    xsd_path = XSD_SPEC_DIR / "examples" / "pubmed_article" / "pubmed.xsd"
+    article_xml = (XSD_SPEC_DIR / "examples" / "pubmed_article" / "minimal.xml").read_text(encoding="utf-8")
+    book_xml = (XSD_SPEC_DIR / "examples" / "pubmed_book_article" / "minimal.xml").read_text(encoding="utf-8")
+
+    article_body = article_xml.split('<PubmedArticleSet xmlns="http://www.w3.org/namespace/">', 1)[1].rsplit(
+        "</PubmedArticleSet>", 1
+    )[0]
+    book_body = book_xml.split('<PubmedBookArticleSet xmlns="http://www.w3.org/namespace/">', 1)[1].rsplit(
+        "</PubmedBookArticleSet>", 1
+    )[0]
+    combined_xml_path = tmp_path / "pubmed_combined.xml"
+    combined_xml_path.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<PubmedArticleSet xmlns="http://www.w3.org/namespace/">\n'
+        f"{article_body}"
+        f"{book_body}"
+        '  <DeleteCitation>\n    <PMID Version="1">99999999</PMID>\n  </DeleteCitation>\n'
+        "</PubmedArticleSet>\n",
+        encoding="utf-8",
+    )
+
+    settings = settings_factory(
+        xsd_file=str(xsd_path),
+        xml_level=1,
+        root_tag="PubmedArticleSet",
+    )
+
+    items = list(process_xml_file_to_pyarrow(combined_xml_path, settings))
+    by_table: dict[str, pa.Table] = {item.meta.table_name: item.data for item in items}
+
+    assert {name: table.num_rows for name, table in by_table.items()} == {
+        "PubmedArticle": 1,
+        "PubmedBookArticle": 1,
+        "DeleteCitation": 1,
+    }
+    for table_name, table in by_table.items():
+        assert table.schema.equals(settings.pyarrow_schemas[table_name], check_metadata=True)
+    assert strip_none_values(by_table["DeleteCitation"].to_pylist()) == [
+        {"PMID": [{"_Version": "1", "#text": "99999999"}]}
+    ]
+
+
+def test_process_xml_file_to_pyarrow_pass_uniprot_level_1_and_uniref_level_2(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    tmp_path: Path,
+) -> None:
+    """Level-1 parsing on UniProt yields entry and copyright tables; level-2 parsing on UniRef yields child tables."""
+    minimal_uniprot = (XSD_SPEC_DIR / "examples" / "uniprot" / "minimal.xml").read_text(encoding="utf-8")
+    uniprot_with_copyright = tmp_path / "uniprot_with_copyright.xml"
+    uniprot_with_copyright.write_text(
+        minimal_uniprot.replace(
+            "</uniprot>",
+            "  <copyright>Copyrighted by the UniProt Consortium</copyright>\n</uniprot>",
+        ),
+        encoding="utf-8",
+    )
+
+    uniprot_settings = settings_factory(
+        xsd_file=str(XSD_SPEC_DIR / "examples" / "uniprot" / "uniprot.xsd"),
+        xml_level=1,
+    )
+    uniprot_items = list(
+        process_xml_file_to_pyarrow(
+            uniprot_with_copyright,
+            uniprot_settings,
+        )
+    )
+    uniprot_tables: dict[str, pa.Table] = {item.meta.table_name: item.data for item in uniprot_items}
+    assert set(uniprot_tables.keys()) == {"entry", "copyright"}
+    assert uniprot_tables["entry"].num_rows == 1
+    assert uniprot_tables["copyright"].to_pylist() == [{"#text": "Copyrighted by the UniProt Consortium"}]
+    assert uniprot_tables["copyright"].schema.equals(uniprot_settings.pyarrow_schemas["copyright"], check_metadata=True)
+
+    uniref_l2_settings = settings_factory(
+        xsd_file=str(XSD_SPEC_DIR / "examples" / "uniref" / "uniref.xsd"),
+        xml_level=2,
+    )
+    uniref_l2_items = list(
+        process_xml_file_to_pyarrow(
+            XSD_SPEC_DIR / "examples" / "uniref" / "minimal.xml",
+            uniref_l2_settings,
+        )
+    )
+    uniref_l2_tables: dict[str, pa.Table] = {item.meta.table_name: item.data for item in uniref_l2_items}
+    assert set(uniref_l2_tables.keys()) == {"name", "representativeMember"}
+    assert uniref_l2_tables["name"].to_pylist() == [{"#text": "Cluster: Glycogen synthase"}]
+    assert uniref_l2_tables["representativeMember"].num_rows == 1
+    for table_name, table in uniref_l2_tables.items():
+        assert table.schema.equals(uniref_l2_settings.pyarrow_schemas[table_name], check_metadata=True)

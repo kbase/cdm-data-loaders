@@ -8,13 +8,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from cdm_data_loaders.utils.file_transfer.async_client import AsyncFileDownloader
 from cdm_data_loaders.utils.file_transfer.core import (
     ChecksumMismatchError,
     DownloadError,
     NonRetryableDownloadError,
 )
-from cdm_data_loaders.utils.file_transfer.sync_client import FileDownloader
 from tests.cdm_data_loaders.utils.file_transfer.conftest import DownloaderAdapter
 
 DOWNLOAD_URL = "https://example.com/file.txt"
@@ -201,20 +199,14 @@ async def test_checksum_success(
 
 
 @pytest.mark.parametrize("checksum_fn", ["shake128", " shake256", "shake-n-vac", "CRC64NVME", "crc64nvme"])
-def test_checksum_invalid_sync_downloader(checksum_fn: str, tmp_path: Path) -> None:
-    """Ensure that invalid checksums throw an error."""
-    downloader = FileDownloader()
-    with pytest.raises(ValueError, match=f"Hashing algorithm {checksum_fn.lower()} not supported"):
-        downloader.download(DOWNLOAD_URL, tmp_path, checksum_fn=checksum_fn)
-
-
-@pytest.mark.parametrize("checksum_fn", ["shake128", " shake256", "shake-n-vac", "CRC64NVME", "crc64nvme"])
 @pytest.mark.asyncio
-async def test_checksum_invalid_async_downloader(checksum_fn: str, tmp_path: Path) -> None:
+async def test_checksum_invalid_downloader(
+    checksum_fn: str, tmp_path: Path, downloader_adapter: DownloaderAdapter
+) -> None:
     """Ensure that invalid checksums throw an error."""
-    downloader = AsyncFileDownloader()
+    downloader = downloader_adapter.make_downloader(lambda _: httpx.Response(200))
     with pytest.raises(ValueError, match=f"Hashing algorithm {checksum_fn.lower()} not supported"):
-        await downloader.download(DOWNLOAD_URL, tmp_path, checksum_fn=checksum_fn)
+        await downloader_adapter.download(downloader, DOWNLOAD_URL, tmp_path, checksum_fn=checksum_fn)
 
 
 @pytest.mark.asyncio

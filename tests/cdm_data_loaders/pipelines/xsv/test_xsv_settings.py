@@ -2,13 +2,26 @@
 
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import MagicMock
 
+import pyarrow as pa
 import pytest
 from pydantic import ValidationError
 
+import cdm_data_loaders.pipelines.xsv.settings as xsv_settings_module
+from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrowError
 from cdm_data_loaders.core.fields import DEFAULTS
-from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
-from tests.cdm_data_loaders.pipelines.xsv.conftest import COLUMNS, DEFAULT_XSV_SCHEMA, VALID_SCHEMA_URI
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry
+from cdm_data_loaders.pipelines.xsv.settings import (
+    PIPELINE_NAME,
+    XsvIngestSettings,
+    convert_xsv_schema_to_pyarrow,
+)
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
+from cdm_data_loaders.utils.jsonschema.dereferencer import DereferencingError
+from tests.cdm_data_loaders.pipelines.xsv.conftest import DEFAULT_XSV_SCHEMA, VALID_SCHEMA_URI
+from tests.helpers import register_temp_module
+from tests.xsv_fixtures import COLUMNS
 
 """defaults and basic construction"""
 
@@ -58,61 +71,289 @@ def test_xsv_settings_fail_empty_schema_file_name(settings_factory: Callable[...
         settings_factory(schema_file="")
 
 
-@pytest.mark.parametrize("field", ["buffer_size", "log_interval"])
-def test_xsv_settings_fail_non_positive_int_fields(
-    settings_factory: Callable[..., XsvIngestSettings], field: str
-) -> None:
-    """buffer_size and log_interval must be positive integers."""
-    with pytest.raises(ValidationError):
-        settings_factory(**{field: 0})
-
-
 """derived properties: first_pass_schema and parsing_config"""
 
 
-def test_xsv_settings_pass_first_pass_schema_is_loose(
+@pytest.mark.parametrize(
+    ("schema_overrides", "expected_kept_keys"),
+    [
+        pytest.param(
+            {},
+            {"$schema", "required", "type", "properties"},
+            id="strips_xsv_config_and_omits_absent_metadata_keys",
+        ),
+        pytest.param(
+            {"$id": "https://example.org/xsv.json", "title": "My XSV", "description": "dropped"},
+            {"$schema", "$id", "title", "required", "type", "properties"},
+            id="preserves_id_and_title_and_drops_description",
+        ),
+    ],
+)
+def test_xsv_settings_pass_first_pass_schema_is_loose_and_cached(
     settings_factory: Callable[..., XsvIngestSettings],
+    schema_overrides: dict[str, Any],
+    expected_kept_keys: set[str],
 ) -> None:
-    """first_pass_schema derives a loose schema typing every required column as string-or-null."""
-    settings = settings_factory()
+    """first_pass_schema derives a loose string-or-null schema, preserves metadata keys, and caches the instance."""
+    base_schema = {k: v for k, v in DEFAULT_XSV_SCHEMA.items() if k not in ("$id", "title")}
+    settings = settings_factory(schema={**base_schema, **schema_overrides})
     first_pass = settings.first_pass_schema
+    assert set(first_pass.jsonschema.keys()) == expected_kept_keys
     assert first_pass.required_cols == COLUMNS
-    assert all(first_pass.jsonschema["properties"][col]["type"] == ["string", "null"] for col in COLUMNS)
+    assert first_pass.jsonschema["type"] == "object"
+    assert first_pass.jsonschema["properties"] == {col: {"type": ["string", "null"]} for col in COLUMNS}
+    assert settings.first_pass_schema is first_pass
 
 
-def test_xsv_settings_pass_first_pass_schema_is_cached(
+@pytest.mark.parametrize(
+    ("xsv_config", "expected_parsing_config"),
+    [
+        pytest.param(None, {}, id="missing_xsv_config_block"),
+        pytest.param({"x-quoting-policy": "all"}, {}, id="only_ignored_quoting_policy"),
+        pytest.param(
+            {"x-delimiter": ",", "x-has-header": True},
+            {"delimiter": ",", "missing_header": False},
+            id="comma_delimiter_with_header",
+        ),
+        pytest.param(
+            {
+                "x-delimiter": "\t",
+                "x-comment-char": "#",
+                "x-quote": "'",
+                "x-escape": "\\",
+                "x-null-regex": "^NA$",
+                "x-null-cols": ["col_1", "col_2"],
+                "x-has-header": False,
+                "x-quoting-policy": "all",
+            },
+            {
+                "delimiter": "\t",
+                "comment_char": "#",
+                "quote": "'",
+                "escape": "\\",
+                "null_regex": "^NA$",
+                "null_regex_cols": ["col_1", "col_2"],
+                "missing_header": True,
+            },
+            id="all_supported_keys_mapped_and_quoting_policy_ignored",
+        ),
+    ],
+)
+def test_xsv_settings_pass_parsing_config_resolved_and_cached(
     settings_factory: Callable[..., XsvIngestSettings],
+    xsv_config: dict[str, Any] | None,
+    expected_parsing_config: dict[str, Any],
 ) -> None:
-    """first_pass_schema is computed once and reused on subsequent access."""
-    settings = settings_factory()
-    assert settings.first_pass_schema is settings.first_pass_schema
-
-
-def test_xsv_settings_pass_parsing_config_empty_without_xsv_config_block(
-    settings_factory: Callable[..., XsvIngestSettings],
-) -> None:
-    """parsing_config is empty when the schema carries no x-xsv-config block."""
-    schema_without_config = {k: v for k, v in DEFAULT_XSV_SCHEMA.items() if k != "x-xsv-config"}
-    settings = settings_factory(schema=schema_without_config)
-    assert settings.parsing_config == {}
-
-
-def test_xsv_settings_pass_parsing_config_resolved_from_xsv_config_block(
-    settings_factory: Callable[..., XsvIngestSettings],
-) -> None:
-    """parsing_config resolves qsv kwargs from the schema's x-xsv-config block."""
-    settings = settings_factory()
-    assert settings.parsing_config == {"delimiter": ",", "missing_header": False}
-
-
-def test_xsv_settings_pass_parsing_config_is_cached(settings_factory: Callable[..., XsvIngestSettings]) -> None:
-    """parsing_config is computed once and reused on subsequent access."""
-    settings = settings_factory()
+    """parsing_config resolves qsv kwargs from the schema's x-xsv-config block and caches the dict."""
+    base_schema = {k: v for k, v in DEFAULT_XSV_SCHEMA.items() if k != "x-xsv-config"}
+    if xsv_config is not None:
+        base_schema["x-xsv-config"] = xsv_config
+    settings = settings_factory(schema=base_schema)
+    assert settings.parsing_config == expected_parsing_config
     assert settings.parsing_config is settings.parsing_config
 
 
-def test_xsv_settings_fail_validated_schema_unset_raises() -> None:
-    """Accessing validated_schema before it has been set raises RuntimeError."""
+@pytest.mark.parametrize(
+    "property_name",
+    ["validated_schema", "first_pass_schema", "parsing_config"],
+    ids=["validated_schema", "first_pass_schema", "parsing_config"],
+)
+def test_xsv_settings_fail_unset_schema_properties_raise(property_name: str) -> None:
+    """Accessing validated_schema, first_pass_schema, or parsing_config before validation raises RuntimeError."""
     settings = XsvIngestSettings.model_construct()
     with pytest.raises(RuntimeError, match="Schema has not been validated"):
-        _ = settings.validated_schema
+        getattr(settings, property_name)
+
+
+"""convert_xsv_schema_to_pyarrow"""
+
+
+@pytest.mark.parametrize(
+    ("raw_schema", "expected_pa_schema"),
+    [
+        pytest.param(
+            {
+                "$schema": VALID_SCHEMA_URI,
+                "required": ["unlisted_col", "non_null_int", "nullable_str"],
+                "properties": {
+                    "non_null_int": {"type": "integer"},
+                    "nullable_str": {"type": ["string", "null"]},
+                    "extra_col": {"type": "boolean"},
+                },
+            },
+            pa.schema(
+                [
+                    pa.field("unlisted_col", pa.string(), nullable=True),
+                    pa.field("non_null_int", pa.int64(), nullable=False),
+                    pa.field("nullable_str", pa.string(), nullable=True),
+                    pa.field("extra_col", pa.bool_(), nullable=True),
+                ]
+            ),
+            id="orders_required_defaults_unlisted_and_keeps_extra_nullable",
+        ),
+        pytest.param(
+            {
+                "$schema": VALID_SCHEMA_URI,
+                "required": [
+                    "str_not_null",
+                    "list_not_null",
+                    "list_with_null",
+                    "anyof_not_null",
+                    "anyof_with_null",
+                    "oneof_not_null",
+                    "oneof_with_null",
+                    "enum_not_null",
+                    "enum_with_null",
+                ],
+                "properties": {
+                    "str_not_null": {"type": "string"},
+                    "list_not_null": {"type": ["integer"]},
+                    "list_with_null": {"type": ["integer", "null"]},
+                    "anyof_not_null": {"anyOf": [{"type": "integer"}, {"type": "integer"}]},
+                    "anyof_with_null": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                    "oneof_not_null": {"oneOf": [{"type": "string"}]},
+                    "oneof_with_null": {"oneOf": [{"type": "string"}, {"type": "null"}]},
+                    "enum_not_null": {"enum": ["a", "b"]},
+                    "enum_with_null": {"enum": ["a", "b", None]},
+                },
+            },
+            pa.schema(
+                [
+                    pa.field("str_not_null", pa.string(), nullable=False),
+                    pa.field("list_not_null", pa.int64(), nullable=False),
+                    pa.field("list_with_null", pa.int64(), nullable=True),
+                    pa.field("anyof_not_null", pa.int64(), nullable=False),
+                    pa.field("anyof_with_null", pa.int64(), nullable=True),
+                    pa.field("oneof_not_null", pa.string(), nullable=False),
+                    pa.field("oneof_with_null", pa.string(), nullable=True),
+                    pa.field("enum_not_null", pa.string(), nullable=False),
+                    pa.field("enum_with_null", pa.string(), nullable=True),
+                ]
+            ),
+            id="nullability_inference_across_type_anyof_oneof_and_enum",
+        ),
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$ref": "#/$defs/RowDef",
+                "required": ["id", "label"],
+                "$defs": {
+                    "RowDef": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "label": {"type": ["string", "null"]},
+                        },
+                    }
+                },
+            },
+            pa.schema(
+                [
+                    pa.field("id", pa.int64(), nullable=False),
+                    pa.field("label", pa.string(), nullable=True),
+                ]
+            ),
+            id="dereferences_root_ref_and_preserves_dollar_schema",
+        ),
+    ],
+)
+def test_convert_xsv_schema_to_pyarrow_pass(
+    raw_schema: dict[str, Any],
+    expected_pa_schema: pa.Schema,
+) -> None:
+    """convert_xsv_schema_to_pyarrow orders columns by required_cols, infers nullability, and dereferences $ref."""
+    validated = ValidatedXsvSchema(jsonschema=raw_schema)
+    assert convert_xsv_schema_to_pyarrow(validated) == expected_pa_schema
+
+
+@pytest.mark.parametrize(
+    ("raw_schema", "exc_type"),
+    [
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "required": ["id"],
+                "properties": {"id": {"$ref": "#/$defs/Missing"}},
+            },
+            DereferencingError,
+            id="unresolvable_ref",
+        ),
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "array",
+                "required": ["id"],
+                "properties": {"id": {"type": "integer"}},
+            },
+            JSONSchemaToPyArrowError,
+            id="non_object_root_type",
+        ),
+    ],
+)
+def test_convert_xsv_schema_to_pyarrow_fail(
+    raw_schema: dict[str, Any],
+    exc_type: type[Exception],
+) -> None:
+    """convert_xsv_schema_to_pyarrow raises DereferencingError or JSONSchemaToPyArrowError on invalid schemas."""
+    validated = ValidatedXsvSchema(jsonschema=raw_schema)
+    with pytest.raises(exc_type):
+        convert_xsv_schema_to_pyarrow(validated)
+
+
+@pytest.mark.parametrize(
+    ("use_transforms", "use_output_schemas"),
+    [
+        pytest.param(False, False, id="default-from-input-schema"),
+        pytest.param(True, False, id="transforms-only-unschematized"),
+        pytest.param(False, True, id="output-schemas-only"),
+        pytest.param(True, True, id="transforms-with-output-schemas"),
+    ],
+)
+def test_xsv_settings_pass_resolves_schema_map_from_input_and_respects_transforms(
+    monkeypatch: pytest.MonkeyPatch,
+    settings_factory: Callable[..., XsvIngestSettings],
+    use_transforms: bool,
+    use_output_schemas: bool,
+) -> None:
+    """schema_map skips input-schema PyArrow generation when a transform or output schema is configured."""
+    override_schema = pa.schema([pa.field("number", pa.int64(), nullable=False)])
+    hooks_mod = register_temp_module(
+        monkeypatch,
+        "_test_xsv_settings_hooks",
+        TABLE_TRANSFORMS={"my_table": lambda row: {"my_table": [row]}},
+        OUTPUT_SCHEMAS={"my_table": override_schema},
+    )
+    convert_spy = MagicMock(wraps=convert_xsv_schema_to_pyarrow)
+    monkeypatch.setattr(xsv_settings_module, "convert_xsv_schema_to_pyarrow", convert_spy)
+
+    settings = settings_factory(
+        transforms_module=hooks_mod if use_transforms else None,
+        output_schemas_module=hooks_mod if use_output_schemas else None,
+    )
+    if use_output_schemas:
+        expected_map: ArrowSchemaRegistry | None = ArrowSchemaRegistry(registry={"my_table": override_schema})
+        assert convert_spy.call_count == 0
+    elif use_transforms:
+        expected_map = None
+        assert convert_spy.call_count == 0
+    else:
+        assert convert_spy.call_count == 1
+        expected_map = ArrowSchemaRegistry(
+            registry={"my_table": convert_xsv_schema_to_pyarrow(settings.validated_schema)}
+        )
+
+    assert settings.schema_map == expected_map
+
+
+def test_xsv_settings_fail_unknown_transform_table_name(
+    settings_factory: Callable[..., XsvIngestSettings],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """XsvIngestSettings rejects TABLE_TRANSFORMS that reference an unknown table name."""
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_xsv_unknown_table_transforms",
+        TABLE_TRANSFORMS={"unknown_table": lambda r: {"unknown_table": [r]}},
+    )
+    with pytest.raises(ValidationError, match="Unknown table names"):
+        settings_factory(transforms_module=transforms_mod)

@@ -3,10 +3,28 @@
 from collections.abc import Mapping
 from decimal import Decimal
 from math import isfinite
+from typing import overload
 
 from frozendict import frozendict
 
 type Value = bool | int | float | Decimal | str | tuple[Value, ...] | Mapping[str, Value] | None
+type MutableValue = bool | int | float | Decimal | str | list[MutableValue] | dict[str, MutableValue] | None
+
+
+@overload
+def freeze_value[T: (bool, int, float, Decimal, str, None)](value: T) -> T: ...
+
+
+@overload
+def freeze_value(value: Mapping[str, object]) -> Mapping[str, Value]: ...
+
+
+@overload
+def freeze_value(value: list[object] | tuple[object, ...]) -> tuple[Value, ...]: ...
+
+
+@overload
+def freeze_value(value: object) -> Value: ...
 
 
 def freeze_value(value: object) -> Value:
@@ -38,7 +56,23 @@ def freeze_mapping(value: Mapping[str, object]) -> Mapping[str, Value]:
     return result
 
 
-def mutable_value(value: Value) -> object:
+@overload
+def mutable_value[T: (bool, int, float, Decimal, str, None)](value: T) -> T: ...
+
+
+@overload
+def mutable_value(value: Mapping[str, Value]) -> dict[str, MutableValue]: ...
+
+
+@overload
+def mutable_value(value: tuple[Value, ...]) -> list[MutableValue]: ...
+
+
+@overload
+def mutable_value(value: Value) -> MutableValue: ...
+
+
+def mutable_value(value: Value) -> MutableValue:
     """Make independent dict/list values without changing numeric precision."""
     if isinstance(value, Mapping):
         return {key: mutable_value(item) for key, item in value.items()}

@@ -1,0 +1,9 @@
+title: Homogeneous Arrays, 2D Arrays and Closed Tuples
+schema: schema.json
+rules: [R-SHAPE-ARRAY, R-SHAPE-TUPLE, R-NULL-ITEMS, R-COERCE-TUPLE, R-META-COMMENT]
+notes: |
+  `coord_3d` has `minItems: 2`, so `item_0` and `item_1` are non-nullable and `item_2` (`["number", "null"]`) is
+  nullable. `[10.5, 20.25, 30.0]` becomes `{"item_0": 10.5, "item_1": 20.25, "item_2": 30.0}`.
+runs:
+  - id: default
+    data: data.json

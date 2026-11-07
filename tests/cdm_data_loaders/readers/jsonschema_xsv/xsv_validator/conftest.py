@@ -1,8 +1,6 @@
 """Fixtures and helpers for the xsv validator module parts."""
 
 import json
-import os
-import shutil
 import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -20,39 +18,24 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     CleanerValidatorArgs,
 )
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
-    ValidatedSchema,
+    ValidatedXsvSchema,
     generate_header,
+)
+from tests.xsv_fixtures import (
+    COLUMNS,
+    VALID_ROWS,
+    Row,
+    WriteFile,
+    build_xsv_content,
+    make_xsv_writer,
 )
 
 FAKE_QSV_CMD: Final[str] = "mock-qsv"
 
 SCHEMAS_DIR: Final[Path] = Path("tests") / "data" / "qsv" / "schemas"
 
-Row = Sequence[str]
-WriteFile = Callable[[str | bytes, str], Path]
-
-# Canonical column order shared by both schema fixtures.
-COLUMNS: Final[list[str]] = ["number", "date", "float", "boolean", "string"]
-
 # valid delimiters from the extension <=> delimiter mapping
 DELIMITERS: Final[list[str]] = list(SEP_TO_EXT)
-
-VALID_ROWS: Final[list[list[str]]] = [
-    ["2", "2023-01-15", "3.14", "true", "key:value1"],
-    ["3", "2023-02-20", "1.11", "false", "key:value2"],
-]
-
-
-@pytest.fixture(scope="session")
-def qsv_cmd() -> str:
-    """Provide the path/name of the qsv binary; override via the QSV_BIN env var if not on PATH.
-
-    If the qsv binary is not available, all tests that rely on this fixture are skipped.
-    """
-    cmd = shutil.which("qsv") or os.environ.get("QSV_BIN")
-    if not cmd or not Path(cmd).is_file():
-        pytest.skip(f"qsv binary not found at {cmd!r}; set QSV_BIN to point at a real binary")
-    return cmd
 
 
 @pytest.fixture(scope="session")
@@ -62,9 +45,9 @@ def first_pass_schema_path() -> Path:
 
 
 @pytest.fixture(scope="session")
-def first_pass_validated_schema(first_pass_schema_path: Path) -> ValidatedSchema:
-    """ValidatedSchema object for the first pass schema."""
-    return ValidatedSchema(jsonschema=json.loads(first_pass_schema_path.read_bytes()))
+def first_pass_validated_schema(first_pass_schema_path: Path) -> ValidatedXsvSchema:
+    """ValidatedXsvSchema object for the first pass schema."""
+    return ValidatedXsvSchema(jsonschema=json.loads(first_pass_schema_path.read_bytes()))
 
 
 @pytest.fixture(scope="session")
@@ -74,9 +57,9 @@ def post_norm_schema_path() -> Path:
 
 
 @pytest.fixture(scope="session")
-def post_norm_validated_schema(post_norm_schema_path: Path) -> ValidatedSchema:
-    """ValidatedSchema object for the post-norm schema."""
-    return ValidatedSchema(jsonschema=json.loads(post_norm_schema_path.read_bytes()))
+def post_norm_validated_schema(post_norm_schema_path: Path) -> ValidatedXsvSchema:
+    """ValidatedXsvSchema object for the post-norm schema."""
+    return ValidatedXsvSchema(jsonschema=json.loads(post_norm_schema_path.read_bytes()))
 
 
 @pytest.fixture(scope="session")
@@ -141,13 +124,13 @@ def source_dir_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def write_source_file(source_dir_path: Path) -> WriteFile:
     """Factory fixture that writes content to a new file in source_dir_path (an xsv "input" location)."""
-    return lambda content, file_name: _write_file(source_dir_path, content, file_name)
+    return make_xsv_writer(source_dir_path)
 
 
 @pytest.fixture
 def write_working_file(tmp_dir_path: Path) -> WriteFile:
     """Factory fixture that writes content directly into tmp_dir_path (simulating an already-prepped file)."""
-    return lambda content, file_name: _write_file(tmp_dir_path, content, file_name)
+    return make_xsv_writer(tmp_dir_path)
 
 
 @pytest.fixture
@@ -228,8 +211,8 @@ def _make_args_factory(
     qsv_cmd: str,
     tmp_dir_path: Path,
     output_dir_path_derivatives: dict[str, Path],
-    first_pass_schema: ValidatedSchema,
-    post_norm_schema: ValidatedSchema,
+    first_pass_schema: ValidatedXsvSchema,
+    post_norm_schema: ValidatedXsvSchema,
 ) -> Callable[..., CleanerValidatorArgs]:
     """Build a `_make_args` factory closed over a fixed `qsv_cmd`."""
 
@@ -239,10 +222,10 @@ def _make_args_factory(
         comment_char: str = "#",
         null_regex: str | None = None,
         missing_header: bool = False,
-        first_pass_schema_override: ValidatedSchema | None = None,
-        post_norm_schema_override: ValidatedSchema | None = None,
+        first_pass_schema_override: ValidatedXsvSchema | None = None,
+        post_norm_schema_override: ValidatedXsvSchema | None = None,
     ) -> CleanerValidatorArgs:
-        # generate_header expects a (first pass) ValidatedSchema object
+        # generate_header expects a (first pass) ValidatedXsvSchema object
         header_file_path = generate_header(
             first_pass_schema_override or first_pass_schema,
             tmp_dir_path,
@@ -271,8 +254,8 @@ def _make_args_factory(
 def make_args(
     tmp_dir_path: Path,
     output_dir_path_derivatives: dict[str, Path],
-    first_pass_validated_schema: ValidatedSchema,
-    post_norm_validated_schema: ValidatedSchema,
+    first_pass_validated_schema: ValidatedXsvSchema,
+    post_norm_validated_schema: ValidatedXsvSchema,
     qsv_cmd: str,
 ) -> Callable[..., CleanerValidatorArgs]:
     """Factory fixture that builds a CleanerValidatorArgs, generating a matching header on the fly.
@@ -289,8 +272,8 @@ def make_args(
 def make_mock_args(
     tmp_dir_path: Path,
     output_dir_path_derivatives: dict[str, Path],
-    first_pass_validated_schema: ValidatedSchema,
-    post_norm_validated_schema: ValidatedSchema,
+    first_pass_validated_schema: ValidatedXsvSchema,
+    post_norm_validated_schema: ValidatedXsvSchema,
 ) -> Callable[..., CleanerValidatorArgs]:
     """Generate a set of CleanerValidatorArgs with an invalid qsv path.
 
@@ -307,26 +290,6 @@ def _touch(path: Path, content: str = "hello") -> Path:
     return path
 
 
-def build_xsv_content(
-    rows: Sequence[Row],
-    *,
-    delimiter: str = "\t",
-    header: Sequence[str] | None = None,
-) -> str:
-    """Build delimited text content from a list of rows, optionally prefixed with a header row.
-
-    :param rows: sequence of rows, each a sequence of field values
-    :param delimiter: field delimiter used to join each row
-    :param header: header columns to prepend; omitted entirely if None
-    :return: the fully assembled file content, newline-terminated
-    """
-    lines: list[str] = []
-    if header is not None:
-        lines.append(delimiter.join(header))
-    lines.extend(delimiter.join(row) for row in rows)
-    return "\n".join(lines) + "\n"
-
-
 def interleave_comments(content: str, comment_char: str) -> str:
     """Insert a comment line before every line in `content`, using the given comment character."""
     lines = content.splitlines()
@@ -340,40 +303,37 @@ def interleave_comments(content: str, comment_char: str) -> str:
     return "\n".join(commented) + "\n"
 
 
-def _write_file(dir_path: Path, content: str | bytes, file_name: str) -> Path:
-    """Write `content` (str or bytes) to `file_name` inside `dir_path`, returning the resulting path."""
-    path = dir_path / file_name
-    if isinstance(content, bytes):
-        path.write_bytes(content)
-    else:
-        path.write_text(content)
-    return path
-
-
-def _write_header_input_file(args: CleanerValidatorArgs, write_working_file: WriteFile) -> str:
-    """Write a `-header`-suffixed working file for `args` and return its name."""
-    input_file_name = f"{args.xsv_file_base_name}{HEADER_SUFFIX}{args.ext}"
-    write_working_file(build_xsv_content(VALID_ROWS, header=COLUMNS), input_file_name)
+def _write_validator_input_file(
+    args: CleanerValidatorArgs,
+    write_working_file: WriteFile,
+    rows: Sequence[Row] = VALID_ROWS,
+    suffix: str = HEADER_SUFFIX,
+    delimiter: str | None = None,
+) -> str:
+    """Write a working file with the given suffix (e.g. HEADER_SUFFIX, CLEANED_SUFFIX, NORM_SUFFIX)."""
+    input_file_name = f"{args.xsv_file_base_name}{suffix}{args.ext}"
+    write_working_file(
+        build_xsv_content(rows, header=COLUMNS, delimiter=delimiter or args.delimiter),
+        input_file_name,
+    )
     return input_file_name
+
+
+def _write_header_input_file(
+    args: CleanerValidatorArgs,
+    write_working_file: WriteFile,
+    rows: Sequence[Row] = VALID_ROWS,
+    delimiter: str | None = None,
+) -> str:
+    """Write a `-header`-suffixed working file for `args` and return its name."""
+    return _write_validator_input_file(args, write_working_file, rows, HEADER_SUFFIX, delimiter=delimiter)
 
 
 def _write_cleaned_input_file(
     args: CleanerValidatorArgs, write_working_file: WriteFile, rows: Sequence[Row], delimiter: str | None = None
 ) -> str:
     """Write a `-cleaned`-suffixed working file for `args` (mimicking run_qsv_input's output) and return its name."""
-    input_file_name = f"{args.xsv_file_base_name}{CLEANED_SUFFIX}{args.ext}"
-    content = build_xsv_content(rows, header=COLUMNS, delimiter=delimiter or args.delimiter)
-    write_working_file(content, input_file_name)
-    return input_file_name
-
-
-def _write_validator_input_file(
-    args: CleanerValidatorArgs, write_working_file: WriteFile, rows: Sequence[Row], suffix: str
-) -> str:
-    """Write a working file with the given suffix (e.g. HEADER_SUFFIX, NORM_SUFFIX) for use as run_qsv_validate input."""
-    input_file_name = f"{args.xsv_file_base_name}{suffix}{args.ext}"
-    write_working_file(build_xsv_content(rows, header=COLUMNS), input_file_name)
-    return input_file_name
+    return _write_validator_input_file(args, write_working_file, rows, CLEANED_SUFFIX, delimiter=delimiter)
 
 
 def snapshot_dir(dir_path: Path) -> set[str]:

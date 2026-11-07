@@ -15,14 +15,17 @@ from cdm_data_loaders.pipelines.uniprot_kb_cdm import (
     UniProtSettings,
     parse_uniprot,
 )
-from tests.cdm_data_loaders.pipelines.conftest import duckdb_pipeline, read_destination_rows
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
+    assert_destination_table_counts,
+    assert_duckdb_table_counts,
     assert_pipeline_report_written,
     assert_run_ok,
+    duckdb_pipeline,
     fetch_all_duckdb,
 )
-from tests.conftest import LOCAL_FS, TEST_DATA_DIR
+from tests.conftest import TEST_DATA_DIR
+from tests.helpers import make_cts_settings
 
 UNIPROT_FIXTURE_DIR = TEST_DATA_DIR / "uniprot" / "uniprot_kb" / "chunk_4"
 UNIPROT_FIXTURE_FILES = ("chunk_00001.xml", "chunk_00002.xml", "chunk_00003.xml", "chunk_00004.xml")
@@ -45,15 +48,13 @@ EXPECTED_ROW_COUNTS = frozendict(
 @pytest.fixture
 def duckdb_uniprot_settings(tmp_path: Path) -> UniProtSettings:
     """Provide UniProtSettings pointing at the real UniProt XML fixtures."""
-    output_dir = tmp_path / "output_dir"
-    output_dir.mkdir()
-
-    return UniProtSettings(
-        input_dir=str(UNIPROT_FIXTURE_DIR),
-        output_dir=str(output_dir),
-        use_destination=LOCAL_FS,
+    return make_cts_settings(
+        UniProtSettings,
+        tmp_path,
+        input_dir=UNIPROT_FIXTURE_DIR,
+        output_dir=tmp_path / "output_dir",
         use_output_dir_for_pipeline_metadata=True,
-    )  # pyright: ignore[reportCallIssue]
+    )
 
 
 def _run_uniprot_duckdb_pipeline(settings: UniProtSettings, tmp_path: Path, name: str) -> tuple[Any, Any]:
@@ -80,10 +81,7 @@ def test_integration_uniprot_pipeline_loads_into_duckdb(
     pipeline, load_info = _run_uniprot_duckdb_pipeline(duckdb_uniprot_settings, tmp_path, "loads")
 
     assert_run_ok(load_info)
-
-    for table_name, expected_count in EXPECTED_ROW_COUNTS.items():
-        ((count,),) = fetch_all_duckdb(pipeline, f"SELECT COUNT(*) FROM {table_name}")  # noqa: S608
-        assert count == expected_count, f"expected {expected_count} rows in '{table_name}', got {count}"
+    assert_duckdb_table_counts(pipeline, EXPECTED_ROW_COUNTS)
 
 
 def test_integration_uniprot_pipeline_entity_and_source_file_content(
@@ -105,7 +103,8 @@ def test_integration_uniprot_pipeline_entity_and_source_file_content(
     source_files = {
         row[0] for row in fetch_all_duckdb(pipeline, "SELECT DISTINCT source_file FROM entity_x_source_file")
     }
-    assert source_files == {str(UNIPROT_FIXTURE_DIR.resolve() / name) for name in UNIPROT_FIXTURE_FILES}
+    # recorded as paths relative to the input directory, independent of where the input lives
+    assert source_files == set(UNIPROT_FIXTURE_FILES)
 
 
 def test_integration_cli_uniprot_pipeline_output_validated(
@@ -116,9 +115,12 @@ def test_integration_cli_uniprot_pipeline_output_validated(
     load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=duckdb_uniprot_settings))
     assert load_info.pipeline.pipeline_name == PIPELINE_NAME
     assert load_info.dataset_name == PIPELINE_NAME
-    assert_pipeline_report_written(Path(duckdb_uniprot_settings.output_dir), load_info, metadata_moved=True)
+    assert_pipeline_report_written(
+        Path(duckdb_uniprot_settings.output_dir),
+        load_info,
+        metadata_moved=True,
+        ingested_files=set(UNIPROT_FIXTURE_FILES),
+    )
 
     dataset_dir = Path(duckdb_uniprot_settings.output_dir) / load_info.dataset_name
-    for table_name, expected_count in EXPECTED_ROW_COUNTS.items():
-        rows = read_destination_rows(dataset_dir, table_name)
-        assert len(rows) == expected_count, f"expected {expected_count} rows in '{table_name}', got {len(rows)}"
+    assert_destination_table_counts(dataset_dir, EXPECTED_ROW_COUNTS)

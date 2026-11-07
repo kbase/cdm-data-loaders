@@ -1,6 +1,5 @@
-"""Tests for the page buffers in cdm_data_loaders.utils.buffer."""
+"""Tests for the page buffer in cdm_data_loaders.utils.buffer."""
 
-import re
 from collections.abc import Iterator
 from typing import Any, Final
 
@@ -9,13 +8,13 @@ import pyarrow as pa
 import pytest
 from pydantic import ValidationError
 
+import cdm_data_loaders.utils.buffer as buffer_module
+from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.utils.buffer import (
     DEFAULT_BUFFER_MAX_ITEMS,
-    ArrowDictBuffer,
-    ArrowListBuffer,
-    BufferCore,
+    REJECTED_PYARROW_SCHEMA,
     DictBuffer,
-    ListBuffer,
 )
 
 PEOPLE = "people"
@@ -23,11 +22,14 @@ EMAILS = "emails"
 PEOPLE_SCHEMA: Final[pa.Schema] = pa.schema([pa.field("name", pa.string())])
 EMAILS_SCHEMA: Final[pa.Schema] = pa.schema([pa.field("n", pa.int64())])
 
-SCHEMA_MAP: Final[dict[str, pa.Schema]] = {
-    PEOPLE: pa.schema([pa.field("name", pa.string())]),
-    EMAILS: pa.schema([pa.field("n", pa.int64())]),
-    "widget": pa.schema([pa.field("n", pa.int64())]),
-}
+SCHEMA_MAP: Final[ArrowSchemaRegistry] = ArrowSchemaRegistry(
+    registry={
+        PEOPLE: PEOPLE_SCHEMA,
+        EMAILS: EMAILS_SCHEMA,
+        "widget": pa.schema([pa.field("n", pa.int64())]),
+    }
+)
+PEOPLE_SCHEMA_MAP: Final[ArrowSchemaRegistry] = ArrowSchemaRegistry(registry={PEOPLE: PEOPLE_SCHEMA})
 
 
 def name_row(n: int) -> dict[str, Any]:
@@ -42,9 +44,10 @@ def number_row(n: int) -> dict[str, Any]:
 
 def tagged(pages: list[Any]) -> list[tuple[str, list[Any]]]:
     """Unwrap yielded pages into (table_name, rows) pairs."""
+    expected_schemas = {REJECTED_TABLE_NAME: REJECTED_PYARROW_SCHEMA, **SCHEMA_MAP.registry}
     for page in pages:
         if isinstance(page.data, pa.Table):
-            assert page.data.schema == SCHEMA_MAP[page.meta.table_name]
+            assert page.data.schema == expected_schemas[page.meta.table_name]
 
     return [
         (page.meta.table_name, page.data.to_pylist() if isinstance(page.data, pa.Table) else page.data)
@@ -57,193 +60,161 @@ def arrow_tagged(pages: list[Any]) -> list[tuple[str, pa.Table]]:
     return [(page.meta.table_name, page.data) for page in pages]
 
 
-# object instantiation and errors
+def _make_buffer(
+    *,
+    max_items: int = DEFAULT_BUFFER_MAX_ITEMS,
+    schema_map: ArrowSchemaRegistry | None = None,
+) -> DictBuffer:
+    """Instantiate DictBuffer with an optional custom schema_map."""
+    if schema_map is None:
+        return DictBuffer(max_items=max_items)
+    return DictBuffer(max_items=max_items, schema_map=schema_map)
 
 
-@pytest.mark.parametrize("cls", [DictBuffer, ListBuffer, ArrowDictBuffer, ArrowListBuffer])
-def test_buffer_classes_pass_default_max_items(
-    cls: type[DictBuffer] | type[ListBuffer] | type[ArrowListBuffer] | type[ArrowDictBuffer],
-) -> None:
-    """max_items defaults to DEFAULT_BUFFER_MAX_ITEMS."""
-    args = {}
-    if cls == ListBuffer:
-        args = {"table_name": "widget"}
-    elif cls in (ArrowDictBuffer, ArrowListBuffer):
-        args = {"table_to_schema_map": {PEOPLE: PEOPLE_SCHEMA}}
+# public API and object instantiation
 
-    buffer = cls(**args)  # pyright: ignore[reportArgumentType]
 
+def test_buffer_module_pass_exposes_single_dict_buffer_api() -> None:
+    """cdm_data_loaders.utils.buffer exposes DictBuffer and removes separate Arrow* buffer classes/factories."""
+    assert hasattr(buffer_module, "DictBuffer")
+    assert not hasattr(buffer_module, "ArrowDictBuffer")
+    assert not hasattr(buffer_module, "ArrowBufferCore")
+    assert not hasattr(buffer_module, "create_dict_buffer")
+
+
+def test_dict_buffer_pass_defaults_include_rejected_schema() -> None:
+    """A basic DictBuffer requires no arguments, defaults max_items, and defaults schema_map to None."""
+    buffer = DictBuffer()
     assert buffer.max_items == DEFAULT_BUFFER_MAX_ITEMS
+    assert buffer.schema_map is None
 
 
-def test_dict_buffer_requires_no_args() -> None:
-    """Test that the DictBuffer class has no required arguments."""
-    buffer = DictBuffer()  # pyright: ignore[reportCallIssue]
-    assert isinstance(buffer, BufferCore)
+def test_dict_buffer_pass_custom_schema_map_adds_arrow_schemas() -> None:
+    """DictBuffer stores an ArrowSchemaRegistry in schema_map."""
+    max_items = 5
+    registry = ArrowSchemaRegistry(registry={PEOPLE: PEOPLE_SCHEMA})
+    buffer = DictBuffer(
+        max_items=max_items,
+        schema_map=registry,
+    )
+    assert buffer.max_items == max_items
+    assert buffer.schema_map == registry
 
 
-@pytest.mark.parametrize("cls", [ListBuffer, ArrowDictBuffer, ArrowListBuffer])
-def test_buffer_classes_required_args(
-    cls: type[ListBuffer] | type[ArrowListBuffer] | type[ArrowDictBuffer],
-) -> None:
-    """Ensure that the required args for each class are flagged in error messages."""
-    with pytest.raises(ValidationError, match="Field required") as e:
-        cls()  # pyright: ignore[reportCallIssue]
-
-    assert "1 validation error for " in str(e)
-
-    if cls == ListBuffer:
-        # table_name
-        pattern = re.compile("table_name\n\\s+Field required")
-        assert re.search(pattern, str(e))
-
-    if cls in (ArrowListBuffer, ArrowDictBuffer):
-        pattern = re.compile("table_to_schema_map\n\\s+Field required")
-        assert re.search(pattern, str(e))
-
-
-@pytest.mark.parametrize("cls", [DictBuffer, ListBuffer, ArrowDictBuffer, ArrowListBuffer])
+@pytest.mark.parametrize(
+    "schema_map",
+    [None, PEOPLE_SCHEMA_MAP],
+    ids=["default", "custom_schema_map"],
+)
 @pytest.mark.parametrize("max_items", [0, -1], ids=["zero", "negative"])
-def test_buffer_classes_fail_non_positive_max_items_raises_error(
+def test_dict_buffer_fail_non_positive_max_items_raises_error(
     max_items: int,
-    cls: type[DictBuffer] | type[ListBuffer] | type[ArrowListBuffer] | type[ArrowDictBuffer],
+    schema_map: ArrowSchemaRegistry | None,
 ) -> None:
-    """A non-positive max_items raises a pydantic ValidationError.
-
-    Note: some classes will also raise other validation errors, but all will throw the max_items error.
-    """
+    """A non-positive max_items raises a pydantic ValidationError."""
     with pytest.raises(ValidationError, match="Input should be greater than 0"):
-        cls(max_items=max_items)  # pyright: ignore[reportCallIssue]
+        _make_buffer(max_items=max_items, schema_map=schema_map)
 
 
-@pytest.mark.parametrize("cls", [DictBuffer, ListBuffer, ArrowDictBuffer, ArrowListBuffer])
-def test_buffer_classes_fail_unrecognised_args_throw_error(
-    cls: type[DictBuffer] | type[ListBuffer] | type[ArrowListBuffer] | type[ArrowDictBuffer],
-) -> None:
-    """Unrecognised arguments throw a big fat error."""
+def test_dict_buffer_fail_unrecognised_args_throw_error() -> None:
+    """Unrecognised arguments raise a pydantic ValidationError."""
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        cls(_buffers="some buffery thing")  # pyright: ignore[reportCallIssue]
+        DictBuffer(_buffers="some buffery thing")  # pyright: ignore[reportCallIssue]
 
 
 @pytest.mark.parametrize(
     ("args", "err_msg"),
     [
-        ({}, "Dictionary should have at least 1 item after validation"),
         ({"": PEOPLE_SCHEMA}, "String should have at least 1 character"),
         ({"foo": "bar"}, "Input should be an instance of Schema"),
         ({"pop": PEOPLE_SCHEMA, "pip": {"this": "that"}}, "Input should be an instance of Schema"),
     ],
 )
-@pytest.mark.parametrize("cls", [ArrowListBuffer, ArrowDictBuffer])
-def test_arrow_buffer_classes_fail_invalid_table_to_schema_map(
-    cls: type[ArrowListBuffer] | type[ArrowDictBuffer], args: Any, err_msg: str
-) -> None:
-    """Arrow buffer classes throw an error on invalid input args."""
+def test_dict_buffer_fail_invalid_schema_map(args: Any, err_msg: str) -> None:  # noqa: ANN401
+    """DictBuffer raises a ValidationError on invalid schema_map."""
     with pytest.raises(ValidationError, match=err_msg):
-        cls(table_to_schema_map=args)  # pyright: ignore[reportCallIssue]
+        DictBuffer(schema_map=ArrowSchemaRegistry(registry=args))
 
 
-@pytest.mark.parametrize("cls", [ArrowListBuffer, ArrowDictBuffer])
-def test_arrow_buffers_accept_empty_schemas(cls: type[ArrowListBuffer] | type[ArrowDictBuffer]) -> None:
-    """Arrow buffers accept an empty schema."""
-    buffer = cls(table_to_schema_map={"pip": pa.schema([])})  # pyright: ignore[reportCallIssue]
-    assert isinstance(buffer, cls)
-
-
-def test_arrow_list_buffer_fail_too_many_mappings() -> None:
-    """Only one table to schema mapping allowed in an ArrowListBuffer class."""
-    with pytest.raises(ValidationError, match="Dictionary should have at most 1 item after validation"):
-        ArrowListBuffer(table_to_schema_map={"pop": PEOPLE_SCHEMA, "pip": PEOPLE_SCHEMA})  # pyright: ignore[reportCallIssue]
+def test_dict_buffer_pass_accepts_empty_schemas() -> None:
+    """DictBuffer accepts an empty pyarrow.Schema in schema_map."""
+    registry = ArrowSchemaRegistry(registry={"pip": pa.schema([])})
+    buffer = DictBuffer(schema_map=registry)
+    assert isinstance(buffer, DictBuffer)
+    assert buffer.schema_map == registry
+    assert buffer.schema_map.registry["pip"] == pa.schema([])
 
 
 # buffer functions
-@pytest.mark.parametrize("cls", [DictBuffer, ArrowDictBuffer])
-def test_dict_buffer_add_item_pass_yields_page_at_max_items(cls: DictBuffer | ArrowDictBuffer) -> None:
-    """A single item addition yields a page when max_items is reached."""
-    args = {}
-    if cls == ArrowDictBuffer:
-        args["table_to_schema_map"] = SCHEMA_MAP
-    buffer = cls(max_items=3, **args)  # pyright: ignore[reportCallIssue]
 
-    # Add 2 items - no yield
+
+@pytest.mark.parametrize("schema_map", [None, SCHEMA_MAP], ids=["unschematized", "with_schema_map"])
+def test_dict_buffer_add_item_pass_yields_page_at_max_items(
+    schema_map: ArrowSchemaRegistry | None,
+) -> None:
+    """A single item addition yields a page when max_items is reached."""
+    buffer = _make_buffer(max_items=3, schema_map=schema_map)
+
     assert list(buffer.add_item(PEOPLE, name_row(1))) == []
     assert list(buffer.add_item(PEOPLE, name_row(2))) == []
 
-    # Add 3rd item - yields page
     pages = list(buffer.add_item(PEOPLE, name_row(3)))
     assert len(pages) == 1
     assert tagged(pages) == [(PEOPLE, [name_row(1), name_row(2), name_row(3)])]
 
-    # Buffer should be empty
     assert list(buffer.flush()) == []
 
 
-@pytest.mark.parametrize("cls", [DictBuffer, ArrowDictBuffer])
-def test_dict_buffer_core_item_pass_routes_to_different_tables(cls: DictBuffer | ArrowDictBuffer) -> None:
+@pytest.mark.parametrize("schema_map", [None, SCHEMA_MAP], ids=["unschematized", "with_schema_map"])
+def test_dict_buffer_core_item_pass_routes_to_different_tables(
+    schema_map: ArrowSchemaRegistry | None,
+) -> None:
     """add_item correctly separates rows into different table buffers."""
-    args = {}
-    if cls == ArrowDictBuffer:
-        args["table_to_schema_map"] = SCHEMA_MAP
-    buffer = cls(max_items=2, **args)  # pyright: ignore[reportCallIssue]
+    buffer = _make_buffer(max_items=2, schema_map=schema_map)
 
     assert list(buffer.add_item(PEOPLE, name_row(1))) == []
     assert list(buffer.add_item(EMAILS, number_row(1))) == []
 
-    # Fill people buffer
     pages_people = list(buffer.add_item(PEOPLE, name_row(2)))
     assert tagged(pages_people) == [(PEOPLE, [name_row(1), name_row(2)])]
 
-    # Fill emails buffer
     pages_emails = list(buffer.add_item(EMAILS, number_row(2)))
     assert tagged(pages_emails) == [(EMAILS, [number_row(1), number_row(2)])]
 
 
-def test_list_buffer_add_item_pass_delegates_to_core() -> None:
-    """ListBuffer.add_item uses the core logic with its fixed table_name."""
-    buffer = ListBuffer(table_name=PEOPLE, max_items=2)
-
-    assert list(buffer.add_item(name_row(1))) == []
-    pages = list(buffer.add_item(name_row(2)))
-    assert tagged(pages) == [(PEOPLE, [name_row(1), name_row(2)])]
-
-
-def test_arrow_dict_buffer_pass_flush_yields_remaining_rows() -> None:
-    """flush() yields the rows still held per table as pa.Tables and empties the buffers."""
-    buffer = ArrowDictBuffer(max_items=10, table_to_schema_map=SCHEMA_MAP)
+def test_dict_buffer_pass_flush_yields_arrow_tables_for_schematized_tables() -> None:
+    """flush() yields pa.Tables for tables with Arrow schemas and empties the buffers."""
+    buffer = _make_buffer(max_items=10, schema_map=SCHEMA_MAP)
     list(buffer.add_items({PEOPLE: [name_row(1)], EMAILS: [number_row(2)]}))
 
     people_page, email_page = arrow_tagged(list(buffer.flush()))
-    assert people_page == (PEOPLE, pa.Table.from_pylist([name_row(1)], schema=SCHEMA_MAP[PEOPLE]))
-    assert email_page == (EMAILS, pa.Table.from_pylist([number_row(2)], schema=SCHEMA_MAP[EMAILS]))
+    assert people_page == (
+        PEOPLE,
+        pa.Table.from_pylist([name_row(1)], schema=SCHEMA_MAP.registry[PEOPLE]),
+    )
+    assert email_page == (
+        EMAILS,
+        pa.Table.from_pylist([number_row(2)], schema=SCHEMA_MAP.registry[EMAILS]),
+    )
     assert list(buffer.flush()) == []
 
 
-def test_arrow_dict_buffer_pass_empty_table_rows_are_ignored() -> None:
-    """Empty row lists contribute nothing and yield no pages."""
-    buffer = ArrowDictBuffer(max_items=1, table_to_schema_map=SCHEMA_MAP)
-
-    assert list(buffer.add_items({PEOPLE: []})) == []
-    assert list(buffer.flush()) == []
-
-
-@pytest.mark.parametrize("cls", [DictBuffer, ArrowDictBuffer])
-def test_dict_buffer_pass_rows_accumulate_until_max_items(cls: type[DictBuffer] | type[ArrowDictBuffer]) -> None:
+@pytest.mark.parametrize("schema_map", [None, SCHEMA_MAP], ids=["unschematized", "with_schema_map"])
+def test_dict_buffer_pass_rows_accumulate_until_max_items(
+    schema_map: ArrowSchemaRegistry | None,
+) -> None:
     """No pages are yielded while every table's buffer is below max_items."""
-    args: dict[str, Any] = {"max_items": 5}
-    if cls == ArrowDictBuffer:
-        args["table_to_schema_map"] = SCHEMA_MAP
-    buffer = cls(**args)  # pyright: ignore[reportCallIssue]
+    buffer = _make_buffer(max_items=5, schema_map=schema_map)
 
     assert list(buffer.add_items({PEOPLE: [name_row(1), name_row(2)], EMAILS: [number_row(3)]})) == []
 
 
-@pytest.mark.parametrize("cls", [DictBuffer, ArrowDictBuffer])
-def test_dict_buffer_pass_full_table_yields_page_and_empties(cls: type[DictBuffer] | type[ArrowDictBuffer]) -> None:
+@pytest.mark.parametrize("schema_map", [None, SCHEMA_MAP], ids=["unschematized", "with_schema_map"])
+def test_dict_buffer_pass_full_table_yields_page_and_empties(
+    schema_map: ArrowSchemaRegistry | None,
+) -> None:
     """A table reaching max_items yields its rows as one page and the buffer resets."""
-    args: dict[str, Any] = {}
-    if cls == ArrowDictBuffer:
-        args["table_to_schema_map"] = SCHEMA_MAP
-    buffer = cls(max_items=2, **args)  # pyright: ignore[reportCallIssue]
+    buffer = _make_buffer(max_items=2, schema_map=schema_map)
 
     first = tagged(list(buffer.add_items({PEOPLE: [name_row(1), name_row(2)]})))
     assert first == [(PEOPLE, [name_row(1), name_row(2)])]
@@ -255,55 +226,68 @@ def test_dict_buffer_pass_full_table_yields_page_and_empties(cls: type[DictBuffe
     assert list(buffer.add_items({PEOPLE: [name_row(5)]})) == []
 
 
-@pytest.mark.parametrize("cls", [DictBuffer, ArrowDictBuffer])
-def test_dict_buffer_pass_flush_yields_remaining_rows(cls: type[DictBuffer] | type[ArrowDictBuffer]) -> None:
+@pytest.mark.parametrize("schema_map", [None, SCHEMA_MAP], ids=["unschematized", "with_schema_map"])
+def test_dict_buffer_pass_flush_yields_remaining_rows(
+    schema_map: ArrowSchemaRegistry | None,
+) -> None:
     """flush() yields the rows still held per table and empties the buffers."""
-    args = {}
-    if cls == ArrowDictBuffer:
-        args["table_to_schema_map"] = SCHEMA_MAP
-    buffer = cls(max_items=10, **args)  # type: ignore[reportCallIssue]
+    buffer = _make_buffer(max_items=10, schema_map=schema_map)
     list(buffer.add_items({PEOPLE: [name_row(1)], EMAILS: [number_row(2)]}))
 
     assert tagged(list(buffer.flush())) == [(PEOPLE, [name_row(1)]), (EMAILS, [number_row(2)])]
     assert list(buffer.flush()) == []
 
 
-@pytest.mark.parametrize("cls", [DictBuffer, ArrowDictBuffer])
-def test_dict_buffer_pass_empty_table_rows_are_ignored(cls: type[DictBuffer] | type[ArrowDictBuffer]) -> None:
+@pytest.mark.parametrize("schema_map", [None, SCHEMA_MAP], ids=["unschematized", "with_schema_map"])
+def test_dict_buffer_pass_empty_table_rows_are_ignored(
+    schema_map: ArrowSchemaRegistry | None,
+) -> None:
     """Empty row lists contribute nothing and yield no pages."""
-    args = {}
-    if cls == ArrowDictBuffer:
-        args["table_to_schema_map"] = SCHEMA_MAP
-    buffer = cls(max_items=1, **args)  # type: ignore[reportCallIssue]
+    buffer = _make_buffer(max_items=1, schema_map=schema_map)
 
     assert list(buffer.add_items({PEOPLE: []})) == []
     assert list(buffer.flush()) == []
 
 
-def test_dict_buffer_pass_unknown_table_is_created_on_demand() -> None:
-    """A table name not seen at construction is buffered like any other."""
-    buffer = DictBuffer()  # type: ignore[reportCallIssue]
+def test_dict_buffer_pass_unknown_table_is_emitted_as_is() -> None:
+    """A table without an Arrow schema (whether or not other tables have schemas) is emitted as a list of dicts."""
+    buffer = _make_buffer(max_items=10, schema_map=PEOPLE_SCHEMA_MAP)
 
-    assert list(buffer.add_items({"surprise": [{"wtf?": "boo!"}]})) == []
-    assert tagged(list(buffer.flush())) == [("surprise", [{"wtf?": "boo!"}])]
+    assert list(buffer.add_items({PEOPLE: [name_row(1)], "surprise": [{"wtf?": "boo!"}]})) == []
+    pages = {page.meta.table_name: page.data for page in buffer.flush()}
 
-
-def test_arrow_dict_buffer_fail_unknown_table_throws_error() -> None:
-    """A table name not seen at construction triggers an error in an ArrowDictBuffer."""
-    buffer = ArrowDictBuffer(table_to_schema_map=SCHEMA_MAP)  # pyright: ignore[reportCallIssue]
-
-    with pytest.raises(ValueError, match="Cannot add data for surprise table: no schema supplied"):
-        # n.b. error does not show up until you try to use the generator
-        list(buffer.add_items({"surprise": [{"wtf?": "boo!"}]}))
+    assert isinstance(pages[PEOPLE], pa.Table)
+    assert pages[PEOPLE] == pa.Table.from_pylist([name_row(1)], schema=PEOPLE_SCHEMA)
+    assert pages["surprise"] == [{"wtf?": "boo!"}]
 
 
-@pytest.mark.parametrize("cls", [DictBuffer, ArrowDictBuffer])
-def test_dict_buffer_pass_multiple_tables_page_independently(cls: type[DictBuffer] | type[ArrowDictBuffer]) -> None:
+def test_dict_buffer_pass_rejected_table_always_uses_pyarrow_schema() -> None:
+    """Even a basic DictBuffer without custom schemas emits _rejected pages as pa.Table with REJECTED_PYARROW_SCHEMA."""
+    buffer = DictBuffer(max_items=10)
+    rejected_row = {
+        "table_name": PEOPLE,
+        "source_file": "people.csv",
+        "line_no": None,
+        "raw_record": None,
+        "error_detail": "failed validation",
+    }
+
+    assert list(buffer.add_item(PEOPLE, name_row(1))) == []
+    assert list(buffer.add_item(REJECTED_TABLE_NAME, rejected_row)) == []
+    pages = {page.meta.table_name: page.data for page in buffer.flush()}
+
+    assert pages[PEOPLE] == [name_row(1)]
+    assert isinstance(pages[REJECTED_TABLE_NAME], pa.Table)
+    assert pages[REJECTED_TABLE_NAME].schema == REJECTED_PYARROW_SCHEMA
+    assert pages[REJECTED_TABLE_NAME].to_pylist() == [rejected_row]
+
+
+@pytest.mark.parametrize("schema_map", [None, SCHEMA_MAP], ids=["unschematized", "with_schema_map"])
+def test_dict_buffer_pass_multiple_tables_page_independently(
+    schema_map: ArrowSchemaRegistry | None,
+) -> None:
     """Each table pages on its own count; a full table does not flush other tables."""
-    args = {}
-    if cls == ArrowDictBuffer:
-        args["table_to_schema_map"] = SCHEMA_MAP
-    buffer = cls(max_items=2, **args)  # type: ignore[reportCallIssue]
+    buffer = _make_buffer(max_items=2, schema_map=schema_map)
     first = tagged(list(buffer.add_items({PEOPLE: [name_row(1), name_row(2)], EMAILS: [number_row(3)]})))
     assert first == [(PEOPLE, [name_row(1), name_row(2)])]
 
@@ -314,44 +298,20 @@ def test_dict_buffer_pass_multiple_tables_page_independently(cls: type[DictBuffe
     assert list(buffer.flush()) == []
 
 
-@pytest.mark.parametrize("cls", [ListBuffer, ArrowListBuffer])
-def test_list_buffer_pass_single_item_adds_and_pages(cls: type[ListBuffer] | type[ArrowListBuffer]) -> None:
-    """add_item routes to the buffer's table and pages when max_items is reached."""
-    args = {"table_name": "widget"} if cls == ListBuffer else {"table_to_schema_map": {"widget": SCHEMA_MAP["widget"]}}
-    buffer = cls(**args, max_items=3)  # type: ignore[reportCallIssue]
-    assert list(buffer.add_item(number_row(1))) == []
-    assert list(buffer.add_item(number_row(2))) == []
-
-    pages = tagged(list(buffer.add_item(number_row(3))))
-
-    assert pages == [("widget", [number_row(1), number_row(2), number_row(3)])]
-    assert list(buffer.add_item(number_row(4))) == []
-
-
-@pytest.mark.parametrize("cls", [ListBuffer, ArrowListBuffer])
-def test_list_buffer_pass_flush_yields_remaining_rows(cls: type[ListBuffer] | type[ArrowListBuffer]) -> None:
-    """flush() yields rows still held for the buffer's table."""
-    args = {"table_name": "widget"} if cls == ListBuffer else {"table_to_schema_map": {"widget": SCHEMA_MAP["widget"]}}
-    buffer = cls(**args, max_items=10)  # type: ignore[reportCallIssue]
-    list(buffer.add_item(number_row(1)))
-
-    assert tagged(list(buffer.flush())) == [("widget", [number_row(1)])]
-    assert list(buffer.flush()) == []
-
-
-@pytest.mark.parametrize("cls", [ListBuffer, ArrowListBuffer])
-def test_arrow_list_buffer_pass_buffer_scope_is_call_local(cls: type[ListBuffer] | type[ArrowListBuffer]) -> None:
-    """A list buffer created inside one transformer call yields every row added to it."""
+@pytest.mark.parametrize("schema_map", [None, PEOPLE_SCHEMA_MAP], ids=["unschematized", "with_schema_map"])
+def test_dict_buffer_pass_buffer_scope_is_call_local(
+    schema_map: ArrowSchemaRegistry | None,
+) -> None:
+    """A dict buffer created inside one transformer call yields every row added to it."""
     max_items = 3
-    args = {"table_name": PEOPLE} if cls == ListBuffer else {"table_to_schema_map": {PEOPLE: PEOPLE_SCHEMA}}
-    buffer = cls(**args, max_items=max_items)  # type: ignore[reportCallIssue]
+    buffer = _make_buffer(max_items=max_items, schema_map=schema_map)
     emitted: list[Any] = []
     for n in range(10):
-        emitted.extend(buffer.add_item(name_row(n)))
+        emitted.extend(buffer.add_item(PEOPLE, name_row(n)))
     emitted.extend(buffer.flush())
 
     values = [page.data for page in emitted]
-    if cls == ArrowListBuffer:
+    if schema_map is not None:
         assert [value for table in values for value in table.column("name").to_pylist()] == [str(n) for n in range(10)]
         assert [table.num_rows for table in values] == [3, 3, 3, 1]
     else:
@@ -402,9 +362,9 @@ def _run_page_per_call_transformer(total: int, max_items: int, chunk_size: int) 
 
     @dlt.transformer(parallelized=True)
     def safe(page: list[int]) -> Iterator[dict[str, int]]:
-        buffer = ListBuffer(table_name="safe_table", max_items=max_items)  # pyright: ignore[reportCallIssue]
+        buffer = DictBuffer(max_items=max_items)
         for item in page:
-            yield from buffer.add_item({"v": item})  # pyright: ignore[reportReturnType]
+            yield from buffer.add_item("safe_table", {"v": item})  # pyright: ignore[reportReturnType]
         yield from buffer.flush()  # pyright: ignore[reportReturnType]
 
     @dlt.resource
@@ -428,7 +388,7 @@ def test_naive_shared_buffer_fail_loses_rows_under_parallelized_transformer() ->
     assert sorted(values) != list(range(total))
 
 
-def test_list_buffer_pass_loses_nothing_under_parallelized_transformer() -> None:
+def test_dict_buffer_pass_loses_nothing_under_parallelized_transformer() -> None:
     """The shipped pattern buffers inside one transformer call, so no rows are lost.
 
     The buffer is created per call and dies with the call: no state is shared across
@@ -438,22 +398,3 @@ def test_list_buffer_pass_loses_nothing_under_parallelized_transformer() -> None
     values = _run_page_per_call_transformer(total=total, max_items=5, chunk_size=7)
 
     assert sorted(values) == list(range(total))
-
-
-def test_list_buffer_pass_buffer_scope_is_call_local() -> None:
-    """A ListBuffer created inside one transformer call yields every row added to it.
-
-    Demonstrates the invariant that makes the pattern safe under parallelism: the
-    buffer never escapes the call that created it, so concurrent calls cannot
-    interleave reads and writes.
-    """
-    max_items = 3
-    buffer = ListBuffer(table_name="widget", max_items=max_items)  # pyright: ignore[reportCallIssue]
-    emitted: list[Any] = []
-    for n in range(10):
-        emitted.extend(buffer.add_item(name_row(n)))
-    emitted.extend(buffer.flush())
-
-    values = [page.data for page in emitted]
-    assert [v for page in values for v in page] == [name_row(n) for n in range(10)]
-    assert [len(page) for page in values] == [3, 3, 3, 1]

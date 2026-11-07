@@ -15,7 +15,9 @@ def convert_type(
     """Read and emit a single Iceberg type.
 
     :param field_type: Iceberg type to convert.
+    :type field_type: IcebergType
     :param extension_registry: Registry for Iceberg extensions.
+    :type extension_registry: ExtensionRegistry
     :returns: LinkML slot definition.
     """
     return LinkMLEmitter().emit_node(IcebergReader(extension_registry, mapping_target="LinkML").read_node(field_type))
@@ -25,7 +27,9 @@ def convert_field(field: NestedField, *, extension_registry: ExtensionRegistry =
     """Read and emit a field with its cardinality and description.
 
     :param field: Iceberg field to convert.
+    :type field: NestedField
     :param extension_registry: Registry for Iceberg extensions.
+    :type extension_registry: ExtensionRegistry
     :returns: Named LinkML slot definition.
     """
     return LinkMLEmitter().emit_field(IcebergReader(extension_registry, mapping_target="LinkML").read_field(field))
@@ -37,7 +41,9 @@ def convert_struct(
     """Read and emit a struct without a document envelope.
 
     :param fields: Iceberg struct fields to convert.
+    :type fields: tuple[NestedField, ...]
     :param extension_registry: Registry for Iceberg extensions.
+    :type extension_registry: ExtensionRegistry
     :returns: LinkML slot referencing the struct class.
     """
     return convert_type(StructType(*fields), extension_registry=extension_registry)
@@ -53,9 +59,13 @@ def table_to_linkml(
     """Read loaded table metadata and emit a LinkML schema model without I/O.
 
     :param table: Loaded Iceberg table.
+    :type table: Table
     :param identifier: Namespace and table name.
+    :type identifier: tuple[str, ...]
     :param extension_registry: Registry for Iceberg extensions.
+    :type extension_registry: ExtensionRegistry
     :param schema: Optional schema to append table classes to, preserving existing definitions.
+    :type schema: SchemaDefinition | None
     :returns: Schema model suitable for LinkML's YAML dumper.
     """
     document = IcebergReader(extension_registry, mapping_target="LinkML").read_table(table, identifier)

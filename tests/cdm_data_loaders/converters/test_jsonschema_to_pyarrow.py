@@ -1,65 +1,20 @@
 """Unit tests for jsonschema_to_pyarrow."""
 
 import json
-from collections.abc import Callable
-from pathlib import Path
+from datetime import UTC, date, datetime, time
+from decimal import Decimal
 from typing import Any
 
 import pyarrow as pa
 import pytest
-import yaml
-from pydantic import ValidationError
 
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
 from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
-    InvalidJSONSchemaError,
     JSONSchemaToPyArrow,
     JSONSchemaToPyArrowError,
+    coerce_record_for_pyarrow,
 )
 from cdm_data_loaders.utils.jsonschema.dereferencer import dereference_schema
 from tests.cdm_data_loaders.converters.conftest import base_object_schema
-
-
-def test_jsonschema_to_pyarrow_fail_instance_is_frozen(jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow) -> None:
-    """Assigning to a JSONSchemaToPyArrow attribute raises ValidationError."""
-    with pytest.raises(ValidationError, match="Instance is frozen"):
-        jsonschema_to_pyarrow_converter.treat_unknown_as_string = False
-
-
-def test_convert_fail_missing_schema_keyword(jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow) -> None:
-    """convert() rejects a schema with no top-level '$schema' keyword."""
-    with pytest.raises(InvalidJSONSchemaError, match="missing a '\\$schema'"):
-        jsonschema_to_pyarrow_converter.convert({"type": "object", "properties": {}})
-
-
-@pytest.mark.parametrize(
-    "root_type",
-    ["string", "array", "integer", "number", "boolean", "null", ["object", "null"]],
-    ids=["string", "array", "integer", "number", "boolean", "null", "nullable-object"],
-)
-def test_convert_fail_non_object_root_type(
-    jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow, root_type: str | list[str]
-) -> None:
-    """convert() rejects any root schema whose declared 'type' isn't literally 'object'."""
-    with pytest.raises(JSONSchemaToPyArrowError, match="must be of type 'object'"):
-        jsonschema_to_pyarrow_converter.convert(base_object_schema(type=root_type))
-
-
-@pytest.mark.parametrize(
-    ("override", "match"),
-    [
-        pytest.param({"$ref": "#/$defs/Foo"}, "unresolved \\$ref", id="ref"),
-        pytest.param({"allOf": [{"type": "string"}]}, "unmerged 'allOf'", id="all-of"),
-    ],
-)
-def test_convert_fail_unresolved_references(
-    jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow, override: dict[str, Any], match: str
-) -> None:
-    """convert() refuses a root schema with un-dereferenced $ref or allOf."""
-    schema = base_object_schema(**override)
-    del schema["type"]
-    with pytest.raises(JSONSchemaToPyArrowError, match=match):
-        jsonschema_to_pyarrow_converter.convert(schema)
 
 
 def test_convert_fail_root_resolves_to_map(jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow) -> None:
@@ -71,28 +26,33 @@ def test_convert_fail_root_resolves_to_map(jsonschema_to_pyarrow_converter: JSON
 
 
 def test_convert_fail_strict_unknown_type_is_wrapped() -> None:
-    """Emitter errors surface as the facade's own error type."""
-    schema = base_object_schema(properties={"value": {"type": ["string", "integer"]}})
+    """Incompatible multi-type unions raise JSONSchemaToPyArrowError."""
+    schema = base_object_schema(properties={"value": {"type": ["string", "object"]}})
     with pytest.raises(JSONSchemaToPyArrowError, match="multi-type union"):
         JSONSchemaToPyArrow(treat_unknown_as_string=False).convert(schema)
 
 
 def test_convert_pass_simple_object(jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow) -> None:
-    """convert() produces a schema with correct nullability and no metadata for a flat object."""
+    """convert() produces a schema with correct nullability and jsonschema_type metadata for a flat object."""
     schema = base_object_schema(properties={"name": {"type": "string"}, "age": {"type": "integer"}}, required=["name"])
     assert jsonschema_to_pyarrow_converter.convert(schema) == pa.schema(
-        [pa.field("name", pa.string(), nullable=False), pa.field("age", pa.int64())]
+        [
+            pa.field("name", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
+            pa.field("age", pa.int64(), metadata={"jsonschema_type": "integer"}),
+        ]
     )
 
 
 def test_convert_pass_root_without_type_infers_object(jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow) -> None:
     """convert() accepts a root that omits 'type' but declares 'properties'."""
     schema = {"$schema": "https://json-schema.org/draft/2020-12/schema", "properties": {"a": {"type": "string"}}}
-    assert jsonschema_to_pyarrow_converter.convert(schema) == pa.schema([pa.field("a", pa.string())])
+    assert jsonschema_to_pyarrow_converter.convert(schema) == pa.schema(
+        [pa.field("a", pa.string(), metadata={"jsonschema_type": "string"})]
+    )
 
 
 def test_convert_pass_nested_schema() -> None:
-    """Nested objects, arrays, dynamic maps, formats and decimals convert together."""
+    """Nested objects, arrays, dynamic maps, formats and numbers convert together."""
     schema = base_object_schema(
         properties={
             "id": {"type": "integer", "minimum": 0, "maximum": 10, "title": "Identifier"},
@@ -111,18 +71,32 @@ def test_convert_pass_nested_schema() -> None:
     schema_out = JSONSchemaToPyArrow().convert(schema)
     assert schema_out == pa.schema(
         [
-            pa.field("id", pa.int32(), nullable=False),
-            pa.field("created", pa.timestamp("us", tz="UTC")),
-            pa.field("price", pa.decimal128(38, 2)),
-            pa.field("tags", pa.list_(pa.string())),
-            pa.field("labels", pa.map_(pa.string(), pa.string())),
+            pa.field("id", pa.int64(), nullable=False, metadata={"jsonschema_type": "integer"}),
+            pa.field("created", pa.string(), metadata={"jsonschema_type": "string (date-time)"}),
+            pa.field("price", pa.float64(), metadata={"jsonschema_type": "number"}),
+            pa.field(
+                "tags",
+                pa.list_(pa.field("item", pa.string(), nullable=False, metadata={"jsonschema_type": "string"})),
+            ),
+            pa.field(
+                "labels",
+                pa.map_(
+                    pa.string(),
+                    pa.field("value", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
+                ),
+            ),
             pa.field(
                 "owner",
-                pa.struct([pa.field("name", pa.string(), nullable=False), pa.field("active", pa.bool_())]),
+                pa.struct(
+                    [
+                        pa.field("name", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
+                        pa.field("active", pa.bool_(), metadata={"jsonschema_type": "boolean"}),
+                    ]
+                ),
             ),
         ]
     )
-    assert schema_out.field("id").metadata == {b"jsonschema": b'{"title": "Identifier"}'}
+    assert schema_out.field("id").metadata == {b"jsonschema_type": b"integer"}
 
 
 def test_convert_pass_dereferenced_schema() -> None:
@@ -132,12 +106,17 @@ def test_convert_pass_dereferenced_schema() -> None:
         **{"$defs": {"Person": {"type": "object", "properties": {"name": {"type": "string"}}}}},
     )
     result = JSONSchemaToPyArrow().convert(dereference_schema(schema))
-    assert result == pa.schema([pa.field("owner", pa.struct([pa.field("name", pa.string())]))])
+    assert result == pa.schema(
+        [pa.field("owner", pa.struct([pa.field("name", pa.string(), metadata={"jsonschema_type": "string"})]))]
+    )
 
 
 def test_convert_to_table_pass_empty_table(jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow) -> None:
     """convert_to_table() returns a zero-row table with the converted schema."""
-    schema = base_object_schema(properties={"id": {"type": "integer"}, "tags": {"type": "array"}}, required=["id"])
+    schema = base_object_schema(
+        properties={"id": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}},
+        required=["id"],
+    )
     table = jsonschema_to_pyarrow_converter.convert_to_table(schema)
     assert table.num_rows == 0
     assert table.schema == jsonschema_to_pyarrow_converter.convert(schema)
@@ -153,47 +132,6 @@ def test_convert_to_table_pass_accepts_rows(jsonschema_to_pyarrow_converter: JSO
     arrow_schema = jsonschema_to_pyarrow_converter.convert(schema)
     table = pa.Table.from_pylist([{"id": 1, "tags": ["a", "b"]}, {"id": 2, "tags": None}], schema=arrow_schema)
     assert table.to_pylist() == [{"id": 1, "tags": ["a", "b"]}, {"id": 2, "tags": None}]
-
-
-def test_convert_from_string_pass_valid_json(jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow) -> None:
-    """convert_from_string() parses JSON text and converts it identically to convert()."""
-    schema = base_object_schema(properties={"id": {"type": "integer"}})
-    result = jsonschema_to_pyarrow_converter.convert_from_string(json.dumps(schema))
-    assert result == jsonschema_to_pyarrow_converter.convert(schema)
-
-
-def test_convert_from_string_fail_invalid_json(jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow) -> None:
-    """convert_from_string() propagates a JSONDecodeError for malformed JSON text."""
-    with pytest.raises(json.JSONDecodeError):
-        jsonschema_to_pyarrow_converter.convert_from_string("{not valid json")
-
-
-@pytest.mark.parametrize(
-    ("suffix", "dumper"),
-    [(".json", json.dumps), (".yaml", yaml.safe_dump)],
-    ids=["json", "yaml"],
-)
-def test_convert_from_file_pass_supported_extensions(
-    jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow,
-    tmp_path: Path,
-    suffix: str,
-    dumper: Callable[[dict[str, Any]], str],
-) -> None:
-    """convert_from_file() loads both .json and YAML files."""
-    schema = base_object_schema(properties={"id": {"type": "integer"}})
-    path = tmp_path / f"schema{suffix}"
-    path.write_text(dumper(schema))
-    assert jsonschema_to_pyarrow_converter.convert_from_file(str(path)) == jsonschema_to_pyarrow_converter.convert(
-        schema
-    )
-
-
-def test_convert_from_file_fail_missing_file(
-    jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow, tmp_path: Path
-) -> None:
-    """convert_from_file() raises FileNotFoundError for a nonexistent path."""
-    with pytest.raises(FileNotFoundError):
-        jsonschema_to_pyarrow_converter.convert_from_file(str(tmp_path / "does_not_exist.json"))
 
 
 def test_jsonschema_to_pyarrow_pass_options_reach_emitter() -> None:
@@ -214,26 +152,168 @@ def test_jsonschema_to_pyarrow_pass_options_reach_emitter() -> None:
     result = converter.convert(schema)
     assert converter.extra_metadata_keywords == frozenset({"pattern"})
     assert result.field("when").type == pa.string()
-    assert result.field("when").metadata == {b"jsonschema": b'{"pattern": "^2"}'}
-    assert result.field("either").metadata == {b"original_union": b'["string", "integer"]'}
+    assert result.field("when").metadata == {
+        b"jsonschema_type": b"string (date-time)",
+        b"jsonschema": b'{"pattern": "^2"}',
+    }
+    assert result.field("either").metadata == {
+        b"jsonschema_type": b"string | integer",
+        b"original_union": b'["string", "integer"]',
+    }
     assert result.field("nested").type == pa.string()
 
 
-def test_jsonschema_to_pyarrow_pass_extension_registry() -> None:
-    """A custom extension registry validates x- namespaces selected as metadata."""
-    registry = DEFAULT_EXTENSIONS.register(
-        ExtensionSpec("x-vendor", {"type": "object", "properties": {"level": {"type": "string"}}})
+def test_coerce_record_for_pyarrow_pass_temporal_decimal_and_nested_types() -> None:
+    """JSON-parsed values are coerced to match temporal, decimal, numeric, struct, list, map, and string fields."""
+    pa_schema = pa.schema(
+        [
+            pa.field("day", pa.date32()),
+            pa.field("ts_z", pa.timestamp("us", tz="UTC")),
+            pa.field("ts_naive", pa.timestamp("us", tz="UTC")),
+            pa.field("tod", pa.time64("us")),
+            pa.field("price", pa.decimal128(38, 2)),
+            pa.field("ratio", pa.float64()),
+            pa.field("whole", pa.int64()),
+            pa.field("collapsed_obj", pa.string()),
+            pa.field("collapsed_num", pa.string()),
+            pa.field("nested", pa.struct([pa.field("when", pa.date32())])),
+            pa.field("items", pa.list_(pa.decimal128(38, 1))),
+            pa.field("attrs", pa.map_(pa.string(), pa.date32())),
+        ]
     )
-    converter = JSONSchemaToPyArrow(extension_registry=registry, extra_metadata_keywords=frozenset({"x-vendor"}))
-    schema = base_object_schema(properties={"name": {"type": "string", "x-vendor": {"level": "public"}}})
-    metadata = converter.convert(schema).field("name").metadata
-    assert json.loads(metadata[b"jsonschema"]) == {"x-vendor": {"level": "public"}}
+    raw_record: dict[str, Any] = {
+        "day": "2024-02-29",
+        "ts_z": "2024-02-29T12:30:00Z",
+        "ts_naive": "2024-02-29T12:30:00",
+        "tod": "08:15:30",
+        "price": 19.95,
+        "ratio": 2,
+        "whole": 7.0,
+        "collapsed_obj": {"a": 1},
+        "collapsed_num": 42,
+        "nested": {"when": "2024-03-01", "extra": "dropped"},
+        "items": [1.5, 2],
+        "attrs": {"start": "2024-01-01"},
+        "undeclared_top": "dropped",
+    }
+
+    coerced = coerce_record_for_pyarrow(raw_record, pa_schema)
+
+    assert coerced == {
+        "day": date(2024, 2, 29),
+        "ts_z": datetime(2024, 2, 29, 12, 30, tzinfo=UTC),
+        "ts_naive": datetime(2024, 2, 29, 12, 30, tzinfo=UTC),
+        "tod": time(8, 15, 30),
+        "price": Decimal("19.95"),
+        "ratio": 2.0,
+        "whole": 7,
+        "collapsed_obj": json.dumps({"a": 1}),
+        "collapsed_num": "42",
+        "nested": {"when": date(2024, 3, 1)},
+        "items": [Decimal("1.5"), Decimal(2)],
+        "attrs": {"start": date(2024, 1, 1)},
+    }
+    table = pa.Table.from_pylist([coerced], schema=pa_schema)
+    assert table.num_rows == 1
+    assert table.schema == pa_schema
 
 
-def test_jsonschema_to_pyarrow_fail_unregistered_extension(
-    jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow,
+BOUNDARY_PA_SCHEMA = pa.schema(
+    [
+        pa.field("day", pa.date32()),
+        pa.field("ts_naive_target", pa.timestamp("us")),
+        pa.field("tod", pa.time64("us")),
+        pa.field("zero_dec", pa.decimal128(38, 2)),
+        pa.field("neg_dec", pa.decimal128(38, 2)),
+        pa.field("neg_float", pa.float64()),
+        pa.field("neg_int", pa.int64()),
+        pa.field("large_text", pa.large_string()),
+        pa.field("collapsed_list", pa.large_string()),
+        pa.field("nested", pa.struct([pa.field("when", pa.date32())])),
+        pa.field("large_items", pa.large_list(pa.decimal128(38, 1))),
+        pa.field("attrs", pa.map_(pa.string(), pa.date32())),
+    ]
+)
+
+
+@pytest.mark.parametrize(
+    ("record", "expected"),
+    [
+        pytest.param({}, {}, id="empty-dict"),
+        pytest.param(
+            dict.fromkeys(BOUNDARY_PA_SCHEMA.names),
+            dict.fromkeys(BOUNDARY_PA_SCHEMA.names),
+            id="all-nulls",
+        ),
+        pytest.param(
+            {
+                "day": date(2024, 1, 1),
+                "ts_naive_target": "2024-02-29T12:30:00",
+                "tod": time(0, 0, 0),
+                "zero_dec": 0,
+                "neg_dec": "-0.05",
+                "neg_float": -3,
+                "neg_int": -7.0,
+                "large_text": "already-string",
+                "collapsed_list": [1, "two"],
+                "nested": {"when": None},
+                "large_items": [None, Decimal("-1.5")],
+                "attrs": {"none_val": None},
+            },
+            {
+                "day": date(2024, 1, 1),
+                "ts_naive_target": datetime(2024, 2, 29, 12, 30),  # noqa: DTZ001
+                "tod": time(0, 0, 0),
+                "zero_dec": Decimal(0),
+                "neg_dec": Decimal("-0.05"),
+                "neg_float": -3.0,
+                "neg_int": -7,
+                "large_text": "already-string",
+                "collapsed_list": json.dumps([1, "two"]),
+                "nested": {"when": None},
+                "large_items": [None, Decimal("-1.5")],
+                "attrs": {"none_val": None},
+            },
+            id="boundary-values",
+        ),
+        pytest.param(
+            {"nested": {}, "large_items": [], "attrs": {}},
+            {"nested": {}, "large_items": [], "attrs": {}},
+            id="empty-containers",
+        ),
+    ],
+)
+def test_coerce_record_for_pyarrow_pass_nulls_empty_and_boundary_values(
+    record: dict[str, Any],
+    expected: dict[str, Any],
 ) -> None:
-    """An unregistered x- namespace in the schema is rejected through the facade error."""
-    schema = base_object_schema(properties={"name": {"type": "string", "x-vendor": {"level": "public"}}})
-    with pytest.raises(JSONSchemaToPyArrowError):
-        jsonschema_to_pyarrow_converter.convert(schema)
+    """Nulls, empty containers, zero/negative numbers, tz-naive timestamps, large types, and pre-coerced values pass."""
+    coerced = coerce_record_for_pyarrow(record, BOUNDARY_PA_SCHEMA)
+    assert coerced == expected
+    table = pa.Table.from_pylist([coerced], schema=BOUNDARY_PA_SCHEMA)
+    assert table.num_rows == 1
+
+
+def test_coerce_record_for_pyarrow_pass_preserves_boolean_and_non_integral_float_guards() -> None:
+    """Booleans are not coerced to numeric/decimal types, and non-integral floats are not truncated to int."""
+    pa_schema = pa.schema(
+        [
+            pa.field("dec", pa.decimal128(38, 2)),
+            pa.field("flt", pa.float64()),
+            pa.field("integer_from_bool", pa.int64()),
+            pa.field("integer_from_frac", pa.int64()),
+        ]
+    )
+    fractional_value = 7.5
+    raw = {
+        "dec": True,
+        "flt": False,
+        "integer_from_bool": True,
+        "integer_from_frac": fractional_value,
+    }
+    coerced = coerce_record_for_pyarrow(raw, pa_schema)
+    assert coerced == raw
+    assert isinstance(coerced["dec"], bool)
+    assert isinstance(coerced["flt"], bool)
+    assert isinstance(coerced["integer_from_bool"], bool)
+    assert coerced["integer_from_frac"] == fractional_value

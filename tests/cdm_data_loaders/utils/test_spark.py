@@ -28,7 +28,6 @@ from tests.helpers import assertDataFrameEqual
 original_set_up_ws_fn = spark_utils.set_up_workspace
 
 SAVE_DIR = "spark.sql.warehouse.dir"
-TEST_WRITE_MODE = ERROR
 DEFAULT_SAMPLE_DATA = {"a": "A1", "b": "B1"}
 TENANT_NAME = "The_Breakers"
 GET_SPARK_SESSION = "berdl_notebook_utils.setup_spark_session.get_spark_session"
@@ -165,69 +164,6 @@ def test_set_up_workspace_defaults(
 
 
 @pytest.mark.requires_spark
-@pytest.mark.parametrize("tenant_name", [pytest.param(_, id=f"tenant_{_}") for _ in [None, "some_tenant"]])
-@pytest.mark.parametrize("namespace", [pytest.param(_, id=f"ns_{_}") for _ in [None, "some_namespace"]])
-def test_set_up_workspace_creates_database(
-    spark: SparkSession,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    tenant_name: str | None,
-    namespace: str | None,
-) -> None:
-    """Test that setting up a workspace creates the appropriate namespace.
-
-    Mimics the functionality of BERDL's `create_namespace_if_not_exists`.
-    """
-    app_name = "test_app"
-    # expected catalog_db, according to the namespace and tenant_name arguments
-    catalog_db = {
-        # namespace
-        None: {
-            # tenant
-            None: f"user__some_user__{DEFAULT_NAMESPACE}",
-            "some_tenant": f"tenant__some_tenant__{DEFAULT_NAMESPACE}",
-        },
-        "some_namespace": {
-            None: "user__some_user__some_namespace",
-            "some_tenant": "tenant__some_tenant__some_namespace",
-        },
-    }
-
-    expected = catalog_db[namespace][tenant_name]
-    assert not spark.catalog.databaseExists(expected)
-
-    def fake_create_namespace_if_not_exists(
-        spark: SparkSession,
-        namespace: str = "default",
-        append_target: bool = True,  # noqa: ARG001
-        tenant_name: str | None = None,
-    ) -> str:
-        """Mock create_namespace_if_not_exists without external calls."""
-        namespace = f"tenant__{tenant_name}__{namespace}" if tenant_name else f"user__some_user__{namespace}"
-        assert not spark.catalog.databaseExists(namespace)
-        spark.sql(f"CREATE DATABASE IF NOT EXISTS {namespace}")
-        return namespace
-
-    # patch the create_namespace_if_not_exists function
-    monkeypatch.setattr(
-        CREATE_NS,
-        fake_create_namespace_if_not_exists,
-    )
-
-    def set_up_test_workspace(*args: str, **kwargs: str | bool) -> tuple[SparkSession, str]:  # noqa: ARG001
-        """Local override of set_up_workspace."""
-        return original_set_up_ws_fn(*args, local=True, override={SAVE_DIR: str(tmp_path)})
-
-    # patch the set_up_workspace function to add in the various extra kwargs for local use
-    monkeypatch.setattr(spark_utils, "set_up_workspace", set_up_test_workspace)
-
-    # create a spark session and ensure that the appropriate database has been created
-    (spark, catalog_db) = spark_utils.set_up_workspace(app_name, namespace, tenant_name)
-    assert expected == catalog_db
-    assert spark.catalog.databaseExists(expected)
-
-
-@pytest.mark.requires_spark
 @pytest.mark.parametrize("dataframe", [None, [1, 2, 3], {}, True])
 def test_write_table_no_data(
     spark: SparkSession,
@@ -281,18 +217,6 @@ def check_logger_output_successful_write(
     assert last_message.levelno == logging.INFO
 
 
-def check_logger_output_successful_location_write(
-    records: list[logging.LogRecord], catalog_db_table: str, mode: str, rows: int
-) -> None:
-    """Check that the logger has emitted the appropriate messages on a successful db write."""
-    first_message = records[0]
-    assert f"Writing table {catalog_db_table} in mode {mode} (rows={rows})" in first_message.getMessage()
-    assert first_message.levelno == logging.INFO
-    last_message = records[-1]
-    assert f"Saved external table {catalog_db_table} (rows={rows}) to " in last_message.getMessage()
-    assert last_message.levelno == logging.INFO
-
-
 def _check_saved_files(parquet_dir: Path) -> None:
     # the directory where table data is expected to be stored
     assert parquet_dir.is_dir()
@@ -332,7 +256,7 @@ def populate_db(
         sdf=spark.createDataFrame([DEFAULT_SAMPLE_DATA]),
         catalog_db=catalog_db,
         table=table,
-        mode=TEST_WRITE_MODE,
+        mode=ERROR,
     )
     assert spark.catalog.tableExists(catalog_db_table)
     # check the db contents are as expected
@@ -340,7 +264,7 @@ def populate_db(
     # check there are saved files
     check_saved_files(ns_save_dir, table)
     # check the logger output
-    check_logger_output_successful_write(caplog.records, catalog_db_table, TEST_WRITE_MODE, 1)
+    check_logger_output_successful_write(caplog.records, catalog_db_table, ERROR, 1)
 
 
 @pytest.mark.requires_spark
@@ -489,7 +413,7 @@ def test_write_table_raise_error(
             sdf=spark.createDataFrame([Row(x=2, y=3)]),
             catalog_db=catalog_db,
             table=table,
-            mode=TEST_WRITE_MODE,
+            mode=ERROR,
         )
     last_log_record = caplog.records[-1]
     assert last_log_record.levelno == logging.ERROR

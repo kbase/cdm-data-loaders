@@ -1,0 +1,41 @@
+[
+    {
+        "id": "ctx1",
+        "primary_tag": {
+            "key": "domain",
+            "value": "Bacteria"
+        },
+        "secondary_tag": {
+            "key": "phylum",
+            "value": "Proteobacteria"
+        },
+        "fallback_tag": {
+            "key": "status",
+            "value": "curated"
+        },
+        "tag_list": [
+            {
+                "key": "gram",
+                "value": "negative"
+            },
+            {
+                "key": "motile"
+            }
+        ],
+        "tag_lookup": {
+            "ncbi": {
+                "key": "taxid",
+                "value": "562"
+            }
+        }
+    },
+    {
+        "id": "ctx2",
+        "primary_tag": {
+            "key": "domain",
+            "value": "Archaea"
+        },
+        "fallback_tag": null
+    }
+]
+

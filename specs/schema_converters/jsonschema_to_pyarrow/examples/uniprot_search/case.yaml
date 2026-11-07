@@ -1,0 +1,18 @@
+title: UniProtKB `SearchResult`
+schema: schema.json
+rules: [R-UNION-OBJECT, R-UNION-SCALAR-OBJECT, R-RECURSION, R-SHAPE-MAP, R-SCALAR-TYPE]
+notes: |
+  `/uniprotkb/search` response schema from `not_for_github/uniprot/api/openapi-3.1.json`
+  (`#/components/schemas/SearchResult`): a 24-branch polymorphic `Comment` `anyOf` (including a string + object
+  `note` with a synthesized `_value`), recursive `ProteinSection`, `extraAttributes` maps and `pa.date32()` dates.
+runs:
+  - id: minimal
+    data: minimal.json
+    expected_json: minimal_expected.json
+    expected_table: minimal_expected_table.py
+    expected_count: 1
+  - id: maximal
+    data: maximal.json
+    expected_json: maximal_expected.json
+    expected_table: maximal_expected_table.py
+    expected_count: 1

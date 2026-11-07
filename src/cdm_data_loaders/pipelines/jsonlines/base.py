@@ -1,112 +1,54 @@
 """Shared machinery for the JSONL registry-ingest pipelines.
 
 Each pipeline reads one JSONL input subdirectory per table, routes valid records
-to a table named after the entity, and routes failures to ``<table>_rejected``
-(or ``_invalid``) with provenance columns. This module holds the pieces all
-three pipelines share; each pipeline module supplies only its validator and
-registry loader.
+to a table named after the entity, and routes failures to ``_rejected``
+with provenance columns (``table_name``, ``source_file``, ``line_no``, ``raw_record``,
+``error_detail``). This module holds the pieces all registry pipelines share;
+each pipeline module supplies only its validator and registry loader.
 """
 
-from collections.abc import Callable, Generator
-from logging import Logger, getLogger
-from typing import TYPE_CHECKING, Any, Final
+from collections.abc import Callable, Generator, Iterator
+from typing import Any
 
 import dlt
 from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TSchemaContractDict
-from dlt.sources.filesystem import filesystem
+from dlt.common.storages.fsspec_filesystem import FileItemDict
+from dlt.common.typing import TDataItems
+from dlt.extract.resource import DltResource
+from pydantic import BaseModel
 
-from cdm_data_loaders.pipelines.core import run_pipeline
-from cdm_data_loaders.readers.jsonlines import stream_jsonl_lines
-from cdm_data_loaders.utils.buffer import ListBuffer
+from cdm_data_loaders.core.registry import (
+    RegistryKey,
+)
+from cdm_data_loaders.pipelines.core import (
+    DEFAULT_SCHEMA_CONTRACT,
+    build_file_ingest_kwargs,
+    build_filesystem_resource,
+    run_pipeline,
+)
+from cdm_data_loaders.readers.jsonlines import (
+    ParseErrorResolver,
+    make_page_router,
+    stream_jsonl_lines,
+)
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
 
-if TYPE_CHECKING:
-    from dlt.extract.resource import DltResource
-
-logger: Logger = getLogger(__name__)
-
-SCHEMA_CONTRACT: Final[TSchemaContractDict] = {
-    "tables": "evolve",
-    "columns": "evolve",
-    "data_type": "discard_row",
-}
-
-DEFAULT_REJECTED_SUFFIX: Final[str] = "_rejected"
-
-REJECTED_COLUMNS: Final[tuple[str, ...]] = ("source_file", "line_no", "raw_record")
-
-ParseErrorResolver = Callable[[dict[str, Any]], str | None]
-ResourceFactory = Callable[[str, dict[str, Any], Any], "DltResource"]
-
-
-def make_page_router(  # noqa: PLR0913
-    table_name: str,
-    buffer_size: int,
-    resolve_error: ParseErrorResolver,
-    *,
-    rejected_suffix: str = DEFAULT_REJECTED_SUFFIX,
-    include_record: bool = False,
-    transform_valid: Callable[[Any], Any] | None = None,
-) -> Callable[[list[dict[str, Any]]], Generator[Any, Any, Any]]:
-    """Build a function that routes pages of line records to valid and rejected tables.
-
-    For each item, `resolve_error` inspects the record and returns None for a
-    valid record, or the error detail string otherwise. Parse errors bypass
-    `resolve_error` entirely. Valid records yield `item["record"]` passed
-    through `transform_valid` (identity when None) into `table_name`; failed
-    records yield a provenance row into ``{table_name}{rejected_suffix}``. With
-    `include_record`, the rejected row also carries the parsed `record` value.
-
-    :param table_name: table name for valid records
-    :type  table_name: str
-    :param buffer_size: number of rows to buffer per table before yielding a page
-    :type  buffer_size: int
-    :param resolve_error: function returning None for valid records or error detail
-    :type  resolve_error: ParseErrorResolver
-    :param rejected_suffix: suffix for the rejected table name
-    :type  rejected_suffix: str
-    :param include_record: whether rejected rows carry the parsed record value
-    :type  include_record: bool
-    :param transform_valid: function applied to each valid record before yielding
-    :type  transform_valid: Callable[[Any], Any] | None
-    :return: function taking one page of line records and yielding routed pages
-    :rtype : Callable[[list[dict[str, Any]]], Generator[Any, Any, Any]]
-    """
-    rejected_table = f"{table_name}{rejected_suffix}"
-
-    def _route(page: list[dict[str, Any]]) -> Generator[Any, Any, Any]:
-        valid_buffer = ListBuffer(table_name=table_name, max_items=buffer_size)
-        rejected_buffer = ListBuffer(table_name=rejected_table, max_items=buffer_size)
-        for item in page:
-            error_detail = item["parse_error"]
-            if error_detail is None:
-                error_detail = resolve_error(item["record"])
-            if error_detail is not None:
-                rejected = {column: item[column] for column in REJECTED_COLUMNS}
-                rejected["error_detail"] = error_detail
-                if include_record:
-                    rejected["record"] = item["record"]
-                yield from rejected_buffer.add_item(rejected)
-            else:
-                record = item["record"]
-                if transform_valid is not None:
-                    record = transform_valid(record)
-                yield from valid_buffer.add_item(record)
-        yield from valid_buffer.flush()
-        yield from rejected_buffer.flush()
-
-    return _route
+ResourceFactory = Callable[[str, Any, Any], DltResource]
 
 
-def build_entity_resource(  # noqa: PLR0913
+def _stream_entity_lines(items: Iterator[FileItemDict], settings: Any) -> Generator[TDataItems, Any, Any]:  # noqa: ANN401
+    """Stream pages of JSONL line records using ``settings.buffer_size``."""
+    yield from stream_jsonl_lines(items, settings.buffer_size)
+
+
+def build_entity_resource(
     table_name: str,
     settings: Any,  # noqa: ANN401
     resolve_error: ParseErrorResolver,
     *,
-    rejected_suffix: str = DEFAULT_REJECTED_SUFFIX,
-    include_record: bool = False,
     transform_valid: Callable[[Any], Any] | None = None,
-) -> "DltResource":
+) -> DltResource:
     """Read plain or gzip JSONL files for one entity and route validated pages.
 
     A missing entity directory produces no rows. Nested values are preserved
@@ -118,86 +60,64 @@ def build_entity_resource(  # noqa: PLR0913
     :type  settings: Any
     :param resolve_error: function returning None for valid records or error detail
     :type  resolve_error: ParseErrorResolver
-    :param rejected_suffix: suffix for the rejected table name
-    :type  rejected_suffix: str
-    :param include_record: whether rejected rows carry the parsed record value
-    :type  include_record: bool
-    :param transform_valid: function applied to each valid record before yielding
+    :param transform_valid: validation function applied to each record before yielding
     :type  transform_valid: Callable[[Any], Any] | None
     :return: resource yielding validated and rejected records for this entity
     :rtype: DltResource
     """
-    entity_dir = settings.input_dir / table_name
-    if entity_dir.is_dir():
-        files = filesystem(bucket_url=str(entity_dir), file_glob=settings.file_glob)
-    else:
-        logger.warning("Entity directory does not exist, skipping: %s", entity_dir)
-        files = dlt.resource([], name=f"{table_name}_files")
-
-    raw = dlt.transformer(
-        stream_jsonl_lines,
-        data_from=files,
+    raw = build_filesystem_resource(
+        settings,
+        _stream_entity_lines,
         name=f"{table_name}_raw",
+        file_glob=f"{table_name}/{settings.file_glob}",
         max_table_nesting=0,
-        parallelized=True,
     )
-    raw.bind(settings.buffer_size)
     validated = dlt.transformer(
         make_page_router(
             table_name,
             settings.buffer_size,
             resolve_error,
-            rejected_suffix=rejected_suffix,
-            include_record=include_record,
             transform_valid=transform_valid,
+            table_transform=settings.get_table_transform(table_name),
+            schema_map=settings.schema_map,
         ),
         data_from=raw,
         name=f"{table_name}_validated",
         max_table_nesting=0,
         parallelized=True,
     )
-    validated.apply_hints(schema_contract=TSchemaContractDict(**SCHEMA_CONTRACT))  # pyright: ignore[reportCallIssue]
+    validated.apply_hints(schema_contract=TSchemaContractDict(**DEFAULT_SCHEMA_CONTRACT))  # pyright: ignore[reportCallIssue]
     return validated
 
 
 def run_registry_ingest(
     settings: Any,  # noqa: ANN401
-    table_to_schema: dict[str, dict[str, Any]],
+    registry: dict[RegistryKey, type[BaseModel] | ValidatedSchema],
     build_resource: ResourceFactory,
     pipeline_name: str,
     pipeline_run_kwargs: dict[str, Any] | None = None,
 ) -> LoadInfo | None:
-    """Load the requested tables using the shared pipeline runner.
-
-    Defaults to every table in the registry when `settings.table_names` is None.
-    Raises ValueError for unknown table names.
+    """Load tables using the shared pipeline runner.
 
     :param settings: pipeline configuration
     :type  settings: Any
-    :param table_to_schema: mapping of table name to its schema entry
-    :type  table_to_schema: dict[str, dict[str, Any]]
+    :param registry: registry of table name to its schema/model entry
+    :type  registry: dict[RegistryKey, type[BaseModel] | ValidatedSchema]
     :param build_resource: function building one entity's resource
     :type  build_resource: ResourceFactory
     :param pipeline_name: registered pipeline name
     :type  pipeline_name: str
     :param pipeline_run_kwargs: extra kwargs for pipeline.run
     :type  pipeline_run_kwargs: dict[str, Any] | None
-    :raises ValueError: if settings.table_names includes a name not in the registry
     :return: load information for the pipeline
     :rtype:  LoadInfo | None
     """
-    table_names = settings.table_names or sorted(table_to_schema)
-    unknown = sorted(set(table_names) - set(table_to_schema))
-    if unknown:
-        err_msg = f"Unknown table name(s) requested: {unknown}; available: {sorted(table_to_schema)}"
-        raise ValueError(err_msg)
-    resources = [build_resource(table_name, table_to_schema[table_name], settings) for table_name in table_names]
+    resources = [build_resource(table_name, registry[table_name], settings) for table_name in sorted(registry)]
+    ingest_kwargs = build_file_ingest_kwargs(settings, pipeline_name, fallback_dataset_name=True)
+    if pipeline_run_kwargs:
+        ingest_kwargs["pipeline_run_kwargs"].update(pipeline_run_kwargs)
     return run_pipeline(
         settings=settings,
         resource=resources,
-        pipeline_kwargs={
-            "pipeline_name": pipeline_name,
-            "dataset_name": settings.dataset_name or pipeline_name,
-        },
-        pipeline_run_kwargs=pipeline_run_kwargs or {},
+        **ingest_kwargs,
     )

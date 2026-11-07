@@ -1,0 +1,9 @@
+title: Conditional (`if`/`then`/`else`) and Dependent Schemas
+schema: schema.json
+rules: [R-NULL-CONDITIONAL, R-ORDER]
+notes: |
+  `strain_name` (from `then`), `biome` (from `else`) and `platform` (from `dependentSchemas`) are nullable.
+  `depth_unit` appears only in `dependentRequired` and stays nullable.
+runs:
+  - id: default
+    data: data.json

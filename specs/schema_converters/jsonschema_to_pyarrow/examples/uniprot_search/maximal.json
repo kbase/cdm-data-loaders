@@ -1,0 +1,5704 @@
+[
+  {
+    "results": [
+      {
+        "entryType": "UniProtKB unreviewed (TrEMBL)",
+        "primaryAccession": "X5I2V6",
+        "uniProtkbId": "X5I2V6_9PARA",
+        "entryAudit": {
+          "firstPublicDate": "2014-06-11",
+          "lastAnnotationUpdateDate": "2026-09-02",
+          "lastSequenceUpdateDate": "2014-06-11",
+          "entryVersion": 59,
+          "sequenceVersion": 1
+        },
+        "annotationScore": 4,
+        "organism": {
+          "scientificName": "Feline morbillivirus",
+          "taxonId": 1170234,
+          "evidences": [
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "EMBL",
+              "id": "BAO58314.1"
+            }
+          ],
+          "lineage": [
+            "Viruses",
+            "Riboviria",
+            "Orthornavirae",
+            "Negarnaviricota",
+            "Haploviricotina",
+            "Monjiviricetes",
+            "Mononegavirales",
+            "Paramyxoviridae",
+            "Orthoparamyxovirinae",
+            "Morbillivirus",
+            "Morbillivirus felis"
+          ]
+        },
+        "proteinExistence": "3: Inferred from homology",
+        "proteinDescription": {
+          "recommendedName": {
+            "fullName": {
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "PIRNR",
+                  "id": "PIRNR000830"
+                }
+              ],
+              "value": "RNA-directed RNA polymerase L"
+            },
+            "shortNames": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "PIRNR",
+                    "id": "PIRNR000830"
+                  }
+                ],
+                "value": "Protein L"
+              }
+            ]
+          },
+          "alternativeNames": [
+            {
+              "fullName": {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "PIRNR",
+                    "id": "PIRNR000830"
+                  }
+                ],
+                "value": "Large structural protein"
+              }
+            },
+            {
+              "fullName": {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "PIRNR",
+                    "id": "PIRNR000830"
+                  }
+                ],
+                "value": "Replicase"
+              }
+            },
+            {
+              "fullName": {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "PIRNR",
+                    "id": "PIRNR000830"
+                  }
+                ],
+                "value": "Transcriptase"
+              }
+            }
+          ],
+          "includes": [
+            {
+              "recommendedName": {
+                "fullName": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "PIRNR",
+                      "id": "PIRNR000830"
+                    }
+                  ],
+                  "value": "RNA-directed RNA polymerase"
+                },
+                "ecNumbers": [
+                  {
+                    "evidences": [
+                      {
+                        "evidenceCode": "ECO:0000256",
+                        "source": "PIRNR",
+                        "id": "PIRNR000830"
+                      }
+                    ],
+                    "value": "2.7.7.48"
+                  }
+                ]
+              }
+            },
+            {
+              "recommendedName": {
+                "fullName": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "PIRNR",
+                      "id": "PIRNR000830"
+                    }
+                  ],
+                  "value": "GTP phosphohydrolase"
+                },
+                "ecNumbers": [
+                  {
+                    "evidences": [
+                      {
+                        "evidenceCode": "ECO:0000256",
+                        "source": "PIRNR",
+                        "id": "PIRNR000830"
+                      }
+                    ],
+                    "value": "3.6.1.-"
+                  }
+                ]
+              }
+            },
+            {
+              "recommendedName": {
+                "fullName": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "PIRNR",
+                      "id": "PIRNR000830"
+                    }
+                  ],
+                  "value": "GDP polyribonucleotidyltransferase"
+                },
+                "ecNumbers": [
+                  {
+                    "evidences": [
+                      {
+                        "evidenceCode": "ECO:0000256",
+                        "source": "PIRNR",
+                        "id": "PIRNR000830"
+                      }
+                    ],
+                    "value": "2.7.7.88"
+                  }
+                ]
+              },
+              "alternativeNames": [
+                {
+                  "fullName": {
+                    "evidences": [
+                      {
+                        "evidenceCode": "ECO:0000256",
+                        "source": "PIRNR",
+                        "id": "PIRNR000830"
+                      }
+                    ],
+                    "value": "PRNTase"
+                  }
+                }
+              ]
+            },
+            {
+              "recommendedName": {
+                "fullName": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "PIRNR",
+                      "id": "PIRNR000830"
+                    }
+                  ],
+                  "value": "mRNA (nucleoside-2'-O-)-methyltransferase"
+                },
+                "shortNames": [
+                  {
+                    "evidences": [
+                      {
+                        "evidenceCode": "ECO:0000256",
+                        "source": "PIRNR",
+                        "id": "PIRNR000830"
+                      }
+                    ],
+                    "value": "N1-2'-O-MTase"
+                  }
+                ]
+              }
+            },
+            {
+              "recommendedName": {
+                "fullName": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "PIRNR",
+                      "id": "PIRNR000830"
+                    }
+                  ],
+                  "value": "mRNA (guanine-N(7)-)-methyltransferase"
+                },
+                "shortNames": [
+                  {
+                    "evidences": [
+                      {
+                        "evidenceCode": "ECO:0000256",
+                        "source": "PIRNR",
+                        "id": "PIRNR000830"
+                      }
+                    ],
+                    "value": "G-N7-MTase"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "genes": [
+          {
+            "geneName": {
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000313",
+                  "source": "EMBL",
+                  "id": "BAO58314.1"
+                }
+              ],
+              "value": "L"
+            }
+          }
+        ],
+        "comments": [
+          {
+            "commentType": "CATALYTIC ACTIVITY",
+            "reaction": {
+              "name": "RNA(n) + a ribonucleoside 5'-triphosphate = RNA(n+1) + diphosphate",
+              "reactionCrossReferences": [
+                {
+                  "database": "Rhea",
+                  "id": "RHEA:21248"
+                },
+                {
+                  "database": "Rhea",
+                  "id": "RHEA-COMP:14527"
+                },
+                {
+                  "database": "Rhea",
+                  "id": "RHEA-COMP:17342"
+                },
+                {
+                  "database": "ChEBI",
+                  "id": "CHEBI:33019"
+                },
+                {
+                  "database": "ChEBI",
+                  "id": "CHEBI:61557"
+                },
+                {
+                  "database": "ChEBI",
+                  "id": "CHEBI:140395"
+                }
+              ],
+              "ecNumber": "2.7.7.48",
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "PIRNR",
+                  "id": "PIRNR000830"
+                },
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "PROSITE-ProRule",
+                  "id": "PRU00539"
+                }
+              ]
+            }
+          },
+          {
+            "commentType": "SUBCELLULAR LOCATION",
+            "subcellularLocations": [
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "PIRNR",
+                      "id": "PIRNR000830"
+                    }
+                  ],
+                  "value": "Virion",
+                  "id": "SL-0274"
+                }
+              },
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "PIRNR",
+                      "id": "PIRNR000830"
+                    }
+                  ],
+                  "value": "Host cytoplasm",
+                  "id": "SL-0381"
+                }
+              }
+            ]
+          },
+          {
+            "texts": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "ARBA",
+                    "id": "ARBA00003132"
+                  },
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "PIRNR",
+                    "id": "PIRNR000830"
+                  }
+                ],
+                "value": "RNA-directed RNA polymerase that catalyzes the replication of viral genomic RNA. The template is composed of the viral RNA tightly encapsidated by the nucleoprotein (N). The replicase mode is dependent on intracellular N protein concentration. In this mode, the polymerase replicates the whole viral genome without recognizing transcriptional signals, and the replicated genome is not caped or polyadenylated"
+              }
+            ],
+            "commentType": "FUNCTION"
+          }
+        ],
+        "features": [
+          {
+            "type": "Domain",
+            "location": {
+              "start": {
+                "value": 672,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 856,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "RdRp catalytic",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000259",
+                "source": "PROSITE",
+                "id": "PS50526"
+              }
+            ]
+          },
+          {
+            "type": "Domain",
+            "location": {
+              "start": {
+                "value": 1771,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 1976,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Mononegavirus-type SAM-dependent 2'-O-MTase",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000259",
+                "source": "PROSITE",
+                "id": "PS51590"
+              }
+            ]
+          },
+          {
+            "type": "Region",
+            "location": {
+              "start": {
+                "value": 620,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 658,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Disordered",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "MobiDB-lite"
+              }
+            ]
+          }
+        ],
+        "keywords": [
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022840"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PIRNR",
+                "id": "PIRNR000830"
+              }
+            ],
+            "id": "KW-0067",
+            "category": "Ligand",
+            "name": "ATP-binding"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023200"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PIRNR",
+                "id": "PIRNR000830"
+              }
+            ],
+            "id": "KW-1035",
+            "category": "Cellular component",
+            "name": "Host cytoplasm"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022801"
+              }
+            ],
+            "id": "KW-0378",
+            "category": "Molecular function",
+            "name": "Hydrolase"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022842"
+              }
+            ],
+            "id": "KW-0460",
+            "category": "Ligand",
+            "name": "Magnesium"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022723"
+              }
+            ],
+            "id": "KW-0479",
+            "category": "Ligand",
+            "name": "Metal-binding"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022603"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PIRNR",
+                "id": "PIRNR000830"
+              }
+            ],
+            "id": "KW-0489",
+            "category": "Molecular function",
+            "name": "Methyltransferase"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023042"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PIRNR",
+                "id": "PIRNR000830"
+              }
+            ],
+            "id": "KW-0506",
+            "category": "Biological process",
+            "name": "mRNA capping"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022664"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PIRNR",
+                "id": "PIRNR000830"
+              }
+            ],
+            "id": "KW-0507",
+            "category": "Biological process",
+            "name": "mRNA processing"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023268"
+              }
+            ],
+            "id": "KW-0511",
+            "category": "Molecular function",
+            "name": "Multifunctional enzyme"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022741"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PIRNR",
+                "id": "PIRNR000830"
+              }
+            ],
+            "id": "KW-0547",
+            "category": "Ligand",
+            "name": "Nucleotide-binding"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022695"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PIRNR",
+                "id": "PIRNR000830"
+              }
+            ],
+            "id": "KW-0548",
+            "category": "Molecular function",
+            "name": "Nucleotidyltransferase"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022484"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PIRNR",
+                "id": "PIRNR000830"
+              }
+            ],
+            "id": "KW-0696",
+            "category": "Molecular function",
+            "name": "RNA-directed RNA polymerase"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022691"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PIRNR",
+                "id": "PIRNR000830"
+              }
+            ],
+            "id": "KW-0949",
+            "category": "Ligand",
+            "name": "S-adenosyl-L-methionine"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022679"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PIRNR",
+                "id": "PIRNR000830"
+              }
+            ],
+            "id": "KW-0808",
+            "category": "Molecular function",
+            "name": "Transferase"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022953"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PIRNR",
+                "id": "PIRNR000830"
+              }
+            ],
+            "id": "KW-0693",
+            "category": "Biological process",
+            "name": "Viral RNA replication"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022844"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PIRNR",
+                "id": "PIRNR000830"
+              }
+            ],
+            "id": "KW-0946",
+            "category": "Cellular component",
+            "name": "Virion"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022833"
+              }
+            ],
+            "id": "KW-0862",
+            "category": "Ligand",
+            "name": "Zinc"
+          }
+        ],
+        "references": [
+          {
+            "referenceNumber": 1,
+            "citation": {
+              "id": "24728711",
+              "citationType": "journal article",
+              "authors": [
+                "Sakaguchi S.",
+                "Nakagawa S.",
+                "Yoshikawa R.",
+                "Kuwahara C.",
+                "Hagiwara H.",
+                "Asai K.",
+                "Kawakami K.",
+                "Yamamoto Y.",
+                "Ogawa M.",
+                "Miyazawa T."
+              ],
+              "citationCrossReferences": [
+                {
+                  "database": "PubMed",
+                  "id": "24728711"
+                },
+                {
+                  "database": "DOI",
+                  "id": "10.1099/vir.0.065029-0"
+                }
+              ],
+              "title": "Genetic diversity of feline morbilliviruses isolated in Japan.",
+              "publicationDate": "2014",
+              "journal": "J. Gen. Virol.",
+              "firstPage": "1464",
+              "lastPage": "1468",
+              "volume": "95"
+            },
+            "referencePositions": [
+              "NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA]"
+            ],
+            "referenceComments": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "BAO58314.1"
+                  }
+                ],
+                "value": "SS1",
+                "type": "STRAIN"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "BAO58314.1"
+              }
+            ]
+          }
+        ],
+        "uniProtKBCrossReferences": [
+          {
+            "database": "EMBL",
+            "id": "AB910309",
+            "properties": [
+              {
+                "key": "ProteinId",
+                "value": "BAO58314.1"
+              },
+              {
+                "key": "Status",
+                "value": "-"
+              },
+              {
+                "key": "MoleculeType",
+                "value": "Viral_cRNA"
+              }
+            ]
+          },
+          {
+            "database": "GO",
+            "id": "GO:0030430",
+            "properties": [
+              {
+                "key": "GoTerm",
+                "value": "C:host cell cytoplasm"
+              },
+              {
+                "key": "GoEvidenceType",
+                "value": "IEA:UniProtKB-SubCell"
+              }
+            ]
+          }
+        ],
+        "sequence": {
+          "value": "MEQSDYQDILYPEVHLNSPIVISKLVGILEYAQVIHNQLLTDHTIIKNIQFRLRNGFNSPRIQTLSTMGEIINKIKNKYSNYFHIPYPECNQKLFRIVDPELTSKLESLLNKGDTLYLKIRSDIIKCFDKLKMKMNISNDLLNDNSQLILDLPLIIKGSQWFFPFLFWFSIKTETRNCIRQNQKARVRSQYRPHLSETKRITLVVTSDLITIFDHINKCIFYLTFEMLLMYCDVIEGRLMTETAMSLDCRFTNLLPRVQYMWDLLDGMFESLGNQIYSVIALLEPLSLAYLQLIDADPQIRGTFLHHCFSELEEIIFDKSPFDPFVYENLINGLDYIYLTDDIHLTAEVFSFFRSFGHPYLEAQNAANNVRKYMNQPKVISYQTLMQGHAIFCGIIINGFRDRHGGTWPPVELPSHASAVIRNAQLSGEGLTSEQCAQHWRSFCGFKFKCFMPLSLDSDLTMYLRDKALSPVRSEWDSVYAKEYLRYNPGLPTSSRRLVNVFLEDDKFDPYEMIMYVINGDYLIDDEFNLSYSLKEKEIKEVGRLFAKMTYKMRACQVIAENLIANGVGKFFKDNGMAKDEHKLTKTLHKLAISGVPKDNSQLYLDECWEQAVRHCSSDTHTKKQTMGSQSKRIIESKSSRSPLNNRDTLKGKRDPNTQLKYPSNTEYYETISSFITTDLKKYCLNWRYESSSVFAERLNEIYGLPGFFQWLHKILEKSVLYVSDPSSPPDFDQHIDIESVPNDHIFIKYPMGGIEGFCQKLWTISTIPFLYLAAFDTGVRIASLVQGDNQAIAVTKRVPSSWSYSKKKEESTKITTQYFLNLRQRLHDIGHELKANETIISSHFFVYSKGIYYDGILLSQALKSMARCVFWSETIVDETRSACSNISTTLAKAIERGYDKFVAYAINIYKTIHQVLIALSFTINPTMTPDITEPFYKSLDLLKNLVLIPAPLGGMNYMNMSRLFVRNIGDPITASFADIKRMIECGLLGCSILSQIMYQKCGSSKYLDWASDPYSINLPYSQSMTKVLKNVTARYVLMHSPNPMLKDLFHEKSQEEDEILAEFLLDRHLIIPRAAHEILSNSVTGARESIAGMLDTTKGLIRASMSRGGLTSSLVLKLSTYDYQQFRTCLEWLYAPTTGIAVSVDSCSVFLAKTIRKRMWVHLTKGREIYGLEVPDILECMQNNIIIDHEDCYSCIQGSRYYTWFFVPSNCQLDQINKSTNSLRVPYVGSTTEERSDMRLSYVRSPSRPLKAAVRIAAVYTWAYGDDDLSWHEAWYLARTRANITFDELKLITPIATSTNLAHRLRDRSTQVKYSGTSLVRVARYTTISNDNMSFIINNKKVDTNFVYQQGMLLGLSILEYIFRYCTSTGQSNTVIHLHADINCCIVQMTDQPYTPSLTKKLPDIKPINNKLIYDPAPIIDTDAARLYSQKYLSHLIDFPSWSTTQLNTVLAKVVAVSIVELITKASKDHLNEIIAVVGDDDINSFITEFLLVDPRLFTLYLGQYTSLQWAYEVHYHRPVGKYQMAEVLHNLLSRASRGIFSVLTNAFSHPRVYRRFWECGLLEPIYGPYIGSQNLHTAVIDYIYNAYITYLDAYLSDQVDDTDIIICETEETCLANRIDNYQSRHLAVLIDMYCDSTRCPNIKGSDTIMRNSILRSFIDNERRTNPLGLTWNLDPLLVDHFSCSITYLRRGIIKQMRLRFDPNISLELAKMIKPDVIYQAPKVPSSWALIDINPEVNDLNTIFGELNSKWKDIPIGQIKIQNYEIHAYRRVGVNSTACYKALEILSVLNRFMSNPLGALFLGEGAGSMLVTYRAFIPFKTIYYNSGISVQHVQGQRELSLYPSEVALVDNKNRLANDPNIKVLFNGKPESTWVGNIDCFAYILSHIETSSLTLIHSDIESSLSKTKNKILEELCHILSMALILGKLGSVLVIKLLPRVGDYTYSFCKYASEFYQQNFLILPRFSNMSSSEIYYIGVHLNTNRLIDPDRIVQYIIRNLQPTPVTFLSYIFETKYRNNMVTNYGLCLSDGHKSDYLSSITKIENVLLSCGLELNGPKIIQQLSGHDYANGETSLESSIMILVREYLNATIQGRETLGLFSPYPVLHESQLREINKCIALKYVVYLLFYLNSISSSKQIMSNLRKGILMYDLRDEFFISRLSANYKKKVMLQEVKTTWIFNIDTPTRKALYKLVGYSLIINHI",
+          "length": 2202,
+          "molWeight": 252830,
+          "crc64": "0B4B3846D2B0EF16",
+          "md5": "E98D71C0EAA4317745F8AEA2695302FD"
+        },
+        "extraAttributes": {
+          "countByCommentType": {
+            "FUNCTION": 2,
+            "CATALYTIC ACTIVITY": 5,
+            "SUBCELLULAR LOCATION": 1,
+            "SIMILARITY": 1
+          },
+          "countByFeatureType": {
+            "Domain": 2,
+            "Region": 1
+          },
+          "uniParcId": "UPI00043ABFDE"
+        }
+      },
+      {
+        "entryType": "UniProtKB unreviewed (TrEMBL)",
+        "primaryAccession": "X2JFE9",
+        "uniProtkbId": "X2JFE9_HELLU",
+        "entryAudit": {
+          "firstPublicDate": "2014-06-11",
+          "lastAnnotationUpdateDate": "2026-09-02",
+          "lastSequenceUpdateDate": "2014-06-11",
+          "entryVersion": 38,
+          "sequenceVersion": 1
+        },
+        "annotationScore": 3,
+        "organism": {
+          "scientificName": "Helix lucorum",
+          "commonName": "Snail",
+          "taxonId": 31229,
+          "evidences": [
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "EMBL",
+              "id": "AHN64827.1"
+            }
+          ],
+          "lineage": [
+            "Eukaryota",
+            "Metazoa",
+            "Spiralia",
+            "Lophotrochozoa",
+            "Mollusca",
+            "Gastropoda",
+            "Heterobranchia",
+            "Euthyneura",
+            "Panpulmonata",
+            "Eupulmonata",
+            "Stylommatophora",
+            "Helicina",
+            "Helicoidea",
+            "Helicidae",
+            "Helix"
+          ]
+        },
+        "proteinExistence": "3: Inferred from homology",
+        "proteinDescription": {
+          "recommendedName": {
+            "fullName": {
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "ARBA",
+                  "id": "ARBA00015947"
+                },
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "RuleBase",
+                  "id": "RU000369"
+                }
+              ],
+              "value": "Cytochrome c oxidase subunit 1"
+            },
+            "ecNumbers": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "RuleBase",
+                    "id": "RU000369"
+                  }
+                ],
+                "value": "7.1.1.9"
+              }
+            ]
+          },
+          "flag": "Fragment"
+        },
+        "genes": [
+          {
+            "geneName": {
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000313",
+                  "source": "EMBL",
+                  "id": "AXB54992.1"
+                }
+              ],
+              "value": "COX1"
+            },
+            "synonyms": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "AKZ31582.1"
+                  }
+                ],
+                "value": "cox1"
+              }
+            ]
+          }
+        ],
+        "comments": [
+          {
+            "commentType": "SUBCELLULAR LOCATION",
+            "subcellularLocations": [
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "RuleBase",
+                      "id": "RU000369"
+                    }
+                  ],
+                  "value": "Mitochondrion inner membrane",
+                  "id": "SL-0168"
+                },
+                "topology": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "RuleBase",
+                      "id": "RU000369"
+                    }
+                  ],
+                  "value": "Multi-pass membrane protein",
+                  "id": "SL-9909"
+                }
+              }
+            ]
+          },
+          {
+            "commentType": "CATALYTIC ACTIVITY",
+            "reaction": {
+              "name": "4 Fe(II)-[cytochrome c] + O2 + 8 H(+)(in) = 4 Fe(III)-[cytochrome c] + 2 H2O + 4 H(+)(out)",
+              "reactionCrossReferences": [
+                {
+                  "database": "Rhea",
+                  "id": "RHEA:11436"
+                },
+                {
+                  "database": "Rhea",
+                  "id": "RHEA-COMP:10350"
+                },
+                {
+                  "database": "Rhea",
+                  "id": "RHEA-COMP:14399"
+                },
+                {
+                  "database": "ChEBI",
+                  "id": "CHEBI:15377"
+                },
+                {
+                  "database": "ChEBI",
+                  "id": "CHEBI:15378"
+                },
+                {
+                  "database": "ChEBI",
+                  "id": "CHEBI:15379"
+                },
+                {
+                  "database": "ChEBI",
+                  "id": "CHEBI:29033"
+                },
+                {
+                  "database": "ChEBI",
+                  "id": "CHEBI:29034"
+                }
+              ],
+              "ecNumber": "7.1.1.9",
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "RuleBase",
+                  "id": "RU000369"
+                }
+              ]
+            }
+          },
+          {
+            "commentType": "COFACTOR",
+            "cofactors": [
+              {
+                "name": "heme",
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "ARBA",
+                    "id": "ARBA00001971"
+                  }
+                ],
+                "cofactorCrossReference": {
+                  "database": "ChEBI",
+                  "id": "CHEBI:30413"
+                }
+              }
+            ]
+          },
+          {
+            "texts": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "RuleBase",
+                    "id": "RU000369"
+                  }
+                ],
+                "value": "Component of the cytochrome c oxidase, the last enzyme in the mitochondrial electron transport chain which drives oxidative phosphorylation. The respiratory chain contains 3 multisubunit complexes succinate dehydrogenase (complex II, CII), ubiquinol-cytochrome c oxidoreductase (cytochrome b-c1 complex, complex III, CIII) and cytochrome c oxidase (complex IV, CIV), that cooperate to transfer electrons derived from NADH and succinate to molecular oxygen, creating an electrochemical gradient over the inner membrane that drives transmembrane transport and the ATP synthase. Cytochrome c oxidase is the component of the respiratory chain that catalyzes the reduction of oxygen to water. Electrons originating from reduced cytochrome c in the intermembrane space (IMS) are transferred via the dinuclear copper A center (CU(A)) of subunit 2 and heme A of subunit 1 to the active site in subunit 1, a binuclear center (BNC) formed by heme A3 and copper B (CU(B)). The BNC reduces molecular oxygen to 2 water molecules using 4 electrons from cytochrome c in the IMS and 4 protons from the mitochondrial matrix"
+              }
+            ],
+            "commentType": "FUNCTION"
+          }
+        ],
+        "features": [
+          {
+            "type": "Transmembrane",
+            "location": {
+              "start": {
+                "value": 6,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 25,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Helical",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ]
+          },
+          {
+            "type": "Transmembrane",
+            "location": {
+              "start": {
+                "value": 37,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 66,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Helical",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ]
+          }
+        ],
+        "geneLocations": [
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "AHN64827.1"
+              }
+            ],
+            "geneEncodingType": "Mitochondrion"
+          }
+        ],
+        "keywords": [
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "RuleBase",
+                "id": "RU000369"
+              }
+            ],
+            "id": "KW-0186",
+            "category": "Ligand",
+            "name": "Copper"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "RuleBase",
+                "id": "RU000369"
+              }
+            ],
+            "id": "KW-0249",
+            "category": "Biological process",
+            "name": "Electron transport"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "RuleBase",
+                "id": "RU000369"
+              }
+            ],
+            "id": "KW-0349",
+            "category": "Ligand",
+            "name": "Heme"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "RuleBase",
+                "id": "RU000369"
+              }
+            ],
+            "id": "KW-0408",
+            "category": "Ligand",
+            "name": "Iron"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "RuleBase",
+                "id": "RU000369"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-0472",
+            "category": "Cellular component",
+            "name": "Membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "RuleBase",
+                "id": "RU000369"
+              }
+            ],
+            "id": "KW-0479",
+            "category": "Ligand",
+            "name": "Metal-binding"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "RuleBase",
+                "id": "RU000369"
+              },
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "AHN64827.1"
+              }
+            ],
+            "id": "KW-0496",
+            "category": "Cellular component",
+            "name": "Mitochondrion"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "RuleBase",
+                "id": "RU000369"
+              }
+            ],
+            "id": "KW-0999",
+            "category": "Cellular component",
+            "name": "Mitochondrion inner membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "RuleBase",
+                "id": "RU000369"
+              }
+            ],
+            "id": "KW-0679",
+            "category": "Biological process",
+            "name": "Respiratory chain"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "RuleBase",
+                "id": "RU000369"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-0812",
+            "category": "Domain",
+            "name": "Transmembrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-1133",
+            "category": "Domain",
+            "name": "Transmembrane helix"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "RuleBase",
+                "id": "RU000369"
+              }
+            ],
+            "id": "KW-0813",
+            "category": "Biological process",
+            "name": "Transport"
+          }
+        ],
+        "references": [
+          {
+            "referenceNumber": 5,
+            "citation": {
+              "id": "32650821",
+              "citationType": "journal article",
+              "authors": [
+                "Dimzas D.",
+                "Morelli S.",
+                "Traversa D.",
+                "Di Cesare A.",
+                "Van Bourgonie Y.R.",
+                "Breugelmans K.",
+                "Backeljau T.",
+                "di Regalbono A.F.",
+                "Diakou A."
+              ],
+              "citationCrossReferences": [
+                {
+                  "database": "PubMed",
+                  "id": "32650821"
+                }
+              ],
+              "title": "Intermediate gastropod hosts of major feline cardiopulmonary nematodes in an area of wildcat and domestic cat sympatry in Greece.",
+              "publicationDate": "2020",
+              "journal": "Parasit. Vectors",
+              "firstPage": "0",
+              "lastPage": "345",
+              "volume": "13"
+            },
+            "referencePositions": [
+              "NUCLEOTIDE SEQUENCE"
+            ],
+            "referenceComments": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "QIU80631.1"
+                  }
+                ],
+                "value": "Sn-14",
+                "type": "STRAIN"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "QIU80631.1"
+              }
+            ]
+          },
+          {
+            "referenceNumber": 1,
+            "citation": {
+              "id": "CI-22T6FP2MKNDTE",
+              "citationType": "journal article",
+              "authors": [
+                "Korabek O.",
+                "Jurickova L.",
+                "Petrusek A."
+              ],
+              "title": "Resurrecting Helix straminea, a forgotten escargot with trans-Adriatic distribution: first insights into the genetic variation within the genus Helix (Gastropoda: Pulmonata).",
+              "publicationDate": "2014",
+              "journal": "Zool. J. Linn. Soc.",
+              "firstPage": "72",
+              "lastPage": "91",
+              "volume": "171"
+            },
+            "referencePositions": [
+              "NUCLEOTIDE SEQUENCE"
+            ],
+            "referenceComments": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "AHN64827.1"
+                  }
+                ],
+                "value": "LC18",
+                "type": "STRAIN"
+              },
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "AHN64824.1"
+                  }
+                ],
+                "value": "LC3",
+                "type": "STRAIN"
+              },
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "AHN64826.1"
+                  }
+                ],
+                "value": "LC37",
+                "type": "STRAIN"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "AHN64827.1"
+              }
+            ]
+          }
+        ],
+        "uniProtKBCrossReferences": [
+          {
+            "database": "EMBL",
+            "id": "KF823081",
+            "properties": [
+              {
+                "key": "ProteinId",
+                "value": "AHN64824.1"
+              },
+              {
+                "key": "Status",
+                "value": "-"
+              },
+              {
+                "key": "MoleculeType",
+                "value": "Genomic_DNA"
+              }
+            ]
+          },
+          {
+            "database": "EMBL",
+            "id": "KF823083",
+            "properties": [
+              {
+                "key": "ProteinId",
+                "value": "AHN64826.1"
+              },
+              {
+                "key": "Status",
+                "value": "-"
+              },
+              {
+                "key": "MoleculeType",
+                "value": "Genomic_DNA"
+              }
+            ]
+          }
+        ],
+        "sequence": {
+          "value": "TLYMLFGVWCGMVGTGLSLLIRWELGTAGVFSDDHFYNVIVTAHAFVMIFFMVMPIMIGGFGNWMVPLLIGAPDMSFPRMNNMSFWLLPPSFLLLISSSLVEGGAGTGWTVYPPLSGLIGHSGASVDLAIFSLHLAGMSSILGAINFITTIFNMRSPGISLELMSLFVWSILVTVFLLLLSLPVLAGAITMLLTDRNFSTSFFDPAGGGDPILYQHLF",
+          "length": 218,
+          "molWeight": 23642,
+          "crc64": "33CDF182AB84C18E",
+          "md5": "25AB05A09758DF77890BC20192EFAE87"
+        },
+        "extraAttributes": {
+          "countByCommentType": {
+            "FUNCTION": 1,
+            "CATALYTIC ACTIVITY": 1,
+            "COFACTOR": 1,
+            "PATHWAY": 1,
+            "SUBCELLULAR LOCATION": 1,
+            "SIMILARITY": 1
+          },
+          "countByFeatureType": {
+            "Transmembrane": 5,
+            "Domain": 1,
+            "Non-terminal residue": 2
+          },
+          "uniParcId": "UPI000438205C"
+        }
+      },
+      {
+        "entryType": "UniProtKB unreviewed (TrEMBL)",
+        "primaryAccession": "W8Q8A4",
+        "uniProtkbId": "W8Q8A4_9REOV",
+        "entryAudit": {
+          "firstPublicDate": "2014-05-14",
+          "lastAnnotationUpdateDate": "2026-06-10",
+          "lastSequenceUpdateDate": "2014-05-14",
+          "entryVersion": 49,
+          "sequenceVersion": 1
+        },
+        "annotationScore": 4,
+        "organism": {
+          "scientificName": "Human rotavirus A",
+          "taxonId": 10941,
+          "evidences": [
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "EMBL",
+              "id": "AHL44736.1"
+            }
+          ],
+          "lineage": [
+            "Viruses",
+            "Riboviria",
+            "Orthornavirae",
+            "Duplornaviricota",
+            "Resentoviricetes",
+            "Reovirales",
+            "Sedoreoviridae",
+            "Rotavirus",
+            "Rotavirus alphagastroenteritidis",
+            "Rotavirus A"
+          ]
+        },
+        "proteinExistence": "3: Inferred from homology",
+        "proteinDescription": {
+          "recommendedName": {
+            "fullName": {
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "HAMAP-Rule",
+                  "id": "MF_04132"
+                }
+              ],
+              "value": "Outer capsid protein VP4"
+            }
+          },
+          "alternativeNames": [
+            {
+              "fullName": {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04132"
+                  }
+                ],
+                "value": "Hemagglutinin"
+              }
+            }
+          ],
+          "contains": [
+            {
+              "recommendedName": {
+                "fullName": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04132"
+                    }
+                  ],
+                  "value": "Outer capsid protein VP8*"
+                }
+              }
+            },
+            {
+              "recommendedName": {
+                "fullName": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04132"
+                    }
+                  ],
+                  "value": "Outer capsid protein VP5*"
+                }
+              }
+            }
+          ]
+        },
+        "comments": [
+          {
+            "commentType": "SUBCELLULAR LOCATION",
+            "molecule": "Outer capsid protein VP5*",
+            "note": {
+              "texts": [
+                {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04132"
+                    }
+                  ],
+                  "value": "Outer capsid protein"
+                }
+              ]
+            },
+            "subcellularLocations": [
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04132"
+                    }
+                  ],
+                  "value": "Virion",
+                  "id": "SL-0274"
+                }
+              }
+            ]
+          },
+          {
+            "texts": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04132"
+                  }
+                ],
+                "value": "Outer capsid protein VP4: Spike-forming protein that mediates virion attachment to the host epithelial cell receptors and plays a major role in cell penetration, determination of host range restriction and virulence. Rotavirus attachment and entry into the host cell probably involves multiple sequential contacts between the outer capsid proteins VP4 and VP7, and the cell receptors. It is subsequently lost, together with VP7, following virus entry into the host cell. Following entry into the host cell, low intracellular or intravesicular Ca(2+) concentration probably causes the calcium-stabilized VP7 trimers to dissociate from the virion. This step is probably necessary for the membrane-disrupting entry step and the release of VP4, which is locked onto the virion by VP7. During the virus exit from the host cell, VP4 seems to be required to target the newly formed virions to the host cell lipid rafts"
+              }
+            ],
+            "commentType": "FUNCTION"
+          }
+        ],
+        "features": [
+          {
+            "type": "Chain",
+            "location": {
+              "start": {
+                "value": 1,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 775,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Outer capsid protein VP4",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "featureId": "PRO_5023367224"
+          },
+          {
+            "type": "Chain",
+            "location": {
+              "start": {
+                "value": 1,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 231,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Outer capsid protein VP8*",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "featureId": "PRO_5029066481"
+          }
+        ],
+        "keywords": [
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022561"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-0167",
+            "category": "Cellular component",
+            "name": "Capsid protein"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023054"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-0175",
+            "category": "Domain",
+            "name": "Coiled coil"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-1015",
+            "category": "PTM",
+            "name": "Disulfide bond"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022546"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-0348",
+            "category": "Molecular function",
+            "name": "Hemagglutinin"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022511"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-1032",
+            "category": "Cellular component",
+            "name": "Host cell membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023200"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-1035",
+            "category": "Cellular component",
+            "name": "Host cytoplasm"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023111"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-1037",
+            "category": "Cellular component",
+            "name": "Host cytoskeleton"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023184"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-1038",
+            "category": "Cellular component",
+            "name": "Host endoplasmic reticulum"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022870"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-1043",
+            "category": "Cellular component",
+            "name": "Host membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022581"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-0945",
+            "category": "Biological process",
+            "name": "Host-virus interaction"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023136"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-0472",
+            "category": "Cellular component",
+            "name": "Membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022770"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-1152",
+            "category": "Cellular component",
+            "name": "Outer capsid protein"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022804"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-1161",
+            "category": "Biological process",
+            "name": "Viral attachment to host cell"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022595"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-1162",
+            "category": "Biological process",
+            "name": "Viral penetration into host cytoplasm"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022648"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-1173",
+            "category": "Biological process",
+            "name": "Viral penetration via permeabilization of host membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022844"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-0946",
+            "category": "Cellular component",
+            "name": "Virion"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023296"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04132"
+              }
+            ],
+            "id": "KW-1160",
+            "category": "Biological process",
+            "name": "Virus entry into host cell"
+          }
+        ],
+        "references": [
+          {
+            "referenceNumber": 1,
+            "citation": {
+              "id": "24818762",
+              "citationType": "journal article",
+              "authors": [
+                "Jeong S.",
+                "Than V.T.",
+                "Lim I.",
+                "Kim W."
+              ],
+              "citationCrossReferences": [
+                {
+                  "database": "PubMed",
+                  "id": "24818762"
+                }
+              ],
+              "title": "Whole-Genome Analysis of a Rare Human Korean G3P Rotavirus Strain Suggests a Complex Evolutionary Origin Potentially Involving Reassortment Events between Feline and Bovine Rotaviruses.",
+              "publicationDate": "2014",
+              "journal": "PLoS ONE",
+              "firstPage": "E97127",
+              "lastPage": "E97127",
+              "volume": "9"
+            },
+            "referencePositions": [
+              "NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA]"
+            ],
+            "referenceComments": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "AHL44736.1"
+                  }
+                ],
+                "value": "CAU12-2-51",
+                "type": "STRAIN"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "AHL44736.1"
+              }
+            ]
+          }
+        ],
+        "uniProtKBCrossReferences": [
+          {
+            "database": "EMBL",
+            "id": "KJ187602",
+            "properties": [
+              {
+                "key": "ProteinId",
+                "value": "AHL44736.1"
+              },
+              {
+                "key": "Status",
+                "value": "-"
+              },
+              {
+                "key": "MoleculeType",
+                "value": "Genomic_RNA"
+              }
+            ]
+          },
+          {
+            "database": "GO",
+            "id": "GO:0044172",
+            "properties": [
+              {
+                "key": "GoTerm",
+                "value": "C:host cell endoplasmic reticulum-Golgi intermediate compartment"
+              },
+              {
+                "key": "GoEvidenceType",
+                "value": "IEA:UniProtKB-SubCell"
+              }
+            ]
+          }
+        ],
+        "sequence": {
+          "value": "MASLIYRQLLSNSYVTNISDEVNEIGNKKTTNVTVNPGPFAQTGYAPVNWGHGELPDSTLVQPTLDGPYQPTSLNLPVDYWMLIAPTREGKVAEGTNTTDRWFACVLVEPNVQNTQRQYVLDGQNVQLNVSNDSSTSWKFILFIKLTPDGTYTQYSTLSTPHKLCAWMKRDNRVYWYQGATPNASESYYLTINNDNSNVSSDAEFYLIPQSQTAMCTQYINNGLPPIQNTRNIVPVNITSRQIKDIRAQMNEDIVISKTSLWKEMQYNRDIIIRFKFANSIIKSGGLGYKWSEISFKPMNYQYTYTRDEEEVTAHTTCSVNGVNDFNYNGGTLPTDFAISRFEVIKENSYVYVDYWDDSQAFRNMVYVRSLAANLNDVVCSGGSYSFALPVGNHPVMSGGAVTLTSAGVTLSTQYTDYVSLNSLRFRFRLAVSEPSFSISRTRMSGIYGLPAVNPNNNAEYYEVAGRFSLISLVPTNDDYQTPIANSVTVRQDLERQLGELREEFNSLSQEIAVSQLIDLATLPLDMFSMFSGIKSTVEAVKSMTTNVMKRFKTSSLANAISDLTSNMSEAASSVRLTSVRSVGAITLPRARVSLQVGDDLRSMQDVSTQVSNVSRNLRLKEFTTQTDTLSFDDISAAVLKTKLDKSTQISQQTMPDIITESSEKFIPKRSYRIVDEDTAFETGIDGTFYAYKVDTFNEIPFDMERFNKLITDPPVLSAIIDFKTLKNLNDNYGITKKQAMELLHSNPKTLKEFINDNNPIIRNRIENLISQCRL",
+          "length": 775,
+          "molWeight": 87160,
+          "crc64": "E8FC8398CFF982A6",
+          "md5": "65E31E3EC001110F2507BA47DB99CEDF"
+        },
+        "extraAttributes": {
+          "countByCommentType": {
+            "FUNCTION": 3,
+            "SUBUNIT": 1,
+            "SUBCELLULAR LOCATION": 4,
+            "DOMAIN": 1,
+            "PTM": 1,
+            "MISCELLANEOUS": 2,
+            "SIMILARITY": 1,
+            "CAUTION": 1
+          },
+          "countByFeatureType": {
+            "Chain": 3,
+            "Domain": 3,
+            "Region": 3,
+            "Coiled coil": 1,
+            "Motif": 1,
+            "Site": 3,
+            "Disulfide bond": 1
+          },
+          "uniParcId": "UPI00042F3651"
+        }
+      },
+      {
+        "entryType": "UniProtKB unreviewed (TrEMBL)",
+        "primaryAccession": "W8QKB0",
+        "uniProtkbId": "W8QKB0_9REOV",
+        "entryAudit": {
+          "firstPublicDate": "2014-05-14",
+          "lastAnnotationUpdateDate": "2026-06-10",
+          "lastSequenceUpdateDate": "2014-05-14",
+          "entryVersion": 30,
+          "sequenceVersion": 1
+        },
+        "annotationScore": 3,
+        "organism": {
+          "scientificName": "Human rotavirus A",
+          "taxonId": 10941,
+          "evidences": [
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "EMBL",
+              "id": "AHL44728.1"
+            }
+          ],
+          "lineage": [
+            "Viruses",
+            "Riboviria",
+            "Orthornavirae",
+            "Duplornaviricota",
+            "Resentoviricetes",
+            "Reovirales",
+            "Sedoreoviridae",
+            "Rotavirus",
+            "Rotavirus alphagastroenteritidis",
+            "Rotavirus A"
+          ]
+        },
+        "proteinExistence": "3: Inferred from homology",
+        "proteinDescription": {
+          "recommendedName": {
+            "fullName": {
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "HAMAP-Rule",
+                  "id": "MF_04089"
+                }
+              ],
+              "value": "Non-structural protein 2"
+            },
+            "shortNames": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04089"
+                  }
+                ],
+                "value": "NSP2"
+              }
+            ],
+            "ecNumbers": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04089"
+                  }
+                ],
+                "value": "3.6.4.-"
+              }
+            ]
+          },
+          "alternativeNames": [
+            {
+              "fullName": {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04089"
+                  }
+                ],
+                "value": "NCVP3"
+              }
+            },
+            {
+              "fullName": {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04089"
+                  }
+                ],
+                "value": "Non-structural RNA-binding protein 35"
+              },
+              "shortNames": [
+                {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04089"
+                    }
+                  ],
+                  "value": "NS35"
+                }
+              ]
+            }
+          ]
+        },
+        "comments": [
+          {
+            "commentType": "SUBCELLULAR LOCATION",
+            "note": {
+              "texts": [
+                {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04089"
+                    }
+                  ],
+                  "value": "Found in spherical cytoplasmic structures, called viral factories, that appear early after infection and are the site of viral replication and packaging"
+                }
+              ]
+            },
+            "subcellularLocations": [
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04089"
+                    }
+                  ],
+                  "value": "Host cytoplasm",
+                  "id": "SL-0381"
+                }
+              }
+            ]
+          },
+          {
+            "commentType": "COFACTOR",
+            "cofactors": [
+              {
+                "name": "Mg(2+)",
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04089"
+                  },
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "RuleBase",
+                    "id": "RU364009"
+                  }
+                ],
+                "cofactorCrossReference": {
+                  "database": "ChEBI",
+                  "id": "CHEBI:18420"
+                }
+              }
+            ]
+          },
+          {
+            "texts": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04089"
+                  }
+                ],
+                "value": "Participates in replication and packaging of the viral genome. Plays a crucial role, together with NSP5, in the formation of virus factories (viroplasms) which are large inclusions in the host cytoplasm where replication intermediates are assembled and viral RNA replication takes place. Displays ssRNA binding, NTPase, RNA triphosphatase (RTPase) and ATP-independent helix-unwinding activities. The unwinding activity may prepare and organize plus-strand RNAs for packaging and replication by removing interfering secondary structures. The RTPase activity plays a role in the removal of the gamma-phosphate from the rotavirus RNA minus strands of dsRNA genome segments. Participates in the selective exclusion of host proteins from stress granules (SG) and P bodies (PB). Participates also in the sequestration of these remodeled organelles in viral factories"
+              }
+            ],
+            "commentType": "FUNCTION"
+          }
+        ],
+        "features": [
+          {
+            "type": "Binding site",
+            "location": {
+              "start": {
+                "value": 107,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 109,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "",
+            "featureCrossReferences": [
+              {
+                "database": "ChEBI",
+                "id": "CHEBI:30616"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04089"
+              }
+            ],
+            "ligand": {
+              "name": "ATP",
+              "id": "ChEBI:CHEBI:30616"
+            }
+          },
+          {
+            "type": "Domain",
+            "location": {
+              "start": {
+                "value": 2,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 142,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Rotavirus non-structural protein 35 N-terminal",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000259",
+                "source": "Pfam",
+                "id": "PF21067"
+              }
+            ]
+          }
+        ],
+        "keywords": [
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022840"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04089"
+              }
+            ],
+            "id": "KW-0067",
+            "category": "Ligand",
+            "name": "ATP-binding"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023200"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04089"
+              }
+            ],
+            "id": "KW-1035",
+            "category": "Cellular component",
+            "name": "Host cytoplasm"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022801"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04089"
+              }
+            ],
+            "id": "KW-0378",
+            "category": "Molecular function",
+            "name": "Hydrolase"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022842"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04089"
+              }
+            ],
+            "id": "KW-0460",
+            "category": "Ligand",
+            "name": "Magnesium"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022723"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04089"
+              }
+            ],
+            "id": "KW-0479",
+            "category": "Ligand",
+            "name": "Metal-binding"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022741"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04089"
+              }
+            ],
+            "id": "KW-0547",
+            "category": "Ligand",
+            "name": "Nucleotide-binding"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022884"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04089"
+              }
+            ],
+            "id": "KW-0694",
+            "category": "Molecular function",
+            "name": "RNA-binding"
+          }
+        ],
+        "references": [
+          {
+            "referenceNumber": 1,
+            "citation": {
+              "id": "24818762",
+              "citationType": "journal article",
+              "authors": [
+                "Jeong S.",
+                "Than V.T.",
+                "Lim I.",
+                "Kim W."
+              ],
+              "citationCrossReferences": [
+                {
+                  "database": "PubMed",
+                  "id": "24818762"
+                }
+              ],
+              "title": "Whole-Genome Analysis of a Rare Human Korean G3P Rotavirus Strain Suggests a Complex Evolutionary Origin Potentially Involving Reassortment Events between Feline and Bovine Rotaviruses.",
+              "publicationDate": "2014",
+              "journal": "PLoS ONE",
+              "firstPage": "E97127",
+              "lastPage": "E97127",
+              "volume": "9"
+            },
+            "referencePositions": [
+              "NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA]"
+            ],
+            "referenceComments": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "AHL44728.1"
+                  }
+                ],
+                "value": "CAU12-2-51",
+                "type": "STRAIN"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "AHL44728.1"
+              }
+            ]
+          }
+        ],
+        "uniProtKBCrossReferences": [
+          {
+            "database": "EMBL",
+            "id": "KJ187595",
+            "properties": [
+              {
+                "key": "ProteinId",
+                "value": "AHL44728.1"
+              },
+              {
+                "key": "Status",
+                "value": "-"
+              },
+              {
+                "key": "MoleculeType",
+                "value": "Genomic_RNA"
+              }
+            ]
+          },
+          {
+            "database": "GO",
+            "id": "GO:0030430",
+            "properties": [
+              {
+                "key": "GoTerm",
+                "value": "C:host cell cytoplasm"
+              },
+              {
+                "key": "GoEvidenceType",
+                "value": "IEA:UniProtKB-SubCell"
+              }
+            ]
+          }
+        ],
+        "sequence": {
+          "value": "MAELACFCYPHLENDSYKFIPFNSLAIKCMLTAKVDKKDQDKFYNSIVYGITPPPQFKKRYNTNDNSRGMNYETPMFNKVAVLICEALNSIKVTQSDVANVLSKVVSVRHLENLVLRRENHQDVLFHSKELLLKSVLIAIGHSKEIETTATAEGGEIVFQNAAFTMWKLTYLEHKLMPILDQNFIEYKITMNEDKPISESHVKELIAELRWQYNKFAVITHGKGHYRVVKYSSVANHADRVYATFKSNNKNGSMTEFNLLDQRIIWQNWYAFTSSMKQGNTLEICKKLLFQKMKRESNPFKGLSTDRKMDEVSQIGI",
+          "length": 317,
+          "molWeight": 36673,
+          "crc64": "81A32DF875978D2E",
+          "md5": "451FD69051210DF8F2D857E25AEB19CC"
+        },
+        "extraAttributes": {
+          "countByCommentType": {
+            "FUNCTION": 1,
+            "COFACTOR": 1,
+            "SUBUNIT": 1,
+            "SUBCELLULAR LOCATION": 1,
+            "SIMILARITY": 1
+          },
+          "countByFeatureType": {
+            "Domain": 2,
+            "Region": 1,
+            "Active site": 1,
+            "Binding site": 4
+          },
+          "uniParcId": "UPI00042E6D38"
+        }
+      },
+      {
+        "entryType": "UniProtKB unreviewed (TrEMBL)",
+        "primaryAccession": "W6U8K5",
+        "uniProtkbId": "W6U8K5_ECHGR",
+        "entryAudit": {
+          "firstPublicDate": "2014-04-16",
+          "lastAnnotationUpdateDate": "2026-09-02",
+          "lastSequenceUpdateDate": "2014-04-16",
+          "entryVersion": 45,
+          "sequenceVersion": 1
+        },
+        "annotationScore": 2,
+        "organism": {
+          "scientificName": "Echinococcus granulosus",
+          "commonName": "Hydatid tapeworm",
+          "taxonId": 6210,
+          "evidences": [
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "EMBL",
+              "id": "EUB57593.1"
+            },
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "Proteomes",
+              "id": "UP000019149"
+            }
+          ],
+          "lineage": [
+            "Eukaryota",
+            "Metazoa",
+            "Spiralia",
+            "Lophotrochozoa",
+            "Platyhelminthes",
+            "Rhabditophora",
+            "Neodermata",
+            "Cestoda",
+            "Eucestoda",
+            "Cyclophyllidea",
+            "Taeniidae",
+            "Echinococcus",
+            "Echinococcus granulosus group"
+          ]
+        },
+        "proteinExistence": "4: Predicted",
+        "proteinDescription": {
+          "submissionNames": [
+            {
+              "fullName": {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "EUB57593.1"
+                  }
+                ],
+                "value": "Feline leukemia virus subgroup C receptor-related protein"
+              }
+            }
+          ]
+        },
+        "genes": [
+          {
+            "orfNames": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "EUB57593.1"
+                  }
+                ],
+                "value": "EGR_07535"
+              }
+            ]
+          }
+        ],
+        "comments": [
+          {
+            "commentType": "SUBCELLULAR LOCATION",
+            "subcellularLocations": [
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "ARBA",
+                      "id": "ARBA00004141"
+                    }
+                  ],
+                  "value": "Membrane",
+                  "id": "SL-0162"
+                },
+                "topology": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "ARBA",
+                      "id": "ARBA00004141"
+                    }
+                  ],
+                  "value": "Multi-pass membrane protein",
+                  "id": "SL-9909"
+                }
+              }
+            ]
+          },
+          {
+            "texts": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "EUB57593.1"
+                  }
+                ],
+                "value": "The sequence shown here is derived from an EMBL/GenBank/DDBJ whole genome shotgun (WGS) entry which is preliminary data"
+              }
+            ],
+            "commentType": "CAUTION"
+          }
+        ],
+        "features": [
+          {
+            "type": "Transmembrane",
+            "location": {
+              "start": {
+                "value": 435,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 455,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Helical",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ]
+          },
+          {
+            "type": "Transmembrane",
+            "location": {
+              "start": {
+                "value": 461,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 480,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Helical",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ]
+          }
+        ],
+        "keywords": [
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023136"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-0472",
+            "category": "Cellular component",
+            "name": "Membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "EUB57593.1"
+              }
+            ],
+            "id": "KW-0675",
+            "category": "Molecular function",
+            "name": "Receptor"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "Proteomes",
+                "id": "UP000019149"
+              }
+            ],
+            "id": "KW-1185",
+            "category": "Technical term",
+            "name": "Reference proteome"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022692"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-0812",
+            "category": "Domain",
+            "name": "Transmembrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022989"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-1133",
+            "category": "Domain",
+            "name": "Transmembrane helix"
+          }
+        ],
+        "references": [
+          {
+            "referenceNumber": 1,
+            "citation": {
+              "id": "24013640",
+              "citationType": "journal article",
+              "authors": [
+                "Zheng H.",
+                "Zhang W.",
+                "Zhang L.",
+                "Zhang Z.",
+                "Li J.",
+                "Lu G.",
+                "Zhu Y.",
+                "Wang Y.",
+                "Huang Y.",
+                "Liu J.",
+                "Kang H.",
+                "Chen J.",
+                "Wang L.",
+                "Chen A.",
+                "Yu S.",
+                "Gao Z.",
+                "Jin L.",
+                "Gu W.",
+                "Wang Z.",
+                "Zhao L.",
+                "Shi B.",
+                "Wen H.",
+                "Lin R.",
+                "Jones M.K.",
+                "Brejova B.",
+                "Vinar T.",
+                "Zhao G.",
+                "McManus D.P.",
+                "Chen Z.",
+                "Zhou Y.",
+                "Wang S."
+              ],
+              "citationCrossReferences": [
+                {
+                  "database": "PubMed",
+                  "id": "24013640"
+                },
+                {
+                  "database": "DOI",
+                  "id": "10.1038/ng.2757"
+                }
+              ],
+              "title": "The genome of the hydatid tapeworm Echinococcus granulosus.",
+              "publicationDate": "2013",
+              "journal": "Nat. Genet.",
+              "firstPage": "1168",
+              "lastPage": "1175",
+              "volume": "45"
+            },
+            "referencePositions": [
+              "NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA]"
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "EUB57593.1"
+              },
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "Proteomes",
+                "id": "UP000019149"
+              }
+            ]
+          }
+        ],
+        "uniProtKBCrossReferences": [
+          {
+            "database": "EMBL",
+            "id": "APAU02000080",
+            "properties": [
+              {
+                "key": "ProteinId",
+                "value": "EUB57593.1"
+              },
+              {
+                "key": "Status",
+                "value": "-"
+              },
+              {
+                "key": "MoleculeType",
+                "value": "Genomic_DNA"
+              }
+            ]
+          },
+          {
+            "database": "RefSeq",
+            "id": "XP_024348789.1",
+            "properties": [
+              {
+                "key": "NucleotideSequenceId",
+                "value": "XM_024496784.1"
+              }
+            ]
+          }
+        ],
+        "sequence": {
+          "value": "MPTPLTHTAYRSPPQEEKINISLYRHRKPKMKSATIATTFIFPNKTYLTCIFAKTQPMRAARGQSKNKGPQQNGSLVPPLDANANPALDVNLGRFSEEEREAILTVVKRDLEIRCMEKYRLKKIRSGLLQEDSQAPLSLPGSANACTICRGRFIIFLNPRVTCSLCRREVCRRCTKAYNGEMLCRICSHDIFYRAVKCPWFYDSSPDKLCGHASDTIVKSLFKDNLPVLNGLTEEQLHKALSNYLKPDRETYVNGVVITLEVMLRIENEQIRTFTKRYQEVRSTAVNALNKVRGTAMKNGQEDSEKEVDRITSQFLQQTREALRKLLQMLCITEEKYKLSVHNSRQVNTATRVLEITQKQVEQLVGHKIQIPDEYTNVEVEEDLESFVASVASGPEEFFANVLLEDLTKAMRNSISHGRNSRAPLSSDQQGKDVAIAWLSMLYMLVYIPMIFPATWLLNHYGLRVSILIGATLNMLGAWIKCLSMELSQPTSSPASNASFPLLMVAQLVCALGQVFLLGVPAQLAATWFSKSELAMATAIGVGCALGFGLPPLMVPAVTSSTGVADFEDFRKGFRIMFYGGAAIMSFDLLLVAIFFKEEPEIAPSRAQYKRILQRRAQLAGDKPDEADFAPAFDHESSVLTAEESVLVNQSYFHQVAHSFKCVSFIYLNICYGVNTGVYYEIGTLLNSIVAEFFPTAQGARMELPNLERCVKKSPSGVKQINVVKDGRIEAISTGDQFCTSPGSEDVEGSDELSLNLSSETEQVAIGWIGFSMVIAGLVGSIVAGVVLKKTGLYRLVLIIFYFLSVISMGAFMGSLYSNLIGTVFLTMILLGFFQSGFLPLGFEYAAEITYPIDEGLTSGILNTSAHIFGIILTQVATAMIGNYGALPTNIFILVCMVIAGVPACFMKDDLKRQRAHEKMRVEVEANSGDEFKYSSISKTKDV",
+          "length": 943,
+          "molWeight": 104642,
+          "crc64": "EBEC2FBABAA7A2A2",
+          "md5": "52E715C9787B9CD778FA5533664DC417"
+        },
+        "extraAttributes": {
+          "countByCommentType": {
+            "SUBCELLULAR LOCATION": 1,
+            "CAUTION": 1
+          },
+          "countByFeatureType": {
+            "Transmembrane": 10,
+            "Domain": 1,
+            "Region": 1,
+            "Compositional bias": 1
+          },
+          "uniParcId": "UPI0003E7E985"
+        }
+      },
+      {
+        "entryType": "UniProtKB unreviewed (TrEMBL)",
+        "primaryAccession": "W5L4Z9",
+        "uniProtkbId": "W5L4Z9_ASTMX",
+        "entryAudit": {
+          "firstPublicDate": "2014-04-16",
+          "lastAnnotationUpdateDate": "2026-06-10",
+          "lastSequenceUpdateDate": "2018-12-05",
+          "entryVersion": 58,
+          "sequenceVersion": 2
+        },
+        "annotationScore": 2,
+        "organism": {
+          "scientificName": "Astyanax mexicanus",
+          "commonName": "Blind cave fish",
+          "synonyms": [
+            "Astyanax fasciatus mexicanus"
+          ],
+          "taxonId": 7994,
+          "evidences": [
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "Ensembl",
+              "id": "ENSAMXP00000014911.2"
+            },
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "Proteomes",
+              "id": "UP000018467"
+            }
+          ],
+          "lineage": [
+            "Eukaryota",
+            "Metazoa",
+            "Chordata",
+            "Craniata",
+            "Vertebrata",
+            "Euteleostomi",
+            "Actinopterygii",
+            "Neopterygii",
+            "Teleostei",
+            "Ostariophysi",
+            "Characiformes",
+            "Characoidei",
+            "Acestrorhamphidae",
+            "Acestrorhamphinae",
+            "Astyanax"
+          ]
+        },
+        "proteinExistence": "3: Inferred from homology",
+        "proteinDescription": {
+          "submissionNames": [
+            {
+              "fullName": {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "Ensembl",
+                    "id": "ENSAMXP00000014911.2"
+                  }
+                ],
+                "value": "FLVCR choline and putative heme transporter 2"
+              }
+            }
+          ]
+        },
+        "comments": [
+          {
+            "commentType": "SUBCELLULAR LOCATION",
+            "subcellularLocations": [
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "ARBA",
+                      "id": "ARBA00004651"
+                    }
+                  ],
+                  "value": "Cell membrane",
+                  "id": "SL-0039"
+                },
+                "topology": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "ARBA",
+                      "id": "ARBA00004651"
+                    }
+                  ],
+                  "value": "Multi-pass membrane protein",
+                  "id": "SL-9909"
+                }
+              },
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "ARBA",
+                      "id": "ARBA00004477"
+                    }
+                  ],
+                  "value": "Endoplasmic reticulum membrane",
+                  "id": "SL-0097"
+                },
+                "topology": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "ARBA",
+                      "id": "ARBA00004477"
+                    }
+                  ],
+                  "value": "Multi-pass membrane protein",
+                  "id": "SL-9909"
+                }
+              },
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "ARBA",
+                      "id": "ARBA00004225"
+                    }
+                  ],
+                  "value": "Mitochondrion membrane",
+                  "id": "SL-0171"
+                },
+                "topology": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "ARBA",
+                      "id": "ARBA00004225"
+                    }
+                  ],
+                  "value": "Multi-pass membrane protein",
+                  "id": "SL-9909"
+                }
+              }
+            ]
+          },
+          {
+            "commentType": "CATALYTIC ACTIVITY",
+            "reaction": {
+              "name": "choline(out) = choline(in)",
+              "reactionCrossReferences": [
+                {
+                  "database": "Rhea",
+                  "id": "RHEA:32751"
+                },
+                {
+                  "database": "ChEBI",
+                  "id": "CHEBI:15354"
+                }
+              ],
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "ARBA",
+                  "id": "ARBA00036811"
+                }
+              ]
+            }
+          },
+          {
+            "texts": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "ARBA",
+                    "id": "ARBA00053231"
+                  }
+                ],
+                "value": "Choline uniporter that specifically mediates choline uptake at the blood-brain-barrier. Responsible for the majority of choline uptake across the blood-brain-barrier from the circulation into the brain. Choline, a nutrient critical for brain development, is a precursor of phosphatidylcholine, as well as betaine. Also mediates transport of ethanolamine. Choline and ethanolamine transport is not coupled with proton transport and is exclusively driven by the choline gradient across the plasma membrane. Also acts as a heme b transporter"
+              }
+            ],
+            "commentType": "FUNCTION"
+          }
+        ],
+        "features": [
+          {
+            "type": "Domain",
+            "location": {
+              "start": {
+                "value": 58,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 463,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Major facilitator superfamily (MFS) profile",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000259",
+                "source": "PROSITE",
+                "id": "PS50850"
+              }
+            ]
+          },
+          {
+            "type": "Region",
+            "location": {
+              "start": {
+                "value": 473,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 494,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Disordered",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "MobiDB-lite"
+              }
+            ]
+          }
+        ],
+        "keywords": [
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022475"
+              }
+            ],
+            "id": "KW-1003",
+            "category": "Cellular component",
+            "name": "Cell membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022824"
+              }
+            ],
+            "id": "KW-0256",
+            "category": "Cellular component",
+            "name": "Endoplasmic reticulum"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023136"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-0472",
+            "category": "Cellular component",
+            "name": "Membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023128"
+              }
+            ],
+            "id": "KW-0496",
+            "category": "Cellular component",
+            "name": "Mitochondrion"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "Proteomes",
+                "id": "UP000018467"
+              }
+            ],
+            "id": "KW-1185",
+            "category": "Technical term",
+            "name": "Reference proteome"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022692"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-0812",
+            "category": "Domain",
+            "name": "Transmembrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022989"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-1133",
+            "category": "Domain",
+            "name": "Transmembrane helix"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022448"
+              }
+            ],
+            "id": "KW-0813",
+            "category": "Biological process",
+            "name": "Transport"
+          }
+        ],
+        "references": [
+          {
+            "referenceNumber": 1,
+            "citation": {
+              "id": "25329095",
+              "citationType": "journal article",
+              "authors": [
+                "McGaugh S.E.",
+                "Gross J.B.",
+                "Aken B.",
+                "Blin M.",
+                "Borowsky R.",
+                "Chalopin D.",
+                "Hinaux H.",
+                "Jeffery W.R.",
+                "Keene A.",
+                "Ma L.",
+                "Minx P.",
+                "Murphy D.",
+                "O'Quin K.E.",
+                "Retaux S.",
+                "Rohner N.",
+                "Searle S.M.",
+                "Stahl B.A.",
+                "Tabin C.",
+                "Volff J.N.",
+                "Yoshizawa M.",
+                "Warren W.C."
+              ],
+              "citationCrossReferences": [
+                {
+                  "database": "PubMed",
+                  "id": "25329095"
+                },
+                {
+                  "database": "DOI",
+                  "id": "10.1038/ncomms6307"
+                }
+              ],
+              "title": "The cavefish genome reveals candidate genes for eye loss.",
+              "publicationDate": "2014",
+              "journal": "Nat. Commun.",
+              "firstPage": "5307",
+              "lastPage": "5307",
+              "volume": "5"
+            },
+            "referencePositions": [
+              "NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA]"
+            ],
+            "referenceComments": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "Proteomes",
+                    "id": "UP000018467"
+                  }
+                ],
+                "value": "female",
+                "type": "STRAIN"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "Proteomes",
+                "id": "UP000018467"
+              }
+            ]
+          },
+          {
+            "referenceNumber": 2,
+            "citation": {
+              "id": "CI-20IM145UGQVF7",
+              "citationType": "submission",
+              "authoringGroup": [
+                "Ensembl"
+              ],
+              "publicationDate": "JAN-2026",
+              "submissionDatabase": "UniProtKB"
+            },
+            "referencePositions": [
+              "IDENTIFICATION"
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "Ensembl",
+                "id": "ENSAMXP00000014911.2"
+              }
+            ]
+          }
+        ],
+        "uniProtKBCrossReferences": [
+          {
+            "database": "AlphaFoldDB",
+            "id": "W5L4Z9",
+            "properties": [
+              {
+                "key": "Description",
+                "value": "-"
+              }
+            ]
+          },
+          {
+            "database": "Ensembl",
+            "id": "ENSAMXT00000014911.2",
+            "properties": [
+              {
+                "key": "ProteinId",
+                "value": "ENSAMXP00000014911.2"
+              },
+              {
+                "key": "GeneId",
+                "value": "ENSAMXG00000014488.2"
+              }
+            ]
+          }
+        ],
+        "sequence": {
+          "value": "MSACENSEDLKGQTNGPALVKSNISTSEPAAEQIECKVFSPEAPQECTTRLYKRRWAIVFLFSSYSLCNAFQWIQYGIINNIFMHFYSVSSFAIDWMSMIYMLTYIPFIFPVTWLLDKKGLRVVALVASSINCLGTWIKVASVKPHLFWVTMLGQFACSFAQVFILGMPSRIASVWFGSGEVSTACSIGVFGNQLGIAIGFLVPPILVPNVEDLDKLAHHISIMFYITAGVATLIFFLVIIVFQEKPEIPPSQAQAAMRNMSPQEYSYLASIKRLIHNKSFILLIITYGLNVGSFYAVSTLLNRMIIDHYPGEEVNAGRIGLTIVIAGMVGSLICGIWLDKSKTYKQTTLAVYFLTLVGMLIYAFTLDLGHLWVVFLTAGALGFFMTGYLPLGFEFAVELTYPESEGTSSGLLNCSAQVFGIIFTICQGKIIDYYGTLAGNIFLCIFLLIGTIMTGFIKADLRRQRANQVAETNAKKPGCQEEGLSSPLKEDKV",
+          "length": 494,
+          "molWeight": 54676,
+          "crc64": "9D5DBF17CAD5C77E",
+          "md5": "E646D99157273186F09C65F70AD4B392"
+        },
+        "extraAttributes": {
+          "countByCommentType": {
+            "FUNCTION": 1,
+            "CATALYTIC ACTIVITY": 3,
+            "SUBCELLULAR LOCATION": 1,
+            "SIMILARITY": 1
+          },
+          "countByFeatureType": {
+            "Domain": 1,
+            "Region": 1
+          },
+          "uniParcId": "UPI000BBDE7D1"
+        }
+      },
+      {
+        "entryType": "UniProtKB unreviewed (TrEMBL)",
+        "primaryAccession": "W8Q983",
+        "uniProtkbId": "W8Q983_9REOV",
+        "entryAudit": {
+          "firstPublicDate": "2014-05-14",
+          "lastAnnotationUpdateDate": "2026-06-10",
+          "lastSequenceUpdateDate": "2014-05-14",
+          "entryVersion": 37,
+          "sequenceVersion": 1
+        },
+        "annotationScore": 4,
+        "organism": {
+          "scientificName": "Human rotavirus A",
+          "taxonId": 10941,
+          "evidences": [
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "EMBL",
+              "id": "AHL44730.1"
+            }
+          ],
+          "lineage": [
+            "Viruses",
+            "Riboviria",
+            "Orthornavirae",
+            "Duplornaviricota",
+            "Resentoviricetes",
+            "Reovirales",
+            "Sedoreoviridae",
+            "Rotavirus",
+            "Rotavirus alphagastroenteritidis",
+            "Rotavirus A"
+          ]
+        },
+        "proteinExistence": "3: Inferred from homology",
+        "proteinDescription": {
+          "recommendedName": {
+            "fullName": {
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "HAMAP-Rule",
+                  "id": "MF_04091"
+                }
+              ],
+              "value": "Non-structural glycoprotein 4"
+            },
+            "shortNames": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04091"
+                  }
+                ],
+                "value": "NSP4"
+              }
+            ]
+          },
+          "alternativeNames": [
+            {
+              "fullName": {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04091"
+                  }
+                ],
+                "value": "NCVP5"
+              }
+            },
+            {
+              "fullName": {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04091"
+                  }
+                ],
+                "value": "NS28"
+              }
+            }
+          ]
+        },
+        "comments": [
+          {
+            "commentType": "SUBCELLULAR LOCATION",
+            "note": {
+              "texts": [
+                {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04091"
+                    }
+                  ],
+                  "value": "NSP4 localizes also in vesicular structures which contain autophagosomal markers and associate with viroplasms in virus-infected cells. Additionally, a soluble form of glycosylated NSP4 is secreted despite retention of its transmembrane domain"
+                }
+              ]
+            },
+            "subcellularLocations": [
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04091"
+                    }
+                  ],
+                  "value": "Host rough endoplasmic reticulum membrane",
+                  "id": "SL-0423"
+                },
+                "topology": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04091"
+                    }
+                  ],
+                  "value": "Single-pass type III membrane protein",
+                  "id": "SL-9907"
+                }
+              },
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04091"
+                    }
+                  ],
+                  "value": "Host membrane, host caveola",
+                  "id": "SL-0428"
+                },
+                "topology": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04091"
+                    }
+                  ],
+                  "value": "Single-pass type III membrane protein",
+                  "id": "SL-9907"
+                }
+              },
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04091"
+                    }
+                  ],
+                  "value": "Secreted",
+                  "id": "SL-0243"
+                }
+              }
+            ]
+          },
+          {
+            "texts": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04091"
+                  }
+                ],
+                "value": "Plays an essential role in the virus replication cycle by acting as a viroporin. Creates a pore in the host endoplasmic reticulum and as a consequence releases Ca(2+) in the cytoplasm of infected cell. In turn, high levels of cytoplasmic calcium trigger membrane trafficking and transport of viral ER-associated proteins to viroplasms, sites of viral genome replication and immature particle assembly"
+              }
+            ],
+            "commentType": "FUNCTION"
+          }
+        ],
+        "features": [
+          {
+            "type": "Binding site",
+            "location": {
+              "start": {
+                "value": 120,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 120,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "",
+            "featureCrossReferences": [
+              {
+                "database": "ChEBI",
+                "id": "CHEBI:29108"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "ligand": {
+              "name": "Ca(2+)",
+              "id": "ChEBI:CHEBI:29108"
+            }
+          },
+          {
+            "type": "Glycosylation",
+            "location": {
+              "start": {
+                "value": 8,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 8,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "N-linked (GlcNAc...) asparagine; by host",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "featureId": ""
+          }
+        ],
+        "keywords": [
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023050"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-1072",
+            "category": "Biological process",
+            "name": "Activation of host autophagy by virus"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022837"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0106",
+            "category": "Ligand",
+            "name": "Calcium"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Coils"
+              }
+            ],
+            "id": "KW-0175",
+            "category": "Domain",
+            "name": "Coiled coil"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022861"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0260",
+            "category": "Molecular function",
+            "name": "Enterotoxin"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023180"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0325",
+            "category": "PTM",
+            "name": "Glycoprotein"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023184"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-1038",
+            "category": "Cellular component",
+            "name": "Host endoplasmic reticulum"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022870"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-1043",
+            "category": "Cellular component",
+            "name": "Host membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022581"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0945",
+            "category": "Biological process",
+            "name": "Host-virus interaction"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023303"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0407",
+            "category": "Molecular function",
+            "name": "Ion channel"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023065"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0406",
+            "category": "Biological process",
+            "name": "Ion transport"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023136"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0472",
+            "category": "Cellular component",
+            "name": "Membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022723"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0479",
+            "category": "Ligand",
+            "name": "Metal-binding"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022525"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0964",
+            "category": "Cellular component",
+            "name": "Secreted"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022968"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0735",
+            "category": "Domain",
+            "name": "Signal-anchor"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022656"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0800",
+            "category": "Molecular function",
+            "name": "Toxin"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022692"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0812",
+            "category": "Domain",
+            "name": "Transmembrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022989"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-1133",
+            "category": "Domain",
+            "name": "Transmembrane helix"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022448"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0813",
+            "category": "Biological process",
+            "name": "Transport"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023039"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-1182",
+            "category": "Molecular function",
+            "name": "Viral ion channel"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023026"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04091"
+              }
+            ],
+            "id": "KW-0843",
+            "category": "Biological process",
+            "name": "Virulence"
+          }
+        ],
+        "references": [
+          {
+            "referenceNumber": 1,
+            "citation": {
+              "id": "24818762",
+              "citationType": "journal article",
+              "authors": [
+                "Jeong S.",
+                "Than V.T.",
+                "Lim I.",
+                "Kim W."
+              ],
+              "citationCrossReferences": [
+                {
+                  "database": "PubMed",
+                  "id": "24818762"
+                }
+              ],
+              "title": "Whole-Genome Analysis of a Rare Human Korean G3P Rotavirus Strain Suggests a Complex Evolutionary Origin Potentially Involving Reassortment Events between Feline and Bovine Rotaviruses.",
+              "publicationDate": "2014",
+              "journal": "PLoS ONE",
+              "firstPage": "E97127",
+              "lastPage": "E97127",
+              "volume": "9"
+            },
+            "referencePositions": [
+              "NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA]"
+            ],
+            "referenceComments": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "AHL44730.1"
+                  }
+                ],
+                "value": "CAU12-2-51",
+                "type": "STRAIN"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "AHL44730.1"
+              }
+            ]
+          }
+        ],
+        "uniProtKBCrossReferences": [
+          {
+            "database": "EMBL",
+            "id": "KJ187597",
+            "properties": [
+              {
+                "key": "ProteinId",
+                "value": "AHL44730.1"
+              },
+              {
+                "key": "Status",
+                "value": "-"
+              },
+              {
+                "key": "MoleculeType",
+                "value": "Genomic_RNA"
+              }
+            ]
+          },
+          {
+            "database": "GO",
+            "id": "GO:0005576",
+            "properties": [
+              {
+                "key": "GoTerm",
+                "value": "C:extracellular region"
+              },
+              {
+                "key": "GoEvidenceType",
+                "value": "IEA:UniProtKB-SubCell"
+              }
+            ]
+          }
+        ],
+        "sequence": {
+          "value": "MEKLTDLNYTLSVITLMNDTLHTIMEDPGMAYFPYIASVLTVLFTLHKASIPTMKIALRTSRCSYKVIKYCIVSIFNTLLKLAGYKEQITTKDEIEKQMDRVVKEMRRQLEMIDKLTTREIEQVELLKRIHDMLVIKPVDKVDMSQEFNQIQFKTLTEWVEGENPYEPKEVTASL",
+          "length": 175,
+          "molWeight": 20457,
+          "crc64": "C336CE8F0EE54E0C",
+          "md5": "5FEED6986EFE388FAC3C63734DF453FD"
+        },
+        "extraAttributes": {
+          "countByCommentType": {
+            "FUNCTION": 2,
+            "SUBUNIT": 1,
+            "SUBCELLULAR LOCATION": 1,
+            "DOMAIN": 1,
+            "PTM": 1,
+            "SIMILARITY": 1
+          },
+          "countByFeatureType": {
+            "Topological domain": 2,
+            "Transmembrane": 1,
+            "Coiled coil": 1,
+            "Binding site": 2,
+            "Glycosylation": 2
+          },
+          "uniParcId": "UPI00042F2EA0"
+        }
+      },
+      {
+        "entryType": "UniProtKB unreviewed (TrEMBL)",
+        "primaryAccession": "W8R3F3",
+        "uniProtkbId": "W8R3F3_9REOV",
+        "entryAudit": {
+          "firstPublicDate": "2014-05-14",
+          "lastAnnotationUpdateDate": "2026-06-10",
+          "lastSequenceUpdateDate": "2014-05-14",
+          "entryVersion": 31,
+          "sequenceVersion": 1
+        },
+        "annotationScore": 2,
+        "organism": {
+          "scientificName": "Human rotavirus A",
+          "taxonId": 10941,
+          "evidences": [
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "EMBL",
+              "id": "AHL44737.1"
+            }
+          ],
+          "lineage": [
+            "Viruses",
+            "Riboviria",
+            "Orthornavirae",
+            "Duplornaviricota",
+            "Resentoviricetes",
+            "Reovirales",
+            "Sedoreoviridae",
+            "Rotavirus",
+            "Rotavirus alphagastroenteritidis",
+            "Rotavirus A"
+          ]
+        },
+        "proteinExistence": "3: Inferred from homology",
+        "proteinDescription": {
+          "recommendedName": {
+            "fullName": {
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "HAMAP-Rule",
+                  "id": "MF_04129"
+                }
+              ],
+              "value": "Intermediate capsid protein VP6"
+            }
+          }
+        },
+        "comments": [
+          {
+            "commentType": "SUBCELLULAR LOCATION",
+            "note": {
+              "texts": [
+                {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04129"
+                    }
+                  ],
+                  "value": "Component of the intermediate capsid. Also found in spherical cytoplasmic structures, called virus factories, that appear early after infection and are the site of viral replication and packaging"
+                }
+              ]
+            },
+            "subcellularLocations": [
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04129"
+                    }
+                  ],
+                  "value": "Virion",
+                  "id": "SL-0274"
+                }
+              }
+            ]
+          },
+          {
+            "texts": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "ARBA",
+                    "id": "ARBA00057631"
+                  },
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04129"
+                  }
+                ],
+                "value": "Intermediate capsid protein that self assembles to form an icosahedral capsid with a T=13 symmetry, which consists of 230 trimers of VP6, with channels at each of its five-fold vertices. This capsid constitutes the middle concentric layer of the viral mature particle. The innermost VP2 capsid and the intermediate VP6 capsid remain intact following cell entry to protect the dsRNA from degradation and to prevent unfavorable antiviral responses in the host cell during all the replication cycle of the virus. Nascent transcripts are transcribed within the structural confines of this double-layered particle (DLP) and are extruded through the channels at the five-fold axes. VP6 is required for the transcription activity of the DLP"
+              }
+            ],
+            "commentType": "FUNCTION"
+          }
+        ],
+        "features": [
+          {
+            "type": "Binding site",
+            "location": {
+              "start": {
+                "value": 153,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 153,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "",
+            "featureCrossReferences": [
+              {
+                "database": "ChEBI",
+                "id": "CHEBI:29105"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04129"
+              }
+            ],
+            "ligand": {
+              "name": "Zn(2+)",
+              "id": "ChEBI:CHEBI:29105",
+              "note": "ligand shared between all trimeric partners"
+            }
+          },
+          {
+            "type": "Region",
+            "location": {
+              "start": {
+                "value": 62,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 73,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Interaction with the inner capsid protein VP2",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04129"
+              }
+            ]
+          }
+        ],
+        "keywords": [
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022837"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04129"
+              }
+            ],
+            "id": "KW-0106",
+            "category": "Ligand",
+            "name": "Calcium"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022561"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04129"
+              }
+            ],
+            "id": "KW-0167",
+            "category": "Cellular component",
+            "name": "Capsid protein"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022493"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04129"
+              }
+            ],
+            "id": "KW-1154",
+            "category": "Cellular component",
+            "name": "Intermediate capsid protein"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022723"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04129"
+              }
+            ],
+            "id": "KW-0479",
+            "category": "Ligand",
+            "name": "Metal-binding"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022843"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04129"
+              }
+            ],
+            "id": "KW-0832",
+            "category": "PTM",
+            "name": "Ubl conjugation"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022844"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04129"
+              }
+            ],
+            "id": "KW-0946",
+            "category": "Cellular component",
+            "name": "Virion"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022833"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04129"
+              }
+            ],
+            "id": "KW-0862",
+            "category": "Ligand",
+            "name": "Zinc"
+          }
+        ],
+        "references": [
+          {
+            "referenceNumber": 1,
+            "citation": {
+              "id": "24818762",
+              "citationType": "journal article",
+              "authors": [
+                "Jeong S.",
+                "Than V.T.",
+                "Lim I.",
+                "Kim W."
+              ],
+              "citationCrossReferences": [
+                {
+                  "database": "PubMed",
+                  "id": "24818762"
+                }
+              ],
+              "title": "Whole-Genome Analysis of a Rare Human Korean G3P Rotavirus Strain Suggests a Complex Evolutionary Origin Potentially Involving Reassortment Events between Feline and Bovine Rotaviruses.",
+              "publicationDate": "2014",
+              "journal": "PLoS ONE",
+              "firstPage": "E97127",
+              "lastPage": "E97127",
+              "volume": "9"
+            },
+            "referencePositions": [
+              "NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA]"
+            ],
+            "referenceComments": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "AHL44737.1"
+                  }
+                ],
+                "value": "CAU12-2-51",
+                "type": "STRAIN"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "AHL44737.1"
+              }
+            ]
+          }
+        ],
+        "uniProtKBCrossReferences": [
+          {
+            "database": "EMBL",
+            "id": "KJ187603",
+            "properties": [
+              {
+                "key": "ProteinId",
+                "value": "AHL44737.1"
+              },
+              {
+                "key": "Status",
+                "value": "-"
+              },
+              {
+                "key": "MoleculeType",
+                "value": "Genomic_RNA"
+              }
+            ]
+          },
+          {
+            "database": "GO",
+            "id": "GO:0039621",
+            "properties": [
+              {
+                "key": "GoTerm",
+                "value": "C:T=13 icosahedral viral capsid"
+              },
+              {
+                "key": "GoEvidenceType",
+                "value": "IEA:UniProtKB-ARBA"
+              }
+            ]
+          }
+        ],
+        "sequence": {
+          "value": "MDVLYSLSKTLKDARDKIVEGTLYSNVSDLIQQFNQMIITMNGNEFQTGGIGNLPVRNWNFDFGLLGTTLLNLDANYVETARNTIDYFVDFVDNVCMDEMVRESQRNGIAPQSDSLRKLSGIKFKRINFDNSSEYIENWNLQNRRQRTGFTFHKPNIFPYSASFTLNRSQPAHDNLMGTMWLNAGSEIQVAGFDYSCAINAPANIQQFEHIVQLRRVLTTATITLLPDAERFSFPRVINSADGATTWYFNPVILRPNNVEVEFLLNGQIINTYQARFGTIIARNFDTIRLSFQLMRPPNMTPAVAALFPNAQPFEHHATVGLTLRIESAVCESVLADASETMLANVTSVRQEYAIPVGPVFPPGMNWTDLITNYSPSREDNLQRVFTVASIRSMLIK",
+          "length": 397,
+          "molWeight": 44897,
+          "crc64": "1AC9A23DA62FBEC0",
+          "md5": "74A8486A6D109C92A854B58EFBEB03A4"
+        },
+        "extraAttributes": {
+          "countByCommentType": {
+            "FUNCTION": 1,
+            "SUBUNIT": 1,
+            "SUBCELLULAR LOCATION": 1,
+            "PTM": 2,
+            "MISCELLANEOUS": 1,
+            "SIMILARITY": 1
+          },
+          "countByFeatureType": {
+            "Region": 1,
+            "Binding site": 3
+          },
+          "uniParcId": "UPI00042F181F"
+        }
+      },
+      {
+        "entryType": "UniProtKB unreviewed (TrEMBL)",
+        "primaryAccession": "W8QKB9",
+        "uniProtkbId": "W8QKB9_9REOV",
+        "entryAudit": {
+          "firstPublicDate": "2014-05-14",
+          "lastAnnotationUpdateDate": "2026-06-10",
+          "lastSequenceUpdateDate": "2014-05-14",
+          "entryVersion": 50,
+          "sequenceVersion": 1
+        },
+        "annotationScore": 3,
+        "organism": {
+          "scientificName": "Human rotavirus A",
+          "taxonId": 10941,
+          "evidences": [
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "EMBL",
+              "id": "AHL44738.1"
+            }
+          ],
+          "lineage": [
+            "Viruses",
+            "Riboviria",
+            "Orthornavirae",
+            "Duplornaviricota",
+            "Resentoviricetes",
+            "Reovirales",
+            "Sedoreoviridae",
+            "Rotavirus",
+            "Rotavirus alphagastroenteritidis",
+            "Rotavirus A"
+          ]
+        },
+        "proteinExistence": "3: Inferred from homology",
+        "proteinDescription": {
+          "recommendedName": {
+            "fullName": {
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "HAMAP-Rule",
+                  "id": "MF_04130"
+                },
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "RuleBase",
+                  "id": "RU363022"
+                }
+              ],
+              "value": "Outer capsid glycoprotein VP7"
+            }
+          }
+        },
+        "comments": [
+          {
+            "commentType": "SUBCELLULAR LOCATION",
+            "note": {
+              "texts": [
+                {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04130"
+                    }
+                  ],
+                  "value": "The outer layer contains 780 copies of VP7, grouped as 260 trimers. Immature double-layered particles assembled in the cytoplasm bud across the membrane of the endoplasmic reticulum, acquiring during this process a transient lipid membrane that is modified with the ER resident viral glycoproteins NSP4 and VP7; these enveloped particles also contain VP4. As the particles move towards the interior of the ER cisternae, the transient lipid membrane and the non-structural protein NSP4 are lost, while the virus surface proteins VP4 and VP7 rearrange to form the outermost virus protein layer, yielding mature infectious triple-layered particles"
+                }
+              ]
+            },
+            "subcellularLocations": [
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04130"
+                    },
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "RuleBase",
+                      "id": "RU363022"
+                    }
+                  ],
+                  "value": "Host endoplasmic reticulum lumen",
+                  "id": "SL-0389"
+                }
+              },
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04130"
+                    }
+                  ],
+                  "value": "Virion",
+                  "id": "SL-0274"
+                }
+              }
+            ]
+          },
+          {
+            "texts": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "ARBA",
+                    "id": "ARBA00059356"
+                  },
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04130"
+                  }
+                ],
+                "value": "Calcium-binding protein that interacts with rotavirus cell receptors once the initial attachment by VP4 has been achieved. Rotavirus attachment and entry into the host cell probably involves multiple sequential contacts between the outer capsid proteins VP4 and VP7, and the cell receptors. Following entry into the host cell, low intracellular or intravesicular Ca(2+) concentration probably causes the calcium-stabilized VP7 trimers to dissociate from the virion. This step is probably necessary for the membrane-disrupting entry step and the release of VP4, which is locked onto the virion by VP7"
+              }
+            ],
+            "commentType": "FUNCTION"
+          }
+        ],
+        "features": [
+          {
+            "type": "Binding site",
+            "location": {
+              "start": {
+                "value": 95,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 95,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "",
+            "featureCrossReferences": [
+              {
+                "database": "ChEBI",
+                "id": "CHEBI:29108"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04131"
+              }
+            ],
+            "ligand": {
+              "name": "Ca(2+)",
+              "id": "ChEBI:CHEBI:29108",
+              "label": "1"
+            }
+          },
+          {
+            "type": "Chain",
+            "location": {
+              "start": {
+                "value": 51,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 326,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Outer capsid glycoprotein VP7",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04131"
+              }
+            ],
+            "featureId": "PRO_5023428870"
+          }
+        ],
+        "keywords": [
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022837"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04130"
+              }
+            ],
+            "id": "KW-0106",
+            "category": "Ligand",
+            "name": "Calcium"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022561"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04130"
+              }
+            ],
+            "id": "KW-0167",
+            "category": "Cellular component",
+            "name": "Capsid protein"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023157"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04130"
+              }
+            ],
+            "id": "KW-1015",
+            "category": "PTM",
+            "name": "Disulfide bond"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023180"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04130"
+              }
+            ],
+            "id": "KW-0325",
+            "category": "PTM",
+            "name": "Glycoprotein"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023184"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04130"
+              }
+            ],
+            "id": "KW-1038",
+            "category": "Cellular component",
+            "name": "Host endoplasmic reticulum"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022581"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04130"
+              }
+            ],
+            "id": "KW-0945",
+            "category": "Biological process",
+            "name": "Host-virus interaction"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-0472",
+            "category": "Cellular component",
+            "name": "Membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022723"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04130"
+              }
+            ],
+            "id": "KW-0479",
+            "category": "Ligand",
+            "name": "Metal-binding"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022770"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04130"
+              }
+            ],
+            "id": "KW-1152",
+            "category": "Cellular component",
+            "name": "Outer capsid protein"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022729"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04131"
+              }
+            ],
+            "id": "KW-0732",
+            "category": "Domain",
+            "name": "Signal"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022708"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04130"
+              }
+            ],
+            "id": "KW-1146",
+            "category": "Cellular component",
+            "name": "T=13 icosahedral capsid protein"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-0812",
+            "category": "Domain",
+            "name": "Transmembrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-1133",
+            "category": "Domain",
+            "name": "Transmembrane helix"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022844"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04130"
+              }
+            ],
+            "id": "KW-0946",
+            "category": "Cellular component",
+            "name": "Virion"
+          }
+        ],
+        "references": [
+          {
+            "referenceNumber": 1,
+            "citation": {
+              "id": "24818762",
+              "citationType": "journal article",
+              "authors": [
+                "Jeong S.",
+                "Than V.T.",
+                "Lim I.",
+                "Kim W."
+              ],
+              "citationCrossReferences": [
+                {
+                  "database": "PubMed",
+                  "id": "24818762"
+                }
+              ],
+              "title": "Whole-Genome Analysis of a Rare Human Korean G3P Rotavirus Strain Suggests a Complex Evolutionary Origin Potentially Involving Reassortment Events between Feline and Bovine Rotaviruses.",
+              "publicationDate": "2014",
+              "journal": "PLoS ONE",
+              "firstPage": "E97127",
+              "lastPage": "E97127",
+              "volume": "9"
+            },
+            "referencePositions": [
+              "NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA]"
+            ],
+            "referenceComments": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "AHL44738.1"
+                  }
+                ],
+                "value": "CAU12-2-51",
+                "type": "STRAIN"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "AHL44738.1"
+              }
+            ]
+          }
+        ],
+        "uniProtKBCrossReferences": [
+          {
+            "database": "EMBL",
+            "id": "KJ187604",
+            "properties": [
+              {
+                "key": "ProteinId",
+                "value": "AHL44738.1"
+              },
+              {
+                "key": "Status",
+                "value": "-"
+              },
+              {
+                "key": "MoleculeType",
+                "value": "Genomic_RNA"
+              }
+            ]
+          },
+          {
+            "database": "GO",
+            "id": "GO:0044166",
+            "properties": [
+              {
+                "key": "GoTerm",
+                "value": "C:host cell endoplasmic reticulum lumen"
+              },
+              {
+                "key": "GoEvidenceType",
+                "value": "IEA:UniProtKB-SubCell"
+              }
+            ]
+          }
+        ],
+        "sequence": {
+          "value": "MYGIEYTTVLTFLISVILLNYALKSLTRIMDFIIYRFLLIVVVLSPFLNAQNYGINLPITGSIDTPYTNSTQEEMFLTSTLCLYYPTEAATEINDNSWKDTLSQLFLTKGWPTGSVYFKDYADIASFSIDPQLYCDYNLVLMKYDAALQLDMSELADLILNEWLCNPMDITLYYYQQTDEANKWISMGSSCTIKVCPLNVQTLGIGCLTTDTSTFEEIATAEKLVITDVVDGVNHKLNVTTNTCTIRNCKKLGPRENVAVIQVGGSNVLDITADPTTAPQTERMMRVNWKKWWQVFYTIVDYVNQIVQAMSKRSRSLNSAAFYYRV",
+          "length": 326,
+          "molWeight": 37073,
+          "crc64": "BE3B85417F66327D",
+          "md5": "D5F596F60A5D582F6C2D226E70983AB9"
+        },
+        "extraAttributes": {
+          "countByCommentType": {
+            "FUNCTION": 2,
+            "SUBUNIT": 2,
+            "SUBCELLULAR LOCATION": 1,
+            "PTM": 2,
+            "MISCELLANEOUS": 2,
+            "SIMILARITY": 1,
+            "CAUTION": 1
+          },
+          "countByFeatureType": {
+            "Chain": 1,
+            "Transmembrane": 2,
+            "Region": 2,
+            "Binding site": 9,
+            "Disulfide bond": 4
+          },
+          "uniParcId": "UPI00042E6A3F"
+        }
+      },
+      {
+        "entryType": "UniProtKB unreviewed (TrEMBL)",
+        "primaryAccession": "W8Q8A1",
+        "uniProtkbId": "W8Q8A1_9REOV",
+        "entryAudit": {
+          "firstPublicDate": "2014-05-14",
+          "lastAnnotationUpdateDate": "2026-06-10",
+          "lastSequenceUpdateDate": "2014-05-14",
+          "entryVersion": 33,
+          "sequenceVersion": 1
+        },
+        "annotationScore": 3,
+        "organism": {
+          "scientificName": "Human rotavirus A",
+          "taxonId": 10941,
+          "evidences": [
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "EMBL",
+              "id": "AHL44731.1"
+            }
+          ],
+          "lineage": [
+            "Viruses",
+            "Riboviria",
+            "Orthornavirae",
+            "Duplornaviricota",
+            "Resentoviricetes",
+            "Reovirales",
+            "Sedoreoviridae",
+            "Rotavirus",
+            "Rotavirus alphagastroenteritidis",
+            "Rotavirus A"
+          ]
+        },
+        "proteinExistence": "3: Inferred from homology",
+        "proteinDescription": {
+          "recommendedName": {
+            "fullName": {
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "HAMAP-Rule",
+                  "id": "MF_04092"
+                },
+                {
+                  "evidenceCode": "ECO:0000256",
+                  "source": "PIRNR",
+                  "id": "PIRNR004006"
+                }
+              ],
+              "value": "Non-structural protein 5"
+            },
+            "shortNames": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04092"
+                  },
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "PIRNR",
+                    "id": "PIRNR004006"
+                  }
+                ],
+                "value": "NSP5"
+              }
+            ]
+          },
+          "alternativeNames": [
+            {
+              "fullName": {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04092"
+                  }
+                ],
+                "value": "NS26"
+              }
+            }
+          ]
+        },
+        "comments": [
+          {
+            "commentType": "SUBCELLULAR LOCATION",
+            "note": {
+              "texts": [
+                {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04092"
+                    },
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "PIRNR",
+                      "id": "PIRNR004006"
+                    }
+                  ],
+                  "value": "Found in spherical cytoplasmic structures, called virus factories, that appear early after infection and are the site of viral replication and packaging"
+                }
+              ]
+            },
+            "subcellularLocations": [
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "HAMAP-Rule",
+                      "id": "MF_04092"
+                    },
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "PIRNR",
+                      "id": "PIRNR004006"
+                    }
+                  ],
+                  "value": "Host cytoplasm",
+                  "id": "SL-0381"
+                }
+              }
+            ]
+          },
+          {
+            "commentType": "COFACTOR",
+            "cofactors": [
+              {
+                "name": "Mg(2+)",
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04092"
+                  }
+                ],
+                "cofactorCrossReference": {
+                  "database": "ChEBI",
+                  "id": "CHEBI:18420"
+                }
+              }
+            ]
+          },
+          {
+            "texts": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "HAMAP-Rule",
+                    "id": "MF_04092"
+                  }
+                ],
+                "value": "Plays an essential role in the viral genome replication. Participates, together with NSP2, in the formation of viral factories (viroplasms) which are large inclusions in the host cytoplasm where replication intermediates are assembled and viral RNA replication takes place. Orchestrates the recruitment of viroplasmic proteins such as capsid proteins to these factories. Participates in the selective exclusion of host proteins from stress granules (SG) and P bodies (PB). Participates also in the sequestration of these remodeled organelles in viral factories"
+              }
+            ],
+            "commentType": "FUNCTION"
+          }
+        ],
+        "features": [
+          {
+            "type": "Binding site",
+            "location": {
+              "start": {
+                "value": 92,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 92,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "",
+            "featureCrossReferences": [
+              {
+                "database": "ChEBI",
+                "id": "CHEBI:18420"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04092"
+              }
+            ],
+            "ligand": {
+              "name": "Mg(2+)",
+              "id": "ChEBI:CHEBI:18420"
+            }
+          },
+          {
+            "type": "Region",
+            "location": {
+              "start": {
+                "value": 16,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 37,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "Disordered",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "MobiDB-lite"
+              }
+            ]
+          }
+        ],
+        "keywords": [
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023180"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04092"
+              }
+            ],
+            "id": "KW-0325",
+            "category": "PTM",
+            "name": "Glycoprotein"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023200"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04092"
+              }
+            ],
+            "id": "KW-1035",
+            "category": "Cellular component",
+            "name": "Host cytoplasm"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022842"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04092"
+              }
+            ],
+            "id": "KW-0460",
+            "category": "Ligand",
+            "name": "Magnesium"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04092"
+              }
+            ],
+            "id": "KW-0479",
+            "category": "Ligand",
+            "name": "Metal-binding"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022741"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04092"
+              }
+            ],
+            "id": "KW-0547",
+            "category": "Ligand",
+            "name": "Nucleotide-binding"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04092"
+              }
+            ],
+            "id": "KW-0597",
+            "category": "PTM",
+            "name": "Phosphoprotein"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022884"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "HAMAP-Rule",
+                "id": "MF_04092"
+              }
+            ],
+            "id": "KW-0694",
+            "category": "Molecular function",
+            "name": "RNA-binding"
+          }
+        ],
+        "references": [
+          {
+            "referenceNumber": 1,
+            "citation": {
+              "id": "24818762",
+              "citationType": "journal article",
+              "authors": [
+                "Jeong S.",
+                "Than V.T.",
+                "Lim I.",
+                "Kim W."
+              ],
+              "citationCrossReferences": [
+                {
+                  "database": "PubMed",
+                  "id": "24818762"
+                }
+              ],
+              "title": "Whole-Genome Analysis of a Rare Human Korean G3P Rotavirus Strain Suggests a Complex Evolutionary Origin Potentially Involving Reassortment Events between Feline and Bovine Rotaviruses.",
+              "publicationDate": "2014",
+              "journal": "PLoS ONE",
+              "firstPage": "E97127",
+              "lastPage": "E97127",
+              "volume": "9"
+            },
+            "referencePositions": [
+              "NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA]"
+            ],
+            "referenceComments": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "AHL44731.1"
+                  }
+                ],
+                "value": "CAU12-2-51",
+                "type": "STRAIN"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "AHL44731.1"
+              }
+            ]
+          }
+        ],
+        "uniProtKBCrossReferences": [
+          {
+            "database": "EMBL",
+            "id": "KJ187598",
+            "properties": [
+              {
+                "key": "ProteinId",
+                "value": "AHL44731.1"
+              },
+              {
+                "key": "Status",
+                "value": "-"
+              },
+              {
+                "key": "MoleculeType",
+                "value": "Genomic_RNA"
+              }
+            ]
+          },
+          {
+            "database": "GO",
+            "id": "GO:0030430",
+            "properties": [
+              {
+                "key": "GoTerm",
+                "value": "C:host cell cytoplasm"
+              },
+              {
+                "key": "GoEvidenceType",
+                "value": "IEA:UniProtKB-SubCell"
+              }
+            ]
+          }
+        ],
+        "sequence": {
+          "value": "MSLSIDVTSLPSISSSIYKNESSSTTSTLSGKSIGRSEQYISPDAEAFGKYMLSKSPEDIGPSDSASNDPLTSFSIRSNAVKTNADASVSMDSSTQSRPSSNVGCDQVDFSFNKGIKMNTNLDSSISIATFSKKEKSKNDHKSRKHYPKVEAESDSDDYVLDDSDSDDGKCKNCKYKRKYFALRVRMKQVAMQLIEDL",
+          "length": 198,
+          "molWeight": 21726,
+          "crc64": "27C0104400E9CE41",
+          "md5": "F11A74C9F145ED70EB6CD8BCAE6D3989"
+        },
+        "extraAttributes": {
+          "countByCommentType": {
+            "FUNCTION": 1,
+            "COFACTOR": 1,
+            "SUBUNIT": 1,
+            "SUBCELLULAR LOCATION": 1,
+            "PTM": 2,
+            "SIMILARITY": 1
+          },
+          "countByFeatureType": {
+            "Region": 4,
+            "Compositional bias": 2,
+            "Binding site": 1,
+            "Modified residue": 5
+          },
+          "uniParcId": "UPI00042E2A3D"
+        }
+      },
+      {
+        "entryType": "UniProtKB unreviewed (TrEMBL)",
+        "primaryAccession": "W6JD38",
+        "uniProtkbId": "W6JD38_FELCA",
+        "entryAudit": {
+          "firstPublicDate": "2018-10-10",
+          "lastAnnotationUpdateDate": "2026-09-02",
+          "lastSequenceUpdateDate": "2018-10-10",
+          "entryVersion": 27,
+          "sequenceVersion": 1
+        },
+        "annotationScore": 2,
+        "organism": {
+          "scientificName": "Felis catus",
+          "commonName": "Cat",
+          "synonyms": [
+            "Felis silvestris catus"
+          ],
+          "taxonId": 9685,
+          "evidences": [
+            {
+              "evidenceCode": "ECO:0000313",
+              "source": "EMBL",
+              "id": "BAN42597.1"
+            }
+          ],
+          "lineage": [
+            "Eukaryota",
+            "Metazoa",
+            "Chordata",
+            "Craniata",
+            "Vertebrata",
+            "Euteleostomi",
+            "Mammalia",
+            "Eutheria",
+            "Laurasiatheria",
+            "Carnivora",
+            "Feliformia",
+            "Felidae",
+            "Felinae",
+            "Felis"
+          ]
+        },
+        "proteinExistence": "2: Evidence at transcript level",
+        "proteinDescription": {
+          "submissionNames": [
+            {
+              "fullName": {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "BAN42597.1"
+                  }
+                ],
+                "value": "Signaling lymphocyte activation molecule"
+              }
+            }
+          ]
+        },
+        "genes": [
+          {
+            "geneName": {
+              "evidences": [
+                {
+                  "evidenceCode": "ECO:0000313",
+                  "source": "EMBL",
+                  "id": "BAN42597.1"
+                }
+              ],
+              "value": "SLAM"
+            }
+          }
+        ],
+        "comments": [
+          {
+            "commentType": "SUBCELLULAR LOCATION",
+            "subcellularLocations": [
+              {
+                "location": {
+                  "evidences": [
+                    {
+                      "evidenceCode": "ECO:0000256",
+                      "source": "ARBA",
+                      "id": "ARBA00004370"
+                    }
+                  ],
+                  "value": "Membrane",
+                  "id": "SL-0162"
+                }
+              }
+            ]
+          },
+          {
+            "texts": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000256",
+                    "source": "PROSITE-ProRule",
+                    "id": "PRU00114"
+                  }
+                ],
+                "value": "Lacks conserved residue(s) required for the propagation of feature annotation"
+              }
+            ],
+            "commentType": "CAUTION"
+          }
+        ],
+        "features": [
+          {
+            "type": "Chain",
+            "location": {
+              "start": {
+                "value": 19,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 337,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "SignalP"
+              }
+            ],
+            "featureId": "PRO_5016357255"
+          },
+          {
+            "type": "Signal",
+            "location": {
+              "start": {
+                "value": 1,
+                "modifier": "EXACT"
+              },
+              "end": {
+                "value": 18,
+                "modifier": "EXACT"
+              }
+            },
+            "description": "",
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "SignalP"
+              }
+            ]
+          }
+        ],
+        "keywords": [
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023180"
+              }
+            ],
+            "id": "KW-0325",
+            "category": "PTM",
+            "name": "Glycoprotein"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "PROSITE-ProRule",
+                "id": "PRU00114"
+              }
+            ],
+            "id": "KW-0393",
+            "category": "Domain",
+            "name": "Immunoglobulin domain"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00023136"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-0472",
+            "category": "Cellular component",
+            "name": "Membrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "ARBA",
+                "id": "ARBA00022729"
+              },
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "SignalP"
+              }
+            ],
+            "id": "KW-0732",
+            "category": "Domain",
+            "name": "Signal"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-0812",
+            "category": "Domain",
+            "name": "Transmembrane"
+          },
+          {
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000256",
+                "source": "SAM",
+                "id": "Phobius"
+              }
+            ],
+            "id": "KW-1133",
+            "category": "Domain",
+            "name": "Transmembrane helix"
+          }
+        ],
+        "references": [
+          {
+            "referenceNumber": 1,
+            "citation": {
+              "id": "23535266",
+              "citationType": "journal article",
+              "authors": [
+                "Hara Y.",
+                "Suzuki J.",
+                "Noguchi K.",
+                "Terada Y.",
+                "Shimoda H.",
+                "Mizuno T.",
+                "Maeda K."
+              ],
+              "citationCrossReferences": [
+                {
+                  "database": "PubMed",
+                  "id": "23535266"
+                },
+                {
+                  "database": "DOI",
+                  "id": "10.1292/jvms.13-0003"
+                }
+              ],
+              "title": "Function of feline signaling lymphocyte activation molecule as a receptor of canine distemper virus.",
+              "publicationDate": "2013",
+              "journal": "J. Vet. Med. Sci.",
+              "firstPage": "1085",
+              "lastPage": "1089",
+              "volume": "75"
+            },
+            "referencePositions": [
+              "NUCLEOTIDE SEQUENCE"
+            ],
+            "referenceComments": [
+              {
+                "evidences": [
+                  {
+                    "evidenceCode": "ECO:0000313",
+                    "source": "EMBL",
+                    "id": "BAN42597.1"
+                  }
+                ],
+                "value": "Thymus",
+                "type": "TISSUE"
+              }
+            ],
+            "evidences": [
+              {
+                "evidenceCode": "ECO:0000313",
+                "source": "EMBL",
+                "id": "BAN42597.1"
+              }
+            ]
+          }
+        ],
+        "uniProtKBCrossReferences": [
+          {
+            "database": "EMBL",
+            "id": "AB771742",
+            "properties": [
+              {
+                "key": "ProteinId",
+                "value": "BAN42597.1"
+              },
+              {
+                "key": "Status",
+                "value": "-"
+              },
+              {
+                "key": "MoleculeType",
+                "value": "mRNA"
+              }
+            ]
+          },
+          {
+            "database": "RefSeq",
+            "id": "NP_001265755.1",
+            "properties": [
+              {
+                "key": "NucleotideSequenceId",
+                "value": "NM_001278826.1"
+              }
+            ]
+          }
+        ],
+        "sequence": {
+          "value": "MDLKGLLSLNFLLFLSLAFELSCGTGESLMTCQEVTEQLGRNLLLPLASEGISKSMNKSIHILVTKSESPQKNVKTKIVSLSLPERASPRFLENGYKFHPENLKLEILQSKKENEGWYFTTLEENFSVRHFCLQLKLFEQVSTPEIKVLNWTQENGNCSLTLACEVEKGDHVAYSWREETGADPPISANSSHLHLSLGPQHVHNVYVCTVSNPISNHSQTFTPGSVCMPDPPELRPWGLYVGLSSGAVIGVILTLKVAVLLLRRRGKANHYQPTTEAKSLTIYAQVQKSGSIQKKPDAPSAQDPCTTIYVAATEPVPEPVQEPKSITVYASVTLPES",
+          "length": 337,
+          "molWeight": 37201,
+          "crc64": "F24FDE8F6BDA985B",
+          "md5": "246583275688D762B2F35467EAB3FE5C"
+        },
+        "extraAttributes": {
+          "countByCommentType": {
+            "SUBCELLULAR LOCATION": 1,
+            "CAUTION": 1
+          },
+          "countByFeatureType": {
+            "Signal": 1,
+            "Chain": 1,
+            "Transmembrane": 1,
+            "Domain": 1
+          },
+          "uniParcId": "UPI000298A0A1"
+        }
+      }
+    ]
+  }
+]

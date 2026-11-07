@@ -1,17 +1,22 @@
 """Tests for the all_the_bacteria pipeline."""
 
+import copy
 import csv
 import logging
 import re
+import threading
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, call, patch
 
+import dlt
 import pytest
 from frozendict import frozendict
 from pydantic import ValidationError
 from requests.exceptions import HTTPError
 
+from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
 from cdm_data_loaders.pipelines import all_the_bacteria
 from cdm_data_loaders.pipelines.all_the_bacteria import (
     ALL_ATB_FILE_NAME,
@@ -27,13 +32,7 @@ from cdm_data_loaders.pipelines.all_the_bacteria import (
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.utils.file_transfer.core import NonRetryableDownloadError
 from tests.cdm_data_loaders.pipelines.conftest import VALID_DESTINATIONS
-from tests.conftest import DEFAULT_VCR_CONFIG, S3
-
-
-@pytest.fixture(scope="module")
-def vcr_config() -> dict[str, Any]:
-    """VCR config for tests that make HTTP requests."""
-    return {**DEFAULT_VCR_CONFIG}
+from tests.conftest import S3
 
 
 @pytest.fixture
@@ -52,11 +51,6 @@ def test_cli_passes_settings_class_to_run_cli() -> None:
     assert isinstance(cli, PipelineCli)
     assert cli.settings_cls is AtbSettings
     assert cli.pipeline_fn is run_atb_pipeline
-
-
-def test_load_patterns_returns_compiled_pattern(pattern_file: Path) -> None:
-    """load_patterns() should return a compiled re.Pattern object."""
-    assert isinstance(load_patterns(pattern_file), re.Pattern)
 
 
 def test_load_patterns_exact_match(pattern_file: Path) -> None:
@@ -241,7 +235,7 @@ def test_get_file_download_links_use_pattern_file(tmp_path: Path, pattern_lines:
     settings = AtbSettings(
         input_dir=str(tmp_path),
         output_dir=str(tmp_path),
-        pattern_file="patterns.txt",
+        pattern_file=str(tmp_path / "patterns.txt"),
         use_destination="local_fs",
     )  # pyright: ignore[reportCallIssue]
     file_path = Path("tests") / "data" / "atb" / "all_atb_files.tsv"
@@ -440,7 +434,7 @@ def test_osf_file_downloader_success(
     ],
 )
 @pytest.mark.parametrize("use_destination", VALID_DESTINATIONS)
-def test_osf_file_downloader_error_handling(  # noqa: PLR0917
+def test_osf_file_downloader_error_handling(
     atb_file_list: list[dict[str, Any]],
     expected_exceptions: list[str],
     expected_paths: dict[str, bool],
@@ -542,23 +536,6 @@ def test_run_atb_pipeline_bind_order(
     assert call_order.index("file_downloader.bind") < call_order.index("run_pipeline")
 
 
-def test_run_atb_pipeline_resource_passed_to_run_pipeline_is_file_downloader(
-    test_settings: AtbSettings,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The resource argument to run_pipeline is the (possibly mutated) file_downloader object."""
-    sentinel = MagicMock(name="file_downloader_sentinel")
-    mock_run_pipeline = MagicMock()
-
-    monkeypatch.setattr(all_the_bacteria, "atb_file_list", MagicMock())
-    monkeypatch.setattr(all_the_bacteria, "file_downloader", sentinel)
-    monkeypatch.setattr(all_the_bacteria, "run_pipeline", mock_run_pipeline)
-
-    run_atb_pipeline(test_settings)
-
-    assert mock_run_pipeline.call_args.kwargs["resource"] is sentinel
-
-
 @pytest.mark.parametrize("use_output_dir_for_pipeline_metadata", [True, False])
 @pytest.mark.parametrize("dlt_dev_mode", [True, False])
 def test_run_atb_pipeline_pipeline_dir_present_or_absent(
@@ -579,7 +556,7 @@ def test_run_atb_pipeline_pipeline_dir_present_or_absent(
     )  # pyright: ignore[reportCallIssue]
     mock_file_downloader = MagicMock(name="file_downloader")
     if use_output_dir_for_pipeline_metadata:
-        assert settings.pipeline_dir == output_dir.resolve() / ".dlt_conf"
+        assert settings.pipeline_dir == output_dir.resolve() / PIPELINE_DIR_NAME
     else:
         assert settings.pipeline_dir is None
 
@@ -600,3 +577,143 @@ def test_run_atb_pipeline_pipeline_dir_present_or_absent(
         pipeline_kwargs["dev_mode"] = True
 
     assert mock_dlt.pipeline.call_args_list == [call(**pipeline_kwargs)]
+
+
+def test_run_atb_pipeline_pass_repeated_invocation_does_not_mutate_singleton_resources_in_place(
+    test_defaults: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Calling run_atb_pipeline more than once should not fail due to in-place .bind() on module-level singletons."""
+    atb_file_list_copy, file_downloader_copy = copy.deepcopy(
+        (all_the_bacteria.atb_file_list, all_the_bacteria.file_downloader)
+    )
+    monkeypatch.setattr(all_the_bacteria, "atb_file_list", atb_file_list_copy)
+    monkeypatch.setattr(all_the_bacteria, "file_downloader", file_downloader_copy)
+
+    bound_settings: list[AtbSettings] = []
+
+    def fake_run_pipeline(*, settings: AtbSettings, **_: Any) -> str:  # noqa: ANN401
+        bound_settings.append(settings)
+        return "ok"
+
+    monkeypatch.setattr(all_the_bacteria, "run_pipeline", fake_run_pipeline)
+
+    settings_1 = AtbSettings(**{**test_defaults, "output_dir": str(tmp_path / "out1"), "version": "1.0"})
+    settings_2 = AtbSettings(**{**test_defaults, "output_dir": str(tmp_path / "out2"), "version": "2.0"})
+
+    assert run_atb_pipeline(settings_1) == "ok"
+    assert run_atb_pipeline(settings_2) == "ok"
+    assert bound_settings == [settings_1, settings_2]
+
+
+def test_get_file_download_links_pass_concurrent_downloads_across_worker_threads(
+    test_settings: AtbSettings,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Multiple matching files in the ATB index TSV should be downloaded concurrently across worker threads."""
+    atb_file_list_copy, file_downloader_copy = copy.deepcopy(
+        (all_the_bacteria.atb_file_list, all_the_bacteria.file_downloader)
+    )
+    monkeypatch.setattr(all_the_bacteria, "atb_file_list", atb_file_list_copy)
+    monkeypatch.setattr(all_the_bacteria, "file_downloader", file_downloader_copy)
+
+    tsv_path = Path("tests") / "data" / "atb" / "filtered_files.tsv"
+    monkeypatch.setattr(all_the_bacteria, "download_atb_index_tsv", lambda _settings: tsv_path)
+
+    in_flight = 0
+    max_in_flight = 0
+    download_threads: set[int] = set()
+    lock = threading.Lock()
+
+    mock_download_client = MagicMock()
+
+    def record_concurrent_download(**_kwargs: Any) -> None:  # noqa: ANN401
+        nonlocal in_flight, max_in_flight
+        with lock:
+            in_flight += 1
+            max_in_flight = max(max_in_flight, in_flight)
+            download_threads.add(threading.get_ident())
+        time.sleep(0.05)
+        with lock:
+            in_flight -= 1
+
+    mock_download_client.download.side_effect = record_concurrent_download
+    monkeypatch.setattr(all_the_bacteria, "FileDownloader", lambda: mock_download_client)
+
+    atb_file_list_copy.bind(test_settings)
+    file_downloader_copy.bind(test_settings)
+
+    pipeline = dlt.pipeline(
+        pipeline_name="test_atb_concurrent_downloads",
+        destination=dlt.destinations.dummy(completed_prob=1.0),
+        pipelines_dir=str(tmp_path / "dlt_pipelines"),
+        dev_mode=True,
+    )
+    pipeline.extract(file_downloader_copy)
+
+    assert mock_download_client.download.call_count > 1
+    assert max_in_flight > 1
+    assert len(download_threads) > 1
+
+
+def test_file_downloader_pass_parallelized_transformer_runs_on_worker_threads(
+    test_settings: AtbSettings,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """file_downloader (parallelized=True) should execute FileDownloader.download concurrently on worker threads."""
+    atb_file_list_copy, file_downloader_copy = copy.deepcopy(
+        (all_the_bacteria.atb_file_list, all_the_bacteria.file_downloader)
+    )
+    monkeypatch.setattr(all_the_bacteria, "atb_file_list", atb_file_list_copy)
+    monkeypatch.setattr(all_the_bacteria, "file_downloader", file_downloader_copy)
+
+    # Yield 4 separate 1-file batches so dlt fans out 4 calls to file_downloader, isolating the
+    # parallelized=True generator-return threading bug from get_file_download_links' single-list yield.
+    batches = [
+        (
+            {
+                "project": "AllTheBacteria/Annotation/Bakta",
+                "project_id": "p1",
+                "filename": f"file_{idx}.tar.xz",
+                "file_id": f"id_{idx}",
+                "url": f"https://osf.io/download/file_{idx}",
+                "md5": f"md5_{idx}",
+                "size": "100",
+            },
+        )
+        for idx in range(4)
+    ]
+    monkeypatch.setattr(all_the_bacteria, "download_atb_index_tsv", lambda _settings: tmp_path / ALL_ATB_FILE_NAME)
+    monkeypatch.setattr(all_the_bacteria, "get_file_download_links", lambda _settings, _tsv: iter(batches))
+
+    main_tid = threading.get_ident()
+    download_threads: set[int] = set()
+    lock = threading.Lock()
+
+    mock_download_client = MagicMock()
+
+    def record_download_thread(**_kwargs: Any) -> None:  # noqa: ANN401
+        with lock:
+            download_threads.add(threading.get_ident())
+        time.sleep(0.05)
+
+    mock_download_client.download.side_effect = record_download_thread
+    monkeypatch.setattr(all_the_bacteria, "FileDownloader", lambda: mock_download_client)
+
+    atb_file_list_copy.bind(test_settings)
+    file_downloader_copy.bind(test_settings)
+
+    pipeline = dlt.pipeline(
+        pipeline_name="test_atb_parallel",
+        destination=dlt.destinations.dummy(completed_prob=1.0),
+        pipelines_dir=str(tmp_path / "dlt_pipelines"),
+        dev_mode=True,
+    )
+    pipeline.extract(file_downloader_copy)
+
+    assert mock_download_client.download.call_count == len(batches)
+    assert main_tid not in download_threads
+    assert len(download_threads) > 1

@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from cdm_data_loaders.core.fields import INPUT_MOUNT, OUTPUT_MOUNT
-from cdm_data_loaders.ncbi_ftp.assembly import FTP_HOST
+from cdm_data_loaders.ncbi_ftp.constants import FTP_HOST
 from cdm_data_loaders.pipelines.ncbi_ftp_download import (
     DownloadSettings,
 )

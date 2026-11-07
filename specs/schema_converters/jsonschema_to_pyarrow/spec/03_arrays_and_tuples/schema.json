@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/spec/03_arrays_and_tuples.schema.json",
+  "title": "ArraysAndTuplesRecord",
+  "type": "object",
+  "required": [
+    "id",
+    "tags",
+    "coord_3d"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "description": "Ordered list of string tags.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "measurements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "label",
+          "value"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "matrix_2d": {
+      "type": "array",
+      "description": "Two-dimensional numeric matrix.",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      }
+    },
+    "coord_3d": {
+      "type": "array",
+      "description": "Closed 3D coordinate tuple (x, y, optional z).",
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "type": "number",
+          "description": "X coordinate."
+        },
+        {
+          "type": "number",
+          "description": "Y coordinate."
+        },
+        {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Optional Z coordinate."
+        }
+      ],
+      "items": false
+    },
+    "pair_tuple_list": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ],
+        "items": false
+      }
+    }
+  }
+}
+

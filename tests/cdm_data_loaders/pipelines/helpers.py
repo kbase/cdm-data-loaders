@@ -1,27 +1,32 @@
 """Misc helpers for integration tests."""
 
-import gzip
+import gc
 import json
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
-from datetime import datetime
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Final
+from unittest.mock import patch
+from uuid import uuid4
 
 import dlt
 import duckdb
-import pendulum
 import pyarrow.parquet as pq
+import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.destinations import filesystem
+from dlt.extract import DltResource
+from pandas import DataFrame
 
-from cdm_data_loaders.core.fields import PARQUET, LoaderFileFormatEnum
-from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.converters.core.paths import set_nested
+from cdm_data_loaders.core.fields import PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
+from cdm_data_loaders.core.settings import FileFormatIngestSettings
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
-from tests.conftest import LOCAL_FS
+from cdm_data_loaders.utils.file_items import as_file_item, open_binary
+from tests.helpers import strip_none_values
 
 logger: Logger = getLogger(__name__)
 
@@ -53,21 +58,17 @@ def is_metadata_table(table_name: str) -> bool:
 
 
 def read_jsonl_file(file_path: Path) -> list[dict[str, Any]]:
-    """Read a plain or gzipped JSONLines file, detecting gzip by magic bytes."""
-    with file_path.open("rb") as f:
-        is_gzipped = f.read(2) == b"\x1f\x8b"
-
-    opener = gzip.open if is_gzipped else open
+    """Read a plain or gzipped JSONLines file."""
     rows: list[dict[str, Any]] = []
-    with opener(file_path, "rt", encoding="utf-8") as f:
+    with open_binary(file_path) as f:
         for raw_line in f:
-            stripped = raw_line.strip()
+            stripped = raw_line.decode("utf-8").strip()
             if not stripped:
                 continue
             try:
                 rows.append(json.loads(stripped))
             except json.JSONDecodeError:
-                logger.warning("Skipping unparseable line in %s: %r", file_path, raw_line[:200])
+                logger.warning("Skipping unparseable line in %s: %r", file_path, stripped[:200])
     return rows
 
 
@@ -100,8 +101,13 @@ def read_pipeline_tables(output_dir: Path, output_format: str | None = None) -> 
     return dict(tables)
 
 
-def read_destination_rows(base_dir: Path, table_name: str) -> list[dict[str, Any]]:
-    """Read the rows the filesystem destination wrote for table_name under base_dir, without dlt columns.
+def read_destination_rows(
+    base_dir: Path,
+    table_name: str,
+    *,
+    strip_metadata: bool = True,
+) -> list[dict[str, Any]]:
+    """Read the rows the filesystem destination wrote for table_name under base_dir.
 
     Handles parquet, jsonl and gzipped jsonl files. Returns an empty list if the table has no files.
     """
@@ -111,47 +117,132 @@ def read_destination_rows(base_dir: Path, table_name: str) -> list[dict[str, Any
             rows.extend(pq.read_table(data_file).to_pylist())
         elif ".jsonl" in data_file.name:
             rows.extend(read_jsonl_file(data_file))
-    return [strip_metadata_columns(row) for row in rows]
+    if strip_metadata:
+        return [strip_metadata_columns(row) for row in rows]
+    return rows
 
 
-def make_cts_settings[S: CtsSettings](
-    settings_cls: type[S],
-    base_dir: Path,
-    **overrides: Any,  # noqa: ANN401
-) -> S:
-    """Create standard input/output directories and log config under base_dir and instantiate settings_cls."""
-    input_dir = base_dir / "input"
-    input_dir.mkdir(parents=True, exist_ok=True)
-    output_dir = base_dir / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    log_config_file = base_dir / "logging.json"
-    if not log_config_file.exists():
-        log_config_file.write_text('{"version": 1}', encoding="utf-8")
+def duckdb_pipeline(tmp_path: Path, pipeline_name: str, dataset_name: str, db_name: str | None = None) -> dlt.Pipeline:
+    """Return a dlt pipeline with a duckdb destination in tmp_path.
 
-    kwargs: dict[str, Any] = {
-        "input_dir": str(input_dir),
-        "output_dir": str(output_dir),
-        "log_config_file": str(log_config_file),
-        "use_destination": LOCAL_FS,
-        "dlt_dev_mode": False,
-        "use_output_dir_for_pipeline_metadata": False,
-    }
-    kwargs.update(overrides)
-    return settings_cls(**kwargs)
-
-
-def make_file_item(file_path: Path, mime_type: str = "application/octet-stream") -> FileItemDict:
-    """Build a dlt FileItemDict for a local file."""
-    return FileItemDict(
-        {
-            "file_url": file_path.as_uri(),
-            "file_name": file_path.name,
-            "relative_path": file_path.name,
-            "mime_type": mime_type,
-            "modification_date": pendulum.now(),
-            "size_in_bytes": file_path.stat().st_size,
-        }
+    The database file defaults to a name derived from the pipeline name so that the DuckDB
+    catalog differs from the dataset schema; equal names trigger a DuckDB binder error.
+    """
+    db_file = f"{db_name or pipeline_name}_db.duckdb"
+    return dlt.pipeline(
+        pipeline_name=pipeline_name,
+        dataset_name=dataset_name,
+        destination=dlt.destinations.duckdb(str(tmp_path / db_file)),
+        pipelines_dir=str(tmp_path / "pipelines"),
     )
+
+
+def assert_core_run_pipeline_args(
+    pipeline_module: Any,  # noqa: ANN401
+    run_fn: Callable[[Any], Any],
+    settings: FileFormatIngestSettings,
+    pipeline_name: str,
+) -> None:
+    """Assert that a pipeline runner delegates to core.run_pipeline with standard ingest kwargs."""
+    with patch.object(pipeline_module, "run_pipeline") as mock_run_pipeline:
+        run_fn(settings)
+
+    assert mock_run_pipeline.call_count == 1
+    _, kwargs = mock_run_pipeline.call_args
+    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
+    assert kwargs["settings"] == settings
+    assert kwargs["pipeline_kwargs"] == {
+        "pipeline_name": pipeline_name,
+        "dataset_name": settings.dataset_name,
+    }
+    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": settings.loader_file_format}
+    assert isinstance(kwargs["resource"], DltResource)
+
+
+def assert_binds_filesystem_reader(
+    pipeline_module: Any,  # noqa: ANN401
+    run_fn: Callable[[Any], Any],
+    settings: Any,  # noqa: ANN401
+    expected_reader_name: str | None = None,
+) -> DltResource:
+    """Assert that a pipeline runner passes a DltResource piped from `filesystem` to run_pipeline."""
+    with patch.object(pipeline_module, "run_pipeline") as mock_run_pipeline:
+        run_fn(settings)
+
+    mock_run_pipeline.assert_called_once()
+    resource = mock_run_pipeline.call_args.kwargs["resource"]
+    assert isinstance(resource, dlt.sources.DltResource)
+    if expected_reader_name is not None:
+        assert resource.name == expected_reader_name
+        assert resource._pipe.parent.name == "filesystem"  # noqa: SLF001
+    return resource
+
+
+def run_with_duckdb_pipeline(
+    tmp_path: Path,
+    pipeline_module: Any,  # noqa: ANN401
+    invoke_fn: Callable[[], Any],
+    *,
+    expected_pipeline_name: str,
+    expected_dataset_name: str,
+    pipeline_name_prefix: str = "test_cli_pipeline",
+) -> LoadInfo:
+    """Patch `pipeline_module.run_pipeline` to run against a real DuckDB destination and return LoadInfo."""
+    db_pipeline_name = f"{pipeline_name_prefix}_{uuid4().hex}"
+    captured: dict[str, LoadInfo] = {}
+
+    def fake_run_pipeline(
+        *,
+        resource: DltResource,
+        pipeline_kwargs: dict[str, Any],
+        **_: Any,  # noqa: ANN401
+    ) -> LoadInfo:
+        assert pipeline_kwargs == {
+            "pipeline_name": expected_pipeline_name,
+            "dataset_name": expected_dataset_name,
+        }
+        pipeline = duckdb_pipeline(tmp_path, db_pipeline_name, expected_dataset_name)
+        load_info = pipeline.run(resource)
+        captured["load_info"] = load_info
+        return load_info
+
+    with patch.object(pipeline_module, "run_pipeline", fake_run_pipeline):
+        invoke_fn()
+
+    return assert_run_ok(captured.get("load_info"))
+
+
+def check_book_list_results(
+    load_info: LoadInfo | None,
+    table_name: str | None = None,
+    *,
+    expected_columns: set[str] | None = None,
+) -> DataFrame:
+    """Check the output of parsing SIMPLE_LIBRARY_XML into a single book table."""
+    load_info = assert_run_ok(load_info)
+    with load_info.pipeline.destination_client() as client:
+        dataset_dir = Path(client.dataset_path)  # pyright: ignore[reportAttributeAccessIssue]
+    table_name = table_name or "book"
+    assert {p.name for p in dataset_dir.iterdir() if p.is_dir()} == {
+        table_name,
+        "_dlt_version",
+        "_dlt_loads",
+        "_dlt_pipeline_state",
+        LOAD_INFO_TABLE_NAME,
+    }
+    book_df = DataFrame(read_destination_rows(dataset_dir, table_name, strip_metadata=False))
+    required_cols = expected_columns or {"book___id", "book__title", "_dlt_id", "_dlt_load_id"}
+    assert set(book_df.columns.tolist()) >= required_cols
+    return book_df
+
+
+def make_file_item(file_path: Path) -> FileItemDict:
+    """Build a dlt FileItemDict for a local file, as the dlt filesystem resource would list it.
+
+    The item carries an fsspec client and the ``encoding`` that dlt derives from the file name, so it can be
+    opened (with gzip decompression) exactly like an item from a pipeline run.
+    """
+    return as_file_item(file_path)
 
 
 def fetch_all_duckdb(pipeline: dlt.Pipeline, query: str) -> list[tuple[Any, ...]]:
@@ -163,8 +254,22 @@ def fetch_all_duckdb(pipeline: dlt.Pipeline, query: str) -> list[tuple[Any, ...]
         return list(cur.fetchall())
 
 
+def assert_duckdb_table_counts(pipeline: dlt.Pipeline, expected_counts: Mapping[str, int]) -> None:
+    """Assert that each table in `expected_counts` has the expected row count in DuckDB."""
+    for table_name, expected_count in expected_counts.items():
+        ((count,),) = fetch_all_duckdb(pipeline, f"SELECT COUNT(*) FROM {table_name}")  # noqa: S608
+        assert count == expected_count, f"expected {expected_count} rows in '{table_name}', got {count}"
+
+
+def assert_destination_table_counts(dataset_dir: Path, expected_counts: Mapping[str, int]) -> None:
+    """Assert that each table in `expected_counts` has the expected row count on the filesystem destination."""
+    for table_name, expected_count in expected_counts.items():
+        rows = read_destination_rows(dataset_dir, table_name)
+        assert len(rows) == expected_count, f"expected {expected_count} rows in '{table_name}', got {len(rows)}"
+
+
 @contextmanager
-def duckdb_reference_from_jsonl(jsonl_path: Path) -> Iterator[duckdb.DuckDBPyConnection]:
+def duckdb_reference_from_jsonl(jsonl_path: Path) -> Generator[duckdb.DuckDBPyConnection]:
     """Load a reference JSONL file into an in-memory DuckDB connection with a `reference` table."""
     connection = duckdb.connect()
     connection.execute(
@@ -180,36 +285,6 @@ def duckdb_reference_from_jsonl(jsonl_path: Path) -> Iterator[duckdb.DuckDBPyCon
 def sorted_json(entries: list[dict[str, Any]]) -> list[str]:
     """Entries as sorted JSON strings for order-insensitive comparison."""
     return sorted(json.dumps(entry, sort_keys=True, default=str) for entry in entries)
-
-
-def settings_to_argv(settings: Any, *, exclude: Iterable[str] = ()) -> list[str]:  # noqa: ANN401
-    """Derive CLI arguments from a settings instance.
-
-    Every serialized field becomes a ``--kebab-case`` flag, with bools rendered
-    as their ``true``/``false`` CLI spelling, sequence fields expanded after the
-    flag, and None-valued, excluded, or computed fields skipped.
-
-    :param settings: a CtsSettings (or derivative) instance
-    :type settings: Any
-    :param exclude: field names to omit from the resulting argument list
-    :type exclude: Iterable[str]
-    :return: command-line argument list reproducing the settings
-    :rtype: list[str]
-    """
-    argv: list[str] = []
-    excluded_fields: set[str] = set(getattr(type(settings), "model_computed_fields", {}).keys()) | set(exclude)
-    for name, value in settings.model_dump(exclude=excluded_fields).items():
-        flag = f"--{name.replace('_', '-')}"
-        if isinstance(value, bool):
-            argv.extend([flag, "true" if value else "false"])
-        elif value is None:
-            continue
-        elif isinstance(value, list | tuple):
-            if value:
-                argv.extend([flag, *(str(item) for item in value)])
-        else:
-            argv.extend([flag, str(value)])
-    return argv
 
 
 def assert_run_ok(load_info: LoadInfo | None) -> LoadInfo:
@@ -229,34 +304,75 @@ def read_data_rows(dataset_dir: Path, file_format: str | None = None) -> dict[st
     }
 
 
-def assert_pipeline_report_written(output_dir: Path, load_info: LoadInfo, *, metadata_moved: bool = False) -> None:
-    """Assert that save_pipeline_metadata wrote the expected report file (and moved metadata if configured)."""
-    report_files = list(output_dir.glob(f"report_{load_info.loads_ids[0]}__*.txt"))
-    assert len(report_files) == 1
-    pipeline_e2e_id = report_files[0].stem.removeprefix("report_")
+def check_pipeline_report(path: Path, expected: dict[str, Any]) -> dict[str, Any]:
+    """Ensure a pipeline report contains what it purports to contain.
+
+    :param path: path to the report file
+    :type path: Path
+    :param expected: key, value pairs that should appear in the report
+    :type expected: dict[str, Any]
+    :return: parsed YAML report dictionary
+    :rtype: dict[str, Any]
+    """
+    assert path.is_file()
+    with path.open("r", encoding="utf-8") as fh:
+        report_data: dict[str, Any] = yaml.safe_load(fh)
+
+    for e, v in expected.items():
+        assert report_data[e] == v
+    return report_data
+
+
+def assert_pipeline_report_written(
+    output_dir: Path,
+    load_info: LoadInfo,
+    *,
+    metadata_moved: bool = False,
+    ingested_files: list[str] | set[str] | None = None,
+) -> None:
+    """Assert that save_pipeline_metadata wrote the expected report file in the configured directory."""
     if metadata_moved:
-        assert (output_dir / pipeline_e2e_id).is_dir()
-    report_text = report_files[0].read_text(encoding="utf-8")
-    report_lines = report_text.splitlines()
-    started_line = report_lines[2]
-    finished_line = report_lines[3]
-    assert started_line.startswith("Started: ")
-    assert finished_line.startswith("Finished: ")
-    started_at = datetime.fromisoformat(started_line.removeprefix("Started: "))
-    finished_at = datetime.fromisoformat(finished_line.removeprefix("Finished: "))
-    assert pipeline_e2e_id == f"{load_info.loads_ids[0]}__{finished_at}"
+        assert (output_dir / PIPELINE_DIR_NAME).is_dir()
+        report_file = output_dir / PIPELINE_DIR_NAME / "report.txt"
+    else:
+        report_file = output_dir / "report.txt"
+
+    expected: dict[str, Any] = {
+        "pipeline": load_info.pipeline.pipeline_name,
+        "dataset": load_info.dataset_name,
+        "status": "completed",
+        "load_ids": list(load_info.loads_ids),
+        "pipeline_load_info_errs": None,
+    }
+    if isinstance(ingested_files, list) and ingested_files:
+        expected["ingested_files"] = ingested_files
+
+    report_data = check_pipeline_report(report_file, expected)
+    started_at = report_data["started"]
+    finished_at = report_data["finished"]
     assert started_at <= load_info.started_at <= finished_at
     if load_info.finished_at is not None:
         assert load_info.started_at <= load_info.finished_at <= finished_at
-    assert report_text == (
-        f"Pipeline: {load_info.pipeline.pipeline_name}\n"
-        f"Dataset: {load_info.dataset_name}\n"
-        f"Started: {started_at}\n"
-        f"Finished: {finished_at}\n"
-        "Status: completed\n"
-        f"Completed loads: {', '.join(load_info.loads_ids)}\n"
-        "Pipeline load info saved\n"
-    )
+
+    if isinstance(ingested_files, set):
+        if ingested_files:
+            assert set(report_data["ingested_files"]) == ingested_files
+        else:
+            assert "ingested_files" not in report_data
+    elif ingested_files == []:
+        assert "ingested_files" not in report_data
+    elif ingested_files is None and "ingested_files" in report_data:
+        assert report_data["ingested_files"]
+    assert set(report_data) <= {
+        "pipeline",
+        "dataset",
+        "started",
+        "finished",
+        "status",
+        "load_ids",
+        "ingested_files",
+        "pipeline_load_info_errs",
+    }
 
 
 def run_and_read(
@@ -268,18 +384,20 @@ def run_and_read(
     (load_info, output_dir) = run_pipeline(chunk_dir, **overrides)
     assert load_info is not None
     assert not load_info.has_failed_jobs
-    assert_pipeline_report_written(output_dir, load_info)
+    assert_pipeline_report_written(output_dir, load_info, metadata_moved=(output_dir / PIPELINE_DIR_NAME).is_dir())
     return (load_info, output_dir)
+
+
+def _df_to_sorted_json(df: DataFrame) -> list[str]:
+    """Convert a table DataFrame into sorted JSON strings, removing the _dlt fields first."""
+    return sorted_json(
+        [{k: v for k, v in datum.items() if not is_metadata_table(k)} for datum in df.to_dict("records")]  # pyright: ignore[reportArgumentType]
+    )
 
 
 def extract_table_data(dataset: dlt.Dataset, table_name: str) -> list[str]:
     """Convert table data into a JSON string, removing the _dlt fields first."""
-    return sorted_json(
-        [
-            {k: v for k, v in datum.items() if not is_metadata_table(k)}
-            for datum in dataset.table(table_name).df().to_dict("records")
-        ]  # pyright: ignore[reportArgumentType]
-    )
+    return _df_to_sorted_json(dataset.table(table_name).df())
 
 
 def get_pipeline(load_info: LoadInfo, output_dir: Path) -> dlt.Pipeline:
@@ -300,13 +418,6 @@ def denormalize_identifier(name: str) -> str:
 def denormalize_path(path: str) -> list[str]:
     """Split a dlt name into xml key fragments, unmangling each one."""
     return [denormalize_identifier(fragment) for fragment in path.split("__")]
-
-
-def set_nested(target: dict[str, Any], path: list[str], value: Any) -> None:
-    """Set a value at a nested path, creating intermediate dicts as needed."""
-    for fragment in path[:-1]:
-        target = target.setdefault(fragment, {})
-    target[path[-1]] = value
 
 
 def rows_as_multiset(tables: dict[str, list[dict[str, Any]]], table_name: str) -> list[str]:
@@ -362,12 +473,13 @@ def reconstruct_entries(tables: dict[str, list[dict[str, Any]]]) -> list[dict[st
             if column in XMLNS_COLUMNS or value is None:
                 continue
             set_nested(entry, denormalize_path(column.removeprefix(f"{top_table}__")), parse_json_string(value))
-        _attach_nested_rows(entry, row["_dlt_id"], parent_index, [], depth_limit=100, top_table=top_table)
+        if "_dlt_id" in row:
+            _attach_nested_rows(entry, row["_dlt_id"], parent_index, [], depth_limit=100, top_table=top_table)
         entries.append(entry)
     return entries
 
 
-def _attach_nested_rows(  # noqa: PLR0917
+def _attach_nested_rows(
     target: dict[str, Any],
     parent_id: str,
     parent_index: dict[str, list[tuple[str, dict[str, Any]]]],
@@ -429,17 +541,8 @@ def _normalize_reference_entry(entry: dict[str, Any]) -> dict[str, Any]:
         value = raw_value
         if isinstance(value, str) and value.startswith(("{", "[")):
             value = json.loads(value)
-        normalized[key] = _normalize_reference_value(value)
+        normalized[key] = strip_none_values(value)
     return normalized
-
-
-def _normalize_reference_value(value: Any) -> Any:
-    """Recursively normalize DuckDB STRUCT/LIST/JSON values to plain Python structures."""
-    if isinstance(value, list):
-        return [_normalize_reference_value(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _normalize_reference_value(item) for key, item in value.items() if item is not None}
-    return value
 
 
 def assert_datasets_equal(
@@ -450,35 +553,31 @@ def assert_datasets_equal(
         err_msg = "assert_datasets_equal requires at least two datasets to compare"
         raise ValueError(err_msg)
 
-    datasets = {key: get_pipeline(*v) for key, v in load_info_and_dir.items()}
-
     all_keys = list(load_info_and_dir.keys())
-
-    sorted_row_data = {k: {} for k in all_keys}
     dataset_zero = all_keys[0]
-    table_names = {
-        table_name for table_name in datasets[dataset_zero].dataset().tables if not is_metadata_table(table_name)
-    }
-    rows_per_table = {
-        table_name: datasets[dataset_zero].dataset().table(table_name).df().shape[0] for table_name in table_names
-    }
-    col_names = {t: set(datasets[dataset_zero].dataset().table(t).df().columns) for t in table_names}
-    sorted_row_data[dataset_zero] = {t: extract_table_data(datasets[dataset_zero].dataset(), t) for t in table_names}
+    sorted_row_data: dict[str, dict[str, list[str]]] = {k: {} for k in all_keys}
+
+    with get_pipeline(*load_info_and_dir[dataset_zero]).dataset() as ds_zero:
+        table_names = {table_name for table_name in ds_zero.tables if not is_metadata_table(table_name)}
+        dfs_zero = {t: ds_zero.table(t).df() for t in table_names}
+        rows_per_table = {t: df.shape[0] for t, df in dfs_zero.items()}
+        col_names = {t: set(df.columns) for t, df in dfs_zero.items()}
+        sorted_row_data[dataset_zero] = {t: _df_to_sorted_json(df) for t, df in dfs_zero.items()}
 
     for key in all_keys[1:]:
-        # check the table names are identical
-        assert {
-            table_name for table_name in datasets[key].dataset().tables if not is_metadata_table(table_name)
-        } == table_names
-        # check row counts
-        assert {
-            table_name: datasets[key].dataset().table(table_name).df().shape[0] for table_name in table_names
-        } == rows_per_table
-        # column names
-        for t in table_names:
-            assert set(datasets[key].dataset().table(t).df().columns) == col_names[t]
-            sorted_row_data[key][t] = extract_table_data(datasets[key].dataset(), t)
-            assert sorted_row_data[key][t] == sorted_row_data[dataset_zero][t]
+        with get_pipeline(*load_info_and_dir[key]).dataset() as ds:
+            # check the table names are identical
+            assert {table_name for table_name in ds.tables if not is_metadata_table(table_name)} == table_names
+            dfs = {t: ds.table(t).df() for t in table_names}
+            # check row counts
+            assert {t: df.shape[0] for t, df in dfs.items()} == rows_per_table
+            # column names
+            for t, df in dfs.items():
+                assert set(df.columns) == col_names[t]
+                sorted_row_data[key][t] = _df_to_sorted_json(df)
+                assert sorted_row_data[key][t] == sorted_row_data[dataset_zero][t]
+
+    gc.collect()
 
 
 def assert_dataset_matches_reference(

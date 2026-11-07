@@ -1,6 +1,5 @@
 """Unified test execution framework for running CDM data ingestion pipelines in core, cli, or docker mode."""
 
-import logging
 import os
 import shutil
 import subprocess
@@ -18,17 +17,19 @@ from uuid import uuid4
 
 import dlt
 import pytest
+import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.destinations import filesystem
 
+from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
 from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME, PipelineCli
-from cdm_data_loaders.utils import cdm_logger
-from tests.cdm_data_loaders.pipelines.helpers import read_jsonl_file, settings_to_argv
-from tests.conftest import BASE_DIR, CONFIG_BUCKET, LOCAL_FS
+from tests.cdm_data_loaders.pipelines.helpers import read_jsonl_file
+from tests.conftest import BASE_DIR, CONFIG_BUCKET, LOCAL_FS, preserve_logging_state
+from tests.helpers import settings_to_argv
 
-DEFAULT_DOCKER_IMAGE_TAG: Final[str] = "cdm-data-loaders-test:latest"
+DEFAULT_DOCKER_IMAGE_TAG: Final[str] = "ghcr.io/kbase/cdm-data-loaders:test_container"
 CONTAINER_INPUT_DIR: Final[str] = "/input_dir"
 CONTAINER_OUTPUT_DIR: Final[str] = "/output_dir"
 CONTAINER_AUX_DIR: Final[str] = "/aux_dir"
@@ -38,7 +39,6 @@ CONTAINER_PYMODULES_DIR: Final[str] = "/pymodules"
 FILE_PATH_FLAGS: Final[frozenset[str]] = frozenset(
     {
         "--xsd-file",
-        "--xml2db-config-file",
         "--schema-file",
         "-s",
         "--log-config-file",
@@ -48,8 +48,8 @@ FILE_PATH_FLAGS: Final[frozenset[str]] = frozenset(
 # Flags whose values are Python module paths that may be dynamically created in sys.modules
 MODULE_PATH_FLAGS: Final[frozenset[str]] = frozenset(
     {
-        "--entity-models-module",
-        "--schema-files-module",
+        "--entity-models",
+        "--entity-schemas",
         "-m",
     }
 )
@@ -73,14 +73,16 @@ PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
     "ncbi_ftp_promote": ("ncbi_ftp_promote", "cdm_data_loaders.pipelines.ncbi_ftp_promote"),
     "ncbi_ftp_sync": ("ncbi_ftp_sync", "cdm_data_loaders.pipelines.ncbi_ftp_download"),
     "ncbi_rest_api": ("ncbi_rest_api", "cdm_data_loaders.pipelines.ncbi_rest_api"),
-    "pdb_manifest": ("pdb_manifest", "cdm_data_loaders.pipelines.pdb_manifest"),
-    "uniprot": ("uniprot", "cdm_data_loaders.pipelines.xmltopyarrow.uniprot"),
+    "uniprot": ("uniprot", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
     "uniprot_cdm": ("uniprot_cdm", "cdm_data_loaders.pipelines.uniprot_kb_cdm"),
-    "uniref": ("uniref", "cdm_data_loaders.pipelines.xmltopyarrow.uniref"),
-    "uniref_cdm": ("uniref_cdm", "cdm_data_loaders.pipelines.uniref_cdm"),
+    "uniref50": ("uniref50", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
+    "uniref50_cdm": ("uniref50_cdm", "cdm_data_loaders.pipelines.uniref_cdm"),
+    "uniref90": ("uniref90", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
+    "uniref90_cdm": ("uniref90_cdm", "cdm_data_loaders.pipelines.uniref_cdm"),
+    "uniref100": ("uniref100", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
+    "uniref100_cdm": ("uniref100_cdm", "cdm_data_loaders.pipelines.uniref_cdm"),
     "xmltodict": ("xmltodict", "cdm_data_loaders.pipelines.xmltodict.pipeline"),
     "xmltopyarrow": ("xmltopyarrow", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
-    "xml2db": ("xml2db", "cdm_data_loaders.pipelines.xml2db.pipeline"),
     "xsv": ("xsv", "cdm_data_loaders.pipelines.xsv.pipeline"),
 }
 
@@ -183,7 +185,7 @@ type PipelineIdentifier = str | ModuleType | PipelineCli[Any] | PipelineSpec | C
 
 def _spec_from_module(cli_command: str, module: ModuleType) -> PipelineSpec:
     """Build a PipelineSpec by inspecting a pipeline module."""
-    cli_attr = getattr(module, "cli", None)
+    cli_attr = getattr(module, f"{cli_command}_cli", None) or getattr(module, "cli", None)
     if isinstance(cli_attr, PipelineCli):
         return PipelineSpec(
             cli_command=cli_command,
@@ -215,7 +217,14 @@ def resolve_pipeline(pipeline: PipelineIdentifier) -> PipelineSpec:
 
     if isinstance(pipeline, PipelineCli):
         module_path = pipeline.pipeline_fn.__module__
-        cli_command = MODULE_TO_CLI_COMMAND.get(module_path, module_path.rsplit(".", maxsplit=1)[-1])
+        prog_name = pipeline.settings_cls.model_config.get("cli_prog_name")
+        if prog_name and str(prog_name) in PIPELINE_TARGETS:
+            cli_command = str(prog_name)
+        else:
+            cli_command = MODULE_TO_CLI_COMMAND.get(
+                module_path,
+                str(prog_name) if prog_name else module_path.rsplit(".", maxsplit=1)[-1],
+            )
         return PipelineSpec(
             cli_command=cli_command,
             module_path=module_path,
@@ -227,31 +236,42 @@ def resolve_pipeline(pipeline: PipelineIdentifier) -> PipelineSpec:
     if isinstance(pipeline, ModuleType):
         module_path = pipeline.__name__
         short_key = module_path.removeprefix("cdm_data_loaders.pipelines.")
+        cli_attr = getattr(pipeline, "cli", None)
+        prog_name = (
+            cli_attr.settings_cls.model_config.get("cli_prog_name") if isinstance(cli_attr, PipelineCli) else None
+        )
         cli_command = MODULE_TO_CLI_COMMAND.get(
             module_path,
-            PIPELINE_TARGETS.get(short_key, (short_key.rsplit(".", maxsplit=1)[-1], module_path))[0],
+            PIPELINE_TARGETS.get(
+                short_key,
+                (str(prog_name) if prog_name else short_key.rsplit(".", maxsplit=1)[-1], module_path),
+            )[0],
         )
         return _spec_from_module(cli_command, pipeline)
 
     if callable(pipeline):
         module_path = getattr(pipeline, "__module__", "")
-        if module_path in MODULE_TO_CLI_COMMAND:
-            module = import_module(module_path)
-            return _spec_from_module(MODULE_TO_CLI_COMMAND[module_path], module)
+        module = (sys.modules.get(module_path) or import_module(module_path)) if module_path else None
+        if module is not None:
+            if module_path in MODULE_TO_CLI_COMMAND:
+                return _spec_from_module(MODULE_TO_CLI_COMMAND[module_path], module)
+            cli_attr = getattr(module, "cli", None)
+            if isinstance(cli_attr, PipelineCli) and cli_attr.pipeline_fn is pipeline:
+                return resolve_pipeline(cli_attr)
         err_msg = f"Cannot resolve pipeline from callable {pipeline!r} (module {module_path!r})"
         raise ValueError(err_msg)
 
     if isinstance(pipeline, str):
         normalized = pipeline.strip().removeprefix("cdm_data_loaders.pipelines.")
-        if normalized in PIPELINE_TARGETS:
-            cli_command, module_path = PIPELINE_TARGETS[normalized]
-            module = import_module(module_path)
-            return _spec_from_module(cli_command, module)
         full_module_path = f"cdm_data_loaders.pipelines.{normalized}"
-        if full_module_path in MODULE_TO_CLI_COMMAND:
-            cli_command = MODULE_TO_CLI_COMMAND[full_module_path]
-            module = import_module(full_module_path)
-            return _spec_from_module(cli_command, module)
+        target = PIPELINE_TARGETS.get(normalized) or (
+            (MODULE_TO_CLI_COMMAND[full_module_path], full_module_path)
+            if full_module_path in MODULE_TO_CLI_COMMAND
+            else None
+        )
+        if target is not None:
+            cli_command, module_path = target
+            return _spec_from_module(cli_command, import_module(module_path))
 
     err_msg = f"Unknown pipeline {pipeline!r}. Known pipelines: {', '.join(sorted(PIPELINE_TARGETS))}"
     raise ValueError(err_msg)
@@ -274,11 +294,11 @@ def _read_saved_load_info_row(dataset_dir: Path) -> dict[str, Any]:
 def reconstruct_load_info(output_dir: Path, bucket_dir: Path | None = None) -> LoadInfo | None:
     """Reconstruct a LoadInfo-compatible object and attached dlt.Pipeline from disk artifacts.
 
-    Reads the ``report_<pipeline_e2e_id>.txt`` file written by ``save_pipeline_metadata`` in
-    ``output_dir`` and attaches a ``dlt.Pipeline`` pointing at the filesystem destination
-    containing ``<dataset_name>``.
+    Reads the ``report.txt`` file written by ``save_pipeline_metadata`` in
+    ``output_dir / PIPELINE_DIR_NAME`` or ``output_dir`` and attaches a ``dlt.Pipeline``
+    pointing at the filesystem destination containing ``<dataset_name>``.
 
-    :param output_dir: directory containing ``report_<pipeline_e2e_id>.txt``
+    :param output_dir: directory containing ``report.txt`` or ``pipeline_metadata/report.txt``
     :type output_dir: Path
     :param bucket_dir: optional separate filesystem destination bucket directory
     :type bucket_dir: Path | None
@@ -286,43 +306,36 @@ def reconstruct_load_info(output_dir: Path, bucket_dir: Path | None = None) -> L
     :rtype: LoadInfo | None
     """
     output_dir = Path(output_dir)
-    report_files = sorted(output_dir.glob("report_*.txt"), key=lambda path: path.stat().st_mtime)
+    candidate_reports = (output_dir / PIPELINE_DIR_NAME / "report.txt", output_dir / "report.txt")
+    report_files = sorted(
+        (path for path in candidate_reports if path.is_file()),
+        key=lambda path: path.stat().st_mtime,
+    )
     if not report_files:
         return None
 
     report_file = report_files[-1]
-    lines = report_file.read_text(encoding="utf-8").splitlines()
-    if len(lines) < 5:  # noqa: PLR2004
+    with report_file.open("r", encoding="utf-8") as fh:
+        report_data = yaml.safe_load(fh)
+    if not isinstance(report_data, dict):
         return None
 
-    # Line 0: "Pipeline: <pipeline_name>"
-    # Line 1: "Dataset: <dataset_name>"
-    # Line 2: "Started: <started_at>"
-    # Line 3: "Finished: <finished_at>"
-    # Line 4: "Status: completed" | "Status: completed with errors" | "Status: error"
-    expected_prefixes = ("Pipeline: ", "Dataset: ", "Started: ", "Finished: ", "Status: ")
-    if not all(line.startswith(prefix) for line, prefix in zip(lines[:5], expected_prefixes, strict=True)):
+    required_keys = {"pipeline", "dataset", "started", "finished", "status"}
+    if not required_keys.issubset(report_data):
         return None
 
-    pipeline_name = lines[0].removeprefix("Pipeline: ").strip()
-    dataset_name = lines[1].removeprefix("Dataset: ").strip()
-    started_str = lines[2].removeprefix("Started: ").strip()
-    finished_str = lines[3].removeprefix("Finished: ").strip()
-    started_at = _PreservedStrDatetime(started_str)
-    report_finished_at = _PreservedStrDatetime(finished_str)
+    pipeline_name = str(report_data["pipeline"])
+    dataset_name = str(report_data["dataset"])
+    started_at = _PreservedStrDatetime(str(report_data["started"]))
+    report_finished_at = _PreservedStrDatetime(str(report_data["finished"]))
 
-    status_str = lines[4].removeprefix("Status: ").strip()
+    status_str = str(report_data["status"])
     if status_str == "error":
         return None
     has_failed_jobs = status_str != "completed"
 
-    # Line 5+: "Completed loads: <id1>, <id2>, ..."
-    loads_ids: list[str] = []
-    for line in lines[5:]:
-        if line.startswith("Completed loads:"):
-            loads_raw = line.removeprefix("Completed loads:").strip()
-            loads_ids = [item.strip() for item in loads_raw.split(",") if item.strip()]
-            break
+    raw_load_ids = report_data.get("load_ids") or []
+    loads_ids = [str(item) for item in raw_load_ids]
 
     # Determine where the dataset directory actually lives on disk
     if (output_dir / dataset_name).is_dir():
@@ -338,8 +351,8 @@ def reconstruct_load_info(output_dir: Path, bucket_dir: Path | None = None) -> L
 
     # Use a fresh working directory outside output_dir so dlt syncs the schema from the destination
     # without colliding with stale schemas in ~/.dlt/pipelines or adding files to output_dir.
-    pipeline_e2e_id = report_file.stem.removeprefix("report_")
-    reconstructed_pipelines_dir = output_dir.parent / f".reconstructed_dlt_{pipeline_e2e_id}"
+    reconstructed_id = loads_ids[0] if loads_ids else uuid4().hex
+    reconstructed_pipelines_dir = output_dir.parent / f".reconstructed_dlt_{reconstructed_id}"
     pipeline = dlt.pipeline(
         pipeline_name=pipeline_name,
         destination=filesystem(bucket_url=str(actual_bucket_dir)),
@@ -361,10 +374,21 @@ def reconstruct_load_info(output_dir: Path, bucket_dir: Path | None = None) -> L
     )
 
 
-def ensure_docker_image(image_tag: str | None = None, *, force_rebuild: bool = False) -> str:
-    """Build the Docker image from the repository Dockerfile if not already built in this session.
+def _docker_image_exists(image_tag: str) -> bool:
+    """Return True if ``image_tag`` already exists in the local Docker image store."""
+    result = subprocess.run(  # noqa: S603
+        ["docker", "image", "inspect", image_tag],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
 
-    :param image_tag: optional image tag; defaults to ``cdm-data-loaders-test:latest``
+
+def ensure_docker_image(image_tag: str | None = None, *, force_rebuild: bool = False) -> str:
+    """Build the Docker image from the repository Dockerfile if not already present or built in this session.
+
+    :param image_tag: optional image tag; defaults to ``ghcr.io/kbase/cdm-data-loaders:test_container``
     :type image_tag: str | None
     :param force_rebuild: force running ``docker build`` even if already built in this session
     :type force_rebuild: bool
@@ -373,7 +397,8 @@ def ensure_docker_image(image_tag: str | None = None, *, force_rebuild: bool = F
     :rtype: str
     """
     tag = image_tag or os.environ.get("CDM_TEST_DOCKER_IMAGE") or DEFAULT_DOCKER_IMAGE_TAG
-    if not force_rebuild and tag in _built_docker_images:
+    if not force_rebuild and (tag in _built_docker_images or _docker_image_exists(tag)):
+        _built_docker_images.add(tag)
         return tag
 
     cmd = ["docker", "build", "-t", tag, str(BASE_DIR.resolve())]
@@ -407,7 +432,7 @@ def _normalize_cli_args(cli_args: list[str]) -> list[str]:
         arg = cli_args[idx]
         if arg == "--log-config-file" and idx + 1 < len(cli_args):
             log_path = Path(cli_args[idx + 1])
-            if log_path.suffix.lower() == ".conf" and log_path.exists() and log_path.stat().st_size == 0:
+            if log_path.suffix.lower() == ".conf" and (not log_path.exists() or log_path.stat().st_size == 0):
                 idx += 2
                 continue
         normalized.append(arg)
@@ -452,6 +477,10 @@ def _write_docker_dlt_config(config_path: Path, use_destination: str) -> None:
     for dest in sorted(destinations):
         blocks.append(f'[destination.{dest}]\nbucket_url = "{CONTAINER_OUTPUT_DIR}"\ndestination_type = "filesystem"\n')
         blocks.append(f'[sources.{dest}]\nbucket_url = "{CONTAINER_INPUT_DIR}"\n')
+    for section in ("extract", "normalize", "load"):
+        workers = dlt.config.get(f"{section}.workers")
+        if workers is not None:
+            blocks.append(f"[{section}]\nworkers = {int(workers)}\n")
     config_path.write_text("\n".join(blocks), encoding="utf-8")
 
 
@@ -567,24 +596,16 @@ class PipelineTestRunner:
             raise ValueError(err_msg)
 
         bucket_dir = self._resolve_bucket_dir(output_dir, use_destination)
-        root = logging.getLogger()
-        handlers, level = root.handlers[:], root.level
-        applied_key = cdm_logger.applied_key
-        try:
-            with dlt.config.values(
+        with (
+            preserve_logging_state(),
+            dlt.config.values(
                 {
                     f"destination.{use_destination}.destination_type": "filesystem",
                     f"destination.{use_destination}.bucket_url": str(bucket_dir),
                 }
-            ):
-                return core.run_cli(spec.settings_cls, spec.pipeline_fn, cli_args=args)
-        finally:
-            for handler in root.handlers[:]:
-                root.removeHandler(handler)
-            for handler in handlers:
-                root.addHandler(handler)
-            root.setLevel(level)
-            cdm_logger.applied_key = applied_key
+            ),
+        ):
+            return core.run_cli(spec.settings_cls, spec.pipeline_fn, cli_args=args)
 
     def _run_cli(
         self,
@@ -599,27 +620,17 @@ class PipelineTestRunner:
             raise ValueError(err_msg)
 
         bucket_dir = self._resolve_bucket_dir(output_dir, use_destination)
-        root = logging.getLogger()
-        handlers, level = root.handlers[:], root.level
-        applied_key = cdm_logger.applied_key
-        try:
-            with (
-                patch.object(sys, "argv", [spec.cli_command, *args]),
-                dlt.config.values(
-                    {
-                        f"destination.{use_destination}.destination_type": "filesystem",
-                        f"destination.{use_destination}.bucket_url": str(bucket_dir),
-                    }
-                ),
-            ):
-                spec.cli_callable()
-        finally:
-            for handler in root.handlers[:]:
-                root.removeHandler(handler)
-            for handler in handlers:
-                root.addHandler(handler)
-            root.setLevel(level)
-            cdm_logger.applied_key = applied_key
+        with (
+            preserve_logging_state(),
+            patch.object(sys, "argv", [spec.cli_command, *args]),
+            dlt.config.values(
+                {
+                    f"destination.{use_destination}.destination_type": "filesystem",
+                    f"destination.{use_destination}.bucket_url": str(bucket_dir),
+                }
+            ),
+        ):
+            spec.cli_callable()
 
         return reconstruct_load_info(output_dir, bucket_dir=bucket_dir)
 
@@ -684,13 +695,20 @@ class PipelineTestRunner:
         else:
             docker_cmd.extend(["-e", "PYTHONPATH=/app/src:/app"])
 
-        docker_cmd.extend([image_tag, "pipeline", spec.cli_command, *container_args])
+        docker_target = (
+            spec.cli_command
+            if spec.module_path in MODULE_TO_CLI_COMMAND
+            else f"{spec.module_path.replace('.', '/')}.py"
+        )
+        docker_cmd.extend([image_tag, "pipeline", docker_target, *container_args])
 
         result = subprocess.run(docker_cmd, capture_output=True, text=True, check=False)  # noqa: S603
+        stderr_and_stdout = f"{result.stdout}\n{result.stderr}".strip()
+        if (result.returncode != 0 or "exited with status" in stderr_and_stdout) and (
+            "Unknown table name" in stderr_and_stdout or "ValueError" in stderr_and_stdout
+        ):
+            raise ValueError(stderr_and_stdout)
         if result.returncode != 0:
-            stderr_and_stdout = f"{result.stdout}\n{result.stderr}".strip()
-            if "Unknown table name" in stderr_and_stdout or "ValueError" in stderr_and_stdout:
-                raise ValueError(stderr_and_stdout)
             err_msg = (
                 f"Docker pipeline '{spec.cli_command}' failed with exit code {result.returncode}:\n"
                 f"Command: {' '.join(docker_cmd)}\n"

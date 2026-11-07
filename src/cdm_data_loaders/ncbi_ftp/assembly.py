@@ -5,7 +5,6 @@ download logic for NCBI GenBank/RefSeq assemblies.  Orchestration (batching,
 threading, CLI) lives in :mod:`cdm_data_loaders.pipelines.ncbi_ftp_download`.
 """
 
-import contextlib
 import time
 from ftplib import FTP
 from logging import Logger, getLogger
@@ -14,7 +13,12 @@ from typing import Any
 
 from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX, FTP_HOST
 from cdm_data_loaders.utils.checksums import compute_file_checksum
-from cdm_data_loaders.utils.file_transfer.ftp_client import connect_ftp, ftp_noop_keepalive, ftp_retrieve_text
+from cdm_data_loaders.utils.file_transfer.ftp_client import (
+    ftp_list_dir,
+    ftp_noop_keepalive,
+    ftp_retrieve_text,
+    ftp_session,
+)
 
 logger: Logger = getLogger(__name__)
 
@@ -38,6 +42,7 @@ def parse_md5_checksums_file(text: str) -> dict[PurePosixPath, str]:
     Each line has the format ``<md5>  ./<filename>`` (two-space separator).
 
     :param text: raw text of the md5checksums.txt file
+    :type text: str
     :return: dict mapping filename to MD5 hex digest
     """
     checksums: dict[PurePosixPath, str] = {}
@@ -49,6 +54,11 @@ def parse_md5_checksums_file(text: str) -> dict[PurePosixPath, str]:
     return checksums
 
 
+def filter_assembly_checksums(checksums: dict[PurePosixPath, str]) -> dict[PurePosixPath, str]:
+    """Filter a parsed ``md5checksums.txt`` mapping to files matching ``FILE_FILTERS``."""
+    return {fname: md5 for fname, md5 in checksums.items() if any(fname.match(f"**{s}") for s in FILE_FILTERS)}
+
+
 # Path helpers
 
 
@@ -58,6 +68,7 @@ def build_accession_path(assembly_dir: PurePosixPath) -> PurePosixPath:
     Produces ``raw_data/{GCF|GCA}/{000}/{001}/{215}/{assembly_dir}/``.
 
     :param assembly_dir: full assembly directory name (e.g. ``GCF_000001215.4_Release_6...``)
+    :type assembly_dir: PurePosixPath
     :return: relative path
     :raises ValueError: if the assembly directory name cannot be parsed
     """
@@ -71,6 +82,7 @@ def parse_assembly_path(assembly_path: PurePosixPath) -> tuple[str, PurePosixPat
     """Extract database, assembly_dir, and accession from an FTP assembly path.
 
     :param assembly_path: FTP directory path (e.g. ``/genomes/all/GCF/000/.../GCF_000001215.4_Rel.../``)
+    :type assembly_path: PurePosixPath
     :return: tuple of ``(database, assembly_dir, accession)``
     :raises ValueError: if the path cannot be parsed
     """
@@ -143,9 +155,13 @@ def download_assembly_to_local(
     sidecar files for downstream metadata.
 
     :param assembly_path: FTP directory path for the assembly
+    :type assembly_path: PurePosixPath
     :param output_dir: base output directory
+    :type output_dir: Path
     :param ftp_host: FTP hostname
+    :type ftp_host: str
     :param ftp: optional existing FTP connection (caller manages lifecycle)
+    :type ftp: FTP | None
     :return: json parsable dict with download statistics
     """
     _database, assembly_dir, accession = parse_assembly_path(assembly_path)
@@ -155,9 +171,6 @@ def download_assembly_to_local(
 
     logger.debug("Downloading %s -> %s", accession, dest_dir)
 
-    owns_ftp = ftp is None
-    if owns_ftp:
-        ftp = connect_ftp(ftp_host)
     stats: dict[str, Any] = {
         "accession": accession,
         "assembly_dir": str(assembly_dir),
@@ -166,17 +179,13 @@ def download_assembly_to_local(
         "files_without_checksum": 0,
     }
 
-    try:
-        ftp.cwd(str(assembly_path))
-
-        file_strings: list[str] = []
-        ftp.retrlines("NLST", file_strings.append)
-        files: list[PurePosixPath] = [PurePosixPath(f) for f in file_strings]
+    with ftp_session(ftp_host, ftp) as active_ftp:
+        files = ftp_list_dir(active_ftp, assembly_path)
 
         # Download and parse md5checksums.txt
         md5_checksums: dict[PurePosixPath, str] = {}
         if PurePosixPath("md5checksums.txt") in files:
-            md5_text = ftp_retrieve_text(ftp, PurePosixPath("md5checksums.txt"))
+            md5_text = ftp_retrieve_text(active_ftp, PurePosixPath("md5checksums.txt"))
             md5_checksums = parse_md5_checksums_file(md5_text)
             (dest_dir / "md5checksums.txt").write_text(md5_text)
             stats["files_downloaded"] += 1
@@ -185,13 +194,8 @@ def download_assembly_to_local(
         last_activity = time.monotonic()
 
         for filename in target_files:
-            last_activity = _download_and_verify(ftp, filename, dest_dir, md5_checksums, stats, last_activity)
+            last_activity = _download_and_verify(active_ftp, filename, dest_dir, md5_checksums, stats, last_activity)
 
         logger.debug("  %s: %d files downloaded", accession, stats["files_downloaded"])
-
-    finally:
-        if owns_ftp:
-            with contextlib.suppress(Exception):
-                ftp.quit()
 
     return stats

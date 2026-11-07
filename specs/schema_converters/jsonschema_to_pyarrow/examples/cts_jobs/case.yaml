@@ -1,0 +1,17 @@
+title: KBase CTS `ListJobsResponse`
+schema: schema.json
+rules: [R-SHAPE-ARRAY, R-SHAPE-REF]
+notes: |
+  `/jobs` response schema from `not_for_github/cts/openapi.json` (`#/components/schemas/ListJobsResponse`): an
+  array of `JobPreview` structs with `JobInputPreview`, `JobImage` and state transition timestamps.
+runs:
+  - id: minimal
+    data: minimal.json
+    expected_json: minimal_expected.json
+    expected_table: minimal_expected_table.py
+    expected_count: 1
+  - id: maximal
+    data: maximal.json
+    expected_json: maximal_expected.json
+    expected_table: maximal_expected_table.py
+    expected_count: 1

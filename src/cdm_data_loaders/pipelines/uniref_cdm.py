@@ -1,63 +1,42 @@
-"""DLT pipeline to import UniRef data."""
+"""DLT pipelines to import UniRef data into KBase CDM tables via XML-to-PyArrow."""
 
-from datetime import UTC, datetime
-from enum import StrEnum
-from typing import Annotated, Final
+from typing import Annotated, ClassVar, Final
 
-from dlt.common.pipeline import LoadInfo
-from dlt.extract import DltResource
+import pyarrow as pa
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import LogInterval
+from cdm_data_loaders.core.registry import TransformRegistry
 from cdm_data_loaders.core.settings import (
-    CLI_SHORTCUTS,
-    CtsSettings,
+    XML_CLI_SHORTCUTS,
     default_settings_with_shortcuts,
 )
-from cdm_data_loaders.parsers.uniprot.uniref import (
-    ENTRY_XML_TAG,
-    parse_uniref_entry,
-)
-from cdm_data_loaders.pipelines.core import (
-    PipelineCli,
-    run_pipeline,
-)
-from cdm_data_loaders.readers.xml import build_xml_file_resource
+from cdm_data_loaders.parsers.uniprot.uniref import UNIREF_CDM_SCHEMA_MAP, make_uniref_cdm_transform
+from cdm_data_loaders.pipelines.core import PipelineCli
+from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import UniRefXmlToPyArrowSettings
 
-PIPELINE_NAME: Final[str] = "uniref_cdm"
+UNIREF_CDM_PIPELINE_NAME: Final[str] = "uniref_cdm"
+UNIREF50_CDM: Final[str] = "uniref50_cdm"
+UNIREF90_CDM: Final[str] = "uniref90_cdm"
+UNIREF100_CDM: Final[str] = "uniref100_cdm"
 UNIREF_LOG_INTERVAL: Final[int] = 10000
-VARIANT: Final[str] = "variant"
-FIFTY: Final[str] = "50"
-NINETY: Final[str] = "90"
-HUNDRED: Final[str] = "100"
 
 
-class UnirefVariantEnum(StrEnum):
-    """Valid values for the Uniref variant."""
+class UniRefCdmSettings(UniRefXmlToPyArrowSettings):
+    """Base settings for UniRef CDM XML-to-PyArrow ingestion pipelines."""
 
-    FIFTY = FIFTY
-    NINETY = NINETY
-    HUNDRED = HUNDRED
-
-
-UNIREF_VARIANTS: Final[list[str]] = [member.value for member in UnirefVariantEnum.__members__.values()]
-
-
-class UnirefSettings(CtsSettings):
-    """Configuration for running the UniRef import pipeline."""
+    _PROTOCOL: ClassVar[str]
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=PIPELINE_NAME,
-        cli_shortcuts={**CLI_SHORTCUTS, "variant": "v"},
+        cli_prog_name=UNIREF_CDM_PIPELINE_NAME,
+        cli_shortcuts=XML_CLI_SHORTCUTS,
     )
 
-    variant: Annotated[
-        UnirefVariantEnum,
-        Field(
-            description=f"Which UniRef variant to import. Choices: {UNIREF_VARIANTS}",
-        ),
-    ]
+    transforms_module: ClassVar[str | None] = None
+    output_schemas_module: ClassVar[str | None] = None
+
     log_interval: Annotated[
         LogInterval,
         Field(
@@ -65,48 +44,56 @@ class UnirefSettings(CtsSettings):
         ),
     ]
 
+    def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
+        """Bind the variant-specific UniRef CDM transform and schemas to the entry table."""
+        self._table_transforms = TransformRegistry(
+            registry={self.table_name: make_uniref_cdm_transform(self._PROTOCOL)}
+        )
+        self._unreconciled_output_schemas = UNIREF_CDM_SCHEMA_MAP
+        super()._resolve_settings_schema_map(default_pyarrow_schema=default_pyarrow_schema)
 
-def parse_uniref(settings: UnirefSettings) -> DltResource:
-    """Build the resource that parses the information from UniRef files.
 
-    :param settings: config for running the pipeline.
-    :type settings: UnirefSettings
-    :return: resource yielding parsed UniRef entries
-    :rtype: DltResource
-    """
-    # a single timestamp is used to mark every entity parsed in this run
-    timestamp = datetime.now(UTC)
-    return build_xml_file_resource(
-        settings=settings,
-        xml_tag=ENTRY_XML_TAG,
-        parse_fn=lambda entry, file_path: parse_uniref_entry(
-            entry=entry,
-            timestamp=timestamp,
-            file_path=file_path,
-            uniref_variant=f"UniRef {settings.variant}",
-        ),
-        resource_name="parse_uniref",
+class UniRef50CdmSettings(UniRefCdmSettings):
+    """UniRef 50 CDM XML-to-PyArrow ingest settings."""
+
+    _PROTOCOL: ClassVar[str] = "UniRef 50"
+
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
+        cli_prog_name=UNIREF50_CDM,
+        cli_shortcuts=XML_CLI_SHORTCUTS,
     )
 
+    dataset_name: ClassVar[str] = UNIREF50_CDM
 
-def run_uniref_pipeline(settings: UnirefSettings) -> LoadInfo | None:
-    """Execute the Uniref pipeline.
 
-    :param settings: config for running the pipeline.
-    :type settings: UnirefSettings
-    """
-    return run_pipeline(
-        settings=settings,
-        resource=parse_uniref(settings),
-        pipeline_kwargs={
-            "pipeline_name": PIPELINE_NAME,
-            "dataset_name": f"uniref_{settings.variant}",
-        },
+class UniRef90CdmSettings(UniRefCdmSettings):
+    """UniRef 90 CDM XML-to-PyArrow ingest settings."""
+
+    _PROTOCOL: ClassVar[str] = "UniRef 90"
+
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
+        cli_prog_name=UNIREF90_CDM,
+        cli_shortcuts=XML_CLI_SHORTCUTS,
     )
 
+    dataset_name: ClassVar[str] = UNIREF90_CDM
 
-cli = PipelineCli(UnirefSettings, run_uniref_pipeline)
+
+class UniRef100CdmSettings(UniRefCdmSettings):
+    """UniRef 100 CDM XML-to-PyArrow ingest settings."""
+
+    _PROTOCOL: ClassVar[str] = "UniRef 100"
+
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
+        cli_prog_name=UNIREF100_CDM,
+        cli_shortcuts=XML_CLI_SHORTCUTS,
+    )
+
+    dataset_name: ClassVar[str] = UNIREF100_CDM
 
 
-if __name__ == "__main__":
-    cli()
+uniref50_cdm_cli = PipelineCli(UniRef50CdmSettings, run_xmltopyarrow_pipeline)
+
+uniref90_cdm_cli = PipelineCli(UniRef90CdmSettings, run_xmltopyarrow_pipeline)
+
+uniref100_cdm_cli = PipelineCli(UniRef100CdmSettings, run_xmltopyarrow_pipeline)

@@ -1,36 +1,49 @@
-"""Tests for JSON Schema validation and rejected-record routing."""
+"""Tests for the JSON Schema validation JSONL pipeline."""
 
-import gzip
 import json
-import sys
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
-from types import ModuleType
 from typing import Any
-from uuid import uuid4
 
+import pyarrow as pa
 import pytest
-from pydantic import ValidationError
 
-from cdm_data_loaders.pipelines.jsonlines.base import make_page_router
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
     _make_resolve_error,
     build_entity_resource,
-    load_entity_schemas,
     run_jsonlines_pipeline,
 )
-from cdm_data_loaders.pipelines.jsonlines.settings import JsonlJsonschemaIngestSettings
+from cdm_data_loaders.pipelines.jsonlines.settings import (
+    JsonlJsonschemaIngestSettings,
+    convert_schema_to_pyarrow,
+)
+from cdm_data_loaders.readers.jsonlines import make_page_router
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
+from tests.cdm_data_loaders.pipelines.helpers import assert_run_ok
 from tests.cdm_data_loaders.pipelines.jsonlines.conftest import make_item
+from tests.helpers import register_temp_module
 
 
-def make_router(schema: dict[str, Any], buffer_size: int = 2) -> Callable[[list[dict[str, Any]]], Any]:
+def make_router(
+    schema: dict[str, Any], buffer_size: int = 2, *, pyarrow_schema: pa.Schema | None = None
+) -> Callable[[list[dict[str, Any]]], Any]:
     """Build the router the jsonschema pipeline uses for the widget table."""
-    return make_page_router("widget", buffer_size, _make_resolve_error(schema))
+    validated_schema = ValidatedSchema(jsonschema=schema)
+    resolved_pa_schema = pyarrow_schema if pyarrow_schema is not None else convert_schema_to_pyarrow(validated_schema)
+    return make_page_router(
+        "widget",
+        buffer_size,
+        _make_resolve_error(validated_schema),
+        schema_map=ArrowSchemaRegistry(registry={"widget": resolved_pa_schema}),
+    )
 
 
-def test_make_page_router_pass_parse_error_preserves_raw_record() -> None:
+def test_make_page_router_pass_parse_error_preserves_raw_record(widget_schema: dict[str, Any]) -> None:
     """Malformed JSON bypasses validation and preserves its source text."""
-    validate = make_router({"$schema": "https://json-schema.org/draft/2020-12/schema"})
+    validate = make_router(widget_schema)
     item = {
         "record": None,
         "raw_record": "{bad json",
@@ -41,11 +54,18 @@ def test_make_page_router_pass_parse_error_preserves_raw_record() -> None:
 
     results = list(validate([item]))
 
-    assert [(result.meta.table_name, result.data) for result in results] == [
-        (
-            "widget_rejected",
-            [{"source_file": "data.jsonl", "line_no": 3, "raw_record": "{bad json", "error_detail": "bad json"}],
-        )
+    assert len(results) == 1
+    assert results[0].meta.table_name == "_rejected"
+    assert isinstance(results[0].data, pa.Table)
+    assert results[0].data.schema == REJECTED_PYARROW_SCHEMA
+    assert results[0].data.to_pylist() == [
+        {
+            "table_name": "widget",
+            "source_file": "data.jsonl",
+            "line_no": 3,
+            "raw_record": "{bad json",
+            "error_detail": "bad json",
+        }
     ]
 
 
@@ -56,95 +76,44 @@ def test_make_page_router_fail_uses_declared_draft() -> None:
         "type": "object",
         "properties": {"count": {"type": "number", "minimum": 5, "exclusiveMinimum": True}},
     }
-    validate = make_router(schema)
-    item = {
-        "record": {"count": 5},
-        "raw_record": '{"count": 5}',
-        "parse_error": None,
-        "source_file": "data.jsonl",
-        "line_no": 1,
-    }
+    validate = make_router(schema, pyarrow_schema=pa.schema([pa.field("count", pa.float64())]))
+    item = make_item({"count": 5})
 
     results = list(validate([item]))
 
-    assert [result.meta.table_name for result in results] == ["widget_rejected"]
+    assert [result.meta.table_name for result in results] == ["_rejected"]
 
 
-def test_load_entity_schemas_pass_returns_registry(
-    schema_module_factory: Callable[[object], str], widget_schema: dict[str, Any]
-) -> None:
-    """Valid schemas from multiple supported drafts are returned unchanged."""
-    registry = {
-        "widget": widget_schema,
-        "older": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "object"},
+def test_make_page_router_pass_preserves_records_without_inserting_defaults(widget_schema: dict[str, Any]) -> None:
+    """Valid data is coerced into a PyArrow Table matching the schema without inserted defaults."""
+    record = {
+        "widget_id": "a",
+        "count": 0,
+        "collected": "2024-02-29",
+        "nested": {"tags": ["one", "two"]},
+        "undeclared": "ignored",
     }
-    assert load_entity_schemas(schema_module_factory(registry)) is registry
-
-
-@pytest.mark.parametrize(
-    ("registry", "message"),
-    [
-        pytest.param(None, "non-empty ENTITY_SCHEMAS", id="none"),
-        pytest.param({}, "non-empty ENTITY_SCHEMAS", id="empty"),
-        pytest.param([], "non-empty ENTITY_SCHEMAS", id="list"),
-        pytest.param({"": {}}, "non-empty table names", id="empty-table"),
-        pytest.param({1: {}}, "non-empty table names", id="non-string-table"),
-        pytest.param({"widget": {}}, r"missing the \$schema keyword", id="missing-draft"),
-        pytest.param({"widget": {"$schema": "https://example.invalid/schema"}}, "Unsupported", id="unknown-draft"),
-    ],
-)
-def test_load_entity_schemas_fail_malformed_registry(
-    schema_module_factory: Callable[[object], str], registry: object, message: str
-) -> None:
-    """Malformed registries and unsupported drafts fail before extraction."""
-    with pytest.raises(ValueError, match=message):
-        load_entity_schemas(schema_module_factory(registry))
-
-
-@pytest.mark.parametrize(
-    "schema",
-    [pytest.param(True, id="boolean-schema"), pytest.param({"$schema": []}, id="non-string-draft")],
-)
-def test_load_entity_schemas_fail_invalid_types(schema_module_factory: Callable[[object], str], schema: object) -> None:
-    """Schema dictionaries and draft declarations must have the documented types."""
-    with pytest.raises(TypeError, match="JSON Schema for widget must"):
-        load_entity_schemas(schema_module_factory({"widget": schema}))
-
-
-def test_load_entity_schemas_fail_missing_registry(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A module must explicitly provide ENTITY_SCHEMAS."""
-    module_name = f"_test_missing_registry_{uuid4().hex}"
-    monkeypatch.setitem(sys.modules, module_name, ModuleType(module_name))
-    with pytest.raises(ValueError, match="non-empty ENTITY_SCHEMAS"):
-        load_entity_schemas(module_name)
-
-
-def test_load_entity_schemas_fail_missing_module() -> None:
-    """Import failures retain their original exception."""
-    with pytest.raises(ModuleNotFoundError):
-        load_entity_schemas(f"_missing_schema_module_{uuid4().hex}")
-
-
-def test_load_entity_schemas_fail_reports_all_invalid_schemas(
-    schema_module_factory: Callable[[object], str], widget_schema: dict[str, Any]
-) -> None:
-    """Schema errors identify every failing table, not just the first."""
-    module_name = schema_module_factory(
-        {"first": {**widget_schema, "type": "invalid"}, "second": {**widget_schema, "required": 7}}
-    )
-    with pytest.raises(RuntimeError, match="errors were found") as error:
-        load_entity_schemas(module_name)
-    assert all(text in str(error.value) for text in [module_name, "first:", "second:"])
-
-
-def test_make_page_router_pass_preserves_records_and_empty_pages(widget_schema: dict[str, Any]) -> None:
-    """Valid data retains extra fields, dates, and nested values without inserted defaults."""
-    record = {"widget_id": "a", "count": 0, "collected": "2024-02-29", "nested": {"items": [1, 2]}}
     validate = make_router(widget_schema)
     results = list(validate([make_item(record)]))
-    assert [(result.meta.table_name, result.data) for result in results] == [("widget", [record])]
-    assert results[0].data[0] is record
+    assert len(results) == 1
+    assert results[0].meta.table_name == "widget"
+    assert isinstance(results[0].data, pa.Table)
+    assert results[0].data.schema == convert_schema_to_pyarrow(ValidatedSchema(jsonschema=widget_schema))
+    assert results[0].data.to_pylist() == [
+        {
+            "widget_id": "a",
+            "count": 0,
+            "collected": date(2024, 2, 29),
+            "label": None,
+            "nested": {"tags": ["one", "two"]},
+        }
+    ]
     assert "label" not in record
+
+
+def test_make_page_router_pass_empty_page(widget_schema: dict[str, Any]) -> None:
+    """An empty page yields no routed output items."""
+    validate = make_router(widget_schema)
     assert list(validate([])) == []
 
 
@@ -172,18 +141,18 @@ def test_make_page_router_fail_reports_exact_errors(
     """Invalid records retain their raw text and report every validation error."""
     item = make_item(record, line_no=7)
     results = list(make_router(widget_schema)([item]))
-    assert [(result.meta.table_name, result.data) for result in results] == [
-        (
-            "widget_rejected",
-            [
-                {
-                    "source_file": "file.jsonl",
-                    "line_no": 7,
-                    "raw_record": item["raw_record"],
-                    "error_detail": json.dumps(messages),
-                }
-            ],
-        )
+    assert len(results) == 1
+    assert results[0].meta.table_name == "_rejected"
+    assert isinstance(results[0].data, pa.Table)
+    assert results[0].data.schema == REJECTED_PYARROW_SCHEMA
+    assert results[0].data.to_pylist() == [
+        {
+            "table_name": "widget",
+            "source_file": "file.jsonl",
+            "line_no": 7,
+            "raw_record": item["raw_record"],
+            "error_detail": json.dumps(messages),
+        }
     ]
 
 
@@ -196,11 +165,14 @@ def test_make_page_router_pass_flushes_independent_buffers(widget_schema: dict[s
         pages = list(validate(items))
         assert [(page.meta.table_name, len(page.data)) for page in pages] == [
             ("widget", 2),
-            ("widget_rejected", 2),
+            ("_rejected", 2),
             ("widget", 1),
-            ("widget_rejected", 1),
+            ("_rejected", 1),
         ]
-        assert [row["line_no"] for page in pages if page.meta.table_name == "widget_rejected" for row in page.data] == [
+        assert all(isinstance(page.data, pa.Table) for page in pages)
+        assert [
+            row["line_no"] for page in pages if page.meta.table_name == "_rejected" for row in page.data.to_pylist()
+        ] == [
             2,
             4,
             6,
@@ -211,6 +183,7 @@ def test_make_page_router_pass_flushes_independent_buffers(widget_schema: dict[s
 def test_build_entity_resource_pass_reads_selected_files(
     schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
     widget_schema: dict[str, Any],
+    write_gzip_file: Callable[[Path, str, str], Path],
     compressed: bool,
 ) -> None:
     """The real resource reads plain/gzip files, skips blanks, and honors the glob."""
@@ -221,20 +194,30 @@ def test_build_entity_resource_pass_reads_selected_files(
     contents = f"\n{json.dumps(record)}\n\n{{broken\n"
     filename = "data.jsonl.gz" if compressed else "data.jsonl"
     if compressed:
-        with gzip.open(entity_dir / filename, "wt", encoding="utf-8") as stream:
-            stream.write(contents)
+        write_gzip_file(entity_dir, filename, contents)
     else:
         (entity_dir / filename).write_text(contents, encoding="utf-8")
     (entity_dir / "ignored.txt").write_text("not JSON", encoding="utf-8")
 
-    resource = build_entity_resource("widget", widget_schema, settings)
+    resource = build_entity_resource("widget", ValidatedSchema(jsonschema=widget_schema), settings)
     rows = list(resource)
 
-    assert record in rows
-    rejected = next(row for row in rows if "error_detail" in row)
+    expected_page_count = 2
+    assert len(rows) == expected_page_count
+    assert all(isinstance(item, pa.Table) for item in rows)
+    valid_table = next(item for item in rows if "widget_id" in item.schema.names)
+    rejected_table = next(item for item in rows if item.schema == REJECTED_PYARROW_SCHEMA)
+    assert valid_table.to_pylist() == [{"widget_id": "a", "count": 0, "collected": None, "label": None, "nested": None}]
     expected_error = "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
-    assert rejected == {"source_file": filename, "line_no": 4, "raw_record": "{broken", "error_detail": expected_error}
-    assert rows == [record, rejected]
+    assert rejected_table.to_pylist() == [
+        {
+            "table_name": "widget",
+            "source_file": f"widget/{filename}",
+            "line_no": 4,
+            "raw_record": "{broken",
+            "error_detail": expected_error,
+        }
+    ]
 
 
 @pytest.mark.parametrize("create_directory", [False, True], ids=["missing", "empty"])
@@ -247,43 +230,78 @@ def test_build_entity_resource_pass_no_files(
     settings = schema_settings_factory()
     if create_directory:
         (Path(settings.input_dir) / "widget").mkdir()
-    assert list(build_entity_resource("widget", widget_schema, settings)) == []
+    assert list(build_entity_resource("widget", ValidatedSchema(jsonschema=widget_schema), settings)) == []
 
 
-def test_run_jsonlines_pipeline_fail_unknown_tables(
+def test_run_jsonlines_pipeline_pass_loads_valid_and_rejected_rows(
     schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
 ) -> None:
-    """Unknown tables fail before the shared runner creates pipeline state."""
-    settings = schema_settings_factory(table_names=["unknown"])
-    with pytest.raises(ValueError, match=r"Unknown table name\(s\) requested: \['unknown'\]"):
-        run_jsonlines_pipeline(settings)
-    assert list(Path(settings.output_dir).iterdir()) == []
+    """The pipeline converts schemas to PyArrow and writes both valid Arrow pages and rejected records."""
+    settings = schema_settings_factory()
+    entity_dir = Path(settings.input_dir) / "widget"
+    entity_dir.mkdir()
+    valid_record = {"widget_id": "w1", "count": 3, "collected": "2024-02-29"}
+    invalid_record = {"widget_id": "w2", "count": -1}
+    (entity_dir / "data.jsonl").write_text(
+        f"{json.dumps(valid_record)}\n{json.dumps(invalid_record)}\n",
+        encoding="utf-8",
+    )
+
+    assert_run_ok(run_jsonlines_pipeline(settings))
+    dataset_dir = Path(settings.output_dir) / str(settings.dataset_name)
+    assert (dataset_dir / "widget").is_dir()
+    assert (dataset_dir / "_rejected").is_dir()
 
 
-@pytest.mark.parametrize(
-    ("table_names", "expected"),
-    [
-        pytest.param(None, None, id="all-tables"),
-        pytest.param("widget, gadget", ["widget", "gadget"], id="comma-separated"),
-        pytest.param(["widget"], ["widget"], id="list"),
-        pytest.param(" , ", None, id="blank"),
-    ],
-)
-def test_settings_pass_table_selection(
+def test_run_jsonlines_pipeline_pass_filters_and_splits_records_with_transforms_module(
     schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
-    table_names: str | list[str] | None,
-    expected: list[str] | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """JSON Schema settings retain the shared table selection contract."""
-    settings = schema_settings_factory(table_names=table_names)
-    assert settings.table_names == expected
-    assert settings.model_config["cli_prog_name"] == "jsonlines_jsonschema"
+    """run_jsonlines_pipeline filters rows and splits records across tables using TABLE_TRANSFORMS and OUTPUT_SCHEMAS."""
 
+    def transform(row: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+        return (
+            {}
+            if row["count"] == 0
+            else {
+                "widget": [{"widget_id": row["widget_id"], "count": row["count"]}],
+                "widget_tag": [
+                    {"widget_id": row["widget_id"], "tag": tag} for tag in (row.get("nested") or {}).get("tags", [])
+                ],
+            }
+        )
 
-@pytest.mark.parametrize("buffer_size", [0, -1], ids=["zero", "negative"])
-def test_settings_fail_invalid_buffer_size(
-    schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings], buffer_size: int
-) -> None:
-    """Settings reject nonpositive buffers before resource construction."""
-    with pytest.raises(ValidationError, match="buffer_size"):
-        schema_settings_factory(buffer_size=buffer_size)
+    output_schemas = {
+        "widget": pa.schema(
+            [pa.field("widget_id", pa.string(), nullable=False), pa.field("count", pa.int64(), nullable=False)]
+        ),
+        "widget_tag": pa.schema(
+            [pa.field("widget_id", pa.string(), nullable=False), pa.field("tag", pa.string(), nullable=False)]
+        ),
+    }
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_jsonschema_transforms",
+        TABLE_TRANSFORMS={"widget": transform},
+        OUTPUT_SCHEMAS=output_schemas,
+    )
+    settings = schema_settings_factory(
+        transforms_module=transforms_mod,
+        output_schemas_module=transforms_mod,
+    )
+    entity_dir = Path(settings.input_dir) / "widget"
+    entity_dir.mkdir()
+    filtered_record = {"widget_id": "w0", "count": 0, "nested": {"tags": ["ignored"]}}
+    valid_record = {"widget_id": "w1", "count": 3, "nested": {"tags": ["alpha", "beta"]}}
+    invalid_record = {"widget_id": "w2", "count": -1}
+    (entity_dir / "data.jsonl").write_text(
+        f"{json.dumps(filtered_record)}\n{json.dumps(valid_record)}\n{json.dumps(invalid_record)}\n",
+        encoding="utf-8",
+    )
+
+    load_info = assert_run_ok(run_jsonlines_pipeline(settings))
+    dataset = load_info.pipeline.dataset()
+    assert dataset.widget.df().to_dict(orient="records") == [{"widget_id": "w1", "count": 3}]
+    assert sorted(dataset.widget_tag.df()["tag"].tolist()) == ["alpha", "beta"]
+    assert len(dataset.table("_rejected").df()) == 1
+    assert dataset.table("_rejected").df().iloc[0]["table_name"] == "widget"

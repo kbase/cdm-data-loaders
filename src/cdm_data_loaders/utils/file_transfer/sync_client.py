@@ -27,17 +27,12 @@ import httpx
 from tenacity import (
     before_sleep_log,
     retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
 )
 
 from cdm_data_loaders.utils.file_transfer.core import (
     HTTP_CLIENT_DEFAULTS,
     RETRY_DEFAULTS,
     DownloadCore,
-    DownloadError,
-    NonRetryableDownloadError,
 )
 
 logger: Logger = getLogger(__name__)
@@ -51,11 +46,7 @@ def get_httpx_client() -> httpx.Client:
 class FileDownloader:
     """Synchronous downloader interface."""
 
-    RETRYABLE_EXCEPTIONS = (
-        httpx.TimeoutException,
-        httpx.TransportError,
-        DownloadError,
-    )
+    RETRYABLE_EXCEPTIONS = DownloadCore.RETRYABLE_EXCEPTIONS
 
     def __init__(
         self,
@@ -82,13 +73,7 @@ class FileDownloader:
         self.chunk_size = chunk_size
 
         self._retry = retry(
-            retry=retry_if_exception_type(self.RETRYABLE_EXCEPTIONS),
-            stop=stop_after_attempt(max_attempts),
-            wait=wait_exponential(
-                min=min_backoff,
-                max=max_backoff,
-            ),
-            reraise=True,
+            **DownloadCore.retry_kwargs(max_attempts, min_backoff, max_backoff),
             before_sleep=before_sleep_log(logger, WARNING),
         )
 
@@ -114,7 +99,7 @@ class FileDownloader:
         :param checksum_fn: function used for calculating the checksum. Set to "sha256" if not supplied.
         :type checksum_fn: str, optional
         :param extra_headers: allow extra headers to be passed, defaults to None
-        :type last_modified: dict[str, Any | None, optional
+        :type extra_headers: dict[str, Any] | None, optional
         :return: either the path to the downloaded file or None if no file was downloaded
         :rtype: Path | None
         """
@@ -168,13 +153,8 @@ class FileDownloader:
                     checksum_fn=checksum_fn,
                 )
 
-        except NonRetryableDownloadError as exc:
-            logger.exception("%s: %s; retry not possible", url, exc.args[0], extra={"url": url})
-            raise
-
-        except Exception as exc:
-            logger.exception("%s: %s; retry possible", url, exc.args[0], extra={"url": url})
-            raise DownloadError(str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            DownloadCore.handle_download_exception(exc, url, logger)
 
         logger.info("%s: download successful", url, extra={"path": str(destination)})
 

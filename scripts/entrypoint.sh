@@ -8,6 +8,7 @@ VALID_COMMANDS=("${PIPELINES[@]}" "${OTHER[@]}")
 
 DLT_CONF_SRC_DIR=/input_dir/dlt_conf
 DLT_CONF_DEST_DIR="$HOME"/.dlt
+OUTPUT_DIR=/output_dir
 
 usage() {
   local joined
@@ -68,10 +69,14 @@ if contains "$cmd" "${PIPELINES[@]}"; then
   cmd="$1"
   shift
   /usr/bin/tini -s -- uv run "$cmd" "$@" || rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo "Warning: pipeline '$cmd' exited with status $rc; exiting 0 to preserve output." >&2
+  # check whether there is anything in the output dir; if so, exit 0.
+  if [ -d "$OUTPUT_DIR" ] && [ -n "$(ls -A "$OUTPUT_DIR")" ]; then
+    if [ "$rc" -ne 0 ]; then
+      echo "Warning: pipeline '$cmd' exited with status $rc; exiting 0 to preserve output." >&2
+    fi
+    exit 0
   fi
-  exit 0
+  exit "$rc"
 fi
 
 case "$cmd" in
@@ -79,7 +84,7 @@ case "$cmd" in
     exec /usr/bin/tini -- xml_file_splitter "$@"
     ;;
   test)
-    exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark and not requires_ceph"
+    exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark and not requires_ceph and not docs" --cov=src --cov-report=xml "$@"
     ;;
   ceph_integration_test)
     # run the CEPH-backed integration tests (requires a running CEPH instance)

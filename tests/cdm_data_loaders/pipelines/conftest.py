@@ -2,24 +2,28 @@
 
 import copy
 import gzip
-import logging
+import json
 import os
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Generator, Iterable, Iterator
 from itertools import count
 from pathlib import Path
 from typing import Any, Final
 from unittest.mock import MagicMock, patch
 
 import dlt
+import duckdb
 import pytest
+import xmltodict
 from dlt.common.pipeline import LoadInfo
 
+from cdm_data_loaders.core.fields import GZIP_SUFFIX
+from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import (
     DISABLE_COMPRESSION_ENV_VAR,
     LOAD_INFO_TABLE_NAME,
 )
-from cdm_data_loaders.utils import cdm_logger
+from cdm_data_loaders.readers.xml import DEFAULT_XMLTODICT_ARGS
 from tests.cdm_data_loaders.pipelines.framework import (
     EXECUTION_MODES,
     ExecutionMode,
@@ -27,44 +31,132 @@ from tests.cdm_data_loaders.pipelines.framework import (
     ensure_docker_image,
 )
 from tests.cdm_data_loaders.pipelines.helpers import (
-    make_cts_settings,
+    duckdb_reference_from_jsonl,
+    read_jsonl_file,
 )
-from tests.cdm_data_loaders.pipelines.helpers import (
-    read_destination_rows as _read_destination_rows,
+from tests.conftest import (
+    LOCAL_FS,
+    N_REFERENCE_XML_ENTRIES,
+    REFERENCE_XML_FIXTURE_DIR,
+    S3,
+    TEST_DATA_DIR,
+    _generate_dlt_config,
+    preserve_logging_state,
 )
-from tests.conftest import LOCAL_FS, REFERENCE_XML_FIXTURE_DIR, S3, _generate_dlt_config
+from tests.helpers import make_cts_settings
 
 DEFAULT_DLT_TABLES = {"_dlt_version", "_dlt_loads", "_dlt_pipeline_state", LOAD_INFO_TABLE_NAME}
 
 HOOK_ENV_VAR: Final[str] = "RUNTIME__SLACK_INCOMING_HOOK"
 HOOK_PART_ENV_VARS: Final[tuple[str, ...]] = ("VARIABLE_B", "VARIABLE_T", "CHAR_STR")
 VALID_DESTINATIONS = [LOCAL_FS, S3]
+LOAD_INFO_SAVE_FAILED: Final[str] = "Loading pipeline load info failed: "
+LOAD_INFO_SAVE_FAILED_JOBS: Final[str] = "Loading pipeline load info had failed jobs: "
 
 PIPELINE_TEST_DATA_DIR: Final[Path] = Path(__file__).parents[2] / "data" / "pipelines"
 UNIREF_DATA_DIR: Final[Path] = PIPELINE_TEST_DATA_DIR / "uniref"
 XMLTODICT_DATA_DIR: Final[Path] = PIPELINE_TEST_DATA_DIR / "xmltodict"
-GZIP_SUFFIX: Final[str] = ".gz"
+
+
+@pytest.fixture
+def dlt_test_settings(tmp_path: Path, dlt_destination_config: str) -> CtsSettings:
+    """Settings that load into the local_fs destination and keep pipeline metadata in a separate output_dir."""
+    return make_cts_settings(
+        CtsSettings,
+        tmp_path,
+        log_config_file=None,
+        use_destination=dlt_destination_config,
+        use_output_dir_for_pipeline_metadata=True,
+    )
+
+
+@pytest.fixture
+def reference_data_dir() -> Path:
+    """Return the directory containing all reference chunk configurations."""
+    return TEST_DATA_DIR / "ncbi_rest_api" / "dataset_report"
+
+
+@pytest.fixture(scope="session")
+def reference_jsonl() -> Path:
+    """Path to the reference JSONL file."""
+    return TEST_DATA_DIR / "ncbi_rest_api" / "dataset_report" / "chunk_52" / "dataset" / "dataset_reports_52.jsonl"
+
+
+@pytest.fixture(scope="session")
+def jsonl_reference_entities(reference_jsonl: Path) -> list[dict[str, Any]]:
+    """Parsed JSONL file."""
+    return read_jsonl_file(reference_jsonl)
+
+
+@pytest.fixture(scope="session")
+def reference_dataset(reference_jsonl: Path) -> Generator[duckdb.DuckDBPyConnection]:
+    """Load the reference JSONL into an in-memory DuckDB connection with nested structures.
+
+    read_json_auto infers native STRUCT/STRUCT[] types for the nested content.
+    """
+    with duckdb_reference_from_jsonl(reference_jsonl) as conn:
+        yield conn
+
+
+def write_reference_xml_as_jsonl(source_xml: Path, jsonl_path: Path) -> int:
+    """Parse the UniRef XML with xmltodict and write the reference JSONL.
+
+    The top-level element is ignored; one JSON object per entry element is written,
+    wrapped as {"entry": ...} so that nested content is preserved verbatim.
+    """
+    with gzip.open(source_xml, "rb") as fh:
+        document = xmltodict.parse(fh.read(), **DEFAULT_XMLTODICT_ARGS)
+
+    entries = document["UniRef50"]["entry"]
+    with jsonl_path.open("w", encoding="utf-8") as out:
+        for entry in entries:
+            out.write(json.dumps({"entry": entry}, ensure_ascii=False) + "\n")
+    return len(entries)
+
+
+@pytest.fixture(scope="session")
+def reference_xml_as_jsonl(reference_xml_data_dir: Path) -> Path:
+    """Generate the reference JSONL from the chunk_100_el source, if not present."""
+    jsonl_path = reference_xml_data_dir / "jsonl" / "uniref_100.jsonl"
+    if not jsonl_path.exists():
+        source_xml = reference_xml_data_dir / "chunk_100_el" / "uniref_100_part_01.xml.gz"
+        n_entries = write_reference_xml_as_jsonl(source_xml, jsonl_path)
+        assert n_entries == N_REFERENCE_XML_ENTRIES
+
+    return jsonl_path
+
+
+@pytest.fixture(scope="session")
+def reference_xml_entries(reference_xml_as_jsonl: Path) -> list[dict[str, Any]]:
+    """The canonical nested entry dicts read back from the reference JSONL."""
+    ref_json = read_jsonl_file(reference_xml_as_jsonl)
+    assert isinstance(ref_json, list)
+    for line in ref_json:
+        assert list(line.keys()) == ["entry"]
+        entry = line.get("entry", {})
+        for key in ("_id", "name", "property", "representativeMember"):
+            assert key in entry
+        assert entry.get("_id") is not None
+        assert entry.get("_id").startswith("UniRef50_")
+    assert len(ref_json) == N_REFERENCE_XML_ENTRIES
+    return ref_json
+
+
+@pytest.fixture(scope="session")
+def reference_xml_dataset(reference_xml_as_jsonl: Path) -> Generator[duckdb.DuckDBPyConnection]:
+    """Load the reference JSONL into an in-memory DuckDB connection with nested structures.
+
+    read_json_auto infers native STRUCT/STRUCT[] types for the nested content;
+    `member` infers as JSON because its shape varies across entries.
+    """
+    with duckdb_reference_from_jsonl(reference_xml_as_jsonl) as conn:
+        yield conn
 
 
 @pytest.fixture(scope="session")
 def reference_xml_data_dir() -> Path:
     """Path to the uniref fixture directory."""
     return REFERENCE_XML_FIXTURE_DIR
-
-
-def duckdb_pipeline(tmp_path: Path, pipeline_name: str, dataset_name: str, db_name: str | None = None) -> dlt.Pipeline:
-    """Return a dlt pipeline with a duckdb destination in tmp_path.
-
-    The database file defaults to a name derived from the pipeline name so that the DuckDB
-    catalog differs from the dataset schema; equal names trigger a DuckDB binder error.
-    """
-    db_file = f"{db_name or pipeline_name}_db.duckdb"
-    return dlt.pipeline(
-        pipeline_name=pipeline_name,
-        dataset_name=dataset_name,
-        destination=dlt.destinations.duckdb(str(tmp_path / db_file)),
-        pipelines_dir=str(tmp_path / "pipelines"),
-    )
 
 
 @pytest.fixture(autouse=True)
@@ -213,18 +305,8 @@ def destination_bucket(tmp_path: Path, dlt_destination_config: str) -> Path:  # 
 @pytest.fixture
 def restore_logging() -> Iterator[None]:
     """Undo the global logging changes made by init_logger, so caplog and later tests are unaffected."""
-    root = logging.getLogger()
-    handlers, level = root.handlers[:], root.level
-    applied_key = cdm_logger.applied_key
-
-    yield
-
-    for handler in root.handlers[:]:
-        root.removeHandler(handler)
-    for handler in handlers:
-        root.addHandler(handler)
-    root.setLevel(level)
-    cdm_logger.applied_key = applied_key
+    with preserve_logging_state():
+        yield
 
 
 def copy_test_files(source_dir: Path, file_names: Iterable[str], dest_dir: Path) -> Path:
@@ -250,14 +332,6 @@ def copy_test_files(source_dir: Path, file_names: Iterable[str], dest_dir: Path)
         else:
             target.write_bytes((source_dir / name).read_bytes())
     return dest_dir
-
-
-def read_destination_rows(base_dir: Path, table_name: str) -> list[dict[str, Any]]:
-    """Read the rows the filesystem destination wrote for table_name under base_dir, without dlt columns.
-
-    Handles parquet, jsonl and gzipped jsonl files. Returns an empty list if the table has no files.
-    """
-    return _read_destination_rows(base_dir, table_name)
 
 
 def sort_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:

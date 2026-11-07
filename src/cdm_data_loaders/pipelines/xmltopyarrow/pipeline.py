@@ -1,35 +1,23 @@
 """XML to pyarrow pipeline for the KBase CTS."""
 
-from collections.abc import Generator, Iterator
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-import dlt
 from dlt.common.pipeline import LoadInfo
-from dlt.common.storages.fsspec_filesystem import FileItemDict
-from dlt.common.typing import TDataItems
-from dlt.sources.filesystem import filesystem
 
-from cdm_data_loaders.pipelines.core import PipelineCli, run_pipeline
-from cdm_data_loaders.pipelines.xmltopyarrow.settings import PIPELINE_NAME, XmlToPyArrowSettings
+from cdm_data_loaders.pipelines.core import (
+    PipelineCli,
+    build_file_ingest_kwargs,
+    build_per_file_filesystem_resource,
+    run_pipeline,
+)
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
+    PIPELINE_NAME,
+    PubMedXmlToPyArrowSettings,
+    UniProtXmlToPyArrowSettings,
+    UniRef50XmlToPyArrowSettings,
+    UniRef90XmlToPyArrowSettings,
+    UniRef100XmlToPyArrowSettings,
+    XmlToPyArrowSettings,
+)
 from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
-
-if TYPE_CHECKING:
-    from dlt.extract import DltResource
-
-
-def _read_items(items: Iterator[FileItemDict], settings: XmlToPyArrowSettings) -> Generator[TDataItems, Any, Any]:
-    """Read each file in items. Yields PyArrow tables for matched `xml_tag` elements.
-
-    :param items: file items to read
-    :type  items: Iterator[FileItemDict]
-    :param settings: pipeline config, including xml_tag and XSD schema
-    :type  settings: XmlToPyArrowSettings
-    :yield: PyArrow tables of matched elements
-    :rtype: Generator[TDataItems, Any, Any]
-    """
-    for file_item in items:
-        yield from process_xml_file_to_pyarrow(settings, file_path=Path(file_item.local_file_path))
 
 
 def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None:
@@ -37,28 +25,35 @@ def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None
 
     :param settings: pipeline configuration
     :type  settings: XmlToPyArrowSettings
+    :return: DLT pipeline LoadInfo or None
+    :rtype : LoadInfo | None
     """
-    reader = dlt.transformer(_read_items, name="xmltopyarrow_reader", parallelized=True)
-    files = filesystem(bucket_url=str(settings.input_dir), file_glob=settings.file_glob)
-
-    xmltopyarrow_resource: DltResource = files | reader(settings)
+    xmltopyarrow_resource = build_per_file_filesystem_resource(
+        settings,
+        process_xml_file_to_pyarrow,
+        name="xmltopyarrow_reader",
+        parallelized=False,
+    )
     pipeline_name = str(settings.model_config.get("cli_prog_name") or PIPELINE_NAME)
 
     return run_pipeline(
         settings=settings,
         resource=xmltopyarrow_resource,
-        pipeline_kwargs={
-            "pipeline_name": pipeline_name,
-            "dataset_name": settings.dataset_name,
-        },
-        pipeline_run_kwargs={
-            "loader_file_format": str(settings.loader_file_format),
-        },
+        **build_file_ingest_kwargs(settings, pipeline_name),
     )
 
 
 cli = PipelineCli(XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 
+pubmed_cli = PipelineCli(PubMedXmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+
+uniprot_cli = PipelineCli(UniProtXmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+
+uniref50_cli = PipelineCli(UniRef50XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+
+uniref90_cli = PipelineCli(UniRef90XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+
+uniref100_cli = PipelineCli(UniRef100XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 
 if __name__ == "__main__":
     cli()

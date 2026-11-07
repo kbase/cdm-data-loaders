@@ -1,7 +1,7 @@
 """DLT pipeline to import UniProt data."""
 
 from datetime import UTC, datetime
-from typing import Annotated, Final
+from typing import Annotated, ClassVar, Final
 
 from dlt.common.pipeline import LoadInfo
 from dlt.extract import DltResource
@@ -10,8 +10,8 @@ from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import LogInterval
 from cdm_data_loaders.core.settings import (
-    CLI_SHORTCUTS,
-    CtsSettings,
+    XML_CLI_SHORTCUTS,
+    XmlIngestSettings,
     default_settings_with_shortcuts,
 )
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import ENTRY_XML_TAG, parse_uniprot_entry
@@ -25,12 +25,14 @@ PIPELINE_NAME: Final[str] = "uniprot_cdm"
 UNIPROT_LOG_INTERVAL: Final[int] = 1000
 
 
-class UniProtSettings(CtsSettings):
+class UniProtSettings(XmlIngestSettings):
     """Configuration for running the UniProt KB import pipeline."""
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=PIPELINE_NAME, cli_shortcuts=CLI_SHORTCUTS
+        cli_prog_name=PIPELINE_NAME, cli_shortcuts=XML_CLI_SHORTCUTS
     )
+
+    dataset_name: ClassVar[str] = PIPELINE_NAME
 
     log_interval: Annotated[
         LogInterval,

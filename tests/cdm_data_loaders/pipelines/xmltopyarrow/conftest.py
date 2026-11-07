@@ -9,16 +9,7 @@ import pytest
 
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
-from tests.cdm_data_loaders.pipelines.helpers import make_cts_settings
-from tests.xml_samples import LIBRARY_XSD
-
-
-@pytest.fixture
-def library_xsd(tmp_path: Path) -> Path:
-    """Write LIBRARY_XSD to tmp_path and return its path."""
-    xsd_path = tmp_path / "library.xsd"
-    xsd_path.write_text(LIBRARY_XSD, encoding="utf-8")
-    return xsd_path
+from tests.helpers import make_cts_settings
 
 
 @pytest.fixture
@@ -38,11 +29,16 @@ def settings_factory(tmp_path: Path, library_xsd: Path) -> Callable[..., Any]:
             defaults.update(
                 {
                     "dataset_name": "xml_test_dataset",
-                    "table_name": "book",
-                    "xml_tag": "book",
                     "xsd_file": str(library_xsd),
                 }
             )
+            if overrides.get("xml_level") is None:
+                defaults.update(
+                    {
+                        "table_name": "book",
+                        "xml_tag": "book",
+                    }
+                )
         defaults.update(overrides)
         return make_cts_settings(settings_cls, tmp_path, **defaults)
 

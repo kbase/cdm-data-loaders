@@ -1,15 +1,14 @@
 """Unit tests for run_xmltopyarrow_pipeline and cli wiring."""
 
+import gzip
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
-from uuid import uuid4
 
-import dlt
+import pyarrow as pa
 import pytest
-from dlt.common.pipeline import LoadInfo
 from dlt.extract import DltResource
 
 import cdm_data_loaders.pipelines.xmltopyarrow.pipeline as xmltopyarrow_module
@@ -17,22 +16,37 @@ from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import (
     cli,
+    pubmed_cli,
     run_xmltopyarrow_pipeline,
+    uniprot_cli,
+    uniref50_cli,
+    uniref90_cli,
+    uniref100_cli,
 )
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
+    PUBMED_PIPELINE_NAME,
     UNIPROT_PIPELINE_NAME,
-    UNIREF_PIPELINE_NAME,
+    UNIREF_FIFTY,
+    UNIREF_HUNDRED,
+    UNIREF_NINETY,
+    PubMedXmlToPyArrowSettings,
     UniProtXmlToPyArrowSettings,
-    UniRefXmlToPyArrowSettings,
+    UniRef50XmlToPyArrowSettings,
+    UniRef90XmlToPyArrowSettings,
+    UniRef100XmlToPyArrowSettings,
     XmlToPyArrowSettings,
 )
-from cdm_data_loaders.pipelines.xmltopyarrow.uniprot import cli as uniprot_cli
-from cdm_data_loaders.pipelines.xmltopyarrow.uniprot import run_uniprot_pipeline
-from cdm_data_loaders.pipelines.xmltopyarrow.uniref import cli as uniref_cli
-from cdm_data_loaders.pipelines.xmltopyarrow.uniref import run_uniref_pipeline
-from tests.cdm_data_loaders.pipelines.conftest import copy_test_files, duckdb_pipeline
-from tests.cdm_data_loaders.pipelines.helpers import assert_run_ok, fetch_all_duckdb, settings_to_argv
+from tests.cdm_data_loaders.pipelines.conftest import copy_test_files
+from tests.cdm_data_loaders.pipelines.helpers import (
+    assert_binds_filesystem_reader,
+    assert_core_run_pipeline_args,
+    fetch_all_duckdb,
+    run_with_duckdb_pipeline,
+)
+from tests.conftest import XSD_SPEC_DIR
+from tests.fs_backends import FsBackend
+from tests.helpers import register_temp_module, settings_to_argv
 from tests.xml_samples import TWO_BOOK_LIBRARY_XML
 
 
@@ -43,20 +57,7 @@ def test_run_xmltopyarrow_pipeline_pass_sets_core_run_pipeline_args_correctly(
 ) -> None:
     """run_xmltopyarrow_pipeline builds the reader and delegates to run_pipeline with the correct args."""
     settings = settings_factory(loader_file_format=loader_file_format)
-
-    with patch.object(xmltopyarrow_module, "run_pipeline") as mock_run_pipeline:
-        run_xmltopyarrow_pipeline(settings)
-
-    assert mock_run_pipeline.call_count == 1
-    _, kwargs = mock_run_pipeline.call_args
-    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
-    assert kwargs["settings"] == settings
-    assert kwargs["pipeline_kwargs"] == {
-        "pipeline_name": PIPELINE_NAME,
-        "dataset_name": settings.dataset_name,
-    }
-    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": loader_file_format}
-    assert isinstance(kwargs["resource"], DltResource)
+    assert_core_run_pipeline_args(xmltopyarrow_module, run_xmltopyarrow_pipeline, settings, PIPELINE_NAME)
 
 
 def test_run_xmltopyarrow_pipeline_pass_binds_reader_before_run_pipeline(
@@ -64,15 +65,7 @@ def test_run_xmltopyarrow_pipeline_pass_binds_reader_before_run_pipeline(
 ) -> None:
     """The resource passed to run_pipeline is the bound reader piped into the filesystem source."""
     settings = settings_factory()
-
-    with patch.object(xmltopyarrow_module, "run_pipeline") as mock_run_pipeline:
-        run_xmltopyarrow_pipeline(settings)
-
-    mock_run_pipeline.assert_called_once()
-    resource = mock_run_pipeline.call_args.kwargs["resource"]
-    assert resource.name == "xmltopyarrow_reader"
-    assert resource._pipe.parent.name == "filesystem"  # noqa: SLF001
-    assert isinstance(resource, dlt.sources.DltResource)
+    assert_binds_filesystem_reader(xmltopyarrow_module, run_xmltopyarrow_pipeline, settings, "xmltopyarrow_reader")
 
 
 def test_cli_pass_runs_end_to_end_from_command_line_arguments(
@@ -90,48 +83,14 @@ def test_cli_pass_runs_end_to_end_from_command_line_arguments(
     (Path(settings.input_dir) / "library.xml").write_text(TWO_BOOK_LIBRARY_XML, encoding="utf-8")
     monkeypatch.setattr(sys, "argv", [PIPELINE_NAME, *settings_to_argv(settings)])
 
-    # unique pipeline name: the duckdb database file is derived from it, so
-    # repeated runs of the suite do not see rows from previous runs
-    pipeline_name = f"test_xmltopyarrow_cli_pipeline_{uuid4().hex}"
-
-    def fake_run_pipeline(
-        *,
-        resource: DltResource,
-        pipeline_kwargs: dict[str, Any],
-        **_: dict[str, Any],
-    ) -> LoadInfo | None:
-        assert pipeline_kwargs == {"pipeline_name": PIPELINE_NAME, "dataset_name": "cli_dataset"}
-        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
-        return pipeline.run(resource)
-
-    with patch.object(xmltopyarrow_module, "run_pipeline", fake_run_pipeline):
-        load_info = assert_run_ok(cli.run())
-
-    assert fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM book") == [(2,)]
-
-
-def test_cli_pass_writes_rows_for_matching_xml_files(
-    tmp_path: Path,
-    settings_factory: Callable[..., Any],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """cli() with xml files in the input dir loads one row per matching element."""
-    settings = settings_factory(dataset_name="cli_dataset", dlt_dev_mode=False)
-    (Path(settings.input_dir) / "data.xml").write_text(TWO_BOOK_LIBRARY_XML, encoding="utf-8")
-    monkeypatch.setattr(sys, "argv", [PIPELINE_NAME, *settings_to_argv(settings)])
-
-    pipeline_name = f"test_xmltopyarrow_cli_rows_pipeline_{uuid4().hex}"
-
-    def fake_run_pipeline(
-        *,
-        resource: Any,  # noqa: ANN401
-        **_: Any,  # noqa: ANN401
-    ) -> LoadInfo | None:
-        pipeline = duckdb_pipeline(tmp_path, pipeline_name, "cli_dataset")
-        return pipeline.run(resource)
-
-    with patch.object(xmltopyarrow_module, "run_pipeline", fake_run_pipeline):
-        load_info = assert_run_ok(cli.run())
+    load_info = run_with_duckdb_pipeline(
+        tmp_path,
+        xmltopyarrow_module,
+        cli.run,
+        expected_pipeline_name=PIPELINE_NAME,
+        expected_dataset_name="cli_dataset",
+        pipeline_name_prefix="test_xmltopyarrow_cli_pipeline",
+    )
 
     assert fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM book") == [(2,)]
 
@@ -156,24 +115,27 @@ def test_cli_fail_missing_required_args_raise(
 
 
 @pytest.mark.parametrize(
-    ("settings_cls", "run_fn", "expected_pipeline_name"),
+    ("settings_cls", "expected_pipeline_name"),
     [
-        (UniProtXmlToPyArrowSettings, run_uniprot_pipeline, UNIPROT_PIPELINE_NAME),
-        (UniRefXmlToPyArrowSettings, run_uniref_pipeline, UNIREF_PIPELINE_NAME),
+        (PubMedXmlToPyArrowSettings, PUBMED_PIPELINE_NAME),
+        (UniProtXmlToPyArrowSettings, UNIPROT_PIPELINE_NAME),
+        (UniRef50XmlToPyArrowSettings, UNIREF_FIFTY),
+        (UniRef90XmlToPyArrowSettings, UNIREF_NINETY),
+        (UniRef100XmlToPyArrowSettings, UNIREF_HUNDRED),
     ],
+    ids=["pubmed", "uniprot", "uniref50", "uniref90", "uniref100"],
 )
 def test_run_subclass_pipeline_pass_sets_core_run_pipeline_args_correctly(
     settings_factory: Callable[..., Any],
     *,
     settings_cls: type[XmlToPyArrowSettings],
-    run_fn: Callable[[Any], LoadInfo | None],
     expected_pipeline_name: str,
 ) -> None:
-    """run_uniprot_pipeline and run_uniref_pipeline delegate to run_pipeline with the subclass pipeline_name."""
+    """run_xmltopyarrow_pipeline delegates to run_pipeline with the subclass pipeline_name."""
     settings = settings_factory(settings_cls)
 
     with patch.object(xmltopyarrow_module, "run_pipeline") as mock_run_pipeline:
-        run_fn(settings)
+        run_xmltopyarrow_pipeline(settings)
 
     mock_run_pipeline.assert_called_once()
     _, kwargs = mock_run_pipeline.call_args
@@ -188,13 +150,15 @@ def test_run_subclass_pipeline_pass_sets_core_run_pipeline_args_correctly(
 @pytest.mark.parametrize(
     ("prog_name", "cli_obj", "sample_xml_rel_dir"),
     [
-        (UNIPROT_PIPELINE_NAME, uniprot_cli, "xsd/examples/uniprot"),
-        (UNIREF_PIPELINE_NAME, uniref_cli, "xsd/examples/uniref"),
+        (UNIPROT_PIPELINE_NAME, uniprot_cli, "examples/uniprot"),
+        (UNIREF_FIFTY, uniref50_cli, "examples/uniref"),
+        (UNIREF_NINETY, uniref90_cli, "examples/uniref"),
+        (UNIREF_HUNDRED, uniref100_cli, "examples/uniref"),
     ],
+    ids=["uniprot", "uniref50", "uniref90", "uniref100"],
 )
 def test_subclass_cli_pass_runs_end_to_end_with_default_settings(
     tmp_path: Path,
-    test_data_dir: Path,
     settings_factory: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -204,22 +168,107 @@ def test_subclass_cli_pass_runs_end_to_end_with_default_settings(
 ) -> None:
     """UniProt and UniRef CLIs load entry rows end-to-end using their default settings."""
     base_settings = settings_factory(CtsSettings, dlt_dev_mode=False)
-    copy_test_files(test_data_dir / sample_xml_rel_dir, ["minimal.xml.gz"], Path(base_settings.input_dir))
+    copy_test_files(XSD_SPEC_DIR / sample_xml_rel_dir, ["minimal.xml.gz"], Path(base_settings.input_dir))
     monkeypatch.setattr(sys, "argv", [prog_name, *settings_to_argv(base_settings)])
 
-    pipeline_name = f"test_{prog_name}_cli_pipeline_{uuid4().hex}"
-
-    def fake_run_pipeline(
-        *,
-        resource: DltResource,
-        pipeline_kwargs: dict[str, Any],
-        **_: dict[str, Any],
-    ) -> LoadInfo | None:
-        assert pipeline_kwargs == {"pipeline_name": prog_name, "dataset_name": prog_name}
-        pipeline = duckdb_pipeline(tmp_path, pipeline_name, prog_name)
-        return pipeline.run(resource)
-
-    with patch.object(xmltopyarrow_module, "run_pipeline", fake_run_pipeline):
-        load_info = assert_run_ok(cli_obj.run())
+    load_info = run_with_duckdb_pipeline(
+        tmp_path,
+        xmltopyarrow_module,
+        cli_obj.run,
+        expected_pipeline_name=prog_name,
+        expected_dataset_name=prog_name,
+        pipeline_name_prefix=f"test_{prog_name}_cli_pipeline",
+    )
 
     assert fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM entry") == [(1,)]
+
+
+def test_pubmed_cli_pass_runs_end_to_end_with_default_settings(
+    tmp_path: Path,
+    settings_factory: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pubmed_cli loads PubmedArticle and PubmedBookArticle tables end-to-end using its default level-1 settings."""
+    base_settings = settings_factory(CtsSettings, dlt_dev_mode=False)
+    copy_test_files(
+        XSD_SPEC_DIR / "examples" / "pubmed_article",
+        ["minimal.xml.gz"],
+        Path(base_settings.input_dir),
+    )
+    monkeypatch.setattr(sys, "argv", [PUBMED_PIPELINE_NAME, *settings_to_argv(base_settings)])
+
+    load_info = run_with_duckdb_pipeline(
+        tmp_path,
+        xmltopyarrow_module,
+        pubmed_cli.run,
+        expected_pipeline_name=PUBMED_PIPELINE_NAME,
+        expected_dataset_name=PUBMED_PIPELINE_NAME,
+        pipeline_name_prefix="test_pubmed_cli_pipeline",
+    )
+
+    assert fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM pubmed_article") == [(1,)]
+
+
+@pytest.mark.parametrize("relative_path", ["library.xml", "sub/library.xml.gz"])
+def test_run_xmltopyarrow_pipeline_pass_per_file_reader_reads_file_items_any_backend(
+    settings_factory: Callable[..., Any], fs_backend: FsBackend, relative_path: str
+) -> None:
+    """The pipeline's per-file reader reads file items from any backend, without assuming they are local files."""
+    data = TWO_BOOK_LIBRARY_XML.encode("utf-8")
+    fs_backend.put(relative_path, gzip.compress(data) if relative_path.endswith(".gz") else data)
+    settings = settings_factory()
+
+    with (
+        patch.object(xmltopyarrow_module, "build_per_file_filesystem_resource") as mock_build,
+        patch.object(xmltopyarrow_module, "run_pipeline"),
+    ):
+        run_xmltopyarrow_pipeline(settings)
+    file_fn = mock_build.call_args.args[1]
+
+    items = [item for file_item in fs_backend.file_items() for item in file_fn(file_item, settings)]
+
+    assert [(item.meta.table_name, item.data.column("_id").to_pylist()) for item in items] == [("book", ["1", "2"])]
+
+
+def test_run_xmltopyarrow_pipeline_pass_filters_and_splits_with_transforms_module(
+    settings_factory: Callable[..., Any],
+    fs_backend: FsBackend,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The xmltopyarrow pipeline filters and splits elements into Arrow tables using TABLE_TRANSFORMS."""
+    fs_backend.put("library.xml", TWO_BOOK_LIBRARY_XML.encode("utf-8"))
+
+    def transform(row: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+        return (
+            {}
+            if row["_id"] == "1"
+            else {
+                "book": [{"_id": row["_id"], "title": row["title"]}],
+                "book_id_only": [{"book_id": row["_id"]}],
+            }
+        )
+
+    output_schemas = {
+        "book": pa.schema([pa.field("_id", pa.string()), pa.field("title", pa.string())]),
+        "book_id_only": pa.schema([pa.field("book_id", pa.string())]),
+    }
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_xmltopyarrow_transforms",
+        TABLE_TRANSFORMS={"book": transform},
+        OUTPUT_SCHEMAS=output_schemas,
+    )
+    settings = settings_factory(transforms_module=transforms_mod, output_schemas_module=transforms_mod)
+
+    with (
+        patch.object(xmltopyarrow_module, "build_per_file_filesystem_resource") as mock_build,
+        patch.object(xmltopyarrow_module, "run_pipeline"),
+    ):
+        run_xmltopyarrow_pipeline(settings)
+    file_fn = mock_build.call_args.args[1]
+
+    items = [item for file_item in fs_backend.file_items() for item in file_fn(file_item, settings)]
+    assert [(item.meta.table_name, item.data.to_pylist()) for item in items] == [
+        ("book", [{"_id": "2", "title": "The Stand"}]),
+        ("book_id_only", [{"book_id": "2"}]),
+    ]

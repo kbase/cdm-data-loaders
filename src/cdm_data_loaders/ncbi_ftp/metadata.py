@@ -26,7 +26,7 @@ from typing import Any, TypedDict
 from frictionless import Package
 
 from cdm_data_loaders.utils.file_transfer.s3 import client
-from cdm_data_loaders.utils.file_transfer.s3.object_utils import copy_object
+from cdm_data_loaders.utils.file_transfer.s3.object_utils import copy_object, object_exists
 
 logger: Logger = getLogger(__name__)
 
@@ -61,7 +61,9 @@ def build_descriptor_key(assembly_dir: PurePosixPath, key_prefix: PurePosixPath)
     """Return the S3 key for the live descriptor of *assembly_dir*.
 
     :param assembly_dir: full assembly directory name, e.g. ``GCF_000001215.4_Release_6_plus_ISO1_MT``
+    :type assembly_dir: PurePosixPath
     :param key_prefix: Lakehouse key prefix (trailing slash optional)
+    :type key_prefix: PurePosixPath
     :return: S3 key, e.g. ``tenant-general-warehouse/.../ncbi/metadata/GCF_..._datapackage.json``
     """
     return key_prefix / "metadata" / assembly_dir.with_name(f"{assembly_dir.name}_datapackage.json")
@@ -73,9 +75,13 @@ def build_archive_descriptor_key(
     """Return the S3 key for the archived descriptor of *assembly_dir*.
 
     :param assembly_dir: full assembly directory name
+    :type assembly_dir: PurePosixPath
     :param release_tag: NCBI release tag used in the archive path, e.g. ``"2024-01"``
+    :type release_tag: str
     :param key_prefix: Lakehouse key prefix
+    :type key_prefix: PurePosixPath
     :param archive_reason: reason for archival, encoded as a path segment
+    :type archive_reason: str
     :return: S3 key under ``archive/{release_tag}/{archive_reason}/metadata/``
     """
     return (
@@ -106,9 +112,13 @@ def create_descriptor(
 
     :param assembly_dir: full assembly directory name (includes the accession
         suffix, e.g. ``GCF_000001215.4_Release_6_plus_ISO1_MT``)
+    :type assembly_dir: PurePosixPath
     :param accession_full: accession without suffix, e.g. ``GCF_000001215.4``
+    :type accession_full: str
     :param resources: list of :class:`DescriptorResource` dicts
+    :type resources: list[DescriptorResource]
     :param timestamp: Unix timestamp to embed; defaults to ``datetime.now(UTC)``
+    :type timestamp: int | None
     :return: descriptor dict ready for serialisation and frictionless validation
     """
     ts = timestamp if timestamp is not None else int(datetime.now(UTC).timestamp())
@@ -166,7 +176,9 @@ def validate_descriptor(descriptor: dict[str, Any], accession_full: str) -> None
     """Validate a descriptor with frictionless.
 
     :param descriptor: descriptor dict from :func:`create_descriptor`
+    :type descriptor: dict[str, Any]
     :param accession_full: accession (used only in error messages)
+    :type accession_full: str
     :raises ValueError: if frictionless reports any metadata errors
     """
     errors = list(Package.metadata_validate(descriptor))
@@ -188,10 +200,15 @@ def upload_descriptor(
     """Serialise and upload a descriptor to the live ``metadata/`` path.
 
     :param descriptor: descriptor dict from :func:`create_descriptor`
+    :type descriptor: dict[str, Any]
     :param assembly_dir: full assembly directory name
+    :type assembly_dir: PurePosixPath
     :param bucket: S3 bucket name
+    :type bucket: PurePosixPath
     :param key_prefix: Lakehouse key prefix
+    :type key_prefix: PurePosixPath
     :param dry_run: if True, log without uploading
+    :type dry_run: bool
     :return: S3 key the descriptor was (or would be) written to
     """
     key = build_descriptor_key(assembly_dir, key_prefix)
@@ -231,11 +248,17 @@ def archive_descriptor(  # noqa: PLR0913
     before the first promote), logs a warning and returns ``False``.
 
     :param assembly_dir: full assembly directory name
+    :type assembly_dir: PurePosixPath
     :param bucket: S3 bucket name
+    :type bucket: PurePosixPath
     :param key_prefix: Lakehouse key prefix
+    :type key_prefix: PurePosixPath
     :param release_tag: NCBI release tag for the archive path
+    :type release_tag: str
     :param archive_reason: metadata value describing why archived (matches raw data metadata)
+    :type archive_reason: str
     :param dry_run: if True, log without copying
+    :type dry_run: bool
     :return: ``True`` if the descriptor was (or would be) archived; ``False`` if not found
     """
     source_key = build_descriptor_key(assembly_dir, key_prefix)
@@ -245,18 +268,9 @@ def archive_descriptor(  # noqa: PLR0913
         logger.debug("[dry-run] would archive descriptor: s3://%s/%s -> %s", bucket, source_key, archive_key)
         return True
 
-    s3_client = client.get_s3_client()
-    try:
-        s3_client.head_object(Bucket=str(bucket), Key=str(source_key))
-    except s3_client.exceptions.NoSuchKey:
+    if not object_exists(str(bucket / source_key)):
         logger.warning("Descriptor not found, skipping archive: s3://%s/%s", bucket, source_key)
         return False
-    except Exception as e:
-        # head_object raises ClientError with 404 when key is absent
-        if hasattr(e, "response") and e.response.get("Error", {}).get("Code") in ("404", "NoSuchKey"):  # type: ignore[union-attr]
-            logger.warning("Descriptor not found, skipping archive: s3://%s/%s", bucket, source_key)
-            return False
-        raise
 
     _ = copy_object(
         str(bucket / source_key),

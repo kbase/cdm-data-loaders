@@ -1,0 +1,38 @@
+[
+  {
+    "id": "u-1",
+    "numeric_union": 10,
+    "scalar_fallback_union": 42,
+    "source": {
+      "shared_id": "src-illumina",
+      "platform": "Illumina NovaSeq",
+      "read_length": 150,
+      "metric": 99
+    },
+    "top_hit": {
+      "hit_type": "blast",
+      "accession": "NP_414542.1",
+      "evalue": 1e-50
+    },
+    "citation": {
+      "pmid": 12345678,
+      "title": "Genome sequence of E. coli"
+    }
+  },
+  {
+    "id": "u-2",
+    "numeric_union": 3.5,
+    "scalar_fallback_union": true,
+    "source": {
+      "shared_id": "src-nanopore",
+      "chemistry": "R10.4.1",
+      "metric": 14.25
+    },
+    "top_hit": {
+      "hit_type": "hmm",
+      "accession": "PF00001.24",
+      "bit_score": 210.4
+    },
+    "citation": "Unpublished observation"
+  }
+]

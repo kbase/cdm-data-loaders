@@ -1,21 +1,83 @@
 """Utilities for running tests."""
 
 import json
+import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import Any
+from uuid import uuid4
 
+import pytest
 import yaml
 from pydantic_settings import BaseSettings, CliApp, CliSettingsSource
 from pyspark.sql import Row, SparkSession
 from pyspark.sql.types import StructType
 
-from cdm_data_loaders.core.settings import CdmDataLoadersBase
+from cdm_data_loaders.core.settings import CdmDataLoadersBase, CtsSettings
+from tests.conftest import LOCAL_FS
 
 
 def make_cli_arg(arg: str) -> str:
     """Generate the appropriate CLI form for an argument."""
     return f"{'--' if len(arg) > 1 else '-'}{arg.replace('_', '-')}"
+
+
+def make_cts_settings[S: CtsSettings](
+    settings_cls: type[S],
+    base_dir: Path,
+    **overrides: Any,  # noqa: ANN401
+) -> S:
+    """Create standard input/output directories and log config under base_dir and instantiate settings_cls."""
+    input_dir = base_dir / "input"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = base_dir / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log_config_file = base_dir / "logging.json"
+    if not log_config_file.exists():
+        log_config_file.write_text('{"version": 1}', encoding="utf-8")
+
+    kwargs: dict[str, Any] = {
+        "input_dir": str(input_dir),
+        "output_dir": str(output_dir),
+        "log_config_file": str(log_config_file),
+        "use_destination": LOCAL_FS,
+        "dlt_dev_mode": False,
+        "use_output_dir_for_pipeline_metadata": False,
+    }
+    kwargs.update(overrides)
+    return settings_cls(**kwargs)
+
+
+def settings_to_argv(settings: Any, *, exclude: Iterable[str] = ()) -> list[str]:  # noqa: ANN401
+    """Derive CLI arguments from a settings instance.
+
+    Every serialized field becomes a ``--kebab-case`` flag, with bools rendered
+    as their ``true``/``false`` CLI spelling, sequence fields expanded after the
+    flag, and None-valued, excluded, or computed fields skipped.
+
+    :param settings: a CtsSettings (or derivative) instance
+    :type settings: Any
+    :param exclude: field names to omit from the resulting argument list
+    :type exclude: Iterable[str]
+    :return: command-line argument list reproducing the settings
+    :rtype: list[str]
+    """
+    argv: list[str] = []
+    excluded_fields: set[str] = set(getattr(type(settings), "model_computed_fields", {}).keys()) | set(exclude)
+    for name, value in settings.model_dump(exclude=excluded_fields).items():
+        flag = make_cli_arg(name)
+        if isinstance(value, bool):
+            argv.extend([flag, "true" if value else "false"])
+        elif value is None:
+            continue
+        elif isinstance(value, list | tuple):
+            if value:
+                argv.extend([flag, *(str(item) for item in value)])
+        else:
+            argv.extend([flag, str(value)])
+    return argv
 
 
 @dataclass(frozen=True)
@@ -39,15 +101,12 @@ def build_cli_arg_specs(settings_cls: type[BaseSettings]) -> dict[str, CliArgSpe
     """
     parser = CliSettingsSource(settings_cls).root_parser
     specs: dict[str, CliArgSpec] = {}
-    for action in parser._actions:  # noqa: SLF001 -- argparse has no public introspection API
+    for action in parser._actions:  # noqa: SLF001
         if not action.option_strings or action.dest == "help" or action.dest.endswith(":subcommand"):
             continue
         field_info = settings_cls.model_fields.get(action.dest)
         if field_info is not None and field_info.exclude:
-            # pydantic-settings always registers a real argparse action per field -- there is no
-            # way to omit one outright -- so Field(exclude=True) fields (e.g. CtsSettings.dlt_config)
-            # still show up here unless filtered explicitly. Such fields aren't real user-facing CLI
-            # options (see DltConfig in cdm_data_loaders.core.fields), so exclude them from the specs.
+            # filter out any fields that are not real user-facing CLI options
             continue
         specs[action.dest] = CliArgSpec(
             field_name=action.dest,
@@ -67,7 +126,8 @@ def assert_no_cli_clashes(settings_cls: type[CdmDataLoadersBase]) -> None:
     AliasChoices / AliasPath, which check_aliases doesn't model.
     """
     settings_cls.check_aliases()
-    build_cli_arg_specs(settings_cls)  # raises argparse.ArgumentError on any residual clash
+    # raises argparse.ArgumentError on any residual clash
+    build_cli_arg_specs(settings_cls)
 
 
 def assert_cli_field_roundtrips(
@@ -149,3 +209,28 @@ def jsonlines_text_to_objects(text: str) -> list[dict[str, Any]]:
     :rtype : list[dict[str, Any]]
     """
     return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def register_temp_module(
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: str = "_test_module",
+    *,
+    name: str | None = None,
+    **attrs: Any,  # noqa: ANN401
+) -> str:
+    """Create an in-memory module with the given attributes and register it in ``sys.modules`` via ``monkeypatch``."""
+    module_name = name or f"{prefix}_{uuid4().hex}"
+    module = ModuleType(module_name)
+    for attr_name, attr_val in attrs.items():
+        setattr(module, attr_name, attr_val)
+    monkeypatch.setitem(sys.modules, module_name, module)
+    return module_name
+
+
+def strip_none_values(value: Any) -> Any:  # noqa: ANN401
+    """Recursively remove keys with None values from nested dicts and lists."""
+    if isinstance(value, dict):
+        return {k: strip_none_values(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [strip_none_values(item) for item in value]
+    return value

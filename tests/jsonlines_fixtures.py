@@ -1,20 +1,41 @@
 """Shared model-registry and scenario-directory fixtures for the JSONL pipeline tests."""
 
-import sys
-import types
-from collections.abc import Callable, Generator
+import json
+from collections.abc import Callable
 from pathlib import Path
-from uuid import uuid4
+from typing import Any
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, NonNegativeInt
+
+from cdm_data_loaders.core.fields import NonEmptyStr
+from tests.helpers import register_temp_module
+
+
+def make_item(
+    record: object = None,
+    line_no: int = 1,
+    raw_record: str | None = None,
+    parse_error: str | None = None,
+    source_file: str = "file.jsonl",
+) -> dict[str, Any]:
+    """Build a line record matching stream_jsonl_lines' output shape."""
+    if raw_record is None:
+        raw_record = "" if parse_error is not None and record is None else json.dumps(record, separators=(",", ":"))
+    return {
+        "record": record,
+        "raw_record": raw_record,
+        "parse_error": parse_error,
+        "source_file": source_file,
+        "line_no": line_no,
+    }
 
 
 class Widget(BaseModel):
     """Test model. widget_id must be non-empty. count must be zero or more."""
 
-    widget_id: str = Field(min_length=1)
-    count: int = Field(ge=0)
+    widget_id: NonEmptyStr = Field()
+    count: NonNegativeInt = Field()
 
 
 @pytest.fixture
@@ -24,34 +45,21 @@ def widget_model() -> type[Widget]:
 
 
 @pytest.fixture
-def entity_models_module_factory() -> Generator[Callable[[dict[str, type[BaseModel]]], str]]:
-    """Return a factory that registers a module holding an ENTITY_MODELS dict.
-
-    Each call creates a module with a unique name and adds it to
-    sys.modules. Removes each created module after the test.
-    """
-    created_names: list[str] = []
+def entity_models_factory(monkeypatch: pytest.MonkeyPatch) -> Callable[[dict[str, type[BaseModel]]], str]:
+    """Return a factory that registers a module holding an ENTITY_MODELS dict."""
 
     def _factory(entity_models: dict[str, type[BaseModel]]) -> str:
-        module_name = f"_test_entity_models_{uuid4().hex}"
-        module = types.ModuleType(module_name)
-        module.ENTITY_MODELS = entity_models  # type: ignore[attr-defined]
-        sys.modules[module_name] = module
-        created_names.append(module_name)
-        return module_name
+        return register_temp_module(monkeypatch, "_test_entity_models", ENTITY_MODELS=entity_models)
 
-    yield _factory
-
-    for name in created_names:
-        sys.modules.pop(name, None)
+    return _factory
 
 
 @pytest.fixture
-def entity_models_module(
-    entity_models_module_factory: Callable[[dict[str, type[BaseModel]]], str], widget_model: type[Widget]
+def entity_models(
+    entity_models_factory: Callable[[dict[str, type[BaseModel]]], str], widget_model: type[Widget]
 ) -> str:
     """Return a module name that maps 'widget' to the Widget model."""
-    return entity_models_module_factory({"widget": widget_model})
+    return entity_models_factory({"widget": widget_model})
 
 
 @pytest.fixture

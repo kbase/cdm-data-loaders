@@ -1,0 +1,16 @@
+title: Structural Recursion and `max_recursion_depth`
+schema: schema.json
+rules: [R-RECURSION, R-COERCE-STRING-FALLBACK]
+notes: |
+  `TreeNode` is self-recursive (`branch: array of TreeNode`); `Section` and `Subsection` are mutually recursive.
+  At depth 2 the third `TreeNode` level becomes JSON strings; at depth 1 the second level already does.
+runs:
+  - id: depth-2
+    params: {max_recursion_depth: 2}
+    data: data.json
+  - id: depth-1
+    params: {max_recursion_depth: 1}
+    data: data.json
+    expected_json: expected_depth_1.json
+    schema_attr: EXPECTED_SCHEMA_DEPTH_1
+    table_attr: EXPECTED_TABLE_DEPTH_1

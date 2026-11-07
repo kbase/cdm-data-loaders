@@ -4,13 +4,14 @@ from enum import StrEnum
 from typing import Annotated, Final
 
 from frozendict import frozendict
-from pydantic import Field, PositiveInt, StringConstraints
+from pydantic import AfterValidator, Field, FilePath, NonNegativeInt, PositiveInt, StringConstraints
 
 INPUT_MOUNT: Final[str] = "/input_dir"
 OUTPUT_MOUNT: Final[str] = "/output_dir"
 
 DEFAULT_JSONL_FILE_GLOB: Final[str] = "*.jsonl*"
 DEFAULT_XML_FILE_GLOB: Final[str] = "*.xml*"
+REJECTED_TABLE_NAME: Final[str] = "_rejected"
 GZIP_SUFFIX: Final[str] = ".gz"
 
 # output file formats
@@ -41,11 +42,18 @@ LOG_CONFIG_FILE: Final[str] = "log_config_file"
 LOG_INTERVAL: Final[str] = "log_interval"
 MAX_TABLE_NESTING: Final[str] = "max_table_nesting"
 OUTPUT_DIR: Final[str] = "output_dir"
+OUTPUT_SCHEMAS_MODULE: Final[str] = "output_schemas_module"
 PRESERVE_TABLE_NESTING: Final[str] = "preserve_table_nesting"
 SAVE_RAW_RESPONSES: Final[str] = "save_raw_responses"
 TABLE_NAME: Final[str] = "table_name"
+TRANSFORMS_MODULE: Final[str] = "transforms_module"
 USE_DESTINATION: Final[str] = "use_destination"
 USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: Final[str] = "use_output_dir_for_pipeline_metadata"
+
+PIPELINE_DIR_NAME: Final[str] = "pipeline_metadata"
+"""Directory where dlt will put run metadata, schemas, etc."""
+REPORT_FILE_NAME: Final[str] = "report.txt"
+"""Name of the report file."""
 
 
 MIN_START_AT: Final[int] = 1
@@ -62,14 +70,20 @@ DEFAULTS = frozendict(
         LOG_CONFIG_FILE: None,
         LOG_INTERVAL: 1000,
         MAX_TABLE_NESTING: 0,
+        OUTPUT_SCHEMAS_MODULE: None,
         PRESERVE_TABLE_NESTING: False,
         SAVE_RAW_RESPONSES: False,
+        TRANSFORMS_MODULE: None,
         USE_DESTINATION: CTS,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: False,
     }
 )
 
+
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
+CharStr = Annotated[str, StringConstraints(min_length=1, max_length=1)]
+type TableNameKey = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, strict=True)]
+
 
 BatchSize = Annotated[
     PositiveInt,
@@ -130,17 +144,26 @@ LogInterval = Annotated[
     ),
 ]
 MaxTableNesting = Annotated[
-    int,
+    NonNegativeInt,
     Field(
         default=DEFAULTS[MAX_TABLE_NESTING],
         description="Maximum level of nesting of output datasets. For infinite nesting, set to 0.",
-        ge=0,
     ),
 ]
 OutputDir = Annotated[
     NonEmptyStr | None,
     Field(
         description="Location to save raw data files and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Has no effect on where the dlt destination loads data.",
+    ),
+]
+OutputSchemasModuleSpec = Annotated[
+    NonEmptyStr | None,
+    Field(
+        default=DEFAULTS[OUTPUT_SCHEMAS_MODULE],
+        description=(
+            "Optional Python module path exporting OUTPUT_SCHEMAS "
+            "(dict[str, pyarrow.Schema]) for PyArrow schema overrides."
+        ),
     ),
 ]
 PreserveTableNesting = Annotated[
@@ -157,7 +180,32 @@ SaveRawResponses = Annotated[
         description="Whether or not to save the raw responses from the API to the output directory.",
     ),
 ]
-TableName = Annotated[NonEmptyStr, Field(description="The name of the table to export parsed data to")]
+
+
+def _reject_reserved_table_name(value: str) -> str:
+    """Reject the reserved _rejected table name."""
+    if value == REJECTED_TABLE_NAME:
+        msg = f"Table name {REJECTED_TABLE_NAME!r} is reserved for pipeline error records."
+        raise ValueError(msg)
+    return value
+
+
+TableName = Annotated[
+    NonEmptyStr,
+    AfterValidator(_reject_reserved_table_name),
+    Field(description="The name of the table to export parsed data to"),
+]
+TransformsModuleSpec = Annotated[
+    NonEmptyStr | None,
+    Field(
+        default=DEFAULTS[TRANSFORMS_MODULE],
+        description=(
+            "Optional Python module path exporting TABLE_TRANSFORMS "
+            "(dict[str, RecordTransformFn]) for record filtering, transformation, "
+            "and multi-table splitting."
+        ),
+    ),
+]
 UseDestination = Annotated[
     NonEmptyStr,
     Field(
@@ -169,6 +217,18 @@ UseOutputDirForPipelineMetadata = Annotated[
     bool,
     Field(
         default=DEFAULTS[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA],
-        description="Store pipeline metadata in `<output_dir>/.dlt_conf`. output_dir must be set and on the local filesystem.",
+        description="Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem.",
+    ),
+]
+XmlTag = Annotated[
+    NonEmptyStr,
+    Field(
+        description="XML tag to capture the contents of",
+    ),
+]
+XsdFile = Annotated[
+    FilePath,
+    Field(
+        description="Path to the XSD file describing the XML documents to be imported.",
     ),
 ]

@@ -5,7 +5,6 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Final
 from unittest.mock import MagicMock
 
 import pytest
@@ -24,33 +23,15 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     prepend_header,
 )
 from tests.cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.conftest import (
-    COLUMNS,
     DELIMITERS,
+    _touch,
+)
+from tests.xsv_fixtures import (
+    COLUMNS,
     VALID_ROWS,
     WriteFile,
-    _touch,
     build_xsv_content,
 )
-
-VALID_SCHEMA_URI: Final[str] = "https://json-schema.org/draft/2019-09/schema"
-SCHEMA_KEY_VALUE: dict[str, str] = {"$schema": VALID_SCHEMA_URI}
-
-INVALID_TOP_LEVEL_SCHEMA_LIST = [
-    pytest.param(["a", "b"], id="schema-is-a-list"),
-    pytest.param("just a string", id="schema-is-string"),
-    pytest.param(42, id="schema-is-a-number"),
-    pytest.param(None, id="schema-is-null"),
-    pytest.param(True, id="schema-is-bool"),
-]
-MISSING_EMPTY_REQUIRED_LIST = [
-    pytest.param({}, id="missing-required-key"),
-    pytest.param({"required": []}, id="empty-required-list"),
-]
-INVALID_REQUIRED_LIST = [
-    pytest.param({"required": "not-a-list"}, id="required-is-a-string"),
-    pytest.param({"required": None}, id="required-is-null"),
-    pytest.param({"required": {"a": 1}}, id="required-is-a-dict"),
-]
 
 """copy_safely and move_safely"""
 
@@ -233,9 +214,18 @@ def test_prepend_header_fail_missing_data_file(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("first_pass_value", [None, True, False])
-@pytest.mark.parametrize("input_file_name", ["some_file_name.tsv", "a_random_sequence_of_chars"])
+@pytest.mark.parametrize(
+    "input_file_name",
+    [
+        "some_file_name.tsv",
+        "a_random_sequence_of_chars",
+        pytest.param("data-header.tsv", id="simple-name"),
+        pytest.param("data.with.dots-header.tsv", id="name-with-embedded-dots"),
+        pytest.param("data-normalised.norm.tsv", id="name-resembling-a-previous-suffix"),
+    ],
+)
 @pytest.mark.parametrize("ext", [".tsv", ".csv", ".tar.gz", ".exe"])
-def test_generate_qsv_validate_file_names(first_pass_value: None | bool, input_file_name: str, ext: str) -> None:
+def test_generate_qsv_validate_file_names(first_pass_value: bool | None, input_file_name: str, ext: str) -> None:
     """Ensure that the appropriate file names are generated for a variety of values.
 
     Parametrizes the file extension, the input file name, and whether or not this is the first pass naming.
@@ -260,51 +250,6 @@ def test_generate_qsv_validate_file_names(first_pass_value: None | bool, input_f
     if first_pass_value is not None and first_pass_value is False:
         valid_output_file_name = f"some_name-normalised-validated{VALID_SUFFIX}{ext}"
         schema_file_name = "some_name-normalised-validated.jsonschema.json"
-
-    assert file_names.valid_output == tmp_path / valid_output_file_name
-    assert file_names.errors == tmp_path / f"{input_file_name}{VALIDATION_ERRORS}"
-    assert file_names.valid_lines == tmp_path / f"{input_file_name}.valid{ext}"
-    assert file_names.invalid_lines == tmp_path / f"{input_file_name}.invalid{ext}"
-    assert file_names.schema == tmp_path / schema_file_name
-
-    names_list = [
-        file_names.valid_output,
-        file_names.errors,
-        file_names.valid_lines,
-        file_names.invalid_lines,
-        file_names.schema,
-    ]
-    # all generated names are different
-    assert len(set(names_list)) == len(names_list)
-
-
-@pytest.mark.parametrize(
-    "input_file_name",
-    [
-        pytest.param("data-header.tsv", id="simple-name"),
-        pytest.param("data.with.dots-header.tsv", id="name-with-embedded-dots"),
-        pytest.param("data-normalised.norm.tsv", id="name-resembling-a-previous-suffix"),
-    ],
-)
-def test_generate_qsv_validate_file_names_pass_handles_various_input_file_names(input_file_name: str) -> None:
-    """input_file_name is used verbatim as a prefix for errors_file/valid_lines_file/invalid_lines_file.
-
-    Embedded dots or substrings that resemble other pipeline suffixes are ignored.
-    """
-    tmp_path = Path("tmp")
-    ext = ".tar.gz"
-    cv_args = MagicMock(
-        ext=ext,
-        tmp_dir_path=tmp_path,
-        xsv_file_base_name="some_name",
-        invalid_file_suffix=f"invalid{ext}",
-        valid_file_suffix=f"valid{ext}",
-    )
-
-    file_names = generate_qsv_validate_file_names(cv_args, input_file_name)
-
-    valid_output_file_name = f"some_name-first-pass{VALID_SUFFIX}{ext}"
-    schema_file_name = "some_name-first-pass.jsonschema.json"
 
     assert file_names.valid_output == tmp_path / valid_output_file_name
     assert file_names.errors == tmp_path / f"{input_file_name}{VALIDATION_ERRORS}"
@@ -375,6 +320,19 @@ def test_error_record_from_exception_works_with_arbitrary_exception_types() -> N
 
     assert record.message == "some validation problem"
     assert record.returncode is None
+
+
+def test_error_record_to_rejected_row_pass_formats_rejected_columns() -> None:
+    """to_rejected_row maps table_name, file, and message to the unified _rejected columns."""
+    record = ErrorRecord(file="sub/data.tsv", message="2 out of 2 records invalid.", returncode=1)
+
+    assert record.to_rejected_row("my_table") == {
+        "table_name": "my_table",
+        "source_file": "sub/data.tsv",
+        "line_no": None,
+        "raw_record": None,
+        "error_detail": "2 out of 2 records invalid.",
+    }
 
 
 """CleanerValidatorArgs -- defaults"""

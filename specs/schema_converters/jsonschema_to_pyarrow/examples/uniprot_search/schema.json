@@ -1,0 +1,2384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:jsonschema:searchresult.json",
+  "title": "SearchResult",
+  "$ref": "#/$defs/SearchResult",
+  "$defs": {
+    "SearchResult": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UniProtKBEntry"
+          }
+        },
+        "facets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Facet"
+          }
+        },
+        "matchedFields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TermInfo"
+          }
+        },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Suggestion"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProblemPair"
+          }
+        }
+      }
+    },
+    "UniProtKBEntry": {
+      "type": "object",
+      "properties": {
+        "entryAudit": {
+          "$ref": "#/$defs/EntryAudit"
+        },
+        "organismHosts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OrganismHost"
+          }
+        },
+        "entryType": {
+          "type": "string",
+          "enum": [
+            "UniProtKB reviewed (Swiss-Prot)",
+            "UniProtKB unreviewed (TrEMBL)",
+            "Inactive",
+            "AA",
+            "UNKNOWN"
+          ]
+        },
+        "annotationScore": {
+          "type": "number",
+          "format": "double"
+        },
+        "secondaryAccessions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "proteinDescription": {
+          "$ref": "#/$defs/ProteinDescription"
+        },
+        "uniProtKBCrossReferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UniProtKBCrossReference"
+          }
+        },
+        "genes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Gene"
+          }
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Comment"
+          }
+        },
+        "geneLocations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GeneLocation"
+          }
+        },
+        "keywords": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Keyword"
+          }
+        },
+        "sequence": {
+          "$ref": "#/$defs/Sequence"
+        },
+        "organism": {
+          "$ref": "#/$defs/Organism"
+        },
+        "lineages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaxonomyLineage"
+          }
+        },
+        "proteinExistence": {
+          "type": "string",
+          "enum": [
+            "1: Evidence at protein level",
+            "2: Evidence at transcript level",
+            "3: Inferred from homology",
+            "4: Predicted",
+            "5: Uncertain",
+            "UNKNOWN"
+          ]
+        },
+        "uniProtkbId": {
+          "type": "string"
+        },
+        "primaryAccession": {
+          "type": "string"
+        },
+        "inactiveReason": {
+          "$ref": "#/$defs/EntryInactiveReason"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UniProtKBReference"
+          }
+        },
+        "internalSection": {
+          "$ref": "#/$defs/InternalSection"
+        },
+        "fragment": {
+          "type": "boolean"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UniProtKBFeature"
+          }
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "extraAttributes": {
+          "type": "object",
+          "properties": {
+            "countByCommentType": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "format": "int32"
+              }
+            },
+            "countByFeatureType": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "format": "int32"
+              }
+            },
+            "uniParcId": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "EntryAudit": {
+      "type": "object",
+      "properties": {
+        "sequenceVersion": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "firstPublicDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "lastAnnotationUpdateDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "lastSequenceUpdateDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "entryVersion": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "OrganismHost": {
+      "type": "object",
+      "properties": {
+        "taxonId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "commonName": {
+          "type": "string"
+        },
+        "synonyms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scientificName": {
+          "type": "string"
+        }
+      }
+    },
+    "ProteinDescription": {
+      "type": "object",
+      "properties": {
+        "alternativeNames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProteinName"
+          }
+        },
+        "recommendedName": {
+          "$ref": "#/$defs/ProteinName"
+        },
+        "submissionNames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProteinSubName"
+          }
+        },
+        "includes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProteinSection"
+          }
+        },
+        "allergenName": {
+          "$ref": "#/$defs/Name"
+        },
+        "biotechName": {
+          "$ref": "#/$defs/Name"
+        },
+        "cdAntigenNames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Name"
+          }
+        },
+        "innNames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Name"
+          }
+        },
+        "contains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProteinSection"
+          }
+        },
+        "flag": {
+          "type": "string"
+        }
+      }
+    },
+    "ProteinName": {
+      "type": "object",
+      "properties": {
+        "shortNames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Name"
+          }
+        },
+        "ecNumbers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EC"
+          }
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "fullName": {
+          "$ref": "#/$defs/Name"
+        }
+      }
+    },
+    "Name": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "Evidence": {
+      "type": "object",
+      "properties": {
+        "evidenceCode": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      }
+    },
+    "EC": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "ProteinSubName": {
+      "type": "object",
+      "properties": {
+        "ecNumbers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EC"
+          }
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "fullName": {
+          "$ref": "#/$defs/Name"
+        }
+      }
+    },
+    "ProteinSection": {
+      "type": "object",
+      "properties": {
+        "alternativeNames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProteinName"
+          }
+        },
+        "recommendedName": {
+          "$ref": "#/$defs/ProteinName"
+        },
+        "allergenName": {
+          "$ref": "#/$defs/Name"
+        },
+        "biotechName": {
+          "$ref": "#/$defs/Name"
+        },
+        "cdAntigenNames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Name"
+          }
+        },
+        "innNames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Name"
+          }
+        }
+      }
+    },
+    "UniProtKBCrossReference": {
+      "type": "object",
+      "properties": {
+        "isoformId": {
+          "type": "string"
+        },
+        "database": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Property"
+          }
+        },
+        "id": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "Property": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "Gene": {
+      "type": "object",
+      "properties": {
+        "orderedLocusNames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OrderedLocusName"
+          }
+        },
+        "geneName": {
+          "$ref": "#/$defs/GeneName"
+        },
+        "orfNames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ORFName"
+          }
+        },
+        "synonyms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GeneNameSynonym"
+          }
+        }
+      }
+    },
+    "OrderedLocusName": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "GeneName": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "ORFName": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "GeneNameSynonym": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "Comment": {
+      "type": "object",
+      "properties": {
+        "commentType": {
+          "type": "string",
+          "enum": [
+            "FUNCTION",
+            "CATALYTIC ACTIVITY",
+            "COFACTOR",
+            "ACTIVITY REGULATION",
+            "BIOPHYSICOCHEMICAL PROPERTIES",
+            "PATHWAY",
+            "SUBUNIT",
+            "INTERACTION",
+            "SUBCELLULAR LOCATION",
+            "ALTERNATIVE PRODUCTS",
+            "TISSUE SPECIFICITY",
+            "DEVELOPMENTAL STAGE",
+            "INDUCTION",
+            "DOMAIN",
+            "PTM",
+            "RNA EDITING",
+            "MASS SPECTROMETRY",
+            "POLYMORPHISM",
+            "DISEASE",
+            "DISRUPTION PHENOTYPE",
+            "ALLERGEN",
+            "TOXIC DOSE",
+            "BIOTECHNOLOGY",
+            "PHARMACEUTICAL",
+            "MISCELLANEOUS",
+            "SIMILARITY",
+            "CAUTION",
+            "SEQUENCE CAUTION",
+            "WEB RESOURCE",
+            "UNKOWN"
+          ]
+        }
+      },
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AlternativeProductsComment"
+        },
+        {
+          "$ref": "#/$defs/BPCPComment"
+        },
+        {
+          "$ref": "#/$defs/CatalyticActivityComment"
+        },
+        {
+          "$ref": "#/$defs/CofactorComment"
+        },
+        {
+          "$ref": "#/$defs/DiseaseComment"
+        },
+        {
+          "$ref": "#/$defs/FreeTextComment"
+        },
+        {
+          "$ref": "#/$defs/InteractionComment"
+        },
+        {
+          "$ref": "#/$defs/MassSpectrometryComment"
+        },
+        {
+          "$ref": "#/$defs/RnaEditingComment"
+        },
+        {
+          "$ref": "#/$defs/SequenceCautionComment"
+        },
+        {
+          "$ref": "#/$defs/SubcellularLocationComment"
+        },
+        {
+          "$ref": "#/$defs/WebResourceComment"
+        }
+      ]
+    },
+    "AlternativeProductsComment": {
+      "type": "object",
+      "properties": {
+        "isoforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/APIsoform"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "Alternative promoter usage",
+              "Alternative splicing",
+              "Alternative initiation",
+              "Ribosomal frameshifting"
+            ]
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "APIsoform": {
+      "type": "object",
+      "properties": {
+        "isoformIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sequenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "isoformSequenceStatus": {
+          "type": "string",
+          "enum": [
+            "Displayed",
+            "External",
+            "Not described",
+            "Described"
+          ]
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        },
+        "synonyms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IsoformName"
+          }
+        },
+        "name": {
+          "$ref": "#/$defs/IsoformName"
+        }
+      }
+    },
+    "Note": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "texts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidencedValue"
+          }
+        }
+      }
+    },
+    "EvidencedValue": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "IsoformName": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "BPCPComment": {
+      "type": "object",
+      "properties": {
+        "kineticParameters": {
+          "$ref": "#/$defs/KineticParameters"
+        },
+        "absorption": {
+          "$ref": "#/$defs/Absorption"
+        },
+        "phDependence": {
+          "$ref": "#/$defs/PhDependence"
+        },
+        "redoxPotential": {
+          "$ref": "#/$defs/RedoxPotential"
+        },
+        "temperatureDependence": {
+          "$ref": "#/$defs/TemperatureDependence"
+        },
+        "molecule": {
+          "type": "string"
+        }
+      }
+    },
+    "KineticParameters": {
+      "type": "object",
+      "properties": {
+        "maximumVelocities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MaximumVelocity"
+          }
+        },
+        "michaelisConstants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MichaelisConstant"
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "MaximumVelocity": {
+      "type": "object",
+      "properties": {
+        "unit": {
+          "type": "string"
+        },
+        "enzyme": {
+          "type": "string"
+        },
+        "velocity": {
+          "type": "number",
+          "format": "double"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "MichaelisConstant": {
+      "type": "object",
+      "properties": {
+        "constant": {
+          "type": "number",
+          "format": "double"
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "M",
+            "mM",
+            "uM",
+            "nM",
+            "mg/mL",
+            "mg/ml"
+          ]
+        },
+        "substrate": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "Absorption": {
+      "type": "object",
+      "properties": {
+        "approximate": {
+          "type": "boolean"
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        },
+        "max": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "PhDependence": {
+      "type": "object",
+      "properties": {
+        "texts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidencedValue"
+          }
+        }
+      }
+    },
+    "RedoxPotential": {
+      "type": "object",
+      "properties": {
+        "texts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidencedValue"
+          }
+        }
+      }
+    },
+    "TemperatureDependence": {
+      "type": "object",
+      "properties": {
+        "texts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidencedValue"
+          }
+        }
+      }
+    },
+    "CatalyticActivityComment": {
+      "type": "object",
+      "properties": {
+        "physiologicalReactions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysiologicalReaction"
+          }
+        },
+        "reaction": {
+          "$ref": "#/$defs/Reaction"
+        },
+        "molecule": {
+          "type": "string"
+        }
+      }
+    },
+    "PhysiologicalReaction": {
+      "type": "object",
+      "properties": {
+        "reactionCrossReference": {
+          "$ref": "#/$defs/CrossReferenceReactionDatabase"
+        },
+        "directionType": {
+          "type": "string",
+          "enum": [
+            "left-to-right",
+            "right-to-left"
+          ]
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "CrossReferenceReactionDatabase": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "string",
+          "enum": [
+            "ChEBI",
+            "Rhea"
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Property"
+          }
+        },
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "Reaction": {
+      "type": "object",
+      "properties": {
+        "reactionCrossReferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CrossReferenceReactionDatabase"
+          }
+        },
+        "ecNumber": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "CofactorComment": {
+      "type": "object",
+      "properties": {
+        "cofactors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Cofactor"
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "molecule": {
+          "type": "string"
+        }
+      }
+    },
+    "Cofactor": {
+      "type": "object",
+      "properties": {
+        "cofactorCrossReference": {
+          "$ref": "#/$defs/CrossReferenceCofactorDatabase"
+        },
+        "name": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "CrossReferenceCofactorDatabase": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "string",
+          "enum": [
+            "ChEBI",
+            ""
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Property"
+          }
+        },
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "DiseaseComment": {
+      "type": "object",
+      "properties": {
+        "disease": {
+          "$ref": "#/$defs/Disease"
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        },
+        "molecule": {
+          "type": "string"
+        }
+      }
+    },
+    "Disease": {
+      "type": "object",
+      "properties": {
+        "diseaseAccession": {
+          "type": "string"
+        },
+        "diseaseCrossReference": {
+          "$ref": "#/$defs/CrossReferenceDiseaseDatabase"
+        },
+        "diseaseId": {
+          "type": "string"
+        },
+        "acronym": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "CrossReferenceDiseaseDatabase": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "string",
+          "enum": [
+            "MIM",
+            ""
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Property"
+          }
+        },
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "FreeTextComment": {
+      "type": "object",
+      "properties": {
+        "texts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidencedValue"
+          }
+        },
+        "molecule": {
+          "type": "string"
+        }
+      }
+    },
+    "InteractionComment": {
+      "type": "object",
+      "properties": {
+        "interactions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Interaction"
+          }
+        }
+      }
+    },
+    "Interaction": {
+      "type": "object",
+      "properties": {
+        "numberOfExperiments": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "interactantOne": {
+          "$ref": "#/$defs/Interactant"
+        },
+        "organismDiffer": {
+          "type": "boolean"
+        },
+        "interactantTwo": {
+          "$ref": "#/$defs/Interactant"
+        }
+      }
+    },
+    "Interactant": {
+      "type": "object",
+      "properties": {
+        "geneName": {
+          "type": "string"
+        },
+        "chainId": {
+          "type": "string"
+        },
+        "intActId": {
+          "type": "string"
+        },
+        "uniProtKBAccession": {
+          "type": "string"
+        }
+      }
+    },
+    "MassSpectrometryComment": {
+      "type": "object",
+      "properties": {
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        },
+        "molWeight": {
+          "type": "number",
+          "format": "float"
+        },
+        "molWeightError": {
+          "type": "number",
+          "format": "float"
+        },
+        "note": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "Electrospray",
+            "FAB",
+            "LSI",
+            "MALDI",
+            "Plasma desorption",
+            "SELDI",
+            "API",
+            "Unknown"
+          ]
+        },
+        "molecule": {
+          "type": "string"
+        }
+      }
+    },
+    "RnaEditingComment": {
+      "type": "object",
+      "properties": {
+        "positions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RnaEdPosition"
+          }
+        },
+        "locationType": {
+          "type": "string",
+          "enum": [
+            "Not_applicable",
+            "Undetermined",
+            "Unknown",
+            "Known"
+          ]
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        },
+        "molecule": {
+          "type": "string"
+        }
+      }
+    },
+    "RnaEdPosition": {
+      "type": "object",
+      "properties": {
+        "position": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "SequenceCautionComment": {
+      "type": "object",
+      "properties": {
+        "sequenceCautionType": {
+          "type": "string",
+          "enum": [
+            "Frameshift",
+            "Erroneous initiation",
+            "Erroneous termination",
+            "Erroneous gene model prediction",
+            "Erroneous translation",
+            "Miscellaneous discrepancy",
+            "unknown"
+          ]
+        },
+        "note": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        },
+        "molecule": {
+          "type": "string"
+        }
+      }
+    },
+    "SubcellularLocationComment": {
+      "type": "object",
+      "properties": {
+        "subcellularLocations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SubcellularLocation"
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        },
+        "molecule": {
+          "type": "string"
+        }
+      }
+    },
+    "SubcellularLocation": {
+      "type": "object",
+      "properties": {
+        "topology": {
+          "$ref": "#/$defs/SubcellularLocationValue"
+        },
+        "orientation": {
+          "$ref": "#/$defs/SubcellularLocationValue"
+        },
+        "location": {
+          "$ref": "#/$defs/SubcellularLocationValue"
+        }
+      }
+    },
+    "SubcellularLocationValue": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "WebResourceComment": {
+      "type": "object",
+      "properties": {
+        "resourceUrl": {
+          "type": "string"
+        },
+        "ftp": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string"
+        },
+        "resourceName": {
+          "type": "string"
+        },
+        "molecule": {
+          "type": "string"
+        }
+      }
+    },
+    "GeneLocation": {
+      "type": "object",
+      "properties": {
+        "geneEncodingType": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "Hydrogenosome",
+            "Mitochondrion",
+            "Nucleomorph",
+            "Plasmid",
+            "Plastid",
+            "Apicoplast",
+            "Chloroplast",
+            "Cyanelle",
+            "Non-photosynthetic plastid",
+            "Organellar chromatophore"
+          ]
+        },
+        "value": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "Keyword": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": [
+            "Biological process",
+            "Cellular component",
+            "Coding sequence diversity",
+            "Developmental stage",
+            "Disease",
+            "Domain",
+            "Ligand",
+            "Molecular function",
+            "PTM",
+            "Technical term",
+            "Unknown"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "Sequence": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "xml": {
+            "attribute": true
+          }
+        },
+        "ref": {
+          "type": "string",
+          "xml": {
+            "attribute": true
+          }
+        },
+        "value": {
+          "type": "string"
+        },
+        "length": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "molWeight": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "crc64": {
+          "type": "string"
+        },
+        "md5": {
+          "type": "string"
+        }
+      }
+    },
+    "Organism": {
+      "type": "object",
+      "properties": {
+        "lineages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "taxonId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "commonName": {
+          "type": "string"
+        },
+        "synonyms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scientificName": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        },
+        "lineage": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "TaxonomyLineage": {
+      "type": "object",
+      "properties": {
+        "rank": {
+          "type": "string",
+          "enum": [
+            "strain",
+            "serotype",
+            "series",
+            "morph",
+            "biotype",
+            "clade",
+            "genotype",
+            "isolate",
+            "forma specialis",
+            "pathogroup",
+            "serogroup",
+            "section",
+            "subsection",
+            "forma",
+            "varietas",
+            "subspecies",
+            "species",
+            "species subgroup",
+            "species group",
+            "subgenus",
+            "genus",
+            "subtribe",
+            "tribe",
+            "subfamily",
+            "family",
+            "superfamily",
+            "parvorder",
+            "infraorder",
+            "suborder",
+            "order",
+            "superorder",
+            "subcohort",
+            "cohort",
+            "infraclass",
+            "subclass",
+            "class",
+            "superclass",
+            "subphylum",
+            "phylum",
+            "superphylum",
+            "subkingdom",
+            "kingdom",
+            "superkingdom",
+            "realm",
+            "domain",
+            "subvariety",
+            "acellular root",
+            "cellular root",
+            "no rank"
+          ]
+        },
+        "taxonId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "commonName": {
+          "type": "string"
+        },
+        "synonyms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scientificName": {
+          "type": "string"
+        }
+      }
+    },
+    "EntryInactiveReason": {
+      "type": "object",
+      "properties": {
+        "deletedReason": {
+          "type": "string",
+          "enum": [
+            "",
+            "Undefined",
+            "Deleted from sequence source (EMBL)",
+            "Deleted from sequence source (TAIR)",
+            "Deleted from sequence source (SGD)",
+            "Deleted from sequence source (ENSEMBL)",
+            "Deleted from sequence source (PDB)",
+            "Deleted from sequence source (RefSeq)",
+            "Deleted from Swiss-Prot",
+            "Redundant sequence",
+            "Not part of a reference proteome",
+            "Excluded proteome",
+            "Over-represented sequence",
+            "Not part of a reference proteome"
+          ]
+        },
+        "inactiveReasonType": {
+          "type": "string",
+          "enum": [
+            "DELETED",
+            "MERGED",
+            "DEMERGED"
+          ]
+        },
+        "mergeDemergeTos": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "UniProtKBReference": {
+      "type": "object",
+      "properties": {
+        "referenceComments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReferenceComment"
+          }
+        },
+        "referenceNumber": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "referencePositions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "citation": {
+          "$ref": "#/$defs/Citation"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "ReferenceComment": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "STRAIN",
+            "PLASMID",
+            "TRANSPOSON",
+            "TISSUE"
+          ]
+        },
+        "value": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "Citation": {
+      "type": "object",
+      "properties": {
+        "citationType": {
+          "type": "string",
+          "enum": [
+            "journal article",
+            "book",
+            "online journal article",
+            "patent",
+            "submission",
+            "thesis",
+            "UniProt indexed literatures",
+            "unpublished observations"
+          ]
+        },
+        "citationCrossReferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CrossReferenceCitationDatabase"
+          }
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "publicationDate": {
+          "type": "string"
+        },
+        "authoringGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "authoringGroup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/Book"
+        },
+        {
+          "$ref": "#/$defs/ElectronicArticle"
+        },
+        {
+          "$ref": "#/$defs/JournalArticle"
+        },
+        {
+          "$ref": "#/$defs/Literature"
+        },
+        {
+          "$ref": "#/$defs/Patent"
+        },
+        {
+          "$ref": "#/$defs/Submission"
+        },
+        {
+          "$ref": "#/$defs/Thesis"
+        }
+      ]
+    },
+    "CrossReferenceCitationDatabase": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "string",
+          "enum": [
+            "PubMed",
+            "DOI",
+            "AGRICOLA"
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Property"
+          }
+        },
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "Book": {
+      "type": "object",
+      "properties": {
+        "firstPage": {
+          "type": "string"
+        },
+        "lastPage": {
+          "type": "string"
+        },
+        "volume": {
+          "type": "string"
+        },
+        "publisher": {
+          "type": "string"
+        },
+        "bookName": {
+          "type": "string"
+        },
+        "editors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "address": {
+          "type": "string"
+        },
+        "citationCrossReferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CrossReferenceCitationDatabase"
+          }
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "publicationDate": {
+          "type": "string"
+        },
+        "authoringGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "authoringGroup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ElectronicArticle": {
+      "type": "object",
+      "properties": {
+        "journal": {
+          "type": "string"
+        },
+        "locator": {
+          "type": "string"
+        },
+        "citationCrossReferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CrossReferenceCitationDatabase"
+          }
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "publicationDate": {
+          "type": "string"
+        },
+        "authoringGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "authoringGroup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "JournalArticle": {
+      "type": "object",
+      "properties": {
+        "journal": {
+          "type": "string"
+        },
+        "firstPage": {
+          "type": "string"
+        },
+        "lastPage": {
+          "type": "string"
+        },
+        "volume": {
+          "type": "string"
+        },
+        "citationCrossReferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CrossReferenceCitationDatabase"
+          }
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "publicationDate": {
+          "type": "string"
+        },
+        "authoringGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "authoringGroup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Literature": {
+      "type": "object",
+      "properties": {
+        "literatureAbstract": {
+          "type": "string"
+        },
+        "completeAuthorList": {
+          "type": "boolean"
+        },
+        "pubmedId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "doiId": {
+          "type": "string"
+        },
+        "journal": {
+          "type": "string"
+        },
+        "firstPage": {
+          "type": "string"
+        },
+        "lastPage": {
+          "type": "string"
+        },
+        "volume": {
+          "type": "string"
+        },
+        "citationCrossReferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CrossReferenceCitationDatabase"
+          }
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "publicationDate": {
+          "type": "string"
+        },
+        "authoringGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "Patent": {
+      "type": "object",
+      "properties": {
+        "patentNumber": {
+          "type": "string"
+        },
+        "citationCrossReferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CrossReferenceCitationDatabase"
+          }
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "publicationDate": {
+          "type": "string"
+        },
+        "authoringGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "authoringGroup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Submission": {
+      "type": "object",
+      "properties": {
+        "submissionDatabase": {
+          "type": "string",
+          "enum": [
+            "PDB data bank",
+            "PIR data bank",
+            "Swiss-Prot",
+            "UniProtKB",
+            "EMBL/GenBank/DDBJ databases"
+          ]
+        },
+        "citationCrossReferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CrossReferenceCitationDatabase"
+          }
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "publicationDate": {
+          "type": "string"
+        },
+        "authoringGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "authoringGroup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Thesis": {
+      "type": "object",
+      "properties": {
+        "institute": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "citationCrossReferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CrossReferenceCitationDatabase"
+          }
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "publicationDate": {
+          "type": "string"
+        },
+        "authoringGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "authoringGroup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "InternalSection": {
+      "type": "object",
+      "properties": {
+        "internalLines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InternalLine"
+          }
+        },
+        "sourceLines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceLine"
+          }
+        },
+        "evidenceLines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidenceLine"
+          }
+        }
+      }
+    },
+    "InternalLine": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "CL",
+            "CP",
+            "CX",
+            "DR",
+            "DG",
+            "GO",
+            "EV",
+            "HA",
+            "HR",
+            "HW",
+            "HU",
+            "HP",
+            "ID",
+            "IS",
+            "NI",
+            "PM",
+            "SO",
+            "YY",
+            "ZA",
+            "ZB",
+            "ZC",
+            "ZR",
+            "ZZ",
+            "ET",
+            "PE",
+            "RU",
+            "TX",
+            "PROSITE",
+            "UP",
+            "ZD"
+          ]
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "SourceLine": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "EvidenceLine": {
+      "type": "object",
+      "properties": {
+        "evidence": {
+          "type": "string"
+        },
+        "createDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "curator": {
+          "type": "string"
+        }
+      }
+    },
+    "UniProtKBFeature": {
+      "type": "object",
+      "properties": {
+        "alternativeSequence": {
+          "$ref": "#/$defs/AlternativeSequence"
+        },
+        "featureId": {
+          "type": "string"
+        },
+        "ligand": {
+          "$ref": "#/$defs/Ligand"
+        },
+        "ligandPart": {
+          "$ref": "#/$defs/LigandPart"
+        },
+        "featureCrossReferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CrossReferenceUniprotKBFeatureDatabase"
+          }
+        },
+        "location": {
+          "$ref": "#/$defs/FeatureLocation"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "Initiator methionine",
+            "Signal",
+            "Propeptide",
+            "Transit peptide",
+            "Chain",
+            "Peptide",
+            "Topological domain",
+            "Transmembrane",
+            "Intramembrane",
+            "Domain",
+            "Repeat",
+            "Calcium binding",
+            "Zinc finger",
+            "DNA binding",
+            "Nucleotide binding",
+            "Region",
+            "Coiled coil",
+            "Motif",
+            "Compositional bias",
+            "Active site",
+            "Metal binding",
+            "Binding site",
+            "Site",
+            "Non-standard residue",
+            "Modified residue",
+            "Lipidation",
+            "Glycosylation",
+            "Disulfide bond",
+            "Cross-link",
+            "Alternative sequence",
+            "Natural variant",
+            "Mutagenesis",
+            "Sequence uncertainty",
+            "Sequence conflict",
+            "Non-adjacent residues",
+            "Non-terminal residue",
+            "Helix",
+            "Turn",
+            "Beta strand"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "evidences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      }
+    },
+    "AlternativeSequence": {
+      "type": "object",
+      "properties": {
+        "originalSequence": {
+          "type": "string"
+        },
+        "alternativeSequences": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Ligand": {
+      "type": "object",
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      }
+    },
+    "LigandPart": {
+      "type": "object",
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      }
+    },
+    "CrossReferenceUniprotKBFeatureDatabase": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "string",
+          "enum": [
+            "dbSNP",
+            "ChEBI"
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Property"
+          }
+        },
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "FeatureLocation": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/Position"
+        },
+        "end": {
+          "$ref": "#/$defs/Position"
+        },
+        "sequence": {
+          "type": "string"
+        }
+      }
+    },
+    "Position": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "modifier": {
+          "type": "string",
+          "enum": [
+            "EXACT",
+            "OUTSIDE",
+            "UNKNOWN",
+            "UNSURE"
+          ]
+        }
+      }
+    },
+    "Facet": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "allowMultipleSelection": {
+          "type": "boolean"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FacetItem"
+          }
+        }
+      }
+    },
+    "FacetItem": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "TermInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "hits": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "Suggestion": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "hits": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "ProblemPair": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,13 +1,15 @@
 """End-to-end JSON Schema ingestion tests using real filesystem destinations."""
 
-import gzip
 import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
+from cdm_data_loaders.core.fields import PARQUET
 from cdm_data_loaders.pipelines.jsonlines.settings import JSONSCHEMA_PIPELINE_NAME, JsonlJsonschemaIngestSettings
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
@@ -17,11 +19,26 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     parse_json_string,
     read_data_rows,
 )
+from tests.helpers import settings_to_argv
 
 pytestmark = pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS, ids=str)
 
 WIDGET_RECORD = {"widget_id": "a", "count": 0, "nested": {"tags": ["one", "two"]}}
 GADGET_RECORD = {"widget_id": "g", "count": 3}
+EXPECTED_WIDGET_ROW = {
+    "widget_id": "a",
+    "count": 0,
+    "collected": None,
+    "label": None,
+    "nested": {"tags": ["one", "two"]},
+}
+EXPECTED_GADGET_ROW = {
+    "widget_id": "g",
+    "count": 3,
+    "collected": None,
+    "label": None,
+    "nested": None,
+}
 TYPE_ERROR_RAW = '{"widget_id":"bad", "count":"2"}'
 FORMAT_ERROR_RAW = '{"widget_id":"bad","count":1,"collected":"2023-02-29"}'
 MALFORMED_RAW = "{broken"
@@ -29,7 +46,7 @@ PARSE_ERROR = "Expecting property name enclosed in double quotes: line 1 column 
 
 
 @pytest.fixture
-def schema_input_dir(tmp_path: Path) -> Path:
+def schema_input_dir(tmp_path: Path, write_gzip_file: Callable[[Path, str, str], Path]) -> Path:
     """Create two entities containing plain, compressed, valid, and invalid inputs."""
     input_dir = tmp_path / "input"
     widget_dir = input_dir / "widget"
@@ -38,8 +55,7 @@ def schema_input_dir(tmp_path: Path) -> Path:
     (widget_dir / "plain.jsonl").write_text(
         f"\n{widget_line}\n{MALFORMED_RAW}\n{TYPE_ERROR_RAW}\n{widget_line}", encoding="utf-8"
     )
-    with gzip.open(widget_dir / "compressed.jsonl.gz", "wt", encoding="utf-8") as stream:
-        stream.write(f"{widget_line}\n{FORMAT_ERROR_RAW}\nnull")
+    write_gzip_file(widget_dir, "compressed.jsonl.gz", f"{widget_line}\n{FORMAT_ERROR_RAW}\nnull")
     (widget_dir / "ignored.txt").write_text(MALFORMED_RAW, encoding="utf-8")
     gadget_dir = input_dir / "gadget"
     gadget_dir.mkdir()
@@ -68,29 +84,53 @@ def test_run_jsonlines_pipeline_pass_persists_valid_and_rejected_rows(
     load_info = assert_run_ok(pipeline_runner.run(JSONSCHEMA_PIPELINE_NAME, settings=settings))
     assert load_info.pipeline.pipeline_name == JSONSCHEMA_PIPELINE_NAME
     assert load_info.dataset_name == "schema_test"
-    assert_pipeline_report_written(Path(settings.output_dir), load_info, metadata_moved=True)
+    assert_pipeline_report_written(
+        Path(settings.output_dir),
+        load_info,
+        metadata_moved=True,
+        ingested_files={"widget/plain.jsonl", "widget/compressed.jsonl.gz", "gadget/records.jsonl"},
+    )
     tables = read_data_tables(settings, load_info.dataset_name)
-    assert set(tables) == {"widget", "widget_rejected", "gadget"}
+    assert set(tables) == {"widget", "_rejected", "gadget"}
     assert [{key: parse_json_string(value) for key, value in row.items()} for row in tables["widget"]] == [
-        WIDGET_RECORD
+        EXPECTED_WIDGET_ROW
     ] * 3
-    assert tables["gadget"] == [GADGET_RECORD]
-    assert sorted(tables["widget_rejected"], key=lambda row: (row["source_file"], row["line_no"])) == [
+    assert tables["gadget"] == [EXPECTED_GADGET_ROW]
+    if loader_file_format == PARQUET:
+        widget_parquet = next((Path(settings.output_dir) / load_info.dataset_name / "widget").glob("*.parquet"))
+        parquet_schema = pq.read_schema(widget_parquet)
+        assert parquet_schema.field("widget_id").type == pa.string()
+        assert parquet_schema.field("count").type == pa.int64()
+        assert parquet_schema.field("collected").type == pa.date32()
+        assert parquet_schema.field("label").type == pa.string()
+        assert parquet_schema.field("nested").type == pa.struct(
+            [pa.field("tags", pa.list_(pa.field("element", pa.string(), nullable=False)))]
+        )
+    assert sorted(tables["_rejected"], key=lambda row: (row["source_file"], row["line_no"])) == [
         {
-            "source_file": "compressed.jsonl.gz",
+            "table_name": "widget",
+            "source_file": "widget/compressed.jsonl.gz",
             "line_no": 2,
             "raw_record": FORMAT_ERROR_RAW,
             "error_detail": json.dumps(["'2023-02-29' is not a 'date'"]),
         },
         {
-            "source_file": "compressed.jsonl.gz",
+            "table_name": "widget",
+            "source_file": "widget/compressed.jsonl.gz",
             "line_no": 3,
             "raw_record": "null",
             "error_detail": json.dumps(["None is not of type 'object'"]),
         },
-        {"source_file": "plain.jsonl", "line_no": 3, "raw_record": MALFORMED_RAW, "error_detail": PARSE_ERROR},
         {
-            "source_file": "plain.jsonl",
+            "table_name": "widget",
+            "source_file": "widget/plain.jsonl",
+            "line_no": 3,
+            "raw_record": MALFORMED_RAW,
+            "error_detail": PARSE_ERROR,
+        },
+        {
+            "table_name": "widget",
+            "source_file": "widget/plain.jsonl",
             "line_no": 4,
             "raw_record": TYPE_ERROR_RAW,
             "error_detail": json.dumps(["'2' is not of type 'integer'"]),
@@ -110,12 +150,25 @@ def test_run_jsonlines_pipeline_pass_all_invalid(
     (table_dir / "invalid.jsonl").write_text(f"{MALFORMED_RAW}\n{TYPE_ERROR_RAW}", encoding="utf-8")
 
     load_info = assert_run_ok(pipeline_runner.run(JSONSCHEMA_PIPELINE_NAME, settings=settings))
-    assert_pipeline_report_written(Path(settings.output_dir), load_info, metadata_moved=True)
-    assert read_data_tables(settings, load_info.dataset_name) == {
-        "widget_rejected": [
-            {"source_file": "invalid.jsonl", "line_no": 1, "raw_record": MALFORMED_RAW, "error_detail": PARSE_ERROR},
+    assert_pipeline_report_written(
+        Path(settings.output_dir), load_info, metadata_moved=True, ingested_files=["widget/invalid.jsonl"]
+    )
+    reject_row_data = read_data_tables(settings, load_info.dataset_name)
+    reject_row_data["_rejected"] = sorted(
+        reject_row_data["_rejected"], key=lambda row: (row["source_file"], row["line_no"])
+    )
+    assert reject_row_data == {
+        "_rejected": [
             {
-                "source_file": "invalid.jsonl",
+                "table_name": "widget",
+                "source_file": "widget/invalid.jsonl",
+                "line_no": 1,
+                "raw_record": MALFORMED_RAW,
+                "error_detail": PARSE_ERROR,
+            },
+            {
+                "table_name": "widget",
+                "source_file": "widget/invalid.jsonl",
                 "line_no": 2,
                 "raw_record": TYPE_ERROR_RAW,
                 "error_detail": json.dumps(["'2' is not of type 'integer'"]),
@@ -127,37 +180,31 @@ def test_run_jsonlines_pipeline_pass_all_invalid(
 def test_cli_pass_loads_selected_entity(
     schema_input_dir: Path,
     schema_settings_factory: Callable[..., JsonlJsonschemaIngestSettings],
+    entity_schemas_factory: Callable[[object], str],
+    widget_schema: dict[str, Any],
     loader_file_format: str,
     pipeline_runner: PipelineTestRunner,
 ) -> None:
-    """The real CTS CLI accepts a registry shortcut, table selection, and the requested file format."""
-    settings = schema_settings_factory(input_dir=str(schema_input_dir), loader_file_format=loader_file_format)
+    """The real CTS CLI accepts a registry shortcut and the requested file format."""
+    settings = schema_settings_factory(
+        input_dir=str(schema_input_dir),
+        loader_file_format=loader_file_format,
+        dataset_name="schema_cli",
+        entity_schemas=entity_schemas_factory({"gadget": widget_schema}),
+    )
 
     load_info = assert_run_ok(
         pipeline_runner.run(
             JSONSCHEMA_PIPELINE_NAME,
             cli_args=[
-                "--input-dir",
-                str(settings.input_dir),
-                "--output-dir",
-                str(settings.output_dir),
-                "--log-config-file",
-                str(settings.log_config_file),
-                "--use-destination",
-                str(settings.use_destination),
-                "--use-output-dir-for-pipeline-metadata",
-                "true",
-                "--loader-file-format",
-                loader_file_format,
-                "--dataset-name",
-                "schema_cli",
+                *settings_to_argv(settings, exclude=["entity_schemas"]),
                 "-m",
-                settings.schema_files_module,
-                "--table-names",
-                "gadget",
+                settings.entity_schemas,
             ],
         )
     )
     assert load_info.dataset_name == "schema_cli"
-    assert_pipeline_report_written(Path(settings.output_dir), load_info, metadata_moved=True)
-    assert read_data_tables(settings, load_info.dataset_name) == {"gadget": [GADGET_RECORD]}
+    assert_pipeline_report_written(
+        Path(settings.output_dir), load_info, metadata_moved=True, ingested_files=["gadget/records.jsonl"]
+    )
+    assert read_data_tables(settings, load_info.dataset_name) == {"gadget": [EXPECTED_GADGET_ROW]}

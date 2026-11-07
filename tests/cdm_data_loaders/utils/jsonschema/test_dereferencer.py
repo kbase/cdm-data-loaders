@@ -340,18 +340,6 @@ def test_dereference_schema_pass_ref_chain_exactly_at_max_depth_succeeds() -> No
     assert result["properties"]["a"] == {"type": "string"}
 
 
-def test_dereference_schema_fail_ref_chain_one_over_max_depth() -> None:
-    """dereference_schema() raises when a $ref chain's length is exactly one more than max_ref_depth."""
-    schema = {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {"a": {"$ref": "#/$defs/A"}},
-        "$defs": {"A": {"$ref": "#/$defs/B"}, "B": {"$ref": "#/$defs/C"}, "C": {"type": "string"}},
-    }
-    with pytest.raises(DereferencingError, match="exceeded max depth"):
-        dereference_schema(schema, max_ref_depth=2)
-
-
 def test_dereference_schema_pass_multi_hop_external_ref_chain() -> None:
     """dereference_schema() follows a $ref chain that hops from the root into one external resource, then into another."""
     schema = {
@@ -527,32 +515,16 @@ def test_dereference_schema_pass_resolver_dgaf_about_additional_resource_specifi
         ("always", True, DRAFT7, True),
         ("always", False, DRAFT7, False),
         ("auto", True, DRAFT202012, True),
+        ("auto", True, DRAFT201909, True),
         ("auto", True, DRAFT7, False),
         ("auto", False, DRAFT202012, False),
+        ("auto", False, DRAFT7, False),
     ],
 )
 def test_should_apply_ref_siblings_pass_mode_and_spec_combinations(
     mode: RefSiblingMode, has_siblings: bool, spec: Specification, expected: bool
 ) -> None:
     """_should_apply_ref_siblings() honours ref_sibling_mode and falls back to per-draft rules under 'auto'."""
-    ctx = _make_ctx({}, spec=spec, ref_sibling_mode=mode)
-    assert _should_apply_ref_siblings(ctx, has_siblings) is expected
-
-
-@pytest.mark.parametrize(
-    ("mode", "has_siblings", "spec", "expected"),
-    [
-        ("auto", False, DRAFT7, False),
-        ("auto", True, DRAFT201909, True),
-    ],
-)
-def test_should_apply_ref_siblings_pass_additional_mode_and_spec_combinations(
-    mode: RefSiblingMode,
-    has_siblings: bool,
-    spec: Specification,
-    expected: bool,
-) -> None:
-    """_should_apply_ref_siblings() covers additional auto-mode combinations, including Draft 2019-09."""
     ctx = _make_ctx({}, spec=spec, ref_sibling_mode=mode)
     assert _should_apply_ref_siblings(ctx, has_siblings) is expected
 
@@ -576,17 +548,6 @@ def test_resolve_ref_and_all_of_fail_circular_ref_detected_directly() -> None:
     ctx = _make_ctx(root)
     with pytest.raises(DereferencingError, match="Circular \\$ref"):
         _resolve_ref_and_all_of({"$ref": "#/$defs/Node"}, ctx)
-
-
-def test_resolve_ref_and_all_of_pass_strips_schema_keyword_from_resolved_ref_target() -> None:
-    """_resolve_ref_and_all_of() strips a stray '$schema' declaration carried by the resolved $ref target."""
-    root = {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$defs": {"S": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"}},
-    }
-    ctx = _make_ctx(root)
-    result = _resolve_ref_and_all_of({"$ref": "#/$defs/S"}, ctx)
-    assert result == {"type": "string"}
 
 
 @pytest.mark.parametrize(

@@ -1,9 +1,11 @@
 """Shared fixtures for ncbi_ftp tests."""
 
-from pathlib import PurePosixPath
+import hashlib
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import botocore.client
 import pytest
 
 import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
@@ -64,3 +66,44 @@ def manifest_transfer_mocks(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     monkeypatch.setattr(manifest_mod, "list_objects", mock_list)
 
     return SimpleNamespace(retrieve=mock_retrieve, list=mock_list)
+
+
+def md5_hex(data: bytes) -> str:
+    """Return the hex-encoded MD5 digest of *data*."""
+    return hashlib.md5(data).hexdigest()  # noqa: S324
+
+
+def write_manifest(tmp_path: Path, accessions: list[str], name: str = "manifest.txt") -> Path:
+    """Write a manifest file (one accession per line)."""
+    path = tmp_path / name
+    path.write_text("\n".join(accessions) + "\n")
+    return path
+
+
+def stage_files_with_sidecars(
+    s3: botocore.client.BaseClient,
+    staging_base: PurePosixPath,
+    files: dict[PurePosixPath, bytes],
+    *,
+    bucket: PurePosixPath = TEST_BUCKET,
+    with_md5: bool = True,
+    with_crc64: bool = False,
+) -> list[PurePosixPath]:
+    """Stage files at *staging_base*, optionally adding .md5 / .crc64nvme sidecars.
+
+    Returns list of all staged keys (data files only, not sidecars).
+    """
+    keys: list[PurePosixPath] = []
+    for fname, content in files.items():
+        key: PurePosixPath = staging_base / fname
+        s3.put_object(Bucket=str(bucket), Key=str(key), Body=content)
+        keys.append(key)
+        if with_md5:
+            s3.put_object(
+                Bucket=str(bucket),
+                Key=str(key.with_name(f"{key.name}.md5")),
+                Body=md5_hex(content).encode(),
+            )
+        if with_crc64:
+            s3.put_object(Bucket=str(bucket), Key=str(key.with_name(f"{key.name}.crc64nvme")), Body=b"fake-crc")
+    return keys

@@ -1,0 +1,15 @@
+title: Sequences, Sets, Variadic Tuples, and Fixed-Length Positional Tuples
+rules:
+  - R-SHAPE-SEQUENCE
+  - R-SHAPE-TUPLE
+  - R-NULL-ITEMS
+  - R-COERCE-TUPLE
+  - R-COERCE-SET
+schema: schema.py
+expected_schema: expected_schema.py
+runs:
+  - id: maximal
+    data: data.json
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_count: 2

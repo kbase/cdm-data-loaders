@@ -1,6 +1,5 @@
 """Exact checks for the normalization used by JSONL reference comparisons."""
 
-from collections.abc import Callable
 from copy import deepcopy
 from datetime import UTC, date, datetime
 from typing import Any
@@ -9,16 +8,12 @@ import duckdb
 import pytest
 
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.jsonlines_reference_helpers import (
-    canonicalize_pipeline_entry,
-    canonicalize_reference_entry,
+    canonicalize_entry,
     reconstructed_entries,
     reference_entries_from_duckdb,
 )
 
 
-@pytest.mark.parametrize(
-    "canonicalize", [canonicalize_reference_entry, canonicalize_pipeline_entry], ids=["reference", "pipeline"]
-)
 @pytest.mark.parametrize(
     ("entry", "expected"),
     [
@@ -58,22 +53,35 @@ from tests.cdm_data_loaders.pipelines.jsonlines.integration.jsonlines_reference_
             {"when": "not-a-timestamp", "release_date": "not-a-date", "name": "2024-01-01"},
             id="invalid-and-unrelated-dates-unchanged",
         ),
+        pytest.param(
+            {
+                "submission_date": datetime(2014, 8, 21, 9, 55, 24, 333000, tzinfo=UTC),
+                "release_date": date(2024, 1, 1),
+                "gc_percent": 42.0,
+            },
+            {
+                "submission_date": datetime(2014, 8, 21, 9, 55, 24, 333000, tzinfo=UTC),
+                "release_date": date(2024, 1, 1),
+                "gc_percent": 42.0,
+            },
+            id="already-canonical-types-idempotent",
+        ),
     ],
 )
-def test_canonicalize_entry_pass_exact_storage_normalization(
-    canonicalize: Callable[[dict[str, Any]], dict[str, Any]], entry: dict[str, Any], expected: dict[str, Any]
-) -> None:
+def test_canonicalize_entry_pass_exact_storage_normalization(entry: dict[str, Any], expected: dict[str, Any]) -> None:
     """Canonicalization handles known storage differences without mutation or repeated wrapping."""
     original = deepcopy(entry)
-    result = canonicalize(entry)
+    result = canonicalize_entry(entry)
     assert result == expected
-    assert canonicalize(result) == expected
     assert entry == original
     if "gc_percent" in expected:
         assert type(result["gc_percent"]) is type(expected["gc_percent"])
 
 
-def test_reconstructed_entries_pass_rebuilds_ordered_children_and_ignores_metadata() -> None:
+@pytest.mark.parametrize("root_table", ["dataset", None], ids=["explicit-root", "inferred-root"])
+def test_reconstructed_entries_pass_rebuilds_ordered_children_and_ignores_metadata(
+    root_table: str | None,
+) -> None:
     """Root selection excludes rejection and metadata tables while preserving child order."""
     tables = {
         "dataset": [{"_dlt_id": "root", "accession": "assembly", "organism__tax_id": 42}],
@@ -81,10 +89,11 @@ def test_reconstructed_entries_pass_rebuilds_ordered_children_and_ignores_metada
             {"_dlt_id": "second", "_dlt_parent_id": "root", "_dlt_list_idx": 1, "value": "b"},
             {"_dlt_id": "first", "_dlt_parent_id": "root", "_dlt_list_idx": 0, "value": "a"},
         ],
-        "dataset_rejected": [{"raw_record": "bad"}],
+        "_rejected": [{"table_name": "dataset", "raw_record": "bad"}],
         "_dlt_loads": [{"load_id": "ignored"}],
     }
-    assert reconstructed_entries(tables, "dataset") == [
+    args = (tables, root_table) if root_table is not None else (tables,)
+    assert reconstructed_entries(*args) == [
         {"accession": "assembly", "organism": {"tax_id": 42}, "tags": [{"value": "a"}, {"value": "b"}]}
     ]
 

@@ -1,0 +1,14 @@
+title: Annotated Type Aliases (`TypeAliasType`), Functional Validators, and Nested Metadata
+rules:
+  - R-SCALAR-ANNOTATED
+  - R-SCALAR-TYPE
+  - R-SCALAR-DECIMAL
+  - R-META-COMMENT
+schema: schema.py
+expected_schema: expected_schema.py
+runs:
+  - id: maximal
+    data: data.json
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_count: 2

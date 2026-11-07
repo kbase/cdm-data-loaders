@@ -1,0 +1,10 @@
+title: Nullability, Required Fields and Array Item Nullability
+schema: schema.json
+rules: [R-NULL-REQUIRED, R-NULL-ALLOWS-NULL, R-NULL-DEFAULT, R-NULL-ITEMS, R-SCALAR-ENUM-CONST]
+notes: |
+  - `required_nullable_str`, `required_anyof_nullable` and `required_enum_nullable` are required but allow `null`, so they are nullable.
+  - `optional_with_default` has a `default` and stays nullable.
+  - `strict_int_list` items are non-nullable; `nullable_int_list` items (`["integer", "null"]`) are nullable.
+runs:
+  - id: default
+    data: data.json

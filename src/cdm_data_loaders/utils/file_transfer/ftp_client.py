@@ -10,9 +10,11 @@ import logging
 import socket
 import threading
 import time
+from collections.abc import Callable, Iterator
 from ftplib import FTP, error_temp
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from tenacity import (
     before_sleep_log,
@@ -31,13 +33,36 @@ def connect_ftp(host: str, timeout: int = DEFAULT_TIMEOUT) -> FTP:
     """Connect and log in to an FTP server with TCP keepalive enabled.
 
     :param host: FTP hostname
+    :type host: str
     :param timeout: connection timeout in seconds
+    :type timeout: int
     :return: logged-in FTP connection
     """
     ftp = FTP(host, timeout=timeout)  # noqa: S321
     ftp.login()
     _set_keepalive(ftp)
     return ftp
+
+
+@contextlib.contextmanager
+def ftp_session(host: str, ftp: FTP | None = None, timeout: int = DEFAULT_TIMEOUT) -> Iterator[FTP]:
+    """Context manager yielding an active FTP connection and closing it on exit if created here.
+
+    :param host: FTP hostname
+    :type host: str
+    :param ftp: optional existing FTP connection (caller manages lifecycle when provided)
+    :type ftp: FTP | None
+    :param timeout: connection timeout in seconds
+    :type timeout: int
+    """
+    owns_ftp = ftp is None
+    active_ftp = connect_ftp(host, timeout=timeout) if ftp is None else ftp
+    try:
+        yield active_ftp
+    finally:
+        if owns_ftp:
+            with contextlib.suppress(Exception):
+                active_ftp.quit()
 
 
 def _set_keepalive(ftp: FTP, idle: int = 30, interval: int = 10, count: int = 3) -> None:
@@ -63,8 +88,11 @@ def ftp_noop_keepalive(ftp: FTP, last_activity: float, interval: int = 25) -> fl
     """Send NOOP if the connection has been idle longer than *interval* seconds.
 
     :param ftp: active FTP connection
+    :type ftp: FTP
     :param last_activity: monotonic timestamp of last FTP activity
+    :type last_activity: float
     :param interval: seconds of idle time before sending NOOP
+    :type interval: int
     :return: updated last-activity timestamp
     """
     if time.monotonic() - last_activity > interval:
@@ -74,23 +102,31 @@ def ftp_noop_keepalive(ftp: FTP, last_activity: float, interval: int = 25) -> fl
     return last_activity
 
 
-def ftp_list_dir(ftp: FTP, path: PurePosixPath, retries: int = 3) -> list[PurePosixPath]:
-    """List files in an FTP directory with retry on transient errors.
-
-    :param ftp: active FTP connection
-    :param path: remote directory path
-    :param retries: number of retry attempts
-    :return: list of filenames
-    """
-    ftp.cwd(str(path))
-
-    @retry(
+def _ftp_retry(retries: int) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Build a tenacity retry decorator for transient FTP errors."""
+    return retry(
         retry=retry_if_exception_type(error_temp),
         stop=stop_after_attempt(retries),
         wait=wait_fixed(2),
         reraise=True,
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )
+
+
+def ftp_list_dir(ftp: FTP, path: PurePosixPath, retries: int = 3) -> list[PurePosixPath]:
+    """List files in an FTP directory with retry on transient errors.
+
+    :param ftp: active FTP connection
+    :type ftp: FTP
+    :param path: remote directory path
+    :type path: PurePosixPath
+    :param retries: number of retry attempts
+    :type retries: int
+    :return: list of filenames
+    """
+    ftp.cwd(str(path))
+
+    @_ftp_retry(retries)
     def _list() -> list[PurePosixPath]:
         file_strings: list[str] = []
         ftp.retrlines("NLST", file_strings.append)
@@ -103,18 +139,16 @@ def ftp_download_file(ftp: FTP, remote_path: PurePosixPath, local_path: Path, re
     """Download a single file from FTP with retry on transient errors.
 
     :param ftp: active FTP connection
+    :type ftp: FTP
     :param remote_path: full remote file path
+    :type remote_path: PurePosixPath
     :param local_path: local destination path
+    :type local_path: Path
     :param retries: number of retry attempts
+    :type retries: int
     """
 
-    @retry(
-        retry=retry_if_exception_type(error_temp),
-        stop=stop_after_attempt(retries),
-        wait=wait_fixed(2),
-        reraise=True,
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-    )
+    @_ftp_retry(retries)
     def _download() -> None:
         with local_path.open("wb") as f:
             ftp.retrbinary(f"RETR {remote_path}", f.write)
@@ -126,7 +160,9 @@ def ftp_retrieve_text(ftp: FTP, remote_path: PurePosixPath) -> str:
     """Retrieve a text file from FTP, returning its content as a string.
 
     :param ftp: active FTP connection
+    :type ftp: FTP
     :param remote_path: full remote file path
+    :type remote_path: PurePosixPath
     :return: file content
     """
     lines: list[str] = []
@@ -145,7 +181,9 @@ class ThreadLocalFTP:
         """Initialise with FTP host and timeout.
 
         :param host: FTP hostname (required — no default)
+        :type host: str
         :param timeout: connection timeout in seconds
+        :type timeout: int
         """
         self._host = host
         self._timeout = timeout
