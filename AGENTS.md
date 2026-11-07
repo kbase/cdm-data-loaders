@@ -9,7 +9,7 @@ Every code change that alters CLI flags, settings classes, public APIs, schemas,
 1. **CLI & Settings Changes (`core/settings.py`, `core/fields.py`, `core/transforms.py`, `pipelines/**/settings.py`, `pyproject.toml`)**:
    - Regenerate CLI docs: `uv run python -m scripts.gen_docs`
    - Search `docs/` and `README.md` for any renamed/removed field names, CLI flags (`--*`), or env vars (`CDL_*`) and update all prose/examples.
-2. **Converter Rules, Scalar Maps, or Error Classes (`converters/`, `readers/xsd.py`, `tests/data/*/rules.yaml`)**:
+2. **Converter Rules, Scalar Maps, or Error Classes (`converters/`, `readers/xsd.py`, `specs/schema_converters/*/rules.yaml`)**:
    - Regenerate converter specs: `uv run python -m scripts.gen_converter_spec`
    - If adding a new converter or specification, register it in `scripts/gen_converter_spec.py`, `mkdocs.yml` (`nav`), `docs/index.md`, and `README.md`.
 3. **Public Symbol / Registry Refactors (`core/`, `pipelines/`, `readers/`, `converters/`, `parsers/`, `utils/`)**:

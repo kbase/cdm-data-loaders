@@ -1,7 +1,7 @@
 """Specification tests for JSON Schema-to-PyArrow schema generation and JSON-to-Arrow record coercion.
 
-Cases, rules and error fixtures are declared in manifests under ``tests/data/jsonschema`` (``rules.yaml``,
-``*/case.yaml`` and ``spec/errors/manifest.yaml``). The same manifests generate
+Cases, rules and error fixtures are declared in manifests under ``specs/schema_converters/jsonschema_to_pyarrow``
+(``rules.yaml``, ``*/case.yaml`` and ``spec/errors/manifest.yaml``). The same manifests generate
 ``docs/jsonschema_to_pyarrow_specification.md`` via ``scripts/gen_converter_spec.py``.
 """
 
@@ -24,6 +24,7 @@ from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
     generate_pyarrow_schema,
 )
 from scripts.gen_converter_spec import JSONSCHEMA_TO_PYARROW, render
+from tests.conftest import BASE_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
 from tests.pyarrow_spec_helpers import (
     assert_expected_table_valid,
@@ -31,7 +32,7 @@ from tests.pyarrow_spec_helpers import (
     assert_schema_matches_expected,
 )
 
-JSONSCHEMA_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "jsonschema"
+JSONSCHEMA_DATA_DIR = (BASE_DIR / "specs" / "schema_converters" / "jsonschema_to_pyarrow").resolve()
 RULES = load_rules(JSONSCHEMA_DATA_DIR / "rules.yaml")
 CASES: list[Case] = load_cases(JSONSCHEMA_DATA_DIR / "spec") + load_cases(JSONSCHEMA_DATA_DIR / "examples")
 ERROR_CASES: list[ErrorCase] = load_error_cases(JSONSCHEMA_DATA_DIR / "spec" / "errors" / "manifest.yaml")

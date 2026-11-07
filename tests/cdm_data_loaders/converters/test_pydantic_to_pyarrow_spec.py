@@ -1,7 +1,7 @@
 """Specification tests for Pydantic-to-PyArrow schema generation and model/record coercion.
 
-Cases, rules and error fixtures are declared in manifests under ``tests/data/pydantic`` (``rules.yaml``,
-``*/case.yaml`` and ``spec/errors/manifest.yaml``). The same manifests generate
+Cases, rules and error fixtures are declared in manifests under ``specs/schema_converters/pydantic_to_pyarrow``
+(``rules.yaml``, ``*/case.yaml`` and ``spec/errors/manifest.yaml``). The same manifests generate
 ``docs/pydantic_to_pyarrow_specification.md`` via ``scripts/gen_converter_spec.py``.
 """
 
@@ -37,6 +37,7 @@ from cdm_data_loaders.converters.pydantic_to_pyarrow import (
     resolve_scalar_type,
 )
 from scripts.gen_converter_spec import PYDANTIC_TO_PYARROW, render
+from tests.conftest import BASE_DIR
 from tests.converter_spec import Case, ErrorCase, RuleCatalogue, Run, load_cases, load_error_cases, load_rules
 from tests.pyarrow_spec_helpers import (
     assert_expected_table_valid,
@@ -45,7 +46,7 @@ from tests.pyarrow_spec_helpers import (
     load_fixture_attr,
 )
 
-PYDANTIC_DATA_DIR: Final[Path] = Path(__file__).resolve().parents[2] / "data" / "pydantic"
+PYDANTIC_DATA_DIR: Path = (BASE_DIR / "specs" / "schema_converters" / "pydantic_to_pyarrow").resolve()
 RULES: Final[RuleCatalogue] = load_rules(PYDANTIC_DATA_DIR / "rules.yaml")
 CASES: Final[tuple[Case, ...]] = tuple(
     load_cases(PYDANTIC_DATA_DIR / "spec") + load_cases(PYDANTIC_DATA_DIR / "examples")

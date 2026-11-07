@@ -2,12 +2,12 @@
 # `code` must match the `code` of an XsdToPyArrowError subclass in cdm_data_loaders.converters.xsd_to_pyarrow.
 # `file` is relative to this directory. `match` is a regex applied to the exception message.
 errors:
-  - file: ../../empty_schema.xsd
+  - file: empty_schema.xsd
     xml_tag: root
     code: E1
     match: not found
     description: Schema declares no elements.
-  - file: ../../../uniprot/uniref/uniref.xsd
+  - file: uniref.xsd
     xml_tag: nonExistentElement
     code: E1
     match: not found
@@ -27,7 +27,7 @@ errors:
     code: E3
     match: complex type
     description: "`xml_tag` has an empty `complexType` with no attributes or children."
-  - file: ../../no_children.xsd
+  - file: no_children.xsd
     xml_tag: leaf
     code: E3
     match: complex type
@@ -42,12 +42,12 @@ errors:
     code: E5
     match: xs:anyAttribute
     description: "`<xs:anyAttribute processContents=\"skip\"/>`"
-  - file: ../../cdata_variety.xsd
+  - file: cdata_variety.xsd
     xml_tag: root
     code: E5
     match: xs:anyAttribute
     description: Legacy fixture containing `xs:anyAttribute`.
-  - file: ../../combinations.xsd
+  - file: combinations.xsd
     xml_tag: record
     code: E5
     match: xs:anyAttribute
