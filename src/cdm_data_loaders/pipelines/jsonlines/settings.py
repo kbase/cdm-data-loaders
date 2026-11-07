@@ -27,6 +27,7 @@ from cdm_data_loaders.core.fields import (
     NonEmptyStr,
     TableName,
 )
+from cdm_data_loaders.core.preprocessors import validate_file_preprocessors
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
     ModelRegistry,
@@ -185,6 +186,7 @@ class JsonlPydanticIngestSettings(JsonlIngestSettings, TransformSettingsMixin):
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:  # noqa: ARG002
         """Load and validate the entity registry from the configured module and resolve `_schema_map`."""
         self._model_registry = load_registry_dict(self.entity_models, "ENTITY_MODELS")
+        validate_file_preprocessors(self, self._model_registry.registry)
         validate_table_transforms(self, self._model_registry.registry)
         self._schema_map = build_output_schema_registry(
             self._model_registry,
@@ -222,6 +224,7 @@ class JsonlJsonschemaIngestSettings(JsonlIngestSettings, TransformSettingsMixin)
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:  # noqa: ARG002
         """Load and validate the schema registry and precompute PyArrow schemas."""
         self._schema_registry = load_registry_dict(self.entity_schemas, "ENTITY_SCHEMAS")
+        validate_file_preprocessors(self, self._schema_registry.registry)
         validate_table_transforms(self, self._schema_registry.registry)
         self._schema_map = build_output_schema_registry(
             self._schema_registry,

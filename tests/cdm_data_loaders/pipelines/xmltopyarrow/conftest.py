@@ -23,8 +23,6 @@ def settings_factory(tmp_path: Path, library_xsd: Path) -> Callable[..., Any]:
         defaults: dict[str, Any] = {
             "dlt_dev_mode": True,
         }
-        if issubclass(settings_cls, XmlToPyArrowSettings):
-            defaults["file_glob"] = "*.xml*"
         if settings_cls is XmlToPyArrowSettings:
             defaults.update(
                 {

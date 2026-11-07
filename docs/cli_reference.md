@@ -62,6 +62,7 @@ Settings for the JSONL extraction-only pipeline.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
@@ -86,6 +87,7 @@ Pipeline settings for JSONL ingestion with JSON Schema validation.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
@@ -110,6 +112,7 @@ Pipeline settings for JSONL pipeline that uses Pydantic for validation.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
@@ -190,6 +193,7 @@ Settings for the PubMed XML to PyArrow ingestion pipeline.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
@@ -201,7 +205,7 @@ Settings for the PubMed XML to PyArrow ingestion pipeline.
 | `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml.gz'` | Glob pattern for PubMed XML files |
 | `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | `src/cdm_data_loaders/schemas/pubmed/pubmed.xsd` | Path to the PubMed XSD file describing the XML documents to be imported. |
 | `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
 
@@ -214,6 +218,7 @@ Settings for the UniProt XML to PyArrow ingestion pipeline.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
@@ -258,6 +263,7 @@ UniRef 100 XML to PyArrow ingest settings.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
@@ -282,6 +288,7 @@ UniRef 100 CDM XML-to-PyArrow ingest settings.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -304,6 +311,7 @@ UniRef 50 XML to PyArrow ingest settings.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
@@ -328,6 +336,7 @@ UniRef 50 CDM XML-to-PyArrow ingest settings.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -350,6 +359,7 @@ UniRef 90 XML to PyArrow ingest settings.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
@@ -374,6 +384,7 @@ UniRef 90 CDM XML-to-PyArrow ingest settings.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -396,6 +407,7 @@ Settings for the XML ingestion pipeline.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
@@ -421,6 +433,7 @@ Settings for the XML to PyArrow ingestion pipeline.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
@@ -450,6 +463,7 @@ Settings for the XSV (CSV/TSV) ingestion pipeline.
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |

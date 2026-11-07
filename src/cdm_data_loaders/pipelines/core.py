@@ -5,9 +5,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import dlt
+import pyarrow as pa
 import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.common.runtime.slack import send_slack_message
@@ -20,14 +21,19 @@ from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
-from cdm_data_loaders.core.fields import JSONL
+from cdm_data_loaders.core.fields import JSONL, REJECTED_TABLE_NAME
 from cdm_data_loaders.core.settings import (
     CtsSettings,
     FileFormatIngestSettings,
     LocalInputOutputSettings,
     LoggerSettings,
 )
+from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.utils.cdm_logger import init_logger
+from cdm_data_loaders.utils.file_items import source_id
+
+if TYPE_CHECKING:
+    from cdm_data_loaders.core.registry import FilePreprocessFn
 
 WEBHOOK_NOT_CONFIGURED: Final[str] = "Slack webhook not configured"
 NO_MESSAGE: Final[str] = "No message supplied"
@@ -75,6 +81,15 @@ class PipelineReport:
     pipeline_err_msg: str | None = None
     info_load_err_msg: str | None = None
     ingested_files: list[str] | None = None
+    preprocess_errors: list[str] | None = None
+
+
+@dataclass(slots=True)
+class _FilesystemTracker:
+    """Mutable collector for ingested file paths and file pre-processing errors."""
+
+    ingested_files: list[str]
+    preprocess_errors: list[str]
 
 
 def send_slack_message_carefully(
@@ -164,6 +179,8 @@ def write_pipeline_report(
             for failed_job in load_package.jobs["failed_jobs"]
             if failed_job.failed_message
         ]
+        if report.preprocess_errors:
+            failed_messages.extend(report.preprocess_errors)
         status = "completed with errors" if failed_messages else "completed"
         report_data["status"] = status
         report_data["load_ids"] = report.pipeline_load_info.loads_ids
@@ -184,12 +201,13 @@ def write_pipeline_report(
         logger.exception(report_err_msg)
 
 
-def save_pipeline_metadata(
+def save_pipeline_metadata(  # noqa: PLR0913, PLR0917
     settings: CtsSettings,
     pipeline: dlt.Pipeline,
     load_info: LoadInfo | None,
     err_msg: str | None,
     ingested_files: list[str] | None = None,
+    preprocess_errors: list[str] | None = None,
 ) -> None:
     """Save the pipeline metadata to a unique directory in settings.output_dir.
 
@@ -199,12 +217,14 @@ def save_pipeline_metadata(
     :type  settings: CtsSettings
     :param pipeline: dlt pipeline instance
     :type  pipeline: dlt.Pipeline
-    :param load_info: pipeline load info, or None if the pipeline did not complete successfully
+    :param load_info: pipeline load info, or None if the pipeline did not complete
     :type  load_info: LoadInfo | None
-    :param err_msg: error message indicating why pipeline failed, or None if the pipeline was successful
+    :param err_msg: error message indicating why pipeline failed, or None if the pipeline succeeded
     :type  err_msg: str | None
     :param ingested_files: relative paths of files ingested from the filesystem resource, if any
     :type  ingested_files: list[str] | None, optional
+    :param preprocess_errors: error messages from files that failed pre-processing, if any
+    :type  preprocess_errors: list[str] | None, optional
     """
     started_at = pipeline.last_trace.started_at
     finished_at = pipeline.last_trace.finished_at
@@ -246,19 +266,20 @@ def save_pipeline_metadata(
         pipeline_err_msg=err_msg,
         info_load_err_msg=info_load_err_msg,
         ingested_files=ingested_files,
+        preprocess_errors=preprocess_errors,
     )
     write_pipeline_report(settings.report_path, report)
 
 
-def _attach_file_collector(resource: DltResource | list[DltResource]) -> list[str]:
-    """Attach a map step to any root ``filesystem`` resource to record ingested file paths."""
-    ingested_files: list[str] = []
+def _attach_file_collector(resource: DltResource | list[DltResource]) -> _FilesystemTracker:
+    """Attach or bind a tracker to root ``filesystem`` resources to record ingested files and pre-processing errors."""
+    collector = _FilesystemTracker(ingested_files=[], preprocess_errors=[])
     seen_pipes: set[str] = set()
     resources = resource if isinstance(resource, list) else [resource]
 
     def _record_file(item: Any) -> Any:  # noqa: ANN401
         if isinstance(item, dict) and "relative_path" in item:
-            ingested_files.append(item["relative_path"])
+            collector.ingested_files.append(item["relative_path"])
         return item
 
     for res in resources:
@@ -266,9 +287,14 @@ def _attach_file_collector(resource: DltResource | list[DltResource]) -> list[st
         while isinstance(curr, DltResource):
             if curr.name == "filesystem" and curr._pipe.instance_id not in seen_pipes:  # noqa: SLF001
                 seen_pipes.add(curr._pipe.instance_id)  # noqa: SLF001
-                curr.add_map(_record_file)
+                tracker: _FilesystemTracker | None = getattr(curr, "_fs_tracker", None)
+                if tracker is not None:
+                    tracker.ingested_files = collector.ingested_files
+                    tracker.preprocess_errors = collector.preprocess_errors
+                else:
+                    curr.add_map(_record_file)
             curr = curr._parent  # noqa: SLF001
-    return ingested_files
+    return collector
 
 
 def run_pipeline(
@@ -318,7 +344,7 @@ def run_pipeline(
     if not slack_hook:
         logger.info("No Slack alerts will be sent: %s", WEBHOOK_NOT_CONFIGURED)
 
-    ingested_files = _attach_file_collector(resource)
+    collector = _attach_file_collector(resource)
     load_info: LoadInfo | None = None
     err_msg: str | None = None
     try:
@@ -328,34 +354,43 @@ def run_pipeline(
         err_msg = f"Pipeline failed: {e!s}"
         logger.exception(err_msg)
 
+    has_errors = bool(load_info and load_info.has_failed_jobs) or bool(collector.preprocess_errors)
     if load_info:
         logger.info(load_info)
-        if load_info.has_failed_jobs:
+        if has_errors:
             logger.warning("Pipeline contains failed jobs")
         else:
             logger.info("All pipeline jobs completed successfully")
 
-    save_pipeline_metadata(settings, pipeline, load_info, err_msg, ingested_files=ingested_files or None)
+    save_pipeline_metadata(
+        settings,
+        pipeline,
+        load_info,
+        err_msg,
+        ingested_files=collector.ingested_files or None,
+        preprocess_errors=collector.preprocess_errors or None,
+    )
 
     if slack_hook:
-        msg = err_msg or f"Pipeline completed {'with errors' if load_info.has_failed_jobs else 'successfully!'}"
+        msg = err_msg or f"Pipeline completed {'with errors' if has_errors else 'successfully!'}"
         send_slack_message_carefully(slack_hook, msg)
 
     return load_info
 
 
-def build_filesystem_resource(
+def build_filesystem_resource(  # noqa: PLR0913
     settings: LocalInputOutputSettings,
     reader_fn: Callable[..., Any] | DltResource,
     *reader_args: Any,  # noqa: ANN401
     name: str,
     file_glob: str | None = None,
+    table_name: str | None = None,
     schema_contract: TSchemaContractDict | None = None,
     **transformer_kwargs: Any,  # noqa: ANN401
 ) -> DltResource:
     """Build a dlt resource that pipes ``filesystem(settings.input_dir, file_glob)`` into a parallelized transformer.
 
-    :param settings: pipeline settings with ``input_dir`` (and optionally ``file_glob``)
+    :param settings: pipeline settings with ``input_dir`` (and optional ``file_glob``)
     :type settings: LocalInputOutputSettings
     :param reader_fn: transformer function or resource accepting ``(items, settings, *reader_args)``
     :type reader_fn: Callable[..., Any] | DltResource
@@ -365,6 +400,8 @@ def build_filesystem_resource(
     :type name: str
     :param file_glob: glob pattern for files; defaults to ``settings.file_glob`` if present
     :type file_glob: str | None
+    :param table_name: target table name for per-table file pre-processors and ``_rejected`` provenance
+    :type table_name: str | None
     :param schema_contract: optional dlt schema contract hint applied to the resource
     :type schema_contract: TSchemaContractDict | None
     :param transformer_kwargs: additional keyword arguments passed to ``dlt.transformer``
@@ -378,12 +415,68 @@ def build_filesystem_resource(
         fs_args["file_glob"] = glob
 
     files = filesystem(**fs_args)
-    parallelized = bool(transformer_kwargs.pop("parallelized", True))
-    reader = (
-        reader_fn
-        if isinstance(reader_fn, DltResource)
-        else dlt.transformer(reader_fn, name=name, parallelized=parallelized, **transformer_kwargs)
+    tracker = _FilesystemTracker(ingested_files=[], preprocess_errors=[])
+    files._fs_tracker = tracker  # type: ignore[attr-defined]  # noqa: SLF001
+
+    resolved_table_name = (
+        table_name
+        if table_name is not None
+        else (settings.table_name if isinstance(getattr(settings, "table_name", None), str) else None)
     )
+    preprocessors: tuple[FilePreprocessFn, ...] = (
+        settings.get_file_preprocessors(resolved_table_name) if hasattr(settings, "get_file_preprocessors") else ()
+    )
+    raw_fn: Callable[..., Any] = (
+        getattr(reader_fn._pipe.gen, "__GEN__", reader_fn._pipe.gen)  # type: ignore[arg-type]  # noqa: SLF001
+        if isinstance(reader_fn, DltResource)
+        else reader_fn
+    )
+
+    def _preprocess_and_read(
+        items: Iterable[FileItemDict],
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Generator[TDataItems, Any, Any]:
+        raw_items = [items] if isinstance(items, dict) else list(items)
+        valid_items: list[FileItemDict] = []
+        for file_item in raw_items:
+            curr_item: FileItemDict | None = file_item
+            failed = False
+            for preprocess_fn in preprocessors:
+                if curr_item is None:
+                    break
+                try:
+                    curr_item = preprocess_fn(curr_item)
+                except Exception as exc:  # noqa: BLE001
+                    src_id = source_id(curr_item)
+                    err_msg = f"File pre-processing failed for {src_id}: {exc}"
+                    logger.error(err_msg)  # noqa: TRY400
+                    tracker.preprocess_errors.append(err_msg)
+                    rejected_row = {
+                        "table_name": resolved_table_name,
+                        "source_file": src_id,
+                        "line_no": None,
+                        "raw_record": None,
+                        "error_detail": str(exc),
+                    }
+                    yield dlt.mark.with_table_name(
+                        pa.Table.from_pylist([rejected_row], schema=REJECTED_PYARROW_SCHEMA),
+                        REJECTED_TABLE_NAME,
+                    )
+                    failed = True
+                    break
+            if not failed and curr_item is not None:
+                if isinstance(curr_item, dict) and "relative_path" in curr_item:
+                    tracker.ingested_files.append(curr_item["relative_path"])
+                valid_items.append(curr_item)
+
+        if valid_items or not raw_items:
+            result = raw_fn(valid_items, *args, **kwargs)
+            if result is not None:
+                yield from result
+
+    parallelized = bool(transformer_kwargs.pop("parallelized", True))
+    reader = dlt.transformer(_preprocess_and_read, name=name, parallelized=parallelized, **transformer_kwargs)
     resource: DltResource = files | reader(settings, *reader_args)
     if schema_contract is not None:
         resource.apply_hints(schema_contract=TSchemaContractDict(**schema_contract))  # pyright: ignore[reportCallIssue]

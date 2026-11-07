@@ -4,6 +4,8 @@ import json
 from collections.abc import Callable, Generator, Iterable, Iterator
 from typing import Any, Final
 
+import dlt
+import pyarrow as pa
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 
@@ -145,7 +147,10 @@ def make_page_router(  # noqa: PLR0913
     :rtype : Callable[[Iterable[dict[str, Any]]], Generator[Any, Any, Any]]
     """
 
-    def _route(page: Iterable[dict[str, Any]]) -> Generator[Any, Any, Any]:
+    def _route(page: Iterable[dict[str, Any]] | pa.Table) -> Generator[Any, Any, Any]:
+        if isinstance(page, pa.Table):
+            yield dlt.mark.with_table_name(page, REJECTED_TABLE_NAME)
+            return
         buffer = DictBuffer(max_items=buffer_size, schema_map=schema_map)
         for item in page:
             yield from _route_line_record(

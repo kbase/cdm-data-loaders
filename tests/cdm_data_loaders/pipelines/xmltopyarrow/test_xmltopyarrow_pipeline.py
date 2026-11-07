@@ -1,6 +1,7 @@
 """Unit tests for run_xmltopyarrow_pipeline and cli wiring."""
 
 import gzip
+import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -37,11 +38,14 @@ from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     UniRef100XmlToPyArrowSettings,
     XmlToPyArrowSettings,
 )
+from cdm_data_loaders.utils.checksums import new_hasher
 from tests.cdm_data_loaders.pipelines.conftest import copy_test_files
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_binds_filesystem_reader,
     assert_core_run_pipeline_args,
+    check_pipeline_report,
     fetch_all_duckdb,
+    read_destination_rows,
     run_with_duckdb_pipeline,
 )
 from tests.conftest import XSD_SPEC_DIR
@@ -188,12 +192,21 @@ def test_pubmed_cli_pass_runs_end_to_end_with_default_settings(
     settings_factory: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """pubmed_cli loads PubmedArticle and PubmedBookArticle tables end-to-end using its default level-1 settings."""
+    """pubmed_cli validates .xml.gz against .xml.gz.md5 and loads PubmedArticle rows using default settings."""
     base_settings = settings_factory(CtsSettings, dlt_dev_mode=False)
+    input_dir = Path(base_settings.input_dir)
     copy_test_files(
         XSD_SPEC_DIR / "examples" / "pubmed_article",
         ["minimal.xml.gz"],
-        Path(base_settings.input_dir),
+        input_dir,
+    )
+    xml_gz_path = input_dir / "minimal.xml.gz"
+    hasher = new_hasher("md5")
+    hasher.update(xml_gz_path.read_bytes())
+    digest = hasher.hexdigest()
+    (input_dir / "minimal.xml.gz.md5").write_text(
+        f"MD5(minimal.xml.gz)= {digest}\n",
+        encoding="utf-8",
     )
     monkeypatch.setattr(sys, "argv", [PUBMED_PIPELINE_NAME, *settings_to_argv(base_settings)])
 
@@ -207,6 +220,65 @@ def test_pubmed_cli_pass_runs_end_to_end_with_default_settings(
     )
 
     assert fetch_all_duckdb(load_info.pipeline, "SELECT COUNT(*) FROM pubmed_article") == [(1,)]
+
+
+@pytest.mark.parametrize(
+    ("sidecar_content", "expected_err_substring"),
+    [
+        pytest.param(None, "Missing MD5 sidecar file for minimal.xml.gz", id="missing-sidecar"),
+        pytest.param(
+            f"MD5(minimal.xml.gz)= {'0' * 32}\n",
+            "MD5 mismatch for minimal.xml.gz",
+            id="mismatched-md5",
+        ),
+    ],
+)
+def test_pubmed_cli_pass_invalid_md5_sidecar_routes_to_rejected_and_report(
+    settings_factory: Callable[..., Any],
+    dlt_destination_config: str,
+    destination_bucket: Path,
+    caplog: pytest.LogCaptureFixture,
+    sidecar_content: str | None,
+    expected_err_substring: str,
+) -> None:
+    """pubmed_cli skips .xml.gz files with missing or mismatched .md5 sidecars, writes to _rejected, and records report errors."""
+    base_settings = settings_factory(
+        CtsSettings,
+        dlt_dev_mode=False,
+        use_destination=dlt_destination_config,
+    )
+    input_dir = Path(base_settings.input_dir)
+    copy_test_files(
+        XSD_SPEC_DIR / "examples" / "pubmed_article",
+        ["minimal.xml.gz"],
+        input_dir,
+    )
+    if sidecar_content is not None:
+        (input_dir / "minimal.xml.gz.md5").write_text(sidecar_content, encoding="utf-8")
+
+    load_info = pubmed_cli.run(cli_args=settings_to_argv(base_settings))
+    assert load_info is not None
+
+    rejected_rows = read_destination_rows(destination_bucket, "_rejected")
+    assert len(rejected_rows) == 1
+    assert rejected_rows[0]["source_file"] == "minimal.xml.gz"
+    assert expected_err_substring in rejected_rows[0]["error_detail"]
+
+    error_logs = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(error_logs) == 1
+    assert f"File pre-processing failed for minimal.xml.gz: {expected_err_substring}" in error_logs[0]
+
+    report_data = check_pipeline_report(
+        base_settings.report_path,
+        {
+            "dataset": PUBMED_PIPELINE_NAME,
+            "status": "completed with errors",
+            "pipeline_load_info_errs": None,
+        },
+    )
+    assert "ingested_files" not in report_data
+    assert len(report_data["load_errors"]) == 1
+    assert expected_err_substring in report_data["load_errors"][0]
 
 
 @pytest.mark.parametrize("relative_path", ["library.xml", "sub/library.xml.gz"])

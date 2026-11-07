@@ -18,7 +18,8 @@ from cdm_data_loaders.converters.xsd_to_pyarrow import (
     generate_pyarrow_schemas_at_level,
     load_schema,
 )
-from cdm_data_loaders.core.fields import DEFAULTS
+from cdm_data_loaders.core.fields import XML_GZ_FILE_GLOB, DEFAULTS
+from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
@@ -419,6 +420,8 @@ def test_pubmed_xmltopyarrow_settings_pass_defaults_and_cli(
 
     mock_gen_schemas.assert_not_called()
     assert settings.dataset_name == PUBMED_PIPELINE_NAME
+    assert settings.file_glob == XML_GZ_FILE_GLOB
+    assert settings.get_file_preprocessors() == (validate_md5_sidecar,)
     assert settings.xml_level == 1
     assert settings.root_tag == PUBMED_ROOT_TAG
     assert settings.table_name is None
@@ -432,6 +435,8 @@ def test_pubmed_xmltopyarrow_settings_pass_defaults_and_cli(
     base_argv = settings_to_argv(base_settings)
     cli_settings = CliApp.run(PubMedXmlToPyArrowSettings, cli_args=base_argv)
     assert cli_settings.dataset_name == PUBMED_PIPELINE_NAME
+    assert cli_settings.file_glob == XML_GZ_FILE_GLOB
+    assert cli_settings.get_file_preprocessors() == (validate_md5_sidecar,)
     assert cli_settings.xml_level == 1
     assert cli_settings.root_tag == PUBMED_ROOT_TAG
     assert cli_settings.pyarrow_schemas == dict(PUBMED_SCHEMAS)

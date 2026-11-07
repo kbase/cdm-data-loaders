@@ -1,7 +1,6 @@
 """Tests for `cdm_data_loaders.pipelines.jsonlines.settings`."""
 
 from collections.abc import Callable
-from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -423,11 +422,13 @@ def test_jsonl_extract_settings_pass_defaults(test_defaults: dict[str, Any]) -> 
             loader_file_format=LoaderFileFormatEnum.PARQUET,
             file_glob=DEFAULT_JSONL_FILE_GLOB,
             table_name="widget",
+            preprocessors_module=None,
             transforms_module=None,
             output_schemas_module=None,
         ),
     )
     assert settings.model_config.get("cli_prog_name") == EXTRACT_PIPELINE_NAME
+    assert settings.file_preprocessors is None
     assert settings.table_transforms is None
     assert settings.schema_map is None
 
@@ -472,6 +473,7 @@ def test_validated_jsonl_settings_pass_defaults_and_registries(
             dataset_name="test_ds",
             loader_file_format=LoaderFileFormatEnum.PARQUET,
             file_glob=DEFAULT_JSONL_FILE_GLOB,
+            preprocessors_module=None,
             transforms_module=None,
             output_schemas_module=None,
             **expected_field,
