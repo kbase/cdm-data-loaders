@@ -210,7 +210,7 @@ ignore = [
 # ARG002: unused mock args
 # PLR0913: too many arguments
 "tests/**/*.py" = ["D401", "S101", "T201", "FBT001", "FBT002", "ARG002", "PLR0913", "PLR0917"]
-# specs dorectpry
+# specs directory
 "specs/**/*.py" = ["INP001", "D101", "D102"]
 
 [tool.ruff.lint.mccabe]
