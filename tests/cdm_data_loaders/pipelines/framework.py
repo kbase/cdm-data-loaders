@@ -70,6 +70,10 @@ PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
         "jsonlines_pydantic",
         "cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline",
     ),
+    "ncbi_datasets": (
+        "ncbi_datasets",
+        "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline",
+    ),
     "ncbi_ftp_promote": ("ncbi_ftp_promote", "cdm_data_loaders.pipelines.ncbi_ftp_promote"),
     "ncbi_ftp_sync": ("ncbi_ftp_sync", "cdm_data_loaders.pipelines.ncbi_ftp_download"),
     "ncbi_rest_api": ("ncbi_rest_api", "cdm_data_loaders.pipelines.ncbi_rest_api"),
@@ -87,7 +91,8 @@ PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
 }
 
 MODULE_TO_CLI_COMMAND: Final[dict[str, str]] = {
-    module_path: cli_command for cli_command, module_path in PIPELINE_TARGETS.values()
+    **{module_path: cli_command for cli_command, module_path in PIPELINE_TARGETS.values()},
+    "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline": "jsonlines_jsonschema",
 }
 
 _built_docker_images: set[str] = set()

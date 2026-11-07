@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pyarrow as pa
 import pytest
 from pydantic import BaseModel, ValidationError
+from pydantic_settings import CliApp, SettingsError
 
 import cdm_data_loaders.pipelines.jsonlines.settings as jsonlines_settings_module
 from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrowError
@@ -30,15 +31,25 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     EXTRACT_PIPELINE_NAME,
     JSONSCHEMA_PIPELINE_NAME,
     LOCAL_CLI_SHORTCUTS,
+    NCBI_DATASETS_PIPELINE_NAME,
+    NCBI_DATASETS_SCHEMA_MODULE,
     PYDANTIC_PIPELINE_NAME,
     JsonlExtractSettings,
     JsonlIngestSettings,
     JsonlJsonschemaIngestSettings,
     JsonlPydanticIngestSettings,
+    NcbiDatasetsSettings,
     build_output_schema_registry,
     convert_schema_to_pyarrow,
 )
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi import (
+    ANNOTATION_REPORT_TABLE,
+    DATASET_REPORT_TABLE,
+    ENTITY_SCHEMAS as NCBI_DATASETS_ENTITY_SCHEMAS,
+    filter_annotation_report,
+)
+from cdm_data_loaders.schemas.ncbi_datasets.schema import SCHEMAS as NCBI_DATASETS_SCHEMAS
 from cdm_data_loaders.utils.jsonschema.dereferencer import DereferencingError
 from tests.cdm_data_loaders.conftest import check_settings, cts_expected
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas import (
@@ -49,6 +60,7 @@ from tests.helpers import (
     assert_no_cli_clashes,
     build_cli_arg_specs,
     register_temp_module,
+    settings_to_argv,
 )
 
 
@@ -389,8 +401,9 @@ def test_build_output_schema_registry_fail_aggregates_conversion_errors(
         JsonlExtractSettings,
         JsonlPydanticIngestSettings,
         JsonlJsonschemaIngestSettings,
+        NcbiDatasetsSettings,
     ],
-    ids=["ingest", "extract", "pydantic", "jsonschema"],
+    ids=["ingest", "extract", "pydantic", "jsonschema", "ncbi_datasets"],
 )
 def test_jsonlines_settings_pass_no_cli_clashes(settings_cls: type[CdmDataLoadersBase]) -> None:
     """Every JSONL settings class has no CLI argument or shortcut collisions."""
@@ -505,6 +518,12 @@ def test_validated_jsonl_settings_pass_defaults_and_registries(
             LOCAL_CLI_SHORTCUTS[ENTITY_SCHEMAS_MODULE],
             id="jsonschema-entity_schemas",
         ),
+        pytest.param(
+            NcbiDatasetsSettings,
+            FILE_GLOB,
+            LOCAL_CLI_SHORTCUTS[FILE_GLOB],
+            id="ncbi_datasets-file_glob",
+        ),
     ],
 )
 def test_jsonlines_settings_pass_cli_field_roundtrips(
@@ -529,7 +548,9 @@ def test_jsonlines_settings_pass_cli_field_roundtrips(
         ENTITY_MODELS={"gadget": GadgetEntityModel},
         ENTITY_SCHEMAS={"gadget": GADGET_SCHEMA},
     )
-    required: dict[str, Any] = {**test_defaults, "dataset_name": "test_ds"}
+    required: dict[str, Any] = (
+        dict(test_defaults) if settings_cls is NcbiDatasetsSettings else {**test_defaults, "dataset_name": "test_ds"}
+    )
     if settings_cls is JsonlExtractSettings:
         required[TABLE_NAME] = "widget"
     elif settings_cls is JsonlPydanticIngestSettings:
@@ -740,3 +761,57 @@ def test_validated_jsonl_settings_pass_validates_table_transforms_once(
     schema_settings_factory()
 
     assert spy.call_count == 1
+
+
+def test_ncbi_datasets_settings_pass_defaults_and_precomputed_schemas(
+    test_defaults: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NcbiDatasetsSettings binds bundled schemas, filter_annotation_report, and precomputed PyArrow schemas without runtime conversion."""
+    spy = MagicMock(wraps=jsonlines_settings_module.convert_schema_to_pyarrow)
+    monkeypatch.setattr(jsonlines_settings_module, "convert_schema_to_pyarrow", spy)
+
+    settings = NcbiDatasetsSettings(**test_defaults)
+
+    assert spy.call_count == 0
+    assert settings.model_config.get("cli_prog_name") == NCBI_DATASETS_PIPELINE_NAME
+    assert settings.dataset_name == NCBI_DATASETS_PIPELINE_NAME
+    assert settings.entity_schemas == NCBI_DATASETS_SCHEMA_MODULE
+    assert settings.transforms_module == NCBI_DATASETS_SCHEMA_MODULE
+    assert settings.output_schemas_module == NCBI_DATASETS_SCHEMA_MODULE
+    assert settings.file_glob == DEFAULT_JSONL_FILE_GLOB
+    assert settings.loader_file_format == LoaderFileFormatEnum.PARQUET
+    assert settings.schema_registry == SchemaRegistry(
+        registry={
+            ANNOTATION_REPORT_TABLE: ValidatedSchema(jsonschema=NCBI_DATASETS_ENTITY_SCHEMAS[ANNOTATION_REPORT_TABLE]),
+            DATASET_REPORT_TABLE: ValidatedSchema(jsonschema=NCBI_DATASETS_ENTITY_SCHEMAS[DATASET_REPORT_TABLE]),
+        }
+    )
+    assert settings.table_transforms == TransformRegistry(registry={ANNOTATION_REPORT_TABLE: filter_annotation_report})
+    assert settings.schema_map == ArrowSchemaRegistry(registry=NCBI_DATASETS_SCHEMAS)
+
+
+@pytest.mark.parametrize(
+    ("locked_kwarg", "locked_flag", "locked_value"),
+    [
+        pytest.param("dataset_name", "--dataset-name", "custom_ds", id="dataset_name"),
+        pytest.param("entity_schemas", "--entity-schemas", "some.module", id="entity_schemas"),
+        pytest.param("entity_schemas", "-m", "some.module", id="entity_schemas_short"),
+        pytest.param("transforms_module", "--transforms-module", "some.module", id="transforms_module"),
+        pytest.param("output_schemas_module", "--output-schemas-module", "some.module", id="output_schemas_module"),
+    ],
+)
+def test_ncbi_datasets_settings_fail_locked_fields_rejected(
+    test_defaults: dict[str, Any],
+    locked_kwarg: str,
+    locked_flag: str,
+    locked_value: str,
+) -> None:
+    """Locked ClassVar fields on NcbiDatasetsSettings are rejected as Python kwargs and CLI flags."""
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        NcbiDatasetsSettings(**test_defaults, **{locked_kwarg: locked_value})
+
+    base = NcbiDatasetsSettings(**test_defaults)
+    cli_args = [*settings_to_argv(base), locked_flag, locked_value]
+    with pytest.raises(SettingsError, match=f"unrecognized arguments: {locked_flag}"):
+        CliApp.run(NcbiDatasetsSettings, cli_args=cli_args)

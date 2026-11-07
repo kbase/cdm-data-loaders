@@ -2,11 +2,11 @@
 
 Three pipelines under `pipelines/jsonlines/` load JSONL files (`.jsonl` and gzip-compressed `.jsonl.gz`) through the shared CTS runner. They share settings, file discovery, table transformation hooks, and error routing, and differ in how (or whether) records are validated and buffered before loading:
 
-| Pipeline                                                                                                                       | CLI Entry Point        | Validation                        | Default Output Format                            |
-| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | --------------------------------- | ------------------------------------------------ |
-| [extract_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | `jsonlines_extract`    | None beyond valid JSON            | `list[dict]` (`pyarrow.Table` if schema map set) |
-| [extract_jsonschema_validate_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema` | JSON Schema, per entity table     | `pyarrow.Table` (`JSONSchemaToPyArrow`)          |
-| [extract_pydantic_validate_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`   | Pydantic models, per entity table | `pyarrow.Table` (`PydanticToPyArrow`)            |
+| Pipeline                                                                                                                       | CLI Entry Point                         | Validation                        | Default Output Format                            |
+| ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- | --------------------------------- | ------------------------------------------------ |
+| [extract_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | `jsonlines_extract`                     | None beyond valid JSON            | `list[dict]` (`pyarrow.Table` if schema map set) |
+| [extract_jsonschema_validate_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema`, `ncbi_datasets` | JSON Schema, per entity table     | `pyarrow.Table` (`JSONSchemaToPyArrow`)          |
+| [extract_pydantic_validate_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`                    | Pydantic models, per entity table | `pyarrow.Table` (`PydanticToPyArrow`)            |
 
 All three support plain and gzip-compressed inputs, Parquet or JSONL output, optional record-level transforms (`--transforms-module`), and a unified `_rejected` table for parse and validation failures.
 
@@ -94,6 +94,13 @@ uv run jsonlines_jsonschema \
   --use-output-dir-for-pipeline-metadata true \
   --loader-file-format parquet
 ```
+
+#### NCBI Datasets Preset (`ncbi_datasets`)
+
+The `ncbi_datasets` CLI entry point runs `jsonlines_jsonschema` with `dataset_name` locked to `"ncbi_datasets"` and precomputed JSON Schemas, PyArrow schemas, and record transforms from `cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi`:
+
+- `dataset_report`: validates `<input_dir>/dataset_report/` records against `datasetReport.schema.json` and loads them into `dataset_report`.
+- `annotation_report`: validates `<input_dir>/annotation_report/` records against `annotationReport.schema.json`, discards records without a non-empty top-level `reports` array via `filter_annotation_report`, and loads the remaining records into `annotation_report`.
 
 ### Pydantic Pipeline (`jsonlines_pydantic`)
 
