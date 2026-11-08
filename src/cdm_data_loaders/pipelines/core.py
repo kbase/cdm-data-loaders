@@ -23,6 +23,7 @@ from dlt.pipeline.exceptions import PipelineStepFailed
 from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
+from pyiceberg.catalog import sql as pyiceberg_sql
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 
@@ -60,57 +61,63 @@ logger: Logger = getLogger(__name__)
 _iceberg_catalog_cleanup_installed: bool = False
 
 
+def _wrap_catalog_finalizer(
+    catalog_cls: type[SqlCatalog | RestCatalog],
+    get_cleanup_fn: Callable[[Any], Callable[[], Any] | None],
+) -> None:
+    """Attach a weakref finalizer on catalog init and invoke it on close."""
+    orig_init = catalog_cls.__init__
+    orig_close = catalog_cls.close
+
+    def _init(self: Any, name: str, **properties: str) -> None:  # noqa: ANN401
+        try:
+            orig_init(self, name, **properties)
+        finally:
+            if (cleanup := get_cleanup_fn(self)) is not None:
+                self._finalizer = weakref.finalize(self, cleanup)
+
+    def _close(self: Any) -> None:  # noqa: ANN401
+        if (finalizer := getattr(self, "_finalizer", None)) is not None:
+            finalizer()
+        orig_close(self)
+
+    catalog_cls.__init__ = _init  # type: ignore[method-assign]
+    catalog_cls.close = _close  # type: ignore[method-assign]
+
+
 def _install_iceberg_catalog_cleanup() -> None:
-    """Register weakref finalizers on PyIceberg catalogs and release cached catalogs on FilesystemClient exit.
+    """Register weakref finalizers on PyIceberg catalogs and close cached catalogs on FilesystemClient exit.
 
     SqlCatalog holds a SQLAlchemy Engine <-> SingletonThreadPool cycle and RestCatalog holds a
     requests.Session <-> AuthManager cycle; neither defines a finalizer, and dlt's FilesystemClient.__exit__
-    is a no-op. Attaching finalizers to Engine.dispose / Session.close and dropping FilesystemClient._catalog
-    on context exit closes SQLite and REST connections as soon as a load job or Table reference finishes.
+    is a no-op. Furthermore, dlt runs load jobs on worker threads while garbage collection or callers may
+    dispose catalogs on the main thread, which fails with sqlite3.ProgrammingError unless check_same_thread=False
+    is set on SQLite connections.
     """
     global _iceberg_catalog_cleanup_installed  # noqa: PLW0603
     if _iceberg_catalog_cleanup_installed:
         return
     _iceberg_catalog_cleanup_installed = True
 
-    orig_sql_init = SqlCatalog.__init__
-    orig_sql_close = SqlCatalog.close
+    orig_create_engine = pyiceberg_sql.create_engine
 
-    def _sql_catalog_init(self: SqlCatalog, name: str, **properties: str) -> None:
-        try:
-            orig_sql_init(self, name, **properties)
-        finally:
-            if hasattr(self, "engine"):
-                self._finalizer = weakref.finalize(self, self.engine.dispose)  # type: ignore[attr-defined]
+    def _create_engine(url: Any, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        if str(url).startswith("sqlite"):
+            connect_args = dict(kwargs.get("connect_args") or {})
+            connect_args.setdefault("check_same_thread", False)
+            kwargs["connect_args"] = connect_args
+        return orig_create_engine(url, *args, **kwargs)
 
-    def _sql_catalog_close(self: SqlCatalog) -> None:
-        finalizer: weakref.finalize[Any, Any] | None = getattr(self, "_finalizer", None)
-        if finalizer is not None:
-            finalizer()
-        orig_sql_close(self)
+    pyiceberg_sql.create_engine = _create_engine
 
-    SqlCatalog.__init__ = _sql_catalog_init  # type: ignore[method-assign]
-    SqlCatalog.close = _sql_catalog_close  # type: ignore[method-assign]
-
-    orig_rest_init = RestCatalog.__init__
-    orig_rest_close = RestCatalog.close
-
-    def _rest_catalog_init(self: RestCatalog, name: str, **properties: str) -> None:
-        try:
-            orig_rest_init(self, name, **properties)
-        finally:
-            session = getattr(self, "_session", None)
-            if session is not None:
-                self._finalizer = weakref.finalize(self, session.close)  # type: ignore[attr-defined]
-
-    def _rest_catalog_close(self: RestCatalog) -> None:
-        finalizer: weakref.finalize[Any, Any] | None = getattr(self, "_finalizer", None)
-        if finalizer is not None:
-            finalizer()
-        orig_rest_close(self)
-
-    RestCatalog.__init__ = _rest_catalog_init  # type: ignore[method-assign]
-    RestCatalog.close = _rest_catalog_close  # type: ignore[method-assign]
+    _wrap_catalog_finalizer(
+        SqlCatalog,
+        lambda cat: cat.engine.dispose if hasattr(cat, "engine") else None,
+    )
+    _wrap_catalog_finalizer(
+        RestCatalog,
+        lambda cat: session.close if (session := getattr(cat, "_session", None)) is not None else None,
+    )
 
     orig_fs_exit = FilesystemClient.__exit__
 
@@ -124,7 +131,7 @@ def _install_iceberg_catalog_cleanup() -> None:
         self._catalog = None
         self._catalog_namespaces.clear()
         try:
-            if exc_type is not None and catalog is not None and hasattr(catalog, "close"):
+            if catalog is not None and hasattr(catalog, "close"):
                 catalog.close()
         finally:
             orig_fs_exit(self, exc_type, exc_val, exc_tb)  # type: ignore[arg-type]
@@ -504,7 +511,7 @@ def build_filesystem_resource(  # noqa: PLR0913
 
     files = filesystem(**fs_args)
     tracker = _FilesystemTracker(ingested_files=[], preprocess_errors=[])
-    files._fs_tracker = tracker  # type: ignore[attr-defined]  # noqa: SLF001
+    files._pipe._fs_tracker = tracker  # type: ignore[attr-defined]  # noqa: SLF001
 
     resolved_table_name = (
         table_name

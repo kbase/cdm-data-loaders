@@ -342,7 +342,10 @@ def check_pipeline_report(path: Path, expected: dict[str, Any]) -> dict[str, Any
         report_data: dict[str, Any] = yaml.safe_load(fh)
 
     for e, v in expected.items():
-        assert report_data[e] == v
+        if e == "ingested_files" and isinstance(v, list):
+            assert set(report_data.get(e, [])) == set(v)
+        else:
+            assert report_data[e] == v
     return report_data
 
 

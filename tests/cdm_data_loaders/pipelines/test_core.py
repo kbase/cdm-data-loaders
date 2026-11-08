@@ -4,6 +4,7 @@ import gc
 import gzip
 import logging
 import sys
+import threading
 import warnings
 from collections.abc import Callable, Iterator
 from dataclasses import FrozenInstanceError
@@ -1374,16 +1375,54 @@ def test_iceberg_catalog_cleanup_pass_rest_catalog_closes_session_on_dereference
     mock_session.close.assert_called_once_with()
 
 
-def test_iceberg_catalog_cleanup_pass_filesystem_client_exit_closes_catalog_on_error() -> None:
-    """FilesystemClient.__exit__ clears _catalog and closes it immediately when exiting on an exception."""
+@pytest.mark.parametrize(
+    "exc_args",
+    [
+        pytest.param((None, None, None), id="normal-exit"),
+        pytest.param((RuntimeError, RuntimeError("boom"), None), id="error-exit"),
+    ],
+)
+def test_iceberg_catalog_cleanup_pass_filesystem_client_exit_closes_catalog(
+    exc_args: tuple[type[BaseException] | None, BaseException | None, Any],
+) -> None:
+    """FilesystemClient.__exit__ clears _catalog and closes it on both normal and error exits."""
     catalog = SqlCatalog("ephemeral", uri="sqlite:///:memory:")
     client = object.__new__(FilesystemClient)
     client._catalog = catalog
     client._catalog_namespaces = {"ns"}
 
     with patch.object(catalog, "close", wraps=catalog.close) as spy_close:
-        client.__exit__(RuntimeError, RuntimeError("boom"), None)
+        client.__exit__(*exc_args)
 
     assert client._catalog is None
     assert client._catalog_namespaces == set()
     spy_close.assert_called_once_with()
+
+
+def test_iceberg_catalog_cleanup_pass_cross_thread_sql_catalog_disposal(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Disposing a SqlCatalog on the main thread after creation on a worker thread emits no errors or warnings."""
+    holder: list[SqlCatalog] = []
+
+    def _create_on_worker() -> None:
+        holder.append(SqlCatalog("worker_ephemeral", uri="sqlite:///:memory:"))
+
+    worker = threading.Thread(target=_create_on_worker)
+    worker.start()
+    worker.join()
+    assert len(holder) == 1
+
+    with (
+        caplog.at_level(logging.ERROR, logger="sqlalchemy.pool"),
+        warnings.catch_warnings(record=True) as caught,
+    ):
+        warnings.simplefilter("always", ResourceWarning)
+        holder.clear()
+        gc.collect()
+
+    assert caplog.records == []
+    sqlite_warnings = [
+        w for w in caught if issubclass(w.category, ResourceWarning) and "sqlite3.Connection" in str(w.message)
+    ]
+    assert sqlite_warnings == []
