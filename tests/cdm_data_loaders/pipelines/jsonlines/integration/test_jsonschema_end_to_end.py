@@ -96,10 +96,12 @@ def test_run_jsonlines_pipeline_pass_persists_valid_and_rejected_rows(
     )
     tables = read_data_tables(settings, load_info.dataset_name)
     assert set(tables) == {"widget", "_rejected", "gadget"}
+    expected_widget = EXPECTED_WIDGET_ROW if settings.use_pyarrow else WIDGET_RECORD
+    expected_gadget = EXPECTED_GADGET_ROW if settings.use_pyarrow else GADGET_RECORD
     assert [{key: parse_json_string(value) for key, value in row.items()} for row in tables["widget"]] == [
-        EXPECTED_WIDGET_ROW
+        expected_widget
     ] * 3
-    assert tables["gadget"] == [EXPECTED_GADGET_ROW]
+    assert tables["gadget"] == [expected_gadget]
     dataset_dir = Path(settings.output_dir) / load_info.dataset_name
     if loader_file_format == ICEBERG:
         for table_name in ("widget", "gadget", "_rejected"):
@@ -223,4 +225,5 @@ def test_cli_pass_loads_selected_entity(
     assert_pipeline_report_written(
         Path(settings.output_dir), load_info, metadata_moved=True, ingested_files=["gadget/records.jsonl"]
     )
-    assert read_data_tables(settings, load_info.dataset_name) == {"gadget": [EXPECTED_GADGET_ROW]}
+    expected_gadget = EXPECTED_GADGET_ROW if settings.use_pyarrow else GADGET_RECORD
+    assert read_data_tables(settings, load_info.dataset_name) == {"gadget": [expected_gadget]}

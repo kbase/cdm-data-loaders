@@ -186,6 +186,3 @@ def coerce_record_for_pyarrow(
         for field in schema
         if field.name in record
     }
-
-
-convert_json_record = coerce_record_for_pyarrow

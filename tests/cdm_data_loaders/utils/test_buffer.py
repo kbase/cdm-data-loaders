@@ -87,6 +87,31 @@ def test_dict_buffer_pass_defaults_include_rejected_schema() -> None:
     buffer = DictBuffer()
     assert buffer.max_items == DEFAULT_BUFFER_MAX_ITEMS
     assert buffer.schema_map is None
+    assert buffer.use_pyarrow is True
+
+
+def test_dict_buffer_pass_use_pyarrow_false_emits_lists_of_dicts() -> None:
+    """When use_pyarrow is False, DictBuffer emits list[dict] pages for both schematized tables and _rejected."""
+    buffer = DictBuffer(max_items=2, schema_map=PEOPLE_SCHEMA_MAP, use_pyarrow=False)
+    rejected_row = {
+        "table_name": PEOPLE,
+        "source_file": "people.csv",
+        "line_no": 1,
+        "raw_record": "bad",
+        "error_detail": "failed validation",
+    }
+
+    assert list(buffer.add_item(PEOPLE, name_row(1))) == []
+    flushed_people = list(buffer.add_item(PEOPLE, name_row(2)))
+    assert len(flushed_people) == 1
+    assert flushed_people[0].meta.table_name == PEOPLE
+    assert isinstance(flushed_people[0].data, list)
+    assert flushed_people[0].data == [name_row(1), name_row(2)]
+
+    assert list(buffer.add_item(REJECTED_TABLE_NAME, rejected_row)) == []
+    pages = {page.meta.table_name: page.data for page in buffer.flush()}
+    assert isinstance(pages[REJECTED_TABLE_NAME], list)
+    assert pages[REJECTED_TABLE_NAME] == [rejected_row]
 
 
 def test_dict_buffer_pass_custom_schema_map_adds_arrow_schemas() -> None:

@@ -599,3 +599,38 @@ def test_transform_settings_mixin_pass_table_transforms_is_immutable(
     with pytest.raises(TypeError):
         configured_settings.table_transforms.registry["injected"] = _identity_items_transform  # type: ignore[index]
     assert "injected" not in configured_settings.table_transforms.registry
+
+
+@pytest.mark.parametrize(
+    ("loader_file_format", "expected_use_pyarrow", "expected_schema_map"),
+    [
+        pytest.param("parquet", True, ITEMS_SCHEMA_REGISTRY, id="parquet"),
+        pytest.param("iceberg", True, ITEMS_SCHEMA_REGISTRY, id="iceberg"),
+        pytest.param("jsonl", False, None, id="jsonl"),
+    ],
+)
+def test_transform_settings_mixin_pass_use_pyarrow_respects_loader_file_format(
+    test_defaults: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    loader_file_format: str,
+    expected_use_pyarrow: bool,
+    expected_schema_map: ArrowSchemaRegistry | None,
+) -> None:
+    """TransformSettingsMixin sets use_pyarrow False and leaves schema_map None when loader_file_format is jsonl."""
+    mod_name = register_temp_module(
+        monkeypatch,
+        f"_test_format_transforms_mod_{loader_file_format}",
+        TABLE_TRANSFORMS={"items": _identity_items_transform},
+        OUTPUT_SCHEMAS={"items": ITEMS_SCHEMA},
+    )
+    settings = JsonlExtractSettings(
+        **test_defaults,
+        dataset_name="test_ds",
+        table_name="items",
+        loader_file_format=loader_file_format,
+        transforms_module=mod_name,
+        output_schemas_module=mod_name,
+    )
+    assert settings.use_pyarrow is expected_use_pyarrow
+    assert settings.schema_map == expected_schema_map
+    assert settings.table_transforms == ITEMS_TRANSFORM_REGISTRY

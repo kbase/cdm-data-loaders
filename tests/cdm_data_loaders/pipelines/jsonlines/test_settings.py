@@ -818,3 +818,35 @@ def test_ncbi_datasets_settings_fail_locked_fields_rejected(
     cli_args = [*settings_to_argv(base), locked_flag, locked_value]
     with pytest.raises(SettingsError, match=f"unrecognized arguments: {locked_flag}"):
         CliApp.run(NcbiDatasetsSettings, cli_args=cli_args)
+
+
+@pytest.mark.parametrize("kind", ["pydantic", "jsonschema"], ids=["pydantic", "jsonschema"])
+def test_validated_jsonl_settings_pass_skips_pyarrow_conversion_for_jsonl_format(
+    kind: str,
+    monkeypatch: pytest.MonkeyPatch,
+    test_defaults: dict[str, Any],
+) -> None:
+    """When loader_file_format is jsonl, validated JSONL settings set schema_map to None and do not convert schemas to PyArrow."""
+    mod_name = register_temp_module(
+        monkeypatch,
+        f"_test_jsonl_format_skips_arrow_{kind}",
+        ENTITY_MODELS={"widget": UnconstrainedEntityModel},
+        ENTITY_SCHEMAS={"widget": NON_OBJECT_ROOT_SCHEMA},
+    )
+    spy = MagicMock(wraps=jsonlines_settings_module.build_output_schema_registry)
+    monkeypatch.setattr(jsonlines_settings_module, "build_output_schema_registry", spy)
+
+    settings_cls, mod_kwarg = (
+        (JsonlPydanticIngestSettings, ENTITY_MODELS_MODULE)
+        if kind == "pydantic"
+        else (JsonlJsonschemaIngestSettings, ENTITY_SCHEMAS_MODULE)
+    )
+    settings = settings_cls(
+        **test_defaults,
+        dataset_name="test_ds",
+        loader_file_format="jsonl",
+        **{mod_kwarg: mod_name},
+    )
+    assert settings.use_pyarrow is False
+    assert settings.schema_map is None
+    assert spy.call_count == 0

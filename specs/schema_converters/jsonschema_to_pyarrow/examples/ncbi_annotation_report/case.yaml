@@ -2,7 +2,7 @@ title: NCBI Datasets `AnnotationReportResponse`
 schema: schema.json
 rules: [R-ROOT-REF, R-SHAPE-REF, R-SHAPE-ARRAY, R-SCALAR-ENUM-CONST]
 notes: |
-  Deeply nested NCBI Datasets v2 schema (`parsers/ncbi/datasets_api/AnnotationReportResponse.schema.json`) with a
+  Deeply nested NCBI Datasets v2 schema (`schemas/ncbi_datasets/annotationReport.schema.json`) with a
   root `$ref`, many `$defs`, arrays of structs, enums, integers and booleans.
 runs:
   - id: minimal

@@ -170,10 +170,14 @@ class JsonlPydanticIngestSettings(JsonlIngestSettings, TransformSettingsMixin):
         self._model_registry = load_registry_dict(self.entity_models, "ENTITY_MODELS")
         validate_file_preprocessors(self, self._model_registry.registry)
         validate_table_transforms(self, self._model_registry.registry)
-        self._schema_map = build_output_schema_registry(
-            self._model_registry,
-            table_transforms=self._table_transforms,
-            output_schemas=self._unreconciled_output_schemas,
+        self._schema_map = (
+            build_output_schema_registry(
+                self._model_registry,
+                table_transforms=self._table_transforms,
+                output_schemas=self._unreconciled_output_schemas,
+            )
+            if self.use_pyarrow
+            else None
         )
 
     @property
@@ -208,10 +212,14 @@ class JsonlJsonschemaIngestSettings(JsonlIngestSettings, TransformSettingsMixin)
         self._schema_registry = load_registry_dict(self.entity_schemas, "ENTITY_SCHEMAS")
         validate_file_preprocessors(self, self._schema_registry.registry)
         validate_table_transforms(self, self._schema_registry.registry)
-        self._schema_map = build_output_schema_registry(
-            self._schema_registry,
-            table_transforms=self._table_transforms,
-            output_schemas=self._unreconciled_output_schemas,
+        self._schema_map = (
+            build_output_schema_registry(
+                self._schema_registry,
+                table_transforms=self._table_transforms,
+                output_schemas=self._unreconciled_output_schemas,
+            )
+            if self.use_pyarrow
+            else None
         )
 
     @property

@@ -533,6 +533,3 @@ def coerce_record_for_pyarrow(
         for field in schema
         if field.name in source_map
     }
-
-
-coerce_model_for_pyarrow = coerce_record_for_pyarrow

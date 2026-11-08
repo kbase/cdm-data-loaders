@@ -3139,7 +3139,7 @@ array of `JobPreview` structs with `JobInputPreview`, `JobImage` and state trans
 
 **Rules:** [R-ROOT-REF](#r-root-ref), [R-SHAPE-REF](#r-shape-ref), [R-SHAPE-ARRAY](#r-shape-array), [R-SCALAR-ENUM-CONST](#r-scalar-enum-const)
 
-Deeply nested NCBI Datasets v2 schema (`parsers/ncbi/datasets_api/AnnotationReportResponse.schema.json`) with a
+Deeply nested NCBI Datasets v2 schema (`schemas/ncbi_datasets/annotationReport.schema.json`) with a
 root `$ref`, many `$defs`, arrays of structs, enums, integers and booleans.
 
 **Schema:** [`specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/schema.json)

@@ -28,9 +28,9 @@ File pre-processors run **before** a file is opened and parsed. Record transform
    - The transform function returns a mapping of `{destination_table_name: [row_dict, ...]}`.
    - Returning `{}` (or empty row lists) drops the record.
 3. **Coerce & Buffer (`DictBuffer`)**:
-   - All pipelines buffer rows using `DictBuffer`, which always includes the built-in `REJECTED_PYARROW_SCHEMA` for `_rejected` and merges any custom `table_to_schema_map`.
-   - If a destination table has an entry in `DictBuffer.table_to_schema_map` (either derived from the pipeline's input schema or supplied via `OUTPUT_SCHEMAS`), each emitted row is coerced against that table's `pyarrow.Schema` and emitted as a `pyarrow.Table` page.
-   - Otherwise, emitted rows for that table are emitted as `list[dict]` pages as-is.
+   - All pipelines buffer rows using `DictBuffer`.
+   - When `loader_file_format` is `parquet` or `iceberg` (`settings.use_pyarrow` is `True`), `_rejected` uses `REJECTED_PYARROW_SCHEMA`, and any destination table with an entry in `settings.schema_map` (either derived from the pipeline's input schema or supplied via `OUTPUT_SCHEMAS`) has its rows coerced against that `pyarrow.Schema` and emitted as a `pyarrow.Table` page.
+   - When `loader_file_format` is `jsonl` (`settings.use_pyarrow` is `False`), `settings.schema_map` is `None` (no PyArrow schemas are generated from input schemas) and all tables (including `_rejected`) are emitted as `list[dict]` pages.
 
 ---
 
@@ -91,7 +91,7 @@ NCBI Datasets API annotation report JSONL files contain summary lines where no a
 {"reports": [], "total_count": 0}
 ```
 
-Both lines are valid against `AnnotationReportResponse.schema.json`, so `jsonlines_jsonschema` accepts both during validation. To drop records with `total_count == 0` instead of writing empty rows to the `annotation_report` table:
+Both lines are valid against `annotationReport.schema.json`, so `jsonlines_jsonschema` accepts both during validation. To drop records with `total_count == 0` instead of writing empty rows to the `annotation_report` table:
 
 ```python
 # my_package/ncbi_transforms.py
@@ -102,9 +102,7 @@ from typing import Any
 from cdm_data_loaders.core.registry import RecordTransformFn
 
 ANNOTATION_REPORT_SCHEMA = json.loads(
-    files("cdm_data_loaders.parsers.ncbi.datasets_api")
-    .joinpath("AnnotationReportResponse.schema.json")
-    .read_text(encoding="utf-8")
+    files("cdm_data_loaders.schemas.ncbi_datasets").joinpath("annotationReport.schema.json").read_text(encoding="utf-8")
 )
 
 # ENTITY_SCHEMAS and TABLE_TRANSFORMS can live in the same module or separate modules.

@@ -57,7 +57,6 @@ def settings_factory(tmp_path: Path, dlt_destination_config: str) -> Callable[..
         defaults: dict[str, Any] = {
             "dataset_name": "xsv_test_dataset",
             "file_glob": "*",
-            "loader_file_format": "jsonl",
             "schema_file": str(input_dir / "schema.json"),
             "table_name": "my_table",
             "use_destination": dlt_destination_config,

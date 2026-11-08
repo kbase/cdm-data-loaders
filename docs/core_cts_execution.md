@@ -290,7 +290,7 @@ All file readers accept either a local `Path`/`str` or a `dlt` `FileItemDict`. O
 ### Row Buffering (`utils/buffer.py`)
 
 To minimize `dlt` item overhead, readers batch records using `settings.buffer_size`:
-- **`DictBuffer`**: Accumulates Python `dict` rows per target table (always configured with `REJECTED_PYARROW_SCHEMA` for `_rejected`, plus any optional custom `table_to_schema_map`). When flushing a batch for a table, if that table has a `pyarrow.Schema` in `table_to_schema_map`, `DictBuffer` emits a `pa.Table`; otherwise it emits a `list[dict]` batch as-is wrapped with `dlt.mark.with_table_name(batch, table)`.
+- **`DictBuffer`**: Accumulates Python `dict` rows per target table. When `use_pyarrow` is `True` (`loader_file_format` is `parquet` or `iceberg`), any table with a `pyarrow.Schema` in `schema_map` (and `_rejected`, which uses `REJECTED_PYARROW_SCHEMA`) is emitted as a `pa.Table`; when `loader_file_format` is `jsonl` (`use_pyarrow` is `False`) or a table has no PyArrow schema, `DictBuffer` emits a `list[dict]` batch as-is wrapped with `dlt.mark.with_table_name(batch, table)`.
 
 ---
 
