@@ -1387,4 +1387,3 @@ def test_iceberg_catalog_cleanup_pass_filesystem_client_exit_closes_catalog_on_e
     assert client._catalog is None
     assert client._catalog_namespaces == set()
     spy_close.assert_called_once_with()
-
