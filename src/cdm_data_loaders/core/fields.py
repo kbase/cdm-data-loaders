@@ -16,6 +16,7 @@ REJECTED_TABLE_NAME: Final[str] = "_rejected"
 GZIP_SUFFIX: Final[str] = ".gz"
 
 # output file formats
+ICEBERG: Final[str] = "iceberg"
 JSONL: Final[str] = "jsonl"
 PARQUET: Final[str] = "parquet"
 
@@ -23,6 +24,7 @@ PARQUET: Final[str] = "parquet"
 class LoaderFileFormatEnum(StrEnum):
     """Valid values for loader file format."""
 
+    ICEBERG = ICEBERG
     JSONL = JSONL
     PARQUET = PARQUET
 

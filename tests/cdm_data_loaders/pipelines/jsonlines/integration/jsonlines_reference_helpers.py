@@ -62,6 +62,8 @@ def canonicalize_entry(entry: dict[str, Any]) -> dict[str, Any]:
     - drops keys whose value is None (dlt stores missing values as NULL columns
       that reconstruct to None);
     - drops empty dicts (e.g. ``"owner": {}``), which dlt stores as no columns;
+    - drops empty lists, which dlt child tables omit and PyIceberg's Arrow
+      ``list<struct>`` projection materializes for NULL lists;
     - wraps scalar list items in ``{"value": ...}`` (dlt stores lists of scalars
       in a child table with a single ``value`` column);
     - unwraps ``{"v_double": ...}`` on both sides (dlt's representation of a
@@ -84,7 +86,7 @@ def _canonicalize_value(value: Any, key: str = "") -> Any:
             if child_value is None:
                 continue
             canonical_child = _canonicalize_value(child_value, child_key)
-            if canonical_child == {}:
+            if canonical_child in ({}, []):
                 continue
             canonical[child_key] = canonical_child
         return canonical
@@ -107,7 +109,7 @@ def _canonicalize_value(value: Any, key: str = "") -> Any:
     return value
 
 
-def _parse_timestamp(value: str) -> Any:
+def _parse_timestamp(value: str) -> datetime | str:
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError:

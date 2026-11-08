@@ -17,6 +17,7 @@ from cdm_data_loaders.core.settings import (
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import ENTRY_XML_TAG, parse_uniprot_entry
 from cdm_data_loaders.pipelines.core import (
     PipelineCli,
+    build_file_ingest_kwargs,
     run_pipeline,
 )
 from cdm_data_loaders.readers.xml import build_xml_file_resource
@@ -65,10 +66,7 @@ def run_uniprot_pipeline(settings: UniProtSettings) -> LoadInfo | None:
     return run_pipeline(
         settings=settings,
         resource=parse_uniprot(settings),
-        pipeline_kwargs={
-            "pipeline_name": PIPELINE_NAME,
-            "dataset_name": PIPELINE_NAME,
-        },
+        **build_file_ingest_kwargs(settings, PIPELINE_NAME),
     )
 
 

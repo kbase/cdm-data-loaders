@@ -1215,6 +1215,18 @@ def test_build_per_file_filesystem_resource_pass(
 
 
 @pytest.mark.parametrize(
+    ("loader_file_format", "expected_run_kwargs"),
+    [
+        pytest.param("jsonl", {"loader_file_format": "jsonl"}, id="jsonl"),
+        pytest.param("parquet", {"loader_file_format": "parquet"}, id="parquet"),
+        pytest.param(
+            "iceberg",
+            {"loader_file_format": "parquet", "table_format": "iceberg"},
+            id="iceberg",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
     ("dataset_name", "fallback_dataset_name", "expected_dataset_name"),
     [
         pytest.param("custom_ds", False, "custom_ds", id="explicit_no_fallback"),
@@ -1228,13 +1240,15 @@ def test_build_file_ingest_kwargs_pass(
     dataset_name: str | None,
     fallback_dataset_name: bool,
     expected_dataset_name: str | None,
+    loader_file_format: str,
+    expected_run_kwargs: dict[str, str],
 ) -> None:
     """build_file_ingest_kwargs constructs pipeline_kwargs and pipeline_run_kwargs from FileFormatIngestSettings."""
     base_settings: FileFormatIngestSettings = make_cts_settings(
         FileFormatIngestSettings,
         tmp_path,
         dataset_name="custom_ds",
-        loader_file_format="jsonl",
+        loader_file_format=loader_file_format,
     )
     settings = base_settings.model_copy(update={"dataset_name": dataset_name})
 
@@ -1249,7 +1263,5 @@ def test_build_file_ingest_kwargs_pass(
             "pipeline_name": TINY_PIPELINE_NAME,
             "dataset_name": expected_dataset_name,
         },
-        "pipeline_run_kwargs": {
-            "loader_file_format": "jsonl",
-        },
+        "pipeline_run_kwargs": expected_run_kwargs,
     }

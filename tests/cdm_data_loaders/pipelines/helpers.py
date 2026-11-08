@@ -1,6 +1,5 @@
 """Misc helpers for integration tests."""
 
-import gc
 import json
 from collections import defaultdict
 from collections.abc import Callable, Generator, Mapping
@@ -21,7 +20,7 @@ from dlt.destinations import filesystem
 from dlt.extract import DltResource
 from pandas import DataFrame
 
-from cdm_data_loaders.core.fields import PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
+from cdm_data_loaders.core.fields import ICEBERG, PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import FileFormatIngestSettings
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.utils.file_items import as_file_item, open_binary
@@ -76,16 +75,20 @@ def read_parquet_tables(output_dir: Path) -> dict[str, list[dict[str, Any]]]:
     """Read all parquet files under a pipeline output dataset dir, grouped by table name."""
     tables: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for parquet_file in sorted(output_dir.rglob("*.parquet")):
-        tables[parquet_file.parent.name].extend(pq.read_table(parquet_file).to_pylist())
+        parent = parquet_file.parent
+        table_name = (
+            parent.parent.name if parent.name == "data" and (parent.parent / "metadata").is_dir() else parent.name
+        )
+        tables[table_name].extend(pq.read_table(parquet_file).to_pylist())
     return dict(tables)
 
 
 def read_pipeline_tables(output_dir: Path, output_format: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    """Read all json files under a pipeline output dataset dir, grouped by table name.
+    """Read all data files under a pipeline output dataset dir, grouped by table name.
 
-    Defaults to reading jsonlines files; supply "parquet" as file format to read parquet files.
+    Defaults to reading jsonlines files; supply "parquet" or "iceberg" as file format to read parquet files.
     """
-    if output_format and output_format == PARQUET:
+    if output_format and output_format in {PARQUET, ICEBERG}:
         return read_parquet_tables(output_dir)
 
     tables: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -94,7 +97,7 @@ def read_pipeline_tables(output_dir: Path, output_format: str | None = None) -> 
         if not json_file.is_file():
             continue
         # ignore metadata dirs
-        if is_metadata_table(json_file.parent.name):
+        if json_file.parent.name == "metadata" or is_metadata_table(json_file.parent.name):
             continue
         tables[json_file.parent.name].extend(read_jsonl_file(json_file))
 
@@ -109,10 +112,13 @@ def read_destination_rows(
 ) -> list[dict[str, Any]]:
     """Read the rows the filesystem destination wrote for table_name under base_dir.
 
-    Handles parquet, jsonl and gzipped jsonl files. Returns an empty list if the table has no files.
+    Handles parquet, iceberg, jsonl and gzipped jsonl files. Returns an empty list if the table has no files.
     """
     rows: list[dict[str, Any]] = []
-    for data_file in sorted(base_dir.glob(f"**/{table_name}/*")):
+    candidate_files = sorted({*base_dir.glob(f"**/{table_name}/*"), *base_dir.glob(f"**/{table_name}/data/*.parquet")})
+    for data_file in candidate_files:
+        if not data_file.is_file():
+            continue
         if data_file.name.endswith(".parquet"):
             rows.extend(pq.read_table(data_file).to_pylist())
         elif ".jsonl" in data_file.name:
@@ -120,6 +126,18 @@ def read_destination_rows(
     if strip_metadata:
         return [strip_metadata_columns(row) for row in rows]
     return rows
+
+
+def assert_iceberg_table_metadata(dataset_dir: Path, table_name: str) -> None:
+    """Assert that ``dataset_dir / table_name`` has Iceberg metadata and data subdirectories."""
+    table_dir = dataset_dir / table_name
+    metadata_dir = table_dir / "metadata"
+    data_dir = table_dir / "data"
+    assert metadata_dir.is_dir(), f"Missing Iceberg metadata directory for table {table_name!r}"
+    assert data_dir.is_dir(), f"Missing Iceberg data directory for table {table_name!r}"
+    assert list(metadata_dir.glob("*.metadata.json")), f"Missing *.metadata.json for table {table_name!r}"
+    assert list(metadata_dir.glob("snap-*.avro")), f"Missing Iceberg snapshot manifest list for table {table_name!r}"
+    assert list(data_dir.glob("*.parquet")), f"Missing Iceberg data parquet files for table {table_name!r}"
 
 
 def duckdb_pipeline(tmp_path: Path, pipeline_name: str, dataset_name: str, db_name: str | None = None) -> dlt.Pipeline:
@@ -155,7 +173,12 @@ def assert_core_run_pipeline_args(
         "pipeline_name": pipeline_name,
         "dataset_name": settings.dataset_name,
     }
-    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": settings.loader_file_format}
+    expected_run_kwargs = (
+        {"loader_file_format": str(PARQUET), "table_format": str(ICEBERG)}
+        if settings.loader_file_format == LoaderFileFormatEnum.ICEBERG
+        else {"loader_file_format": str(settings.loader_file_format)}
+    )
+    assert kwargs["pipeline_run_kwargs"] == expected_run_kwargs
     assert isinstance(kwargs["resource"], DltResource)
 
 
@@ -547,6 +570,7 @@ def _normalize_reference_entry(entry: dict[str, Any]) -> dict[str, Any]:
 
 def assert_datasets_equal(
     load_info_and_dir: dict[str, tuple[LoadInfo, Path]],
+    output_format: str | None = None,
 ) -> None:
     """Compare datasets to check whether they are identical."""
     if len(load_info_and_dir) < 2:
@@ -555,29 +579,25 @@ def assert_datasets_equal(
 
     all_keys = list(load_info_and_dir.keys())
     dataset_zero = all_keys[0]
-    sorted_row_data: dict[str, dict[str, list[str]]] = {k: {} for k in all_keys}
-
-    with get_pipeline(*load_info_and_dir[dataset_zero]).dataset() as ds_zero:
-        table_names = {table_name for table_name in ds_zero.tables if not is_metadata_table(table_name)}
-        dfs_zero = {t: ds_zero.table(t).df() for t in table_names}
-        rows_per_table = {t: df.shape[0] for t, df in dfs_zero.items()}
-        col_names = {t: set(df.columns) for t, df in dfs_zero.items()}
-        sorted_row_data[dataset_zero] = {t: _df_to_sorted_json(df) for t, df in dfs_zero.items()}
+    load_info_zero, output_dir_zero = load_info_and_dir[dataset_zero]
+    tables_zero = read_data_rows(output_dir_zero / load_info_zero.dataset_name, output_format)
+    table_names = set(tables_zero)
+    rows_per_table = {t: len(rows) for t, rows in tables_zero.items()}
+    col_names = {t: set().union(*(row.keys() for row in rows)) for t, rows in tables_zero.items()}
+    sorted_row_data: dict[str, dict[str, list[str]]] = {
+        dataset_zero: {t: rows_as_multiset(tables_zero, t) for t in table_names},
+    }
 
     for key in all_keys[1:]:
-        with get_pipeline(*load_info_and_dir[key]).dataset() as ds:
-            # check the table names are identical
-            assert {table_name for table_name in ds.tables if not is_metadata_table(table_name)} == table_names
-            dfs = {t: ds.table(t).df() for t in table_names}
-            # check row counts
-            assert {t: df.shape[0] for t, df in dfs.items()} == rows_per_table
-            # column names
-            for t, df in dfs.items():
-                assert set(df.columns) == col_names[t]
-                sorted_row_data[key][t] = _df_to_sorted_json(df)
-                assert sorted_row_data[key][t] == sorted_row_data[dataset_zero][t]
-
-    gc.collect()
+        load_info, output_dir = load_info_and_dir[key]
+        tables = read_data_rows(output_dir / load_info.dataset_name, output_format)
+        assert set(tables) == table_names
+        assert {t: len(rows) for t, rows in tables.items()} == rows_per_table
+        sorted_row_data[key] = {}
+        for t, rows in tables.items():
+            assert set().union(*(row.keys() for row in rows)) == col_names[t]
+            sorted_row_data[key][t] = rows_as_multiset(tables, t)
+            assert sorted_row_data[key][t] == sorted_row_data[dataset_zero][t]
 
 
 def assert_dataset_matches_reference(
@@ -618,7 +638,7 @@ def run_and_compare_variations(
         key: run_and_read(run_pipeline, chunk_dir, **overrides) for key, (chunk_dir, overrides) in variations.items()
     }
     if len(load_info_and_dir) >= 2:  # noqa: PLR2004
-        assert_datasets_equal(load_info_and_dir)
+        assert_datasets_equal(load_info_and_dir, output_format)
     if sorted_reference_json is not None:
         assert_dataset_matches_reference(
             load_info_and_dir,

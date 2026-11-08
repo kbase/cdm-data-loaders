@@ -32,10 +32,13 @@ def test_run_uniprot_pipeline_args_set_correctly(test_settings: UniProtSettings)
 
     assert mock_run_pipeline.call_count == 1
     _, kwargs = mock_run_pipeline.call_args
-    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs"}
+    assert kwargs.keys() == {"settings", "resource", "pipeline_kwargs", "pipeline_run_kwargs"}
     assert kwargs["pipeline_kwargs"] == {
         "pipeline_name": PIPELINE_NAME,
         "dataset_name": PIPELINE_NAME,
+    }
+    assert kwargs["pipeline_run_kwargs"] == {
+        "loader_file_format": str(test_settings.loader_file_format),
     }
     assert kwargs["settings"] == test_settings
     assert isinstance(kwargs["resource"], Callable)
@@ -64,7 +67,7 @@ def test_run_uniprot_pipeline_sets_core_run_pipeline_args_correctly(
     assert mock_dlt.pipeline.return_value.destination == mock_dlt.destination.return_value
     first_run, load_info_save_run = mock_dlt.pipeline.return_value.run.call_args_list
     assert first_run.args == (expected_resource,)
-    assert first_run.kwargs == {}
+    assert first_run.kwargs == {"loader_file_format": str(test_settings.loader_file_format)}
     assert load_info_save_run.args[0] is not None
     assert load_info_save_run.kwargs == {"loader_file_format": "jsonl"}
 

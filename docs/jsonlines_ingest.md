@@ -8,7 +8,7 @@ Three pipelines under `pipelines/jsonlines/` load JSONL files (`.jsonl` and gzip
 | [extract_jsonschema_validate_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema`, `ncbi_datasets` | JSON Schema, per entity table     | `pyarrow.Table` (`JSONSchemaToPyArrow`)          |
 | [extract_pydantic_validate_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`                    | Pydantic models, per entity table | `pyarrow.Table` (`PydanticToPyArrow`)            |
 
-All three support plain and gzip-compressed inputs, Parquet or JSONL output, optional record-level transforms (`--transforms-module`), and a unified `_rejected` table for parse and validation failures.
+All three support plain and gzip-compressed inputs, Parquet, JSONL, or Iceberg output, optional record-level transforms (`--transforms-module`), and a unified `_rejected` table for parse and validation failures.
 
 ---
 
@@ -247,7 +247,7 @@ Standard CTS settings and `CDL_`-prefixed environment variables apply to all thr
 | `--output-schemas-module`                      | `CDL_OUTPUT_SCHEMAS_MODULE`                | all                    | Optional module path defining `OUTPUT_SCHEMAS: dict[str, pa.Schema]`.                                                                                                               |
 | `--file-glob`, `-g`                            | `CDL_FILE_GLOB`                            | all                    | File glob pattern within each input directory; defaults to `*.jsonl*`.                                                                                                              |
 | `--buffer-size`                                | `CDL_BUFFER_SIZE`                          | all                    | Number of rows buffered per table before yielding a page (positive integer, default `100`).                                                                                         |
-| `--loader-file-format`, `-f`                   | `CDL_LOADER_FILE_FORMAT`                   | all                    | Output file format: `parquet` (default) or `jsonl`.                                                                                                                                 |
+| `--loader-file-format`, `-f`                   | `CDL_LOADER_FILE_FORMAT`                   | all                    | Output file or table format: `parquet` (default), `jsonl`, or `iceberg`.                                                                                                            |
 | `--use-destination`, `-d`                      | `CDL_USE_DESTINATION`                      | all                    | Name of the `dlt` destination block (default `cts`).                                                                                                                                |
 | `--use-output-dir-for-pipeline-metadata`, `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | all                    | Store `dlt` pipeline metadata under `<output_dir>/pipeline_metadata` (default `false`).                                                                                             |
 | `--dlt-dev-mode`                               | `CDL_DLT_DEV_MODE`                         | all                    | Enable `dlt` dev mode (resets state and appends a timestamp to the dataset name; default `false`).                                                                                  |

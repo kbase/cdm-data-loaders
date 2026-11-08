@@ -506,7 +506,7 @@ def test_run_atb_pipeline(
             "pipeline_name": DATASET_NAME,
             "dataset_name": DATASET_NAME,
         },
-        pipeline_run_kwargs=None,
+        pipeline_run_kwargs={"loader_file_format": str(test_settings.loader_file_format)},
     )
 
 
@@ -568,7 +568,10 @@ def test_run_atb_pipeline_pipeline_dir_present_or_absent(
     assert mock_dlt.destination.call_args_list == [call(VALID_DESTINATIONS[0], max_table_nesting=0)]
     mock_pipeline = mock_dlt.pipeline.return_value
     assert mock_pipeline.destination == mock_dlt.destination.return_value
-    assert mock_pipeline.run.call_args_list[0] == call(mock_file_downloader)
+    assert mock_pipeline.run.call_args_list[0] == call(
+        mock_file_downloader,
+        loader_file_format=str(settings.loader_file_format),
+    )
 
     pipeline_kwargs: dict[str, Any] = {"pipeline_name": DATASET_NAME, "dataset_name": DATASET_NAME}
     if use_output_dir_for_pipeline_metadata:

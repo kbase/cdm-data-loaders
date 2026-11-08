@@ -24,7 +24,7 @@ from tests.cdm_data_loaders.pipelines.jsonlines.integration.jsonlines_reference_
         ),
         pytest.param(
             {"values": ["second", "first", "second"], "empty_list": []},
-            {"values": [{"value": "second"}, {"value": "first"}, {"value": "second"}], "empty_list": []},
+            {"values": [{"value": "second"}, {"value": "first"}, {"value": "second"}]},
             id="scalar-list-order-and-duplicates",
         ),
         pytest.param(

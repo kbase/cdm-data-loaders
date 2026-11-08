@@ -109,8 +109,8 @@ classDiagram
 
     LoggerSettings <|-- PromoteSettings
     LoggerSettings <|-- DownloadSettings
-    CtsSettings <|-- AtbSettings
-    CtsSettings <|-- NcbiRestApiSettings
+    FileFormatIngestSettings <|-- AtbSettings
+    FileFormatIngestSettings <|-- NcbiRestApiSettings
     XmlIngestSettings <|-- UniProtSettings
     FileFormatIngestSettings <|-- JsonlIngestSettings
     FileFormatIngestSettings <|-- XsvIngestSettings
@@ -170,10 +170,10 @@ Base settings for `dlt`-backed CTS pipelines (`CLI_SHORTCUTS`):
 
 Extends `CtsSettings` for file-format ingestion pipelines (`FILE_FORMAT_CLI_SHORTCUTS`):
 
-| Field                | CLI Flag               | Shortcut | Default      | Description                                                     |
-| :------------------- | :--------------------- | :------- | :----------- | :-------------------------------------------------------------- |
-| `dataset_name`       | `--dataset-name`       | —        | *(Required)* | Name of the dataset / schema produced in the `dlt` destination. |
-| `loader_file_format` | `--loader-file-format` | `-f`     | `"parquet"`  | Output file format for `dlt` (`parquet` or `jsonl`).            |
+| Field                | CLI Flag               | Shortcut | Default      | Description                                                                |
+| :------------------- | :--------------------- | :------- | :----------- | :------------------------------------------------------------------------- |
+| `dataset_name`       | `--dataset-name`       | —        | *(Required)* | Name of the dataset / schema produced in the `dlt` destination.            |
+| `loader_file_format` | `--loader-file-format` | `-f`     | `"parquet"`  | Output file or table format for `dlt` (`iceberg`, `jsonl`, or `parquet`). |
 
 #### `XmlIngestSettings` & `SingleTableXmlIngestSettings`
 
@@ -222,11 +222,29 @@ credentials = "/output_dir/warehouse.duckdb"
 `dlt` reads destination credentials and configuration from:
 
 1. **Container Input Directory (`/input_dir/dlt_conf/`)**:
-   When running via `scripts/entrypoint.sh pipeline ...`, if `/input_dir/dlt_conf` exists, the entrypoint copies `/input_dir/dlt_conf/*` (such as `config.toml` and `secrets.toml`) into `$HOME/.dlt/` before starting the pipeline.
+   When running via `scripts/entrypoint.sh pipeline ...`, if `/input_dir/dlt_conf` exists, the entrypoint copies `/input_dir/dlt_conf/{config.toml,secrets.toml,.pyiceberg.yaml}` into `$HOME/.dlt/` before starting the pipeline.
 2. **Project `.dlt/` Directory**:
    For local runs, `dlt` reads `.dlt/config.toml` and `.dlt/secrets.toml` in the working directory (or `~/.dlt/`).
 3. **Environment Variables**:
    Standard `dlt` environment variables (e.g., `DESTINATION__LOCAL_FS__DESTINATION_TYPE=filesystem`, `DESTINATION__LOCAL_FS__BUCKET_URL=/output_dir`, `RUNTIME__SLACK_INCOMING_HOOK=...`) can be set alongside `CDL_*` variables.
+
+### Configuring Apache Iceberg Catalogs (`--loader-file-format iceberg`)
+
+When `--loader-file-format iceberg` (`-f iceberg`) is passed with a `filesystem` destination, `dlt` writes Apache Iceberg tables (`loader_file_format="parquet"`, `table_format="iceberg"`) using PyIceberg (`dlt.common.libs.pyiceberg`). The `_load_info` metadata table always writes as `jsonl` (`table_format=None`).
+
+By default, if no explicit catalog is configured, `dlt` creates a local SQLite catalog (`sql_default`) at `<bucket_url>/iceberg_catalog.db`. To configure a custom SQLite, PostgreSQL, or REST catalog, use one of:
+
+1. **`[iceberg_catalog]` in `.dlt/config.toml` / `.dlt/secrets.toml`**:
+   ```toml
+   [iceberg_catalog]
+   iceberg_catalog_name = "default"
+   iceberg_catalog_type = "sql"
+   iceberg_catalog_config = { uri = "sqlite:////output_dir/catalog.db" }
+   ```
+2. **`.pyiceberg.yaml`**:
+   Supply `.pyiceberg.yaml` in `/input_dir/dlt_conf/.pyiceberg.yaml` (copied into `$HOME/.dlt/.pyiceberg.yaml` by `scripts/entrypoint.sh`) or set `PYICEBERG_HOME`.
+3. **Environment Variables**:
+   Use PyIceberg environment variables (`PYICEBERG_CATALOG__DEFAULT__URI=...`) or `dlt` environment variables (`ICEBERG_CATALOG__ICEBERG_CATALOG_TYPE=...`).
 
 ### Pipeline Metadata Location (`-p` / `--use-output-dir-for-pipeline-metadata`)
 
@@ -264,7 +282,7 @@ sequenceDiagram
 3. **`build_per_file_filesystem_resource(settings, file_fn, *reader_args, name=..., file_glob=..., schema_contract=..., **transformer_kwargs)`**:
    Composes `build_filesystem_resource` and `make_per_file_reader(file_fn)` so each discovered file is streamed through `file_fn(file_item, settings, *reader_args)` while `_attach_file_collector` records its `relative_path` in `ingested_files`.
 4. **`build_file_ingest_kwargs(settings, pipeline_name, fallback_dataset_name=False)`**:
-   Builds `{"pipeline_kwargs": {"pipeline_name": ..., "dataset_name": ...}, "pipeline_run_kwargs": {"loader_file_format": str(settings.loader_file_format)}}` for `run_pipeline()`.
+   Builds `{"pipeline_kwargs": {"pipeline_name": ..., "dataset_name": ...}, "pipeline_run_kwargs": ...}` for `run_pipeline()`. When `settings.loader_file_format` is `"iceberg"`, `pipeline_run_kwargs` is set to `{"loader_file_format": "parquet", "table_format": "iceberg"}`; otherwise it is set to `{"loader_file_format": str(settings.loader_file_format)}`.
 
 ### Transparent Gzip Handling (`utils/file_items.py`)
 

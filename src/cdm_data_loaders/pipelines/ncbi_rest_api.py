@@ -14,7 +14,7 @@ from functools import cached_property, partial
 from itertools import islice
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, ClassVar, Final
 from urllib.parse import parse_qs, urlparse
 
 import dlt
@@ -31,9 +31,14 @@ from pydantic_settings import SettingsConfigDict
 from requests.exceptions import HTTPError
 
 from cdm_data_loaders.core.fields import SaveRawResponses
-from cdm_data_loaders.core.settings import CLI_SHORTCUTS, CtsSettings, default_settings_with_shortcuts
+from cdm_data_loaders.core.settings import (
+    FILE_FORMAT_CLI_SHORTCUTS,
+    FileFormatIngestSettings,
+    default_settings_with_shortcuts,
+)
 from cdm_data_loaders.pipelines.core import (
     PipelineCli,
+    build_file_ingest_kwargs,
     run_pipeline,
 )
 from cdm_data_loaders.utils.batcher import NumericFileSequenceBatcher
@@ -62,13 +67,15 @@ BATCH_SIZE: Final[str] = "batch_size"
 QUERY_TYPE: Final[str] = "query_type"
 
 
-class NcbiRestApiSettings(CtsSettings):
+class NcbiRestApiSettings(FileFormatIngestSettings):
     """Configuration for running the NCBI REST API import pipeline."""
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name="ncbi_rest_api",
-        cli_shortcuts={**CLI_SHORTCUTS, BATCH_SIZE: "b", QUERY_TYPE: "q"},
+        cli_shortcuts={**FILE_FORMAT_CLI_SHORTCUTS, BATCH_SIZE: "b", QUERY_TYPE: "q"},
     )
+
+    dataset_name: ClassVar[str] = DATASET_NAME
 
     batch_size: PositiveInt = Field(
         default=MAX_IDS_PER_QUERY,
@@ -414,17 +421,11 @@ def run_ncbi_pipeline(settings: NcbiRestApiSettings) -> LoadInfo | None:
     if settings.save_raw_responses:
         REST_CLIENT_HOOKS["response"] = [partial(save_raw_response, settings)]
 
-    pipeline_kwargs = {
-        "pipeline_name": DATASET_NAME,
-        "dataset_name": DATASET_NAME,
-    }
-
     return run_pipeline(
         settings=settings,
         resource=[assembly_report_parser],
         destination_kwargs={"max_table_nesting": 0},
-        pipeline_kwargs=pipeline_kwargs,
-        pipeline_run_kwargs=None,
+        **build_file_ingest_kwargs(settings, DATASET_NAME),
     )
 
 

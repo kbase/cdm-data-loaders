@@ -17,7 +17,7 @@ from cdm_data_loaders.core.fields import (
     TableName,
 )
 
-FORMAT_ERROR = "Input should be 'jsonl' or 'parquet'"
+FORMAT_ERROR = "Input should be 'iceberg', 'jsonl' or 'parquet'"
 
 
 class PipelineFieldsModel(BaseModel):
@@ -45,6 +45,16 @@ class PipelineFieldsModel(BaseModel):
             {"dataset_name": "ds", "loader_file_format": LoaderFileFormatEnum.JSONL, "max_table_nesting": 0},
             {"dataset_name": "ds", "loader_file_format": "jsonl", "max_table_nesting": 0},
             id="jsonl_enum_member-nesting_0",
+        ),
+        pytest.param(
+            {"dataset_name": "ds", "loader_file_format": "iceberg", "max_table_nesting": 0},
+            {"dataset_name": "ds", "loader_file_format": "iceberg", "max_table_nesting": 0},
+            id="iceberg_string-nesting_0",
+        ),
+        pytest.param(
+            {"dataset_name": "ds", "loader_file_format": LoaderFileFormatEnum.ICEBERG, "max_table_nesting": 0},
+            {"dataset_name": "ds", "loader_file_format": "iceberg", "max_table_nesting": 0},
+            id="iceberg_enum_member-nesting_0",
         ),
     ],
 )

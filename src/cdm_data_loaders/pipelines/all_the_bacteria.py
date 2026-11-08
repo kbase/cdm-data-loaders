@@ -5,9 +5,6 @@ Project documentation: https://allthebacteria.org/
 Batch downloading from OSF: https://allthebacteria.org/docs/osf_downloads/
 
 all_atb_files.tsv: https://osf.io/xv7q9/files/r6gcp (or Rg6cp, casing varies)
-
-# TODO: change the output to parquet files.
-
 """
 
 import copy
@@ -17,7 +14,7 @@ from collections.abc import Generator
 from functools import cached_property
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any, Final, Self
+from typing import Any, ClassVar, Final, Self
 
 import dlt
 from dlt.common.pipeline import LoadInfo
@@ -29,12 +26,13 @@ from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import NonEmptyStr
 from cdm_data_loaders.core.settings import (
-    CLI_SHORTCUTS,
-    CtsSettings,
+    FILE_FORMAT_CLI_SHORTCUTS,
+    FileFormatIngestSettings,
     default_settings_with_shortcuts,
 )
 from cdm_data_loaders.pipelines.core import (
     PipelineCli,
+    build_file_ingest_kwargs,
     run_pipeline,
 )
 from cdm_data_loaders.utils.file_transfer.sync_client import FileDownloader
@@ -59,13 +57,15 @@ EXPECTED_ATB_FIELDNAMES = ["project", "project_id", "filename", "url", "md5", "s
 REQUIRED_ATB_FIELDNAMES = {"project", "filename", "url", "md5"}
 
 
-class AtbSettings(CtsSettings):
+class AtbSettings(FileFormatIngestSettings):
     """Configuration for running the AllTheBacteria import pipeline."""
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name="all_the_bacteria",
-        cli_shortcuts={VERSION: "v", **CLI_SHORTCUTS},
+        cli_shortcuts={VERSION: "v", **FILE_FORMAT_CLI_SHORTCUTS},
     )
+
+    dataset_name: ClassVar[str] = DATASET_NAME
 
     version: NonEmptyStr = Field(
         default=ATB_VERSION,
@@ -272,17 +272,11 @@ def run_atb_pipeline(settings: AtbSettings) -> LoadInfo | None:
     file_list_resource.bind(settings)
     downloader_resource.bind(settings)
 
-    pipeline_kwargs: dict[str, Any] = {
-        "pipeline_name": DATASET_NAME,
-        "dataset_name": DATASET_NAME,
-    }
-
     return run_pipeline(
         settings=settings,
         resource=downloader_resource,
         destination_kwargs={"max_table_nesting": 0},
-        pipeline_kwargs=pipeline_kwargs,
-        pipeline_run_kwargs=None,
+        **build_file_ingest_kwargs(settings, DATASET_NAME),
     )
 
 
