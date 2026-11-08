@@ -109,7 +109,7 @@ def _canonicalize_value(value: Any, key: str = "") -> Any:
     return value
 
 
-def _parse_timestamp(value: str) -> Any:
+def _parse_timestamp(value: str) -> datetime | str:
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError:
