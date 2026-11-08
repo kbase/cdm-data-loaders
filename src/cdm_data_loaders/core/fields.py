@@ -29,6 +29,14 @@ class LoaderFileFormatEnum(StrEnum):
     PARQUET = PARQUET
 
 
+PYARROW_FILE_FORMATS: Final[frozenset[LoaderFileFormatEnum]] = frozenset(
+    {
+        LoaderFileFormatEnum.ICEBERG,
+        LoaderFileFormatEnum.PARQUET,
+    }
+)
+
+
 # destination config block names
 CTS: Final[str] = "cts"
 

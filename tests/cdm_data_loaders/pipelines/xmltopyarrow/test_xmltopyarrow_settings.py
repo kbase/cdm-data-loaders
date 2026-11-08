@@ -465,3 +465,42 @@ def test_pubmed_xmltopyarrow_settings_pass_defaults_and_cli(
         )
     assert UNIPROT_SCHEMAS["entry"] is UNIPROT_SCHEMA
     assert UNIREF_SCHEMAS["entry"] is UNIREF_SCHEMA
+
+
+@pytest.mark.parametrize("level_mode", [False, True], ids=["single-tag", "level-mode"])
+def test_xmltopyarrow_settings_pass_skips_pyarrow_schema_generation_for_jsonl_format(
+    monkeypatch: pytest.MonkeyPatch,
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    copy_xsd_fixture: Callable[[str], str],
+    level_mode: bool,
+) -> None:
+    """When loader_file_format is jsonl, XmlToPyArrowSettings does not generate PyArrow schemas and sets schema_map to None."""
+    gen_single_spy = MagicMock(wraps=generate_pyarrow_schema)
+    gen_level_spy = MagicMock(wraps=generate_pyarrow_schemas_at_level)
+    monkeypatch.setattr(xmltopyarrow_settings_module, "generate_pyarrow_schema", gen_single_spy)
+    monkeypatch.setattr(xmltopyarrow_settings_module, "generate_pyarrow_schemas_at_level", gen_level_spy)
+
+    if level_mode:
+        settings = settings_factory(
+            xsd_file=str(PUBMED_XSD_FILE),
+            xml_level=1,
+            root_tag=PUBMED_ROOT_TAG,
+            loader_file_format="jsonl",
+        )
+        assert set(settings.xml_level_converters) == {"PubmedArticle", "PubmedBookArticle", "DeleteCitation"}
+    else:
+        xsd_file = copy_xsd_fixture(UNIREF_LIKE_XSD)
+        settings = settings_factory(
+            xsd_file=xsd_file,
+            xml_tag="entry",
+            table_name="entry",
+            loader_file_format="jsonl",
+        )
+        assert callable(settings.xml_element_converter)
+
+    assert settings.use_pyarrow is False
+    assert settings.schema_map is None
+    assert settings.pyarrow_schema is None
+    assert settings.pyarrow_schemas == {}
+    assert gen_single_spy.call_count == 0
+    assert gen_level_spy.call_count == 0

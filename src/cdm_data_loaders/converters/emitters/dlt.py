@@ -49,7 +49,6 @@ FORMATS: Final[dict[str, TDataType]] = {
     "binary": "binary",
     "base64": "binary",
 }
-BINARY_FORMATS: Final = frozenset(name for name, kind in FORMATS.items() if kind == "binary")
 LOGICAL: Final[dict[str, TDataType]] = {
     "decimal": "decimal",
     "wei": "wei",

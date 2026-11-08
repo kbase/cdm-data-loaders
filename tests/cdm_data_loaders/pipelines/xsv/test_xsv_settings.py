@@ -359,3 +359,18 @@ def test_xsv_settings_fail_unknown_transform_table_name(
     )
     with pytest.raises(ValidationError, match="Unknown table names"):
         settings_factory(transforms_module=transforms_mod)
+
+
+def test_xsv_settings_pass_skips_pyarrow_schema_generation_for_jsonl_format(
+    monkeypatch: pytest.MonkeyPatch,
+    settings_factory: Callable[..., XsvIngestSettings],
+) -> None:
+    """When loader_file_format is jsonl, XsvIngestSettings sets schema_map to None and does not call convert_xsv_schema_to_pyarrow."""
+    convert_spy = MagicMock(wraps=convert_xsv_schema_to_pyarrow)
+    monkeypatch.setattr(xsv_settings_module, "convert_xsv_schema_to_pyarrow", convert_spy)
+
+    settings = settings_factory(loader_file_format="jsonl")
+
+    assert settings.use_pyarrow is False
+    assert settings.schema_map is None
+    assert convert_spy.call_count == 0

@@ -117,6 +117,7 @@ def make_page_router(  # noqa: PLR0913
     transform_valid: Callable[[Any], Any] | None = None,
     table_transform: RecordTransformFn | None = None,
     schema_map: ArrowSchemaRegistry | None = None,
+    use_pyarrow: bool = True,
 ) -> Callable[[Iterable[dict[str, Any]]], Generator[Any, Any, Any]]:
     """Build a function that routes pages of line records to valid and rejected tables.
 
@@ -127,9 +128,9 @@ def make_page_router(  # noqa: PLR0913
     ``table_transform`` into target table(s); failed records yield a provenance
     row (``table_name``, ``source_file``, ``line_no``, ``raw_record``,
     ``error_detail``) into ``_rejected``. Records are accumulated in a
-    ``DictBuffer``, which always emits ``_rejected`` as ``pyarrow.Table`` pages and
-    emits target tables as ``pyarrow.Table`` pages whenever ``schema_map``
-    is supplied.
+    ``DictBuffer``, which emits ``_rejected`` and schematized target tables as
+    ``pyarrow.Table`` pages when ``use_pyarrow`` is ``True``, or as ``list[dict]``
+    pages otherwise.
 
     :param table_name: default table name for valid records
     :type  table_name: str
@@ -143,16 +144,23 @@ def make_page_router(  # noqa: PLR0913
     :type  table_transform: RecordTransformFn | None
     :param schema_map: optional per-table PyArrow schema registry
     :type  schema_map: ArrowSchemaRegistry | None
+    :param use_pyarrow: whether buffered pages are emitted as ``pyarrow.Table`` instances
+    :type  use_pyarrow: bool
     :return: function taking one page (or iterable) of line records and yielding routed pages
     :rtype : Callable[[Iterable[dict[str, Any]]], Generator[Any, Any, Any]]
     """
 
-    def _route(page: Iterable[dict[str, Any]] | pa.Table) -> Generator[Any, Any, Any]:
+    def _route(page: Iterable[dict[str, Any]] | dict[str, Any] | pa.Table) -> Generator[Any, Any, Any]:
         if isinstance(page, pa.Table):
             yield dlt.mark.with_table_name(page, REJECTED_TABLE_NAME)
             return
-        buffer = DictBuffer(max_items=buffer_size, schema_map=schema_map)
+        if isinstance(page, dict):
+            page = [page]
+        buffer = DictBuffer(max_items=buffer_size, schema_map=schema_map, use_pyarrow=use_pyarrow)
         for item in page:
+            if "parse_error" not in item and "error_detail" in item:
+                yield from buffer.add_item(REJECTED_TABLE_NAME, item)
+                continue
             yield from _route_line_record(
                 item,
                 table_name,
@@ -185,7 +193,11 @@ def route_jsonl_lines(
     :yield: table-tagged rows
     :rtype: Generator[TDataItems, Any, Any]
     """
-    buffer = DictBuffer(max_items=settings.buffer_size, schema_map=settings.schema_map)
+    buffer = DictBuffer(
+        max_items=settings.buffer_size,
+        schema_map=settings.schema_map,
+        use_pyarrow=settings.use_pyarrow,
+    )
     for file_item in items:
         for item in iter_file_jsonl_records(file_item):
             yield from _route_line_record(

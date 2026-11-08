@@ -554,8 +554,13 @@ def build_filesystem_resource(  # noqa: PLR0913
                         "raw_record": None,
                         "error_detail": str(exc),
                     }
+                    rejected_page: TDataItems = (
+                        pa.Table.from_pylist([rejected_row], schema=REJECTED_PYARROW_SCHEMA)
+                        if getattr(settings, "use_pyarrow", True)
+                        else [rejected_row]
+                    )
                     yield dlt.mark.with_table_name(
-                        pa.Table.from_pylist([rejected_row], schema=REJECTED_PYARROW_SCHEMA),
+                        rejected_page,
                         REJECTED_TABLE_NAME,
                     )
                     failed = True

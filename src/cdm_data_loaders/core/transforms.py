@@ -9,6 +9,8 @@ from pydantic_settings import BaseSettings
 
 from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
 from cdm_data_loaders.core.fields import (
+    PYARROW_FILE_FORMATS,
+    LoaderFileFormatEnum,
     OutputSchemasModuleSpec,
     PreprocessorsModuleSpec,
     TransformsModuleSpec,
@@ -177,14 +179,19 @@ class TransformSettingsMixin(BaseSettings):
             self._file_preprocessors = PreprocessorRegistry(default=self._DEFAULT_FILE_PREPROCESSORS)
         if self.transforms_module is not None:
             self._table_transforms = load_registry_dict(self.transforms_module, "TABLE_TRANSFORMS")
-        if self.output_schemas_module is not None:
+        if self.output_schemas_module is not None and self.use_pyarrow:
             self._unreconciled_output_schemas = load_registry_dict(self.output_schemas_module, "OUTPUT_SCHEMAS")
         self._resolve_settings_schema_map()
         return self
 
+    @property
+    def use_pyarrow(self) -> bool:
+        """Return whether this pipeline yields ``pyarrow.Table`` pages instead of row dicts."""
+        return getattr(self, "loader_file_format", LoaderFileFormatEnum.PARQUET) in PYARROW_FILE_FORMATS
+
     def _needs_default_pyarrow_schema(self, table_name: str) -> bool:
         """Return whether ``table_name`` needs its PyArrow schema generated from the input schema."""
-        if self.get_table_transform(table_name) is not None:
+        if not self.use_pyarrow or self.get_table_transform(table_name) is not None:
             return False
         return not (
             self._unreconciled_output_schemas is not None and table_name in self._unreconciled_output_schemas.registry
@@ -196,14 +203,18 @@ class TransformSettingsMixin(BaseSettings):
         if isinstance(table_name, str):
             validate_file_preprocessors(self, {table_name})
             validate_table_transforms(self, {table_name})
-            self._schema_map = resolve_schema_map(
-                table_name,
-                transform=self.get_table_transform(table_name),
-                unreconciled_output_schemas=self._unreconciled_output_schemas,
-                default_pyarrow_schema=default_pyarrow_schema,
+            self._schema_map = (
+                resolve_schema_map(
+                    table_name,
+                    transform=self.get_table_transform(table_name),
+                    unreconciled_output_schemas=self._unreconciled_output_schemas,
+                    default_pyarrow_schema=default_pyarrow_schema,
+                )
+                if self.use_pyarrow
+                else None
             )
         else:
-            self._schema_map = self._unreconciled_output_schemas
+            self._schema_map = self._unreconciled_output_schemas if self.use_pyarrow else None
 
     @property
     def file_preprocessors(self) -> PreprocessorRegistry | None:

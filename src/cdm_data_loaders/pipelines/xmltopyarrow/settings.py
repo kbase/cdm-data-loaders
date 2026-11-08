@@ -124,8 +124,12 @@ class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin):
 
     def _resolve_level_schema_map(self) -> None:
         """Validate `file_preprocessors` and `table_transforms`, and populate `_schema_map` for level-based mode."""
-        validate_file_preprocessors(self, self._pyarrow_schemas)
-        validate_table_transforms(self, self._pyarrow_schemas)
+        valid_tables = self._xml_level_converters or self._pyarrow_schemas
+        validate_file_preprocessors(self, valid_tables)
+        validate_table_transforms(self, valid_tables)
+        if not self.use_pyarrow:
+            self._schema_map = None
+            return
         resolved_schemas: dict[str, pa.Schema] = {
             **(
                 dict(self._unreconciled_output_schemas.registry)
@@ -154,7 +158,7 @@ class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin):
                     root_tag=self.root_tag,
                     max_recursion_depth=self.max_recursion_depth,
                 )
-                self._pyarrow_schemas = self._resolve_pyarrow_schemas()
+                self._pyarrow_schemas = self._resolve_pyarrow_schemas() if self.use_pyarrow else {}
                 self._pyarrow_schema = None
             else:
                 table_name = self.table_name or ""
@@ -292,7 +296,6 @@ class PubMedXmlToPyArrowSettings(LevelPresetXmlToPyArrowSettings):
     )
 
     dataset_name: ClassVar[str] = PUBMED_PIPELINE_NAME
-    root_tag: ClassVar[str | None] = PUBMED_ROOT_TAG
 
     file_glob: Annotated[
         FileGlob,

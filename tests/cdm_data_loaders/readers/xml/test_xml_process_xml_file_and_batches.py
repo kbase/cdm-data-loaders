@@ -257,6 +257,7 @@ def fake_settings(
     settings.input_dir = Path(input_dir)
     settings.file_glob = DEFAULT_XML_FILE_GLOB
     settings.loader_file_format = DEFAULTS[LOADER_FILE_FORMAT]
+    settings.use_pyarrow = True
     if hasattr(settings, "get_table_transform"):
         settings.get_table_transform.return_value = None
     if hasattr(settings, "schema_map"):
@@ -1124,9 +1125,11 @@ def test_process_xml_file_to_pyarrow_pass_uses_dict_buffer_with_table_schema_map
     def _recording_dict_buffer(
         max_items: int = DEFAULTS[BUFFER_SIZE],
         schema_map: ArrowSchemaRegistry | None = None,
+        *,
+        use_pyarrow: bool = True,
     ) -> Any:  # noqa: ANN401
         captured_schema_maps.append(schema_map)
-        return real_dict_buffer(max_items=max_items, schema_map=schema_map)
+        return real_dict_buffer(max_items=max_items, schema_map=schema_map, use_pyarrow=use_pyarrow)
 
     monkeypatch.setattr(xml_module, "DictBuffer", _recording_dict_buffer)
 
@@ -1257,3 +1260,33 @@ def test_process_xml_file_to_pyarrow_fail_level_mode_unexpected_xml_tag(tmp_path
 
     with pytest.raises(ValueError, match="Unexpected XML element <newspaper> at level 1"):
         list(process_xml_file_to_pyarrow(file_path, settings))
+
+
+@pytest.mark.parametrize("level_mode", [False, True], ids=["single-tag", "level-mode"])
+def test_process_xml_file_to_pyarrow_pass_use_pyarrow_false_yields_lists_of_dicts(
+    tmp_path: Path,
+    level_mode: bool,
+) -> None:
+    """When settings.use_pyarrow is False, process_xml_file_to_pyarrow yields list[dict] instead of pa.Table."""
+    if level_mode:
+        file_path = write_xml_file(tmp_path, "catalog.xml", MULTI_ENTITY_XML)
+        settings = fake_xmltopyarrow_level_settings(xml_level=1)
+        settings.use_pyarrow = False  # pyright: ignore[reportAttributeAccessIssue]
+        settings.schema_map = None  # pyright: ignore[reportAttributeAccessIssue]
+        tagged = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
+        by_table = dict(tagged)
+        assert all(isinstance(page, list) for page in by_table.values())
+        assert by_table["book"] == [{"_id": "b1", "title": "Dune"}, {"_id": "b2", "title": "Foundation"}]
+        assert by_table["magazine"] == [{"_id": "m1", "issue": 42}]
+        assert by_table["copyright"] == [{"#text": "Copyright 2026"}]
+    else:
+        file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
+        settings = fake_xmltopyarrow_settings(table_name="people", xml_tag="person")
+        settings.use_pyarrow = False  # pyright: ignore[reportAttributeAccessIssue]
+        settings.schema_map = None  # pyright: ignore[reportAttributeAccessIssue]
+        tagged = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
+        assert len(tagged) == 1
+        table_name, data = tagged[0]
+        assert table_name == "people"
+        assert isinstance(data, list)
+        assert data == PEOPLE_XML_TO_PYARROW_PARSED[:2]

@@ -16,6 +16,7 @@ from cdm_data_loaders.core.fields import (
     LOADER_FILE_FORMAT,
     OUTPUT_DIR,
     PIPELINE_DIR_NAME,
+    PYARROW_FILE_FORMATS,
     REPORT_FILE_NAME,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
@@ -251,6 +252,11 @@ class FileFormatIngestSettings(CtsSettings):
 
     dataset_name: DatasetName
     loader_file_format: LoaderFileFormat
+
+    @property
+    def use_pyarrow(self) -> bool:
+        """Return whether this pipeline yields ``pyarrow.Table`` pages instead of row dicts."""
+        return self.loader_file_format in PYARROW_FILE_FORMATS
 
 
 class XmlIngestSettings(FileFormatIngestSettings):

@@ -1058,8 +1058,6 @@ def test_run_pipeline_pass_file_preprocessors_reject_skip_and_record_report_erro
         {
             "table_name": "items",
             "source_file": "bad.jsonl",
-            "line_no": None,
-            "raw_record": None,
             "error_detail": "checksum mismatch",
         }
     ]

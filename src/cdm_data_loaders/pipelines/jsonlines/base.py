@@ -81,6 +81,7 @@ def build_entity_resource(
             transform_valid=transform_valid,
             table_transform=settings.get_table_transform(table_name),
             schema_map=settings.schema_map,
+            use_pyarrow=settings.use_pyarrow,
         ),
         data_from=raw,
         name=f"{table_name}_validated",

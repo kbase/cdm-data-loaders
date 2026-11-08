@@ -343,6 +343,7 @@ def _process_xml_file_to_pyarrow_at_level(
     buffer = DictBuffer(
         schema_map=settings.schema_map,
         max_items=settings.buffer_size,
+        use_pyarrow=settings.use_pyarrow,
     )
     converters = settings.xml_level_converters
 
@@ -395,6 +396,7 @@ def process_xml_file_to_pyarrow(file_path: FileSource, settings: XmlToPyArrowSet
     buffer = DictBuffer(
         schema_map=schema_map,
         max_items=settings.buffer_size,
+        use_pyarrow=settings.use_pyarrow,
     )
     yield from _stream_and_buffer_xml_elements(
         file_path=file_path,
@@ -424,7 +426,11 @@ def process_xml_file_to_dict(file_path: FileSource, settings: XmlToDictSettings)
     """
     transform = settings.get_table_transform(settings.table_name)
     schema_map = settings.schema_map
-    buffer = DictBuffer(max_items=settings.buffer_size, schema_map=schema_map)
+    buffer = DictBuffer(
+        max_items=settings.buffer_size,
+        schema_map=schema_map,
+        use_pyarrow=settings.use_pyarrow,
+    )
 
     def _buffer_element(element: Element) -> Generator[DataItemWithMeta]:
         parsed_element = _parse_element_to_dict(element)
@@ -473,7 +479,10 @@ def process_xml_file(
     :yield: table-tagged rows
     :rtype: Generator[DataItemWithMeta, Any]
     """
-    buffer = DictBuffer(max_items=settings.buffer_size)
+    buffer = DictBuffer(
+        max_items=settings.buffer_size,
+        use_pyarrow=getattr(settings, "use_pyarrow", True),
+    )
     file_source_id = source_id(file_path)
     yield from _stream_and_buffer_xml_elements(
         file_path=file_path,

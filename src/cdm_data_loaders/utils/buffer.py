@@ -39,9 +39,9 @@ type MaxItems = Annotated[PositiveInt, Field(description="Maximum number of item
 class DictBuffer(BaseModel):
     """Accumulates rows per table and yields them as pages to dlt.
 
-    If a table has a ``pyarrow.Schema`` in ``schema_map``, its pages are yielded
-    as ``pyarrow.Table`` instances; otherwise, pages are yielded as ``list[dict]`` as-is.
-    The ``_rejected`` table schema (``REJECTED_PYARROW_SCHEMA``) is always included.
+    When ``use_pyarrow`` is ``True`` (the default), any table with a ``pyarrow.Schema`` in
+    ``schema_map`` (as well as ``_rejected``, which uses ``REJECTED_PYARROW_SCHEMA``) is yielded
+    as a ``pyarrow.Table``; otherwise, pages are yielded as ``list[dict]`` as-is.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
@@ -50,9 +50,12 @@ class DictBuffer(BaseModel):
 
     max_items: MaxItems = Field(default=DEFAULT_BUFFER_MAX_ITEMS)
     schema_map: ArrowSchemaRegistry | None = Field(default=None)
+    use_pyarrow: bool = Field(default=True)
 
     def _make_page(self, table_name: str, rows: list[Any]) -> Any:  # noqa: ANN401
         """Construct the page payload for ``table_name`` from buffered ``rows``."""
+        if not self.use_pyarrow:
+            return rows
         if table_name == REJECTED_TABLE_NAME:
             return pa.Table.from_pylist(rows, schema=REJECTED_PYARROW_SCHEMA)
         if self.schema_map and table_name in self.schema_map.registry:

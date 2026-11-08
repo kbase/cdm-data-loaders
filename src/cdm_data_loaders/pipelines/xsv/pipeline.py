@@ -126,12 +126,17 @@ def _process_local_xsv_file(
 
         validated_file_name = clean_validate_file(args)
 
-    buffer = DictBuffer(max_items=settings.buffer_size, schema_map=settings.schema_map)
+    buffer = DictBuffer(
+        max_items=settings.buffer_size,
+        schema_map=settings.schema_map,
+        use_pyarrow=settings.use_pyarrow,
+    )
 
     if validated_file_name:
         properties = settings.validated_schema.jsonschema.get("properties", {})
         transform = settings.get_table_transform(settings.table_name)
         pa_schema = settings.schema_map.registry.get(settings.table_name) if settings.schema_map else None
+        use_pyarrow = settings.use_pyarrow and transform is None
         items = read_validated_rows(
             file_validated_dir / validated_file_name,
             properties,
@@ -139,10 +144,10 @@ def _process_local_xsv_file(
             quote=args.quote,
             escape=args.escape,
             chunk_size=settings.buffer_size,
-            use_pyarrow=transform is None,
+            use_pyarrow=use_pyarrow,
             pa_schema=pa_schema,
         )
-        if transform is None:
+        if use_pyarrow:
             for table in items:
                 yield dlt.mark.with_table_name(table, settings.table_name)
         else:
