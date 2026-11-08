@@ -183,6 +183,12 @@ VALID_ROUTED_OUTPUT_CASES = [
     pytest.param({"items": [], "other": ()}, {}, id="only_empty_sequences"),
     pytest.param({"items": [{"id": "1"}]}, {"items": [{"id": "1"}]}, id="single_table_list"),
     pytest.param({"  items \n": [{"id": "1"}]}, {"items": [{"id": "1"}]}, id="whitespace_padded_table_name"),
+    pytest.param({"_rejected": [{"id": "1"}]}, {"_rejected": [{"id": "1"}]}, id="rejected_table_key"),
+    pytest.param(
+        {"  _rejected \n": [{"id": "1"}]},
+        {"_rejected": [{"id": "1"}]},
+        id="rejected_table_key_whitespace",
+    ),
     pytest.param(
         {"items": ({"id": "1"}, {"id": "2"})},
         {"items": [{"id": "1"}, {"id": "2"}]},
@@ -240,16 +246,6 @@ INVALID_ROUTED_OUTPUT_CASES = [
         {"   \t\n": [{"id": 1}]},
         "transform_fn output keys must be non-empty table names",
         id="whitespace_key",
-    ),
-    pytest.param(
-        {"_rejected": [{"id": 1}]},
-        "transform_fn cannot route rows to reserved table '_rejected'",
-        id="reserved_rejected_key",
-    ),
-    pytest.param(
-        {"  _rejected \n": [{"id": 1}]},
-        "transform_fn cannot route rows to reserved table '_rejected'",
-        id="reserved_rejected_key_whitespace",
     ),
     pytest.param(
         {"items": None},
@@ -319,18 +315,6 @@ INVALID_ROUTED_OUTPUT_CASES = [
         id="non_str_key_and_empty_row_dict",
     ),
     pytest.param(
-        {"_rejected": "not_a_seq"},
-        "transform_fn cannot route rows to reserved table '_rejected'\n"
-        "transform_fn rows for table '_rejected' must be a sequence of dicts",
-        id="reserved_key_and_bad_rows_sequence",
-    ),
-    pytest.param(
-        {" _rejected ": ["not_a_dict"]},
-        "transform_fn cannot route rows to reserved table '_rejected'\n"
-        "transform_fn rows for table ' _rejected ' must be non-empty dicts",
-        id="reserved_key_and_non_dict_row",
-    ),
-    pytest.param(
         {
             "": [{"id": 1}],
             "valid_before": [{"id": 2}],
@@ -346,8 +330,6 @@ INVALID_ROUTED_OUTPUT_CASES = [
             "transform_fn output keys must be non-empty table names\n"
             "transform_fn output keys must be non-empty table names\n"
             "transform_fn rows for table 123 must be a sequence of dicts\n"
-            "transform_fn cannot route rows to reserved table '_rejected'\n"
-            "transform_fn cannot route rows to reserved table '_rejected'\n"
             "transform_fn rows for table '  _rejected\\n' must be non-empty dicts\n"
             "transform_fn rows for table 'bad_rows' must be a sequence of dicts\n"
             "transform_fn rows for table 'non_dict_row' must be non-empty dicts\n"

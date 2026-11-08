@@ -1,39 +1,37 @@
-"""DLT pipeline to import UniProt data."""
+"""DLT pipeline to import UniProt data into KBase CDM tables via XML-to-PyArrow."""
 
-from datetime import UTC, datetime
 from typing import Annotated, ClassVar, Final
 
-from dlt.common.pipeline import LoadInfo
-from dlt.extract import DltResource
+import pyarrow as pa
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import LogInterval
+from cdm_data_loaders.core.registry import TransformRegistry
 from cdm_data_loaders.core.settings import (
     XML_CLI_SHORTCUTS,
-    XmlIngestSettings,
     default_settings_with_shortcuts,
 )
-from cdm_data_loaders.parsers.uniprot.uniprot_kb import ENTRY_XML_TAG, parse_uniprot_entry
-from cdm_data_loaders.pipelines.core import (
-    PipelineCli,
-    build_file_ingest_kwargs,
-    run_pipeline,
-)
-from cdm_data_loaders.readers.xml import build_xml_file_resource
+from cdm_data_loaders.parsers.uniprot.uniprot_kb import UNIPROT_CDM_SCHEMA_MAP, make_uniprot_cdm_transform
+from cdm_data_loaders.pipelines.core import PipelineCli
+from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import UniProtXmlToPyArrowSettings
 
 PIPELINE_NAME: Final[str] = "uniprot_cdm"
 UNIPROT_LOG_INTERVAL: Final[int] = 1000
 
 
-class UniProtSettings(XmlIngestSettings):
-    """Configuration for running the UniProt KB import pipeline."""
+class UniProtSettings(UniProtXmlToPyArrowSettings):
+    """Configuration for running the UniProt KB CDM XML-to-PyArrow import pipeline."""
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=PIPELINE_NAME, cli_shortcuts=XML_CLI_SHORTCUTS
+        cli_prog_name=PIPELINE_NAME,
+        cli_shortcuts=XML_CLI_SHORTCUTS,
     )
 
     dataset_name: ClassVar[str] = PIPELINE_NAME
+    transforms_module: ClassVar[str | None] = None
+    output_schemas_module: ClassVar[str | None] = None
 
     log_interval: Annotated[
         LogInterval,
@@ -42,35 +40,14 @@ class UniProtSettings(XmlIngestSettings):
         ),
     ]
 
-
-def parse_uniprot(settings: UniProtSettings) -> DltResource:
-    """Build the resource that parses the information from UniProt files.
-
-    :param settings: config for running the pipeline.
-    :type settings: UniProtSettings
-    :return: resource yielding parsed UniProt entries
-    :rtype: DltResource
-    """
-    # a single timestamp is used to mark every entity parsed in this run
-    timestamp = datetime.now(UTC)
-    return build_xml_file_resource(
-        settings=settings,
-        xml_tag=ENTRY_XML_TAG,
-        parse_fn=lambda entry, file_path: parse_uniprot_entry(entry=entry, timestamp=timestamp, file_path=file_path),
-        resource_name="parse_uniprot",
-    )
+    def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
+        """Bind the UniProt CDM transform and schemas to the entry table."""
+        self._table_transforms = TransformRegistry(registry={self.table_name: make_uniprot_cdm_transform()})
+        self._unreconciled_output_schemas = UNIPROT_CDM_SCHEMA_MAP
+        super()._resolve_settings_schema_map(default_pyarrow_schema=default_pyarrow_schema)
 
 
-def run_uniprot_pipeline(settings: UniProtSettings) -> LoadInfo | None:
-    """Execute the UniProt KB pipeline."""
-    return run_pipeline(
-        settings=settings,
-        resource=parse_uniprot(settings),
-        **build_file_ingest_kwargs(settings, PIPELINE_NAME),
-    )
-
-
-cli = PipelineCli(UniProtSettings, run_uniprot_pipeline)
+cli = PipelineCli(UniProtSettings, run_xmltopyarrow_pipeline)
 
 
 if __name__ == "__main__":

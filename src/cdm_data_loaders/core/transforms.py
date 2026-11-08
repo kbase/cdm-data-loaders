@@ -9,7 +9,6 @@ from pydantic_settings import BaseSettings
 
 from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
 from cdm_data_loaders.core.fields import (
-    REJECTED_TABLE_NAME,
     OutputSchemasModuleSpec,
     PreprocessorsModuleSpec,
     TransformsModuleSpec,
@@ -64,7 +63,7 @@ def validate_routed_output(raw_routed: object) -> dict[str, list[dict[str, Any]]
 
     :param raw_routed: raw output from ``transform_fn`` for a single record
     :type  raw_routed: object
-    :raises ValueError: if ``raw_routed`` is not a mapping, any table name is empty or reserved,
+    :raises ValueError: if ``raw_routed`` is not a mapping, any table name is empty,
         or rows for any table are not a sequence of non-empty dicts
     :return: validated dictionary mapping destination table names to non-empty lists of row dictionaries
     :rtype : dict[str, list[dict[str, Any]]]
@@ -77,8 +76,6 @@ def validate_routed_output(raw_routed: object) -> dict[str, list[dict[str, Any]]
         for table_name, rows in raw_routed.items():
             if not isinstance(table_name, str) or not table_name.strip():
                 errors.append("transform_fn output keys must be non-empty table names")
-            elif table_name.strip() == REJECTED_TABLE_NAME:
-                errors.append(f"transform_fn cannot route rows to reserved table {REJECTED_TABLE_NAME!r}")
 
             if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes, bytearray, Mapping)):
                 errors.append(f"transform_fn rows for table {table_name!r} must be a sequence of dicts")

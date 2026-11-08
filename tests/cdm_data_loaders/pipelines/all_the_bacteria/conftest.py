@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -38,7 +39,7 @@ def atb_settings_pair(
         )
         return settings, reconciled
 
-    pattern_path = test_cts_settings_reconciled[INPUT_DIR] / "pattern_file.txt"
+    pattern_path = Path(test_cts_settings_reconciled[INPUT_DIR]) / "pattern_file.txt"
     pattern_path.parent.mkdir(parents=True, exist_ok=True)
     pattern_path.write_text("hello world\n")
     settings = frozendict(

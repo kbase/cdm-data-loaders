@@ -18,6 +18,7 @@ from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import (
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings, JsonlJsonschemaIngestSettings
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
+from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
 from tests.cdm_data_loaders.pipelines import framework
 from tests.cdm_data_loaders.pipelines.conftest import DEFAULT_DLT_TABLES
 from tests.cdm_data_loaders.pipelines.framework import (
@@ -80,7 +81,7 @@ _PRE_RESOLVED_CLI_SPEC = PipelineSpec(
             uniprot_kb_cdm,
             "uniprot_cdm",
             uniprot_kb_cdm.UniProtSettings,
-            uniprot_kb_cdm.run_uniprot_pipeline,
+            run_xmltopyarrow_pipeline,
             uniprot_kb_cdm.cli,
             id="module",
         ),
@@ -104,7 +105,7 @@ _PRE_RESOLVED_CLI_SPEC = PipelineSpec(
             "cdm_data_loaders.pipelines.uniprot_kb_cdm",
             "uniprot_cdm",
             uniprot_kb_cdm.UniProtSettings,
-            uniprot_kb_cdm.run_uniprot_pipeline,
+            run_xmltopyarrow_pipeline,
             uniprot_kb_cdm.cli,
             id="dotted-module-path",
         ),
@@ -336,7 +337,7 @@ def test_pipeline_test_runner_pass_core_and_cli_modes_end_to_end(
         loader_file_format="jsonl",
     )
     expected_records = [{"id": "rec_1", "value": 10}, {"id": "rec_2", "value": 20}]
-    (settings.input_dir / "data.jsonl").write_text(
+    (Path(settings.input_dir) / "data.jsonl").write_text(
         "\n".join(f'{{"id": "{r["id"]}", "value": {r["value"]}}}' for r in expected_records) + "\n",
         encoding="utf-8",
     )
@@ -369,7 +370,7 @@ def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
         xml_tag="entry",
         loader_file_format="parquet",
     )
-    (settings.input_dir / "sample.xml").write_text("<root><entry><id>1</id></entry></root>", encoding="utf-8")
+    (Path(settings.input_dir) / "sample.xml").write_text("<root><entry><id>1</id></entry></root>", encoding="utf-8")
     output_dir = settings.output_dir
     xsd_file = tmp_path / "schema.xsd"
     xsd_file.write_text("<xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema'/>", encoding="utf-8")
@@ -617,7 +618,7 @@ def test_pipeline_test_runner_pass_real_docker_container(tmp_path: Path, docker_
         loader_file_format="jsonl",
     )
     expected_records = [{"id": "docker_1", "value": 42}]
-    (settings.input_dir / "data.jsonl").write_text('{"id": "docker_1", "value": 42}\n', encoding="utf-8")
+    (Path(settings.input_dir) / "data.jsonl").write_text('{"id": "docker_1", "value": 42}\n', encoding="utf-8")
 
     runner = PipelineTestRunner(mode=ExecutionMode.DOCKER, docker_image=docker_image)
     load_info = assert_run_ok(runner.run("jsonlines_extract", settings=settings))

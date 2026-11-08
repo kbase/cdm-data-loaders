@@ -33,7 +33,6 @@ class LoaderFileFormatEnum(StrEnum):
 CTS: Final[str] = "cts"
 
 # field names
-BATCH_SIZE: Final[str] = "batch_size"
 BUFFER_SIZE: Final[str] = "buffer_size"
 DATASET_NAME: Final[str] = "dataset_name"
 DLT_DEV_MODE: Final[str] = "dlt_dev_mode"
@@ -48,7 +47,6 @@ OUTPUT_DIR: Final[str] = "output_dir"
 OUTPUT_SCHEMAS_MODULE: Final[str] = "output_schemas_module"
 PREPROCESSORS_MODULE: Final[str] = "preprocessors_module"
 PRESERVE_TABLE_NESTING: Final[str] = "preserve_table_nesting"
-SAVE_RAW_RESPONSES: Final[str] = "save_raw_responses"
 TABLE_NAME: Final[str] = "table_name"
 TRANSFORMS_MODULE: Final[str] = "transforms_module"
 USE_DESTINATION: Final[str] = "use_destination"
@@ -60,12 +58,9 @@ REPORT_FILE_NAME: Final[str] = "report.txt"
 """Name of the report file."""
 
 
-MIN_START_AT: Final[int] = 1
-
 # Default values for the common fields
 DEFAULTS = frozendict(
     {
-        BATCH_SIZE: 1000,
         BUFFER_SIZE: 100,
         DLT_DEV_MODE: False,
         DISABLE_OUTPUT_COMPRESSION: False,
@@ -77,7 +72,6 @@ DEFAULTS = frozendict(
         OUTPUT_SCHEMAS_MODULE: None,
         PREPROCESSORS_MODULE: None,
         PRESERVE_TABLE_NESTING: False,
-        SAVE_RAW_RESPONSES: False,
         TRANSFORMS_MODULE: None,
         USE_DESTINATION: CTS,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: False,
@@ -90,13 +84,6 @@ CharStr = Annotated[str, StringConstraints(min_length=1, max_length=1)]
 type TableNameKey = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, strict=True)]
 
 
-BatchSize = Annotated[
-    PositiveInt,
-    Field(
-        default=DEFAULTS[BATCH_SIZE],
-        description="Number of items per batch",
-    ),
-]
 BufferSize = Annotated[
     PositiveInt,
     Field(
@@ -120,13 +107,6 @@ DisableOutputCompression = Annotated[
     ),
 ]
 FileGlob = Annotated[str, Field(default=DEFAULTS[FILE_GLOB], description="File glob for input files")]
-InputDir = Annotated[
-    NonEmptyStr,
-    Field(
-        # no default - value must be supplied
-        description="Location of directory containing file(s) to import",
-    ),
-]
 LoaderFileFormat = Annotated[
     LoaderFileFormatEnum,
     Field(
@@ -187,13 +167,6 @@ PreserveTableNesting = Annotated[
     Field(
         default=DEFAULTS[PRESERVE_TABLE_NESTING],
         description="Whether or not nested data should be flattened out into separate tables",
-    ),
-]
-SaveRawResponses = Annotated[
-    bool,
-    Field(
-        default=DEFAULTS[SAVE_RAW_RESPONSES],
-        description="Whether or not to save the raw responses from the API to the output directory.",
     ),
 ]
 

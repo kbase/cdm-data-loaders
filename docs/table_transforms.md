@@ -61,6 +61,7 @@ from cdm_data_loaders.core.registry import RecordTransformFn
     - `{"table": [new_row]}` -> **Transform** a row 1-to-1 in place.
     - `{"table": [row_1, row_2]}` -> **Unnest / fan out** 1-to-N rows into the same table.
     - `{"parent_table": [parent_row], "child_table": [child_1, child_2]}` -> **Split** a record across multiple destination tables.
+    - `{"_rejected": [rejected_row]}` -> **Reject** a record into the shared `_rejected` table (`REJECTED_TABLE_NAME`).
   - When no transform is configured for a table, records are routed unchanged to `{table_name: [record]}`.
 - **`OUTPUT_SCHEMAS`** (`--output-schemas-module` / `CDL_OUTPUT_SCHEMAS_MODULE`): `dict[str, pa.Schema]`
   - Optional mapping of `{destination_table_name: pyarrow.Schema}`.

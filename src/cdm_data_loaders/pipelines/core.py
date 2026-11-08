@@ -1,10 +1,12 @@
 """Common reusable pipeline elements."""
 
+import weakref
 from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from logging import Logger, getLogger
 from pathlib import Path
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, Final
 
 import dlt
@@ -15,17 +17,21 @@ from dlt.common.runtime.slack import send_slack_message
 from dlt.common.schema.typing import TSchemaContractDict
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
+from dlt.destinations.impl.filesystem.filesystem import FilesystemClient
 from dlt.extract import DltResource
 from dlt.pipeline.exceptions import PipelineStepFailed
 from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
+from pyiceberg.catalog import sql as pyiceberg_sql
+from pyiceberg.catalog.rest import RestCatalog
+from pyiceberg.catalog.sql import SqlCatalog
 
 from cdm_data_loaders.core.fields import ICEBERG, JSONL, PARQUET, REJECTED_TABLE_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import (
     CtsSettings,
     FileFormatIngestSettings,
-    LocalInputOutputSettings,
+    InputLocalOutputSettings,
     LoggerSettings,
 )
 from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
@@ -51,6 +57,89 @@ DEFAULT_SCHEMA_CONTRACT: Final[TSchemaContractDict] = {
 yaml.SafeDumper.add_multi_representer(datetime, yaml.SafeDumper.represent_datetime)
 
 logger: Logger = getLogger(__name__)
+
+_iceberg_catalog_cleanup_installed: bool = False
+
+
+def _wrap_catalog_finalizer(
+    catalog_cls: type[SqlCatalog | RestCatalog],
+    get_cleanup_fn: Callable[[Any], Callable[[], Any] | None],
+) -> None:
+    """Attach a weakref finalizer on catalog init and invoke it on close."""
+    orig_init = catalog_cls.__init__
+    orig_close = catalog_cls.close
+
+    def _init(self: Any, name: str, **properties: str) -> None:  # noqa: ANN401
+        try:
+            orig_init(self, name, **properties)
+        finally:
+            if (cleanup := get_cleanup_fn(self)) is not None:
+                self._finalizer = weakref.finalize(self, cleanup)
+
+    def _close(self: Any) -> None:  # noqa: ANN401
+        if (finalizer := getattr(self, "_finalizer", None)) is not None:
+            finalizer()
+        orig_close(self)
+
+    catalog_cls.__init__ = _init  # type: ignore[method-assign]
+    catalog_cls.close = _close  # type: ignore[method-assign]
+
+
+def _install_iceberg_catalog_cleanup() -> None:
+    """Register weakref finalizers on PyIceberg catalogs and close cached catalogs on FilesystemClient exit.
+
+    SqlCatalog holds a SQLAlchemy Engine <-> SingletonThreadPool cycle and RestCatalog holds a
+    requests.Session <-> AuthManager cycle; neither defines a finalizer, and dlt's FilesystemClient.__exit__
+    is a no-op. Furthermore, dlt runs load jobs on worker threads while garbage collection or callers may
+    dispose catalogs on the main thread, which fails with sqlite3.ProgrammingError unless check_same_thread=False
+    is set on SQLite connections.
+    """
+    global _iceberg_catalog_cleanup_installed  # noqa: PLW0603
+    if _iceberg_catalog_cleanup_installed:
+        return
+    _iceberg_catalog_cleanup_installed = True
+
+    orig_create_engine = pyiceberg_sql.create_engine
+
+    def _create_engine(url: Any, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        if str(url).startswith("sqlite"):
+            connect_args = dict(kwargs.get("connect_args") or {})
+            connect_args.setdefault("check_same_thread", False)
+            kwargs["connect_args"] = connect_args
+        return orig_create_engine(url, *args, **kwargs)
+
+    pyiceberg_sql.create_engine = _create_engine
+
+    _wrap_catalog_finalizer(
+        SqlCatalog,
+        lambda cat: cat.engine.dispose if hasattr(cat, "engine") else None,
+    )
+    _wrap_catalog_finalizer(
+        RestCatalog,
+        lambda cat: session.close if (session := getattr(cat, "_session", None)) is not None else None,
+    )
+
+    orig_fs_exit = FilesystemClient.__exit__
+
+    def _fs_client_exit(
+        self: FilesystemClient,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        catalog = self._catalog
+        self._catalog = None
+        self._catalog_namespaces.clear()
+        try:
+            if catalog is not None and hasattr(catalog, "close"):
+                catalog.close()
+        finally:
+            orig_fs_exit(self, exc_type, exc_val, exc_tb)  # type: ignore[arg-type]
+
+    FilesystemClient.__exit__ = _fs_client_exit  # type: ignore[method-assign]
+
+
+_install_iceberg_catalog_cleanup()
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,22 +366,28 @@ def _attach_file_collector(resource: DltResource | list[DltResource]) -> _Filesy
     seen_pipes: set[str] = set()
     resources = resource if isinstance(resource, list) else [resource]
 
-    def _record_file(item: Any) -> Any:  # noqa: ANN401
-        if isinstance(item, dict) and "relative_path" in item:
-            collector.ingested_files.append(item["relative_path"])
-        return item
-
     for res in resources:
         curr: DltResource | None = res
         while isinstance(curr, DltResource):
-            if curr.name == "filesystem" and curr._pipe.instance_id not in seen_pipes:  # noqa: SLF001
-                seen_pipes.add(curr._pipe.instance_id)  # noqa: SLF001
-                tracker: _FilesystemTracker | None = getattr(curr, "_fs_tracker", None)
-                if tracker is not None:
-                    tracker.ingested_files = collector.ingested_files
-                    tracker.preprocess_errors = collector.preprocess_errors
-                else:
-                    curr.add_map(_record_file)
+            pipe = curr._pipe  # noqa: SLF001
+            if curr.name == "filesystem" and pipe.instance_id not in seen_pipes:
+                seen_pipes.add(pipe.instance_id)
+                tracker: _FilesystemTracker | None = getattr(pipe, "_fs_tracker", None)
+                if tracker is None:
+                    tracker = _FilesystemTracker(ingested_files=[], preprocess_errors=[])
+                    pipe._fs_tracker = tracker  # type: ignore[attr-defined]  # noqa: SLF001
+
+                    def _make_recorder(t: _FilesystemTracker) -> Callable[[Any], Any]:
+                        def _record_file(item: Any) -> Any:  # noqa: ANN401
+                            if isinstance(item, dict) and "relative_path" in item:
+                                t.ingested_files.append(item["relative_path"])
+                            return item
+
+                        return _record_file
+
+                    curr.add_map(_make_recorder(tracker))
+                tracker.ingested_files = collector.ingested_files
+                tracker.preprocess_errors = collector.preprocess_errors
             curr = curr._parent  # noqa: SLF001
     return collector
 
@@ -379,7 +474,7 @@ def run_pipeline(
 
 
 def build_filesystem_resource(  # noqa: PLR0913
-    settings: LocalInputOutputSettings,
+    settings: InputLocalOutputSettings,
     reader_fn: Callable[..., Any] | DltResource,
     *reader_args: Any,  # noqa: ANN401
     name: str,
@@ -391,7 +486,7 @@ def build_filesystem_resource(  # noqa: PLR0913
     """Build a dlt resource that pipes ``filesystem(settings.input_dir, file_glob)`` into a parallelized transformer.
 
     :param settings: pipeline settings with ``input_dir`` (and optional ``file_glob``)
-    :type settings: LocalInputOutputSettings
+    :type settings: InputLocalOutputSettings
     :param reader_fn: transformer function or resource accepting ``(items, settings, *reader_args)``
     :type reader_fn: Callable[..., Any] | DltResource
     :param reader_args: positional arguments bound to the transformer after ``settings``
@@ -416,7 +511,7 @@ def build_filesystem_resource(  # noqa: PLR0913
 
     files = filesystem(**fs_args)
     tracker = _FilesystemTracker(ingested_files=[], preprocess_errors=[])
-    files._fs_tracker = tracker  # type: ignore[attr-defined]  # noqa: SLF001
+    files._pipe._fs_tracker = tracker  # type: ignore[attr-defined]  # noqa: SLF001
 
     resolved_table_name = (
         table_name
@@ -496,7 +591,7 @@ def make_per_file_reader(
 
 
 def build_per_file_filesystem_resource(
-    settings: LocalInputOutputSettings,
+    settings: InputLocalOutputSettings,
     file_fn: Callable[..., Iterable[Any]],
     *reader_args: Any,  # noqa: ANN401
     name: str,

@@ -17,7 +17,7 @@ from cdm_data_loaders.core.settings import (
     CdmDataLoadersBase,
     CtsSettings,
     FileFormatIngestSettings,
-    LocalInputOutputSettings,
+    InputLocalOutputSettings,
     LoggerSettings,
     SingleTableXmlIngestSettings,
     XmlIngestSettings,
@@ -43,7 +43,7 @@ from tests.helpers import (
     "settings_cls",
     [
         LoggerSettings,
-        LocalInputOutputSettings,
+        InputLocalOutputSettings,
         CtsSettings,
         FileFormatIngestSettings,
         XmlIngestSettings,
@@ -159,16 +159,38 @@ def test_logger_settings_fail_whitespace_only_log_config_file(make_settings: Set
 def test_local_input_output_settings_pass_sources(
     make_settings: SettingsFactory, source: str, input_dir: Path, output_dir: Path
 ) -> None:
-    """Build LocalInputOutputSettings from each source."""
+    """Build InputLocalOutputSettings from each source."""
     settings = make_settings(
-        LocalInputOutputSettings, source, {"input_dir": str(input_dir), "output_dir": str(output_dir)}
+        InputLocalOutputSettings, source, {"input_dir": str(input_dir), "output_dir": str(output_dir)}
     )
     check_settings(settings, local_io_expected(input_dir, output_dir))
 
 
+@pytest.mark.parametrize("source", SETTINGS_SOURCES, ids=str)
+@pytest.mark.parametrize(
+    ("raw_input_dir", "expected_input_dir"),
+    [
+        pytest.param("s3://bucket/prefix/", "s3://bucket/prefix", id="s3"),
+        pytest.param("memory://test-bucket/sub/", "memory://test-bucket/sub", id="memory"),
+    ],
+)
+def test_local_input_output_settings_pass_remote_input_dir_sources(
+    make_settings: SettingsFactory,
+    source: str,
+    raw_input_dir: str,
+    expected_input_dir: str,
+    output_dir: Path,
+) -> None:
+    """Build InputLocalOutputSettings with a remote fsspec input_dir from each source."""
+    settings = make_settings(
+        InputLocalOutputSettings, source, {"input_dir": raw_input_dir, "output_dir": str(output_dir)}
+    )
+    check_settings(settings, local_io_expected(expected_input_dir, output_dir))
+
+
 def test_local_input_output_settings_pass_cli_shortcuts(input_dir: Path, output_dir: Path) -> None:
     """Set input_dir and output_dir with the -i and -o shortcuts."""
-    settings = CliApp.run(LocalInputOutputSettings, cli_args=["-i", str(input_dir), "-o", str(output_dir)])
+    settings = CliApp.run(InputLocalOutputSettings, cli_args=["-i", str(input_dir), "-o", str(output_dir)])
     check_settings(settings, local_io_expected(input_dir, output_dir))
 
 
@@ -253,7 +275,7 @@ def test_cts_settings_fail_unrecognised_cli_args(test_defaults: dict[str, Any], 
 
 @pytest.mark.parametrize(
     "settings_cls",
-    [LocalInputOutputSettings, CtsSettings],
+    [InputLocalOutputSettings, CtsSettings],
     ids=["local_input_output_settings", "cts_settings"],
 )
 @pytest.mark.parametrize("set_unprefixed_env", [False, True], ids=["nothing_set", "env_vars_without_prefix"])

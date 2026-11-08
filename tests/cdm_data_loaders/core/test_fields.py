@@ -1,8 +1,8 @@
 """Tests for the constrained field types in cdm_data_loaders.core.fields that the core settings classes do not use.
 
 Fields used by the classes in cdm_data_loaders.core.settings are exercised via those classes in test_settings.py.
-BatchSize is the same PositiveInt construct as BufferSize/LogInterval. FileGlob and PreserveTableNesting
-are unconstrained str/bool fields, and the module constants are plain values, so none of those are tested here.
+FileGlob and PreserveTableNesting are unconstrained str/bool fields, and the module constants are plain values,
+so none of those are tested here.
 """
 
 import pytest

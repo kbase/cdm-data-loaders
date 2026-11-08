@@ -33,7 +33,7 @@ contains() {
 # $HOME configs are merged with those in the execution directory, with $HOME taking priority
 copy_dlt_config() {
   local file
-  for file in config.toml secrets.toml; do
+  for file in config.toml secrets.toml .pyiceberg.yaml; do
     if [ -e "${DLT_CONF_SRC_DIR}/${file}" ]; then
       mkdir -p "${DLT_CONF_DEST_DIR}" || {
         echo "Error: could not create '${DLT_CONF_DEST_DIR}' in $(pwd)." >&2

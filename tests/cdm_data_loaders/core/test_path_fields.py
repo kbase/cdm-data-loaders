@@ -13,8 +13,10 @@ from cdm_data_loaders.core.path_fields import (
     PATH_EMPTY,
     PATH_NOT_LOCAL,
     VALID_PATH_ONE_CHAR,
+    InputDir,
     LocalInputDir,
     LocalOutputDir,
+    check_input_dir,
     check_local_path,
     ensure_dir,
     is_local,
@@ -22,6 +24,12 @@ from cdm_data_loaders.core.path_fields import (
     to_absolute,
     url_protocol,
 )
+
+
+class FsspecInputDirModel(BaseModel):
+    """Model with one InputDir field."""
+
+    path: InputDir
 
 
 class InputDirModel(BaseModel):
@@ -436,3 +444,141 @@ def test_local_dir_models_fail_invalid_type(model_cls: type[BaseModel], value: A
         model_cls.model_validate({"path": value})
 
     assert get_single_error(exc_info.value)["type"] == "path_type"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(None, id="none"),
+        pytest.param(123, id="int"),
+        pytest.param(b"/some/data", id="bytes"),
+        pytest.param(["/some/dir"], id="list"),
+    ],
+)
+def test_check_input_dir_pass_non_path_unchanged(value: Any) -> None:  # noqa: ANN401
+    """Non-string, non-Path values are returned unchanged by check_input_dir."""
+    assert check_input_dir(value) is value
+
+
+@pytest.mark.parametrize("make_value", PATH_FORMS)
+def test_input_dir_pass_existing_local_dir(tmp_path: Path, make_value: Callable[[Path], Any]) -> None:
+    """InputDir accepts an existing local directory in each form and returns its resolved absolute string path."""
+    model = FsspecInputDirModel.model_validate({"path": make_value(tmp_path)})
+    assert model.path == str(tmp_path.resolve())
+
+
+@pytest.mark.parametrize(
+    ("value", "parts"),
+    [
+        pytest.param(".", (), id="current_dir"),
+        pytest.param("sub", ("sub",), id="sub_dir"),
+        pytest.param("file://sub", ("sub",), id="file_protocol_sub_dir"),
+        pytest.param("FILE://sub/", ("sub",), id="file_protocol_upper_case_trailing_slash"),
+    ],
+)
+def test_input_dir_pass_relative_local_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str, parts: tuple[str, ...]
+) -> None:
+    """InputDir resolves relative local paths against the current working directory to an absolute string."""
+    (tmp_path / "sub").mkdir()
+    monkeypatch.chdir(tmp_path)
+    model = FsspecInputDirModel.model_validate({"path": value})
+    assert model.path == str(tmp_path.joinpath(*parts).resolve())
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        pytest.param("s3://bucket/key", "s3://bucket/key", id="s3"),
+        pytest.param("s3://bucket/key/", "s3://bucket/key", id="s3_trailing_slash"),
+        pytest.param("  S3://bucket/key// \n", "s3://bucket/key", id="s3_upper_case_whitespace_and_slashes"),
+        pytest.param("s3a://bucket/key/", "s3a://bucket/key", id="s3a"),
+        pytest.param("memory://test-bucket/sub/", "memory://test-bucket/sub", id="memory"),
+        pytest.param("https://example.com/data/", "https://example.com/data", id="https"),
+        pytest.param("data:text/plain,hello/", "data:text/plain,hello", id="data_uri"),
+    ],
+)
+def test_input_dir_pass_remote_fsspec_url(value: str, expected: str) -> None:
+    """InputDir accepts remote fsspec URLs, normalising trailing slashes and protocol case without existence checks."""
+    model = FsspecInputDirModel.model_validate({"path": value})
+    assert model.path == expected
+
+
+@pytest.mark.parametrize("make_value", [str, lambda p: p, lambda p: f"file://{p}"], ids=["str", "path", "file_url"])
+@pytest.mark.parametrize(
+    "create_file",
+    [
+        pytest.param(False, id="does_not_exist"),
+        pytest.param(True, id="is_a_file"),
+    ],
+)
+def test_input_dir_fail_local_not_a_directory(
+    tmp_path: Path, make_value: Callable[[Path], Any], create_file: bool
+) -> None:
+    """InputDir rejects a missing local path or a local file with path_not_directory."""
+    target = tmp_path / "target"
+    if create_file:
+        target.write_text("content")
+
+    with pytest.raises(ValidationError) as exc_info:
+        FsspecInputDirModel.model_validate({"path": make_value(target)})
+
+    assert get_single_error(exc_info.value)["type"] == "path_not_directory"
+    assert target.is_file() is create_file
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param("", id="empty_string"),
+        pytest.param("   ", id="whitespace_only"),
+        pytest.param("file://", id="file_protocol_only"),
+        pytest.param("  FILE://  ", id="file_protocol_upper_case_only"),
+        pytest.param("s3://", id="s3_protocol_only"),
+        pytest.param("  s3://\n", id="s3_protocol_only_with_whitespace"),
+        pytest.param("https://", id="https_protocol_only"),
+        pytest.param("data:", id="data_protocol_only"),
+    ],
+)
+def test_input_dir_fail_empty_or_protocol_only(value: str) -> None:
+    """InputDir rejects empty strings and protocol-only URLs."""
+    with pytest.raises(ValidationError) as exc_info:
+        FsspecInputDirModel.model_validate({"path": value})
+
+    error = get_single_error(exc_info.value)
+    assert error["type"] == "value_error"
+    assert error["msg"] == f"Value error, {PATH_EMPTY}"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_msg"),
+    [
+        pytest.param("notaprotocol://bucket/key", "Protocol not known: notaprotocol", id="unknown_protocol"),
+        pytest.param("gs://bucket/key", "Please install gcsfs to access Google Storage", id="uninstalled_protocol"),
+    ],
+)
+def test_input_dir_fail_unsupported_protocol(value: str, expected_msg: str) -> None:
+    """InputDir rejects unknown fsspec protocols or protocols whose backend library is not installed."""
+    with pytest.raises(ValidationError) as exc_info:
+        FsspecInputDirModel.model_validate({"path": value})
+
+    error = get_single_error(exc_info.value)
+    assert error["type"] == "value_error"
+    assert expected_msg in error["msg"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(None, id="none"),
+        pytest.param(123, id="int"),
+        pytest.param(["/some/dir"], id="list"),
+        pytest.param(b"/some/data", id="bytes"),
+    ],
+)
+def test_input_dir_fail_invalid_type(value: Any) -> None:  # noqa: ANN401
+    """InputDir rejects values that are neither strings nor Path objects."""
+    with pytest.raises(ValidationError) as exc_info:
+        FsspecInputDirModel.model_validate({"path": value})
+
+    assert get_single_error(exc_info.value)["type"] == "string_type"

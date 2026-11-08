@@ -76,7 +76,6 @@ PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
     ),
     "ncbi_ftp_promote": ("ncbi_ftp_promote", "cdm_data_loaders.pipelines.ncbi_ftp_promote"),
     "ncbi_ftp_sync": ("ncbi_ftp_sync", "cdm_data_loaders.pipelines.ncbi_ftp_download"),
-    "ncbi_rest_api": ("ncbi_rest_api", "cdm_data_loaders.pipelines.ncbi_rest_api"),
     "uniprot": ("uniprot", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
     "uniprot_cdm": ("uniprot_cdm", "cdm_data_loaders.pipelines.uniprot_kb_cdm"),
     "uniref50": ("uniref50", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),

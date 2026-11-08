@@ -1,8 +1,11 @@
 """Tests for the shared core DLT pipeline functions."""
 
+import gc
 import gzip
 import logging
 import sys
+import threading
+import warnings
 from collections.abc import Callable, Iterator
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
@@ -13,21 +16,25 @@ from unittest.mock import MagicMock, call, patch
 import dlt
 import pytest
 from dlt.common.destination.exceptions import DestinationTerminalException
+from dlt.common.libs.pyiceberg import get_iceberg_tables
 from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TTableSchema
+from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
-from dlt.destinations.impl.filesystem.filesystem import FilesystemLoadJob
+from dlt.destinations.impl.filesystem.filesystem import FilesystemClient, FilesystemLoadJob
 from dlt.extract.resource import DltResource
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
-from requests import RequestException
+from pyiceberg.catalog.rest import RestCatalog
+from pyiceberg.catalog.sql import SqlCatalog
+from requests import RequestException, Session
 
 from cdm_data_loaders.core.fields import OUTPUT_DIR, PIPELINE_DIR_NAME, USE_DESTINATION
 from cdm_data_loaders.core.settings import (
     CdmDataLoadersBase,
     CtsSettings,
     FileFormatIngestSettings,
-    LocalInputOutputSettings,
+    InputLocalOutputSettings,
     LoggerSettings,
 )
 from cdm_data_loaders.pipelines import core
@@ -56,6 +63,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
 )
 from tests.conftest import LOCAL_FS, S3
 from tests.dlt_config_isolation import dlt_config_unset, isolated_dlt_config
+from tests.fs_backends import MOTO_ACCESS_KEY, MOTO_SECRET_KEY, S3_MOTO, FsBackend
 from tests.helpers import make_cts_settings, settings_to_argv
 
 TINY_RESOURCE_DATA: Final[list[dict[str, Any]]] = [
@@ -68,7 +76,7 @@ FILESYSTEM_DESTINATION_TYPE: Final[str] = "dlt.destinations.filesystem"
 ALL_JOBS_COMPLETED: Final[str] = "All pipeline jobs completed successfully"
 FAILED_JOBS_WARNING: Final[str] = "Pipeline contains failed jobs"
 
-SETTINGS_CLASSES: Final[list[type[CdmDataLoadersBase]]] = [LoggerSettings, LocalInputOutputSettings, CtsSettings]
+SETTINGS_CLASSES: Final[list[type[CdmDataLoadersBase]]] = [LoggerSettings, InputLocalOutputSettings, CtsSettings]
 SETTINGS_CLASS_IDS: Final[list[str]] = ["logger-settings", "local-io-settings", "cts-settings"]
 
 
@@ -116,13 +124,13 @@ def make_mock_pipeline(save_run_result: object, slack_hook: str | None = None) -
 @pytest.fixture(params=["no-relevant-attrs", "output_dir-only-no-destination"])
 def settings_missing_sync_attrs(
     request: pytest.FixtureRequest, tmp_path: Path
-) -> LoggerSettings | LocalInputOutputSettings:
+) -> LoggerSettings | InputLocalOutputSettings:
     """Settings instances missing one or more attribute the sync tests check for via hasattr."""
     if request.param == "no-relevant-attrs":
         return LoggerSettings.model_validate({})
     input_dir = tmp_path / "input"
     input_dir.mkdir(exist_ok=True)
-    return LocalInputOutputSettings.model_validate({"input_dir": input_dir, "output_dir": tmp_path / "output"})
+    return InputLocalOutputSettings.model_validate({"input_dir": input_dir, "output_dir": tmp_path / "output"})
 
 
 # send slack message carefully
@@ -184,11 +192,11 @@ def test_send_slack_message_fail_error_oh_no(
 
 
 def test_settings_missing_sync_attrs_pass_fixture_shape(
-    settings_missing_sync_attrs: LoggerSettings | LocalInputOutputSettings,
+    settings_missing_sync_attrs: LoggerSettings | InputLocalOutputSettings,
 ) -> None:
     """Sanity-check the fixture: confirm which attributes are genuinely absent."""
     assert hasattr(settings_missing_sync_attrs, OUTPUT_DIR) == isinstance(
-        settings_missing_sync_attrs, LocalInputOutputSettings
+        settings_missing_sync_attrs, InputLocalOutputSettings
     )
     assert not hasattr(settings_missing_sync_attrs, USE_DESTINATION)
 
@@ -242,7 +250,7 @@ def _settings_kwargs_for(settings_cls: type[CdmDataLoadersBase], tmp_path: Path)
     """Return minimal required kwargs for instantiating `settings_cls` in `run_cli` tests."""
     if issubclass(settings_cls, CtsSettings):
         return {"input_dir": tmp_path, "output_dir": tmp_path, "use_destination": LOCAL_FS}
-    if issubclass(settings_cls, LocalInputOutputSettings):
+    if issubclass(settings_cls, InputLocalOutputSettings):
         return {"input_dir": tmp_path, "output_dir": tmp_path}
     return {}
 
@@ -821,7 +829,7 @@ def test_pipeline_cli_pass_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     )
     assert result is RUN_RESULT
     assert [(s.input_dir, s.buffer_size, s.log_interval, s.dlt_dev_mode) for s in received] == [
-        (tmp_path.resolve(), 7, 3, True)
+        (str(tmp_path.resolve()), 7, 3, True)
     ]
 
 
@@ -1034,11 +1042,11 @@ def test_build_filesystem_resource_pass_default_glob_and_callable_transformer(
     """build_filesystem_resource uses settings.file_glob and wraps a callable in dlt.transformer with settings bound."""
     file_path = input_dir / "sample.xml"
     file_path.write_text("hello", encoding="utf-8")
-    settings = LocalInputOutputSettings(input_dir=input_dir, output_dir=output_dir)
+    settings = InputLocalOutputSettings(input_dir=input_dir, output_dir=output_dir)
 
     def read_items(
         items: TDataItems,
-        cfg: LocalInputOutputSettings,
+        cfg: InputLocalOutputSettings,
         prefix: str,
     ) -> Iterator[dict[str, Any]]:
         assert cfg is settings
@@ -1059,12 +1067,12 @@ def test_build_filesystem_resource_pass_custom_glob_resource_transformer_and_con
     matched.write_text("matched", encoding="utf-8")
     ignored = input_dir / "ignore.txt"
     ignored.write_text("ignored", encoding="utf-8")
-    settings = LocalInputOutputSettings(input_dir=input_dir, output_dir=output_dir)
+    settings = InputLocalOutputSettings(input_dir=input_dir, output_dir=output_dir)
 
     @dlt.transformer(name="jsonl_test_reader")
     def read_jsonl_items(
         items: TDataItems,
-        cfg: LocalInputOutputSettings,
+        cfg: InputLocalOutputSettings,
     ) -> Iterator[dict[str, Any]]:
         assert cfg is settings
         for item in items:
@@ -1187,11 +1195,11 @@ def test_build_per_file_filesystem_resource_pass(
     """build_per_file_filesystem_resource wraps file_fn via make_per_file_reader and reads matching files."""
     (input_dir / "a.xml").write_text("alpha", encoding="utf-8")
     (input_dir / "b.txt").write_text("beta", encoding="utf-8")
-    settings = LocalInputOutputSettings(input_dir=input_dir, output_dir=output_dir)
+    settings = InputLocalOutputSettings(input_dir=input_dir, output_dir=output_dir)
 
     def read_single_file(
         file_item: dict[str, Any],
-        cfg: LocalInputOutputSettings,
+        cfg: InputLocalOutputSettings,
         label: str,
     ) -> Iterator[dict[str, Any]]:
         assert cfg is settings
@@ -1212,6 +1220,59 @@ def test_build_per_file_filesystem_resource_pass(
     if "max_table_nesting" in transformer_kwargs:
         assert resource.max_table_nesting == transformer_kwargs["max_table_nesting"]
     assert sorted(resource, key=lambda row: row["file"]) == expected
+
+
+def test_build_per_file_filesystem_resource_pass_across_fs_backends(
+    fs_backend: FsBackend,
+    output_dir: Path,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """build_per_file_filesystem_resource reads files from any fsspec backend configured via settings.input_dir."""
+    fs_backend.put("a.txt", b"alpha")
+    fs_backend.put("b.txt", b"beta")
+    settings = InputLocalOutputSettings(input_dir=fs_backend.bucket_url, output_dir=output_dir)
+
+    def read_single_file(
+        file_item: FileItemDict,
+        cfg: InputLocalOutputSettings,
+    ) -> Iterator[dict[str, str]]:
+        assert cfg is settings
+        with file_item.open(mode="rt", encoding="utf-8") as fh:
+            yield {"file": file_item["relative_path"], "content": fh.read()}
+
+    dlt_secrets: dict[str, Any] = {}
+    if fs_backend.name == S3_MOTO:
+        endpoint_url = request.getfixturevalue("s3_moto_endpoint")
+        monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+        monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+        dlt_secrets = {
+            "sources": {
+                "filesystem": {
+                    "credentials": {
+                        "aws_access_key_id": MOTO_ACCESS_KEY,
+                        "aws_secret_access_key": MOTO_SECRET_KEY,
+                        "endpoint_url": endpoint_url,
+                    }
+                }
+            }
+        }
+
+    with isolated_dlt_config(secrets=dlt_secrets):
+        resource = build_per_file_filesystem_resource(
+            settings,
+            read_single_file,
+            name="fs_backend_reader",
+            file_glob="*.txt",
+            parallelized=False,
+        )
+        rows = sorted(resource, key=lambda row: row["file"])
+
+    assert rows == [
+        {"file": "a.txt", "content": "alpha"},
+        {"file": "b.txt", "content": "beta"},
+    ]
 
 
 @pytest.mark.parametrize(
@@ -1265,3 +1326,103 @@ def test_build_file_ingest_kwargs_pass(
         },
         "pipeline_run_kwargs": expected_run_kwargs,
     }
+
+
+def test_iceberg_catalog_cleanup_pass_no_sqlite_resource_warning_on_pipeline_run(
+    dlt_test_settings: CtsSettings,
+) -> None:
+    """Running an Iceberg pipeline and collecting garbage emits no unclosed sqlite3 ResourceWarning."""
+    rows = [{"id": 1, "name": "alpha"}, {"id": 2, "name": "beta"}]
+    resource = dlt.resource(rows, name="items")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        load_info = run_pipeline(
+            dlt_test_settings,
+            resource,
+            pipeline_kwargs={"pipeline_name": TINY_PIPELINE_NAME, "dataset_name": "iceberg_ds"},
+            pipeline_run_kwargs={"loader_file_format": "parquet", "table_format": "iceberg"},
+        )
+        assert load_info is not None
+        assert not load_info.has_failed_jobs
+
+        tables = get_iceberg_tables(load_info.pipeline)
+        assert set(tables) == {"items"}
+        assert len(tables["items"].scan().to_arrow()) == len(rows)
+        del tables
+        del load_info
+        gc.collect()
+
+    sqlite_warnings = [
+        w for w in caught if issubclass(w.category, ResourceWarning) and "sqlite3.Connection" in str(w.message)
+    ]
+    assert sqlite_warnings == []
+
+
+def test_iceberg_catalog_cleanup_pass_rest_catalog_closes_session_on_dereference() -> None:
+    """Dereferencing a RestCatalog (e.g. Polaris) closes its underlying requests.Session via finalizer."""
+    mock_session = MagicMock(spec=Session)
+    with (
+        patch.object(RestCatalog, "_fetch_config"),
+        patch.object(RestCatalog, "_create_session", return_value=mock_session),
+    ):
+        catalog = RestCatalog("polaris", uri="http://polaris:8181/api/catalog")
+        assert catalog.name == "polaris"
+        assert mock_session.close.call_count == 0
+        del catalog
+        gc.collect()
+
+    mock_session.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    "exc_args",
+    [
+        pytest.param((None, None, None), id="normal-exit"),
+        pytest.param((RuntimeError, RuntimeError("boom"), None), id="error-exit"),
+    ],
+)
+def test_iceberg_catalog_cleanup_pass_filesystem_client_exit_closes_catalog(
+    exc_args: tuple[type[BaseException] | None, BaseException | None, Any],
+) -> None:
+    """FilesystemClient.__exit__ clears _catalog and closes it on both normal and error exits."""
+    catalog = SqlCatalog("ephemeral", uri="sqlite:///:memory:")
+    client = object.__new__(FilesystemClient)
+    client._catalog = catalog
+    client._catalog_namespaces = {"ns"}
+
+    with patch.object(catalog, "close", wraps=catalog.close) as spy_close:
+        client.__exit__(*exc_args)
+
+    assert client._catalog is None
+    assert client._catalog_namespaces == set()
+    spy_close.assert_called_once_with()
+
+
+def test_iceberg_catalog_cleanup_pass_cross_thread_sql_catalog_disposal(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Disposing a SqlCatalog on the main thread after creation on a worker thread emits no errors or warnings."""
+    holder: list[SqlCatalog] = []
+
+    def _create_on_worker() -> None:
+        holder.append(SqlCatalog("worker_ephemeral", uri="sqlite:///:memory:"))
+
+    worker = threading.Thread(target=_create_on_worker)
+    worker.start()
+    worker.join()
+    assert len(holder) == 1
+
+    with (
+        caplog.at_level(logging.ERROR, logger="sqlalchemy.pool"),
+        warnings.catch_warnings(record=True) as caught,
+    ):
+        warnings.simplefilter("always", ResourceWarning)
+        holder.clear()
+        gc.collect()
+
+    assert caplog.records == []
+    sqlite_warnings = [
+        w for w in caught if issubclass(w.category, ResourceWarning) and "sqlite3.Connection" in str(w.message)
+    ]
+    assert sqlite_warnings == []
