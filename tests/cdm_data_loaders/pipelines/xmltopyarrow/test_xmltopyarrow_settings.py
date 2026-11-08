@@ -414,7 +414,6 @@ def test_xmltopyarrow_settings_fail_mutually_exclusive_or_invalid_level_args(
 
 def test_pubmed_xmltopyarrow_settings_pass_defaults_and_cli(
     settings_factory: Callable[..., Any],
-    copy_xsd_fixture: Callable[[str], str],
 ) -> None:
     """PubMedXmlToPyArrowSettings defaults dataset_name, xml_level, root_tag, xsd_file, and precomputed SCHEMAS."""
     with patch.object(xmltopyarrow_settings_module, "generate_pyarrow_schemas_at_level") as mock_gen_schemas:
@@ -425,7 +424,7 @@ def test_pubmed_xmltopyarrow_settings_pass_defaults_and_cli(
     assert settings.file_glob == XML_GZ_FILE_GLOB
     assert settings.get_file_preprocessors() == (validate_md5_sidecar,)
     assert settings.xml_level == 1
-    assert settings.root_tag == PUBMED_ROOT_TAG
+    assert settings.root_tag is None
     assert settings.table_name is None
     assert settings.xml_tag is None
     assert settings.xsd_file == PUBMED_XSD_FILE
@@ -440,22 +439,40 @@ def test_pubmed_xmltopyarrow_settings_pass_defaults_and_cli(
     assert cli_settings.file_glob == XML_GZ_FILE_GLOB
     assert cli_settings.get_file_preprocessors() == (validate_md5_sidecar,)
     assert cli_settings.xml_level == 1
-    assert cli_settings.root_tag == PUBMED_ROOT_TAG
+    assert cli_settings.root_tag is None
     assert cli_settings.pyarrow_schemas == dict(PUBMED_SCHEMAS)
+    assert UNIPROT_SCHEMAS["entry"] is UNIPROT_SCHEMA
+    assert UNIREF_SCHEMAS["entry"] is UNIREF_SCHEMA
 
-    for locked_field, flag in (
-        ("dataset_name", "--dataset-name"),
-        ("table_name", "--table-name"),
-        ("xml_tag", "--xml-tag"),
-        ("xml_level", "--xml-level"),
-        ("root_tag", "--root-tag"),
-    ):
-        assert locked_field not in PubMedXmlToPyArrowSettings.model_fields
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-            settings_factory(PubMedXmlToPyArrowSettings, **{locked_field: "custom"})
-        with pytest.raises(SettingsError, match=f"unrecognized arguments: {flag}"):
-            CliApp.run(PubMedXmlToPyArrowSettings, cli_args=[*base_argv, flag, "custom"])
 
+@pytest.mark.parametrize(
+    ("locked_field", "flag"),
+    [
+        pytest.param("dataset_name", "--dataset-name", id="dataset-name"),
+        pytest.param("table_name", "--table-name", id="table-name"),
+        pytest.param("xml_tag", "--xml-tag", id="xml-tag"),
+        pytest.param("xml_level", "--xml-level", id="xml-level"),
+    ],
+)
+def test_pubmed_xmltopyarrow_settings_fail_locked_fields(
+    settings_factory: Callable[..., Any],
+    locked_field: str,
+    flag: str,
+) -> None:
+    """PubMedXmlToPyArrowSettings rejects overrides of locked preset fields in Python and CLI."""
+    assert locked_field not in PubMedXmlToPyArrowSettings.model_fields
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        settings_factory(PubMedXmlToPyArrowSettings, **{locked_field: "custom"})
+    base_argv = settings_to_argv(settings_factory(CtsSettings))
+    with pytest.raises(SettingsError, match=f"unrecognized arguments: {flag}"):
+        CliApp.run(PubMedXmlToPyArrowSettings, cli_args=[*base_argv, flag, "custom"])
+
+
+def test_level_preset_xmltopyarrow_settings_fail_missing_precomputed_schemas(
+    settings_factory: Callable[..., Any],
+    copy_xsd_fixture: Callable[[str], str],
+) -> None:
+    """LevelPresetXmlToPyArrowSettings raises ValidationError when _PRECOMPUTED_SCHEMAS is not defined on the class."""
     xsd_path = copy_xsd_fixture(UNIREF_LIKE_XSD)
     with pytest.raises(ValidationError, match="_PRECOMPUTED_SCHEMAS"):
         settings_factory(
@@ -463,8 +480,6 @@ def test_pubmed_xmltopyarrow_settings_pass_defaults_and_cli(
             dataset_name="preset_ds",
             xsd_file=xsd_path,
         )
-    assert UNIPROT_SCHEMAS["entry"] is UNIPROT_SCHEMA
-    assert UNIREF_SCHEMAS["entry"] is UNIREF_SCHEMA
 
 
 @pytest.mark.parametrize("level_mode", [False, True], ids=["single-tag", "level-mode"])
