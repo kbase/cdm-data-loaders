@@ -25,7 +25,7 @@ from cdm_data_loaders.core.fields import ICEBERG, JSONL, PARQUET, REJECTED_TABLE
 from cdm_data_loaders.core.settings import (
     CtsSettings,
     FileFormatIngestSettings,
-    LocalInputOutputSettings,
+    InputLocalOutputSettings,
     LoggerSettings,
 )
 from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
@@ -379,7 +379,7 @@ def run_pipeline(
 
 
 def build_filesystem_resource(  # noqa: PLR0913
-    settings: LocalInputOutputSettings,
+    settings: InputLocalOutputSettings,
     reader_fn: Callable[..., Any] | DltResource,
     *reader_args: Any,  # noqa: ANN401
     name: str,
@@ -391,7 +391,7 @@ def build_filesystem_resource(  # noqa: PLR0913
     """Build a dlt resource that pipes ``filesystem(settings.input_dir, file_glob)`` into a parallelized transformer.
 
     :param settings: pipeline settings with ``input_dir`` (and optional ``file_glob``)
-    :type settings: LocalInputOutputSettings
+    :type settings: InputLocalOutputSettings
     :param reader_fn: transformer function or resource accepting ``(items, settings, *reader_args)``
     :type reader_fn: Callable[..., Any] | DltResource
     :param reader_args: positional arguments bound to the transformer after ``settings``
@@ -496,7 +496,7 @@ def make_per_file_reader(
 
 
 def build_per_file_filesystem_resource(
-    settings: LocalInputOutputSettings,
+    settings: InputLocalOutputSettings,
     file_fn: Callable[..., Iterable[Any]],
     *reader_args: Any,  # noqa: ANN401
     name: str,

@@ -31,7 +31,7 @@ from cdm_data_loaders.core.fields import (
     UseOutputDirForPipelineMetadata,
     XmlTag,
 )
-from cdm_data_loaders.core.path_fields import LocalInputDir, LocalOutputDir
+from cdm_data_loaders.core.path_fields import InputDir, LocalOutputDir
 from cdm_data_loaders.core.transforms import TransformSettingsMixin
 
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
@@ -199,16 +199,16 @@ class LoggerSettings(CdmDataLoadersBase):
     log_config_file: LogConfigFile
 
 
-class LocalInputOutputSettings(LoggerSettings):
-    """Configuration for a DLT pipeline where both input and output directories are local."""
+class InputLocalOutputSettings(LoggerSettings):
+    """Configuration for a DLT pipeline with an input directory or URL and a local output directory."""
 
     model_config = default_settings_with_shortcuts(cli_shortcuts={INPUT_DIR: "i", OUTPUT_DIR: "o"})
 
-    input_dir: LocalInputDir
+    input_dir: InputDir
     output_dir: LocalOutputDir
 
 
-class CtsSettings(LocalInputOutputSettings):
+class CtsSettings(InputLocalOutputSettings):
     """Configuration for running a basic DLT pipeline."""
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(cli_shortcuts=CLI_SHORTCUTS)

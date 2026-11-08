@@ -120,13 +120,6 @@ DisableOutputCompression = Annotated[
     ),
 ]
 FileGlob = Annotated[str, Field(default=DEFAULTS[FILE_GLOB], description="File glob for input files")]
-InputDir = Annotated[
-    NonEmptyStr,
-    Field(
-        # no default - value must be supplied
-        description="Location of directory containing file(s) to import",
-    ),
-]
 LoaderFileFormat = Annotated[
     LoaderFileFormatEnum,
     Field(

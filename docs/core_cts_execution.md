@@ -143,11 +143,11 @@ Configures structured JSON logging (`src/cdm_data_loaders/utils/cdm_logger.py`):
 
 #### `LocalInputOutputSettings`
 
-Adds validated local directory paths (`src/cdm_data_loaders/core/path_fields.py`), accepting either plain paths (`/input_dir`) or `file://` URLs:
+Adds validated input and output directory settings (`src/cdm_data_loaders/core/path_fields.py`):
 
 | Field        | CLI Flag       | Shortcut | Default      | Description                                                                                                |
 | :----------- | :------------- | :------- | :----------- | :--------------------------------------------------------------------------------------------------------- |
-| `input_dir`  | `--input-dir`  | `-i`     | *(Required)* | Local directory containing file(s) to import (must exist).                                                 |
+| `input_dir`  | `--input-dir`  | `-i`     | *(Required)* | Local directory (plain path or `file://` URL, must exist) or `fsspec` URL containing file(s) to import.   |
 | `output_dir` | `--output-dir` | `-o`     | *(Required)* | Local directory for output artifacts, `report.txt`, and optional pipeline metadata (`pipeline_metadata`). |
 
 #### `CtsSettings`

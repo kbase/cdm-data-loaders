@@ -15,6 +15,7 @@ import pytest
 from dlt.common.destination.exceptions import DestinationTerminalException
 from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TTableSchema
+from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 from dlt.destinations.impl.filesystem.filesystem import FilesystemLoadJob
 from dlt.extract.resource import DltResource
@@ -27,7 +28,7 @@ from cdm_data_loaders.core.settings import (
     CdmDataLoadersBase,
     CtsSettings,
     FileFormatIngestSettings,
-    LocalInputOutputSettings,
+    InputLocalOutputSettings,
     LoggerSettings,
 )
 from cdm_data_loaders.pipelines import core
@@ -56,6 +57,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
 )
 from tests.conftest import LOCAL_FS, S3
 from tests.dlt_config_isolation import dlt_config_unset, isolated_dlt_config
+from tests.fs_backends import MOTO_ACCESS_KEY, MOTO_SECRET_KEY, S3_MOTO, FsBackend
 from tests.helpers import make_cts_settings, settings_to_argv
 
 TINY_RESOURCE_DATA: Final[list[dict[str, Any]]] = [
@@ -68,7 +70,7 @@ FILESYSTEM_DESTINATION_TYPE: Final[str] = "dlt.destinations.filesystem"
 ALL_JOBS_COMPLETED: Final[str] = "All pipeline jobs completed successfully"
 FAILED_JOBS_WARNING: Final[str] = "Pipeline contains failed jobs"
 
-SETTINGS_CLASSES: Final[list[type[CdmDataLoadersBase]]] = [LoggerSettings, LocalInputOutputSettings, CtsSettings]
+SETTINGS_CLASSES: Final[list[type[CdmDataLoadersBase]]] = [LoggerSettings, InputLocalOutputSettings, CtsSettings]
 SETTINGS_CLASS_IDS: Final[list[str]] = ["logger-settings", "local-io-settings", "cts-settings"]
 
 
@@ -116,13 +118,13 @@ def make_mock_pipeline(save_run_result: object, slack_hook: str | None = None) -
 @pytest.fixture(params=["no-relevant-attrs", "output_dir-only-no-destination"])
 def settings_missing_sync_attrs(
     request: pytest.FixtureRequest, tmp_path: Path
-) -> LoggerSettings | LocalInputOutputSettings:
+) -> LoggerSettings | InputLocalOutputSettings:
     """Settings instances missing one or more attribute the sync tests check for via hasattr."""
     if request.param == "no-relevant-attrs":
         return LoggerSettings.model_validate({})
     input_dir = tmp_path / "input"
     input_dir.mkdir(exist_ok=True)
-    return LocalInputOutputSettings.model_validate({"input_dir": input_dir, "output_dir": tmp_path / "output"})
+    return InputLocalOutputSettings.model_validate({"input_dir": input_dir, "output_dir": tmp_path / "output"})
 
 
 # send slack message carefully
@@ -184,11 +186,11 @@ def test_send_slack_message_fail_error_oh_no(
 
 
 def test_settings_missing_sync_attrs_pass_fixture_shape(
-    settings_missing_sync_attrs: LoggerSettings | LocalInputOutputSettings,
+    settings_missing_sync_attrs: LoggerSettings | InputLocalOutputSettings,
 ) -> None:
     """Sanity-check the fixture: confirm which attributes are genuinely absent."""
     assert hasattr(settings_missing_sync_attrs, OUTPUT_DIR) == isinstance(
-        settings_missing_sync_attrs, LocalInputOutputSettings
+        settings_missing_sync_attrs, InputLocalOutputSettings
     )
     assert not hasattr(settings_missing_sync_attrs, USE_DESTINATION)
 
@@ -242,7 +244,7 @@ def _settings_kwargs_for(settings_cls: type[CdmDataLoadersBase], tmp_path: Path)
     """Return minimal required kwargs for instantiating `settings_cls` in `run_cli` tests."""
     if issubclass(settings_cls, CtsSettings):
         return {"input_dir": tmp_path, "output_dir": tmp_path, "use_destination": LOCAL_FS}
-    if issubclass(settings_cls, LocalInputOutputSettings):
+    if issubclass(settings_cls, InputLocalOutputSettings):
         return {"input_dir": tmp_path, "output_dir": tmp_path}
     return {}
 
@@ -821,7 +823,7 @@ def test_pipeline_cli_pass_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     )
     assert result is RUN_RESULT
     assert [(s.input_dir, s.buffer_size, s.log_interval, s.dlt_dev_mode) for s in received] == [
-        (tmp_path.resolve(), 7, 3, True)
+        (str(tmp_path.resolve()), 7, 3, True)
     ]
 
 
@@ -1034,11 +1036,11 @@ def test_build_filesystem_resource_pass_default_glob_and_callable_transformer(
     """build_filesystem_resource uses settings.file_glob and wraps a callable in dlt.transformer with settings bound."""
     file_path = input_dir / "sample.xml"
     file_path.write_text("hello", encoding="utf-8")
-    settings = LocalInputOutputSettings(input_dir=input_dir, output_dir=output_dir)
+    settings = InputLocalOutputSettings(input_dir=input_dir, output_dir=output_dir)
 
     def read_items(
         items: TDataItems,
-        cfg: LocalInputOutputSettings,
+        cfg: InputLocalOutputSettings,
         prefix: str,
     ) -> Iterator[dict[str, Any]]:
         assert cfg is settings
@@ -1059,12 +1061,12 @@ def test_build_filesystem_resource_pass_custom_glob_resource_transformer_and_con
     matched.write_text("matched", encoding="utf-8")
     ignored = input_dir / "ignore.txt"
     ignored.write_text("ignored", encoding="utf-8")
-    settings = LocalInputOutputSettings(input_dir=input_dir, output_dir=output_dir)
+    settings = InputLocalOutputSettings(input_dir=input_dir, output_dir=output_dir)
 
     @dlt.transformer(name="jsonl_test_reader")
     def read_jsonl_items(
         items: TDataItems,
-        cfg: LocalInputOutputSettings,
+        cfg: InputLocalOutputSettings,
     ) -> Iterator[dict[str, Any]]:
         assert cfg is settings
         for item in items:
@@ -1187,11 +1189,11 @@ def test_build_per_file_filesystem_resource_pass(
     """build_per_file_filesystem_resource wraps file_fn via make_per_file_reader and reads matching files."""
     (input_dir / "a.xml").write_text("alpha", encoding="utf-8")
     (input_dir / "b.txt").write_text("beta", encoding="utf-8")
-    settings = LocalInputOutputSettings(input_dir=input_dir, output_dir=output_dir)
+    settings = InputLocalOutputSettings(input_dir=input_dir, output_dir=output_dir)
 
     def read_single_file(
         file_item: dict[str, Any],
-        cfg: LocalInputOutputSettings,
+        cfg: InputLocalOutputSettings,
         label: str,
     ) -> Iterator[dict[str, Any]]:
         assert cfg is settings
@@ -1212,6 +1214,59 @@ def test_build_per_file_filesystem_resource_pass(
     if "max_table_nesting" in transformer_kwargs:
         assert resource.max_table_nesting == transformer_kwargs["max_table_nesting"]
     assert sorted(resource, key=lambda row: row["file"]) == expected
+
+
+def test_build_per_file_filesystem_resource_pass_across_fs_backends(
+    fs_backend: FsBackend,
+    output_dir: Path,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """build_per_file_filesystem_resource reads files from any fsspec backend configured via settings.input_dir."""
+    fs_backend.put("a.txt", b"alpha")
+    fs_backend.put("b.txt", b"beta")
+    settings = InputLocalOutputSettings(input_dir=fs_backend.bucket_url, output_dir=output_dir)
+
+    def read_single_file(
+        file_item: FileItemDict,
+        cfg: InputLocalOutputSettings,
+    ) -> Iterator[dict[str, str]]:
+        assert cfg is settings
+        with file_item.open(mode="rt", encoding="utf-8") as fh:
+            yield {"file": file_item["relative_path"], "content": fh.read()}
+
+    dlt_secrets: dict[str, Any] = {}
+    if fs_backend.name == S3_MOTO:
+        endpoint_url = request.getfixturevalue("s3_moto_endpoint")
+        monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+        monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+        dlt_secrets = {
+            "sources": {
+                "filesystem": {
+                    "credentials": {
+                        "aws_access_key_id": MOTO_ACCESS_KEY,
+                        "aws_secret_access_key": MOTO_SECRET_KEY,
+                        "endpoint_url": endpoint_url,
+                    }
+                }
+            }
+        }
+
+    with isolated_dlt_config(secrets=dlt_secrets):
+        resource = build_per_file_filesystem_resource(
+            settings,
+            read_single_file,
+            name="fs_backend_reader",
+            file_glob="*.txt",
+            parallelized=False,
+        )
+        rows = sorted(resource, key=lambda row: row["file"])
+
+    assert rows == [
+        {"file": "a.txt", "content": "alpha"},
+        {"file": "b.txt", "content": "beta"},
+    ]
 
 
 @pytest.mark.parametrize(

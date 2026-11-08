@@ -47,7 +47,7 @@ Configuration for running the AllTheBacteria import pipeline.
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -71,7 +71,7 @@ Settings for the JSONL extraction-only pipeline.
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -96,7 +96,7 @@ Pipeline settings for JSONL ingestion with JSON Schema validation.
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -121,7 +121,7 @@ Pipeline settings for JSONL pipeline that uses Pydantic for validation.
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -144,7 +144,7 @@ Pipeline settings for NCBI Datasets JSONL ingestion (`annotation_report` and `da
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -199,7 +199,7 @@ Configuration for running the NCBI REST API import pipeline.
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -224,7 +224,7 @@ Settings for the PubMed XML to PyArrow ingestion pipeline.
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -277,7 +277,7 @@ Settings for the UniProt XML to PyArrow ingestion pipeline.
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -299,7 +299,7 @@ Configuration for running the UniProt KB import pipeline.
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -322,7 +322,7 @@ UniRef 100 XML to PyArrow ingest settings.
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -345,7 +345,7 @@ UniRef 100 CDM XML-to-PyArrow ingest settings.
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -370,7 +370,7 @@ UniRef 50 XML to PyArrow ingest settings.
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -393,7 +393,7 @@ UniRef 50 CDM XML-to-PyArrow ingest settings.
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -418,7 +418,7 @@ UniRef 90 XML to PyArrow ingest settings.
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -441,7 +441,7 @@ UniRef 90 CDM XML-to-PyArrow ingest settings.
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -466,7 +466,7 @@ Settings for the XML ingestion pipeline.
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -492,7 +492,7 @@ Settings for the XML to PyArrow ingestion pipeline.
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
@@ -539,7 +539,7 @@ Settings for the XSV (CSV/TSV) ingestion pipeline.
 | `--transforms-module` | — | `CDL_TRANSFORMS_MODULE` | `str \| None` | `None` | Optional Python module path exporting TABLE_TRANSFORMS (dict[str, RecordTransformFn]) for record filtering, transformation, and multi-table splitting. |
 | `--output-schemas-module` | — | `CDL_OUTPUT_SCHEMAS_MODULE` | `str \| None` | `None` | Optional Python module path exporting OUTPUT_SCHEMAS (dict[str, pyarrow.Schema]) for PyArrow schema overrides. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `Path` | *(Required)* | Local directory containing file(s) to import |
+| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
 | `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
 | `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
