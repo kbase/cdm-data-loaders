@@ -1,6 +1,5 @@
 """Misc helpers for integration tests."""
 
-import gc
 import json
 from collections import defaultdict
 from collections.abc import Callable, Generator, Mapping
@@ -571,6 +570,7 @@ def _normalize_reference_entry(entry: dict[str, Any]) -> dict[str, Any]:
 
 def assert_datasets_equal(
     load_info_and_dir: dict[str, tuple[LoadInfo, Path]],
+    output_format: str | None = None,
 ) -> None:
     """Compare datasets to check whether they are identical."""
     if len(load_info_and_dir) < 2:
@@ -579,29 +579,25 @@ def assert_datasets_equal(
 
     all_keys = list(load_info_and_dir.keys())
     dataset_zero = all_keys[0]
-    sorted_row_data: dict[str, dict[str, list[str]]] = {k: {} for k in all_keys}
-
-    with get_pipeline(*load_info_and_dir[dataset_zero]).dataset() as ds_zero:
-        table_names = {table_name for table_name in ds_zero.tables if not is_metadata_table(table_name)}
-        dfs_zero = {t: ds_zero.table(t).df() for t in table_names}
-        rows_per_table = {t: df.shape[0] for t, df in dfs_zero.items()}
-        col_names = {t: set(df.columns) for t, df in dfs_zero.items()}
-        sorted_row_data[dataset_zero] = {t: _df_to_sorted_json(df) for t, df in dfs_zero.items()}
+    load_info_zero, output_dir_zero = load_info_and_dir[dataset_zero]
+    tables_zero = read_data_rows(output_dir_zero / load_info_zero.dataset_name, output_format)
+    table_names = set(tables_zero)
+    rows_per_table = {t: len(rows) for t, rows in tables_zero.items()}
+    col_names = {t: set().union(*(row.keys() for row in rows)) for t, rows in tables_zero.items()}
+    sorted_row_data: dict[str, dict[str, list[str]]] = {
+        dataset_zero: {t: rows_as_multiset(tables_zero, t) for t in table_names},
+    }
 
     for key in all_keys[1:]:
-        with get_pipeline(*load_info_and_dir[key]).dataset() as ds:
-            # check the table names are identical
-            assert {table_name for table_name in ds.tables if not is_metadata_table(table_name)} == table_names
-            dfs = {t: ds.table(t).df() for t in table_names}
-            # check row counts
-            assert {t: df.shape[0] for t, df in dfs.items()} == rows_per_table
-            # column names
-            for t, df in dfs.items():
-                assert set(df.columns) == col_names[t]
-                sorted_row_data[key][t] = _df_to_sorted_json(df)
-                assert sorted_row_data[key][t] == sorted_row_data[dataset_zero][t]
-
-    gc.collect()
+        load_info, output_dir = load_info_and_dir[key]
+        tables = read_data_rows(output_dir / load_info.dataset_name, output_format)
+        assert set(tables) == table_names
+        assert {t: len(rows) for t, rows in tables.items()} == rows_per_table
+        sorted_row_data[key] = {}
+        for t, rows in tables.items():
+            assert set().union(*(row.keys() for row in rows)) == col_names[t]
+            sorted_row_data[key][t] = rows_as_multiset(tables, t)
+            assert sorted_row_data[key][t] == sorted_row_data[dataset_zero][t]
 
 
 def assert_dataset_matches_reference(
@@ -642,7 +638,7 @@ def run_and_compare_variations(
         key: run_and_read(run_pipeline, chunk_dir, **overrides) for key, (chunk_dir, overrides) in variations.items()
     }
     if len(load_info_and_dir) >= 2:  # noqa: PLR2004
-        assert_datasets_equal(load_info_and_dir)
+        assert_datasets_equal(load_info_and_dir, output_format)
     if sorted_reference_json is not None:
         assert_dataset_matches_reference(
             load_info_and_dir,
