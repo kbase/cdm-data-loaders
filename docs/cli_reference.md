@@ -20,7 +20,6 @@ Auto-generated reference for all registered pipeline CLIs in `pyproject.toml` (`
 | [`ncbi_datasets`](#ncbi_datasets) | `NcbiDatasetsSettings` | `cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:ncbi_datasets_cli` | Pipeline settings for NCBI Datasets JSONL ingestion (`annotation_report` and `dataset_report`). |
 | [`ncbi_ftp_promote`](#ncbi_ftp_promote) | `PromoteSettings` | `cdm_data_loaders.pipelines.ncbi_ftp_promote:cli` | Configuration for the NCBI FTP file promotion pipeline. |
 | [`ncbi_ftp_sync`](#ncbi_ftp_sync) | `DownloadSettings` | `cdm_data_loaders.pipelines.ncbi_ftp_download:cli` | Configuration for the NCBI FTP assembly download pipeline. |
-| [`ncbi_rest_api`](#ncbi_rest_api) | `NcbiRestApiSettings` | `cdm_data_loaders.pipelines.ncbi_rest_api:cli` | Configuration for running the NCBI REST API import pipeline. |
 | [`pubmed`](#pubmed) | `PubMedXmlToPyArrowSettings` | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:pubmed_cli` | Settings for the PubMed XML to PyArrow ingestion pipeline. |
 | [`pyiceberg_to_jsonschema`](#pyiceberg_to_jsonschema) | `IcebergToJsonSchemaSettings` | `cdm_data_loaders.converters.cli.pyiceberg_to_jsonschema:cli` | Settings for generating a set of JSONSchemas from an Iceberg data catalog. |
 | [`pyiceberg_to_linkml`](#pyiceberg_to_linkml) | `IcebergToLinkMLSettings` | `cdm_data_loaders.converters.cli.pyiceberg_to_linkml:cli` | Settings for generating a set of LinkML schemas from an Iceberg data catalog. |
@@ -188,28 +187,6 @@ Configuration for the NCBI FTP assembly download pipeline.
 | `--threads` | `-t` | `CDL_THREADS` | `int` | `4` | Number of parallel download threads |
 | `--ftp-host` | — | `CDL_FTP_HOST` | `str` | `'ftp.ncbi.nlm.nih.gov'` | NCBI FTP hostname |
 | `--limit` | `-l` | `CDL_LIMIT` | `int \| None` | `None` | Limit to first N assemblies (for testing) |
-
-## `ncbi_rest_api`
-
-Configuration for running the NCBI REST API import pipeline.
-
-- **Entry point**: `cdm_data_loaders.pipelines.ncbi_rest_api:cli`
-- **Settings hierarchy**: `NcbiRestApiSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
-
-| CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
-| `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
-| `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
-| `--buffer-size` | — | `CDL_BUFFER_SIZE` | `int` | `100` | Number of rows to buffer per table before yielding a batch to the destination. Must be a positive integer. |
-| `--dlt-dev-mode` | — | `CDL_DLT_DEV_MODE` | `bool` | `False` | Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run. |
-| `--log-interval` | — | `CDL_LOG_INTERVAL` | `int` | `1000` | How often (in number of processed entries) to emit a progress log message. |
-| `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
-| `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
-| `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--batch-size` | `-b` | `CDL_BATCH_SIZE` | `int` | `250` | Number of IDs to send in each request to the NCBI REST API. |
-| `--query-type` | `-q` | `CDL_QUERY_TYPE` | `str \| None` | `None` | The type of query to perform, dataset or annotation. By default, both are performed. |
-| `--save-raw-responses` | — | `CDL_SAVE_RAW_RESPONSES` | `bool` | `False` | Whether or not to save the raw responses from the API to the output directory. |
 
 ## `pubmed`
 

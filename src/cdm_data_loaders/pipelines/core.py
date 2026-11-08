@@ -1,10 +1,12 @@
 """Common reusable pipeline elements."""
 
+import weakref
 from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from logging import Logger, getLogger
 from pathlib import Path
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, Final
 
 import dlt
@@ -15,11 +17,14 @@ from dlt.common.runtime.slack import send_slack_message
 from dlt.common.schema.typing import TSchemaContractDict
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
+from dlt.destinations.impl.filesystem.filesystem import FilesystemClient
 from dlt.extract import DltResource
 from dlt.pipeline.exceptions import PipelineStepFailed
 from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
+from pyiceberg.catalog.rest import RestCatalog
+from pyiceberg.catalog.sql import SqlCatalog
 
 from cdm_data_loaders.core.fields import ICEBERG, JSONL, PARQUET, REJECTED_TABLE_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import (
@@ -51,6 +56,83 @@ DEFAULT_SCHEMA_CONTRACT: Final[TSchemaContractDict] = {
 yaml.SafeDumper.add_multi_representer(datetime, yaml.SafeDumper.represent_datetime)
 
 logger: Logger = getLogger(__name__)
+
+_iceberg_catalog_cleanup_installed: bool = False
+
+
+def _install_iceberg_catalog_cleanup() -> None:
+    """Register weakref finalizers on PyIceberg catalogs and release cached catalogs on FilesystemClient exit.
+
+    SqlCatalog holds a SQLAlchemy Engine <-> SingletonThreadPool cycle and RestCatalog holds a
+    requests.Session <-> AuthManager cycle; neither defines a finalizer, and dlt's FilesystemClient.__exit__
+    is a no-op. Attaching finalizers to Engine.dispose / Session.close and dropping FilesystemClient._catalog
+    on context exit closes SQLite and REST connections as soon as a load job or Table reference finishes.
+    """
+    global _iceberg_catalog_cleanup_installed  # noqa: PLW0603
+    if _iceberg_catalog_cleanup_installed:
+        return
+    _iceberg_catalog_cleanup_installed = True
+
+    orig_sql_init = SqlCatalog.__init__
+    orig_sql_close = SqlCatalog.close
+
+    def _sql_catalog_init(self: SqlCatalog, name: str, **properties: str) -> None:
+        try:
+            orig_sql_init(self, name, **properties)
+        finally:
+            if hasattr(self, "engine"):
+                self._finalizer = weakref.finalize(self, self.engine.dispose)  # type: ignore[attr-defined]
+
+    def _sql_catalog_close(self: SqlCatalog) -> None:
+        finalizer: weakref.finalize[Any, Any] | None = getattr(self, "_finalizer", None)
+        if finalizer is not None:
+            finalizer()
+        orig_sql_close(self)
+
+    SqlCatalog.__init__ = _sql_catalog_init  # type: ignore[method-assign]
+    SqlCatalog.close = _sql_catalog_close  # type: ignore[method-assign]
+
+    orig_rest_init = RestCatalog.__init__
+    orig_rest_close = RestCatalog.close
+
+    def _rest_catalog_init(self: RestCatalog, name: str, **properties: str) -> None:
+        try:
+            orig_rest_init(self, name, **properties)
+        finally:
+            session = getattr(self, "_session", None)
+            if session is not None:
+                self._finalizer = weakref.finalize(self, session.close)  # type: ignore[attr-defined]
+
+    def _rest_catalog_close(self: RestCatalog) -> None:
+        finalizer: weakref.finalize[Any, Any] | None = getattr(self, "_finalizer", None)
+        if finalizer is not None:
+            finalizer()
+        orig_rest_close(self)
+
+    RestCatalog.__init__ = _rest_catalog_init  # type: ignore[method-assign]
+    RestCatalog.close = _rest_catalog_close  # type: ignore[method-assign]
+
+    orig_fs_exit = FilesystemClient.__exit__
+
+    def _fs_client_exit(
+        self: FilesystemClient,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        catalog = self._catalog
+        self._catalog = None
+        self._catalog_namespaces.clear()
+        try:
+            if exc_type is not None and catalog is not None and hasattr(catalog, "close"):
+                catalog.close()
+        finally:
+            orig_fs_exit(self, exc_type, exc_val, exc_tb)  # type: ignore[arg-type]
+
+    FilesystemClient.__exit__ = _fs_client_exit  # type: ignore[method-assign]
+
+
+_install_iceberg_catalog_cleanup()
 
 
 @dataclass(frozen=True, slots=True)

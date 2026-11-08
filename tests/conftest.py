@@ -27,10 +27,13 @@ from pyspark.sql import SparkSession
 from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
+from cdm_data_loaders.pipelines.core import _install_iceberg_catalog_cleanup
 from cdm_data_loaders.utils import cdm_logger
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
 from tests.xml_samples import LIBRARY_XSD
+
+_install_iceberg_catalog_cleanup()
 
 settings.register_profile(
     "default",
@@ -70,9 +73,6 @@ DEFAULT_VCR_CONFIG = frozendict(
         "record_mode": "once",  # record on first run, replay thereafter
         "serializer": "yaml",
         "match_on": ["method", "scheme", "host", "path", "query"],
-        # strip the NCBI API key from cassettes
-        "filter_query_parameters": ["api_key"],
-        "filter_headers": ["api_key"],
         "decode_compressed_response": True,
         "allow_playback_repeats": True,
     }

@@ -41,7 +41,6 @@ jsonlines_pydantic = "cdm_data_loaders.pipelines.jsonlines.extract_pydantic_vali
 ncbi_datasets = "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:ncbi_datasets_cli"
 ncbi_ftp_promote = "cdm_data_loaders.pipelines.ncbi_ftp_promote:cli"
 ncbi_ftp_sync = "cdm_data_loaders.pipelines.ncbi_ftp_download:cli"
-ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"
 pubmed = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:pubmed_cli"
 pyiceberg_to_jsonschema = "cdm_data_loaders.converters.cli.pyiceberg_to_jsonschema:cli"
 pyiceberg_to_linkml = "cdm_data_loaders.converters.cli.pyiceberg_to_linkml:cli"
@@ -228,7 +227,7 @@ build-backend = "uv_build"
 
 [tool.mutmut]
 source_paths = [ "src/" ]
-pytest_add_cli_args_test_selection= [ "-m", "not requires_spark", "-m", "not slow_test", "-m", "not requires_ceph", "-m", "not external_request", "-m", "not docker", "-m", "not docs", "--ignore", "tests/cdm_data_loaders/pipelines/ncbi_rest_api/test_ncbi_rest_api.py" ]
+pytest_add_cli_args_test_selection= [ "-m", "not requires_spark", "-m", "not slow_test", "-m", "not requires_ceph", "-m", "not external_request", "-m", "not docker", "-m", "not docs" ]
 
 
 

@@ -1,8 +1,10 @@
 """Tests for the shared core DLT pipeline functions."""
 
+import gc
 import gzip
 import logging
 import sys
+import warnings
 from collections.abc import Callable, Iterator
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
@@ -13,15 +15,18 @@ from unittest.mock import MagicMock, call, patch
 import dlt
 import pytest
 from dlt.common.destination.exceptions import DestinationTerminalException
+from dlt.common.libs.pyiceberg import get_iceberg_tables
 from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TTableSchema
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
-from dlt.destinations.impl.filesystem.filesystem import FilesystemLoadJob
+from dlt.destinations.impl.filesystem.filesystem import FilesystemClient, FilesystemLoadJob
 from dlt.extract.resource import DltResource
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
-from requests import RequestException
+from pyiceberg.catalog.rest import RestCatalog
+from pyiceberg.catalog.sql import SqlCatalog
+from requests import RequestException, Session
 
 from cdm_data_loaders.core.fields import OUTPUT_DIR, PIPELINE_DIR_NAME, USE_DESTINATION
 from cdm_data_loaders.core.settings import (
@@ -1320,3 +1325,66 @@ def test_build_file_ingest_kwargs_pass(
         },
         "pipeline_run_kwargs": expected_run_kwargs,
     }
+
+
+def test_iceberg_catalog_cleanup_pass_no_sqlite_resource_warning_on_pipeline_run(
+    dlt_test_settings: CtsSettings,
+) -> None:
+    """Running an Iceberg pipeline and collecting garbage emits no unclosed sqlite3 ResourceWarning."""
+    rows = [{"id": 1, "name": "alpha"}, {"id": 2, "name": "beta"}]
+    resource = dlt.resource(rows, name="items")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        load_info = run_pipeline(
+            dlt_test_settings,
+            resource,
+            pipeline_kwargs={"pipeline_name": TINY_PIPELINE_NAME, "dataset_name": "iceberg_ds"},
+            pipeline_run_kwargs={"loader_file_format": "parquet", "table_format": "iceberg"},
+        )
+        assert load_info is not None
+        assert not load_info.has_failed_jobs
+
+        tables = get_iceberg_tables(load_info.pipeline)
+        assert set(tables) == {"items"}
+        assert len(tables["items"].scan().to_arrow()) == len(rows)
+        del tables
+        del load_info
+        gc.collect()
+
+    sqlite_warnings = [
+        w for w in caught if issubclass(w.category, ResourceWarning) and "sqlite3.Connection" in str(w.message)
+    ]
+    assert sqlite_warnings == []
+
+
+def test_iceberg_catalog_cleanup_pass_rest_catalog_closes_session_on_dereference() -> None:
+    """Dereferencing a RestCatalog (e.g. Polaris) closes its underlying requests.Session via finalizer."""
+    mock_session = MagicMock(spec=Session)
+    with (
+        patch.object(RestCatalog, "_fetch_config"),
+        patch.object(RestCatalog, "_create_session", return_value=mock_session),
+    ):
+        catalog = RestCatalog("polaris", uri="http://polaris:8181/api/catalog")
+        assert catalog.name == "polaris"
+        assert mock_session.close.call_count == 0
+        del catalog
+        gc.collect()
+
+    mock_session.close.assert_called_once_with()
+
+
+def test_iceberg_catalog_cleanup_pass_filesystem_client_exit_closes_catalog_on_error() -> None:
+    """FilesystemClient.__exit__ clears _catalog and closes it immediately when exiting on an exception."""
+    catalog = SqlCatalog("ephemeral", uri="sqlite:///:memory:")
+    client = object.__new__(FilesystemClient)
+    client._catalog = catalog
+    client._catalog_namespaces = {"ns"}
+
+    with patch.object(catalog, "close", wraps=catalog.close) as spy_close:
+        client.__exit__(RuntimeError, RuntimeError("boom"), None)
+
+    assert client._catalog is None
+    assert client._catalog_namespaces == set()
+    spy_close.assert_called_once_with()
+

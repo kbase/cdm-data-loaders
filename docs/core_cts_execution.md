@@ -110,7 +110,6 @@ classDiagram
     LoggerSettings <|-- PromoteSettings
     LoggerSettings <|-- DownloadSettings
     FileFormatIngestSettings <|-- AtbSettings
-    FileFormatIngestSettings <|-- NcbiRestApiSettings
     FileFormatIngestSettings <|-- JsonlIngestSettings
     FileFormatIngestSettings <|-- XsvIngestSettings
     TransformSettingsMixin <|-- JsonlIngestSettings
