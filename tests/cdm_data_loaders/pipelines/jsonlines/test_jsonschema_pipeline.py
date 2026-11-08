@@ -10,6 +10,9 @@ from typing import Any
 import pyarrow as pa
 import pytest
 
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
+    convert_schema_to_pyarrow,
+)
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
     _make_resolve_error,
@@ -20,7 +23,6 @@ from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline i
 from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlJsonschemaIngestSettings,
     NcbiDatasetsSettings,
-    convert_schema_to_pyarrow,
 )
 from cdm_data_loaders.readers.jsonlines import make_page_router
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema

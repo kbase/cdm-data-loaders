@@ -18,16 +18,18 @@ from dlt.extract.items import DataItemWithMeta, TableNameMeta
 from dlt.extract.pipe_iterator import ManagedPipeIterator
 from lxml.etree import Element, XMLSyntaxError, tostring
 
-import cdm_data_loaders.converters.xsd_to_pyarrow as xsd_module
+import cdm_data_loaders.coercion.xml as xml_coercion_module
 import cdm_data_loaders.readers.xml as xml_module
 import cdm_data_loaders.utils.buffer as buffer_module
-from cdm_data_loaders.converters.xsd_to_pyarrow import (
-    DEFAULT_MAX_RECURSION_DEPTH,
-    generate_pyarrow_schema,
-    generate_pyarrow_schemas_at_level,
+from cdm_data_loaders.coercion.xml import (
     make_xml_element_converter,
     make_xml_level_converters,
 )
+from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
+    generate_pyarrow_schema,
+    generate_pyarrow_schemas_at_level,
+)
+from cdm_data_loaders.converters.readers.xsd import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.core.fields import (
     BUFFER_SIZE,
     DEFAULT_XML_FILE_GLOB,
@@ -1098,8 +1100,8 @@ def test_process_xml_file_to_pyarrow_pass_prepares_xsd_target_traversal_at_most_
     """Verify XSD target resolution and particle validation is not repeated for every XML element."""
     file_path = write_xml_file(tmp_path, "five.xml", PEOPLE_XML_5)
     settings = fake_xmltopyarrow_settings(table_name="people", xml_tag="person")
-    prepare_spy = MagicMock(wraps=xsd_module._prepare_target_traversal)  # noqa: SLF001
-    monkeypatch.setattr(xsd_module, "_prepare_target_traversal", prepare_spy)
+    prepare_spy = MagicMock(wraps=xml_coercion_module._prepare_target_traversal)  # noqa: SLF001
+    monkeypatch.setattr(xml_coercion_module, "_prepare_target_traversal", prepare_spy)
 
     tagged = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
 

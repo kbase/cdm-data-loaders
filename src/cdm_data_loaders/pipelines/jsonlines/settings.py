@@ -11,14 +11,12 @@ from frozendict import frozendict
 from pydantic import Field, PrivateAttr
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
-    JSONSchemaToPyArrow,
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrowError,
+    convert_schema_to_pyarrow,
 )
-from cdm_data_loaders.converters.pydantic_to_pyarrow import (
-    PydanticToPyArrow,
-    PydanticToPyArrowError,
-)
+from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
+from cdm_data_loaders.converters.readers.pydantic import PydanticToPyArrowError
 from cdm_data_loaders.core.fields import (
     DEFAULT_JSONL_FILE_GLOB,
     FILE_GLOB,
@@ -41,8 +39,7 @@ from cdm_data_loaders.core.settings import (
     select_cli_shortcuts,
 )
 from cdm_data_loaders.core.transforms import TransformSettingsMixin, validate_table_transforms
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
-from cdm_data_loaders.utils.jsonschema.dereferencer import DereferencingError, dereference_schema
+from cdm_data_loaders.schemas.jsonschema import DereferencingError
 
 logger: Logger = getLogger(__name__)
 
@@ -64,23 +61,6 @@ LOCAL_CLI_SHORTCUTS: Final[frozendict[str, str]] = frozendict(
         TABLE_NAME: "t",
     }
 )
-
-
-def convert_schema_to_pyarrow(schema: ValidatedSchema) -> pa.Schema:
-    """Dereference a validated JSON Schema and convert it to a PyArrow schema.
-
-    :param schema: validated JSON Schema
-    :type schema: ValidatedSchema
-    :return: target PyArrow schema for the entity table
-    :rtype: pa.Schema
-    :raises DereferencingError: if ``$ref`` or ``allOf`` cannot be resolved
-    :raises JSONSchemaToPyArrowError: if the dereferenced schema cannot be converted to a PyArrow schema
-    """
-    raw_schema = schema.jsonschema
-    dereferenced = dereference_schema(raw_schema)
-    if "$schema" not in dereferenced and "$schema" in raw_schema:
-        dereferenced = {"$schema": raw_schema["$schema"], **dereferenced}
-    return JSONSchemaToPyArrow().convert(dereferenced)
 
 
 def build_output_schema_registry(

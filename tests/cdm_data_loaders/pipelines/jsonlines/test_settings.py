@@ -10,8 +10,11 @@ from pydantic import BaseModel, ValidationError
 from pydantic_settings import CliApp, SettingsError
 
 import cdm_data_loaders.pipelines.jsonlines.settings as jsonlines_settings_module
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrowError
-from cdm_data_loaders.converters.pydantic_to_pyarrow import PydanticToPyArrow
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
+    JSONSchemaToPyArrowError,
+    convert_schema_to_pyarrow,
+)
+from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
 from cdm_data_loaders.core.fields import (
     DEFAULT_JSONL_FILE_GLOB,
     FILE_GLOB,
@@ -40,17 +43,17 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlPydanticIngestSettings,
     NcbiDatasetsSettings,
     build_output_schema_registry,
-    convert_schema_to_pyarrow,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.schemas.jsonschema import DereferencingError, ValidatedSchema
 from cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi import (
     ANNOTATION_REPORT_TABLE,
     DATASET_REPORT_TABLE,
-    ENTITY_SCHEMAS as NCBI_DATASETS_ENTITY_SCHEMAS,
     filter_annotation_report,
 )
+from cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi import (
+    ENTITY_SCHEMAS as NCBI_DATASETS_ENTITY_SCHEMAS,
+)
 from cdm_data_loaders.schemas.ncbi_datasets.schema import SCHEMAS as NCBI_DATASETS_SCHEMAS
-from cdm_data_loaders.utils.jsonschema.dereferencer import DereferencingError
 from tests.cdm_data_loaders.conftest import check_settings, cts_expected
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas import (
     ENTITY_SCHEMAS as DATASET_ENTITY_SCHEMAS,

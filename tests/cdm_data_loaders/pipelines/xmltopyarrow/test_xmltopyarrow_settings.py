@@ -12,13 +12,15 @@ from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
 import cdm_data_loaders.pipelines.xmltopyarrow.settings as xmltopyarrow_settings_module
-from cdm_data_loaders.converters.xsd_to_pyarrow import (
-    DEFAULT_MAX_RECURSION_DEPTH,
+from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schema,
     generate_pyarrow_schemas_at_level,
+)
+from cdm_data_loaders.converters.readers.xsd import (
+    DEFAULT_MAX_RECURSION_DEPTH,
     load_schema,
 )
-from cdm_data_loaders.core.fields import XML_GZ_FILE_GLOB, DEFAULTS
+from cdm_data_loaders.core.fields import DEFAULTS, XML_GZ_FILE_GLOB
 from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.core.settings import CtsSettings

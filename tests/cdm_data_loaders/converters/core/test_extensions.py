@@ -16,7 +16,7 @@ from cdm_data_loaders.converters.core.extensions import (
 )
 from cdm_data_loaders.converters.core.ir import TypedNode
 from cdm_data_loaders.converters.core.ir_values import Value, freeze_value
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema import X_XSV_CONFIG_SCHEMA
+from cdm_data_loaders.schemas.jsonschema import X_XSV_CONFIG_SCHEMA
 
 
 @pytest.mark.parametrize(

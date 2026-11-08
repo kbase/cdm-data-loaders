@@ -10,13 +10,17 @@ from lxml.etree import Element
 from pydantic import Field, FilePath, PositiveInt, PrivateAttr
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.converters.xsd_to_pyarrow import (
-    DEFAULT_MAX_RECURSION_DEPTH,
-    generate_pyarrow_schema,
-    generate_pyarrow_schemas_at_level,
-    load_schema,
+from cdm_data_loaders.coercion.xml import (
     make_xml_element_converter,
     make_xml_level_converters,
+)
+from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
+    generate_pyarrow_schema,
+    generate_pyarrow_schemas_at_level,
+)
+from cdm_data_loaders.converters.readers.xsd import (
+    DEFAULT_MAX_RECURSION_DEPTH,
+    load_schema,
 )
 from cdm_data_loaders.core.fields import XML_GZ_FILE_GLOB, FileGlob, NonEmptyStr, XsdFile
 from cdm_data_loaders.core.preprocessors import validate_file_preprocessors, validate_md5_sidecar

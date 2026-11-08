@@ -4,7 +4,7 @@ from typing import Final
 
 import pyarrow as pa
 
-from cdm_data_loaders.converters.xsd_to_pyarrow import assemble_pyarrow_schema
+from cdm_data_loaders.converters.emitters.pyarrow import assemble_pyarrow_schema
 
 EVIDENCED_STRING_STRUCT: Final[pa.StructType] = pa.struct(
     [

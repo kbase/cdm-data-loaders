@@ -5,7 +5,6 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, ClassVar, Final, Literal
 
-import pyarrow as pa
 import xmlschema
 from frozendict import frozendict
 from xmlschema.validators import (
@@ -114,59 +113,6 @@ XSD_SCALAR_SPEC: Final[Mapping[str, tuple[NodeType, NodeHints]]] = frozendict(
     }
 )
 
-SCALAR_ARROW_TYPES: Final[Mapping[str, pa.DataType]] = frozendict(
-    {
-        **dict.fromkeys(
-            (
-                "xs:string",
-                "xs:normalizedString",
-                "xs:token",
-                "xs:language",
-                "xs:Name",
-                "xs:NCName",
-                "xs:NMTOKEN",
-                "xs:ID",
-                "xs:IDREF",
-                "xs:ENTITY",
-                "xs:anyURI",
-                "xs:QName",
-                "xs:NOTATION",
-                "xs:dateTime",
-                "xs:time",
-                "xs:duration",
-                "xs:gYear",
-                "xs:gYearMonth",
-                "xs:gMonthDay",
-                "xs:gDay",
-                "xs:gMonth",
-            ),
-            pa.string(),
-        ),
-        "xs:boolean": pa.bool_(),
-        "xs:byte": pa.int8(),
-        "xs:short": pa.int16(),
-        "xs:int": pa.int32(),
-        **dict.fromkeys(
-            (
-                "xs:long",
-                "xs:integer",
-                "xs:positiveInteger",
-                "xs:nonNegativeInteger",
-                "xs:negativeInteger",
-                "xs:nonPositiveInteger",
-            ),
-            pa.int64(),
-        ),
-        "xs:unsignedByte": pa.uint8(),
-        "xs:unsignedShort": pa.uint16(),
-        "xs:unsignedInt": pa.uint32(),
-        "xs:unsignedLong": pa.uint64(),
-        **dict.fromkeys(("xs:float", "xs:double", "xs:decimal"), pa.float64()),
-        "xs:date": pa.date32(),
-        **dict.fromkeys(("xs:base64Binary", "xs:hexBinary"), pa.binary()),
-    }
-)
-
 
 class XsdToPyArrowError(ConversionError):
     """Base class for XSD constructs that cannot be converted to a PyArrow schema.
@@ -259,9 +205,9 @@ def load_schema(schema_path: str | Path) -> xmlschema.XMLSchema:
     """Load an XML schema document into an XMLSchema object.
 
     :param schema_path: path to the schema file
-    :type  schema_path: str | Path
+    :type schema_path: str | Path
     :return: loaded schema
-    :rtype : xmlschema.XMLSchema
+    :rtype: xmlschema.XMLSchema
     """
     return xmlschema.XMLSchema(str(schema_path))
 
@@ -411,7 +357,7 @@ class _TraversalContext:
     struct_cache: dict[tuple[int, bool], Any] = field(default_factory=dict)
 
 
-_LeafKind = Literal["simple", "mixed", "empty_marker"]
+type LeafKind = Literal["simple", "mixed", "empty_marker"]
 
 
 def _check_complex_type_forbidden_recursion(root_type: XsdType, current: XsdComplexType) -> list[XsdType]:
@@ -612,7 +558,7 @@ def _resolve_child_cardinality(
     return is_list, nullable
 
 
-def _classify_leaf_element_type(elem_type: XsdType | None) -> tuple[_LeafKind, XsdType | None] | None:
+def _classify_leaf_element_type(elem_type: XsdType | None) -> tuple[LeafKind, XsdType | None] | None:
     """Classify ``elem_type`` as a non-struct leaf ``(kind, simple_type)`` or ``None`` if it maps to a struct."""
     if not isinstance(elem_type, XsdComplexType):
         return "simple", elem_type
@@ -1179,11 +1125,11 @@ def resolve_root_elements(
     back to all global elements if all global elements participate in a mutual reference cycle).
 
     :param schema: loaded XMLSchema instance
-    :type  schema: xmlschema.XMLSchema
+    :type schema: xmlschema.XMLSchema
     :param root_tag: optional explicit root element name (local name or Clark notation)
-    :type  root_tag: str | None
+    :type root_tag: str | None
     :return: list of root XsdElement declarations in schema order
-    :rtype : list[XsdElement]
+    :rtype: list[XsdElement]
     """
     if root_tag is not None:
         return [_resolve_target_element(schema, root_tag)]
@@ -1205,11 +1151,11 @@ def _advance_elements_one_level(
     """Return child ``XsdElement`` declarations reachable in one step from ``elements``.
 
     :param schema: loaded XMLSchema instance
-    :type  schema: xmlschema.XMLSchema
+    :type schema: xmlschema.XMLSchema
     :param elements: parent XSD element declarations at current depth
-    :type  elements: Sequence[XsdElement]
+    :type elements: Sequence[XsdElement]
     :return: child XSD element declarations at the next depth
-    :rtype : list[XsdElement]
+    :rtype: list[XsdElement]
     """
     next_elements: list[XsdElement] = []
     visited_types: set[int] = set()
@@ -1228,9 +1174,9 @@ def _group_and_deduplicate_elements(elements: Sequence[XsdElement]) -> dict[str,
     """Group ``elements`` by local name and deduplicate matching declarations.
 
     :param elements: XSD element declarations at a given depth
-    :type  elements: Sequence[XsdElement]
+    :type elements: Sequence[XsdElement]
     :return: mapping of element local name to its deduplicated XsdElement
-    :rtype : dict[str, XsdElement]
+    :rtype: dict[str, XsdElement]
     """
     by_name: dict[str, list[XsdElement]] = {}
     for el in elements:
@@ -1251,13 +1197,13 @@ def resolve_elements_at_level(
     the root element(s); depth ``2`` corresponds to grandchildren of the root element(s), and so on.
 
     :param schema: loaded XMLSchema instance
-    :type  schema: xmlschema.XMLSchema
+    :type schema: xmlschema.XMLSchema
     :param level: non-negative depth relative to the root element(s)
-    :type  level: int
+    :type level: int
     :param root_tag: optional explicit root element name to anchor the traversal
-    :type  root_tag: str | None
+    :type root_tag: str | None
     :return: mapping of element local tag name to its validated XsdElement declaration at ``level``
-    :rtype : dict[str, XsdElement]
+    :rtype: dict[str, XsdElement]
     """
     if level < 0:
         msg = f"level must be >= 0, got {level}"

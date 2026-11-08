@@ -1,16 +1,12 @@
-"""JSON Schema-related functions."""
+"""XSV-specific JSON Schema validation and header generation utilities."""
 
 import json
-from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
 
 import jsonschema
-import jsonschema.exceptions
 import jsonschema.validators
-from jsonschema import Draft202012Validator, validators
 from pydantic import (
-    BaseModel,
     DirectoryPath,
     computed_field,
     field_validator,
@@ -18,50 +14,12 @@ from pydantic import (
 )
 
 from cdm_data_loaders.core.fields import CharStr, NonEmptyStr
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema import (
-    CUSTOM_META_SCHEMA,
+from cdm_data_loaders.schemas.jsonschema import (
     CUSTOM_META_SCHEMA_URI,
     X_XSV_CONFIG_KEY,
+    ValidatedSchema,
+    register_xsv_validator,
 )
-
-logger: Logger = getLogger(__name__)
-
-
-class ValidatedSchema(BaseModel):
-    """A validated JSON Schema."""
-
-    jsonschema: dict[str, Any]
-
-    @field_validator("jsonschema", mode="after")
-    @classmethod
-    def validate_jsonschema(cls, schema: dict[str, Any]) -> dict[str, Any]:
-        """Validate the schema in the jsonschema field.
-
-        :param schema: a JSON schema
-        :type schema: dict[str, Any]
-        :raises ValueError: if there is no `$schema` field to identify the metaschema used
-        :raises jsonschema.exceptions.SchemaError, jsonschema.exceptions.ValidationError: if the schema is invalid
-        :return: validated schema
-        :rtype: dict[str, Any]
-        """
-        # not required by the spec, but we have higher standards
-        if "$schema" not in schema or not isinstance(schema["$schema"], str):
-            err_msg = "JSON Schema is missing the $schema keyword"
-            raise ValueError(err_msg)
-
-        # retrieve the appropriate validator for the schema and ensure it is a supported draft
-        declared = schema["$schema"]
-        validator = jsonschema.validators.validator_for(schema, default=None)  # type: ignore[arg-type]
-        if validator is None:
-            err_msg = f"Unsupported JSON Schema draft: {declared}"
-            raise ValueError(err_msg)
-
-        try:
-            validator.check_schema(schema)
-        except (jsonschema.exceptions.SchemaError, jsonschema.exceptions.ValidationError):
-            logger.exception("Error validating JSON Schema")
-            raise
-        return schema
 
 
 class ValidatedXsvSchema(ValidatedSchema):
@@ -82,7 +40,7 @@ class ValidatedXsvSchema(ValidatedSchema):
     @computed_field
     @property
     def required_cols(self) -> list[str]:
-        """Retrieve the list of headers from the top-level `required` field."""
+        """Retrieve the list of headers from the top-level ``required`` field."""
         return self.jsonschema.get("required", [])
 
     @field_validator("jsonschema", mode="after")
@@ -92,9 +50,10 @@ class ValidatedXsvSchema(ValidatedSchema):
 
         :param schema: the schema
         :type  schema: dict[str, Any]
-        :raises ValueError: if there is no `$schema` field to identify the metaschema used
-        :raises jsonschema.exceptions.SchemaError, jsonschema.exceptions.ValidationError: if the schema is invalid
-        :raises ValueError: if there are no `required` fields to indicate the CSV columns and order
+        :raises ValueError: if there is no ``$schema`` field to identify the metaschema used
+        :raises jsonschema.exceptions.SchemaError: if the schema is invalid
+        :raises jsonschema.exceptions.ValidationError: if the schema fails validation
+        :raises ValueError: if there are no ``required`` fields to indicate the CSV columns and order
         :return: the validated schema
         :rtype : dict[str, Any]
         """
@@ -105,18 +64,6 @@ class ValidatedXsvSchema(ValidatedSchema):
             err_msg = "Could not find any required cols in schema"
             raise ValueError(err_msg)
         return validated_schema
-
-
-def register_xsv_validator() -> None:
-    """Register the custom validator for validating JSON Schema with embedded XSV parsing metadata."""
-    # extend the Draft202012Validator metaschema to include the extra XSV parsing info
-    # the metaschema only affects validation of schemas, not of data conforming to the schema
-    xsv_validator = validators.extend(Draft202012Validator)
-    xsv_validator.META_SCHEMA = CUSTOM_META_SCHEMA
-
-    # Register it so `jsonschema.validate(...)`/`validator_for(...)` automatically
-    # picks xsv_validator whenever a schema declares this "$schema" URI.
-    validators.validates(CUSTOM_META_SCHEMA_URI)(xsv_validator)
 
 
 def validate_jsonschema(schema_path: Path) -> ValidatedXsvSchema:
@@ -139,8 +86,8 @@ def generate_first_pass_schema(validated_schema: ValidatedXsvSchema) -> Validate
     The first pass schema is used for verifying that the top-level columns are correct; no further checks
     are performed.
 
-    :param schema: parsed, validated JSON schema
-    :type schema: ValidatedXsvSchema
+    :param validated_schema: parsed, validated JSON schema
+    :type validated_schema: ValidatedXsvSchema
     :return: the validated first pass schema
     :rtype: ValidatedXsvSchema
     """
@@ -151,7 +98,6 @@ def generate_first_pass_schema(validated_schema: ValidatedXsvSchema) -> Validate
     first_pass_schema["type"] = "object"
     first_pass_schema["properties"] = {req: {"type": ["string", "null"]} for req in validated_schema.required_cols}
 
-    # retrieve the appropriate validator for the schema and ensure it is valid
     validator = jsonschema.validators.validator_for(first_pass_schema)
     validator.check_schema(first_pass_schema)
 
@@ -167,20 +113,18 @@ def generate_header(
 ) -> Path:
     r"""Generate a header file for an xSV file from a JSON Schema.
 
-    If no file name is supplied, the header file is saved as `header.txt`.
+    If no file name is supplied, the header file is saved as ``header.txt``.
 
     The top level required properties are assumed to be the columns of the xSV file.
 
-    :param schema: parsed, validated JSON schema
-    :type schema: ValidatedXsvSchema
+    :param validated_schema: parsed, validated JSON schema
+    :type validated_schema: ValidatedXsvSchema
     :param target_dir: directory in which to save the file
     :type target_dir: DirectoryPath
+    :param header_file_name: name for the header file, defaults to "header.txt"
+    :type header_file_name: NonEmptyStr, optional
     :param delimiter: delimiter to use for the headers, defaults to "\t"
     :type delimiter: CharStr, optional
-    :param header_file_name: name for the header file, defaults to "header.txt"
-    :type header_file_name: str, optional
-    :raises TypeError: if the schema is not in the correct format (dictionary)
-    :raises ValueError: if the schema file has no `required` cols
     :return: path to the newly-created header.txt file
     :rtype: Path
     """
@@ -192,8 +136,9 @@ def generate_header(
 def get_schema_parsing_metadata(validated_schema: ValidatedXsvSchema) -> dict[str, Any]:
     """Read in the schema parser config information from the supplied schema.
 
-    :param schema: parsed, validated JSON schema
-    :type schema: ValidatedXsvSchema
+    :param validated_schema: parsed, validated JSON schema
+    :type validated_schema: ValidatedXsvSchema
+    :raises ValueError: if no xsv config information is found in the schema
     :return: parsed xsv schema metadata
     :rtype: dict[str, Any]
     """

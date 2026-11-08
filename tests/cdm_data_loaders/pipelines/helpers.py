@@ -21,11 +21,11 @@ from dlt.destinations import filesystem
 from dlt.extract import DltResource
 from pandas import DataFrame
 
-from cdm_data_loaders.converters.core.paths import set_nested
 from cdm_data_loaders.core.fields import PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import FileFormatIngestSettings
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.utils.file_items import as_file_item, open_binary
+from cdm_data_loaders.utils.paths import set_nested
 from tests.helpers import strip_none_values
 
 logger: Logger = getLogger(__name__)

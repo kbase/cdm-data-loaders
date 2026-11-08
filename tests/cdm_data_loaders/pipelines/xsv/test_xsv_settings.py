@@ -9,16 +9,18 @@ import pytest
 from pydantic import ValidationError
 
 import cdm_data_loaders.pipelines.xsv.settings as xsv_settings_module
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrowError
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
+    JSONSchemaToPyArrowError,
+    convert_xsv_schema_to_pyarrow,
+)
 from cdm_data_loaders.core.fields import DEFAULTS
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.pipelines.xsv.settings import (
     PIPELINE_NAME,
     XsvIngestSettings,
-    convert_xsv_schema_to_pyarrow,
 )
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
-from cdm_data_loaders.utils.jsonschema.dereferencer import DereferencingError
+from cdm_data_loaders.schemas.jsonschema import DereferencingError
 from tests.cdm_data_loaders.pipelines.xsv.conftest import DEFAULT_XSV_SCHEMA, VALID_SCHEMA_URI
 from tests.helpers import register_temp_module
 from tests.xsv_fixtures import COLUMNS

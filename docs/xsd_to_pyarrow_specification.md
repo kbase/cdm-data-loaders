@@ -258,7 +258,7 @@ This document specifies how an XML Schema (`.xsd`) and a target `xml_tag` determ
 | `xs:base64Binary`, `xs:hexBinary` | `bytes` | `pa.binary()` |
 | `xs:NMTOKENS` (items `xs:NMTOKEN`), `xs:IDREFS` (items `xs:IDREF`), `xs:ENTITIES` (items `xs:ENTITY`) | `list[str]` | `pa.list_(pa.string())` |
 
-### 1.6 Component-Based Python Schema Code Generation (`scripts.gen_pyarrow_schema`)
+### 1.6 Component-Based Python Schema Code Generation (`cdm_data_loaders.converters.cli.xsd_to_pyarrow`)
 
 <a id="r-codegen-component"></a>
 

@@ -7,7 +7,7 @@ import pyarrow as pa
 from pydantic import PrivateAttr, model_validator
 from pydantic_settings import BaseSettings
 
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
 from cdm_data_loaders.core.fields import (
     REJECTED_TABLE_NAME,
     OutputSchemasModuleSpec,

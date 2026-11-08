@@ -9,7 +9,7 @@ import pyarrow as pa
 import pytest
 from pydantic import BaseModel
 
-from cdm_data_loaders.converters.pydantic_to_pyarrow import PydanticToPyArrow
+from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
 from cdm_data_loaders.core.preprocessors import FilePreprocessError
 from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
     build_entity_resource,

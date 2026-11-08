@@ -33,6 +33,8 @@ plugins:
           paths: [src]
           options:
             docstring_style: sphinx
+            docstring_options:
+              warnings: false
             heading_level: 2
             members_order: source
             separate_signature: true

@@ -25,55 +25,86 @@ core/                          shared, target-independent foundation
   inference.py                 infer_implicit_type, json_type_from_enum, is_unconstrained_node,
                                decimal_places, decimal_pattern, resolve_union_type
   metadata.py                  ConversionContext, metadata_keys_for, get_known_jsonschema_keywords,
-                               DEFAULT_METADATA_KEYWORDS, REF_AND_IDENTITY_KEYWORDS,
-                               STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS
+                               decode_field_metadata, DEFAULT_METADATA_KEYWORDS,
+                               REF_AND_IDENTITY_KEYWORDS, STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS
   io.py                        load_schema_text, load_schema_file
-  paths.py                     NestedPathError, set_nested
+  dlt_normalization.py         DltTableNode, unflatten_tables, flatten_nodes,
+                               tables_parents_first, child_key, child_table_name
 readers/                       source -> IR
   json_schema.py               JsonSchemaReader
+  json_schema_strict.py        StrictJsonSchemaReader
   dlt.py                       DltReader
   iceberg.py                   IcebergReader, iceberg_value
+  pyarrow.py                   PyArrowReader, PyArrowReaderError
+  pydantic.py                  PydanticReader
+  xsd.py                       XsdReader
 emitters/                      IR -> target
   json_schema.py               JsonSchemaEmitter
   dlt.py                       DltEmitter
   pyspark.py                   PySparkEmitter, format-map helpers
-  pyarrow.py                   PyArrowEmitter, format-map helpers
+  pyarrow.py                   PyArrowEmitter, assemble_pyarrow_schema, format-map helpers
+  pyarrow_codegen.py           render_python_schema_module, write_python_schema_file
   linkml.py                    LinkMLEmitter
-jsonschema_to_dlt.py           facade: JSON Schema -> dlt stored schema
-jsonschema_to_pyspark.py       facade: JSON Schema -> PySpark StructType
-jsonschema_to_pyarrow.py       facade: JSON Schema -> PyArrow Schema / empty Table
-dlt_to_jsonschema.py           facade: dlt -> JSON Schema documents
-pyiceberg_to_jsonschema.py     functions over IcebergReader + JsonSchemaEmitter
-pyiceberg_to_linkml.py         functions over IcebergReader + LinkMLEmitter
-pyiceberg_catalog_to_jsonschema.py  CLI: dump catalog tables as JSON Schema
-pyiceberg_catalog_to_linkml.py      CLI: dump catalog tables as LinkML
+facades/                       source -> IR -> target facades
+  jsonschema_to_dlt.py         facade: JSON Schema -> dlt stored schema
+  jsonschema_to_pyspark.py     facade: JSON Schema -> PySpark StructType
+  jsonschema_to_pyarrow.py     facade: JSON Schema -> PyArrow Schema / empty Table
+  pydantic_to_pyarrow.py       facade: Pydantic BaseModel -> PyArrow Schema
+  xsd_to_pyarrow.py            facade: XSD -> PyArrow Schema
+  dlt_to_jsonschema.py         facade: dlt -> JSON Schema documents
+  pyiceberg_to_jsonschema.py   functions over IcebergReader + JsonSchemaEmitter
+  pyiceberg_to_linkml.py       functions over IcebergReader + LinkMLEmitter
+cli/                           converter CLI entry points and settings
+  iceberg_base.py              IcebergCatalogDumpSettings, CatalogDumpDriver, dump_catalog, write_schema_text
+  pyiceberg_to_jsonschema.py   IcebergToJsonSchemaSettings, dump_catalog_schemas, cli
+  pyiceberg_to_linkml.py       IcebergToLinkMLSettings, dump_catalog_schemas, cli
+  xsd_to_pyarrow.py            XsdToPyArrowCliSettings, SchemaCodegenConfig, render_schema_module, cli
 ```
 
 `core/` imports no dlt, PyIceberg or PySpark modules. The only cross-package import is the
 `x-xsv-config` contract, which reuses `X_XSV_CONFIG_SCHEMA` from
-`cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema`. dlt table
-normalization lives outside the package in `cdm_data_loaders.utils.dlt.dlt_normalization`
+`cdm_data_loaders.schemas.jsonschema`. dlt table normalization lives in
+`cdm_data_loaders.converters.core.dlt_normalization`
 (`DltTableNode`, `unflatten_tables`, `flatten_nodes`, `tables_parents_first`, `child_key`,
-`child_table_name`).
+`child_table_name`). Runtime record coercion lives in `cdm_data_loaders.coercion`
+(`coercion.pyarrow`, `coercion.pydantic`, `coercion.xml`), and converter CLIs
+live in `cdm_data_loaders.converters.cli`.
 
-| Module                    | Public API                                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `core/ir.py`              | `NodeType`, `Source`, `Provenance`, `NodeHints`, `TypedNode`, `Field`, `SchemaDocument`, `Reader`, `Emitter`       |
-| `core/ir_values.py`       | `Value`, `freeze_value`, `freeze_mapping`, `mutable_value`                                                         |
-| `core/extensions.py`      | `ExtensionError`, `ExtensionSpec`, `ExtensionRegistry`, `Extensions`, `DEFAULT_EXTENSIONS`, `validated_extensions` |
-| `core/guards.py`          | `require_schema_keyword`, `require_object_root`, `reject_unresolved_references`                                    |
-| `core/inference.py`       | `infer_implicit_type`, `json_type_from_enum`, `decimal_places`, `decimal_pattern`, `resolve_union_type`            |
-| `core/io.py`              | `load_schema_text`, `load_schema_file`                                                                             |
-| `core/paths.py`           | `set_nested`                                                                                                       |
-| `readers/json_schema.py`  | `JsonSchemaReader`, including `read_node`                                                                          |
-| `readers/dlt.py`          | `DltReader`                                                                                                        |
-| `readers/iceberg.py`      | `IcebergReader`, including `read_node` and `read_field`; `iceberg_value`                                           |
-| `emitters/json_schema.py` | `JsonSchemaEmitter`, including `emit_node` and `emit_field`                                                        |
-| `emitters/dlt.py`         | `DltEmitter`                                                                                                       |
-| `core/metadata.py`        | `ConversionContext`, `metadata_keys_for`, `get_known_jsonschema_keywords`, metadata keyword constants              |
-| `emitters/pyspark.py`     | `PySparkEmitter`, `merge_format_map`                                                                               |
-| `emitters/pyarrow.py`     | `PyArrowEmitter`, `merge_format_map`, `infer_type_from_enum`                                                       |
-| `emitters/linkml.py`      | `LinkMLEmitter`, including `emit_node` and `emit_field`                                                            |
+| Module                          | Public API                                                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `core/ir.py`                    | `NodeType`, `Source`, `Provenance`, `NodeHints`, `TypedNode`, `Field`, `SchemaDocument`, `Reader`, `Emitter`       |
+| `core/ir_values.py`             | `Value`, `freeze_value`, `freeze_mapping`, `mutable_value`                                                         |
+| `core/extensions.py`            | `ExtensionError`, `ExtensionSpec`, `ExtensionRegistry`, `Extensions`, `DEFAULT_EXTENSIONS`, `validated_extensions` |
+| `core/guards.py`                | `require_schema_keyword`, `require_object_root`, `reject_unresolved_references`                                    |
+| `core/inference.py`             | `infer_implicit_type`, `json_type_from_enum`, `decimal_places`, `decimal_pattern`, `resolve_union_type`            |
+| `core/io.py`                    | `load_schema_text`, `load_schema_file`                                                                             |
+| `core/dlt_normalization.py`     | `DltTableNode`, `unflatten_tables`, `flatten_nodes`, `tables_parents_first`, `child_key`, `child_table_name`       |
+| `readers/json_schema.py`        | `JsonSchemaReader`, including `read_node`                                                                          |
+| `readers/json_schema_strict.py` | `StrictJsonSchemaReader`, including `read_node`                                                                    |
+| `readers/dlt.py`                | `DltReader`                                                                                                        |
+| `readers/iceberg.py`            | `IcebergReader`, including `read_node` and `read_field`; `iceberg_value`                                           |
+| `readers/pyarrow.py`            | `PyArrowReader`, `PyArrowReaderError`                                                                              |
+| `readers/pydantic.py`           | `PydanticReader`                                                                                                   |
+| `readers/xsd.py`                | `XsdReader`                                                                                                        |
+| `emitters/json_schema.py`       | `JsonSchemaEmitter`, including `emit_node` and `emit_field`                                                        |
+| `emitters/dlt.py`               | `DltEmitter`                                                                                                       |
+| `core/metadata.py`              | `ConversionContext`, `metadata_keys_for`, `get_known_jsonschema_keywords`, `decode_field_metadata`, constants      |
+| `emitters/pyspark.py`           | `PySparkEmitter`, `merge_format_map`                                                                               |
+| `emitters/pyarrow.py`                 | `PyArrowEmitter`, `assemble_pyarrow_schema`, `merge_format_map`, `infer_type_from_enum`                            |
+| `emitters/pyarrow_codegen.py`         | `render_python_schema_module`, `write_python_schema_file`                                                          |
+| `emitters/linkml.py`                  | `LinkMLEmitter`, including `emit_node` and `emit_field`                                                            |
+| `facades/jsonschema_to_dlt.py`        | `JSONSchemaToDlt`, `JSONSchemaToDltError`, `InvalidJSONSchemaError`                                                |
+| `facades/jsonschema_to_pyspark.py`    | `JSONSchemaToPySpark`, `JSONSchemaToPySparkError`, `InvalidJSONSchemaError`                                        |
+| `facades/jsonschema_to_pyarrow.py`    | `JSONSchemaToPyArrow`, `generate_pyarrow_schema`, `convert_schema_to_pyarrow`, `convert_xsv_schema_to_pyarrow`     |
+| `facades/pydantic_to_pyarrow.py`      | `PydanticToPyArrow`, `generate_pyarrow_schema`, `resolve_scalar_type`                                              |
+| `facades/xsd_to_pyarrow.py`           | `XsdToPyArrow`, `generate_pyarrow_schema`, `generate_pyarrow_schemas_at_level`, `generate_pyarrow_struct`          |
+| `facades/dlt_to_jsonschema.py`        | `DltToJSONSchema`, `DltToJSONSchemaError`                                                                          |
+| `facades/pyiceberg_to_jsonschema.py`  | `table_to_json_schema`, `convert_type`, `convert_field`, `convert_struct`                                          |
+| `facades/pyiceberg_to_linkml.py`      | `table_to_linkml`, `convert_type`, `convert_field`, `convert_struct`                                               |
+| `cli/iceberg_base.py`                 | `IcebergCatalogDumpSettings`, `CatalogDumpDriver`, `dump_catalog`, `write_schema_text`                             |
+| `cli/pyiceberg_to_jsonschema.py`      | `IcebergToJsonSchemaSettings`, `dump_catalog_schemas`, `cli`                                                       |
+| `cli/pyiceberg_to_linkml.py`          | `IcebergToLinkMLSettings`, `dump_catalog_schemas`, `cli`                                                           |
+| `cli/xsd_to_pyarrow.py`               | `XsdToPyArrowCliSettings`, `SchemaCodegenConfig`, `render_schema_module`, `generate_python_schema`, `cli`          |
 
 The IR, value helpers and extension registry import no dlt, PyIceberg or PySpark modules.
 The XSV contract imports only the existing custom metaschema module, not Spark readers.
@@ -135,7 +166,7 @@ are required constructor arguments. Metadata values retain absent keys separatel
 
 ```python
 type Value = None | bool | int | float | Decimal | str | tuple[Value, ...] | Mapping[str, Value]
-type Source = Literal["json-schema", "dlt", "iceberg"]
+type Source = Literal["json-schema", "dlt", "iceberg", "pydantic", "xsd", "pyarrow"]
 type NodeType = Literal[
     "object", "map", "array", "string", "integer", "number", "boolean",
     "null", "any", "never", "unknown",
@@ -294,7 +325,7 @@ Explicit registration example:
 
 ```python
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
-from cdm_data_loaders.converters.jsonschema_to_pyspark import JSONSchemaToPySpark
+from cdm_data_loaders.converters.facades.jsonschema_to_pyspark import JSONSchemaToPySpark
 
 registry = DEFAULT_EXTENSIONS.register(
     ExtensionSpec(

@@ -5,27 +5,31 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Final
 
+from frozendict import frozendict
+
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.inference import decimal_pattern
 from cdm_data_loaders.converters.core.ir import Field, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
 
-JSON_SCHEMA_DIALECT: Final = "https://json-schema.org/draft/2020-12/schema"
-DLT_TYPES: Final[dict[str, dict[str, Any]]] = {
-    "text": {"type": "string"},
-    "bigint": {"type": "integer"},
-    "double": {"type": "number"},
-    "decimal": {"type": "string", "pattern": r"^-?\d+(\.\d+)?$", "x-dlt": {"data_type": "decimal"}},
-    "bool": {"type": "boolean"},
-    "timestamp": {"type": "string", "format": "date-time", "x-dlt": {"data_type": "timestamp"}},
-    "date": {"type": "string", "format": "date"},
-    "time": {"type": "string", "format": "time"},
-    "binary": {"type": "string", "contentEncoding": "base64"},
-    "json": {},
-    "wei": {"type": "integer", "x-dlt": {"data_type": "wei"}},
-}
-DLT_KNOWN: Final = frozenset({"name", "data_type", "nullable", "description", "precision", "scale"})
-ICEBERG_LOGICAL_TYPES: Final = frozenset(
+JSON_SCHEMA_DIALECT: Final[str] = "https://json-schema.org/draft/2020-12/schema"
+DLT_TYPES: Final[frozendict[str, dict[str, Any]]] = frozendict(
+    {
+        "text": {"type": "string"},
+        "bigint": {"type": "integer"},
+        "double": {"type": "number"},
+        "decimal": {"type": "string", "pattern": r"^-?\d+(\.\d+)?$", "x-dlt": {"data_type": "decimal"}},
+        "bool": {"type": "boolean"},
+        "timestamp": {"type": "string", "format": "date-time", "x-dlt": {"data_type": "timestamp"}},
+        "date": {"type": "string", "format": "date"},
+        "time": {"type": "string", "format": "time"},
+        "binary": {"type": "string", "contentEncoding": "base64"},
+        "json": {},
+        "wei": {"type": "integer", "x-dlt": {"data_type": "wei"}},
+    }
+)
+DLT_KNOWN: Final[frozenset[str]] = frozenset({"name", "data_type", "nullable", "description", "precision", "scale"})
+ICEBERG_LOGICAL_TYPES: Final[frozenset[str]] = frozenset(
     {
         "boolean",
         "int",
@@ -42,28 +46,58 @@ ICEBERG_LOGICAL_TYPES: Final = frozenset(
         "fixed",
     }
 )
-ICEBERG_ELEMENT_KEYS: Final = frozenset({"element_id", "element_required", "key_id", "value_id", "value_required"})
+ICEBERG_ELEMENT_KEYS: Final[frozenset[str]] = frozenset(
+    {"element_id", "element_required", "key_id", "value_id", "value_required"}
+)
 
 
 def _values(values: Mapping[str, Value]) -> dict[str, Any]:
-    """Copy literal containers without changing numeric values."""
+    """Copy literal containers without changing numeric values.
+
+    :param values: Mapping of IR values.
+    :type values: Mapping[str, Value]
+    :return: Dictionary of mutable Python values.
+    :rtype: dict[str, Any]
+    """
     return {key: mutable_value(value) for key, value in values.items()}
 
 
 def _nullable(schema: dict[str, Any], *, nullable: bool) -> dict[str, Any]:
-    """Wrap a value schema without moving its metadata."""
+    """Wrap a value schema without moving its metadata.
+
+    :param schema: Base JSON Schema object.
+    :type schema: dict[str, Any]
+    :param nullable: Whether to wrap ``schema`` in a null union.
+    :type nullable: bool
+    :return: Resulting JSON Schema object.
+    :rtype: dict[str, Any]
+    """
     return {"anyOf": [schema, {"type": "null"}]} if nullable else schema
 
 
 def _schema_object(*, schema: dict[str, Any] | bool) -> dict[str, Any]:
-    """Represent a boolean schema as an object when metadata must be attached."""
+    """Represent a boolean schema as an object when metadata must be attached.
+
+    :param schema: JSON Schema dict or boolean schema.
+    :type schema: dict[str, Any] | bool
+    :return: Equivalent JSON Schema dictionary.
+    :rtype: dict[str, Any]
+    """
     if isinstance(schema, bool):
         return {} if schema else {"not": {}}
     return schema
 
 
 def _closed_object_schema(properties: dict[str, Any], node: TypedNode) -> dict[str, Any]:
-    """Build a closed JSON Schema object from rendered properties and node required facts."""
+    """Build a closed JSON Schema object from rendered properties and node required facts.
+
+    :param properties: Rendered property subschemas.
+    :type properties: dict[str, Any]
+    :param node: Source object IR node.
+    :type node: TypedNode
+    :return: Closed JSON Schema object definition.
+    :rtype: dict[str, Any]
+    """
     result: dict[str, Any] = {
         "type": "object",
         "properties": properties,
@@ -83,7 +117,17 @@ def _kv_array_schema(
     value_schema: dict[str, Any] | bool,
     description: str | None = None,
 ) -> dict[str, Any]:
-    """Render a map node as an array of closed key/value object items."""
+    """Render a map node as an array of closed key/value object items.
+
+    :param key_schema: Rendered key JSON Schema.
+    :type key_schema: dict[str, Any] | bool
+    :param value_schema: Rendered value JSON Schema.
+    :type value_schema: dict[str, Any] | bool
+    :param description: Optional description string.
+    :type description: str | None
+    :return: Array-of-entries JSON Schema object.
+    :rtype: dict[str, Any]
+    """
     result: dict[str, Any] = {"type": "array"}
     if description is not None:
         result["description"] = description
@@ -109,7 +153,13 @@ class JsonSchemaEmitter:
             raise TypeError(msg)
 
     def emit(self, document: SchemaDocument) -> dict[str, Any]:
-        """Return an independently owned JSON Schema document."""
+        """Return an independently owned JSON Schema document.
+
+        :param document: IR schema document to emit.
+        :type document: SchemaDocument
+        :return: Rendered JSON Schema dictionary.
+        :rtype: dict[str, Any]
+        """
         provenance = document.provenance or document.root.provenance
         source = provenance.source if provenance is not None else None
         if source == "dlt":
@@ -139,7 +189,9 @@ class JsonSchemaEmitter:
         :type document: SchemaDocument
         :param schema: Destination namespace document, updated only after successful conversion.
         :type schema: dict[str, Any]
-        :returns: The destination namespace document.
+        :return: The destination namespace document.
+        :rtype: dict[str, Any]
+        :raises ConversionError: If ``document.name`` is ``None``.
         """
         if document.name is None:
             msg = "A namespaced JSON Schema entry requires a named document"
@@ -150,7 +202,13 @@ class JsonSchemaEmitter:
         return schema
 
     def emit_node(self, node: TypedNode) -> dict[str, Any] | bool:
-        """Emit a standalone node using its source's rendering policy."""
+        """Emit a standalone node using its source's rendering policy.
+
+        :param node: IR node to emit.
+        :type node: TypedNode
+        :return: Rendered JSON Schema dictionary or boolean schema.
+        :rtype: dict[str, Any] | bool
+        """
         source = node.provenance.source if node.provenance is not None else None
         if source == "iceberg":
             return self._iceberg_node(node)
@@ -159,7 +217,13 @@ class JsonSchemaEmitter:
         return self._json_node(node)
 
     def emit_field(self, field: Field) -> dict[str, Any] | bool:
-        """Emit a field, retaining source-specific metadata placement."""
+        """Emit a field, retaining source-specific metadata placement.
+
+        :param field: IR field to emit.
+        :type field: Field
+        :return: Rendered JSON Schema dictionary or boolean schema.
+        :rtype: dict[str, Any] | bool
+        """
         source = field.node.provenance.source if field.node.provenance is not None else None
         if source == "iceberg":
             return self._iceberg_field(field)
@@ -168,7 +232,13 @@ class JsonSchemaEmitter:
         return self._json_field(field)
 
     def _json_document(self, document: SchemaDocument) -> dict[str, Any]:
-        """Emit structural JSON facts without changing the source dialect."""
+        """Emit structural JSON facts without changing the source dialect.
+
+        :param document: IR schema document to emit.
+        :type document: SchemaDocument
+        :return: Rendered JSON Schema dictionary.
+        :rtype: dict[str, Any]
+        """
         result = _schema_object(schema=self._json_node(document.root))
         result.update(_values(document.annotations))
         result.update(_values(document.extensions))
@@ -181,7 +251,14 @@ class JsonSchemaEmitter:
         return result
 
     def _json_node(self, node: TypedNode) -> dict[str, Any] | bool:
-        """Preserve declarations separately from inferred types and literal values."""
+        """Preserve declarations separately from inferred types and literal values.
+
+        :param node: IR node to emit.
+        :type node: TypedNode
+        :return: Rendered JSON Schema dictionary or boolean schema.
+        :rtype: dict[str, Any] | bool
+        :raises ConversionError: If ``node.type`` is ``unknown`` without a declaration.
+        """
         from_json = node.provenance is not None and node.provenance.source == "json-schema"
         result = _values(node.constraints)
         result.update(_values(node.annotations))
@@ -207,7 +284,13 @@ class JsonSchemaEmitter:
         return result
 
     def _json_children(self, node: TypedNode, result: dict[str, Any]) -> None:
-        """Render schema positions without interpreting literal keyword payloads."""
+        """Render schema positions without interpreting literal keyword payloads.
+
+        :param node: IR node whose child schemas are being rendered.
+        :type node: TypedNode
+        :param result: Target JSON Schema dictionary to populate in place.
+        :type result: dict[str, Any]
+        """
         if node.properties or "properties" in node.source_keywords:
             result["properties"] = {field.name: self._json_field(field) for field in node.properties}
         if node.required_names is not None:
@@ -236,7 +319,13 @@ class JsonSchemaEmitter:
             result.update(self._json_map(node))
 
     def _json_field(self, field: Field) -> dict[str, Any] | bool:
-        """Attach field metadata without changing an unannotated boolean schema."""
+        """Attach field metadata without changing an unannotated boolean schema.
+
+        :param field: IR field to emit.
+        :type field: Field
+        :return: Rendered JSON Schema dictionary or boolean schema.
+        :rtype: dict[str, Any] | bool
+        """
         schema = self._json_node(field.node)
         if not field.annotations and not field.extensions:
             return schema
@@ -246,7 +335,14 @@ class JsonSchemaEmitter:
         return result
 
     def _json_map(self, node: TypedNode) -> dict[str, Any]:
-        """Represent arbitrary typed keys as key/value pairs."""
+        """Represent arbitrary typed keys as key/value pairs.
+
+        :param node: Map IR node.
+        :type node: TypedNode
+        :return: Array-of-entries JSON Schema dictionary.
+        :rtype: dict[str, Any]
+        :raises ConversionError: If ``node.key_type`` or ``node.value_type`` is ``None``.
+        """
         if node.key_type is None or node.value_type is None:
             msg = "Map nodes require key and value types"
             raise ConversionError(msg)
@@ -256,7 +352,13 @@ class JsonSchemaEmitter:
         )
 
     def _dlt_node(self, node: TypedNode) -> dict[str, Any]:
-        """Render table structure separately from nullable columns."""
+        """Render table structure separately from nullable columns.
+
+        :param node: dlt IR node to emit.
+        :type node: TypedNode
+        :return: Rendered JSON Schema dictionary.
+        :rtype: dict[str, Any]
+        """
         if node.type == "object":
             result = _closed_object_schema(
                 {field.name: self._dlt_node(field.node) for field in node.properties},
@@ -271,7 +373,14 @@ class JsonSchemaEmitter:
         return result
 
     def _dlt_scalar(self, node: TypedNode) -> dict[str, Any]:
-        """Select logical templates and keep column metadata inside null unions."""
+        """Select logical templates and keep column metadata inside null unions.
+
+        :param node: Scalar dlt IR node.
+        :type node: TypedNode
+        :return: Rendered JSON Schema dictionary.
+        :rtype: dict[str, Any]
+        :raises ConversionError: If the node has an unknown dlt ``data_type``.
+        """
         logical = node.hints.logical_type
         if node.type == "unknown" or (logical is not None and logical not in DLT_TYPES):
             path = node.provenance.path if node.provenance is not None else ()
@@ -296,7 +405,13 @@ class JsonSchemaEmitter:
         return _nullable(result, nullable=bool(node.nullable and result))
 
     def _iceberg_node(self, node: TypedNode) -> dict[str, Any]:
-        """Wrap nullable types and elements before applying field metadata."""
+        """Wrap nullable types and elements before applying field metadata.
+
+        :param node: Iceberg IR node to emit.
+        :type node: TypedNode
+        :return: Rendered JSON Schema dictionary.
+        :rtype: dict[str, Any]
+        """
         result = self._iceberg_type(node)
         result.update(_values(node.constraints))
         result.update(_values(node.annotations))
@@ -309,7 +424,13 @@ class JsonSchemaEmitter:
         return _nullable(result, nullable=node.nullable is True)
 
     def _iceberg_type(self, node: TypedNode) -> dict[str, Any]:
-        """Render structural Iceberg nodes directly from their typed children."""
+        """Render structural Iceberg nodes directly from their typed children.
+
+        :param node: Iceberg IR node to emit.
+        :type node: TypedNode
+        :return: Rendered JSON Schema dictionary.
+        :rtype: dict[str, Any]
+        """
         if node.type == "object":
             result = _closed_object_schema(
                 {field.name: self._iceberg_field(field) for field in node.properties},
@@ -328,7 +449,14 @@ class JsonSchemaEmitter:
         return result
 
     def _iceberg_scalar(self, node: TypedNode) -> dict[str, Any]:
-        """Apply physical bounds and source logical encodings to scalar nodes."""
+        """Apply physical bounds and source logical encodings to scalar nodes.
+
+        :param node: Scalar Iceberg IR node.
+        :type node: TypedNode
+        :return: Rendered JSON Schema dictionary.
+        :rtype: dict[str, Any]
+        :raises ConversionError: If the logical type is unsupported or missing required parameters.
+        """
         hints = node.hints
         logical = hints.logical_type
         if logical not in ICEBERG_LOGICAL_TYPES:
@@ -366,7 +494,13 @@ class JsonSchemaEmitter:
         return result
 
     def _iceberg_field(self, field: Field) -> dict[str, Any]:
-        """Place descriptions, IDs and non-null defaults outside optional types."""
+        """Place descriptions, IDs and non-null defaults outside optional types.
+
+        :param field: Iceberg IR field to emit.
+        :type field: Field
+        :return: Rendered JSON Schema dictionary.
+        :rtype: dict[str, Any]
+        """
         result = self._iceberg_node(field.node)
         annotations = _values(field.annotations)
         if not annotations.get("description"):

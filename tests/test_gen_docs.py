@@ -10,7 +10,7 @@ import pytest
 import yaml
 from pydantic import AliasChoices
 
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
 from cdm_data_loaders.core.settings import CdmDataLoadersBase
 from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
     run_jsonlines_with_validation_pipeline,
@@ -36,7 +36,6 @@ DOCS_DIR = REPO_ROOT / "docs"
 MKDOCS_PATH = REPO_ROOT / "mkdocs.yml"
 INDEX_PATH = DOCS_DIR / "index.md"
 README_PATH = REPO_ROOT / "README.md"
-DEFAULT_MARKDOWN_PATHS: tuple[Path, ...] = (README_PATH, *sorted(DOCS_DIR.glob("*.md")))
 
 PYTHON_FENCE_RE = re.compile(r"```(?:python|py)\n(.*?)```", re.DOTALL)
 SHELL_FENCE_RE = re.compile(r"```(?:bash|sh|shell|console)\n(.*?)```", re.DOTALL)
@@ -53,6 +52,21 @@ class _MkDocsYamlLoader(yaml.SafeLoader):
 _MkDocsYamlLoader.add_multi_constructor(
     "tag:yaml.org,2002:python/",
     lambda _loader, _suffix, _node: None,
+)
+
+
+def _excluded_doc_names(mkdocs_path: Path = MKDOCS_PATH) -> set[str]:
+    """Return the set of filenames listed under ``exclude_docs`` in ``mkdocs.yml``."""
+    if not mkdocs_path.exists():
+        return set()
+    mkdocs_data = yaml.load(mkdocs_path.read_text(encoding="utf-8"), Loader=_MkDocsYamlLoader) or {}  # noqa: S506
+    raw_exclude = mkdocs_data.get("exclude_docs", "") or ""
+    return {line.strip() for line in str(raw_exclude).splitlines() if line.strip()}
+
+
+DEFAULT_MARKDOWN_PATHS: tuple[Path, ...] = (
+    README_PATH,
+    *sorted(p for p in DOCS_DIR.glob("*.md") if p.name not in _excluded_doc_names()),
 )
 
 
@@ -435,8 +449,8 @@ def test_check_markdown_python_blocks_pass() -> None:
             id="removed_symbol_in_from_import",
         ),
         pytest.param(
-            "```python\nfrom cdm_data_loaders.converters.jsonschema_to_pyspark.converter import JSONSchemaToPySpark\n```\n",
-            "cannot import module 'cdm_data_loaders.converters.jsonschema_to_pyspark.converter'",
+            "```python\nfrom cdm_data_loaders.converters.facades.jsonschema_to_pyspark.converter import JSONSchemaToPySpark\n```\n",
+            "cannot import module 'cdm_data_loaders.converters.facades.jsonschema_to_pyspark.converter'",
             id="nonexistent_submodule_in_from_import",
         ),
         pytest.param(

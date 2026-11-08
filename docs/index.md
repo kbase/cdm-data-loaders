@@ -20,7 +20,7 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Comparati
 ### Pipeline & Execution Guides
 
 - **[Core Pipeline & KBase CTS Execution Guide](core_cts_execution.md)**: Settings hierarchy, `CDL_*` environment variables, `dlt` destination configuration, `PipelineReport` (`report.txt`), `_load_info` and `_rejected` tables, and the KBase CTS exit-code-0 contract.
-- **[CLI Reference](cli_reference.md)**: Auto-generated reference of all 18 registered `[project.scripts]` pipeline CLIs, flags, shortcuts, environment variables, and defaults.
+- **[CLI Reference](cli_reference.md)**: Auto-generated reference of all 20 registered `[project.scripts]` pipeline CLIs, flags, shortcuts, environment variables, and defaults.
 - **[JSONLines Ingestion Pipelines](jsonlines_ingest.md)**: Guide to `jsonlines_extract`, `jsonlines_jsonschema`, and `jsonlines_pydantic`.
 - **[Table & Column Transformations](table_transforms.md)**: Record-level filtering, single-table row transformation, multi-table splitting, and PyArrow schema overrides (`TransformSettingsMixin`).
 - **[UniProt & UniRef Ingestion Guide](uniprot.md)**: XSD-driven XML-to-PyArrow pipelines (`uniprot`, `uniref50`, `uniref90`, `uniref100`) and normalized multi-table CDM pipelines (`uniprot_cdm`, `uniref50_cdm`, `uniref90_cdm`, `uniref100_cdm`).
