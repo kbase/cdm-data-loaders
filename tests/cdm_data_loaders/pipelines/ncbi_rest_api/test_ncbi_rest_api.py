@@ -18,7 +18,7 @@ import requests
 from dlt.extract.items import DataItemWithMeta
 from requests import HTTPError, PreparedRequest, Response
 
-from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME, REPORT_FILE_NAME
+from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME, REPORT_FILE_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.pipelines import ncbi_rest_api as ncbi_module
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.ncbi_rest_api import (
@@ -140,6 +140,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
             "buffer_size": 100,
             "dlt_dev_mode": bool(dlt_dev_mode),
             "input_dir": input_dir.resolve(),
+            "loader_file_format": LoaderFileFormatEnum.PARQUET,
             "log_config_file": None,
             "log_interval": 1000,
             "output_dir": resolved_output_dir,
@@ -175,7 +176,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
 
     first_run, load_info_save_run = mock_dlt.pipeline.return_value.run.call_args_list
     assert first_run.args == ([mock_assembly_report_parser],)
-    assert first_run.kwargs == {}
+    assert first_run.kwargs == {"loader_file_format": str(settings.loader_file_format)}
     assert load_info_save_run.args[0] is not None
     assert load_info_save_run.kwargs == {"loader_file_format": "jsonl"}
 

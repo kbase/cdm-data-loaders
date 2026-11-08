@@ -117,7 +117,7 @@ Pipelines can be run directly via `uv run <pipeline_cli> [args...]` or inside th
 
 ### Container Entrypoint Modes (`scripts/entrypoint.sh`)
 
-- `pipeline <pipeline_cli> [args...]`: copies `/input_dir/dlt_conf/{config.toml,secrets.toml}` (if present) into `$HOME/.dlt` and executes `uv run <pipeline_cli> [args...]`.
+- `pipeline <pipeline_cli> [args...]`: copies `/input_dir/dlt_conf/{config.toml,secrets.toml,.pyiceberg.yaml}` (if present) into `$HOME/.dlt` and executes `uv run <pipeline_cli> [args...]`.
 - `xml_split <n_elements> <tag> <file_1> [<file_2> ...]`: splits XML files into chunks of `<n_elements>` `<tag>` elements using `xml_split`.
 - `test`: runs unit tests (`scripts/run_tests.sh unit`).
 - `ceph_integration_test`: runs Ceph-backed S3 and NCBI FTP integration tests.

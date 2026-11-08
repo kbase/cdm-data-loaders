@@ -8,7 +8,7 @@ from frozendict import frozendict
 from pydantic import ValidationError
 from pydantic_settings import CliApp
 
-from cdm_data_loaders.core.fields import OUTPUT_DIR
+from cdm_data_loaders.core.fields import OUTPUT_DIR, LoaderFileFormatEnum
 from cdm_data_loaders.pipelines import ncbi_rest_api as ncbi_module
 from cdm_data_loaders.pipelines.ncbi_rest_api import (
     ANNOTATION,
@@ -34,20 +34,32 @@ def ncbi_settings_pair(
     """Return (settings, reconciled) dicts for NcbiRestApiSettings variants."""
     raw_data_dir = test_cts_settings_reconciled[OUTPUT_DIR] / "raw_data" / "api_responses"
     if request.param == "default":
-        settings = frozendict(**test_cts_settings, batch_size=BATCH_SIZE_STRING, query_type="")
+        settings = frozendict(
+            **test_cts_settings,
+            batch_size=BATCH_SIZE_STRING,
+            query_type="",
+            loader_file_format=LoaderFileFormatEnum.PARQUET,
+        )
         reconciled = frozendict(
             **test_cts_settings_reconciled,
             batch_size=BATCH_SIZE,
             query_type=None,
+            loader_file_format=LoaderFileFormatEnum.PARQUET,
             save_raw_responses=False,
             raw_data_dir=raw_data_dir,
         )
         return settings, reconciled
-    settings = frozendict(**test_cts_settings, batch_size=BATCH_SIZE_STRING, query_type=" ANNOTATION ")
+    settings = frozendict(
+        **test_cts_settings,
+        batch_size=BATCH_SIZE_STRING,
+        query_type=" ANNOTATION ",
+        loader_file_format=LoaderFileFormatEnum.JSONL,
+    )
     reconciled = frozendict(
         **test_cts_settings_reconciled,
         batch_size=BATCH_SIZE,
         query_type=ANNOTATION,
+        loader_file_format=LoaderFileFormatEnum.JSONL,
         save_raw_responses=False,
         raw_data_dir=raw_data_dir,
     )

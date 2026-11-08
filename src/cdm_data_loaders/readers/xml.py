@@ -494,7 +494,7 @@ def build_xml_file_resource(
 
     Files are read using the dlt filesystem source.
 
-    :param settings: pipeline config with input_dir, file_glob, loader_file_format, buffer_size and log_interval
+    :param settings: pipeline config with input_dir, file_glob, buffer_size and log_interval
     :type  settings: XmlIngestSettings
     :param xml_tag: XML element tag to stream
     :type  xml_tag: str
@@ -511,6 +511,5 @@ def build_xml_file_resource(
         xml_tag,
         parse_fn,
         name=resource_name,
-        file_format=str(settings.loader_file_format),
         parallelized=False,
     )

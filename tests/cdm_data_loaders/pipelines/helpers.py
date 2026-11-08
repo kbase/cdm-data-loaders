@@ -21,7 +21,7 @@ from dlt.destinations import filesystem
 from dlt.extract import DltResource
 from pandas import DataFrame
 
-from cdm_data_loaders.core.fields import PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
+from cdm_data_loaders.core.fields import ICEBERG, PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import FileFormatIngestSettings
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.utils.file_items import as_file_item, open_binary
@@ -76,16 +76,20 @@ def read_parquet_tables(output_dir: Path) -> dict[str, list[dict[str, Any]]]:
     """Read all parquet files under a pipeline output dataset dir, grouped by table name."""
     tables: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for parquet_file in sorted(output_dir.rglob("*.parquet")):
-        tables[parquet_file.parent.name].extend(pq.read_table(parquet_file).to_pylist())
+        parent = parquet_file.parent
+        table_name = (
+            parent.parent.name if parent.name == "data" and (parent.parent / "metadata").is_dir() else parent.name
+        )
+        tables[table_name].extend(pq.read_table(parquet_file).to_pylist())
     return dict(tables)
 
 
 def read_pipeline_tables(output_dir: Path, output_format: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    """Read all json files under a pipeline output dataset dir, grouped by table name.
+    """Read all data files under a pipeline output dataset dir, grouped by table name.
 
-    Defaults to reading jsonlines files; supply "parquet" as file format to read parquet files.
+    Defaults to reading jsonlines files; supply "parquet" or "iceberg" as file format to read parquet files.
     """
-    if output_format and output_format == PARQUET:
+    if output_format and output_format in {PARQUET, ICEBERG}:
         return read_parquet_tables(output_dir)
 
     tables: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -94,7 +98,7 @@ def read_pipeline_tables(output_dir: Path, output_format: str | None = None) -> 
         if not json_file.is_file():
             continue
         # ignore metadata dirs
-        if is_metadata_table(json_file.parent.name):
+        if json_file.parent.name == "metadata" or is_metadata_table(json_file.parent.name):
             continue
         tables[json_file.parent.name].extend(read_jsonl_file(json_file))
 
@@ -109,10 +113,13 @@ def read_destination_rows(
 ) -> list[dict[str, Any]]:
     """Read the rows the filesystem destination wrote for table_name under base_dir.
 
-    Handles parquet, jsonl and gzipped jsonl files. Returns an empty list if the table has no files.
+    Handles parquet, iceberg, jsonl and gzipped jsonl files. Returns an empty list if the table has no files.
     """
     rows: list[dict[str, Any]] = []
-    for data_file in sorted(base_dir.glob(f"**/{table_name}/*")):
+    candidate_files = sorted({*base_dir.glob(f"**/{table_name}/*"), *base_dir.glob(f"**/{table_name}/data/*.parquet")})
+    for data_file in candidate_files:
+        if not data_file.is_file():
+            continue
         if data_file.name.endswith(".parquet"):
             rows.extend(pq.read_table(data_file).to_pylist())
         elif ".jsonl" in data_file.name:
@@ -120,6 +127,18 @@ def read_destination_rows(
     if strip_metadata:
         return [strip_metadata_columns(row) for row in rows]
     return rows
+
+
+def assert_iceberg_table_metadata(dataset_dir: Path, table_name: str) -> None:
+    """Assert that ``dataset_dir / table_name`` has Iceberg metadata and data subdirectories."""
+    table_dir = dataset_dir / table_name
+    metadata_dir = table_dir / "metadata"
+    data_dir = table_dir / "data"
+    assert metadata_dir.is_dir(), f"Missing Iceberg metadata directory for table {table_name!r}"
+    assert data_dir.is_dir(), f"Missing Iceberg data directory for table {table_name!r}"
+    assert list(metadata_dir.glob("*.metadata.json")), f"Missing *.metadata.json for table {table_name!r}"
+    assert list(metadata_dir.glob("snap-*.avro")), f"Missing Iceberg snapshot manifest list for table {table_name!r}"
+    assert list(data_dir.glob("*.parquet")), f"Missing Iceberg data parquet files for table {table_name!r}"
 
 
 def duckdb_pipeline(tmp_path: Path, pipeline_name: str, dataset_name: str, db_name: str | None = None) -> dlt.Pipeline:
@@ -155,7 +174,12 @@ def assert_core_run_pipeline_args(
         "pipeline_name": pipeline_name,
         "dataset_name": settings.dataset_name,
     }
-    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": settings.loader_file_format}
+    expected_run_kwargs = (
+        {"loader_file_format": str(PARQUET), "table_format": str(ICEBERG)}
+        if settings.loader_file_format == LoaderFileFormatEnum.ICEBERG
+        else {"loader_file_format": str(settings.loader_file_format)}
+    )
+    assert kwargs["pipeline_run_kwargs"] == expected_run_kwargs
     assert isinstance(kwargs["resource"], DltResource)
 
 

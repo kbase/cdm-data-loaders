@@ -7,10 +7,12 @@ from uuid import uuid4
 import pandas as pd
 import pytest
 
+from cdm_data_loaders.core.fields import ICEBERG, PARQUET
 from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
 from tests.cdm_data_loaders.pipelines.conftest import DEFAULT_DLT_TABLES
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
+    assert_iceberg_table_metadata,
     assert_pipeline_report_written,
     assert_run_ok,
 )
@@ -157,24 +159,29 @@ def test_run_xsv_pipeline_pass_configured_null_regex_replaces_placeholder(
     assert floats[1] == "1.11"
 
 
+@pytest.mark.parametrize("loader_file_format", [PARQUET, ICEBERG])
 def test_run_xsv_pipeline_pass_parquet_format_loads_expected_row_count(
     settings_factory: Callable[..., XsvIngestSettings],
     write_xsv_file: Callable[[XsvIngestSettings, str, str], Path],
     pipeline_runner: PipelineTestRunner,
+    destination_bucket: Path,
+    loader_file_format: str,
 ) -> None:
-    """The pipeline also loads successfully when loader_file_format is parquet.
+    """The pipeline also loads successfully when loader_file_format is parquet or iceberg.
 
     Only row count is checked here (not exact column values/types): dlt infers column types
     during parquet normalization (e.g. ISO-looking date strings may become typed date columns),
     which can differ from the jsonl path used by the other tests in this module.
     """
-    settings = settings_factory(loader_file_format="parquet")
+    settings = settings_factory(loader_file_format=loader_file_format)
     write_xsv_file(settings, "data.csv", rows_to_csv(VALID_ROWS))
 
     load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=settings))
 
     df = load_info.pipeline.dataset().table("my_table").df()
     assert len(df) == len(VALID_ROWS)
+    if loader_file_format == ICEBERG:
+        assert_iceberg_table_metadata(destination_bucket / load_info.dataset_name, "my_table")
 
 
 def test_cli_pass_runs_end_to_end_from_command_line_arguments(

@@ -21,7 +21,7 @@ from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
-from cdm_data_loaders.core.fields import JSONL, REJECTED_TABLE_NAME
+from cdm_data_loaders.core.fields import ICEBERG, JSONL, PARQUET, REJECTED_TABLE_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import (
     CtsSettings,
     FileFormatIngestSettings,
@@ -533,12 +533,15 @@ def build_file_ingest_kwargs(
     :return: mapping with ``pipeline_kwargs`` and ``pipeline_run_kwargs`` suitable for ``run_pipeline``
     """
     dataset_name = (settings.dataset_name or pipeline_name) if fallback_dataset_name else settings.dataset_name
+    run_kwargs: dict[str, Any] = (
+        {"loader_file_format": str(PARQUET), "table_format": str(ICEBERG)}
+        if settings.loader_file_format == LoaderFileFormatEnum.ICEBERG
+        else {"loader_file_format": str(settings.loader_file_format)}
+    )
     return {
         "pipeline_kwargs": {
             "pipeline_name": pipeline_name,
             "dataset_name": dataset_name,
         },
-        "pipeline_run_kwargs": {
-            "loader_file_format": str(settings.loader_file_format),
-        },
+        "pipeline_run_kwargs": run_kwargs,
     }
