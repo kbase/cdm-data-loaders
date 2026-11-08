@@ -25,7 +25,7 @@ Auto-generated reference for all registered pipeline CLIs in `pyproject.toml` (`
 | [`pyiceberg_to_jsonschema`](#pyiceberg_to_jsonschema) | `IcebergToJsonSchemaSettings` | `cdm_data_loaders.converters.cli.pyiceberg_to_jsonschema:cli` | Settings for generating a set of JSONSchemas from an Iceberg data catalog. |
 | [`pyiceberg_to_linkml`](#pyiceberg_to_linkml) | `IcebergToLinkMLSettings` | `cdm_data_loaders.converters.cli.pyiceberg_to_linkml:cli` | Settings for generating a set of LinkML schemas from an Iceberg data catalog. |
 | [`uniprot`](#uniprot) | `UniProtXmlToPyArrowSettings` | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniprot_cli` | Settings for the UniProt XML to PyArrow ingestion pipeline. |
-| [`uniprot_cdm`](#uniprot_cdm) | `UniProtSettings` | `cdm_data_loaders.pipelines.uniprot_kb_cdm:cli` | Configuration for running the UniProt KB import pipeline. |
+| [`uniprot_cdm`](#uniprot_cdm) | `UniProtSettings` | `cdm_data_loaders.pipelines.uniprot_kb_cdm:cli` | Configuration for running the UniProt KB CDM XML-to-PyArrow import pipeline. |
 | [`uniref100`](#uniref100) | `UniRef100XmlToPyArrowSettings` | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref100_cli` | UniRef 100 XML to PyArrow ingest settings. |
 | [`uniref100_cdm`](#uniref100_cdm) | `UniRef100CdmSettings` | `cdm_data_loaders.pipelines.uniref_cdm:uniref100_cdm_cli` | UniRef 100 CDM XML-to-PyArrow ingest settings. |
 | [`uniref50`](#uniref50) | `UniRef50XmlToPyArrowSettings` | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref50_cli` | UniRef 50 XML to PyArrow ingest settings. |
@@ -42,7 +42,7 @@ Auto-generated reference for all registered pipeline CLIs in `pyproject.toml` (`
 Configuration for running the AllTheBacteria import pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.all_the_bacteria:cli`
-- **Settings hierarchy**: `AtbSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `AtbSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -63,7 +63,7 @@ Configuration for running the AllTheBacteria import pipeline.
 Settings for the JSONL extraction-only pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.jsonlines.extract_pipeline:cli`
-- **Settings hierarchy**: `JsonlExtractSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `JsonlExtractSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -88,7 +88,7 @@ Settings for the JSONL extraction-only pipeline.
 Pipeline settings for JSONL ingestion with JSON Schema validation.
 
 - **Entry point**: `cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:cli`
-- **Settings hierarchy**: `JsonlJsonschemaIngestSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `JsonlJsonschemaIngestSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -113,7 +113,7 @@ Pipeline settings for JSONL ingestion with JSON Schema validation.
 Pipeline settings for JSONL pipeline that uses Pydantic for validation.
 
 - **Entry point**: `cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline:cli`
-- **Settings hierarchy**: `JsonlPydanticIngestSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `JsonlPydanticIngestSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -138,7 +138,7 @@ Pipeline settings for JSONL pipeline that uses Pydantic for validation.
 Pipeline settings for NCBI Datasets JSONL ingestion (`annotation_report` and `dataset_report`).
 
 - **Entry point**: `cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:ncbi_datasets_cli`
-- **Settings hierarchy**: `NcbiDatasetsSettings` -> `JsonlJsonschemaIngestSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `NcbiDatasetsSettings` -> `JsonlJsonschemaIngestSettings` -> `JsonlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -194,7 +194,7 @@ Configuration for the NCBI FTP assembly download pipeline.
 Configuration for running the NCBI REST API import pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.ncbi_rest_api:cli`
-- **Settings hierarchy**: `NcbiRestApiSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `NcbiRestApiSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -216,7 +216,7 @@ Configuration for running the NCBI REST API import pipeline.
 Settings for the PubMed XML to PyArrow ingestion pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:pubmed_cli`
-- **Settings hierarchy**: `PubMedXmlToPyArrowSettings` -> `LevelPresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `PubMedXmlToPyArrowSettings` -> `LevelPresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -269,7 +269,7 @@ Settings for generating a set of LinkML schemas from an Iceberg data catalog.
 Settings for the UniProt XML to PyArrow ingestion pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniprot_cli`
-- **Settings hierarchy**: `UniProtXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniProtXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -291,13 +291,14 @@ Settings for the UniProt XML to PyArrow ingestion pipeline.
 
 ## `uniprot_cdm`
 
-Configuration for running the UniProt KB import pipeline.
+Configuration for running the UniProt KB CDM XML-to-PyArrow import pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.uniprot_kb_cdm:cli`
-- **Settings hierarchy**: `UniProtSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniProtSettings` -> `UniProtXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `--preprocessors-module` | — | `CDL_PREPROCESSORS_MODULE` | `str \| None` | `None` | Optional Python module path exporting FILE_PREPROCESSORS (Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] \| FilePreprocessFn]) for file-level validation and filtering before opening and parsing. |
 | `--log-config-file` | — | `CDL_LOG_CONFIG_FILE` | `str \| None` | `None` | Location of configuration file for the logger |
 | `--input-dir` | `-i` | `CDL_INPUT_DIR` | `str` | *(Required)* | Local directory or fsspec URL containing file(s) to import |
 | `--output-dir` | `-o` | `CDL_OUTPUT_DIR` | `Path` | *(Required)* | Local directory to save output and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Required. Use `use_destination` to set where dlt loads data. |
@@ -308,13 +309,15 @@ Configuration for running the UniProt KB import pipeline.
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
 | `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
+| `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | `src/cdm_data_loaders/schemas/uniprot/uniprot.xsd` | Path to the UniProt XSD file describing the XML documents to be imported. |
+| `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
 
 ## `uniref100`
 
 UniRef 100 XML to PyArrow ingest settings.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref100_cli`
-- **Settings hierarchy**: `UniRef100XmlToPyArrowSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniRef100XmlToPyArrowSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -339,7 +342,7 @@ UniRef 100 XML to PyArrow ingest settings.
 UniRef 100 CDM XML-to-PyArrow ingest settings.
 
 - **Entry point**: `cdm_data_loaders.pipelines.uniref_cdm:uniref100_cdm_cli`
-- **Settings hierarchy**: `UniRef100CdmSettings` -> `UniRefCdmSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniRef100CdmSettings` -> `UniRefCdmSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -362,7 +365,7 @@ UniRef 100 CDM XML-to-PyArrow ingest settings.
 UniRef 50 XML to PyArrow ingest settings.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref50_cli`
-- **Settings hierarchy**: `UniRef50XmlToPyArrowSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniRef50XmlToPyArrowSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -387,7 +390,7 @@ UniRef 50 XML to PyArrow ingest settings.
 UniRef 50 CDM XML-to-PyArrow ingest settings.
 
 - **Entry point**: `cdm_data_loaders.pipelines.uniref_cdm:uniref50_cdm_cli`
-- **Settings hierarchy**: `UniRef50CdmSettings` -> `UniRefCdmSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniRef50CdmSettings` -> `UniRefCdmSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -410,7 +413,7 @@ UniRef 50 CDM XML-to-PyArrow ingest settings.
 UniRef 90 XML to PyArrow ingest settings.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref90_cli`
-- **Settings hierarchy**: `UniRef90XmlToPyArrowSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniRef90XmlToPyArrowSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -435,7 +438,7 @@ UniRef 90 XML to PyArrow ingest settings.
 UniRef 90 CDM XML-to-PyArrow ingest settings.
 
 - **Entry point**: `cdm_data_loaders.pipelines.uniref_cdm:uniref90_cdm_cli`
-- **Settings hierarchy**: `UniRef90CdmSettings` -> `UniRefCdmSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `UniRef90CdmSettings` -> `UniRefCdmSettings` -> `UniRefXmlToPyArrowSettings` -> `PresetXmlToPyArrowSettings` -> `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -458,7 +461,7 @@ UniRef 90 CDM XML-to-PyArrow ingest settings.
 Settings for the XML ingestion pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltodict.pipeline:cli`
-- **Settings hierarchy**: `XmlToDictSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `XmlToDictSettings` -> `SingleTableXmlIngestSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -484,7 +487,7 @@ Settings for the XML ingestion pipeline.
 Settings for the XML to PyArrow ingestion pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xmltopyarrow.pipeline:cli`
-- **Settings hierarchy**: `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `XmlToPyArrowSettings` -> `XmlIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -531,7 +534,7 @@ Settings for generating a static Python PyArrow schema module from an XSD file.
 Settings for the XSV (CSV/TSV) ingestion pipeline.
 
 - **Entry point**: `cdm_data_loaders.pipelines.xsv.pipeline:cli`
-- **Settings hierarchy**: `XsvIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `LocalInputOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
+- **Settings hierarchy**: `XsvIngestSettings` -> `FileFormatIngestSettings` -> `CtsSettings` -> `InputLocalOutputSettings` -> `LoggerSettings` -> `CdmDataLoadersBase`
 
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |

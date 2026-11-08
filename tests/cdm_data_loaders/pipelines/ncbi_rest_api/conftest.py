@@ -22,6 +22,7 @@ def patch_rest_client_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "cdm_data_loaders.pipelines.ncbi_rest_api.ncbi_genome_client._config.http_show_error_body", True
     )
+    ncbi_module.ncbi_genome_client.session = None
 
 
 @pytest.fixture(scope="module")

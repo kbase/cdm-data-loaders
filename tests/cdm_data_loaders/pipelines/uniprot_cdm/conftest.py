@@ -8,9 +8,11 @@ from frozendict import frozendict
 from cdm_data_loaders.core.fields import (
     FILE_GLOB,
     LOADER_FILE_FORMAT,
+    PREPROCESSORS_MODULE,
     LoaderFileFormatEnum,
 )
 from cdm_data_loaders.pipelines.uniprot_kb_cdm import UNIPROT_LOG_INTERVAL, UniProtSettings
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import UNIPROT_XSD_FILE
 
 
 @pytest.fixture
@@ -27,6 +29,9 @@ def test_uniprot_settings(test_cts_settings: frozendict[str, Any]) -> frozendict
             **test_cts_settings,
             FILE_GLOB: "*.xml*",
             LOADER_FILE_FORMAT: "parquet",
+            PREPROCESSORS_MODULE: "cdm_data_loaders.core.preprocessors",
+            "xsd_file": str(UNIPROT_XSD_FILE),
+            "max_recursion_depth": 2,
             "log_interval": UNIPROT_LOG_INTERVAL,
         }
     )
@@ -40,6 +45,9 @@ def test_uniprot_settings_reconciled(test_cts_settings_reconciled: frozendict[st
             **test_cts_settings_reconciled,
             FILE_GLOB: "*.xml*",
             LOADER_FILE_FORMAT: LoaderFileFormatEnum.PARQUET,
+            PREPROCESSORS_MODULE: "cdm_data_loaders.core.preprocessors",
+            "xsd_file": UNIPROT_XSD_FILE,
+            "max_recursion_depth": 2,
             "log_interval": UNIPROT_LOG_INTERVAL,
         }
     )

@@ -2,12 +2,20 @@
 
 import re
 from logging import Logger, getLogger
-from pathlib import Path
 from typing import Annotated, Final, Self
 
-from pydantic import BaseModel, DirectoryPath, Field, model_validator
+import dlt
+from dlt.common.configuration.inject import with_config
+from dlt.common.configuration.specs import known_sections
+from dlt.common.configuration.specs.config_section_context import ConfigSectionContext
+from dlt.common.storages.fsspec_filesystem import FileItemDict, fsspec_filesystem, glob_files
+from dlt.sources.credentials import FileSystemCredentials
+from dlt.sources.filesystem.helpers import FilesystemConfigurationResource
+from fsspec import AbstractFileSystem
+from pydantic import BaseModel, Field, model_validator
 
 from cdm_data_loaders.core.fields import MIN_START_AT
+from cdm_data_loaders.core.path_fields import InputDir
 
 # Matches files like: name_00001.ext or name_00001.ext.gz
 FILE_NAME_REGEX: re.Pattern[str] = re.compile(r"^\w+_(\d+)(\.\w+)+$")
@@ -19,8 +27,23 @@ DEFAULT_PIPELINE_BATCH_SIZE: Final[int] = 50
 logger: Logger = getLogger(__name__)
 
 
+@with_config(
+    spec=FilesystemConfigurationResource,
+    sections=(known_sections.SOURCES, "filesystem"),
+    sections_merge_style=ConfigSectionContext.resource_merge_style,
+)
+def _get_fs_client(
+    bucket_url: str,
+    credentials: FileSystemCredentials | AbstractFileSystem = dlt.secrets.value,
+) -> AbstractFileSystem:
+    """Instantiate an fsspec filesystem client for ``bucket_url`` using dlt filesystem config."""
+    if isinstance(credentials, AbstractFileSystem):
+        return credentials
+    return fsspec_filesystem(bucket_url, credentials)[0]
+
+
 class NumericFileSequenceBatcher(BaseModel):
-    """A batcher that can be used to retrieve batches of files from a directory.
+    """A batcher that can be used to retrieve batches of files from a directory or fsspec URL.
 
     Searches the directory for files with names ending in `_[0-9]+`
     (underscore followed by one or more digits) with one or more extensions (e.g. `.gz`, `.txt`, `.tar.gz`).
@@ -29,8 +52,8 @@ class NumericFileSequenceBatcher(BaseModel):
 
     Re-scans the directory each time the next batch is requested.
 
-    :param directory:   directory to retrieve files from; strings will be coerced to Paths
-    :type  directory:   Path, required
+    :param directory:   local directory or fsspec URL to retrieve files from
+    :type  directory:   InputDir, required
     :param batch_size:  number of files to return per invocation, defaults to 1
     :type  batch_size:  int, optional
     :param start_at:    file number to start at, defaults to 1.
@@ -45,7 +68,7 @@ class NumericFileSequenceBatcher(BaseModel):
     :type  file_regex:  re.Pattern, optional
     """
 
-    directory: DirectoryPath
+    directory: InputDir
     batch_size: Annotated[int, Field(ge=MIN_BATCH_SIZE, strict=True)] = MIN_BATCH_SIZE
     start_at: Annotated[int, Field(ge=MIN_START_AT, strict=True)] = MIN_START_AT
     end_at: Annotated[int, Field(ge=MIN_END_AT, strict=True)] = MIN_END_AT
@@ -64,11 +87,11 @@ class NumericFileSequenceBatcher(BaseModel):
             raise ValueError(err_msg)
         return self
 
-    def _get_sequence_number(self, path: Path) -> int:
-        match = self.file_regex.match(path.name)
+    def _get_sequence_number(self, item: FileItemDict) -> int:
+        match = self.file_regex.match(item["file_name"])
         return int(match.group(1))  # pyright: ignore[reportOptionalMemberAccess]
 
-    def get_batch(self) -> list[Path]:
+    def get_batch(self) -> list[FileItemDict]:
         """Return the next `batch_size` files whose sequence number >= start_at.
 
         Re-scans the directory on every call to pick up newly added files and
@@ -77,16 +100,25 @@ class NumericFileSequenceBatcher(BaseModel):
         if self.end_at and self.start_at > self.end_at:
             return []
 
-        matched = sorted(p for p in self.directory.iterdir() if p.is_file() and self.file_regex.match(p.name))
+        fs_client = _get_fs_client(self.directory)
+        fs_client.invalidate_cache()
+        matched = sorted(
+            (
+                FileItemDict(item, fs_client)
+                for item in glob_files(fs_client, self.directory, file_glob="*")
+                if self.file_regex.match(item["file_name"])
+            ),
+            key=lambda item: item["file_name"],
+        )
         if not matched:
             logger.warning("No matching files found in %s", str(self.directory))
             return []
 
         eligible = [
-            p
-            for p in matched
-            if self._get_sequence_number(p) >= self.start_at
-            and (not self.end_at or self._get_sequence_number(p) <= self.end_at)
+            item
+            for item in matched
+            if self._get_sequence_number(item) >= self.start_at
+            and (not self.end_at or self._get_sequence_number(item) <= self.end_at)
         ]
 
         batch = eligible[: self.batch_size]

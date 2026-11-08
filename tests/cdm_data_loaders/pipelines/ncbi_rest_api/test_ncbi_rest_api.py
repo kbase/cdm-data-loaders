@@ -1,6 +1,7 @@
 """Tests for the NCBI datasets API pipeline functions."""
 
 import copy
+import gzip
 import json
 import threading
 import time
@@ -38,6 +39,7 @@ from cdm_data_loaders.pipelines.ncbi_rest_api import (
     set_settings,
 )
 from tests.cdm_data_loaders.conftest import check_settings
+from tests.cdm_data_loaders.pipelines.helpers import check_pipeline_report
 from tests.cdm_data_loaders.pipelines.ncbi_rest_api.conftest import (
     ALL_IDS,
     ID_TRIGGERS_500_ERR,
@@ -47,6 +49,8 @@ from tests.cdm_data_loaders.pipelines.ncbi_rest_api.conftest import (
     VALID_IDS,
 )
 from tests.conftest import LOCAL_FS
+from tests.dlt_config_isolation import isolated_dlt_config
+from tests.fs_backends import MOTO_ACCESS_KEY, MOTO_SECRET_KEY, S3_MOTO, FsBackend
 
 
 def test_cli_passes_settings_class_to_run_cli() -> None:
@@ -139,7 +143,7 @@ def test_run_ncbi_pipeline_sets_core_run_pipeline_args_correctly(
             "batch_size": MAX_IDS_PER_QUERY,
             "buffer_size": 100,
             "dlt_dev_mode": bool(dlt_dev_mode),
-            "input_dir": input_dir.resolve(),
+            "input_dir": str(input_dir.resolve()),
             "loader_file_format": LoaderFileFormatEnum.PARQUET,
             "log_config_file": None,
             "log_interval": 1000,
@@ -811,3 +815,86 @@ def test_assembly_report_parser_pass_parallelized_transformer_runs_on_worker_thr
 
     assert main_tid not in parser_threads
     assert len(parser_threads) > 1
+
+
+def test_assembly_list_across_fs_backends(
+    fs_backend: FsBackend,
+    output_dir: Path,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """assembly_list reads plain and gzipped assembly ID files from any fsspec backend."""
+    fs_backend.put("batch_1.txt", b"GCF_000000001.1\nGCF_000000002.1\n")
+    fs_backend.put("batch_2.txt.gz", gzip.compress(b"GCF_000000003.1\n\nGCF_000000004.1\n"))
+
+    dlt_secrets: dict[str, Any] = {}
+    if fs_backend.name == S3_MOTO:
+        endpoint_url = request.getfixturevalue("s3_moto_endpoint")
+        monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+        monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+        dlt_secrets = {
+            "sources": {
+                "filesystem": {
+                    "credentials": {
+                        "aws_access_key_id": MOTO_ACCESS_KEY,
+                        "aws_secret_access_key": MOTO_SECRET_KEY,
+                        "endpoint_url": endpoint_url,
+                    }
+                }
+            }
+        }
+
+    with isolated_dlt_config(secrets=dlt_secrets):
+        settings = NcbiRestApiSettings(
+            input_dir=fs_backend.bucket_url,
+            output_dir=output_dir,
+            use_destination=LOCAL_FS,
+            batch_size=2,
+        )
+        set_settings(settings)
+        assert list(assembly_list()) == [
+            "GCF_000000001.1",
+            "GCF_000000002.1",
+            "GCF_000000003.1",
+            "GCF_000000004.1",
+        ]
+
+
+def test_run_ncbi_pipeline_records_ingested_files_in_report(
+    dlt_destination_config: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """run_ncbi_pipeline records ingested batch files in report.txt via the root filesystem resource."""
+    monkeypatch.setattr(
+        ncbi_module,
+        "get_assembly_reports",
+        lambda ids: {
+            DATASET: {aid: {"accession": aid} for aid in ids},
+            ANNOTATION: {aid: [{"row_id": "1"}] for aid in ids},
+            ERROR: [],
+        },
+    )
+
+    output_dir = tmp_path / "output"
+    settings = NcbiRestApiSettings(
+        input_dir="tests/data/ncbi_datasets/input",
+        output_dir=str(output_dir),
+        use_destination=dlt_destination_config,
+        loader_file_format=LoaderFileFormatEnum.JSONL,
+    )
+    load_info = run_ncbi_pipeline(settings)
+    assert load_info is not None
+    assert not load_info.has_failed_jobs
+
+    check_pipeline_report(
+        settings.report_path,
+        {
+            "pipeline": DATASET_NAME,
+            "dataset": DATASET_NAME,
+            "status": "completed",
+            "ingested_files": ["ass_ids_0001.txt", "ass_ids_0002.txt", "ass_ids_0003.txt"],
+            "pipeline_load_info_errs": None,
+        },
+    )

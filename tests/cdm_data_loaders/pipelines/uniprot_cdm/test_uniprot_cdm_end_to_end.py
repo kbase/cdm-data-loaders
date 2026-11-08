@@ -1,4 +1,4 @@
-"""Tests for the UniProt DLT pipeline.
+"""End-to-end tests for the UniProt CDM DLT pipeline.
 
 The fixture directory contains 15 entries across four chunk files; exact
 per-table counts below are derived from those fixtures.
@@ -10,11 +10,12 @@ from typing import Any
 import pytest
 from frozendict import frozendict
 
+from cdm_data_loaders.pipelines.core import build_per_file_filesystem_resource
 from cdm_data_loaders.pipelines.uniprot_kb_cdm import (
     PIPELINE_NAME,
     UniProtSettings,
-    parse_uniprot,
 )
+from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_destination_table_counts,
@@ -39,7 +40,6 @@ EXPECTED_ROW_COUNTS = frozendict(
         "name": 62,
         "protein": UNIPROT_ENTRY_COUNT,
         "entity_x_publication": 21,
-        "entity_x_source_file": UNIPROT_ENTRY_COUNT,
     }
 )
 
@@ -58,14 +58,15 @@ def duckdb_uniprot_settings(tmp_path: Path) -> UniProtSettings:
 
 
 def _run_uniprot_duckdb_pipeline(settings: UniProtSettings, tmp_path: Path, name: str) -> tuple[Any, Any]:
-    """Run ``parse_uniprot`` through a real DuckDB pipeline and return (pipeline, load_info).
-
-    dlt writes the duckdb destination file into the working directory and appends
-    on re-runs, so each test gets its own database file and pipeline name under
-    tmp_path to stay isolated from other tests.
-    """
+    """Run ``process_xml_file_to_pyarrow`` across the fixture files through a real DuckDB pipeline."""
     pipeline = duckdb_pipeline(tmp_path, f"test_uniprot_pipeline_{name}", "test_uniprot")
-    load_info = pipeline.run(parse_uniprot(settings))
+    resource = build_per_file_filesystem_resource(
+        settings,
+        process_xml_file_to_pyarrow,
+        name="xmltopyarrow_reader",
+        parallelized=False,
+    )
+    load_info = pipeline.run(resource)
     return pipeline, load_info
 
 
@@ -84,11 +85,11 @@ def test_integration_uniprot_pipeline_loads_into_duckdb(
     assert_duckdb_table_counts(pipeline, EXPECTED_ROW_COUNTS)
 
 
-def test_integration_uniprot_pipeline_entity_and_source_file_content(
+def test_integration_uniprot_pipeline_entity_content(
     duckdb_uniprot_settings: UniProtSettings,
     tmp_path: Path,
 ) -> None:
-    """Entity rows are uniprot proteins and source-file rows reference every fixture file."""
+    """Entity rows are uniprot proteins with expected data sources."""
     pipeline, load_info = _run_uniprot_duckdb_pipeline(duckdb_uniprot_settings, tmp_path, "content")
 
     assert_run_ok(load_info)
@@ -98,13 +99,6 @@ def test_integration_uniprot_pipeline_entity_and_source_file_content(
     assert len(rows) == UNIPROT_ENTRY_COUNT
     assert all(entity_id.startswith("uniprot:") for entity_id, _ in rows)
     assert all(entity_type == "protein" for _, entity_type in rows)
-
-    # entity_x_source_file must reference exactly the fixture files we loaded from
-    source_files = {
-        row[0] for row in fetch_all_duckdb(pipeline, "SELECT DISTINCT source_file FROM entity_x_source_file")
-    }
-    # recorded as paths relative to the input directory, independent of where the input lives
-    assert source_files == set(UNIPROT_FIXTURE_FILES)
 
 
 def test_integration_cli_uniprot_pipeline_output_validated(

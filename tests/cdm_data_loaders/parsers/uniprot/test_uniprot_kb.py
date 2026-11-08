@@ -1,26 +1,26 @@
 """Tests for the UniProtKB XML parser."""
 
-import datetime
-import re
+import datetime as dt
+import json
 from typing import Any
 
 import pytest
 from lxml.etree import XMLParser, fromstring
 
 import cdm_data_loaders.parsers.uniprot.uniprot_kb as uniprot_kb_module
+from cdm_data_loaders.coercion.xml import make_xml_element_converter
+from cdm_data_loaders.converters.readers.xsd import load_schema
+from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import (
-    CONTENT,
     DB,
     DESCRIPTION,
     ENTITY_ID,
     ENTRY_XML_TAG,
     HTTPS_NS,
-    KEY,
     NAME,
     NCBI_TAXON,
     XREF,
-    dump_comment_xml,
-    dump_evidence_xml,
+    make_uniprot_cdm_transform,
     parse_cross_references,
     parse_identifiers,
     parse_names,
@@ -29,12 +29,13 @@ from cdm_data_loaders.parsers.uniprot.uniprot_kb import (
     parse_references,
     parse_uniprot_entry,
 )
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import UNIPROT_XSD_FILE
 from cdm_data_loaders.readers.xml import stream_xml_file
 from tests.cdm_data_loaders.parsers.conftest import wrap_entry_xml
 from tests.conftest import TEST_DATA_DIR
 
-TEST_ID = "uniprot:P01Q23"
-FILE_PATH = "/path/to/file"
+UNIPROT_XSD = load_schema(UNIPROT_XSD_FILE)
+CONVERT_ENTRY = make_xml_element_converter(UNIPROT_XSD, "entry")
 
 
 def entry_wrap(xml: str) -> str:
@@ -176,7 +177,7 @@ def entry_wrap(xml: str) -> str:
 def test_parse_names(xml: str, expected: list[tuple[str, str]]) -> None:
     """Test the extraction of names from an entry."""
     xml_str = entry_wrap(xml)
-    parsed_xrefs = parse_names(fromstring(xml_str))
+    parsed_xrefs = parse_names(CONVERT_ENTRY(fromstring(xml_str)))
     assert parsed_xrefs == [{NAME: e[0], DESCRIPTION: e[1]} for e in expected]
 
 
@@ -221,7 +222,7 @@ def test_parse_names(xml: str, expected: list[tuple[str, str]]) -> None:
 def test_parse_protein_info(xml: str, expected: dict[str, Any]) -> None:
     """Test extraction of core protein properties from the entry XML."""
     xml_str = entry_wrap(xml)
-    result = parse_protein_info(fromstring(xml_str))
+    result = parse_protein_info(CONVERT_ENTRY(fromstring(xml_str)))
     assert result == expected
 
 
@@ -285,83 +286,8 @@ def test_parse_protein_info(xml: str, expected: dict[str, Any]) -> None:
 def test_parse_identifiers(xml: str, expected: list[dict[str, Any]]) -> None:
     """Test the parsing of accessions."""
     xml_str = entry_wrap(xml)
-    result = parse_identifiers(fromstring(xml_str))
+    result = parse_identifiers(CONVERT_ENTRY(fromstring(xml_str)))
     assert result == expected
-
-
-@pytest.mark.parametrize(
-    ("xml", "expected"),
-    [
-        (  # simple evidence
-            """
-    <evidence type="ECO:0000255" key="4"/>
-    <evidence type="ECO:0000305" key="7"/>""",
-            [
-                {KEY: "4", CONTENT: '<evidence type="ECO:0000255" key="4"/>'},
-                {KEY: "7", CONTENT: '<evidence type="ECO:0000305" key="7"/>'},
-            ],
-        ),
-        (  # evidence with source
-            """
-    <evidence type="ECO:0000250" key="1">
-      <source>
-        <dbReference type="UniProtKB" id="B9KDD4"/>
-      </source>
-    </evidence>
-    <evidence type="ECO:0000250" key="2">
-      <source>
-        <dbReference type="UniProtKB" id="O29867"/>
-      </source>
-    </evidence>""",
-            [
-                {
-                    KEY: "1",
-                    CONTENT: '<evidence type="ECO:0000250" key="1"><source><dbReference type="UniProtKB" id="B9KDD4"/></source></evidence>',
-                },
-                {
-                    KEY: "2",
-                    CONTENT: '<evidence type="ECO:0000250" key="2"><source><dbReference type="UniProtKB" id="O29867"/></source></evidence>',
-                },
-            ],
-        ),
-        (  # evidence with ref
-            """
-    <evidence type="ECO:0000269" key="8">
-      <source ref="3"/>
-    </evidence>
-    <evidence type="ECO:0000303" key="9">
-      <source ref="3"/>
-    </evidence>""",
-            [
-                {KEY: "8", CONTENT: '<evidence type="ECO:0000269" key="8"><source ref="3"/></evidence>'},
-                {
-                    KEY: "9",
-                    CONTENT: '<evidence type="ECO:0000303" key="9"><source ref="3"/></evidence>',
-                },
-            ],
-        ),
-        (  # evidence imported from
-            """
-    <evidence type="string" key="10">
-      <source ref="2" />
-      <importedFrom>
-        <dbReference type="string" id="string" />
-      </importedFrom>
-    </evidence>""",
-            [
-                {
-                    KEY: "10",
-                    CONTENT: '<evidence type="string" key="10"><source ref="2"/><importedFrom><dbReference type="string" id="string"/></importedFrom></evidence>',
-                }
-            ],
-        ),
-    ],
-)
-def test_parse_evidence(xml: str, expected: list[dict[str, str]]) -> None:
-    """Test the parsing of evidence data."""
-    xml_str = entry_wrap(xml)
-    parsed_evidence = dump_evidence_xml(fromstring(xml_str, parser=XMLParser(remove_blank_text=True)), TEST_ID)
-    assert parsed_evidence == [{ENTITY_ID: TEST_ID, **e} for e in expected]
 
 
 REF_TEXT = {
@@ -476,16 +402,14 @@ PARSED_REFS = {
 
 
 @pytest.mark.parametrize(
-    ("xml", "expected", "key"),
-    [(REF_TEXT[key], [PARSED_REFS.get(key)] if PARSED_REFS.get(key) else [], str(key)) for key in REF_TEXT],
+    ("xml", "expected"),
+    [(REF_TEXT[key], [PARSED_REFS[key]] if key in PARSED_REFS else []) for key in REF_TEXT],
 )
-def test_parse_references(xml: str, expected: list[dict[str, str]] | None, key: str) -> None:
+def test_parse_references(xml: str, expected: list[dict[str, str]]) -> None:
     """Test the parsing of reference data."""
     xml_str = entry_wrap(xml)
-    parsed_refs = parse_references(fromstring(xml_str, parser=XMLParser(remove_blank_text=True)))
-    assert parsed_refs["publication"] == expected
-    no_ws_xml = re.sub(r">\s+<", "><", xml.strip())
-    assert parsed_refs["all_xml"] == [{KEY: key, CONTENT: no_ws_xml}]
+    parsed_refs = parse_references(CONVERT_ENTRY(fromstring(xml_str, parser=XMLParser(remove_blank_text=True))))
+    assert parsed_refs == expected
 
 
 @pytest.mark.parametrize(
@@ -734,7 +658,7 @@ def test_parse_references(xml: str, expected: list[dict[str, str]] | None, key: 
 def test_parse_cross_references(xml: str, expected: list[dict[str, str]]) -> None:
     """Test the parsing of generic cross references."""
     xml_str = entry_wrap(xml)
-    parsed_dbxrefs = parse_cross_references(fromstring(xml_str))
+    parsed_dbxrefs = parse_cross_references(CONVERT_ENTRY(fromstring(xml_str)))
     assert parsed_dbxrefs == expected
 
 
@@ -847,103 +771,52 @@ def test_parse_cross_references(xml: str, expected: list[dict[str, str]]) -> Non
 def test_parse_organism(xml: str, expected: list[dict[str, str]]) -> None:
     """Test the parsing of organism taxon IDs."""
     xml_str = entry_wrap(xml)
-    parsed_dbxrefs = parse_organism(fromstring(xml_str))
+    parsed_dbxrefs = parse_organism(CONVERT_ENTRY(fromstring(xml_str)))
     assert parsed_dbxrefs == expected
 
 
 @pytest.mark.parametrize(
-    ("xml", "expected"),
+    ("xml", "expected_raw"),
     [
-        ("", {"_parse_error": [{"xml": "<entry/>", "error": "No accession found", "source_file": FILE_PATH}]}),
-        (
-            "<dbReference/><name/>",
-            {
-                "_parse_error": [
-                    {
-                        "xml": "<entry><dbReference/><name/></entry>",
-                        "error": "No accession found",
-                        "source_file": FILE_PATH,
-                    }
-                ]
-            },
-        ),
+        ("", {}),
+        ("<dbReference/><name/>", {"dbReference": [None], "name": [None]}),
     ],
 )
 @pytest.mark.parametrize("args_style", ["positional", "kwargs"])
-def test_parse_uniprot_entry(args_style: str, xml: str, expected: dict[str, list[dict[str, Any]]]) -> None:
-    """Test the parsing of generic cross references."""
+def test_parse_uniprot_entry(args_style: str, xml: str, expected_raw: dict[str, Any]) -> None:
+    """Test that entries without an accession are routed to _rejected."""
     xml_str = entry_wrap(xml)
+    entry_dict = CONVERT_ENTRY(fromstring(xml_str, parser=XMLParser(remove_blank_text=True)))
+    now = dt.datetime.now(tz=dt.UTC)
     if args_style == "positional":
-        parsed_entry = parse_uniprot_entry(
-            fromstring(xml_str, parser=XMLParser(remove_blank_text=True)),
-            datetime.datetime.now(tz=datetime.UTC),
-            FILE_PATH,
-        )
+        parsed_entry = parse_uniprot_entry(entry_dict, now)
     else:
-        parsed_entry = parse_uniprot_entry(
-            file_path=FILE_PATH,
-            timestamp=datetime.datetime.now(tz=datetime.UTC),
-            entry=fromstring(xml_str, parser=XMLParser(remove_blank_text=True)),
-        )
+        parsed_entry = parse_uniprot_entry(timestamp=now, entry=entry_dict)
 
-    assert parsed_entry == expected
-
-
-@pytest.mark.parametrize(
-    ("xml", "expected"),
-    [
-        # no comments present
-        ("", []),
-        # single simple comment
-        (
-            """
-    <comment type="function">
-      <text>Catalyzes a reaction.</text>
-    </comment>""",
-            [{CONTENT: '<comment type="function"><text>Catalyzes a reaction.</text></comment>'}],
-        ),
-        # multiple comments of differing types
-        (
-            """
-    <comment type="function">
-      <text evidence="1">Does something important.</text>
-    </comment>
-    <comment type="catalytic activity">
-      <reaction>
-        <text>A = B</text>
-        <dbReference type="Rhea" id="RHEA:16933"/>
-      </reaction>
-    </comment>""",
-            [
-                {CONTENT: '<comment type="function"><text evidence="1">Does something important.</text></comment>'},
-                {
-                    CONTENT: '<comment type="catalytic activity"><reaction><text>A = B</text>'
-                    '<dbReference type="Rhea" id="RHEA:16933"/></reaction></comment>'
-                },
-            ],
-        ),
-    ],
-)
-def test_dump_comment_xml(xml: str, expected: list[dict[str, str]]) -> None:
-    """Test the dumping of comment elements as XML strings."""
-    xml_str = entry_wrap(xml)
-    parsed_comments = dump_comment_xml(fromstring(xml_str, parser=XMLParser(remove_blank_text=True)), TEST_ID)
-    assert parsed_comments == [{ENTITY_ID: TEST_ID, **e} for e in expected]
+    assert list(parsed_entry.keys()) == [REJECTED_TABLE_NAME]
+    error = parsed_entry[REJECTED_TABLE_NAME][0]
+    assert error["table_name"] == "entry"
+    assert error["source_file"] is None
+    assert error["line_no"] is None
+    assert error["error_detail"] == "No accession found"
+    assert json.loads(error["raw_record"]) == expected_raw
 
 
 def test_parse_cross_references_multiple_molecules(caplog: pytest.LogCaptureFixture) -> None:
     """Test that a dbReference with multiple molecules logs a warning and uses the first molecule."""
-    xml = entry_wrap(
-        """
-    <accession>P99999</accession>
-    <dbReference type="Ensembl" id="ENST00000000001.1">
-      <molecule id="P99999-1"/>
-      <molecule id="P99999-2"/>
-      <property type="protein sequence ID" value="ENSP00000000001.1"/>
-    </dbReference>"""
-    )
+    entry_dict = {
+        "accession": ["P99999"],
+        "dbReference": [
+            {
+                "_type": "Ensembl",
+                "_id": "ENST00000000001.1",
+                "molecule": [{"_id": "P99999-1"}, {"_id": "P99999-2"}],
+                "property": [{"_type": "protein sequence ID", "_value": "ENSP00000000001.1"}],
+            }
+        ],
+    }
     with caplog.at_level("WARNING"):
-        result = parse_cross_references(fromstring(xml))
+        result = parse_cross_references(entry_dict)
 
     # the description suffix uses the first molecule id
     assert result == [
@@ -1006,12 +879,9 @@ def test_parse_references_no_priority_ref_type(caplog: pytest.LogCaptureFixture)
     """A reference whose citation dbReferences are all non-priority yields no publication and warns twice."""
     xml_str = entry_wrap(REF_TEXT[7])
     with caplog.at_level("WARNING"):
-        parsed = parse_references(fromstring(xml_str, parser=XMLParser(remove_blank_text=True)))
+        parsed = parse_references(CONVERT_ENTRY(fromstring(xml_str, parser=XMLParser(remove_blank_text=True))))
 
-    assert parsed["publication"] == []
-    # the raw XML is still retained
-    assert len(parsed["all_xml"]) == 1
-    assert parsed["all_xml"][0][KEY] == "7"
+    assert parsed == []
     # warns about the unexpected type and about not finding a priority ref type
     messages = " ".join(rec.getMessage() for rec in caplog.records)
     assert "Unexpected dbxref types in publications" in messages
@@ -1028,8 +898,8 @@ def test_parse_references_no_priority_ref_type(caplog: pytest.LogCaptureFixture)
 def test_parse_references_priority_order(key: int, expected_publication_id: str) -> None:
     """Test that publication IDs are selected according to the priority ordering."""
     xml_str = entry_wrap(REF_TEXT[key])
-    parsed = parse_references(fromstring(xml_str, parser=XMLParser(remove_blank_text=True)))
-    assert parsed["publication"] == [{"publication_id": expected_publication_id}]
+    parsed = parse_references(CONVERT_ENTRY(fromstring(xml_str, parser=XMLParser(remove_blank_text=True))))
+    assert parsed == [{"publication_id": expected_publication_id}]
 
 
 FULL_ENTRY_XML = """
@@ -1070,15 +940,15 @@ FULL_ENTRY_XML = """
 def test_parse_uniprot_entry_full() -> None:
     """Test the happy path of parse_uniprot_entry with a complete entry."""
     xml_str = f'<entry created="2000-05-30" modified="2020-01-01" version="3" dataset="Swiss-Prot" xmlns="{HTTPS_NS}">{FULL_ENTRY_XML}</entry>'
-    timestamp = datetime.datetime.now(tz=datetime.UTC)
+    timestamp = dt.datetime.now(tz=dt.UTC)
     result = parse_uniprot_entry(
-        fromstring(xml_str, parser=XMLParser(remove_blank_text=True)),
+        CONVERT_ENTRY(fromstring(xml_str, parser=XMLParser(remove_blank_text=True))),
         timestamp,
-        FILE_PATH,
     )
 
     # no parse error
-    assert "_parse_error" not in result
+    assert REJECTED_TABLE_NAME not in result
+    assert set(result.keys()) == {"entity", "identifier", "name", "protein", "entity_x_publication"}
 
     uniprot_id = "uniprot:P12345"
 
@@ -1125,22 +995,9 @@ def test_parse_uniprot_entry_full() -> None:
     # publications
     assert result["entity_x_publication"] == [{ENTITY_ID: uniprot_id, "publication_id": "PMID:12345678"}]
 
-    # source-file linkage
-    assert result["entity_x_source_file"] == [
-        {ENTITY_ID: uniprot_id, "data_source": "UniProt/Swiss-Prot", "source_file": FILE_PATH}
-    ]
-
-    # non-schema XML dump tables
-    assert len(result["_comment_xml"]) == 1
-    assert result["_comment_xml"][0][ENTITY_ID] == uniprot_id
-    assert len(result["_evidence_xml"]) == 1
-    assert result["_evidence_xml"][0][ENTITY_ID] == uniprot_id
-    assert len(result["_reference_xml"]) == 1
-    assert result["_reference_xml"][0][ENTITY_ID] == uniprot_id
-
 
 def test_parse_uniprot_entry_unexpected_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An unexpected exception during parsing is caught and reported as a _parse_error."""
+    """An unexpected exception during parsing is caught and routed to _rejected."""
 
     def _boom(*_args: object, **_kwargs: object) -> None:
         msg = "boom"
@@ -1151,17 +1008,66 @@ def test_parse_uniprot_entry_unexpected_error(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(uniprot_kb_module, "parse_names", _boom)
 
     xml_str = f'<entry dataset="Swiss-Prot" xmlns="{HTTPS_NS}"><accession>P12345</accession></entry>'
+    entry_dict = CONVERT_ENTRY(fromstring(xml_str, parser=XMLParser(remove_blank_text=True)))
     result = parse_uniprot_entry(
-        fromstring(xml_str, parser=XMLParser(remove_blank_text=True)),
-        datetime.datetime.now(tz=datetime.UTC),
-        FILE_PATH,
+        entry_dict,
+        dt.datetime.now(tz=dt.UTC),
     )
 
-    assert list(result.keys()) == ["_parse_error"]
-    error = result["_parse_error"][0]
-    assert error["error"] == "boom"
-    assert error["source_file"] == FILE_PATH
-    assert "P12345" in error["xml"]
+    assert list(result.keys()) == [REJECTED_TABLE_NAME]
+    error = result[REJECTED_TABLE_NAME][0]
+    assert error["table_name"] == "entry"
+    assert error["source_file"] is None
+    assert error["line_no"] is None
+    assert error["error_detail"] == "boom"
+    assert json.loads(error["raw_record"]) == {"_dataset": "Swiss-Prot", "accession": ["P12345"]}
+
+
+def test_make_uniprot_cdm_transform() -> None:
+    """Test that make_uniprot_cdm_transform builds a RecordTransformFn that routes UniProtKB entries."""
+    now = dt.datetime.now(tz=dt.UTC)
+    transform_fn = make_uniprot_cdm_transform(timestamp=now)
+    assert callable(transform_fn)
+
+    entry_dict = {
+        "_dataset": "Swiss-Prot",
+        "_created": dt.date(2020, 1, 1),
+        "_modified": dt.date(2021, 6, 15),
+        "_version": 2,
+        "accession": ["P12345"],
+        "name": ["TEST_HUMAN"],
+    }
+    routed = transform_fn(entry_dict)
+    assert set(routed.keys()) == {"entity", "identifier", "name", "protein", "entity_x_publication"}
+    assert routed["entity"] == [
+        {
+            ENTITY_ID: "uniprot:P12345",
+            "entity_type": "protein",
+            "data_source_entity_id": "P12345",
+            "data_source_created": "2020-01-01",
+            "data_source_modified": "2021-06-15",
+            "data_source_entity_version": "2",
+            "data_source_id": None,
+            "created": None,
+            "data_source": "UniProt/Swiss-Prot",
+            "updated": now,
+        }
+    ]
+    assert routed["identifier"] == [
+        {
+            ENTITY_ID: "uniprot:P12345",
+            DB: "UniProt",
+            XREF: "P12345",
+            DESCRIPTION: "UniProt accession",
+        }
+    ]
+    assert routed["name"] == [
+        {
+            ENTITY_ID: "uniprot:P12345",
+            NAME: "TEST_HUMAN",
+            DESCRIPTION: "UniProt entry name",
+        }
+    ]
 
 
 FIXTURE_CHUNK = TEST_DATA_DIR / "uniprot" / "uniprot_kb" / "chunk_4" / "chunk_00001.xml"
@@ -1173,16 +1079,17 @@ def test_parse_uniprot_entry_integration() -> None:
     Exercises the parser end-to-end against genuine UniProt XML (as produced upstream),
     ensuring every entry parses without error and produces the expected schema tables.
     """
-    timestamp = datetime.datetime.now(tz=datetime.UTC)
+    timestamp = dt.datetime.now(tz=dt.UTC)
     entry_count = 0
     # NOTE: stream_xml_file clears each element right after yielding it, so entries must be
     # parsed inside the streaming loop rather than collected into a list first.
     for entry in stream_xml_file(FIXTURE_CHUNK, ENTRY_XML_TAG):
         entry_count += 1
-        parsed = parse_uniprot_entry(entry, timestamp, str(FIXTURE_CHUNK))
+        parsed = parse_uniprot_entry(CONVERT_ENTRY(entry), timestamp)
 
         # every real entry should parse cleanly
-        assert "_parse_error" not in parsed, f"unexpected parse error: {parsed.get('_parse_error')}"
+        assert REJECTED_TABLE_NAME not in parsed, f"unexpected parse error: {parsed.get(REJECTED_TABLE_NAME)}"
+        assert set(parsed.keys()) == {"entity", "identifier", "name", "protein", "entity_x_publication"}
 
         # core schema tables must always be present and well formed
         assert len(parsed["entity"]) == 1
@@ -1200,10 +1107,5 @@ def test_parse_uniprot_entry_integration() -> None:
         # identifiers should at minimum contain the UniProt accession
         assert any(i[DB] == "UniProt" for i in parsed["identifier"])
         assert all(i[ENTITY_ID] == entity_id for i in parsed["identifier"])
-
-        # source-file linkage present
-        assert parsed["entity_x_source_file"] == [
-            {ENTITY_ID: entity_id, "data_source": entity["data_source"], "source_file": str(FIXTURE_CHUNK)}
-        ]
 
     assert entry_count > 0, "expected at least one entry in the fixture"

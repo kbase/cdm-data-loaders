@@ -277,22 +277,28 @@ def _attach_file_collector(resource: DltResource | list[DltResource]) -> _Filesy
     seen_pipes: set[str] = set()
     resources = resource if isinstance(resource, list) else [resource]
 
-    def _record_file(item: Any) -> Any:  # noqa: ANN401
-        if isinstance(item, dict) and "relative_path" in item:
-            collector.ingested_files.append(item["relative_path"])
-        return item
-
     for res in resources:
         curr: DltResource | None = res
         while isinstance(curr, DltResource):
-            if curr.name == "filesystem" and curr._pipe.instance_id not in seen_pipes:  # noqa: SLF001
-                seen_pipes.add(curr._pipe.instance_id)  # noqa: SLF001
-                tracker: _FilesystemTracker | None = getattr(curr, "_fs_tracker", None)
-                if tracker is not None:
-                    tracker.ingested_files = collector.ingested_files
-                    tracker.preprocess_errors = collector.preprocess_errors
-                else:
-                    curr.add_map(_record_file)
+            pipe = curr._pipe  # noqa: SLF001
+            if curr.name == "filesystem" and pipe.instance_id not in seen_pipes:
+                seen_pipes.add(pipe.instance_id)
+                tracker: _FilesystemTracker | None = getattr(pipe, "_fs_tracker", None)
+                if tracker is None:
+                    tracker = _FilesystemTracker(ingested_files=[], preprocess_errors=[])
+                    pipe._fs_tracker = tracker  # type: ignore[attr-defined]  # noqa: SLF001
+
+                    def _make_recorder(t: _FilesystemTracker) -> Callable[[Any], Any]:
+                        def _record_file(item: Any) -> Any:  # noqa: ANN401
+                            if isinstance(item, dict) and "relative_path" in item:
+                                t.ingested_files.append(item["relative_path"])
+                            return item
+
+                        return _record_file
+
+                    curr.add_map(_make_recorder(tracker))
+                tracker.ingested_files = collector.ingested_files
+                tracker.preprocess_errors = collector.preprocess_errors
             curr = curr._parent  # noqa: SLF001
     return collector
 

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from dlt.common.storages.fsspec_filesystem import FileItemDict
 from pydantic import ValidationError
 
 from cdm_data_loaders.core.fields import MIN_START_AT
@@ -14,6 +15,9 @@ from cdm_data_loaders.utils.batcher import (
     MIN_END_AT,
     NumericFileSequenceBatcher,
 )
+from cdm_data_loaders.utils.file_items import as_file_item
+from tests.dlt_config_isolation import isolated_dlt_config
+from tests.fs_backends import MOTO_ACCESS_KEY, MOTO_SECRET_KEY, S3_MOTO, FsBackend
 
 # what the range should be set to (max range is exclusive)
 MAX_RANGE_VALUE = 16
@@ -57,15 +61,15 @@ for ix, vals in EXPECTED.items():
         EXPECTED[ix][None] = vals[1]
 
 
-def make_files(directory: Path, names: list[str]) -> list[Path]:
-    """Touch each filename in *directory* and return the sorted Path list."""
+def make_files(directory: Path, names: list[str]) -> list[FileItemDict]:
+    """Touch each filename in *directory* and return the sorted FileItemDict list."""
     paths = []
     for name in names:
         p = directory / name
         p.parent.mkdir(parents=True, exist_ok=True)
         p.touch()
         paths.append(p)
-    return sorted(paths)
+    return [as_file_item(p) for p in sorted(paths)]
 
 
 def make_file_names(prefix: str, ext: str, numbers: list[int] | range) -> list[str]:
@@ -76,8 +80,8 @@ def make_file_names(prefix: str, ext: str, numbers: list[int] | range) -> list[s
     return [f"{prefix}_{n:05}.{ext}" for n in numbers]
 
 
-def make_sequence(directory: Path, prefix: str, ext: str, numbers: list[int] | range) -> list[Path]:
-    """Create files for the given sequence numbers and return sorted Paths."""
+def make_sequence(directory: Path, prefix: str, ext: str, numbers: list[int] | range) -> list[FileItemDict]:
+    """Create files for the given sequence numbers and return sorted FileItemDicts."""
     names = make_file_names(prefix, ext, numbers)
     return make_files(directory, names)
 
@@ -124,12 +128,12 @@ def mixed_dir(tmp_path: Path, non_matching_file_names: list[str]) -> Path:
 
 def test_init_batcher_defaults(tmp_path: Path) -> None:
     """Ensure defaults are set correctly."""
-    bc = NumericFileSequenceBatcher(directory=str(tmp_path))  # type: ignore[reportArgumentType]
+    bc = NumericFileSequenceBatcher(directory=str(tmp_path))
     assert bc.batch_size == MIN_BATCH_SIZE
     assert bc.start_at == MIN_START_AT
     assert bc.end_at == MIN_END_AT
     assert bc.file_regex == FILE_NAME_REGEX
-    assert bc.directory == tmp_path
+    assert bc.directory == str(tmp_path.resolve())
 
 
 def test_init_batcher_values(tmp_path: Path) -> None:
@@ -142,7 +146,7 @@ def test_init_batcher_values(tmp_path: Path) -> None:
     assert bc.batch_size == batch_size
     assert bc.end_at == end_at
     assert bc.file_regex == FILE_NAME_REGEX
-    assert bc.directory == tmp_path
+    assert bc.directory == str(tmp_path.resolve())
 
 
 def test_init_batcher_no_directory() -> None:
@@ -299,17 +303,19 @@ def test_get_batch_parametrized(
     cursor = NumericFileSequenceBatcher(directory=file_dir, **cursor_params)
 
     # generate the expected files
-    expected_files: list[list[Path]] = [
-        [file_dir / fn for fn in make_file_names("report", "csv", numbers)]
+    expected_files: list[list[FileItemDict]] = [
+        [as_file_item(file_dir / fn) for fn in make_file_names("report", "csv", numbers)]
         for numbers in EXPECTED[batch_size][start_at]
     ]
     if end_at:
         expected_files = []
         for numbers in EXPECTED[batch_size][start_at]:
             if cutoffless := [n for n in numbers if n <= end_at]:
-                expected_files.append([file_dir / fn for fn in make_file_names("report", "csv", cutoffless)])
+                expected_files.append(
+                    [as_file_item(file_dir / fn) for fn in make_file_names("report", "csv", cutoffless)]
+                )
 
-    output: list[list[Path]] = []
+    output: list[list[FileItemDict]] = []
     while batch := cursor.get_batch():
         output.append(batch)
         if cursor.start_at >= MAX_RANGE_VALUE:
@@ -320,9 +326,9 @@ def test_get_batch_parametrized(
 
     # results are sorted
     for batch in output:
-        # results are all file paths
-        assert all(isinstance(p, Path) for p in batch)
-        assert sorted(batch) == batch
+        # results are all FileItemDict instances
+        assert all(isinstance(p, FileItemDict) for p in batch)
+        assert sorted(batch, key=lambda item: item["file_name"]) == batch
     assert output == expected_files
 
     # if end_at is defined, the start_at value will be one greater than the end_at value
@@ -342,7 +348,7 @@ def test_get_batch_start_at_matches_sequence_number(file_dir: Path) -> None:
     cursor = NumericFileSequenceBatcher(directory=file_dir, batch_size=5, start_at=15)
     result = cursor.get_batch()
     assert len(result) == 1
-    assert result[0].name == "report_00015.csv"
+    assert result[0]["file_name"] == "report_00015.csv"
 
 
 # advancing the cursor
@@ -362,7 +368,7 @@ def test_get_batch_start_at_advances_after_get_batch(file_dir: Path) -> None:
 
     # all files should be the sequential list of existing files
     all_files = batch_1 + batch_2 + batch_3
-    assert all_files == [file_dir / f"report_{n:05}.csv" for n in range(1, MAX_RANGE_VALUE)]
+    assert all_files == [as_file_item(file_dir / f"report_{n:05}.csv") for n in range(1, MAX_RANGE_VALUE)]
 
 
 def test_get_batch_cursor_does_not_advance_on_empty_result(file_dir: Path) -> None:
@@ -378,7 +384,7 @@ def test_get_batch_partial_batch_advances_correctly(file_dir: Path) -> None:
     # Only 3 files remain from 13 onward
     cursor = NumericFileSequenceBatcher(directory=file_dir, batch_size=5, start_at=13)
     result = cursor.get_batch()
-    assert result == [file_dir / f"report_{n:05}.csv" for n in [13, 14, 15]]
+    assert result == [as_file_item(file_dir / f"report_{n:05}.csv") for n in [13, 14, 15]]
     assert cursor.start_at == 16  # noqa: PLR2004
 
 
@@ -393,7 +399,7 @@ def test_get_batch_cursor_can_be_reset(file_dir: Path) -> None:
     reset_result = cursor.get_batch()
     assert cursor.start_at == batch_size + 1
     assert original_result == reset_result
-    assert reset_result[0].name == "report_00001.csv"
+    assert reset_result[0]["file_name"] == "report_00001.csv"
 
 
 # Edge cases -- boundaries
@@ -414,8 +420,8 @@ def test_get_batch_batch_size_larger_than_remaining_files(file_dir: Path) -> Non
     cursor = NumericFileSequenceBatcher(directory=file_dir, batch_size=10, start_at=10)
     result = cursor.get_batch()
     # should have 00010 - 00015
-    assert result[-1].name == "report_00015.csv"
-    assert result == [file_dir / f"report_{n:05}.csv" for n in range(10, MAX_RANGE_VALUE)]
+    assert result[-1]["file_name"] == "report_00015.csv"
+    assert result == [as_file_item(file_dir / f"report_{n:05}.csv") for n in range(10, MAX_RANGE_VALUE)]
     assert cursor.start_at == 16  # noqa: PLR2004
 
 
@@ -426,7 +432,7 @@ def test_get_batch_start_at_skips_to_next_available_when_gap(tmp_path: Path) -> 
     make_sequence(tmp_path, "data", "csv.gz", [1, 2, 3, 10, 11, 12])
     cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=5, start_at=5)
     # retrieve 5 files, starting at 00005
-    assert cursor.get_batch() == [tmp_path / f"data_{n:05}.csv.gz" for n in [10, 11, 12]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"data_{n:05}.csv.gz") for n in [10, 11, 12]]
     assert cursor.start_at == 13  # noqa: PLR2004
     assert cursor.get_batch() == []
 
@@ -435,13 +441,13 @@ def test__get_batchsequential_calls_across_gap(tmp_path: Path) -> None:
     """Ensure that files are correctly retrieved across gaps in the sequence."""
     make_sequence(tmp_path, "data", "csv.gz", [1, 2, 3, 10, 11, 12])
     cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=2)
-    assert cursor.get_batch() == [tmp_path / f"data_{n:05}.csv.gz" for n in [1, 2]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"data_{n:05}.csv.gz") for n in [1, 2]]
     assert cursor.start_at == 3  # noqa: PLR2004
 
-    assert cursor.get_batch() == [tmp_path / f"data_{n:05}.csv.gz" for n in [3, 10]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"data_{n:05}.csv.gz") for n in [3, 10]]
     assert cursor.start_at == 11  # noqa: PLR2004
 
-    assert cursor.get_batch() == [tmp_path / f"data_{n:05}.csv.gz" for n in [11, 12]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"data_{n:05}.csv.gz") for n in [11, 12]]
     assert cursor.start_at == 13  # noqa: PLR2004
 
     assert cursor.get_batch() == []
@@ -452,13 +458,13 @@ def test_get_batch_sequential_calls_across_gap_with_end_at(tmp_path: Path) -> No
     """Ensure that files are correctly retrieved across gaps in the sequence when end_at is specified."""
     make_sequence(tmp_path, "data", "csv.gz", [1, 2, 3, 5, 8, 11, 15])
     cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=2, end_at=10)
-    assert cursor.get_batch() == [tmp_path / f"data_{n:05}.csv.gz" for n in [1, 2]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"data_{n:05}.csv.gz") for n in [1, 2]]
     assert cursor.start_at == 3  # noqa: PLR2004
 
-    assert cursor.get_batch() == [tmp_path / f"data_{n:05}.csv.gz" for n in [3, 5]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"data_{n:05}.csv.gz") for n in [3, 5]]
     assert cursor.start_at == 6  # noqa: PLR2004
 
-    assert cursor.get_batch() == [tmp_path / f"data_{n:05}.csv.gz" for n in [8]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"data_{n:05}.csv.gz") for n in [8]]
     assert cursor.start_at == 9  # noqa: PLR2004
 
     assert cursor.get_batch() == []
@@ -481,7 +487,7 @@ def test_get_batch_ignores_invalid_filenames(mixed_dir: Path) -> None:
             "file_000300.txt.tar.gz",
         ]
     )
-    assert cursor.get_batch() == [mixed_dir / fn for fn in file_names]
+    assert cursor.get_batch() == [as_file_item(mixed_dir / fn) for fn in file_names]
 
 
 def test_get_batch_mixed_extensions_sorted_correctly(tmp_path: Path) -> None:
@@ -489,7 +495,7 @@ def test_get_batch_mixed_extensions_sorted_correctly(tmp_path: Path) -> None:
     names = ["data_00001.csv", "data_00001.tar.gz", "data_00002.tar.gz", "data_00003.txt"]
     make_files(tmp_path, names)
     cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=10)
-    assert [p.name for p in cursor.get_batch()] == names
+    assert [p["file_name"] for p in cursor.get_batch()] == names
 
 
 def test_get_batch_exits_early_with_no_matching_files(
@@ -501,7 +507,7 @@ def test_get_batch_exits_early_with_no_matching_files(
     assert cursor.get_batch() == []
     assert len(caplog.records) == 1
     assert caplog.records[-1].levelno == logging.WARNING
-    assert caplog.records[-1].getMessage() == f"No matching files found in {tmp_path!s}"
+    assert caplog.records[-1].getMessage() == f"No matching files found in {tmp_path.resolve()!s}"
 
 
 # Dynamic / live-directory behaviour
@@ -510,12 +516,12 @@ def test_get_batch_picks_up_newly_added_files(tmp_path: Path) -> None:
     # dir contains log_00001.txt -> log_00003.txt
     make_sequence(tmp_path, "log", "txt", range(1, 4))
     cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=10)
-    assert cursor.get_batch() == [tmp_path / f"log_{n:05}.txt" for n in [1, 2, 3]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"log_{n:05}.txt") for n in [1, 2, 3]]
 
     (tmp_path / "log_00004.txt").touch()
     # Reset cursor to re-scan from the start
     cursor.start_at = MIN_START_AT
-    assert cursor.get_batch() == [tmp_path / f"log_{n:05}.txt" for n in [1, 2, 3, 4]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"log_{n:05}.txt") for n in [1, 2, 3, 4]]
 
 
 def test_get_batch_new_files_within_current_window_are_included(tmp_path: Path) -> None:
@@ -524,20 +530,20 @@ def test_get_batch_new_files_within_current_window_are_included(tmp_path: Path) 
     make_sequence(tmp_path, "log", "txt", range(1, 6))
     cursor = NumericFileSequenceBatcher(directory=tmp_path, batch_size=3, end_at=13)
 
-    assert cursor.get_batch() == [tmp_path / f"log_{n:05}.txt" for n in [1, 2, 3]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"log_{n:05}.txt") for n in [1, 2, 3]]
     assert cursor.start_at == 4  # noqa: PLR2004
 
     # New files added within the next window before the next call
     (tmp_path / "log_00006.txt").touch()
     (tmp_path / "log_00007.txt").touch()
-    assert cursor.get_batch() == [tmp_path / f"log_{n:05}.txt" for n in [4, 5, 6]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"log_{n:05}.txt") for n in [4, 5, 6]]
     assert cursor.start_at == 7  # noqa: PLR2004
 
     # New files added within the next window before the next call
     # Note: we are missing 00008 and 00009
     (tmp_path / "log_00010.txt").touch()
     (tmp_path / "log_00011.txt").touch()
-    assert cursor.get_batch() == [tmp_path / f"log_{n:05}.txt" for n in [7, 10, 11]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"log_{n:05}.txt") for n in [7, 10, 11]]
     assert cursor.start_at == 12  # noqa: PLR2004
 
     # add in missing files -- nothing is returned as start_at is at 12
@@ -549,7 +555,7 @@ def test_get_batch_new_files_within_current_window_are_included(tmp_path: Path) 
     # add more files
     (tmp_path / "log_00012.txt").touch()
     (tmp_path / "log_00013.txt").touch()
-    assert cursor.get_batch() == [tmp_path / f"log_{n:05}.txt" for n in [12, 13]]
+    assert cursor.get_batch() == [as_file_item(tmp_path / f"log_{n:05}.txt") for n in [12, 13]]
     assert cursor.start_at == 14  # noqa: PLR2004
 
     # add more files beyond the end_at value
@@ -557,3 +563,49 @@ def test_get_batch_new_files_within_current_window_are_included(tmp_path: Path) 
     (tmp_path / "log_00015.txt").touch()
     assert cursor.get_batch() == []
     assert cursor.start_at == 14  # noqa: PLR2004
+
+
+def test_get_batch_across_fs_backends(
+    fs_backend: FsBackend,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NumericFileSequenceBatcher reads and live-scans files from any fsspec backend."""
+    fs_backend.put("batch_00001.txt", b"first\n")
+    fs_backend.put("batch_00002.txt", b"second\n")
+    fs_backend.put("README.md", b"ignored\n")
+
+    dlt_secrets: dict[str, Any] = {}
+    if fs_backend.name == S3_MOTO:
+        endpoint_url = request.getfixturevalue("s3_moto_endpoint")
+        monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+        monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+        dlt_secrets = {
+            "sources": {
+                "filesystem": {
+                    "credentials": {
+                        "aws_access_key_id": MOTO_ACCESS_KEY,
+                        "aws_secret_access_key": MOTO_SECRET_KEY,
+                        "endpoint_url": endpoint_url,
+                    }
+                }
+            }
+        }
+
+    with isolated_dlt_config(secrets=dlt_secrets):
+        batcher = NumericFileSequenceBatcher(directory=fs_backend.bucket_url, batch_size=2)
+        batch_1 = batcher.get_batch()
+        assert [item["file_name"] for item in batch_1] == ["batch_00001.txt", "batch_00002.txt"]
+        contents = []
+        for item in batch_1:
+            with item.open("rt", encoding="utf-8") as fh:
+                contents.append(fh.read().strip())
+        assert contents == ["first", "second"]
+        assert batcher.start_at == 3  # noqa: PLR2004
+
+        fs_backend.put("batch_00003.txt", b"third\n")
+        batch_2 = batcher.get_batch()
+        assert [item["file_name"] for item in batch_2] == ["batch_00003.txt"]
+        assert batcher.start_at == 4  # noqa: PLR2004
+        assert batcher.get_batch() == []

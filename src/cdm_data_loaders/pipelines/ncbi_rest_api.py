@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 
 import dlt
 from dlt.common.pipeline import LoadInfo
+from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.extract.items import DataItemWithMeta
 from dlt.sources.helpers.requests import Client, Response
 from dlt.sources.helpers.rest_client.auth import APIKeyAuth
@@ -165,7 +166,7 @@ def set_settings(settings_obj: NcbiRestApiSettings) -> None:
     :type settings_obj: NcbiRestApiSettings
     """
     # ugh, somewhat horrible
-    global PIPELINE_SETTINGS
+    global PIPELINE_SETTINGS  # noqa: PLW0603
     PIPELINE_SETTINGS = settings_obj
 
 
@@ -381,16 +382,23 @@ def assemble_assembly_reports(
         yield dlt.mark.with_table_name(error_reports, "ncbi_import_error")
 
 
-@dlt.resource(name="assembly_list")
-def assembly_list() -> Generator[list[str], Any, Any]:
-    """List of assemblies to fetch."""
+@dlt.resource(name="filesystem")
+def assembly_files() -> Generator[list[FileItemDict], Any, Any]:
+    """Yield batches of input files from the configured input directory."""
     settings = get_settings()
     batcher = NumericFileSequenceBatcher(directory=settings.input_dir, batch_size=1)
     while files := batcher.get_batch():
-        for file_path in files:
-            with file_path.open() as f:
-                while next_chunk := list(islice(f, settings.batch_size)):
-                    yield [line.strip() for line in next_chunk if line.strip()]
+        yield files
+
+
+@dlt.transformer(name="assembly_list", data_from=assembly_files)
+def assembly_list(files: list[FileItemDict]) -> Generator[list[str], Any, Any]:
+    """List of assemblies to fetch."""
+    settings = get_settings()
+    for file_item in files:
+        with file_item.open("rt", encoding="utf-8") as f:
+            while next_chunk := list(islice(f, settings.batch_size)):
+                yield [line.strip() for line in next_chunk if line.strip()]
 
 
 @dlt.transformer(name="assembly_reports", data_from=assembly_list, max_table_nesting=0, parallelized=True)

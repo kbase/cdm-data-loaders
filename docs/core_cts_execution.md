@@ -111,7 +111,6 @@ classDiagram
     LoggerSettings <|-- DownloadSettings
     FileFormatIngestSettings <|-- AtbSettings
     FileFormatIngestSettings <|-- NcbiRestApiSettings
-    XmlIngestSettings <|-- UniProtSettings
     FileFormatIngestSettings <|-- JsonlIngestSettings
     FileFormatIngestSettings <|-- XsvIngestSettings
     TransformSettingsMixin <|-- JsonlIngestSettings
@@ -121,6 +120,7 @@ classDiagram
     XmlToPyArrowSettings <|-- PresetXmlToPyArrowSettings
     PresetXmlToPyArrowSettings <|-- UniProtXmlToPyArrowSettings
     PresetXmlToPyArrowSettings <|-- UniRefXmlToPyArrowSettings
+    UniProtXmlToPyArrowSettings <|-- UniProtSettings
     UniRefXmlToPyArrowSettings <|-- UniRefCdmSettings
 ```
 
