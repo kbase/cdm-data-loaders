@@ -1,8 +1,26 @@
-"""JSON Schema input guards that raise the caller's direction-specific error."""
+"""JSON Schema input guards and shared reader configuration validators."""
 
-from typing import Any
+from typing import Any, Final
 
 from cdm_data_loaders.converters.core.errors import ConversionError
+
+DEFAULT_MAX_RECURSION_DEPTH: Final[int] = 2
+
+
+def validate_max_recursion_depth(depth: int) -> None:
+    """Validate that ``depth`` is a positive integer (excluding booleans).
+
+    :param depth: Recursion depth limit to validate.
+    :type depth: int
+    :raises TypeError: If ``depth`` is a boolean or not an integer.
+    :raises ValueError: If ``depth`` is less than 1.
+    """
+    if isinstance(depth, bool) or not isinstance(depth, int):
+        msg = "max_recursion_depth must be an integer >= 1"
+        raise TypeError(msg)
+    if depth < 1:
+        msg = "max_recursion_depth must be >= 1"
+        raise ValueError(msg)
 
 
 def require_schema_keyword(

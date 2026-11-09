@@ -7,24 +7,31 @@ import pyarrow as pa
 from frozendict import frozendict
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.ir import Field as SchemaField
-from cdm_data_loaders.converters.core.ir import NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.ir import (
+    SPEC_BINARY,
+    SPEC_BOOL,
+    SPEC_DATE,
+    SPEC_FLOAT64,
+    SPEC_INT8,
+    SPEC_INT16,
+    SPEC_INT32,
+    SPEC_INT64,
+    SPEC_STRING,
+    SPEC_TIME,
+    SPEC_UINT8,
+    SPEC_UINT16,
+    SPEC_UINT32,
+    SPEC_UINT64,
+    NodeHints,
+    NodeType,
+    Provenance,
+    SchemaDocument,
+    TypedNode,
+)
+from cdm_data_loaders.converters.core.ir import (
+    Field as SchemaField,
+)
 from cdm_data_loaders.converters.core.metadata import decode_field_metadata
-
-SPEC_BOOL: Final[tuple[NodeType, NodeHints]] = ("boolean", NodeHints(logical_type="boolean"))
-SPEC_INT8: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="int8", bit_width=8))
-SPEC_INT16: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="int16", bit_width=16))
-SPEC_INT32: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="int32", bit_width=32))
-SPEC_INT64: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="long", bit_width=64))
-SPEC_UINT8: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="uint8", bit_width=8))
-SPEC_UINT16: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="uint16", bit_width=16))
-SPEC_UINT32: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="uint32", bit_width=32))
-SPEC_UINT64: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="uint64", bit_width=64))
-SPEC_FLOAT64: Final[tuple[NodeType, NodeHints]] = ("number", NodeHints(logical_type="double"))
-SPEC_DATE: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="date"))
-SPEC_TIME: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="time"))
-SPEC_BINARY: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="binary"))
-SPEC_STRING: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="string"))
 
 FIXED_SCALAR_SPEC: Final[frozendict[pa.DataType, tuple[NodeType, NodeHints]]] = frozendict(
     {

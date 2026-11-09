@@ -19,11 +19,29 @@ from xmlschema.validators import (
 )
 
 from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth
+from cdm_data_loaders.converters.core.ir import (
+    SPEC_BINARY,
+    SPEC_BOOL,
+    SPEC_DATE,
+    SPEC_FLOAT64,
+    SPEC_INT8,
+    SPEC_INT16,
+    SPEC_INT32,
+    SPEC_INT64,
+    SPEC_STRING,
+    SPEC_UINT8,
+    SPEC_UINT16,
+    SPEC_UINT32,
+    SPEC_UINT64,
+    NodeHints,
+    NodeType,
+    Provenance,
+    SchemaDocument,
+    TypedNode,
+)
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
-from cdm_data_loaders.converters.core.ir import NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.utils.xml_utils import local_name as _local_name
-
-DEFAULT_MAX_RECURSION_DEPTH: Final[int] = 2
 
 XSD_NAMESPACE: Final[str] = "{http://www.w3.org/2001/XMLSchema}"
 XSI_NAMESPACE: Final[str] = "{http://www.w3.org/2001/XMLSchema-instance}"
@@ -45,20 +63,6 @@ BUILTIN_LIST_ITEM_TYPES: Final[Mapping[str, str]] = frozendict(
         "xs:ENTITIES": "xs:ENTITY",
     }
 )
-
-SPEC_STRING: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="string"))
-SPEC_BOOL: Final[tuple[NodeType, NodeHints]] = ("boolean", NodeHints(logical_type="boolean"))
-SPEC_INT8: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="int8", bit_width=8))
-SPEC_INT16: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="int16", bit_width=16))
-SPEC_INT32: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="int32", bit_width=32))
-SPEC_INT64: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="long", bit_width=64))
-SPEC_UINT8: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="uint8", bit_width=8))
-SPEC_UINT16: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="uint16", bit_width=16))
-SPEC_UINT32: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="uint32", bit_width=32))
-SPEC_UINT64: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="uint64", bit_width=64))
-SPEC_FLOAT64: Final[tuple[NodeType, NodeHints]] = ("number", NodeHints(logical_type="double"))
-SPEC_DATE: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="date"))
-SPEC_BINARY: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="binary"))
 
 XSD_SCALAR_SPEC: Final[Mapping[str, tuple[NodeType, NodeHints]]] = frozendict(
     {
@@ -288,27 +292,14 @@ def _simple_type_to_ir_node(
 ) -> TypedNode:
     """Map any XSD simpleType (atomic, union, or list) to an IR ``TypedNode``."""
     builtin_name = _builtin_xsd_name(simple_type)
-    if builtin_name in BUILTIN_LIST_ITEM_TYPES:
-        item_xsd = BUILTIN_LIST_ITEM_TYPES[builtin_name]
-        item_node = TypedNode(
-            type="string",
-            nullable=True,
-            hints=NodeHints(logical_type="string"),
-            provenance=Provenance("xsd", (*path, "item"), {"xsd_type": item_xsd}),
-        )
-        return TypedNode(
-            type="array",
-            nullable=nullable,
-            items=item_node,
-            provenance=Provenance("xsd", path),
-        )
-
-    if simple_type.is_list():
-        item_type = _unwrap_item_type(simple_type)
-        if item_type is not None:
-            item_nt, item_hints, item_xsd = _resolve_scalar_spec(item_type)
+    if builtin_name in BUILTIN_LIST_ITEM_TYPES or simple_type.is_list():
+        if builtin_name in BUILTIN_LIST_ITEM_TYPES:
+            item_nt, item_hints, item_xsd = *SPEC_STRING, BUILTIN_LIST_ITEM_TYPES[builtin_name]
         else:
-            item_nt, item_hints, item_xsd = *SPEC_STRING, "xs:string"
+            item_type = _unwrap_item_type(simple_type)
+            item_nt, item_hints, item_xsd = (
+                _resolve_scalar_spec(item_type) if item_type is not None else (*SPEC_STRING, "xs:string")
+            )
         item_node = TypedNode(
             type=item_nt,
             nullable=True,
@@ -655,61 +646,40 @@ def _wrap_leaf_ir_field(  # noqa: PLR0913
 ) -> SchemaField:
     """Create a scalar or list IR ``Field`` with ``xsd_type`` on leaf scalar nodes and ``comment`` on the outer field."""
     annotations = {"description": comment} if comment else {}
-    if is_list:
-        item_path = (*path, "item")
-        if truncated_recursion:
-            trunc_meta = {"truncated_component_id": id(elem_type)} if elem_type is not None else {}
-            item_node = TypedNode(
-                type="string",
-                nullable=True,
-                hints=NodeHints(logical_type="string"),
-                provenance=Provenance("xsd", item_path, trunc_meta),
-            )
-        else:
-            resolved_item = _resolve_non_struct_element_node(elem_type, item_path, nullable=True)
-            item_node = resolved_item or TypedNode(
-                type="string",
-                nullable=True,
-                hints=NodeHints(logical_type="string"),
-                provenance=Provenance("xsd", item_path),
-            )
-        array_meta = (
-            {"truncated_component_id": id(elem_type)} if (truncated_recursion and elem_type is not None) else {}
-        )
-        array_node = TypedNode(
-            type="array",
-            nullable=nullable,
-            items=item_node,
-            provenance=Provenance("xsd", path, array_meta),
-        )
-        return SchemaField(
-            name=name,
-            node=array_node,
-            required=not nullable,
-            annotations=annotations,
-            provenance=Provenance("xsd", path, array_meta),
-        )
+    leaf_path = (*path, "item") if is_list else path
+    leaf_nullable = True if is_list else nullable
+    trunc_meta = {"truncated_component_id": id(elem_type)} if (truncated_recursion and elem_type is not None) else {}
 
     if truncated_recursion:
-        trunc_meta = {"truncated_component_id": id(elem_type)} if elem_type is not None else {}
         leaf_node = TypedNode(
             type="string",
-            nullable=nullable,
+            nullable=leaf_nullable,
             hints=NodeHints(logical_type="string"),
-            provenance=Provenance("xsd", path, trunc_meta),
+            provenance=Provenance("xsd", leaf_path, trunc_meta),
         )
     else:
-        resolved_leaf = _resolve_non_struct_element_node(elem_type, path, nullable=nullable)
-        leaf_node = resolved_leaf or TypedNode(
+        leaf_node = _resolve_non_struct_element_node(elem_type, leaf_path, nullable=leaf_nullable) or TypedNode(
             type="string",
-            nullable=nullable,
+            nullable=leaf_nullable,
             hints=NodeHints(logical_type="string"),
-            provenance=Provenance("xsd", path),
+            provenance=Provenance("xsd", leaf_path),
         )
-    prov_meta = dict(leaf_node.provenance.metadata) if leaf_node.provenance is not None else {}
+
+    if is_list:
+        field_node = TypedNode(
+            type="array",
+            nullable=nullable,
+            items=leaf_node,
+            provenance=Provenance("xsd", path, trunc_meta),
+        )
+        prov_meta = trunc_meta
+    else:
+        field_node = leaf_node
+        prov_meta = dict(leaf_node.provenance.metadata) if leaf_node.provenance is not None else {}
+
     return SchemaField(
         name=name,
-        node=leaf_node,
+        node=field_node,
         required=not nullable,
         annotations=annotations,
         provenance=Provenance("xsd", path, prov_meta),
@@ -755,9 +725,9 @@ def _build_complex_struct_fields(
             )
         )
 
-    if complex_type.has_simple_content():
-        content_type = complex_type.content
+    if complex_type.has_simple_content() or complex_type.mixed:
         text_path = (*path, "#text")
+        content_type = complex_type.content if complex_type.has_simple_content() else None
         if isinstance(content_type, XsdType):
             node = _simple_type_to_ir_node(content_type, text_path, nullable=True)
         else:
@@ -774,25 +744,6 @@ def _build_complex_struct_fields(
                 node=node,
                 required=False,
                 provenance=Provenance("xsd", text_path, prov_meta),
-            )
-        )
-        return tuple(fields)
-
-    if complex_type.mixed:
-        text_path = (*path, "#text")
-        prov = Provenance("xsd", text_path, {"xsd_type": "xs:string"})
-        node = TypedNode(
-            type="string",
-            nullable=True,
-            hints=NodeHints(logical_type="string"),
-            provenance=prov,
-        )
-        fields.append(
-            SchemaField(
-                name="#text",
-                node=node,
-                required=False,
-                provenance=prov,
             )
         )
         return tuple(fields)
@@ -1222,6 +1173,24 @@ def resolve_elements_at_level(
     return deduped
 
 
+def _finish_element_doc(
+    schema: xmlschema.XMLSchema,
+    target_elem: XsdElement,
+    tag_name: str,
+    root_node: TypedNode,
+) -> SchemaDocument:
+    """Attach element documentation annotations to ``root_node`` and wrap in a ``SchemaDocument``."""
+    comment = _extract_doc_comment(target_elem, target_elem.type)
+    annotations = {"description": comment} if comment is not None else {}
+    return SchemaDocument(
+        root=replace(root_node, annotations=annotations),
+        name=_local_name(tag_name),
+        identifier=schema.target_namespace or None,
+        annotations=annotations,
+        provenance=Provenance("xsd", (tag_name,)),
+    )
+
+
 def _build_element_table_doc(
     schema: xmlschema.XMLSchema,
     target_elem: XsdElement,
@@ -1236,7 +1205,6 @@ def _build_element_table_doc(
         raise NonStructXmlTagError(msg)
 
     comment = _extract_doc_comment(target_elem, target_elem.type)
-    annotations = {"description": comment} if comment is not None else {}
 
     if _classify_leaf_element_type(target_elem.type) is not None:
         text_field = _wrap_leaf_ir_field(
@@ -1253,7 +1221,6 @@ def _build_element_table_doc(
             properties=(text_field,),
             required_names=(),
             additional_properties=TypedNode(type="never", nullable=False),
-            annotations=annotations,
             provenance=Provenance("xsd", (), {"scalar_leaf_table": True}),
         )
     else:
@@ -1264,15 +1231,9 @@ def _build_element_table_doc(
             max_recursion_depth=max_recursion_depth,
             struct_cache=struct_cache,
         )
-        root_node = replace(_build_element_struct_node(target_elem, tag_name, ctx), annotations=annotations)
+        root_node = _build_element_struct_node(target_elem, tag_name, ctx)
 
-    return SchemaDocument(
-        root=root_node,
-        name=_local_name(tag_name),
-        identifier=schema.target_namespace or None,
-        annotations=annotations,
-        provenance=Provenance("xsd", (tag_name,)),
-    )
+    return _finish_element_doc(schema, target_elem, tag_name, root_node)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1290,12 +1251,7 @@ class XsdReader:
 
     def __post_init__(self) -> None:
         """Validate reader configuration."""
-        if isinstance(self.max_recursion_depth, bool) or not isinstance(self.max_recursion_depth, int):
-            msg = "max_recursion_depth must be an integer >= 1"
-            raise TypeError(msg)
-        if self.max_recursion_depth < 1:
-            msg = "max_recursion_depth must be >= 1"
-            raise ValueError(msg)
+        validate_max_recursion_depth(self.max_recursion_depth)
 
     def read(
         self,
@@ -1332,16 +1288,7 @@ class XsdReader:
             struct_cache=struct_cache,
         )
         root_struct = _build_element_struct_node(target_elem, tag, ctx)
-        comment = _extract_doc_comment(target_elem, target_elem.type)
-        annotations = {"description": comment} if comment is not None else {}
-        root = replace(root_struct, annotations=annotations)
-        return SchemaDocument(
-            root=root,
-            name=_local_name(tag),
-            identifier=schema.target_namespace or None,
-            annotations=annotations,
-            provenance=Provenance("xsd", (tag,)),
-        )
+        return _finish_element_doc(schema, target_elem, tag, root_struct)
 
     def read_at_level(
         self,

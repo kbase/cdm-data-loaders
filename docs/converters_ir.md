@@ -16,11 +16,12 @@ All paths below are under `src/cdm_data_loaders/converters/`.
 core/                          shared, target-independent foundation
   errors.py                    ConversionError base class
   ir.py                        NodeType, Source, Provenance, NodeHints, TypedNode,
-                               Field, SchemaDocument, Reader/Emitter protocols
+                               Field, SchemaDocument, Reader/Emitter protocols, SPEC_* constants
   ir_values.py                 Value, freeze_value, freeze_mapping, mutable_value
   extensions.py                ExtensionError, ExtensionSpec, ExtensionRegistry,
                                Extensions, DEFAULT_EXTENSIONS, validated_extensions
-  guards.py                    require_schema_keyword, require_object_root,
+  guards.py                    DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth,
+                               require_schema_keyword, require_object_root,
                                reject_unresolved_references
   inference.py                 infer_implicit_type, json_type_from_enum, is_unconstrained_node,
                                decimal_places, decimal_pattern, resolve_union_type
@@ -72,14 +73,14 @@ live in `cdm_data_loaders.converters.cli`.
 
 | Module                          | Public API                                                                                                         |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `core/ir.py`                    | `NodeType`, `Source`, `Provenance`, `NodeHints`, `TypedNode`, `Field`, `SchemaDocument`, `Reader`, `Emitter`       |
-| `core/ir_values.py`             | `Value`, `freeze_value`, `freeze_mapping`, `mutable_value`                                                         |
-| `core/extensions.py`            | `ExtensionError`, `ExtensionSpec`, `ExtensionRegistry`, `Extensions`, `DEFAULT_EXTENSIONS`, `validated_extensions` |
-| `core/guards.py`                | `require_schema_keyword`, `require_object_root`, `reject_unresolved_references`                                    |
-| `core/inference.py`             | `infer_implicit_type`, `json_type_from_enum`, `decimal_places`, `decimal_pattern`, `resolve_union_type`            |
-| `core/io.py`                    | `load_schema_text`, `load_schema_file`                                                                             |
-| `core/dlt_normalization.py`     | `DltTableNode`, `unflatten_tables`, `flatten_nodes`, `tables_parents_first`, `child_key`, `child_table_name`       |
-| `readers/json_schema.py`        | `JsonSchemaReader`, including `read_node`                                                                          |
+| `core/ir.py`                    | `NodeType`, `Source`, `Provenance`, `NodeHints`, `TypedNode`, `Field`, `SchemaDocument`, `Reader`, `Emitter`, `SPEC_*` |
+| `core/ir_values.py`             | `Value`, `freeze_value`, `freeze_mapping`, `mutable_value`                                                             |
+| `core/extensions.py`            | `ExtensionError`, `ExtensionSpec`, `ExtensionRegistry`, `Extensions`, `DEFAULT_EXTENSIONS`, `validated_extensions`     |
+| `core/guards.py`                | `DEFAULT_MAX_RECURSION_DEPTH`, `validate_max_recursion_depth`, `require_schema_keyword`, `require_object_root`, `reject_unresolved_references` |
+| `core/inference.py`             | `infer_implicit_type`, `json_type_from_enum`, `decimal_places`, `decimal_pattern`, `resolve_union_type`                |
+| `core/io.py`                    | `load_schema_text`, `load_schema_file`, `coerce_extra_metadata_keywords`, `JsonSchemaConverterBase`                    |
+| `core/dlt_normalization.py`     | `DltTableNode`, `unflatten_tables`, `flatten_nodes`, `tables_parents_first`, `child_key`, `child_table_name`           |
+| `readers/json_schema.py`        | `JsonSchemaReader` (including `read_node`), `extract_constraints`, `extract_extensions`                                |
 | `readers/json_schema_strict.py` | `StrictJsonSchemaReader`, including `read_node`                                                                    |
 | `readers/dlt.py`                | `DltReader`                                                                                                        |
 | `readers/iceberg.py`            | `IcebergReader`, including `read_node` and `read_field`; `iceberg_value`                                           |

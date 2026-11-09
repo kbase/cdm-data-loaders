@@ -1,6 +1,5 @@
 """Emit JSON Schema from typed schema facts and scoped metadata."""
 
-from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Final
@@ -10,7 +9,7 @@ from frozendict import frozendict
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.inference import decimal_pattern
 from cdm_data_loaders.converters.core.ir import Field, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
+from cdm_data_loaders.converters.core.ir_values import mutable_value
 
 JSON_SCHEMA_DIALECT: Final[str] = "https://json-schema.org/draft/2020-12/schema"
 DLT_TYPES: Final[frozendict[str, dict[str, Any]]] = frozendict(
@@ -49,17 +48,6 @@ ICEBERG_LOGICAL_TYPES: Final[frozenset[str]] = frozenset(
 ICEBERG_ELEMENT_KEYS: Final[frozenset[str]] = frozenset(
     {"element_id", "element_required", "key_id", "value_id", "value_required"}
 )
-
-
-def _values(values: Mapping[str, Value]) -> dict[str, Any]:
-    """Copy literal containers without changing numeric values.
-
-    :param values: Mapping of IR values.
-    :type values: Mapping[str, Value]
-    :return: Dictionary of mutable Python values.
-    :rtype: dict[str, Any]
-    """
-    return {key: mutable_value(value) for key, value in values.items()}
 
 
 def _nullable(schema: dict[str, Any], *, nullable: bool) -> dict[str, Any]:
@@ -168,11 +156,11 @@ class JsonSchemaEmitter:
             result = self._iceberg_node(document.root)
         else:
             return self._json_document(document)
-        annotations = _values(document.annotations)
+        annotations = mutable_value(document.annotations)
         if source == "iceberg" and not annotations.get("description"):
             annotations.pop("description", None)
         result.update(annotations)
-        result.update(_values(document.extensions))
+        result.update(mutable_value(document.extensions))
         result["$schema"] = document.dialect or JSON_SCHEMA_DIALECT
         if document.identifier is not None:
             result["$id"] = document.identifier
@@ -240,8 +228,8 @@ class JsonSchemaEmitter:
         :rtype: dict[str, Any]
         """
         result = _schema_object(schema=self._json_node(document.root))
-        result.update(_values(document.annotations))
-        result.update(_values(document.extensions))
+        result.update(mutable_value(document.annotations))
+        result.update(mutable_value(document.extensions))
         if document.dialect is not None:
             result["$schema"] = document.dialect
         if document.identifier is not None:
@@ -260,9 +248,9 @@ class JsonSchemaEmitter:
         :raises ConversionError: If ``node.type`` is ``unknown`` without a declaration.
         """
         from_json = node.provenance is not None and node.provenance.source == "json-schema"
-        result = _values(node.constraints)
-        result.update(_values(node.annotations))
-        result.update(_values(node.extensions))
+        result = mutable_value(node.constraints)
+        result.update(mutable_value(node.annotations))
+        result.update(mutable_value(node.extensions))
         if node.declared_type is not None:
             result["type"] = list(node.declared_type) if isinstance(node.declared_type, tuple) else node.declared_type
         elif not from_json and node.type not in {"any", "never", "unknown", "map"}:
@@ -330,8 +318,8 @@ class JsonSchemaEmitter:
         if not field.annotations and not field.extensions:
             return schema
         result = _schema_object(schema=schema)
-        result.update(_values(field.annotations))
-        result.update(_values(field.extensions))
+        result.update(mutable_value(field.annotations))
+        result.update(mutable_value(field.extensions))
         return result
 
     def _json_map(self, node: TypedNode) -> dict[str, Any]:
@@ -368,8 +356,8 @@ class JsonSchemaEmitter:
             result = {"type": "array", "items": self._dlt_node(node.items)}
         else:
             return self._dlt_scalar(node)
-        result.update(_values(node.annotations))
-        result.update(_values(node.extensions))
+        result.update(mutable_value(node.annotations))
+        result.update(mutable_value(node.extensions))
         return result
 
     def _dlt_scalar(self, node: TypedNode) -> dict[str, Any]:
@@ -393,9 +381,9 @@ class JsonSchemaEmitter:
             hints["precision"] = node.hints.precision
             if node.hints.scale is not None:
                 hints["scale"] = node.hints.scale
-        result.update(_values(node.constraints))
-        result.update(_values(node.annotations))
-        metadata = _values(node.extensions)
+        result.update(mutable_value(node.constraints))
+        result.update(mutable_value(node.annotations))
+        metadata = mutable_value(node.extensions)
         source_hints = metadata.pop("x-dlt", {})
         if self.preserve_unknown_hints:
             hints = {key: value for key, value in source_hints.items() if key not in DLT_KNOWN and value is not None}
@@ -413,9 +401,9 @@ class JsonSchemaEmitter:
         :rtype: dict[str, Any]
         """
         result = self._iceberg_type(node)
-        result.update(_values(node.constraints))
-        result.update(_values(node.annotations))
-        extensions = _values(node.extensions)
+        result.update(mutable_value(node.constraints))
+        result.update(mutable_value(node.annotations))
+        extensions = mutable_value(node.extensions)
         metadata = extensions.pop("x-iceberg", {})
         metadata = {key: value for key, value in metadata.items() if key not in ICEBERG_ELEMENT_KEYS}
         if metadata:
@@ -502,11 +490,11 @@ class JsonSchemaEmitter:
         :rtype: dict[str, Any]
         """
         result = self._iceberg_node(field.node)
-        annotations = _values(field.annotations)
+        annotations = mutable_value(field.annotations)
         if not annotations.get("description"):
             annotations.pop("description", None)
         result.update(annotations)
-        extensions = _values(field.extensions)
+        extensions = mutable_value(field.extensions)
         metadata = extensions.pop("x-iceberg", {})
         metadata = {
             key: value

@@ -7,7 +7,6 @@ from typing import Any, Final
 
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
-from pyiceberg.table import Table
 
 from cdm_data_loaders.converters.cli.iceberg_base import (
     CATALOG_CLI_SHORTCUTS,
@@ -51,25 +50,6 @@ def _make_namespace_schema(namespace_name: str) -> dict[str, Any]:
     }
 
 
-def _convert_table(
-    table: Table,
-    identifier: tuple[str, ...],
-    namespace_schema: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """Convert a single Iceberg table to JSON Schema.
-
-    :param table: Loaded PyIceberg table.
-    :type table: Table
-    :param identifier: Table identifier tuple.
-    :type identifier: tuple[str, ...]
-    :param namespace_schema: Optional shared namespace JSON Schema document.
-    :type namespace_schema: dict[str, Any] | None
-    :return: Converted JSON Schema dictionary.
-    :rtype: dict[str, Any]
-    """
-    return table_to_json_schema(table, identifier, schema=namespace_schema)
-
-
 def _has_grouped_entries(namespace_schema: dict[str, Any]) -> bool:
     """Return True if ``namespace_schema`` contains at least one table definition in ``$defs``.
 
@@ -98,7 +78,7 @@ def _write_schema(schema_doc: dict[str, Any], out_file: Path, generated_at: str)
 JSON_SCHEMA_DUMP_DRIVER: Final[CatalogDumpDriver[dict[str, Any]]] = CatalogDumpDriver(
     file_suffix=".schema.json",
     make_namespace_schema=_make_namespace_schema,
-    convert_table=_convert_table,
+    convert_table=table_to_json_schema,
     has_grouped_entries=_has_grouped_entries,
     write_schema=_write_schema,
 )

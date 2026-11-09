@@ -10,10 +10,10 @@ from frozendict import frozendict
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 from xmlschema.validators import XsdType
 
-from cdm_data_loaders.converters.core.ir import TypedNode
+from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
+from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
 from cdm_data_loaders.converters.readers.xsd import (
-    DEFAULT_MAX_RECURSION_DEPTH,
     XSD_SCALAR_SPEC,
     NonStructXmlTagError,
     XsdReader,
@@ -133,6 +133,38 @@ class XsdToPyArrow(BaseModel):
     xml_tag: str | None = None
     max_recursion_depth: PositiveInt = Field(default=DEFAULT_MAX_RECURSION_DEPTH)
 
+    def _read(self, schema: xmlschema.XMLSchema | str | Path, xml_tag: str | None = None) -> SchemaDocument:
+        """Read an XSD schema element into a converter IR ``SchemaDocument``.
+
+        :param schema: Loaded ``XMLSchema`` instance or path to an XSD file.
+        :type schema: xmlschema.XMLSchema | str | Path
+        :param xml_tag: Target XML element name.
+        :type xml_tag: str | None
+        :return: Parsed ``SchemaDocument``.
+        :rtype: SchemaDocument
+        """
+        return XsdReader(xml_tag=self.xml_tag, max_recursion_depth=self.max_recursion_depth).read(schema, xml_tag)
+
+    def _read_level(
+        self,
+        schema: xmlschema.XMLSchema | str | Path,
+        level: int,
+        *,
+        root_tag: str | None = None,
+    ) -> dict[str, SchemaDocument]:
+        """Read all XML element types at depth ``level`` into ``SchemaDocument`` instances.
+
+        :param schema: Loaded ``XMLSchema`` instance or path to an XSD file.
+        :type schema: xmlschema.XMLSchema | str | Path
+        :param level: Non-negative depth relative to the root element(s).
+        :type level: int
+        :param root_tag: Optional explicit root element name to anchor the traversal.
+        :type root_tag: str | None
+        :return: Mapping of element tag name to ``SchemaDocument``.
+        :rtype: dict[str, SchemaDocument]
+        """
+        return XsdReader(max_recursion_depth=self.max_recursion_depth).read_at_level(schema, level, root_tag=root_tag)
+
     def convert(self, schema: xmlschema.XMLSchema | str | Path, xml_tag: str | None = None) -> pa.Schema:
         """Convert an XSD schema element into a ``pa.Schema``.
 
@@ -143,8 +175,7 @@ class XsdToPyArrow(BaseModel):
         :return: converted PyArrow schema
         :rtype: pa.Schema
         """
-        doc = XsdReader(xml_tag=self.xml_tag, max_recursion_depth=self.max_recursion_depth).read(schema, xml_tag)
-        return DEFAULT_EMITTER.emit(doc)
+        return DEFAULT_EMITTER.emit(self._read(schema, xml_tag))
 
     def convert_to_table(self, schema: xmlschema.XMLSchema | str | Path, xml_tag: str | None = None) -> pa.Table:
         """Convert an XSD schema element into a zero-row ``pa.Table``.
@@ -156,8 +187,7 @@ class XsdToPyArrow(BaseModel):
         :return: zero-row PyArrow table with the converted schema
         :rtype: pa.Table
         """
-        doc = XsdReader(xml_tag=self.xml_tag, max_recursion_depth=self.max_recursion_depth).read(schema, xml_tag)
-        return DEFAULT_EMITTER.emit_table(doc)
+        return DEFAULT_EMITTER.emit_table(self._read(schema, xml_tag))
 
     def convert_to_python(
         self,
@@ -177,8 +207,7 @@ class XsdToPyArrow(BaseModel):
         :return: formatted Python source code defining ``*_STRUCT``, ``*_SCHEMA``, ``SCHEMA``, and ``SCHEMAS``
         :rtype: str
         """
-        doc = XsdReader(xml_tag=self.xml_tag, max_recursion_depth=self.max_recursion_depth).read(schema, xml_tag)
-        return DEFAULT_EMITTER.emit_python(doc, docstring=docstring)
+        return DEFAULT_EMITTER.emit_python(self._read(schema, xml_tag), docstring=docstring)
 
     def convert_to_python_file(
         self,
@@ -201,8 +230,7 @@ class XsdToPyArrow(BaseModel):
         :return: resolved output ``Path``
         :rtype: Path
         """
-        doc = XsdReader(xml_tag=self.xml_tag, max_recursion_depth=self.max_recursion_depth).read(schema, xml_tag)
-        return DEFAULT_EMITTER.emit_python_file(doc, output, docstring=docstring)
+        return DEFAULT_EMITTER.emit_python_file(self._read(schema, xml_tag), output, docstring=docstring)
 
     def convert_level_to_python(
         self,
@@ -225,8 +253,7 @@ class XsdToPyArrow(BaseModel):
         :return: formatted Python source code defining ``*_STRUCT``, ``*_SCHEMA``, ``SCHEMA``, and ``SCHEMAS``
         :rtype: str
         """
-        docs = XsdReader(max_recursion_depth=self.max_recursion_depth).read_at_level(schema, level, root_tag=root_tag)
-        return DEFAULT_EMITTER.emit_python(docs, docstring=docstring)
+        return DEFAULT_EMITTER.emit_python(self._read_level(schema, level, root_tag=root_tag), docstring=docstring)
 
     def convert_level_to_python_file(
         self,
@@ -252,5 +279,8 @@ class XsdToPyArrow(BaseModel):
         :return: resolved output ``Path``
         :rtype: Path
         """
-        docs = XsdReader(max_recursion_depth=self.max_recursion_depth).read_at_level(schema, level, root_tag=root_tag)
-        return DEFAULT_EMITTER.emit_python_file(docs, output, docstring=docstring)
+        return DEFAULT_EMITTER.emit_python_file(
+            self._read_level(schema, level, root_tag=root_tag),
+            output,
+            docstring=docstring,
+        )

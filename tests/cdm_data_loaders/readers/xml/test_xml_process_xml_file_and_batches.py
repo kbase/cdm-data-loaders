@@ -25,11 +25,11 @@ from cdm_data_loaders.coercion.xml import (
     make_xml_element_converter,
     make_xml_level_converters,
 )
+from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schema,
     generate_pyarrow_schemas_at_level,
 )
-from cdm_data_loaders.converters.readers.xsd import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.core.fields import (
     BUFFER_SIZE,
     DEFAULT_XML_FILE_GLOB,

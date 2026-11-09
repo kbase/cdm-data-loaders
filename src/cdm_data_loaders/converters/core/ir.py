@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Final, Literal, Protocol
 
 from frozendict import frozendict
 
@@ -62,6 +62,30 @@ class NodeHints:
             raise TypeError(msg)
 
 
+SPEC_BOOL: Final[tuple[NodeType, NodeHints]] = ("boolean", NodeHints(logical_type="boolean"))
+SPEC_INT8: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="int8", bit_width=8))
+SPEC_INT16: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="int16", bit_width=16))
+SPEC_INT32: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="int32", bit_width=32))
+SPEC_INT64: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="long", bit_width=64))
+SPEC_UINT8: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="uint8", bit_width=8))
+SPEC_UINT16: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="uint16", bit_width=16))
+SPEC_UINT32: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="uint32", bit_width=32))
+SPEC_UINT64: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="uint64", bit_width=64))
+SPEC_FLOAT64: Final[tuple[NodeType, NodeHints]] = ("number", NodeHints(logical_type="double"))
+SPEC_DATE: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="date"))
+SPEC_TIME: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="time"))
+SPEC_TS_NAIVE: Final[tuple[NodeType, NodeHints]] = (
+    "string",
+    NodeHints(logical_type="timestamp-without-tz", timezone=False),
+)
+SPEC_TS_UTC: Final[tuple[NodeType, NodeHints]] = (
+    "string",
+    NodeHints(logical_type="timestamp-with-tz", timezone=True),
+)
+SPEC_BINARY: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="binary"))
+SPEC_STRING: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="string"))
+
+
 @dataclass(frozen=True, slots=True)
 class TypedNode:
     """A value schema, independent of a property's presence requirement.
@@ -110,9 +134,8 @@ class TypedNode:
         if self.required_names is not None:
             object.__setattr__(self, "required_names", _string_tuple(self.required_names))
         self._own_children()
-        for name in ("constraints", "annotations"):
-            object.__setattr__(self, name, _schema_metadata(getattr(self, name)))
-        object.__setattr__(self, "extensions", validated_extensions(self.extensions))
+        object.__setattr__(self, "constraints", _schema_metadata(self.constraints))
+        _init_common_metadata(self)
 
     def _validate_types(self) -> None:
         """Reject invalid scalar facts and mutable stand-ins for typed models."""
@@ -140,7 +163,6 @@ class TypedNode:
         if not isinstance(self.hints, NodeHints):
             msg = "hints must be NodeHints"
             raise TypeError(msg)
-        _validate_provenance(self.provenance)
 
     def _own_children(self) -> None:
         """Copy each schema-valued child collection into immutable containers."""
@@ -209,6 +231,17 @@ def _validate_provenance(value: Provenance | None) -> None:
         raise TypeError(msg)
 
 
+def _init_common_metadata(obj: "TypedNode | Field | SchemaDocument") -> None:
+    """Validate provenance and freeze annotations and extensions on an IR model.
+
+    :param obj: IR node, field, or document instance being initialized.
+    :type obj: TypedNode | Field | SchemaDocument
+    """
+    _validate_provenance(obj.provenance)
+    object.__setattr__(obj, "annotations", _schema_metadata(obj.annotations))
+    object.__setattr__(obj, "extensions", validated_extensions(obj.extensions))
+
+
 def _node_mapping(nodes: Mapping[str, TypedNode]) -> Mapping[str, TypedNode]:
     """Own a named collection of immutable nodes."""
     if any(not isinstance(key, str) or not isinstance(value, TypedNode) for key, value in nodes.items()):
@@ -233,9 +266,7 @@ class Field:
         if not isinstance(self.name, str) or not isinstance(self.node, TypedNode) or type(self.required) is not bool:
             msg = "Fields require a string name, node and boolean required flag"
             raise TypeError(msg)
-        _validate_provenance(self.provenance)
-        object.__setattr__(self, "annotations", _schema_metadata(self.annotations))
-        object.__setattr__(self, "extensions", validated_extensions(self.extensions))
+        _init_common_metadata(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,13 +287,11 @@ class SchemaDocument:
         if not isinstance(self.root, TypedNode):
             msg = "A schema document requires a TypedNode root"
             raise TypeError(msg)
-        _validate_provenance(self.provenance)
         for name in ("name", "dialect", "identifier"):
             if getattr(self, name) is not None and not isinstance(getattr(self, name), str):
                 msg = f"{name} must be a string or None"
                 raise TypeError(msg)
-        object.__setattr__(self, "annotations", _schema_metadata(self.annotations))
-        object.__setattr__(self, "extensions", validated_extensions(self.extensions))
+        _init_common_metadata(self)
 
 
 class Reader[Input, Output](Protocol):
