@@ -11,10 +11,10 @@ import xmlschema
 from lxml.etree import Element
 from xmlschema.validators import XsdComplexType, XsdElement, XsdType
 
+from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.ir import NodeHints, NodeType
 from cdm_data_loaders.converters.readers.xsd import (
     BUILTIN_LIST_ITEM_TYPES,
-    DEFAULT_MAX_RECURSION_DEPTH,
     XSI_NAMESPACE,
     XSI_NIL,
     _builtin_xsd_name,

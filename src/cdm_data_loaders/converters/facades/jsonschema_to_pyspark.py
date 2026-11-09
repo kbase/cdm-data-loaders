@@ -7,7 +7,7 @@ from pydantic import Field, field_validator
 from pyspark.sql.types import DataType, StructType
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase, coerce_extra_metadata_keywords
+from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase
 from cdm_data_loaders.converters.emitters.pyspark import (
     DEFAULT_FORMAT_MAP,
     PySparkEmitter,
@@ -41,12 +41,6 @@ class JSONSchemaToPySpark(JsonSchemaConverterBase[StructType]):
     def _merge_with_builtin_format_map(cls, value: object) -> object:
         """Delegate nonempty format overrides to the emitter."""
         return merge_format_map(value) if value else value
-
-    @field_validator("extra_metadata_keywords", mode="before")
-    @classmethod
-    def _coerce_extra_metadata_keywords(cls, value: object) -> object:
-        """Normalize supported metadata keyword collections."""
-        return coerce_extra_metadata_keywords(value)
 
     def _emitter(self) -> PySparkEmitter:
         """Pass target policy to the emitter without serializing arbitrary types."""

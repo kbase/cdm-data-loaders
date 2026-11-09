@@ -145,6 +145,56 @@ def _render_parametric_scalar_expr(dtype: pa.DataType) -> str:
     raise KeyError(dtype)
 
 
+def _field_spec_from_pa(
+    pa_field: pa.Field,
+    type_expr: str,
+    *,
+    inline_struct_fields: tuple[_RenderedFieldSpec, ...] | None = None,
+    is_list: bool = False,
+    list_item_nullable: bool = True,
+) -> _RenderedFieldSpec:
+    """Build a ``_RenderedFieldSpec`` from a ``pa.Field`` and its rendered type expression.
+
+    :param pa_field: Source PyArrow field.
+    :type pa_field: pa.Field
+    :param type_expr: Rendered Python constructor expression for ``pa_field.type``.
+    :type type_expr: str
+    :param inline_struct_fields: Inline struct field specs when rendering an unhoisted struct.
+    :type inline_struct_fields: tuple[_RenderedFieldSpec, ...] | None
+    :param is_list: Whether the field wraps a list of structs.
+    :type is_list: bool
+    :param list_item_nullable: Nullability of list elements when ``is_list`` is ``True``.
+    :type list_item_nullable: bool
+    :return: Rendered field specification.
+    :rtype: _RenderedFieldSpec
+    """
+    return _RenderedFieldSpec(
+        name=pa_field.name,
+        type_expr=type_expr,
+        nullable=pa_field.nullable,
+        metadata=_decode_metadata(pa_field.metadata),
+        inline_struct_fields=inline_struct_fields,
+        is_list=is_list,
+        list_item_nullable=list_item_nullable,
+    )
+
+
+def _extract_component_meta(node: TypedNode) -> tuple[ComponentKey, str | None, bool]:
+    """Extract component identity, local type name, and inline flag from ``node.provenance``.
+
+    :param node: Object IR node representing a struct component.
+    :type node: TypedNode
+    :return: Tuple of ``((component_id, nillable), type_name, is_inline)``.
+    :rtype: tuple[ComponentKey, str | None, bool]
+    """
+    meta = node.provenance.metadata if node.provenance is not None else {}
+    comp_id = int(meta.get("component_id", id(node)))
+    nillable = bool(meta.get("nillable", False))
+    type_name = str(meta["type_name"]) if isinstance(meta.get("type_name"), str) else None
+    is_inline = bool(meta.get("inline_struct", False))
+    return (comp_id, nillable), type_name, is_inline
+
+
 def _render_type_expr(dtype: pa.DataType) -> str:
     """Render a PyArrow ``DataType`` as a Python constructor expression.
 
@@ -155,37 +205,15 @@ def _render_type_expr(dtype: pa.DataType) -> str:
     """
     if isinstance(dtype, pa.ListType):
         item_field = dtype.value_field
-        item_expr = _render_field_call(
-            _RenderedFieldSpec(
-                name=item_field.name,
-                type_expr=_render_type_expr(item_field.type),
-                nullable=item_field.nullable,
-                metadata=_decode_metadata(item_field.metadata),
-            )
-        )
+        item_expr = _render_field_call(_field_spec_from_pa(item_field, _render_type_expr(item_field.type)))
         return f"pa.list_({item_expr})"
     if isinstance(dtype, pa.MapType):
         key_expr = _render_type_expr(dtype.key_field.type)
         val_field = dtype.item_field
-        val_expr = _render_field_call(
-            _RenderedFieldSpec(
-                name=val_field.name,
-                type_expr=_render_type_expr(val_field.type),
-                nullable=val_field.nullable,
-                metadata=_decode_metadata(val_field.metadata),
-            )
-        )
+        val_expr = _render_field_call(_field_spec_from_pa(val_field, _render_type_expr(val_field.type)))
         return f"pa.map_({key_expr}, {val_expr})"
     if isinstance(dtype, pa.StructType):
-        struct_fields = [
-            _RenderedFieldSpec(
-                name=f.name,
-                type_expr=_render_type_expr(f.type),
-                nullable=f.nullable,
-                metadata=_decode_metadata(f.metadata),
-            )
-            for f in dtype
-        ]
+        struct_fields = [_field_spec_from_pa(f, _render_type_expr(f.type)) for f in dtype]
         return _render_struct_expr(struct_fields)
     if dtype in PA_SCALAR_EXPR:
         return PA_SCALAR_EXPR[dtype]
@@ -624,17 +652,9 @@ class _IRComponentCollector:
         root_meta = doc.root.provenance.metadata if doc.root.provenance is not None else {}
         if root_meta.get("scalar_leaf_table"):
             f0 = pa_schema.field(0)
-            return _RenderedFieldSpec(
-                name=f0.name,
-                type_expr=_render_type_expr(f0.type),
-                nullable=f0.nullable,
-                metadata=_decode_metadata(f0.metadata),
-            )
+            return _field_spec_from_pa(f0, _render_type_expr(f0.type))
 
-        comp_id = int(root_meta.get("component_id", id(doc.root)))
-        nillable = bool(root_meta.get("nillable", False))
-        type_name = str(root_meta["type_name"]) if isinstance(root_meta.get("type_name"), str) else None
-        key: ComponentKey = (comp_id, nillable)
+        key, type_name, _ = _extract_component_meta(doc.root)
         pa_struct = pa.struct(list(pa_schema))
         if key not in self.components:
             fields = self._build_struct_fields(doc.root, pa_struct, parent_el_name=tag_name)
@@ -683,11 +703,9 @@ class _IRComponentCollector:
                     parent_el_name=parent_el_name,
                 )
                 specs.append(
-                    _RenderedFieldSpec(
-                        name=field_name,
-                        type_expr=struct_expr,
-                        nullable=pa_field.nullable,
-                        metadata=_decode_metadata(pa_field.metadata),
+                    _field_spec_from_pa(
+                        pa_field,
+                        struct_expr,
                         inline_struct_fields=inline_tuple,
                         is_list=False,
                     )
@@ -702,18 +720,11 @@ class _IRComponentCollector:
                     el_name=field_name,
                     parent_el_name=parent_el_name,
                 )
-                item_spec = _RenderedFieldSpec(
-                    name=item_pa_field.name,
-                    type_expr=struct_expr,
-                    nullable=item_pa_field.nullable,
-                    metadata=_decode_metadata(item_pa_field.metadata),
-                )
+                item_spec = _field_spec_from_pa(item_pa_field, struct_expr)
                 specs.append(
-                    _RenderedFieldSpec(
-                        name=field_name,
-                        type_expr=f"pa.list_({_render_field_call(item_spec)})",
-                        nullable=pa_field.nullable,
-                        metadata=_decode_metadata(pa_field.metadata),
+                    _field_spec_from_pa(
+                        pa_field,
+                        f"pa.list_({_render_field_call(item_spec)})",
                         inline_struct_fields=inline_tuple,
                         is_list=True,
                         list_item_nullable=item_pa_field.nullable,
@@ -726,14 +737,7 @@ class _IRComponentCollector:
                     el_name=field_name,
                     parent_el_name=parent_el_name,
                 )
-                specs.append(
-                    _RenderedFieldSpec(
-                        name=field_name,
-                        type_expr=type_expr,
-                        nullable=pa_field.nullable,
-                        metadata=_decode_metadata(pa_field.metadata),
-                    )
-                )
+                specs.append(_field_spec_from_pa(pa_field, type_expr))
         return specs
 
     def _collect_struct_node(
@@ -760,13 +764,8 @@ class _IRComponentCollector:
         if child_obj is None or len(pa_struct) == 0:
             return _render_type_expr(pa_struct), None
 
-        prov_meta = child_obj.provenance.metadata if child_obj.provenance is not None else {}
         source = child_obj.provenance.source if child_obj.provenance is not None else None
-        comp_id = int(prov_meta.get("component_id", id(child_obj)))
-        nillable = bool(prov_meta.get("nillable", False))
-        type_name = str(prov_meta["type_name"]) if isinstance(prov_meta.get("type_name"), str) else None
-        cache_key: ComponentKey = (comp_id, nillable)
-        is_inline = bool(prov_meta.get("inline_struct", False))
+        cache_key, type_name, is_inline = _extract_component_meta(child_obj)
 
         if (
             not is_inline
@@ -840,12 +839,7 @@ class _IRComponentCollector:
                 el_name=el_name,
                 parent_el_name=parent_el_name,
             )
-            item_spec = _RenderedFieldSpec(
-                name=item_field.name,
-                type_expr=item_type_expr,
-                nullable=item_field.nullable,
-                metadata=_decode_metadata(item_field.metadata),
-            )
+            item_spec = _field_spec_from_pa(item_field, item_type_expr)
             return f"pa.list_({_render_field_call(item_spec)})"
         if isinstance(dtype, pa.MapType):
             key_expr = _render_type_expr(dtype.key_field.type)
@@ -857,12 +851,7 @@ class _IRComponentCollector:
                 el_name=el_name,
                 parent_el_name=parent_el_name,
             )
-            val_spec = _RenderedFieldSpec(
-                name=val_field.name,
-                type_expr=val_type_expr,
-                nullable=val_field.nullable,
-                metadata=_decode_metadata(val_field.metadata),
-            )
+            val_spec = _field_spec_from_pa(val_field, val_type_expr)
             return f"pa.map_({key_expr}, {_render_field_call(val_spec)})"
         return _render_type_expr(dtype)
 

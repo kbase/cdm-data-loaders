@@ -87,11 +87,31 @@ from pydantic.networks import IPvAnyAddress, IPvAnyInterface, IPvAnyNetwork
 from pydantic_core import PydanticUndefined, Url
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.ir import Field as SchemaField
-from cdm_data_loaders.converters.core.ir import NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.guards import (
+    DEFAULT_MAX_RECURSION_DEPTH,
+    validate_max_recursion_depth,
+)
+from cdm_data_loaders.converters.core.ir import (
+    SPEC_BINARY,
+    SPEC_BOOL,
+    SPEC_DATE,
+    SPEC_FLOAT64,
+    SPEC_INT64,
+    SPEC_STRING,
+    SPEC_TIME,
+    SPEC_TS_NAIVE,
+    SPEC_TS_UTC,
+    NodeHints,
+    NodeType,
+    Provenance,
+    SchemaDocument,
+    TypedNode,
+)
+from cdm_data_loaders.converters.core.ir import (
+    Field as SchemaField,
+)
 from cdm_data_loaders.converters.emitters._tabular_base import DECIMAL128_MAX_PRECISION
 
-DEFAULT_MAX_RECURSION_DEPTH: Final[int] = 2
 VARIADIC_TUPLE_ARGS_LEN: Final[int] = 2
 MAP_TYPE_ARGS_LEN: Final[int] = 2
 
@@ -144,22 +164,6 @@ IP_CLASSES: Final[tuple[type[Any], ...]] = (
     IPvAnyInterface,
     IPvAnyNetwork,
 )
-
-SPEC_BOOL: Final[tuple[NodeType, NodeHints]] = ("boolean", NodeHints(logical_type="boolean"))
-SPEC_INT64: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="long", bit_width=64))
-SPEC_FLOAT64: Final[tuple[NodeType, NodeHints]] = ("number", NodeHints(logical_type="double"))
-SPEC_DATE: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="date"))
-SPEC_TIME: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="time"))
-SPEC_TS_NAIVE: Final[tuple[NodeType, NodeHints]] = (
-    "string",
-    NodeHints(logical_type="timestamp-without-tz", timezone=False),
-)
-SPEC_TS_UTC: Final[tuple[NodeType, NodeHints]] = (
-    "string",
-    NodeHints(logical_type="timestamp-with-tz", timezone=True),
-)
-SPEC_BINARY: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="binary"))
-SPEC_STRING: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="string"))
 
 
 class PydanticToPyArrowError(ConversionError):
@@ -342,11 +346,14 @@ def _ensure_model_complete(model: type[BaseModel]) -> None:
         raise UnresolvedForwardRefError(msg)
 
 
-def _validate_model_class(model: object) -> type[BaseModel]:
-    """Validate that ``model`` is a concrete Pydantic ``BaseModel`` subclass."""
-    if not isinstance(model, type) or not issubclass(model, BaseModel) or model in {BaseModel, RootModel}:
-        msg = f"Expected a concrete Pydantic BaseModel subclass, got {model!r}"
-        raise InvalidPydanticModelError(msg)
+def _ensure_concrete_model(model: type[BaseModel]) -> None:
+    """Ensure ``model`` has resolved forward references and has no unbound generic type parameters.
+
+    :param model: Pydantic ``BaseModel`` subclass to validate.
+    :type model: type[BaseModel]
+    :raises UnresolvedForwardRefError: If forward references cannot be resolved.
+    :raises UnconstrainedFieldError: If ``model`` has unbound generic type parameters.
+    """
     _ensure_model_complete(model)
     generic_meta = getattr(model, "__pydantic_generic_metadata__", {})
     if generic_meta.get("parameters"):
@@ -354,6 +361,14 @@ def _validate_model_class(model: object) -> type[BaseModel]:
             f"Unparameterized generic model {model.__name__} has unbound type parameters: {generic_meta['parameters']}"
         )
         raise UnconstrainedFieldError(msg)
+
+
+def _validate_model_class(model: object) -> type[BaseModel]:
+    """Validate that ``model`` is a concrete Pydantic ``BaseModel`` subclass."""
+    if not isinstance(model, type) or not issubclass(model, BaseModel) or model in {BaseModel, RootModel}:
+        msg = f"Expected a concrete Pydantic BaseModel subclass, got {model!r}"
+        raise InvalidPydanticModelError(msg)
+    _ensure_concrete_model(model)
     return model
 
 
@@ -386,17 +401,28 @@ def _collect_meta_items(meta_seq: Iterable[Any]) -> list[Any]:
     return items
 
 
+def _clean_docstring(cls: type[Any]) -> str | None:
+    """Return a cleaned class docstring if defined on ``cls``, excluding generated signature docstrings.
+
+    :param cls: Class to inspect.
+    :type cls: type[Any]
+    :return: Cleaned docstring or ``None``.
+    :rtype: str | None
+    """
+    raw_doc = cls.__dict__.get("__doc__")
+    if not raw_doc or not isinstance(raw_doc, str):
+        return None
+    cleaned = inspect.cleandoc(raw_doc).strip()
+    return None if (not cleaned or cleaned.startswith(f"{cls.__name__}(")) else cleaned
+
+
 def _extract_class_docstring(tp: Any) -> str | None:  # noqa: ANN401
     """Extract a cleaned class docstring from a ``BaseModel`` or ``Enum`` subclass when defined on ``tp``."""
     if not isinstance(tp, type) or not (issubclass(tp, BaseModel) or issubclass(tp, Enum)):
         return None
     if tp in {BaseModel, RootModel, Enum, IntEnum, StrEnum}:
         return None
-    raw_doc = tp.__dict__.get("__doc__")
-    if not raw_doc or not isinstance(raw_doc, str):
-        return None
-    cleaned = inspect.cleandoc(raw_doc).strip()
-    return None if (not cleaned or cleaned.startswith(f"{tp.__name__}(")) else cleaned
+    return _clean_docstring(tp)
 
 
 def _safe_type_hints(tp: type[Any], module_ns: Mapping[str, Any]) -> dict[str, Any]:
@@ -441,9 +467,7 @@ def _dataclass_to_model(tp: type[Any], ctx: _SchemaBuildContext) -> type[BaseMod
             default_spec = ...
         field_defs[dc_f.name] = (f_ann, default_spec)
     model_cls = create_model(tp.__name__, __module__=tp.__module__, **field_defs)
-    raw_doc = tp.__dict__.get("__doc__")
-    is_custom_doc = isinstance(raw_doc, str) and not raw_doc.strip().startswith(f"{tp.__name__}(")
-    model_cls.__doc__ = raw_doc if is_custom_doc else None
+    model_cls.__doc__ = _clean_docstring(tp)
     return model_cls
 
 
@@ -500,10 +524,7 @@ def _unwrap_step(
     if isinstance(curr, NewType) or hasattr(curr, "__supertype__"):
         return curr.__supertype__, ctx, True
     if isinstance(curr, type) and issubclass(curr, RootModel) and curr is not RootModel:
-        _ensure_model_complete(curr)
-        if getattr(curr, "__pydantic_generic_metadata__", {}).get("parameters"):
-            msg = f"Unparameterized generic RootModel {curr.__name__}"
-            raise UnconstrainedFieldError(msg)
+        _ensure_concrete_model(curr)
         root_finfo = curr.model_fields["root"]
         meta_items.extend(_collect_meta_items([root_finfo]))
         return root_finfo.annotation, ctx, True
@@ -651,6 +672,30 @@ def _unify_scalar_specs(
     return *SPEC_STRING, joined_label
 
 
+def _scalar_spec_for_runtime_value(val: object, error_msg: str) -> tuple[NodeType, NodeHints, str]:
+    """Map a runtime ``Literal`` or ``Enum`` member value to ``(NodeType, NodeHints, pydantic_type)``.
+
+    :param val: Runtime scalar value.
+    :type val: object
+    :param error_msg: Diagnostic message if ``val`` is not a supported scalar primitive.
+    :type error_msg: str
+    :return: Tuple of ``(NodeType, NodeHints, pydantic_type)``.
+    :rtype: tuple[NodeType, NodeHints, str]
+    :raises UnsupportedFieldTypeError: If ``val`` is not ``bool``, ``int``, ``float``, ``str``, or ``bytes``.
+    """
+    if isinstance(val, bool):
+        return *SPEC_BOOL, "boolean"
+    if isinstance(val, int):
+        return *SPEC_INT64, "integer"
+    if isinstance(val, float):
+        return *SPEC_FLOAT64, "number"
+    if isinstance(val, str):
+        return *SPEC_STRING, "string"
+    if isinstance(val, bytes):
+        return *SPEC_BINARY, "binary"
+    raise UnsupportedFieldTypeError(error_msg)
+
+
 def _resolve_literal_scalar(tp: Any) -> tuple[NodeType, NodeHints, str]:  # noqa: ANN401
     """Resolve a ``Literal[...]`` type to ``(NodeType, NodeHints, pydantic_type)``."""
     raw_values: list[Any] = []
@@ -668,22 +713,13 @@ def _resolve_literal_scalar(tp: Any) -> tuple[NodeType, NodeHints, str]:  # noqa
         msg = "Literal[None] has no non-null values and cannot be converted to a PyArrow column"
         raise NullOnlyFieldError(msg)
 
-    resolved: list[tuple[NodeType, NodeHints, str]] = []
-    for val in non_null:
-        raw_val = val.value if isinstance(val, Enum) else val
-        if isinstance(raw_val, bool):
-            resolved.append((*SPEC_BOOL, "boolean"))
-        elif isinstance(raw_val, int):
-            resolved.append((*SPEC_INT64, "integer"))
-        elif isinstance(raw_val, float):
-            resolved.append((*SPEC_FLOAT64, "number"))
-        elif isinstance(raw_val, str):
-            resolved.append((*SPEC_STRING, "string"))
-        elif isinstance(raw_val, bytes):
-            resolved.append((*SPEC_BINARY, "binary"))
-        else:
-            msg = f"Unsupported Literal member value: {val!r}"
-            raise UnsupportedFieldTypeError(msg)
+    resolved = [
+        _scalar_spec_for_runtime_value(
+            val.value if isinstance(val, Enum) else val,
+            f"Unsupported Literal member value: {val!r}",
+        )
+        for val in non_null
+    ]
     return _unify_scalar_specs(resolved)
 
 
@@ -701,22 +737,13 @@ def _resolve_enum_scalar(enum_cls: type[Enum]) -> tuple[NodeType, NodeHints, str
         msg = f"Empty Enum {enum_cls.__name__} has no members"
         raise UnsupportedFieldTypeError(msg)
 
-    resolved: list[tuple[NodeType, NodeHints, str]] = []
-    for member in members:
-        val = member.value
-        if isinstance(val, bool):
-            resolved.append((*SPEC_BOOL, "boolean"))
-        elif isinstance(val, int):
-            resolved.append((*SPEC_INT64, "integer"))
-        elif isinstance(val, float):
-            resolved.append((*SPEC_FLOAT64, "number"))
-        elif isinstance(val, str):
-            resolved.append((*SPEC_STRING, "string"))
-        elif isinstance(val, bytes):
-            resolved.append((*SPEC_BINARY, "binary"))
-        else:
-            msg = f"Unsupported Enum member value {val!r} in {enum_cls.__name__}"
-            raise UnsupportedFieldTypeError(msg)
+    resolved = [
+        _scalar_spec_for_runtime_value(
+            member.value,
+            f"Unsupported Enum member value {member.value!r} in {enum_cls.__name__}",
+        )
+        for member in members
+    ]
     return _unify_scalar_specs(resolved)
 
 
@@ -863,10 +890,7 @@ def _classify_parsed_kind(parsed: _ParsedAnnotation) -> str:
         if tp in {BaseModel, RootModel}:
             msg = f"Bare {tp.__name__} cannot be used as a field type"
             raise InvalidPydanticModelError(msg)
-        _ensure_model_complete(tp)
-        if getattr(tp, "__pydantic_generic_metadata__", {}).get("parameters"):
-            msg = f"Unparameterized generic model {tp.__name__} has unbound type parameters"
-            raise UnconstrainedFieldError(msg)
+        _ensure_concrete_model(tp)
         return "model"
 
     return "scalar"
@@ -1432,15 +1456,6 @@ def _build_field_ir(  # noqa: PLR0913
     )
 
 
-def _clean_docstring(cls: type[Any]) -> str | None:
-    """Return a cleaned class docstring if defined on ``cls``."""
-    raw = cls.__dict__.get("__doc__")
-    if not raw or not isinstance(raw, str):
-        return None
-    cleaned = inspect.cleandoc(raw).strip()
-    return cleaned or None
-
-
 @dataclass(frozen=True, slots=True)
 class PydanticReader:
     """Build typed converter IR documents from Pydantic v2 BaseModel classes.
@@ -1456,12 +1471,7 @@ class PydanticReader:
 
     def __post_init__(self) -> None:
         """Validate reader configuration."""
-        if isinstance(self.max_recursion_depth, bool) or not isinstance(self.max_recursion_depth, int):
-            msg = "max_recursion_depth must be an integer >= 1"
-            raise TypeError(msg)
-        if self.max_recursion_depth < 1:
-            msg = "max_recursion_depth must be >= 1"
-            raise ValueError(msg)
+        validate_max_recursion_depth(self.max_recursion_depth)
         if type(self.by_alias) is not bool:
             msg = "by_alias must be a boolean"
             raise TypeError(msg)

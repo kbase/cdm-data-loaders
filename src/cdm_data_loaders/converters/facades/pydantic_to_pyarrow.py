@@ -6,11 +6,10 @@ from typing import Final
 import pyarrow as pa
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 
+from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
+from cdm_data_loaders.converters.core.ir import SchemaDocument
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
-from cdm_data_loaders.converters.readers.pydantic import (
-    DEFAULT_MAX_RECURSION_DEPTH,
-    PydanticReader,
-)
+from cdm_data_loaders.converters.readers.pydantic import PydanticReader
 
 DEFAULT_EMITTER: Final[PyArrowEmitter] = PyArrowEmitter(max_nesting=100)
 
@@ -60,6 +59,16 @@ class PydanticToPyArrow(BaseModel):
     max_recursion_depth: PositiveInt = Field(default=DEFAULT_MAX_RECURSION_DEPTH)
     by_alias: bool = False
 
+    def _read(self, model: type[BaseModel]) -> SchemaDocument:
+        """Read ``model`` into a converter IR ``SchemaDocument``.
+
+        :param model: Concrete Pydantic ``BaseModel`` subclass.
+        :type model: type[BaseModel]
+        :return: Parsed ``SchemaDocument``.
+        :rtype: SchemaDocument
+        """
+        return PydanticReader(max_recursion_depth=self.max_recursion_depth, by_alias=self.by_alias).read(model)
+
     def convert(self, model: type[BaseModel]) -> pa.Schema:
         """Convert a Pydantic ``BaseModel`` subclass to a ``pa.Schema``.
 
@@ -68,8 +77,7 @@ class PydanticToPyArrow(BaseModel):
         :return: converted PyArrow schema
         :rtype: pa.Schema
         """
-        doc = PydanticReader(max_recursion_depth=self.max_recursion_depth, by_alias=self.by_alias).read(model)
-        return DEFAULT_EMITTER.emit(doc)
+        return DEFAULT_EMITTER.emit(self._read(model))
 
     def convert_to_table(self, model: type[BaseModel]) -> pa.Table:
         """Convert a Pydantic ``BaseModel`` subclass to a zero-row ``pa.Table``.
@@ -79,8 +87,7 @@ class PydanticToPyArrow(BaseModel):
         :return: zero-row PyArrow table with the converted schema
         :rtype: pa.Table
         """
-        doc = PydanticReader(max_recursion_depth=self.max_recursion_depth, by_alias=self.by_alias).read(model)
-        return DEFAULT_EMITTER.emit_table(doc)
+        return DEFAULT_EMITTER.emit_table(self._read(model))
 
     def convert_to_python(self, model: type[BaseModel], *, docstring: str | None = None) -> str:
         """Convert a Pydantic ``BaseModel`` subclass to a static Python schema module.
@@ -92,8 +99,7 @@ class PydanticToPyArrow(BaseModel):
         :return: formatted Python source code defining ``*_STRUCT``, ``*_SCHEMA``, ``SCHEMA``, and ``SCHEMAS``
         :rtype: str
         """
-        doc = PydanticReader(max_recursion_depth=self.max_recursion_depth, by_alias=self.by_alias).read(model)
-        return DEFAULT_EMITTER.emit_python(doc, docstring=docstring)
+        return DEFAULT_EMITTER.emit_python(self._read(model), docstring=docstring)
 
     def convert_to_python_file(
         self,
@@ -113,5 +119,4 @@ class PydanticToPyArrow(BaseModel):
         :return: resolved output ``Path``
         :rtype: Path
         """
-        doc = PydanticReader(max_recursion_depth=self.max_recursion_depth, by_alias=self.by_alias).read(model)
-        return DEFAULT_EMITTER.emit_python_file(doc, output, docstring=docstring)
+        return DEFAULT_EMITTER.emit_python_file(self._read(model), output, docstring=docstring)

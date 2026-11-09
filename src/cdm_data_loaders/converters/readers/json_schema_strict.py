@@ -10,16 +10,27 @@ from frozendict import frozendict
 from jsonschema.validators import validator_for
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.core.guards import (
+    DEFAULT_MAX_RECURSION_DEPTH,
     require_object_root,
     require_schema_keyword,
 )
-from cdm_data_loaders.converters.core.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.readers.json_schema import ANNOTATIONS, STRUCTURE
+from cdm_data_loaders.converters.core.ir import (
+    SPEC_BINARY,
+    SPEC_BOOL,
+    SPEC_DATE,
+    SPEC_INT64,
+    SPEC_STRING,
+    Field,
+    NodeHints,
+    NodeType,
+    Provenance,
+    SchemaDocument,
+    TypedNode,
+)
+from cdm_data_loaders.converters.readers.json_schema import extract_constraints, extract_extensions
 from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI, register_xsv_validator
-
-DEFAULT_MAX_RECURSION_DEPTH: Final[int] = 2
 
 SUPPORTED_SCHEMA_DIALECTS: Final[frozenset[str]] = frozenset(
     {
@@ -49,8 +60,8 @@ CONSTRAINING_KEYWORDS: Final[frozenset[str]] = frozenset(
 
 NON_EXTENDABLE_SCALAR_HINTS: Final[frozendict[str, tuple[NodeType, NodeHints, str]]] = frozendict(
     {
-        "boolean": ("boolean", NodeHints(logical_type="boolean"), "boolean"),
-        "integer": ("integer", NodeHints(logical_type="long", bit_width=64), "integer"),
+        "boolean": (*SPEC_BOOL, "boolean"),
+        "integer": (*SPEC_INT64, "integer"),
         "number": ("number", NodeHints(logical_type="double", bit_width=64), "number"),
     }
 )
@@ -209,22 +220,7 @@ class StrictJsonSchemaReader:
             ref_counts=ref_counts,
             max_recursion_depth=self.max_recursion_depth,
         )
-        desc = self._get_inherited_description(root_dict, defs)
-        root_annotations: dict[str, Any] = {"description": desc} if desc else {}
-        root_extensions = Extensions(
-            {k: v for k, v in schema.items() if k.startswith("x-")},
-            self.extension_registry,
-        )
-        root_constraints = {
-            k: v for k, v in schema.items() if k not in STRUCTURE and k not in ANNOTATIONS and not k.startswith("x-")
-        }
-        root_meta = _StrictNodeMeta(
-            path=(),
-            nullable=False,
-            annotations=root_annotations,
-            extensions=root_extensions,
-            constraints=root_constraints,
-        )
+        root_meta = self._build_node_meta(root_dict, defs, (), nullable=False, facet_source=schema)
         node = self._build_merged_object(root_dict, ctx, root_meta)
         return SchemaDocument(
             root=node,
@@ -234,6 +230,40 @@ class StrictJsonSchemaReader:
             extensions=node.extensions,
             provenance=Provenance("json-schema"),
             jsonschema_validator_cls=validator_for(schema),
+        )
+
+    def _build_node_meta(
+        self,
+        node: Mapping[str, Any],
+        defs: Mapping[str, Any],
+        path: tuple[str | int, ...],
+        *,
+        nullable: bool,
+        facet_source: Mapping[str, Any] | None = None,
+    ) -> _StrictNodeMeta:
+        """Build a ``_StrictNodeMeta`` with inherited description, extensions, and constraints.
+
+        :param node: Validated JSON Schema node used for description inheritance.
+        :type node: Mapping[str, Any]
+        :param defs: Root ``$defs`` mapping.
+        :type defs: Mapping[str, Any]
+        :param path: JSON pointer path tuple.
+        :type path: tuple[str | int, ...]
+        :param nullable: Whether the node is nullable.
+        :type nullable: bool
+        :param facet_source: Optional mapping from which to extract extensions and constraints (defaults to ``node``).
+        :type facet_source: Mapping[str, Any] | None
+        :return: Populated ``_StrictNodeMeta``.
+        :rtype: _StrictNodeMeta
+        """
+        source = facet_source if facet_source is not None else node
+        desc = self._get_inherited_description(node, defs)
+        return _StrictNodeMeta(
+            path=path,
+            nullable=nullable,
+            annotations={"description": desc} if desc else {},
+            extensions=extract_extensions(source, self.extension_registry),
+            constraints=extract_constraints(source),
         )
 
     def read_node(self, source: Mapping[str, Any] | bool) -> TypedNode:  # noqa: FBT001
@@ -278,15 +308,9 @@ class StrictJsonSchemaReader:
         if isinstance(node, bool) or not isinstance(node, dict):
             msg = f"Unconstrained or boolean schema node is not supported: {node!r}"
             self._raise_err("E4", msg)
-        Extensions(
-            {k: v for k, v in node.items() if k.startswith("x-")},
-            self.extension_registry,
-        )
+        extract_extensions(node, self.extension_registry)
         if isinstance(node.get("if"), Mapping):
-            Extensions(
-                {k: v for k, v in node["if"].items() if k.startswith("x-")},
-                self.extension_registry,
-            )
+            extract_extensions(node["if"], self.extension_registry)
         if "not" in node:
             msg = "Unsupported JSON Schema keyword 'not': negation schemas cannot be converted to PyArrow"
             self._raise_err("E7", msg)
@@ -413,13 +437,13 @@ class StrictJsonSchemaReader:
         if type_name == "string":
             content_enc = node.get("contentEncoding")
             if content_enc in {"base64", "base16"}:
-                return "string", NodeHints(logical_type="binary"), f"string ({content_enc})"
+                return *SPEC_BINARY, f"string ({content_enc})"
             fmt = node.get("format")
             if fmt == "date":
-                return "string", NodeHints(logical_type="date"), "string (date)"
+                return *SPEC_DATE, "string (date)"
             if isinstance(fmt, str) and fmt:
-                return "string", NodeHints(logical_type="string"), f"string ({fmt})"
-            return "string", NodeHints(logical_type="string"), "string"
+                return *SPEC_STRING, f"string ({fmt})"
+            return *SPEC_STRING, "string"
         msg = f"Unsupported or non-scalar type in scalar context: {type_name!r}"
         raise self.error_type(msg)
 
@@ -446,7 +470,35 @@ class StrictJsonSchemaReader:
         base_types = {label.split(" ", maxsplit=1)[0] for _, _, label in branches}
         if base_types <= {"integer", "number"}:
             return "number", NodeHints(logical_type="double", bit_width=64), joined_label
-        return "string", NodeHints(logical_type="string"), joined_label
+        return *SPEC_STRING, joined_label
+
+    def _resolve_and_unify_scalar_branches(
+        self,
+        scalar_branches: list[dict[str, Any]],
+        ctx: _StrictBuildContext,
+        path: tuple[str | int, ...],
+    ) -> tuple[NodeType, NodeHints, str]:
+        """Build each scalar branch node and unify their scalar types and labels.
+
+        :param scalar_branches: List of scalar branch schema dictionaries.
+        :type scalar_branches: list[dict[str, Any]]
+        :param ctx: Active strict build context.
+        :type ctx: _StrictBuildContext
+        :param path: Provenance path for scalar branch evaluation.
+        :type path: tuple[str | int, ...]
+        :return: Unified ``(NodeType, NodeHints, jsonschema_type)`` tuple.
+        :rtype: tuple[NodeType, NodeHints, str]
+        """
+        resolved_scalars: list[tuple[NodeType, NodeHints, str]] = []
+        branch_meta = _StrictNodeMeta(path=path)
+        for scalar_branch in scalar_branches:
+            s_node = self._build_type(scalar_branch, ctx, branch_meta)
+            s_label = s_node.provenance.metadata.get("jsonschema_type") if s_node.provenance else None
+            if not isinstance(s_label, str):
+                msg = f"Expected scalar branch with jsonschema_type label, got {scalar_branch!r}"
+                raise self.error_type(msg)
+            resolved_scalars.append((s_node.type, s_node.hints, s_label))
+        return self._unify_scalar_types(resolved_scalars)
 
     def _infer_literal_type_name(self, value: object) -> str:
         """Infer the JSON Schema scalar type name of a Python literal inside ``const`` or ``enum``.
@@ -712,17 +764,9 @@ class StrictJsonSchemaReader:
             )
 
         if all_scalars:
-            resolved_scalars: list[tuple[NodeType, NodeHints, str]] = []
-            val_meta = _StrictNodeMeta(path=(*meta.path, "_value"))
-            for scalar_branch in all_scalars:
-                s_node = self._build_type(scalar_branch, ctx, val_meta)
-                s_label = s_node.provenance.metadata.get("jsonschema_type") if s_node.provenance else None
-                if not isinstance(s_label, str):
-                    msg = f"Expected scalar branch with jsonschema_type label, got {scalar_branch!r}"
-                    raise self.error_type(msg)
-                resolved_scalars.append((s_node.type, s_node.hints, s_label))
-            val_type, val_hints, val_label = self._unify_scalar_types(resolved_scalars)
-            val_prov = Provenance("json-schema", (*meta.path, "_value"), {"jsonschema_type": val_label})
+            val_path = (*meta.path, "_value")
+            val_type, val_hints, val_label = self._resolve_and_unify_scalar_branches(all_scalars, ctx, val_path)
+            val_prov = Provenance("json-schema", val_path, {"jsonschema_type": val_label})
             val_node = TypedNode(type=val_type, nullable=True, hints=val_hints, provenance=val_prov)
             fields.append(Field("_value", val_node, required=False, provenance=val_prov))
 
@@ -887,16 +931,7 @@ class StrictJsonSchemaReader:
                 self._raise_err("E8", msg)
 
         if scalar_branches and not obj_branches:
-            resolved_scalars: list[tuple[NodeType, NodeHints, str]] = []
-            scalar_meta = _StrictNodeMeta(path=meta.path)
-            for scalar_branch in scalar_branches:
-                s_node = self._build_type(scalar_branch, ctx, scalar_meta)
-                s_label = s_node.provenance.metadata.get("jsonschema_type") if s_node.provenance else None
-                if not isinstance(s_label, str):
-                    msg = f"Expected scalar branch with jsonschema_type label, got {scalar_branch!r}"
-                    raise self.error_type(msg)
-                resolved_scalars.append((s_node.type, s_node.hints, s_label))
-            u_type, u_hints, u_label = self._unify_scalar_types(resolved_scalars)
+            u_type, u_hints, u_label = self._resolve_and_unify_scalar_branches(scalar_branches, ctx, meta.path)
             return TypedNode(
                 type=u_type,
                 nullable=meta.nullable,
@@ -1050,20 +1085,5 @@ class StrictJsonSchemaReader:
         """
         validated = self._validate_node(node)
         nullable = (not required_in_parent) or self._has_null_possibility(validated, ctx.defs)
-        desc = self._get_inherited_description(validated, ctx.defs)
-        annotations: dict[str, Any] = {"description": desc} if desc else {}
-        extensions = Extensions(
-            {k: v for k, v in validated.items() if k.startswith("x-")},
-            self.extension_registry,
-        )
-        constraints = {
-            k: v for k, v in validated.items() if k not in STRUCTURE and k not in ANNOTATIONS and not k.startswith("x-")
-        }
-        meta = _StrictNodeMeta(
-            path=path,
-            nullable=nullable,
-            annotations=annotations,
-            extensions=extensions,
-            constraints=constraints,
-        )
+        meta = self._build_node_meta(validated, ctx.defs, path, nullable=nullable)
         return self._build_type(validated, ctx, meta)

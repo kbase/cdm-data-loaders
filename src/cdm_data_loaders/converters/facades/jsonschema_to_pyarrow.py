@@ -9,13 +9,10 @@ from frozendict import frozendict
 from pydantic import Field, PositiveInt, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase, coerce_extra_metadata_keywords
-from cdm_data_loaders.converters.core.ir import SchemaDocument
+from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
+from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase
 from cdm_data_loaders.converters.emitters.pyarrow import DEFAULT_FORMAT_MAP, PyArrowEmitter, merge_format_map
-from cdm_data_loaders.converters.readers.json_schema_strict import (
-    DEFAULT_MAX_RECURSION_DEPTH,
-    StrictJsonSchemaReader,
-)
+from cdm_data_loaders.converters.readers.json_schema_strict import StrictJsonSchemaReader
 from cdm_data_loaders.schemas.jsonschema import ValidatedSchema, dereference_schema
 
 if TYPE_CHECKING:
@@ -145,6 +142,7 @@ ERROR_BY_CODE: Final[frozendict[str, type[JSONSchemaToPyArrowError]]] = frozendi
 class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
     """Read Draft 2020-12 JSON Schema through the shared IR reader and emit PyArrow schemas and empty tables."""
 
+    _run_root_guards: ClassVar[bool] = False
     _error_cls: ClassVar[type[ConversionError]] = JSONSchemaToPyArrowError
     _invalid_schema_error_cls: ClassVar[type[ConversionError]] = UnsupportedDialectError
     _converter_name: ClassVar[str] = "JSONSchemaToPyArrow"
@@ -169,18 +167,6 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
         """
         return merge_format_map(value) if value else value
 
-    @field_validator("extra_metadata_keywords", mode="before")
-    @classmethod
-    def _coerce_extra_metadata_keywords(cls, value: object) -> object:
-        """Normalize supported metadata keyword collections.
-
-        :param value: Input extra metadata keywords.
-        :type value: object
-        :return: Normalized frozenset of keywords.
-        :rtype: object
-        """
-        return coerce_extra_metadata_keywords(value)
-
     def _reader(self) -> StrictJsonSchemaReader:
         """Configure strict Draft 2020-12 IR reader with specification error codes.
 
@@ -194,21 +180,6 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
             max_recursion_depth=self.max_recursion_depth,
             error_by_code=ERROR_BY_CODE,
         )
-
-    def _read(self, schema: dict[str, Any]) -> SchemaDocument:
-        """Read schema into a ``SchemaDocument``, preserving specification error identity.
-
-        :param schema: Input JSON Schema dictionary.
-        :type schema: dict[str, Any]
-        :return: Parsed ``SchemaDocument``.
-        :rtype: SchemaDocument
-        """
-        try:
-            return self._reader().read(schema)
-        except ConversionError as error:
-            if isinstance(error, self._error_cls):
-                raise
-            raise self._error_cls(str(error)) from error
 
     def _emitter(self) -> PyArrowEmitter:
         """Pass target policy to the emitter.
@@ -315,6 +286,21 @@ def generate_pyarrow_schema(
     return JSONSchemaToPyArrow(max_recursion_depth=max_recursion_depth).convert(schema)
 
 
+def _dereference_validated_schema(schema: ValidatedSchema) -> dict[str, Any]:
+    """Dereference a validated JSON Schema while preserving its top-level ``$schema`` URI.
+
+    :param schema: Validated JSON Schema wrapper.
+    :type schema: ValidatedSchema
+    :return: Dereferenced JSON Schema dictionary.
+    :rtype: dict[str, Any]
+    """
+    raw_schema = schema.jsonschema
+    dereferenced = dereference_schema(raw_schema)
+    if "$schema" not in dereferenced and "$schema" in raw_schema:
+        dereferenced = {"$schema": raw_schema["$schema"], **dereferenced}
+    return dereferenced
+
+
 def convert_schema_to_pyarrow(schema: ValidatedSchema) -> pa.Schema:
     """Dereference a validated JSON Schema and convert it to a PyArrow schema.
 
@@ -325,11 +311,7 @@ def convert_schema_to_pyarrow(schema: ValidatedSchema) -> pa.Schema:
     :raises DereferencingError: if ``$ref`` or ``allOf`` cannot be resolved
     :raises JSONSchemaToPyArrowError: if the dereferenced schema cannot be converted to a PyArrow schema
     """
-    raw_schema = schema.jsonschema
-    dereferenced = dereference_schema(raw_schema)
-    if "$schema" not in dereferenced and "$schema" in raw_schema:
-        dereferenced = {"$schema": raw_schema["$schema"], **dereferenced}
-    return JSONSchemaToPyArrow().convert(dereferenced)
+    return JSONSchemaToPyArrow().convert(_dereference_validated_schema(schema))
 
 
 def convert_xsv_schema_to_pyarrow(validated_schema: "ValidatedXsvSchema") -> pa.Schema:
@@ -344,10 +326,7 @@ def convert_xsv_schema_to_pyarrow(validated_schema: "ValidatedXsvSchema") -> pa.
     :return: PyArrow schema for the XSV table
     :rtype: pa.Schema
     """
-    raw_schema = validated_schema.jsonschema
-    dereferenced = dereference_schema(raw_schema)
-    if "$schema" not in dereferenced and "$schema" in raw_schema:
-        dereferenced = {"$schema": raw_schema["$schema"], **dereferenced}
+    dereferenced = _dereference_validated_schema(validated_schema)
 
     raw_properties = dereferenced.get("properties", {})
     properties: dict[str, Any] = {

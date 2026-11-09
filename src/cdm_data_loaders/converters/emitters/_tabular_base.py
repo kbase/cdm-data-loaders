@@ -7,10 +7,11 @@ from typing import ClassVar, Final
 
 from frozendict import frozendict
 from jsonschema import Draft202012Validator
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.inference import decimal_places, is_unconstrained_node, json_type_from_enum
+from cdm_data_loaders.converters.core.io import coerce_extra_metadata_keywords
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import NodeHints, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.ir_values import MutableValue, Value, mutable_value
@@ -115,6 +116,12 @@ class _TabularEmitterBase[DataTypeT](BaseModel):
     extra_metadata_keywords: frozenset[str] = Field(default_factory=frozenset)
     max_nesting: PositiveInt = Field(default=10)
     format_map: frozendict[str, DataTypeT] = Field(default_factory=frozendict)
+
+    @field_validator("extra_metadata_keywords", mode="before")
+    @classmethod
+    def _coerce_extra_metadata_keywords(cls, value: object) -> object:
+        """Accept any iterable of strings and normalize to a frozenset."""
+        return coerce_extra_metadata_keywords(value)
 
     def _logger(self) -> logging.Logger:
         """Return the concrete emitter module logger."""

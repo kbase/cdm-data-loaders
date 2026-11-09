@@ -68,6 +68,37 @@ STRUCTURE: Final[frozenset[str]] = (
 )
 
 
+def extract_extensions(schema: Mapping[str, Any], registry: ExtensionRegistry) -> Extensions:
+    """Extract and validate ``x-*`` vendor extensions from a JSON Schema mapping.
+
+    :param schema: JSON Schema node mapping.
+    :type schema: Mapping[str, Any]
+    :param registry: Extension registry used for validation.
+    :type registry: ExtensionRegistry
+    :return: Validated ``Extensions`` container.
+    :rtype: Extensions
+    """
+    return Extensions(
+        {key: value for key, value in schema.items() if key.startswith("x-")},
+        registry,
+    )
+
+
+def extract_constraints(schema: Mapping[str, Any]) -> dict[str, Any]:
+    """Extract non-structural, non-annotation, non-extension constraint keywords from ``schema``.
+
+    :param schema: JSON Schema node mapping.
+    :type schema: Mapping[str, Any]
+    :return: Dictionary of constraint keywords and values.
+    :rtype: dict[str, Any]
+    """
+    return {
+        key: value
+        for key, value in schema.items()
+        if key not in STRUCTURE and key not in ANNOTATIONS and not key.startswith("x-")
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class JsonSchemaReader:
     """Read validated object-compatible documents using an explicit extension registry."""
@@ -151,11 +182,7 @@ class JsonSchemaReader:
         nullable = None
         if declaration is not None:
             nullable = "null" in declaration if isinstance(declaration, list) else declaration == "null"
-        constraints = {
-            key: value
-            for key, value in schema.items()
-            if key not in STRUCTURE and key not in ANNOTATIONS and not key.startswith("x-")
-        }
+        constraints = extract_constraints(schema)
         dependencies = schema.get("dependencies", {})
         literal_dependencies = {key: value for key, value in dependencies.items() if isinstance(value, list)}
         if literal_dependencies:
@@ -204,10 +231,7 @@ class JsonSchemaReader:
             schema_maps=schema_maps,
             constraints=constraints,
             annotations={key: value for key, value in schema.items() if key in ANNOTATIONS},
-            extensions=Extensions(
-                {key: value for key, value in schema.items() if key.startswith("x-")},
-                self.extension_registry,
-            ),
+            extensions=extract_extensions(schema, self.extension_registry),
             provenance=provenance,
             source_keywords=tuple(schema),
         )

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from logging import Logger
 from pathlib import Path
-from typing import Annotated, Final
+from typing import Annotated, Final, Protocol
 
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
@@ -33,13 +33,27 @@ class IcebergCatalogDumpSettings(LoggerSettings):
     group_by_namespace: bool = Field(default=False, description="Export one schema per namespace")
 
 
+class TableConverter[SchemaT](Protocol):
+    """Protocol for converting an Iceberg table into a schema or shared namespace document."""
+
+    def __call__(
+        self,
+        table: Table,
+        identifier: tuple[str, ...],
+        *,
+        schema: SchemaT | None = None,
+    ) -> SchemaT:
+        """Convert ``table`` to ``SchemaT``, optionally accumulating into ``schema``."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class CatalogDumpDriver[SchemaT]:
     """Format-specific callbacks for dumping Iceberg catalog schemas."""
 
     file_suffix: str
     make_namespace_schema: Callable[[str], SchemaT]
-    convert_table: Callable[[Table, tuple[str, ...], SchemaT | None], SchemaT]
+    convert_table: TableConverter[SchemaT]
     has_grouped_entries: Callable[[SchemaT], bool]
     write_schema: Callable[[SchemaT, Path, str], None]
 
@@ -88,7 +102,7 @@ def dump_catalog[SchemaT](
             for identifier in sorted(catalog.list_tables(namespace)):
                 try:
                     table = catalog.load_table(identifier)
-                    schema_doc = driver.convert_table(table, identifier, namespace_schema)
+                    schema_doc = driver.convert_table(table, identifier, schema=namespace_schema)
                 except Exception:
                     failures += 1
                     log.exception("Failed to convert table %s; skipping", identifier)
