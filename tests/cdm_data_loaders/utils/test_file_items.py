@@ -149,8 +149,6 @@ def test_source_id_pass_file_item_is_relative_path(fs_backend: FsBackend, relati
     assert source_id(fs_backend.file_item(relative_path)) == relative_path
 
 
-
-
 @pytest.mark.parametrize(
     ("file", "expected"),
     [

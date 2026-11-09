@@ -14,4 +14,3 @@ def _ensembl_type(xref: str) -> str:
     }
 
     return prefixes.get(xref[0:4], prefixes.get(xref[0:5], "sequence"))
-

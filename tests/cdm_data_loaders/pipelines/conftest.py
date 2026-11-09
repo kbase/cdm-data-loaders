@@ -303,4 +303,3 @@ def copy_test_files(source_dir: Path, file_names: Iterable[str], dest_dir: Path)
         else:
             target.write_bytes((source_dir / name).read_bytes())
     return dest_dir
-

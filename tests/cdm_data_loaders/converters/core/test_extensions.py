@@ -281,8 +281,6 @@ def test_extension_registry_fail_duplicates() -> None:
     assert registry.register(spec, replace=True) == registry
 
 
-
-
 @pytest.mark.parametrize(
     ("schema", "error_type", "match"),
     [
