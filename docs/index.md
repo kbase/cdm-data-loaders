@@ -30,9 +30,14 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Comparati
 ### Schema Converter Architecture & Specifications
 
 - **[Schema Converters & Intermediate Representation (IR)](converters_ir.md)**: Reader -> IR -> Emitter architecture and invariants.
+- **[Schema Converter Specifications Developer Guide](schema_converter_specs_guide.md)**: Authoring and maintaining converter rules, test cases, error catalogs (`E1`..`En`), and generated specification pages.
+- **[Pipeline Specifications Developer Guide](pipeline_specs_guide.md)**: Authoring and maintaining pipeline smoke test rules, error scenarios (`_rejected`, `report.txt`), and generated specification pages.
+- **[Pipeline E2E & Smoke Testing Across Environments Guide](pipeline_e2e_testing_guide.md)**: Running end-to-end and smoke tests across `local_fs`, `s3_moto`, `s3_ceph`, custom environments (`--dlt-config-dir`, `--settings-file`), and Docker (`--run-docker`).
 - **[JSON Schema to PyArrow Specification](jsonschema_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
 - **[Pydantic to PyArrow Specification](pydantic_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
 - **[XSD to PyArrow Specification](xsd_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
+- **[PubMed Pipeline Specification](pubmed_pipeline_specification.md)**: Auto-generated end-to-end smoke test specification for the `pubmed` pipeline.
+- **[NCBI Datasets Pipeline Specification](ncbi_datasets_pipeline_specification.md)**: Auto-generated end-to-end smoke test specification for the `ncbi_datasets` pipeline.
 
 ### Code & Schema Reference
 

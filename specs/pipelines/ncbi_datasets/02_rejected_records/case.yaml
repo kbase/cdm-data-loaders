@@ -1,0 +1,29 @@
+title: Malformed JSON and Schema-Invalid Record Rejection (`_rejected`)
+pipeline: ncbi_datasets
+settings_file: settings.toml
+rules:
+  - R-NCBI-ENTITY-DIRS
+  - R-NCBI-SCHEMA
+  - R-NCBI-FILTER-EMPTY
+  - R-NCBI-KEEP-NONEMPTY
+  - R-NCBI-REJECT
+  - R-NCBI-REPORT
+notes: |
+  Mixed valid, filtered, schema-invalid, and malformed JSON lines across `annotation_report/batch.jsonl`
+  and `dataset_report/batch.jsonl`. Valid records load into their target tables, empty `reports` rows are
+  discarded, and invalid lines route to `_rejected` with line-level provenance.
+runs:
+  - id: mixed_valid_and_invalid
+    input_dir: input
+    expected_report:
+      status: completed
+      ingested_files:
+        - annotation_report/batch.jsonl
+        - dataset_report/batch.jsonl
+      pipeline_load_info_errs: null
+    expected_counts:
+      annotation_report: 1
+      dataset_report: 1
+      _rejected: 2
+    expected_tables: expected_tables.py
+    expected_json: expected.json

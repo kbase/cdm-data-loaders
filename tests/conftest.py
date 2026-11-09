@@ -61,6 +61,7 @@ TEST_DATA_DIR: Final[Path] = Path("tests") / "data"
 CASSETTES_DIR: Final[Path] = Path("tests") / "cassettes"
 SCHEMA_CONVERTER_SPECS_DIR: Final[Path] = BASE_DIR / "specs" / "schema_converters"
 XSD_SPEC_DIR: Final[Path] = SCHEMA_CONVERTER_SPECS_DIR / "xsd_to_pyarrow"
+PIPELINE_SPECS_DIR: Final[Path] = BASE_DIR / "specs" / "pipelines"
 
 REFERENCE_XML_NS: Final[str] = "http://uniprot.org/uniref"
 REFERENCE_XML_TAG: Final[str] = f"{{{REFERENCE_XML_NS}}}entry"
@@ -109,6 +110,24 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store",
         default=None,
         help="Pre-built Docker image tag to use for @pytest.mark.docker tests instead of building.",
+    )
+    parser.addoption(
+        "--dlt-config-dir",
+        action="store",
+        default=None,
+        help="Directory containing config.toml, secrets.toml, and optional settings.toml/.yaml for pipeline smoke tests.",
+    )
+    parser.addoption(
+        "--settings-file",
+        action="store",
+        default=None,
+        help="Path to a settings config file (.toml, .yaml, .yml, or .json) with environment Settings overrides.",
+    )
+    parser.addoption(
+        "--smoke-pipeline",
+        action="store",
+        default=None,
+        help="Filter pipeline smoke tests to a single pipeline name (e.g., pubmed, ncbi_datasets).",
     )
 
 

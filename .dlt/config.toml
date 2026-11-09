@@ -37,3 +37,15 @@ resource_type = "filesystem"
 [destination.cts]
 bucket_url = "/output_dir"
 destination_type = "filesystem"
+
+# Optional Iceberg catalog configuration when loader_file_format = "iceberg".
+# When omitted, dlt uses an in-memory SQLite catalog and writes Iceberg metadata
+# to <bucket_url>/<dataset_name>/<table_name>/metadata/.
+# [iceberg_catalog]
+# iceberg_catalog_name = "default"
+# iceberg_catalog_type = "rest"  # "sql" or "rest"
+#
+# [iceberg_catalog.iceberg_catalog_config]
+# uri = "http://polaris:8181/api/catalog"
+# warehouse = "warehouse_name"
+

@@ -1,0 +1,38 @@
+{
+  "_rejected": [
+    {
+      "error_detail": "[\"'not-an-int' is not of type 'integer'\"]",
+      "line_no": 3,
+      "raw_record": "{\"total_count\":\"not-an-int\"}",
+      "source_file": "annotation_report/batch.jsonl",
+      "table_name": "annotation_report"
+    },
+    {
+      "error_detail": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
+      "line_no": 2,
+      "raw_record": "{malformed json",
+      "source_file": "dataset_report/batch.jsonl",
+      "table_name": "dataset_report"
+    }
+  ],
+  "annotation_report": [
+    {
+      "reports": [
+        {
+          "annotation": {
+            "name": "integrase/recombinase",
+            "symbol": "int"
+          },
+          "row_id": "1"
+        }
+      ],
+      "total_count": 1
+    }
+  ],
+  "dataset_report": [
+    {
+      "accession": "GCF_000005845.2",
+      "source_database": "SOURCE_DATABASE_REFSEQ"
+    }
+  ]
+}

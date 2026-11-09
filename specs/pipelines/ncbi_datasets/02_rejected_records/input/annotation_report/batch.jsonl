@@ -1,0 +1,3 @@
+{"total_count":0}
+{"reports":[{"annotation":{"name":"integrase/recombinase","symbol":"int"},"row_id":"1"}],"total_count":1}
+{"total_count":"not-an-int"}

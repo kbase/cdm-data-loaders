@@ -1,0 +1,2 @@
+{"total_count":0}
+{"reports":[{"annotation":{"annotations":[{"assembly_accession":"GCA_000234645.4"}],"gene_type":"protein-coding","genomic_regions":[{"gene_range":{"accession_version":"JF734911.1","range":[{"begin":"562","end":"1713","orientation":"plus"}]}}],"name":"integrase/recombinase","proteins":[{"accession_version":"AET85156.1","length":383,"name":"integrase/recombinase"}],"symbol":"int"},"row_id":"1"}],"total_count":1}
