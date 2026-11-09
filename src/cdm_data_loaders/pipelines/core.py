@@ -44,10 +44,6 @@ if TYPE_CHECKING:
 WEBHOOK_NOT_CONFIGURED: Final[str] = "Slack webhook not configured"
 NO_MESSAGE: Final[str] = "No message supplied"
 LOAD_INFO_TABLE_NAME: Final[str] = "_load_info"
-DISABLE_COMPRESSION_ENV_VAR: Final[str] = "NORMALIZE__DATA_WRITER__DISABLE_COMPRESSION"
-DESTINATION_NOT_CONFIGURED: Final[str] = (
-    "Destination {name!r} is not configured: set destination.{name}.destination_type in the dlt config."
-)
 DEFAULT_SCHEMA_CONTRACT: Final[TSchemaContractDict] = {
     "tables": "evolve",
     "columns": "evolve",

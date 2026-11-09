@@ -25,8 +25,6 @@ from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformF
 
 UNIREF_URL = "http://uniprot.org/uniref"
 ENTRY_XML_TAG = f"{{{UNIREF_URL}}}entry"
-NS = "ns"
-UNIREF_NS = {NS: UNIREF_URL, "": UNIREF_URL}
 UNIREF = "UniRef"
 ENTITY_ID = "entity_id"
 
@@ -174,6 +172,7 @@ def parse_uniref_entry(
             REJECTED_TABLE_NAME: [
                 {
                     "table_name": "entry",
+                    # FIXME: add source_file from the XML parser
                     "source_file": None,
                     "line_no": None,
                     "raw_record": json.dumps(dict(entry), default=str),

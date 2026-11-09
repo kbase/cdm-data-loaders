@@ -42,17 +42,18 @@ def test_stream_xml_file_pass_yields_matching_elements_in_order(
     assert tags_ids == EXPECTED_SIMPLE_TAGS_IDS
 
 
+@pytest.mark.parametrize("gzip_compress", [False, True], ids=["plain", "gzip"])
 def test_stream_xml_file_pass_gzip_file_yields_same_elements_as_plain_file(
     xml_path_factory: Callable[..., Path],
+    gzip_compress: bool,
 ) -> None:
     """Verify a gzip-compressed (.gz) file is transparently decompressed and parsed identically to a plain file."""
-    plain_path = xml_path_factory(SIMPLE_LIBRARY_XML, filename="plain.xml")
-    gz_path = xml_path_factory(SIMPLE_LIBRARY_XML, gzip_compress=True, filename="compressed.xml")
+    filename = "compressed.xml" if gzip_compress else "plain.xml"
+    path = xml_path_factory(SIMPLE_LIBRARY_XML, gzip_compress=gzip_compress, filename=filename)
 
-    plain_ids = [(elem.tag, elem.get("id")) for elem in stream_xml_file(plain_path, "book")]
-    gz_ids = [(elem.tag, elem.get("id")) for elem in stream_xml_file(gz_path, "book")]
+    ids = [(elem.tag, elem.get("id")) for elem in stream_xml_file(path, "book")]
 
-    assert gz_ids == plain_ids == EXPECTED_SIMPLE_TAGS_IDS
+    assert ids == EXPECTED_SIMPLE_TAGS_IDS
 
 
 def test_stream_xml_file_pass_filters_out_non_matching_tags(xml_path_factory: Callable[..., Path]) -> None:

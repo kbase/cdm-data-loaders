@@ -58,7 +58,6 @@ UNIPROT_NS: Final[str] = "http://uniprot.org/uniprot"
 
 # Arbitrary non-default value used to prove settings are forwarded to process_xml_file.
 CUSTOM_LOG_INTERVAL: Final[int] = 7
-CUSTOM_BATCH_LOG_INTERVAL: Final[int] = 50
 
 PEOPLE_XML_2: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
 <people>
@@ -424,19 +423,16 @@ def test_process_xml_file_pass_multiple_tables_per_entry(tmp_path: Path) -> None
     assert [row["email"] for row in tagged[1][1]] == ["a@example.com", "b@example.com"]
 
 
+@pytest.mark.parametrize("gzip_compress", [False, True], ids=["plain", "gzip"])
 @pytest.mark.parametrize("mode", XML_PROCESSOR_MODES)
-def test_process_xml_file_pass_gzip_file(tmp_path: Path, mode: str) -> None:
+def test_process_xml_file_pass_gzip_file(tmp_path: Path, mode: str, gzip_compress: bool) -> None:
     """Verify gzip-compressed XML input (.gz suffix) is transparently decompressed and parsed."""
-    plain_path = write_xml_file(tmp_path, "plain.xml", PEOPLE_XML_5)
-    gz_path = write_xml_file(tmp_path, "compressed.xml.gz", PEOPLE_XML_5, gzip_compress=True)
+    filename = "compressed.xml.gz" if gzip_compress else "plain.xml"
+    path = write_xml_file(tmp_path, filename, PEOPLE_XML_5, gzip_compress=gzip_compress)
 
-    plain_items = table_and_data(_stream_xml_processor(mode, plain_path))
-    gz_items = table_and_data(_stream_xml_processor(mode, gz_path))
-
-    plain_rows = [row for _, batch in plain_items for row in _batch_rows(mode, batch)]
-    gz_rows = [row for _, batch in gz_items for row in _batch_rows(mode, batch)]
-    assert plain_rows == _expected_people_rows(mode, plain_path)
-    assert gz_rows == _expected_people_rows(mode, gz_path)
+    items = table_and_data(_stream_xml_processor(mode, path))
+    rows = [row for _, batch in items for row in _batch_rows(mode, batch)]
+    assert rows == _expected_people_rows(mode, path)
 
 
 def test_process_xml_file_pass_namespaced_tag(tmp_path: Path) -> None:

@@ -16,7 +16,6 @@ from typing import Any
 import yaml
 
 CASE_MANIFEST = "case.yaml"
-ERROR_MANIFEST = "manifest.yaml"
 
 
 @dataclass(frozen=True, slots=True)

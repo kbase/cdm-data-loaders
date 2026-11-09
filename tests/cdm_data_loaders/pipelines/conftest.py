@@ -1,6 +1,5 @@
 """Shared fixtures for pipelines tests."""
 
-import copy
 import gzip
 import json
 import os
@@ -19,10 +18,7 @@ from dlt.common.pipeline import LoadInfo
 from cdm_data_loaders.core.fields import GZIP_SUFFIX
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines import core
-from cdm_data_loaders.pipelines.core import (
-    DISABLE_COMPRESSION_ENV_VAR,
-    LOAD_INFO_TABLE_NAME,
-)
+from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.readers.xml import DEFAULT_XMLTODICT_ARGS
 from tests.cdm_data_loaders.pipelines.framework import (
     EXECUTION_MODES,
@@ -40,7 +36,6 @@ from tests.conftest import (
     REFERENCE_XML_FIXTURE_DIR,
     S3,
     TEST_DATA_DIR,
-    _generate_dlt_config,
     preserve_logging_state,
 )
 from tests.helpers import make_cts_settings
@@ -52,10 +47,6 @@ HOOK_PART_ENV_VARS: Final[tuple[str, ...]] = ("VARIABLE_B", "VARIABLE_T", "CHAR_
 VALID_DESTINATIONS = [LOCAL_FS, S3]
 LOAD_INFO_SAVE_FAILED: Final[str] = "Loading pipeline load info failed: "
 LOAD_INFO_SAVE_FAILED_JOBS: Final[str] = "Loading pipeline load info had failed jobs: "
-
-PIPELINE_TEST_DATA_DIR: Final[Path] = Path(__file__).parents[2] / "data" / "pipelines"
-UNIREF_DATA_DIR: Final[Path] = PIPELINE_TEST_DATA_DIR / "uniref"
-XMLTODICT_DATA_DIR: Final[Path] = PIPELINE_TEST_DATA_DIR / "xmltodict"
 
 
 @pytest.fixture
@@ -163,7 +154,7 @@ def reference_xml_data_dir() -> Path:
 def clean_env() -> Iterator[None]:
     """Remove env vars that core reads or writes, and restore the whole environment afterwards."""
     with patch.dict(os.environ):
-        for name in (*HOOK_PART_ENV_VARS, HOOK_ENV_VAR, DISABLE_COMPRESSION_ENV_VAR):
+        for name in (*HOOK_PART_ENV_VARS, HOOK_ENV_VAR):
             os.environ.pop(name, None)
         os.environ["RUNTIME__DLTHUB_TELEMETRY"] = "false"
         yield
@@ -183,26 +174,6 @@ def careful_slack_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     mock = MagicMock()
     monkeypatch.setattr(core, "send_slack_message_carefully", mock)
     return mock
-
-
-@pytest.fixture
-def mock_init_logger(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    """Stop run_cli reconfiguring logging and point dlt.config at a plain dict."""
-    mock = MagicMock()
-    monkeypatch.setattr(core, "init_logger", mock)
-    monkeypatch.setattr(dlt, "config", copy.deepcopy(_generate_dlt_config()))
-    return mock
-
-
-@pytest.fixture
-def mock_pipeline(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    """Replace dlt.pipeline with a factory whose pipeline has no Slack hook and returns no load info."""
-    pipeline = MagicMock()
-    pipeline.runtime_config.slack_incoming_hook = None
-    pipeline.run.return_value = None
-    factory = MagicMock(return_value=pipeline)
-    monkeypatch.setattr(dlt, "pipeline", factory)
-    return factory
 
 
 @pytest.fixture
@@ -332,8 +303,3 @@ def copy_test_files(source_dir: Path, file_names: Iterable[str], dest_dir: Path)
         else:
             target.write_bytes((source_dir / name).read_bytes())
     return dest_dir
-
-
-def sort_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Sort rows into a stable order so that whole tables can be compared."""
-    return sorted(rows, key=lambda row: repr(sorted(row.items())))

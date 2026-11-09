@@ -134,20 +134,6 @@ ROWS_WITH_MULTIPLE_NULL_SPELLINGS: Final[list[list[str]]] = [
     ["4", "2023-02-20", "none", "false", "key:value3"],
 ]
 
-# Malformed schema content used to trigger qsv's own "bad config" exit codes (>1), as opposed to
-# the module's own pre-flight JSON validation in `generate_header` (which is tested separately).
-MALFORMED_SCHEMA_CASES: Final[list[tuple[str, str]]] = [
-    ("truncated-json", '{"type": "object", "required": ['),
-    ("not-json-at-all", "this is definitely not json"),
-]
-
-# Regexes with invalid syntax, used to trigger qsv replace's own "bad pattern" exit code (>1).
-INVALID_NULL_REGEXES: Final[list[str]] = [
-    "[unclosed",
-    "(unclosed",
-    "*leading-quantifier",
-]
-
 
 """qsv_check"""
 

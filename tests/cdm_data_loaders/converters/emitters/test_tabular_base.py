@@ -388,17 +388,21 @@ def test_build_context_pass_warns_about_invalid_keywords(
     assert "['type', 'typo']" in caplog.text
 
 
-def test_emit_node_pass_formats(spec: TabularTargetSpec) -> None:
+@pytest.mark.parametrize(
+    "format_value",
+    ["date-time", "date", "time", "uuid", "binary", "byte", "base64", "unknown", "", 1],
+    ids=["date-time", "date", "time", "uuid", "binary", "byte", "base64", "unknown", "empty", "non-string"],
+)
+def test_emit_node_pass_formats(spec: TabularTargetSpec, format_value: str | int) -> None:
     """Every built-in format, unknown format, and non-string format resolves to the expected type."""
     emitter = spec.emitter_cls()
-    for format_name, expected in [
-        *spec.default_format_map.items(),
-        ("unknown", spec.string_type),
-        ("", spec.string_type),
-    ]:
-        node = TypedNode(type="string", constraints={"format": format_name})
-        assert emitter.emit_node(node) == expected
-    assert emitter.emit_node(TypedNode(type="string", constraints={"format": 1})) == spec.string_type
+    expected = (
+        spec.default_format_map.get(format_value, spec.string_type)
+        if isinstance(format_value, str)
+        else spec.string_type
+    )
+    node = TypedNode(type="string", constraints={"format": format_value})
+    assert emitter.emit_node(node) == expected
 
 
 @pytest.mark.parametrize("use_user_dict", [False, True], ids=["dict-override", "mapping-override"])

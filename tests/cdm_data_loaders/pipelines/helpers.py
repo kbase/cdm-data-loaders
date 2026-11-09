@@ -16,7 +16,6 @@ import pyarrow.parquet as pq
 import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
-from dlt.destinations import filesystem
 from dlt.extract import DltResource
 from pandas import DataFrame
 
@@ -412,23 +411,6 @@ def run_and_read(
     assert not load_info.has_failed_jobs
     assert_pipeline_report_written(output_dir, load_info, metadata_moved=(output_dir / PIPELINE_DIR_NAME).is_dir())
     return (load_info, output_dir)
-
-
-def _df_to_sorted_json(df: DataFrame) -> list[str]:
-    """Convert a table DataFrame into sorted JSON strings, removing the _dlt fields first."""
-    return sorted_json(
-        [{k: v for k, v in datum.items() if not is_metadata_table(k)} for datum in df.to_dict("records")]  # pyright: ignore[reportArgumentType]
-    )
-
-
-def extract_table_data(dataset: dlt.Dataset, table_name: str) -> list[str]:
-    """Convert table data into a JSON string, removing the _dlt fields first."""
-    return _df_to_sorted_json(dataset.table(table_name).df())
-
-
-def get_pipeline(load_info: LoadInfo, output_dir: Path) -> dlt.Pipeline:
-    """Return a Pipeline object for the given dataset and destination."""
-    return dlt.pipeline(destination=filesystem(bucket_url=str(output_dir)), dataset_name=load_info.dataset_name)
 
 
 def strip_metadata_columns(row: dict[str, Any]) -> dict[str, Any]:

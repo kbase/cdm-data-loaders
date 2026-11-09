@@ -151,18 +151,6 @@ def with_invalid_flag_injected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def write_raw_file(tmp_path: Path) -> Callable[[str, str], Path]:
-    """Factory fixture that writes raw, unvalidated text content directly to a file (bypassing JSON encoding)."""
-
-    def _write(content: str, file_name: str) -> Path:
-        path = tmp_path / file_name
-        path.write_text(content)
-        return path
-
-    return _write
-
-
-@pytest.fixture
 def mock_qsv_run(monkeypatch: pytest.MonkeyPatch) -> Callable[..., MagicMock]:
     """Factory fixture that replaces `qsv.subprocess.run` with a configurable fake.
 

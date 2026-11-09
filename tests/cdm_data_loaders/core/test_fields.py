@@ -1,7 +1,7 @@
 """Tests for the constrained field types in cdm_data_loaders.core.fields that the core settings classes do not use.
 
 Fields used by the classes in cdm_data_loaders.core.settings are exercised via those classes in test_settings.py.
-FileGlob and PreserveTableNesting are unconstrained str/bool fields, and the module constants are plain values,
+FileGlob is an unconstrained str field, and the module constants are plain values,
 so none of those are tested here.
 """
 
@@ -13,7 +13,6 @@ from cdm_data_loaders.core.fields import (
     DatasetName,
     LoaderFileFormat,
     LoaderFileFormatEnum,
-    MaxTableNesting,
     TableName,
 )
 
@@ -25,7 +24,6 @@ class PipelineFieldsModel(BaseModel):
 
     dataset_name: DatasetName
     loader_file_format: LoaderFileFormat
-    max_table_nesting: MaxTableNesting
 
 
 @pytest.mark.parametrize(
@@ -33,28 +31,28 @@ class PipelineFieldsModel(BaseModel):
     [
         pytest.param(
             {"dataset_name": "ds"},
-            {"dataset_name": "ds", "loader_file_format": "parquet", "max_table_nesting": 0},
+            {"dataset_name": "ds", "loader_file_format": "parquet"},
             id="defaults",
         ),
         pytest.param(
-            {"dataset_name": "ds", "loader_file_format": "jsonl", "max_table_nesting": 3},
-            {"dataset_name": "ds", "loader_file_format": "jsonl", "max_table_nesting": 3},
-            id="jsonl_string-nesting_3",
+            {"dataset_name": "ds", "loader_file_format": "jsonl"},
+            {"dataset_name": "ds", "loader_file_format": "jsonl"},
+            id="jsonl_string",
         ),
         pytest.param(
-            {"dataset_name": "ds", "loader_file_format": LoaderFileFormatEnum.JSONL, "max_table_nesting": 0},
-            {"dataset_name": "ds", "loader_file_format": "jsonl", "max_table_nesting": 0},
-            id="jsonl_enum_member-nesting_0",
+            {"dataset_name": "ds", "loader_file_format": LoaderFileFormatEnum.JSONL},
+            {"dataset_name": "ds", "loader_file_format": "jsonl"},
+            id="jsonl_enum_member",
         ),
         pytest.param(
-            {"dataset_name": "ds", "loader_file_format": "iceberg", "max_table_nesting": 0},
-            {"dataset_name": "ds", "loader_file_format": "iceberg", "max_table_nesting": 0},
-            id="iceberg_string-nesting_0",
+            {"dataset_name": "ds", "loader_file_format": "iceberg"},
+            {"dataset_name": "ds", "loader_file_format": "iceberg"},
+            id="iceberg_string",
         ),
         pytest.param(
-            {"dataset_name": "ds", "loader_file_format": LoaderFileFormatEnum.ICEBERG, "max_table_nesting": 0},
-            {"dataset_name": "ds", "loader_file_format": "iceberg", "max_table_nesting": 0},
-            id="iceberg_enum_member-nesting_0",
+            {"dataset_name": "ds", "loader_file_format": LoaderFileFormatEnum.ICEBERG},
+            {"dataset_name": "ds", "loader_file_format": "iceberg"},
+            id="iceberg_enum_member",
         ),
     ],
 )
@@ -69,11 +67,6 @@ def test_pipeline_fields_pass_valid_values(kwargs: dict[str, object], expected: 
 @pytest.mark.parametrize(
     ("kwargs", "expected_errors"),
     [
-        pytest.param(
-            {"dataset_name": "ds", "max_table_nesting": -1},
-            [(("max_table_nesting",), "Input should be greater than or equal to 0")],
-            id="negative_nesting",
-        ),
         pytest.param(
             {"dataset_name": "ds", "loader_file_format": "csv"},
             [(("loader_file_format",), FORMAT_ERROR)],
@@ -95,7 +88,7 @@ def test_pipeline_fields_pass_valid_values(kwargs: dict[str, object], expected: 
 def test_pipeline_fields_fail_invalid_values(
     kwargs: dict[str, object], expected_errors: list[tuple[tuple[str, ...], str]]
 ) -> None:
-    """Out-of-range nesting, unknown formats, and empty or missing dataset names are rejected."""
+    """Unknown formats and empty or missing dataset names are rejected."""
     with pytest.raises(ValidationError) as exc_info:
         PipelineFieldsModel.model_validate(kwargs)
     assert [(err["loc"], err["msg"]) for err in exc_info.value.errors()] == expected_errors

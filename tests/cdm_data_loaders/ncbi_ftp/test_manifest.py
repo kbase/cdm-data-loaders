@@ -120,28 +120,40 @@ def test_compute_diff_new() -> None:
     assert diff.new == sorted(diff.new)
 
 
-def test_compute_diff_updated() -> None:
+@pytest.mark.parametrize(
+    ("prev_date", "expected_in_updated"),
+    [
+        pytest.param("2010/01/01", True, id="newer-release-date"),
+        pytest.param("2099/12/31", False, id="older-release-date"),
+    ],
+)
+def test_compute_diff_updated(prev_date: str, expected_in_updated: bool) -> None:
     """seq_rel_date moving forward marks updated; moving backward does not."""
     current = parse_assembly_summary(SAMPLE_SUMMARY)
     previous = parse_assembly_summary(SAMPLE_SUMMARY)
-    previous["GCF_000001215.4"].seq_rel_date = "2010/01/01"
-    assert "GCF_000001215.4" in compute_diff(current, previous_assemblies=previous).updated
-
-    previous2 = parse_assembly_summary(SAMPLE_SUMMARY)
-    previous2["GCF_000001215.4"].seq_rel_date = "2099/12/31"
-    assert "GCF_000001215.4" not in compute_diff(current, previous_assemblies=previous2).updated
+    previous["GCF_000001215.4"].seq_rel_date = prev_date
+    assert ("GCF_000001215.4" in compute_diff(current, previous_assemblies=previous).updated) is expected_in_updated
 
 
-def test_compute_diff_removed() -> None:
+@pytest.mark.parametrize(
+    ("summary_text", "accession", "expected_replaced", "expected_suppressed"),
+    [
+        pytest.param(SAMPLE_SUMMARY, "GCF_000005845.2", ["GCF_000005845.2"], [], id="replaced"),
+        pytest.param(SAMPLE_SUMMARY, "GCF_000009999.1", [], ["GCF_000009999.1"], id="suppressed"),
+        pytest.param("# empty\n", "GCF_000001215.4", [], ["GCF_000001215.4"], id="absent-from-current"),
+    ],
+)
+def test_compute_diff_removed(
+    summary_text: str,
+    accession: str,
+    expected_replaced: list[str],
+    expected_suppressed: list[str],
+) -> None:
     """Replaced, suppressed, and entirely-absent accessions are classified correctly."""
-    current = parse_assembly_summary(SAMPLE_SUMMARY)
-    assert "GCF_000005845.2" in compute_diff(current, previous_accessions={"GCF_000005845.2"}).replaced
-    assert "GCF_000009999.1" in compute_diff(current, previous_accessions={"GCF_000009999.1"}).suppressed
-    # Accession absent from current entirely → suppressed
-    assert (
-        "GCF_000001215.4"
-        in compute_diff(parse_assembly_summary("# empty\n"), previous_accessions={"GCF_000001215.4"}).suppressed
-    )
+    current = parse_assembly_summary(summary_text)
+    diff = compute_diff(current, previous_accessions={accession})
+    assert diff.replaced == expected_replaced
+    assert diff.suppressed == expected_suppressed
 
 
 def test_compute_diff_scan_store_fallback() -> None:
@@ -172,12 +184,19 @@ def test_accession_prefix(accession: str, expected: str | None) -> None:
         assert accession_prefix(accession) == expected
 
 
-def test_filter_by_prefix_range() -> None:
+@pytest.mark.parametrize(
+    ("args", "expected_all"),
+    [
+        pytest.param(("000", "000"), True, id="inclusive-match"),
+        pytest.param(("001", "999"), False, id="out-of-range"),
+        pytest.param((), True, id="no-range"),
+    ],
+)
+def test_filter_by_prefix_range(args: tuple[str, ...], expected_all: bool) -> None:
     """Range filter is inclusive; out-of-range excluded; no range returns all."""
     assemblies = parse_assembly_summary(SAMPLE_SUMMARY)
-    assert len(filter_by_prefix_range(assemblies, "000", "000")) == len(assemblies)
-    assert len(filter_by_prefix_range(assemblies, "001", "999")) == 0
-    assert len(filter_by_prefix_range(assemblies)) == len(assemblies)
+    expected_count = len(assemblies) if expected_all else 0
+    assert len(filter_by_prefix_range(assemblies, *args)) == expected_count
 
 
 # Manifest writing

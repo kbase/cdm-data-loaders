@@ -43,11 +43,9 @@ logger: Logger = getLogger(__name__)
 DATASET_NAME = "all_the_bacteria"
 ALL_FILES_TSV_FILE_ID = "R6gcp"
 ALL_ATB_FILE_NAME = "all_atb_files.tsv"
-REGEX_FILE = "filters.txt"
 ATB_VERSION = "2025-05"
 
 VERSION: Final[str] = "version"
-PATTERN_FILE: Final[str] = "pattern_file"
 
 # project parts needed:
 PROJECT_PARTS = ["Annotation/Bakta", "Assembly", "Metadata"]

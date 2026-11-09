@@ -165,23 +165,76 @@ def test_validate_md5_sidecar_fail_oserror_reading_sidecar(fs_backend: FsBackend
         validate_md5_sidecar(file_item)
 
 
-def test_preprocessor_registry_pass_sequence_and_dict_modes() -> None:
+@pytest.mark.parametrize(
+    ("registry", "table_name", "expected"),
+    [
+        pytest.param(
+            PreprocessorRegistry(default=(_noop_preprocessor, _filter_preprocessor)),
+            None,
+            (_noop_preprocessor, _filter_preprocessor),
+            id="sequence-none-table",
+        ),
+        pytest.param(
+            PreprocessorRegistry(default=(_noop_preprocessor, _filter_preprocessor)),
+            "any_table",
+            (_noop_preprocessor, _filter_preprocessor),
+            id="sequence-named-table",
+        ),
+        pytest.param(
+            PreprocessorRegistry(
+                registry={
+                    "  table_a ": _noop_preprocessor,
+                    "table_b": [_noop_preprocessor, _filter_preprocessor],
+                }
+            ),
+            "table_a",
+            (_noop_preprocessor,),
+            id="dict-trimmed-key",
+        ),
+        pytest.param(
+            PreprocessorRegistry(
+                registry={
+                    "  table_a ": _noop_preprocessor,
+                    "table_b": [_noop_preprocessor, _filter_preprocessor],
+                }
+            ),
+            "table_b",
+            (_noop_preprocessor, _filter_preprocessor),
+            id="dict-sequence-value",
+        ),
+        pytest.param(
+            PreprocessorRegistry(
+                registry={
+                    "  table_a ": _noop_preprocessor,
+                    "table_b": [_noop_preprocessor, _filter_preprocessor],
+                }
+            ),
+            "unlisted",
+            (),
+            id="dict-unlisted-table",
+        ),
+        pytest.param(
+            PreprocessorRegistry(
+                registry={
+                    "  table_a ": _noop_preprocessor,
+                    "table_b": [_noop_preprocessor, _filter_preprocessor],
+                }
+            ),
+            None,
+            (_noop_preprocessor, _filter_preprocessor),
+            id="dict-none-table-deduped",
+        ),
+    ],
+)
+def test_preprocessor_registry_pass_sequence_and_dict_modes(
+    registry: PreprocessorRegistry,
+    table_name: str | None,
+    expected: tuple[Any, ...],
+) -> None:
     """PreprocessorRegistry supports both pipeline-wide sequence mode and per-table dict mode."""
-    seq_reg = PreprocessorRegistry(default=(_noop_preprocessor, _filter_preprocessor))
-    assert seq_reg.get() == (_noop_preprocessor, _filter_preprocessor)
-    assert seq_reg.get("any_table") == (_noop_preprocessor, _filter_preprocessor)
-
-    dict_reg = PreprocessorRegistry(
-        registry={
-            "  table_a ": _noop_preprocessor,
-            "table_b": [_noop_preprocessor, _filter_preprocessor],
-        }
-    )
-    assert isinstance(dict_reg.registry, MappingProxyType)
-    assert dict_reg.get("table_a") == (_noop_preprocessor,)
-    assert dict_reg.get("table_b") == (_noop_preprocessor, _filter_preprocessor)
-    assert dict_reg.get("unlisted") == ()
-    assert dict_reg.get(None) == (_noop_preprocessor, _filter_preprocessor)
+    if registry.registry is not None:
+        assert isinstance(registry.registry, MappingProxyType)
+    assert registry.get(table_name) == expected
 
 
 @pytest.mark.parametrize(
@@ -297,18 +350,32 @@ def test_load_file_preprocessors_fail(
         load_file_preprocessors(mod_name)
 
 
-def test_validate_file_preprocessors_pass_and_fail() -> None:
-    """validate_file_preprocessors allows sequence registries and valid table keys, and rejects unknown tables."""
-    validate_file_preprocessors(SimpleNamespace(file_preprocessors=None), {"items"})
-    validate_file_preprocessors(
-        SimpleNamespace(file_preprocessors=PreprocessorRegistry(default=(_noop_preprocessor,))),
-        {"items"},
-    )
-    validate_file_preprocessors(
-        SimpleNamespace(file_preprocessors=PreprocessorRegistry(registry={"items": _noop_preprocessor})),
-        {"items", "other"},
-    )
+@pytest.mark.parametrize(
+    ("file_preprocessors", "valid_tables"),
+    [
+        pytest.param(None, {"items"}, id="none-registry"),
+        pytest.param(
+            PreprocessorRegistry(default=(_noop_preprocessor,)),
+            {"items"},
+            id="sequence-registry",
+        ),
+        pytest.param(
+            PreprocessorRegistry(registry={"items": _noop_preprocessor}),
+            {"items", "other"},
+            id="dict-registry-subset",
+        ),
+    ],
+)
+def test_validate_file_preprocessors_pass(
+    file_preprocessors: PreprocessorRegistry | None,
+    valid_tables: set[str],
+) -> None:
+    """validate_file_preprocessors allows None, sequence registries, and valid table keys."""
+    validate_file_preprocessors(SimpleNamespace(file_preprocessors=file_preprocessors), valid_tables)
 
+
+def test_validate_file_preprocessors_fail_unknown_tables() -> None:
+    """validate_file_preprocessors rejects unknown table names in a dict registry."""
     bad_settings = SimpleNamespace(
         file_preprocessors=PreprocessorRegistry(
             registry={"items": _noop_preprocessor, "extra": _noop_preprocessor, " bogus ": _noop_preprocessor}

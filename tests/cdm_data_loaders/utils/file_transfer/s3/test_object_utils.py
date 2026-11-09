@@ -47,7 +47,6 @@ from tests.conftest import ALT_BUCKET, BUCKETS, TEST_BUCKET
 PATH = "path"
 TO = "to"
 TO_FILE = "to/file.txt"
-PATH_TO_FILE = f"{PATH}/{TO_FILE}"
 
 EXPECTED = {
     "path/to": (PATH, TO),
@@ -242,21 +241,33 @@ def test_get_existing_object_info_fail_non_not_found_error_propagates(
 
 # object_exists
 @pytest.mark.s3
+@pytest.mark.parametrize(
+    ("bucket", "file_key"),
+    [(bucket, f) for bucket, file_list in FILES_IN_BUCKETS.items() for f in file_list],
+    ids=[f"{bucket}-{f}" for bucket, file_list in FILES_IN_BUCKETS.items() for f in file_list],
+)
 @pytest.mark.parametrize("protocol", TEST_PROTOCOLS)
-def test_head_object_and_object_exists_true_and_false(mock_s3_client: S3Client, protocol: str) -> None:
-    """Verify that object_exists returns True for an object that exists in the bucket."""
+def test_head_object_and_object_exists_true(
+    mock_s3_client: S3Client, protocol: str, bucket: str, file_key: str
+) -> None:
+    """Verify that head_object and object_exists succeed for an object that exists in the bucket."""
     populate_mock_s3(mock_s3_client, FILES_IN_BUCKETS)
-    for bucket, file_list in FILES_IN_BUCKETS.items():
-        for f in file_list:
-            output = head_object(f"{protocol}{bucket}/{f}")
-            assert output is not None
-            assert isinstance(output["ContentLength"], int)
-            assert object_exists(f"{protocol}{bucket}/{f}") is True
+    output = head_object(f"{protocol}{bucket}/{file_key}")
+    assert output is not None
+    assert isinstance(output["ContentLength"], int)
+    assert object_exists(f"{protocol}{bucket}/{file_key}") is True
 
-        nonexistent_file = f"{protocol}{bucket}/a-file-i-just-made-up.txt"
-        assert object_exists(nonexistent_file) is False
-        with pytest.raises(ClientError, match="404"):
-            head_object(nonexistent_file)
+
+@pytest.mark.s3
+@pytest.mark.parametrize("bucket", BUCKETS)
+@pytest.mark.parametrize("protocol", TEST_PROTOCOLS)
+def test_head_object_and_object_exists_false(mock_s3_client: S3Client, protocol: str, bucket: str) -> None:
+    """Verify that object_exists returns False and head_object raises 404 for a nonexistent key."""
+    populate_mock_s3(mock_s3_client, FILES_IN_BUCKETS)
+    nonexistent_file = f"{protocol}{bucket}/a-file-i-just-made-up.txt"
+    assert object_exists(nonexistent_file) is False
+    with pytest.raises(ClientError, match="404"):
+        head_object(nonexistent_file)
 
 
 @pytest.mark.s3
@@ -304,16 +315,17 @@ def test_list_objects_filters_by_prefix(
 
 
 @pytest.mark.s3
+@pytest.mark.parametrize("bucket", BUCKETS)
 @pytest.mark.parametrize("protocol", TEST_PROTOCOLS)
 def test_list_objects_empty_for_missing_prefix(
     mock_s3_client: S3Client,
+    bucket: str,
     protocol: str,
 ) -> None:
     """Verify that an empty list is returned when no objects match the given prefix."""
     populate_mock_s3(mock_s3_client, FILES_IN_BUCKETS)
-    for bucket in FILES_IN_BUCKETS:
-        contents = list_objects(f"{protocol}{bucket}/nonexistent/")
-        assert contents == []
+    contents = list_objects(f"{protocol}{bucket}/nonexistent/")
+    assert contents == []
 
 
 N_FILES = 1005

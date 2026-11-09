@@ -195,6 +195,23 @@ def test_generate_pyarrow_schema_fail_error_manifest(err: ErrorCase) -> None:
         generate_pyarrow_schema(model_cls)
 
 
+class _FloatEnum(float, Enum):
+    HALF = 0.5
+
+
+class _BoolBytesEnum(Enum):
+    FLAG = True
+    RAW = b"x"
+
+
+class _EmptyEnum(Enum):
+    pass
+
+
+class _BadObjEnum(Enum):
+    OBJ = object()
+
+
 @pytest.mark.parametrize(
     ("annotation", "expected_type", "expected_label"),
     [
@@ -221,6 +238,9 @@ def test_generate_pyarrow_schema_fail_error_manifest(err: ErrorCase) -> None:
             "date-time | date-time-naive",
             id="timestamp-union-widens-to-utc",
         ),
+        pytest.param(_FloatEnum, pa.float64(), "number", id="float-enum"),
+        pytest.param(_BoolBytesEnum, pa.string(), "boolean | binary", id="bool-bytes-enum"),
+        pytest.param(Literal[_FloatEnum.HALF], pa.float64(), "number", id="literal-float-enum"),
     ],
 )
 def test_resolve_scalar_type_pass_special_cases(
@@ -228,7 +248,7 @@ def test_resolve_scalar_type_pass_special_cases(
     expected_type: pa.DataType,
     expected_label: str,
 ) -> None:
-    """Verify resolve_scalar_type handles NewType, Literals, Decimal union widening, and timestamp widening."""
+    """Verify resolve_scalar_type handles NewType, Literals, Enums, Decimal union widening, and timestamp widening."""
     dtype, label = resolve_scalar_type(annotation)
     assert dtype == expected_type
     assert label == expected_label
@@ -253,6 +273,8 @@ def test_resolve_scalar_type_pass_special_cases(
             "decimal128 scale",
             id="decimal-places-exceeds-max-digits",
         ),
+        pytest.param(_EmptyEnum, UnsupportedFieldTypeError, "Empty Enum", id="empty-enum"),
+        pytest.param(_BadObjEnum, UnsupportedFieldTypeError, "Unsupported Enum member", id="unsupported-enum-member"),
     ],
 )
 def test_resolve_scalar_type_fail_invalid_annotations(
@@ -263,32 +285,6 @@ def test_resolve_scalar_type_fail_invalid_annotations(
     """Verify resolve_scalar_type raises appropriate errors for invalid scalar annotations."""
     with pytest.raises(expected_exc, match=match):
         resolve_scalar_type(annotation)
-
-
-def test_resolve_scalar_type_pass_and_fail_enum_variants() -> None:
-    """Verify resolve_scalar_type handles float/bool/bytes enums and rejects empty or unsupported enums."""
-
-    class FloatEnum(float, Enum):
-        HALF = 0.5
-
-    class BoolBytesEnum(Enum):
-        FLAG = True
-        RAW = b"x"
-
-    class EmptyEnum(Enum):
-        pass
-
-    class BadObjEnum(Enum):
-        OBJ = object()
-
-    assert resolve_scalar_type(FloatEnum) == (pa.float64(), "number")
-    assert resolve_scalar_type(BoolBytesEnum) == (pa.string(), "boolean | binary")
-    assert resolve_scalar_type(Literal[FloatEnum.HALF]) == (pa.float64(), "number")
-
-    with pytest.raises(UnsupportedFieldTypeError, match="Empty Enum"):
-        resolve_scalar_type(EmptyEnum)
-    with pytest.raises(UnsupportedFieldTypeError, match="Unsupported Enum member"):
-        resolve_scalar_type(BadObjEnum)
 
 
 def test_generate_pyarrow_schema_pass_edge_cases() -> None:
@@ -349,62 +345,83 @@ def test_generate_pyarrow_schema_pass_edge_cases() -> None:
     assert root_union_schema.field("shared").type == pa.int64()
 
 
-def test_generate_pyarrow_schema_fail_additional_error_branches() -> None:
+type _CyclicAlias = str | list[_CyclicAlias]
+type _GenericCyclic[T] = T | list[_GenericCyclic[T]]
+
+
+class _GenericModel[T](BaseModel):
+    item: T
+
+
+class _GenericRoot[T](RootModel[T]):
+    pass
+
+
+class _BareBaseModelField(BaseModel):
+    sub: BaseModel
+
+
+class _UnparameterizedGenericField(BaseModel):
+    sub: _GenericModel
+
+
+class _UnparameterizedGenericRootField(BaseModel):
+    sub: _GenericRoot
+
+
+class _EmptyTupleField(BaseModel):
+    empty: tuple[()]
+
+
+class _IntKeyedMapModel(BaseModel):
+    counts: dict[int, str]
+
+
+class _AnyKeyedMapModel(BaseModel):
+    counts: dict[Any, str]
+
+
+class _NullOnlyModel(BaseModel):
+    empty_val: None = None
+
+
+class _CyclicAliasModel(BaseModel):
+    tree: _CyclicAlias
+
+
+class _GenericCyclicAliasModel(BaseModel):
+    tree: _GenericCyclic[int]
+
+
+class _RootUnionWithScalar(RootModel[_BareBaseModelField | int]):
+    pass
+
+
+@pytest.mark.parametrize(
+    ("model_cls", "exc_cls"),
+    [
+        pytest.param(_GenericModel, UnconstrainedFieldError, id="generic-model"),
+        pytest.param(_BareBaseModelField, InvalidPydanticModelError, id="bare-basemodel-field"),
+        pytest.param(_UnparameterizedGenericField, UnconstrainedFieldError, id="unparameterized-generic-field"),
+        pytest.param(
+            _UnparameterizedGenericRootField, UnconstrainedFieldError, id="unparameterized-generic-root-field"
+        ),
+        pytest.param(_EmptyTupleField, EmptyModelError, id="empty-tuple-field"),
+        pytest.param(_IntKeyedMapModel, NonStringMapKeyError, id="int-keyed-map"),
+        pytest.param(_AnyKeyedMapModel, UnconstrainedFieldError, id="any-keyed-map"),
+        pytest.param(_NullOnlyModel, UnsupportedFieldTypeError, id="null-only-model"),
+        pytest.param(_CyclicAliasModel, RecursiveNonJsonTypeError, id="cyclic-alias"),
+        pytest.param(_GenericCyclicAliasModel, RecursiveNonJsonTypeError, id="generic-cyclic-alias"),
+        pytest.param(_RootUnionWithScalar, NonStructRootError, id="root-union-with-scalar"),
+    ],
+)
+def test_generate_pyarrow_schema_fail_additional_error_branches(
+    model_cls: type[BaseModel],
+    exc_cls: type[PydanticToPyArrowError],
+) -> None:
     """Verify schema generation error branches for invalid models, tuples, maps, and recursive types."""
-    type CyclicAlias = str | list[CyclicAlias]
-    type GenericCyclic[T] = T | list[GenericCyclic[T]]
-
-    class GenericModel[T](BaseModel):
-        item: T
-
-    class GenericRoot[T](RootModel[T]):
-        pass
-
-    class BareBaseModelField(BaseModel):
-        sub: BaseModel
-
-    class UnparameterizedGenericField(BaseModel):
-        sub: GenericModel
-
-    class UnparameterizedGenericRootField(BaseModel):
-        sub: GenericRoot
-
-    class EmptyTupleField(BaseModel):
-        empty: tuple[()]
-
-    class IntKeyedMapModel(BaseModel):
-        counts: dict[int, str]
-
-    class AnyKeyedMapModel(BaseModel):
-        counts: dict[Any, str]
-
-    class NullOnlyModel(BaseModel):
-        empty_val: None = None
-
-    class CyclicAliasModel(BaseModel):
-        tree: CyclicAlias
-
-    class GenericCyclicAliasModel(BaseModel):
-        tree: GenericCyclic[int]
-
-    class RootUnionWithScalar(RootModel[BareBaseModelField | int]):
-        pass
-
-    for model_cls, exc_cls in (
-        (GenericModel, UnconstrainedFieldError),
-        (BareBaseModelField, InvalidPydanticModelError),
-        (UnparameterizedGenericField, UnconstrainedFieldError),
-        (UnparameterizedGenericRootField, UnconstrainedFieldError),
-        (EmptyTupleField, EmptyModelError),
-        (IntKeyedMapModel, NonStringMapKeyError),
-        (AnyKeyedMapModel, UnconstrainedFieldError),
-        (NullOnlyModel, UnsupportedFieldTypeError),
-        (CyclicAliasModel, RecursiveNonJsonTypeError),
-        (GenericCyclicAliasModel, RecursiveNonJsonTypeError),
-        (RootUnionWithScalar, NonStructRootError),
-    ):
-        with pytest.raises(exc_cls):
-            generate_pyarrow_schema(model_cls)
+    with pytest.raises(exc_cls):
+        generate_pyarrow_schema(model_cls)
 
 
 def test_coerce_record_for_pyarrow_pass_unvalidated_and_boundary_coercions() -> None:

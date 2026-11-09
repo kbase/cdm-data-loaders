@@ -72,7 +72,6 @@ TINY_RESOURCE_DATA: Final[list[dict[str, Any]]] = [
 ]
 TINY_PIPELINE_NAME: Final[str] = "test_core_tiny_pipeline"
 TINY_TABLE_NAME: Final[str] = "tiny"
-FILESYSTEM_DESTINATION_TYPE: Final[str] = "dlt.destinations.filesystem"
 ALL_JOBS_COMPLETED: Final[str] = "All pipeline jobs completed successfully"
 FAILED_JOBS_WARNING: Final[str] = "Pipeline contains failed jobs"
 
