@@ -21,14 +21,19 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
 )
 from cdm_data_loaders.converters.readers.xsd import load_schema
 from cdm_data_loaders.core.fields import XML_GZ_FILE_GLOB, FileGlob, NonEmptyStr, XsdFile
-from cdm_data_loaders.core.preprocessors import validate_file_preprocessors, validate_md5_sidecar
-from cdm_data_loaders.core.registry import ArrowSchemaRegistry, FilePreprocessFn
+from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
+from cdm_data_loaders.core.registry import (
+    ArrowSchemaRegistry,
+    FilePreprocessFn,
+    RecordTransformFn,
+    TransformRegistry,
+)
 from cdm_data_loaders.core.settings import (
     XML_CLI_SHORTCUTS,
     XmlIngestSettings,
     default_settings_with_shortcuts,
 )
-from cdm_data_loaders.core.transforms import TransformSettingsMixin, validate_table_transforms
+from cdm_data_loaders.core.transforms import TransformSettingsMixin
 from cdm_data_loaders.schemas.pubmed.schema import SCHEMAS as PUBMED_SCHEMAS
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMA as UNIPROT_SCHEMA
 from cdm_data_loaders.schemas.uniref.schema import SCHEMA as UNIREF_SCHEMA
@@ -123,8 +128,7 @@ class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin):
     def _resolve_level_schema_map(self) -> None:
         """Validate `file_preprocessors` and `table_transforms`, and populate `_schema_map` for level-based mode."""
         valid_tables = self._xml_level_converters or self._pyarrow_schemas
-        validate_file_preprocessors(self, valid_tables)
-        validate_table_transforms(self, valid_tables)
+        self._validate_configured_tables(valid_tables)
         if not self.use_pyarrow:
             self._schema_map = None
             return
@@ -166,10 +170,10 @@ class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin):
                     xml_tag,
                     max_recursion_depth=self.max_recursion_depth,
                 )
-                pyarrow_schema = (
-                    default_pyarrow_schema
-                    if default_pyarrow_schema is not None or not self._needs_default_pyarrow_schema(table_name)
-                    else self._resolve_pyarrow_schema()
+                pyarrow_schema = self._resolve_default_table_schema(
+                    table_name,
+                    default_pyarrow_schema,
+                    self._resolve_pyarrow_schema,
                 )
                 self._pyarrow_schema = pyarrow_schema
                 self._pyarrow_schemas = {table_name: pyarrow_schema} if pyarrow_schema is not None else {}
@@ -262,6 +266,17 @@ class PresetXmlToPyArrowSettings(XmlToPyArrowSettings):
         :rtype : pa.Schema
         """
         return self._PRECOMPUTED_SCHEMA
+
+    def _bind_cdm_transform_and_schemas(
+        self,
+        transform: RecordTransformFn,
+        schema_map: ArrowSchemaRegistry,
+        default_pyarrow_schema: pa.Schema | None = None,
+    ) -> None:
+        """Bind a preset CDM record transform and output schema registry to ``self.table_name``."""
+        self._table_transforms = TransformRegistry(registry={self.table_name: transform})
+        self._unreconciled_output_schemas = schema_map
+        super()._resolve_settings_schema_map(default_pyarrow_schema=default_pyarrow_schema)
 
 
 class LevelPresetXmlToPyArrowSettings(XmlToPyArrowSettings):

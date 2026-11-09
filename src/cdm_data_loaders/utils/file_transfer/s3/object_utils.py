@@ -1,5 +1,8 @@
 """Utilities for s3 interaction."""
 
+import itertools
+import shutil
+from collections.abc import Callable
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import IO, Any, Final
@@ -63,7 +66,12 @@ def split_s3_path(s3_path: str, *, allow_bucket_only: bool = False) -> tuple[str
     return (path_parts[0], path_parts[1])
 
 
-def list_objects(s3_path: str, *, max_keys: int = 1000) -> list[dict[str, Any]]:
+def list_objects(
+    s3_path: str,
+    *,
+    max_keys: int = 1000,
+    allow_bucket_only: bool = False,
+) -> list[dict[str, Any]]:
     """List the remote paths that start with ``s3_path``.
 
     Note: since s3 paths are basically cosmetic, this function returns all paths that start with
@@ -76,13 +84,15 @@ def list_objects(s3_path: str, *, max_keys: int = 1000) -> list[dict[str, Any]]:
     :type s3_path: str
     :param max_keys: maximum number of keys to return. boto3 defaults to 1000 records max.
     :type max_keys: int
+    :param allow_bucket_only: allow listing an entire bucket when ``s3_path`` has no key prefix
+    :type allow_bucket_only: bool
     :return: list of object metadata dicts in the directory
     :rtype: list[dict[str, Any]]
     """
     s3 = client.get_s3_client()
-    (bucket, key) = split_s3_path(s3_path)
+    (bucket, key) = split_s3_path(s3_path, allow_bucket_only=allow_bucket_only)
     paginator = s3.get_paginator("list_objects_v2")
-    page_iterator = paginator.paginate(Bucket=bucket, Prefix=key, MaxKeys=max_keys)
+    page_iterator = paginator.paginate(Bucket=bucket, Prefix=key or "", MaxKeys=max_keys)
 
     contents = []
     for page in page_iterator:
@@ -273,10 +283,75 @@ def upload_file(  # noqa: PLR0913
         )
 
 
+def upload_dir_files(  # noqa: PLR0913
+    local_dir: Path | str,
+    destination_dir: str,
+    file_glob: str | None = None,
+    *,
+    show_progress: bool = True,
+    delete_source: bool = False,
+    upload_fn: Callable[..., bool] | None = None,
+) -> tuple[int, bool]:
+    """Upload files under ``local_dir`` to ``destination_dir`` and return ``(uploaded_count, all_successful)``.
+
+    :param local_dir: local directory to upload
+    :type local_dir: Path | str
+    :param destination_dir: remote directory to upload to, including the bucket name
+    :type destination_dir: str
+    :param file_glob: glob for selecting files to upload (defaults to ``"**/*"``)
+    :type file_glob: str | None
+    :param show_progress: whether to display a tqdm progress bar during each upload
+    :type show_progress: bool
+    :param delete_source: whether to delete each file after uploading and remove ``local_dir`` on completion
+    :type delete_source: bool
+    :param upload_fn: callable used to upload each file (defaults to :func:`upload_file`)
+    :type upload_fn: Callable[..., bool] | None
+    :return: tuple of ``(uploaded_count, all_successful)``
+    :rtype: tuple[int, bool]
+    """
+    if not local_dir:
+        msg = "No source directory supplied for the upload"
+        raise ValueError(msg)
+
+    if not destination_dir:
+        msg = "No destination directory supplied for the upload"
+        raise ValueError(msg)
+
+    if not file_glob:
+        file_glob = "**/*"
+
+    if isinstance(local_dir, str):
+        local_dir = Path(local_dir)
+
+    uploader = upload_fn or upload_file
+    uploaded_count = 0
+    all_successful = True
+    for path in sorted(local_dir.glob(file_glob)):
+        if path.is_dir():
+            continue
+        object_name = str(path.relative_to(local_dir))
+        success = uploader(path, destination_dir, object_name=object_name, show_progress=show_progress)
+        if success:
+            uploaded_count += 1
+        else:
+            all_successful = False
+            logger.warning("Failed to upload %s to %s/%s", path, destination_dir, object_name)
+        if delete_source:
+            path.unlink()
+
+    if delete_source:
+        shutil.rmtree(local_dir, ignore_errors=True)
+
+    return uploaded_count, all_successful
+
+
 def upload_dir(
     local_dir: Path | str,
     destination_dir: str,
     file_glob: str | None = None,
+    *,
+    show_progress: bool = True,
+    delete_source: bool = False,
 ) -> bool:
     """Upload a directory to an s3 bucket.
 
@@ -312,38 +387,26 @@ def upload_dir(
 
     For a literal match, wrap the meta-characters in brackets. For example, "[?]" matches the character "?".
 
-    :param local_dir_path: local directory to upload
-    :type local_dir_path: Path | str
+    :param local_dir: local directory to upload
+    :type local_dir: Path | str
     :param destination_dir: remote directory to upload to, including the bucket name
     :type destination_dir: str
     :param file_glob: glob for selecting files to upload
     :type file_glob: str | None
+    :param show_progress: whether to display a tqdm progress bar during each upload
+    :type show_progress: bool
+    :param delete_source: whether to delete each file after uploading and remove ``local_dir`` on completion
+    :type delete_source: bool
     :return: True or False, depending on the result of the uploads
     :rtype: bool
     """
-    if not local_dir:
-        msg = "No source directory supplied for the upload"
-        raise ValueError(msg)
-
-    if not destination_dir:
-        msg = "No destination directory supplied for the upload"
-        raise ValueError(msg)
-
-    if not file_glob:
-        file_glob = "**/*"
-
-    if isinstance(local_dir, str):
-        local_dir = Path(local_dir)
-
-    all_successful = True
-    for path in sorted(local_dir.glob(file_glob)):
-        if path.is_dir():
-            continue
-        # get the path of the current file relative to local_dir and use that as the object name
-        success = upload_file(path, destination_dir, object_name=str(path.relative_to(local_dir)))
-        if not success:
-            all_successful = False
-
+    _, all_successful = upload_dir_files(
+        local_dir,
+        destination_dir,
+        file_glob=file_glob,
+        show_progress=show_progress,
+        delete_source=delete_source,
+    )
     return all_successful
 
 
@@ -457,7 +520,6 @@ def copy_directory(current_s3_path: str, new_s3_path: str) -> tuple[dict[str, st
                for each failed copy
     :rtype: tuple[dict[str, str], dict[str, Any]]
     """
-    s3 = client.get_s3_client()
     (current_s3_bucket, current_s3_prefix) = split_s3_path(current_s3_path)
     (new_s3_bucket, new_s3_prefix) = split_s3_path(new_s3_path)
 
@@ -466,35 +528,26 @@ def copy_directory(current_s3_path: str, new_s3_path: str) -> tuple[dict[str, st
     if new_s3_prefix and not new_s3_prefix.endswith("/"):
         new_s3_prefix += "/"
 
-    paginator = s3.get_paginator("list_objects_v2")
-    pages = paginator.paginate(Bucket=current_s3_bucket, Prefix=current_s3_prefix)
-
     successes: dict[str, str] = {}
     errors: dict[str, Any] = {}
 
-    for page in pages:
-        for obj in page.get("Contents", []):
-            current_key = obj["Key"]
-            relative_key = current_key[len(current_s3_prefix) :]
-            new_key = new_s3_prefix + relative_key
+    for obj in list_objects(f"{current_s3_bucket}/{current_s3_prefix}"):
+        current_key = obj["Key"]
+        relative_key = current_key[len(current_s3_prefix) :]
+        new_key = new_s3_prefix + relative_key
 
-            source_path = f"{current_s3_bucket}/{current_key}"
-            dest_path = f"{new_s3_bucket}/{new_key}"
+        source_path = f"{current_s3_bucket}/{current_key}"
+        dest_path = f"{new_s3_bucket}/{new_key}"
 
-            try:
-                resp = s3.copy_object(
-                    CopySource={"Bucket": current_s3_bucket, "Key": current_key},
-                    Bucket=new_s3_bucket,
-                    Key=new_key,
-                    **DEFAULT_EXTRA_ARGS,
-                )
-                if resp["ResponseMetadata"]["HTTPStatusCode"] == SUCCESS_RESPONSE:
-                    successes[source_path] = dest_path
-                else:
-                    errors[source_path] = resp
-            except Exception as e:
-                logger.exception("Failed to copy %s to %s", source_path, dest_path)
-                errors[source_path] = e
+        try:
+            resp = copy_object(source_path, dest_path)
+            if resp["ResponseMetadata"]["HTTPStatusCode"] == SUCCESS_RESPONSE:
+                successes[source_path] = dest_path
+            else:
+                errors[source_path] = resp
+        except Exception as e:
+            logger.exception("Failed to copy %s to %s", source_path, dest_path)
+            errors[source_path] = e
 
     return successes, errors
 
@@ -535,8 +588,7 @@ def delete_objects(bucket: str, keys: list[str]) -> list[dict[str, Any]]:
 
     s3 = client.get_s3_client()
     errors: list[dict[str, Any]] = []
-    for i in range(0, len(keys), 1000):
-        batch = keys[i : i + 1000]
+    for batch in itertools.batched(keys, 1000, strict=False):
         resp = s3.delete_objects(
             Bucket=bucket,
             Delete={"Objects": [{"Key": k} for k in batch], "Quiet": False},

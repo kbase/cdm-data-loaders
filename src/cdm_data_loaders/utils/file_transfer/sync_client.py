@@ -32,6 +32,7 @@ from tenacity import (
 from cdm_data_loaders.utils.file_transfer.core import (
     HTTP_CLIENT_DEFAULTS,
     RETRY_DEFAULTS,
+    BaseFileDownloader,
     DownloadCore,
 )
 
@@ -43,10 +44,8 @@ def get_httpx_client() -> httpx.Client:
     return httpx.Client(**HTTP_CLIENT_DEFAULTS)
 
 
-class FileDownloader:
+class FileDownloader(BaseFileDownloader):
     """Synchronous downloader interface."""
-
-    RETRYABLE_EXCEPTIONS = DownloadCore.RETRYABLE_EXCEPTIONS
 
     def __init__(
         self,
@@ -69,8 +68,7 @@ class FileDownloader:
         :param chunk_size: chunk size for the downloader, defaults to 8192
         :type chunk_size: int, optional
         """
-        self.client = client or get_httpx_client()
-        self.chunk_size = chunk_size
+        super().__init__(client or get_httpx_client(), chunk_size=chunk_size)
 
         self._retry = retry(
             **DownloadCore.retry_kwargs(max_attempts, min_backoff, max_backoff),
@@ -138,9 +136,7 @@ class FileDownloader:
         """
         try:
             with self.client.stream("GET", url, headers=extra_headers) as response:
-                continue_dl = DownloadCore.validate_response(response)
-                if not continue_dl:
-                    logger.info("%s: resource has not been modified", url, extra={"url": url})
+                if not DownloadCore.check_should_download(response, url, logger):
                     return None
 
                 chunks = response.iter_bytes(chunk_size=self.chunk_size)
@@ -156,6 +152,4 @@ class FileDownloader:
         except Exception as exc:  # noqa: BLE001
             DownloadCore.handle_download_exception(exc, url, logger)
 
-        logger.info("%s: download successful", url, extra={"path": str(destination)})
-
-        return destination
+        return DownloadCore.log_download_success(url, destination, logger)

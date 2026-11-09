@@ -49,6 +49,7 @@ class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
     _validated_schema: ValidatedXsvSchema | None = PrivateAttr(default=None)
     _first_pass_schema: ValidatedXsvSchema | None = PrivateAttr(default=None)
     _parsing_config: dict[str, Any] | None = PrivateAttr(default=None)
+    _pyarrow_schema: pa.Schema | None = PrivateAttr(default=None)
 
     file_glob: FileGlob
     schema_file: Annotated[
@@ -63,22 +64,25 @@ class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
     table_name: TableName
 
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
-        """Load and validate the schema file, first-pass schema, parsing config, and resolve `_schema_map`."""
+        """Load and validate the schema file, first-pass schema, parsing config, PyArrow schema, and `_schema_map`."""
         try:
             self._validated_schema = validate_jsonschema(self.schema_file)
             self._first_pass_schema = generate_first_pass_schema(self._validated_schema)
             self._parsing_config = resolve_xsv_parsing_config(self._validated_schema)
-            pyarrow_schema = (
-                default_pyarrow_schema
-                if default_pyarrow_schema is not None or not self._needs_default_pyarrow_schema(self.table_name)
-                else convert_xsv_schema_to_pyarrow(self._validated_schema)
-            )
+            if (
+                self.get_table_transform(self.table_name) is None
+                and self._unreconciled_output_schemas is not None
+                and self.table_name in self._unreconciled_output_schemas.registry
+            ):
+                self._pyarrow_schema = self._unreconciled_output_schemas.registry[self.table_name]
+            else:
+                self._pyarrow_schema = default_pyarrow_schema or convert_xsv_schema_to_pyarrow(self.validated_schema)
         except Exception as e:
             err_msg = f"Could not load JSON Schema for XSV data: {e!s}"
             logger.exception(err_msg)
             raise RuntimeError(err_msg) from e
 
-        super()._resolve_settings_schema_map(default_pyarrow_schema=pyarrow_schema)
+        super()._resolve_settings_schema_map(default_pyarrow_schema=self._pyarrow_schema)
 
     @property
     def validated_schema(self) -> ValidatedXsvSchema:
@@ -103,3 +107,11 @@ class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
             err_msg = "Schema has not been validated"
             raise RuntimeError(err_msg)
         return self._parsing_config
+
+    @property
+    def pyarrow_schema(self) -> pa.Schema:
+        """The PyArrow schema used to type XSV columns during reading and output."""
+        if self._pyarrow_schema is None:
+            err_msg = "Schema has not been validated"
+            raise RuntimeError(err_msg)
+        return self._pyarrow_schema

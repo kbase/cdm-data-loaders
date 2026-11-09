@@ -195,6 +195,20 @@ def _extract_component_meta(node: TypedNode) -> tuple[ComponentKey, str | None, 
     return (comp_id, nillable), type_name, is_inline
 
 
+def render_scalar_type_expr(dtype: pa.DataType) -> str:
+    """Render a scalar PyArrow ``DataType`` as a Python constructor expression.
+
+    :param dtype: Scalar PyArrow data type.
+    :type dtype: pa.DataType
+    :return: Python constructor expression string.
+    :rtype: str
+    :raises KeyError: If ``dtype`` is not a supported scalar type.
+    """
+    if dtype in PA_SCALAR_EXPR:
+        return PA_SCALAR_EXPR[dtype]
+    return _render_parametric_scalar_expr(dtype)
+
+
 def _render_type_expr(dtype: pa.DataType) -> str:
     """Render a PyArrow ``DataType`` as a Python constructor expression.
 
@@ -215,9 +229,7 @@ def _render_type_expr(dtype: pa.DataType) -> str:
     if isinstance(dtype, pa.StructType):
         struct_fields = [_field_spec_from_pa(f, _render_type_expr(f.type)) for f in dtype]
         return _render_struct_expr(struct_fields)
-    if dtype in PA_SCALAR_EXPR:
-        return PA_SCALAR_EXPR[dtype]
-    return _render_parametric_scalar_expr(dtype)
+    return render_scalar_type_expr(dtype)
 
 
 def _format_metadata_single(metadata: Mapping[str, str]) -> str:

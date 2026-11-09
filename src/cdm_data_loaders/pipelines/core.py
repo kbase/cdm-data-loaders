@@ -34,7 +34,7 @@ from cdm_data_loaders.core.settings import (
     InputLocalOutputSettings,
     LoggerSettings,
 )
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
+from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA, make_rejected_row
 from cdm_data_loaders.utils.cdm_logger import init_logger
 from cdm_data_loaders.utils.file_items import source_id
 
@@ -175,6 +175,18 @@ class _FilesystemTracker:
 
     ingested_files: list[str]
     preprocess_errors: list[str]
+
+    def record_file(self, item: Any) -> Any:  # noqa: ANN401
+        """Append ``item["relative_path"]`` to ``ingested_files`` if present and return ``item``.
+
+        :param item: file item or record yielded by a filesystem resource
+        :type item: Any
+        :return: unmodified ``item``
+        :rtype: Any
+        """
+        if isinstance(item, dict) and "relative_path" in item:
+            self.ingested_files.append(item["relative_path"])
+        return item
 
 
 def send_slack_message_carefully(
@@ -372,16 +384,7 @@ def _attach_file_collector(resource: DltResource | list[DltResource]) -> _Filesy
                 if tracker is None:
                     tracker = _FilesystemTracker(ingested_files=[], preprocess_errors=[])
                     pipe._fs_tracker = tracker  # type: ignore[attr-defined]  # noqa: SLF001
-
-                    def _make_recorder(t: _FilesystemTracker) -> Callable[[Any], Any]:
-                        def _record_file(item: Any) -> Any:  # noqa: ANN401
-                            if isinstance(item, dict) and "relative_path" in item:
-                                t.ingested_files.append(item["relative_path"])
-                            return item
-
-                        return _record_file
-
-                    curr.add_map(_make_recorder(tracker))
+                    curr.add_map(tracker.record_file)
                 tracker.ingested_files = collector.ingested_files
                 tracker.preprocess_errors = collector.preprocess_errors
             curr = curr._parent  # noqa: SLF001
@@ -543,13 +546,11 @@ def build_filesystem_resource(  # noqa: PLR0913
                     err_msg = f"File pre-processing failed for {src_id}: {exc}"
                     logger.error(err_msg)  # noqa: TRY400
                     tracker.preprocess_errors.append(err_msg)
-                    rejected_row = {
-                        "table_name": resolved_table_name,
-                        "source_file": src_id,
-                        "line_no": None,
-                        "raw_record": None,
-                        "error_detail": str(exc),
-                    }
+                    rejected_row = make_rejected_row(
+                        resolved_table_name,
+                        str(exc),
+                        source_file=src_id,
+                    )
                     rejected_page: TDataItems = (
                         pa.Table.from_pylist([rejected_row], schema=REJECTED_PYARROW_SCHEMA)
                         if getattr(settings, "use_pyarrow", True)
@@ -562,8 +563,7 @@ def build_filesystem_resource(  # noqa: PLR0913
                     failed = True
                     break
             if not failed and curr_item is not None:
-                if isinstance(curr_item, dict) and "relative_path" in curr_item:
-                    tracker.ingested_files.append(curr_item["relative_path"])
+                tracker.record_file(curr_item)
                 valid_items.append(curr_item)
 
         if valid_items or not raw_items:

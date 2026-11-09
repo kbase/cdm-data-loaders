@@ -20,6 +20,7 @@ output_path = await async_client.download(
 """
 
 import asyncio
+import contextlib
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,7 @@ from tenacity import AsyncRetrying
 from cdm_data_loaders.utils.file_transfer.core import (
     HTTP_CLIENT_DEFAULTS,
     RETRY_DEFAULTS,
+    BaseFileDownloader,
     DownloadCore,
 )
 
@@ -41,10 +43,8 @@ def get_async_httpx_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(**HTTP_CLIENT_DEFAULTS)
 
 
-class AsyncFileDownloader:
+class AsyncFileDownloader(BaseFileDownloader):
     """Asynchronous downloader interface."""
-
-    RETRYABLE_EXCEPTIONS = DownloadCore.RETRYABLE_EXCEPTIONS
 
     def __init__(  # noqa: PLR0913
         self,
@@ -70,8 +70,7 @@ class AsyncFileDownloader:
         :param max_concurrency: maximum concurrency for the downloader, defaults to None
         :type max_concurrency: int, optional
         """
-        self.client = client or get_async_httpx_client()
-        self.chunk_size = chunk_size
+        super().__init__(client or get_async_httpx_client(), chunk_size=chunk_size)
         self.semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency else None
 
         self._retry = AsyncRetrying(**DownloadCore.retry_kwargs(max_attempts, min_backoff, max_backoff))
@@ -104,23 +103,14 @@ class AsyncFileDownloader:
         """
         destination, checksum_fn, extra_headers = DownloadCore.validate_args(destination, checksum_fn, extra_headers)
 
-        if self.semaphore:
-            async with self.semaphore:
-                return await self._download_with_retry(
-                    url,
-                    destination,
-                    expected_checksum,
-                    checksum_fn,
-                    extra_headers,
-                )
-
-        return await self._download_with_retry(
-            url,
-            destination,
-            expected_checksum,
-            checksum_fn,
-            extra_headers,
-        )
+        async with self.semaphore or contextlib.nullcontext():
+            return await self._download_with_retry(
+                url,
+                destination,
+                expected_checksum,
+                checksum_fn,
+                extra_headers,
+            )
 
     async def _download_with_retry(self, *args) -> Path | None:
         async for attempt in self._retry:
@@ -158,9 +148,7 @@ class AsyncFileDownloader:
         """
         try:
             async with self.client.stream("GET", url, headers=extra_headers) as response:
-                # check the response - should the download continue?
-                if not DownloadCore.validate_response(response):
-                    logger.info("%s: resource has not been modified", url, extra={"url": url})
+                if not DownloadCore.check_should_download(response, url, logger):
                     return None
 
                 chunks = response.aiter_bytes(chunk_size=self.chunk_size)
@@ -176,6 +164,4 @@ class AsyncFileDownloader:
         except Exception as exc:  # noqa: BLE001
             DownloadCore.handle_download_exception(exc, url, logger)
 
-        logger.info("%s: download successful", url, extra={"path": str(destination)})
-
-        return destination
+        return DownloadCore.log_download_success(url, destination, logger)

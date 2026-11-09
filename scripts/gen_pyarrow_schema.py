@@ -7,7 +7,6 @@ Usage::
 """
 
 import argparse
-import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -17,8 +16,8 @@ from cdm_data_loaders.converters.cli.xsd_to_pyarrow import (
     SchemaCodegenConfig,
     render_schema_module,
 )
+from scripts.gen_docs import REPO_ROOT, check_or_write_files, rel_posix
 
-REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 SCHEMAS_DIR: Final[Path] = REPO_ROOT / "src" / "cdm_data_loaders" / "schemas"
 
 UNIREF_SCHEMA_CONFIG: Final[SchemaCodegenConfig] = SchemaCodegenConfig(
@@ -49,18 +48,7 @@ CONFIGS: Final[tuple[SchemaCodegenConfig, ...]] = (
     PUBMED_SCHEMA_CONFIG,
 )
 
-
-def _rel(path: Path, start: Path) -> str:
-    """Return a POSIX relative path string from ``start`` to ``path``.
-
-    :param path: Target path.
-    :type path: Path
-    :param start: Base directory path.
-    :type start: Path
-    :return: POSIX relative path string.
-    :rtype: str
-    """
-    return Path(os.path.relpath(path, start)).as_posix()
+_rel = rel_posix
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -75,19 +63,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="fail if a committed schema.py is out of date")
     args = parser.parse_args(argv)
 
-    stale: list[Path] = []
-    for config in CONFIGS:
-        text = render_schema_module(config)
-        current = config.output.read_text(encoding="utf-8") if config.output.exists() else None
-        if current == text:
-            continue
-        if args.check:
-            stale.append(config.output)
-        else:
-            config.output.write_text(text, encoding="utf-8")
-    for path in stale:
-        sys.stderr.write(f"stale: {_rel(path, REPO_ROOT)}\n")
-    return 1 if stale else 0
+    return check_or_write_files(
+        ((config.output, render_schema_module(config)) for config in CONFIGS),
+        check=args.check,
+        repo_root=REPO_ROOT,
+    )
 
 
 if __name__ == "__main__":

@@ -9,7 +9,6 @@ Usage::
 import argparse
 import datetime as dt
 import json
-import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -54,6 +53,7 @@ from pydantic import (
     StrictStr,
 )
 
+from cdm_data_loaders.converters.emitters.pyarrow_codegen import render_scalar_type_expr
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSCHEMA_TO_PYARROW_ERRORS,
     JSONSchemaToPyArrowError,
@@ -72,30 +72,10 @@ from cdm_data_loaders.converters.readers.xsd import (
     XSD_TO_PYARROW_ERRORS,
     XsdToPyArrowError,
 )
+from scripts.gen_docs import REPO_ROOT, check_or_write_files, escape_table_cell, rel_posix
 from tests.converter_spec import Case, ErrorCase, RuleCatalogue, load_cases, load_error_cases, load_rules
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-
 GENERATED_BANNER = "<!-- GENERATED FILE - DO NOT EDIT. Source: {sources}. Regenerate with `uv run python -m scripts.gen_converter_spec`. -->"
-
-_PA_CONSTRUCTORS: dict[str, str] = {
-    "string": "pa.string()",
-    "bool": "pa.bool_()",
-    "int8": "pa.int8()",
-    "int16": "pa.int16()",
-    "int32": "pa.int32()",
-    "int64": "pa.int64()",
-    "uint8": "pa.uint8()",
-    "uint16": "pa.uint16()",
-    "uint32": "pa.uint32()",
-    "uint64": "pa.uint64()",
-    "double": "pa.float64()",
-    "date32[day]": "pa.date32()",
-    "time64[us]": 'pa.time64("us")',
-    "timestamp[us, tz=UTC]": 'pa.timestamp("us", tz="UTC")',
-    "timestamp[us]": 'pa.timestamp("us")',
-    "binary": "pa.binary()",
-}
 
 _PY_TYPES: dict[str, str] = {
     "string": "`str`",
@@ -125,8 +105,7 @@ class ConverterSpecConfig:
     target_label: str | None = None
 
 
-def _rel(path: Path, start: Path) -> str:
-    return Path(os.path.relpath(path, start)).as_posix()
+_rel = rel_posix
 
 
 def _code_block(path: Path, lang: str) -> str:
@@ -134,9 +113,10 @@ def _code_block(path: Path, lang: str) -> str:
 
 
 def _pa_ctor(dtype: pa.DataType) -> str:
-    if isinstance(dtype, pa.Decimal128Type):
-        return f"pa.decimal128({dtype.precision}, {dtype.scale})"
-    return _PA_CONSTRUCTORS.get(str(dtype), f"`{dtype}`")
+    try:
+        return render_scalar_type_expr(dtype)
+    except KeyError:
+        return f"`{dtype}`"
 
 
 def _py_type(dtype: pa.DataType) -> str:
@@ -198,7 +178,7 @@ def render_jsonschema_scalar_table() -> str:
     ]
     for probe in JSONSCHEMA_SCALAR_PROBES:
         dtype, label = resolve_scalar_type(probe)
-        cell_label = label.replace("|", "\\|")
+        cell_label = escape_table_cell(label)
         lines.append(f"| `{json.dumps(probe)}` | {_py_type(dtype)} | `{_pa_ctor(dtype)}` | `{cell_label}` |")
     return "\n".join(lines)
 
@@ -297,8 +277,8 @@ def render_pydantic_scalar_table() -> str:
     ]
     for display_label, annotation in PYDANTIC_SCALAR_PROBES:
         dtype, label = resolve_pydantic_scalar_type(annotation)
-        cell_display = display_label.replace("|", "\\|")
-        cell_label = label.replace("|", "\\|")
+        cell_display = escape_table_cell(display_label)
+        cell_label = escape_table_cell(label)
         lines.append(f"| {cell_display} | {_py_type(dtype)} | `{_pa_ctor(dtype)}` | `{cell_label}` |")
     return "\n".join(lines)
 
@@ -502,19 +482,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="fail if a committed document is out of date")
     args = parser.parse_args(argv)
 
-    stale: list[Path] = []
-    for config in CONFIGS:
-        text = render(config)
-        current = config.output.read_text(encoding="utf-8") if config.output.exists() else None
-        if current == text:
-            continue
-        if args.check:
-            stale.append(config.output)
-        else:
-            config.output.write_text(text, encoding="utf-8")
-    for path in stale:
-        sys.stderr.write(f"stale: {_rel(path, REPO_ROOT)}\n")
-    return 1 if stale else 0
+    return check_or_write_files(
+        ((config.output, render(config)) for config in CONFIGS),
+        check=args.check,
+        repo_root=REPO_ROOT,
+    )
 
 
 if __name__ == "__main__":

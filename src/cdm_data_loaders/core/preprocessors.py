@@ -6,11 +6,14 @@ from typing import Any, Final
 
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 
-from cdm_data_loaders.core.registry import FilePreprocessFn, PreprocessorRegistry
-from cdm_data_loaders.utils.checksums import new_hasher
+from cdm_data_loaders.core.registry import (
+    FilePreprocessFn,
+    PreprocessorRegistry,
+    validate_registry_table_names,
+)
+from cdm_data_loaders.utils.checksums import HASH_CHUNK_BYTES, compute_stream_checksum
 from cdm_data_loaders.utils.file_items import is_local, source_id
 
-HASH_CHUNK_BYTES: Final[int] = 1 << 20
 MD5_BSD_RE: Final[re.Pattern[str]] = re.compile(r"^MD5\s*\(.+\)\s*=\s*(?P<digest>[0-9a-fA-F]{32})$")
 MD5_GNU_OR_BARE_RE: Final[re.Pattern[str]] = re.compile(r"^(?P<digest>[0-9a-fA-F]{32})(?:\s+\*?.+)?$")
 
@@ -73,11 +76,8 @@ def validate_md5_sidecar(file_item: FileItemDict) -> FileItemDict:
 
     expected_md5 = parse_md5_sidecar(sidecar_text, src_id)
 
-    hasher = new_hasher("md5")
     with file_item.open(mode="rb", compression="disable") as raw_fh:
-        for chunk in iter(lambda: raw_fh.read(HASH_CHUNK_BYTES), b""):
-            hasher.update(chunk)
-    actual_md5 = hasher.hexdigest().lower()
+        actual_md5 = compute_stream_checksum(raw_fh, "md5", chunk_size=HASH_CHUNK_BYTES).lower()
 
     if actual_md5 != expected_md5:
         msg = f"MD5 mismatch for {src_id}: expected {expected_md5}, got {actual_md5}"
@@ -101,10 +101,7 @@ def validate_file_preprocessors(
     file_preprocessors: PreprocessorRegistry | None = getattr(settings, "file_preprocessors", None)
     if file_preprocessors is None or not file_preprocessors.registry:
         return
-    unknown_tables = sorted(set(file_preprocessors.registry) - set(valid_tables))
-    if unknown_tables:
-        err_msg = f"Unknown table names in preprocessors_module: {', '.join(unknown_tables)}"
-        raise ValueError(err_msg)
+    validate_registry_table_names(file_preprocessors.registry, valid_tables, "preprocessors_module")
 
 
 FILE_PREPROCESSORS: Final[tuple[FilePreprocessFn, ...]] = (validate_md5_sidecar,)
