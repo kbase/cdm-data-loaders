@@ -1,15 +1,17 @@
-"""Reader for XSV data already cleaned and validated by `xsv_validator.qsv`.
+"""Reader for XSV data cleaned and validated by `xsv_validator.qsv`.
 
 Reads rows from a file produced by `xsv_validator.qsv.clean_validate_file`, casting each field
-to the python type declared for it in the schema's `properties` block. Also resolves the
+to the type declared for it in the target PyArrow schema. Also resolves the
 qsv cleaning/validation parameters (delimiter, quote, escape, comment character, null handling)
 from a schema's `x-xsv-config` extension block.
 """
 
+import csv
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Final
 
+import duckdb
 import pyarrow as pa
 from dlt.sources.filesystem import read_csv_duckdb
 
@@ -20,12 +22,6 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
 )
 from cdm_data_loaders.utils.buffer import DEFAULT_BUFFER_MAX_ITEMS
 from cdm_data_loaders.utils.file_items import as_file_item
-
-JSON_SCHEMA_TO_DUCKDB_TYPES: Final[dict[str, str]] = {
-    "integer": "BIGINT",
-    "number": "DOUBLE",
-    "boolean": "BOOLEAN",
-}
 
 # maps x-xsv-config metadata keys (after get_schema_parsing_metadata strips the "x-" prefix) to
 # the CleanerValidatorArgs kwarg they configure. x-quoting-policy is omitted: it configures XSV
@@ -62,38 +58,60 @@ def resolve_xsv_parsing_config(validated_schema: ValidatedXsvSchema) -> dict[str
     return config
 
 
-def resolve_duckdb_column_config(properties: dict[str, Any]) -> dict[str, Any]:
-    """Derive DuckDB CSV reader column-type and nullability kwargs from a schema's `properties` block.
+def resolve_duckdb_column_config(pa_schema: pa.Schema | None) -> dict[str, Any]:
+    """Derive DuckDB CSV reader column-type and nullability kwargs from a PyArrow schema.
 
-    Maps each property's declared JSON Schema type(s) to a DuckDB SQL type (`BIGINT`, `DOUBLE`,
-    `BOOLEAN`, or `VARCHAR`). Columns absent from `properties` default to nullable `VARCHAR` via
-    `auto_type_candidates=["VARCHAR"]`. Non-nullable string columns are listed in `force_not_null`
-    so empty cells remain `""` rather than `None`.
+    Maps each field in `pa_schema` to a `DuckDBPyType` via `duckdb.from_arrow`. Columns absent
+    from `pa_schema` default to nullable `VARCHAR` via `auto_type_candidates=["VARCHAR"]`.
+    Non-nullable string columns are listed in `force_not_null` so empty cells remain `""`
+    rather than `None`.
 
-    :param properties: the schema's `properties` block, keyed by column name
-    :type properties: dict[str, Any]
+    :param pa_schema: target PyArrow schema for the XSV table, or `None`
+    :type pa_schema: pa.Schema | None
     :return: kwargs (`auto_type_candidates`, and optional `dtype` and `force_not_null`) for DuckDB `from_csv_auto`
     :rtype: dict[str, Any]
     """
-    dtypes: dict[str, str] = {}
-    force_not_null: list[str] = []
-    for column, prop_spec in properties.items():
-        type_spec = prop_spec.get("type") if isinstance(prop_spec, dict) else None
-        types = [type_spec] if isinstance(type_spec, str) else list(type_spec or [])
-        duckdb_type = next(
-            (JSON_SCHEMA_TO_DUCKDB_TYPES[candidate] for candidate in types if candidate in JSON_SCHEMA_TO_DUCKDB_TYPES),
-            "VARCHAR",
-        )
-        dtypes[column] = duckdb_type
-        if duckdb_type == "VARCHAR" and types and "null" not in types:
-            force_not_null.append(column)
-
     config: dict[str, Any] = {"auto_type_candidates": ["VARCHAR"]}
-    if dtypes:
-        config["dtype"] = dtypes
+    if pa_schema is None or len(pa_schema) == 0:
+        return config
+
+    dtypes = dict(
+        zip(
+            pa_schema.names,
+            duckdb.from_arrow(pa_schema.empty_table()).dtypes,
+            strict=True,
+        )
+    )
+    force_not_null = [
+        field.name
+        for field in pa_schema
+        if (pa.types.is_string(field.type) or pa.types.is_large_string(field.type)) and not field.nullable
+    ]
+    config["dtype"] = dtypes
     if force_not_null:
         config["force_not_null"] = force_not_null
     return config
+
+
+def _read_header_columns(
+    xsv_path: Path,
+    delimiter: str,
+    quote_char: str,
+    escape: str | None,
+) -> set[str]:
+    """Read the column names from the first non-blank (header) line of `xsv_path`."""
+    with xsv_path.open(newline="") as f:
+        header_line = next(line for line in f if line.strip())
+    row = next(
+        csv.reader(
+            [header_line],
+            delimiter=delimiter,
+            quotechar=quote_char,
+            escapechar=escape,
+            doublequote=escape is None,
+        )
+    )
+    return {col.strip() for col in row}
 
 
 def _coerce_batch_to_table(batch: pa.RecordBatch, pa_schema: pa.Schema | None) -> pa.Table:
@@ -109,14 +127,13 @@ def _coerce_batch_to_table(batch: pa.RecordBatch, pa_schema: pa.Schema | None) -
 
 def read_validated_rows(  # noqa: PLR0913
     xsv_path: Path,
-    properties: dict[str, Any],
+    pa_schema: pa.Schema | None = None,
     delimiter: str = "\t",
     quote: str | None = None,
     escape: str | None = None,
     *,
     chunk_size: int = DEFAULT_BUFFER_MAX_ITEMS,
     use_pyarrow: bool = False,
-    pa_schema: pa.Schema | None = None,
 ) -> Generator[dict[str, Any] | pa.Table, Any, Any]:
     """Read a cleaned, validated XSV file via `read_csv_duckdb`, coercing columns to schema types on read.
 
@@ -126,8 +143,8 @@ def read_validated_rows(  # noqa: PLR0913
 
     :param xsv_path: path to the cleaned, validated XSV file
     :type xsv_path: Path
-    :param properties: the schema's `properties` block, keyed by column name
-    :type properties: dict[str, Any]
+    :param pa_schema: optional target PyArrow schema used to configure DuckDB column types and align `pa.Table` chunks
+    :type pa_schema: pa.Schema | None, optional
     :param delimiter: delimiter used in the file, defaults to tab
     :type delimiter: str, optional
     :param quote: quote character used in the file; defaults to `"` when unset
@@ -138,8 +155,6 @@ def read_validated_rows(  # noqa: PLR0913
     :type chunk_size: int, optional
     :param use_pyarrow: when True, yield `pa.Table` chunks instead of row dicts
     :type use_pyarrow: bool, optional
-    :param pa_schema: optional target PyArrow schema applied when `use_pyarrow` is True
-    :type pa_schema: pa.Schema | None, optional
     :yield: row dicts (when `use_pyarrow=False`) or `pa.Table` chunks (when `use_pyarrow=True`)
     :rtype: Generator[dict[str, Any] | pa.Table, Any, Any]
     """
@@ -147,6 +162,11 @@ def read_validated_rows(  # noqa: PLR0913
         return
 
     quote_char = quote or '"'
+    duckdb_schema = pa_schema
+    if pa_schema is not None:
+        header_cols = _read_header_columns(xsv_path, delimiter, quote_char, escape)
+        duckdb_schema = pa.schema([field for field in pa_schema if field.name in header_cols])
+
     reader = [[as_file_item(xsv_path)]] | read_csv_duckdb(
         chunk_size=chunk_size,
         use_pyarrow=use_pyarrow,
@@ -154,7 +174,7 @@ def read_validated_rows(  # noqa: PLR0913
         delimiter=delimiter,
         quotechar=quote_char,
         escapechar=escape or quote_char,
-        **resolve_duckdb_column_config(properties),
+        **resolve_duckdb_column_config(duckdb_schema),
     )
     for item in reader:
         if use_pyarrow:

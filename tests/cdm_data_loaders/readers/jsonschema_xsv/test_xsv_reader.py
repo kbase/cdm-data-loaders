@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any, Final
 
+import duckdb
 import pyarrow as pa
 import pytest
 
@@ -30,39 +31,38 @@ def _schema(properties: dict[str, Any] | None = None, x_xsv_config: dict[str, An
 """resolve_duckdb_column_config"""
 
 
-def test_resolve_duckdb_column_config_pass_empty_properties() -> None:
-    """An empty properties block only sets auto_type_candidates=['VARCHAR']."""
-    assert resolve_duckdb_column_config({}) == {"auto_type_candidates": ["VARCHAR"]}
+@pytest.mark.parametrize("pa_schema", [None, pa.schema([])], ids=["none", "empty"])
+def test_resolve_duckdb_column_config_pass_empty_or_none_schema(pa_schema: pa.Schema | None) -> None:
+    """A None or empty pa.Schema only sets auto_type_candidates=['VARCHAR']."""
+    assert resolve_duckdb_column_config(pa_schema) == {"auto_type_candidates": ["VARCHAR"]}
 
 
 def test_resolve_duckdb_column_config_pass_maps_types_and_force_not_null() -> None:
-    """Properties map to DuckDB SQL types and non-nullable string columns populate force_not_null."""
-    properties = {
-        "int_col": {"type": "integer"},
-        "int_list_col": {"type": ["integer"]},
-        "str_then_int_col": {"type": ["string", "integer"]},
-        "num_col": {"type": "number"},
-        "nullable_num_col": {"type": ["number", "null"]},
-        "bool_col": {"type": "boolean"},
-        "str_col": {"type": "string"},
-        "nullable_str_col": {"type": ["string", "null"]},
-        "untyped_col": {},
-    }
+    """PyArrow fields map to DuckDB types via Arrow type translation and non-nullable strings populate force_not_null."""
+    pa_schema = pa.schema(
+        [
+            pa.field("int_col", pa.int64(), nullable=False),
+            pa.field("num_col", pa.float64(), nullable=False),
+            pa.field("nullable_num_col", pa.float64(), nullable=True),
+            pa.field("bool_col", pa.bool_(), nullable=False),
+            pa.field("str_col", pa.string(), nullable=False),
+            pa.field("large_str_col", pa.large_string(), nullable=False),
+            pa.field("nullable_str_col", pa.string(), nullable=True),
+        ]
+    )
 
-    assert resolve_duckdb_column_config(properties) == {
+    assert resolve_duckdb_column_config(pa_schema) == {
         "auto_type_candidates": ["VARCHAR"],
         "dtype": {
-            "int_col": "BIGINT",
-            "int_list_col": "BIGINT",
-            "str_then_int_col": "BIGINT",
-            "num_col": "DOUBLE",
-            "nullable_num_col": "DOUBLE",
-            "bool_col": "BOOLEAN",
-            "str_col": "VARCHAR",
-            "nullable_str_col": "VARCHAR",
-            "untyped_col": "VARCHAR",
+            "int_col": duckdb.sqltype("BIGINT"),
+            "num_col": duckdb.sqltype("DOUBLE"),
+            "nullable_num_col": duckdb.sqltype("DOUBLE"),
+            "bool_col": duckdb.sqltype("BOOLEAN"),
+            "str_col": duckdb.sqltype("VARCHAR"),
+            "large_str_col": duckdb.sqltype("VARCHAR"),
+            "nullable_str_col": duckdb.sqltype("VARCHAR"),
         },
-        "force_not_null": ["str_col"],
+        "force_not_null": ["str_col", "large_str_col"],
     }
 
 
@@ -122,19 +122,21 @@ def test_resolve_xsv_parsing_config_pass_quoting_policy_not_propagated() -> None
 """read_validated_rows"""
 
 
-def test_read_validated_rows_pass_casts_rows_by_property_type(tmp_path: Path) -> None:
-    """Rows are cast according to the declared property types, keyed by header column name."""
-    properties = {
-        "number": {"type": ["integer", "null"]},
-        "date": {"type": "string"},
-        "float": {"type": ["string", "null"]},
-        "boolean": {"type": "boolean"},
-        "string": {"type": "string"},
-    }
+def test_read_validated_rows_pass_casts_rows_by_schema_type(tmp_path: Path) -> None:
+    """Rows are cast according to the declared PyArrow schema types, keyed by header column name."""
+    pa_schema = pa.schema(
+        [
+            pa.field("number", pa.int64(), nullable=True),
+            pa.field("date", pa.string(), nullable=False),
+            pa.field("float", pa.string(), nullable=True),
+            pa.field("boolean", pa.bool_(), nullable=False),
+            pa.field("string", pa.string(), nullable=False),
+        ]
+    )
     content = "number,date,float,boolean,string\n2,2023-01-15,3.14,true,key:value1\n,2023-02-20,,false,\n"
     xsv_path = write_xsv(tmp_path, content, file_name="data.csv")
 
-    rows = list(read_validated_rows(xsv_path, properties, delimiter=","))
+    rows = list(read_validated_rows(xsv_path, pa_schema, delimiter=","))
 
     assert rows == [
         {"number": 2, "date": "2023-01-15", "float": "3.14", "boolean": True, "string": "key:value1"},
@@ -143,31 +145,41 @@ def test_read_validated_rows_pass_casts_rows_by_property_type(tmp_path: Path) ->
 
 
 def test_read_validated_rows_pass_tab_delimited(tmp_path: Path) -> None:
-    r"""A tab-delimited file is read correctly when delimiter="\t"."""
-    properties = {"a": {"type": "integer"}, "b": {"type": "string"}}
+    r"""A tab-delimited file is read when delimiter="\t"."""
+    pa_schema = pa.schema(
+        [
+            pa.field("a", pa.int64(), nullable=False),
+            pa.field("b", pa.string(), nullable=False),
+        ]
+    )
     xsv_path = write_xsv(tmp_path, "a\tb\n1\tfoo\n2\tbar\n", file_name="data.tsv")
 
-    rows = list(read_validated_rows(xsv_path, properties, delimiter="\t"))
+    rows = list(read_validated_rows(xsv_path, pa_schema, delimiter="\t"))
 
     assert rows == [{"a": 1, "b": "foo"}, {"a": 2, "b": "bar"}]
 
 
 def test_read_validated_rows_pass_custom_quote_char(tmp_path: Path) -> None:
     """A field containing the delimiter is read as one field when wrapped in the custom quote char."""
-    properties = {"a": {"type": "string"}, "b": {"type": "string"}}
+    pa_schema = pa.schema(
+        [
+            pa.field("a", pa.string(), nullable=False),
+            pa.field("b", pa.string(), nullable=False),
+        ]
+    )
     xsv_path = write_xsv(tmp_path, "a,b\n'contains, a comma',plain\n", file_name="data.csv")
 
-    rows = list(read_validated_rows(xsv_path, properties, delimiter=",", quote="'"))
+    rows = list(read_validated_rows(xsv_path, pa_schema, delimiter=",", quote="'"))
 
     assert rows == [{"a": "contains, a comma", "b": "plain"}]
 
 
 def test_read_validated_rows_pass_custom_escape_char_disables_doublequote(tmp_path: Path) -> None:
-    """A backslash-escaped quote inside a field is read literally when escape is set."""
-    properties = {"a": {"type": "string"}}
+    """A backslash-escaped quote inside a field is preserved when escape is set."""
+    pa_schema = pa.schema([pa.field("a", pa.string(), nullable=False)])
     xsv_path = write_xsv(tmp_path, 'a\n"contains \\"a quote\\""\n', file_name="data.csv")
 
-    rows = list(read_validated_rows(xsv_path, properties, delimiter=",", escape="\\"))
+    rows = list(read_validated_rows(xsv_path, pa_schema, delimiter=",", escape="\\"))
 
     assert rows == [{"a": 'contains "a quote"'}]
 
@@ -177,14 +189,14 @@ def test_read_validated_rows_pass_header_only_file_yields_no_rows(tmp_path: Path
     """A file with only a header row yields no rows in either dict or PyArrow mode."""
     xsv_path = write_xsv(tmp_path, "number,date,float,boolean,string\n", file_name="data.csv")
 
-    assert list(read_validated_rows(xsv_path, {}, delimiter=",", use_pyarrow=use_pyarrow)) == []
+    assert list(read_validated_rows(xsv_path, delimiter=",", use_pyarrow=use_pyarrow)) == []
 
 
 def test_read_validated_rows_pass_unknown_column_defaults_to_nullable_string(tmp_path: Path) -> None:
-    """A column absent from properties defaults to nullable VARCHAR (empty becomes None, non-empty stays str)."""
+    """A column absent from pa_schema defaults to nullable VARCHAR (empty becomes None, non-empty stays str)."""
     xsv_path = write_xsv(tmp_path, "unknown,other\n,text\n3.14,more\n", file_name="data.csv")
 
-    rows = list(read_validated_rows(xsv_path, {}, delimiter=","))
+    rows = list(read_validated_rows(xsv_path, delimiter=","))
 
     assert rows == [
         {"unknown": None, "other": "text"},
@@ -194,12 +206,6 @@ def test_read_validated_rows_pass_unknown_column_defaults_to_nullable_string(tmp
 
 def test_read_validated_rows_pass_emits_pyarrow_tables_when_use_pyarrow_true(tmp_path: Path) -> None:
     """When use_pyarrow=True, read_validated_rows yields pa.Table chunks aligned to pa_schema."""
-    properties = {
-        "number": {"type": "integer"},
-        "score": {"type": ["number", "null"]},
-        "active": {"type": "boolean"},
-        "label": {"type": "string"},
-    }
     pa_schema = pa.schema(
         [
             pa.field("number", pa.int64(), nullable=False),
@@ -215,11 +221,10 @@ def test_read_validated_rows_pass_emits_pyarrow_tables_when_use_pyarrow_true(tmp
     tables = list(
         read_validated_rows(
             xsv_path,
-            properties,
+            pa_schema,
             delimiter=",",
             chunk_size=2,
             use_pyarrow=True,
-            pa_schema=pa_schema,
         )
     )
 
@@ -235,11 +240,10 @@ def test_read_validated_rows_pass_emits_pyarrow_tables_when_use_pyarrow_true(tmp
 
 def test_read_validated_rows_pass_emits_pyarrow_tables_without_pa_schema(tmp_path: Path) -> None:
     """When use_pyarrow=True and pa_schema is None, read_validated_rows yields DuckDB's native pa.Table."""
-    properties = {"a": {"type": "integer"}, "b": {"type": "string"}}
     xsv_path = write_xsv(tmp_path, "a,b\n1,foo\n2,bar\n", file_name="data.csv")
 
-    tables = list(read_validated_rows(xsv_path, properties, delimiter=",", use_pyarrow=True))
+    tables = list(read_validated_rows(xsv_path, delimiter=",", use_pyarrow=True))
 
     assert len(tables) == 1
     assert isinstance(tables[0], pa.Table)
-    assert tables[0].to_pylist() == [{"a": 1, "b": "foo"}, {"a": 2, "b": "bar"}]
+    assert tables[0].to_pylist() == [{"a": "1", "b": "foo"}, {"a": "2", "b": "bar"}]
