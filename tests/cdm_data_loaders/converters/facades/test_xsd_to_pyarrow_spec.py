@@ -286,23 +286,38 @@ def test_convert_xml_element_pass_cases(case: Case, run: Run) -> None:
     )
 
 
-def test_generate_pyarrow_schema_pass_mutual_and_self_referential_xsds() -> None:
+@pytest.mark.parametrize(
+    ("xsd_filename", "xml_tag", "depth", "expected"),
+    [
+        pytest.param(
+            "self_referential.xsd",
+            "node",
+            2,
+            pa.schema(
+                [list_field("child", pa.struct([list_field("child", pa.string(), nullable=True)]), nullable=True)]
+            ),
+            id="self-referential",
+        ),
+        pytest.param(
+            "mutual_recursion.xsd",
+            "a",
+            1,
+            pa.schema([list_field("b", pa.struct([pa.field("a", pa.string(), nullable=True)]), nullable=True)]),
+            id="mutual-recursion",
+        ),
+    ],
+)
+def test_generate_pyarrow_schema_pass_mutual_and_self_referential_xsds(
+    xsd_filename: str,
+    xml_tag: str,
+    depth: int,
+    expected: pa.Schema,
+) -> None:
     """self_referential.xsd and mutual_recursion.xsd terminate at max_recursion_depth."""
-    pa_self = generate_pyarrow_schema(
-        load_schema(XSD_DATA_DIR / "spec" / "self_referential.xsd"), "node", max_recursion_depth=2
+    actual = generate_pyarrow_schema(
+        load_schema(XSD_DATA_DIR / "spec" / xsd_filename), xml_tag, max_recursion_depth=depth
     )
-    expected_self = pa.schema(
-        [list_field("child", pa.struct([list_field("child", pa.string(), nullable=True)]), nullable=True)]
-    )
-    assert pa_self.equals(expected_self, check_metadata=True)
-
-    pa_mutual = generate_pyarrow_schema(
-        load_schema(XSD_DATA_DIR / "spec" / "mutual_recursion.xsd"), "a", max_recursion_depth=1
-    )
-    expected_mutual = pa.schema(
-        [list_field("b", pa.struct([pa.field("a", pa.string(), nullable=True)]), nullable=True)]
-    )
-    assert pa_mutual.equals(expected_mutual, check_metadata=True)
+    assert actual.equals(expected, check_metadata=True)
 
 
 # Errors
@@ -451,6 +466,13 @@ def test_resolve_root_elements_pass_deduces_or_resolves_roots(
         ),
         pytest.param(
             "examples/uniref/uniref.xsd",
+            0,
+            "UniRef50",
+            ["UniRef50"],
+            id="uniref-level-0",
+        ),
+        pytest.param(
+            "examples/uniref/uniref.xsd",
             1,
             None,
             ["entry"],
@@ -471,21 +493,28 @@ def test_resolve_elements_at_level_pass_level_1_and_level_2(
     root_tag: str | None,
     expected_tags: list[str],
 ) -> None:
-    """resolve_elements_at_level deduces all element declarations at level 1 and level 2."""
+    """resolve_elements_at_level deduces all element declarations at level 0, 1, and 2."""
     schema = load_schema(XSD_DATA_DIR / xsd_rel_path)
     elements = resolve_elements_at_level(schema, level, root_tag=root_tag)
     assert list(elements.keys()) == expected_tags
 
 
-def test_resolve_elements_at_level_fail_invalid_or_empty_level() -> None:
+@pytest.mark.parametrize(
+    ("level", "exc_cls", "match"),
+    [
+        pytest.param(-1, ValueError, "level must be >= 0", id="negative-level"),
+        pytest.param(10, XmlTagNotFoundError, "No XML elements found at level 10", id="beyond-max-depth"),
+    ],
+)
+def test_resolve_elements_at_level_fail_invalid_or_empty_level(
+    level: int,
+    exc_cls: type[Exception],
+    match: str,
+) -> None:
     """resolve_elements_at_level raises ValueError for level < 0 and XmlTagNotFoundError beyond max depth."""
     schema = load_schema(XSD_DATA_DIR / "examples" / "uniref" / "uniref.xsd")
-    assert list(resolve_elements_at_level(schema, 0, root_tag="UniRef50").keys()) == ["UniRef50"]
-    with pytest.raises(ValueError, match="level must be >= 0"):
-        resolve_elements_at_level(schema, -1)
-
-    with pytest.raises(XmlTagNotFoundError, match="No XML elements found at level 10"):
-        resolve_elements_at_level(schema, 10)
+    with pytest.raises(exc_cls, match=match):
+        resolve_elements_at_level(schema, level)
 
 
 def test_resolve_root_elements_fail_or_cyclic_global_elements() -> None:
@@ -768,7 +797,19 @@ def test_render_schema_module_pass_codegen_rules_and_formatting(tmp_path: Path) 
         assert schemas_map[table_name].equals(expected_schema, check_metadata=True)
 
 
-def test_render_schema_module_fail_empty_marker_at_level(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("xml_level", "xml_tag", "match"),
+    [
+        pytest.param(1, None, "empty complex type", id="empty-marker-at-level"),
+        pytest.param(None, "mixedLeaf", "resolves to a struct", id="mixed-leaf-tag"),
+    ],
+)
+def test_render_schema_module_fail_empty_marker_at_level(
+    tmp_path: Path,
+    xml_level: int | None,
+    xml_tag: str | None,
+    match: str,
+) -> None:
     """render_schema_module raises NonStructXmlTagError for empty markers at level or mixed/simpleContent xml_tag."""
     xsd_path = tmp_path / "empty_marker_level.xsd"
     xsd_path.write_text(
@@ -790,24 +831,14 @@ def test_render_schema_module_fail_empty_marker_at_level(tmp_path: Path) -> None
         """,
         encoding="utf-8",
     )
-    with pytest.raises(NonStructXmlTagError, match="empty complex type"):
+    with pytest.raises(NonStructXmlTagError, match=match):
         render_schema_module(
             SchemaCodegenConfig(
                 xsd_file=xsd_path,
                 output=tmp_path / "out.py",
-                docstring="Empty marker level test.",
-                xml_level=1,
-            )
-        )
-
-    with pytest.raises(NonStructXmlTagError, match="resolves to a struct"):
-        render_schema_module(
-            SchemaCodegenConfig(
-                xsd_file=xsd_path,
-                output=tmp_path / "out.py",
-                docstring="Mixed leaf single-tag test.",
-                xml_level=None,
-                xml_tag="mixedLeaf",
+                docstring="Empty marker or mixed leaf test.",
+                xml_level=xml_level,
+                xml_tag=xml_tag,
             )
         )
 

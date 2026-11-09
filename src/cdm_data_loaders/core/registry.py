@@ -12,8 +12,6 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, InstanceOf, 
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.schemas.jsonschema import ValidatedSchema
 
-DEFAULT_TRANSFORMS_ATTR: Final[str] = "TABLE_TRANSFORMS"
-DEFAULT_OUTPUT_SCHEMAS_ATTR: Final[str] = "OUTPUT_SCHEMAS"
 DEFAULT_PREPROCESSORS_ATTR: Final[str] = "FILE_PREPROCESSORS"
 
 RegistryKey = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True, strict=True)]

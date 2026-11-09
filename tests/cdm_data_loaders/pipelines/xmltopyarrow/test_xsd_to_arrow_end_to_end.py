@@ -237,50 +237,58 @@ def test_process_xml_file_to_pyarrow_pass_pubmed_level_1_multi_table_files(
     ]
 
 
+@pytest.mark.parametrize(
+    ("domain", "xml_level", "expected_table_names", "expected_text_table", "expected_text_rows"),
+    [
+        pytest.param(
+            "uniprot",
+            1,
+            {"entry", "copyright"},
+            "copyright",
+            [{"#text": "Copyrighted by the UniProt Consortium"}],
+            id="uniprot-level-1",
+        ),
+        pytest.param(
+            "uniref",
+            2,
+            {"name", "representativeMember"},
+            "name",
+            [{"#text": "Cluster: Glycogen synthase"}],
+            id="uniref-level-2",
+        ),
+    ],
+)
 def test_process_xml_file_to_pyarrow_pass_uniprot_level_1_and_uniref_level_2(
     settings_factory: Callable[..., XmlToPyArrowSettings],
     tmp_path: Path,
+    domain: str,
+    xml_level: int,
+    expected_table_names: set[str],
+    expected_text_table: str,
+    expected_text_rows: list[dict[str, str]],
 ) -> None:
     """Level-1 parsing on UniProt yields entry and copyright tables; level-2 parsing on UniRef yields child tables."""
-    minimal_uniprot = (XSD_SPEC_DIR / "examples" / "uniprot" / "minimal.xml").read_text(encoding="utf-8")
-    uniprot_with_copyright = tmp_path / "uniprot_with_copyright.xml"
-    uniprot_with_copyright.write_text(
-        minimal_uniprot.replace(
-            "</uniprot>",
-            "  <copyright>Copyrighted by the UniProt Consortium</copyright>\n</uniprot>",
-        ),
-        encoding="utf-8",
-    )
-
-    uniprot_settings = settings_factory(
-        xsd_file=str(XSD_SPEC_DIR / "examples" / "uniprot" / "uniprot.xsd"),
-        xml_level=1,
-    )
-    uniprot_items = list(
-        process_xml_file_to_pyarrow(
-            uniprot_with_copyright,
-            uniprot_settings,
+    if domain == "uniprot":
+        minimal_uniprot = (XSD_SPEC_DIR / "examples" / "uniprot" / "minimal.xml").read_text(encoding="utf-8")
+        xml_path = tmp_path / "uniprot_with_copyright.xml"
+        xml_path.write_text(
+            minimal_uniprot.replace(
+                "</uniprot>",
+                "  <copyright>Copyrighted by the UniProt Consortium</copyright>\n</uniprot>",
+            ),
+            encoding="utf-8",
         )
-    )
-    uniprot_tables: dict[str, pa.Table] = {item.meta.table_name: item.data for item in uniprot_items}
-    assert set(uniprot_tables.keys()) == {"entry", "copyright"}
-    assert uniprot_tables["entry"].num_rows == 1
-    assert uniprot_tables["copyright"].to_pylist() == [{"#text": "Copyrighted by the UniProt Consortium"}]
-    assert uniprot_tables["copyright"].schema.equals(uniprot_settings.pyarrow_schemas["copyright"], check_metadata=True)
+    else:
+        xml_path = XSD_SPEC_DIR / "examples" / "uniref" / "minimal.xml"
 
-    uniref_l2_settings = settings_factory(
-        xsd_file=str(XSD_SPEC_DIR / "examples" / "uniref" / "uniref.xsd"),
-        xml_level=2,
+    settings = settings_factory(
+        xsd_file=str(XSD_SPEC_DIR / "examples" / domain / f"{domain}.xsd"),
+        xml_level=xml_level,
     )
-    uniref_l2_items = list(
-        process_xml_file_to_pyarrow(
-            XSD_SPEC_DIR / "examples" / "uniref" / "minimal.xml",
-            uniref_l2_settings,
-        )
-    )
-    uniref_l2_tables: dict[str, pa.Table] = {item.meta.table_name: item.data for item in uniref_l2_items}
-    assert set(uniref_l2_tables.keys()) == {"name", "representativeMember"}
-    assert uniref_l2_tables["name"].to_pylist() == [{"#text": "Cluster: Glycogen synthase"}]
-    assert uniref_l2_tables["representativeMember"].num_rows == 1
-    for table_name, table in uniref_l2_tables.items():
-        assert table.schema.equals(uniref_l2_settings.pyarrow_schemas[table_name], check_metadata=True)
+    items = list(process_xml_file_to_pyarrow(xml_path, settings))
+    tables: dict[str, pa.Table] = {item.meta.table_name: item.data for item in items}
+    assert set(tables.keys()) == expected_table_names
+    assert tables[expected_text_table].to_pylist() == expected_text_rows
+    for table_name, table in tables.items():
+        assert table.num_rows == 1
+        assert table.schema.equals(settings.pyarrow_schemas[table_name], check_metadata=True)

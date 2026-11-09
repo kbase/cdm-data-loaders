@@ -82,13 +82,17 @@ def test_emit_pass_fixed_golden(case_id: str) -> None:
     assert emitter.emit(JsonSchemaReader().read(case["input"])).jsonValue() == case["expected"]
 
 
-def test_emit_pass_root_union_and_inference() -> None:
+@pytest.mark.parametrize(
+    "declaration",
+    [None, ["object", "null"]],
+    ids=["inferred-object", "nullable-object"],
+)
+def test_emit_pass_root_union_and_inference(declaration: list[str] | None) -> None:
     """Struct emission accepts an inferred or nullable object without a facade declaration guard."""
-    for declaration in (None, ["object", "null"]):
-        schema: dict[str, Any] = {"$schema": DIALECT, "properties": {"name": {"type": "string"}}}
-        if declaration is not None:
-            schema["type"] = declaration
-        assert PySparkEmitter().emit(JsonSchemaReader().read(schema)) == StructType([StructField("name", StringType())])
+    schema: dict[str, Any] = {"$schema": DIALECT, "properties": {"name": {"type": "string"}}}
+    if declaration is not None:
+        schema["type"] = declaration
+    assert PySparkEmitter().emit(JsonSchemaReader().read(schema)) == StructType([StructField("name", StringType())])
 
 
 @pytest.mark.parametrize("validator", [Draft7Validator, Draft202012Validator], ids=["draft7", "draft2020"])

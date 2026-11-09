@@ -149,13 +149,26 @@ def test_source_id_pass_file_item_is_relative_path(fs_backend: FsBackend, relati
     assert source_id(fs_backend.file_item(relative_path)) == relative_path
 
 
-def test_source_url_pass_file_item_and_path(fs_backend: FsBackend) -> None:
-    """Verify source_url gives a file item's file_url, and a local path as given."""
+
+
+@pytest.mark.parametrize(
+    ("file", "expected"),
+    [
+        pytest.param(Path("some/data.tsv"), str(Path("some/data.tsv")), id="path"),
+        pytest.param("some/data.tsv", "some/data.tsv", id="str"),
+    ],
+)
+def test_source_url_pass_path(file: Path | str, expected: str) -> None:
+    """Verify source_url returns a local path or string as given."""
+    assert source_url(file) == expected
+
+
+def test_source_url_pass_file_item(fs_backend: FsBackend) -> None:
+    """Verify source_url gives a file item's file_url."""
     fs_backend.put("data.tsv", CONTENT)
     item = fs_backend.file_item("data.tsv")
 
     assert source_url(item) == item["file_url"]
-    assert source_url(Path("some/data.tsv")) == str(Path("some/data.tsv"))
 
 
 """open_binary"""

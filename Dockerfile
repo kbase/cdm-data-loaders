@@ -80,6 +80,7 @@ COPY --chown=nonroot:nonroot tests /app/tests
 COPY --chown=nonroot:nonroot README.md /app/README.md
 COPY --chown=nonroot:nonroot pyproject.toml /app/pyproject.toml
 COPY --chown=nonroot:nonroot uv.lock /app/uv.lock
+COPY --chown=nonroot:nonroot logger_config.json /app/logger_config.json
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-editable

@@ -153,20 +153,31 @@ def test_node_hints_fail_invalid(kwargs: dict[str, Any]) -> None:
         NodeHints(**kwargs)
 
 
-def test_models_fail_invalid_envelopes_and_metadata() -> None:
+@pytest.mark.parametrize(
+    ("call", "error_type", "match"),
+    [
+        (partial(Provenance, "bogus"), ValueError, "source"),
+        (partial(Provenance, "dlt", (True,)), TypeError, "paths"),
+        (partial(Field, "name", {}), TypeError, "Fields require"),
+        (partial(SchemaDocument, root={}), TypeError, "root"),
+        (partial(SchemaDocument, root=TypedNode(type="any"), name=1), TypeError, "name"),
+        (partial(freeze_mapping, []), TypeError, "mapping"),
+    ],
+    ids=[
+        "invalid-provenance-source",
+        "invalid-provenance-paths",
+        "invalid-field-node",
+        "invalid-document-root",
+        "invalid-document-name",
+        "invalid-freeze-mapping",
+    ],
+)
+def test_models_fail_invalid_envelopes_and_metadata(
+    call: Callable[[], object], error_type: type[Exception], match: str
+) -> None:
     """Envelope, field and source validation run during normal construction."""
-    with pytest.raises(ValueError, match="source"):
-        Provenance("bogus")
-    with pytest.raises(TypeError, match="paths"):
-        Provenance("dlt", (True,))
-    with pytest.raises(TypeError, match="Fields require"):
-        Field("name", {})
-    with pytest.raises(TypeError, match="root"):
-        SchemaDocument(root={})
-    with pytest.raises(TypeError, match="name"):
-        SchemaDocument(root=TypedNode(type="any"), name=1)
-    with pytest.raises(TypeError, match="mapping"):
-        freeze_mapping([])
+    with pytest.raises(error_type, match=match):
+        call()
 
 
 def test_typed_node_pass_all_containers_owned() -> None:

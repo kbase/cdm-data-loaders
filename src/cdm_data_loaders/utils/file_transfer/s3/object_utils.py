@@ -1,9 +1,7 @@
 """Utilities for s3 interaction."""
 
-from contextlib import suppress
 from logging import Logger, getLogger
 from pathlib import Path
-from types import ModuleType
 from typing import IO, Any, Final
 
 from botocore.exceptions import ClientError
@@ -14,12 +12,6 @@ from cdm_data_loaders.utils.file_transfer.s3.transfer_config import build_transf
 from cdm_data_loaders.utils.progress import SynchronizedCallback, make_progress_bar
 
 DEFAULT_EXTRA_ARGS: frozendict[str, str] = frozendict({"ChecksumAlgorithm": "CRC64NVME"})
-
-VALID_S3_PREFIXES: list[str] = ["s3://", "s3a://"]
-
-CDM_LAKE_BUCKET: Final[str] = "cdm-lake"
-CTS_BUCKET: Final[str] = "cts"
-VALID_BUCKETS: list[str] = [CDM_LAKE_BUCKET, CTS_BUCKET]
 
 SUCCESS_RESPONSE: Final[int] = 200
 
@@ -148,44 +140,6 @@ def object_exists(s3_path: str) -> bool:
     :rtype: bool
     """
     return get_existing_object_info(s3_path) is not None
-
-
-def check_existing_objects(s3_path: str, object_info: dict[str, Any]) -> bool:
-    """Check if an object exists in S3 and raise an error if it does.
-
-    :param s3_path: path to the object on s3, including the bucket name
-    :type s3_path: str
-    :param object_info: information about the object to check
-    :type object_info: dict[str, Any]
-    :return: True if the object exists, False otherwise
-    :rtype: bool
-    """
-    existing_object = None
-
-    # suppress exceptions so that 404s and other errors are not triggered
-    with suppress(Exception):
-        existing_object = get_existing_object_info(s3_path)
-
-    if existing_object is None:
-        return False
-
-    # compare checksum, metadata, and other attributes if needed to determine if the object is the same or different
-    if object_info.get("Metadata") != existing_object["metadata"]:
-        logger.debug("Object metadata differs for %s", s3_path)
-        return False
-
-    # check the file sizes
-    if object_info.get("ContentLength") != existing_object["size"]:
-        logger.debug("Object size differs for %s", s3_path)
-        return False
-
-    # TODO: all data uploaded to s3 should have a checksum
-    checksum_data = {k: v.lower() for k, v in existing_object.items() if k.startswith("Checksum")}
-    # if checksum_data == object_info["checksum"]:
-    #     logger.debug("Object checksum matches for %s", s3_path)
-    #     return True
-
-    return False
 
 
 def upload_fileobj(  # noqa: PLR0913
@@ -317,35 +271,6 @@ def upload_file(  # noqa: PLR0913
             skip_if_exists=skip_if_exists,
             show_progress=show_progress,
         )
-
-
-def stream_to_s3(url: str, s3_path: str, requests: ModuleType) -> str:
-    """Stream directly from an HTTP download to s3.
-
-    :param url: address of the object to transfer to s3
-    :type url: str
-    :param s3_path: save path on s3
-    :type s3_path: str
-    :param requests: module implementing requests.get and returning a response
-    :type requests: ModuleType
-    :return: path of the file on s3, in the form bucket/key
-    :rtype: str
-    """
-    s3 = client.get_s3_client()
-    (bucket, key) = split_s3_path(s3_path)
-    with requests.get(url, stream=True) as response:
-        response.raise_for_status()
-        s3.upload_fileobj(
-            # raw stream from urllib3
-            response.raw,
-            bucket,
-            key,
-            ExtraArgs={
-                **DEFAULT_EXTRA_ARGS,
-                "ContentType": response.headers.get("content-type", "application/octet-stream"),
-            },
-        )
-    return f"{bucket}/{key}"
 
 
 def upload_dir(

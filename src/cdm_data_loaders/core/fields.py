@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import Annotated, Final
 
 from frozendict import frozendict
-from pydantic import AfterValidator, Field, FilePath, NonNegativeInt, PositiveInt, StringConstraints
+from pydantic import AfterValidator, Field, FilePath, PositiveInt, StringConstraints
 
 INPUT_MOUNT: Final[str] = "/input_dir"
 OUTPUT_MOUNT: Final[str] = "/output_dir"
@@ -44,17 +44,14 @@ CTS: Final[str] = "cts"
 BUFFER_SIZE: Final[str] = "buffer_size"
 DATASET_NAME: Final[str] = "dataset_name"
 DLT_DEV_MODE: Final[str] = "dlt_dev_mode"
-DISABLE_OUTPUT_COMPRESSION: Final[str] = "disable_output_compression"
 FILE_GLOB: Final[str] = "file_glob"
 INPUT_DIR: Final[str] = "input_dir"
 LOADER_FILE_FORMAT: Final[str] = "loader_file_format"
 LOG_CONFIG_FILE: Final[str] = "log_config_file"
 LOG_INTERVAL: Final[str] = "log_interval"
-MAX_TABLE_NESTING: Final[str] = "max_table_nesting"
 OUTPUT_DIR: Final[str] = "output_dir"
 OUTPUT_SCHEMAS_MODULE: Final[str] = "output_schemas_module"
 PREPROCESSORS_MODULE: Final[str] = "preprocessors_module"
-PRESERVE_TABLE_NESTING: Final[str] = "preserve_table_nesting"
 TABLE_NAME: Final[str] = "table_name"
 TRANSFORMS_MODULE: Final[str] = "transforms_module"
 USE_DESTINATION: Final[str] = "use_destination"
@@ -71,15 +68,12 @@ DEFAULTS = frozendict(
     {
         BUFFER_SIZE: 100,
         DLT_DEV_MODE: False,
-        DISABLE_OUTPUT_COMPRESSION: False,
         FILE_GLOB: "*",
         LOADER_FILE_FORMAT: LoaderFileFormatEnum.PARQUET,
         LOG_CONFIG_FILE: None,
         LOG_INTERVAL: 1000,
-        MAX_TABLE_NESTING: 0,
         OUTPUT_SCHEMAS_MODULE: None,
         PREPROCESSORS_MODULE: None,
-        PRESERVE_TABLE_NESTING: False,
         TRANSFORMS_MODULE: None,
         USE_DESTINATION: CTS,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: False,
@@ -89,7 +83,6 @@ DEFAULTS = frozendict(
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 CharStr = Annotated[str, StringConstraints(min_length=1, max_length=1)]
-type TableNameKey = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, strict=True)]
 
 
 BufferSize = Annotated[
@@ -105,13 +98,6 @@ DltDevMode = Annotated[
     Field(
         default=DEFAULTS[DLT_DEV_MODE],
         description="Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run.",
-    ),
-]
-DisableOutputCompression = Annotated[
-    bool,
-    Field(
-        default=DEFAULTS[DISABLE_OUTPUT_COMPRESSION],
-        description="Disables output compression for the pipeline. Output files are compressed by default; setting this to False turns off compression.",
     ),
 ]
 FileGlob = Annotated[str, Field(default=DEFAULTS[FILE_GLOB], description="File glob for input files")]
@@ -136,19 +122,6 @@ LogInterval = Annotated[
         description="How often (in number of processed entries) to emit a progress log message.",
     ),
 ]
-MaxTableNesting = Annotated[
-    NonNegativeInt,
-    Field(
-        default=DEFAULTS[MAX_TABLE_NESTING],
-        description="Maximum level of nesting of output datasets. For infinite nesting, set to 0.",
-    ),
-]
-OutputDir = Annotated[
-    NonEmptyStr | None,
-    Field(
-        description="Location to save raw data files and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Has no effect on where the dlt destination loads data.",
-    ),
-]
 OutputSchemasModuleSpec = Annotated[
     NonEmptyStr | None,
     Field(
@@ -168,13 +141,6 @@ PreprocessorsModuleSpec = Annotated[
             "(Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] | FilePreprocessFn]) "
             "for file-level validation and filtering before opening and parsing."
         ),
-    ),
-]
-PreserveTableNesting = Annotated[
-    bool,
-    Field(
-        default=DEFAULTS[PRESERVE_TABLE_NESTING],
-        description="Whether or not nested data should be flattened out into separate tables",
     ),
 ]
 

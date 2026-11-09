@@ -138,12 +138,20 @@ def test_read_fail_invalid_graph(source: dict[str, Any]) -> None:
         DltReader().read(source)
 
 
-def test_dlt_reader_fail_invalid_options() -> None:
+@pytest.mark.parametrize(
+    ("kwargs", "error_type", "match"),
+    [
+        ({"child_table_mode": "guess"}, ValueError, "child_table_mode"),
+        ({"include_dlt_columns": "yes"}, TypeError, None),
+    ],
+    ids=["invalid-child-table-mode", "invalid-include-dlt-columns"],
+)
+def test_dlt_reader_fail_invalid_options(
+    kwargs: dict[str, Any], error_type: type[Exception], match: str | None
+) -> None:
     """Invalid reader policies fail immediately."""
-    with pytest.raises(ValueError, match="child_table_mode"):
-        DltReader(child_table_mode="guess")
-    with pytest.raises(TypeError):
-        DltReader(include_dlt_columns="yes")
+    with pytest.raises(error_type, match=match):
+        DltReader(**kwargs)
 
 
 def test_read_fail_non_mapping() -> None:

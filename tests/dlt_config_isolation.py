@@ -36,10 +36,6 @@ class InMemoryConfigProvider(BaseDocProvider):
         """Instantiation."""
         super().__init__(deepcopy(initial or {}))
 
-    def reseed(self, initial: dict[str, Any] | None = None) -> None:
-        """Replace this provider's config doc with a deep copy of initial."""
-        self._config_doc = deepcopy(initial) if initial else {}
-
     @property
     def name(self) -> str:
         """Name."""

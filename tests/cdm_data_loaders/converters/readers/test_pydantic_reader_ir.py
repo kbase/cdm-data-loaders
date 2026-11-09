@@ -130,14 +130,21 @@ def test_pydantic_reader_pass_emit_to_pyarrow_pyspark_dlt_jsonschema_linkml() ->
     assert "LinkMLCompatibleModel" in linkml_schema.classes
 
 
-def test_pydantic_reader_fail_invalid_configuration() -> None:
+@pytest.mark.parametrize(
+    ("kwargs", "error_type", "match"),
+    [
+        ({"max_recursion_depth": 0}, ValueError, "max_recursion_depth"),
+        ({"max_recursion_depth": True}, TypeError, "max_recursion_depth"),
+        ({"by_alias": "yes"}, TypeError, "by_alias"),
+    ],
+    ids=["non-positive-depth", "bool-depth", "non-bool-by-alias"],
+)
+def test_pydantic_reader_fail_invalid_configuration(
+    kwargs: dict[str, object], error_type: type[Exception], match: str
+) -> None:
     """PydanticReader validates max_recursion_depth and by_alias in __post_init__."""
-    with pytest.raises(ValueError, match="max_recursion_depth"):
-        PydanticReader(max_recursion_depth=0)
-    with pytest.raises(TypeError, match="max_recursion_depth"):
-        PydanticReader(max_recursion_depth=True)  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="by_alias"):
-        PydanticReader(by_alias="yes")  # type: ignore[arg-type]
+    with pytest.raises(error_type, match=match):
+        PydanticReader(**kwargs)  # type: ignore[arg-type]
 
 
 def test_pyarrow_reader_fail_unsupported_arrow_type() -> None:

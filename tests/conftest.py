@@ -305,19 +305,9 @@ def json_test_strings() -> dict[str, Any]:
 
 CONFIG_BUCKET = frozendict({LOCAL_FS: "/output_dir", S3: "s3://some/s3/bucket"})
 
-TEST_DLT_CONFIG = frozendict(
-    {
-        "destination.local_fs.bucket_url": CONFIG_BUCKET[LOCAL_FS],
-        "destination.local_fs.destination_type": "filesystem",
-        "destination.s3.bucket_url": CONFIG_BUCKET[S3],
-        "destination.s3.destination_type": "filesystem",
-        "normalize.data_writer.disable_compression": False,
-    }
-)
-
 
 def _generate_dlt_config() -> dict[str, Any]:
-    """Return a fresh DLT config dict (same shape as the conftest fixture)."""
+    """Return a fresh DLT config dict."""
     return {
         "destination": {
             LOCAL_FS: {"bucket_url": CONFIG_BUCKET[LOCAL_FS], "destination_type": "filesystem"},
@@ -329,12 +319,6 @@ def _generate_dlt_config() -> dict[str, Any]:
         "destination.s3.destination_type": "filesystem",
         "normalize.data_writer.disable_compression": False,
     }
-
-
-@pytest.fixture
-def dlt_config() -> dict[str, Any]:
-    """DLT config for testing purposes."""
-    return _generate_dlt_config()
 
 
 @pytest.fixture(autouse=True)
