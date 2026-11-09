@@ -22,6 +22,8 @@ from typing import IO, Any
 import fsspec
 from dlt.common.storages.fsspec_filesystem import FileItemDict, glob_files
 
+from cdm_data_loaders.core.path_fields import FILE_PROTOCOL
+
 FileSource = str | Path | FileItemDict
 """A local file path or a dlt file item."""
 
@@ -47,7 +49,7 @@ def as_file_item(file: FileSource) -> FileItemDict:
     if path.is_dir():
         raise IsADirectoryError(errno.EISDIR, os.strerror(errno.EISDIR), str(file))
 
-    local_fs = fsspec.filesystem("file")
+    local_fs = fsspec.filesystem(FILE_PROTOCOL)
     # escape the name so that glob metacharacters ([, ], *, ?) in file names are matched literally
     matches = list(glob_files(local_fs, str(path.parent), glob.escape(path.name)))
     if not matches:
@@ -132,7 +134,7 @@ def is_local(file_item: FileItemDict) -> bool:
     """
     protocol: Any = file_item.fsspec.protocol
     protocols = (protocol,) if isinstance(protocol, str) else tuple(protocol)
-    return "file" in protocols
+    return FILE_PROTOCOL in protocols
 
 
 @contextmanager

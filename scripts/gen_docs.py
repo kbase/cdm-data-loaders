@@ -10,10 +10,11 @@ Usage::
 import argparse
 import ast
 import importlib
+import os
 import sys
 import tomllib
 import types
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path, PurePath
@@ -257,9 +258,66 @@ def load_cli_entries(pyproject_path: Path = PYPROJECT_PATH, repo_root: Path = RE
     return entries
 
 
-def _escape_table_cell(text: str) -> str:
-    """Escape pipe characters for safe inclusion inside a Markdown table cell."""
+def rel_posix(path: Path, start: Path = REPO_ROOT) -> str:
+    """Return a POSIX relative path string from ``start`` to ``path``.
+
+    :param path: target path
+    :type path: Path
+    :param start: base directory path
+    :type start: Path
+    :return: POSIX relative path string
+    :rtype: str
+    """
+    return Path(os.path.relpath(path, start)).as_posix()
+
+
+def escape_table_cell(text: str) -> str:
+    """Escape pipe characters for safe inclusion inside a Markdown table cell.
+
+    :param text: raw cell text
+    :type text: str
+    :return: Markdown-escaped cell text
+    :rtype: str
+    """
     return text.replace("|", r"\|")
+
+
+_escape_table_cell = escape_table_cell
+
+
+def check_or_write_files(
+    outputs: Iterable[tuple[Path, str]],
+    *,
+    check: bool,
+    repo_root: Path = REPO_ROOT,
+) -> int:
+    """Compare each ``(output_path, rendered_text)`` pair against disk and either report stale files or write updates.
+
+    :param outputs: iterable of ``(output_path, rendered_text)`` pairs
+    :type outputs: Iterable[tuple[Path, str]]
+    :param check: when ``True``, report stale files to ``sys.stderr`` and return ``1`` without writing
+    :type check: bool
+    :param repo_root: repository root used to format relative paths on ``stderr``
+    :type repo_root: Path
+    :return: ``0`` if all files are up to date (or written), ``1`` if ``check`` is ``True`` and any file is stale
+    :rtype: int
+    """
+    stale: list[Path] = []
+    for output_path, text in outputs:
+        current = output_path.read_text(encoding="utf-8") if output_path.exists() else None
+        if current == text:
+            continue
+        if check:
+            stale.append(output_path)
+        else:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(text, encoding="utf-8")
+    for path in stale:
+        rel_out = (
+            path.relative_to(repo_root).as_posix() if path.is_relative_to(repo_root) else rel_posix(path, repo_root)
+        )
+        sys.stderr.write(f"stale: {rel_out}\n")
+    return 1 if stale else 0
 
 
 def render_cli_reference(entries: Sequence[CliEntryDoc] | None = None) -> str:
@@ -488,17 +546,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     rendered = render_cli_reference()
     output_path: Path = args.output
-    current = output_path.read_text(encoding="utf-8") if output_path.exists() else None
-
-    if current != rendered:
-        if args.check:
-            rel_out = output_path.relative_to(REPO_ROOT) if output_path.is_relative_to(REPO_ROOT) else output_path
-            sys.stderr.write(f"stale: {rel_out.as_posix()}\n")
-            return 1
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(rendered, encoding="utf-8")
-
-    return 0
+    return check_or_write_files([(output_path, rendered)], check=args.check, repo_root=REPO_ROOT)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,6 @@ from cdm_data_loaders.core.fields import (
     LOADER_FILE_FORMAT,
     OUTPUT_DIR,
     PIPELINE_DIR_NAME,
-    PYARROW_FILE_FORMATS,
     REPORT_FILE_NAME,
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
@@ -33,7 +32,7 @@ from cdm_data_loaders.core.fields import (
     XmlTag,
 )
 from cdm_data_loaders.core.path_fields import InputDir, LocalOutputDir
-from cdm_data_loaders.core.transforms import TransformSettingsMixin
+from cdm_data_loaders.core.transforms import TransformSettingsMixin, uses_pyarrow_format
 
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
     {
@@ -256,7 +255,7 @@ class FileFormatIngestSettings(CtsSettings):
     @property
     def use_pyarrow(self) -> bool:
         """Return whether this pipeline yields ``pyarrow.Table`` pages instead of row dicts."""
-        return self.loader_file_format in PYARROW_FILE_FORMATS
+        return uses_pyarrow_format(self)
 
 
 class XmlIngestSettings(FileFormatIngestSettings):

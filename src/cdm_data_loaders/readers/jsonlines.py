@@ -13,7 +13,7 @@ from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformFn
 from cdm_data_loaders.core.transforms import route_and_coerce_record
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
-from cdm_data_loaders.utils.buffer import DictBuffer
+from cdm_data_loaders.utils.buffer import DictBuffer, make_rejected_row
 
 LineRecord = dict[str, Any]
 ParseErrorResolver = Callable[[dict[str, Any]], str | None]
@@ -89,11 +89,11 @@ def _route_line_record(  # noqa: PLR0913
     if error_detail is None and resolve_error is not None:
         error_detail = resolve_error(item["record"])
     if error_detail is not None:
-        rejected = {
-            "table_name": table_name,
+        rejected = make_rejected_row(
+            table_name,
+            error_detail,
             **{column: item[column] for column in REJECTED_COLUMNS},
-            "error_detail": error_detail,
-        }
+        )
         yield from buffer.add_item(REJECTED_TABLE_NAME, rejected)
     else:
         record = item["record"]
@@ -193,11 +193,7 @@ def route_jsonl_lines(
     :yield: table-tagged rows
     :rtype: Generator[TDataItems, Any, Any]
     """
-    buffer = DictBuffer(
-        max_items=settings.buffer_size,
-        schema_map=settings.schema_map,
-        use_pyarrow=settings.use_pyarrow,
-    )
+    buffer = DictBuffer.from_settings(settings)
     for file_item in items:
         for item in iter_file_jsonl_records(file_item):
             yield from _route_line_record(

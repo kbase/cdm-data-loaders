@@ -5,9 +5,11 @@ import hashlib
 from dataclasses import dataclass
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import IO, Any, Final, Protocol, runtime_checkable
 
 from awscrt.checksums import crc64nvme as _crc64nvme
+
+HASH_CHUNK_BYTES: Final[int] = 1 << 20
 
 # Algorithms handled outside hashlib but exposed through the same interface.
 EXTRA_ALGORITHMS = frozenset({"crc64nvme"})
@@ -168,6 +170,28 @@ class HashingReader:
         return self._hash.b64digest()
 
 
+def compute_stream_checksum(
+    stream: IO[bytes],
+    algorithm: str,
+    chunk_size: int = HASH_CHUNK_BYTES,
+) -> str:
+    """Compute a checksum from an open binary stream using any algorithm ``new_hasher`` supports.
+
+    :param stream: readable binary stream
+    :type stream: IO[bytes]
+    :param algorithm: hashlib algorithm name, or "crc64nvme"
+    :type algorithm: str
+    :param chunk_size: read chunk size in bytes
+    :type chunk_size: int
+    :return: hex digest, or base64 digest for crc64nvme (matching S3's format)
+    :rtype: str
+    """
+    hasher: Hasher = new_hasher(algorithm)
+    for chunk in iter(lambda: stream.read(chunk_size), b""):
+        hasher.update(chunk)
+    return _final_digest(hasher)
+
+
 def compute_file_checksum(file_path: str | Path, algorithm: str) -> str:
     """Compute a checksum for a local file using any algorithm new_hasher supports.
 
@@ -177,11 +201,8 @@ def compute_file_checksum(file_path: str | Path, algorithm: str) -> str:
     :type algorithm: str
     :return: hex digest, or base64 digest for crc64nvme (matching S3's format)
     """
-    hasher: Hasher = new_hasher(algorithm)
     with Path(file_path).open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            hasher.update(chunk)
-    return _final_digest(hasher)
+        return compute_stream_checksum(f, algorithm)
 
 
 def validate_checksum_fn(checksum_fn: str, include_extras: bool = True) -> str:  # noqa: FBT001, FBT002

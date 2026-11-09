@@ -68,10 +68,10 @@ class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
             self._validated_schema = validate_jsonschema(self.schema_file)
             self._first_pass_schema = generate_first_pass_schema(self._validated_schema)
             self._parsing_config = resolve_xsv_parsing_config(self._validated_schema)
-            pyarrow_schema = (
-                default_pyarrow_schema
-                if default_pyarrow_schema is not None or not self._needs_default_pyarrow_schema(self.table_name)
-                else convert_xsv_schema_to_pyarrow(self._validated_schema)
+            pyarrow_schema = self._resolve_default_table_schema(
+                self.table_name,
+                default_pyarrow_schema,
+                lambda: convert_xsv_schema_to_pyarrow(self.validated_schema),
             )
         except Exception as e:
             err_msg = f"Could not load JSON Schema for XSV data: {e!s}"

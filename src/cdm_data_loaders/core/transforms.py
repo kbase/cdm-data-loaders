@@ -1,6 +1,6 @@
 """Pluggable record filtering, transformation, multi-table splitting, and PyArrow schema overrides."""
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, ClassVar, Self
 
 import pyarrow as pa
@@ -24,6 +24,7 @@ from cdm_data_loaders.core.registry import (
     TransformRegistry,
     load_file_preprocessors,
     load_registry_dict,
+    validate_registry_table_names,
 )
 
 
@@ -141,10 +142,39 @@ def validate_table_transforms(
     table_transforms: TransformRegistry | None = getattr(settings, "table_transforms", None)
     if table_transforms is None:
         return
-    unknown_transforms = sorted(set(table_transforms.registry) - set(valid_tables))
-    if unknown_transforms:
-        err_msg = f"Unknown table names in transforms_module: {', '.join(unknown_transforms)}"
-        raise ValueError(err_msg)
+    validate_registry_table_names(table_transforms.registry, valid_tables, "transforms_module")
+
+
+def uses_pyarrow_format(settings: Any) -> bool:  # noqa: ANN401
+    """Return whether ``settings.loader_file_format`` is a PyArrow-backed loader format."""
+    return getattr(settings, "loader_file_format", LoaderFileFormatEnum.PARQUET) in PYARROW_FILE_FORMATS
+
+
+def needs_default_pyarrow_schema(
+    table_name: str,
+    *,
+    use_pyarrow: bool = True,
+    table_transforms: TransformRegistry | None = None,
+    output_schemas: ArrowSchemaRegistry | None = None,
+) -> bool:
+    """Return whether ``table_name`` needs its PyArrow schema generated from the input schema.
+
+    :param table_name: target table name
+    :type table_name: str
+    :param use_pyarrow: whether PyArrow output is enabled
+    :type use_pyarrow: bool
+    :param table_transforms: optional configured table transforms registry
+    :type table_transforms: TransformRegistry | None
+    :param output_schemas: optional user-supplied output schemas registry
+    :type output_schemas: ArrowSchemaRegistry | None
+    :return: ``True`` if a default PyArrow schema should be generated for ``table_name``
+    :rtype: bool
+    """
+    if not use_pyarrow:
+        return False
+    if table_transforms is not None and table_name in table_transforms.registry:
+        return False
+    return not (output_schemas is not None and table_name in output_schemas.registry)
 
 
 class TransformSettingsMixin(BaseSettings):
@@ -187,22 +217,44 @@ class TransformSettingsMixin(BaseSettings):
     @property
     def use_pyarrow(self) -> bool:
         """Return whether this pipeline yields ``pyarrow.Table`` pages instead of row dicts."""
-        return getattr(self, "loader_file_format", LoaderFileFormatEnum.PARQUET) in PYARROW_FILE_FORMATS
+        return uses_pyarrow_format(self)
+
+    def _validate_configured_tables(
+        self,
+        valid_tables: Iterable[str],
+        *,
+        validate_transforms_fn: Callable[[Any, Iterable[str]], None] = validate_table_transforms,
+    ) -> None:
+        """Validate both ``file_preprocessors`` and ``table_transforms`` against ``valid_tables``."""
+        validate_file_preprocessors(self, valid_tables)
+        validate_transforms_fn(self, valid_tables)
 
     def _needs_default_pyarrow_schema(self, table_name: str) -> bool:
         """Return whether ``table_name`` needs its PyArrow schema generated from the input schema."""
         if not self.use_pyarrow or self.get_table_transform(table_name) is not None:
             return False
-        return not (
-            self._unreconciled_output_schemas is not None and table_name in self._unreconciled_output_schemas.registry
+        return needs_default_pyarrow_schema(
+            table_name,
+            use_pyarrow=self.use_pyarrow,
+            output_schemas=self._unreconciled_output_schemas,
         )
+
+    def _resolve_default_table_schema(
+        self,
+        table_name: str,
+        default_pyarrow_schema: pa.Schema | None,
+        build_default: Callable[[], pa.Schema],
+    ) -> pa.Schema | None:
+        """Return ``default_pyarrow_schema`` if provided, else call ``build_default`` when needed."""
+        if default_pyarrow_schema is not None or not self._needs_default_pyarrow_schema(table_name):
+            return default_pyarrow_schema
+        return build_default()
 
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
         """Resolve `_schema_map` from `_unreconciled_output_schemas`, `_table_transforms`, and any default PyArrow schema."""
         table_name = getattr(self, "table_name", None)
         if isinstance(table_name, str):
-            validate_file_preprocessors(self, {table_name})
-            validate_table_transforms(self, {table_name})
+            self._validate_configured_tables({table_name})
             self._schema_map = (
                 resolve_schema_map(
                     table_name,

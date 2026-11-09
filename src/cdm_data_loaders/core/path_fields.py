@@ -26,7 +26,7 @@ def url_protocol(url: str) -> str:
     :rtype: str
     """
     protocol, _ = split_protocol(url)
-    return (protocol or "file").lower()
+    return (protocol or FILE_PROTOCOL).lower()
 
 
 def is_local(url: str) -> bool:
@@ -86,6 +86,24 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
+def _resolve_existing_local_dir(path: Path) -> str:
+    """Validate that ``path`` is an existing directory and return its resolved absolute path string."""
+    if not path.is_dir():
+        raise PydanticCustomError(
+            PATH_NOT_DIRECTORY_ERROR_TYPE,
+            PATH_NOT_DIRECTORY,
+        )
+    return str(to_absolute(path))
+
+
+def _format_protocol_url(protocol: str | None, path: str) -> str:
+    """Format ``protocol`` and ``path`` with ``:`` for ``data`` URLs or ``://`` for other protocols."""
+    if not protocol:
+        return path
+    sep = ":" if protocol == "data" else "://"
+    return f"{protocol}{sep}{path}"
+
+
 def normalise_dir(full_path: str | None) -> str:
     """Remove trailing slashes from a directory path or URL, keeping roots such as '/' and 'file:///'.
 
@@ -107,10 +125,7 @@ def normalise_dir(full_path: str | None) -> str:
     # path was '/' or multiple '/'s
     if path and not stripped:
         stripped = "/"
-    sep = ""
-    if protocol:
-        sep = ":" if protocol == "data" else "://"
-    return f"{protocol or ''}{sep}{stripped}"
+    return _format_protocol_url(protocol, stripped)
 
 
 def check_input_dir(value: Any) -> Any:  # noqa: ANN401
@@ -130,23 +145,12 @@ def check_input_dir(value: Any) -> Any:  # noqa: ANN401
     :rtype: Any
     """
     if isinstance(value, Path):
-        if not value.is_dir():
-            raise PydanticCustomError(
-                PATH_NOT_DIRECTORY_ERROR_TYPE,
-                PATH_NOT_DIRECTORY,
-            )
-        return str(to_absolute(value))
+        return _resolve_existing_local_dir(value)
     if not isinstance(value, str):
         return value
     value = value.strip()
     if is_local(value):
-        local_path = Path(check_local_path(value))
-        if not local_path.is_dir():
-            raise PydanticCustomError(
-                PATH_NOT_DIRECTORY_ERROR_TYPE,
-                PATH_NOT_DIRECTORY,
-            )
-        return str(to_absolute(local_path))
+        return _resolve_existing_local_dir(Path(check_local_path(value)))
     normalised = normalise_dir(value)
     protocol = url_protocol(normalised)
     try:
@@ -154,8 +158,7 @@ def check_input_dir(value: Any) -> Any:  # noqa: ANN401
     except ImportError as e:
         raise ValueError(str(e)) from e
     _, path = split_protocol(normalised)
-    sep = ":" if protocol == "data" else "://"
-    return f"{protocol}{sep}{path}"
+    return _format_protocol_url(protocol, path)
 
 
 InputDir = Annotated[

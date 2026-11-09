@@ -1,6 +1,6 @@
 """Validated registries and module loaders for entity models, JSON Schemas, PyArrow schemas, transforms, and pre-processors."""
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from importlib import import_module
 from types import MappingProxyType
 from typing import Annotated, Any, Final, Literal, Self, overload
@@ -211,3 +211,24 @@ def load_file_preprocessors(
         f"not {type(raw_preprocessors).__name__}"
     )
     raise TypeError(err_msg)
+
+
+def validate_registry_table_names(
+    registry_keys: Iterable[str],
+    valid_tables: Iterable[str],
+    module_label: str,
+) -> None:
+    """Raise ``ValueError`` if ``registry_keys`` contains table names not in ``valid_tables``.
+
+    :param registry_keys: table names configured in a registry
+    :type registry_keys: Iterable[str]
+    :param valid_tables: valid destination/input table names for the pipeline
+    :type valid_tables: Iterable[str]
+    :param module_label: setting attribute label reported in the error message
+    :type module_label: str
+    :raises ValueError: if ``registry_keys`` contains unknown table names
+    """
+    unknown_tables = sorted(set(registry_keys) - set(valid_tables))
+    if unknown_tables:
+        err_msg = f"Unknown table names in {module_label}: {', '.join(unknown_tables)}"
+        raise ValueError(err_msg)

@@ -25,7 +25,6 @@ from cdm_data_loaders.core.fields import (
     NonEmptyStr,
     TableName,
 )
-from cdm_data_loaders.core.preprocessors import validate_file_preprocessors
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
     ModelRegistry,
@@ -38,7 +37,11 @@ from cdm_data_loaders.core.settings import (
     default_settings_with_shortcuts,
     select_cli_shortcuts,
 )
-from cdm_data_loaders.core.transforms import TransformSettingsMixin, validate_table_transforms
+from cdm_data_loaders.core.transforms import (
+    TransformSettingsMixin,
+    needs_default_pyarrow_schema,
+    validate_table_transforms,
+)
 from cdm_data_loaders.schemas.jsonschema import DereferencingError
 
 logger: Logger = getLogger(__name__)
@@ -97,8 +100,10 @@ def build_output_schema_registry(
         fn = convert_schema_to_pyarrow
 
     for table_name, model_or_schema in validation_schema_registry.registry.items():
-        if (output_schemas is not None and table_name in output_schemas.registry) or (
-            table_transforms is not None and table_name in table_transforms.registry
+        if not needs_default_pyarrow_schema(
+            table_name,
+            table_transforms=table_transforms,
+            output_schemas=output_schemas,
         ):
             continue
         try:
@@ -131,6 +136,25 @@ class JsonlIngestSettings(FileFormatIngestSettings):
             description="Glob pattern for JSONL files",
         ),
     ]
+
+    def _resolve_entity_registry_schema_map(
+        self: Any,
+        registry: ModelRegistry | SchemaRegistry,
+    ) -> None:
+        """Validate configured tables against ``registry`` and resolve ``_schema_map``."""
+        self._validate_configured_tables(
+            registry.registry,
+            validate_transforms_fn=validate_table_transforms,
+        )
+        self._schema_map = (
+            build_output_schema_registry(
+                registry,
+                table_transforms=self._table_transforms,
+                output_schemas=self._unreconciled_output_schemas,
+            )
+            if self.use_pyarrow
+            else None
+        )
 
 
 class JsonlExtractSettings(JsonlIngestSettings, TransformSettingsMixin):
@@ -168,17 +192,7 @@ class JsonlPydanticIngestSettings(JsonlIngestSettings, TransformSettingsMixin):
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:  # noqa: ARG002
         """Load and validate the entity registry from the configured module and resolve `_schema_map`."""
         self._model_registry = load_registry_dict(self.entity_models, "ENTITY_MODELS")
-        validate_file_preprocessors(self, self._model_registry.registry)
-        validate_table_transforms(self, self._model_registry.registry)
-        self._schema_map = (
-            build_output_schema_registry(
-                self._model_registry,
-                table_transforms=self._table_transforms,
-                output_schemas=self._unreconciled_output_schemas,
-            )
-            if self.use_pyarrow
-            else None
-        )
+        self._resolve_entity_registry_schema_map(self._model_registry)
 
     @property
     def model_registry(self) -> ModelRegistry:
@@ -210,17 +224,7 @@ class JsonlJsonschemaIngestSettings(JsonlIngestSettings, TransformSettingsMixin)
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:  # noqa: ARG002
         """Load and validate the schema registry and precompute PyArrow schemas."""
         self._schema_registry = load_registry_dict(self.entity_schemas, "ENTITY_SCHEMAS")
-        validate_file_preprocessors(self, self._schema_registry.registry)
-        validate_table_transforms(self, self._schema_registry.registry)
-        self._schema_map = (
-            build_output_schema_registry(
-                self._schema_registry,
-                table_transforms=self._table_transforms,
-                output_schemas=self._unreconciled_output_schemas,
-            )
-            if self.use_pyarrow
-            else None
-        )
+        self._resolve_entity_registry_schema_map(self._schema_registry)
 
     @property
     def schema_registry(self) -> SchemaRegistry:

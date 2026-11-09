@@ -126,11 +126,7 @@ def _process_local_xsv_file(
 
         validated_file_name = clean_validate_file(args)
 
-    buffer = DictBuffer(
-        max_items=settings.buffer_size,
-        schema_map=settings.schema_map,
-        use_pyarrow=settings.use_pyarrow,
-    )
+    buffer = DictBuffer.from_settings(settings)
 
     if validated_file_name:
         properties = settings.validated_schema.jsonschema.get("properties", {})

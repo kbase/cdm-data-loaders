@@ -7,7 +7,6 @@ from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.fields import LogInterval
-from cdm_data_loaders.core.registry import TransformRegistry
 from cdm_data_loaders.core.settings import (
     XML_CLI_SHORTCUTS,
     default_settings_with_shortcuts,
@@ -46,11 +45,11 @@ class UniRefCdmSettings(UniRefXmlToPyArrowSettings):
 
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
         """Bind the variant-specific UniRef CDM transform and schemas to the entry table."""
-        self._table_transforms = TransformRegistry(
-            registry={self.table_name: make_uniref_cdm_transform(self._PROTOCOL)}
+        self._bind_cdm_transform_and_schemas(
+            make_uniref_cdm_transform(self._PROTOCOL),
+            UNIREF_CDM_SCHEMA_MAP,
+            default_pyarrow_schema=default_pyarrow_schema,
         )
-        self._unreconciled_output_schemas = UNIREF_CDM_SCHEMA_MAP
-        super()._resolve_settings_schema_map(default_pyarrow_schema=default_pyarrow_schema)
 
 
 class UniRef50CdmSettings(UniRefCdmSettings):

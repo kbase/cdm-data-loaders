@@ -13,15 +13,16 @@ Data goes into the Cluster, ClusterMember and Entity tables.
 """
 
 import datetime as dt
-import json
+import functools
 from collections.abc import Mapping
 from logging import Logger, getLogger
 from typing import Any, Final
 
 import pyarrow as pa
 
-from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformFn
+from cdm_data_loaders.parsers.uniprot.uniprot_kb import _format_date, _iter_mappings
+from cdm_data_loaders.utils.buffer import make_rejected_table_result
 
 UNIREF_URL = "http://uniprot.org/uniref"
 ENTRY_XML_TAG = f"{{{UNIREF_URL}}}entry"
@@ -90,8 +91,7 @@ def extract_cluster(entry: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str,
     if not entry_id:
         return ({}, {})
     cluster_id = f"uniref:{entry_id}"
-    raw_updated = entry.get("_updated")
-    updated_str = raw_updated.isoformat() if isinstance(raw_updated, dt.date) else raw_updated
+    updated_str = _format_date(entry.get("_updated"))
     cluster = {
         "cluster_id": cluster_id,
         "name": entry.get("name"),
@@ -125,16 +125,12 @@ def extract_cross_refs(
         return {}
 
     entity_id = generate_dbxref(entity_db, entity_xref)
-    properties = dbref.get("property") or []
+    properties = list(_iter_mappings(dbref.get("property")))
 
     # if this is a UniProtKB ID, check whether there is a UniProtKB accession
     if entity_db == "UniProtKB ID":
         uniprot_id = next(
-            (
-                prop.get("_value")
-                for prop in properties
-                if isinstance(prop, Mapping) and prop.get("_type") == "UniProtKB accession"
-            ),
+            (prop.get("_value") for prop in properties if prop.get("_type") == "UniProtKB accession"),
             None,
         )
         if uniprot_id:
@@ -144,7 +140,7 @@ def extract_cross_refs(
 
     # is this a seed member?
     is_seed_val = next(
-        (prop.get("_value") for prop in properties if isinstance(prop, Mapping) and prop.get("_type") == "isSeed"),
+        (prop.get("_value") for prop in properties if prop.get("_type") == "isSeed"),
         None,
     )
     is_seed = is_seed_val == "true"
@@ -168,37 +164,26 @@ def parse_uniref_entry(
     cluster_id = cluster.get("cluster_id")
     if not cluster_id:
         logger.debug("No cluster ID found in entry")
-        return {
-            REJECTED_TABLE_NAME: [
-                {
-                    "table_name": "entry",
-                    # FIXME: add source_file from the XML parser
-                    "source_file": None,
-                    "line_no": None,
-                    "raw_record": json.dumps(dict(entry), default=str),
-                    "error_detail": "No cluster ID found in entry",
-                }
-            ]
-        }
+        return make_rejected_table_result("entry", entry, "No cluster ID found in entry")
 
     # add the current timestamp
     entity["updated"] = timestamp
     # add in the protocol (which version of UniRef this is)
     cluster["protocol"] = uniref_variant
 
-    cluster_members: list[dict[str, Any]] = []
     # Cross references from representative and members
-    repr_member = entry.get("representativeMember")
-    if isinstance(repr_member, Mapping):
-        repr_db = repr_member.get("dbReference")
-        if isinstance(repr_db, Mapping):
-            cluster_members.append(extract_cross_refs(repr_db, cluster_id, is_representative=True))
-
-    for member in entry.get("member") or []:
-        if isinstance(member, Mapping):
-            mem_db = member.get("dbReference")
-            if isinstance(mem_db, Mapping):
-                cluster_members.append(extract_cross_refs(mem_db, cluster_id, is_representative=False))
+    cluster_members = [
+        *(
+            extract_cross_refs(repr_db, cluster_id, is_representative=True)
+            for repr_member in _iter_mappings(entry.get("representativeMember"))
+            for repr_db in _iter_mappings(repr_member.get("dbReference"))
+        ),
+        *(
+            extract_cross_refs(mem_db, cluster_id, is_representative=False)
+            for member in _iter_mappings(entry.get("member"))
+            for mem_db in _iter_mappings(member.get("dbReference"))
+        ),
+    ]
 
     return {
         "entity": [entity],
@@ -220,8 +205,8 @@ def make_uniref_cdm_transform(
     :return: ``RecordTransformFn`` transforming ``entry`` records into CDM table rows
     """
     resolved_ts = timestamp if timestamp is not None else dt.datetime.now(dt.UTC)
-    return lambda entry: parse_uniref_entry(
-        entry=entry,
+    return functools.partial(
+        parse_uniref_entry,
         timestamp=resolved_ts,
         uniref_variant=uniref_variant,
     )

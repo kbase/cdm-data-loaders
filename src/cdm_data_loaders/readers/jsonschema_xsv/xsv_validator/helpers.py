@@ -19,6 +19,7 @@ from pydantic import (
 
 from cdm_data_loaders.core.fields import CharStr, NonEmptyStr
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
+from cdm_data_loaders.utils.buffer import make_rejected_row
 
 VALIDATION_ERRORS: Final[str] = ".validation-errors.tsv"
 
@@ -62,13 +63,7 @@ class ErrorRecord(BaseModel):
 
     def to_rejected_row(self, table_name: str) -> dict[str, str | int | None]:
         """Format this error record for the ``_rejected`` table."""
-        return {
-            "table_name": table_name,
-            "source_file": self.file,
-            "line_no": None,
-            "raw_record": None,
-            "error_detail": self.message,
-        }
+        return make_rejected_row(table_name, self.message, source_file=self.file)
 
 
 class CleanerValidatorArgs(BaseModel):

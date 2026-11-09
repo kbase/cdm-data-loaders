@@ -5,15 +5,14 @@ Contains the core logic for parsing XSD-converted UniProt XML entry dictionaries
 
 import datetime as dt
 import functools
-import json
 from collections.abc import Iterable, Mapping, Sequence
 from logging import Logger, getLogger
 from typing import Any, Final
 
 import pyarrow as pa
 
-from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformFn
+from cdm_data_loaders.utils.buffer import make_rejected_table_result
 from cdm_data_loaders.utils.helpers import _ensembl_type
 
 DB: Final[str] = "db"
@@ -132,6 +131,17 @@ def _format_date(val: object) -> str | None:
     return None
 
 
+def _extract_accessions(entry: Mapping[str, Any]) -> list[str]:
+    """Extract non-empty stripped accession strings from an entry dictionary.
+
+    :param entry: XSD-converted entry dictionary
+    :type entry: Mapping[str, Any]
+    :return: list of stripped accession strings
+    :rtype: list[str]
+    """
+    return [acc.strip() for acc in entry.get("accession") or [] if isinstance(acc, str) and acc.strip()]
+
+
 def parse_identifiers(entry: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Parse the UniProt accessions from an XSD-converted entry dictionary.
 
@@ -140,11 +150,7 @@ def parse_identifiers(entry: Mapping[str, Any]) -> list[dict[str, Any]]:
     :return: list of identifiers in "db" / "xref" format
     :rtype: list[dict[str, Any]]
     """
-    return [
-        {DB: "UniProt", XREF: acc.strip(), DESCRIPTION: "UniProt accession"}
-        for acc in entry.get("accession") or []
-        if isinstance(acc, str) and acc.strip()
-    ]
+    return [{DB: "UniProt", XREF: acc, DESCRIPTION: "UniProt accession"} for acc in _extract_accessions(entry)]
 
 
 def parse_names(entry: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -207,9 +213,7 @@ def parse_cross_references(entry: Mapping[str, Any]) -> list[dict[str, Any]]:
         molecules = [mol_id for mol in _iter_mappings(dbxref.get("molecule")) if (mol_id := mol.get("_id"))]
         if len(molecules) > 1:
             if not entry_acc:
-                accessions = [
-                    acc.strip() for acc in entry.get("accession") or [] if isinstance(acc, str) and acc.strip()
-                ]
+                accessions = _extract_accessions(entry)
                 entry_acc = accessions[0] if accessions else None
             logger.warning("Found many molecules for entry %s", entry_acc)
         description_suffix = f" for UniProt:{molecules[0]}" if molecules else ""
@@ -476,20 +480,10 @@ def parse_uniprot_entry(
     :rtype: dict[str, list[dict[str, Any]]]
     """
     try:
-        accessions = [acc.strip() for acc in entry.get("accession") or [] if isinstance(acc, str) and acc.strip()]
+        accessions = _extract_accessions(entry)
         if not accessions:
             logger.error("No accession found for entry")
-            return {
-                REJECTED_TABLE_NAME: [
-                    {
-                        "table_name": "entry",
-                        "source_file": None,
-                        "line_no": None,
-                        "raw_record": json.dumps(dict(entry), default=str),
-                        "error_detail": "No accession found",
-                    }
-                ]
-            }
+            return make_rejected_table_result("entry", entry, "No accession found")
 
         first_acc = accessions[0]
         uniprot_id = f"uniprot:{first_acc}"
@@ -519,17 +513,7 @@ def parse_uniprot_entry(
         }
     except Exception as e:
         logger.exception("Parse error while processing entry")
-        return {
-            REJECTED_TABLE_NAME: [
-                {
-                    "table_name": "entry",
-                    "source_file": None,
-                    "line_no": None,
-                    "raw_record": json.dumps(dict(entry), default=str),
-                    "error_detail": str(e),
-                }
-            ]
-        }
+        return make_rejected_table_result("entry", entry, str(e))
 
 
 def make_uniprot_cdm_transform(
