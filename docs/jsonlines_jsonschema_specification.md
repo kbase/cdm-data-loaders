@@ -407,7 +407,7 @@ OUTPUT_SCHEMAS: dict[str, pa.Schema] = {
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/01_scalars_nested_types_and_extra_fields/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/01_scalars_nested_types_and_extra_fields/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 01_scalars_nested_types_and_extra_fields."""
@@ -533,7 +533,7 @@ EXPECTED_SCHEMA = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/02_defs_ref_allof_and_draft_dialects/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/02_defs_ref_allof_and_draft_dialects/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 02_defs_ref_allof_and_draft_dialects."""
@@ -691,7 +691,7 @@ EXPECTED_SCHEMA = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/03_blank_lines_parse_errors_and_format_rejections/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/03_blank_lines_parse_errors_and_format_rejections/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 03_blank_lines_parse_errors_and_format_rejections."""
@@ -782,7 +782,7 @@ EXPECTED_SCHEMA = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/04_multi_entity_gzip_and_subdirs/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/04_multi_entity_gzip_and_subdirs/expected_schema.py))
 
 ```python
 """Expected PyArrow schemas for 04_multi_entity_gzip_and_subdirs."""
@@ -924,7 +924,7 @@ not-a-valid-md5-line
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/05_md5_sidecar_preprocessing/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/05_md5_sidecar_preprocessing/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 05_md5_sidecar_preprocessing."""
@@ -1025,7 +1025,7 @@ EXPECTED_SCHEMA = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/06_table_transforms_and_output_schemas/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/06_table_transforms_and_output_schemas/expected_schema.py))
 
 ```python
 """Expected PyArrow schemas for 06_table_transforms_and_output_schemas."""
@@ -1434,11 +1434,11 @@ Schema generation raises a subclass of `JsonlJsonschemaError` (itself a `Runtime
 
 | Code | Exception | Condition | Reason | Fixtures |
 | :--- | :--- | :--- | :--- | :--- |
-| **E1** | `InvalidEntitySchemasRegistryError` | Invalid or empty ENTITY_SCHEMAS registry | The `entity_schemas` module must define a non-empty `ENTITY_SCHEMAS` dictionary and cannot use the reserved `_rejected` table name. | [`01_empty_entity_schemas.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/errors/01_empty_entity_schemas.json): `ENTITY_SCHEMAS` is an empty dictionary.<br>[`02_reserved_rejected_table_name.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/errors/02_reserved_rejected_table_name.json): `ENTITY_SCHEMAS` uses the reserved `_rejected` table name. |
-| **E2** | `UnsupportedJsonlSchemaDialectError` | Missing or unsupported JSON Schema $schema dialect | Every entity JSON Schema must declare a supported `$schema` draft URI (Draft 4, 6, 7, 2019-09, 2020-12, or KBase 2020-12-xsv). | [`03_missing_schema_keyword.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/errors/03_missing_schema_keyword.json): Entity JSON Schema omits the required `$schema` keyword.<br>[`04_unsupported_schema_draft.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/errors/04_unsupported_schema_draft.json): Entity JSON Schema declares an unrecognized `$schema` URI. |
-| **E3** | `InvalidJsonlEntitySchemaError` | Entity JSON Schema fails draft metaschema validation | Every entity JSON Schema must be a valid schema document under its declared `$schema` metaschema. | [`05_invalid_property_type_keyword.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/errors/05_invalid_property_type_keyword.json): Property schema uses an invalid `type` value rejected by the Draft 2020-12 metaschema.<br>[`06_non_list_required_keyword.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/errors/06_non_list_required_keyword.json): `required` is a string instead of an array of property names. |
-| **E4** | `UnresolvableJsonlSchemaRefError` | Unresolvable or circular $ref in entity JSON Schema | All `$ref` pointers and `allOf` branches in an entity JSON Schema must resolve without cycles before PyArrow conversion. | [`07_dangling_local_ref.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/errors/07_dangling_local_ref.json): Local `$ref` pointer targets a non-existent definition in `$defs`.<br>[`08_circular_ref.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/errors/08_circular_ref.json): Self-referential `$ref` cycle in `$defs` fails `dereference_schema`. |
-| **E5** | `UnsupportedJsonlArrowSchemaError` | Entity JSON Schema cannot be converted to a PyArrow table schema | Each non-transformed, non-overridden entity JSON Schema must have `type: "object"` with at least one property and only supported PyArrow column constructs. | [`09_non_object_root_type.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/errors/09_non_object_root_type.json): Root entity schema has `type: "array"` instead of `type: "object"`.<br>[`10_unsupported_anyof_union.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/errors/10_unsupported_anyof_union.json): Incompatible `anyOf` union branches (`array` and `string`) cannot be converted to a PyArrow column type without a table transform or `OUTPUT_SCHEMAS` override. |
+| **E1** | `InvalidEntitySchemasRegistryError` | Invalid or empty ENTITY_SCHEMAS registry | The `entity_schemas` module must define a non-empty `ENTITY_SCHEMAS` dictionary and cannot use the reserved `_rejected` table name. | [`01_empty_entity_schemas.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/errors/01_empty_entity_schemas.json): `ENTITY_SCHEMAS` is an empty dictionary.<br>[`02_reserved_rejected_table_name.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/errors/02_reserved_rejected_table_name.json): `ENTITY_SCHEMAS` uses the reserved `_rejected` table name. |
+| **E2** | `UnsupportedJsonlSchemaDialectError` | Missing or unsupported JSON Schema $schema dialect | Every entity JSON Schema must declare a supported `$schema` draft URI (Draft 4, 6, 7, 2019-09, 2020-12, or KBase 2020-12-xsv). | [`03_missing_schema_keyword.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/errors/03_missing_schema_keyword.json): Entity JSON Schema omits the required `$schema` keyword.<br>[`04_unsupported_schema_draft.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/errors/04_unsupported_schema_draft.json): Entity JSON Schema declares an unrecognized `$schema` URI. |
+| **E3** | `InvalidJsonlEntitySchemaError` | Entity JSON Schema fails draft metaschema validation | Every entity JSON Schema must be a valid schema document under its declared `$schema` metaschema. | [`05_invalid_property_type_keyword.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/errors/05_invalid_property_type_keyword.json): Property schema uses an invalid `type` value rejected by the Draft 2020-12 metaschema.<br>[`06_non_list_required_keyword.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/errors/06_non_list_required_keyword.json): `required` is a string instead of an array of property names. |
+| **E4** | `UnresolvableJsonlSchemaRefError` | Unresolvable or circular $ref in entity JSON Schema | All `$ref` pointers and `allOf` branches in an entity JSON Schema must resolve without cycles before PyArrow conversion. | [`07_dangling_local_ref.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/errors/07_dangling_local_ref.json): Local `$ref` pointer targets a non-existent definition in `$defs`.<br>[`08_circular_ref.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/errors/08_circular_ref.json): Self-referential `$ref` cycle in `$defs` fails `dereference_schema`. |
+| **E5** | `UnsupportedJsonlArrowSchemaError` | Entity JSON Schema cannot be converted to a PyArrow table schema | Each non-transformed, non-overridden entity JSON Schema must have `type: "object"` with at least one property and only supported PyArrow column constructs. | [`09_non_object_root_type.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/errors/09_non_object_root_type.json): Root entity schema has `type: "array"` instead of `type: "object"`.<br>[`10_unsupported_anyof_union.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/errors/10_unsupported_anyof_union.json): Incompatible `anyOf` union branches (`array` and `string`) cannot be converted to a PyArrow column type without a table transform or `OUTPUT_SCHEMAS` override. |
 
 ## 6. Fixture Index
 
@@ -1446,11 +1446,11 @@ Every case directory contains a `case.yaml` manifest; the test suites and this d
 
 | Case | Target CLI | Manifest | Runs |
 | :--- | :--- | :--- | :--- |
-| [`spec/01_scalars_nested_types_and_extra_fields`](#case-spec-01-scalars-nested-types-and-extra-fields) | `jsonlines_jsonschema` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/01_scalars_nested_types_and_extra_fields/case.yaml) | default |
-| [`spec/02_defs_ref_allof_and_draft_dialects`](#case-spec-02-defs-ref-allof-and-draft-dialects) | `jsonlines_jsonschema` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/02_defs_ref_allof_and_draft_dialects/case.yaml) | default |
-| [`spec/03_blank_lines_parse_errors_and_format_rejections`](#case-spec-03-blank-lines-parse-errors-and-format-rejections) | `jsonlines_jsonschema` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/03_blank_lines_parse_errors_and_format_rejections/case.yaml) | partial_rejections, total_rejection |
-| [`spec/04_multi_entity_gzip_and_subdirs`](#case-spec-04-multi-entity-gzip-and-subdirs) | `jsonlines_jsonschema` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/04_multi_entity_gzip_and_subdirs/case.yaml) | default |
-| [`spec/05_md5_sidecar_preprocessing`](#case-spec-05-md5-sidecar-preprocessing) | `jsonlines_jsonschema` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/05_md5_sidecar_preprocessing/case.yaml) | partial_md5_failure, total_md5_failure |
-| [`spec/06_table_transforms_and_output_schemas`](#case-spec-06-table-transforms-and-output-schemas) | `jsonlines_jsonschema` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/spec/06_table_transforms_and_output_schemas/case.yaml) | default |
-| [`presets/ncbi_datasets/01_valid_and_filtered`](#case-presets-ncbi-datasets-01-valid-and-filtered) | `ncbi_datasets` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/presets/ncbi_datasets/01_valid_and_filtered/case.yaml) | default |
-| [`presets/ncbi_datasets/02_rejected_records`](#case-presets-ncbi-datasets-02-rejected-records) | `ncbi_datasets` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_jsonschema/presets/ncbi_datasets/02_rejected_records/case.yaml) | mixed_valid_and_invalid |
+| [`spec/01_scalars_nested_types_and_extra_fields`](#case-spec-01-scalars-nested-types-and-extra-fields) | `jsonlines_jsonschema` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/01_scalars_nested_types_and_extra_fields/case.yaml) | default |
+| [`spec/02_defs_ref_allof_and_draft_dialects`](#case-spec-02-defs-ref-allof-and-draft-dialects) | `jsonlines_jsonschema` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/02_defs_ref_allof_and_draft_dialects/case.yaml) | default |
+| [`spec/03_blank_lines_parse_errors_and_format_rejections`](#case-spec-03-blank-lines-parse-errors-and-format-rejections) | `jsonlines_jsonschema` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/03_blank_lines_parse_errors_and_format_rejections/case.yaml) | partial_rejections, total_rejection |
+| [`spec/04_multi_entity_gzip_and_subdirs`](#case-spec-04-multi-entity-gzip-and-subdirs) | `jsonlines_jsonschema` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/04_multi_entity_gzip_and_subdirs/case.yaml) | default |
+| [`spec/05_md5_sidecar_preprocessing`](#case-spec-05-md5-sidecar-preprocessing) | `jsonlines_jsonschema` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/05_md5_sidecar_preprocessing/case.yaml) | partial_md5_failure, total_md5_failure |
+| [`spec/06_table_transforms_and_output_schemas`](#case-spec-06-table-transforms-and-output-schemas) | `jsonlines_jsonschema` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/spec/06_table_transforms_and_output_schemas/case.yaml) | default |
+| [`presets/ncbi_datasets/01_valid_and_filtered`](#case-presets-ncbi-datasets-01-valid-and-filtered) | `ncbi_datasets` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/presets/ncbi_datasets/01_valid_and_filtered/case.yaml) | default |
+| [`presets/ncbi_datasets/02_rejected_records`](#case-presets-ncbi-datasets-02-rejected-records) | `ncbi_datasets` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_jsonschema/presets/ncbi_datasets/02_rejected_records/case.yaml) | mixed_valid_and_invalid |

@@ -688,6 +688,6 @@ Every case directory contains a `case.yaml` manifest; the test suites and this d
 
 | Case | Target CLI | Manifest | Runs |
 | :--- | :--- | :--- | :--- |
-| [`spec/01_multi_entity_validation_and_rejections`](#case-spec-01-multi-entity-validation-and-rejections) | `jsonlines_pydantic` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_pydantic/spec/01_multi_entity_validation_and_rejections/case.yaml) | default |
-| [`spec/02_md5_sidecar_preprocessing`](#case-spec-02-md5-sidecar-preprocessing) | `jsonlines_pydantic` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_pydantic/spec/02_md5_sidecar_preprocessing/case.yaml) | partial_md5_failure |
-| [`spec/03_table_transforms_and_output_schemas`](#case-spec-03-table-transforms-and-output-schemas) | `jsonlines_pydantic` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/jsonlines_pydantic/spec/03_table_transforms_and_output_schemas/case.yaml) | default |
+| [`spec/01_multi_entity_validation_and_rejections`](#case-spec-01-multi-entity-validation-and-rejections) | `jsonlines_pydantic` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_pydantic/spec/01_multi_entity_validation_and_rejections/case.yaml) | default |
+| [`spec/02_md5_sidecar_preprocessing`](#case-spec-02-md5-sidecar-preprocessing) | `jsonlines_pydantic` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_pydantic/spec/02_md5_sidecar_preprocessing/case.yaml) | partial_md5_failure |
+| [`spec/03_table_transforms_and_output_schemas`](#case-spec-03-table-transforms-and-output-schemas) | `jsonlines_pydantic` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_pydantic/spec/03_table_transforms_and_output_schemas/case.yaml) | default |

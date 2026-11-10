@@ -46,7 +46,7 @@ SHELL_FENCE_RE = re.compile(r"```(?:bash|sh|shell|console)\n(.*?)```", re.DOTALL
 CDL_ENV_VAR_RE = re.compile(r"\bCDL_[A-Z0-9_]+\b")
 INDEX_MD_LINK_RE = re.compile(r"\]\(([a-zA-Z0-9_-]+\.md)(?:#[^)]*)?\)")
 README_DOCS_LINK_RE = re.compile(r"\]\(docs/([a-zA-Z0-9_-]+\.md)(?:#[^)]*)?\)")
-GITHUB_BLOB_LINK_RE = re.compile(r"\]\(" + re.escape(GITHUB_BLOB_BASE) + r"/([^)#\s]+)(?:#[^)]*)?\)")
+GITHUB_BLOB_LINK_RE = re.compile(r"\]\(https://github\.com/kbase/cdm-data-loaders/blob/([^/]+)/([^)#\s]+)(?:#[^)]*)?\)")
 SHELL_STOP_TOKENS = frozenset({"|", "||", "&&", ";", ">", ">>", "<"})
 
 
@@ -138,13 +138,13 @@ def check_github_repo_blob_links(
     md_paths: Sequence[Path] = DEFAULT_MARKDOWN_PATHS,
     repo_root: Path = REPO_ROOT,
 ) -> list[str]:
-    """Verify every repository ``blob/main`` link in Markdown docs resolves to an existing file in ``repo_root``.
+    """Verify every repository ``blob/develop`` link in Markdown docs uses ``develop`` and resolves to a file.
 
     :param md_paths: Markdown files to inspect
     :type md_paths: Sequence[Path]
     :param repo_root: repository root directory
     :type repo_root: Path
-    :return: list of broken link error messages
+    :return: list of broken or wrong-branch link error messages
     :rtype: list[str]
     """
     errors: list[str] = []
@@ -152,11 +152,11 @@ def check_github_repo_blob_links(
         raw_text = md_path.read_text(encoding="utf-8")
         stripped = FENCED_BLOCK_RE.sub("", raw_text)
         label = md_path.relative_to(repo_root).as_posix() if md_path.is_relative_to(repo_root) else md_path.name
-        errors.extend(
-            f"{label}: GitHub blob link target '{rel_target}' does not exist in repository"
-            for rel_target in sorted(set(GITHUB_BLOB_LINK_RE.findall(stripped)))
-            if not (repo_root / rel_target).exists()
-        )
+        for branch, rel_target in sorted(set(GITHUB_BLOB_LINK_RE.findall(stripped))):
+            if branch != "develop":
+                errors.append(f"{label}: GitHub blob link uses branch '{branch}' instead of 'develop' ('{rel_target}')")
+            if not (repo_root / rel_target).exists():
+                errors.append(f"{label}: GitHub blob link target '{rel_target}' does not exist in repository")
     return errors
 
 
@@ -477,7 +477,7 @@ def test_check_zensical_nav_and_index_fail_detects_drift(
 
 
 def test_check_github_repo_blob_links_pass() -> None:
-    """Verify every GitHub blob/main link in docs/ and README.md resolves to an existing repository file."""
+    """Verify every GitHub blob/develop link in docs/ and README.md resolves to an existing repository file."""
     assert check_github_repo_blob_links() == []
 
 
@@ -495,6 +495,11 @@ def test_check_github_repo_blob_links_pass() -> None:
             id="missing_blob_target_reported",
         ),
         pytest.param(
+            "See [`existing.txt`](https://github.com/kbase/cdm-data-loaders/blob/main/existing.txt).\n",
+            ["sample.md: GitHub blob link uses branch 'main' instead of 'develop' ('existing.txt')"],
+            id="non_develop_branch_reported",
+        ),
+        pytest.param(
             f"```markdown\n[`ignored.py`]({GITHUB_BLOB_BASE}/src/ignored.py)\n```\n",
             [],
             id="fenced_code_block_links_ignored",
@@ -506,7 +511,7 @@ def test_check_github_repo_blob_links_detects_missing_target(
     markdown_text: str,
     expected_errors: list[str],
 ) -> None:
-    """Verify check_github_repo_blob_links flags missing repository paths and ignores fenced code blocks."""
+    """Verify check_github_repo_blob_links flags wrong branches, missing paths, and ignores fenced code blocks."""
     (tmp_path / "existing.txt").write_text("ok\n", encoding="utf-8")
     md_file = tmp_path / "sample.md"
     md_file.write_text(markdown_text, encoding="utf-8")

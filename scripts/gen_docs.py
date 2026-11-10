@@ -31,7 +31,7 @@ PYPROJECT_PATH: Final[Path] = REPO_ROOT / "pyproject.toml"
 SRC_ROOT: Final[Path] = REPO_ROOT / "src" / "cdm_data_loaders"
 CLI_REFERENCE_PATH: Final[Path] = DOCS_DIR / "cli_reference.md"
 BUNDLED_SCHEMAS_PATH: Final[Path] = DOCS_DIR / "bundled_schemas.md"
-GITHUB_BLOB_BASE: Final[str] = "https://github.com/kbase/cdm-data-loaders/blob/main"
+GITHUB_BLOB_BASE: Final[str] = "https://github.com/kbase/cdm-data-loaders/blob/develop"
 
 GENERATED_BANNER: Final[str] = (
     "<!-- GENERATED FILE - DO NOT EDIT. Source: `pyproject.toml`, `src/cdm_data_loaders/`. "
@@ -133,7 +133,7 @@ def rel_posix(path: Path, start: Path = REPO_ROOT) -> str:
 
 
 def repo_blob_url(path: Path, repo_root: Path = REPO_ROOT) -> str:
-    """Return the GitHub ``blob/main`` URL for a repository file path.
+    """Return the GitHub ``blob/develop`` URL for a repository file path.
 
     :param path: target repository file path
     :type path: Path

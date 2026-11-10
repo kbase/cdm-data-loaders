@@ -534,7 +534,7 @@ MODEL = ScalarShowcaseRecord
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/01_scalars_and_special_types/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/01_scalars_and_special_types/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 01_scalars_and_special_types."""
@@ -668,7 +668,7 @@ MODEL = NullabilityAndDefaultsRecord
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/02_nullability_defaults_and_computed/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/02_nullability_defaults_and_computed/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 02_nullability_defaults_and_computed."""
@@ -838,7 +838,7 @@ MODEL = SequenceAndTupleRecord
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/03_sequences_sets_and_tuples/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/03_sequences_sets_and_tuples/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 03_sequences_sets_and_tuples."""
@@ -1086,7 +1086,7 @@ MODEL = NestedModelsAndMapsRecord
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/04_nested_models_and_maps/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/04_nested_models_and_maps/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 04_nested_models_and_maps."""
@@ -1276,7 +1276,7 @@ MODEL = RootEnvelopeModel
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/05_inheritance_generics_and_root_model/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/05_inheritance_generics_and_root_model/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 05_inheritance_generics_and_root_model."""
@@ -1434,7 +1434,7 @@ MODEL = EnumAndLiteralRecord
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/06_enums_and_literals/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/06_enums_and_literals/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 06_enums_and_literals."""
@@ -1620,7 +1620,7 @@ MODEL = UnionShowcaseRecord
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/07_unions_and_discriminators/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/07_unions_and_discriminators/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 07_unions_and_discriminators."""
@@ -1792,7 +1792,7 @@ MODEL = AliasedRecord
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/08_aliases_and_field_names/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/08_aliases_and_field_names/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 08_aliases_and_field_names."""
@@ -1923,7 +1923,7 @@ MODEL = AnnotatedShowcaseRecord
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/09_annotated_and_custom_types/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/09_annotated_and_custom_types/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 09_annotated_and_custom_types."""
@@ -2101,7 +2101,7 @@ MODEL = RecursiveCladeRecord
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/10_bounded_recursion/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/10_bounded_recursion/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 10_bounded_recursion."""
@@ -2263,11 +2263,11 @@ EXPECTED_SCHEMA_DEPTH_1 = pa.schema(
 
 **Rules:** [R-MODEL-INPUT](#r-model-input), [R-UNWRAP](#r-unwrap), [R-NAME-FIELD](#r-name-field), [R-ORDER](#r-order), [R-COMPUTED-FIELDS](#r-computed-fields), [R-SHAPE-MODEL](#r-shape-model), [R-SHAPE-MAP](#r-shape-map), [R-NULL-REQUIRED](#r-null-required), [R-NULL-OPTIONAL](#r-null-optional), [R-SCALAR-TYPE](#r-scalar-type), [R-SCALAR-DECIMAL](#r-scalar-decimal), [R-META-PYDANTIC-TYPE](#r-meta-pydantic-type), [R-META-COMMENT](#r-meta-comment), [R-COERCE-INPUT](#r-coerce-input), [R-COERCE-SCALAR](#r-coerce-scalar), [R-COERCE-SPARSE](#r-coerce-sparse)
 
-**Schema:** [`specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/schema.py)
+**Schema:** [`specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/schema.py)
 
-- Run `maximal`: [`data.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/data.json), [`expected.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/expected.json), [`expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/expected_table.py)
+- Run `maximal`: [`data.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/data.json), [`expected.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/expected.json), [`expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/expected_table.py)
 
-**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/expected_schema.py)
+**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/expected_schema.py)
 
 ---
 
@@ -2277,11 +2277,11 @@ EXPECTED_SCHEMA_DEPTH_1 = pa.schema(
 
 **Rules:** [R-MODEL-INPUT](#r-model-input), [R-UNWRAP](#r-unwrap), [R-NAME-FIELD](#r-name-field), [R-ORDER](#r-order), [R-SHAPE-MODEL](#r-shape-model), [R-SHAPE-SEQUENCE](#r-shape-sequence), [R-NULL-REQUIRED](#r-null-required), [R-NULL-OPTIONAL](#r-null-optional), [R-SCALAR-TYPE](#r-scalar-type), [R-SCALAR-ENUM-LITERAL](#r-scalar-enum-literal), [R-META-PYDANTIC-TYPE](#r-meta-pydantic-type), [R-META-COMMENT](#r-meta-comment), [R-COERCE-INPUT](#r-coerce-input), [R-COERCE-SCALAR](#r-coerce-scalar), [R-COERCE-SPARSE](#r-coerce-sparse)
 
-**Schema:** [`specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/schema.py)
+**Schema:** [`specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/schema.py)
 
-- Run `maximal`: [`data.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/data.json), [`expected.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/expected.json), [`expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/expected_table.py)
+- Run `maximal`: [`data.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/data.json), [`expected.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/expected.json), [`expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/expected_table.py)
 
-**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/expected_schema.py)
+**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/expected_schema.py)
 
 ---
 
@@ -2291,11 +2291,11 @@ EXPECTED_SCHEMA_DEPTH_1 = pa.schema(
 
 **Rules:** [R-MODEL-INPUT](#r-model-input), [R-UNWRAP](#r-unwrap), [R-NAME-FIELD](#r-name-field), [R-ORDER](#r-order), [R-SHAPE-MODEL](#r-shape-model), [R-SHAPE-SEQUENCE](#r-shape-sequence), [R-NULL-REQUIRED](#r-null-required), [R-NULL-OPTIONAL](#r-null-optional), [R-SCALAR-TYPE](#r-scalar-type), [R-SCALAR-TEMPORAL](#r-scalar-temporal), [R-SCALAR-ENUM-LITERAL](#r-scalar-enum-literal), [R-META-PYDANTIC-TYPE](#r-meta-pydantic-type), [R-META-COMMENT](#r-meta-comment), [R-COERCE-INPUT](#r-coerce-input), [R-COERCE-SCALAR](#r-coerce-scalar), [R-COERCE-SPARSE](#r-coerce-sparse)
 
-**Schema:** [`specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/schema.py)
+**Schema:** [`specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/schema.py)
 
-- Run `maximal`: [`data.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/data.json), [`expected.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/expected.json), [`expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/expected_table.py)
+- Run `maximal`: [`data.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/data.json), [`expected.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/expected.json), [`expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/expected_table.py)
 
-**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/expected_schema.py)
+**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/expected_schema.py)
 
 ---
 
@@ -2305,18 +2305,18 @@ Schema generation raises a subclass of `PydanticToPyArrowError` (itself a `Value
 
 | Code | Exception | Condition | Reason | Fixtures |
 | :--- | :--- | :--- | :--- | :--- |
-| **E1** | `InvalidPydanticModelError` | Input is not a concrete Pydantic `BaseModel` subclass | Converter requires a concrete Pydantic `BaseModel` subclass as input. | [`e01_invalid_model_input.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e01_invalid_model_input.py): Input is a stdlib `@dataclass` rather than a `BaseModel` subclass. |
-| **E2** | `NonStructRootError` | Non-struct `RootModel` | Root of a PyArrow schema must be a `struct` (a table has named columns, not a bare scalar, list, or map). | [`e02_non_object_root_model.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e02_non_object_root_model.py): `RootModel[list[int]]` wraps a sequence rather than a `BaseModel`. |
-| **E3** | `EmptyModelError` | Empty model or tuple (zero fields) | Parquet cannot persist a `struct` with zero child fields. | [`e03_empty_model.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e03_empty_model.py): Root `BaseModel` has no declared or computed fields. |
-| **E4** | `UnconstrainedFieldError` | Unconstrained field (`Any`, `object`, untyped container, or unbound `TypeVar`) | PyArrow requires a concrete static column type and has no dynamic `any` or untyped container column. | [`e04_unconstrained_any_field.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e04_unconstrained_any_field.py): Field annotation is `Any`. |
-| **E5** | `OpenTupleError` | Open tuple mixing positional and variadic elements | Positional tuple structs require a fixed element count so every position maps to a deterministic field. | [`e05_open_tuple.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e05_open_tuple.py): Field uses a mixed prefix + variadic tuple `tuple[int, *tuple[str, ...]]`. |
-| **E6** | `NonStringMapKeyError` | Open `extra='allow'` model or non-string mapping key type | Fixed-field structs cannot mix open `extra='allow'` maps, and Arrow maps require string keys for JSONL round-tripping. | [`e06_mixed_extra_allow_or_non_string_map_key.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e06_mixed_extra_allow_or_non_string_map_key.py): Model declares `model_config = ConfigDict(extra="allow")` with fixed fields. |
-| **E7** | `UnsupportedFieldTypeError` | Unsupported field type or null-only field | Non-serializable Python runtime types and null-only fields have no valid Arrow column representation. | [`e07_unsupported_field_type.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e07_unsupported_field_type.py): Field annotation is `Callable[[int], str]`. |
-| **E8** | `IncompatibleUnionBranchesError` | Incompatible structural union branches | PyArrow cannot merge lists, maps, and structs into a single column without an opaque union type. | [`e08_incompatible_union_shapes.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e08_incompatible_union_shapes.py): Field annotation mixes a `BaseModel` branch with a `list[int]` branch. |
-| **E9** | `UnresolvedForwardRefError` | Unresolvable forward reference | Schema generation requires all forward type annotations to be resolved to concrete types. | [`e09_unresolved_forward_ref.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e09_unresolved_forward_ref.py): Field references a forward annotation `"UndefinedChild"` that cannot be resolved. |
-| **E10** | `RecursiveNonJsonTypeError` | Non-JSON-serializable type in a recursive model cycle or cyclic type alias | Truncated recursive subtrees are serialized with `json.dumps`, which cannot encode `datetime.date` or `bytes`; cyclic type aliases without a `BaseModel` boundary cannot be finitely unrolled. | [`e10_recursive_non_json_type.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e10_recursive_non_json_type.py): Recursive `BaseModel` contains a `datetime.date` field. |
-| **E11** | `InvalidDecimalConstraintsError` | Invalid or out-of-range `Decimal` precision/scale constraints | Arrow `decimal128` requires `1 <= max_digits <= 38` and `0 <= decimal_places <= max_digits`. | [`e11_invalid_decimal_constraints.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e11_invalid_decimal_constraints.py): Field declares `Decimal` with `max_digits=50` (> 38). |
-| **E12** | `ValueFieldCollisionError` | `_value` collision in a scalar + model union | The synthesized `_value` field for scalar union branches would collide with the model's declared `_value` field. | [`e12_value_field_collision.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e12_value_field_collision.py): `BaseModel` branch of a scalar + model union declares a `_value` field. |
+| **E1** | `InvalidPydanticModelError` | Input is not a concrete Pydantic `BaseModel` subclass | Converter requires a concrete Pydantic `BaseModel` subclass as input. | [`e01_invalid_model_input.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e01_invalid_model_input.py): Input is a stdlib `@dataclass` rather than a `BaseModel` subclass. |
+| **E2** | `NonStructRootError` | Non-struct `RootModel` | Root of a PyArrow schema must be a `struct` (a table has named columns, not a bare scalar, list, or map). | [`e02_non_object_root_model.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e02_non_object_root_model.py): `RootModel[list[int]]` wraps a sequence rather than a `BaseModel`. |
+| **E3** | `EmptyModelError` | Empty model or tuple (zero fields) | Parquet cannot persist a `struct` with zero child fields. | [`e03_empty_model.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e03_empty_model.py): Root `BaseModel` has no declared or computed fields. |
+| **E4** | `UnconstrainedFieldError` | Unconstrained field (`Any`, `object`, untyped container, or unbound `TypeVar`) | PyArrow requires a concrete static column type and has no dynamic `any` or untyped container column. | [`e04_unconstrained_any_field.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e04_unconstrained_any_field.py): Field annotation is `Any`. |
+| **E5** | `OpenTupleError` | Open tuple mixing positional and variadic elements | Positional tuple structs require a fixed element count so every position maps to a deterministic field. | [`e05_open_tuple.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e05_open_tuple.py): Field uses a mixed prefix + variadic tuple `tuple[int, *tuple[str, ...]]`. |
+| **E6** | `NonStringMapKeyError` | Open `extra='allow'` model or non-string mapping key type | Fixed-field structs cannot mix open `extra='allow'` maps, and Arrow maps require string keys for JSONL round-tripping. | [`e06_mixed_extra_allow_or_non_string_map_key.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e06_mixed_extra_allow_or_non_string_map_key.py): Model declares `model_config = ConfigDict(extra="allow")` with fixed fields. |
+| **E7** | `UnsupportedFieldTypeError` | Unsupported field type or null-only field | Non-serializable Python runtime types and null-only fields have no valid Arrow column representation. | [`e07_unsupported_field_type.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e07_unsupported_field_type.py): Field annotation is `Callable[[int], str]`. |
+| **E8** | `IncompatibleUnionBranchesError` | Incompatible structural union branches | PyArrow cannot merge lists, maps, and structs into a single column without an opaque union type. | [`e08_incompatible_union_shapes.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e08_incompatible_union_shapes.py): Field annotation mixes a `BaseModel` branch with a `list[int]` branch. |
+| **E9** | `UnresolvedForwardRefError` | Unresolvable forward reference | Schema generation requires all forward type annotations to be resolved to concrete types. | [`e09_unresolved_forward_ref.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e09_unresolved_forward_ref.py): Field references a forward annotation `"UndefinedChild"` that cannot be resolved. |
+| **E10** | `RecursiveNonJsonTypeError` | Non-JSON-serializable type in a recursive model cycle or cyclic type alias | Truncated recursive subtrees are serialized with `json.dumps`, which cannot encode `datetime.date` or `bytes`; cyclic type aliases without a `BaseModel` boundary cannot be finitely unrolled. | [`e10_recursive_non_json_type.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e10_recursive_non_json_type.py): Recursive `BaseModel` contains a `datetime.date` field. |
+| **E11** | `InvalidDecimalConstraintsError` | Invalid or out-of-range `Decimal` precision/scale constraints | Arrow `decimal128` requires `1 <= max_digits <= 38` and `0 <= decimal_places <= max_digits`. | [`e11_invalid_decimal_constraints.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e11_invalid_decimal_constraints.py): Field declares `Decimal` with `max_digits=50` (> 38). |
+| **E12** | `ValueFieldCollisionError` | `_value` collision in a scalar + model union | The synthesized `_value` field for scalar union branches would collide with the model's declared `_value` field. | [`e12_value_field_collision.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/errors/e12_value_field_collision.py): `BaseModel` branch of a scalar + model union declares a `_value` field. |
 
 ## 4. Fixture Index
 
@@ -2324,16 +2324,16 @@ Every case directory contains a `case.yaml` manifest; the test suite and this do
 
 | Case | Schema | Runs |
 | :--- | :--- | :--- |
-| [`spec/01_scalars_and_special_types`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/01_scalars_and_special_types/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/01_scalars_and_special_types/schema.py) | maximal |
-| [`spec/02_nullability_defaults_and_computed`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/02_nullability_defaults_and_computed/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/02_nullability_defaults_and_computed/schema.py) | maximal |
-| [`spec/03_sequences_sets_and_tuples`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/03_sequences_sets_and_tuples/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/03_sequences_sets_and_tuples/schema.py) | maximal |
-| [`spec/04_nested_models_and_maps`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/04_nested_models_and_maps/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/04_nested_models_and_maps/schema.py) | maximal |
-| [`spec/05_inheritance_generics_and_root_model`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/05_inheritance_generics_and_root_model/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/05_inheritance_generics_and_root_model/schema.py) | maximal |
-| [`spec/06_enums_and_literals`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/06_enums_and_literals/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/06_enums_and_literals/schema.py) | maximal |
-| [`spec/07_unions_and_discriminators`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/07_unions_and_discriminators/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/07_unions_and_discriminators/schema.py) | maximal |
-| [`spec/08_aliases_and_field_names`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/08_aliases_and_field_names/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/08_aliases_and_field_names/schema.py) | field-names, by-alias |
-| [`spec/09_annotated_and_custom_types`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/09_annotated_and_custom_types/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/09_annotated_and_custom_types/schema.py) | maximal |
-| [`spec/10_bounded_recursion`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/10_bounded_recursion/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/spec/10_bounded_recursion/schema.py) | depth-2, depth-1 |
-| [`examples/checkm2_and_bbmap`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/schema.py) | maximal |
-| [`examples/ncbi_annotation_report`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/schema.py) | maximal |
-| [`examples/ncbi_assembly_report`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/schema.py) | maximal |
+| [`spec/01_scalars_and_special_types`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/01_scalars_and_special_types/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/01_scalars_and_special_types/schema.py) | maximal |
+| [`spec/02_nullability_defaults_and_computed`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/02_nullability_defaults_and_computed/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/02_nullability_defaults_and_computed/schema.py) | maximal |
+| [`spec/03_sequences_sets_and_tuples`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/03_sequences_sets_and_tuples/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/03_sequences_sets_and_tuples/schema.py) | maximal |
+| [`spec/04_nested_models_and_maps`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/04_nested_models_and_maps/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/04_nested_models_and_maps/schema.py) | maximal |
+| [`spec/05_inheritance_generics_and_root_model`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/05_inheritance_generics_and_root_model/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/05_inheritance_generics_and_root_model/schema.py) | maximal |
+| [`spec/06_enums_and_literals`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/06_enums_and_literals/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/06_enums_and_literals/schema.py) | maximal |
+| [`spec/07_unions_and_discriminators`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/07_unions_and_discriminators/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/07_unions_and_discriminators/schema.py) | maximal |
+| [`spec/08_aliases_and_field_names`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/08_aliases_and_field_names/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/08_aliases_and_field_names/schema.py) | field-names, by-alias |
+| [`spec/09_annotated_and_custom_types`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/09_annotated_and_custom_types/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/09_annotated_and_custom_types/schema.py) | maximal |
+| [`spec/10_bounded_recursion`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/10_bounded_recursion/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/spec/10_bounded_recursion/schema.py) | depth-2, depth-1 |
+| [`examples/checkm2_and_bbmap`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/checkm2_and_bbmap/schema.py) | maximal |
+| [`examples/ncbi_annotation_report`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_annotation_report/schema.py) | maximal |
+| [`examples/ncbi_assembly_report`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/case.yaml) | [`schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/pydantic_to_pyarrow/examples/ncbi_assembly_report/schema.py) | maximal |
