@@ -1,10 +1,9 @@
-"""Generate CLI reference and MkDocs API documentation from codebase metadata.
+"""Generate CLI reference and bundled schema catalog documentation from codebase metadata.
 
 Usage::
 
-    uv run python -m scripts.gen_docs                          # write docs/cli_reference.md
-    uv run python -m scripts.gen_docs --check                  # exit 1 if docs/cli_reference.md is stale
-    uv run python -m scripts.gen_docs --mkdocs-api-dir <dir>   # write MkDocs API reference tree into <dir>
+    uv run python -m scripts.gen_docs          # write docs/cli_reference.md and docs/bundled_schemas.md
+    uv run python -m scripts.gen_docs --check  # exit 1 if generated docs are stale
 """
 
 import argparse
@@ -14,7 +13,7 @@ import os
 import sys
 import tomllib
 import types
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path, PurePath
@@ -31,6 +30,8 @@ DOCS_DIR: Final[Path] = REPO_ROOT / "docs"
 PYPROJECT_PATH: Final[Path] = REPO_ROOT / "pyproject.toml"
 SRC_ROOT: Final[Path] = REPO_ROOT / "src" / "cdm_data_loaders"
 CLI_REFERENCE_PATH: Final[Path] = DOCS_DIR / "cli_reference.md"
+BUNDLED_SCHEMAS_PATH: Final[Path] = DOCS_DIR / "bundled_schemas.md"
+GITHUB_BLOB_BASE: Final[str] = "https://github.com/kbase/cdm-data-loaders/blob/main"
 
 GENERATED_BANNER: Final[str] = (
     "<!-- GENERATED FILE - DO NOT EDIT. Source: `pyproject.toml`, `src/cdm_data_loaders/`. "
@@ -129,6 +130,19 @@ def rel_posix(path: Path, start: Path = REPO_ROOT) -> str:
     :rtype: str
     """
     return Path(os.path.relpath(path.resolve(), start.resolve())).as_posix()
+
+
+def repo_blob_url(path: Path, repo_root: Path = REPO_ROOT) -> str:
+    """Return the GitHub ``blob/main`` URL for a repository file path.
+
+    :param path: target repository file path
+    :type path: Path
+    :param repo_root: repository root directory
+    :type repo_root: Path
+    :return: GitHub blob URL string
+    :rtype: str
+    """
+    return f"{GITHUB_BLOB_BASE}/{rel_posix(path, repo_root)}"
 
 
 def escape_table_cell(text: str) -> str:
@@ -468,9 +482,26 @@ def discover_schema_assets(src_root: Path = SRC_ROOT) -> list[SchemaAssetDoc]:
     return assets
 
 
-def render_schema_assets_page(assets: Sequence[SchemaAssetDoc]) -> str:
-    """Render the ``api/schemas.md`` page cataloging bundled JSON Schemas and XSDs."""
+def render_schema_assets_page(
+    assets: Sequence[SchemaAssetDoc] | None = None,
+    src_root: Path = SRC_ROOT,
+    repo_root: Path = REPO_ROOT,
+) -> str:
+    """Render the ``docs/bundled_schemas.md`` page cataloging bundled JSON Schemas and XSDs.
+
+    :param assets: optional sequence of discovered schema assets
+    :type assets: Sequence[SchemaAssetDoc] | None
+    :param src_root: package source root directory
+    :type src_root: Path
+    :param repo_root: repository root directory
+    :type repo_root: Path
+    :return: rendered Markdown document text
+    :rtype: str
+    """
+    resolved_assets = list(assets) if assets is not None else discover_schema_assets(src_root)
     lines = [
+        GENERATED_BANNER,
+        "",
         "# Bundled Schemas & XSD Assets",
         "",
         "Static schema assets bundled inside `src/cdm_data_loaders/` for validation and PyArrow schema generation.",
@@ -478,90 +509,28 @@ def render_schema_assets_page(assets: Sequence[SchemaAssetDoc]) -> str:
         "| Relative Path (`src/cdm_data_loaders/`) | Format | Package Area |",
         "| :--- | :--- | :--- |",
     ]
-    lines.extend(f"| `{asset.rel_path.as_posix()}` | {asset.kind} | `{asset.package_area}` |" for asset in assets)
+    lines.extend(
+        f"| [`{asset.rel_path.as_posix()}`]({repo_blob_url(src_root / asset.rel_path, repo_root)}) | "
+        f"{asset.kind} | `{asset.package_area}` |"
+        for asset in resolved_assets
+    )
     lines.append("")
     return "\n".join(lines)
 
 
-def write_mkdocs_api_tree(
-    src_root: Path = SRC_ROOT,
-    writer: Callable[[Path, str], None] | None = None,
-    output_dir: Path | None = None,
-) -> list[Path]:
-    """Write the MkDocs API reference tree using either ``output_dir`` or a custom ``writer`` callback."""
-    if writer is None:
-        if output_dir is None:
-            msg = "Either writer or output_dir must be provided"
-            raise ValueError(msg)
-
-        def _fs_writer(rel_path: Path, content: str) -> None:
-            target = output_dir / rel_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
-
-        writer = _fs_writer
-
-    modules = discover_api_modules(src_root)
-    assets = discover_schema_assets(src_root)
-    written: list[Path] = []
-    summary_lines: list[str] = ["# API Reference", ""]
-    emitted_prefixes: set[tuple[str, ...]] = set()
-
-    for mod in modules:
-        for depth in range(1, len(mod.nav_parts)):
-            prefix = mod.nav_parts[:depth]
-            if prefix not in emitted_prefixes:
-                prefix_indent = "    " * (depth - 1)
-                prefix_label = prefix[-1] if depth > 1 else prefix[0]
-                summary_lines.append(f"{prefix_indent}* {prefix_label}")
-                emitted_prefixes.add(prefix)
-
-        page_path = Path("api") / mod.doc_rel_path
-        indent = "    " * (len(mod.nav_parts) - 1)
-        label = mod.nav_parts[-1] if len(mod.nav_parts) > 1 else mod.module_path
-        summary_lines.append(f"{indent}* [`{label}`]({mod.doc_rel_path.as_posix()})")
-        emitted_prefixes.add(mod.nav_parts)
-
-        page_lines = [
-            f"# `{mod.module_path}`",
-            "",
-            f"::: {mod.module_path}",
-            "",
-        ]
-        writer(page_path, "\n".join(page_lines))
-        written.append(page_path)
-
-    schemas_rel = Path("schemas.md")
-    schemas_page = Path("api") / schemas_rel
-    summary_lines.append(f"* [Bundled Schemas & XSDs]({schemas_rel.as_posix()})")
-    writer(schemas_page, render_schema_assets_page(assets))
-    written.append(schemas_page)
-
-    summary_path = Path("api") / "SUMMARY.md"
-    writer(summary_path, "\n".join(summary_lines) + "\n")
-    written.append(summary_path)
-
-    return written
-
-
-def _run_mkdocs_gen_files() -> None:
-    """Entry hook invoked when ``mkdocs-gen-files`` executes this script during ``mkdocs build``."""
-    import mkdocs_gen_files  # noqa: PLC0415
-
-    def _mkdocs_writer(rel_path: Path, content: str) -> None:
-        with mkdocs_gen_files.open(rel_path.as_posix(), "w") as fh:
-            fh.write(content)
-
-    write_mkdocs_api_tree(src_root=SRC_ROOT, writer=_mkdocs_writer)
-
-
 def main(argv: Sequence[str] | None = None) -> int:
-    """Generate or verify ``docs/cli_reference.md`` and optional MkDocs API reference pages."""
+    """Generate or check ``docs/cli_reference.md`` and ``docs/bundled_schemas.md``.
+
+    :param argv: optional CLI argument sequence
+    :type argv: Sequence[str] | None
+    :return: exit code (``0`` on success, ``1`` if ``--check`` detects stale files)
+    :rtype: int
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Fail with exit code 1 if docs/cli_reference.md is out of date.",
+        help="Fail with exit code 1 if generated documentation files are out of date.",
     )
     parser.add_argument(
         "--output",
@@ -570,22 +539,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Output path for the generated CLI reference Markdown file.",
     )
     parser.add_argument(
-        "--mkdocs-api-dir",
+        "--schemas-output",
         type=Path,
-        default=None,
-        help="Optional directory into which to write the MkDocs API reference tree.",
+        default=BUNDLED_SCHEMAS_PATH,
+        help="Output path for the generated bundled schemas Markdown file.",
     )
     args = parser.parse_args(argv)
 
-    if args.mkdocs_api_dir is not None:
-        write_mkdocs_api_tree(src_root=SRC_ROOT, output_dir=args.mkdocs_api_dir)
-
-    rendered = render_cli_reference()
-    output_path: Path = args.output
-    return check_or_write_files([(output_path, rendered)], check=args.check, repo_root=REPO_ROOT)
+    return check_or_write_files(
+        [
+            (args.output, render_cli_reference()),
+            (args.schemas_output, render_schema_assets_page()),
+        ],
+        check=args.check,
+        repo_root=REPO_ROOT,
+    )
 
 
 if __name__ == "__main__":
     sys.exit(main())
-elif __name__ == "<run_path>":
-    _run_mkdocs_gen_files()

@@ -576,6 +576,6 @@ Every case directory contains a `case.yaml` manifest; the test suites and this d
 
 | Case | Target CLI | Manifest | Runs |
 | :--- | :--- | :--- | :--- |
-| [`spec/01_outermost_elements_gzip_and_xmlns`](#case-spec-01-outermost-elements-gzip-and-xmlns) | `xmltodict` | [`case.yaml`](../specs/pipelines/xmltodict/spec/01_outermost_elements_gzip_and_xmlns/case.yaml) | default |
-| [`spec/02_md5_sidecar_preprocessing`](#case-spec-02-md5-sidecar-preprocessing) | `xmltodict` | [`case.yaml`](../specs/pipelines/xmltodict/spec/02_md5_sidecar_preprocessing/case.yaml) | partial_md5_failure |
-| [`spec/03_table_transforms_and_output_schemas`](#case-spec-03-table-transforms-and-output-schemas) | `xmltodict` | [`case.yaml`](../specs/pipelines/xmltodict/spec/03_table_transforms_and_output_schemas/case.yaml) | default |
+| [`spec/01_outermost_elements_gzip_and_xmlns`](#case-spec-01-outermost-elements-gzip-and-xmlns) | `xmltodict` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/xmltodict/spec/01_outermost_elements_gzip_and_xmlns/case.yaml) | default |
+| [`spec/02_md5_sidecar_preprocessing`](#case-spec-02-md5-sidecar-preprocessing) | `xmltodict` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/xmltodict/spec/02_md5_sidecar_preprocessing/case.yaml) | partial_md5_failure |
+| [`spec/03_table_transforms_and_output_schemas`](#case-spec-03-table-transforms-and-output-schemas) | `xmltodict` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/pipelines/xmltodict/spec/03_table_transforms_and_output_schemas/case.yaml) | default |

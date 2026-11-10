@@ -182,10 +182,10 @@ runs:
    - Add a `PipelineSpecConfig` entry to `PIPELINE_SPECS` pointing to `specs/pipelines/<pipeline>` and `docs/<pipeline>_specification.md`.
 4. **Generate and index the specification page**:
    - Run `uv run python -m scripts.gen_pipeline_spec`.
-   - Add `docs/<pipeline>_specification.md` to `mkdocs.yml` (`nav`), `docs/index.md`, and `README.md`.
+   - Add `docs/<pipeline>_specification.md` to `zensical.toml` (`[project].nav`), `docs/index.md`, and `README.md`.
 5. **Run verification**:
    ```bash
    uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py
    uv run pytest -m docs
-   uv run mkdocs build --strict
+   uv run --group docs zensical build --strict
    ```

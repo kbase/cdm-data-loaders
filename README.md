@@ -31,12 +31,13 @@ Architecture, pipeline execution, schema conversion, and CLI reference guides li
 - **[Converters IR & Package Architecture](docs/converters_ir.md)**: Intermediate representation (IR) contract for translating between JSON Schema, Pydantic, `dlt`, PyIceberg, PySpark, PyArrow, and LinkML.
 - **[JSON Schema to PyArrow Specification](docs/jsonschema_to_pyarrow_specification.md)**, **[Pydantic to PyArrow Specification](docs/pydantic_to_pyarrow_specification.md)**, **[XSD to PyArrow Specification](docs/xsd_to_pyarrow_specification.md)**, **[XSV Schema & Pipeline Specification](docs/xsv_specification.md)**, **[XML to PyArrow Pipeline Specification](docs/xmltopyarrow_specification.md)**, **[XML to Dict Pipeline Specification](docs/xmltodict_specification.md)**, **[JSONLines Extract Pipeline Specification](docs/jsonlines_extract_specification.md)**, **[JSONLines (JSON Schema) Pipeline Specification](docs/jsonlines_jsonschema_specification.md)** & **[JSONLines (Pydantic) Pipeline Specification](docs/jsonlines_pydantic_specification.md)**: Auto-generated conversion and pipeline execution rules, test cases, and error catalogs.
 - **[NCBI FTP End-to-End Walkthrough](docs/ncbi_ftp_e2e_walkthrough.md)** & **[rclone Instructions](docs/rclone_instructions.md)**: Three-phase NCBI assembly synchronization and S3 Lakehouse promotion.
+- **[Bundled Schemas & XSD Assets](docs/bundled_schemas.md)**: Auto-generated catalog of static JSON Schema and XML Schema (`.xsd`) assets bundled in `src/cdm_data_loaders/`.
 
 To build or preview the full documentation website locally (including auto-generated Python API reference pages):
 
 ```sh
 uv sync --group docs
-uv run --group docs mkdocs serve
+uv run --group docs zensical serve
 ```
 
 

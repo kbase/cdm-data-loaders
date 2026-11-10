@@ -531,7 +531,7 @@ This document specifies how a **JSON Schema Draft 2020-12** document determines:
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/spec/01_scalars_and_formats/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/01_scalars_and_formats/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 01_scalars_and_formats."""
@@ -777,7 +777,7 @@ EXPECTED_SCHEMA = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/spec/02_nullability_and_required/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/02_nullability_and_required/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 02_nullability_and_required."""
@@ -1054,7 +1054,7 @@ nullable. `[10.5, 20.25, 30.0]` becomes `{"item_0": 10.5, "item_1": 20.25, "item
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/spec/03_arrays_and_tuples/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/03_arrays_and_tuples/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 03_arrays_and_tuples."""
@@ -1338,7 +1338,7 @@ uses `patternProperties`.
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/spec/04_objects_and_maps/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/04_objects_and_maps/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 04_objects_and_maps."""
@@ -1547,7 +1547,7 @@ The root is `"$ref": "#/$defs/Document"`. `lead_author` declares its own `descri
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/spec/05_defs_and_refs/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/05_defs_and_refs/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 05_defs_and_refs."""
@@ -1802,7 +1802,7 @@ At depth 2 the third `TreeNode` level becomes JSON strings; at depth 1 the secon
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/spec/06_recursion_depth/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/06_recursion_depth/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 06_recursion_depth."""
@@ -2218,7 +2218,7 @@ EXPECTED_SCHEMA_DEPTH_1 = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/spec/07_combinators_allof_anyof_oneof/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/07_combinators_allof_anyof_oneof/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 07_combinators_allof_anyof_oneof."""
@@ -2404,7 +2404,7 @@ EXPECTED_SCHEMA = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/spec/08_conditional_and_dependent_schemas/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/08_conditional_and_dependent_schemas/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 08_conditional_and_dependent_schemas."""
@@ -2607,7 +2607,7 @@ required-but-nullable `anyOf` property (`fallback_tag`), an array item (`tag_lis
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/spec/09_context_dependent_shared_defs/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/09_context_dependent_shared_defs/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 09_context_dependent_shared_defs."""
@@ -2987,7 +2987,7 @@ Stress test combining `allOf` inheritance, `const`, date / date-time / Base64 sc
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/spec/10_combinations/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/10_combinations/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 10_combinations."""
@@ -3106,12 +3106,12 @@ EXPECTED_SCHEMA = pa.schema(
 `/jobs/{job_id}` response schema from `not_for_github/cts/openapi.json` (`#/components/schemas/Job`), with nested
 `JobInput`, `JobImage`, `RefData` / `S3FileWithDataID`, a dynamic `params` map and `anyOf` nullability.
 
-**Schema:** [`specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/schema.json)
+**Schema:** [`specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/schema.json)
 
-- Run `minimal`: [`minimal.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/minimal.json), [`minimal_expected.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/minimal_expected.json), [`minimal_expected_table.py`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/minimal_expected_table.py)
-- Run `maximal`: [`maximal.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/maximal.json), [`maximal_expected.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/maximal_expected.json), [`maximal_expected_table.py`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/maximal_expected_table.py)
+- Run `minimal`: [`minimal.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/minimal.json), [`minimal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/minimal_expected.json), [`minimal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/minimal_expected_table.py)
+- Run `maximal`: [`maximal.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/maximal.json), [`maximal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/maximal_expected.json), [`maximal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/maximal_expected_table.py)
 
-**Expected PyArrow schema:** [`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/expected_schema.py)
+**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/expected_schema.py)
 
 ---
 
@@ -3124,12 +3124,12 @@ EXPECTED_SCHEMA = pa.schema(
 `/jobs` response schema from `not_for_github/cts/openapi.json` (`#/components/schemas/ListJobsResponse`): an
 array of `JobPreview` structs with `JobInputPreview`, `JobImage` and state transition timestamps.
 
-**Schema:** [`specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/schema.json)
+**Schema:** [`specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/schema.json)
 
-- Run `minimal`: [`minimal.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/minimal.json), [`minimal_expected.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/minimal_expected.json), [`minimal_expected_table.py`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/minimal_expected_table.py)
-- Run `maximal`: [`maximal.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/maximal.json), [`maximal_expected.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/maximal_expected.json), [`maximal_expected_table.py`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/maximal_expected_table.py)
+- Run `minimal`: [`minimal.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/minimal.json), [`minimal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/minimal_expected.json), [`minimal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/minimal_expected_table.py)
+- Run `maximal`: [`maximal.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/maximal.json), [`maximal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/maximal_expected.json), [`maximal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/maximal_expected_table.py)
 
-**Expected PyArrow schema:** [`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/expected_schema.py)
+**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/expected_schema.py)
 
 ---
 
@@ -3142,12 +3142,12 @@ array of `JobPreview` structs with `JobInputPreview`, `JobImage` and state trans
 Deeply nested NCBI Datasets v2 schema (`schemas/ncbi_datasets/annotationReport.schema.json`) with a
 root `$ref`, many `$defs`, arrays of structs, enums, integers and booleans.
 
-**Schema:** [`specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/schema.json)
+**Schema:** [`specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/schema.json)
 
-- Run `minimal`: [`minimal.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/minimal.json), [`minimal_expected.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/minimal_expected.json), [`minimal_expected_table.py`](../specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/minimal_expected_table.py)
-- Run `maximal`: [`maximal.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/maximal.json), [`maximal_expected.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/maximal_expected.json), [`maximal_expected_table.py`](../specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/maximal_expected_table.py)
+- Run `minimal`: [`minimal.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/minimal.json), [`minimal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/minimal_expected.json), [`minimal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/minimal_expected_table.py)
+- Run `maximal`: [`maximal.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/maximal.json), [`maximal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/maximal_expected.json), [`maximal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/maximal_expected_table.py)
 
-**Expected PyArrow schema:** [`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/expected_schema.py)
+**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/expected_schema.py)
 
 ---
 
@@ -3161,12 +3161,12 @@ root `$ref`, many `$defs`, arrays of structs, enums, integers and booleans.
 (`#/components/schemas/SearchResult`): a 24-branch polymorphic `Comment` `anyOf` (including a string + object
 `note` with a synthesized `_value`), recursive `ProteinSection`, `extraAttributes` maps and `pa.date32()` dates.
 
-**Schema:** [`specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/schema.json)
+**Schema:** [`specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/schema.json)
 
-- Run `minimal`: [`minimal.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/minimal.json), [`minimal_expected.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/minimal_expected.json), [`minimal_expected_table.py`](../specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/minimal_expected_table.py)
-- Run `maximal`: [`maximal.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/maximal.json), [`maximal_expected.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/maximal_expected.json), [`maximal_expected_table.py`](../specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/maximal_expected_table.py)
+- Run `minimal`: [`minimal.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/minimal.json), [`minimal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/minimal_expected.json), [`minimal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/minimal_expected_table.py)
+- Run `maximal`: [`maximal.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/maximal.json), [`maximal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/maximal_expected.json), [`maximal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/maximal_expected_table.py)
 
-**Expected PyArrow schema:** [`expected_schema.py`](../specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/expected_schema.py)
+**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/expected_schema.py)
 
 ---
 
@@ -3176,18 +3176,18 @@ Schema generation raises a subclass of `JSONSchemaToPyArrowError` (itself a `Val
 
 | Code | Exception | Condition | Reason | Fixtures |
 | :--- | :--- | :--- | :--- | :--- |
-| **E1** | `UnsupportedDialectError` | Missing or unsupported `$schema` dialect | Only JSON Schema Draft 2020-12 and the KBase Draft 2020-12 XSV metaschema are supported. | [`missing_schema_dialect.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/missing_schema_dialect.json): Declares the Draft-07 dialect URI.<br>[`missing_schema_keyword.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/missing_schema_keyword.json): No `$schema` keyword. |
-| **E2** | `NonStructRootError` | Non-struct top-level schema | A `pa.Schema` needs top-level columns, so the root must resolve to a fixed-property object. | [`scalar_top_level.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/scalar_top_level.json): Root is `{"type": "string"}`.<br>[`array_top_level.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/array_top_level.json): Root is `{"type": "array", "items": {"type": "integer"}}`.<br>[`map_top_level.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/map_top_level.json): Root is a pure map (`additionalProperties: {"type": "string"}`). |
-| **E3** | `EmptyObjectError` | Empty object or tuple (zero fields) | Parquet cannot store a `pa.struct([])` with no child fields. | [`empty_object_top_level.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/empty_object_top_level.json): Root object has `properties: {}`.<br>[`empty_object_nested.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/empty_object_nested.json): Nested property has `properties: {}`. |
-| **E4** | `UnconstrainedSchemaError` | Unconstrained or boolean schema | An untyped JSON value cannot be assigned a concrete Arrow `DataType`. | [`unconstrained_property.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/unconstrained_property.json): Property schema is `{}`.<br>[`boolean_property_schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/boolean_property_schema.json): Property schema is `true`. |
-| **E5** | `OpenTupleError` | Open tuple (`prefixItems` with schema-valued `items`) | A field cannot be both a positional `pa.struct` and an unbounded `pa.list_`. | [`open_tuple_prefix_items.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/open_tuple_prefix_items.json): `prefixItems` with `items: {"type": "boolean"}`. |
-| **E6** | `MixedPropertiesAndMapError` | Fixed `properties` mixed with a dynamic map | An object cannot be both a fixed-field `pa.struct` and a dynamic `pa.map_`. | [`mixed_properties_and_map.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/mixed_properties_and_map.json): `properties` together with `additionalProperties: {"type": "integer"}`. |
-| **E7** | `NegationError` | Negation (`not`) | A complement type does not define a positive storage `DataType`. | [`negation_not_keyword.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/negation_not_keyword.json): Property uses `"not": {"type": "string"}`. |
-| **E8** | `IncompatibleBranchShapesError` | Incompatible structural union branches | Branches with different structural shapes (object vs array, array vs scalar, object vs map) cannot share one column. | [`incompatible_branch_shapes.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/incompatible_branch_shapes.json): `oneOf` with an object branch and an array branch. |
-| **E9** | `UnsupportedRefError` | Unresolvable or unsupported reference | Every `$ref` must resolve to a local `#/$defs/...` definition; `$dynamicRef` and `$recursiveRef` are not supported. | [`unresolvable_ref.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/unresolvable_ref.json): `$ref` to the missing `#/$defs/DoesNotExist`.<br>[`dynamic_ref.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/dynamic_ref.json): Property uses `$dynamicRef`. |
-| **E10** | `RecursiveNonJsonTypeError` | Non-JSON-serializable type in a recursive `$ref` cycle | Truncated recursive subtrees are serialized with `json.dumps`, which cannot encode `datetime.date` or `bytes`. | [`recursive_date_type.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/recursive_date_type.json): Recursive `DatedNode` has a `format: "date"` property.<br>[`recursive_binary_type.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/recursive_binary_type.json): Recursive `BlobNode` has a `contentEncoding: "base64"` property. |
-| **E11** | `NullOnlySchemaError` | Null-only schema | Parquet has no physical storage type for a `pa.null()` column. | [`null_only_field.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/null_only_field.json): Property is `{"type": "null"}`.<br>[`const_null_field.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/const_null_field.json): Property is `{"const": null}`.<br>[`enum_null_field.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/enum_null_field.json): Property is `{"enum": [null]}`. |
-| **E12** | `ValueFieldCollisionError` | `_value` collision in a scalar + object union | The synthesized `_value` field of a scalar + object union would collide with a declared `_value` property. | [`value_field_collision.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/errors/value_field_collision.json): Object branch of a string + object `anyOf` declares `_value`. |
+| **E1** | `UnsupportedDialectError` | Missing or unsupported `$schema` dialect | Only JSON Schema Draft 2020-12 and the KBase Draft 2020-12 XSV metaschema are supported. | [`missing_schema_dialect.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/missing_schema_dialect.json): Declares the Draft-07 dialect URI.<br>[`missing_schema_keyword.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/missing_schema_keyword.json): No `$schema` keyword. |
+| **E2** | `NonStructRootError` | Non-struct top-level schema | A `pa.Schema` needs top-level columns, so the root must resolve to a fixed-property object. | [`scalar_top_level.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/scalar_top_level.json): Root is `{"type": "string"}`.<br>[`array_top_level.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/array_top_level.json): Root is `{"type": "array", "items": {"type": "integer"}}`.<br>[`map_top_level.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/map_top_level.json): Root is a pure map (`additionalProperties: {"type": "string"}`). |
+| **E3** | `EmptyObjectError` | Empty object or tuple (zero fields) | Parquet cannot store a `pa.struct([])` with no child fields. | [`empty_object_top_level.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/empty_object_top_level.json): Root object has `properties: {}`.<br>[`empty_object_nested.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/empty_object_nested.json): Nested property has `properties: {}`. |
+| **E4** | `UnconstrainedSchemaError` | Unconstrained or boolean schema | An untyped JSON value cannot be assigned a concrete Arrow `DataType`. | [`unconstrained_property.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/unconstrained_property.json): Property schema is `{}`.<br>[`boolean_property_schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/boolean_property_schema.json): Property schema is `true`. |
+| **E5** | `OpenTupleError` | Open tuple (`prefixItems` with schema-valued `items`) | A field cannot be both a positional `pa.struct` and an unbounded `pa.list_`. | [`open_tuple_prefix_items.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/open_tuple_prefix_items.json): `prefixItems` with `items: {"type": "boolean"}`. |
+| **E6** | `MixedPropertiesAndMapError` | Fixed `properties` mixed with a dynamic map | An object cannot be both a fixed-field `pa.struct` and a dynamic `pa.map_`. | [`mixed_properties_and_map.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/mixed_properties_and_map.json): `properties` together with `additionalProperties: {"type": "integer"}`. |
+| **E7** | `NegationError` | Negation (`not`) | A complement type does not define a positive storage `DataType`. | [`negation_not_keyword.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/negation_not_keyword.json): Property uses `"not": {"type": "string"}`. |
+| **E8** | `IncompatibleBranchShapesError` | Incompatible structural union branches | Branches with different structural shapes (object vs array, array vs scalar, object vs map) cannot share one column. | [`incompatible_branch_shapes.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/incompatible_branch_shapes.json): `oneOf` with an object branch and an array branch. |
+| **E9** | `UnsupportedRefError` | Unresolvable or unsupported reference | Every `$ref` must resolve to a local `#/$defs/...` definition; `$dynamicRef` and `$recursiveRef` are not supported. | [`unresolvable_ref.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/unresolvable_ref.json): `$ref` to the missing `#/$defs/DoesNotExist`.<br>[`dynamic_ref.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/dynamic_ref.json): Property uses `$dynamicRef`. |
+| **E10** | `RecursiveNonJsonTypeError` | Non-JSON-serializable type in a recursive `$ref` cycle | Truncated recursive subtrees are serialized with `json.dumps`, which cannot encode `datetime.date` or `bytes`. | [`recursive_date_type.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/recursive_date_type.json): Recursive `DatedNode` has a `format: "date"` property.<br>[`recursive_binary_type.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/recursive_binary_type.json): Recursive `BlobNode` has a `contentEncoding: "base64"` property. |
+| **E11** | `NullOnlySchemaError` | Null-only schema | Parquet has no physical storage type for a `pa.null()` column. | [`null_only_field.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/null_only_field.json): Property is `{"type": "null"}`.<br>[`const_null_field.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/const_null_field.json): Property is `{"const": null}`.<br>[`enum_null_field.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/enum_null_field.json): Property is `{"enum": [null]}`. |
+| **E12** | `ValueFieldCollisionError` | `_value` collision in a scalar + object union | The synthesized `_value` field of a scalar + object union would collide with a declared `_value` property. | [`value_field_collision.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/errors/value_field_collision.json): Object branch of a string + object `anyOf` declares `_value`. |
 
 ## 4. Fixture Index
 
@@ -3195,17 +3195,17 @@ Every case directory contains a `case.yaml` manifest; the test suite and this do
 
 | Case | Schema | Runs |
 | :--- | :--- | :--- |
-| [`spec/01_scalars_and_formats`](../specs/schema_converters/jsonschema_to_pyarrow/spec/01_scalars_and_formats/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/01_scalars_and_formats/schema.json) | default |
-| [`spec/02_nullability_and_required`](../specs/schema_converters/jsonschema_to_pyarrow/spec/02_nullability_and_required/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/02_nullability_and_required/schema.json) | default |
-| [`spec/03_arrays_and_tuples`](../specs/schema_converters/jsonschema_to_pyarrow/spec/03_arrays_and_tuples/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/03_arrays_and_tuples/schema.json) | default |
-| [`spec/04_objects_and_maps`](../specs/schema_converters/jsonschema_to_pyarrow/spec/04_objects_and_maps/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/04_objects_and_maps/schema.json) | default |
-| [`spec/05_defs_and_refs`](../specs/schema_converters/jsonschema_to_pyarrow/spec/05_defs_and_refs/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/05_defs_and_refs/schema.json) | default |
-| [`spec/06_recursion_depth`](../specs/schema_converters/jsonschema_to_pyarrow/spec/06_recursion_depth/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/06_recursion_depth/schema.json) | depth-2, depth-1 |
-| [`spec/07_combinators_allof_anyof_oneof`](../specs/schema_converters/jsonschema_to_pyarrow/spec/07_combinators_allof_anyof_oneof/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/07_combinators_allof_anyof_oneof/schema.json) | default |
-| [`spec/08_conditional_and_dependent_schemas`](../specs/schema_converters/jsonschema_to_pyarrow/spec/08_conditional_and_dependent_schemas/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/08_conditional_and_dependent_schemas/schema.json) | default |
-| [`spec/09_context_dependent_shared_defs`](../specs/schema_converters/jsonschema_to_pyarrow/spec/09_context_dependent_shared_defs/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/09_context_dependent_shared_defs/schema.json) | default |
-| [`spec/10_combinations`](../specs/schema_converters/jsonschema_to_pyarrow/spec/10_combinations/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/spec/10_combinations/schema.json) | default |
-| [`examples/cts_job`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/schema.json) | minimal, maximal |
-| [`examples/cts_jobs`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/schema.json) | minimal, maximal |
-| [`examples/ncbi_annotation_report`](../specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/schema.json) | minimal, maximal |
-| [`examples/uniprot_search`](../specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/case.yaml) | [`schema.json`](../specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/schema.json) | minimal, maximal |
+| [`spec/01_scalars_and_formats`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/01_scalars_and_formats/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/01_scalars_and_formats/schema.json) | default |
+| [`spec/02_nullability_and_required`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/02_nullability_and_required/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/02_nullability_and_required/schema.json) | default |
+| [`spec/03_arrays_and_tuples`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/03_arrays_and_tuples/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/03_arrays_and_tuples/schema.json) | default |
+| [`spec/04_objects_and_maps`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/04_objects_and_maps/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/04_objects_and_maps/schema.json) | default |
+| [`spec/05_defs_and_refs`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/05_defs_and_refs/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/05_defs_and_refs/schema.json) | default |
+| [`spec/06_recursion_depth`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/06_recursion_depth/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/06_recursion_depth/schema.json) | depth-2, depth-1 |
+| [`spec/07_combinators_allof_anyof_oneof`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/07_combinators_allof_anyof_oneof/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/07_combinators_allof_anyof_oneof/schema.json) | default |
+| [`spec/08_conditional_and_dependent_schemas`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/08_conditional_and_dependent_schemas/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/08_conditional_and_dependent_schemas/schema.json) | default |
+| [`spec/09_context_dependent_shared_defs`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/09_context_dependent_shared_defs/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/09_context_dependent_shared_defs/schema.json) | default |
+| [`spec/10_combinations`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/10_combinations/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/spec/10_combinations/schema.json) | default |
+| [`examples/cts_job`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_job/schema.json) | minimal, maximal |
+| [`examples/cts_jobs`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/cts_jobs/schema.json) | minimal, maximal |
+| [`examples/ncbi_annotation_report`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/ncbi_annotation_report/schema.json) | minimal, maximal |
+| [`examples/uniprot_search`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/case.yaml) | [`schema.json`](https://github.com/kbase/cdm-data-loaders/blob/main/specs/schema_converters/jsonschema_to_pyarrow/examples/uniprot_search/schema.json) | minimal, maximal |
