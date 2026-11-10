@@ -30,6 +30,7 @@ from cdm_data_loaders.core.fields import (
     UseDestination,
     UseOutputDirForPipelineMetadata,
     XmlTag,
+    file_glob_description,
 )
 from cdm_data_loaders.core.path_fields import InputDir, LocalOutputDir
 from cdm_data_loaders.core.transforms import TransformSettingsMixin, uses_pyarrow_format
@@ -267,7 +268,7 @@ class XmlIngestSettings(FileFormatIngestSettings):
         FileGlob,
         Field(
             default=DEFAULT_XML_FILE_GLOB,
-            description="Glob pattern for XML files",
+            description=file_glob_description("Glob pattern for XML files"),
         ),
     ]
 

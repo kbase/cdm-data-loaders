@@ -129,6 +129,32 @@ classDiagram
 - **Kebab-Case CLI Flags**: Field names use `snake_case` in Python and `--kebab-case` on the CLI (e.g., `dataset_name` -> `--dataset-name`).
 - **Explicit CLI Parsing**: `cli_parse_args` is not enabled on model instantiation (`default_settings_with_shortcuts()`), so constructing settings objects in Python code or unit tests never reads `sys.argv`. CLI parsing only happens when `PipelineCli` invokes `pydantic_settings.CliApp.run(settings_cls)`.
 - **Compile-Time Alias & Shortcut Validation**: `CdmDataLoadersBase.__pydantic_init_subclass__` calls `check_aliases()` whenever a settings subclass is defined, ensuring no field name, `validation_alias`, or `cli_shortcuts` entry collides or claims `-h` / `--help`.
+- **CTS-Safe Wildcard Tokens (`FileGlob`)**: The CTS `POST /jobs` API restricts `args` and `environment` values to `^[\w\./][\w\.\,+/-]*$`. CTS rejects raw glob metacharacters (`*`, `?`, `[`, `]`, `!`). `FileGlob` (`--file-glob`, `-g`, `CDL_FILE_GLOB`) expands readable wildcard tokens while keeping raw globs intact for local runs:
+
+| Token          | Glob Character | Example CTS Value                        | Expanded Glob     |
+| :------------- | :------------- | :--------------------------------------- | :---------------- |
+| `__STAR__`     | `*`            | `__STAR__.ext.__STAR__`                  | `*.ext.*`         |
+| `__GLOBSTAR__` | `**`           | `__GLOBSTAR__/__STAR__.xml.gz`           | `**/*.xml.gz`     |
+| `__QMARK__`    | `?`            | `batch___QMARK__.csv`                    | `batch_?.csv`     |
+| `__LBRACK__`   | `[`            | `part___LBRACK__0-9__RBRACK__.tsv`       | `part_[0-9].tsv`  |
+| `__RBRACK__`   | `]`            | `part___LBRACK__0-9__RBRACK__.tsv`       | `part_[0-9].tsv`  |
+| `__BANG__`     | `!`            | `data___LBRACK____BANG__a__RBRACK__.xml` | `data_[!a].xml`   |
+
+Example CTS `POST /jobs` `params.args` list:
+
+```json
+[
+  "pipeline",
+  "xsv",
+  "--input-dir", "/input_dir",
+  "--output-dir", "/output_dir",
+  "--use-destination", "cts",
+  "--dataset-name", "my_dataset",
+  "--table-name", "sample_rows",
+  "--schema-file", "/input_dir/schema.json",
+  "--file-glob", "__STAR__.ext.__STAR__"
+]
+```
 
 ### Settings Layers and Fields
 
@@ -180,7 +206,7 @@ Extends `FileFormatIngestSettings` (and `TransformSettingsMixin`) for XML pipeli
 
 | Field        | CLI Flag       | Shortcut | Default      | Description                                                                               |
 | :----------- | :------------- | :------- | :----------- | :---------------------------------------------------------------------------------------- |
-| `file_glob`  | `--file-glob`  | `-g`     | `"*.xml*"`   | Glob pattern matching XML files (including `.xml.gz`) under `input_dir`.                  |
+| `file_glob`  | `--file-glob`  | `-g`     | `"*.xml*"`   | Glob pattern matching XML files (including `.xml.gz`) under `input_dir`; accepts CTS wildcard tokens (`__STAR__`, `__GLOBSTAR__`, etc.). |
 | `table_name` | `--table-name` | `-t`     | *(Required)* | Target table name (`SingleTableXmlIngestSettings`; preset on `uniprot`/`uniref*`).        |
 | `xml_tag`    | `--xml-tag`    | `-x`     | *(Required)* | Repeating record XML tag (`SingleTableXmlIngestSettings`; preset on `uniprot`/`uniref*`). |
 

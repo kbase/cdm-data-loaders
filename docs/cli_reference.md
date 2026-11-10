@@ -79,7 +79,7 @@ Settings for the JSONL extraction-only pipeline.
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--dataset-name` | — | `CDL_DATASET_NAME` | `str` | *(Required)* | The name of the dataset being produced |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.jsonl*'` | Glob pattern for JSONL files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.jsonl*'` | Glob pattern for JSONL files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--table-name` | `-t` | `CDL_TABLE_NAME` | `str` | *(Required)* | The name of the table to export parsed data to |
 
 ## `jsonlines_jsonschema`
@@ -104,7 +104,7 @@ Pipeline settings for JSONL ingestion with JSON Schema validation.
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--dataset-name` | — | `CDL_DATASET_NAME` | `str` | *(Required)* | The name of the dataset being produced |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.jsonl*'` | Glob pattern for JSONL files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.jsonl*'` | Glob pattern for JSONL files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--entity-schemas` | `-m` | `CDL_ENTITY_SCHEMAS` | `str` | *(Required)* | Dotted import path to a module that defines `ENTITY_SCHEMAS: dict[str, dict]`. Each key is a table name and a subdirectory of `input_dir`. Each value is a JSON Schema dictionary declaring its draft with `$schema`. |
 
 ## `jsonlines_pydantic`
@@ -129,7 +129,7 @@ Pipeline settings for JSONL pipeline that uses Pydantic for validation.
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--dataset-name` | — | `CDL_DATASET_NAME` | `str` | *(Required)* | The name of the dataset being produced |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.jsonl*'` | Glob pattern for JSONL files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.jsonl*'` | Glob pattern for JSONL files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--entity-models` | `-m` | `CDL_ENTITY_MODELS` | `str` | *(Required)* | Dotted import path to a module that defines `ENTITY_MODELS: dict[str, type[BaseModel]]`. Each key is a table name and a subdirectory of `input_dir`. Each value is the Pydantic model for that table. |
 
 ## `ncbi_datasets`
@@ -151,7 +151,7 @@ Pipeline settings for NCBI Datasets JSONL ingestion (`annotation_report` and `da
 | `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.jsonl*'` | Glob pattern for JSONL files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.jsonl*'` | Glob pattern for JSONL files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 
 ## `ncbi_ftp_promote`
 
@@ -209,7 +209,7 @@ Settings for the PubMed XML to PyArrow ingestion pipeline.
 | `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml.gz'` | Glob pattern for PubMed XML files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml.gz'` | Glob pattern for PubMed XML files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--root-tag` | — | `CDL_ROOT_TAG` | `str \| None` | `None` | Optional root XML element tag name used to anchor level-based XSD element resolution. |
 | `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | `src/cdm_data_loaders/schemas/pubmed/pubmed.xsd` | Path to the PubMed XSD file describing the XML documents to be imported. |
 | `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
@@ -263,7 +263,7 @@ Settings for the UniProt XML to PyArrow ingestion pipeline.
 | `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | `src/cdm_data_loaders/schemas/uniprot/uniprot.xsd` | Path to the UniProt XSD file describing the XML documents to be imported. |
 | `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
 
@@ -286,7 +286,7 @@ Configuration for running the UniProt KB CDM XML-to-PyArrow import pipeline.
 | `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | `src/cdm_data_loaders/schemas/uniprot/uniprot.xsd` | Path to the UniProt XSD file describing the XML documents to be imported. |
 | `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
 
@@ -311,7 +311,7 @@ UniRef 100 XML to PyArrow ingest settings.
 | `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | `src/cdm_data_loaders/schemas/uniref/uniref.xsd` | Path to the UniRef XSD file describing the XML documents to be imported. |
 | `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
 
@@ -334,7 +334,7 @@ UniRef 100 CDM XML-to-PyArrow ingest settings.
 | `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | `src/cdm_data_loaders/schemas/uniref/uniref.xsd` | Path to the UniRef XSD file describing the XML documents to be imported. |
 | `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
 
@@ -359,7 +359,7 @@ UniRef 50 XML to PyArrow ingest settings.
 | `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | `src/cdm_data_loaders/schemas/uniref/uniref.xsd` | Path to the UniRef XSD file describing the XML documents to be imported. |
 | `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
 
@@ -382,7 +382,7 @@ UniRef 50 CDM XML-to-PyArrow ingest settings.
 | `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | `src/cdm_data_loaders/schemas/uniref/uniref.xsd` | Path to the UniRef XSD file describing the XML documents to be imported. |
 | `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
 
@@ -407,7 +407,7 @@ UniRef 90 XML to PyArrow ingest settings.
 | `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | `src/cdm_data_loaders/schemas/uniref/uniref.xsd` | Path to the UniRef XSD file describing the XML documents to be imported. |
 | `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
 
@@ -430,7 +430,7 @@ UniRef 90 CDM XML-to-PyArrow ingest settings.
 | `--use-destination` | `-d` | `CDL_USE_DESTINATION` | `str` | *(Required)* | Name of the dlt destination to load data into. The dlt config must set destination.<name>.destination_type; the destination's location and credentials also come from the dlt config. |
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--xsd-file` | — | `CDL_XSD_FILE` | `Path` | `src/cdm_data_loaders/schemas/uniref/uniref.xsd` | Path to the UniRef XSD file describing the XML documents to be imported. |
 | `--max-recursion-depth` | — | `CDL_MAX_RECURSION_DEPTH` | `int` | `2` | Maximum recursion depth for self-referential XSD types before serializing deeper content as JSON. |
 
@@ -456,7 +456,7 @@ Settings for the XML ingestion pipeline.
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--dataset-name` | — | `CDL_DATASET_NAME` | `str` | *(Required)* | The name of the dataset being produced |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--table-name` | — | `CDL_TABLE_NAME` | `str` | *(Required)* | The name of the table to export parsed data to |
 | `--xml-tag` | — | `CDL_XML_TAG` | `str` | *(Required)* | XML tag to capture the contents of |
 
@@ -482,7 +482,7 @@ Settings for the XML to PyArrow ingestion pipeline.
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--dataset-name` | — | `CDL_DATASET_NAME` | `str` | *(Required)* | The name of the dataset being produced |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*.xml*'` | Glob pattern for XML files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--table-name` | — | `CDL_TABLE_NAME` | `str \| None` | `None` | The name of the table to export parsed data to (required when xml_level is not set). |
 | `--xml-tag` | — | `CDL_XML_TAG` | `str \| None` | `None` | XML tag to capture the contents of (required when xml_level is not set). |
 | `--xml-level` | — | `CDL_XML_LEVEL` | `int \| None` | `None` | XML depth level relative to the root element to extract all elements from and assign to tables by tag name. |
@@ -529,6 +529,6 @@ Settings for the XSV (CSV/TSV) ingestion pipeline.
 | `--use-output-dir-for-pipeline-metadata` | `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | `bool` | `False` | Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem. |
 | `--dataset-name` | — | `CDL_DATASET_NAME` | `str` | *(Required)* | The name of the dataset being produced |
 | `--loader-file-format` | `-f` | `CDL_LOADER_FILE_FORMAT` | `'iceberg' \| 'jsonl' \| 'parquet'` | `'parquet'` | Format of the output files. Choices: ['iceberg', 'jsonl', 'parquet'] |
-| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*'` | File glob for input files |
+| `--file-glob` | `-g` | `CDL_FILE_GLOB` | `str` | `'*'` | File glob for input files. Accepts CTS wildcard tokens: `__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), `__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`). |
 | `--schema-file` | `-s` | `CDL_SCHEMA_FILE` | `Path` | *(Required)* | Path to a JSON Schema file describing the XSV data's columns and types. May include an x-xsv-config block with xsv parser config metadata. |
 | `--table-name` | `-t` | `CDL_TABLE_NAME` | `str` | *(Required)* | The name of the table to export parsed data to |
