@@ -1,0 +1,30 @@
+{
+  "event_tags": [
+    {
+      "event_id": "EVT-1",
+      "tag": "edge"
+    },
+    {
+      "event_id": "EVT-1",
+      "tag": "prod"
+    },
+    {
+      "event_id": "EVT-2",
+      "tag": "batch"
+    }
+  ],
+  "events": [
+    {
+      "event_id": "EVT-1",
+      "is_slow": false,
+      "latency_ms": 25,
+      "service": "auth"
+    },
+    {
+      "event_id": "EVT-2",
+      "is_slow": true,
+      "latency_ms": 140,
+      "service": "storage"
+    }
+  ]
+}

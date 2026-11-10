@@ -1,5 +1,6 @@
 """Common reusable pipeline elements."""
 
+import os
 import weakref
 from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Final
 import dlt
 import pyarrow as pa
 import yaml
+from dlt.common.libs import pyiceberg as dlt_pyiceberg
 from dlt.common.pipeline import LoadInfo
 from dlt.common.runtime.slack import send_slack_message
 from dlt.common.schema.typing import TSchemaContractDict
@@ -23,9 +25,13 @@ from dlt.pipeline.exceptions import PipelineStepFailed
 from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
+from pyiceberg import catalog as pyiceberg_catalog
 from pyiceberg.catalog import sql as pyiceberg_sql
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.exceptions import NamespaceAlreadyExistsError
+from pyiceberg.utils.config import Config
+from sqlalchemy.exc import IntegrityError
 
 from cdm_data_loaders.core.fields import ICEBERG, JSONL, PARQUET, REJECTED_TABLE_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import (
@@ -105,6 +111,34 @@ def _install_iceberg_catalog_cleanup() -> None:
         return orig_create_engine(url, *args, **kwargs)
 
     pyiceberg_sql.create_engine = _create_engine
+
+    orig_load_from_pyiceberg = dlt_pyiceberg._load_catalog_from_pyiceberg  # noqa: SLF001
+
+    def _load_catalog_from_pyiceberg(catalog_name: str) -> Any:  # noqa: ANN401
+        pyiceberg_catalog._ENV_CONFIG = Config()  # noqa: SLF001
+        if not os.environ.get("PYICEBERG_HOME") and (Path.home() / ".pyiceberg.yaml").is_file():
+            os.environ["PYICEBERG_HOME"] = str(Path.home())
+            try:
+                return orig_load_from_pyiceberg(catalog_name)
+            finally:
+                os.environ.pop("PYICEBERG_HOME", None)
+        return orig_load_from_pyiceberg(catalog_name)
+
+    dlt_pyiceberg._load_catalog_from_pyiceberg = _load_catalog_from_pyiceberg  # noqa: SLF001
+
+    orig_create_namespace = SqlCatalog.create_namespace
+
+    def _create_namespace(self: SqlCatalog, namespace: Any, properties: Any = None) -> None:  # noqa: ANN401
+        try:
+            if properties is None:
+                orig_create_namespace(self, namespace)
+            else:
+                orig_create_namespace(self, namespace, properties)
+        except IntegrityError as exc:
+            msg = f"Namespace {namespace} already exists"
+            raise NamespaceAlreadyExistsError(msg) from exc
+
+    SqlCatalog.create_namespace = _create_namespace  # type: ignore[method-assign]
 
     _wrap_catalog_finalizer(
         SqlCatalog,

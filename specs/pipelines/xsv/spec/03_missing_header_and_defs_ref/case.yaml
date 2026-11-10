@@ -1,0 +1,23 @@
+title: Missing Header Synthesis, `$defs` / `$ref`, and `anyOf` Nullability
+schema: schema.json
+rules:
+  - R-XSV-DIALECT
+  - R-XSV-REQUIRED-COLS
+  - R-XSV-METASCHEMA
+  - R-XSV-CONFIG
+  - R-XSV-DEREF
+  - R-XSV-NULLABILITY
+  - R-XSV-SCALAR-MAP
+  - R-XSV-HEADER
+  - R-XSV-CLEAN-INPUT
+  - R-XSV-FIRST-PASS
+  - R-XSV-SECOND-PASS
+  - R-XSV-DUCKDB-TYPES
+  - R-XSV-ARROW-CAST
+notes: |
+  - `x-has-header: false` sets `missing_header=True`, causing `clean_validate_file` to prepend a comma-delimited header (`gene_id,reads,organism`) generated from `required`.
+  - `gene_id` and `organism` resolve through local `$defs`/`$ref` via `dereference_schema`.
+  - `organism` uses `anyOf: [{"type": "string"}, {"type": "null"}]`, which is recognized as `nullable=True` in PyArrow and nullable `VARCHAR` in DuckDB.
+runs:
+  - id: default
+    data: data.csv

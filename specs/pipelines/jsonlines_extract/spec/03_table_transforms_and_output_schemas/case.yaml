@@ -1,0 +1,23 @@
+title: Table Transforms, Record Filtering, Multi-Table Fan-Out, and PyArrow Output Schemas
+pipeline: jsonlines_extract
+settings_file: settings.toml
+rules:
+  - R-JSONL-EXTRACT-STREAM
+  - R-JSONL-EXTRACT-TRANSFORMS
+  - R-JSONL-EXTRACT-REPORT
+notes: |
+  - `transforms_module = "specs.pipelines.jsonlines_extract.transforms"` and `output_schemas_module = "specs.pipelines.jsonlines_extract.transforms"` register `TABLE_TRANSFORMS["events"]` and `OUTPUT_SCHEMAS` for `events` and `event_tags`.
+  - `evt-drop` (`drop: true`) is filtered out (`{}`), `evt-1` and `evt-2` are normalized and enriched with `is_slow = latency_ms >= 100`, and `tags` arrays fan out to `event_tags`.
+runs:
+  - id: default
+    input_dir: input
+    expected_report:
+      status: completed
+      ingested_files:
+        - events.jsonl
+      pipeline_load_info_errs: null
+    expected_counts:
+      events: 2
+      event_tags: 3
+    expected_tables: expected_tables.py
+    expected_json: expected.json

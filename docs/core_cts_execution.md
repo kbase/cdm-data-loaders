@@ -221,7 +221,7 @@ credentials = "/output_dir/warehouse.duckdb"
 `dlt` reads destination credentials and configuration from:
 
 1. **Container Input Directory (`/input_dir/dlt_conf/`)**:
-   When running via `scripts/entrypoint.sh pipeline ...`, if `/input_dir/dlt_conf` exists, the entrypoint copies `/input_dir/dlt_conf/{config.toml,secrets.toml,.pyiceberg.yaml}` into `$HOME/.dlt/` before starting the pipeline.
+   When running via `scripts/entrypoint.sh pipeline ...`, if `/input_dir/dlt_conf` exists, the entrypoint copies `/input_dir/dlt_conf/{config.toml,secrets.toml}` into `$HOME/.dlt/` and `/input_dir/dlt_conf/.pyiceberg.yaml` into `$HOME/.pyiceberg.yaml` before starting the pipeline.
 2. **Project `.dlt/` Directory**:
    For local runs, `dlt` reads `.dlt/config.toml` and `.dlt/secrets.toml` in the working directory (or `~/.dlt/`).
 3. **Environment Variables**:
@@ -241,7 +241,7 @@ By default, if no explicit catalog is configured, `dlt` creates a local SQLite c
    iceberg_catalog_config = { uri = "sqlite:////output_dir/catalog.db" }
    ```
 2. **`.pyiceberg.yaml`**:
-   Supply `.pyiceberg.yaml` in `/input_dir/dlt_conf/.pyiceberg.yaml` (copied into `$HOME/.dlt/.pyiceberg.yaml` by `scripts/entrypoint.sh`) or set `PYICEBERG_HOME`.
+   Place `.pyiceberg.yaml` in `$HOME/.pyiceberg.yaml` for local runs, or supply `/input_dir/dlt_conf/.pyiceberg.yaml` for container runs (copied into `$HOME/.pyiceberg.yaml` by `scripts/entrypoint.sh`).
 3. **Environment Variables**:
    Use PyIceberg environment variables (`PYICEBERG_CATALOG__DEFAULT__URI=...`) or `dlt` environment variables (`ICEBERG_CATALOG__ICEBERG_CATALOG_TYPE=...`).
 

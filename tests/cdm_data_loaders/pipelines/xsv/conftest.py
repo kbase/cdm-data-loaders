@@ -80,7 +80,11 @@ def work_paths_factory(tmp_path: Path, qsv_cmd: str) -> Callable[[XsvIngestSetti
             directory.mkdir(exist_ok=True)
         return XsvWorkPaths(
             qsv_cmd=qsv_cmd,
-            header_file_path=generate_header(settings.validated_schema, tmp_dir),
+            header_file_path=generate_header(
+                settings.validated_schema,
+                tmp_dir,
+                delimiter=settings.parsing_config.get("delimiter", "\t"),
+            ),
             tmp_dir=tmp_dir,
             qsv_output_dir=qsv_output_dir,
             validated_dir=validated_dir,

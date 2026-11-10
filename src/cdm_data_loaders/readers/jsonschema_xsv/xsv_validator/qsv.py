@@ -267,8 +267,14 @@ def run_qsv_validate(
     # generate the full paths for the derived files
     files = generate_qsv_validate_file_names(args, input_file_name, first_pass=first_pass)
 
-    # save the schema to a temp file
-    files.schema.write_text(json.dumps(schema.jsonschema))
+    # save the schema to a temp file (rewrite custom XSV metaschema URI to standard Draft 2020-12
+    # so the external qsv binary can compile it)
+    qsv_schema = (
+        {**schema.jsonschema, "$schema": "https://json-schema.org/draft/2020-12/schema"}
+        if schema.has_xsv_metaschema
+        else schema.jsonschema
+    )
+    files.schema.write_text(json.dumps(qsv_schema))
 
     cmd = [
         args.qsv_cmd,

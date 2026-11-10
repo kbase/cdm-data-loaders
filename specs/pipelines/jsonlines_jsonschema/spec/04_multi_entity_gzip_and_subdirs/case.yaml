@@ -1,0 +1,22 @@
+title: Multi-Entity Subdirectory Discovery, Gzip Decompression, and Missing Entity Directories
+schema: schema.json
+xml_tag: projects
+rules:
+  - R-JSONL-MULTI-ENTITY-GLOB
+  - R-JSONL-ENTITY-REGISTRY
+notes: |
+  - `ENTITY_SCHEMAS` registers three entities: `projects`, `experiments`, and `missing_entity`.
+  - `data/` contains `projects/part1.jsonl`, `projects/nested/part2.jsonl.gz` (recursively matched by `file_glob="**/*.jsonl*"`), and `experiments/exp1.jsonl`, while `missing_entity/` is absent and skipped without error.
+runs:
+  - id: default
+    data: data
+    expected_json: expected.json
+    expected_table: expected_table.py
+    extra_expected_json:
+      experiments: expected_experiments.json
+    params:
+      entity_type: projects
+      file_glob: "**/*.jsonl*"
+      extra_entities:
+        experiments: experiment_schema.json
+        missing_entity: schema.json

@@ -1,0 +1,13 @@
+[
+  {
+    "scaled_value": 12.5,
+    "sensor_id": "S1",
+    "value": 1.25
+  },
+  {
+    "scaled_value": 35.0,
+    "sensor_id": "S3",
+    "value": 3.5
+  }
+]
+

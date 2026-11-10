@@ -1,0 +1,33 @@
+title: Partial Row Recovery vs Total File Rejection (`_rejected`)
+schema: schema.json
+rules:
+  - R-XSV-FIRST-PASS
+  - R-XSV-SECOND-PASS
+  - R-XSV-DUCKDB-TYPES
+  - R-XSV-ARROW-CAST
+  - R-XSV-REJECTED
+notes: |
+  - In run `partial_recovery` (`partial.csv`), 1 of 4 rows is ragged (too few columns) and is split out by first-pass validation (`"1 out of 4 records invalid."`), and 1 of the remaining 3 rows fails second-pass schema validation (`amount` is `"not-an-int"`, `"1 out of 3 records invalid."`). The 2 valid rows are promoted to `records` while both pass errors are recorded in `_rejected`.
+  - In run `total_failure` (`all_invalid.csv`), all 2 rows fail second-pass validation (`"bad-int"` and `"not-a-date"`). Because `.valid` contains only the header line, no data rows are emitted to `records` and `_rejected` receives `"2 out of 2 records invalid."`.
+runs:
+  - id: partial_recovery
+    data: partial.csv
+    expected_json: expected_partial.json
+    expected_table: expected_table.py
+    table_attr: EXPECTED_PARTIAL_TABLE
+    expected_rejected: expected_partial_rejected.json
+    expected_report:
+      status: completed
+      ingested_files:
+        - partial.csv
+      pipeline_load_info_errs: null
+    params:
+      table_name: records
+  - id: total_failure
+    data: all_invalid.csv
+    expected_json: expected_empty.json
+    expected_table: expected_table.py
+    table_attr: EXPECTED_EMPTY_TABLE
+    expected_rejected: expected_total_rejected.json
+    params:
+      table_name: records

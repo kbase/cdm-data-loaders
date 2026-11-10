@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="IssueBatch">
+    <xs:complexType>
+      <xs:choice maxOccurs="unbounded">
+        <xs:element name="article" type="ArticleType"/>
+        <xs:element name="retraction" type="RetractionType"/>
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="LegacyBatch">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="legacyItem" type="ArticleType" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="ArticleType">
+    <xs:sequence>
+      <xs:element name="pmid" type="xs:string"/>
+      <xs:element name="title" type="xs:string"/>
+      <xs:element name="pages" type="xs:int" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RetractionType">
+    <xs:sequence>
+      <xs:element name="pmid" type="xs:string"/>
+      <xs:element name="reason" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>
+

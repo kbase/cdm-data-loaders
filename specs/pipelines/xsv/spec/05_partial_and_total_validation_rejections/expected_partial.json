@@ -1,0 +1,13 @@
+[
+  {
+    "record_id": "R1",
+    "amount": 100,
+    "event_date": "2025-03-01"
+  },
+  {
+    "record_id": "R3",
+    "amount": 250,
+    "event_date": "2025-03-03"
+  }
+]
+

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.kbase.us/draft/2020-12-xsv/schema",
+  "type": "object",
+  "required": ["id"],
+  "properties": {
+    "id": {"type": "string"}
+  },
+  "x-xsv-config": {
+    "x-delimiter": "::"
+  }
+}
+

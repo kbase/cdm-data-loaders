@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
 import pyarrow as pa
 from frozendict import frozendict
+from jsonschema.exceptions import SchemaError
 from pydantic import Field, PrivateAttr
 from pydantic_settings import SettingsConfigDict
 
@@ -15,8 +16,10 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrowError,
     convert_schema_to_pyarrow,
 )
-from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
-from cdm_data_loaders.converters.readers.pydantic import PydanticToPyArrowError
+from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import (
+    PydanticToPyArrow,
+    PydanticToPyArrowError,
+)
 from cdm_data_loaders.core.fields import (
     DEFAULT_JSONL_FILE_GLOB,
     FILE_GLOB,
@@ -66,6 +69,67 @@ LOCAL_CLI_SHORTCUTS: Final[frozendict[str, str]] = frozendict(
 )
 
 
+class JsonlJsonschemaError(RuntimeError):
+    """Base error raised when an ``ENTITY_SCHEMAS`` registry or entity JSON Schema is invalid or cannot convert to PyArrow."""
+
+    code: ClassVar[str] = ""
+    title: ClassVar[str] = ""
+
+
+class InvalidEntitySchemasRegistryError(JsonlJsonschemaError):
+    """The `entity_schemas` module must define a non-empty `ENTITY_SCHEMAS` dictionary and cannot use the reserved `_rejected` table name."""
+
+    code: ClassVar[str] = "E1"
+    title: ClassVar[str] = "Invalid or empty ENTITY_SCHEMAS registry"
+
+
+class UnsupportedJsonlSchemaDialectError(JsonlJsonschemaError):
+    """Every entity JSON Schema must declare a supported `$schema` draft URI (Draft 4, 6, 7, 2019-09, 2020-12, or KBase 2020-12-xsv)."""
+
+    code: ClassVar[str] = "E2"
+    title: ClassVar[str] = "Missing or unsupported JSON Schema $schema dialect"
+
+
+class InvalidJsonlEntitySchemaError(JsonlJsonschemaError):
+    """Every entity JSON Schema must be a valid schema document under its declared `$schema` metaschema."""
+
+    code: ClassVar[str] = "E3"
+    title: ClassVar[str] = "Entity JSON Schema fails draft metaschema validation"
+
+
+class UnresolvableJsonlSchemaRefError(JsonlJsonschemaError):
+    """All `$ref` pointers and `allOf` branches in an entity JSON Schema must resolve without cycles before PyArrow conversion."""
+
+    code: ClassVar[str] = "E4"
+    title: ClassVar[str] = "Unresolvable or circular $ref in entity JSON Schema"
+
+
+class UnsupportedJsonlArrowSchemaError(JsonlJsonschemaError):
+    """Each non-transformed, non-overridden entity JSON Schema must have `type: "object"` with at least one property and only supported PyArrow column constructs."""
+
+    code: ClassVar[str] = "E5"
+    title: ClassVar[str] = "Entity JSON Schema cannot be converted to a PyArrow table schema"
+
+
+JSONLINES_JSONSCHEMA_ERRORS: Final[tuple[type[JsonlJsonschemaError], ...]] = (
+    InvalidEntitySchemasRegistryError,
+    UnsupportedJsonlSchemaDialectError,
+    InvalidJsonlEntitySchemaError,
+    UnresolvableJsonlSchemaRefError,
+    UnsupportedJsonlArrowSchemaError,
+)
+
+
+def _classify_jsonl_schema_error(exc: Exception) -> JsonlJsonschemaError:
+    """Classify an ``ENTITY_SCHEMAS`` loading or schema validation exception into a :class:`JsonlJsonschemaError` subclass."""
+    if isinstance(exc, SchemaError) or isinstance(exc.__cause__, SchemaError):
+        return InvalidJsonlEntitySchemaError(str(exc))
+    msg = str(exc)
+    if "JSON Schema is missing the $schema keyword" in msg or "Unsupported JSON Schema draft:" in msg:
+        return UnsupportedJsonlSchemaDialectError(msg)
+    return InvalidEntitySchemasRegistryError(msg)
+
+
 def build_output_schema_registry(
     validation_schema_registry: SchemaRegistry | ModelRegistry,
     *,
@@ -93,7 +157,9 @@ def build_output_schema_registry(
     """
     pyarrow_schemas: dict[str, pa.Schema] = dict(output_schemas.registry) if output_schemas is not None else {}
     errors: dict[str, str] = {}
-    if isinstance(validation_schema_registry, ModelRegistry):
+    has_arrow_error = False
+    is_model_registry = isinstance(validation_schema_registry, ModelRegistry)
+    if is_model_registry:
         pydantic_converter = PydanticToPyArrow()
         fn: Callable[..., Any] = pydantic_converter.convert
     else:
@@ -111,14 +177,22 @@ def build_output_schema_registry(
         except PydanticToPyArrowError as error:
             logger.exception("Error converting Pydantic model to PyArrow for %s", table_name)
             errors[table_name] = str(error)
-        except (DereferencingError, JSONSchemaToPyArrowError) as error:
+        except (DereferencingError, RecursionError) as error:
             logger.exception("Error converting JSON Schema to PyArrow for %s", table_name)
+            errors[table_name] = str(error)
+        except JSONSchemaToPyArrowError as error:
+            logger.exception("Error converting JSON Schema to PyArrow for %s", table_name)
+            has_arrow_error = True
             errors[table_name] = str(error)
 
     if errors:
         details = "".join(f"{table_name}: {error}\n" for table_name, error in errors.items())
         err_msg = f"The following errors were found when converting schemas to PyArrow:\n{details}"
-        raise RuntimeError(err_msg)
+        if is_model_registry:
+            raise RuntimeError(err_msg)
+        if has_arrow_error:
+            raise UnsupportedJsonlArrowSchemaError(err_msg)
+        raise UnresolvableJsonlSchemaRefError(err_msg)
 
     if not pyarrow_schemas:
         return None
@@ -223,7 +297,10 @@ class JsonlJsonschemaIngestSettings(JsonlIngestSettings, TransformSettingsMixin)
 
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:  # noqa: ARG002
         """Load and validate the schema registry and precompute PyArrow schemas."""
-        self._schema_registry = load_registry_dict(self.entity_schemas, "ENTITY_SCHEMAS")
+        try:
+            self._schema_registry = load_registry_dict(self.entity_schemas, "ENTITY_SCHEMAS")
+        except Exception as exc:
+            raise _classify_jsonl_schema_error(exc) from exc
         self._resolve_entity_registry_schema_map(self._schema_registry)
 
     @property

@@ -1,0 +1,29 @@
+title: MD5 Sidecar Pre-processing and `_rejected` Dead-Letter Routing
+schema: schema.xsd
+xml_tag: PubmedArticle
+rules:
+  - R-XML-PREPROCESS-MD5
+  - R-XML-PRESET
+notes: |
+  - `preprocessors_module="specs.pipelines.xmltopyarrow.transforms"` registers `validate_md5_sidecar` (also enabled by default on `PubMedXmlToPyArrowSettings`).
+  - Run `partial_md5_failure` validates `good.xml` against `good.xml.md5` and rejects `bad.xml` due to a digest mismatch in `bad.xml.md5`, routing a file-level row (`line_no=None`, `raw_record=None`) to `_rejected`.
+  - Run `total_md5_failure` rejects `malformed.xml` because `malformed.xml.md5` is not a valid MD5 sidecar line, emitting only `_rejected` and leaving `articles` uncreated.
+runs:
+  - id: partial_md5_failure
+    data: data_partial
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_rejected: expected_rejected.json
+    params:
+      table_name: articles
+      file_glob: "*.xml"
+      preprocessors_module: specs.pipelines.xmltopyarrow.transforms
+  - id: total_md5_failure
+    data: data_total_failure
+    expected_json: expected_empty.json
+    expected_table: expected_table.py
+    expected_rejected: expected_total_rejected.json
+    params:
+      table_name: articles
+      file_glob: "*.xml"
+      preprocessors_module: specs.pipelines.xmltopyarrow.transforms

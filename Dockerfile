@@ -6,7 +6,7 @@
 # Use a Python image with uv pre-installed
 FROM ghcr.io/astral-sh/uv:python3.14-trixie
 
-ARG QSV_VERSION="25.0.0"
+ARG QSV_VERSION="28.0.0"
 ARG XML_FILE_SPLITTER_VERSION="v0.1.4"
 
 # Set environment variable to noninteractive to prevent prompts during apt operations

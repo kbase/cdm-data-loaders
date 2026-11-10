@@ -1,0 +1,15 @@
+[
+  {
+    "_id": "cat-1",
+    "title": "Bacteria",
+    "category": [
+      "{\"_id\": \"cat-1-1\", \"title\": \"Proteobacteria\", \"category\": [{\"_id\": \"cat-1-1-1\", \"title\": \"Gammaproteobacteria\"}]}"
+    ]
+  },
+  {
+    "_id": "cat-2",
+    "title": "Archaea",
+    "category": null
+  }
+]
+

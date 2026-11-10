@@ -10,7 +10,7 @@ This document specifies how a **Pydantic v2 `BaseModel`** class determines:
    `pa.Table.from_pylist(rows, schema=pa_schema)` and Parquet serialization.
 3. The **errors** raised for constructs that cannot be represented as a static columnar schema.
 
-**Contents:** [1. Conversion Rules](#1-conversion-rules) · [2. Cases](#2-cases) · [3. Errors](#3-errors-unsupported--invalid-input) · [4. Fixture Index](#4-fixture-index)
+**Contents:** [1. Conversion Rules](#1-conversion-rules) · [2. Cases](#2-cases) · [3. Errors](#3-errors-unsupported-invalid-input) · [4. Fixture Index](#4-fixture-index)
 
 ## 1. Conversion Rules
 

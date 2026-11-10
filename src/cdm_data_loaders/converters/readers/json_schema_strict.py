@@ -20,6 +20,7 @@ from cdm_data_loaders.converters.core.ir import (
     SPEC_BINARY,
     SPEC_BOOL,
     SPEC_DATE,
+    SPEC_FLOAT64,
     SPEC_INT64,
     SPEC_STRING,
     Field,
@@ -62,7 +63,21 @@ NON_EXTENDABLE_SCALAR_HINTS: Final[frozendict[str, tuple[NodeType, NodeHints, st
     {
         "boolean": (*SPEC_BOOL, "boolean"),
         "integer": (*SPEC_INT64, "integer"),
-        "number": ("number", NodeHints(logical_type="double", bit_width=64), "number"),
+        "number": (*SPEC_FLOAT64, "number"),
+    }
+)
+
+STRING_FORMAT_SPECS: Final[frozendict[str, tuple[NodeType, NodeHints]]] = frozendict(
+    {
+        "date": SPEC_DATE,
+        **dict.fromkeys(("date-time", "time", "duration", "uuid", "uri", "email"), SPEC_STRING),
+    }
+)
+
+STRING_CONTENT_ENCODING_SPECS: Final[frozendict[str, tuple[NodeType, NodeHints]]] = frozendict(
+    {
+        "base64": SPEC_BINARY,
+        "base16": SPEC_BINARY,
     }
 )
 
@@ -436,11 +451,11 @@ class StrictJsonSchemaReader:
             return NON_EXTENDABLE_SCALAR_HINTS[type_name]
         if type_name == "string":
             content_enc = node.get("contentEncoding")
-            if content_enc in {"base64", "base16"}:
-                return *SPEC_BINARY, f"string ({content_enc})"
+            if isinstance(content_enc, str) and content_enc in STRING_CONTENT_ENCODING_SPECS:
+                return *STRING_CONTENT_ENCODING_SPECS[content_enc], f"string ({content_enc})"
             fmt = node.get("format")
-            if fmt == "date":
-                return *SPEC_DATE, "string (date)"
+            if isinstance(fmt, str) and fmt in STRING_FORMAT_SPECS:
+                return *STRING_FORMAT_SPECS[fmt], f"string ({fmt})"
             if isinstance(fmt, str) and fmt:
                 return *SPEC_STRING, f"string ({fmt})"
             return *SPEC_STRING, "string"
@@ -469,7 +484,7 @@ class StrictJsonSchemaReader:
             return first_nt, first_hints, joined_label
         base_types = {label.split(" ", maxsplit=1)[0] for _, _, label in branches}
         if base_types <= {"integer", "number"}:
-            return "number", NodeHints(logical_type="double", bit_width=64), joined_label
+            return *SPEC_FLOAT64, joined_label
         return *SPEC_STRING, joined_label
 
     def _resolve_and_unify_scalar_branches(

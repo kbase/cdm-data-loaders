@@ -1,17 +1,141 @@
 """Convert Pydantic v2 BaseModel schemas to PyArrow schemas."""
 
 from pathlib import Path
-from typing import Final
+from typing import ClassVar, Final
 
 import pyarrow as pa
+from frozendict import frozendict
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 
+from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.ir import SchemaDocument
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
 from cdm_data_loaders.converters.readers.pydantic import PydanticReader
 
 DEFAULT_EMITTER: Final[PyArrowEmitter] = PyArrowEmitter(max_nesting=100)
+
+
+class PydanticToPyArrowError(ConversionError):
+    """Raised when a Pydantic model construct cannot be converted to a PyArrow schema.
+
+    Subclasses raised by :func:`generate_pyarrow_schema` carry a stable specification ``code`` and a short
+    ``title``; their docstrings state why the construct is rejected. The converter specification document is
+    generated from these attributes.
+    """
+
+    code: ClassVar[str] = ""
+    title: ClassVar[str] = ""
+
+
+class InvalidPydanticModelError(PydanticToPyArrowError):
+    """Converter requires a concrete Pydantic `BaseModel` subclass as input."""
+
+    code = "E1"
+    title = "Input is not a concrete Pydantic `BaseModel` subclass"
+
+
+class NonStructRootError(PydanticToPyArrowError):
+    """Root of a PyArrow schema must be a `struct` (a table has named columns, not a bare scalar, list, or map)."""
+
+    code = "E2"
+    title = "Non-struct `RootModel`"
+
+
+class EmptyModelError(PydanticToPyArrowError):
+    """Parquet cannot persist a `struct` with zero child fields."""
+
+    code = "E3"
+    title = "Empty model or tuple (zero fields)"
+
+
+class UnconstrainedFieldError(PydanticToPyArrowError):
+    """PyArrow requires a concrete static column type and has no dynamic `any` or untyped container column."""
+
+    code = "E4"
+    title = "Unconstrained field (`Any`, `object`, untyped container, or unbound `TypeVar`)"
+
+
+class OpenTupleError(PydanticToPyArrowError):
+    """Positional tuple structs require a fixed element count so every position maps to a deterministic field."""
+
+    code = "E5"
+    title = "Open tuple mixing positional and variadic elements"
+
+
+class NonStringMapKeyError(PydanticToPyArrowError):
+    """Fixed-field structs cannot mix open `extra='allow'` maps, and Arrow maps require string keys for JSONL round-tripping."""
+
+    code = "E6"
+    title = "Open `extra='allow'` model or non-string mapping key type"
+
+
+class UnsupportedFieldTypeError(PydanticToPyArrowError):
+    """Non-serializable Python runtime types and null-only fields have no valid Arrow column representation."""
+
+    code = "E7"
+    title = "Unsupported field type or null-only field"
+
+
+class IncompatibleUnionBranchesError(PydanticToPyArrowError):
+    """PyArrow cannot merge lists, maps, and structs into a single column without an opaque union type."""
+
+    code = "E8"
+    title = "Incompatible structural union branches"
+
+
+class UnresolvedForwardRefError(PydanticToPyArrowError):
+    """Schema generation requires all forward type annotations to be resolved to concrete types."""
+
+    code = "E9"
+    title = "Unresolvable forward reference"
+
+
+class RecursiveNonJsonTypeError(PydanticToPyArrowError):
+    """Truncated recursive subtrees are serialized with `json.dumps`, which cannot encode `datetime.date` or `bytes`; cyclic type aliases without a `BaseModel` boundary cannot be finitely unrolled."""
+
+    code = "E10"
+    title = "Non-JSON-serializable type in a recursive model cycle or cyclic type alias"
+
+
+CyclicTypeAliasError = RecursiveNonJsonTypeError
+
+
+class InvalidDecimalConstraintsError(PydanticToPyArrowError):
+    """Arrow `decimal128` requires `1 <= max_digits <= 38` and `0 <= decimal_places <= max_digits`."""
+
+    code = "E11"
+    title = "Invalid or out-of-range `Decimal` precision/scale constraints"
+
+
+NullOnlyFieldError = UnsupportedFieldTypeError
+
+
+class ValueFieldCollisionError(PydanticToPyArrowError):
+    """The synthesized `_value` field for scalar union branches would collide with the model's declared `_value` field."""
+
+    code = "E12"
+    title = "`_value` collision in a scalar + model union"
+
+
+PYDANTIC_TO_PYARROW_ERRORS: Final[tuple[type[PydanticToPyArrowError], ...]] = (
+    InvalidPydanticModelError,
+    NonStructRootError,
+    EmptyModelError,
+    UnconstrainedFieldError,
+    OpenTupleError,
+    NonStringMapKeyError,
+    UnsupportedFieldTypeError,
+    IncompatibleUnionBranchesError,
+    UnresolvedForwardRefError,
+    RecursiveNonJsonTypeError,
+    InvalidDecimalConstraintsError,
+    ValueFieldCollisionError,
+)
+
+ERROR_BY_CODE: Final[frozendict[str, type[PydanticToPyArrowError]]] = frozendict(
+    {cls.code: cls for cls in PYDANTIC_TO_PYARROW_ERRORS}
+)
 
 
 def resolve_scalar_type(annotation: object) -> tuple[pa.DataType, str]:
@@ -23,7 +147,10 @@ def resolve_scalar_type(annotation: object) -> tuple[pa.DataType, str]:
     :rtype: tuple[pa.DataType, str]
     :raises PydanticToPyArrowError: if ``annotation`` is not a supported scalar type
     """
-    node = PydanticReader().read_scalar_annotation(annotation)
+    node = PydanticReader(
+        error_type=PydanticToPyArrowError,
+        error_by_code=ERROR_BY_CODE,
+    ).read_scalar_annotation(annotation)
     dtype = DEFAULT_EMITTER.emit_node(node)
     pyd_type = str(node.provenance.metadata["pydantic_type"]) if node.provenance else ""
     return dtype, pyd_type
@@ -47,7 +174,12 @@ def generate_pyarrow_schema(
     :rtype: pa.Schema
     :raises PydanticToPyArrowError: if ``model`` is invalid or uses an unsupported construct
     """
-    doc = PydanticReader(max_recursion_depth=max_recursion_depth, by_alias=by_alias).read(model)
+    doc = PydanticReader(
+        max_recursion_depth=max_recursion_depth,
+        by_alias=by_alias,
+        error_type=PydanticToPyArrowError,
+        error_by_code=ERROR_BY_CODE,
+    ).read(model)
     return DEFAULT_EMITTER.emit(doc)
 
 
@@ -67,7 +199,12 @@ class PydanticToPyArrow(BaseModel):
         :return: Parsed ``SchemaDocument``.
         :rtype: SchemaDocument
         """
-        return PydanticReader(max_recursion_depth=self.max_recursion_depth, by_alias=self.by_alias).read(model)
+        return PydanticReader(
+            max_recursion_depth=self.max_recursion_depth,
+            by_alias=self.by_alias,
+            error_type=PydanticToPyArrowError,
+            error_by_code=ERROR_BY_CODE,
+        ).read(model)
 
     def convert(self, model: type[BaseModel]) -> pa.Schema:
         """Convert a Pydantic ``BaseModel`` subclass to a ``pa.Schema``.

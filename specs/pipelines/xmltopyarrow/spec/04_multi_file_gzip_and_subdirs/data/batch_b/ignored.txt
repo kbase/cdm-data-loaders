@@ -1,0 +1,2 @@
+Not an XML file; ignored by file_glob.
+

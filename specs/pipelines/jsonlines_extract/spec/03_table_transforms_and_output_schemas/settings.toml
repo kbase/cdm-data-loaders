@@ -1,0 +1,7 @@
+dataset_name = "jsonlines_extract_spec"
+table_name = "events"
+file_glob = "*.jsonl"
+transforms_module = "specs.pipelines.jsonlines_extract.transforms"
+output_schemas_module = "specs.pipelines.jsonlines_extract.transforms"
+loader_file_format = "parquet"
+use_output_dir_for_pipeline_metadata = true

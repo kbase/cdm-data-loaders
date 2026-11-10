@@ -43,18 +43,18 @@ from cdm_data_loaders.converters.emitters.pyarrow_codegen import (
 )
 from cdm_data_loaders.converters.emitters.pyspark import PySparkEmitter
 from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
+    XSD_TO_PYARROW_ERRORS,
+    NonStructXmlTagError,
+    RecursiveNonJsonTypeError,
+    XmlTagNotFoundError,
     XsdToPyArrow,
+    XsdToPyArrowError,
     generate_pyarrow_schema,
     generate_pyarrow_schemas_at_level,
     generate_pyarrow_struct,
 )
 from cdm_data_loaders.converters.readers.xsd import (
-    XSD_TO_PYARROW_ERRORS,
-    NonStructXmlTagError,
-    RecursiveNonJsonTypeError,
-    XmlTagNotFoundError,
     XsdReader,
-    XsdToPyArrowError,
     load_schema,
     resolve_elements_at_level,
     resolve_root_elements,
@@ -514,7 +514,7 @@ def test_resolve_elements_at_level_fail_invalid_or_empty_level(
     """resolve_elements_at_level raises ValueError for level < 0 and XmlTagNotFoundError beyond max depth."""
     schema = load_schema(XSD_DATA_DIR / "examples" / "uniref" / "uniref.xsd")
     with pytest.raises(exc_cls, match=match):
-        resolve_elements_at_level(schema, level)
+        resolve_elements_at_level(schema, level, error_type=XsdToPyArrowError, error_by_code=ERRORS_BY_CODE)
 
 
 def test_resolve_root_elements_fail_or_cyclic_global_elements() -> None:
@@ -527,7 +527,7 @@ def test_resolve_root_elements_fail_or_cyclic_global_elements() -> None:
         """
     )
     with pytest.raises(XmlTagNotFoundError, match="No global elements found in XSD schema"):
-        resolve_root_elements(empty_schema)
+        resolve_root_elements(empty_schema, error_type=XsdToPyArrowError, error_by_code=ERRORS_BY_CODE)
 
     cyclic_schema = xmlschema.XMLSchema(
         """<?xml version="1.0" encoding="UTF-8"?>
@@ -962,4 +962,4 @@ def test_xsd_reader_and_xsd_to_pyarrow_facade_pass_ir_and_emitters(
     with pytest.raises(TypeError, match="max_recursion_depth"):
         XsdReader(max_recursion_depth=True)  # type: ignore[arg-type]
     with pytest.raises(XmlTagNotFoundError, match="xml_tag must be specified"):
-        XsdReader().read(uniref_path)
+        XsdReader(error_type=XsdToPyArrowError, error_by_code=ERRORS_BY_CODE).read(uniref_path)

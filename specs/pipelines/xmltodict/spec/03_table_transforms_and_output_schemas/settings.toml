@@ -1,0 +1,8 @@
+dataset_name = "xmltodict_spec"
+table_name = "books"
+xml_tag = "book"
+file_glob = "*.xml"
+transforms_module = "specs.pipelines.xmltodict.transforms"
+output_schemas_module = "specs.pipelines.xmltodict.transforms"
+loader_file_format = "parquet"
+use_output_dir_for_pipeline_metadata = true

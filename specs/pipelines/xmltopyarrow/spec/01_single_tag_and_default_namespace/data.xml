@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<catalog xmlns="http://example.org/catalog"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <item id="itm-1" active="true">
+    <name>Spectrometer</name>
+    <quantity>4</quantity>
+    <price>1250.5</price>
+    <released>2025-03-15</released>
+    <notes>Calibrated</notes>
+    <tag>optics</tag>
+    <tag>lab</tag>
+  </item>
+  <item id="itm-2" active="false">
+    <name>Centrifuge</name>
+    <quantity>1</quantity>
+    <price>890.0</price>
+    <notes xsi:nil="true"/>
+  </item>
+</catalog>
+

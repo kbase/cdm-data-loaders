@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.kbase.us/draft/2020-12-xsv/schema",
+  "title": "SelectiveNullRegexReplacement",
+  "type": "object",
+  "required": [
+    "site",
+    "depth",
+    "ph",
+    "raw_code"
+  ],
+  "properties": {
+    "site": {
+      "type": "string"
+    },
+    "depth": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "ph": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "raw_code": {
+      "type": "string"
+    }
+  },
+  "x-xsv-config": {
+    "x-delimiter": "\t",
+    "x-null-regex": "^(NA|N/A|null|-)$",
+    "x-null-cols": [
+      "depth",
+      "ph"
+    ]
+  }
+}
+

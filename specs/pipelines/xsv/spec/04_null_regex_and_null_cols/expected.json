@@ -1,0 +1,27 @@
+[
+  {
+    "site": "station-1",
+    "depth": 10,
+    "ph": 7.2,
+    "raw_code": "NA"
+  },
+  {
+    "site": "station-2",
+    "depth": null,
+    "ph": null,
+    "raw_code": "-"
+  },
+  {
+    "site": "station-3",
+    "depth": null,
+    "ph": 6.8,
+    "raw_code": "null"
+  },
+  {
+    "site": "station-4",
+    "depth": 25,
+    "ph": null,
+    "raw_code": "OK"
+  }
+]
+

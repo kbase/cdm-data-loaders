@@ -1,6 +1,6 @@
 # Error specification fixtures for the Pydantic v2 -> PyArrow converter.
 # `code` must match the `code` of a PydanticToPyArrowError subclass in
-# cdm_data_loaders.converters.readers.pydantic. `file` is relative to this directory.
+# cdm_data_loaders.converters.facades.pydantic_to_pyarrow. `file` is relative to this directory.
 # `match` is a regex applied to the exception message.
 errors:
   - file: e01_invalid_model_input.py

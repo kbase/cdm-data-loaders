@@ -1,0 +1,15 @@
+{
+  "_rejected": [
+    {
+      "error_detail": "MD5 mismatch for bad.xml: expected 00000000000000000000000000000000, got 5a46030ee1e4775d1dd0418280d8a0d7",
+      "source_file": "bad.xml",
+      "table_name": "books"
+    }
+  ],
+  "books": [
+    {
+      "book___id": "b-10",
+      "book__title": "Hyperion"
+    }
+  ]
+}

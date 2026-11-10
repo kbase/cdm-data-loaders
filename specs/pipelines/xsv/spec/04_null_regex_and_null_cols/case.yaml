@@ -1,0 +1,20 @@
+title: Selective Null Regex Replacement (`x-null-regex` and `x-null-cols`)
+schema: schema.json
+rules:
+  - R-XSV-REQUIRED-COLS
+  - R-XSV-METASCHEMA
+  - R-XSV-CONFIG
+  - R-XSV-NULLABILITY
+  - R-XSV-FIRST-PASS
+  - R-XSV-NULL-REPLACE
+  - R-XSV-SECOND-PASS
+  - R-XSV-DUCKDB-TYPES
+  - R-XSV-ARROW-CAST
+notes: |
+  - First-pass validation uses `generate_first_pass_schema` (where all columns accept strings), allowing placeholder strings `"NA"`, `"N/A"`, `"null"`, and `"-"` in numeric columns `depth` and `ph` to pass structural checks.
+  - `qsv replace` then replaces matches of `^(NA|N/A|null|-)$` with `""` only in `x-null-cols: ["depth", "ph"]` before second-pass validation checks `integer` and `number` types.
+  - Because `raw_code` is not listed in `x-null-cols`, its `"NA"` and `"-"` values are preserved verbatim.
+runs:
+  - id: default
+    data: data.tsv
+

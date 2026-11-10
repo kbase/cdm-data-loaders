@@ -1,0 +1,4 @@
+{"sample_id": "smp-1", "ph": 6.4, "metrics": ["moisture", "salinity"], "raw_payload": "note"}
+{"sample_id": "smp-2", "ph": 7.1, "exclude": true, "metrics": ["ignored"], "raw_payload": 42}
+{"sample_id": "smp-3", "ph": 7.8}
+

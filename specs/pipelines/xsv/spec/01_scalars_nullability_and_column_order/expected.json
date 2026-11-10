@@ -1,0 +1,30 @@
+[
+  {
+    "id": "rec-1",
+    "count": 42,
+    "rank32": 10,
+    "score": 3.5,
+    "price": 19.99,
+    "active": true,
+    "created_date": "2025-01-15",
+    "updated_at": "2025-01-15T08:30:00Z",
+    "status": "active",
+    "opt_note": "first note",
+    "unlisted_tag": "alpha",
+    "extra_col": null
+  },
+  {
+    "id": "rec-2",
+    "count": -100,
+    "rank32": 0,
+    "score": -0.25,
+    "price": 0.5,
+    "active": false,
+    "created_date": "2025-02-20",
+    "updated_at": "2025-02-20T14:00:00Z",
+    "status": "inactive",
+    "opt_note": null,
+    "unlisted_tag": null,
+    "extra_col": null
+  }
+]

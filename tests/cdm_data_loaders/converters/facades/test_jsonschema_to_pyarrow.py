@@ -8,7 +8,10 @@ from typing import Any
 import pyarrow as pa
 import pytest
 
-from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.pyarrow import (
+    coerce_record_for_pyarrow,
+    pyarrow_to_python_type_label,
+)
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrow,
     JSONSchemaToPyArrowError,
@@ -317,3 +320,29 @@ def test_coerce_record_for_pyarrow_pass_preserves_boolean_and_non_integral_float
     assert isinstance(coerced["flt"], bool)
     assert isinstance(coerced["integer_from_bool"], bool)
     assert coerced["integer_from_frac"] == fractional_value
+
+
+@pytest.mark.parametrize(
+    ("data_type", "expected_label"),
+    [
+        pytest.param(pa.bool_(), "`bool`", id="bool"),
+        pytest.param(pa.int32(), "`int`", id="int32"),
+        pytest.param(pa.uint64(), "`int`", id="uint64"),
+        pytest.param(pa.float64(), "`float`", id="float64"),
+        pytest.param(pa.decimal128(10, 2), "`decimal.Decimal`", id="decimal128"),
+        pytest.param(pa.date32(), "`datetime.date`", id="date32"),
+        pytest.param(pa.time64("us"), "`datetime.time`", id="time64"),
+        pytest.param(pa.timestamp("us", tz="UTC"), "`datetime.datetime` (UTC)", id="timestamp-utc"),
+        pytest.param(pa.timestamp("us"), "`datetime.datetime` (naive)", id="timestamp-naive"),
+        pytest.param(pa.binary(), "`bytes`", id="binary"),
+        pytest.param(pa.string(), "`str`", id="string"),
+        pytest.param(pa.list_(pa.string()), "`list[str]`", id="list-str"),
+        pytest.param(pa.null(), "`null`", id="fallback-null"),
+    ],
+)
+def test_pyarrow_to_python_type_label_pass_scalar_list_and_fallback_types(
+    data_type: pa.DataType,
+    expected_label: str,
+) -> None:
+    """pyarrow_to_python_type_label maps scalar, list, and fallback Arrow DataTypes to Python type labels."""
+    assert pyarrow_to_python_type_label(data_type) == expected_label

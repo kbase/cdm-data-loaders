@@ -1,0 +1,10 @@
+[
+  {
+    "error_detail": "MD5 mismatch for articles/bad.jsonl: expected 00000000000000000000000000000000, got d7400ffc422f33a13f8edec2834cf6e1",
+    "line_no": null,
+    "raw_record": null,
+    "source_file": "articles/bad.jsonl",
+    "table_name": "articles"
+  }
+]
+

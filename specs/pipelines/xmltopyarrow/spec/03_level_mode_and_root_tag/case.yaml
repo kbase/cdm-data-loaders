@@ -1,0 +1,28 @@
+title: Level-Based Multi-Table Extraction and `root_tag` Anchoring
+schema: schema.xsd
+xml_tag: article
+rules:
+  - R-XML-LEVEL-TARGET
+  - R-XML-LEVEL-STREAM
+  - R-XML-REPORT
+notes: |
+  - `schema.xsd` declares two root elements (`IssueBatch` and `LegacyBatch`). Setting `xml_level=1` and `root_tag="IssueBatch"` resolves only the level-1 children under `IssueBatch` (`article` and `retraction`).
+  - `stream_xml_file_at_level` yields every direct child of `<IssueBatch>` and routes `<article>` elements to the `article` table (`expected.json` / `expected_table.py`) and `<retraction>` elements to the `retraction` table (`expected_retraction.json`).
+runs:
+  - id: level_1
+    data: data.xml
+    expected_json: expected.json
+    expected_table: expected_table.py
+    extra_expected_json:
+      retraction: expected_retraction.json
+    expected_report:
+      status: completed
+      ingested_files:
+        - data.xml
+      pipeline_load_info_errs: null
+    params:
+      xml_level: 1
+      root_tag: IssueBatch
+      xml_tag: null
+      table_name: null
+

@@ -3,7 +3,7 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, ClassVar, Final, Literal
+from typing import Any, Final, Literal, NoReturn
 
 import xmlschema
 from frozendict import frozendict
@@ -44,8 +44,6 @@ from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.utils.xml_utils import local_name as _local_name
 
 XSD_NAMESPACE: Final[str] = "{http://www.w3.org/2001/XMLSchema}"
-XSI_NAMESPACE: Final[str] = "{http://www.w3.org/2001/XMLSchema-instance}"
-XSI_NIL: Final[str] = f"{XSI_NAMESPACE}nil"
 
 FORBIDDEN_RECURSIVE_XSD_TYPES: Final[frozenset[str]] = frozenset(
     {
@@ -118,91 +116,27 @@ XSD_SCALAR_SPEC: Final[Mapping[str, tuple[NodeType, NodeHints]]] = frozendict(
 )
 
 
-class XsdToPyArrowError(ConversionError):
-    """Base class for XSD constructs that cannot be converted to a PyArrow schema.
+def _raise_code(
+    code: str,
+    msg: str,
+    *,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
+) -> NoReturn:
+    """Raise the configured ``ConversionError`` subclass for ``code`` or fall back to ``error_type``.
 
-    Each subclass carries a stable specification ``code`` and a short ``title``; its docstring states the reason
-    the construct is rejected. The converter specification document is generated from these attributes.
+    :param code: Specification error code (``E1``-``E9``).
+    :type code: str
+    :param msg: Diagnostic error message.
+    :type msg: str
+    :param error_type: Fallback error class.
+    :type error_type: type[ConversionError]
+    :param error_by_code: Mapping from specification error code to exception class.
+    :type error_by_code: Mapping[str, type[ConversionError]]
+    :raises ConversionError: Always raised with the resolved error class.
     """
-
-    code: ClassVar[str] = ""
-    title: ClassVar[str] = ""
-
-
-class XmlTagNotFoundError(XsdToPyArrowError):
-    """The target element is not declared anywhere in the XSD."""
-
-    code = "E1"
-    title = "`xml_tag` not found"
-
-
-class AmbiguousXmlTagError(XsdToPyArrowError):
-    """Declarations of `xml_tag` at the shallowest matching depth have different types, so no single `pa.Schema` can be chosen."""
-
-    code = "E2"
-    title = "Ambiguous `xml_tag` type"
-
-
-class NonStructXmlTagError(XsdToPyArrowError):
-    """A `pa.Table` schema needs top-level columns: the type of `xml_tag` must yield at least one attribute, `#text`, or child element field."""
-
-    code = "E3"
-    title = "Non-struct top-level `xml_tag`"
-
-
-class WildcardElementError(XsdToPyArrowError):
-    """Arbitrary undeclared child elements cannot be represented as fixed `pa.struct` fields."""
-
-    code = "E4"
-    title = "Element wildcard (`xs:any`)"
-
-
-class WildcardAttributeError(XsdToPyArrowError):
-    """Arbitrary undeclared attributes cannot be represented as fixed `pa.struct` fields."""
-
-    code = "E5"
-    title = "Attribute wildcard (`xs:anyAttribute`)"
-
-
-class AbstractComponentError(XsdToPyArrowError):
-    """Concrete instances of an abstract element or type require `xsi:type` or substitution polymorphism, which has no single schema."""
-
-    code = "E6"
-    title = 'Abstract element or type (`abstract="true"`)'
-
-
-class SubstitutionGroupError(XsdToPyArrowError):
-    """Substituted elements introduce element names and types that are not declared in the parent content model."""
-
-    code = "E7"
-    title = "Substitution group"
-
-
-class FieldNameCollisionError(XsdToPyArrowError):
-    """An attribute (prefixed `_`) and a child element map to the same field name in one `pa.struct`."""
-
-    code = "E8"
-    title = "Attribute / child field name collision"
-
-
-class RecursiveNonJsonTypeError(XsdToPyArrowError):
-    """Subtrees truncated beyond `max_recursion_depth` are serialized with `json.dumps`, which cannot encode `datetime.date` or `bytes` without lossy conversion."""
-
-    code = "E9"
-    title = "Non-JSON-serializable scalar under recursion"
-
-
-XSD_TO_PYARROW_ERRORS: Final[tuple[type[XsdToPyArrowError], ...]] = (
-    XmlTagNotFoundError,
-    AmbiguousXmlTagError,
-    NonStructXmlTagError,
-    WildcardElementError,
-    WildcardAttributeError,
-    AbstractComponentError,
-    SubstitutionGroupError,
-    FieldNameCollisionError,
-    RecursiveNonJsonTypeError,
-)
+    cls = error_by_code.get(code, error_type)
+    raise cls(msg)
 
 
 def load_schema(schema_path: str | Path) -> xmlschema.XMLSchema:
@@ -346,12 +280,29 @@ class _TraversalContext:
     type_counts: Mapping[int, int]
     max_recursion_depth: int | None
     struct_cache: dict[tuple[int, bool], Any] = field(default_factory=dict)
+    error_type: type[ConversionError] = ConversionError
+    error_by_code: Mapping[str, type[ConversionError]] = field(default_factory=frozendict)
+
+    def raise_err(self, code: str, msg: str) -> NoReturn:
+        """Raise the configured exception subclass for ``code`` or fall back to ``error_type``.
+
+        :param code: Specification error code (``E1``-``E9``).
+        :type code: str
+        :param msg: Diagnostic error message.
+        :type msg: str
+        :raises ConversionError: Always raised with the resolved error class.
+        """
+        _raise_code(code, msg, error_type=self.error_type, error_by_code=self.error_by_code)
 
 
 type LeafKind = Literal["simple", "mixed", "empty_marker"]
 
 
-def _check_complex_type_forbidden_recursion(root_type: XsdType, current: XsdComplexType) -> list[XsdType]:
+def _check_complex_type_forbidden_recursion(
+    root_type: XsdType,
+    current: XsdComplexType,
+    ctx: _TraversalContext,
+) -> list[XsdType]:
     """Validate attributes on ``current`` and return child ``XsdType``s to inspect for forbidden recursive scalars."""
     for attr in current.attributes.values():
         if isinstance(attr, XsdAttribute) and attr.type is not None:
@@ -361,7 +312,7 @@ def _check_complex_type_forbidden_recursion(root_type: XsdType, current: XsdComp
                         f"Unsupported XSD feature: recursive type {root_type.local_name or root_type.name!r} "
                         f"contains attribute @{attr.local_name} of type {xsd_name!r}"
                     )
-                    raise RecursiveNonJsonTypeError(msg)
+                    ctx.raise_err("E9", msg)
 
     if current.has_simple_content() and isinstance(current.content, XsdType):
         return [current.content]
@@ -374,8 +325,8 @@ def _check_complex_type_forbidden_recursion(root_type: XsdType, current: XsdComp
     return []
 
 
-def _check_no_forbidden_types_under_recursion(root_type: XsdType) -> None:
-    """Raise ValueError if a recursive type or any descendant type uses date, dateTime, or binary scalars."""
+def _check_no_forbidden_types_under_recursion(root_type: XsdType, ctx: _TraversalContext) -> None:
+    """Raise ``E9`` if a recursive type or any descendant type uses date, dateTime, or binary scalars."""
     visited: set[int] = set()
     stack: list[XsdType] = [root_type]
 
@@ -392,10 +343,10 @@ def _check_no_forbidden_types_under_recursion(root_type: XsdType) -> None:
                         f"Unsupported XSD feature: recursive type {root_type.local_name or root_type.name!r} "
                         f"contains {xsd_name!r}, which cannot be serialized to JSON when recursion is truncated"
                     )
-                    raise RecursiveNonJsonTypeError(msg)
+                    ctx.raise_err("E9", msg)
             continue
 
-        stack.extend(_check_complex_type_forbidden_recursion(root_type, current))
+        stack.extend(_check_complex_type_forbidden_recursion(root_type, current, ctx))
 
 
 def _group_min_occurs_by_name(group: XsdGroup, local_name: str) -> int:
@@ -457,20 +408,26 @@ def _is_any_attribute(attr: object) -> bool:
     return isinstance(attr, XsdAnyAttribute)
 
 
-def _validate_group_particles(schema: xmlschema.XMLSchema, group: XsdGroup) -> None:
+def _validate_group_particles(
+    schema: xmlschema.XMLSchema,
+    group: XsdGroup,
+    *,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
+) -> None:
     """Validate that a model group contains no wildcards, abstract elements/types, or substitution groups."""
     target_group = group.ref if group.ref is not None else group
     for item in target_group.content:
         if _is_any_element(item):
             msg = "Unsupported XSD feature: xs:any wildcard element is not supported"
-            raise WildcardElementError(msg)
+            _raise_code("E4", msg, error_type=error_type, error_by_code=error_by_code)
         if isinstance(item, XsdGroup):
-            _validate_group_particles(schema, item)
+            _validate_group_particles(schema, item, error_type=error_type, error_by_code=error_by_code)
         elif isinstance(item, XsdElement):
             target_el = item.ref if item.ref is not None else item
             if getattr(item, "abstract", False) or getattr(target_el, "abstract", False):
                 msg = f"Unsupported XSD feature: abstract element {item.local_name!r} is not supported"
-                raise AbstractComponentError(msg)
+                _raise_code("E6", msg, error_type=error_type, error_by_code=error_by_code)
             if (
                 item.name in schema.substitution_groups
                 or target_el.name in schema.substitution_groups
@@ -478,18 +435,24 @@ def _validate_group_particles(schema: xmlschema.XMLSchema, group: XsdGroup) -> N
                 or getattr(target_el, "substitution_group", None) is not None
             ):
                 msg = f"Unsupported XSD feature: substitutionGroup on element {item.local_name!r} is not supported"
-                raise SubstitutionGroupError(msg)
+                _raise_code("E7", msg, error_type=error_type, error_by_code=error_by_code)
             if item.type is not None and getattr(item.type, "abstract", False):
                 msg = f"Unsupported XSD feature: abstract type {item.type.local_name!r} is not supported"
-                raise AbstractComponentError(msg)
+                _raise_code("E6", msg, error_type=error_type, error_by_code=error_by_code)
 
 
-def _collect_unique_children(schema: xmlschema.XMLSchema, complex_type: XsdComplexType) -> list[XsdElement]:
+def _collect_unique_children(
+    schema: xmlschema.XMLSchema,
+    complex_type: XsdComplexType,
+    *,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
+) -> list[XsdElement]:
     """Validate and return unique child ``XsdElement`` declarations in content-model order."""
     model_group = complex_type.model_group
     if model_group is None:
         return []
-    _validate_group_particles(schema, model_group)
+    _validate_group_particles(schema, model_group, error_type=error_type, error_by_code=error_by_code)
     seen_names: set[str] = set()
     children: list[XsdElement] = []
     for child in model_group.iter_elements():
@@ -503,13 +466,18 @@ def _collect_unique_children(schema: xmlschema.XMLSchema, complex_type: XsdCompl
     return children
 
 
-def _collect_attributes(complex_type: XsdComplexType) -> list[XsdAttribute]:
+def _collect_attributes(
+    complex_type: XsdComplexType,
+    *,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
+) -> list[XsdAttribute]:
     """Validate and return declared attributes on ``complex_type`` in declaration order."""
     attrs: list[XsdAttribute] = []
     for attr in complex_type.attributes.values():
         if _is_any_attribute(attr):
             msg = "Unsupported XSD feature: xs:anyAttribute wildcard is not supported"
-            raise WildcardAttributeError(msg)
+            _raise_code("E5", msg, error_type=error_type, error_by_code=error_by_code)
         if isinstance(attr, XsdAttribute) and getattr(attr, "use", None) != "prohibited":
             if attr.local_name is None:
                 continue
@@ -549,12 +517,17 @@ def _resolve_child_cardinality(
     return is_list, nullable
 
 
-def _classify_leaf_element_type(elem_type: XsdType | None) -> tuple[LeafKind, XsdType | None] | None:
+def _classify_leaf_element_type(
+    elem_type: XsdType | None,
+    *,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
+) -> tuple[LeafKind, XsdType | None] | None:
     """Classify ``elem_type`` as a non-struct leaf ``(kind, simple_type)`` or ``None`` if it maps to a struct."""
     if not isinstance(elem_type, XsdComplexType):
         return "simple", elem_type
 
-    attrs = _collect_attributes(elem_type)
+    attrs = _collect_attributes(elem_type, error_type=error_type, error_by_code=error_by_code)
     if elem_type.has_simple_content() and not attrs:
         content_type = elem_type.content if isinstance(elem_type.content, XsdType) else None
         return "simple", content_type
@@ -573,9 +546,11 @@ def _resolve_non_struct_element_node(
     path: tuple[str | int, ...],
     *,
     nullable: bool,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
 ) -> TypedNode | None:
     """Return an IR ``TypedNode`` if ``elem_type`` maps to a leaf scalar rather than a struct."""
-    leaf_info = _classify_leaf_element_type(elem_type)
+    leaf_info = _classify_leaf_element_type(elem_type, error_type=error_type, error_by_code=error_by_code)
     if leaf_info is None:
         return None
     kind, simple_type = leaf_info
@@ -643,6 +618,8 @@ def _wrap_leaf_ir_field(  # noqa: PLR0913
     is_list: bool,
     nullable: bool,
     truncated_recursion: bool = False,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
 ) -> SchemaField:
     """Create a scalar or list IR ``Field`` with ``xsd_type`` on leaf scalar nodes and ``comment`` on the outer field."""
     annotations = {"description": comment} if comment else {}
@@ -658,7 +635,13 @@ def _wrap_leaf_ir_field(  # noqa: PLR0913
             provenance=Provenance("xsd", leaf_path, trunc_meta),
         )
     else:
-        leaf_node = _resolve_non_struct_element_node(elem_type, leaf_path, nullable=leaf_nullable) or TypedNode(
+        leaf_node = _resolve_non_struct_element_node(
+            elem_type,
+            leaf_path,
+            nullable=leaf_nullable,
+            error_type=error_type,
+            error_by_code=error_by_code,
+        ) or TypedNode(
             type="string",
             nullable=leaf_nullable,
             hints=NodeHints(logical_type="string"),
@@ -697,7 +680,7 @@ def _build_complex_struct_fields(
     fields: list[SchemaField] = []
     attr_field_names: set[str] = set()
 
-    for attr in _collect_attributes(complex_type):
+    for attr in _collect_attributes(complex_type, error_type=ctx.error_type, error_by_code=ctx.error_by_code):
         field_name = f"_{attr.local_name}"
         attr_field_names.add(field_name)
         attr_path = (*path, field_name)
@@ -752,14 +735,19 @@ def _build_complex_struct_fields(
     if model_group is None:
         return tuple(fields)
 
-    for child in _collect_unique_children(ctx.schema, complex_type):
+    for child in _collect_unique_children(
+        ctx.schema,
+        complex_type,
+        error_type=ctx.error_type,
+        error_by_code=ctx.error_by_code,
+    ):
         child_name = child.local_name or ""
         if child_name in attr_field_names:
             msg = (
                 f"Field name collision in {complex_type.local_name or 'complexType'!r}: "
                 f"attribute and child element both map to {child_name!r}"
             )
-            raise FieldNameCollisionError(msg)
+            ctx.raise_err("E8", msg)
 
         is_list, nullable = _resolve_child_cardinality(model_group, child, parent_nillable=parent_nillable)
         fields.append(
@@ -788,7 +776,7 @@ def _build_element_ir_field(
     field_name = element.local_name or ""
     comment = _extract_doc_comment(element, elem_type)
 
-    if _classify_leaf_element_type(elem_type) is not None:
+    if _classify_leaf_element_type(elem_type, error_type=ctx.error_type, error_by_code=ctx.error_by_code) is not None:
         return _wrap_leaf_ir_field(
             field_name,
             elem_type,
@@ -796,12 +784,19 @@ def _build_element_ir_field(
             comment=comment,
             is_list=is_list,
             nullable=nullable,
+            error_type=ctx.error_type,
+            error_by_code=ctx.error_by_code,
         )
 
-    elem_type = _require_complex_type(elem_type, field_name)
+    elem_type = _require_complex_type(
+        elem_type,
+        field_name,
+        error_type=ctx.error_type,
+        error_by_code=ctx.error_by_code,
+    )
     type_id = id(elem_type)
     if type_id in ctx.type_counts:
-        _check_no_forbidden_types_under_recursion(elem_type)
+        _check_no_forbidden_types_under_recursion(elem_type, ctx)
 
     next_count = ctx.type_counts.get(type_id, 0) + 1
     if ctx.max_recursion_depth is not None and next_count > ctx.max_recursion_depth:
@@ -813,6 +808,8 @@ def _build_element_ir_field(
             is_list=is_list,
             nullable=nullable,
             truncated_recursion=True,
+            error_type=ctx.error_type,
+            error_by_code=ctx.error_by_code,
         )
 
     cache_key = (type_id, element.nillable)
@@ -826,6 +823,8 @@ def _build_element_ir_field(
             type_counts={**ctx.type_counts, type_id: next_count},
             max_recursion_depth=ctx.max_recursion_depth,
             struct_cache=ctx.struct_cache,
+            error_type=ctx.error_type,
+            error_by_code=ctx.error_by_code,
         )
         struct_fields = _build_complex_struct_fields(
             next_ctx,
@@ -874,7 +873,13 @@ def _build_element_ir_field(
     )
 
 
-def _resolve_target_element(schema: xmlschema.XMLSchema, xml_tag: str) -> XsdElement:
+def _resolve_target_element(
+    schema: xmlschema.XMLSchema,
+    xml_tag: str,
+    *,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
+) -> XsdElement:
     """Resolve ``xml_tag`` (local name or Clark notation) to a unique ``XsdElement`` declaration."""
     if xml_tag.startswith("{") and "}" in xml_tag:
         ns_filter: str | None = xml_tag
@@ -890,7 +895,7 @@ def _resolve_target_element(schema: xmlschema.XMLSchema, xml_tag: str) -> XsdEle
 
     depth0 = [el for el in schema.elements.values() if isinstance(el, XsdElement) and _matches(el)]
     if depth0:
-        return _deduplicate_target_elements(depth0, xml_tag)
+        return _deduplicate_target_elements(depth0, xml_tag, error_type=error_type, error_by_code=error_by_code)
 
     current_level: list[XsdElement] = [el for el in schema.elements.values() if isinstance(el, XsdElement)]
     visited_types: set[int] = set()
@@ -911,52 +916,70 @@ def _resolve_target_element(schema: xmlschema.XMLSchema, xml_tag: str) -> XsdEle
                     matches.append(child)
                 next_level.append(child)
         if matches:
-            return _deduplicate_target_elements(matches, xml_tag)
+            return _deduplicate_target_elements(matches, xml_tag, error_type=error_type, error_by_code=error_by_code)
         current_level = next_level
 
     msg = f"Element {xml_tag!r} not found in XSD schema"
-    raise XmlTagNotFoundError(msg)
+    _raise_code("E1", msg, error_type=error_type, error_by_code=error_by_code)
 
 
-def _deduplicate_target_elements(matches: list[XsdElement], xml_tag: str) -> XsdElement:
+def _deduplicate_target_elements(
+    matches: list[XsdElement],
+    xml_tag: str,
+    *,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
+) -> XsdElement:
     """Verify all matching ``XsdElement`` declarations at the resolution depth share a single ``XsdType``."""
     by_type: dict[int, XsdElement] = {id(el.type): el for el in matches}
     if len(by_type) > 1:
         msg = f"Ambiguous xml_tag {xml_tag!r}: found {len(by_type)} declarations with different types"
-        raise AmbiguousXmlTagError(msg)
+        _raise_code("E2", msg, error_type=error_type, error_by_code=error_by_code)
     target = next(iter(by_type.values()))
     target_ref = target.ref if target.ref is not None else target
     if getattr(target, "abstract", False) or getattr(target_ref, "abstract", False):
         msg = f"Unsupported XSD feature: abstract element {xml_tag!r} is not supported"
-        raise AbstractComponentError(msg)
+        _raise_code("E6", msg, error_type=error_type, error_by_code=error_by_code)
     if target.type is not None and getattr(target.type, "abstract", False):
         msg = f"Unsupported XSD feature: abstract type on {xml_tag!r} is not supported"
-        raise AbstractComponentError(msg)
+        _raise_code("E6", msg, error_type=error_type, error_by_code=error_by_code)
     return target
 
 
-def _require_complex_type(elem_type: XsdType | None, xml_tag: str) -> XsdComplexType:
+def _require_complex_type(
+    elem_type: XsdType | None,
+    xml_tag: str,
+    *,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
+) -> XsdComplexType:
     """Ensure that the resolved target element has an ``XsdComplexType``.
 
     :param elem_type: XSD type to validate
     :type  elem_type: XsdType | None
     :param xml_tag: XML element tag name for error reporting
     :type  xml_tag: str
+    :param error_type: fallback exception class
+    :type  error_type: type[ConversionError]
+    :param error_by_code: mapping of specification error codes to exception classes
+    :type  error_by_code: Mapping[str, type[ConversionError]]
     :return: validated XsdComplexType
     :rtype : XsdComplexType
     """
     if not isinstance(elem_type, XsdComplexType):
         msg = f"Top-level xml_tag {xml_tag!r} must have a complex type with attributes or child elements"
-        raise NonStructXmlTagError(msg)
+        _raise_code("E3", msg, error_type=error_type, error_by_code=error_by_code)
     return elem_type
 
 
-def _prepare_target_traversal(
+def _prepare_target_traversal(  # noqa: PLR0913
     schema: xmlschema.XMLSchema,
     xml_tag: str,
     *,
     max_recursion_depth: int,
     struct_cache: dict[tuple[int, bool], Any] | None = None,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
 ) -> tuple[XsdElement, XsdComplexType, _TraversalContext]:
     """Resolve ``xml_tag`` to its ``XsdElement``, validated ``XsdComplexType``, and initial ``_TraversalContext``.
 
@@ -968,16 +991,22 @@ def _prepare_target_traversal(
     :type  max_recursion_depth: int
     :param struct_cache: optional struct component cache
     :type  struct_cache: dict[tuple[int, bool], Any] | None
+    :param error_type: fallback exception class
+    :type  error_type: type[ConversionError]
+    :param error_by_code: mapping of specification error codes to exception classes
+    :type  error_by_code: Mapping[str, type[ConversionError]]
     :return: tuple of (target_elem, elem_type, traversal_context)
     :rtype : tuple[XsdElement, XsdComplexType, _TraversalContext]
     """
-    target_elem = _resolve_target_element(schema, xml_tag)
-    elem_type = _require_complex_type(target_elem.type, xml_tag)
+    target_elem = _resolve_target_element(schema, xml_tag, error_type=error_type, error_by_code=error_by_code)
+    elem_type = _require_complex_type(target_elem.type, xml_tag, error_type=error_type, error_by_code=error_by_code)
     ctx = _TraversalContext(
         schema=schema,
         type_counts={id(elem_type): 1},
         max_recursion_depth=max_recursion_depth,
         struct_cache=struct_cache if struct_cache is not None else {},
+        error_type=error_type,
+        error_by_code=error_by_code,
     )
     return target_elem, elem_type, ctx
 
@@ -988,15 +1017,20 @@ def _build_element_struct_node(
     ctx: _TraversalContext,
 ) -> TypedNode:
     """Validate that ``target_elem`` maps to a struct and return its root object ``TypedNode``."""
-    elem_type = _require_complex_type(target_elem.type, xml_tag)
+    elem_type = _require_complex_type(
+        target_elem.type,
+        xml_tag,
+        error_type=ctx.error_type,
+        error_by_code=ctx.error_by_code,
+    )
     if _is_empty_marker_complex_type(elem_type):
         msg = f"Top-level xml_tag {xml_tag!r} has an empty complex type with no attributes or child elements"
-        raise NonStructXmlTagError(msg)
+        ctx.raise_err("E3", msg)
 
-    attrs = _collect_attributes(elem_type)
+    attrs = _collect_attributes(elem_type, error_type=ctx.error_type, error_by_code=ctx.error_by_code)
     if (elem_type.has_simple_content() or elem_type.mixed) and not attrs:
         msg = f"Top-level xml_tag {xml_tag!r} must have a complex type that resolves to a struct"
-        raise NonStructXmlTagError(msg)
+        ctx.raise_err("E3", msg)
 
     fields = _build_complex_struct_fields(
         ctx,
@@ -1006,7 +1040,7 @@ def _build_element_struct_node(
     )
     if not fields:
         msg = f"Top-level xml_tag {xml_tag!r} must have a complex type with at least one field"
-        raise NonStructXmlTagError(msg)
+        ctx.raise_err("E3", msg)
 
     required_names = tuple(f.name for f in fields if f.required)
     struct_meta: dict[str, Any] = {
@@ -1068,6 +1102,9 @@ def _collect_referenced_global_element_names(schema: xmlschema.XMLSchema) -> set
 def resolve_root_elements(
     schema: xmlschema.XMLSchema,
     root_tag: str | None = None,
+    *,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
 ) -> list[XsdElement]:
     """Resolve the level-0 root ``XsdElement`` declarations in an XSD schema.
 
@@ -1079,16 +1116,20 @@ def resolve_root_elements(
     :type schema: xmlschema.XMLSchema
     :param root_tag: optional explicit root element name (local name or Clark notation)
     :type root_tag: str | None
+    :param error_type: fallback exception class
+    :type error_type: type[ConversionError]
+    :param error_by_code: mapping of specification error codes to exception classes
+    :type error_by_code: Mapping[str, type[ConversionError]]
     :return: list of root XsdElement declarations in schema order
     :rtype: list[XsdElement]
     """
     if root_tag is not None:
-        return [_resolve_target_element(schema, root_tag)]
+        return [_resolve_target_element(schema, root_tag, error_type=error_type, error_by_code=error_by_code)]
 
     global_elements = [el for el in schema.elements.values() if isinstance(el, XsdElement)]
     if not global_elements:
         msg = "No global elements found in XSD schema"
-        raise XmlTagNotFoundError(msg)
+        _raise_code("E1", msg, error_type=error_type, error_by_code=error_by_code)
 
     referenced_names = _collect_referenced_global_element_names(schema)
     unreferenced = [el for el in global_elements if el.name not in referenced_names]
@@ -1098,6 +1139,9 @@ def resolve_root_elements(
 def _advance_elements_one_level(
     schema: xmlschema.XMLSchema,
     elements: Sequence[XsdElement],
+    *,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
 ) -> list[XsdElement]:
     """Return child ``XsdElement`` declarations reachable in one step from ``elements``.
 
@@ -1105,6 +1149,10 @@ def _advance_elements_one_level(
     :type schema: xmlschema.XMLSchema
     :param elements: parent XSD element declarations at current depth
     :type elements: Sequence[XsdElement]
+    :param error_type: fallback exception class
+    :type error_type: type[ConversionError]
+    :param error_by_code: mapping of specification error codes to exception classes
+    :type error_by_code: Mapping[str, type[ConversionError]]
     :return: child XSD element declarations at the next depth
     :rtype: list[XsdElement]
     """
@@ -1117,15 +1165,26 @@ def _advance_elements_one_level(
         visited_types.add(id(parent_type))
         if parent_type.has_simple_content() or parent_type.mixed:
             continue
-        next_elements.extend(_collect_unique_children(schema, parent_type))
+        next_elements.extend(
+            _collect_unique_children(schema, parent_type, error_type=error_type, error_by_code=error_by_code)
+        )
     return next_elements
 
 
-def _group_and_deduplicate_elements(elements: Sequence[XsdElement]) -> dict[str, XsdElement]:
+def _group_and_deduplicate_elements(
+    elements: Sequence[XsdElement],
+    *,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
+) -> dict[str, XsdElement]:
     """Group ``elements`` by local name and deduplicate matching declarations.
 
     :param elements: XSD element declarations at a given depth
     :type elements: Sequence[XsdElement]
+    :param error_type: fallback exception class
+    :type error_type: type[ConversionError]
+    :param error_by_code: mapping of specification error codes to exception classes
+    :type error_by_code: Mapping[str, type[ConversionError]]
     :return: mapping of element local name to its deduplicated XsdElement
     :rtype: dict[str, XsdElement]
     """
@@ -1133,7 +1192,10 @@ def _group_and_deduplicate_elements(elements: Sequence[XsdElement]) -> dict[str,
     for el in elements:
         if el.local_name:
             by_name.setdefault(el.local_name, []).append(el)
-    return {name: _deduplicate_target_elements(matches, name) for name, matches in by_name.items()}
+    return {
+        name: _deduplicate_target_elements(matches, name, error_type=error_type, error_by_code=error_by_code)
+        for name, matches in by_name.items()
+    }
 
 
 def resolve_elements_at_level(
@@ -1141,6 +1203,8 @@ def resolve_elements_at_level(
     level: int,
     *,
     root_tag: str | None = None,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
 ) -> dict[str, XsdElement]:
     """Deduce all ``XsdElement`` declarations that can appear at depth ``level`` in an XSD schema.
 
@@ -1153,6 +1217,10 @@ def resolve_elements_at_level(
     :type level: int
     :param root_tag: optional explicit root element name to anchor the traversal
     :type root_tag: str | None
+    :param error_type: fallback exception class
+    :type error_type: type[ConversionError]
+    :param error_by_code: mapping of specification error codes to exception classes
+    :type error_by_code: Mapping[str, type[ConversionError]]
     :return: mapping of element local tag name to its validated XsdElement declaration at ``level``
     :rtype: dict[str, XsdElement]
     """
@@ -1160,16 +1228,26 @@ def resolve_elements_at_level(
         msg = f"level must be >= 0, got {level}"
         raise ValueError(msg)
 
-    current_elements = resolve_root_elements(schema, root_tag=root_tag)
+    current_elements = resolve_root_elements(
+        schema,
+        root_tag=root_tag,
+        error_type=error_type,
+        error_by_code=error_by_code,
+    )
     for _ in range(level):
-        current_elements = _advance_elements_one_level(schema, current_elements)
+        current_elements = _advance_elements_one_level(
+            schema,
+            current_elements,
+            error_type=error_type,
+            error_by_code=error_by_code,
+        )
         if not current_elements:
             break
 
-    deduped = _group_and_deduplicate_elements(current_elements)
+    deduped = _group_and_deduplicate_elements(current_elements, error_type=error_type, error_by_code=error_by_code)
     if not deduped:
         msg = f"No XML elements found at level {level} in XSD schema"
-        raise XmlTagNotFoundError(msg)
+        _raise_code("E1", msg, error_type=error_type, error_by_code=error_by_code)
     return deduped
 
 
@@ -1191,22 +1269,24 @@ def _finish_element_doc(
     )
 
 
-def _build_element_table_doc(
+def _build_element_table_doc(  # noqa: PLR0913
     schema: xmlschema.XMLSchema,
     target_elem: XsdElement,
     tag_name: str,
     *,
     max_recursion_depth: int,
     struct_cache: dict[tuple[int, bool], Any],
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
 ) -> SchemaDocument:
     """Build a ``SchemaDocument`` for ``target_elem`` (struct or single-column ``#text`` scalar)."""
     if isinstance(target_elem.type, XsdComplexType) and _is_empty_marker_complex_type(target_elem.type):
         msg = f"Top-level xml_tag {tag_name!r} has an empty complex type with no attributes or child elements"
-        raise NonStructXmlTagError(msg)
+        _raise_code("E3", msg, error_type=error_type, error_by_code=error_by_code)
 
     comment = _extract_doc_comment(target_elem, target_elem.type)
 
-    if _classify_leaf_element_type(target_elem.type) is not None:
+    if _classify_leaf_element_type(target_elem.type, error_type=error_type, error_by_code=error_by_code) is not None:
         text_field = _wrap_leaf_ir_field(
             "#text",
             target_elem.type,
@@ -1214,6 +1294,8 @@ def _build_element_table_doc(
             comment=comment,
             is_list=False,
             nullable=True,
+            error_type=error_type,
+            error_by_code=error_by_code,
         )
         root_node = TypedNode(
             type="object",
@@ -1224,12 +1306,19 @@ def _build_element_table_doc(
             provenance=Provenance("xsd", (), {"scalar_leaf_table": True}),
         )
     else:
-        elem_type = _require_complex_type(target_elem.type, tag_name)
+        elem_type = _require_complex_type(
+            target_elem.type,
+            tag_name,
+            error_type=error_type,
+            error_by_code=error_by_code,
+        )
         ctx = _TraversalContext(
             schema=schema,
             type_counts={id(elem_type): 1},
             max_recursion_depth=max_recursion_depth,
             struct_cache=struct_cache,
+            error_type=error_type,
+            error_by_code=error_by_code,
         )
         root_node = _build_element_struct_node(target_elem, tag_name, ctx)
 
@@ -1244,14 +1333,31 @@ class XsdReader:
     :type xml_tag: str | None
     :param max_recursion_depth: Maximum times a recursive ``XsdComplexType`` may be expanded along an ancestor path.
     :type max_recursion_depth: int
+    :param error_type: Base exception class raised when a construct cannot be converted.
+    :type error_type: type[ConversionError]
+    :param error_by_code: Mapping from specification error code (``E1``-``E9``) to exception class.
+    :type error_by_code: Mapping[str, type[ConversionError]]
     """
 
     xml_tag: str | None = None
     max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH
+    error_type: type[ConversionError] = ConversionError
+    error_by_code: Mapping[str, type[ConversionError]] = field(default_factory=frozendict)
 
     def __post_init__(self) -> None:
         """Validate reader configuration."""
         validate_max_recursion_depth(self.max_recursion_depth)
+
+    def _raise_err(self, code: str, msg: str) -> NoReturn:
+        """Raise the configured exception subclass for ``code`` or fall back to ``error_type``.
+
+        :param code: Specification error code (``E1``-``E9``).
+        :type code: str
+        :param msg: Diagnostic error message.
+        :type msg: str
+        :raises ConversionError: Always raised with the resolved error class.
+        """
+        _raise_code(code, msg, error_type=self.error_type, error_by_code=self.error_by_code)
 
     def read(
         self,
@@ -1270,15 +1376,15 @@ class XsdReader:
         :type struct_cache: dict[tuple[int, bool], Any] | None
         :return: Structural IR document with ``source="xsd"`` provenance.
         :rtype: SchemaDocument
-        :raises XsdToPyArrowError: If the schema or ``xml_tag`` violates ``E1``-``E9``.
+        :raises ConversionError: If the schema or ``xml_tag`` violates ``E1``-``E9``.
         """
         schema = load_schema(source) if isinstance(source, str | Path) else source
         tag = xml_tag if xml_tag is not None else self.xml_tag
         if tag is None:
-            roots = resolve_root_elements(schema)
+            roots = resolve_root_elements(schema, error_type=self.error_type, error_by_code=self.error_by_code)
             if len(roots) != 1 or roots[0].local_name is None:
                 msg = "xml_tag must be specified when the XSD schema does not have a single root element"
-                raise XmlTagNotFoundError(msg)
+                self._raise_err("E1", msg)
             tag = roots[0].local_name
 
         target_elem, _, ctx = _prepare_target_traversal(
@@ -1286,6 +1392,8 @@ class XsdReader:
             tag,
             max_recursion_depth=self.max_recursion_depth,
             struct_cache=struct_cache,
+            error_type=self.error_type,
+            error_by_code=self.error_by_code,
         )
         root_struct = _build_element_struct_node(target_elem, tag, ctx)
         return _finish_element_doc(schema, target_elem, tag, root_struct)
@@ -1309,7 +1417,13 @@ class XsdReader:
         :rtype: dict[str, SchemaDocument]
         """
         schema = load_schema(source) if isinstance(source, str | Path) else source
-        elements_at_level = resolve_elements_at_level(schema, level, root_tag=root_tag)
+        elements_at_level = resolve_elements_at_level(
+            schema,
+            level,
+            root_tag=root_tag,
+            error_type=self.error_type,
+            error_by_code=self.error_by_code,
+        )
         struct_cache: dict[tuple[int, bool], Any] = {}
         return {
             tag_name: _build_element_table_doc(
@@ -1318,6 +1432,8 @@ class XsdReader:
                 tag_name,
                 max_recursion_depth=self.max_recursion_depth,
                 struct_cache=struct_cache,
+                error_type=self.error_type,
+                error_by_code=self.error_by_code,
             )
             for tag_name, target_elem in elements_at_level.items()
         }

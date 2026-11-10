@@ -1,0 +1,25 @@
+title: MD5 Sidecar Pre-processing and File-Level `_rejected` Routing
+pipeline: xmltodict
+settings_file: settings.toml
+rules:
+  - R-XMLTODICT-PREPROCESS-MD5
+  - R-XMLTODICT-REPORT
+notes: |
+  - `preprocessors_module = "specs.pipelines.xmltodict.transforms"` registers `validate_md5_sidecar`.
+  - `good.xml` matches `good.xml.md5` and streams `<book id="b-10">` into `books`.
+  - `bad.xml` fails MD5 validation against `bad.xml.md5`; the file is skipped before XML parsing, omitted from `ingested_files`, recorded in `report.txt` `load_errors` (`status: completed with errors`), and emitted as a file-level row (`line_no=None`, `raw_record=None`) in `_rejected`.
+runs:
+  - id: partial_md5_failure
+    input_dir: input
+    expected_report:
+      status: completed with errors
+      ingested_files:
+        - good.xml
+      load_errors:
+        - "File pre-processing failed for bad.xml: MD5 mismatch for bad.xml"
+      pipeline_load_info_errs: null
+    expected_counts:
+      books: 1
+      _rejected: 1
+    expected_tables: expected_tables.py
+    expected_json: expected.json

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.kbase.us/draft/2020-12-xsv/schema",
+  "title": "CustomDelimitersQuotesAndEscapes",
+  "type": "object",
+  "required": [
+    "sample_id",
+    "measurement",
+    "label"
+  ],
+  "properties": {
+    "sample_id": {
+      "type": "string"
+    },
+    "measurement": {
+      "type": "number"
+    },
+    "label": {
+      "type": "string"
+    }
+  },
+  "x-xsv-config": {
+    "x-delimiter": ";",
+    "x-comment-char": "%",
+    "x-quote": "'",
+    "x-escape": "\\",
+    "x-has-header": true,
+    "x-quoting-policy": "necessary"
+  }
+}
+

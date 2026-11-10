@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<library>
+  <book id="b-1" status="active">
+    <title>The Left Hand of Darkness</title>
+    <year>1969</year>
+    <author>Ursula K. Le Guin</author>
+  </book>
+  <book id="b-drop" status="withdrawn">
+    <title>Withdrawn Draft</title>
+    <year>1970</year>
+    <author>Ignored Author</author>
+  </book>
+  <book id="b-2" status="active">
+    <title>Good Omens</title>
+    <year>1990</year>
+    <author>Terry Pratchett</author>
+    <author>Neil Gaiman</author>
+  </book>
+</library>

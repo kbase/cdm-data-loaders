@@ -9,7 +9,7 @@ This document specifies how an XML Schema (`.xsd`) and a target `xml_tag` determ
    `pa.Table.from_pylist(rows, schema=pa_schema)`.
 3. The **errors** raised when an XSD or `xml_tag` uses unsupported or ambiguous constructs.
 
-**Contents:** [1. Conversion Rules](#1-conversion-rules) · [2. Cases](#2-cases) · [3. Errors](#3-errors-unsupported--invalid-input) · [4. Fixture Index](#4-fixture-index)
+**Contents:** [1. Conversion Rules](#1-conversion-rules) · [2. Cases](#2-cases) · [3. Errors](#3-errors-unsupported-invalid-input) · [4. Fixture Index](#4-fixture-index)
 
 ## 1. Conversion Rules
 

@@ -1,0 +1,28 @@
+title: MD5 Sidecar Pre-processing and File-Level `_rejected` Routing
+schema: schema.json
+xml_tag: articles
+rules:
+  - R-JSONL-PREPROCESS-MD5
+notes: |
+  - `preprocessors_module="specs.pipelines.jsonlines_jsonschema.transforms"` registers `validate_md5_sidecar`.
+  - Run `partial_md5_failure` ingests `articles/good.jsonl` and rejects `articles/bad.jsonl` due to a digest mismatch in `articles/bad.jsonl.md5`, emitting a file-level row (`line_no=None`, `raw_record=None`) to `_rejected`.
+  - Run `total_md5_failure` rejects `articles/malformed.jsonl` due to invalid sidecar syntax in `articles/malformed.jsonl.md5`, leaving `articles` uncreated.
+runs:
+  - id: partial_md5_failure
+    data: data_partial
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_rejected: expected_rejected.json
+    params:
+      entity_type: articles
+      file_glob: "*.jsonl"
+      preprocessors_module: specs.pipelines.jsonlines_jsonschema.transforms
+  - id: total_md5_failure
+    data: data_total_failure
+    expected_json: expected_empty.json
+    expected_table: expected_table.py
+    expected_rejected: expected_total_rejected.json
+    params:
+      entity_type: articles
+      file_glob: "*.jsonl"
+      preprocessors_module: specs.pipelines.jsonlines_jsonschema.transforms

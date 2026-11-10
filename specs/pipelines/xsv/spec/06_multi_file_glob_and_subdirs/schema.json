@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MultiFileGlobSamples",
+  "type": "object",
+  "required": [
+    "sample_num",
+    "sample_name"
+  ],
+  "properties": {
+    "sample_num": {
+      "type": "integer"
+    },
+    "sample_name": {
+      "type": "string"
+    }
+  },
+  "x-xsv-config": {
+    "x-delimiter": ",",
+    "x-has-header": true
+  }
+}
+

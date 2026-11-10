@@ -92,7 +92,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.13", "3.14"]
-        os: ["ubuntu-24.04"]
+        os: ["ubuntu-latest"]
         suite:
           - name: pipelines
             args: tests/cdm_data_loaders/pipelines/
@@ -115,6 +115,43 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --dev
+
+      - name: Install qsv
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$(uname -s)" in
+            Linux)
+              OS_TARGET="unknown-linux-gnu"
+              if command -v dpkg-query >/dev/null 2>&1 && ! dpkg-query -W -f='${db:Status-Status}' libwayland-client0 2>/dev/null | grep -qx installed; then
+                sudo apt-get update -y
+                sudo apt-get install -y --no-install-recommends libwayland-client0
+              fi
+              ;;
+            Darwin)
+              OS_TARGET="apple-darwin"
+              ;;
+            *)
+              echo "Unsupported OS: $(uname -s)" >&2
+              exit 1
+              ;;
+          esac
+          case "$(uname -m)" in
+            x86_64) ARCH="x86_64" ;;
+            aarch64|arm64) ARCH="aarch64" ;;
+            *)
+              echo "Unsupported architecture: $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+          QSV_VERSION=$(gh release view --repo dathere/qsv --json tagName --jq .tagName)
+          ASSET="qsv-${QSV_VERSION#v}-${ARCH}-${OS_TARGET}.zip"
+          gh release download "${QSV_VERSION}" --repo dathere/qsv --pattern "${ASSET}" --dir "${RUNNER_TEMP}" --clobber
+          unzip -q -o "${RUNNER_TEMP}/${ASSET}" qsv -d "${RUNNER_TEMP}/qsv"
+          sudo install -m 0755 "${RUNNER_TEMP}/qsv/qsv" /usr/local/bin/qsv
+          rm -rf "${RUNNER_TEMP}/qsv" "${RUNNER_TEMP}/${ASSET}"
+          qsv --version
 
       - name: Run local tests
         shell: bash

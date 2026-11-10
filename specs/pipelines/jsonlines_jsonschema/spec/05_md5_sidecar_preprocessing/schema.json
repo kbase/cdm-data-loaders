@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ArticleRecord",
+  "type": "object",
+  "required": ["pmid", "title"],
+  "properties": {
+    "pmid": {
+      "type": "integer"
+    },
+    "title": {
+      "type": "string"
+    }
+  }
+}
+

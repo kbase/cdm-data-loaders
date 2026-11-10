@@ -18,7 +18,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path, PurePath
-from typing import Annotated, Literal, get_args, get_origin
+from typing import Annotated, Any, Final, Literal, get_args, get_origin
 
 from pydantic import AliasChoices
 from pydantic.fields import FieldInfo
@@ -26,12 +26,13 @@ from pydantic_core import PydanticUndefined
 
 from cdm_data_loaders.core.settings import CdmDataLoadersBase
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
-SRC_ROOT = REPO_ROOT / "src" / "cdm_data_loaders"
-CLI_REFERENCE_PATH = REPO_ROOT / "docs" / "cli_reference.md"
+REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
+DOCS_DIR: Final[Path] = REPO_ROOT / "docs"
+PYPROJECT_PATH: Final[Path] = REPO_ROOT / "pyproject.toml"
+SRC_ROOT: Final[Path] = REPO_ROOT / "src" / "cdm_data_loaders"
+CLI_REFERENCE_PATH: Final[Path] = DOCS_DIR / "cli_reference.md"
 
-GENERATED_BANNER = (
+GENERATED_BANNER: Final[str] = (
     "<!-- GENERATED FILE - DO NOT EDIT. Source: `pyproject.toml`, `src/cdm_data_loaders/`. "
     "Regenerate with `uv run python -m scripts.gen_docs`. -->"
 )
@@ -117,28 +118,92 @@ def _format_type_annotation(annotation: object) -> str:
     return str(annotation)
 
 
+def rel_posix(path: Path, start: Path = REPO_ROOT) -> str:
+    """Return a POSIX relative path string from ``start`` to ``path``.
+
+    :param path: target path
+    :type path: Path
+    :param start: base directory path
+    :type start: Path
+    :return: POSIX relative path string
+    :rtype: str
+    """
+    return Path(os.path.relpath(path.resolve(), start.resolve())).as_posix()
+
+
+def escape_table_cell(text: str) -> str:
+    """Escape pipe characters for safe inclusion inside a Markdown table cell.
+
+    :param text: raw cell text
+    :type text: str
+    :return: Markdown-escaped cell text
+    :rtype: str
+    """
+    return text.replace("|", r"\|")
+
+
+def mro_class_names(cls: type[Any], base_cls: type[Any] = CdmDataLoadersBase) -> tuple[str, ...]:
+    """Return the MRO class names of ``cls`` that are subclasses of ``base_cls``.
+
+    :param cls: target class to inspect
+    :type cls: type[Any]
+    :param base_cls: base class upper bound for the MRO chain
+    :type base_cls: type[Any]
+    :return: ordered tuple of class names from ``cls`` up to ``base_cls``
+    :rtype: tuple[str, ...]
+    """
+    return tuple(c.__name__ for c in cls.__mro__ if isinstance(c, type) and issubclass(c, base_cls))
+
+
+def format_value_code(
+    val: object,
+    *,
+    repo_root: Path = REPO_ROOT,
+    undefined_label: str = "*(required)*",
+    summarize_containers: bool = True,
+) -> str:
+    """Format a Python default or attribute value as a Markdown cell string.
+
+    :param val: value to format
+    :type val: object
+    :param repo_root: repository root used to relativize ``Path`` instances
+    :type repo_root: Path
+    :param undefined_label: label returned when ``val`` is ``PydanticUndefined``
+    :type undefined_label: str
+    :param summarize_containers: when ``True``, summarize callable tuples and dicts instead of ``repr``
+    :type summarize_containers: bool
+    :return: Markdown-formatted value representation
+    :rtype: str
+    """
+    if val is PydanticUndefined:
+        return undefined_label
+    if isinstance(val, Enum):
+        return f"`{val.value!r}`"
+    if isinstance(val, Path | PurePath):
+        rel = val.relative_to(repo_root) if isinstance(val, Path) and val.is_relative_to(repo_root) else val
+        return f"`{rel.as_posix()}`"
+    if summarize_containers and isinstance(val, tuple) and val and all(callable(item) for item in val):
+        names = ", ".join(getattr(fn, "__name__", repr(fn)) for fn in val)
+        return f"`({names},)`"
+    if summarize_containers and isinstance(val, dict):
+        keys = sorted(str(k) for k in val)
+        return f"mapping with keys `{keys}`"
+    return f"`{val!r}`"
+
+
 def _format_default_value(field_info: FieldInfo, repo_root: Path = REPO_ROOT) -> tuple[str, bool]:
     """Return ``(default_label, required)`` for a Pydantic ``FieldInfo``."""
     if field_info.is_required():
         return ("*(Required)*", True)
-
-    default = field_info.default
-    if default is PydanticUndefined:
-        label = "*(Dynamic)*"
-    elif default is None:
-        label = "`None`"
-    elif isinstance(default, Enum):
-        label = f"`{default.value!r}`"
-    elif isinstance(default, Path | PurePath):
-        rel = (
-            default.relative_to(repo_root)
-            if isinstance(default, Path) and default.is_relative_to(repo_root)
-            else default
-        )
-        label = f"`{rel.as_posix()}`"
-    else:
-        label = f"`{default!r}`"
-    return (label, False)
+    return (
+        format_value_code(
+            field_info.default,
+            repo_root=repo_root,
+            undefined_label="*(Dynamic)*",
+            summarize_containers=False,
+        ),
+        False,
+    )
 
 
 def _extract_shortcuts(
@@ -196,9 +261,7 @@ def inspect_settings_class(
     raw_shortcuts = settings_cls.model_config.get("cli_shortcuts")
     cli_shortcuts: dict[str, str | list[str]] = dict(raw_shortcuts) if isinstance(raw_shortcuts, dict) else {}
 
-    inheritance_chain = tuple(
-        cls.__name__ for cls in settings_cls.__mro__ if isinstance(cls, type) and issubclass(cls, CdmDataLoadersBase)
-    )
+    inheritance_chain = mro_class_names(settings_cls)
 
     fields: list[CliFieldDoc] = []
     for field_name, field_info in settings_cls.model_fields.items():
@@ -258,33 +321,6 @@ def load_cli_entries(pyproject_path: Path = PYPROJECT_PATH, repo_root: Path = RE
     return entries
 
 
-def rel_posix(path: Path, start: Path = REPO_ROOT) -> str:
-    """Return a POSIX relative path string from ``start`` to ``path``.
-
-    :param path: target path
-    :type path: Path
-    :param start: base directory path
-    :type start: Path
-    :return: POSIX relative path string
-    :rtype: str
-    """
-    return Path(os.path.relpath(path, start)).as_posix()
-
-
-def escape_table_cell(text: str) -> str:
-    """Escape pipe characters for safe inclusion inside a Markdown table cell.
-
-    :param text: raw cell text
-    :type text: str
-    :return: Markdown-escaped cell text
-    :rtype: str
-    """
-    return text.replace("|", r"\|")
-
-
-_escape_table_cell = escape_table_cell
-
-
 def check_or_write_files(
     outputs: Iterable[tuple[Path, str]],
     *,
@@ -316,7 +352,7 @@ def check_or_write_files(
         rel_out = (
             path.relative_to(repo_root).as_posix() if path.is_relative_to(repo_root) else rel_posix(path, repo_root)
         )
-        sys.stderr.write(f"stale: {rel_out}\n")
+        sys.stderr.write(f"stale: {rel_out} is out of date\n")
     return 1 if stale else 0
 
 
@@ -346,7 +382,7 @@ def render_cli_reference(entries: Sequence[CliEntryDoc] | None = None) -> str:
         anchor = f"#{entry.cli_name.lower()}"
         lines.append(
             f"| [`{entry.cli_name}`]({anchor}) | `{entry.settings_class_name}` | "
-            f"`{entry.entry_point}` | {_escape_table_cell(entry.summary)} |"
+            f"`{entry.entry_point}` | {escape_table_cell(entry.summary)} |"
         )
 
     lines.append("")
@@ -368,9 +404,9 @@ def render_cli_reference(entries: Sequence[CliEntryDoc] | None = None) -> str:
         )
         for field_doc in entry.fields:
             shortcut_str = ", ".join(f"`{s}`" for s in field_doc.shortcuts) if field_doc.shortcuts else "—"
-            type_cell = _escape_table_cell(f"`{field_doc.type_label}`")
-            default_cell = _escape_table_cell(field_doc.default_label)
-            desc_cell = _escape_table_cell(field_doc.description or "—")
+            type_cell = escape_table_cell(f"`{field_doc.type_label}`")
+            default_cell = escape_table_cell(field_doc.default_label)
+            desc_cell = escape_table_cell(field_doc.description or "—")
             lines.append(
                 f"| `{field_doc.cli_flag}` | {shortcut_str} | `{field_doc.env_var}` | "
                 f"{type_cell} | {default_cell} | {desc_cell} |"

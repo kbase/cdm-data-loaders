@@ -1,0 +1,18 @@
+title: Multi-File Recursive Globbing, Gzip Decompression, and Preset Settings
+schema: schema.xsd
+xml_tag: entry
+rules:
+  - R-XML-PRESET
+  - R-XML-GLOB-GZIP
+notes: |
+  - `data/` contains `batch_a/part1.xml` (plain XML), `batch_b/part2.xml.gz` (gzip-compressed XML), and `batch_b/ignored.txt` (excluded by `file_glob="**/*.xml*"`).
+  - `run_xmltopyarrow_pipeline` discovers both XML files across subdirectories, transparently decompresses `part2.xml.gz`, and concatenates all `<entry>` rows into `entries`.
+runs:
+  - id: default
+    data: data
+    expected_json: expected.json
+    expected_table: expected_table.py
+    params:
+      table_name: entries
+      file_glob: "**/*.xml*"
+

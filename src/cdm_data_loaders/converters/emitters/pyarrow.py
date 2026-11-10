@@ -57,6 +57,24 @@ ENUM_TYPE_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
         "string": pa.string(),
     }
 )
+JSON_SCHEMA_LOGICAL_TYPE_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
+    {
+        "boolean": pa.bool_(),
+        "long": pa.int64(),
+        "double": pa.float64(),
+        "date": pa.date32(),
+        "binary": pa.binary(),
+        "string": pa.string(),
+    }
+)
+UNSIGNED_INT_LOGICAL_TYPE_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
+    {
+        "uint8": pa.uint8(),
+        "uint16": pa.uint16(),
+        "uint32": pa.uint32(),
+        "uint64": pa.uint64(),
+    }
+)
 
 
 def merge_format_map(value: object) -> object:
@@ -293,16 +311,10 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
     def _emit_logical(node: TypedNode) -> pa.DataType | None:
         """Preserve physical widths and logical source types without a JSON encoding."""
         if node.provenance is not None and node.provenance.source == "json-schema":
+            logical_key = node.hints.logical_type
             return (
-                {
-                    "boolean": pa.bool_(),
-                    "long": pa.int64(),
-                    "double": pa.float64(),
-                    "date": pa.date32(),
-                    "binary": pa.binary(),
-                    "string": pa.string(),
-                }.get(node.hints.logical_type)
-                if "jsonschema_type" in node.provenance.metadata
+                JSON_SCHEMA_LOGICAL_TYPE_MAP.get(logical_key)
+                if logical_key is not None and "jsonschema_type" in node.provenance.metadata
                 else None
             )
         hints = node.hints
@@ -323,10 +335,8 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
 
 def _emit_logical_integer(hints: NodeHints) -> pa.DataType | None:
     """Resolve signed or unsigned physical integer width from logical hints."""
-    if hints.logical_type in {"uint8", "uint16", "uint32", "uint64"}:
-        return {"uint8": pa.uint8(), "uint16": pa.uint16(), "uint32": pa.uint32(), "uint64": pa.uint64()}[
-            hints.logical_type
-        ]
+    if hints.logical_type is not None and hints.logical_type in UNSIGNED_INT_LOGICAL_TYPE_MAP:
+        return UNSIGNED_INT_LOGICAL_TYPE_MAP[hints.logical_type]
     return _integer_type(hints.bit_width) if hints.bit_width is not None else None
 
 

@@ -1,0 +1,29 @@
+title: Multi-Entity Validation, Model Coercion, Gzip Decompression, and `_rejected` Routing
+pipeline: jsonlines_pydantic
+settings_file: settings.toml
+rules:
+  - R-JSONL-PYDANTIC-ENTITY-REGISTRY
+  - R-JSONL-PYDANTIC-SCHEMA-CONVERT
+  - R-JSONL-PYDANTIC-VALIDATE-COERCE
+  - R-JSONL-PYDANTIC-BLANK-AND-REJECT
+  - R-JSONL-PYDANTIC-MULTI-ENTITY-GLOB
+  - R-JSONL-PYDANTIC-REPORT
+notes: |
+  - `entity_models = "specs.pipelines.jsonlines_pydantic.sample_registry"` registers `samples` (`SampleModel`), `instruments` (`InstrumentModel`), and `unpopulated` (`InstrumentModel`).
+  - `samples/samples.jsonl` exercises `model_validate(...).model_dump(mode="python")` (coercing `"ph": "6.5"` to `6.5` and populating default `biome = "terrestrial"`), skips a blank line at line 2, and routes a JSON syntax error (line 3) and a Pydantic `ValidationError` (line 4) to `_rejected`.
+  - `instruments/instruments.jsonl.gz` is transparently decompressed and loaded into `instruments`, while the absent `unpopulated/` directory produces zero rows without error.
+runs:
+  - id: default
+    input_dir: input
+    expected_report:
+      status: completed
+      ingested_files:
+        - instruments/instruments.jsonl.gz
+        - samples/samples.jsonl
+      pipeline_load_info_errs: null
+    expected_counts:
+      instruments: 1
+      samples: 2
+      _rejected: 2
+    expected_tables: expected_tables.py
+    expected_json: expected.json

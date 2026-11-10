@@ -1,0 +1,25 @@
+title: Invalid MD5 Sidecar Rejection (`_rejected` and `load_errors`)
+pipeline: pubmed
+settings_file: settings.toml
+rules:
+  - R-XML-PREPROCESS-MD5
+  - R-XML-REPORT
+  - R-PUBMED-PRESET
+  - R-PUBMED-MD5-FAIL
+notes: |
+  An `.xml.gz` file whose accompanying `.xml.gz.md5` sidecar contains a mismatched digest.
+  `validate_md5_sidecar` rejects the file before XML parsing, writes a file-level provenance
+  record to `_rejected`, and marks `report.txt` as `completed with errors`.
+runs:
+  - id: mismatched_md5
+    input_dir: input
+    expected_report:
+      status: completed with errors
+      ingested_files: []
+      load_errors:
+        - "File pre-processing failed for corrupt_sample.xml.gz: MD5 mismatch for corrupt_sample.xml.gz"
+      pipeline_load_info_errs: null
+    expected_counts:
+      _rejected: 1
+    expected_tables: expected_tables.py
+    expected_json: expected.json
