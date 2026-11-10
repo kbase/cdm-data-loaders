@@ -345,8 +345,74 @@ def test_xml_ingest_settings_pass_defaults_across_sources(
     )
 
 
-def test_xml_ingest_settings_pass_cli_shortcuts(test_defaults: dict[str, Any]) -> None:
-    """XmlIngestSettings supports XML_CLI_SHORTCUTS (-f, -g)."""
+@pytest.mark.parametrize("source", SETTINGS_SOURCES, ids=str)
+@pytest.mark.parametrize(
+    ("raw_glob", "expected_glob"),
+    [
+        pytest.param("*.xml.gz", "*.xml.gz", id="raw_glob"),
+        pytest.param("__STAR__.ext.__STAR__", "*.ext.*", id="cts_star_tokens"),
+        pytest.param("__GLOBSTAR__/__STAR__.xml.gz", "**/*.xml.gz", id="cts_globstar_and_star"),
+        pytest.param("batch___QMARK__.xml", "batch_?.xml", id="cts_qmark_token"),
+        pytest.param("part___LBRACK__0-9__RBRACK__.xml", "part_[0-9].xml", id="cts_bracket_tokens"),
+        pytest.param("data___LBRACK____BANG__a-z__RBRACK__.xml", "data_[!a-z].xml", id="cts_negated_bracket_tokens"),
+        pytest.param("  __STAR__.xml.gz\t", "*.xml.gz", id="whitespace_stripped_before_expansion"),
+    ],
+)
+def test_xml_ingest_settings_pass_file_glob_tokens_across_sources(
+    make_settings: SettingsFactory,
+    source: str,
+    raw_glob: str,
+    expected_glob: str,
+    test_defaults: dict[str, Any],
+) -> None:
+    """XmlIngestSettings expands CTS wildcard tokens in file_glob across all settings sources."""
+    settings = make_settings(
+        XmlIngestSettings,
+        source,
+        {
+            **{k: str(v) for k, v in test_defaults.items()},
+            "dataset_name": "xml_dataset",
+            "file_glob": raw_glob,
+        },
+    )
+    assert settings.file_glob == expected_glob
+
+
+@pytest.mark.parametrize("source", SETTINGS_SOURCES, ids=str)
+@pytest.mark.parametrize("bad_glob", ["", "   "], ids=["empty", "whitespace_only"])
+def test_xml_ingest_settings_fail_empty_file_glob_across_sources(
+    make_settings: SettingsFactory,
+    source: str,
+    bad_glob: str,
+    test_defaults: dict[str, Any],
+) -> None:
+    """XmlIngestSettings rejects empty or whitespace-only file_glob across all settings sources."""
+    with pytest.raises(ValidationError) as exc_info:
+        make_settings(
+            XmlIngestSettings,
+            source,
+            {
+                **{k: str(v) for k, v in test_defaults.items()},
+                "dataset_name": "xml_dataset",
+                "file_glob": bad_glob,
+            },
+        )
+    assert {err["loc"][0] for err in exc_info.value.errors()} == {"file_glob"}
+
+
+@pytest.mark.parametrize(
+    ("raw_glob", "expected_glob"),
+    [
+        pytest.param("*.xml.gz", "*.xml.gz", id="raw_glob"),
+        pytest.param("__STAR__.ext.__STAR__", "*.ext.*", id="cts_star_tokens"),
+    ],
+)
+def test_xml_ingest_settings_pass_cli_shortcuts(
+    test_defaults: dict[str, Any],
+    raw_glob: str,
+    expected_glob: str,
+) -> None:
+    """XmlIngestSettings supports XML_CLI_SHORTCUTS (-f, -g) with raw and CTS-tokenized globs."""
     assert XML_CLI_SHORTCUTS["loader_file_format"] == "f"
     assert XML_CLI_SHORTCUTS["file_glob"] == "g"
     base = XmlIngestSettings(**test_defaults, dataset_name="xml_dataset")
@@ -357,7 +423,7 @@ def test_xml_ingest_settings_pass_cli_shortcuts(test_defaults: dict[str, Any]) -
             "-f",
             "jsonl",
             "-g",
-            "*.xml.gz",
+            raw_glob,
         ],
     )
     check_settings(
@@ -365,7 +431,7 @@ def test_xml_ingest_settings_pass_cli_shortcuts(test_defaults: dict[str, Any]) -
         {
             **cts_expected(**test_defaults, dataset_name="xml_dataset"),
             "loader_file_format": "jsonl",
-            "file_glob": "*.xml.gz",
+            "file_glob": expected_glob,
         },
     )
 

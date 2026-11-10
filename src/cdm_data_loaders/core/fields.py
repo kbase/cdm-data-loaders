@@ -1,5 +1,6 @@
 """Common fields and defaults for data loading and wrangling pipelines."""
 
+import re
 from enum import StrEnum
 from typing import Annotated, Final
 
@@ -14,6 +15,32 @@ XML_GZ_FILE_GLOB: Final[str] = "*.xml.gz"
 DEFAULT_XML_FILE_GLOB: Final[str] = "*.xml*"
 REJECTED_TABLE_NAME: Final[str] = "_rejected"
 GZIP_SUFFIX: Final[str] = ".gz"
+
+CTS_GLOBSTAR: Final[str] = "__GLOBSTAR__"
+CTS_STAR: Final[str] = "__STAR__"
+CTS_QMARK: Final[str] = "__QMARK__"
+CTS_LBRACK: Final[str] = "__LBRACK__"
+CTS_RBRACK: Final[str] = "__RBRACK__"
+CTS_BANG: Final[str] = "__BANG__"
+
+CTS_GLOB_WILDCARDS: Final[frozendict[str, str]] = frozendict(
+    {
+        CTS_GLOBSTAR: "**",
+        CTS_STAR: "*",
+        CTS_QMARK: "?",
+        CTS_LBRACK: "[",
+        CTS_RBRACK: "]",
+        CTS_BANG: "!",
+    }
+)
+CTS_GLOB_WILDCARD_PATTERN: Final[re.Pattern[str]] = re.compile(
+    "|".join(re.escape(wildcard) for wildcard in CTS_GLOB_WILDCARDS)
+)
+CTS_GLOB_WILDCARDS_DESCRIPTION: Final[str] = (
+    "Accepts CTS wildcard tokens: "
+    "`__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), "
+    "`__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`)."
+)
 
 # output file formats
 ICEBERG: Final[str] = "iceberg"
@@ -100,7 +127,50 @@ DltDevMode = Annotated[
         description="Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run.",
     ),
 ]
-FileGlob = Annotated[str, Field(default=DEFAULTS[FILE_GLOB], description="File glob for input files")]
+
+
+def _replace_cts_glob_wildcard(match: re.Match[str]) -> str:
+    """Return the glob metacharacter for a matched CTS wildcard token.
+
+    :param match: regex match for a CTS wildcard token
+    :type match: re.Match[str]
+    :return: glob metacharacter for the matched token
+    :rtype: str
+    """
+    return CTS_GLOB_WILDCARDS[match.group(0)]
+
+
+def expand_cts_glob_wildcards(value: str) -> str:
+    """Replace CTS wildcard tokens in ``value`` with glob metacharacters.
+
+    :param value: raw or CTS-tokenized glob pattern
+    :type value: str
+    :return: glob pattern with CTS wildcard tokens expanded
+    :rtype: str
+    """
+    return CTS_GLOB_WILDCARD_PATTERN.sub(_replace_cts_glob_wildcard, value)
+
+
+def file_glob_description(summary: str) -> str:
+    """Build a CLI field description for ``file_glob`` including CTS wildcard tokens.
+
+    :param summary: short description of matched input files
+    :type summary: str
+    :return: field description with CTS wildcard token reference
+    :rtype: str
+    """
+    base = summary.rstrip(".")
+    return f"{base}. {CTS_GLOB_WILDCARDS_DESCRIPTION}"
+
+
+FileGlob = Annotated[
+    NonEmptyStr,
+    AfterValidator(expand_cts_glob_wildcards),
+    Field(
+        default=DEFAULTS[FILE_GLOB],
+        description=file_glob_description("File glob for input files"),
+    ),
+]
 LoaderFileFormat = Annotated[
     LoaderFileFormatEnum,
     Field(

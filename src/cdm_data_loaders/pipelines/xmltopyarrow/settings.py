@@ -22,7 +22,13 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schemas_at_level,
 )
 from cdm_data_loaders.converters.readers.xsd import load_schema
-from cdm_data_loaders.core.fields import XML_GZ_FILE_GLOB, FileGlob, NonEmptyStr, XsdFile
+from cdm_data_loaders.core.fields import (
+    XML_GZ_FILE_GLOB,
+    FileGlob,
+    NonEmptyStr,
+    XsdFile,
+    file_glob_description,
+)
 from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
@@ -382,7 +388,7 @@ class PubMedXmlToPyArrowSettings(LevelPresetXmlToPyArrowSettings):
         FileGlob,
         Field(
             default=XML_GZ_FILE_GLOB,
-            description="Glob pattern for PubMed XML files",
+            description=file_glob_description("Glob pattern for PubMed XML files"),
         ),
     ]
     xsd_file: Annotated[

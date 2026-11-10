@@ -24,7 +24,7 @@ from dlt.common.typing import TDataItems
 from dlt.destinations.impl.filesystem.filesystem import FilesystemClient, FilesystemLoadJob
 from dlt.extract.resource import DltResource
 from pydantic import ValidationError
-from pydantic_settings import SettingsError
+from pydantic_settings import CliApp, SettingsError
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from requests import RequestException, Session
@@ -36,6 +36,7 @@ from cdm_data_loaders.core.settings import (
     FileFormatIngestSettings,
     InputLocalOutputSettings,
     LoggerSettings,
+    XmlIngestSettings,
 )
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import (
@@ -1086,6 +1087,43 @@ def test_build_filesystem_resource_pass_custom_glob_resource_transformer_and_con
     )
     rows = list(resource)
     assert rows == [{"name": "data.jsonl"}]
+
+
+def test_build_filesystem_resource_pass_cts_wildcard_tokens_on_settings_file_glob(
+    input_dir: Path, output_dir: Path
+) -> None:
+    """build_filesystem_resource discovers files matching settings.file_glob expanded from CTS wildcard tokens."""
+    (input_dir / "alpha.ext.xml").write_text("<a/>", encoding="utf-8")
+    (input_dir / "beta.ext.gz").write_text("<b/>", encoding="utf-8")
+    (input_dir / "gamma.xml").write_text("<c/>", encoding="utf-8")
+    settings = CliApp.run(
+        XmlIngestSettings,
+        cli_args=[
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+            "--use-destination",
+            "cts",
+            "--dataset-name",
+            "ext_ds",
+            "--file-glob",
+            "__STAR__.ext.__STAR__",
+        ],
+    )
+    assert settings.file_glob == "*.ext.*"
+
+    def read_names(
+        items: TDataItems,
+        cfg: XmlIngestSettings,
+    ) -> Iterator[dict[str, str]]:
+        assert cfg is settings
+        for item in items:
+            yield {"name": Path(item["file_url"].removeprefix("file://")).name}
+
+    resource = build_filesystem_resource(settings, read_names, name="cts_glob_reader")
+    names = sorted(row["name"] for row in resource)
+    assert names == ["alpha.ext.xml", "beta.ext.gz"]
 
 
 @pytest.mark.parametrize(

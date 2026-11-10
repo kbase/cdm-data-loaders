@@ -27,6 +27,7 @@ from cdm_data_loaders.core.fields import (
     FileGlob,
     NonEmptyStr,
     TableName,
+    file_glob_description,
 )
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
@@ -207,7 +208,7 @@ class JsonlIngestSettings(FileFormatIngestSettings):
         FileGlob,
         Field(
             default=DEFAULT_JSONL_FILE_GLOB,
-            description="Glob pattern for JSONL files",
+            description=file_glob_description("Glob pattern for JSONL files"),
         ),
     ]
 
