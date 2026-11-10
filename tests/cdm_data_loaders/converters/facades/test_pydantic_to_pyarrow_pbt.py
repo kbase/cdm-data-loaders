@@ -41,12 +41,12 @@ from cdm_data_loaders.coercion.pydantic import (
 )
 from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import (
     PydanticToPyArrow,
+    RecursiveNonJsonTypeError,
     generate_pyarrow_schema,
 )
 from cdm_data_loaders.converters.readers.pydantic import (
     BASE64_BYTES_MARKERS,
     NAIVE_DATETIME_MARKERS,
-    RecursiveNonJsonTypeError,
     _collect_meta_items,
     _ensure_model_complete,
 )

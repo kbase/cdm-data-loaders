@@ -65,6 +65,8 @@ class Run:
     schema_attr: str = "EXPECTED_SCHEMA"
     table_attr: str = "EXPECTED_TABLE"
     expected_count: int | None = None
+    expected_rejected: Path | None = None
+    extra_expected_json: dict[str, Path] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +99,7 @@ class ErrorCase:
     match: str
     description: str
     xml_tag: str | None
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -135,6 +138,8 @@ def load_rules(path: Path) -> RuleCatalogue:
 
 
 def _load_run(directory: Path, raw: dict[str, Any], case_xml_tag: str | None) -> Run:
+    rejected = raw.get("expected_rejected")
+    extra_tables = raw.get("extra_expected_json", {})
     return Run(
         id=raw["id"],
         data=(directory / raw["data"]).resolve(),
@@ -145,6 +150,8 @@ def _load_run(directory: Path, raw: dict[str, Any], case_xml_tag: str | None) ->
         schema_attr=raw.get("schema_attr", "EXPECTED_SCHEMA"),
         table_attr=raw.get("table_attr", "EXPECTED_TABLE"),
         expected_count=raw.get("expected_count"),
+        expected_rejected=(directory / rejected).resolve() if rejected else None,
+        extra_expected_json={name: (directory / path).resolve() for name, path in extra_tables.items()},
     )
 
 
@@ -182,6 +189,7 @@ def load_error_cases(manifest: Path) -> list[ErrorCase]:
             match=entry["match"],
             description=entry.get("description", "").strip(),
             xml_tag=entry.get("xml_tag"),
+            params=dict(entry.get("params", {})),
         )
         for entry in raw["errors"]
     ]

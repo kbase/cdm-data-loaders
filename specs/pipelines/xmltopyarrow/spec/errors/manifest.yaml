@@ -1,0 +1,91 @@
+errors:
+  - file: 01_missing_xml_tag_in_single_mode.xsd
+    code: E1
+    exception: InvalidXmlTargetSelectionError
+    match: "Missing required field\\(s\\) when xml_level is not set: xml_tag"
+    params:
+      table_name: items
+    description: Single-tag mode (`xml_level` omitted) without `xml_tag`.
+
+  - file: 02_root_tag_in_single_mode.xsd
+    code: E1
+    exception: InvalidXmlTargetSelectionError
+    match: "root_tag can only be specified when xml_level is set"
+    params:
+      xml_tag: item
+      table_name: items
+      root_tag: catalog
+    description: Specifying `root_tag` in single-tag mode without `xml_level`.
+
+  - file: 03_xml_tag_with_xml_level.xsd
+    code: E1
+    exception: InvalidXmlTargetSelectionError
+    match: "xml_level cannot be combined with xml_tag or table_name"
+    params:
+      xml_level: 1
+      xml_tag: item
+      table_name: items
+    description: Combining `xml_level` with `xml_tag` or `table_name`.
+
+  - file: 04_malformed_xsd_xml.xsd
+    code: E2
+    exception: InvalidXsdDocumentError
+    match: "unclosed token"
+    params:
+      xml_tag: item
+      table_name: items
+    description: Malformed XML in `xsd_file` fails `load_schema`.
+
+  - file: 05_non_xsd_root_element.xsd
+    code: E2
+    exception: InvalidXsdDocumentError
+    match: "schema"
+    params:
+      xml_tag: item
+      table_name: items
+    description: XML file whose root element is not `<xs:schema>` fails `load_schema`.
+
+  - file: 06_unknown_xml_tag.xsd
+    code: E3
+    exception: XmlTargetNotFoundError
+    match: "Element 'nonexistent' not found in XSD schema"
+    params:
+      xml_tag: nonexistent
+      table_name: items
+    description: "`xml_tag` does not match any element declaration in the XSD."
+
+  - file: 07_no_elements_at_xml_level.xsd
+    code: E3
+    exception: XmlTargetNotFoundError
+    match: "No XML elements found at level 5"
+    params:
+      xml_level: 5
+    description: "`xml_level` exceeds the depth of all element declarations in the XSD."
+
+  - file: 08_scalar_target_element.xsd
+    code: E4
+    exception: UnsupportedXsdTargetError
+    match: "complex type"
+    params:
+      xml_tag: title
+      table_name: titles
+    description: Target element has a scalar simple type rather than a complex type (`E3` in `xsd_to_pyarrow`).
+
+  - file: 09_unknown_transform_table_single_mode.xsd
+    code: E5
+    exception: InvalidXmlPipelineHookError
+    match: "Unknown table names in transforms_module: measurements"
+    params:
+      xml_tag: item
+      table_name: items
+      transforms_module: specs.pipelines.xmltopyarrow.transforms
+    description: "`transforms_module` defines `TABLE_TRANSFORMS` for a table name not matching `table_name` in single-tag mode."
+
+  - file: 10_unknown_transform_table_level_mode.xsd
+    code: E5
+    exception: InvalidXmlPipelineHookError
+    match: "Unknown table names in transforms_module: measurements"
+    params:
+      xml_level: 1
+      transforms_module: specs.pipelines.xmltopyarrow.transforms
+    description: "`transforms_module` defines `TABLE_TRANSFORMS` for a table name not present among elements at `xml_level`."

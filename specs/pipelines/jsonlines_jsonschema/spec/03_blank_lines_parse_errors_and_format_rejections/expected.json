@@ -1,0 +1,13 @@
+[
+  {
+    "contact_email": "alice@example.org",
+    "count": 5,
+    "id": "rec-1"
+  },
+  {
+    "contact_email": "carol@example.org",
+    "count": 12,
+    "id": "rec-4"
+  }
+]
+

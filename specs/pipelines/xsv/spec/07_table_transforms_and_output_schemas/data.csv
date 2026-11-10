@@ -1,0 +1,5 @@
+sensor_id,celsius,status
+s-1,25.0,ok
+s-2,999.0,drop
+s-3,120.5,ok
+

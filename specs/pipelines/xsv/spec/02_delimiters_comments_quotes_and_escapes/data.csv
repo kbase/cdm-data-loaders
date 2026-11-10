@@ -1,0 +1,5 @@
+% Semicolon-delimited file with single-quote quoting and backslash escaping
+sample_id;measurement;label
+S-1;12.5;'quoted label'
+% Mid-file comment
+S#2;8.75;'escaped \'quote\' inside'

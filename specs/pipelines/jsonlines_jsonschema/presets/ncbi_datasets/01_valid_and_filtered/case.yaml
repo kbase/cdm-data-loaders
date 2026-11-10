@@ -1,0 +1,27 @@
+title: Valid Records and Empty Annotation Report Filtering
+pipeline: ncbi_datasets
+settings_file: settings.toml
+rules:
+  - R-JSONL-ENTITY-REGISTRY
+  - R-JSONL-TRANSFORMS
+  - R-JSONL-REPORT
+  - R-NCBI-PRESET
+  - R-NCBI-FILTER-EMPTY
+notes: |
+  Loads `annotation_report/annotations.jsonl` (one empty response `{"total_count": 0}` dropped by
+  `filter_annotation_report`, and one populated annotation report retained) alongside
+  `dataset_report/dataset_reports.jsonl` (one assembly dataset report).
+runs:
+  - id: default
+    input_dir: input
+    expected_report:
+      status: completed
+      ingested_files:
+        - annotation_report/annotations.jsonl
+        - dataset_report/dataset_reports.jsonl
+      pipeline_load_info_errs: null
+    expected_counts:
+      annotation_report: 1
+      dataset_report: 1
+    expected_tables: expected_tables.py
+    expected_json: expected.json

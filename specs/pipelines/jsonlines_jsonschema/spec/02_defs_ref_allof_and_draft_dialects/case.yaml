@@ -1,0 +1,17 @@
+title: Local `$defs` / `$ref` Dereferencing, `allOf` Composition, and Format Validation
+schema: schema.json
+xml_tag: submissions
+rules:
+  - R-JSONL-SCHEMA-CONVERT
+  - R-JSONL-DIALECT-FORMAT
+notes: |
+  - `schema.json` declares local `$defs` definitions (`#/$defs/base_id`, `#/$defs/contact_info`) and top-level `allOf` composition.
+  - `dereference_schema` merges the `allOf` branches and resolves `$ref` pointers before `JSONSchemaToPyArrow` builds `EXPECTED_SCHEMA`.
+  - `_make_resolve_error` validates `submitted_date` (`format: "date"`) and `contact.email` (`format: "email"`) with `FormatChecker()`, while `coerce_record_for_pyarrow` parses `submitted_date` into `pa.date32()` (`datetime.date`) and keeps `contact.email` as `pa.string()`.
+runs:
+  - id: default
+    data: data.jsonl
+    expected_json: expected.json
+    expected_table: expected_table.py
+    params:
+      entity_type: submissions

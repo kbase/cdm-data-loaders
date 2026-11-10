@@ -1,5 +1,5 @@
 # Error specification fixtures for the XSD -> PyArrow converter.
-# `code` must match the `code` of an XsdToPyArrowError subclass in cdm_data_loaders.converters.readers.xsd.
+# `code` must match the `code` of an XsdToPyArrowError subclass in cdm_data_loaders.converters.facades.xsd_to_pyarrow.
 # `file` is relative to this directory. `match` is a regex applied to the exception message.
 errors:
   - file: empty_schema.xsd

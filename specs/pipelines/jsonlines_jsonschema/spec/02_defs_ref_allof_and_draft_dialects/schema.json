@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SampleSubmission",
+  "$defs": {
+    "base_id": {
+      "type": "object",
+      "required": ["submission_id"],
+      "properties": {
+        "submission_id": {
+          "type": "string"
+        }
+      }
+    },
+    "contact_info": {
+      "type": "object",
+      "required": ["email"],
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "orcid": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "#/$defs/base_id"
+    },
+    {
+      "type": "object",
+      "required": ["submitted_date", "contact"],
+      "properties": {
+        "submitted_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "contact": {
+          "$ref": "#/$defs/contact_info"
+        }
+      }
+    }
+  ]
+}

@@ -5,7 +5,7 @@ import datetime as dt
 import functools
 import json
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Final
 
 import xmlschema
 from lxml.etree import Element
@@ -13,10 +13,12 @@ from xmlschema.validators import XsdComplexType, XsdElement, XsdType
 
 from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.ir import NodeHints, NodeType
+from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
+    ERROR_BY_CODE,
+    XsdToPyArrowError,
+)
 from cdm_data_loaders.converters.readers.xsd import (
     BUILTIN_LIST_ITEM_TYPES,
-    XSI_NAMESPACE,
-    XSI_NIL,
     _builtin_xsd_name,
     _classify_leaf_element_type,
     _collect_attributes,
@@ -30,6 +32,9 @@ from cdm_data_loaders.converters.readers.xsd import (
     resolve_elements_at_level,
 )
 from cdm_data_loaders.utils.xml_utils import local_name
+
+XSI_NAMESPACE: Final[str] = "{http://www.w3.org/2001/XMLSchema-instance}"
+XSI_NIL: Final[str] = f"{XSI_NAMESPACE}nil"
 
 
 def _is_ignored_attr(attr_name: str) -> bool:
@@ -403,20 +408,33 @@ def _make_resolved_element_converter(
     :return: Function converting an lxml Element into a dictionary.
     :rtype: Callable[[Element], dict[str, Any]]
     """
-    leaf_info = _classify_leaf_element_type(target_elem.type)
+    leaf_info = _classify_leaf_element_type(
+        target_elem.type,
+        error_type=XsdToPyArrowError,
+        error_by_code=ERROR_BY_CODE,
+    )
     if leaf_info is not None:
         leaf_ctx = _TraversalContext(
             schema=schema,
             type_counts={},
             max_recursion_depth=max_recursion_depth,
+            error_type=XsdToPyArrowError,
+            error_by_code=ERROR_BY_CODE,
         )
         return functools.partial(_convert_leaf_element_to_dict, ctx=leaf_ctx, target_elem=target_elem)
 
-    elem_type = _require_complex_type(target_elem.type, tag_name)
+    elem_type = _require_complex_type(
+        target_elem.type,
+        tag_name,
+        error_type=XsdToPyArrowError,
+        error_by_code=ERROR_BY_CODE,
+    )
     ctx = _TraversalContext(
         schema=schema,
         type_counts={id(elem_type): 1},
         max_recursion_depth=max_recursion_depth,
+        error_type=XsdToPyArrowError,
+        error_by_code=ERROR_BY_CODE,
     )
     return functools.partial(_convert_struct_element_to_dict, ctx=ctx, elem_type=elem_type)
 
@@ -442,6 +460,8 @@ def make_xml_element_converter(
         schema,
         xml_tag,
         max_recursion_depth=max_recursion_depth,
+        error_type=XsdToPyArrowError,
+        error_by_code=ERROR_BY_CODE,
     )
     return functools.partial(_convert_struct_element_to_dict, ctx=ctx, elem_type=elem_type)
 
@@ -466,7 +486,13 @@ def make_xml_level_converters(
     :return: Mapping of element local tag name to its element-to-dict converter function.
     :rtype: dict[str, Callable[[Element], dict[str, Any]]]
     """
-    elements_at_level = resolve_elements_at_level(schema, level, root_tag=root_tag)
+    elements_at_level = resolve_elements_at_level(
+        schema,
+        level,
+        root_tag=root_tag,
+        error_type=XsdToPyArrowError,
+        error_by_code=ERROR_BY_CODE,
+    )
     return {
         tag_name: _make_resolved_element_converter(
             schema,

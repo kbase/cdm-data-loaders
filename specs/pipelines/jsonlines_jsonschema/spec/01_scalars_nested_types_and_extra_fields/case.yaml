@@ -1,0 +1,17 @@
+title: Scalar Types, Nested Objects, Arrays, and Undeclared Extra Fields
+schema: schema.json
+xml_tag: genomes
+rules:
+  - R-JSONL-ENTITY-REGISTRY
+  - R-JSONL-SCHEMA-CONVERT
+  - R-JSONL-COERCE
+notes: |
+  - `ENTITY_SCHEMAS["genomes"]` maps `string`, `integer`, `number`, `boolean`, nullable `["string", "null"]`, `array` (`pa.list_`), and nested `object` (`pa.struct`) properties to `EXPECTED_SCHEMA`.
+  - Undeclared extra fields in input records (`extra_note`) are dropped during PyArrow table coercion, and omitted optional fields (`tags`, `assembly_stats`) are populated with `null`.
+runs:
+  - id: default
+    data: data.jsonl
+    expected_json: expected.json
+    expected_table: expected_table.py
+    params:
+      entity_type: genomes

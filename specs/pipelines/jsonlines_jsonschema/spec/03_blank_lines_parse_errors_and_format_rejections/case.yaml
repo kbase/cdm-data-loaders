@@ -1,0 +1,31 @@
+title: Blank Lines, JSON Parse Errors, Schema Violations, and `FormatChecker` Rejections
+schema: schema.json
+xml_tag: contacts
+rules:
+  - R-JSONL-BLANK-AND-REJECT
+  - R-JSONL-DIALECT-FORMAT
+  - R-JSONL-REPORT
+notes: |
+  - `iter_file_jsonl_records` skips blank/whitespace-only lines (line 2 of `data.jsonl`) while preserving 1-based physical line numbers (`line_no`).
+  - Malformed JSON lines (line 3), non-object JSON arrays (line 4), type mismatches (line 5), and `format: "email"` violations (line 6) are routed to `_rejected` (`REJECTED_PYARROW_SCHEMA`).
+  - Run `total_rejection` verifies that when all lines in a file fail validation, only `_rejected` is created.
+runs:
+  - id: partial_rejections
+    data: data.jsonl
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_rejected: expected_rejected.json
+    expected_report:
+      status: completed
+      ingested_files:
+        - contacts/data.jsonl
+      pipeline_load_info_errs: null
+    params:
+      entity_type: contacts
+  - id: total_rejection
+    data: data_all_invalid.jsonl
+    expected_json: expected_empty.json
+    expected_table: expected_table.py
+    expected_rejected: expected_all_rejected.json
+    params:
+      entity_type: contacts

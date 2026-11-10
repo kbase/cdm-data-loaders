@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, ClassVar, Final
 
 import pyarrow as pa
 import xmlschema
@@ -10,12 +10,12 @@ from frozendict import frozendict
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 from xmlschema.validators import XsdType
 
+from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
 from cdm_data_loaders.converters.readers.xsd import (
     XSD_SCALAR_SPEC,
-    NonStructXmlTagError,
     XsdReader,
     _simple_type_to_ir_node,
 )
@@ -27,6 +27,97 @@ SCALAR_ARROW_TYPES: Final[Mapping[str, pa.DataType]] = frozendict(
         xsd_name: DEFAULT_EMITTER.emit_node(TypedNode(type=node_type, hints=hints))
         for xsd_name, (node_type, hints) in XSD_SCALAR_SPEC.items()
     }
+)
+
+
+class XsdToPyArrowError(ConversionError):
+    """Base class for XSD constructs that cannot be converted to a PyArrow schema.
+
+    Each subclass carries a stable specification ``code`` and a short ``title``; its docstring states the reason
+    the construct is rejected. The converter specification document is generated from these attributes.
+    """
+
+    code: ClassVar[str] = ""
+    title: ClassVar[str] = ""
+
+
+class XmlTagNotFoundError(XsdToPyArrowError):
+    """The target element is not declared anywhere in the XSD."""
+
+    code = "E1"
+    title = "`xml_tag` not found"
+
+
+class AmbiguousXmlTagError(XsdToPyArrowError):
+    """Declarations of `xml_tag` at the shallowest matching depth have different types, so no single `pa.Schema` can be chosen."""
+
+    code = "E2"
+    title = "Ambiguous `xml_tag` type"
+
+
+class NonStructXmlTagError(XsdToPyArrowError):
+    """A `pa.Table` schema needs top-level columns: the type of `xml_tag` must yield at least one attribute, `#text`, or child element field."""
+
+    code = "E3"
+    title = "Non-struct top-level `xml_tag`"
+
+
+class WildcardElementError(XsdToPyArrowError):
+    """Arbitrary undeclared child elements cannot be represented as fixed `pa.struct` fields."""
+
+    code = "E4"
+    title = "Element wildcard (`xs:any`)"
+
+
+class WildcardAttributeError(XsdToPyArrowError):
+    """Arbitrary undeclared attributes cannot be represented as fixed `pa.struct` fields."""
+
+    code = "E5"
+    title = "Attribute wildcard (`xs:anyAttribute`)"
+
+
+class AbstractComponentError(XsdToPyArrowError):
+    """Concrete instances of an abstract element or type require `xsi:type` or substitution polymorphism, which has no single schema."""
+
+    code = "E6"
+    title = 'Abstract element or type (`abstract="true"`)'
+
+
+class SubstitutionGroupError(XsdToPyArrowError):
+    """Substituted elements introduce element names and types that are not declared in the parent content model."""
+
+    code = "E7"
+    title = "Substitution group"
+
+
+class FieldNameCollisionError(XsdToPyArrowError):
+    """An attribute (prefixed `_`) and a child element map to the same field name in one `pa.struct`."""
+
+    code = "E8"
+    title = "Attribute / child field name collision"
+
+
+class RecursiveNonJsonTypeError(XsdToPyArrowError):
+    """Subtrees truncated beyond `max_recursion_depth` are serialized with `json.dumps`, which cannot encode `datetime.date` or `bytes` without lossy conversion."""
+
+    code = "E9"
+    title = "Non-JSON-serializable scalar under recursion"
+
+
+XSD_TO_PYARROW_ERRORS: Final[tuple[type[XsdToPyArrowError], ...]] = (
+    XmlTagNotFoundError,
+    AmbiguousXmlTagError,
+    NonStructXmlTagError,
+    WildcardElementError,
+    WildcardAttributeError,
+    AbstractComponentError,
+    SubstitutionGroupError,
+    FieldNameCollisionError,
+    RecursiveNonJsonTypeError,
+)
+
+ERROR_BY_CODE: Final[frozendict[str, type[XsdToPyArrowError]]] = frozendict(
+    {cls.code: cls for cls in XSD_TO_PYARROW_ERRORS}
 )
 
 
@@ -64,7 +155,12 @@ def generate_pyarrow_struct(
     :return: PyArrow StructType component whose fields correspond to the target element's fields
     :rtype : pa.StructType
     """
-    doc = XsdReader(xml_tag=xml_tag, max_recursion_depth=max_recursion_depth).read(
+    doc = XsdReader(
+        xml_tag=xml_tag,
+        max_recursion_depth=max_recursion_depth,
+        error_type=XsdToPyArrowError,
+        error_by_code=ERROR_BY_CODE,
+    ).read(
         schema,
         xml_tag,
         struct_cache=struct_cache,
@@ -93,7 +189,12 @@ def generate_pyarrow_schema(
     :return: PyArrow schema whose top-level fields correspond to the target element's fields
     :rtype : pa.Schema
     """
-    doc = XsdReader(xml_tag=xml_tag, max_recursion_depth=max_recursion_depth).read(schema, xml_tag)
+    doc = XsdReader(
+        xml_tag=xml_tag,
+        max_recursion_depth=max_recursion_depth,
+        error_type=XsdToPyArrowError,
+        error_by_code=ERROR_BY_CODE,
+    ).read(schema, xml_tag)
     return DEFAULT_EMITTER.emit(doc)
 
 
@@ -121,7 +222,11 @@ def generate_pyarrow_schemas_at_level(
     :return: mapping of element local tag name (table name) to its assembled PyArrow schema
     :rtype : dict[str, pa.Schema]
     """
-    docs = XsdReader(max_recursion_depth=max_recursion_depth).read_at_level(schema, level, root_tag=root_tag)
+    docs = XsdReader(
+        max_recursion_depth=max_recursion_depth,
+        error_type=XsdToPyArrowError,
+        error_by_code=ERROR_BY_CODE,
+    ).read_at_level(schema, level, root_tag=root_tag)
     return {tag_name: DEFAULT_EMITTER.emit(doc) for tag_name, doc in docs.items()}
 
 
@@ -143,7 +248,12 @@ class XsdToPyArrow(BaseModel):
         :return: Parsed ``SchemaDocument``.
         :rtype: SchemaDocument
         """
-        return XsdReader(xml_tag=self.xml_tag, max_recursion_depth=self.max_recursion_depth).read(schema, xml_tag)
+        return XsdReader(
+            xml_tag=self.xml_tag,
+            max_recursion_depth=self.max_recursion_depth,
+            error_type=XsdToPyArrowError,
+            error_by_code=ERROR_BY_CODE,
+        ).read(schema, xml_tag)
 
     def _read_level(
         self,
@@ -163,7 +273,11 @@ class XsdToPyArrow(BaseModel):
         :return: Mapping of element tag name to ``SchemaDocument``.
         :rtype: dict[str, SchemaDocument]
         """
-        return XsdReader(max_recursion_depth=self.max_recursion_depth).read_at_level(schema, level, root_tag=root_tag)
+        return XsdReader(
+            max_recursion_depth=self.max_recursion_depth,
+            error_type=XsdToPyArrowError,
+            error_by_code=ERROR_BY_CODE,
+        ).read_at_level(schema, level, root_tag=root_tag)
 
     def convert(self, schema: xmlschema.XMLSchema | str | Path, xml_tag: str | None = None) -> pa.Schema:
         """Convert an XSD schema element into a ``pa.Schema``.

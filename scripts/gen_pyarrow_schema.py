@@ -16,7 +16,7 @@ from cdm_data_loaders.converters.cli.xsd_to_pyarrow import (
     SchemaCodegenConfig,
     render_schema_module,
 )
-from scripts.gen_docs import REPO_ROOT, check_or_write_files, rel_posix
+from scripts.gen_docs import REPO_ROOT, check_or_write_files
 
 SCHEMAS_DIR: Final[Path] = REPO_ROOT / "src" / "cdm_data_loaders" / "schemas"
 
@@ -47,8 +47,6 @@ CONFIGS: Final[tuple[SchemaCodegenConfig, ...]] = (
     UNIPROT_SCHEMA_CONFIG,
     PUBMED_SCHEMA_CONFIG,
 )
-
-_rel = rel_posix
 
 
 def main(argv: Sequence[str] | None = None) -> int:

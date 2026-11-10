@@ -29,11 +29,11 @@ contains() {
   return 1
 }
 
-# Copy any dlt config files from the input dir into $HOME/.dlt; exit on any failure.
+# Copy any dlt config files from the input dir into $HOME/.dlt and .pyiceberg.yaml into $HOME; exit on any failure.
 # $HOME configs are merged with those in the execution directory, with $HOME taking priority
 copy_dlt_config() {
   local file
-  for file in config.toml secrets.toml .pyiceberg.yaml; do
+  for file in config.toml secrets.toml; do
     if [ -e "${DLT_CONF_SRC_DIR}/${file}" ]; then
       mkdir -p "${DLT_CONF_DEST_DIR}" || {
         echo "Error: could not create '${DLT_CONF_DEST_DIR}' in $(pwd)." >&2
@@ -45,6 +45,12 @@ copy_dlt_config() {
       }
     fi
   done
+  if [ -e "${DLT_CONF_SRC_DIR}/.pyiceberg.yaml" ]; then
+    cp "${DLT_CONF_SRC_DIR}/.pyiceberg.yaml" "${HOME}/.pyiceberg.yaml" || {
+      echo "Error: could not copy '${DLT_CONF_SRC_DIR}/.pyiceberg.yaml' to '${HOME}/.pyiceberg.yaml'." >&2
+      exit 1
+    }
+  fi
 }
 
 if [ "$#" -eq 0 ]; then

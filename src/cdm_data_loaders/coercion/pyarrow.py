@@ -165,6 +165,39 @@ def _coerce_value_for_pyarrow(
     return _coerce_scalar_for_pyarrow(value, data_type, metadata)
 
 
+def pyarrow_to_python_type_label(data_type: pa.DataType) -> str:
+    """Return the Markdown-formatted Python runtime type label corresponding to a coerced PyArrow ``DataType``.
+
+    Mirrors the scalar and list coercion rules enforced by :func:`coerce_record_for_pyarrow`.
+
+    :param data_type: Target PyArrow data type.
+    :type data_type: pa.DataType
+    :return: Backtick-wrapped Python runtime type label (e.g. ``"`int`"``, ``"`datetime.datetime` (UTC)"``).
+    :rtype: str
+    """
+    if isinstance(data_type, pa.ListType | pa.LargeListType):
+        inner = pyarrow_to_python_type_label(data_type.value_field.type).strip("`")
+        return f"`list[{inner}]`"
+    if isinstance(data_type, pa.TimestampType):
+        tz_suffix = f"({data_type.tz})" if data_type.tz is not None else "(naive)"
+        return f"`datetime.datetime` {tz_suffix}"
+    for predicate, label in (
+        (pa.types.is_boolean, "`bool`"),
+        (pa.types.is_integer, "`int`"),
+        (pa.types.is_floating, "`float`"),
+        (pa.types.is_decimal, "`decimal.Decimal`"),
+        (pa.types.is_date, "`datetime.date`"),
+        (pa.types.is_time, "`datetime.time`"),
+    ):
+        if predicate(data_type):
+            return label
+    if pa.types.is_binary(data_type) or pa.types.is_large_binary(data_type) or pa.types.is_fixed_size_binary(data_type):
+        return "`bytes`"
+    if pa.types.is_string(data_type) or pa.types.is_large_string(data_type):
+        return "`str`"
+    return f"`{data_type}`"
+
+
 def coerce_record_for_pyarrow(
     record: dict[str, Any],
     schema: pa.Schema,

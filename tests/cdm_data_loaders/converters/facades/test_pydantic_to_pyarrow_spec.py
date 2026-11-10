@@ -22,21 +22,19 @@ from pydantic import AwareDatetime, BaseModel, Field, NaiveDatetime, RootModel, 
 
 from cdm_data_loaders.coercion.pydantic import coerce_record_for_pyarrow
 from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import (
-    PydanticToPyArrow,
-    generate_pyarrow_schema,
-    resolve_scalar_type,
-)
-from cdm_data_loaders.converters.readers.pydantic import (
     PYDANTIC_TO_PYARROW_ERRORS,
     EmptyModelError,
     InvalidDecimalConstraintsError,
     InvalidPydanticModelError,
     NonStringMapKeyError,
     NonStructRootError,
+    PydanticToPyArrow,
     PydanticToPyArrowError,
     RecursiveNonJsonTypeError,
     UnconstrainedFieldError,
     UnsupportedFieldTypeError,
+    generate_pyarrow_schema,
+    resolve_scalar_type,
 )
 from scripts.gen_converter_spec import PYDANTIC_TO_PYARROW, render
 from tests.conftest import BASE_DIR

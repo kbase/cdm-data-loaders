@@ -18,6 +18,7 @@ from lxml.etree import Element, SubElement, fromstring
 from xmlschema.validators import XsdComplexType, XsdElement, XsdType
 
 from cdm_data_loaders.coercion.xml import (
+    XSI_NIL,
     _serialize_inner_xml,
     convert_xml_element,
     make_xml_element_converter,
@@ -31,14 +32,13 @@ from cdm_data_loaders.converters.emitters.pyarrow_codegen import (
     _to_upper_snake,
 )
 from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
+    RecursiveNonJsonTypeError,
     generate_pyarrow_schema,
     resolve_scalar_type,
 )
 from cdm_data_loaders.converters.readers.xsd import (
     BUILTIN_LIST_ITEM_TYPES,
     FORBIDDEN_RECURSIVE_XSD_TYPES,
-    XSI_NIL,
-    RecursiveNonJsonTypeError,
     _builtin_xsd_name,
     _classify_leaf_element_type,
     _collect_attributes,

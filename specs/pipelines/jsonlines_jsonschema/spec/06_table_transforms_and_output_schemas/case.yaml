@@ -1,0 +1,28 @@
+title: Table Transforms, Schema Conversion Skip, and Multi-Table Fan-Out
+schema: schema.json
+xml_tag: samples
+rules:
+  - R-JSONL-SCHEMA-SKIP
+  - R-JSONL-TRANSFORMS
+  - R-JSONL-REPORT
+notes: |
+  - `transforms_module="specs.pipelines.jsonlines_jsonschema.transforms"` defines `TABLE_TRANSFORMS["samples"] = transform_sample` and `OUTPUT_SCHEMAS` for `samples` and `sample_measurements`.
+  - `build_output_schema_registry` skips `convert_schema_to_pyarrow` for `samples` (allowing input-only `anyOf` fields such as `raw_payload` in `schema.json` to validate input lines without raising `E5`).
+  - `transform_sample` drops `exclude=True` rows, uppercases `sample_id`, computes `ph_bucket`, and fans out `metrics` to `sample_measurements`.
+runs:
+  - id: default
+    data: data.jsonl
+    expected_json: expected.json
+    expected_table: expected_table.py
+    extra_expected_json:
+      sample_measurements: expected_measurements.json
+    expected_report:
+      status: completed
+      ingested_files:
+        - samples/data.jsonl
+      pipeline_load_info_errs: null
+    params:
+      entity_type: samples
+      entity_schemas: specs.pipelines.jsonlines_jsonschema.transforms
+      transforms_module: specs.pipelines.jsonlines_jsonschema.transforms
+      output_schemas_module: specs.pipelines.jsonlines_jsonschema.transforms

@@ -1,0 +1,13 @@
+[
+  {
+    "sensor_id": "S-1",
+    "celsius": 25.0,
+    "kelvin": 298.15
+  },
+  {
+    "sensor_id": "S-3",
+    "celsius": 120.5,
+    "kelvin": 393.65
+  }
+]
+

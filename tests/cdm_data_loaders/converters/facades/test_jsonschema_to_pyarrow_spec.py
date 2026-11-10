@@ -23,7 +23,12 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     RecursiveNonJsonTypeError,
     generate_pyarrow_schema,
 )
-from scripts.gen_converter_spec import JSONSCHEMA_TO_PYARROW, render
+from scripts.gen_converter_spec import (
+    JSONSCHEMA_TO_PYARROW,
+    render,
+    render_xsv_column_type_table,
+    render_xsv_config_table,
+)
 from tests.conftest import BASE_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
 from tests.pyarrow_spec_helpers import (
@@ -272,3 +277,16 @@ def test_generate_pyarrow_schema_fail_non_json_serializable_type_under_recursion
     }
     with pytest.raises(RecursiveNonJsonTypeError, match="recursive"):
         generate_pyarrow_schema(schema)
+
+
+@pytest.mark.docs
+def test_render_xsv_tables_pass_derived_from_converter_and_duckdb() -> None:
+    """render_xsv_config_table and render_xsv_column_type_table derive their rows from the converter and DuckDB."""
+    config_table = render_xsv_config_table()
+    assert "| `x-delimiter` |" in config_table
+    assert "| `x-has-header` |" in config_table
+
+    col_table = render_xsv_column_type_table()
+    assert "| `BIGINT` | `False` | `pa.int64()` | `False` |" in col_table
+    assert "| `VARCHAR` | `True` | `pa.string()` | `False` |" in col_table
+    assert "| `VARCHAR (auto)` | `False` | `pa.string()` | `True` |" in col_table

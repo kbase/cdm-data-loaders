@@ -1,0 +1,4 @@
+{"event_id": "evt-1", "kind": "login", "latency_ms": 12}
+
+{"event_id": "evt-bad", "kind": }
+{"event_id": "evt-2", "kind": "query", "latency_ms": 45}

@@ -1,0 +1,5 @@
+{"sample_id": "s-1", "ph": "6.5", "tags": ["soil", "core"]}
+
+{"sample_id": "s-bad-json", "ph": }
+{"sample_id": "s-bad-model", "ph": "not-a-float"}
+{"sample_id": "s-2", "ph": 7.8, "biome": "marine", "tags": ["water"]}

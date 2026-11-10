@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ScalarsNullabilityAndOrder",
+  "type": "object",
+  "required": [
+    "id",
+    "count",
+    "rank32",
+    "score",
+    "price",
+    "active",
+    "created_date",
+    "updated_at",
+    "status",
+    "opt_note",
+    "unlisted_tag"
+  ],
+  "properties": {
+    "score": {
+      "type": "number",
+      "description": "Floating-point score."
+    },
+    "id": {
+      "type": "string",
+      "title": "RecordId",
+      "description": "Primary record identifier."
+    },
+    "count": {
+      "type": "integer"
+    },
+    "rank32": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "price": {
+      "type": "number",
+      "multipleOf": 0.01
+    },
+    "active": {
+      "type": "boolean"
+    },
+    "created_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string"
+    },
+    "opt_note": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "extra_col": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Extra property omitted from required."
+    }
+  }
+}

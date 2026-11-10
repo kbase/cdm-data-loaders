@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GenomeRecord",
+  "type": "object",
+  "required": ["genome_id", "contig_count", "gc_content", "is_complete"],
+  "properties": {
+    "genome_id": {
+      "type": "string"
+    },
+    "contig_count": {
+      "type": "integer"
+    },
+    "gc_content": {
+      "type": "number"
+    },
+    "is_complete": {
+      "type": "boolean"
+    },
+    "strain": {
+      "type": ["string", "null"]
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assembly_stats": {
+      "type": "object",
+      "required": ["n50"],
+      "properties": {
+        "n50": {
+          "type": "integer"
+        },
+        "source_lab": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
+

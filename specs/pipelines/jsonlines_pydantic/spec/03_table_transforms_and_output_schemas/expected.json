@@ -1,0 +1,28 @@
+{
+  "assay_metrics": [
+    {
+      "assay_id": "A-1",
+      "metric": "od600"
+    },
+    {
+      "assay_id": "A-1",
+      "metric": "temp"
+    },
+    {
+      "assay_id": "A-2",
+      "metric": "dissolved_o2"
+    }
+  ],
+  "assays": [
+    {
+      "assay_id": "A-1",
+      "ph": 5.4,
+      "ph_bucket": "acidic"
+    },
+    {
+      "assay_id": "A-2",
+      "ph": 7.4,
+      "ph_bucket": "neutral_or_basic"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+[
+  {
+    "sensor_id": "S1",
+    "tag": "alpha"
+  },
+  {
+    "sensor_id": "S1",
+    "tag": "beta"
+  }
+]
+

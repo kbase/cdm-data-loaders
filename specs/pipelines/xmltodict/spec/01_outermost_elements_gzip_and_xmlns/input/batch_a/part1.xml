@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<library xmlns:cat="http://example.org/catalog">
+  <book id="b-1">
+    <title>Dune</title>
+    <related>
+      <book id="b-1a">
+        <title>Dune Messiah</title>
+      </book>
+    </related>
+  </book>
+</library>

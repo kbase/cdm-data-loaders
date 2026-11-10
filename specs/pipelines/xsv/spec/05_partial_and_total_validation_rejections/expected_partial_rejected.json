@@ -1,0 +1,16 @@
+[
+  {
+    "table_name": "records",
+    "source_file": "partial.csv",
+    "line_no": null,
+    "raw_record": null,
+    "error_detail": "1 out of 4 records invalid."
+  },
+  {
+    "table_name": "records",
+    "source_file": "partial.csv",
+    "line_no": null,
+    "raw_record": null,
+    "error_detail": "1 out of 3 records invalid."
+  }
+]

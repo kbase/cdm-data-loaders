@@ -1,0 +1,25 @@
+title: Table Transforms, Schema Conversion Skip, Multi-Table Fan-Out, and Output Schemas
+pipeline: jsonlines_pydantic
+settings_file: settings.toml
+rules:
+  - R-JSONL-PYDANTIC-SCHEMA-SKIP
+  - R-JSONL-PYDANTIC-VALIDATE-COERCE
+  - R-JSONL-PYDANTIC-TRANSFORMS
+  - R-JSONL-PYDANTIC-REPORT
+notes: |
+  - `entity_models`, `transforms_module`, and `output_schemas_module` all point to `specs.pipelines.jsonlines_pydantic.transforms`.
+  - Because `assays` has a registered `TABLE_TRANSFORMS` entry and an explicit `OUTPUT_SCHEMAS` entry, `build_output_schema_registry` skips automatic `PydanticToPyArrow` conversion for `AssayModel`.
+  - Validated `AssayModel` dictionaries pass through `transform_assay`, dropping `a-drop` (`exclude: true`), computing `ph_bucket` (`acidic` vs `neutral_or_basic`), and fanning out `metrics` to `assay_metrics`.
+runs:
+  - id: default
+    input_dir: input
+    expected_report:
+      status: completed
+      ingested_files:
+        - assays/assays.jsonl
+      pipeline_load_info_errs: null
+    expected_counts:
+      assays: 2
+      assay_metrics: 3
+    expected_tables: expected_tables.py
+    expected_json: expected.json

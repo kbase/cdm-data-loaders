@@ -1,0 +1,25 @@
+title: Single-Tag Extraction, Default Namespace Resolution, and PyArrow Coercion
+schema: schema.xsd
+xml_tag: item
+rules:
+  - R-XML-SINGLE-TARGET
+  - R-XML-DEFAULT-NS
+  - R-XML-COERCE
+  - R-XML-REPORT
+notes: |
+  - `schema.xsd` declares `targetNamespace="http://example.org/catalog"`, while `xml_tag` is configured as unprefixed `"item"` and `table_name="catalog_items"`.
+  - `parse_head_matter` reads `xmlns="http://example.org/catalog"` from the root `<catalog>` element and rewinds the stream to match `{http://example.org/catalog}item`.
+  - Each `<item>` element is converted into a nested dictionary (`_id`, `_active`, `name`, `quantity`, `price`, `released`, `notes`, and `tag`) and buffered into a `pa.Table` conforming to `EXPECTED_SCHEMA`.
+runs:
+  - id: default
+    data: data.xml
+    expected_json: expected.json
+    expected_table: expected_table.py
+    expected_report:
+      status: completed
+      ingested_files:
+        - data.xml
+      pipeline_load_info_errs: null
+    params:
+      table_name: catalog_items
+

@@ -1,0 +1,10 @@
+[
+  {
+    "error_detail": "Invalid MD5 sidecar content for articles/malformed.jsonl: 'not-a-valid-md5-line'",
+    "line_no": null,
+    "raw_record": null,
+    "source_file": "articles/malformed.jsonl",
+    "table_name": "articles"
+  }
+]
+

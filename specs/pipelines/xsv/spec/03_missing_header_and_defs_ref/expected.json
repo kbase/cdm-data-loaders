@@ -1,0 +1,18 @@
+[
+  {
+    "gene_id": "G0001",
+    "reads": 1500,
+    "organism": "Escherichia coli"
+  },
+  {
+    "gene_id": "G0002",
+    "reads": null,
+    "organism": "Bacillus subtilis"
+  },
+  {
+    "gene_id": "G0003",
+    "reads": 0,
+    "organism": "Saccharomyces cerevisiae"
+  }
+]
+

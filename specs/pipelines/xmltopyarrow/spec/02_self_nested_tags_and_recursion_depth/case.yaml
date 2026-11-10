@@ -1,0 +1,28 @@
+title: Self-Nested Target Tags and Configurable `max_recursion_depth`
+schema: schema.xsd
+xml_tag: category
+rules:
+  - R-XML-OUTERMOST
+  - R-XML-RECURSION
+notes: |
+  - `<category>` is both the target `xml_tag` and a self-referential child element inside `CategoryType`.
+  - `stream_xml_file` tracks open `<category>` depth and yields only the two outermost `<category>` elements (`cat-1` and `cat-2`), keeping nested `<category>` descendants (`cat-1-1`, `cat-1-1-1`) inside `cat-1`.
+  - Run `depth_2` (default `max_recursion_depth=2`) expands child `<category>` elements as structs and serializes grandchild `<category>` elements as JSON strings; run `depth_1` (`max_recursion_depth=1`) serializes direct child `<category>` elements as JSON strings.
+runs:
+  - id: depth_2
+    data: data.xml
+    expected_json: expected.json
+    expected_table: expected_table.py
+    params:
+      table_name: categories
+      max_recursion_depth: 2
+  - id: depth_1
+    data: data.xml
+    expected_json: expected_depth_1.json
+    expected_table: expected_table.py
+    schema_attr: EXPECTED_SCHEMA_DEPTH_1
+    table_attr: EXPECTED_TABLE_DEPTH_1
+    params:
+      table_name: categories
+      max_recursion_depth: 1
+

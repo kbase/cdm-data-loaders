@@ -1,0 +1,16 @@
+{
+  "_rejected": [
+    {
+      "error_detail": "MD5 mismatch for bad.jsonl: expected 00000000000000000000000000000000, got f23fdd271c6003eac5a5e788c4e86b84",
+      "source_file": "bad.jsonl",
+      "table_name": "events"
+    }
+  ],
+  "events": [
+    {
+      "event_id": "evt-10",
+      "kind": "ingest",
+      "latency_ms": 21
+    }
+  ]
+}

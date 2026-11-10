@@ -1,0 +1,28 @@
+{
+  "book_authors": [
+    {
+      "author": "Ursula K. Le Guin",
+      "book_id": "B-1"
+    },
+    {
+      "author": "Neil Gaiman",
+      "book_id": "B-2"
+    },
+    {
+      "author": "Terry Pratchett",
+      "book_id": "B-2"
+    }
+  ],
+  "books": [
+    {
+      "book_id": "B-1",
+      "title": "The Left Hand of Darkness",
+      "year": 1969
+    },
+    {
+      "book_id": "B-2",
+      "title": "Good Omens",
+      "year": 1990
+    }
+  ]
+}

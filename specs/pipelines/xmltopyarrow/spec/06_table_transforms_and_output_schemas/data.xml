@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<report>
+  <measurement id="s1" status="ok">
+    <value>1.25</value>
+    <tag>alpha</tag>
+    <tag>beta</tag>
+  </measurement>
+  <measurement id="s2" status="drop">
+    <value>9.99</value>
+    <tag>discard</tag>
+  </measurement>
+  <measurement id="s3" status="ok">
+    <value>3.5</value>
+  </measurement>
+</report>
+

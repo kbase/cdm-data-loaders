@@ -1,0 +1,18 @@
+title: Custom Delimiters, Comment Characters, Quotes, and Escapes
+schema: schema.json
+rules:
+  - R-XSV-DIALECT
+  - R-XSV-REQUIRED-COLS
+  - R-XSV-METASCHEMA
+  - R-XSV-CONFIG
+  - R-XSV-CLEAN-INPUT
+  - R-XSV-SECOND-PASS
+  - R-XSV-DUCKDB-TYPES
+  - R-XSV-ARROW-CAST
+notes: |
+  - Declares `"$schema": "https://json-schema.kbase.us/draft/2020-12-xsv/schema"` with `x-delimiter: ";"`, `x-comment-char: "%"`, `x-quote: "'"`, `x-escape: "\\"`, and `x-quoting-policy: "necessary"`.
+  - Lines starting with `%` are stripped as comments, while `#` inside `sample_id` (`"S#2"`) is preserved as data.
+  - `qsv input` strips surrounding single quotes (`'`) and unescapes `\'` sequences inside quoted fields.
+runs:
+  - id: default
+    data: data.csv
