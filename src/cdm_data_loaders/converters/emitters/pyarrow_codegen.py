@@ -22,6 +22,8 @@ PA_SCALAR_EXPR: Final[Mapping[pa.DataType, str]] = frozendict(
     {
         pa.null(): "pa.null()",
         pa.string(): "pa.string()",
+        pa.large_string(): "pa.large_string()",
+        pa.string_view(): "pa.string_view()",
         pa.bool_(): "pa.bool_()",
         pa.int8(): "pa.int8()",
         pa.int16(): "pa.int16()",
@@ -31,10 +33,14 @@ PA_SCALAR_EXPR: Final[Mapping[pa.DataType, str]] = frozendict(
         pa.uint16(): "pa.uint16()",
         pa.uint32(): "pa.uint32()",
         pa.uint64(): "pa.uint64()",
+        pa.float16(): "pa.float16()",
         pa.float32(): "pa.float32()",
         pa.float64(): "pa.float64()",
         pa.date32(): "pa.date32()",
+        pa.date64(): "pa.date64()",
         pa.binary(): "pa.binary()",
+        pa.large_binary(): "pa.large_binary()",
+        pa.binary_view(): "pa.binary_view()",
     }
 )
 
@@ -142,6 +148,12 @@ def _render_parametric_scalar_expr(dtype: pa.DataType) -> str:
         return f"pa.{fn}({_fmt_str(dtype.unit)})"
     if isinstance(dtype, pa.FixedSizeBinaryType):
         return f"pa.binary({dtype.byte_width})"
+    if isinstance(dtype, pa.DictionaryType):
+        idx_expr = render_scalar_type_expr(dtype.index_type)
+        val_expr = render_scalar_type_expr(dtype.value_type)
+        if dtype.ordered:
+            return f"pa.dictionary({idx_expr}, {val_expr}, ordered=True)"
+        return f"pa.dictionary({idx_expr}, {val_expr})"
     raise KeyError(dtype)
 
 

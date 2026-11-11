@@ -1,0 +1,22 @@
+title: Strings, Base64 Binary Columns, and Fixed-Point Decimals
+rules:
+  - R-SCALAR-STRING-BINARY
+  - R-SCALAR-DECIMAL
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-SER-ROW-ORDER
+  - R-SER-DECIMAL-STR
+  - R-SER-BASE64
+notes: |
+  Verifies that `string`, `large_string`, `binary`, `large_binary`, and `fixed_size_binary` map to `range: string`
+  while `decimal128` and `decimal256` map to `range: decimal` with plain fixed-point string serialization.
+schema: schema.py
+expected_schema: expected_schema.yaml
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

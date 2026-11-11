@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kbase.us/schemas/cdm/checkm2_quality_report.json",
+  "title": "CheckM2QualityReport",
+  "description": "CheckM2 genome completeness, contamination, and assembly metrics.",
+  "type": "object",
+  "properties": {
+    "bin_id": {
+      "type": "string",
+      "x-pyarrow": {
+        "arrow_type": "string"
+      },
+      "description": "MAG or isolate bin identifier."
+    },
+    "completeness": {
+      "type": "string",
+      "pattern": "^-?\\d{1,3}(\\.\\d{1,2})?$",
+      "x-pyarrow": {
+        "arrow_type": "decimal128",
+        "logical_type": "decimal",
+        "precision": 5,
+        "scale": 2
+      },
+      "description": "Estimated completeness %."
+    },
+    "contamination": {
+      "type": "string",
+      "pattern": "^-?\\d{1,3}(\\.\\d{1,2})?$",
+      "x-pyarrow": {
+        "arrow_type": "decimal128",
+        "logical_type": "decimal",
+        "precision": 5,
+        "scale": 2
+      },
+      "description": "Estimated contamination %."
+    },
+    "coding_density": {
+      "type": "number",
+      "x-pyarrow": {
+        "arrow_type": "float64"
+      }
+    },
+    "contig_n50": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615,
+      "x-pyarrow": {
+        "arrow_type": "uint64"
+      }
+    },
+    "total_contigs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "x-pyarrow": {
+        "arrow_type": "uint32"
+      }
+    },
+    "translation_table": {
+      "type": "integer",
+      "minimum": -2147483648,
+      "maximum": 2147483647,
+      "x-pyarrow": {
+        "arrow_type": "dictionary",
+        "value_type": "int32",
+        "index_type": "int8",
+        "ordered": false
+      }
+    },
+    "assembly_stats": {
+      "type": "object",
+      "properties": {
+        "genome_size_bp": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615,
+          "x-pyarrow": {
+            "arrow_type": "uint64"
+          }
+        },
+        "max_contig_bp": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615,
+          "x-pyarrow": {
+            "arrow_type": "uint64"
+          }
+        },
+        "gc_fraction": {
+          "type": "number",
+          "x-pyarrow": {
+            "arrow_type": "float32"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "genome_size_bp",
+        "max_contig_bp",
+        "gc_fraction"
+      ],
+      "x-pyarrow": {
+        "arrow_type": "struct"
+      }
+    },
+    "kmer_metrics": {
+      "anyOf": [
+        {
+          "type": "array",
+          "description": "PyArrow map rendered as key/value pairs (JSON object keys must be strings).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "x-pyarrow": {
+                  "arrow_type": "string"
+                }
+              },
+              "value": {
+                "type": "number",
+                "x-pyarrow": {
+                  "arrow_type": "float64"
+                }
+              }
+            },
+            "required": [
+              "key",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "x-pyarrow": {
+            "arrow_type": "map",
+            "keys_sorted": false
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "qc_warnings": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "x-pyarrow": {
+              "arrow_type": "string"
+            }
+          },
+          "x-pyarrow": {
+            "arrow_type": "list"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "bin_id",
+    "completeness",
+    "contamination",
+    "coding_density",
+    "contig_n50",
+    "total_contigs",
+    "translation_table",
+    "assembly_stats"
+  ]
+}

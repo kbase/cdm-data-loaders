@@ -1,0 +1,30 @@
+title: Booleans, Signed and Unsigned Integers, and IEEE-754 Floats
+rules:
+  - R-SCHEMA-INPUT
+  - R-NON-EMPTY-ROOT
+  - R-SCHEMA-IDENTITY
+  - R-IMPORTS-PREFIXES
+  - R-SLOT-NAME
+  - R-SLOT-ORDER
+  - R-UNIQUE-FIELD-NAMES
+  - R-NULL-REQUIRED
+  - R-SCALAR-BOOL
+  - R-SCALAR-SIGNED-INT
+  - R-SCALAR-UNSIGNED-INT
+  - R-SCALAR-FLOAT
+  - R-SER-ROW-ORDER
+  - R-SER-FINITE-FLOAT
+notes: |
+  Exercises default unnamed schema identity (`name: schema`, `id: urn:linkml:schema`, root class `Root`),
+  two's-complement `minimum_value`/`maximum_value` bounds on `int8`..`int64`, unsigned `0..2^w - 1` bounds on
+  `uint8`..`uint64`, `boolean`, and `float` ranges across `float16`/`float32`/`float64`.
+schema: schema.py
+expected_schema: expected_schema.yaml
+runs:
+  - id: boundary_values
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

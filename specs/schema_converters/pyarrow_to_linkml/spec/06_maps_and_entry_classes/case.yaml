@@ -1,0 +1,24 @@
+title: Map Entry Classes with Required vs Optional Values and Non-String Keys
+rules:
+  - R-SHAPE-MAP-CLASS
+  - R-SHAPE-STRUCT-CLASS
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-NULL-MAP-VALUE
+  - R-SCALAR-SIGNED-INT
+  - R-SER-ROW-ORDER
+  - R-SER-MAP-ENTRIES
+notes: |
+  Verifies that `pa.map_` synthesizes `<OwnerClass>_<field_name>_map` entry classes where `key` is always
+  `required: true`, `value` carries `required: true` iff `item_field.nullable == False`, and struct map values
+  produce a nested `<OwnerClass>_<field_name>_map_value` class.
+schema: schema.py
+expected_schema: expected_schema.yaml
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

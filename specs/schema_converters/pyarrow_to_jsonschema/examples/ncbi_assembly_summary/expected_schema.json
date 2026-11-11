@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kbase.us/schemas/cdm/ncbi_assembly_summary.json",
+  "title": "NcbiAssemblySummary",
+  "description": "Curated NCBI assembly metadata and replicon inventory.",
+  "type": "object",
+  "properties": {
+    "assembly_accession": {
+      "type": "string",
+      "x-pyarrow": {
+        "arrow_type": "string"
+      },
+      "description": "RefSeq/GenBank accession."
+    },
+    "bioproject": {
+      "anyOf": [
+        {
+          "type": "string",
+          "x-pyarrow": {
+            "arrow_type": "string"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tax_id": {
+      "type": "integer",
+      "minimum": -2147483648,
+      "maximum": 2147483647,
+      "x-pyarrow": {
+        "arrow_type": "int32"
+      }
+    },
+    "is_reference": {
+      "type": "boolean",
+      "x-pyarrow": {
+        "arrow_type": "bool"
+      }
+    },
+    "assembly_level": {
+      "type": "string",
+      "x-pyarrow": {
+        "arrow_type": "dictionary",
+        "value_type": "string",
+        "index_type": "int8",
+        "ordered": false
+      }
+    },
+    "release_date": {
+      "type": "string",
+      "format": "date",
+      "x-pyarrow": {
+        "arrow_type": "date32"
+      }
+    },
+    "ingested_at": {
+      "type": "string",
+      "format": "date-time",
+      "x-pyarrow": {
+        "arrow_type": "timestamp",
+        "logical_type": "timestamp-with-tz",
+        "unit": "us",
+        "tz": "UTC"
+      }
+    },
+    "gc_percent": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^-?\\d{1,3}(\\.\\d{1,2})?$",
+          "x-pyarrow": {
+            "arrow_type": "decimal128",
+            "logical_type": "decimal",
+            "precision": 5,
+            "scale": 2
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "fasta_md5": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "x-pyarrow": {
+        "arrow_type": "fixed_size_binary",
+        "byte_width": 16
+      },
+      "description": "16-byte raw MD5 digest."
+    },
+    "replicons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "accession": {
+            "type": "string",
+            "x-pyarrow": {
+              "arrow_type": "string"
+            }
+          },
+          "molecule_type": {
+            "type": "string",
+            "x-pyarrow": {
+              "arrow_type": "string"
+            }
+          },
+          "length_bp": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 18446744073709551615,
+            "x-pyarrow": {
+              "arrow_type": "uint64"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "accession",
+          "molecule_type",
+          "length_bp"
+        ],
+        "x-pyarrow": {
+          "arrow_type": "struct"
+        }
+      },
+      "x-pyarrow": {
+        "arrow_type": "list"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "assembly_accession",
+    "tax_id",
+    "is_reference",
+    "assembly_level",
+    "release_date",
+    "ingested_at",
+    "fasta_md5",
+    "replicons"
+  ]
+}

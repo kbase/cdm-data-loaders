@@ -1,0 +1,73 @@
+# Error specification fixtures for the PyArrow -> LinkML converter.
+# `code` must match the `code` of a PyArrowToLinkMLError subclass in
+# cdm_data_loaders.converters.facades.pyarrow_to_linkml. `file` is relative to this directory.
+# `match` is a regex applied to the exception message.
+errors:
+  - file: e01_non_schema_input.py
+    code: E1
+    match: Expected a pyarrow\.Schema instance
+    description: Input is a `pa.Field` rather than a `pa.Schema`.
+  - file: e02a_empty_root_schema.py
+    code: E2
+    match: Empty PyArrow schema with 0 fields
+    description: Root `pa.schema([])` declares zero fields.
+  - file: e02b_empty_nested_struct.py
+    code: E2
+    match: Empty PyArrow struct with 0 fields
+    description: Nested `pa.struct([])` column declares zero child fields.
+  - file: e03a_duplicate_root_field.py
+    code: E3
+    match: Duplicate field name 'id' in PyArrow schema
+    description: Root `pa.Schema` declares two fields named `'id'`.
+  - file: e03b_duplicate_struct_field.py
+    code: E3
+    match: Duplicate field name 'tag' in PyArrow struct
+    description: Nested `pa.struct` declares duplicate child fields named `'tag'`.
+  - file: e04_null_only_field.py
+    code: E4
+    match: Standalone PyArrow null type
+    description: Column uses standalone `pa.null()` with no value type.
+  - file: e05_negative_scale_decimal.py
+    code: E5
+    match: Invalid PyArrow decimal scale/precision
+    description: Column uses `pa.decimal128(6, -2)` with negative scale.
+  - file: e06a_duration_field.py
+    code: E6
+    match: duration/interval
+    description: Column uses `pa.duration("us")`.
+  - file: e06b_interval_field.py
+    code: E6
+    match: duration/interval
+    description: Column uses `pa.month_day_nano_interval()`.
+  - file: e07a_sparse_union_field.py
+    code: E7
+    match: sparse union
+    description: Column uses `pa.sparse_union(...)`.
+  - file: e07b_dense_union_field.py
+    code: E7
+    match: dense union
+    description: Column uses `pa.dense_union(...)`.
+  - file: e08a_run_end_encoded_field.py
+    code: E8
+    match: run_end_encoded
+    description: Column uses `pa.run_end_encoded(pa.int32(), pa.string())`.
+  - file: e08b_extension_type_field.py
+    code: E8
+    match: Unsupported PyArrow extension type
+    description: Column uses Arrow extension type `pa.uuid()`.
+  - file: e09a_empty_field_name.py
+    code: E9
+    match: LinkML slot names must be non-empty
+    description: Column declares an empty field name `""`.
+  - file: e09b_whitespace_field_name.py
+    code: E9
+    match: LinkML slot names must be non-empty
+    description: Column declares a whitespace-only field name `"   "`.
+  - file: e10a_nested_list_in_list.py
+    code: E10
+    match: nested 'array' items inside array field
+    description: Column uses a 2D nested list `pa.list_(pa.list_(pa.int64()))`.
+  - file: e10b_nested_map_in_list.py
+    code: E10
+    match: nested 'map' items inside array field
+    description: Column uses a list of maps `pa.list_(pa.map_(pa.string(), pa.int64()))`.

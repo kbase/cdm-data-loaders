@@ -1,0 +1,26 @@
+title: Strings, Binary Encodings, and Fixed-Point Decimals
+rules:
+  - R-SCALAR-STRING
+  - R-SCALAR-BINARY
+  - R-SCALAR-DECIMAL
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-META-X-PYARROW-TYPE
+  - R-SER-ROW-ORDER
+  - R-SER-DECIMAL-STR
+  - R-SER-BASE64
+notes: |
+  Covers UTF-8 string variants (`string`, `large_string`, `string_view`), Base64-encoded binary variants
+  (`binary`, `large_binary`, `binary_view`, `fixed_size_binary`), and regex-constrained fixed-point decimals
+  (`decimal128` with `scale < precision`, `scale == precision`, `scale == 0`, and `decimal256` including tiny
+  values formatted without scientific notation).
+schema: schema.py
+expected_schema: expected_schema.json
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

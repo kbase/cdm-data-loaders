@@ -1,0 +1,31 @@
+title: UniRef Sequence Cluster Inventory Table
+rules:
+  - R-ENVELOPE-ID-TITLE
+  - R-SHAPE-STRUCT
+  - R-SHAPE-LIST
+  - R-SHAPE-FIXED-LIST
+  - R-SHAPE-MAP
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-SCALAR-UNSIGNED-INT
+  - R-SCALAR-FLOAT
+  - R-SCALAR-STRING
+  - R-SCALAR-BINARY
+  - R-SCALAR-TIMESTAMP
+  - R-META-DESCRIPTION
+  - R-META-X-PYARROW-TYPE
+  - R-META-X-PYARROW-CUSTOM
+  - R-SER-ROW-ORDER
+  - R-SER-BASE64
+  - R-SER-TEMPORAL-ISO
+  - R-SER-MAP-ENTRIES
+schema: schema.py
+expected_schema: expected_schema.json
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

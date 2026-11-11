@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "d32": {
+      "type": "string",
+      "format": "date",
+      "x-pyarrow": {
+        "arrow_type": "date32"
+      }
+    },
+    "d64": {
+      "type": "string",
+      "format": "date",
+      "x-pyarrow": {
+        "arrow_type": "date64"
+      }
+    },
+    "t32_s": {
+      "type": "string",
+      "format": "time",
+      "x-pyarrow": {
+        "arrow_type": "time32",
+        "unit": "s"
+      }
+    },
+    "t32_ms": {
+      "type": "string",
+      "format": "time",
+      "x-pyarrow": {
+        "arrow_type": "time32",
+        "unit": "ms"
+      }
+    },
+    "t64_us": {
+      "type": "string",
+      "format": "time",
+      "x-pyarrow": {
+        "arrow_type": "time64",
+        "unit": "us"
+      }
+    },
+    "t64_ns": {
+      "type": "string",
+      "format": "time",
+      "x-pyarrow": {
+        "arrow_type": "time64",
+        "unit": "ns"
+      }
+    },
+    "ts_s_utc": {
+      "type": "string",
+      "format": "date-time",
+      "x-pyarrow": {
+        "arrow_type": "timestamp",
+        "logical_type": "timestamp-with-tz",
+        "unit": "s",
+        "tz": "UTC"
+      }
+    },
+    "ts_ms_utc": {
+      "type": "string",
+      "format": "date-time",
+      "x-pyarrow": {
+        "arrow_type": "timestamp",
+        "logical_type": "timestamp-with-tz",
+        "unit": "ms",
+        "tz": "UTC"
+      }
+    },
+    "ts_us_la": {
+      "type": "string",
+      "format": "date-time",
+      "x-pyarrow": {
+        "arrow_type": "timestamp",
+        "logical_type": "timestamp-with-tz",
+        "unit": "us",
+        "tz": "America/Los_Angeles"
+      }
+    },
+    "ts_ns_utc": {
+      "type": "string",
+      "format": "date-time",
+      "x-pyarrow": {
+        "arrow_type": "timestamp",
+        "logical_type": "timestamp-with-tz",
+        "unit": "ns",
+        "tz": "UTC"
+      }
+    },
+    "ts_naive_us": {
+      "type": "string",
+      "description": "ISO 8601 timestamp with no timezone attached.",
+      "x-pyarrow": {
+        "arrow_type": "timestamp",
+        "logical_type": "timestamp-without-tz",
+        "unit": "us"
+      }
+    },
+    "ts_naive_ns_opt": {
+      "anyOf": [
+        {
+          "type": "string",
+          "description": "ISO 8601 timestamp with no timezone attached.",
+          "x-pyarrow": {
+            "arrow_type": "timestamp",
+            "logical_type": "timestamp-without-tz",
+            "unit": "ns"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "d32",
+    "d64",
+    "t32_s",
+    "t32_ms",
+    "t64_us",
+    "t64_ns",
+    "ts_s_utc",
+    "ts_ms_utc",
+    "ts_us_la",
+    "ts_ns_utc",
+    "ts_naive_us"
+  ]
+}

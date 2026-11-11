@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kbase.us/schemas/cdm/uniref_cluster_entry.json",
+  "title": "UniRefClusterEntry",
+  "description": "UniRef cluster representative and member summary.",
+  "type": "object",
+  "properties": {
+    "cluster_id": {
+      "type": "string",
+      "x-pyarrow": {
+        "arrow_type": "string"
+      },
+      "description": "UniRef cluster identifier."
+    },
+    "cluster_name": {
+      "type": "string",
+      "x-pyarrow": {
+        "arrow_type": "large_string"
+      }
+    },
+    "identity_threshold": {
+      "type": "number",
+      "x-pyarrow": {
+        "arrow_type": "float32",
+        "metadata": {
+          "unit": "fraction"
+        }
+      }
+    },
+    "member_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "x-pyarrow": {
+        "arrow_type": "uint32"
+      }
+    },
+    "updated_at": {
+      "type": "string",
+      "description": "ISO 8601 timestamp with no timezone attached.",
+      "x-pyarrow": {
+        "arrow_type": "timestamp",
+        "logical_type": "timestamp-without-tz",
+        "unit": "s"
+      }
+    },
+    "representative": {
+      "type": "object",
+      "properties": {
+        "uniprot_acc": {
+          "type": "string",
+          "x-pyarrow": {
+            "arrow_type": "string"
+          }
+        },
+        "length_aa": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "x-pyarrow": {
+            "arrow_type": "uint32"
+          }
+        },
+        "crc64": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "x-pyarrow": {
+            "arrow_type": "fixed_size_binary",
+            "byte_width": 8
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "uniprot_acc",
+        "length_aa",
+        "crc64"
+      ],
+      "x-pyarrow": {
+        "arrow_type": "struct"
+      }
+    },
+    "embedding_preview": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "x-pyarrow": {
+              "arrow_type": "float32"
+            }
+          },
+          "minItems": 4,
+          "maxItems": 4,
+          "x-pyarrow": {
+            "arrow_type": "fixed_size_list",
+            "list_size": 4
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "member_accessions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "x-pyarrow": {
+          "arrow_type": "string"
+        }
+      },
+      "x-pyarrow": {
+        "arrow_type": "large_list"
+      }
+    },
+    "taxon_counts": {
+      "type": "array",
+      "description": "PyArrow map rendered as key/value pairs (JSON object keys must be strings).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647,
+            "x-pyarrow": {
+              "arrow_type": "int32"
+            }
+          },
+          "value": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295,
+            "x-pyarrow": {
+              "arrow_type": "uint32"
+            }
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "x-pyarrow": {
+        "arrow_type": "map",
+        "keys_sorted": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "cluster_id",
+    "cluster_name",
+    "identity_threshold",
+    "member_count",
+    "updated_at",
+    "representative",
+    "member_accessions",
+    "taxon_counts"
+  ],
+  "x-pyarrow": {
+    "metadata": {
+      "source_release": "2026_02"
+    }
+  }
+}

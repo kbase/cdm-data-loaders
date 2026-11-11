@@ -1,0 +1,39 @@
+name: AssayMeasurement
+description: High-throughput growth assay measurement records.
+id: https://kbase.us/linkml/assay_measurement
+imports:
+- linkml:types
+prefixes:
+  AssayMeasurement:
+    prefix_prefix: AssayMeasurement
+    prefix_reference: https://kbase.us/linkml/assay_measurement#
+  linkml:
+    prefix_prefix: linkml
+    prefix_reference: https://w3id.org/linkml/
+default_prefix: AssayMeasurement
+classes:
+  AssayMeasurement:
+    name: AssayMeasurement
+    attributes:
+      assay_id:
+        name: assay_id
+        description: Primary assay identifier.
+        range: string
+        required: true
+      od600:
+        name: od600
+        description: Optical density at 600 nm.
+        range: float
+      replicate_num:
+        name: replicate_num
+        range: integer
+        required: true
+        minimum_value: -32768
+        maximum_value: 32767
+      notes:
+        name: notes
+        range: string
+      reagents:
+        name: reagents
+        range: string
+        multivalued: true

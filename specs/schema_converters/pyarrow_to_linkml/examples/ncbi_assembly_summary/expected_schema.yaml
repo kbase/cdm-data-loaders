@@ -1,0 +1,77 @@
+name: NcbiAssemblySummary
+description: Curated NCBI assembly metadata and replicon inventory.
+id: https://kbase.us/linkml/cdm/ncbi_assembly_summary
+imports:
+- linkml:types
+prefixes:
+  NcbiAssemblySummary:
+    prefix_prefix: NcbiAssemblySummary
+    prefix_reference: https://kbase.us/linkml/cdm/ncbi_assembly_summary#
+  linkml:
+    prefix_prefix: linkml
+    prefix_reference: https://w3id.org/linkml/
+default_prefix: NcbiAssemblySummary
+classes:
+  NcbiAssemblySummary_replicons:
+    name: NcbiAssemblySummary_replicons
+    attributes:
+      accession:
+        name: accession
+        range: string
+        required: true
+      molecule_type:
+        name: molecule_type
+        range: string
+        required: true
+      length_bp:
+        name: length_bp
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 18446744073709551615
+  NcbiAssemblySummary:
+    name: NcbiAssemblySummary
+    attributes:
+      assembly_accession:
+        name: assembly_accession
+        description: RefSeq/GenBank accession.
+        range: string
+        required: true
+      bioproject:
+        name: bioproject
+        range: string
+      tax_id:
+        name: tax_id
+        range: integer
+        required: true
+        minimum_value: -2147483648
+        maximum_value: 2147483647
+      is_reference:
+        name: is_reference
+        range: boolean
+        required: true
+      assembly_level:
+        name: assembly_level
+        range: string
+        required: true
+      release_date:
+        name: release_date
+        range: date
+        required: true
+      ingested_at:
+        name: ingested_at
+        range: datetime
+        required: true
+      gc_percent:
+        name: gc_percent
+        range: decimal
+      fasta_md5:
+        name: fasta_md5
+        description: 16-byte raw MD5 digest.
+        range: string
+        required: true
+      replicons:
+        name: replicons
+        range: NcbiAssemblySummary_replicons
+        required: true
+        multivalued: true

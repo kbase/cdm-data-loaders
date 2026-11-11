@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "entry_id": {
+      "type": "string",
+      "x-pyarrow": {
+        "arrow_type": "string"
+      }
+    },
+    "biotype": {
+      "type": "string",
+      "x-pyarrow": {
+        "arrow_type": "dictionary",
+        "value_type": "string",
+        "index_type": "int16",
+        "ordered": false
+      },
+      "description": "Controlled biotype term."
+    },
+    "priority_tier": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807,
+          "x-pyarrow": {
+            "arrow_type": "dictionary",
+            "value_type": "int64",
+            "index_type": "int8",
+            "ordered": true
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rate_bucket": {
+      "type": "string",
+      "pattern": "^-?\\d{1,6}(\\.\\d{1,2})?$",
+      "x-pyarrow": {
+        "arrow_type": "dictionary",
+        "logical_type": "decimal",
+        "precision": 8,
+        "scale": 2,
+        "value_type": "decimal128",
+        "index_type": "int8",
+        "ordered": false
+      }
+    },
+    "xref_hits": {
+      "type": "array",
+      "description": "PyArrow map rendered as key/value pairs (JSON object keys must be strings).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "External database key.",
+            "x-pyarrow": {
+              "arrow_type": "string"
+            }
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "db": {
+                    "type": "string",
+                    "x-pyarrow": {
+                      "arrow_type": "string"
+                    }
+                  },
+                  "evalue": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "x-pyarrow": {
+                          "arrow_type": "float64"
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "db"
+                ],
+                "x-pyarrow": {
+                  "arrow_type": "struct"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "x-pyarrow": {
+        "arrow_type": "map",
+        "keys_sorted": false
+      }
+    },
+    "coverage_by_bin": {
+      "anyOf": [
+        {
+          "type": "array",
+          "description": "PyArrow map rendered as key/value pairs (JSON object keys must be strings).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "integer",
+                "minimum": -2147483648,
+                "maximum": 2147483647,
+                "x-pyarrow": {
+                  "arrow_type": "int32"
+                }
+              },
+              "value": {
+                "type": "number",
+                "x-pyarrow": {
+                  "arrow_type": "float64"
+                }
+              }
+            },
+            "required": [
+              "key",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "x-pyarrow": {
+            "arrow_type": "map",
+            "keys_sorted": true
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "entry_id",
+    "biotype",
+    "rate_bucket",
+    "xref_hits"
+  ]
+}

@@ -1,0 +1,34 @@
+title: CheckM2 Genome Quality and Contig Statistics Table
+rules:
+  - R-SCHEMA-INPUT
+  - R-SCHEMA-IDENTITY
+  - R-IMPORTS-PREFIXES
+  - R-SLOT-NAME
+  - R-SLOT-ORDER
+  - R-SHAPE-STRUCT-CLASS
+  - R-SHAPE-LIST-SLOT
+  - R-SHAPE-MAP-CLASS
+  - R-SHAPE-DICTIONARY
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-NULL-MAP-VALUE
+  - R-SCALAR-SIGNED-INT
+  - R-SCALAR-UNSIGNED-INT
+  - R-SCALAR-FLOAT
+  - R-SCALAR-DECIMAL
+  - R-SCALAR-STRING-BINARY
+  - R-META-SCHEMA-DESC
+  - R-META-SLOT-DESC
+  - R-SER-ROW-ORDER
+  - R-SER-DECIMAL-STR
+  - R-SER-MAP-ENTRIES
+schema: schema.py
+expected_schema: expected_schema.yaml
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

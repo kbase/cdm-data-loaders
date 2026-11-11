@@ -1,0 +1,59 @@
+name: schema
+id: urn:linkml:schema
+imports:
+- linkml:types
+prefixes:
+  schema:
+    prefix_prefix: schema
+    prefix_reference: urn:linkml:schema#
+  linkml:
+    prefix_prefix: linkml
+    prefix_reference: https://w3id.org/linkml/
+default_prefix: schema
+classes:
+  Root:
+    name: Root
+    attributes:
+      d32:
+        name: d32
+        range: date
+        required: true
+      d64:
+        name: d64
+        range: date
+        required: true
+      t32_s:
+        name: t32_s
+        range: time
+        required: true
+      t32_ms:
+        name: t32_ms
+        range: time
+        required: true
+      t64_us:
+        name: t64_us
+        range: time
+        required: true
+      t64_ns:
+        name: t64_ns
+        range: time
+        required: true
+      ts_s_utc:
+        name: ts_s_utc
+        range: datetime
+        required: true
+      ts_us_la:
+        name: ts_us_la
+        range: datetime
+        required: true
+      ts_ns_utc:
+        name: ts_ns_utc
+        range: datetime
+        required: true
+      ts_naive_us:
+        name: ts_naive_us
+        range: datetime
+        required: true
+      ts_naive_ns_opt:
+        name: ts_naive_ns_opt
+        range: datetime

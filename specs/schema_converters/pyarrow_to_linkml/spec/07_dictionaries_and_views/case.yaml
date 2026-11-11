@@ -1,0 +1,26 @@
+title: Dictionary-Encoded Columns and String/Binary/List View Variants
+rules:
+  - R-SHAPE-DICTIONARY
+  - R-SHAPE-LIST-SLOT
+  - R-SCALAR-UNSIGNED-INT
+  - R-SCALAR-DECIMAL
+  - R-SCALAR-STRING-BINARY
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-SER-ROW-ORDER
+  - R-SER-DECIMAL-STR
+  - R-SER-BASE64
+notes: |
+  Verifies that `pa.dictionary` unwraps to the underlying value range and integer bounds (`uint16` ->
+  `0..65535`), and that Arrow view types (`string_view`, `binary_view`, `list_view`, `large_list_view`) map to
+  standard LinkML string and multivalued slots.
+schema: schema.py
+expected_schema: expected_schema.yaml
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

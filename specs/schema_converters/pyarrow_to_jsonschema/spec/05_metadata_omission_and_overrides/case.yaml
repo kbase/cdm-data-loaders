@@ -1,0 +1,29 @@
+title: Explicit Envelope Overrides and Omitting `x-pyarrow` Metadata
+rules:
+  - R-DIALECT
+  - R-ENVELOPE-ID-TITLE
+  - R-ENVELOPE-CLOSED
+  - R-META-DESCRIPTION
+  - R-META-OMIT-FLAG
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-SER-ROW-ORDER
+notes: |
+  Verifies that explicit `schema_name` and `schema_id` parameters override `metadata[b"title"]` and
+  `metadata[b"$id"]`, and that `include_pyarrow_metadata=False` strips all `"x-pyarrow"` blocks while keeping
+  standard Draft 2020-12 keywords (`$schema`, `$id`, `title`, `description`, `minimum`, `maximum`, `pattern`,
+  `format`, `contentEncoding`).
+schema: schema.py
+expected_schema: expected_schema.json
+runs:
+  - id: without_pyarrow_metadata
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2
+    params:
+      schema_name: CleanSample
+      schema_id: https://kbase.us/schemas/clean_sample.json
+      include_pyarrow_metadata: false

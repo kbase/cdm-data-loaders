@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "utf8_str": {
+      "type": "string",
+      "x-pyarrow": {
+        "arrow_type": "string"
+      }
+    },
+    "large_str": {
+      "type": "string",
+      "x-pyarrow": {
+        "arrow_type": "large_string"
+      }
+    },
+    "view_str": {
+      "type": "string",
+      "x-pyarrow": {
+        "arrow_type": "string_view"
+      }
+    },
+    "raw_bin": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "x-pyarrow": {
+        "arrow_type": "binary"
+      }
+    },
+    "large_bin": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "x-pyarrow": {
+        "arrow_type": "large_binary"
+      }
+    },
+    "view_bin": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "x-pyarrow": {
+        "arrow_type": "binary_view"
+      }
+    },
+    "fixed_bin_4": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "x-pyarrow": {
+        "arrow_type": "fixed_size_binary",
+        "byte_width": 4
+      }
+    },
+    "dec_standard": {
+      "type": "string",
+      "pattern": "^-?\\d{1,8}(\\.\\d{1,2})?$",
+      "x-pyarrow": {
+        "arrow_type": "decimal128",
+        "logical_type": "decimal",
+        "precision": 10,
+        "scale": 2
+      }
+    },
+    "dec_fraction_only": {
+      "type": "string",
+      "pattern": "^-?0(\\.\\d{1,4})?$",
+      "x-pyarrow": {
+        "arrow_type": "decimal128",
+        "logical_type": "decimal",
+        "precision": 4,
+        "scale": 4
+      }
+    },
+    "dec_integer_only": {
+      "type": "string",
+      "pattern": "^-?\\d{1,8}$",
+      "x-pyarrow": {
+        "arrow_type": "decimal128",
+        "logical_type": "decimal",
+        "precision": 8,
+        "scale": 0
+      }
+    },
+    "dec256_high_prec": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^-?\\d{1,40}(\\.\\d{1,10})?$",
+          "x-pyarrow": {
+            "arrow_type": "decimal256",
+            "logical_type": "decimal",
+            "precision": 50,
+            "scale": 10
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "utf8_str",
+    "large_str",
+    "view_str",
+    "raw_bin",
+    "large_bin",
+    "view_bin",
+    "fixed_bin_4",
+    "dec_standard",
+    "dec_fraction_only",
+    "dec_integer_only"
+  ]
+}

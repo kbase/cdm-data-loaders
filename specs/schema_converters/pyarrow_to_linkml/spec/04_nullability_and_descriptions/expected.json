@@ -1,0 +1,19 @@
+[
+  {
+    "assay_id": "ASY-1001",
+    "od600": 0.825,
+    "replicate_num": 1,
+    "notes": "Exponential phase",
+    "reagents": [
+      "R-10",
+      "R-22"
+    ]
+  },
+  {
+    "assay_id": "ASY-1002",
+    "od600": null,
+    "replicate_num": 2,
+    "notes": null,
+    "reagents": null
+  }
+]

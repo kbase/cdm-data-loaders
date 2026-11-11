@@ -1,0 +1,46 @@
+name: CatalogViewRecord
+id: urn:linkml:CatalogViewRecord
+imports:
+- linkml:types
+prefixes:
+  CatalogViewRecord:
+    prefix_prefix: CatalogViewRecord
+    prefix_reference: urn:linkml:CatalogViewRecord#
+  linkml:
+    prefix_prefix: linkml
+    prefix_reference: https://w3id.org/linkml/
+default_prefix: CatalogViewRecord
+classes:
+  CatalogViewRecord:
+    name: CatalogViewRecord
+    attributes:
+      id:
+        name: id
+        range: string
+        required: true
+      payload_view:
+        name: payload_view
+        range: string
+        required: true
+      category:
+        name: category
+        range: string
+        required: true
+      rank_code:
+        name: rank_code
+        range: integer
+        minimum_value: 0
+        maximum_value: 65535
+      weight_tier:
+        name: weight_tier
+        range: decimal
+        required: true
+      tags_view:
+        name: tags_view
+        range: string
+        required: true
+        multivalued: true
+      scores_large_view:
+        name: scores_large_view
+        range: integer
+        multivalued: true

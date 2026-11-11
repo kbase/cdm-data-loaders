@@ -1,0 +1,27 @@
+title: Nullability, Envelope Metadata, Descriptions, and Custom Arrow Metadata
+rules:
+  - R-ENVELOPE-ID-TITLE
+  - R-ENVELOPE-CLOSED
+  - R-FIELD-NAME
+  - R-FIELD-ORDER
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-META-DESCRIPTION
+  - R-META-X-PYARROW-TYPE
+  - R-META-X-PYARROW-CUSTOM
+  - R-SER-ROW-ORDER
+notes: |
+  Demonstrates resolution of `"title"`, `"$id"`, and `"description"` from `pa.Schema.metadata`, preservation of
+  custom schema and field metadata under `x-pyarrow.metadata`, placement of field `"description"` and
+  `x-pyarrow.metadata` outside `"anyOf"` on nullable fields, and omission of `"required"` on a nested struct
+  whose fields are all nullable.
+schema: schema.py
+expected_schema: expected_schema.json
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

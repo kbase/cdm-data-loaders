@@ -9,7 +9,7 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Comparati
 `cdm-data-loaders` separates domain logic from pipeline orchestration:
 
 - **Core and Settings (`cdm_data_loaders.core`)**: `pydantic-settings` base class hierarchy (`CdmDataLoadersBase` -> `LoggerSettings` -> `LocalInputOutputSettings` -> `CtsSettings` -> `FileFormatIngestSettings` -> `XmlIngestSettings` -> `SingleTableXmlIngestSettings`) and declarative table/column transforms (`TransformSettingsMixin`).
-- **Schema Converters (`cdm_data_loaders.converters`)**: Hub-and-spoke schema translation via a frozen Intermediate Representation (`IR`): source readers (`JsonSchemaReader`, `DltReader`, `IcebergReader`) and target emitters (`JsonSchemaEmitter`, `DltEmitter`, `PySparkEmitter`, `PyArrowEmitter`, `LinkMLEmitter`).
+- **Schema Converters (`cdm_data_loaders.converters`)**: Hub-and-spoke schema translation via a frozen Intermediate Representation (`IR`): source readers (`JsonSchemaReader`, `DltReader`, `IcebergReader`, `PyArrowReader`, `PydanticReader`, `XsdReader`) and target emitters (`JsonSchemaEmitter`, `DltEmitter`, `PySparkEmitter`, `PyArrowEmitter`, `LinkMLEmitter`).
 - **Readers and Parsers (`cdm_data_loaders.readers`, `cdm_data_loaders.parsers`)**: Streaming readers for JSONLines, XML (`xmltodict` and XSD-guided PyArrow), XSV (`qsv` + JSON Schema `x-xsv-config`), and domain parsers for UniProt/UniRef, NCBI Datasets, CheckM2, and BBMap.
 - **Pipelines (`cdm_data_loaders.pipelines`)**: `dlt`-backed ingestion pipelines designed to run locally via `uv run` or in containers on the KBase Container Task Service (CTS).
 
@@ -36,6 +36,8 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Comparati
 - **[JSON Schema to PyArrow Specification](jsonschema_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
 - **[Pydantic to PyArrow Specification](pydantic_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
 - **[XSD to PyArrow Specification](xsd_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
+- **[PyArrow to JSON Schema Specification](pyarrow_to_jsonschema_specification.md)**: Auto-generated conversion rules, `x-pyarrow` extension contract, test cases, and error catalog.
+- **[PyArrow to LinkML Specification](pyarrow_to_linkml_specification.md)**: Auto-generated conversion rules, LinkML slot/class mapping, test cases, and error catalog.
 - **[XSV (CSV/TSV) Schema and Pipeline Specification](xsv_specification.md)**: Auto-generated XSV schema validation, `x-xsv-config` parsing, PyArrow conversion, two-pass `qsv` cleaning/validation, DuckDB coercion, and pipeline execution specification.
 - **[XML to PyArrow Pipeline Specification](xmltopyarrow_specification.md)**: Auto-generated target selection, preset pipelines, streaming XML-to-PyArrow coercion, MD5 pre-processing, dead-letter routing, and table transform specification.
 - **[XML to Dict Pipeline Specification](xmltodict_specification.md)**: Auto-generated outermost `<xml_tag>` streaming, `xmltodict` parsing (`_` attribute prefix and `_xmlns` stripping), MD5 pre-processing, dead-letter routing, and table transform specification.

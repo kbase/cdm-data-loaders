@@ -1,0 +1,64 @@
+name: SampleReadMap
+id: urn:linkml:SampleReadMap
+imports:
+- linkml:types
+prefixes:
+  SampleReadMap:
+    prefix_prefix: SampleReadMap
+    prefix_reference: urn:linkml:SampleReadMap#
+  linkml:
+    prefix_prefix: linkml
+    prefix_reference: https://w3id.org/linkml/
+default_prefix: SampleReadMap
+classes:
+  SampleReadMap_read_counts_map:
+    name: SampleReadMap_read_counts_map
+    attributes:
+      key:
+        name: key
+        range: string
+        required: true
+      value:
+        name: value
+        range: integer
+        required: true
+        minimum_value: -9223372036854775808
+        maximum_value: 9223372036854775807
+  SampleReadMap_taxid_hits_map_value:
+    name: SampleReadMap_taxid_hits_map_value
+    attributes:
+      score:
+        name: score
+        range: float
+        required: true
+      note:
+        name: note
+        range: string
+  SampleReadMap_taxid_hits_map:
+    name: SampleReadMap_taxid_hits_map
+    attributes:
+      key:
+        name: key
+        range: integer
+        required: true
+        minimum_value: -2147483648
+        maximum_value: 2147483647
+      value:
+        name: value
+        range: SampleReadMap_taxid_hits_map_value
+  SampleReadMap:
+    name: SampleReadMap
+    attributes:
+      sample_id:
+        name: sample_id
+        range: string
+        required: true
+      read_counts:
+        name: read_counts
+        range: SampleReadMap_read_counts_map
+        required: true
+        multivalued: true
+      taxid_hits:
+        name: taxid_hits
+        range: SampleReadMap_taxid_hits_map
+        multivalued: true

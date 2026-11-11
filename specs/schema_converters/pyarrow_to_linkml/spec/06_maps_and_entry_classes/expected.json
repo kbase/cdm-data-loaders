@@ -1,0 +1,33 @@
+[
+  {
+    "sample_id": "SMP-01",
+    "read_counts": [
+      {
+        "key": "raw",
+        "value": 150000
+      },
+      {
+        "key": "trimmed",
+        "value": 142500
+      }
+    ],
+    "taxid_hits": [
+      {
+        "key": 562,
+        "value": {
+          "score": 99.5,
+          "note": "Escherichia coli"
+        }
+      },
+      {
+        "key": 1280,
+        "value": null
+      }
+    ]
+  },
+  {
+    "sample_id": "SMP-02",
+    "read_counts": [],
+    "taxid_hits": null
+  }
+]

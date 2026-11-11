@@ -1,0 +1,92 @@
+name: UniRefClusterEntry
+description: UniRef cluster representative and member summary.
+id: https://kbase.us/linkml/cdm/uniref_cluster_entry
+imports:
+- linkml:types
+prefixes:
+  UniRefClusterEntry:
+    prefix_prefix: UniRefClusterEntry
+    prefix_reference: https://kbase.us/linkml/cdm/uniref_cluster_entry#
+  linkml:
+    prefix_prefix: linkml
+    prefix_reference: https://w3id.org/linkml/
+default_prefix: UniRefClusterEntry
+classes:
+  UniRefClusterEntry_representative:
+    name: UniRefClusterEntry_representative
+    attributes:
+      uniprot_acc:
+        name: uniprot_acc
+        range: string
+        required: true
+      length_aa:
+        name: length_aa
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 4294967295
+      crc64:
+        name: crc64
+        range: string
+        required: true
+  UniRefClusterEntry_taxon_counts_map:
+    name: UniRefClusterEntry_taxon_counts_map
+    attributes:
+      key:
+        name: key
+        range: integer
+        required: true
+        minimum_value: -2147483648
+        maximum_value: 2147483647
+      value:
+        name: value
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 4294967295
+  UniRefClusterEntry:
+    name: UniRefClusterEntry
+    attributes:
+      cluster_id:
+        name: cluster_id
+        description: UniRef cluster identifier.
+        range: string
+        required: true
+      cluster_name:
+        name: cluster_name
+        range: string
+        required: true
+      identity_threshold:
+        name: identity_threshold
+        range: float
+        required: true
+      member_count:
+        name: member_count
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 4294967295
+      updated_at:
+        name: updated_at
+        range: datetime
+        required: true
+      representative:
+        name: representative
+        range: UniRefClusterEntry_representative
+        required: true
+      embedding_preview:
+        name: embedding_preview
+        range: float
+        multivalued: true
+        minimum_cardinality: 4
+        maximum_cardinality: 4
+      member_accessions:
+        name: member_accessions
+        range: string
+        required: true
+        multivalued: true
+      taxon_counts:
+        name: taxon_counts
+        range: UniRefClusterEntry_taxon_counts_map
+        required: true
+        multivalued: true

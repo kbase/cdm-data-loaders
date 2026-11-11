@@ -1,0 +1,47 @@
+name: schema
+id: urn:linkml:schema
+imports:
+- linkml:types
+prefixes:
+  schema:
+    prefix_prefix: schema
+    prefix_reference: urn:linkml:schema#
+  linkml:
+    prefix_prefix: linkml
+    prefix_reference: https://w3id.org/linkml/
+default_prefix: schema
+classes:
+  Root:
+    name: Root
+    attributes:
+      utf8_str:
+        name: utf8_str
+        range: string
+        required: true
+      large_str:
+        name: large_str
+        range: string
+        required: true
+      raw_bin:
+        name: raw_bin
+        range: string
+        required: true
+      large_bin:
+        name: large_bin
+        range: string
+        required: true
+      fixed_bin_4:
+        name: fixed_bin_4
+        range: string
+        required: true
+      dec_standard:
+        name: dec_standard
+        range: decimal
+        required: true
+      dec_integer_only:
+        name: dec_integer_only
+        range: decimal
+        required: true
+      dec256_high_prec:
+        name: dec256_high_prec
+        range: decimal

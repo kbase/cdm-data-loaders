@@ -52,6 +52,8 @@ JSON_SCHEMA_KEYWORDS: Final = frozenset(
         "anyOf",
         "minimum",
         "maximum",
+        "minItems",
+        "maxItems",
         "contentEncoding",
     }
 )

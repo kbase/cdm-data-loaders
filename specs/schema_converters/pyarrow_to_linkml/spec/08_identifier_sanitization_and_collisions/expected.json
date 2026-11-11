@@ -1,0 +1,33 @@
+[
+  {
+    "meta_info": {
+      "source": "IMG/M"
+    },
+    "meta": {
+      "info": {
+        "version": 4
+      }
+    },
+    "labels": [
+      {
+        "key": "env",
+        "value": "soil"
+      }
+    ],
+    "labels_map": {
+      "note": "collides with labels map class"
+    }
+  },
+  {
+    "meta_info": {
+      "source": "GTDB"
+    },
+    "meta": {
+      "info": {
+        "version": 220
+      }
+    },
+    "labels": [],
+    "labels_map": null
+  }
+]

@@ -1,0 +1,22 @@
+[
+  {
+    "utf8_str": "contig_0001",
+    "large_str": "ATGCNATGCNATGCN",
+    "raw_bin": "AAEC/w==",
+    "large_bin": "a2Jhc2UtbGFyZ2UtcGF5bG9hZA==",
+    "fixed_bin_4": "3q2+7w==",
+    "dec_standard": "-12345678.95",
+    "dec_integer_only": "98765432",
+    "dec256_high_prec": "0.0000000001"
+  },
+  {
+    "utf8_str": "",
+    "large_str": "second-large-string",
+    "raw_bin": "",
+    "large_bin": "iVBORw==",
+    "fixed_bin_4": "AAAAAQ==",
+    "dec_standard": "0.00",
+    "dec_integer_only": "-42",
+    "dec256_high_prec": null
+  }
+]
