@@ -15,7 +15,6 @@ from cdm_data_loaders.core.fields import (
     FILE_GLOB,
     TABLE_NAME,
     FileGlob,
-    PreserveTableNesting,
     TableName,
 )
 from cdm_data_loaders.core.settings import (
@@ -66,7 +65,13 @@ class ReferencePipelineSettings(JsonlExtractSettings):
             description="The name of the table to export parsed data to",
         ),
     ]
-    preserve_table_nesting: PreserveTableNesting
+    preserve_table_nesting: Annotated[
+        bool,
+        Field(
+            default=False,
+            description="Whether or not nested data should be flattened out into separate tables",
+        ),
+    ]
     parallel_step_1: Annotated[
         bool,
         Field(

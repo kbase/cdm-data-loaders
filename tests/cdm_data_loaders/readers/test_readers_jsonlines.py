@@ -571,3 +571,35 @@ def test_make_page_router_pass_buffer_size_controls_batching(
     pages = tagged_pages(list(validator(items)))
 
     assert pages == [("widget", 2), ("widget", 2), ("widget", 1)]
+
+
+def test_make_page_router_pass_use_pyarrow_false_yields_lists_of_dicts(
+    widget_model: Any,  # noqa: ANN401
+) -> None:
+    """When use_pyarrow is False, make_page_router yields list[dict] for valid, rejected, and preprocessor-rejected items."""
+    validator = make_router(widget_model, use_pyarrow=False)
+    items = [
+        make_item(record={"widget_id": "a", "count": 1}, raw_record='{"widget_id": "a", "count": 1}', line_no=1),
+        make_item(record=None, raw_record="{bad", parse_error="boom", line_no=2),
+    ]
+
+    results = list(validator(items))
+    by_table = {r.meta.table_name: r.data for r in results}
+
+    assert isinstance(by_table["widget"], list)
+    assert by_table["widget"] == [{"widget_id": "a", "count": 1}]
+    assert isinstance(by_table["_rejected"], list)
+    assert by_table["_rejected"][0]["line_no"] == 2  # noqa: PLR2004
+
+    preprocess_rejected = {
+        "table_name": "widget",
+        "source_file": "widget/corrupt.jsonl",
+        "line_no": None,
+        "raw_record": None,
+        "error_detail": "corrupt header",
+    }
+    pre_results = list(validator(preprocess_rejected))  # type: ignore[arg-type]
+    assert len(pre_results) == 1
+    assert pre_results[0].meta.table_name == "_rejected"
+    assert isinstance(pre_results[0].data, list)
+    assert pre_results[0].data == [preprocess_rejected]

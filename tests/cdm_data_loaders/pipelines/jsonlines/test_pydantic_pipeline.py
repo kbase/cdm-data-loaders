@@ -9,7 +9,8 @@ import pyarrow as pa
 import pytest
 from pydantic import BaseModel
 
-from cdm_data_loaders.converters.pydantic_to_pyarrow import PydanticToPyArrow
+from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
+from cdm_data_loaders.core.preprocessors import FilePreprocessError
 from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
     build_entity_resource,
     run_jsonlines_with_validation_pipeline,
@@ -319,3 +320,51 @@ def test_run_jsonlines_with_validation_pipeline_pass_mixed_dict_and_arrow_transf
     expected_rejected_rows = 2
     assert len(rejected_df) == expected_rejected_rows
     assert sorted(rejected_df["table_name"].tolist()) == ["gadget", "widget"]
+
+
+def test_build_entity_resource_pass_per_table_preprocessors_route_failed_files_to_rejected(
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
+    entity_models_factory: Callable[[dict[str, type[BaseModel]]], str],
+    widget_model: type[BaseModel],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Per-table FILE_PREPROCESSORS route failed entity files through make_page_router to _rejected."""
+    models_mod = entity_models_factory({"widget": widget_model, "gadget": widget_model})
+
+    def reject_corrupt_file(file_item: Any) -> Any:  # noqa: ANN401
+        if file_item["relative_path"].endswith("corrupt.jsonl"):
+            msg = "corrupt file header"
+            raise FilePreprocessError(msg)
+        return file_item
+
+    preprocessors_mod = register_temp_module(
+        monkeypatch,
+        "_test_pydantic_per_table_preprocessors",
+        FILE_PREPROCESSORS={"widget": [reject_corrupt_file]},
+    )
+
+    input_dir = tmp_path / "preprocess_entities_input"
+    (input_dir / "widget").mkdir(parents=True)
+    (input_dir / "gadget").mkdir(parents=True)
+    (input_dir / "widget" / "ok.jsonl").write_text('{"widget_id": "w_ok", "count": 1}\n', encoding="utf-8")
+    (input_dir / "widget" / "corrupt.jsonl").write_text('{"widget_id": "w_corrupt", "count": 2}\n', encoding="utf-8")
+    (input_dir / "gadget" / "corrupt.jsonl").write_text('{"widget_id": "g_ok", "count": 3}\n', encoding="utf-8")
+
+    settings = settings_factory(
+        input_dir=str(input_dir),
+        output_dir=str(tmp_path / "output"),
+        entity_models=models_mod,
+        preprocessors_module=preprocessors_mod,
+    )
+
+    load_info = assert_run_ok(run_jsonlines_with_validation_pipeline(settings))
+    dataset = load_info.pipeline.dataset()
+    assert dataset.widget.df()["widget_id"].tolist() == ["w_ok"]
+    assert dataset.gadget.df()["widget_id"].tolist() == ["g_ok"]
+    rejected_df = dataset.table("_rejected").df()
+    assert len(rejected_df) == 1
+    row = rejected_df.iloc[0]
+    assert row["table_name"] == "widget"
+    assert row["source_file"] == "widget/corrupt.jsonl"
+    assert row["error_detail"] == "corrupt file header"

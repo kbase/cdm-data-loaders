@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, InstanceOf
+from pydantic import BaseModel, ConfigDict, InstanceOf, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
@@ -57,13 +57,20 @@ class JsonSchemaConverterBase[OutputT](BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     _allow_yaml_in_string: ClassVar[bool] = False
+    _run_root_guards: ClassVar[bool] = True
     _error_cls: ClassVar[type[ConversionError]] = ConversionError
     _invalid_schema_error_cls: ClassVar[type[ConversionError]] = ConversionError
     _converter_name: ClassVar[str] = ""
     _root_target_label: ClassVar[str] = ""
-    _dereference_function: ClassVar[str] = "cdm_data_loaders.utils.jsonschema.dereferencer.dereference_schema"
+    _dereference_function: ClassVar[str] = "cdm_data_loaders.schemas.jsonschema.dereference_schema"
 
     extension_registry: InstanceOf[ExtensionRegistry] = DEFAULT_EXTENSIONS
+
+    @field_validator("extra_metadata_keywords", mode="before", check_fields=False)
+    @classmethod
+    def _coerce_extra_metadata_keywords(cls, value: object) -> object:
+        """Normalize supported metadata keyword collections into a frozenset."""
+        return coerce_extra_metadata_keywords(value)
 
     def _reader(self) -> JsonSchemaReader:
         """Configure reader diagnostics for this public facade."""
@@ -80,9 +87,10 @@ class JsonSchemaConverterBase[OutputT](BaseModel):
 
     def _read(self, schema: dict[str, Any]) -> SchemaDocument:
         """Preserve facade guards and error identity around the reader."""
-        converter_name = self._converter_name or type(self).__name__
-        require_schema_keyword(schema, self._invalid_schema_error_cls, converter_name=converter_name)
-        require_object_root(schema, self._error_cls, target=self._root_target_label)
+        if self._run_root_guards:
+            converter_name = self._converter_name or type(self).__name__
+            require_schema_keyword(schema, self._invalid_schema_error_cls, converter_name=converter_name)
+            require_object_root(schema, self._error_cls, target=self._root_target_label)
         try:
             return self._reader().read(schema)
         except ConversionError as error:

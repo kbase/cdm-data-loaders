@@ -7,9 +7,10 @@ to ``pyarrow.Table`` instances for any table with a registered PyArrow schema
 (including ``_rejected``, which is registered by default).
 """
 
+import json
 from collections import defaultdict
-from collections.abc import Generator
-from typing import Annotated, Any, Final
+from collections.abc import Callable, Generator, Mapping
+from typing import Annotated, Any, Final, Self
 
 import dlt
 import pandas as pd  # noqa: F401 - import on main thread before dlt worker threads yield arrow tables
@@ -36,12 +37,80 @@ type Buffers = Annotated[dict[NonEmptyStr, list[Any]], Field(description="Buffer
 type MaxItems = Annotated[PositiveInt, Field(description="Maximum number of items per buffer")]
 
 
+def make_rejected_row(
+    table_name: str | None,
+    error_detail: str,
+    *,
+    source_file: str | None = None,
+    line_no: int | None = None,
+    raw_record: str | None = None,
+) -> dict[str, Any]:
+    """Build a standardized row dictionary for the ``_rejected`` table.
+
+    :param table_name: target table name associated with the rejected record
+    :type table_name: str | None
+    :param error_detail: human-readable error message
+    :type error_detail: str
+    :param source_file: relative path or identifier of the source file
+    :type source_file: str | None
+    :param line_no: 1-based line number within the source file, if applicable
+    :type line_no: int | None
+    :param raw_record: serialized raw record text, if applicable
+    :type raw_record: str | None
+    :return: dictionary matching ``REJECTED_PYARROW_SCHEMA``
+    :rtype: dict[str, Any]
+    """
+    return {
+        "table_name": table_name,
+        "source_file": source_file,
+        "line_no": line_no,
+        "raw_record": raw_record,
+        "error_detail": error_detail,
+    }
+
+
+def make_rejected_table_result(
+    table_name: str,
+    raw_record_obj: Mapping[str, Any],
+    error_detail: str,
+    *,
+    source_file: str | None = None,
+    line_no: int | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Build a ``{_rejected: [row]}`` result mapping for a record transform failure.
+
+    :param table_name: source table name of the record that failed transformation
+    :type table_name: str
+    :param raw_record_obj: input record mapping to serialize into ``raw_record``
+    :type raw_record_obj: Mapping[str, Any]
+    :param error_detail: human-readable error message
+    :type error_detail: str
+    :param source_file: relative path or identifier of the source file
+    :type source_file: str | None
+    :param line_no: 1-based line number within the source file, if applicable
+    :type line_no: int | None
+    :return: single-row ``_rejected`` table result mapping
+    :rtype: dict[str, list[dict[str, Any]]]
+    """
+    return {
+        REJECTED_TABLE_NAME: [
+            make_rejected_row(
+                table_name,
+                error_detail,
+                source_file=source_file,
+                line_no=line_no,
+                raw_record=json.dumps(dict(raw_record_obj), default=str),
+            )
+        ]
+    }
+
+
 class DictBuffer(BaseModel):
     """Accumulates rows per table and yields them as pages to dlt.
 
-    If a table has a ``pyarrow.Schema`` in ``schema_map``, its pages are yielded
-    as ``pyarrow.Table`` instances; otherwise, pages are yielded as ``list[dict]`` as-is.
-    The ``_rejected`` table schema (``REJECTED_PYARROW_SCHEMA``) is always included.
+    When ``use_pyarrow`` is ``True`` (the default), any table with a ``pyarrow.Schema`` in
+    ``schema_map`` (as well as ``_rejected``, which uses ``REJECTED_PYARROW_SCHEMA``) is yielded
+    as a ``pyarrow.Table``; otherwise, pages are yielded as ``list[dict]`` as-is.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
@@ -50,9 +119,23 @@ class DictBuffer(BaseModel):
 
     max_items: MaxItems = Field(default=DEFAULT_BUFFER_MAX_ITEMS)
     schema_map: ArrowSchemaRegistry | None = Field(default=None)
+    use_pyarrow: bool = Field(default=True)
+
+    @classmethod
+    def from_settings(cls, settings: Any) -> Self:  # noqa: ANN401
+        """Construct a ``DictBuffer`` from pipeline settings.
+
+        :param settings: pipeline settings with ``buffer_size`` and optional ``schema_map`` / ``use_pyarrow``
+        :type settings: Any
+        :return: configured ``DictBuffer`` instance
+        :rtype: Self
+        """
+        return make_dict_buffer(settings, cls)  # type: ignore[return-value]
 
     def _make_page(self, table_name: str, rows: list[Any]) -> Any:  # noqa: ANN401
         """Construct the page payload for ``table_name`` from buffered ``rows``."""
+        if not self.use_pyarrow:
+            return rows
         if table_name == REJECTED_TABLE_NAME:
             return pa.Table.from_pylist(rows, schema=REJECTED_PYARROW_SCHEMA)
         if self.schema_map and table_name in self.schema_map.registry:
@@ -98,3 +181,23 @@ class DictBuffer(BaseModel):
                 continue
             self._buffers[table_name].extend(contents)
             yield from self._flush_if_full(table_name)
+
+
+def make_dict_buffer(
+    settings: Any,  # noqa: ANN401
+    buffer_cls: Callable[..., DictBuffer] = DictBuffer,
+) -> DictBuffer:
+    """Construct a ``DictBuffer`` from pipeline settings using ``buffer_cls``.
+
+    :param settings: pipeline settings with ``buffer_size`` and optional ``schema_map`` / ``use_pyarrow``
+    :type settings: Any
+    :param buffer_cls: ``DictBuffer`` constructor or compatible factory
+    :type buffer_cls: Callable[..., DictBuffer]
+    :return: configured ``DictBuffer`` instance
+    :rtype: DictBuffer
+    """
+    return buffer_cls(
+        max_items=settings.buffer_size,
+        schema_map=getattr(settings, "schema_map", None),
+        use_pyarrow=getattr(settings, "use_pyarrow", True),
+    )

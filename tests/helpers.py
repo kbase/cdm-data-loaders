@@ -12,8 +12,7 @@ from uuid import uuid4
 import pytest
 import yaml
 from pydantic_settings import BaseSettings, CliApp, CliSettingsSource
-from pyspark.sql import Row, SparkSession
-from pyspark.sql.types import StructType
+from pyspark.sql import Row
 
 from cdm_data_loaders.core.settings import CdmDataLoadersBase, CtsSettings
 from tests.conftest import LOCAL_FS
@@ -160,19 +159,6 @@ def assert_cli_field_roundtrips(
         f"{settings_cls.__name__}.{field_name}: flags {option_strings} disagree: {results}"
     )
     assert getattr(results[0], field_name) == expected_value
-
-
-def create_empty_delta_table(
-    spark: SparkSession,
-    db: str,
-    table: str,
-    schema: StructType,
-) -> None:
-    """Create an empty delta table, initialising the db namespace first."""
-    spark.sql(f"CREATE DATABASE IF NOT EXISTS {db}")
-    df = spark.createDataFrame([], schema)
-    df.write.format("delta").mode("error").saveAsTable(f"{db}.{table}")
-    assert df.count() == 0
 
 
 def assertDataFrameEqual(result_rows: list[Row], expected_rows: list[Row]) -> None:  # noqa: N802

@@ -32,7 +32,7 @@ from cdm_data_loaders.readers.jsonlines import (
     make_page_router,
     stream_jsonl_lines,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.schemas.jsonschema import ValidatedSchema
 
 ResourceFactory = Callable[[str, Any, Any], DltResource]
 
@@ -70,6 +70,7 @@ def build_entity_resource(
         _stream_entity_lines,
         name=f"{table_name}_raw",
         file_glob=f"{table_name}/{settings.file_glob}",
+        table_name=table_name,
         max_table_nesting=0,
     )
     validated = dlt.transformer(
@@ -80,6 +81,7 @@ def build_entity_resource(
             transform_valid=transform_valid,
             table_transform=settings.get_table_transform(table_name),
             schema_map=settings.schema_map,
+            use_pyarrow=settings.use_pyarrow,
         ),
         data_from=raw,
         name=f"{table_name}_validated",

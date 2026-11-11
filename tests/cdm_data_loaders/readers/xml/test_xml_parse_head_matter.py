@@ -119,17 +119,16 @@ def test_parse_head_matter_pass_child_only_namespace_not_reported(
     assert parse_head_matter(path) == {}
 
 
+@pytest.mark.parametrize("gzip_compress", [False, True], ids=["plain", "gzip"])
 def test_parse_head_matter_pass_gzip_file_matches_plain_file(
     xml_path_factory: Callable[..., Path],
+    gzip_compress: bool,
 ) -> None:
     """Verify a gzip-compressed (.gz) file is transparently decompressed and parsed identically to a plain file."""
-    plain_path = xml_path_factory(MULTI_NAMESPACE_XML, filename="plain.xml")
-    gz_path = xml_path_factory(MULTI_NAMESPACE_XML, gzip_compress=True, filename="compressed.xml")
+    filename = "compressed.xml" if gzip_compress else "plain.xml"
+    path = xml_path_factory(MULTI_NAMESPACE_XML, gzip_compress=gzip_compress, filename=filename)
 
-    plain_result = parse_head_matter(plain_path)
-    gz_result = parse_head_matter(gz_path)
-
-    assert gz_result == plain_result == {"": DEFAULT_NS_URI, "xsi": XSI_NS_URI, "dc": DC_NS_URI}
+    assert parse_head_matter(path) == {"": DEFAULT_NS_URI, "xsi": XSI_NS_URI, "dc": DC_NS_URI}
 
 
 @pytest.mark.parametrize("relative_path", ["library.xml", "sub/library.xml.gz"])

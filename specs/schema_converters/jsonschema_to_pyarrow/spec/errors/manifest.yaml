@@ -1,6 +1,6 @@
 # Error specification fixtures for the JSON Schema -> PyArrow converter.
 # `code` must match the `code` of a JSONSchemaToPyArrowError subclass in
-# cdm_data_loaders.converters.jsonschema_to_pyarrow. `file` is relative to this directory.
+# cdm_data_loaders.converters.facades.jsonschema_to_pyarrow. `file` is relative to this directory.
 # `match` is a regex applied to the exception message.
 errors:
   - file: missing_schema_dialect.json

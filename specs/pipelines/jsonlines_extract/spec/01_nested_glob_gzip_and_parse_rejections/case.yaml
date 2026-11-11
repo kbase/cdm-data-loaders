@@ -1,0 +1,25 @@
+title: Nested Subdirectory Globbing, Gzip Decompression, Blank Lines, and JSON Parse Rejections
+pipeline: jsonlines_extract
+settings_file: settings.toml
+rules:
+  - R-JSONL-EXTRACT-DISCOVERY
+  - R-JSONL-EXTRACT-STREAM
+  - R-JSONL-EXTRACT-REJECT
+  - R-JSONL-EXTRACT-REPORT
+notes: |
+  - `file_glob = "**/*.jsonl*"` discovers `batch_a/part1.jsonl` and `batch_b/part2.jsonl.gz` across nested subdirectories while ignoring `batch_b/ignored.txt`.
+  - `batch_a/part1.jsonl` contains a blank line at line 2 (skipped without error) and a malformed JSON object at line 3 (routed to `_rejected` with `line_no=3` and the verbatim `raw_record`), while valid records on lines 1 and 4 load into `events`.
+runs:
+  - id: default
+    input_dir: input
+    expected_report:
+      status: completed
+      ingested_files:
+        - batch_a/part1.jsonl
+        - batch_b/part2.jsonl.gz
+      pipeline_load_info_errs: null
+    expected_counts:
+      events: 3
+      _rejected: 1
+    expected_tables: expected_tables.py
+    expected_json: expected.json

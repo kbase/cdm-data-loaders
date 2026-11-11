@@ -1,13 +1,15 @@
 """Settings for the XSV (CSV/TSV) ingestion pipeline for the KBase CTS."""
 
 from logging import Logger, getLogger
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, ClassVar, Final
 
 import pyarrow as pa
 from pydantic import Field, FilePath, PrivateAttr
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrow
+from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.extensions import ExtensionError
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import convert_xsv_schema_to_pyarrow
 from cdm_data_loaders.core.fields import (
     FileGlob,
     TableName,
@@ -24,7 +26,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
     generate_first_pass_schema,
     validate_jsonschema,
 )
-from cdm_data_loaders.utils.jsonschema.dereferencer import dereference_schema
+from cdm_data_loaders.schemas.jsonschema import DereferencingError
 
 PIPELINE_NAME: Final[str] = "xsv"
 
@@ -39,38 +41,73 @@ SHORTCUTS: Final[dict[str, str]] = {
 }
 
 
-def convert_xsv_schema_to_pyarrow(validated_schema: ValidatedXsvSchema) -> pa.Schema:
-    """Convert a validated XSV JSON Schema to a PyArrow schema.
+class XsvSchemaError(RuntimeError):
+    """Raised when an XSV JSON Schema cannot be validated or converted to a PyArrow schema.
 
-    In XSV schemas, top-level ``required`` declares the ordered CSV columns,
-    unlisted columns default to nullable strings, and any column whose
-    schema permits ``null`` is nullable in PyArrow.
-
-    :param validated_schema: validated XSV JSON Schema
-    :type validated_schema: ValidatedXsvSchema
-    :return: PyArrow schema for the XSV table
-    :rtype: pa.Schema
+    Subclasses carry a stable specification ``code`` and a short ``title``; their docstrings state
+    why the schema is rejected. The XSV specification document is generated from these attributes.
     """
-    raw_schema = validated_schema.jsonschema
-    dereferenced = dereference_schema(raw_schema)
-    if "$schema" not in dereferenced and "$schema" in raw_schema:
-        dereferenced = {"$schema": raw_schema["$schema"], **dereferenced}
 
-    raw_properties = dereferenced.get("properties", {})
-    properties: dict[str, Any] = {
-        col: raw_properties.get(col, {"type": ["string", "null"]}) for col in validated_schema.required_cols
-    }
-    for col, prop_spec in raw_properties.items():
-        if col not in properties:
-            properties[col] = prop_spec
+    code: ClassVar[str] = ""
+    title: ClassVar[str] = ""
 
-    normalized_schema = {
-        **dereferenced,
-        "type": dereferenced.get("type", "object"),
-        "properties": properties,
-        "required": list(validated_schema.required_cols),
-    }
-    return JSONSchemaToPyArrow().convert(normalized_schema)
+
+class UnsupportedXsvDialectError(XsvSchemaError):
+    """Only JSON Schema Draft 2020-12 and the KBase Draft 2020-12 XSV metaschema are supported."""
+
+    code = "E1"
+    title = "Missing or unsupported `$schema` dialect"
+
+
+class MissingRequiredColumnsError(XsvSchemaError):
+    """XSV schemas must declare a non-empty list of column headers in the top-level `required` array."""
+
+    code = "E2"
+    title = "Missing or empty `required` column list"
+
+
+class InvalidXsvSchemaDefinitionError(XsvSchemaError):
+    """The document is not valid JSON Schema or contains an invalid `x-xsv-config` parser block."""
+
+    code = "E3"
+    title = "Invalid JSON Schema or `x-xsv-config` block"
+
+
+class UnresolvableXsvRefError(XsvSchemaError):
+    """All `$ref` pointers in an XSV schema must resolve against local `$defs` before conversion."""
+
+    code = "E4"
+    title = "Unresolvable `$ref` pointer"
+
+
+class UnsupportedXsvArrowConstructError(XsvSchemaError):
+    """Every XSV column must convert to a supported PyArrow type under a top-level `object` schema."""
+
+    code = "E5"
+    title = "Unsupported PyArrow column construct"
+
+
+XSV_SCHEMA_ERRORS: Final[tuple[type[XsvSchemaError], ...]] = (
+    UnsupportedXsvDialectError,
+    MissingRequiredColumnsError,
+    InvalidXsvSchemaDefinitionError,
+    UnresolvableXsvRefError,
+    UnsupportedXsvArrowConstructError,
+)
+
+
+def _classify_xsv_schema_error(exc: Exception, err_msg: str) -> XsvSchemaError:
+    """Classify an underlying schema validation or conversion exception into an `XsvSchemaError` subclass."""
+    if isinstance(exc, DereferencingError):
+        return UnresolvableXsvRefError(err_msg)
+    if isinstance(exc, ConversionError) and not isinstance(exc.__cause__, ExtensionError):
+        return UnsupportedXsvArrowConstructError(err_msg)
+    raw = str(exc)
+    if "JSON Schema is missing the $schema keyword" in raw or "Unsupported JSON Schema draft:" in raw:
+        return UnsupportedXsvDialectError(err_msg)
+    if "Could not find any required cols in schema" in raw:
+        return MissingRequiredColumnsError(err_msg)
+    return InvalidXsvSchemaDefinitionError(err_msg)
 
 
 class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
@@ -84,6 +121,7 @@ class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
     _validated_schema: ValidatedXsvSchema | None = PrivateAttr(default=None)
     _first_pass_schema: ValidatedXsvSchema | None = PrivateAttr(default=None)
     _parsing_config: dict[str, Any] | None = PrivateAttr(default=None)
+    _pyarrow_schema: pa.Schema | None = PrivateAttr(default=None)
 
     file_glob: FileGlob
     schema_file: Annotated[
@@ -98,22 +136,25 @@ class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
     table_name: TableName
 
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
-        """Load and validate the schema file, first-pass schema, parsing config, and resolve `_schema_map`."""
+        """Load and validate the schema file, first-pass schema, parsing config, PyArrow schema, and `_schema_map`."""
         try:
             self._validated_schema = validate_jsonschema(self.schema_file)
             self._first_pass_schema = generate_first_pass_schema(self._validated_schema)
             self._parsing_config = resolve_xsv_parsing_config(self._validated_schema)
-            pyarrow_schema = (
-                default_pyarrow_schema
-                if default_pyarrow_schema is not None or not self._needs_default_pyarrow_schema(self.table_name)
-                else convert_xsv_schema_to_pyarrow(self._validated_schema)
-            )
+            if (
+                self.get_table_transform(self.table_name) is None
+                and self._unreconciled_output_schemas is not None
+                and self.table_name in self._unreconciled_output_schemas.registry
+            ):
+                self._pyarrow_schema = self._unreconciled_output_schemas.registry[self.table_name]
+            else:
+                self._pyarrow_schema = default_pyarrow_schema or convert_xsv_schema_to_pyarrow(self.validated_schema)
         except Exception as e:
             err_msg = f"Could not load JSON Schema for XSV data: {e!s}"
             logger.exception(err_msg)
-            raise RuntimeError(err_msg) from e
+            raise _classify_xsv_schema_error(e, err_msg) from e
 
-        super()._resolve_settings_schema_map(default_pyarrow_schema=pyarrow_schema)
+        super()._resolve_settings_schema_map(default_pyarrow_schema=self._pyarrow_schema)
 
     @property
     def validated_schema(self) -> ValidatedXsvSchema:
@@ -138,3 +179,11 @@ class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
             err_msg = "Schema has not been validated"
             raise RuntimeError(err_msg)
         return self._parsing_config
+
+    @property
+    def pyarrow_schema(self) -> pa.Schema:
+        """The PyArrow schema used to type XSV columns during reading and output."""
+        if self._pyarrow_schema is None:
+            err_msg = "Schema has not been validated"
+            raise RuntimeError(err_msg)
+        return self._pyarrow_schema

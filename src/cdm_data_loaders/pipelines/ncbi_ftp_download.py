@@ -7,7 +7,6 @@ domain-specific download logic is in :mod:`cdm_data_loaders.ncbi_ftp.assembly`.
 
 import json
 import logging
-import shutil
 import tempfile
 import threading
 from collections.abc import Callable
@@ -34,7 +33,7 @@ from cdm_data_loaders.ncbi_ftp.constants import FTP_HOST
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.utils.file_transfer.ftp_client import ThreadLocalFTP
 from cdm_data_loaders.utils.file_transfer.s3.client import get_s3_client
-from cdm_data_loaders.utils.file_transfer.s3.object_utils import upload_file
+from cdm_data_loaders.utils.file_transfer.s3.object_utils import upload_dir_files, upload_file
 
 logger: Logger = getLogger(__name__)
 
@@ -100,18 +99,15 @@ def _upload_assembly_dir(
     """
     if not assembly_dir.exists():
         return 0
-    count = 0
-    for f in sorted(assembly_dir.rglob("*")):
-        if f.is_file():
-            relative = f.relative_to(tmp_root)
-            dest_prefix = bucket / staging_key_prefix / relative.parent
-            if upload_file(f, str(dest_prefix), show_progress=False):
-                count += 1
-            else:
-                logger.warning("Failed to upload %s to %s", f, dest_prefix)
-            f.unlink()
-    shutil.rmtree(assembly_dir, ignore_errors=True)
-    return count
+    dest_dir = str(bucket / staging_key_prefix / assembly_dir.relative_to(tmp_root))
+    uploaded_count, _ = upload_dir_files(
+        assembly_dir,
+        dest_dir,
+        show_progress=False,
+        delete_source=True,
+        upload_fn=upload_file,
+    )
+    return uploaded_count
 
 
 # Batch download

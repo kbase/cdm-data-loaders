@@ -1,0 +1,45 @@
+# Error specification fixtures for the XSV schema and ingestion pipeline.
+# `code` must match the `code` of an XsvSchemaError subclass in
+# cdm_data_loaders.pipelines.xsv.settings. `file` is relative to this directory.
+# `match` is a regex applied to the exception message.
+errors:
+  - file: missing_schema_keyword.json
+    code: E1
+    match: JSON Schema is missing the \$schema keyword
+    description: No `$schema` keyword.
+  - file: unsupported_dialect.json
+    code: E1
+    match: "Unsupported JSON Schema draft:"
+    description: Declares an unknown `$schema` dialect URI.
+  - file: missing_required.json
+    code: E2
+    match: Could not find any required cols in schema
+    description: Top-level `required` keyword is omitted.
+  - file: empty_required.json
+    code: E2
+    match: Could not find any required cols in schema
+    description: Top-level `required` is `[]`.
+  - file: invalid_xsv_config_delimiter.json
+    code: E3
+    match: "'::' is too long"
+    description: '`x-xsv-config.x-delimiter` is a two-character string `"::"`.'
+  - file: invalid_xsv_config_unknown_key.json
+    code: E3
+    match: Additional properties are not allowed
+    description: '`x-xsv-config` contains an unrecognized property `"x-unknown"`.'
+  - file: invalid_json_schema_type.json
+    code: E3
+    match: "'not-a-valid-type' is not valid"
+    description: 'Property declares `"type": "not-a-valid-type"`.'
+  - file: unresolvable_ref.json
+    code: E4
+    match: \$ref|MissingDef|Unresolvable
+    description: 'Property references missing `#/$defs/MissingDef`.'
+  - file: non_struct_root.json
+    code: E5
+    match: top-level|object|struct
+    description: 'Root declares `"type": "array"` despite having `required`.'
+  - file: unsupported_column_construct.json
+    code: E5
+    match: "\\$dynamicRef"
+    description: 'Column property uses `"$dynamicRef": "#Node"`.'

@@ -13,18 +13,18 @@ from dlt.common.schema.typing import TColumnSchema, TStoredSchema, TTableSchema
 from dlt.common.schema.utils import new_column, new_table
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, field_validator
 
-from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.inference import json_type_from_enum
-from cdm_data_loaders.converters.core.ir import Field as SchemaField
-from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
-from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
-from cdm_data_loaders.utils.dlt.dlt_normalization import (
+from cdm_data_loaders.converters.core.dlt_normalization import (
     DltTableNode,
     child_key,
     child_table_name,
     flatten_nodes,
     tables_parents_first,
 )
+from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.inference import json_type_from_enum
+from cdm_data_loaders.converters.core.ir import Field as SchemaField
+from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,6 @@ FORMATS: Final[dict[str, TDataType]] = {
     "binary": "binary",
     "base64": "binary",
 }
-BINARY_FORMATS: Final = frozenset(name for name, kind in FORMATS.items() if kind == "binary")
 LOGICAL: Final[dict[str, TDataType]] = {
     "decimal": "decimal",
     "wei": "wei",

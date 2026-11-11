@@ -1,0 +1,19 @@
+{
+  "_rejected": [
+    {
+      "error_detail": "MD5 mismatch for samples/bad.jsonl: expected 00000000000000000000000000000000, got d8981895f8c957b2edf853991bd4f5c4",
+      "source_file": "samples/bad.jsonl",
+      "table_name": "samples"
+    }
+  ],
+  "samples": [
+    {
+      "biome": "aquatic",
+      "ph": 7.1,
+      "sample_id": "s-10",
+      "tags": [
+        "lake"
+      ]
+    }
+  ]
+}

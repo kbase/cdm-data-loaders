@@ -70,9 +70,13 @@ PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
         "jsonlines_pydantic",
         "cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline",
     ),
+    "ncbi_datasets": (
+        "ncbi_datasets",
+        "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline",
+    ),
     "ncbi_ftp_promote": ("ncbi_ftp_promote", "cdm_data_loaders.pipelines.ncbi_ftp_promote"),
     "ncbi_ftp_sync": ("ncbi_ftp_sync", "cdm_data_loaders.pipelines.ncbi_ftp_download"),
-    "ncbi_rest_api": ("ncbi_rest_api", "cdm_data_loaders.pipelines.ncbi_rest_api"),
+    "pubmed": ("pubmed", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
     "uniprot": ("uniprot", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
     "uniprot_cdm": ("uniprot_cdm", "cdm_data_loaders.pipelines.uniprot_kb_cdm"),
     "uniref50": ("uniref50", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
@@ -87,7 +91,8 @@ PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
 }
 
 MODULE_TO_CLI_COMMAND: Final[dict[str, str]] = {
-    module_path: cli_command for cli_command, module_path in PIPELINE_TARGETS.values()
+    **{module_path: cli_command for cli_command, module_path in PIPELINE_TARGETS.values()},
+    "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline": "jsonlines_jsonschema",
 }
 
 _built_docker_images: set[str] = set()
@@ -291,17 +296,25 @@ def _read_saved_load_info_row(dataset_dir: Path) -> dict[str, Any]:
     return {}
 
 
-def reconstruct_load_info(output_dir: Path, bucket_dir: Path | None = None) -> LoadInfo | None:
+def reconstruct_load_info(
+    output_dir: Path,
+    bucket_dir: Path | None = None,
+    *,
+    use_destination: str | None = None,
+) -> LoadInfo | None:
     """Reconstruct a LoadInfo-compatible object and attached dlt.Pipeline from disk artifacts.
 
     Reads the ``report.txt`` file written by ``save_pipeline_metadata`` in
     ``output_dir / PIPELINE_DIR_NAME`` or ``output_dir`` and attaches a ``dlt.Pipeline``
-    pointing at the filesystem destination containing ``<dataset_name>``.
+    pointing at the filesystem destination containing ``<dataset_name>`` (or the named
+    ``use_destination`` from ``dlt.config`` when supplied).
 
     :param output_dir: directory containing ``report.txt`` or ``pipeline_metadata/report.txt``
     :type output_dir: Path
     :param bucket_dir: optional separate filesystem destination bucket directory
     :type bucket_dir: Path | None
+    :param use_destination: optional configured dlt destination block name
+    :type use_destination: str | None
     :return: reconstructed LoadInfo, or None if the report indicates an error or no report exists
     :rtype: LoadInfo | None
     """
@@ -353,9 +366,12 @@ def reconstruct_load_info(output_dir: Path, bucket_dir: Path | None = None) -> L
     # without colliding with stale schemas in ~/.dlt/pipelines or adding files to output_dir.
     reconstructed_id = loads_ids[0] if loads_ids else uuid4().hex
     reconstructed_pipelines_dir = output_dir.parent / f".reconstructed_dlt_{reconstructed_id}"
+    destination_arg: Any = (
+        use_destination if use_destination is not None else filesystem(bucket_url=str(actual_bucket_dir))
+    )
     pipeline = dlt.pipeline(
         pipeline_name=pipeline_name,
-        destination=filesystem(bucket_url=str(actual_bucket_dir)),
+        destination=destination_arg,
         dataset_name=dataset_name,
         pipelines_dir=str(reconstructed_pipelines_dir),
     )
@@ -368,7 +384,7 @@ def reconstruct_load_info(output_dir: Path, bucket_dir: Path | None = None) -> L
         has_failed_jobs=has_failed_jobs,
         finished_at=finished_at,
         first_run=bool(saved_row.get("first_run", False)),
-        destination_name=str(saved_row.get("destination_name", LOCAL_FS)),
+        destination_name=str(saved_row.get("destination_name", use_destination or LOCAL_FS)),
         destination_type=str(saved_row.get("destination_type", "filesystem")),
         _raw_dict=saved_row,
     )
@@ -500,10 +516,19 @@ def _make_container_accessible(root: Path, *, writable: bool = True) -> None:
 class PipelineTestRunner:
     """Execute any CDM ingestion pipeline in ``core``, ``cli``, or ``docker`` mode."""
 
-    def __init__(self, mode: ExecutionMode | str = ExecutionMode.CORE, docker_image: str | None = None) -> None:
-        """Initialize the runner with the target execution mode and optional Docker image tag."""
+    def __init__(
+        self,
+        mode: ExecutionMode | str = ExecutionMode.CORE,
+        docker_image: str | None = None,
+        *,
+        dlt_config_dir: Path | None = None,
+        preserve_dlt_destination: bool = False,
+    ) -> None:
+        """Initialize the runner with the target execution mode, optional Docker image tag, and dlt config options."""
         self.mode = ExecutionMode(mode)
         self.docker_image = docker_image
+        self.dlt_config_dir = Path(dlt_config_dir) if dlt_config_dir is not None else None
+        self.preserve_dlt_destination = preserve_dlt_destination
 
     def __call__(
         self,
@@ -595,6 +620,10 @@ class PipelineTestRunner:
             err_msg = f"Pipeline {spec.cli_command!r} does not expose settings_cls and pipeline_fn for core.run_cli"
             raise ValueError(err_msg)
 
+        if self.preserve_dlt_destination:
+            with preserve_logging_state():
+                return core.run_cli(spec.settings_cls, spec.pipeline_fn, cli_args=args)
+
         bucket_dir = self._resolve_bucket_dir(output_dir, use_destination)
         with (
             preserve_logging_state(),
@@ -620,6 +649,14 @@ class PipelineTestRunner:
             raise ValueError(err_msg)
 
         bucket_dir = self._resolve_bucket_dir(output_dir, use_destination)
+        if self.preserve_dlt_destination:
+            with (
+                preserve_logging_state(),
+                patch.object(sys, "argv", [spec.cli_command, *args]),
+            ):
+                spec.cli_callable()
+            return reconstruct_load_info(output_dir, bucket_dir=bucket_dir, use_destination=use_destination)
+
         with (
             preserve_logging_state(),
             patch.object(sys, "argv", [spec.cli_command, *args]),
@@ -634,6 +671,21 @@ class PipelineTestRunner:
 
         return reconstruct_load_info(output_dir, bucket_dir=bucket_dir)
 
+    def _stage_docker_dlt_config(self, dlt_conf_dir: Path, use_destination: str) -> None:
+        """Populate ``dlt_conf_dir`` from ``self.dlt_config_dir`` (and ``$HOME/.pyiceberg.yaml`` if present) or write default config."""
+        dlt_conf_dir.mkdir(parents=True, exist_ok=True)
+        if self.dlt_config_dir is not None and self.dlt_config_dir.is_dir():
+            for conf_name in ("config.toml", "secrets.toml"):
+                src_conf = self.dlt_config_dir / conf_name
+                if src_conf.is_file():
+                    shutil.copy2(src_conf, dlt_conf_dir / conf_name)
+        else:
+            _write_docker_dlt_config(dlt_conf_dir / "config.toml", use_destination)
+
+        home_pyiceberg = Path.home() / ".pyiceberg.yaml"
+        if home_pyiceberg.is_file():
+            shutil.copy2(home_pyiceberg, dlt_conf_dir / ".pyiceberg.yaml")
+
     def _run_docker(
         self,
         spec: PipelineSpec,
@@ -647,7 +699,6 @@ class PipelineTestRunner:
         if not input_dir_str:
             err_msg = "Docker execution mode requires --input-dir / -i in settings or cli_args"
             raise ValueError(err_msg)
-        host_input_dir = Path(input_dir_str).resolve()
         host_output_dir = output_dir.resolve()
 
         stage_dir = host_output_dir.parent / f".docker_stage_{uuid4().hex[:8]}"
@@ -656,10 +707,10 @@ class PipelineTestRunner:
         pymodules_dir = stage_dir / "pymodules"
         staged_input_dir.mkdir(parents=True, exist_ok=True)
 
-        if host_input_dir.is_dir():
-            shutil.copytree(host_input_dir, staged_input_dir, dirs_exist_ok=True)
+        if "://" not in input_dir_str and Path(input_dir_str).resolve().is_dir():
+            shutil.copytree(Path(input_dir_str).resolve(), staged_input_dir, dirs_exist_ok=True)
 
-        _write_docker_dlt_config(staged_input_dir / "dlt_conf" / "config.toml", use_destination)
+        self._stage_docker_dlt_config(staged_input_dir / "dlt_conf", use_destination)
 
         container_args = self._translate_args_for_docker(args, aux_dir, pymodules_dir)
 
@@ -680,6 +731,8 @@ class PipelineTestRunner:
             f"{host_output_dir}:{CONTAINER_OUTPUT_DIR}",
             "-v",
             f"{(BASE_DIR / 'tests').resolve()}:/app/tests:ro",
+            "-v",
+            f"{(BASE_DIR / 'specs').resolve()}:/app/specs:ro",
         ]
         if aux_dir.is_dir():
             docker_cmd.extend(["-v", f"{aux_dir.resolve()}:{CONTAINER_AUX_DIR}:ro"])
@@ -717,7 +770,11 @@ class PipelineTestRunner:
             )
             raise RuntimeError(err_msg)
 
-        return reconstruct_load_info(host_output_dir, bucket_dir=host_output_dir)
+        return reconstruct_load_info(
+            host_output_dir,
+            bucket_dir=host_output_dir,
+            use_destination=use_destination if self.preserve_dlt_destination else None,
+        )
 
     def _translate_args_for_docker(
         self,
@@ -732,7 +789,8 @@ class PipelineTestRunner:
         while idx < len(args):
             token = args[idx]
             if token in INPUT_DIR_FLAGS and idx + 1 < len(args):
-                translated.extend([token, CONTAINER_INPUT_DIR])
+                input_val = args[idx + 1]
+                translated.extend([token, input_val if "://" in input_val else CONTAINER_INPUT_DIR])
                 idx += 2
                 continue
             if token in OUTPUT_DIR_FLAGS and idx + 1 < len(args):

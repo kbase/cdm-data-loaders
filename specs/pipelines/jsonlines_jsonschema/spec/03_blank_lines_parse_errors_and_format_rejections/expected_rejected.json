@@ -1,0 +1,31 @@
+[
+  {
+    "error_detail": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
+    "line_no": 3,
+    "raw_record": "{bad json",
+    "source_file": "contacts/data.jsonl",
+    "table_name": "contacts"
+  },
+  {
+    "error_detail": "[\"[1, 2, 3] is not of type 'object'\"]",
+    "line_no": 4,
+    "raw_record": "[1, 2, 3]",
+    "source_file": "contacts/data.jsonl",
+    "table_name": "contacts"
+  },
+  {
+    "error_detail": "[\"'not-an-int' is not of type 'integer'\"]",
+    "line_no": 5,
+    "raw_record": "{\"id\": \"rec-2\", \"count\": \"not-an-int\", \"contact_email\": \"bob@example.org\"}",
+    "source_file": "contacts/data.jsonl",
+    "table_name": "contacts"
+  },
+  {
+    "error_detail": "[\"'not-an-email' is not a 'email'\"]",
+    "line_no": 6,
+    "raw_record": "{\"id\": \"rec-3\", \"count\": 10, \"contact_email\": \"not-an-email\"}",
+    "source_file": "contacts/data.jsonl",
+    "table_name": "contacts"
+  }
+]
+

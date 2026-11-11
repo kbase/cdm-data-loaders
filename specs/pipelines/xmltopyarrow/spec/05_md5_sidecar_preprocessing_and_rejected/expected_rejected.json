@@ -1,0 +1,10 @@
+[
+  {
+    "error_detail": "MD5 mismatch for bad.xml: expected 00000000000000000000000000000000, got 211f65fc7b67f2012f1811bfc543e6ef",
+    "line_no": null,
+    "raw_record": null,
+    "source_file": "bad.xml",
+    "table_name": "articles"
+  }
+]
+

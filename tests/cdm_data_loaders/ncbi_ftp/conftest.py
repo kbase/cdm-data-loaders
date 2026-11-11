@@ -11,7 +11,6 @@ import pytest
 import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
 from tests.conftest import TEST_BUCKET as TEST_BUCKET_STR
 
-AWS_REGION = "us-east-1"
 TEST_BUCKET: PurePosixPath = PurePosixPath(TEST_BUCKET_STR)
 
 
@@ -46,7 +45,6 @@ SAMPLE_SUMMARY = (
 ACC_PATH_215 = PurePosixPath("GCF") / "000" / "001" / "215" / "GCF_000001215.4_Release_6_plus_ISO1_MT"
 ACC_PATH_405 = PurePosixPath("GCF") / "000" / "001" / "405" / "GCF_000001405.40_GRCh38.p14"
 ACC_PATH_845 = PurePosixPath("GCF") / "000" / "005" / "845" / "GCF_000005845.2_ASM584v2"
-ACC_PATH_999 = PurePosixPath("GCF") / "000" / "009" / "999" / "GCF_000009999.1_ASM999v1"
 
 _MD5_CHECKSUMS_TXT = (
     "d41d8cd98f00b204e9800998ecf8427e  ./GCF_000001215.4_Release_6_plus_ISO1_MT_genomic.fna.gz\n"

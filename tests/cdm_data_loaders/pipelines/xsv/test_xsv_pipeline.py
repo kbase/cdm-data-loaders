@@ -445,3 +445,27 @@ def test_run_xsv_pipeline_pass_rejected_table_retains_null_columns(
     assert line_no is None
     assert raw_record is None
     assert error_detail
+
+
+def test_process_xsv_file_pass_jsonl_format_yields_lists_of_dicts(
+    settings_factory: Callable[..., XsvIngestSettings],
+    work_paths_factory: Callable[[XsvIngestSettings], XsvWorkPaths],
+) -> None:
+    """When loader_file_format is jsonl, _process_xsv_file yields list[dict] for both valid and _rejected pages."""
+    settings = settings_factory(
+        SIMPLE_SCHEMA,
+        {"mixed.csv": "number,name\n1,alice\n2,bob\n3\n"},
+        loader_file_format="jsonl",
+    )
+    work_paths = work_paths_factory(settings)
+
+    results = list(_process_xsv_file(make_file_item(Path(settings.input_dir) / "mixed.csv"), settings, work_paths))
+    by_table = {result.meta.table_name: result.data for result in results}
+
+    assert set(by_table) == {"my_table", REJECTED_TABLE_NAME}
+    assert isinstance(by_table["my_table"], list)
+    assert by_table["my_table"] == [{"number": 1, "name": "alice"}, {"number": 2, "name": "bob"}]
+    assert isinstance(by_table[REJECTED_TABLE_NAME], list)
+    assert len(by_table[REJECTED_TABLE_NAME]) == 1
+    assert by_table[REJECTED_TABLE_NAME][0]["table_name"] == "my_table"
+    assert by_table[REJECTED_TABLE_NAME][0]["source_file"] == "mixed.csv"

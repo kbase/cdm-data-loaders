@@ -1,6 +1,7 @@
 """File downloader with tenacity for retry support."""
 
-from collections.abc import AsyncIterable, Iterable
+from collections.abc import AsyncIterable, Callable, Generator, Iterable
+from contextlib import contextmanager
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Never
@@ -133,6 +134,40 @@ class DownloadCore:
         raise DownloadError(msg)
 
     @staticmethod
+    def check_should_download(response: httpx.Response, url: str, log: Logger) -> bool:
+        """Validate ``response`` and log when the resource is unmodified (HTTP 304).
+
+        :param response: HTTP response from the server
+        :type response: httpx.Response
+        :param url: download URL
+        :type url: str
+        :param log: logger instance
+        :type log: Logger
+        :return: ``True`` if the response body should be downloaded, ``False`` on HTTP 304
+        :rtype: bool
+        """
+        if not DownloadCore.validate_response(response):
+            log.info("%s: resource has not been modified", url, extra={"url": url})
+            return False
+        return True
+
+    @staticmethod
+    def log_download_success(url: str, destination: Path, log: Logger) -> Path:
+        """Log a successful download and return ``destination``.
+
+        :param url: download URL
+        :type url: str
+        :param destination: saved file path
+        :type destination: Path
+        :param log: logger instance
+        :type log: Logger
+        :return: ``destination``
+        :rtype: Path
+        """
+        log.info("%s: download successful", url, extra={"path": str(destination)})
+        return destination
+
+    @staticmethod
     def check_hash(
         url: str,
         expected_checksum: str,
@@ -160,6 +195,40 @@ class DownloadCore:
             logger.info("%s: %s checksum matches", url, checksum_fn)
 
     @staticmethod
+    @contextmanager
+    def open_hash_writer(
+        url: str,
+        destination: Path,
+        expected_checksum: str | None,
+        checksum_fn: str,
+    ) -> Generator[Callable[[bytes], None]]:
+        """Open ``destination`` for binary writing, update an optional hasher per chunk, and verify on exit.
+
+        :param url: download URL
+        :type url: str
+        :param destination: file path to write to
+        :type destination: Path
+        :param expected_checksum: expected checksum (if known)
+        :type expected_checksum: str | None
+        :param checksum_fn: checksum algorithm name
+        :type checksum_fn: str
+        :yield: callback accepting a ``bytes`` chunk to write and hash
+        :rtype: Generator[Callable[[bytes], None]]
+        """
+        hash_obj = new_hasher(checksum_fn) if expected_checksum else None
+        with destination.open("wb") as fh:
+
+            def _write_chunk(chunk: bytes) -> None:
+                fh.write(chunk)
+                if hash_obj:
+                    hash_obj.update(chunk)
+
+            yield _write_chunk
+
+        if hash_obj and expected_checksum:
+            DownloadCore.check_hash(url, expected_checksum, checksum_fn, hash_obj)
+
+    @staticmethod
     def write_and_hash(
         url: str,
         destination: Path,
@@ -181,17 +250,9 @@ class DownloadCore:
         :type checksum_fn: str, optional
         :raises ChecksumMismatchError: if the checksum of the downloaded data does not match the expected checksum.
         """
-        hash_obj = new_hasher(checksum_fn) if expected_checksum else None
-
-        with destination.open("wb") as fh:
+        with DownloadCore.open_hash_writer(url, destination, expected_checksum, checksum_fn) as write_chunk:
             for chunk in chunks:
-                fh.write(chunk)
-                if hash_obj:
-                    hash_obj.update(chunk)
-
-        # include expected_checksum to stop the typechecker complaining
-        if hash_obj and expected_checksum:
-            DownloadCore.check_hash(url, expected_checksum, checksum_fn, hash_obj)
+                write_chunk(chunk)
 
     @staticmethod
     async def write_and_hash_async(
@@ -215,15 +276,23 @@ class DownloadCore:
         :type checksum_fn: str, optional
         :raises ChecksumMismatchError: if the checksum of the downloaded data does not match the expected checksum.
         """
-        hash_obj = new_hasher(checksum_fn) if expected_checksum else None
-
-        # NOTE: file I/O is sync, but chunk iteration must be async
-        with destination.open("wb") as fh:
+        with DownloadCore.open_hash_writer(url, destination, expected_checksum, checksum_fn) as write_chunk:
             async for chunk in chunks:
-                fh.write(chunk)
-                if hash_obj:
-                    hash_obj.update(chunk)
+                write_chunk(chunk)
 
-        # include expected_checksum to stop the typechecker complaining
-        if hash_obj and expected_checksum:
-            DownloadCore.check_hash(url, expected_checksum, checksum_fn, hash_obj)
+
+class BaseFileDownloader:
+    """Shared base class for synchronous and asynchronous HTTP file downloaders."""
+
+    RETRYABLE_EXCEPTIONS = DownloadCore.RETRYABLE_EXCEPTIONS
+
+    def __init__(self, client: Any, *, chunk_size: int = 8192) -> None:  # noqa: ANN401
+        """Initialize shared HTTP client and chunk size attributes.
+
+        :param client: configured sync or async httpx client
+        :type client: Any
+        :param chunk_size: download stream chunk size in bytes
+        :type chunk_size: int
+        """
+        self.client = client
+        self.chunk_size = chunk_size

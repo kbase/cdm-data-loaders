@@ -33,11 +33,11 @@ from pathlib import PurePath
 from typing import (
     Annotated,
     Any,
-    ClassVar,
     Final,
     ForwardRef,
     Literal,
     NewType,
+    NoReturn,
     NotRequired,
     Required,
     Self,
@@ -52,7 +52,6 @@ from typing import (
 )
 from uuid import UUID
 
-import pyarrow as pa
 from frozendict import frozendict
 from pydantic import (
     UUID1,
@@ -88,11 +87,31 @@ from pydantic.networks import IPvAnyAddress, IPvAnyInterface, IPvAnyNetwork
 from pydantic_core import PydanticUndefined, Url
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.ir import Field as SchemaField
-from cdm_data_loaders.converters.core.ir import NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.guards import (
+    DEFAULT_MAX_RECURSION_DEPTH,
+    validate_max_recursion_depth,
+)
+from cdm_data_loaders.converters.core.ir import (
+    SPEC_BINARY,
+    SPEC_BOOL,
+    SPEC_DATE,
+    SPEC_FLOAT64,
+    SPEC_INT64,
+    SPEC_STRING,
+    SPEC_TIME,
+    SPEC_TS_NAIVE,
+    SPEC_TS_UTC,
+    NodeHints,
+    NodeType,
+    Provenance,
+    SchemaDocument,
+    TypedNode,
+)
+from cdm_data_loaders.converters.core.ir import (
+    Field as SchemaField,
+)
 from cdm_data_loaders.converters.emitters._tabular_base import DECIMAL128_MAX_PRECISION
 
-DEFAULT_MAX_RECURSION_DEPTH: Final[int] = 2
 VARIADIC_TUPLE_ARGS_LEN: Final[int] = 2
 MAP_TYPE_ARGS_LEN: Final[int] = 2
 
@@ -146,151 +165,33 @@ IP_CLASSES: Final[tuple[type[Any], ...]] = (
     IPvAnyNetwork,
 )
 
-SPEC_BOOL: Final[tuple[NodeType, NodeHints]] = ("boolean", NodeHints(logical_type="boolean"))
-SPEC_INT64: Final[tuple[NodeType, NodeHints]] = ("integer", NodeHints(logical_type="long", bit_width=64))
-SPEC_FLOAT64: Final[tuple[NodeType, NodeHints]] = ("number", NodeHints(logical_type="double"))
-SPEC_DATE: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="date"))
-SPEC_TIME: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="time"))
-SPEC_TS_NAIVE: Final[tuple[NodeType, NodeHints]] = (
-    "string",
-    NodeHints(logical_type="timestamp-without-tz", timezone=False),
-)
-SPEC_TS_UTC: Final[tuple[NodeType, NodeHints]] = (
-    "string",
-    NodeHints(logical_type="timestamp-with-tz", timezone=True),
-)
-SPEC_BINARY: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="binary"))
-SPEC_STRING: Final[tuple[NodeType, NodeHints]] = ("string", NodeHints(logical_type="string"))
 
-FIXED_SCALAR_SPEC: Final[frozendict[pa.DataType, tuple[NodeType, NodeHints]]] = frozendict(
-    {
-        pa.bool_(): SPEC_BOOL,
-        pa.int64(): SPEC_INT64,
-        pa.float64(): SPEC_FLOAT64,
-        pa.date32(): SPEC_DATE,
-        pa.time64("us"): SPEC_TIME,
-        pa.binary(): SPEC_BINARY,
-        pa.string(): SPEC_STRING,
-    }
-)
+def _raise_code(
+    code: str,
+    msg: str,
+    *,
+    error_type: type[ConversionError] = ConversionError,
+    error_by_code: Mapping[str, type[ConversionError]] = frozendict(),
+    cause: BaseException | None = None,
+) -> NoReturn:
+    """Raise the configured ``ConversionError`` subclass for ``code`` or fall back to ``error_type``.
 
-
-class PydanticToPyArrowError(ConversionError):
-    """Raised when a Pydantic model construct cannot be converted to a PyArrow schema.
-
-    Subclasses raised by :func:`generate_pyarrow_schema` carry a stable specification ``code`` and a short
-    ``title``; their docstrings state why the construct is rejected. The converter specification document is
-    generated from these attributes.
+    :param code: Specification error code (``E1``-``E12``).
+    :type code: str
+    :param msg: Diagnostic error message.
+    :type msg: str
+    :param error_type: Fallback error class.
+    :type error_type: type[ConversionError]
+    :param error_by_code: Mapping from specification error code to exception class.
+    :type error_by_code: Mapping[str, type[ConversionError]]
+    :param cause: Optional underlying exception to chain via ``raise ... from cause``.
+    :type cause: BaseException | None
+    :raises ConversionError: Always raised with the resolved error class.
     """
-
-    code: ClassVar[str] = ""
-    title: ClassVar[str] = ""
-
-
-class InvalidPydanticModelError(PydanticToPyArrowError):
-    """Converter requires a concrete Pydantic `BaseModel` subclass as input."""
-
-    code = "E1"
-    title = "Input is not a concrete Pydantic `BaseModel` subclass"
-
-
-class NonStructRootError(PydanticToPyArrowError):
-    """Root of a PyArrow schema must be a `struct` (a table has named columns, not a bare scalar, list, or map)."""
-
-    code = "E2"
-    title = "Non-struct `RootModel`"
-
-
-class EmptyModelError(PydanticToPyArrowError):
-    """Parquet cannot persist a `struct` with zero child fields."""
-
-    code = "E3"
-    title = "Empty model or tuple (zero fields)"
-
-
-class UnconstrainedFieldError(PydanticToPyArrowError):
-    """PyArrow requires a concrete static column type and has no dynamic `any` or untyped container column."""
-
-    code = "E4"
-    title = "Unconstrained field (`Any`, `object`, untyped container, or unbound `TypeVar`)"
-
-
-class OpenTupleError(PydanticToPyArrowError):
-    """Positional tuple structs require a fixed element count so every position maps to a deterministic field."""
-
-    code = "E5"
-    title = "Open tuple mixing positional and variadic elements"
-
-
-class NonStringMapKeyError(PydanticToPyArrowError):
-    """Fixed-field structs cannot mix open `extra='allow'` maps, and Arrow maps require string keys for JSONL round-tripping."""
-
-    code = "E6"
-    title = "Open `extra='allow'` model or non-string mapping key type"
-
-
-class UnsupportedFieldTypeError(PydanticToPyArrowError):
-    """Non-serializable Python runtime types and null-only fields have no valid Arrow column representation."""
-
-    code = "E7"
-    title = "Unsupported field type or null-only field"
-
-
-class IncompatibleUnionBranchesError(PydanticToPyArrowError):
-    """PyArrow cannot merge lists, maps, and structs into a single column without an opaque union type."""
-
-    code = "E8"
-    title = "Incompatible structural union branches"
-
-
-class UnresolvedForwardRefError(PydanticToPyArrowError):
-    """Schema generation requires all forward type annotations to be resolved to concrete types."""
-
-    code = "E9"
-    title = "Unresolvable forward reference"
-
-
-class RecursiveNonJsonTypeError(PydanticToPyArrowError):
-    """Truncated recursive subtrees are serialized with `json.dumps`, which cannot encode `datetime.date` or `bytes`; cyclic type aliases without a `BaseModel` boundary cannot be finitely unrolled."""
-
-    code = "E10"
-    title = "Non-JSON-serializable type in a recursive model cycle or cyclic type alias"
-
-
-CyclicTypeAliasError = RecursiveNonJsonTypeError
-
-
-class InvalidDecimalConstraintsError(PydanticToPyArrowError):
-    """Arrow `decimal128` requires `1 <= max_digits <= 38` and `0 <= decimal_places <= max_digits`."""
-
-    code = "E11"
-    title = "Invalid or out-of-range `Decimal` precision/scale constraints"
-
-
-NullOnlyFieldError = UnsupportedFieldTypeError
-
-
-class ValueFieldCollisionError(PydanticToPyArrowError):
-    """The synthesized `_value` field for scalar union branches would collide with the model's declared `_value` field."""
-
-    code = "E12"
-    title = "`_value` collision in a scalar + model union"
-
-
-PYDANTIC_TO_PYARROW_ERRORS: Final[tuple[type[PydanticToPyArrowError], ...]] = (
-    InvalidPydanticModelError,
-    NonStructRootError,
-    EmptyModelError,
-    UnconstrainedFieldError,
-    OpenTupleError,
-    NonStringMapKeyError,
-    UnsupportedFieldTypeError,
-    IncompatibleUnionBranchesError,
-    UnresolvedForwardRefError,
-    RecursiveNonJsonTypeError,
-    InvalidDecimalConstraintsError,
-    ValueFieldCollisionError,
-)
+    cls = error_by_code.get(code, error_type)
+    if cause is not None:
+        raise cls(msg) from cause
+    raise cls(msg)
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,6 +215,27 @@ class _SchemaBuildContext:
     max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH
     by_alias: bool = False
     module_ns: Mapping[str, Any] = field(default_factory=frozendict)
+    error_type: type[ConversionError] = ConversionError
+    error_by_code: Mapping[str, type[ConversionError]] = field(default_factory=frozendict)
+
+    def raise_err(self, code: str, msg: str, *, cause: BaseException | None = None) -> NoReturn:
+        """Raise the configured exception subclass for ``code`` or fall back to ``error_type``.
+
+        :param code: Specification error code (``E1``-``E12``).
+        :type code: str
+        :param msg: Diagnostic error message.
+        :type msg: str
+        :param cause: Optional underlying exception to chain via ``raise ... from cause``.
+        :type cause: BaseException | None
+        :raises ConversionError: Always raised with the resolved error class.
+        """
+        _raise_code(
+            code,
+            msg,
+            error_type=self.error_type,
+            error_by_code=self.error_by_code,
+            cause=cause,
+        )
 
     def with_model(self, model: type[BaseModel]) -> Self:
         """Return a new context incrementing the expansion count for ``model`` and resetting alias cycle state."""
@@ -325,6 +247,8 @@ class _SchemaBuildContext:
             max_recursion_depth=self.max_recursion_depth,
             by_alias=self.by_alias,
             module_ns=ns,
+            error_type=self.error_type,
+            error_by_code=self.error_by_code,
         )
 
     def with_alias(self, alias_obj: Any) -> Self:  # noqa: ANN401
@@ -335,10 +259,12 @@ class _SchemaBuildContext:
             max_recursion_depth=self.max_recursion_depth,
             by_alias=self.by_alias,
             module_ns=self.module_ns,
+            error_type=self.error_type,
+            error_by_code=self.error_by_code,
         )
 
 
-def _ensure_model_complete(model: type[BaseModel]) -> None:
+def _ensure_model_complete(model: type[BaseModel], ctx: _SchemaBuildContext | None = None) -> None:
     """Ensure a Pydantic BaseModel subclass has resolved all forward references."""
     if not getattr(model, "__pydantic_complete__", True):
         mod = sys.modules.get(model.__module__)
@@ -347,26 +273,42 @@ def _ensure_model_complete(model: type[BaseModel]) -> None:
             model.model_rebuild(raise_errors=True, _types_namespace=ns)
         except (PydanticUndefinedAnnotation, NameError, TypeError) as exc:
             msg = f"Unresolved forward reference in model {model.__name__}: {exc}"
-            raise UnresolvedForwardRefError(msg) from exc
+            if ctx is not None:
+                ctx.raise_err("E9", msg, cause=exc)
+            _raise_code("E9", msg, cause=exc)
         except PydanticSchemaGenerationError:
             return
     if not getattr(model, "__pydantic_complete__", True):
         msg = f"Model {model.__name__} remains incomplete after model_rebuild()"
-        raise UnresolvedForwardRefError(msg)
+        if ctx is not None:
+            ctx.raise_err("E9", msg)
+        _raise_code("E9", msg)
 
 
-def _validate_model_class(model: object) -> type[BaseModel]:
-    """Validate that ``model`` is a concrete Pydantic ``BaseModel`` subclass."""
-    if not isinstance(model, type) or not issubclass(model, BaseModel) or model in {BaseModel, RootModel}:
-        msg = f"Expected a concrete Pydantic BaseModel subclass, got {model!r}"
-        raise InvalidPydanticModelError(msg)
-    _ensure_model_complete(model)
+def _ensure_concrete_model(model: type[BaseModel], ctx: _SchemaBuildContext) -> None:
+    """Ensure ``model`` has resolved forward references and has no unbound generic type parameters.
+
+    :param model: Pydantic ``BaseModel`` subclass to validate.
+    :type model: type[BaseModel]
+    :param ctx: Active schema build context.
+    :type ctx: _SchemaBuildContext
+    :raises ConversionError: If forward references cannot be resolved or ``model`` has unbound generic type parameters.
+    """
+    _ensure_model_complete(model, ctx)
     generic_meta = getattr(model, "__pydantic_generic_metadata__", {})
     if generic_meta.get("parameters"):
         msg = (
             f"Unparameterized generic model {model.__name__} has unbound type parameters: {generic_meta['parameters']}"
         )
-        raise UnconstrainedFieldError(msg)
+        ctx.raise_err("E4", msg)
+
+
+def _validate_model_class(model: object, ctx: _SchemaBuildContext) -> type[BaseModel]:
+    """Validate that ``model`` is a concrete Pydantic ``BaseModel`` subclass."""
+    if not isinstance(model, type) or not issubclass(model, BaseModel) or model in {BaseModel, RootModel}:
+        msg = f"Expected a concrete Pydantic BaseModel subclass, got {model!r}"
+        ctx.raise_err("E1", msg)
+    _ensure_concrete_model(model, ctx)
     return model
 
 
@@ -399,17 +341,28 @@ def _collect_meta_items(meta_seq: Iterable[Any]) -> list[Any]:
     return items
 
 
+def _clean_docstring(cls: type[Any]) -> str | None:
+    """Return a cleaned class docstring if defined on ``cls``, excluding generated signature docstrings.
+
+    :param cls: Class to inspect.
+    :type cls: type[Any]
+    :return: Cleaned docstring or ``None``.
+    :rtype: str | None
+    """
+    raw_doc = cls.__dict__.get("__doc__")
+    if not raw_doc or not isinstance(raw_doc, str):
+        return None
+    cleaned = inspect.cleandoc(raw_doc).strip()
+    return None if (not cleaned or cleaned.startswith(f"{cls.__name__}(")) else cleaned
+
+
 def _extract_class_docstring(tp: Any) -> str | None:  # noqa: ANN401
     """Extract a cleaned class docstring from a ``BaseModel`` or ``Enum`` subclass when defined on ``tp``."""
     if not isinstance(tp, type) or not (issubclass(tp, BaseModel) or issubclass(tp, Enum)):
         return None
     if tp in {BaseModel, RootModel, Enum, IntEnum, StrEnum}:
         return None
-    raw_doc = tp.__dict__.get("__doc__")
-    if not raw_doc or not isinstance(raw_doc, str):
-        return None
-    cleaned = inspect.cleandoc(raw_doc).strip()
-    return None if (not cleaned or cleaned.startswith(f"{tp.__name__}(")) else cleaned
+    return _clean_docstring(tp)
 
 
 def _safe_type_hints(tp: type[Any], module_ns: Mapping[str, Any]) -> dict[str, Any]:
@@ -454,9 +407,7 @@ def _dataclass_to_model(tp: type[Any], ctx: _SchemaBuildContext) -> type[BaseMod
             default_spec = ...
         field_defs[dc_f.name] = (f_ann, default_spec)
     model_cls = create_model(tp.__name__, __module__=tp.__module__, **field_defs)
-    raw_doc = tp.__dict__.get("__doc__")
-    is_custom_doc = isinstance(raw_doc, str) and not raw_doc.strip().startswith(f"{tp.__name__}(")
-    model_cls.__doc__ = raw_doc if is_custom_doc else None
+    model_cls.__doc__ = _clean_docstring(tp)
     return model_cls
 
 
@@ -476,13 +427,13 @@ def _unwrap_type_alias(curr: Any, ctx: _SchemaBuildContext) -> tuple[Any, _Schem
     if isinstance(curr, TypeAliasType):
         if curr in ctx.active_aliases:
             msg = f"Cyclic recursive type alias without a BaseModel boundary: {curr.__name__}"
-            raise CyclicTypeAliasError(msg)
+            ctx.raise_err("E10", msg)
         return curr.__value__, ctx.with_alias(curr)
     origin = get_origin(curr)
     if isinstance(origin, TypeAliasType):
         if origin in ctx.active_aliases:
             msg = f"Cyclic recursive type alias without a BaseModel boundary: {origin.__name__}"
-            raise CyclicTypeAliasError(msg)
+            ctx.raise_err("E10", msg)
         type_params = getattr(origin, "__type_params__", ())
         tv_map = dict(zip(type_params, get_args(curr), strict=False))
         return _substitute_typevars(origin.__value__, tv_map), ctx.with_alias(origin)
@@ -502,7 +453,7 @@ def _unwrap_step(
         if ref_name in ctx.module_ns:
             return ctx.module_ns[ref_name], ctx, True
         msg = f"Unresolved forward reference: {ref_name!r}"
-        raise UnresolvedForwardRefError(msg)
+        ctx.raise_err("E9", msg)
     if get_origin(curr) is Annotated:
         args = get_args(curr)
         meta_items.extend(_collect_meta_items(args[1:]))
@@ -513,10 +464,7 @@ def _unwrap_step(
     if isinstance(curr, NewType) or hasattr(curr, "__supertype__"):
         return curr.__supertype__, ctx, True
     if isinstance(curr, type) and issubclass(curr, RootModel) and curr is not RootModel:
-        _ensure_model_complete(curr)
-        if getattr(curr, "__pydantic_generic_metadata__", {}).get("parameters"):
-            msg = f"Unparameterized generic RootModel {curr.__name__}"
-            raise UnconstrainedFieldError(msg)
+        _ensure_concrete_model(curr, ctx)
         root_finfo = curr.model_fields["root"]
         meta_items.extend(_collect_meta_items([root_finfo]))
         return root_finfo.annotation, ctx, True
@@ -664,7 +612,37 @@ def _unify_scalar_specs(
     return *SPEC_STRING, joined_label
 
 
-def _resolve_literal_scalar(tp: Any) -> tuple[NodeType, NodeHints, str]:  # noqa: ANN401
+def _scalar_spec_for_runtime_value(
+    val: object,
+    error_msg: str,
+    ctx: _SchemaBuildContext,
+) -> tuple[NodeType, NodeHints, str]:
+    """Map a runtime ``Literal`` or ``Enum`` member value to ``(NodeType, NodeHints, pydantic_type)``.
+
+    :param val: Runtime scalar value.
+    :type val: object
+    :param error_msg: Diagnostic message if ``val`` is not a supported scalar primitive.
+    :type error_msg: str
+    :param ctx: Active schema build context.
+    :type ctx: _SchemaBuildContext
+    :return: Tuple of ``(NodeType, NodeHints, pydantic_type)``.
+    :rtype: tuple[NodeType, NodeHints, str]
+    :raises ConversionError: If ``val`` is not ``bool``, ``int``, ``float``, ``str``, or ``bytes``.
+    """
+    if isinstance(val, bool):
+        return *SPEC_BOOL, "boolean"
+    if isinstance(val, int):
+        return *SPEC_INT64, "integer"
+    if isinstance(val, float):
+        return *SPEC_FLOAT64, "number"
+    if isinstance(val, str):
+        return *SPEC_STRING, "string"
+    if isinstance(val, bytes):
+        return *SPEC_BINARY, "binary"
+    raise ctx.error_by_code.get("E7", ctx.error_type)(error_msg)
+
+
+def _resolve_literal_scalar(tp: Any, ctx: _SchemaBuildContext) -> tuple[NodeType, NodeHints, str]:  # noqa: ANN401
     """Resolve a ``Literal[...]`` type to ``(NodeType, NodeHints, pydantic_type)``."""
     raw_values: list[Any] = []
 
@@ -679,28 +657,20 @@ def _resolve_literal_scalar(tp: Any) -> tuple[NodeType, NodeHints, str]:  # noqa
     non_null = [v for v in raw_values if v is not None]
     if not non_null:
         msg = "Literal[None] has no non-null values and cannot be converted to a PyArrow column"
-        raise NullOnlyFieldError(msg)
+        ctx.raise_err("E7", msg)
 
-    resolved: list[tuple[NodeType, NodeHints, str]] = []
-    for val in non_null:
-        raw_val = val.value if isinstance(val, Enum) else val
-        if isinstance(raw_val, bool):
-            resolved.append((*SPEC_BOOL, "boolean"))
-        elif isinstance(raw_val, int):
-            resolved.append((*SPEC_INT64, "integer"))
-        elif isinstance(raw_val, float):
-            resolved.append((*SPEC_FLOAT64, "number"))
-        elif isinstance(raw_val, str):
-            resolved.append((*SPEC_STRING, "string"))
-        elif isinstance(raw_val, bytes):
-            resolved.append((*SPEC_BINARY, "binary"))
-        else:
-            msg = f"Unsupported Literal member value: {val!r}"
-            raise UnsupportedFieldTypeError(msg)
+    resolved = [
+        _scalar_spec_for_runtime_value(
+            val.value if isinstance(val, Enum) else val,
+            f"Unsupported Literal member value: {val!r}",
+            ctx,
+        )
+        for val in non_null
+    ]
     return _unify_scalar_specs(resolved)
 
 
-def _resolve_enum_scalar(enum_cls: type[Enum]) -> tuple[NodeType, NodeHints, str]:
+def _resolve_enum_scalar(enum_cls: type[Enum], ctx: _SchemaBuildContext) -> tuple[NodeType, NodeHints, str]:
     """Resolve an ``Enum`` subclass to ``(NodeType, NodeHints, pydantic_type)``."""
     if issubclass(enum_cls, StrEnum) or issubclass(enum_cls, str):
         return *SPEC_STRING, "string"
@@ -712,24 +682,16 @@ def _resolve_enum_scalar(enum_cls: type[Enum]) -> tuple[NodeType, NodeHints, str
     members = list(enum_cls)
     if not members:
         msg = f"Empty Enum {enum_cls.__name__} has no members"
-        raise UnsupportedFieldTypeError(msg)
+        ctx.raise_err("E7", msg)
 
-    resolved: list[tuple[NodeType, NodeHints, str]] = []
-    for member in members:
-        val = member.value
-        if isinstance(val, bool):
-            resolved.append((*SPEC_BOOL, "boolean"))
-        elif isinstance(val, int):
-            resolved.append((*SPEC_INT64, "integer"))
-        elif isinstance(val, float):
-            resolved.append((*SPEC_FLOAT64, "number"))
-        elif isinstance(val, str):
-            resolved.append((*SPEC_STRING, "string"))
-        elif isinstance(val, bytes):
-            resolved.append((*SPEC_BINARY, "binary"))
-        else:
-            msg = f"Unsupported Enum member value {val!r} in {enum_cls.__name__}"
-            raise UnsupportedFieldTypeError(msg)
+    resolved = [
+        _scalar_spec_for_runtime_value(
+            member.value,
+            f"Unsupported Enum member value {member.value!r} in {enum_cls.__name__}",
+            ctx,
+        )
+        for member in members
+    ]
     return _unify_scalar_specs(resolved)
 
 
@@ -752,12 +714,8 @@ DIRECT_SCALAR_MARKERS: Final[frozendict[Any, tuple[NodeType, NodeHints, str]]] =
         IPvAnyAddress: (*SPEC_STRING, "ip"),
         IPvAnyInterface: (*SPEC_STRING, "ip"),
         IPvAnyNetwork: (*SPEC_STRING, "ip"),
-        AnyUrl: (*SPEC_STRING, "string"),
         HttpUrl: (*SPEC_STRING, "string"),
-        EmailStr: (*SPEC_STRING, "string"),
-        NameEmail: (*SPEC_STRING, "string"),
         Base64Str: (*SPEC_STRING, "string"),
-        Url: (*SPEC_STRING, "string"),
     }
 )
 
@@ -775,11 +733,14 @@ SUBCLASS_SCALAR_TABLE: Final[tuple[tuple[type[Any] | tuple[type[Any], ...], tupl
 )
 
 
-def _resolve_decimal_scalar(parsed: _ParsedAnnotation) -> tuple[NodeType, NodeHints, str]:
+def _resolve_decimal_scalar(
+    parsed: _ParsedAnnotation,
+    ctx: _SchemaBuildContext,
+) -> tuple[NodeType, NodeHints, str]:
     """Resolve a ``Decimal`` annotation and its ``max_digits`` / ``decimal_places`` metadata."""
     if parsed.max_digits is not None and not (1 <= parsed.max_digits <= DECIMAL128_MAX_PRECISION):
         msg = f"Unsupported Arrow decimal128 precision: max_digits={parsed.max_digits} (must be 1..38)"
-        raise InvalidDecimalConstraintsError(msg)
+        ctx.raise_err("E11", msg)
     if parsed.decimal_places is not None and (
         parsed.decimal_places < 0 or (parsed.max_digits is not None and parsed.decimal_places > parsed.max_digits)
     ):
@@ -787,7 +748,7 @@ def _resolve_decimal_scalar(parsed: _ParsedAnnotation) -> tuple[NodeType, NodeHi
             f"Unsupported Arrow decimal128 scale: max_digits={parsed.max_digits}, "
             f"decimal_places={parsed.decimal_places}"
         )
-        raise InvalidDecimalConstraintsError(msg)
+        ctx.raise_err("E11", msg)
     if parsed.max_digits is not None and parsed.decimal_places is not None:
         return (
             "number",
@@ -797,12 +758,16 @@ def _resolve_decimal_scalar(parsed: _ParsedAnnotation) -> tuple[NodeType, NodeHi
     return *SPEC_FLOAT64, "number"
 
 
-def _resolve_class_scalar(tp: type[Any], parsed: _ParsedAnnotation) -> tuple[NodeType, NodeHints, str] | None:
+def _resolve_class_scalar(
+    tp: type[Any],
+    parsed: _ParsedAnnotation,
+    ctx: _SchemaBuildContext,
+) -> tuple[NodeType, NodeHints, str] | None:
     """Resolve a class-based scalar ``tp`` to ``(NodeType, NodeHints, pydantic_type)`` or ``None``."""
     if issubclass(tp, Enum):
-        return _resolve_enum_scalar(tp)
+        return _resolve_enum_scalar(tp, ctx)
     if issubclass(tp, Decimal):
-        return _resolve_decimal_scalar(parsed)
+        return _resolve_decimal_scalar(parsed, ctx)
     if issubclass(tp, datetime):
         return (*SPEC_TS_NAIVE, "date-time-naive") if parsed.is_naive_datetime else (*SPEC_TS_UTC, "date-time")
     if issubclass(tp, bytes | bytearray | SecretBytes):
@@ -813,18 +778,21 @@ def _resolve_class_scalar(tp: type[Any], parsed: _ParsedAnnotation) -> tuple[Nod
     return None
 
 
-def _resolve_parsed_scalar(parsed: _ParsedAnnotation) -> tuple[NodeType, NodeHints, str]:
+def _resolve_parsed_scalar(
+    parsed: _ParsedAnnotation,
+    ctx: _SchemaBuildContext,
+) -> tuple[NodeType, NodeHints, str]:
     """Resolve an unwrapped scalar ``_ParsedAnnotation`` to ``(NodeType, NodeHints, pydantic_type)``."""
     tp = parsed.annotation
     if _is_none_type(tp):
         msg = "Standalone NoneType cannot be converted to a PyArrow column"
-        raise NullOnlyFieldError(msg)
+        ctx.raise_err("E7", msg)
     if tp is Any or tp is object or isinstance(tp, TypeVar):
         msg = f"Unconstrained scalar type: {tp!r}"
-        raise UnconstrainedFieldError(msg)
+        ctx.raise_err("E4", msg)
 
     if get_origin(tp) is Literal:
-        return _resolve_literal_scalar(tp)
+        return _resolve_literal_scalar(tp, ctx)
 
     try:
         direct = DIRECT_SCALAR_MARKERS.get(tp)
@@ -834,35 +802,35 @@ def _resolve_parsed_scalar(parsed: _ParsedAnnotation) -> tuple[NodeType, NodeHin
         return direct
 
     if isinstance(tp, type):
-        resolved = _resolve_class_scalar(tp, parsed)
+        resolved = _resolve_class_scalar(tp, parsed, ctx)
         if resolved is not None:
             return resolved
 
     msg = f"Unsupported field type annotation: {tp!r}"
-    raise UnsupportedFieldTypeError(msg)
+    raise ctx.error_by_code.get("E7", ctx.error_type)(msg)
 
 
-def _validate_non_bare_annotation(tp: Any, origin: Any) -> None:  # noqa: ANN401
+def _validate_non_bare_annotation(tp: Any, origin: Any, ctx: _SchemaBuildContext) -> None:  # noqa: ANN401
     """Raise an error if ``tp`` is unconstrained, a bare container, or an unsupported callable/pattern."""
     if tp is Any or tp is object or isinstance(tp, TypeVar):
         msg = f"Unconstrained field annotation: {tp!r}"
-        raise UnconstrainedFieldError(msg)
+        ctx.raise_err("E4", msg)
     if origin in CALLABLE_ORIGINS or tp in CALLABLE_ORIGINS:
         msg = f"Unsupported runtime type annotation: {tp!r}"
-        raise UnsupportedFieldTypeError(msg)
+        ctx.raise_err("E7", msg)
     if tp in SEQUENCE_ORIGINS or tp is tuple or tp in MAP_ORIGINS:
         msg = f"Bare untyped container {tp!r} requires type parameters"
-        raise UnconstrainedFieldError(msg)
+        ctx.raise_err("E4", msg)
 
 
-def _classify_parsed_kind(parsed: _ParsedAnnotation) -> str:
+def _classify_parsed_kind(parsed: _ParsedAnnotation, ctx: _SchemaBuildContext) -> str:
     """Classify an unwrapped non-union annotation into ``'null'``, ``'model'``, ``'sequence'``, ``'tuple'``, ``'map'``, or ``'scalar'``."""
     tp = parsed.annotation
     if _is_none_type(tp):
         return "null"
 
     origin = get_origin(tp)
-    _validate_non_bare_annotation(tp, origin)
+    _validate_non_bare_annotation(tp, origin, ctx)
 
     if origin in SEQUENCE_ORIGINS:
         return "sequence"
@@ -875,11 +843,8 @@ def _classify_parsed_kind(parsed: _ParsedAnnotation) -> str:
     if isinstance(tp, type) and issubclass(tp, BaseModel):
         if tp in {BaseModel, RootModel}:
             msg = f"Bare {tp.__name__} cannot be used as a field type"
-            raise InvalidPydanticModelError(msg)
-        _ensure_model_complete(tp)
-        if getattr(tp, "__pydantic_generic_metadata__", {}).get("parameters"):
-            msg = f"Unparameterized generic model {tp.__name__} has unbound type parameters"
-            raise UnconstrainedFieldError(msg)
+            ctx.raise_err("E1", msg)
+        _ensure_concrete_model(tp, ctx)
         return "model"
 
     return "scalar"
@@ -891,7 +856,7 @@ def _is_valid_string_map_key(key_ann: Any, ctx: _SchemaBuildContext) -> bool:  #
     tp = parsed.annotation
     if tp is Any or tp is object or isinstance(tp, TypeVar):
         msg = f"Unconstrained map key type: {tp!r}"
-        raise UnconstrainedFieldError(msg)
+        ctx.raise_err("E4", msg)
     origin = get_origin(tp)
     if _is_union_origin(origin):
         branches = _flatten_union_branches(parsed, next_ctx)
@@ -934,13 +899,13 @@ def _extract_model_field_specs(
     ctx: _SchemaBuildContext,
 ) -> list[_ModelFieldSpec]:
     """Extract ordered active declared and computed fields from ``model``."""
-    _ensure_model_complete(model)
+    _ensure_model_complete(model, ctx)
     if model.model_config.get("extra") == "allow":
         msg = (
             f"Model {model.__name__} declares extra='allow' on a fixed-field BaseModel; "
             "open extra fields cannot be represented in a closed PyArrow struct"
         )
-        raise NonStringMapKeyError(msg)
+        ctx.raise_err("E6", msg)
     model_ctx = ctx.with_model(model)
     specs: list[_ModelFieldSpec] = []
 
@@ -992,7 +957,7 @@ def _check_no_forbidden_types_in_recursive_model(
     ctx: _SchemaBuildContext,
     visited: set[type[BaseModel]] | None = None,
 ) -> None:
-    """Raise ``RecursiveNonJsonTypeError`` (``E10``) if a recursive model cycle contains non-JSON-native scalar types."""
+    """Raise ``E10`` if a recursive model cycle contains non-JSON-native scalar types."""
     if visited is None:
         visited = set()
     if model in visited:
@@ -1017,7 +982,7 @@ def _check_no_forbidden_types_in_annotation(
         for branch_parsed, branch_ctx in _flatten_union_branches(parsed, next_ctx):
             _check_no_forbidden_types_in_annotation(branch_parsed.annotation, branch_ctx, visited)
         return
-    kind = _classify_parsed_kind(parsed)
+    kind = _classify_parsed_kind(parsed, next_ctx)
     if kind == "model":
         _check_no_forbidden_types_in_recursive_model(tp, next_ctx, visited)
         return
@@ -1026,7 +991,7 @@ def _check_no_forbidden_types_in_annotation(
             if arg is not Ellipsis:
                 _check_no_forbidden_types_in_annotation(arg, next_ctx, visited)
         return
-    _, hints, _ = _resolve_parsed_scalar(parsed)
+    _, hints, _ = _resolve_parsed_scalar(parsed, next_ctx)
     if hints.logical_type in {
         "date",
         "timestamp-with-tz",
@@ -1036,7 +1001,7 @@ def _check_no_forbidden_types_in_annotation(
         "binary",
     }:
         msg = f"Non-JSON-serializable scalar type {hints.logical_type} in recursive model cycle"
-        raise RecursiveNonJsonTypeError(msg)
+        next_ctx.raise_err("E10", msg)
 
 
 def _nodes_same_shape(a: TypedNode, b: TypedNode) -> bool:
@@ -1079,7 +1044,7 @@ def _build_sequence_node(
     args = get_args(parsed.annotation)
     if not args:
         msg = f"Untyped sequence annotation: {parsed.annotation!r}"
-        raise UnconstrainedFieldError(msg)
+        ctx.raise_err("E4", msg)
     item_field = _build_field_ir("item", args[0], ctx, (*path, "element"), required_in_parent=True)
     item_node = replace(item_field.node, annotations=item_field.annotations)
     return TypedNode(
@@ -1101,10 +1066,10 @@ def _build_tuple_node(
     args = get_args(parsed.annotation)
     if not args:
         msg = "Empty tuple tuple[()] cannot be converted to a PyArrow struct with zero fields"
-        raise EmptyModelError(msg)
+        ctx.raise_err("E3", msg)
     if any(_is_variadic_unpack(a) for a in args):
         msg = f"Open tuple mixing positional elements and variadic unpack is not supported: {parsed.annotation!r}"
-        raise OpenTupleError(msg)
+        ctx.raise_err("E5", msg)
 
     fields = tuple(
         _build_field_ir(f"item_{idx}", elem_ann, ctx, (*path, f"item_{idx}"), required_in_parent=True)
@@ -1132,11 +1097,11 @@ def _build_map_node(
     args = get_args(parsed.annotation)
     if len(args) != MAP_TYPE_ARGS_LEN:
         msg = f"Mapping annotation requires key and value type arguments: {parsed.annotation!r}"
-        raise UnconstrainedFieldError(msg)
+        ctx.raise_err("E4", msg)
     key_ann, val_ann = args
     if not _is_valid_string_map_key(key_ann, ctx):
         msg = f"Map key type must resolve to str, got {key_ann!r}"
-        raise NonStringMapKeyError(msg)
+        ctx.raise_err("E6", msg)
     key_node = TypedNode(
         type="string",
         nullable=False,
@@ -1181,7 +1146,7 @@ def _build_merged_models_struct(
 
     if scalar_branches and "_value" in fields_by_name:
         msg = "Field '_value' in model branch collides with synthesized '_value' field in scalar + model union"
-        raise ValueFieldCollisionError(msg)
+        ctx.raise_err("E12", msg)
 
     ir_fields: list[SchemaField] = []
     for out_name, spec_list in fields_by_name.items():
@@ -1222,7 +1187,7 @@ def _build_merged_models_struct(
             )
 
     if scalar_branches:
-        resolved_scalars = [_resolve_parsed_scalar(sb) for sb in scalar_branches]
+        resolved_scalars = [_resolve_parsed_scalar(sb, ctx) for sb in scalar_branches]
         val_node_type, val_hints, val_label = _unify_scalar_specs(resolved_scalars)
         val_path = (*path, "_value")
         val_prov = Provenance("pydantic", val_path, {"pydantic_type": val_label})
@@ -1232,7 +1197,7 @@ def _build_merged_models_struct(
     if not ir_fields:
         model_names = ", ".join(m.__name__ for m in models)
         msg = f"Model {model_names} has zero active fields and cannot be converted to a PyArrow struct"
-        raise EmptyModelError(msg)
+        ctx.raise_err("E3", msg)
 
     fields_tuple = tuple(ir_fields)
     required_names = tuple(f.name for f in fields_tuple if f.required)
@@ -1260,8 +1225,8 @@ def _partition_union_branches(
     scalar_branches: list[_ParsedAnnotation] = []
     other_kinds: list[str] = []
 
-    for b_parsed, _ in non_null:
-        kind = _classify_parsed_kind(b_parsed)
+    for b_parsed, b_ctx in non_null:
+        kind = _classify_parsed_kind(b_parsed, b_ctx)
         if kind == "model":
             if b_parsed.annotation not in model_branches:
                 model_branches.append(b_parsed.annotation)
@@ -1279,12 +1244,12 @@ def _resolve_container_union_branches(
     *,
     nullable: bool,
 ) -> TypedNode:
-    """Resolve container branches in a union or raise ``IncompatibleUnionBranchesError``."""
+    """Resolve container branches in a union or raise ``E8``."""
     model_branches, scalar_branches, other_kinds = partition
     container_nodes = [
         _build_parsed_node(b, b_ctx, path, nullable=nullable)
         for b, b_ctx in non_null
-        if _classify_parsed_kind(b) not in {"model", "scalar"}
+        if _classify_parsed_kind(b, b_ctx) not in {"model", "scalar"}
     ]
     if not model_branches and not scalar_branches and len(set(other_kinds)) == 1:
         first_node = container_nodes[0]
@@ -1294,7 +1259,8 @@ def _resolve_container_union_branches(
         f"Incompatible union branch shapes: models={[m.__name__ for m in model_branches]}, "
         f"scalars={len(scalar_branches)}, containers={list(other_kinds)}"
     )
-    raise IncompatibleUnionBranchesError(msg)
+    first_ctx = non_null[0][1]
+    raise first_ctx.error_by_code.get("E8", first_ctx.error_type)(msg)
 
 
 def _build_multi_branch_node(
@@ -1311,7 +1277,7 @@ def _build_multi_branch_node(
     non_null = [(b, b_ctx) for b, b_ctx in flat_branches if not _is_none_type(b.annotation)]
     if not non_null:
         msg = "Standalone null-only union cannot be converted to a PyArrow field"
-        raise NullOnlyFieldError(msg)
+        branches[0][1].raise_err("E7", msg)
 
     if len(non_null) == 1:
         return _build_parsed_node(non_null[0][0], non_null[0][1], path, nullable=nullable)
@@ -1327,8 +1293,11 @@ def _build_multi_branch_node(
             nullable=nullable,
         )
 
+    base_ctx = non_null[0][1]
     if scalar_branches and not model_branches:
-        node_type, hints, pyd_type = _unify_scalar_specs([_resolve_parsed_scalar(sb) for sb in scalar_branches])
+        node_type, hints, pyd_type = _unify_scalar_specs(
+            [_resolve_parsed_scalar(sb, base_ctx) for sb in scalar_branches]
+        )
         return TypedNode(
             type=node_type,
             nullable=nullable,
@@ -1336,7 +1305,6 @@ def _build_multi_branch_node(
             provenance=Provenance("pydantic", path, {"pydantic_type": pyd_type}),
         )
 
-    base_ctx = non_null[0][1]
     for m in model_branches:
         if base_ctx.model_counts.get(m, 0) >= 1:
             _check_no_forbidden_types_in_recursive_model(m, base_ctx)
@@ -1384,12 +1352,12 @@ def _build_parsed_node(
     tp = parsed.annotation
     if _is_none_type(tp):
         msg = "Standalone NoneType field cannot be converted to a PyArrow column"
-        raise NullOnlyFieldError(msg)
+        ctx.raise_err("E7", msg)
 
     if _is_union_origin(get_origin(tp)):
         return _build_multi_branch_node([(parsed, ctx)], path, nullable=nullable)
 
-    kind = _classify_parsed_kind(parsed)
+    kind = _classify_parsed_kind(parsed, ctx)
     if kind == "model":
         model_cls: type[BaseModel] = tp
         if ctx.model_counts.get(model_cls, 0) >= 1:
@@ -1406,7 +1374,7 @@ def _build_parsed_node(
     if builder is not None:
         return builder(parsed, ctx, path, nullable=nullable)
 
-    node_type, hints, pyd_type = _resolve_parsed_scalar(parsed)
+    node_type, hints, pyd_type = _resolve_parsed_scalar(parsed, ctx)
     return TypedNode(
         type=node_type,
         nullable=nullable,
@@ -1445,22 +1413,6 @@ def _build_field_ir(  # noqa: PLR0913
     )
 
 
-def _decode_metadata(metadata: dict[bytes, bytes] | None) -> dict[str, str]:
-    """Decode Arrow byte key/value metadata into string key/value pairs."""
-    if not metadata:
-        return {}
-    return {k.decode("utf-8"): v.decode("utf-8") for k, v in metadata.items()}
-
-
-def _clean_docstring(cls: type[Any]) -> str | None:
-    """Return a cleaned class docstring if defined on ``cls``."""
-    raw = cls.__dict__.get("__doc__")
-    if not raw or not isinstance(raw, str):
-        return None
-    cleaned = inspect.cleandoc(raw).strip()
-    return cleaned or None
-
-
 @dataclass(frozen=True, slots=True)
 class PydanticReader:
     """Build typed converter IR documents from Pydantic v2 BaseModel classes.
@@ -1469,22 +1421,34 @@ class PydanticReader:
     :type max_recursion_depth: int
     :param by_alias: When ``True``, use field aliases rather than Python attribute names.
     :type by_alias: bool
+    :param error_type: Base exception class raised when a construct cannot be converted.
+    :type error_type: type[ConversionError]
+    :param error_by_code: Mapping from specification error code (``E1``-``E12``) to exception class.
+    :type error_by_code: Mapping[str, type[ConversionError]]
     """
 
     max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH
     by_alias: bool = False
+    error_type: type[ConversionError] = ConversionError
+    error_by_code: Mapping[str, type[ConversionError]] = field(default_factory=frozendict)
 
     def __post_init__(self) -> None:
         """Validate reader configuration."""
-        if isinstance(self.max_recursion_depth, bool) or not isinstance(self.max_recursion_depth, int):
-            msg = "max_recursion_depth must be an integer >= 1"
-            raise TypeError(msg)
-        if self.max_recursion_depth < 1:
-            msg = "max_recursion_depth must be >= 1"
-            raise ValueError(msg)
+        validate_max_recursion_depth(self.max_recursion_depth)
         if type(self.by_alias) is not bool:
             msg = "by_alias must be a boolean"
             raise TypeError(msg)
+
+    def _raise_err(self, code: str, msg: str) -> NoReturn:
+        """Raise the configured exception subclass for ``code`` or fall back to ``error_type``.
+
+        :param code: Specification error code (``E1``-``E12``).
+        :type code: str
+        :param msg: Diagnostic error message.
+        :type msg: str
+        :raises ConversionError: Always raised with the resolved error class.
+        """
+        _raise_code(code, msg, error_type=self.error_type, error_by_code=self.error_by_code)
 
     def read(self, source: type[BaseModel]) -> SchemaDocument:
         """Read a Pydantic ``BaseModel`` subclass into a ``SchemaDocument``.
@@ -1493,9 +1457,15 @@ class PydanticReader:
         :type source: type[BaseModel]
         :return: Structural IR document with ``source="pydantic"`` provenance.
         :rtype: SchemaDocument
-        :raises PydanticToPyArrowError: If the model or any of its fields violates ``E1``-``E12``.
+        :raises ConversionError: If the model or any of its fields violates ``E1``-``E12``.
         """
-        validated_model = _validate_model_class(source)
+        init_ctx = _SchemaBuildContext(
+            max_recursion_depth=self.max_recursion_depth,
+            by_alias=self.by_alias,
+            error_type=self.error_type,
+            error_by_code=self.error_by_code,
+        )
+        validated_model = _validate_model_class(source, init_ctx)
         mod = sys.modules.get(validated_model.__module__)
         module_ns = vars(mod) if mod is not None else {}
 
@@ -1505,6 +1475,8 @@ class PydanticReader:
             max_recursion_depth=self.max_recursion_depth,
             by_alias=self.by_alias,
             module_ns=module_ns,
+            error_type=self.error_type,
+            error_by_code=self.error_by_code,
         )
 
         if issubclass(validated_model, RootModel):
@@ -1514,20 +1486,20 @@ class PydanticReader:
             if _is_union_origin(origin):
                 branches = _flatten_union_branches(parsed, next_ctx)
                 non_null = [(b, b_ctx) for b, b_ctx in branches if not _is_none_type(b.annotation)]
-                if not non_null or any(_classify_parsed_kind(b) != "model" for b, _ in non_null):
+                if not non_null or any(_classify_parsed_kind(b, b_ctx) != "model" for b, b_ctx in non_null):
                     msg = (
                         f"RootModel union must consist exclusively of BaseModel branches, got {root_finfo.annotation!r}"
                     )
-                    raise NonStructRootError(msg)
+                    self._raise_err("E2", msg)
                 root_struct = _build_merged_models_struct(
                     [b.annotation for b, _ in non_null],
                     next_ctx,
                     (),
                     nullable=False,
                 )
-            elif _classify_parsed_kind(parsed) != "model":
+            elif _classify_parsed_kind(parsed, next_ctx) != "model":
                 msg = f"RootModel must wrap a BaseModel or union of BaseModels, got {parsed.annotation!r}"
-                raise NonStructRootError(msg)
+                self._raise_err("E2", msg)
             else:
                 root_struct = _build_merged_models_struct([parsed.annotation], next_ctx, (), nullable=False)
         else:
@@ -1545,16 +1517,21 @@ class PydanticReader:
             provenance=Provenance("pydantic", (source.__name__,)),
         )
 
-    def read_scalar_annotation(self, annotation: Any) -> TypedNode:  # noqa: ANN401
+    def read_scalar_annotation(self, annotation: object) -> TypedNode:
         """Read a scalar Python or Pydantic type annotation into an IR ``TypedNode``.
 
         :param annotation: Scalar type annotation.
-        :type annotation: Any
+        :type annotation: object
         :return: Structural IR scalar node with ``pydantic_type`` provenance metadata.
         :rtype: TypedNode
-        :raises PydanticToPyArrowError: If ``annotation`` is not a supported scalar type.
+        :raises ConversionError: If ``annotation`` is not a supported scalar type.
         """
-        ctx = _SchemaBuildContext(max_recursion_depth=self.max_recursion_depth, by_alias=self.by_alias)
+        ctx = _SchemaBuildContext(
+            max_recursion_depth=self.max_recursion_depth,
+            by_alias=self.by_alias,
+            error_type=self.error_type,
+            error_by_code=self.error_by_code,
+        )
         parsed, next_ctx = _unwrap_annotation(annotation, ctx)
         origin = get_origin(parsed.annotation)
         if _is_union_origin(origin):
@@ -1562,157 +1539,15 @@ class PydanticReader:
             non_null = [(b, b_ctx) for b, b_ctx in branches if not _is_none_type(b.annotation)]
             if not non_null:
                 msg = "Union contains only NoneType branches"
-                raise NullOnlyFieldError(msg)
-            node_type, hints, pyd_type = _unify_scalar_specs([_resolve_parsed_scalar(b) for b, _ in non_null])
+                self._raise_err("E7", msg)
+            node_type, hints, pyd_type = _unify_scalar_specs(
+                [_resolve_parsed_scalar(b, b_ctx) for b, b_ctx in non_null]
+            )
         else:
-            node_type, hints, pyd_type = _resolve_parsed_scalar(parsed)
+            node_type, hints, pyd_type = _resolve_parsed_scalar(parsed, next_ctx)
         return TypedNode(
             type=node_type,
             nullable=_allows_null(annotation, ctx),
             hints=hints,
             provenance=Provenance("pydantic", (), {"pydantic_type": pyd_type}),
         )
-
-    def read_field(self, source: pa.Field) -> SchemaField:
-        """Read a PyArrow field into an IR ``Field``.
-
-        :param source: PyArrow field.
-        :type source: pa.Field
-        :return: Structural IR field with ``source="pydantic"`` provenance.
-        :rtype: SchemaField
-        """
-        return self._field(source, (source.name,))
-
-    def read_node(
-        self,
-        dtype: pa.DataType,
-        *,
-        nullable: bool = False,
-        metadata: dict[bytes, bytes] | None = None,
-        path: tuple[str | int, ...] = (),
-    ) -> TypedNode:
-        """Read a PyArrow data type into an IR ``TypedNode``.
-
-        :param dtype: PyArrow data type to convert.
-        :type dtype: pa.DataType
-        :param nullable: Whether the node allows ``None`` values.
-        :type nullable: bool
-        :param metadata: Optional raw Arrow field metadata bytes.
-        :type metadata: dict[bytes, bytes] | None
-        :param path: Structural provenance path tuple.
-        :type path: tuple[str | int, ...]
-        :return: Structural IR node with ``source="pydantic"`` provenance.
-        :rtype: TypedNode
-        """
-        return self._type(dtype, nullable=nullable, metadata=metadata, path=path)
-
-    def _field(self, pa_field: pa.Field, path: tuple[str | int, ...]) -> SchemaField:
-        """Convert a PyArrow field into an IR ``Field`` with separated presence and description."""
-        meta = _decode_metadata(pa_field.metadata)
-        annotations = {"description": meta["comment"]} if "comment" in meta else {}
-        prov_meta = {"pydantic_type": meta["pydantic_type"]} if "pydantic_type" in meta else {}
-        node = self._type(
-            pa_field.type,
-            nullable=pa_field.nullable,
-            metadata=pa_field.metadata,
-            path=path,
-        )
-        return SchemaField(
-            name=pa_field.name,
-            node=node,
-            required=not pa_field.nullable,
-            annotations=annotations,
-            provenance=Provenance("pydantic", path, prov_meta),
-        )
-
-    def _type(
-        self,
-        dtype: pa.DataType,
-        *,
-        nullable: bool,
-        metadata: dict[bytes, bytes] | None,
-        path: tuple[str | int, ...],
-    ) -> TypedNode:
-        """Convert a PyArrow ``DataType`` into a structural IR ``TypedNode``."""
-        meta = _decode_metadata(metadata)
-        prov_meta = {"pydantic_type": meta["pydantic_type"]} if "pydantic_type" in meta else {}
-        provenance = Provenance("pydantic", path, prov_meta)
-
-        if isinstance(dtype, pa.StructType):
-            fields = tuple(self._field(child, (*path, child.name)) for child in dtype)
-            required_names = tuple(f.name for f in fields if f.required)
-            return TypedNode(
-                type="object",
-                nullable=nullable,
-                properties=fields,
-                required_names=required_names,
-                additional_properties=TypedNode(type="never", nullable=False),
-                provenance=provenance,
-            )
-
-        if isinstance(dtype, pa.ListType):
-            val_field = dtype.value_field
-            item_node = self._type(
-                val_field.type,
-                nullable=val_field.nullable,
-                metadata=val_field.metadata,
-                path=(*path, "element"),
-            )
-            return TypedNode(
-                type="array",
-                nullable=nullable,
-                items=item_node,
-                provenance=provenance,
-            )
-
-        if isinstance(dtype, pa.MapType):
-            key_field = dtype.key_field
-            item_field = dtype.item_field
-            key_node = self._type(
-                key_field.type,
-                nullable=False,
-                metadata=key_field.metadata,
-                path=(*path, "key"),
-            )
-            val_node = self._type(
-                item_field.type,
-                nullable=item_field.nullable,
-                metadata=item_field.metadata,
-                path=(*path, "value"),
-            )
-            return TypedNode(
-                type="map",
-                nullable=nullable,
-                key_type=key_node,
-                value_type=val_node,
-                provenance=provenance,
-            )
-
-        return replace(self._scalar(dtype, provenance), nullable=nullable)
-
-    @staticmethod
-    def _scalar(dtype: pa.DataType, provenance: Provenance) -> TypedNode:
-        """Convert a scalar PyArrow type into a ``TypedNode`` with ``NodeHints``."""
-        if dtype in FIXED_SCALAR_SPEC:
-            node_type, hints = FIXED_SCALAR_SPEC[dtype]
-            return TypedNode(type=node_type, nullable=False, hints=hints, provenance=provenance)
-        if isinstance(dtype, pa.Decimal128Type):
-            return TypedNode(
-                type="number",
-                nullable=False,
-                hints=NodeHints(logical_type="decimal", precision=dtype.precision, scale=dtype.scale),
-                provenance=provenance,
-            )
-        if isinstance(dtype, pa.TimestampType):
-            has_tz = dtype.tz is not None
-            return TypedNode(
-                type="string",
-                nullable=False,
-                hints=NodeHints(
-                    logical_type="timestamp-with-tz" if has_tz else "timestamp-without-tz",
-                    timezone=has_tz,
-                ),
-                provenance=provenance,
-            )
-        msg = f"Unsupported PyArrow scalar type in PydanticReader: {dtype}"
-        raise PydanticToPyArrowError(msg)

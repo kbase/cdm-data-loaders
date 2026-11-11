@@ -1,7 +1,7 @@
 """Emit PyArrow schema objects from immutable typed schema nodes."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from pathlib import Path
 from typing import ClassVar, Final
@@ -14,10 +14,6 @@ from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import NodeHints, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.metadata import ConversionContext
-from cdm_data_loaders.converters.emitters._pyarrow_codegen import (
-    render_python_schema_module,
-    write_python_schema_file,
-)
 from cdm_data_loaders.converters.emitters._tabular_base import (
     DECIMAL128_MAX_PRECISION,
     DEFAULT_STRING_FORMATS,
@@ -27,6 +23,10 @@ from cdm_data_loaders.converters.emitters._tabular_base import (
     infer_enum_type,
     merge_format_map_with_defaults,
     resolve_logical_decimal,
+)
+from cdm_data_loaders.converters.emitters.pyarrow_codegen import (
+    render_python_schema_module,
+    write_python_schema_file,
 )
 
 INT8_WIDTH: Final = 8
@@ -57,6 +57,24 @@ ENUM_TYPE_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
         "string": pa.string(),
     }
 )
+JSON_SCHEMA_LOGICAL_TYPE_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
+    {
+        "boolean": pa.bool_(),
+        "long": pa.int64(),
+        "double": pa.float64(),
+        "date": pa.date32(),
+        "binary": pa.binary(),
+        "string": pa.string(),
+    }
+)
+UNSIGNED_INT_LOGICAL_TYPE_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
+    {
+        "uint8": pa.uint8(),
+        "uint16": pa.uint16(),
+        "uint32": pa.uint32(),
+        "uint64": pa.uint64(),
+    }
+)
 
 
 def merge_format_map(value: object) -> object:
@@ -73,6 +91,28 @@ def merge_format_map(value: object) -> object:
 
 class PyArrowEmitterError(ConversionError):
     """A typed schema cannot be represented by the configured Arrow policy."""
+
+
+def assemble_pyarrow_schema(
+    component: pa.StructType | Sequence[pa.Field],
+    *,
+    metadata: Mapping[str, str | bytes] | None = None,
+) -> pa.Schema:
+    """Assemble a PyArrow table schema from a ``pa.StructType`` component or sequence of ``pa.Field``s.
+
+    :param component: struct component or sequence of PyArrow fields
+    :type component: pa.StructType | Sequence[pa.Field]
+    :param metadata: optional schema-level metadata
+    :type metadata: Mapping[str, str | bytes] | None
+    :return: assembled PyArrow schema
+    :rtype: pa.Schema
+    :raises PyArrowEmitterError: if ``component`` contains no fields
+    """
+    fields = list(component)
+    if not fields:
+        msg = "Cannot assemble a PyArrow schema from an empty component"
+        raise PyArrowEmitterError(msg)
+    return pa.schema(fields, metadata=metadata)
 
 
 class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
@@ -271,16 +311,10 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
     def _emit_logical(node: TypedNode) -> pa.DataType | None:
         """Preserve physical widths and logical source types without a JSON encoding."""
         if node.provenance is not None and node.provenance.source == "json-schema":
+            logical_key = node.hints.logical_type
             return (
-                {
-                    "boolean": pa.bool_(),
-                    "long": pa.int64(),
-                    "double": pa.float64(),
-                    "date": pa.date32(),
-                    "binary": pa.binary(),
-                    "string": pa.string(),
-                }.get(node.hints.logical_type)
-                if "jsonschema_type" in node.provenance.metadata
+                JSON_SCHEMA_LOGICAL_TYPE_MAP.get(logical_key)
+                if logical_key is not None and "jsonschema_type" in node.provenance.metadata
                 else None
             )
         hints = node.hints
@@ -301,10 +335,8 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
 
 def _emit_logical_integer(hints: NodeHints) -> pa.DataType | None:
     """Resolve signed or unsigned physical integer width from logical hints."""
-    if hints.logical_type in {"uint8", "uint16", "uint32", "uint64"}:
-        return {"uint8": pa.uint8(), "uint16": pa.uint16(), "uint32": pa.uint32(), "uint64": pa.uint64()}[
-            hints.logical_type
-        ]
+    if hints.logical_type is not None and hints.logical_type in UNSIGNED_INT_LOGICAL_TYPE_MAP:
+        return UNSIGNED_INT_LOGICAL_TYPE_MAP[hints.logical_type]
     return _integer_type(hints.bit_width) if hints.bit_width is not None else None
 
 

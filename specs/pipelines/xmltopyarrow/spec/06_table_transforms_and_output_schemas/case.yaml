@@ -1,0 +1,21 @@
+title: Table Transforms, Multi-Table Fan-Out, and `OUTPUT_SCHEMAS`
+schema: schema.xsd
+xml_tag: measurement
+rules:
+  - R-XML-SCHEMA-SKIP
+  - R-XML-TRANSFORMS
+notes: |
+  - `transforms_module="specs.pipelines.xmltopyarrow.transforms"` defines `TABLE_TRANSFORMS["measurements"] = transform_measurement` and `OUTPUT_SCHEMAS` for `measurements` and `measurement_tags`.
+  - `XmlToPyArrowSettings` skips default XSD-to-PyArrow schema generation for `measurements` and uses `OUTPUT_SCHEMAS`.
+  - `transform_measurement` drops `<measurement status="drop">` (`s2`), uppercases `_id` into `sensor_id`, computes `scaled_value`, and fans out `<tag>` values into `measurement_tags`.
+runs:
+  - id: default
+    data: data.xml
+    expected_json: expected.json
+    expected_table: expected_table.py
+    extra_expected_json:
+      measurement_tags: expected_tags.json
+    params:
+      table_name: measurements
+      transforms_module: specs.pipelines.xmltopyarrow.transforms
+      output_schemas_module: specs.pipelines.xmltopyarrow.transforms

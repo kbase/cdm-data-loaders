@@ -1,21 +1,22 @@
 """Setting for the JSONL validate-and-load pipeline for the KBase CTS."""
 
 from logging import Logger, getLogger
-from typing import TYPE_CHECKING, Annotated, Any, Final
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Final
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 import pyarrow as pa
 from frozendict import frozendict
+from jsonschema.exceptions import SchemaError
 from pydantic import Field, PrivateAttr
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import (
-    JSONSchemaToPyArrow,
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrowError,
+    convert_schema_to_pyarrow,
 )
-from cdm_data_loaders.converters.pydantic_to_pyarrow import (
+from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import (
     PydanticToPyArrow,
     PydanticToPyArrowError,
 )
@@ -26,6 +27,7 @@ from cdm_data_loaders.core.fields import (
     FileGlob,
     NonEmptyStr,
     TableName,
+    file_glob_description,
 )
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
@@ -39,9 +41,12 @@ from cdm_data_loaders.core.settings import (
     default_settings_with_shortcuts,
     select_cli_shortcuts,
 )
-from cdm_data_loaders.core.transforms import TransformSettingsMixin, validate_table_transforms
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
-from cdm_data_loaders.utils.jsonschema.dereferencer import DereferencingError, dereference_schema
+from cdm_data_loaders.core.transforms import (
+    TransformSettingsMixin,
+    needs_default_pyarrow_schema,
+    validate_table_transforms,
+)
+from cdm_data_loaders.schemas.jsonschema import DereferencingError
 
 logger: Logger = getLogger(__name__)
 
@@ -49,6 +54,8 @@ logger: Logger = getLogger(__name__)
 EXTRACT_PIPELINE_NAME: Final[str] = "jsonlines_extract"
 PYDANTIC_PIPELINE_NAME: Final[str] = "jsonlines_pydantic"
 JSONSCHEMA_PIPELINE_NAME: Final[str] = "jsonlines_jsonschema"
+NCBI_DATASETS_PIPELINE_NAME: Final[str] = "ncbi_datasets"
+NCBI_DATASETS_SCHEMA_MODULE: Final[str] = "cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi"
 
 ENTITY_MODELS_MODULE: Final[str] = "entity_models"
 ENTITY_SCHEMAS_MODULE: Final[str] = "entity_schemas"
@@ -63,21 +70,65 @@ LOCAL_CLI_SHORTCUTS: Final[frozendict[str, str]] = frozendict(
 )
 
 
-def convert_schema_to_pyarrow(schema: ValidatedSchema) -> pa.Schema:
-    """Dereference a validated JSON Schema and convert it to a PyArrow schema.
+class JsonlJsonschemaError(RuntimeError):
+    """Base error raised when an ``ENTITY_SCHEMAS`` registry or entity JSON Schema is invalid or cannot convert to PyArrow."""
 
-    :param schema: validated JSON Schema
-    :type schema: ValidatedSchema
-    :return: target PyArrow schema for the entity table
-    :rtype: pa.Schema
-    :raises DereferencingError: if ``$ref`` or ``allOf`` cannot be resolved
-    :raises JSONSchemaToPyArrowError: if the dereferenced schema cannot be converted to a PyArrow schema
-    """
-    raw_schema = schema.jsonschema
-    dereferenced = dereference_schema(raw_schema)
-    if "$schema" not in dereferenced and "$schema" in raw_schema:
-        dereferenced = {"$schema": raw_schema["$schema"], **dereferenced}
-    return JSONSchemaToPyArrow().convert(dereferenced)
+    code: ClassVar[str] = ""
+    title: ClassVar[str] = ""
+
+
+class InvalidEntitySchemasRegistryError(JsonlJsonschemaError):
+    """The `entity_schemas` module must define a non-empty `ENTITY_SCHEMAS` dictionary and cannot use the reserved `_rejected` table name."""
+
+    code: ClassVar[str] = "E1"
+    title: ClassVar[str] = "Invalid or empty ENTITY_SCHEMAS registry"
+
+
+class UnsupportedJsonlSchemaDialectError(JsonlJsonschemaError):
+    """Every entity JSON Schema must declare a supported `$schema` draft URI (Draft 4, 6, 7, 2019-09, 2020-12, or KBase 2020-12-xsv)."""
+
+    code: ClassVar[str] = "E2"
+    title: ClassVar[str] = "Missing or unsupported JSON Schema $schema dialect"
+
+
+class InvalidJsonlEntitySchemaError(JsonlJsonschemaError):
+    """Every entity JSON Schema must be a valid schema document under its declared `$schema` metaschema."""
+
+    code: ClassVar[str] = "E3"
+    title: ClassVar[str] = "Entity JSON Schema fails draft metaschema validation"
+
+
+class UnresolvableJsonlSchemaRefError(JsonlJsonschemaError):
+    """All `$ref` pointers and `allOf` branches in an entity JSON Schema must resolve without cycles before PyArrow conversion."""
+
+    code: ClassVar[str] = "E4"
+    title: ClassVar[str] = "Unresolvable or circular $ref in entity JSON Schema"
+
+
+class UnsupportedJsonlArrowSchemaError(JsonlJsonschemaError):
+    """Each non-transformed, non-overridden entity JSON Schema must have `type: "object"` with at least one property and only supported PyArrow column constructs."""
+
+    code: ClassVar[str] = "E5"
+    title: ClassVar[str] = "Entity JSON Schema cannot be converted to a PyArrow table schema"
+
+
+JSONLINES_JSONSCHEMA_ERRORS: Final[tuple[type[JsonlJsonschemaError], ...]] = (
+    InvalidEntitySchemasRegistryError,
+    UnsupportedJsonlSchemaDialectError,
+    InvalidJsonlEntitySchemaError,
+    UnresolvableJsonlSchemaRefError,
+    UnsupportedJsonlArrowSchemaError,
+)
+
+
+def _classify_jsonl_schema_error(exc: Exception) -> JsonlJsonschemaError:
+    """Classify an ``ENTITY_SCHEMAS`` loading or schema validation exception into a :class:`JsonlJsonschemaError` subclass."""
+    if isinstance(exc, SchemaError) or isinstance(exc.__cause__, SchemaError):
+        return InvalidJsonlEntitySchemaError(str(exc))
+    msg = str(exc)
+    if "JSON Schema is missing the $schema keyword" in msg or "Unsupported JSON Schema draft:" in msg:
+        return UnsupportedJsonlSchemaDialectError(msg)
+    return InvalidEntitySchemasRegistryError(msg)
 
 
 def build_output_schema_registry(
@@ -107,15 +158,19 @@ def build_output_schema_registry(
     """
     pyarrow_schemas: dict[str, pa.Schema] = dict(output_schemas.registry) if output_schemas is not None else {}
     errors: dict[str, str] = {}
-    if isinstance(validation_schema_registry, ModelRegistry):
+    has_arrow_error = False
+    is_model_registry = isinstance(validation_schema_registry, ModelRegistry)
+    if is_model_registry:
         pydantic_converter = PydanticToPyArrow()
         fn: Callable[..., Any] = pydantic_converter.convert
     else:
         fn = convert_schema_to_pyarrow
 
     for table_name, model_or_schema in validation_schema_registry.registry.items():
-        if (output_schemas is not None and table_name in output_schemas.registry) or (
-            table_transforms is not None and table_name in table_transforms.registry
+        if not needs_default_pyarrow_schema(
+            table_name,
+            table_transforms=table_transforms,
+            output_schemas=output_schemas,
         ):
             continue
         try:
@@ -123,14 +178,22 @@ def build_output_schema_registry(
         except PydanticToPyArrowError as error:
             logger.exception("Error converting Pydantic model to PyArrow for %s", table_name)
             errors[table_name] = str(error)
-        except (DereferencingError, JSONSchemaToPyArrowError) as error:
+        except (DereferencingError, RecursionError) as error:
             logger.exception("Error converting JSON Schema to PyArrow for %s", table_name)
+            errors[table_name] = str(error)
+        except JSONSchemaToPyArrowError as error:
+            logger.exception("Error converting JSON Schema to PyArrow for %s", table_name)
+            has_arrow_error = True
             errors[table_name] = str(error)
 
     if errors:
         details = "".join(f"{table_name}: {error}\n" for table_name, error in errors.items())
         err_msg = f"The following errors were found when converting schemas to PyArrow:\n{details}"
-        raise RuntimeError(err_msg)
+        if is_model_registry:
+            raise RuntimeError(err_msg)
+        if has_arrow_error:
+            raise UnsupportedJsonlArrowSchemaError(err_msg)
+        raise UnresolvableJsonlSchemaRefError(err_msg)
 
     if not pyarrow_schemas:
         return None
@@ -145,9 +208,28 @@ class JsonlIngestSettings(FileFormatIngestSettings):
         FileGlob,
         Field(
             default=DEFAULT_JSONL_FILE_GLOB,
-            description="Glob pattern for JSONL files",
+            description=file_glob_description("Glob pattern for JSONL files"),
         ),
     ]
+
+    def _resolve_entity_registry_schema_map(
+        self: Any,
+        registry: ModelRegistry | SchemaRegistry,
+    ) -> None:
+        """Validate configured tables against ``registry`` and resolve ``_schema_map``."""
+        self._validate_configured_tables(
+            registry.registry,
+            validate_transforms_fn=validate_table_transforms,
+        )
+        self._schema_map = (
+            build_output_schema_registry(
+                registry,
+                table_transforms=self._table_transforms,
+                output_schemas=self._unreconciled_output_schemas,
+            )
+            if self.use_pyarrow
+            else None
+        )
 
 
 class JsonlExtractSettings(JsonlIngestSettings, TransformSettingsMixin):
@@ -185,12 +267,7 @@ class JsonlPydanticIngestSettings(JsonlIngestSettings, TransformSettingsMixin):
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:  # noqa: ARG002
         """Load and validate the entity registry from the configured module and resolve `_schema_map`."""
         self._model_registry = load_registry_dict(self.entity_models, "ENTITY_MODELS")
-        validate_table_transforms(self, self._model_registry.registry)
-        self._schema_map = build_output_schema_registry(
-            self._model_registry,
-            table_transforms=self._table_transforms,
-            output_schemas=self._unreconciled_output_schemas,
-        )
+        self._resolve_entity_registry_schema_map(self._model_registry)
 
     @property
     def model_registry(self) -> ModelRegistry:
@@ -221,15 +298,27 @@ class JsonlJsonschemaIngestSettings(JsonlIngestSettings, TransformSettingsMixin)
 
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:  # noqa: ARG002
         """Load and validate the schema registry and precompute PyArrow schemas."""
-        self._schema_registry = load_registry_dict(self.entity_schemas, "ENTITY_SCHEMAS")
-        validate_table_transforms(self, self._schema_registry.registry)
-        self._schema_map = build_output_schema_registry(
-            self._schema_registry,
-            table_transforms=self._table_transforms,
-            output_schemas=self._unreconciled_output_schemas,
-        )
+        try:
+            self._schema_registry = load_registry_dict(self.entity_schemas, "ENTITY_SCHEMAS")
+        except Exception as exc:
+            raise _classify_jsonl_schema_error(exc) from exc
+        self._resolve_entity_registry_schema_map(self._schema_registry)
 
     @property
     def schema_registry(self) -> SchemaRegistry:
         """The loaded `ENTITY_SCHEMAS` mapping."""
         return self._schema_registry
+
+
+class NcbiDatasetsSettings(JsonlJsonschemaIngestSettings):
+    """Pipeline settings for NCBI Datasets JSONL ingestion (`annotation_report` and `dataset_report`)."""
+
+    model_config: SettingsConfigDict = default_settings_with_shortcuts(
+        cli_prog_name=NCBI_DATASETS_PIPELINE_NAME,
+        cli_shortcuts=select_cli_shortcuts(LOCAL_CLI_SHORTCUTS, FILE_GLOB),  # pyright: ignore[reportArgumentType]
+    )
+
+    dataset_name: ClassVar[str] = NCBI_DATASETS_PIPELINE_NAME
+    entity_schemas: ClassVar[str] = NCBI_DATASETS_SCHEMA_MODULE
+    transforms_module: ClassVar[str | None] = NCBI_DATASETS_SCHEMA_MODULE
+    output_schemas_module: ClassVar[str | None] = NCBI_DATASETS_SCHEMA_MODULE

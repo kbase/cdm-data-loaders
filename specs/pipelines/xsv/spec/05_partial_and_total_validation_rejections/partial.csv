@@ -1,0 +1,5 @@
+record_id,amount,event_date
+R1,100,2025-03-01
+R_RAGGED,only_two_cols
+R2,not-an-int,2025-03-02
+R3,250,2025-03-03

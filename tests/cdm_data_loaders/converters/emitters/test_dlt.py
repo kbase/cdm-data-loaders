@@ -429,13 +429,22 @@ def test_dlt_emitter_fail_frozen_configuration() -> None:
         emitter.max_nesting = 2
 
 
-def test_emit_fail_unsupported_nodes() -> None:
+@pytest.mark.parametrize(
+    ("document", "match"),
+    [
+        (SchemaDocument(root=TypedNode("string")), "root"),
+        (
+            SchemaDocument(root=TypedNode("object", properties=(Field("unknown", TypedNode("unknown")),))),
+            "No dlt mapping",
+        ),
+    ],
+    ids=["non-object-root", "unknown-column-type"],
+)
+def test_emit_fail_unsupported_nodes(document: SchemaDocument, match: str) -> None:
     """Invalid roots and unknown native column types use the shared error base."""
     emitter = DltEmitter(schema_name="records")
-    with pytest.raises(ConversionError, match="root"):
-        emitter.emit(SchemaDocument(root=TypedNode("string")))
-    with pytest.raises(ConversionError, match="No dlt mapping"):
-        emitter.emit(SchemaDocument(root=TypedNode("object", properties=(Field("unknown", TypedNode("unknown")),))))
+    with pytest.raises(ConversionError, match=match):
+        emitter.emit(document)
 
 
 @pytest.mark.parametrize("include", [False, True], ids=["filtered", "included"])

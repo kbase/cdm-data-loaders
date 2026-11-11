@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.kbase.us/draft/2020-12-xsv/schema",
+  "title": "MissingHeaderAndDefsRef",
+  "type": "object",
+  "required": [
+    "gene_id",
+    "reads",
+    "organism"
+  ],
+  "$defs": {
+    "GeneId": {
+      "type": "string",
+      "pattern": "^G[0-9]{4}$",
+      "description": "Standard gene identifier."
+    },
+    "NullableOrganism": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Organism name or null."
+    }
+  },
+  "properties": {
+    "gene_id": {
+      "$ref": "#/$defs/GeneId"
+    },
+    "reads": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Read count or null when unmeasured."
+    },
+    "organism": {
+      "$ref": "#/$defs/NullableOrganism"
+    }
+  },
+  "x-xsv-config": {
+    "x-delimiter": ",",
+    "x-has-header": false
+  }
+}

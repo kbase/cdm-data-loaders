@@ -1,23 +1,23 @@
-"""Generate CLI reference and MkDocs API documentation from codebase metadata.
+"""Generate CLI reference and bundled schema catalog documentation from codebase metadata.
 
 Usage::
 
-    uv run python -m scripts.gen_docs                          # write docs/cli_reference.md
-    uv run python -m scripts.gen_docs --check                  # exit 1 if docs/cli_reference.md is stale
-    uv run python -m scripts.gen_docs --mkdocs-api-dir <dir>   # write MkDocs API reference tree into <dir>
+    uv run python -m scripts.gen_docs          # write docs/cli_reference.md and docs/bundled_schemas.md
+    uv run python -m scripts.gen_docs --check  # exit 1 if generated docs are stale
 """
 
 import argparse
 import ast
 import importlib
+import os
 import sys
 import tomllib
 import types
-from collections.abc import Callable, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path, PurePath
-from typing import Annotated, Literal, get_args, get_origin
+from typing import Annotated, Any, Final, Literal, get_args, get_origin
 
 from pydantic import AliasChoices
 from pydantic.fields import FieldInfo
@@ -25,12 +25,15 @@ from pydantic_core import PydanticUndefined
 
 from cdm_data_loaders.core.settings import CdmDataLoadersBase
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
-SRC_ROOT = REPO_ROOT / "src" / "cdm_data_loaders"
-CLI_REFERENCE_PATH = REPO_ROOT / "docs" / "cli_reference.md"
+REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
+DOCS_DIR: Final[Path] = REPO_ROOT / "docs"
+PYPROJECT_PATH: Final[Path] = REPO_ROOT / "pyproject.toml"
+SRC_ROOT: Final[Path] = REPO_ROOT / "src" / "cdm_data_loaders"
+CLI_REFERENCE_PATH: Final[Path] = DOCS_DIR / "cli_reference.md"
+BUNDLED_SCHEMAS_PATH: Final[Path] = DOCS_DIR / "bundled_schemas.md"
+GITHUB_BLOB_BASE: Final[str] = "https://github.com/kbase/cdm-data-loaders/blob/develop"
 
-GENERATED_BANNER = (
+GENERATED_BANNER: Final[str] = (
     "<!-- GENERATED FILE - DO NOT EDIT. Source: `pyproject.toml`, `src/cdm_data_loaders/`. "
     "Regenerate with `uv run python -m scripts.gen_docs`. -->"
 )
@@ -116,28 +119,105 @@ def _format_type_annotation(annotation: object) -> str:
     return str(annotation)
 
 
+def rel_posix(path: Path, start: Path = REPO_ROOT) -> str:
+    """Return a POSIX relative path string from ``start`` to ``path``.
+
+    :param path: target path
+    :type path: Path
+    :param start: base directory path
+    :type start: Path
+    :return: POSIX relative path string
+    :rtype: str
+    """
+    return Path(os.path.relpath(path.resolve(), start.resolve())).as_posix()
+
+
+def repo_blob_url(path: Path, repo_root: Path = REPO_ROOT) -> str:
+    """Return the GitHub ``blob/develop`` URL for a repository file path.
+
+    :param path: target repository file path
+    :type path: Path
+    :param repo_root: repository root directory
+    :type repo_root: Path
+    :return: GitHub blob URL string
+    :rtype: str
+    """
+    return f"{GITHUB_BLOB_BASE}/{rel_posix(path, repo_root)}"
+
+
+def escape_table_cell(text: str) -> str:
+    """Escape pipe characters for safe inclusion inside a Markdown table cell.
+
+    :param text: raw cell text
+    :type text: str
+    :return: Markdown-escaped cell text
+    :rtype: str
+    """
+    return text.replace("|", r"\|")
+
+
+def mro_class_names(cls: type[Any], base_cls: type[Any] = CdmDataLoadersBase) -> tuple[str, ...]:
+    """Return the MRO class names of ``cls`` that are subclasses of ``base_cls``.
+
+    :param cls: target class to inspect
+    :type cls: type[Any]
+    :param base_cls: base class upper bound for the MRO chain
+    :type base_cls: type[Any]
+    :return: ordered tuple of class names from ``cls`` up to ``base_cls``
+    :rtype: tuple[str, ...]
+    """
+    return tuple(c.__name__ for c in cls.__mro__ if isinstance(c, type) and issubclass(c, base_cls))
+
+
+def format_value_code(
+    val: object,
+    *,
+    repo_root: Path = REPO_ROOT,
+    undefined_label: str = "*(required)*",
+    summarize_containers: bool = True,
+) -> str:
+    """Format a Python default or attribute value as a Markdown cell string.
+
+    :param val: value to format
+    :type val: object
+    :param repo_root: repository root used to relativize ``Path`` instances
+    :type repo_root: Path
+    :param undefined_label: label returned when ``val`` is ``PydanticUndefined``
+    :type undefined_label: str
+    :param summarize_containers: when ``True``, summarize callable tuples and dicts instead of ``repr``
+    :type summarize_containers: bool
+    :return: Markdown-formatted value representation
+    :rtype: str
+    """
+    if val is PydanticUndefined:
+        return undefined_label
+    if isinstance(val, Enum):
+        return f"`{val.value!r}`"
+    if isinstance(val, Path | PurePath):
+        rel = val.relative_to(repo_root) if isinstance(val, Path) and val.is_relative_to(repo_root) else val
+        return f"`{rel.as_posix()}`"
+    if summarize_containers and isinstance(val, tuple) and val and all(callable(item) for item in val):
+        names = ", ".join(getattr(fn, "__name__", repr(fn)) for fn in val)
+        return f"`({names},)`"
+    if summarize_containers and isinstance(val, dict):
+        keys = sorted(str(k) for k in val)
+        return f"mapping with keys `{keys}`"
+    return f"`{val!r}`"
+
+
 def _format_default_value(field_info: FieldInfo, repo_root: Path = REPO_ROOT) -> tuple[str, bool]:
     """Return ``(default_label, required)`` for a Pydantic ``FieldInfo``."""
     if field_info.is_required():
         return ("*(Required)*", True)
-
-    default = field_info.default
-    if default is PydanticUndefined:
-        label = "*(Dynamic)*"
-    elif default is None:
-        label = "`None`"
-    elif isinstance(default, Enum):
-        label = f"`{default.value!r}`"
-    elif isinstance(default, Path | PurePath):
-        rel = (
-            default.relative_to(repo_root)
-            if isinstance(default, Path) and default.is_relative_to(repo_root)
-            else default
-        )
-        label = f"`{rel.as_posix()}`"
-    else:
-        label = f"`{default!r}`"
-    return (label, False)
+    return (
+        format_value_code(
+            field_info.default,
+            repo_root=repo_root,
+            undefined_label="*(Dynamic)*",
+            summarize_containers=False,
+        ),
+        False,
+    )
 
 
 def _extract_shortcuts(
@@ -195,9 +275,7 @@ def inspect_settings_class(
     raw_shortcuts = settings_cls.model_config.get("cli_shortcuts")
     cli_shortcuts: dict[str, str | list[str]] = dict(raw_shortcuts) if isinstance(raw_shortcuts, dict) else {}
 
-    inheritance_chain = tuple(
-        cls.__name__ for cls in settings_cls.__mro__ if isinstance(cls, type) and issubclass(cls, CdmDataLoadersBase)
-    )
+    inheritance_chain = mro_class_names(settings_cls)
 
     fields: list[CliFieldDoc] = []
     for field_name, field_info in settings_cls.model_fields.items():
@@ -257,9 +335,39 @@ def load_cli_entries(pyproject_path: Path = PYPROJECT_PATH, repo_root: Path = RE
     return entries
 
 
-def _escape_table_cell(text: str) -> str:
-    """Escape pipe characters for safe inclusion inside a Markdown table cell."""
-    return text.replace("|", r"\|")
+def check_or_write_files(
+    outputs: Iterable[tuple[Path, str]],
+    *,
+    check: bool,
+    repo_root: Path = REPO_ROOT,
+) -> int:
+    """Compare each ``(output_path, rendered_text)`` pair against disk and either report stale files or write updates.
+
+    :param outputs: iterable of ``(output_path, rendered_text)`` pairs
+    :type outputs: Iterable[tuple[Path, str]]
+    :param check: when ``True``, report stale files to ``sys.stderr`` and return ``1`` without writing
+    :type check: bool
+    :param repo_root: repository root used to format relative paths on ``stderr``
+    :type repo_root: Path
+    :return: ``0`` if all files are up to date (or written), ``1`` if ``check`` is ``True`` and any file is stale
+    :rtype: int
+    """
+    stale: list[Path] = []
+    for output_path, text in outputs:
+        current = output_path.read_text(encoding="utf-8") if output_path.exists() else None
+        if current == text:
+            continue
+        if check:
+            stale.append(output_path)
+        else:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(text, encoding="utf-8")
+    for path in stale:
+        rel_out = (
+            path.relative_to(repo_root).as_posix() if path.is_relative_to(repo_root) else rel_posix(path, repo_root)
+        )
+        sys.stderr.write(f"stale: {rel_out} is out of date\n")
+    return 1 if stale else 0
 
 
 def render_cli_reference(entries: Sequence[CliEntryDoc] | None = None) -> str:
@@ -288,7 +396,7 @@ def render_cli_reference(entries: Sequence[CliEntryDoc] | None = None) -> str:
         anchor = f"#{entry.cli_name.lower()}"
         lines.append(
             f"| [`{entry.cli_name}`]({anchor}) | `{entry.settings_class_name}` | "
-            f"`{entry.entry_point}` | {_escape_table_cell(entry.summary)} |"
+            f"`{entry.entry_point}` | {escape_table_cell(entry.summary)} |"
         )
 
     lines.append("")
@@ -310,9 +418,9 @@ def render_cli_reference(entries: Sequence[CliEntryDoc] | None = None) -> str:
         )
         for field_doc in entry.fields:
             shortcut_str = ", ".join(f"`{s}`" for s in field_doc.shortcuts) if field_doc.shortcuts else "—"
-            type_cell = _escape_table_cell(f"`{field_doc.type_label}`")
-            default_cell = _escape_table_cell(field_doc.default_label)
-            desc_cell = _escape_table_cell(field_doc.description or "—")
+            type_cell = escape_table_cell(f"`{field_doc.type_label}`")
+            default_cell = escape_table_cell(field_doc.default_label)
+            desc_cell = escape_table_cell(field_doc.description or "—")
             lines.append(
                 f"| `{field_doc.cli_flag}` | {shortcut_str} | `{field_doc.env_var}` | "
                 f"{type_cell} | {default_cell} | {desc_cell} |"
@@ -357,6 +465,7 @@ def discover_api_modules(src_root: Path = SRC_ROOT) -> list[ModuleDoc]:
             )
         )
 
+    modules.sort(key=lambda m: (m.nav_parts if m.is_package else m.nav_parts[:-1], not m.is_package, m.nav_parts[-1]))
     return modules
 
 
@@ -373,9 +482,26 @@ def discover_schema_assets(src_root: Path = SRC_ROOT) -> list[SchemaAssetDoc]:
     return assets
 
 
-def render_schema_assets_page(assets: Sequence[SchemaAssetDoc]) -> str:
-    """Render the ``api/schemas.md`` page cataloging bundled JSON Schemas and XSDs."""
+def render_schema_assets_page(
+    assets: Sequence[SchemaAssetDoc] | None = None,
+    src_root: Path = SRC_ROOT,
+    repo_root: Path = REPO_ROOT,
+) -> str:
+    """Render the ``docs/bundled_schemas.md`` page cataloging bundled JSON Schemas and XSDs.
+
+    :param assets: optional sequence of discovered schema assets
+    :type assets: Sequence[SchemaAssetDoc] | None
+    :param src_root: package source root directory
+    :type src_root: Path
+    :param repo_root: repository root directory
+    :type repo_root: Path
+    :return: rendered Markdown document text
+    :rtype: str
+    """
+    resolved_assets = list(assets) if assets is not None else discover_schema_assets(src_root)
     lines = [
+        GENERATED_BANNER,
+        "",
         "# Bundled Schemas & XSD Assets",
         "",
         "Static schema assets bundled inside `src/cdm_data_loaders/` for validation and PyArrow schema generation.",
@@ -383,80 +509,28 @@ def render_schema_assets_page(assets: Sequence[SchemaAssetDoc]) -> str:
         "| Relative Path (`src/cdm_data_loaders/`) | Format | Package Area |",
         "| :--- | :--- | :--- |",
     ]
-    lines.extend(f"| `{asset.rel_path.as_posix()}` | {asset.kind} | `{asset.package_area}` |" for asset in assets)
+    lines.extend(
+        f"| [`{asset.rel_path.as_posix()}`]({repo_blob_url(src_root / asset.rel_path, repo_root)}) | "
+        f"{asset.kind} | `{asset.package_area}` |"
+        for asset in resolved_assets
+    )
     lines.append("")
     return "\n".join(lines)
 
 
-def write_mkdocs_api_tree(
-    src_root: Path = SRC_ROOT,
-    writer: Callable[[Path, str], None] | None = None,
-    output_dir: Path | None = None,
-) -> list[Path]:
-    """Write the MkDocs API reference tree using either ``output_dir`` or a custom ``writer`` callback."""
-    if writer is None:
-        if output_dir is None:
-            msg = "Either writer or output_dir must be provided"
-            raise ValueError(msg)
-
-        def _fs_writer(rel_path: Path, content: str) -> None:
-            target = output_dir / rel_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
-
-        writer = _fs_writer
-
-    modules = discover_api_modules(src_root)
-    assets = discover_schema_assets(src_root)
-    written: list[Path] = []
-    summary_lines: list[str] = ["# API Reference", ""]
-
-    for mod in modules:
-        page_path = Path("api") / mod.doc_rel_path
-        indent = "    " * (len(mod.nav_parts) - 1)
-        label = mod.nav_parts[-1] if len(mod.nav_parts) > 1 else mod.module_path
-        summary_lines.append(f"{indent}* [`{label}`]({mod.doc_rel_path.as_posix()})")
-
-        page_lines = [
-            f"# `{mod.module_path}`",
-            "",
-            f"::: {mod.module_path}",
-            "",
-        ]
-        writer(page_path, "\n".join(page_lines))
-        written.append(page_path)
-
-    schemas_rel = Path("schemas.md")
-    schemas_page = Path("api") / schemas_rel
-    summary_lines.append(f"* [Bundled Schemas & XSDs]({schemas_rel.as_posix()})")
-    writer(schemas_page, render_schema_assets_page(assets))
-    written.append(schemas_page)
-
-    summary_path = Path("api") / "SUMMARY.md"
-    writer(summary_path, "\n".join(summary_lines) + "\n")
-    written.append(summary_path)
-
-    return written
-
-
-def _run_mkdocs_gen_files() -> None:
-    """Entry hook invoked when ``mkdocs-gen-files`` executes this script during ``mkdocs build``."""
-    import mkdocs_gen_files  # noqa: PLC0415
-
-    def _mkdocs_writer(rel_path: Path, content: str) -> None:
-        with mkdocs_gen_files.open(rel_path.as_posix(), "w") as fh:
-            fh.write(content)
-
-    write_mkdocs_api_tree(src_root=SRC_ROOT, writer=_mkdocs_writer)
-
-
 def main(argv: Sequence[str] | None = None) -> int:
-    """Generate or verify ``docs/cli_reference.md`` and optional MkDocs API reference pages."""
+    """Generate or check ``docs/cli_reference.md`` and ``docs/bundled_schemas.md``.
+
+    :param argv: optional CLI argument sequence
+    :type argv: Sequence[str] | None
+    :return: exit code (``0`` on success, ``1`` if ``--check`` detects stale files)
+    :rtype: int
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Fail with exit code 1 if docs/cli_reference.md is out of date.",
+        help="Fail with exit code 1 if generated documentation files are out of date.",
     )
     parser.add_argument(
         "--output",
@@ -465,32 +539,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Output path for the generated CLI reference Markdown file.",
     )
     parser.add_argument(
-        "--mkdocs-api-dir",
+        "--schemas-output",
         type=Path,
-        default=None,
-        help="Optional directory into which to write the MkDocs API reference tree.",
+        default=BUNDLED_SCHEMAS_PATH,
+        help="Output path for the generated bundled schemas Markdown file.",
     )
     args = parser.parse_args(argv)
 
-    if args.mkdocs_api_dir is not None:
-        write_mkdocs_api_tree(src_root=SRC_ROOT, output_dir=args.mkdocs_api_dir)
-
-    rendered = render_cli_reference()
-    output_path: Path = args.output
-    current = output_path.read_text(encoding="utf-8") if output_path.exists() else None
-
-    if current != rendered:
-        if args.check:
-            rel_out = output_path.relative_to(REPO_ROOT) if output_path.is_relative_to(REPO_ROOT) else output_path
-            sys.stderr.write(f"stale: {rel_out.as_posix()}\n")
-            return 1
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(rendered, encoding="utf-8")
-
-    return 0
+    return check_or_write_files(
+        [
+            (args.output, render_cli_reference()),
+            (args.schemas_output, render_schema_assets_page()),
+        ],
+        check=args.check,
+        repo_root=REPO_ROOT,
+    )
 
 
 if __name__ == "__main__":
     sys.exit(main())
-elif __name__ == "<run_path>":
-    _run_mkdocs_gen_files()

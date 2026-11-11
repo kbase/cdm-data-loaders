@@ -1,0 +1,6 @@
+dataset_name = "jsonlines_pydantic_spec"
+entity_models = "specs.pipelines.jsonlines_pydantic.sample_registry"
+file_glob = "*.jsonl"
+preprocessors_module = "specs.pipelines.jsonlines_pydantic.transforms"
+loader_file_format = "parquet"
+use_output_dir_for_pipeline_metadata = true

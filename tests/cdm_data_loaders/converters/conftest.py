@@ -28,10 +28,10 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.config import Config
 
-from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema
-from cdm_data_loaders.converters.jsonschema_to_dlt import JSONSchemaToDlt
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrow
-from cdm_data_loaders.converters.jsonschema_to_pyspark import JSONSchemaToPySpark
+from cdm_data_loaders.converters.facades.dlt_to_jsonschema import DltToJSONSchema
+from cdm_data_loaders.converters.facades.jsonschema_to_dlt import JSONSchemaToDlt
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import JSONSchemaToPyArrow
+from cdm_data_loaders.converters.facades.jsonschema_to_pyspark import JSONSchemaToPySpark
 
 CATALOG_NAME: Final[str] = "testcat"
 
@@ -201,21 +201,6 @@ def iter_schema_keywords(node: dict) -> Iterator[str]:
             for subschema in value:
                 if isinstance(subschema, dict):
                     yield from iter_schema_keywords(subschema)
-
-
-def iter_property_names(node: dict) -> Iterator[str]:
-    """Yield every property name in a schema document, descending into subschemas."""
-    for key, value in node.items():
-        if key == "properties" and isinstance(value, dict):
-            for name, subschema in value.items():
-                yield name
-                yield from iter_property_names(subschema)
-        elif key == "items" and isinstance(value, dict):
-            yield from iter_property_names(value)
-        elif key == "anyOf" and isinstance(value, list):
-            for subschema in value:
-                if isinstance(subschema, dict):
-                    yield from iter_property_names(subschema)
 
 
 def iter_extension_keys(node: dict) -> Iterator[str]:

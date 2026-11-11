@@ -23,19 +23,21 @@ Repo for CDM input data loading and wrangling
 Architecture, pipeline execution, schema conversion, and CLI reference guides live in [`docs/`](docs/):
 
 - **[Core & CTS Pipeline Execution Guide](docs/core_cts_execution.md)**: Settings hierarchy (`CdmDataLoadersBase` / `CtsSettings`), `CDL_*` environment variables, `dlt` destination configuration (`/input_dir/dlt_conf`), output artifacts (`report.txt`, `_load_info`, `log.json`), and the KBase Container Task Service (CTS) exit-code-0 contract.
-- **[CLI & Settings Reference](docs/cli_reference.md)**: Auto-generated reference for all 18 pipeline CLI entry points, their flags, shortcuts, environment variables, defaults, and settings models.
+- **[CLI & Settings Reference](docs/cli_reference.md)**: Auto-generated reference for all 19 pipeline CLI entry points, their flags, shortcuts, environment variables, defaults, and settings models.
+- **[Pipeline E2E & Smoke Testing Guide](docs/pipeline_e2e_testing_guide.md)**, **[Pipeline Specifications Guide](docs/pipeline_specs_guide.md)** & **[Schema Converter Specifications Guide](docs/schema_converter_specs_guide.md)**: Running smoke tests across environments (`local_fs`, `s3_moto`, `s3_ceph`, `--dlt-config-dir`, `--settings-file`, Iceberg) and maintaining converter/pipeline specifications.
 - **[JSONL Ingest Pipelines](docs/jsonlines_ingest.md)**: Guide to `jsonlines_extract`, `jsonlines_jsonschema`, and `jsonlines_pydantic`.
 - **[Table Transforms Guide](docs/table_transforms.md)**: Pluggable record filtering, transformation, multi-table splitting, and PyArrow schema overrides (`--transforms-module`, `--output-schemas-module`).
 - **[UniProt & UniRef Ingestion Guide](docs/uniprot.md)**: XSD-driven XML-to-PyArrow pipelines (`uniprot`, `uniref50`, `uniref90`, `uniref100`) and CDM-normalized multi-table pipelines (`uniprot_cdm`, `uniref50_cdm`, `uniref90_cdm`, `uniref100_cdm`).
 - **[Converters IR & Package Architecture](docs/converters_ir.md)**: Intermediate representation (IR) contract for translating between JSON Schema, Pydantic, `dlt`, PyIceberg, PySpark, PyArrow, and LinkML.
-- **[JSON Schema to PyArrow Specification](docs/jsonschema_to_pyarrow_specification.md)**, **[Pydantic to PyArrow Specification](docs/pydantic_to_pyarrow_specification.md)** & **[XSD to PyArrow Specification](docs/xsd_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalogs.
+- **[JSON Schema to PyArrow Specification](docs/jsonschema_to_pyarrow_specification.md)**, **[Pydantic to PyArrow Specification](docs/pydantic_to_pyarrow_specification.md)**, **[XSD to PyArrow Specification](docs/xsd_to_pyarrow_specification.md)**, **[XSV Schema & Pipeline Specification](docs/xsv_specification.md)**, **[XML to PyArrow Pipeline Specification](docs/xmltopyarrow_specification.md)**, **[XML to Dict Pipeline Specification](docs/xmltodict_specification.md)**, **[JSONLines Extract Pipeline Specification](docs/jsonlines_extract_specification.md)**, **[JSONLines (JSON Schema) Pipeline Specification](docs/jsonlines_jsonschema_specification.md)** & **[JSONLines (Pydantic) Pipeline Specification](docs/jsonlines_pydantic_specification.md)**: Auto-generated conversion and pipeline execution rules, test cases, and error catalogs.
 - **[NCBI FTP End-to-End Walkthrough](docs/ncbi_ftp_e2e_walkthrough.md)** & **[rclone Instructions](docs/rclone_instructions.md)**: Three-phase NCBI assembly synchronization and S3 Lakehouse promotion.
+- **[Bundled Schemas & XSD Assets](docs/bundled_schemas.md)**: Auto-generated catalog of static JSON Schema and XML Schema (`.xsd`) assets bundled in `src/cdm_data_loaders/`.
 
 To build or preview the full documentation website locally (including auto-generated Python API reference pages):
 
 ```sh
 uv sync --group docs
-uv run --group docs mkdocs serve
+uv run --group docs zensical serve
 ```
 
 
@@ -117,7 +119,7 @@ Pipelines can be run directly via `uv run <pipeline_cli> [args...]` or inside th
 
 ### Container Entrypoint Modes (`scripts/entrypoint.sh`)
 
-- `pipeline <pipeline_cli> [args...]`: copies `/input_dir/dlt_conf/{config.toml,secrets.toml}` (if present) into `$HOME/.dlt` and executes `uv run <pipeline_cli> [args...]`.
+- `pipeline <pipeline_cli> [args...]`: copies `/input_dir/dlt_conf/{config.toml,secrets.toml,.pyiceberg.yaml}` (if present) into `$HOME/.dlt` and executes `uv run <pipeline_cli> [args...]`.
 - `xml_split <n_elements> <tag> <file_1> [<file_2> ...]`: splits XML files into chunks of `<n_elements>` `<tag>` elements using `xml_split`.
 - `test`: runs unit tests (`scripts/run_tests.sh unit`).
 - `ceph_integration_test`: runs Ceph-backed S3 and NCBI FTP integration tests.
@@ -133,7 +135,8 @@ Pipelines can be run directly via `uv run <pipeline_cli> [args...]` or inside th
 | `jsonlines_pydantic`   | Multi-table JSONL ingestion validated against `ENTITY_MODELS`              | [`pipelines/jsonlines/extract_pydantic_validate_pipeline.py`](src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | [JSONL Ingest](docs/jsonlines_ingest.md)                    |
 | `ncbi_ftp_sync`        | NCBI FTP assembly batch download (Phase 2)                                 | [`pipelines/ncbi_ftp_download.py`](src/cdm_data_loaders/pipelines/ncbi_ftp_download.py)                                                           | [NCBI FTP Walkthrough](docs/ncbi_ftp_e2e_walkthrough.md)    |
 | `ncbi_ftp_promote`     | NCBI FTP staged file promotion to Lakehouse S3 (Phase 3)                   | [`pipelines/ncbi_ftp_promote.py`](src/cdm_data_loaders/pipelines/ncbi_ftp_promote.py)                                                             | [NCBI FTP Walkthrough](docs/ncbi_ftp_e2e_walkthrough.md)    |
-| `ncbi_rest_api`        | NCBI Datasets v2 REST API importer (`dataset_report`, `annotation_report`) | [`pipelines/ncbi_rest_api.py`](src/cdm_data_loaders/pipelines/ncbi_rest_api.py)                                                                   | [CLI Reference](docs/cli_reference.md#ncbi_rest_api)        |
+| `pyiceberg_to_jsonschema` | Dump PyIceberg catalog table schemas as JSON Schema documents              | [`converters/cli/pyiceberg_to_jsonschema.py`](src/cdm_data_loaders/converters/cli/pyiceberg_to_jsonschema.py)                                     | [Converters IR](docs/converters_ir.md)                      |
+| `pyiceberg_to_linkml`     | Dump PyIceberg catalog table schemas as LinkML YAML schemas                | [`converters/cli/pyiceberg_to_linkml.py`](src/cdm_data_loaders/converters/cli/pyiceberg_to_linkml.py)                                             | [Converters IR](docs/converters_ir.md)                      |
 | `uniprot`              | Preset XSD-to-PyArrow ingestion for UniProtKB XML (`uniprot.xsd`)          | [`pipelines/xmltopyarrow/pipeline.py`](src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                                   | [UniProt Guide](docs/uniprot.md)                            |
 | `uniprot_cdm`          | CDM-normalized multi-table UniProtKB XML pipeline                          | [`pipelines/uniprot_kb_cdm.py`](src/cdm_data_loaders/pipelines/uniprot_kb_cdm.py)                                                                 | [UniProt Guide](docs/uniprot.md)                            |
 | `uniref50`             | Preset XSD-to-PyArrow ingestion for UniRef50 XML (`uniref.xsd`)            | [`pipelines/xmltopyarrow/pipeline.py`](src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                                   | [UniProt Guide](docs/uniprot.md)                            |
@@ -144,7 +147,8 @@ Pipelines can be run directly via `uv run <pipeline_cli> [args...]` or inside th
 | `uniref100_cdm`        | CDM-normalized multi-table UniRef100 XML pipeline                          | [`pipelines/uniref_cdm.py`](src/cdm_data_loaders/pipelines/uniref_cdm.py)                                                                         | [UniProt Guide](docs/uniprot.md)                            |
 | `xmltodict`            | Generic XML-to-dictionary ingestion using `xmltodict`                      | [`pipelines/xmltodict/pipeline.py`](src/cdm_data_loaders/pipelines/xmltodict/pipeline.py)                                                         | [CLI Reference](docs/cli_reference.md#xmltodict)            |
 | `xmltopyarrow`         | Generic XSD-driven XML-to-PyArrow ingestion                                | [`pipelines/xmltopyarrow/pipeline.py`](src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                                   | [XSD to PyArrow Spec](docs/xsd_to_pyarrow_specification.md) |
-| `xsv`                  | CSV/TSV ingestion with `qsv` two-pass validation and JSON Schema casting   | [`pipelines/xsv/pipeline.py`](src/cdm_data_loaders/pipelines/xsv/pipeline.py)                                                                     | [CLI Reference](docs/cli_reference.md#xsv)                  |
+| `xsd_to_pyarrow`       | Generate static Python PyArrow schema modules from XSD schemas             | [`converters/cli/xsd_to_pyarrow.py`](src/cdm_data_loaders/converters/cli/xsd_to_pyarrow.py)                                                       | [XSD to PyArrow Spec](docs/xsd_to_pyarrow_specification.md) |
+| `xsv`                  | CSV/TSV ingestion with `qsv` two-pass validation and JSON Schema casting   | [`pipelines/xsv/pipeline.py`](src/cdm_data_loaders/pipelines/xsv/pipeline.py)                                                                     | [XSV Spec](docs/xsv_specification.md)                       |
 
 
 ## Development

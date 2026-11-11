@@ -1,0 +1,44 @@
+{
+  "_rejected": [
+    {
+      "error_detail": "Expecting value: line 1 column 35 (char 34)",
+      "line_no": 3,
+      "raw_record": "{\"sample_id\": \"s-bad-json\", \"ph\": }",
+      "source_file": "samples/samples.jsonl",
+      "table_name": "samples"
+    },
+    {
+      "error_detail": "[{\"type\": \"float_parsing\", \"loc\": [\"ph\"], \"msg\": \"Input should be a valid number, unable to parse string as a number\", \"input\": \"not-a-float\", \"url\": \"https://errors.pydantic.dev/2.14/v/float_parsing\"}]",
+      "line_no": 4,
+      "raw_record": "{\"sample_id\": \"s-bad-model\", \"ph\": \"not-a-float\"}",
+      "source_file": "samples/samples.jsonl",
+      "table_name": "samples"
+    }
+  ],
+  "instruments": [
+    {
+      "active": true,
+      "instrument_id": "inst-1",
+      "platform": "Illumina"
+    }
+  ],
+  "samples": [
+    {
+      "biome": "terrestrial",
+      "ph": 6.5,
+      "sample_id": "s-1",
+      "tags": [
+        "soil",
+        "core"
+      ]
+    },
+    {
+      "biome": "marine",
+      "ph": 7.8,
+      "sample_id": "s-2",
+      "tags": [
+        "water"
+      ]
+    }
+  ]
+}

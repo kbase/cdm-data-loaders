@@ -12,7 +12,7 @@ from jsonschema.exceptions import ValidationError
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.ir_values import Value, freeze_mapping, freeze_value, mutable_value
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema import X_XSV_CONFIG_SCHEMA
+from cdm_data_loaders.schemas.jsonschema import X_XSV_CONFIG_SCHEMA
 
 
 class ExtensionError(ConversionError):
@@ -115,7 +115,7 @@ def _object_schema(properties: Mapping[str, object]) -> dict[str, Any]:
     return {"type": "object", "properties": dict(properties), "additionalProperties": False}
 
 
-_DLT_PROPERTIES: Final = {
+DLT_PROPERTIES: Final[dict[str, Any]] = {
     **{
         name: {"type": ["boolean", "null"]}
         for name in (
@@ -138,7 +138,7 @@ _DLT_PROPERTIES: Final = {
     "description": {"type": ["string", "null"]},
     "data_type": {"type": ["string", "null"]},
 }
-_ICEBERG_PROPERTIES: Final = {
+ICEBERG_PROPERTIES: Final[dict[str, Any]] = {
     **{
         name: {"type": "integer"}
         for name in (
@@ -169,10 +169,10 @@ _ICEBERG_PROPERTIES: Final = {
         },
     },
 }
-DEFAULT_EXTENSIONS: Final = ExtensionRegistry(
+DEFAULT_EXTENSIONS: Final[ExtensionRegistry] = ExtensionRegistry(
     (
-        ExtensionSpec("x-dlt", _object_schema(_DLT_PROPERTIES)),
-        ExtensionSpec("x-iceberg", _object_schema(_ICEBERG_PROPERTIES)),
+        ExtensionSpec("x-dlt", _object_schema(DLT_PROPERTIES)),
+        ExtensionSpec("x-iceberg", _object_schema(ICEBERG_PROPERTIES)),
         ExtensionSpec("x-xsv-config", X_XSV_CONFIG_SCHEMA),
         ExtensionSpec("x-file-glob", {"type": "string"}),
         ExtensionSpec("x-delimiter", {"type": "string", "minLength": 1, "maxLength": 1}),

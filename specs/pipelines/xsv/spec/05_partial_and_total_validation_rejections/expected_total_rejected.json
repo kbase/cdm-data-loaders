@@ -1,0 +1,9 @@
+[
+  {
+    "table_name": "records",
+    "source_file": "all_invalid.csv",
+    "line_no": null,
+    "raw_record": null,
+    "error_detail": "2 out of 2 records invalid."
+  }
+]

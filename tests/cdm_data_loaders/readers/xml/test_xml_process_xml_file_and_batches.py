@@ -18,15 +18,17 @@ from dlt.extract.items import DataItemWithMeta, TableNameMeta
 from dlt.extract.pipe_iterator import ManagedPipeIterator
 from lxml.etree import Element, XMLSyntaxError, tostring
 
-import cdm_data_loaders.converters.xsd_to_pyarrow as xsd_module
+import cdm_data_loaders.coercion.xml as xml_coercion_module
 import cdm_data_loaders.readers.xml as xml_module
 import cdm_data_loaders.utils.buffer as buffer_module
-from cdm_data_loaders.converters.xsd_to_pyarrow import (
-    DEFAULT_MAX_RECURSION_DEPTH,
-    generate_pyarrow_schema,
-    generate_pyarrow_schemas_at_level,
+from cdm_data_loaders.coercion.xml import (
     make_xml_element_converter,
     make_xml_level_converters,
+)
+from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
+from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
+    generate_pyarrow_schema,
+    generate_pyarrow_schemas_at_level,
 )
 from cdm_data_loaders.core.fields import (
     BUFFER_SIZE,
@@ -56,7 +58,6 @@ UNIPROT_NS: Final[str] = "http://uniprot.org/uniprot"
 
 # Arbitrary non-default value used to prove settings are forwarded to process_xml_file.
 CUSTOM_LOG_INTERVAL: Final[int] = 7
-CUSTOM_BATCH_LOG_INTERVAL: Final[int] = 50
 
 PEOPLE_XML_2: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
 <people>
@@ -255,6 +256,7 @@ def fake_settings(
     settings.input_dir = Path(input_dir)
     settings.file_glob = DEFAULT_XML_FILE_GLOB
     settings.loader_file_format = DEFAULTS[LOADER_FILE_FORMAT]
+    settings.use_pyarrow = True
     if hasattr(settings, "get_table_transform"):
         settings.get_table_transform.return_value = None
     if hasattr(settings, "schema_map"):
@@ -421,19 +423,16 @@ def test_process_xml_file_pass_multiple_tables_per_entry(tmp_path: Path) -> None
     assert [row["email"] for row in tagged[1][1]] == ["a@example.com", "b@example.com"]
 
 
+@pytest.mark.parametrize("gzip_compress", [False, True], ids=["plain", "gzip"])
 @pytest.mark.parametrize("mode", XML_PROCESSOR_MODES)
-def test_process_xml_file_pass_gzip_file(tmp_path: Path, mode: str) -> None:
+def test_process_xml_file_pass_gzip_file(tmp_path: Path, mode: str, gzip_compress: bool) -> None:
     """Verify gzip-compressed XML input (.gz suffix) is transparently decompressed and parsed."""
-    plain_path = write_xml_file(tmp_path, "plain.xml", PEOPLE_XML_5)
-    gz_path = write_xml_file(tmp_path, "compressed.xml.gz", PEOPLE_XML_5, gzip_compress=True)
+    filename = "compressed.xml.gz" if gzip_compress else "plain.xml"
+    path = write_xml_file(tmp_path, filename, PEOPLE_XML_5, gzip_compress=gzip_compress)
 
-    plain_items = table_and_data(_stream_xml_processor(mode, plain_path))
-    gz_items = table_and_data(_stream_xml_processor(mode, gz_path))
-
-    plain_rows = [row for _, batch in plain_items for row in _batch_rows(mode, batch)]
-    gz_rows = [row for _, batch in gz_items for row in _batch_rows(mode, batch)]
-    assert plain_rows == _expected_people_rows(mode, plain_path)
-    assert gz_rows == _expected_people_rows(mode, gz_path)
+    items = table_and_data(_stream_xml_processor(mode, path))
+    rows = [row for _, batch in items for row in _batch_rows(mode, batch)]
+    assert rows == _expected_people_rows(mode, path)
 
 
 def test_process_xml_file_pass_namespaced_tag(tmp_path: Path) -> None:
@@ -1098,8 +1097,8 @@ def test_process_xml_file_to_pyarrow_pass_prepares_xsd_target_traversal_at_most_
     """Verify XSD target resolution and particle validation is not repeated for every XML element."""
     file_path = write_xml_file(tmp_path, "five.xml", PEOPLE_XML_5)
     settings = fake_xmltopyarrow_settings(table_name="people", xml_tag="person")
-    prepare_spy = MagicMock(wraps=xsd_module._prepare_target_traversal)  # noqa: SLF001
-    monkeypatch.setattr(xsd_module, "_prepare_target_traversal", prepare_spy)
+    prepare_spy = MagicMock(wraps=xml_coercion_module._prepare_target_traversal)  # noqa: SLF001
+    monkeypatch.setattr(xml_coercion_module, "_prepare_target_traversal", prepare_spy)
 
     tagged = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
 
@@ -1122,9 +1121,11 @@ def test_process_xml_file_to_pyarrow_pass_uses_dict_buffer_with_table_schema_map
     def _recording_dict_buffer(
         max_items: int = DEFAULTS[BUFFER_SIZE],
         schema_map: ArrowSchemaRegistry | None = None,
+        *,
+        use_pyarrow: bool = True,
     ) -> Any:  # noqa: ANN401
         captured_schema_maps.append(schema_map)
-        return real_dict_buffer(max_items=max_items, schema_map=schema_map)
+        return real_dict_buffer(max_items=max_items, schema_map=schema_map, use_pyarrow=use_pyarrow)
 
     monkeypatch.setattr(xml_module, "DictBuffer", _recording_dict_buffer)
 
@@ -1255,3 +1256,33 @@ def test_process_xml_file_to_pyarrow_fail_level_mode_unexpected_xml_tag(tmp_path
 
     with pytest.raises(ValueError, match="Unexpected XML element <newspaper> at level 1"):
         list(process_xml_file_to_pyarrow(file_path, settings))
+
+
+@pytest.mark.parametrize("level_mode", [False, True], ids=["single-tag", "level-mode"])
+def test_process_xml_file_to_pyarrow_pass_use_pyarrow_false_yields_lists_of_dicts(
+    tmp_path: Path,
+    level_mode: bool,
+) -> None:
+    """When settings.use_pyarrow is False, process_xml_file_to_pyarrow yields list[dict] instead of pa.Table."""
+    if level_mode:
+        file_path = write_xml_file(tmp_path, "catalog.xml", MULTI_ENTITY_XML)
+        settings = fake_xmltopyarrow_level_settings(xml_level=1)
+        settings.use_pyarrow = False  # pyright: ignore[reportAttributeAccessIssue]
+        settings.schema_map = None  # pyright: ignore[reportAttributeAccessIssue]
+        tagged = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
+        by_table = dict(tagged)
+        assert all(isinstance(page, list) for page in by_table.values())
+        assert by_table["book"] == [{"_id": "b1", "title": "Dune"}, {"_id": "b2", "title": "Foundation"}]
+        assert by_table["magazine"] == [{"_id": "m1", "issue": 42}]
+        assert by_table["copyright"] == [{"#text": "Copyright 2026"}]
+    else:
+        file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
+        settings = fake_xmltopyarrow_settings(table_name="people", xml_tag="person")
+        settings.use_pyarrow = False  # pyright: ignore[reportAttributeAccessIssue]
+        settings.schema_map = None  # pyright: ignore[reportAttributeAccessIssue]
+        tagged = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
+        assert len(tagged) == 1
+        table_name, data = tagged[0]
+        assert table_name == "people"
+        assert isinstance(data, list)
+        assert data == PEOPLE_XML_TO_PYARROW_PARSED[:2]

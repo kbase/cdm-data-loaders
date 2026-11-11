@@ -1,7 +1,9 @@
 """Misc helpers for integration tests."""
 
-import gc
+import gzip
+import io
 import json
+import posixpath
 from collections import defaultdict
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
@@ -13,20 +15,23 @@ from uuid import uuid4
 
 import dlt
 import duckdb
+import pyarrow as pa
 import pyarrow.parquet as pq
 import yaml
+from dlt.common.normalizers.naming.snake_case import NamingConvention as SnakeCaseNamingConvention
 from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
-from dlt.destinations import filesystem
 from dlt.extract import DltResource
 from pandas import DataFrame
 
-from cdm_data_loaders.converters.core.paths import set_nested
-from cdm_data_loaders.core.fields import PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
-from cdm_data_loaders.core.settings import FileFormatIngestSettings
+from cdm_data_loaders.core.fields import ICEBERG, PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
+from cdm_data_loaders.core.settings import CtsSettings, FileFormatIngestSettings
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.utils.file_items import as_file_item, open_binary
+from cdm_data_loaders.utils.paths import set_nested
 from tests.helpers import strip_none_values
+from tests.pipeline_spec import PipelineRun, load_expected_json_tables, load_expected_tables
+from tests.pyarrow_spec_helpers import json_default
 
 logger: Logger = getLogger(__name__)
 
@@ -76,16 +81,20 @@ def read_parquet_tables(output_dir: Path) -> dict[str, list[dict[str, Any]]]:
     """Read all parquet files under a pipeline output dataset dir, grouped by table name."""
     tables: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for parquet_file in sorted(output_dir.rglob("*.parquet")):
-        tables[parquet_file.parent.name].extend(pq.read_table(parquet_file).to_pylist())
+        parent = parquet_file.parent
+        table_name = (
+            parent.parent.name if parent.name == "data" and (parent.parent / "metadata").is_dir() else parent.name
+        )
+        tables[table_name].extend(pq.read_table(parquet_file).to_pylist())
     return dict(tables)
 
 
 def read_pipeline_tables(output_dir: Path, output_format: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    """Read all json files under a pipeline output dataset dir, grouped by table name.
+    """Read all data files under a pipeline output dataset dir, grouped by table name.
 
-    Defaults to reading jsonlines files; supply "parquet" as file format to read parquet files.
+    Defaults to reading jsonlines files; supply "parquet" or "iceberg" as file format to read parquet files.
     """
-    if output_format and output_format == PARQUET:
+    if output_format and output_format in {PARQUET, ICEBERG}:
         return read_parquet_tables(output_dir)
 
     tables: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -94,7 +103,7 @@ def read_pipeline_tables(output_dir: Path, output_format: str | None = None) -> 
         if not json_file.is_file():
             continue
         # ignore metadata dirs
-        if is_metadata_table(json_file.parent.name):
+        if json_file.parent.name == "metadata" or is_metadata_table(json_file.parent.name):
             continue
         tables[json_file.parent.name].extend(read_jsonl_file(json_file))
 
@@ -109,10 +118,13 @@ def read_destination_rows(
 ) -> list[dict[str, Any]]:
     """Read the rows the filesystem destination wrote for table_name under base_dir.
 
-    Handles parquet, jsonl and gzipped jsonl files. Returns an empty list if the table has no files.
+    Handles parquet, iceberg, jsonl and gzipped jsonl files. Returns an empty list if the table has no files.
     """
     rows: list[dict[str, Any]] = []
-    for data_file in sorted(base_dir.glob(f"**/{table_name}/*")):
+    candidate_files = sorted({*base_dir.glob(f"**/{table_name}/*"), *base_dir.glob(f"**/{table_name}/data/*.parquet")})
+    for data_file in candidate_files:
+        if not data_file.is_file():
+            continue
         if data_file.name.endswith(".parquet"):
             rows.extend(pq.read_table(data_file).to_pylist())
         elif ".jsonl" in data_file.name:
@@ -120,6 +132,18 @@ def read_destination_rows(
     if strip_metadata:
         return [strip_metadata_columns(row) for row in rows]
     return rows
+
+
+def assert_iceberg_table_metadata(dataset_dir: Path, table_name: str) -> None:
+    """Assert that ``dataset_dir / table_name`` has Iceberg metadata and data subdirectories."""
+    table_dir = dataset_dir / table_name
+    metadata_dir = table_dir / "metadata"
+    data_dir = table_dir / "data"
+    assert metadata_dir.is_dir(), f"Missing Iceberg metadata directory for table {table_name!r}"
+    assert data_dir.is_dir(), f"Missing Iceberg data directory for table {table_name!r}"
+    assert list(metadata_dir.glob("*.metadata.json")), f"Missing *.metadata.json for table {table_name!r}"
+    assert list(metadata_dir.glob("snap-*.avro")), f"Missing Iceberg snapshot manifest list for table {table_name!r}"
+    assert list(data_dir.glob("*.parquet")), f"Missing Iceberg data parquet files for table {table_name!r}"
 
 
 def duckdb_pipeline(tmp_path: Path, pipeline_name: str, dataset_name: str, db_name: str | None = None) -> dlt.Pipeline:
@@ -155,7 +179,12 @@ def assert_core_run_pipeline_args(
         "pipeline_name": pipeline_name,
         "dataset_name": settings.dataset_name,
     }
-    assert kwargs["pipeline_run_kwargs"] == {"loader_file_format": settings.loader_file_format}
+    expected_run_kwargs = (
+        {"loader_file_format": str(PARQUET), "table_format": str(ICEBERG)}
+        if settings.loader_file_format == LoaderFileFormatEnum.ICEBERG
+        else {"loader_file_format": str(settings.loader_file_format)}
+    )
+    assert kwargs["pipeline_run_kwargs"] == expected_run_kwargs
     assert isinstance(kwargs["resource"], DltResource)
 
 
@@ -319,7 +348,10 @@ def check_pipeline_report(path: Path, expected: dict[str, Any]) -> dict[str, Any
         report_data: dict[str, Any] = yaml.safe_load(fh)
 
     for e, v in expected.items():
-        assert report_data[e] == v
+        if e == "ingested_files" and isinstance(v, list):
+            assert set(report_data.get(e, [])) == set(v)
+        else:
+            assert report_data[e] == v
     return report_data
 
 
@@ -376,9 +408,9 @@ def assert_pipeline_report_written(
 
 
 def run_and_read(
-    run_pipeline: Any,
+    run_pipeline: Callable[..., tuple[LoadInfo | None, Path]],
     chunk_dir: str,
-    **overrides: Any,
+    **overrides: object,
 ) -> tuple[LoadInfo, Path]:
     """Run the pipeline on a chunk dir and return the run result with its tables."""
     (load_info, output_dir) = run_pipeline(chunk_dir, **overrides)
@@ -386,23 +418,6 @@ def run_and_read(
     assert not load_info.has_failed_jobs
     assert_pipeline_report_written(output_dir, load_info, metadata_moved=(output_dir / PIPELINE_DIR_NAME).is_dir())
     return (load_info, output_dir)
-
-
-def _df_to_sorted_json(df: DataFrame) -> list[str]:
-    """Convert a table DataFrame into sorted JSON strings, removing the _dlt fields first."""
-    return sorted_json(
-        [{k: v for k, v in datum.items() if not is_metadata_table(k)} for datum in df.to_dict("records")]  # pyright: ignore[reportArgumentType]
-    )
-
-
-def extract_table_data(dataset: dlt.Dataset, table_name: str) -> list[str]:
-    """Convert table data into a JSON string, removing the _dlt fields first."""
-    return _df_to_sorted_json(dataset.table(table_name).df())
-
-
-def get_pipeline(load_info: LoadInfo, output_dir: Path) -> dlt.Pipeline:
-    """Return a Pipeline object for the given dataset and destination."""
-    return dlt.pipeline(destination=filesystem(bucket_url=str(output_dir)), dataset_name=load_info.dataset_name)
 
 
 def strip_metadata_columns(row: dict[str, Any]) -> dict[str, Any]:
@@ -427,7 +442,7 @@ def rows_as_multiset(tables: dict[str, list[dict[str, Any]]], table_name: str) -
     )
 
 
-def parse_json_string(value: Any) -> Any:
+def parse_json_string(value: object) -> object:
     """Parse a string holding a JSON object or array; pass any other value through.
 
     Parquet output with max_table_nesting=0 stores nested content as JSON strings,
@@ -545,39 +560,39 @@ def _normalize_reference_entry(entry: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+MIN_DATASETS_TO_COMPARE: Final[int] = 2
+
+
 def assert_datasets_equal(
     load_info_and_dir: dict[str, tuple[LoadInfo, Path]],
+    output_format: str | None = None,
 ) -> None:
     """Compare datasets to check whether they are identical."""
-    if len(load_info_and_dir) < 2:
+    if len(load_info_and_dir) < MIN_DATASETS_TO_COMPARE:
         err_msg = "assert_datasets_equal requires at least two datasets to compare"
         raise ValueError(err_msg)
 
     all_keys = list(load_info_and_dir.keys())
     dataset_zero = all_keys[0]
-    sorted_row_data: dict[str, dict[str, list[str]]] = {k: {} for k in all_keys}
-
-    with get_pipeline(*load_info_and_dir[dataset_zero]).dataset() as ds_zero:
-        table_names = {table_name for table_name in ds_zero.tables if not is_metadata_table(table_name)}
-        dfs_zero = {t: ds_zero.table(t).df() for t in table_names}
-        rows_per_table = {t: df.shape[0] for t, df in dfs_zero.items()}
-        col_names = {t: set(df.columns) for t, df in dfs_zero.items()}
-        sorted_row_data[dataset_zero] = {t: _df_to_sorted_json(df) for t, df in dfs_zero.items()}
+    load_info_zero, output_dir_zero = load_info_and_dir[dataset_zero]
+    tables_zero = read_data_rows(output_dir_zero / load_info_zero.dataset_name, output_format)
+    table_names = set(tables_zero)
+    rows_per_table = {t: len(rows) for t, rows in tables_zero.items()}
+    col_names = {t: set().union(*(row.keys() for row in rows)) for t, rows in tables_zero.items()}
+    sorted_row_data: dict[str, dict[str, list[str]]] = {
+        dataset_zero: {t: rows_as_multiset(tables_zero, t) for t in table_names},
+    }
 
     for key in all_keys[1:]:
-        with get_pipeline(*load_info_and_dir[key]).dataset() as ds:
-            # check the table names are identical
-            assert {table_name for table_name in ds.tables if not is_metadata_table(table_name)} == table_names
-            dfs = {t: ds.table(t).df() for t in table_names}
-            # check row counts
-            assert {t: df.shape[0] for t, df in dfs.items()} == rows_per_table
-            # column names
-            for t, df in dfs.items():
-                assert set(df.columns) == col_names[t]
-                sorted_row_data[key][t] = _df_to_sorted_json(df)
-                assert sorted_row_data[key][t] == sorted_row_data[dataset_zero][t]
-
-    gc.collect()
+        load_info, output_dir = load_info_and_dir[key]
+        tables = read_data_rows(output_dir / load_info.dataset_name, output_format)
+        assert set(tables) == table_names
+        assert {t: len(rows) for t, rows in tables.items()} == rows_per_table
+        sorted_row_data[key] = {}
+        for t, rows in tables.items():
+            assert set().union(*(row.keys() for row in rows)) == col_names[t]
+            sorted_row_data[key][t] = rows_as_multiset(tables, t)
+            assert sorted_row_data[key][t] == sorted_row_data[dataset_zero][t]
 
 
 def assert_dataset_matches_reference(
@@ -618,7 +633,7 @@ def run_and_compare_variations(
         key: run_and_read(run_pipeline, chunk_dir, **overrides) for key, (chunk_dir, overrides) in variations.items()
     }
     if len(load_info_and_dir) >= 2:  # noqa: PLR2004
-        assert_datasets_equal(load_info_and_dir)
+        assert_datasets_equal(load_info_and_dir, output_format)
     if sorted_reference_json is not None:
         assert_dataset_matches_reference(
             load_info_and_dir,
@@ -628,3 +643,182 @@ def run_and_compare_variations(
             canonicalize=canonicalize,
         )
     return load_info_and_dir
+
+
+def _read_fsspec_data_file(fs: Any, file_path: str) -> list[dict[str, Any]]:  # noqa: ANN401
+    """Read a Parquet or JSONL (.jsonl / .jsonl.gz) file from an fsspec filesystem."""
+    base_name = posixpath.basename(file_path)
+    with fs.open(file_path, "rb") as fh:
+        raw_bytes = fh.read()
+    if base_name.endswith(".parquet"):
+        return pq.read_table(io.BytesIO(raw_bytes)).to_pylist()
+    if ".jsonl" in base_name:
+        if raw_bytes[:2] == b"\x1f\x8b" or base_name.endswith(".gz"):
+            raw_bytes = gzip.decompress(raw_bytes)
+        text = raw_bytes.decode("utf-8")
+        return [json.loads(line) for line in text.splitlines() if line.strip()]
+    return []
+
+
+def _read_fsspec_table_rows(fs: Any, entry_path: str) -> list[dict[str, Any]]:  # noqa: ANN401
+    """Read all data files from a table directory (or ``data/`` subdirectory) on an fsspec filesystem."""
+    data_subdir = f"{entry_path}/data"
+    search_dirs = [data_subdir] if fs.exists(data_subdir) and fs.isdir(data_subdir) else [entry_path]
+    rows: list[dict[str, Any]] = []
+    for sdir in search_dirs:
+        for file_entry in sorted(fs.ls(sdir, detail=True), key=lambda item: str(item.get("name", ""))):
+            file_path = str(file_entry["name"])
+            if file_entry.get("type") == "directory" or fs.isdir(file_path):
+                continue
+            rows.extend(_read_fsspec_data_file(fs, file_path))
+    return rows
+
+
+def read_destination_tables_from_load_info(
+    load_info: LoadInfo,
+    *,
+    include_load_info: bool = False,
+) -> dict[str, list[dict[str, Any]]]:
+    """Read data tables (and optionally ``_load_info``) from ``load_info`` across local, S3, or SQL destinations."""
+    with load_info.pipeline.destination_client() as client:
+        if hasattr(client, "fs_client") and hasattr(client, "dataset_path"):
+            fs = client.fs_client  # pyright: ignore[reportAttributeAccessIssue]
+            dataset_path = str(client.dataset_path).rstrip("/")  # pyright: ignore[reportAttributeAccessIssue]
+            if not fs.exists(dataset_path):
+                return {}
+            tables: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            for entry in sorted(fs.ls(dataset_path, detail=True), key=lambda item: str(item.get("name", ""))):
+                entry_path = str(entry["name"]).rstrip("/")
+                table_name = posixpath.basename(entry_path)
+                if table_name.startswith("_dlt") or (table_name == LOAD_INFO_TABLE_NAME and not include_load_info):
+                    continue
+                if entry.get("type") != "directory" and not fs.isdir(entry_path):
+                    continue
+                rows = _read_fsspec_table_rows(fs, entry_path)
+                tables[table_name].extend(
+                    rows if table_name == LOAD_INFO_TABLE_NAME else (strip_metadata_columns(r) for r in rows)
+                )
+            return dict(tables)
+
+    dataset = load_info.pipeline.dataset()
+    sql_tables: dict[str, list[dict[str, Any]]] = {}
+    for table_name in sorted(dataset.tables):
+        if table_name.startswith("_dlt"):
+            continue
+        if table_name == LOAD_INFO_TABLE_NAME and not include_load_info:
+            continue
+        raw_rows = dataset.table(table_name).arrow().to_pylist()
+        sql_tables[table_name] = (
+            raw_rows if table_name == LOAD_INFO_TABLE_NAME else [strip_metadata_columns(r) for r in raw_rows]
+        )
+    return sql_tables
+
+
+def _strip_none_and_empty_lists(value: Any) -> Any:  # noqa: ANN401
+    """Recursively remove keys with None or empty-list values from nested dicts and lists.
+
+    PyIceberg's ``ArrowProjectionVisitor.list`` rebuilds ``list<struct>`` arrays without
+    preserving the null validity bitmap, materializing null ``list<struct>`` fields as ``[]``.
+    """
+    if isinstance(value, dict):
+        cleaned: dict[str, Any] = {}
+        for k, v in value.items():
+            if v is None:
+                continue
+            stripped_v = _strip_none_and_empty_lists(v)
+            if stripped_v is None or stripped_v == []:
+                continue
+            cleaned[k] = stripped_v
+        return cleaned
+    if isinstance(value, list):
+        return [_strip_none_and_empty_lists(item) for item in value]
+    return value
+
+
+def canonicalize_table_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Strip None/empty-list values, normalize top-level column names, parse JSON strings, and sort rows."""
+    naming = SnakeCaseNamingConvention()
+    cleaned: list[dict[str, Any]] = []
+    for row in rows:
+        parsed_row = {
+            naming.normalize_identifier(k): (parse_json_string(v) if k not in {"raw_record", "error_detail"} else v)
+            for k, v in strip_metadata_columns(row).items()
+        }
+        stripped = _strip_none_and_empty_lists(parsed_row)
+        normalized = json.loads(json.dumps(stripped, default=json_default))
+        cleaned.append(normalized)
+    return sorted(cleaned, key=lambda item: json.dumps(item, sort_keys=True))
+
+
+def normalize_expected_table_rows(
+    table: pa.Table,
+    load_info: LoadInfo | None = None,
+) -> list[dict[str, Any]]:
+    """Convert an expected ``pa.Table`` to canonical row dicts with dlt-normalized top-level column names."""
+    naming = None
+    if load_info is not None and getattr(load_info.pipeline, "default_schema_name", None):
+        naming = getattr(load_info.pipeline.default_schema, "naming", None)
+    if naming is None:
+        naming = SnakeCaseNamingConvention()
+    renamed_cols = [naming.normalize_identifier(name) for name in table.column_names]
+    renamed_table = table.rename_columns(renamed_cols)
+    return canonicalize_table_rows(renamed_table.to_pylist())
+
+
+def assert_smoke_run_output(
+    load_info: LoadInfo | None,
+    settings: CtsSettings,
+    run: PipelineRun,
+) -> None:
+    """Validate ``LoadInfo``, ``report.txt``, ``_load_info``, row counts, and expected table contents."""
+    assert load_info is not None
+    if run.expected_report.status == "completed":
+        assert not load_info.has_failed_jobs
+
+    report_path = settings.report_path
+    assert report_path.is_file(), f"Missing pipeline report at {report_path}"
+    report_data = yaml.safe_load(report_path.read_text(encoding="utf-8"))
+    assert isinstance(report_data, dict)
+    assert report_data["pipeline"] == load_info.pipeline.pipeline_name
+    assert report_data["dataset"] == load_info.dataset_name
+    assert report_data["status"] == run.expected_report.status
+    assert report_data["pipeline_load_info_errs"] == run.expected_report.pipeline_load_info_errs
+    assert report_data["load_ids"] == list(load_info.loads_ids)
+    assert report_data["started"] <= report_data["finished"]
+
+    if run.expected_report.ingested_files:
+        assert sorted(report_data.get("ingested_files", [])) == sorted(run.expected_report.ingested_files)
+    else:
+        assert "ingested_files" not in report_data
+
+    if run.expected_report.load_errors:
+        actual_errors = report_data.get("load_errors", [])
+        assert len(actual_errors) == len(run.expected_report.load_errors)
+        for expected_substr, actual_err in zip(run.expected_report.load_errors, actual_errors, strict=True):
+            assert expected_substr in actual_err
+    else:
+        assert "load_errors" not in report_data
+
+    all_tables = read_destination_tables_from_load_info(load_info, include_load_info=True)
+    assert LOAD_INFO_TABLE_NAME in all_tables, f"Missing {LOAD_INFO_TABLE_NAME!r} table in destination"
+    load_info_rows = all_tables.pop(LOAD_INFO_TABLE_NAME)
+    assert len(load_info_rows) == 1
+
+    actual_counts = {name: len(rows) for name, rows in all_tables.items()}
+    assert actual_counts == run.expected_counts
+
+    if run.expected_tables is not None:
+        expected_pa_tables = load_expected_tables(run)
+        assert set(all_tables) == set(expected_pa_tables)
+        for table_name, exp_table in expected_pa_tables.items():
+            actual_rows = canonicalize_table_rows(all_tables[table_name])
+            expected_rows = normalize_expected_table_rows(exp_table, load_info)
+            assert actual_rows == expected_rows, (
+                f"Mismatch in table {table_name!r}:\nactual={actual_rows}\nexpected={expected_rows}"
+            )
+
+    if run.expected_json is not None:
+        expected_json_data = load_expected_json_tables(run)
+        actual_canonical = {name: canonicalize_table_rows(rows) for name, rows in sorted(all_tables.items())}
+        expected_canonical = {name: canonicalize_table_rows(rows) for name, rows in sorted(expected_json_data.items())}
+        assert actual_canonical == expected_canonical

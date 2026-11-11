@@ -6,7 +6,7 @@
 # Use a Python image with uv pre-installed
 FROM ghcr.io/astral-sh/uv:python3.14-trixie
 
-ARG QSV_VERSION="25.0.0"
+ARG QSV_VERSION="28.0.0"
 ARG XML_FILE_SPLITTER_VERSION="v0.1.4"
 
 # Set environment variable to noninteractive to prevent prompts during apt operations
@@ -80,6 +80,7 @@ COPY --chown=nonroot:nonroot tests /app/tests
 COPY --chown=nonroot:nonroot README.md /app/README.md
 COPY --chown=nonroot:nonroot pyproject.toml /app/pyproject.toml
 COPY --chown=nonroot:nonroot uv.lock /app/uv.lock
+COPY --chown=nonroot:nonroot logger_config.json /app/logger_config.json
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-editable

@@ -1,0 +1,21 @@
+title: Table Transforms, Row Filtering, Multi-Table Fan-Out, and Output Schemas
+schema: schema.json
+rules:
+  - R-XSV-DUCKDB-TYPES
+  - R-XSV-TRANSFORMS
+notes: |
+  - Configures `transforms_module="specs.pipelines.xsv.transforms"` and `output_schemas_module="specs.pipelines.xsv.transforms"` for `table_name="readings"`.
+  - Because a transform is registered for `"readings"`, `read_validated_rows` yields Python row dicts (`use_pyarrow=False`) to `route_and_coerce_record` and `DictBuffer`.
+  - The transform drops rows with `status == "drop"` (`s-2`), uppercases `sensor_id`, computes `kelvin = round(celsius + 273.15, 2)` for `"readings"`, and fans out rows with `celsius >= 100.0` (`s-3`) to `"alerts"`, coercing both tables against `OUTPUT_SCHEMAS`.
+runs:
+  - id: with_transforms
+    data: data.csv
+    expected_json: expected.json
+    expected_table: expected_table.py
+    extra_expected_json:
+      alerts: expected_alerts.json
+    params:
+      table_name: readings
+      transforms_module: specs.pipelines.xsv.transforms
+      output_schemas_module: specs.pipelines.xsv.transforms
+

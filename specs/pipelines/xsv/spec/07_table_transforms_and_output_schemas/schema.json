@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SensorReadingsInput",
+  "type": "object",
+  "required": [
+    "sensor_id",
+    "celsius",
+    "status"
+  ],
+  "properties": {
+    "sensor_id": {
+      "type": "string"
+    },
+    "celsius": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "x-xsv-config": {
+    "x-delimiter": ",",
+    "x-has-header": true
+  }
+}
+

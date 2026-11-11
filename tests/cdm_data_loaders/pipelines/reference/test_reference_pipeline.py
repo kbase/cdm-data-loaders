@@ -82,27 +82,25 @@ def test_reference_pass_output_identical_across_chunk_dirs(
     )
 
 
+@pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS, ids=str)
 def test_reference_pass_diff_format_same_results(
     run_reference_pipeline_fxt: Callable[..., Any],
     sorted_reference_entities: list[str],
+    loader_file_format: str,
 ) -> None:
     """Ensure that the save format does not affect the output."""
-    load_info_and_dir = {
-        str(output_format): run_and_read(
-            run_reference_pipeline_fxt,
-            "chunk_10",
-            loader_file_format=output_format,
-        )
-        for output_format in LOADER_FILE_FORMATS
-    }
-    for output_format, result in load_info_and_dir.items():
-        assert_dataset_matches_reference(
-            {output_format: result},
-            sorted_reference_entities,
-            output_format,
-            reconstruct=reconstructed_entries,
-            canonicalize=canonicalize_entry,
-        )
+    result = run_and_read(
+        run_reference_pipeline_fxt,
+        "chunk_10",
+        loader_file_format=loader_file_format,
+    )
+    assert_dataset_matches_reference(
+        {str(loader_file_format): result},
+        sorted_reference_entities,
+        str(loader_file_format),
+        reconstruct=reconstructed_entries,
+        canonicalize=canonicalize_entry,
+    )
 
 
 @pytest.mark.parametrize("chunk_dir", CHUNK_DIRS, ids=str)

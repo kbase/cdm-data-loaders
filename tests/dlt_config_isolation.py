@@ -10,9 +10,11 @@ as it would in production, without ever touching the process's real config.toml/
 secrets.toml/env-derived provider chain.
 """
 
+import tomllib
 from collections.abc import Generator
 from contextlib import contextmanager
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 import dlt
@@ -35,10 +37,6 @@ class InMemoryConfigProvider(BaseDocProvider):
     def __init__(self, initial: dict[str, Any] | None = None) -> None:
         """Instantiation."""
         super().__init__(deepcopy(initial or {}))
-
-    def reseed(self, initial: dict[str, Any] | None = None) -> None:
-        """Replace this provider's config doc with a deep copy of initial."""
-        self._config_doc = deepcopy(initial) if initial else {}
 
     @property
     def name(self) -> str:
@@ -123,3 +121,24 @@ def isolated_dlt_config(
             yield config_provider
     finally:
         run_ctx.providers = old_providers
+
+
+def load_dlt_toml_files(config_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load ``config.toml`` and ``secrets.toml`` from ``config_dir`` as nested dicts.
+
+    :param config_dir: directory containing ``config.toml`` and/or ``secrets.toml``
+    :type config_dir: Path
+    :raises FileNotFoundError: if ``config_dir`` does not exist or is not a directory
+    :return: ``(config_dict, secrets_dict)``
+    :rtype: tuple[dict[str, Any], dict[str, Any]]
+    """
+    config_dir = Path(config_dir)
+    if not config_dir.is_dir():
+        msg = f"dlt config directory does not exist: {config_dir}"
+        raise FileNotFoundError(msg)
+
+    config_path = config_dir / "config.toml"
+    secrets_path = config_dir / "secrets.toml"
+    config_doc = tomllib.loads(config_path.read_text(encoding="utf-8")) if config_path.is_file() else {}
+    secrets_doc = tomllib.loads(secrets_path.read_text(encoding="utf-8")) if secrets_path.is_file() else {}
+    return config_doc, secrets_doc

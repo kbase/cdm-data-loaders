@@ -2,7 +2,7 @@
 
 from logging import Logger, getLogger
 
-from pyspark.sql import DataFrame, DataFrameWriter, SparkSession
+from pyspark.sql import DataFrame, SparkSession
 
 logger: Logger = getLogger(__name__)
 
@@ -188,21 +188,6 @@ def write_table(
         logger.info("Saved managed table %s (rows=%d)", catalog_db_table, sdf.count())
     except Exception:
         logger.exception("Error writing managed table %s", catalog_db_table)
-        raise
-
-
-def write_table_to_file(
-    spark: SparkSession, sdf: DataFrame, catalog_db: str, table: str, writer: DataFrameWriter, data_dir: str
-) -> None:
-    """Write database tables to a specific location."""
-    catalog_db_table = f"{catalog_db}.{table}"
-    try:
-        writer.save(data_dir)
-        # Register/create an external table using LOCATION
-        spark.sql(f"CREATE TABLE IF NOT EXISTS {catalog_db_table} USING DELTA LOCATION '{data_dir}'")
-        logger.info("Saved external table %s (rows=%d) to %s", catalog_db_table, sdf.count(), data_dir)
-    except Exception:
-        logger.exception("Error writing external table %s", catalog_db_table)
         raise
 
 

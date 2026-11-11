@@ -37,8 +37,8 @@ from pyiceberg.types import (
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, Extensions, ExtensionSpec
 from cdm_data_loaders.converters.core.ir import Field, NodeHints, Provenance, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.dlt_to_jsonschema import DltToJSONSchema
 from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter
+from cdm_data_loaders.converters.facades.dlt_to_jsonschema import DltToJSONSchema
 from cdm_data_loaders.converters.readers.dlt import DltReader
 from cdm_data_loaders.converters.readers.iceberg import IcebergReader
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
@@ -857,39 +857,68 @@ def test_emit_pass_sibling_and_call_isolation(logical: str) -> None:
     assert source == original
 
 
-def test_emit_pass_document_and_type_metadata() -> None:
+@pytest.mark.parametrize(
+    ("document", "expected"),
+    [
+        (
+            SchemaDocument(TypedNode("any"), name="records"),
+            {"title": "records"},
+        ),
+        (
+            SchemaDocument(
+                TypedNode(
+                    "object",
+                    properties=(
+                        Field("flag", TypedNode("boolean", hints=NodeHints(logical_type="bool")), required=True),
+                    ),
+                ),
+                name="records",
+                provenance=Provenance("dlt"),
+            ),
+            {
+                "type": "object",
+                "properties": {"flag": {"type": "boolean"}},
+                "required": ["flag"],
+                "additionalProperties": False,
+                "$schema": JSON_SCHEMA_DIALECT,
+                "$id": "urn:dlt:records",
+                "title": "records",
+            },
+        ),
+        (
+            SchemaDocument(
+                TypedNode(
+                    "integer",
+                    hints=NodeHints(logical_type="int", bit_width=32),
+                    nullable=True,
+                    extensions={"x-iceberg": {"logical_type": "int"}},
+                    provenance=Provenance("iceberg"),
+                ),
+                dialect="urn:dialect",
+                identifier="urn:identifier",
+                name="records",
+            ),
+            {
+                "anyOf": [
+                    {
+                        "type": "integer",
+                        "minimum": -2147483648,
+                        "maximum": 2147483647,
+                        "x-iceberg": {"logical_type": "int"},
+                    },
+                    {"type": "null"},
+                ],
+                "$schema": "urn:dialect",
+                "$id": "urn:identifier",
+                "title": "records",
+            },
+        ),
+    ],
+    ids=["named-any", "dlt-object", "iceberg-integer"],
+)
+def test_emit_pass_document_and_type_metadata(document: SchemaDocument, expected: dict[str, Any]) -> None:
     """Direct documents retain envelope overrides, type metadata and inferred field requirements."""
-    emitter = JsonSchemaEmitter()
-    assert emitter.emit(SchemaDocument(TypedNode("any"), name="records")) == {"title": "records"}
-    root = TypedNode(
-        "object", properties=(Field("flag", TypedNode("boolean", hints=NodeHints(logical_type="bool")), required=True),)
-    )
-    assert emitter.emit(SchemaDocument(root, name="records", provenance=Provenance("dlt"))) == {
-        "type": "object",
-        "properties": {"flag": {"type": "boolean"}},
-        "required": ["flag"],
-        "additionalProperties": False,
-        "$schema": JSON_SCHEMA_DIALECT,
-        "$id": "urn:dlt:records",
-        "title": "records",
-    }
-    iceberg = TypedNode(
-        "integer",
-        hints=NodeHints(logical_type="int", bit_width=32),
-        nullable=True,
-        extensions={"x-iceberg": {"logical_type": "int"}},
-        provenance=Provenance("iceberg"),
-    )
-    document = SchemaDocument(iceberg, dialect="urn:dialect", identifier="urn:identifier", name="records")
-    assert emitter.emit(document) == {
-        "anyOf": [
-            {"type": "integer", "minimum": -2147483648, "maximum": 2147483647, "x-iceberg": {"logical_type": "int"}},
-            {"type": "null"},
-        ],
-        "$schema": "urn:dialect",
-        "$id": "urn:identifier",
-        "title": "records",
-    }
+    assert JsonSchemaEmitter().emit(document) == expected
 
 
 @pytest.mark.parametrize("boolean", [True, False], ids=["true", "false"])

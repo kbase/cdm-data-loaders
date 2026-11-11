@@ -8,7 +8,15 @@ from pathlib import Path
 from botocore.exceptions import ClientError
 
 from cdm_data_loaders.utils.file_transfer.s3 import client
-from cdm_data_loaders.utils.file_transfer.s3.object_utils import split_s3_path
+from cdm_data_loaders.utils.file_transfer.s3.object_utils import list_objects, split_s3_path
+
+
+def _parse_s3_arg(arg: str, *, allow_bucket_only: bool = False) -> tuple[str, str | None]:
+    """Parse an S3 CLI argument into ``(bucket, key_or_prefix)`` or exit with the validation error."""
+    try:
+        return split_s3_path(arg, allow_bucket_only=allow_bucket_only)
+    except ValueError as e:
+        raise SystemExit(str(e)) from e
 
 
 def cmd_mb(args: list[str]) -> None:
@@ -16,10 +24,7 @@ def cmd_mb(args: list[str]) -> None:
     if not args or len(args) != 1:
         err_msg = "Usage: s3_local.py mb s3://BUCKET"
         raise SystemExit(err_msg)
-    try:
-        bucket, _ = split_s3_path(args[0], allow_bucket_only=True)
-    except ValueError as e:
-        raise SystemExit(str(e)) from e
+    bucket, _ = _parse_s3_arg(args[0], allow_bucket_only=True)
     s3 = client.get_s3_client()
     try:
         s3.head_bucket(Bucket=bucket)
@@ -35,10 +40,7 @@ def cmd_cp(args: list[str]) -> None:
         err_msg = "Usage: s3_local.py cp [LOCAL_DIR | LOCAL_FILE] s3://BUCKET[/PREFIX/]"
         raise SystemExit(err_msg)
     local_path = Path(args[0])
-    try:
-        bucket, prefix = split_s3_path(args[1], allow_bucket_only=True)
-    except ValueError as e:
-        raise SystemExit(str(e)) from e
+    bucket, prefix = _parse_s3_arg(args[1], allow_bucket_only=True)
     s3 = client.get_s3_client()
     count = 0
     if local_path.is_file():
@@ -66,23 +68,13 @@ def cmd_ls(args: list[str]) -> None:
     if not args:
         err_msg = "Usage: s3_local.py ls s3://BUCKET[/PREFIX/] [--limit N]"
         raise SystemExit(err_msg)
-    try:
-        bucket, prefix = split_s3_path(args[0], allow_bucket_only=True)
-    except ValueError as e:
-        raise SystemExit(str(e)) from e
+    _parse_s3_arg(args[0], allow_bucket_only=True)
     limit = 20
     if "--limit" in args:
         idx = args.index("--limit")
         limit = int(args[idx + 1])
-    s3 = client.get_s3_client()
-    paginator = s3.get_paginator("list_objects_v2")
-    shown = 0
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        for obj in page.get("Contents", []):
-            print(f"  {obj['Size']:>10}  {obj['Key']}")
-            shown += 1
-            if shown >= limit:
-                return
+    for obj in list_objects(args[0], allow_bucket_only=True)[:limit]:
+        print(f"  {obj['Size']:>10}  {obj['Key']}")
 
 
 def cmd_head(args: list[str]) -> None:
@@ -90,10 +82,7 @@ def cmd_head(args: list[str]) -> None:
     if not args:
         err_msg = "Usage: s3_local.py head s3://BUCKET/KEY"
         raise SystemExit(err_msg)
-    try:
-        bucket, key = split_s3_path(args[0])
-    except ValueError as e:
-        raise SystemExit(str(e)) from e
+    bucket, key = _parse_s3_arg(args[0])
     s3 = client.get_s3_client()
     meta = {}
     try:

@@ -1,0 +1,27 @@
+title: Multi-Table PubMed Ingest (`PubmedArticle`, `PubmedBookArticle`, `DeleteCitation`)
+pipeline: pubmed
+settings_file: settings.toml
+rules:
+  - R-XML-LEVEL-TARGET
+  - R-XML-LEVEL-STREAM
+  - R-XML-REPORT
+  - R-PUBMED-PRESET
+  - R-PUBMED-MD5-PASS
+notes: |
+  A single gzip-compressed `<PubmedArticleSet>` XML file accompanied by a matching `.xml.gz.md5`
+  sidecar file containing one `<PubmedArticle>`, one `<PubmedBookArticle>`, and one `<DeleteCitation>`.
+  Validates MD5 pre-processing, level-1 multi-table routing, mixed-content preservation, and report output.
+runs:
+  - id: default
+    input_dir: input
+    expected_report:
+      status: completed
+      ingested_files:
+        - pubmed_sample.xml.gz
+      pipeline_load_info_errs: null
+    expected_counts:
+      pubmed_article: 1
+      pubmed_book_article: 1
+      delete_citation: 1
+    expected_tables: expected_tables.py
+    expected_json: expected.json

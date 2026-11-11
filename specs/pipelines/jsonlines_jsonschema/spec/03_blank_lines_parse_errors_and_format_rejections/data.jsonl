@@ -1,0 +1,8 @@
+{"id": "rec-1", "count": 5, "contact_email": "alice@example.org"}
+   
+{bad json
+[1, 2, 3]
+{"id": "rec-2", "count": "not-an-int", "contact_email": "bob@example.org"}
+{"id": "rec-3", "count": 10, "contact_email": "not-an-email"}
+{"id": "rec-4", "count": 12, "contact_email": "carol@example.org"}
+

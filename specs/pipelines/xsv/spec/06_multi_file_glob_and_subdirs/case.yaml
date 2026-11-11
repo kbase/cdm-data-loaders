@@ -1,0 +1,20 @@
+title: Multi-File Glob Discovery Across Subdirectories and Per-File Rejections
+schema: schema.json
+rules:
+  - R-XSV-GLOB
+  - R-XSV-FIRST-PASS
+  - R-XSV-SECOND-PASS
+  - R-XSV-DUCKDB-TYPES
+  - R-XSV-ARROW-CAST
+  - R-XSV-REJECTED
+notes: |
+  - `input_files/` contains two subdirectories with same-stem files (`batch_1/data.csv` and `batch_2/data.csv`) plus a non-matching `batch_1/notes.txt` file ignored by `file_glob: "*/*.csv"`.
+  - `batch_1/data.csv` has 2 valid rows; `batch_2/data.csv` has 1 valid row and 1 ragged row (`3\n`), so its valid row is merged into `samples` and its failure is recorded in `_rejected` with `source_file: "batch_2/data.csv"`.
+runs:
+  - id: default
+    data: input_files
+    expected_rejected: expected_rejected.json
+    params:
+      file_glob: "*/*.csv"
+      table_name: samples
+

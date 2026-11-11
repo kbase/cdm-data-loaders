@@ -183,6 +183,12 @@ VALID_ROUTED_OUTPUT_CASES = [
     pytest.param({"items": [], "other": ()}, {}, id="only_empty_sequences"),
     pytest.param({"items": [{"id": "1"}]}, {"items": [{"id": "1"}]}, id="single_table_list"),
     pytest.param({"  items \n": [{"id": "1"}]}, {"items": [{"id": "1"}]}, id="whitespace_padded_table_name"),
+    pytest.param({"_rejected": [{"id": "1"}]}, {"_rejected": [{"id": "1"}]}, id="rejected_table_key"),
+    pytest.param(
+        {"  _rejected \n": [{"id": "1"}]},
+        {"_rejected": [{"id": "1"}]},
+        id="rejected_table_key_whitespace",
+    ),
     pytest.param(
         {"items": ({"id": "1"}, {"id": "2"})},
         {"items": [{"id": "1"}, {"id": "2"}]},
@@ -240,16 +246,6 @@ INVALID_ROUTED_OUTPUT_CASES = [
         {"   \t\n": [{"id": 1}]},
         "transform_fn output keys must be non-empty table names",
         id="whitespace_key",
-    ),
-    pytest.param(
-        {"_rejected": [{"id": 1}]},
-        "transform_fn cannot route rows to reserved table '_rejected'",
-        id="reserved_rejected_key",
-    ),
-    pytest.param(
-        {"  _rejected \n": [{"id": 1}]},
-        "transform_fn cannot route rows to reserved table '_rejected'",
-        id="reserved_rejected_key_whitespace",
     ),
     pytest.param(
         {"items": None},
@@ -319,18 +315,6 @@ INVALID_ROUTED_OUTPUT_CASES = [
         id="non_str_key_and_empty_row_dict",
     ),
     pytest.param(
-        {"_rejected": "not_a_seq"},
-        "transform_fn cannot route rows to reserved table '_rejected'\n"
-        "transform_fn rows for table '_rejected' must be a sequence of dicts",
-        id="reserved_key_and_bad_rows_sequence",
-    ),
-    pytest.param(
-        {" _rejected ": ["not_a_dict"]},
-        "transform_fn cannot route rows to reserved table '_rejected'\n"
-        "transform_fn rows for table ' _rejected ' must be non-empty dicts",
-        id="reserved_key_and_non_dict_row",
-    ),
-    pytest.param(
         {
             "": [{"id": 1}],
             "valid_before": [{"id": 2}],
@@ -346,8 +330,6 @@ INVALID_ROUTED_OUTPUT_CASES = [
             "transform_fn output keys must be non-empty table names\n"
             "transform_fn output keys must be non-empty table names\n"
             "transform_fn rows for table 123 must be a sequence of dicts\n"
-            "transform_fn cannot route rows to reserved table '_rejected'\n"
-            "transform_fn cannot route rows to reserved table '_rejected'\n"
             "transform_fn rows for table '  _rejected\\n' must be non-empty dicts\n"
             "transform_fn rows for table 'bad_rows' must be a sequence of dicts\n"
             "transform_fn rows for table 'non_dict_row' must be non-empty dicts\n"
@@ -617,3 +599,38 @@ def test_transform_settings_mixin_pass_table_transforms_is_immutable(
     with pytest.raises(TypeError):
         configured_settings.table_transforms.registry["injected"] = _identity_items_transform  # type: ignore[index]
     assert "injected" not in configured_settings.table_transforms.registry
+
+
+@pytest.mark.parametrize(
+    ("loader_file_format", "expected_use_pyarrow", "expected_schema_map"),
+    [
+        pytest.param("parquet", True, ITEMS_SCHEMA_REGISTRY, id="parquet"),
+        pytest.param("iceberg", True, ITEMS_SCHEMA_REGISTRY, id="iceberg"),
+        pytest.param("jsonl", False, None, id="jsonl"),
+    ],
+)
+def test_transform_settings_mixin_pass_use_pyarrow_respects_loader_file_format(
+    test_defaults: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    loader_file_format: str,
+    expected_use_pyarrow: bool,
+    expected_schema_map: ArrowSchemaRegistry | None,
+) -> None:
+    """TransformSettingsMixin sets use_pyarrow False and leaves schema_map None when loader_file_format is jsonl."""
+    mod_name = register_temp_module(
+        monkeypatch,
+        f"_test_format_transforms_mod_{loader_file_format}",
+        TABLE_TRANSFORMS={"items": _identity_items_transform},
+        OUTPUT_SCHEMAS={"items": ITEMS_SCHEMA},
+    )
+    settings = JsonlExtractSettings(
+        **test_defaults,
+        dataset_name="test_ds",
+        table_name="items",
+        loader_file_format=loader_file_format,
+        transforms_module=mod_name,
+        output_schemas_module=mod_name,
+    )
+    assert settings.use_pyarrow is expected_use_pyarrow
+    assert settings.schema_map == expected_schema_map
+    assert settings.table_transforms == ITEMS_TRANSFORM_REGISTRY

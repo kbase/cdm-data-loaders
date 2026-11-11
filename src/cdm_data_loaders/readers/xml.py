@@ -20,7 +20,7 @@ from cdm_data_loaders.core.transforms import route_and_coerce_record
 from cdm_data_loaders.pipelines.core import build_per_file_filesystem_resource
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
-from cdm_data_loaders.utils.buffer import DictBuffer
+from cdm_data_loaders.utils.buffer import DictBuffer, make_dict_buffer
 from cdm_data_loaders.utils.file_items import FileSource, open_binary, source_id, source_url
 from cdm_data_loaders.utils.xml_utils import local_name
 
@@ -294,7 +294,7 @@ def _buffer_level_pyarrow_element(
 def _buffer_single_tag_pyarrow_element(
     element: Element,
     *,
-    convert_element: Callable[[Element], dict[str, Any]],
+    convert_element: Callable[[Element], dict[str, Any] | None],
     table_name: str,
     transform: RecordTransformFn | None,
     buffer: DictBuffer,
@@ -303,24 +303,69 @@ def _buffer_single_tag_pyarrow_element(
 
     :param element: streamed XML element matching ``xml_tag``
     :type  element: Element
-    :param convert_element: XSD-driven element-to-dict converter
-    :type  convert_element: Callable[[Element], dict[str, Any]]
+    :param convert_element: element-to-dict converter (returns ``None`` to skip)
+    :type  convert_element: Callable[[Element], dict[str, Any] | None]
     :param table_name: target table name
     :type  table_name: str
     :param transform: optional table transform
     :type  transform: RecordTransformFn | None
-    :param buffer: PyArrow batch buffer
+    :param buffer: PyArrow or dictionary batch buffer
     :type  buffer: DictBuffer
-    :return: flushed PyArrow table batches, if any
+    :return: flushed table batches, if any
     :rtype : Iterable[DataItemWithMeta]
     """
+    parsed_element = convert_element(element)
+    if parsed_element is None:
+        return ()
     return buffer.add_items(
         route_and_coerce_record(
-            convert_element(element),
+            parsed_element,
             table_name,
             transform=transform,
             schema_map=buffer.schema_map,
         )
+    )
+
+
+def _process_single_tag_xml_file(
+    file_path: FileSource,
+    settings: XmlToDictSettings | XmlToPyArrowSettings,
+    convert_element: Callable[[Element], dict[str, Any] | None],
+    *,
+    resolve_default_ns: bool = False,
+) -> Generator[DataItemWithMeta]:
+    """Stream single-tag XML elements, convert each with ``convert_element``, and yield buffered pages.
+
+    :param file_path: local path or dlt file item
+    :type  file_path: FileSource
+    :param settings: XML pipeline settings
+    :type  settings: XmlToDictSettings | XmlToPyArrowSettings
+    :param convert_element: function converting an XML element into a record dict (or ``None`` to skip)
+    :type  convert_element: Callable[[Element], dict[str, Any] | None]
+    :param resolve_default_ns: whether to resolve an unprefixed tag against the file's default namespace
+    :type  resolve_default_ns: bool
+    :yield: buffered pages of rows or PyArrow tables
+    :rtype : Generator[DataItemWithMeta]
+    """
+    if settings.table_name is None or settings.xml_tag is None:
+        err_msg = "Expected table_name and xml_tag when xml_level is not set"
+        raise RuntimeError(err_msg)
+
+    transform = settings.get_table_transform(settings.table_name)
+    buffer = make_dict_buffer(settings, DictBuffer)
+    yield from _stream_and_buffer_xml_elements(
+        file_path=file_path,
+        xml_tag=settings.xml_tag,
+        log_interval=settings.log_interval,
+        buffer=buffer,
+        buffer_element_fn=functools.partial(
+            _buffer_single_tag_pyarrow_element,
+            convert_element=convert_element,
+            table_name=settings.table_name,
+            transform=transform,
+            buffer=buffer,
+        ),
+        resolve_default_ns=resolve_default_ns,
     )
 
 
@@ -340,10 +385,7 @@ def _process_xml_file_to_pyarrow_at_level(
     :yield: pages of PyArrow tables
     :rtype : Generator[DataItemWithMeta]
     """
-    buffer = DictBuffer(
-        schema_map=settings.schema_map,
-        max_items=settings.buffer_size,
-    )
+    buffer = make_dict_buffer(settings, DictBuffer)
     converters = settings.xml_level_converters
 
     yield from _stream_and_buffer_element_iter(
@@ -390,24 +432,10 @@ def process_xml_file_to_pyarrow(file_path: FileSource, settings: XmlToPyArrowSet
         err_msg = "Expected xml_element_converter when xml_level is not set"
         raise RuntimeError(err_msg)
 
-    transform = settings.get_table_transform(settings.table_name)
-    schema_map = settings.schema_map
-    buffer = DictBuffer(
-        schema_map=schema_map,
-        max_items=settings.buffer_size,
-    )
-    yield from _stream_and_buffer_xml_elements(
-        file_path=file_path,
-        xml_tag=settings.xml_tag,
-        log_interval=settings.log_interval,
-        buffer=buffer,
-        buffer_element_fn=functools.partial(
-            _buffer_single_tag_pyarrow_element,
-            convert_element=convert_element,
-            table_name=settings.table_name,
-            transform=transform,
-            buffer=buffer,
-        ),
+    yield from _process_single_tag_xml_file(
+        file_path,
+        settings,
+        convert_element,
         resolve_default_ns=True,
     )
 
@@ -422,28 +450,10 @@ def process_xml_file_to_dict(file_path: FileSource, settings: XmlToDictSettings)
     :yield: pages of dictionary items
     :rtype: Generator[DataItemWithMeta]
     """
-    transform = settings.get_table_transform(settings.table_name)
-    schema_map = settings.schema_map
-    buffer = DictBuffer(max_items=settings.buffer_size, schema_map=schema_map)
-
-    def _buffer_element(element: Element) -> Generator[DataItemWithMeta]:
-        parsed_element = _parse_element_to_dict(element)
-        if parsed_element:
-            yield from buffer.add_items(
-                route_and_coerce_record(
-                    parsed_element,
-                    settings.table_name,
-                    transform=transform,
-                    schema_map=schema_map,
-                )
-            )
-
-    yield from _stream_and_buffer_xml_elements(
-        file_path=file_path,
-        xml_tag=settings.xml_tag,
-        log_interval=settings.log_interval,
-        buffer=buffer,
-        buffer_element_fn=_buffer_element,
+    yield from _process_single_tag_xml_file(
+        file_path,
+        settings,
+        _parse_element_to_dict,
     )
 
 
@@ -473,7 +483,7 @@ def process_xml_file(
     :yield: table-tagged rows
     :rtype: Generator[DataItemWithMeta, Any]
     """
-    buffer = DictBuffer(max_items=settings.buffer_size)
+    buffer = make_dict_buffer(settings, DictBuffer)
     file_source_id = source_id(file_path)
     yield from _stream_and_buffer_xml_elements(
         file_path=file_path,
@@ -494,7 +504,7 @@ def build_xml_file_resource(
 
     Files are read using the dlt filesystem source.
 
-    :param settings: pipeline config with input_dir, file_glob, loader_file_format, buffer_size and log_interval
+    :param settings: pipeline config with input_dir, file_glob, buffer_size and log_interval
     :type  settings: XmlIngestSettings
     :param xml_tag: XML element tag to stream
     :type  xml_tag: str
@@ -511,6 +521,5 @@ def build_xml_file_resource(
         xml_tag,
         parse_fn,
         name=resource_name,
-        file_format=str(settings.loader_file_format),
         parallelized=False,
     )

@@ -1,20 +1,49 @@
 """Common fields and defaults for data loading and wrangling pipelines."""
 
+import re
 from enum import StrEnum
 from typing import Annotated, Final
 
 from frozendict import frozendict
-from pydantic import AfterValidator, Field, FilePath, NonNegativeInt, PositiveInt, StringConstraints
+from pydantic import AfterValidator, Field, FilePath, PositiveInt, StringConstraints
 
 INPUT_MOUNT: Final[str] = "/input_dir"
 OUTPUT_MOUNT: Final[str] = "/output_dir"
 
 DEFAULT_JSONL_FILE_GLOB: Final[str] = "*.jsonl*"
+XML_GZ_FILE_GLOB: Final[str] = "*.xml.gz"
 DEFAULT_XML_FILE_GLOB: Final[str] = "*.xml*"
 REJECTED_TABLE_NAME: Final[str] = "_rejected"
 GZIP_SUFFIX: Final[str] = ".gz"
 
+CTS_GLOBSTAR: Final[str] = "__GLOBSTAR__"
+CTS_STAR: Final[str] = "__STAR__"
+CTS_QMARK: Final[str] = "__QMARK__"
+CTS_LBRACK: Final[str] = "__LBRACK__"
+CTS_RBRACK: Final[str] = "__RBRACK__"
+CTS_BANG: Final[str] = "__BANG__"
+
+CTS_GLOB_WILDCARDS: Final[frozendict[str, str]] = frozendict(
+    {
+        CTS_GLOBSTAR: "**",
+        CTS_STAR: "*",
+        CTS_QMARK: "?",
+        CTS_LBRACK: "[",
+        CTS_RBRACK: "]",
+        CTS_BANG: "!",
+    }
+)
+CTS_GLOB_WILDCARD_PATTERN: Final[re.Pattern[str]] = re.compile(
+    "|".join(re.escape(wildcard) for wildcard in CTS_GLOB_WILDCARDS)
+)
+CTS_GLOB_WILDCARDS_DESCRIPTION: Final[str] = (
+    "Accepts CTS wildcard tokens: "
+    "`__STAR__` (`*`), `__GLOBSTAR__` (`**`), `__QMARK__` (`?`), "
+    "`__LBRACK__` (`[`), `__RBRACK__` (`]`), `__BANG__` (`!`)."
+)
+
 # output file formats
+ICEBERG: Final[str] = "iceberg"
 JSONL: Final[str] = "jsonl"
 PARQUET: Final[str] = "parquet"
 
@@ -22,29 +51,34 @@ PARQUET: Final[str] = "parquet"
 class LoaderFileFormatEnum(StrEnum):
     """Valid values for loader file format."""
 
+    ICEBERG = ICEBERG
     JSONL = JSONL
     PARQUET = PARQUET
+
+
+PYARROW_FILE_FORMATS: Final[frozenset[LoaderFileFormatEnum]] = frozenset(
+    {
+        LoaderFileFormatEnum.ICEBERG,
+        LoaderFileFormatEnum.PARQUET,
+    }
+)
 
 
 # destination config block names
 CTS: Final[str] = "cts"
 
 # field names
-BATCH_SIZE: Final[str] = "batch_size"
 BUFFER_SIZE: Final[str] = "buffer_size"
 DATASET_NAME: Final[str] = "dataset_name"
 DLT_DEV_MODE: Final[str] = "dlt_dev_mode"
-DISABLE_OUTPUT_COMPRESSION: Final[str] = "disable_output_compression"
 FILE_GLOB: Final[str] = "file_glob"
 INPUT_DIR: Final[str] = "input_dir"
 LOADER_FILE_FORMAT: Final[str] = "loader_file_format"
 LOG_CONFIG_FILE: Final[str] = "log_config_file"
 LOG_INTERVAL: Final[str] = "log_interval"
-MAX_TABLE_NESTING: Final[str] = "max_table_nesting"
 OUTPUT_DIR: Final[str] = "output_dir"
 OUTPUT_SCHEMAS_MODULE: Final[str] = "output_schemas_module"
-PRESERVE_TABLE_NESTING: Final[str] = "preserve_table_nesting"
-SAVE_RAW_RESPONSES: Final[str] = "save_raw_responses"
+PREPROCESSORS_MODULE: Final[str] = "preprocessors_module"
 TABLE_NAME: Final[str] = "table_name"
 TRANSFORMS_MODULE: Final[str] = "transforms_module"
 USE_DESTINATION: Final[str] = "use_destination"
@@ -56,23 +90,17 @@ REPORT_FILE_NAME: Final[str] = "report.txt"
 """Name of the report file."""
 
 
-MIN_START_AT: Final[int] = 1
-
 # Default values for the common fields
 DEFAULTS = frozendict(
     {
-        BATCH_SIZE: 1000,
         BUFFER_SIZE: 100,
         DLT_DEV_MODE: False,
-        DISABLE_OUTPUT_COMPRESSION: False,
         FILE_GLOB: "*",
         LOADER_FILE_FORMAT: LoaderFileFormatEnum.PARQUET,
         LOG_CONFIG_FILE: None,
         LOG_INTERVAL: 1000,
-        MAX_TABLE_NESTING: 0,
         OUTPUT_SCHEMAS_MODULE: None,
-        PRESERVE_TABLE_NESTING: False,
-        SAVE_RAW_RESPONSES: False,
+        PREPROCESSORS_MODULE: None,
         TRANSFORMS_MODULE: None,
         USE_DESTINATION: CTS,
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: False,
@@ -82,16 +110,8 @@ DEFAULTS = frozendict(
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 CharStr = Annotated[str, StringConstraints(min_length=1, max_length=1)]
-type TableNameKey = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, strict=True)]
 
 
-BatchSize = Annotated[
-    PositiveInt,
-    Field(
-        default=DEFAULTS[BATCH_SIZE],
-        description="Number of items per batch",
-    ),
-]
 BufferSize = Annotated[
     PositiveInt,
     Field(
@@ -107,19 +127,48 @@ DltDevMode = Annotated[
         description="Enables DLT's dev mode. In dev mode, dlt resets the pipeline state on each run and creates a new dataset with a unique timestamped name for each run.",
     ),
 ]
-DisableOutputCompression = Annotated[
-    bool,
-    Field(
-        default=DEFAULTS[DISABLE_OUTPUT_COMPRESSION],
-        description="Disables output compression for the pipeline. Output files are compressed by default; setting this to False turns off compression.",
-    ),
-]
-FileGlob = Annotated[str, Field(default=DEFAULTS[FILE_GLOB], description="File glob for input files")]
-InputDir = Annotated[
+
+
+def _replace_cts_glob_wildcard(match: re.Match[str]) -> str:
+    """Return the glob metacharacter for a matched CTS wildcard token.
+
+    :param match: regex match for a CTS wildcard token
+    :type match: re.Match[str]
+    :return: glob metacharacter for the matched token
+    :rtype: str
+    """
+    return CTS_GLOB_WILDCARDS[match.group(0)]
+
+
+def expand_cts_glob_wildcards(value: str) -> str:
+    """Replace CTS wildcard tokens in ``value`` with glob metacharacters.
+
+    :param value: raw or CTS-tokenized glob pattern
+    :type value: str
+    :return: glob pattern with CTS wildcard tokens expanded
+    :rtype: str
+    """
+    return CTS_GLOB_WILDCARD_PATTERN.sub(_replace_cts_glob_wildcard, value)
+
+
+def file_glob_description(summary: str) -> str:
+    """Build a CLI field description for ``file_glob`` including CTS wildcard tokens.
+
+    :param summary: short description of matched input files
+    :type summary: str
+    :return: field description with CTS wildcard token reference
+    :rtype: str
+    """
+    base = summary.rstrip(".")
+    return f"{base}. {CTS_GLOB_WILDCARDS_DESCRIPTION}"
+
+
+FileGlob = Annotated[
     NonEmptyStr,
+    AfterValidator(expand_cts_glob_wildcards),
     Field(
-        # no default - value must be supplied
-        description="Location of directory containing file(s) to import",
+        default=DEFAULTS[FILE_GLOB],
+        description=file_glob_description("File glob for input files"),
     ),
 ]
 LoaderFileFormat = Annotated[
@@ -143,19 +192,6 @@ LogInterval = Annotated[
         description="How often (in number of processed entries) to emit a progress log message.",
     ),
 ]
-MaxTableNesting = Annotated[
-    NonNegativeInt,
-    Field(
-        default=DEFAULTS[MAX_TABLE_NESTING],
-        description="Maximum level of nesting of output datasets. For infinite nesting, set to 0.",
-    ),
-]
-OutputDir = Annotated[
-    NonEmptyStr | None,
-    Field(
-        description="Location to save raw data files and, if use_output_dir_for_pipeline_metadata is set, pipeline metadata to. Has no effect on where the dlt destination loads data.",
-    ),
-]
 OutputSchemasModuleSpec = Annotated[
     NonEmptyStr | None,
     Field(
@@ -166,18 +202,15 @@ OutputSchemasModuleSpec = Annotated[
         ),
     ),
 ]
-PreserveTableNesting = Annotated[
-    bool,
+PreprocessorsModuleSpec = Annotated[
+    NonEmptyStr | None,
     Field(
-        default=DEFAULTS[PRESERVE_TABLE_NESTING],
-        description="Whether or not nested data should be flattened out into separate tables",
-    ),
-]
-SaveRawResponses = Annotated[
-    bool,
-    Field(
-        default=DEFAULTS[SAVE_RAW_RESPONSES],
-        description="Whether or not to save the raw responses from the API to the output directory.",
+        default=DEFAULTS[PREPROCESSORS_MODULE],
+        description=(
+            "Optional Python module path exporting FILE_PREPROCESSORS "
+            "(Sequence[FilePreprocessFn] or dict[str, Sequence[FilePreprocessFn] | FilePreprocessFn]) "
+            "for file-level validation and filtering before opening and parsing."
+        ),
     ),
 ]
 

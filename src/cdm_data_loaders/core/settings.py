@@ -30,9 +30,10 @@ from cdm_data_loaders.core.fields import (
     UseDestination,
     UseOutputDirForPipelineMetadata,
     XmlTag,
+    file_glob_description,
 )
-from cdm_data_loaders.core.path_fields import LocalInputDir, LocalOutputDir
-from cdm_data_loaders.core.transforms import TransformSettingsMixin
+from cdm_data_loaders.core.path_fields import InputDir, LocalOutputDir
+from cdm_data_loaders.core.transforms import TransformSettingsMixin, uses_pyarrow_format
 
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
     {
@@ -199,16 +200,16 @@ class LoggerSettings(CdmDataLoadersBase):
     log_config_file: LogConfigFile
 
 
-class LocalInputOutputSettings(LoggerSettings):
-    """Configuration for a DLT pipeline where both input and output directories are local."""
+class InputLocalOutputSettings(LoggerSettings):
+    """Configuration for a DLT pipeline with an input directory or URL and a local output directory."""
 
     model_config = default_settings_with_shortcuts(cli_shortcuts={INPUT_DIR: "i", OUTPUT_DIR: "o"})
 
-    input_dir: LocalInputDir
+    input_dir: InputDir
     output_dir: LocalOutputDir
 
 
-class CtsSettings(LocalInputOutputSettings):
+class CtsSettings(InputLocalOutputSettings):
     """Configuration for running a basic DLT pipeline."""
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(cli_shortcuts=CLI_SHORTCUTS)
@@ -252,6 +253,11 @@ class FileFormatIngestSettings(CtsSettings):
     dataset_name: DatasetName
     loader_file_format: LoaderFileFormat
 
+    @property
+    def use_pyarrow(self) -> bool:
+        """Return whether this pipeline yields ``pyarrow.Table`` pages instead of row dicts."""
+        return uses_pyarrow_format(self)
+
 
 class XmlIngestSettings(FileFormatIngestSettings):
     """Configuration for DLT pipelines that import XML files."""
@@ -262,7 +268,7 @@ class XmlIngestSettings(FileFormatIngestSettings):
         FileGlob,
         Field(
             default=DEFAULT_XML_FILE_GLOB,
-            description="Glob pattern for XML files",
+            description=file_glob_description("Glob pattern for XML files"),
         ),
     ]
 

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://example.org/json-schema/draft-99/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    }
+  }
+}
+

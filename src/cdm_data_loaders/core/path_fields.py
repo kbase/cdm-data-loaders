@@ -3,13 +3,17 @@
 from pathlib import Path
 from typing import Annotated, Any, Final
 
+from fsspec import get_filesystem_class
 from fsspec.core import split_protocol
-from pydantic import AfterValidator, BeforeValidator, DirectoryPath, Field
+from pydantic import AfterValidator, BeforeValidator, DirectoryPath, Field, StringConstraints
+from pydantic_core import PydanticCustomError
 
 VALID_PATH_ONE_CHAR: Final[str] = "A valid path must contain at least one character"
 FILE_PROTOCOL: Final[str] = "file"
 PATH_EMPTY: Final[str] = "Path must not be empty."
 PATH_NOT_LOCAL: Final[str] = "Path must be on the local filesystem, not a URL"
+PATH_NOT_DIRECTORY_ERROR_TYPE: Final[str] = "path_not_directory"
+PATH_NOT_DIRECTORY: Final[str] = "Path does not point to a directory"
 DIR_NOT_CREATED: Final[str] = "Cannot create directory "
 
 
@@ -22,7 +26,7 @@ def url_protocol(url: str) -> str:
     :rtype: str
     """
     protocol, _ = split_protocol(url)
-    return (protocol or "file").lower()
+    return (protocol or FILE_PROTOCOL).lower()
 
 
 def is_local(url: str) -> bool:
@@ -82,6 +86,24 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
+def _resolve_existing_local_dir(path: Path) -> str:
+    """Validate that ``path`` is an existing directory and return its resolved absolute path string."""
+    if not path.is_dir():
+        raise PydanticCustomError(
+            PATH_NOT_DIRECTORY_ERROR_TYPE,
+            PATH_NOT_DIRECTORY,
+        )
+    return str(to_absolute(path))
+
+
+def _format_protocol_url(protocol: str | None, path: str) -> str:
+    """Format ``protocol`` and ``path`` with ``:`` for ``data`` URLs or ``://`` for other protocols."""
+    if not protocol:
+        return path
+    sep = ":" if protocol == "data" else "://"
+    return f"{protocol}{sep}{path}"
+
+
 def normalise_dir(full_path: str | None) -> str:
     """Remove trailing slashes from a directory path or URL, keeping roots such as '/' and 'file:///'.
 
@@ -103,11 +125,50 @@ def normalise_dir(full_path: str | None) -> str:
     # path was '/' or multiple '/'s
     if path and not stripped:
         stripped = "/"
-    sep = ""
-    if protocol:
-        sep = ":" if protocol == "data" else "://"
-    return f"{protocol or ''}{sep}{stripped}"
+    return _format_protocol_url(protocol, stripped)
 
+
+def check_input_dir(value: Any) -> Any:  # noqa: ANN401
+    """Validate and normalise a local directory path or fsspec directory URL.
+
+    Values that are not strings or ``Path`` objects are returned unchanged.
+    Local paths (``Path`` objects, plain string paths, or ``file://`` URLs)
+    must point to an existing directory and are resolved to an absolute path
+    string. Non-local URLs are stripped of trailing slashes, checked against
+    ``fsspec``'s registered protocols, and returned with a lower-case protocol.
+
+    :param value: path or URL to validate
+    :type value: Any
+    :raises ValueError: if the path is empty, protocol-only, or uses an unknown or uninstalled fsspec protocol
+    :raises PydanticCustomError: if a local path does not exist or is not a directory
+    :return: resolved absolute local path string or normalised fsspec URL string
+    :rtype: Any
+    """
+    if isinstance(value, Path):
+        return _resolve_existing_local_dir(value)
+    if not isinstance(value, str):
+        return value
+    value = value.strip()
+    if is_local(value):
+        return _resolve_existing_local_dir(Path(check_local_path(value)))
+    normalised = normalise_dir(value)
+    protocol = url_protocol(normalised)
+    try:
+        get_filesystem_class(protocol)
+    except ImportError as e:
+        raise ValueError(str(e)) from e
+    _, path = split_protocol(normalised)
+    return _format_protocol_url(protocol, path)
+
+
+InputDir = Annotated[
+    str,
+    StringConstraints(strict=True),
+    Field(
+        description="Local directory or fsspec URL containing file(s) to import",
+    ),
+    BeforeValidator(check_input_dir),
+]
 
 LocalInputDir = Annotated[
     DirectoryPath,

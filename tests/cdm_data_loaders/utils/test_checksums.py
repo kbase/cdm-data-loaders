@@ -89,13 +89,18 @@ def test_checksumentry_pass_construction_and_fields() -> None:
     assert entry.value == "flash_gordon"
 
 
-def test_checksumentry_pass_equality() -> None:
+@pytest.mark.parametrize(
+    ("other", "expected_equal"),
+    [
+        pytest.param(ChecksumEntry(algorithm="sha256", value="flash_gordon"), True, id="same-fields"),
+        pytest.param(ChecksumEntry(algorithm="md5", value="flash_gordon"), False, id="different-algorithm"),
+        pytest.param(ChecksumEntry(algorithm="sha256", value="ming"), False, id="different-value"),
+    ],
+)
+def test_checksumentry_pass_equality(other: ChecksumEntry, expected_equal: bool) -> None:
     """Two ChecksumEntry instances with the same fields compare equal; differing fields compare unequal."""
-    a = ChecksumEntry(algorithm="sha256", value="flash_gordon")
-    b = ChecksumEntry(algorithm="sha256", value="flash_gordon")
-    c = ChecksumEntry(algorithm="md5", value="flash_gordon")
-    assert a == b
-    assert a != c
+    entry = ChecksumEntry(algorithm="sha256", value="flash_gordon")
+    assert (entry == other) is expected_equal
 
 
 def test_checksumentry_pass_hashable() -> None:

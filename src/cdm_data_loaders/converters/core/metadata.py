@@ -74,3 +74,16 @@ class ConversionContext:
     def invalid_extra_metadata_keywords(self) -> frozenset[str]:
         """Return ignored structural, identity and unknown keywords."""
         return self.extra_metadata_keywords - self.allowed_extra_metadata_keywords
+
+
+def decode_field_metadata(metadata: dict[bytes, bytes] | None) -> dict[str, str]:
+    """Decode PyArrow byte key/value metadata into string key/value pairs.
+
+    :param metadata: Optional raw PyArrow field metadata dictionary.
+    :type metadata: dict[bytes, bytes] | None
+    :return: Decoded string-to-string metadata dictionary.
+    :rtype: dict[str, str]
+    """
+    if not metadata:
+        return {}
+    return {k.decode("utf-8"): v.decode("utf-8") for k, v in metadata.items()}

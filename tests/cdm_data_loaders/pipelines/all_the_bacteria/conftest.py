@@ -1,9 +1,15 @@
+from pathlib import Path
 from typing import Any
 
 import pytest
 from frozendict import frozendict
 
-from cdm_data_loaders.core.fields import INPUT_DIR, OUTPUT_DIR, USE_DESTINATION
+from cdm_data_loaders.core.fields import (
+    INPUT_DIR,
+    OUTPUT_DIR,
+    USE_DESTINATION,
+    LoaderFileFormatEnum,
+)
 from cdm_data_loaders.pipelines.all_the_bacteria import PROJECT_PART_REGEX, AtbSettings, load_patterns
 from tests.conftest import S3
 
@@ -17,25 +23,36 @@ def atb_settings_pair(
     """Return (settings, reconciled) dicts for AtbSettings variants."""
     output_dir = test_cts_settings_reconciled[OUTPUT_DIR]
     if request.param == "default":
-        settings = frozendict(**test_cts_settings, version="1.2.3", pattern_file=None)
+        settings = frozendict(
+            **test_cts_settings,
+            version="1.2.3",
+            pattern_file=None,
+            loader_file_format=LoaderFileFormatEnum.PARQUET,
+        )
         reconciled = frozendict(
             **test_cts_settings_reconciled,
             version="1.2.3",
             pattern_file=None,
+            loader_file_format=LoaderFileFormatEnum.PARQUET,
             raw_data_dir=output_dir / "raw_data" / "1.2.3",
             pattern_matches=PROJECT_PART_REGEX,
         )
         return settings, reconciled
 
-    pattern_path = test_cts_settings_reconciled[INPUT_DIR] / "pattern_file.txt"
-    pattern_path_str = str(pattern_path)
+    pattern_path = Path(test_cts_settings_reconciled[INPUT_DIR]) / "pattern_file.txt"
     pattern_path.parent.mkdir(parents=True, exist_ok=True)
     pattern_path.write_text("hello world\n")
-    settings = frozendict(**test_cts_settings, version=1, pattern_file=pattern_path)
+    settings = frozendict(
+        **test_cts_settings,
+        version=1,
+        pattern_file=pattern_path,
+        loader_file_format=LoaderFileFormatEnum.JSONL,
+    )
     reconciled = frozendict(
         **test_cts_settings_reconciled,
         version="1",
         pattern_file=pattern_path,
+        loader_file_format=LoaderFileFormatEnum.JSONL,
         raw_data_dir=output_dir / "raw_data" / "1",
         pattern_matches=load_patterns(pattern_path),
     )

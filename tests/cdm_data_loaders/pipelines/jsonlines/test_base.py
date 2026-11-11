@@ -117,6 +117,28 @@ def test_build_entity_resource_pass_routes_valid_and_rejected_records(
     assert REJECTED_TABLE_NAME == "_rejected"
 
 
+def test_build_entity_resource_pass_jsonl_format_yields_dicts_not_pyarrow(
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
+) -> None:
+    """When loader_file_format is jsonl, build_entity_resource yields dict items instead of pa.Table for valid and _rejected."""
+    settings = settings_factory(loader_file_format="jsonl")
+    entity_dir = Path(settings.input_dir) / "widget"
+    entity_dir.mkdir(parents=True)
+    (entity_dir / "part.jsonl").write_text(
+        '{"widget_id": "w1", "count": 2}\n{"widget_id": "w2", "count": -1}\n{malformed\n',
+        encoding="utf-8",
+    )
+
+    resource = build_entity_resource("widget", settings, _resolve_negative_count_error)
+    items = list(resource)
+
+    assert all(isinstance(item, dict) for item in items)
+    valid_items = [item for item in items if "widget_id" in item]
+    rejected_items = [item for item in items if "error_detail" in item]
+    assert valid_items == [{"widget_id": "w1", "count": 2}]
+    assert [row["line_no"] for row in rejected_items] == [2, 3]
+
+
 @pytest.mark.parametrize(
     "setup_mode",
     ["missing_subdir", "empty_subdir", "non_matching_files"],

@@ -1,0 +1,24 @@
+title: Table Transforms, Unwrapping `<xml_tag>`, Multi-Table Fan-Out, and PyArrow Output Schemas
+pipeline: xmltodict
+settings_file: settings.toml
+rules:
+  - R-XMLTODICT-OUTERMOST-STREAM
+  - R-XMLTODICT-PARSE
+  - R-XMLTODICT-TRANSFORMS
+  - R-XMLTODICT-REPORT
+notes: |
+  - `transforms_module = "specs.pipelines.xmltodict.transforms"` and `output_schemas_module = "specs.pipelines.xmltodict.transforms"` register `TABLE_TRANSFORMS["books"]` and `OUTPUT_SCHEMAS` for `books` and `book_authors`.
+  - `transform_book` unwraps each `{"book": {...}}` dictionary, filters out `<book id="b-drop" status="withdrawn">`, normalizes `book_id` to uppercase, casts `year` to `int`, and fans out single or repeated `<author>` elements to `book_authors`.
+runs:
+  - id: default
+    input_dir: input
+    expected_report:
+      status: completed
+      ingested_files:
+        - catalog.xml
+      pipeline_load_info_errs: null
+    expected_counts:
+      books: 2
+      book_authors: 3
+    expected_tables: expected_tables.py
+    expected_json: expected.json

@@ -1,0 +1,64 @@
+errors:
+  - file: 01_empty_entity_schemas.json
+    code: E1
+    exception: InvalidEntitySchemasRegistryError
+    match: "at least 1 item"
+    params:
+      raw_registry: true
+    description: "`ENTITY_SCHEMAS` is an empty dictionary."
+
+  - file: 02_reserved_rejected_table_name.json
+    code: E1
+    exception: InvalidEntitySchemasRegistryError
+    match: "cannot use reserved table name '_rejected'"
+    params:
+      entity_key: _rejected
+    description: "`ENTITY_SCHEMAS` uses the reserved `_rejected` table name."
+
+  - file: 03_missing_schema_keyword.json
+    code: E2
+    exception: UnsupportedJsonlSchemaDialectError
+    match: "JSON Schema is missing the \\$schema keyword"
+    description: Entity JSON Schema omits the required `$schema` keyword.
+
+  - file: 04_unsupported_schema_draft.json
+    code: E2
+    exception: UnsupportedJsonlSchemaDialectError
+    match: "Unsupported JSON Schema draft"
+    description: Entity JSON Schema declares an unrecognized `$schema` URI.
+
+  - file: 05_invalid_property_type_keyword.json
+    code: E3
+    exception: InvalidJsonlEntitySchemaError
+    match: "'not_a_json_type' is not valid under any of the given schemas"
+    description: Property schema uses an invalid `type` value rejected by the Draft 2020-12 metaschema.
+
+  - file: 06_non_list_required_keyword.json
+    code: E3
+    exception: InvalidJsonlEntitySchemaError
+    match: "'id' is not of type 'array'"
+    description: "`required` is a string instead of an array of property names."
+
+  - file: 07_dangling_local_ref.json
+    code: E4
+    exception: UnresolvableJsonlSchemaRefError
+    match: "Unable to resolve \\$ref '#/\\$defs/missing'"
+    description: Local `$ref` pointer targets a non-existent definition in `$defs`.
+
+  - file: 08_circular_ref.json
+    code: E4
+    exception: UnresolvableJsonlSchemaRefError
+    match: "maximum recursion depth exceeded"
+    description: Self-referential `$ref` cycle in `$defs` fails `dereference_schema`.
+
+  - file: 09_non_object_root_type.json
+    code: E5
+    exception: UnsupportedJsonlArrowSchemaError
+    match: "Root schema must be of type 'object'"
+    description: 'Root entity schema has `type: "array"` instead of `type: "object"`.'
+
+  - file: 10_unsupported_anyof_union.json
+    code: E5
+    exception: UnsupportedJsonlArrowSchemaError
+    match: "Incompatible branch shape"
+    description: Incompatible `anyOf` union branches (`array` and `string`) cannot be converted to a PyArrow column type without a table transform or `OUTPUT_SCHEMAS` override.

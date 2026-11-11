@@ -9,16 +9,18 @@ import pytest
 from pydantic import ValidationError
 
 import cdm_data_loaders.pipelines.xsv.settings as xsv_settings_module
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import JSONSchemaToPyArrowError
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
+    JSONSchemaToPyArrowError,
+    convert_xsv_schema_to_pyarrow,
+)
 from cdm_data_loaders.core.fields import DEFAULTS
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.pipelines.xsv.settings import (
     PIPELINE_NAME,
     XsvIngestSettings,
-    convert_xsv_schema_to_pyarrow,
 )
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
-from cdm_data_loaders.utils.jsonschema.dereferencer import DereferencingError
+from cdm_data_loaders.schemas.jsonschema import DereferencingError
 from tests.cdm_data_loaders.pipelines.xsv.conftest import DEFAULT_XSV_SCHEMA, VALID_SCHEMA_URI
 from tests.helpers import register_temp_module
 from tests.xsv_fixtures import COLUMNS
@@ -155,11 +157,11 @@ def test_xsv_settings_pass_parsing_config_resolved_and_cached(
 
 @pytest.mark.parametrize(
     "property_name",
-    ["validated_schema", "first_pass_schema", "parsing_config"],
-    ids=["validated_schema", "first_pass_schema", "parsing_config"],
+    ["validated_schema", "first_pass_schema", "parsing_config", "pyarrow_schema"],
+    ids=["validated_schema", "first_pass_schema", "parsing_config", "pyarrow_schema"],
 )
 def test_xsv_settings_fail_unset_schema_properties_raise(property_name: str) -> None:
-    """Accessing validated_schema, first_pass_schema, or parsing_config before validation raises RuntimeError."""
+    """Accessing validated_schema, first_pass_schema, parsing_config, or pyarrow_schema before validation raises RuntimeError."""
     settings = XsvIngestSettings.model_construct()
     with pytest.raises(RuntimeError, match="Schema has not been validated"):
         getattr(settings, property_name)
@@ -315,7 +317,7 @@ def test_xsv_settings_pass_resolves_schema_map_from_input_and_respects_transform
     use_transforms: bool,
     use_output_schemas: bool,
 ) -> None:
-    """schema_map skips input-schema PyArrow generation when a transform or output schema is configured."""
+    """pyarrow_schema and schema_map resolve from input JSON Schema or OUTPUT_SCHEMAS depending on transforms."""
     override_schema = pa.schema([pa.field("number", pa.int64(), nullable=False)])
     hooks_mod = register_temp_module(
         monkeypatch,
@@ -330,17 +332,23 @@ def test_xsv_settings_pass_resolves_schema_map_from_input_and_respects_transform
         transforms_module=hooks_mod if use_transforms else None,
         output_schemas_module=hooks_mod if use_output_schemas else None,
     )
-    if use_output_schemas:
+    converted_schema = convert_xsv_schema_to_pyarrow(settings.validated_schema)
+    if use_output_schemas and not use_transforms:
         expected_map: ArrowSchemaRegistry | None = ArrowSchemaRegistry(registry={"my_table": override_schema})
+        assert settings.pyarrow_schema == override_schema
         assert convert_spy.call_count == 0
+    elif use_output_schemas and use_transforms:
+        expected_map = ArrowSchemaRegistry(registry={"my_table": override_schema})
+        assert settings.pyarrow_schema == converted_schema
+        assert convert_spy.call_count == 1
     elif use_transforms:
         expected_map = None
-        assert convert_spy.call_count == 0
+        assert settings.pyarrow_schema == converted_schema
+        assert convert_spy.call_count == 1
     else:
         assert convert_spy.call_count == 1
-        expected_map = ArrowSchemaRegistry(
-            registry={"my_table": convert_xsv_schema_to_pyarrow(settings.validated_schema)}
-        )
+        assert settings.pyarrow_schema == converted_schema
+        expected_map = ArrowSchemaRegistry(registry={"my_table": converted_schema})
 
     assert settings.schema_map == expected_map
 
@@ -357,3 +365,19 @@ def test_xsv_settings_fail_unknown_transform_table_name(
     )
     with pytest.raises(ValidationError, match="Unknown table names"):
         settings_factory(transforms_module=transforms_mod)
+
+
+def test_xsv_settings_pass_generates_pyarrow_schema_for_jsonl_format(
+    monkeypatch: pytest.MonkeyPatch,
+    settings_factory: Callable[..., XsvIngestSettings],
+) -> None:
+    """When loader_file_format is jsonl, XsvIngestSettings resolves pyarrow_schema for reading while schema_map is None."""
+    convert_spy = MagicMock(wraps=convert_xsv_schema_to_pyarrow)
+    monkeypatch.setattr(xsv_settings_module, "convert_xsv_schema_to_pyarrow", convert_spy)
+
+    settings = settings_factory(loader_file_format="jsonl")
+
+    assert settings.use_pyarrow is False
+    assert settings.schema_map is None
+    assert convert_spy.call_count == 1
+    assert settings.pyarrow_schema == convert_xsv_schema_to_pyarrow(settings.validated_schema)

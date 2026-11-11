@@ -26,9 +26,10 @@ from cdm_data_loaders.pipelines.jsonlines.base import run_registry_ingest
 from cdm_data_loaders.pipelines.jsonlines.settings import (
     JSONSCHEMA_PIPELINE_NAME,
     JsonlJsonschemaIngestSettings,
+    NcbiDatasetsSettings,
 )
 from cdm_data_loaders.readers.jsonlines import ParseErrorResolver
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedSchema
+from cdm_data_loaders.schemas.jsonschema import ValidatedSchema
 
 
 def _make_resolve_error(schema: ValidatedSchema) -> ParseErrorResolver:
@@ -84,15 +85,17 @@ def run_jsonlines_pipeline(settings: JsonlJsonschemaIngestSettings) -> LoadInfo 
     :return: load information for the pipeline
     :rtype:  LoadInfo | None
     """
+    pipeline_name = str(settings.model_config.get("cli_prog_name") or JSONSCHEMA_PIPELINE_NAME)
     return run_registry_ingest(
         settings,
         registry=settings.schema_registry.registry,
         build_resource=build_entity_resource,
-        pipeline_name=JSONSCHEMA_PIPELINE_NAME,
+        pipeline_name=pipeline_name,
     )
 
 
 cli = PipelineCli(JsonlJsonschemaIngestSettings, run_jsonlines_pipeline)
+ncbi_datasets_cli = PipelineCli(NcbiDatasetsSettings, run_jsonlines_pipeline)
 
 
 if __name__ == "__main__":

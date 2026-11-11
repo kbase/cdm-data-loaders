@@ -12,10 +12,15 @@ Every code change that alters CLI flags, settings classes, public APIs, schemas,
 2. **Converter Rules, Scalar Maps, or Error Classes (`converters/`, `readers/xsd.py`, `specs/schema_converters/*/rules.yaml`)**:
    - Regenerate converter specs: `uv run python -m scripts.gen_converter_spec`
    - If adding a new converter or specification, register it in `scripts/gen_converter_spec.py`, `mkdocs.yml` (`nav`), `docs/index.md`, and `README.md`.
-3. **Public Symbol / Registry Refactors (`core/`, `pipelines/`, `readers/`, `converters/`, `parsers/`, `utils/`)**:
+   - See `docs/schema_converter_specs_guide.md` for creating or editing rules, error codes (`E1..En`), and fixture manifests.
+3. **Pipeline Specifications & Multi-Environment Smoke Tests (`specs/pipelines/`, `tests/pipeline_spec.py`, `tests/pipeline_env.py`, `tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py`)**:
+   - Regenerate pipeline specs: `uv run python -m scripts.gen_pipeline_spec` (or `uv run python -m scripts.gen_converter_spec`)
+   - If adding a new pipeline specification, register it in `scripts/gen_pipeline_spec.py`, `mkdocs.yml` (`nav`), `docs/index.md`, and `README.md`.
+   - See `docs/pipeline_specs_guide.md` and `docs/pipeline_e2e_testing_guide.md` for creating or editing pipeline rules, error scenarios (`_rejected` and `expected_report`), and running smoke tests across environments (`--dlt-config-dir`, `--settings-file`, `--drop-existing-tables`, `--drop-tables-after`).
+4. **Public Symbol / Registry Refactors (`core/`, `pipelines/`, `readers/`, `converters/`, `parsers/`, `utils/`)**:
    - Update module and class/function docstrings in the modified files.
    - Grep `docs/` and `README.md` for all references to modified or removed symbols and update code examples.
-4. **Pre-Completion Verification**:
+5. **Pre-Completion Verification**:
    - Always run `uv run pytest -m docs` and `uv run mkdocs build --strict` before finishing any task that touches `src/`, `scripts/`, `pyproject.toml`, or `docs/`.
 
 ## Gotchas

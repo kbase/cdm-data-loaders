@@ -1,0 +1,11 @@
+[
+  {
+    "metric": "moisture",
+    "sample_id": "SMP-1"
+  },
+  {
+    "metric": "salinity",
+    "sample_id": "SMP-1"
+  }
+]
+

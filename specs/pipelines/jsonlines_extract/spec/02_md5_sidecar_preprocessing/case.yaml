@@ -1,0 +1,25 @@
+title: MD5 Sidecar Pre-processing and File-Level `_rejected` Routing
+pipeline: jsonlines_extract
+settings_file: settings.toml
+rules:
+  - R-JSONL-EXTRACT-PREPROCESS-MD5
+  - R-JSONL-EXTRACT-REPORT
+notes: |
+  - `preprocessors_module = "specs.pipelines.jsonlines_extract.transforms"` registers `validate_md5_sidecar`.
+  - `good.jsonl` matches `good.jsonl.md5` and loads into `events`.
+  - `bad.jsonl` fails MD5 validation against `bad.jsonl.md5`; the file is skipped before line streaming, omitted from `ingested_files`, recorded in `report.txt` `load_errors` (`status: completed with errors`), and emitted as a file-level row (`line_no=None`, `raw_record=None`) in `_rejected`.
+runs:
+  - id: partial_md5_failure
+    input_dir: input
+    expected_report:
+      status: completed with errors
+      ingested_files:
+        - good.jsonl
+      load_errors:
+        - "File pre-processing failed for bad.jsonl: MD5 mismatch for bad.jsonl"
+      pipeline_load_info_errs: null
+    expected_counts:
+      events: 1
+      _rejected: 1
+    expected_tables: expected_tables.py
+    expected_json: expected.json

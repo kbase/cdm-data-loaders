@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<IssueBatch>
+  <article>
+    <pmid>10001</pmid>
+    <title>CRISPR Defense Systems</title>
+    <pages>12</pages>
+  </article>
+  <retraction>
+    <pmid>09999</pmid>
+    <reason>Contaminated reagent batch</reason>
+  </retraction>
+  <article>
+    <pmid>10002</pmid>
+    <title>Metagenomic Binning</title>
+  </article>
+</IssueBatch>
+

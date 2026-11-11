@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ContactRecord",
+  "type": "object",
+  "required": ["id", "count", "contact_email"],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "count": {
+      "type": "integer"
+    },
+    "contact_email": {
+      "type": "string",
+      "format": "email"
+    }
+  }
+}
+

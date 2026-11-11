@@ -53,63 +53,72 @@ def test_cli_passes_settings_class_to_run_cli() -> None:
     assert cli.pipeline_fn is run_atb_pipeline
 
 
-def test_load_patterns_exact_match(pattern_file: Path) -> None:
-    """Plain text lines should match exactly against their literal content."""
+@pytest.mark.parametrize(
+    ("candidate", "expected_match"),
+    [
+        pytest.param("hello world", True, id="exact-hello"),
+        pytest.param("foo.bar", True, id="exact-dot"),
+        pytest.param("2+2=4", True, id="exact-plus"),
+        pytest.param("hello world!!!", False, id="trailing-chars"),
+        pytest.param("well, hello world", False, id="leading-chars"),
+        pytest.param("fooXbar", False, id="dot-is-literal"),
+        pytest.param("22=4", False, id="plus-is-literal"),
+        pytest.param("starts with", True, id="wildcard-empty-suffix"),
+        pytest.param("starts with anything", True, id="wildcard-alpha-suffix"),
+        pytest.param("starts with 123!@#", True, id="wildcard-symbol-suffix"),
+        pytest.param("ends with", False, id="wildcard-wrong-prefix"),
+    ],
+)
+def test_load_patterns_exact_match(pattern_file: Path, candidate: str, expected_match: bool) -> None:
+    """Plain text lines should match against their literal content or trailing wildcard."""
     pattern = load_patterns(pattern_file)
     assert isinstance(pattern, re.Pattern)
-    assert pattern.match("hello world")
-    assert pattern.match("foo.bar")
-    assert pattern.match("2+2=4")
-
-    # patterns are anchored with ^ and $, so partial matches should not succeed
-    assert not pattern.match("hello world!!!")
-    assert not pattern.match("well, hello world")
-
-    # dot is literal, not a wildcard
-    assert not pattern.match("fooXbar")
-    # + is literal, not a quantifier
-    assert not pattern.match("22=4")
-
-    # line ending with * should match the prefix followed by any suffix
-    assert pattern.match("starts with")
-    assert pattern.match("starts with anything")
-    assert pattern.match("starts with 123!@#")
-
-    # line ending with * should not match strings with a different prefix
-    assert not pattern.match("ends with")
+    assert bool(pattern.match(candidate)) is expected_match
 
 
-def test_load_patterns_blank_lines_are_ignored(tmp_path: Path) -> None:
-    """Blank lines in the file should be silently skipped."""
+@pytest.mark.parametrize(
+    ("candidate", "expected_match"),
+    [
+        pytest.param("hello", True, id="hello"),
+        pytest.param("world", True, id="world"),
+        pytest.param("", False, id="empty-string"),
+    ],
+)
+def test_load_patterns_blank_lines_are_ignored(tmp_path: Path, candidate: str, expected_match: bool) -> None:
+    """Blank lines in the file should be skipped."""
     p = tmp_path / "patterns.txt"
     p.write_text("\nhello\n\nworld\n", encoding="utf-8")
     pattern = load_patterns(p)
     assert isinstance(pattern, re.Pattern)
-    assert pattern.match("hello")
-    assert pattern.match("world")
-    assert not pattern.match("")
+    assert bool(pattern.match(candidate)) is expected_match
 
 
-def test_load_patterns_only_wildcard_matches_anything(tmp_path: Path) -> None:
+@pytest.mark.parametrize("candidate", ["", "anything at all"], ids=["empty", "non-empty"])
+def test_load_patterns_only_wildcard_matches_anything(tmp_path: Path, candidate: str) -> None:
     """A file containing only '*' should produce a pattern that matches any string."""
     p = tmp_path / "patterns.txt"
     p.write_text("*\n", encoding="utf-8")
     pattern = load_patterns(p)
     assert isinstance(pattern, re.Pattern)
-    assert pattern.match("")
-    assert pattern.match("anything at all")
+    assert pattern.match(candidate)
 
 
-def test_load_patterns_alternation(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("candidate", "expected_match"),
+    [
+        pytest.param("cat", True, id="cat"),
+        pytest.param("dog", True, id="dog"),
+        pytest.param("bird", True, id="bird"),
+        pytest.param("fish", False, id="fish"),
+    ],
+)
+def test_load_patterns_alternation(tmp_path: Path, candidate: str, expected_match: bool) -> None:
     """Each line in the file should become an alternative in the combined pattern."""
     p = tmp_path / "patterns.txt"
     p.write_text("cat\ndog\nbird\n", encoding="utf-8")
     pattern = load_patterns(p)
     assert isinstance(pattern, re.Pattern)
-    assert pattern.match("cat")
-    assert pattern.match("dog")
-    assert pattern.match("bird")
-    assert not pattern.match("fish")
+    assert bool(pattern.match(candidate)) is expected_match
 
 
 def test_load_patterns_no_file_returns_none(tmp_path: Path) -> None:
@@ -506,7 +515,7 @@ def test_run_atb_pipeline(
             "pipeline_name": DATASET_NAME,
             "dataset_name": DATASET_NAME,
         },
-        pipeline_run_kwargs=None,
+        pipeline_run_kwargs={"loader_file_format": str(test_settings.loader_file_format)},
     )
 
 
@@ -568,7 +577,10 @@ def test_run_atb_pipeline_pipeline_dir_present_or_absent(
     assert mock_dlt.destination.call_args_list == [call(VALID_DESTINATIONS[0], max_table_nesting=0)]
     mock_pipeline = mock_dlt.pipeline.return_value
     assert mock_pipeline.destination == mock_dlt.destination.return_value
-    assert mock_pipeline.run.call_args_list[0] == call(mock_file_downloader)
+    assert mock_pipeline.run.call_args_list[0] == call(
+        mock_file_downloader,
+        loader_file_format=str(settings.loader_file_format),
+    )
 
     pipeline_kwargs: dict[str, Any] = {"pipeline_name": DATASET_NAME, "dataset_name": DATASET_NAME}
     if use_output_dir_for_pipeline_metadata:

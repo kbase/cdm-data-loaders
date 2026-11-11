@@ -109,9 +109,7 @@ classDiagram
 
     LoggerSettings <|-- PromoteSettings
     LoggerSettings <|-- DownloadSettings
-    CtsSettings <|-- AtbSettings
-    CtsSettings <|-- NcbiRestApiSettings
-    XmlIngestSettings <|-- UniProtSettings
+    FileFormatIngestSettings <|-- AtbSettings
     FileFormatIngestSettings <|-- JsonlIngestSettings
     FileFormatIngestSettings <|-- XsvIngestSettings
     TransformSettingsMixin <|-- JsonlIngestSettings
@@ -121,6 +119,7 @@ classDiagram
     XmlToPyArrowSettings <|-- PresetXmlToPyArrowSettings
     PresetXmlToPyArrowSettings <|-- UniProtXmlToPyArrowSettings
     PresetXmlToPyArrowSettings <|-- UniRefXmlToPyArrowSettings
+    UniProtXmlToPyArrowSettings <|-- UniProtSettings
     UniRefXmlToPyArrowSettings <|-- UniRefCdmSettings
 ```
 
@@ -130,6 +129,32 @@ classDiagram
 - **Kebab-Case CLI Flags**: Field names use `snake_case` in Python and `--kebab-case` on the CLI (e.g., `dataset_name` -> `--dataset-name`).
 - **Explicit CLI Parsing**: `cli_parse_args` is not enabled on model instantiation (`default_settings_with_shortcuts()`), so constructing settings objects in Python code or unit tests never reads `sys.argv`. CLI parsing only happens when `PipelineCli` invokes `pydantic_settings.CliApp.run(settings_cls)`.
 - **Compile-Time Alias & Shortcut Validation**: `CdmDataLoadersBase.__pydantic_init_subclass__` calls `check_aliases()` whenever a settings subclass is defined, ensuring no field name, `validation_alias`, or `cli_shortcuts` entry collides or claims `-h` / `--help`.
+- **CTS-Safe Wildcard Tokens (`FileGlob`)**: The CTS `POST /jobs` API restricts `args` and `environment` values to `^[\w\./][\w\.\,+/-]*$`. CTS rejects raw glob metacharacters (`*`, `?`, `[`, `]`, `!`). `FileGlob` (`--file-glob`, `-g`, `CDL_FILE_GLOB`) expands readable wildcard tokens while keeping raw globs intact for local runs:
+
+| Token          | Glob Character | Example CTS Value                        | Expanded Glob     |
+| :------------- | :------------- | :--------------------------------------- | :---------------- |
+| `__STAR__`     | `*`            | `__STAR__.ext.__STAR__`                  | `*.ext.*`         |
+| `__GLOBSTAR__` | `**`           | `__GLOBSTAR__/__STAR__.xml.gz`           | `**/*.xml.gz`     |
+| `__QMARK__`    | `?`            | `batch___QMARK__.csv`                    | `batch_?.csv`     |
+| `__LBRACK__`   | `[`            | `part___LBRACK__0-9__RBRACK__.tsv`       | `part_[0-9].tsv`  |
+| `__RBRACK__`   | `]`            | `part___LBRACK__0-9__RBRACK__.tsv`       | `part_[0-9].tsv`  |
+| `__BANG__`     | `!`            | `data___LBRACK____BANG__a__RBRACK__.xml` | `data_[!a].xml`   |
+
+Example CTS `POST /jobs` `params.args` list:
+
+```json
+[
+  "pipeline",
+  "xsv",
+  "--input-dir", "/input_dir",
+  "--output-dir", "/output_dir",
+  "--use-destination", "cts",
+  "--dataset-name", "my_dataset",
+  "--table-name", "sample_rows",
+  "--schema-file", "/input_dir/schema.json",
+  "--file-glob", "__STAR__.ext.__STAR__"
+]
+```
 
 ### Settings Layers and Fields
 
@@ -143,11 +168,11 @@ Configures structured JSON logging (`src/cdm_data_loaders/utils/cdm_logger.py`):
 
 #### `LocalInputOutputSettings`
 
-Adds validated local directory paths (`src/cdm_data_loaders/core/path_fields.py`), accepting either plain paths (`/input_dir`) or `file://` URLs:
+Adds validated input and output directory settings (`src/cdm_data_loaders/core/path_fields.py`):
 
 | Field        | CLI Flag       | Shortcut | Default      | Description                                                                                                |
 | :----------- | :------------- | :------- | :----------- | :--------------------------------------------------------------------------------------------------------- |
-| `input_dir`  | `--input-dir`  | `-i`     | *(Required)* | Local directory containing file(s) to import (must exist).                                                 |
+| `input_dir`  | `--input-dir`  | `-i`     | *(Required)* | Local directory (plain path or `file://` URL, must exist) or `fsspec` URL containing file(s) to import.   |
 | `output_dir` | `--output-dir` | `-o`     | *(Required)* | Local directory for output artifacts, `report.txt`, and optional pipeline metadata (`pipeline_metadata`). |
 
 #### `CtsSettings`
@@ -170,10 +195,10 @@ Base settings for `dlt`-backed CTS pipelines (`CLI_SHORTCUTS`):
 
 Extends `CtsSettings` for file-format ingestion pipelines (`FILE_FORMAT_CLI_SHORTCUTS`):
 
-| Field                | CLI Flag               | Shortcut | Default      | Description                                                     |
-| :------------------- | :--------------------- | :------- | :----------- | :-------------------------------------------------------------- |
-| `dataset_name`       | `--dataset-name`       | —        | *(Required)* | Name of the dataset / schema produced in the `dlt` destination. |
-| `loader_file_format` | `--loader-file-format` | `-f`     | `"parquet"`  | Output file format for `dlt` (`parquet` or `jsonl`).            |
+| Field                | CLI Flag               | Shortcut | Default      | Description                                                                |
+| :------------------- | :--------------------- | :------- | :----------- | :------------------------------------------------------------------------- |
+| `dataset_name`       | `--dataset-name`       | —        | *(Required)* | Name of the dataset / schema produced in the `dlt` destination.            |
+| `loader_file_format` | `--loader-file-format` | `-f`     | `"parquet"`  | Output file or table format for `dlt` (`iceberg`, `jsonl`, or `parquet`). |
 
 #### `XmlIngestSettings` & `SingleTableXmlIngestSettings`
 
@@ -181,7 +206,7 @@ Extends `FileFormatIngestSettings` (and `TransformSettingsMixin`) for XML pipeli
 
 | Field        | CLI Flag       | Shortcut | Default      | Description                                                                               |
 | :----------- | :------------- | :------- | :----------- | :---------------------------------------------------------------------------------------- |
-| `file_glob`  | `--file-glob`  | `-g`     | `"*.xml*"`   | Glob pattern matching XML files (including `.xml.gz`) under `input_dir`.                  |
+| `file_glob`  | `--file-glob`  | `-g`     | `"*.xml*"`   | Glob pattern matching XML files (including `.xml.gz`) under `input_dir`; accepts CTS wildcard tokens (`__STAR__`, `__GLOBSTAR__`, etc.). |
 | `table_name` | `--table-name` | `-t`     | *(Required)* | Target table name (`SingleTableXmlIngestSettings`; preset on `uniprot`/`uniref*`).        |
 | `xml_tag`    | `--xml-tag`    | `-x`     | *(Required)* | Repeating record XML tag (`SingleTableXmlIngestSettings`; preset on `uniprot`/`uniref*`). |
 
@@ -191,10 +216,11 @@ Mixed into `JsonlIngestSettings`, `XsvIngestSettings`, and `SingleTableXmlIngest
 
 | Field                   | CLI Flag                  | Shortcut | Default | Description                                                                                             |
 | :---------------------- | :------------------------ | :------- | :------ | :------------------------------------------------------------------------------------------------------ |
+| `preprocessors_module`  | `--preprocessors-module`  | —        | `None`  | Optional Python module path exporting `FILE_PREPROCESSORS` (`Sequence[FilePreprocessFn]` or `dict`).    |
 | `transforms_module`     | `--transforms-module`     | —        | `None`  | Optional Python module path exporting `TABLE_TRANSFORMS` (`dict[str, RecordTransformFn]`).              |
 | `output_schemas_module` | `--output-schemas-module` | —        | `None`  | Optional Python module path exporting `OUTPUT_SCHEMAS` (`dict[str, pa.Schema]`) for destination tables. |
 
-See [Table & Column Transformations](table_transforms.md) for full details on `TABLE_TRANSFORMS` and `OUTPUT_SCHEMAS`.
+See [Table & Column Transformations](table_transforms.md) for full details on `FILE_PREPROCESSORS`, `TABLE_TRANSFORMS`, and `OUTPUT_SCHEMAS`.
 
 ---
 
@@ -221,11 +247,29 @@ credentials = "/output_dir/warehouse.duckdb"
 `dlt` reads destination credentials and configuration from:
 
 1. **Container Input Directory (`/input_dir/dlt_conf/`)**:
-   When running via `scripts/entrypoint.sh pipeline ...`, if `/input_dir/dlt_conf` exists, the entrypoint copies `/input_dir/dlt_conf/*` (such as `config.toml` and `secrets.toml`) into `$HOME/.dlt/` before starting the pipeline.
+   When running via `scripts/entrypoint.sh pipeline ...`, if `/input_dir/dlt_conf` exists, the entrypoint copies `/input_dir/dlt_conf/{config.toml,secrets.toml}` into `$HOME/.dlt/` and `/input_dir/dlt_conf/.pyiceberg.yaml` into `$HOME/.pyiceberg.yaml` before starting the pipeline.
 2. **Project `.dlt/` Directory**:
    For local runs, `dlt` reads `.dlt/config.toml` and `.dlt/secrets.toml` in the working directory (or `~/.dlt/`).
 3. **Environment Variables**:
    Standard `dlt` environment variables (e.g., `DESTINATION__LOCAL_FS__DESTINATION_TYPE=filesystem`, `DESTINATION__LOCAL_FS__BUCKET_URL=/output_dir`, `RUNTIME__SLACK_INCOMING_HOOK=...`) can be set alongside `CDL_*` variables.
+
+### Configuring Apache Iceberg Catalogs (`--loader-file-format iceberg`)
+
+When `--loader-file-format iceberg` (`-f iceberg`) is passed with a `filesystem` destination, `dlt` writes Apache Iceberg tables (`loader_file_format="parquet"`, `table_format="iceberg"`) using PyIceberg (`dlt.common.libs.pyiceberg`). The `_load_info` metadata table always writes as `jsonl` (`table_format=None`).
+
+By default, if no explicit catalog is configured, `dlt` creates a local SQLite catalog (`sql_default`) at `<bucket_url>/iceberg_catalog.db`. To configure a custom SQLite, PostgreSQL, or REST catalog, use one of:
+
+1. **`[iceberg_catalog]` in `.dlt/config.toml` / `.dlt/secrets.toml`**:
+   ```toml
+   [iceberg_catalog]
+   iceberg_catalog_name = "default"
+   iceberg_catalog_type = "sql"
+   iceberg_catalog_config = { uri = "sqlite:////output_dir/catalog.db" }
+   ```
+2. **`.pyiceberg.yaml`**:
+   Place `.pyiceberg.yaml` in `$HOME/.pyiceberg.yaml` for local runs, or supply `/input_dir/dlt_conf/.pyiceberg.yaml` for container runs (copied into `$HOME/.pyiceberg.yaml` by `scripts/entrypoint.sh`).
+3. **Environment Variables**:
+   Use PyIceberg environment variables (`PYICEBERG_CATALOG__DEFAULT__URI=...`) or `dlt` environment variables (`ICEBERG_CATALOG__ICEBERG_CATALOG_TYPE=...`).
 
 ### Pipeline Metadata Location (`-p` / `--use-output-dir-for-pipeline-metadata`)
 
@@ -263,7 +307,7 @@ sequenceDiagram
 3. **`build_per_file_filesystem_resource(settings, file_fn, *reader_args, name=..., file_glob=..., schema_contract=..., **transformer_kwargs)`**:
    Composes `build_filesystem_resource` and `make_per_file_reader(file_fn)` so each discovered file is streamed through `file_fn(file_item, settings, *reader_args)` while `_attach_file_collector` records its `relative_path` in `ingested_files`.
 4. **`build_file_ingest_kwargs(settings, pipeline_name, fallback_dataset_name=False)`**:
-   Builds `{"pipeline_kwargs": {"pipeline_name": ..., "dataset_name": ...}, "pipeline_run_kwargs": {"loader_file_format": str(settings.loader_file_format)}}` for `run_pipeline()`.
+   Builds `{"pipeline_kwargs": {"pipeline_name": ..., "dataset_name": ...}, "pipeline_run_kwargs": ...}` for `run_pipeline()`. When `settings.loader_file_format` is `"iceberg"`, `pipeline_run_kwargs` is set to `{"loader_file_format": "parquet", "table_format": "iceberg"}`; otherwise it is set to `{"loader_file_format": str(settings.loader_file_format)}`.
 
 ### Transparent Gzip Handling (`utils/file_items.py`)
 
@@ -272,7 +316,7 @@ All file readers accept either a local `Path`/`str` or a `dlt` `FileItemDict`. O
 ### Row Buffering (`utils/buffer.py`)
 
 To minimize `dlt` item overhead, readers batch records using `settings.buffer_size`:
-- **`DictBuffer`**: Accumulates Python `dict` rows per target table (always configured with `REJECTED_PYARROW_SCHEMA` for `_rejected`, plus any optional custom `table_to_schema_map`). When flushing a batch for a table, if that table has a `pyarrow.Schema` in `table_to_schema_map`, `DictBuffer` emits a `pa.Table`; otherwise it emits a `list[dict]` batch as-is wrapped with `dlt.mark.with_table_name(batch, table)`.
+- **`DictBuffer`**: Accumulates Python `dict` rows per target table. When `use_pyarrow` is `True` (`loader_file_format` is `parquet` or `iceberg`), any table with a `pyarrow.Schema` in `schema_map` (and `_rejected`, which uses `REJECTED_PYARROW_SCHEMA`) is emitted as a `pa.Table`; when `loader_file_format` is `jsonl` (`use_pyarrow` is `False`) or a table has no PyArrow schema, `DictBuffer` emits a `list[dict]` batch as-is wrapped with `dlt.mark.with_table_name(batch, table)`.
 
 ---
 

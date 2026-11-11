@@ -63,16 +63,17 @@ def make_settings(monkeypatch: pytest.MonkeyPatch) -> SettingsFactory:
     return _make
 
 
-def local_io_expected(input_dir: Path, output_dir: Path) -> dict[str, Any]:
-    """Expected model_dump of LocalInputOutputSettings with default logging."""
+def local_io_expected(input_dir: Path | str, output_dir: Path) -> dict[str, Any]:
+    """Expected model_dump of InputLocalOutputSettings with default logging."""
+    resolved_input = str(input_dir.resolve()) if isinstance(input_dir, Path) else input_dir
     return {
         "log_config_file": DEFAULTS[LOG_CONFIG_FILE],
-        "input_dir": input_dir.resolve(),
+        "input_dir": resolved_input,
         "output_dir": output_dir.resolve(),
     }
 
 
-def cts_expected(input_dir: Path, output_dir: Path, **overrides: Any) -> dict[str, Any]:  # noqa: ANN401
+def cts_expected(input_dir: Path | str, output_dir: Path, **overrides: Any) -> dict[str, Any]:  # noqa: ANN401
     """Expected model_dump of CtsSettings: defaults, the given dirs, and any overrides."""
     resolved_output_dir = output_dir.resolve()
     use_pipeline_dir = overrides.get(
@@ -138,6 +139,7 @@ def test_cts_settings_reconciled(test_cts_settings: frozendict[str, Any]) -> fro
     return frozendict(
         {
             **test_cts_settings,
+            INPUT_DIR: str(test_cts_settings[INPUT_DIR].resolve()),
             DLT_DEV_MODE: False,
             USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: True,
             LOG_INTERVAL: 5000,

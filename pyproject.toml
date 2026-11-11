@@ -38,10 +38,12 @@ all_the_bacteria = "cdm_data_loaders.pipelines.all_the_bacteria:cli"
 jsonlines_extract = "cdm_data_loaders.pipelines.jsonlines.extract_pipeline:cli"
 jsonlines_jsonschema = "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:cli"
 jsonlines_pydantic = "cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline:cli"
+ncbi_datasets = "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:ncbi_datasets_cli"
 ncbi_ftp_promote = "cdm_data_loaders.pipelines.ncbi_ftp_promote:cli"
 ncbi_ftp_sync = "cdm_data_loaders.pipelines.ncbi_ftp_download:cli"
-ncbi_rest_api = "cdm_data_loaders.pipelines.ncbi_rest_api:cli"
 pubmed = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:pubmed_cli"
+pyiceberg_to_jsonschema = "cdm_data_loaders.converters.cli.pyiceberg_to_jsonschema:cli"
+pyiceberg_to_linkml = "cdm_data_loaders.converters.cli.pyiceberg_to_linkml:cli"
 uniprot = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniprot_cli"
 uniprot_cdm = "cdm_data_loaders.pipelines.uniprot_kb_cdm:cli"
 uniref50 = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref50_cli"
@@ -52,10 +54,12 @@ uniref100 = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref100_cli"
 uniref100_cdm = "cdm_data_loaders.pipelines.uniref_cdm:uniref100_cdm_cli"
 xmltodict = "cdm_data_loaders.pipelines.xmltodict.pipeline:cli"
 xmltopyarrow = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:cli"
+xsd_to_pyarrow = "cdm_data_loaders.converters.cli.xsd_to_pyarrow:cli"
 xsv = "cdm_data_loaders.pipelines.xsv.pipeline:cli"
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.130.0",
     "moto[s3,server]>=5.2.5",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.4.1.post1",
@@ -78,10 +82,8 @@ mutants = [
     "mutmut>=3.8.1",
 ]
 docs = [
-    "mkdocs-gen-files>=0.6.1",
-    "mkdocs-literate-nav>=0.6.3",
-    "mkdocs-material>=9.8.0",
     "mkdocstrings[python]>=1.0.8",
+    "zensical>=0.1.1",
 ]
 
 [tool.ruff]
@@ -223,7 +225,7 @@ build-backend = "uv_build"
 
 [tool.mutmut]
 source_paths = [ "src/" ]
-pytest_add_cli_args_test_selection= [ "-m", "not requires_spark", "-m", "not slow_test", "-m", "not requires_ceph", "-m", "not external_request", "-m", "not docker", "-m", "not docs", "--ignore", "tests/cdm_data_loaders/pipelines/ncbi_rest_api/test_ncbi_rest_api.py" ]
+pytest_add_cli_args_test_selection= [ "-m", "not requires_spark", "-m", "not slow_test", "-m", "not requires_ceph", "-m", "not external_request", "-m", "not docker", "-m", "not docs" ]
 
 
 
@@ -242,6 +244,7 @@ markers = [
     "external_request: tests that make real network requests to external services (e.g. NCBI FTP)",
     "docker: tests that build and run the pipeline inside a Docker container",
     "docs: tests that verify documentation generation and drift across docs/ and README.md",
+    "pbt: property-based tests powered by Hypothesis",
 ]
 
 # environment settings for running tests

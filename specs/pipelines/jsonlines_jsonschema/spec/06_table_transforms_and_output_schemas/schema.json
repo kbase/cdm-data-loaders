@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SampleRecord",
+  "type": "object",
+  "required": ["sample_id", "ph"],
+  "properties": {
+    "sample_id": {
+      "type": "string"
+    },
+    "ph": {
+      "type": "number"
+    },
+    "exclude": {
+      "type": "boolean"
+    },
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "raw_payload": {
+      "anyOf": [
+        {"type": "string"},
+        {"type": "integer"}
+      ]
+    }
+  }
+}
+

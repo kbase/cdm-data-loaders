@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<taxonomy>
+  <category id="cat-1">
+    <title>Bacteria</title>
+    <category id="cat-1-1">
+      <title>Proteobacteria</title>
+      <category id="cat-1-1-1">
+        <title>Gammaproteobacteria</title>
+      </category>
+    </category>
+  </category>
+  <category id="cat-2">
+    <title>Archaea</title>
+  </category>
+</taxonomy>
+

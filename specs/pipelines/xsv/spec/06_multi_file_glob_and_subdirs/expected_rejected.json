@@ -1,0 +1,10 @@
+[
+  {
+    "table_name": "samples",
+    "source_file": "batch_2/data.csv",
+    "line_no": null,
+    "raw_record": null,
+    "error_detail": "1 out of 2 records invalid."
+  }
+]
+

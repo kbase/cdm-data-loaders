@@ -8,6 +8,7 @@ from frozendict import frozendict
 from cdm_data_loaders.core.fields import (
     FILE_GLOB,
     LOADER_FILE_FORMAT,
+    PREPROCESSORS_MODULE,
     LoaderFileFormatEnum,
 )
 from cdm_data_loaders.pipelines.core import PipelineCli
@@ -44,6 +45,7 @@ def test_uniref_cdm_settings(test_cts_settings: frozendict[str, Any]) -> frozend
             **test_cts_settings,
             LOADER_FILE_FORMAT: "parquet",
             FILE_GLOB: "*.xml*",
+            PREPROCESSORS_MODULE: "cdm_data_loaders.core.preprocessors",
             "xsd_file": str(UNIREF_XSD_FILE),
             "max_recursion_depth": 2,
         }
@@ -58,6 +60,7 @@ def test_uniref_cdm_settings_reconciled(test_cts_settings_reconciled: frozendict
             **test_cts_settings_reconciled,
             LOADER_FILE_FORMAT: LoaderFileFormatEnum.PARQUET,
             FILE_GLOB: "*.xml*",
+            PREPROCESSORS_MODULE: "cdm_data_loaders.core.preprocessors",
             "xsd_file": UNIREF_XSD_FILE,
             "max_recursion_depth": 2,
         }

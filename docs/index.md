@@ -20,7 +20,10 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Comparati
 ### Pipeline & Execution Guides
 
 - **[Core Pipeline & KBase CTS Execution Guide](core_cts_execution.md)**: Settings hierarchy, `CDL_*` environment variables, `dlt` destination configuration, `PipelineReport` (`report.txt`), `_load_info` and `_rejected` tables, and the KBase CTS exit-code-0 contract.
-- **[CLI Reference](cli_reference.md)**: Auto-generated reference of all 18 registered `[project.scripts]` pipeline CLIs, flags, shortcuts, environment variables, and defaults.
+- **[CLI Reference](cli_reference.md)**: Auto-generated reference of all 19 registered `[project.scripts]` pipeline CLIs, flags, shortcuts, environment variables, and defaults.
+- **[Pipeline E2E & Smoke Testing Across Environments Guide](pipeline_e2e_testing_guide.md)**: Running specification-driven smoke tests across `core`, `cli`, and `docker` modes and `local_fs`, `s3_moto`, `s3_ceph`, and custom `--dlt-config-dir` / Iceberg environments.
+- **[Pipeline Specifications Developer Guide](pipeline_specs_guide.md)**: Authoring and maintaining pipeline specification rules, `spec/` and `presets/` fixture manifests, and generated specification pages.
+- **[Schema Converter Specifications Developer Guide](schema_converter_specs_guide.md)**: Authoring and maintaining schema converter rules, error codes (`E1..En`), fixture manifests, and generated reference pages.
 - **[JSONLines Ingestion Pipelines](jsonlines_ingest.md)**: Guide to `jsonlines_extract`, `jsonlines_jsonschema`, and `jsonlines_pydantic`.
 - **[Table & Column Transformations](table_transforms.md)**: Record-level filtering, single-table row transformation, multi-table splitting, and PyArrow schema overrides (`TransformSettingsMixin`).
 - **[UniProt & UniRef Ingestion Guide](uniprot.md)**: XSD-driven XML-to-PyArrow pipelines (`uniprot`, `uniref50`, `uniref90`, `uniref100`) and normalized multi-table CDM pipelines (`uniprot_cdm`, `uniref50_cdm`, `uniref90_cdm`, `uniref100_cdm`).
@@ -33,9 +36,15 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Comparati
 - **[JSON Schema to PyArrow Specification](jsonschema_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
 - **[Pydantic to PyArrow Specification](pydantic_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
 - **[XSD to PyArrow Specification](xsd_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
+- **[XSV (CSV/TSV) Schema & Pipeline Specification](xsv_specification.md)**: Auto-generated XSV schema validation, `x-xsv-config` parsing, PyArrow conversion, two-pass `qsv` cleaning/validation, DuckDB coercion, and pipeline execution specification.
+- **[XML to PyArrow Pipeline Specification](xmltopyarrow_specification.md)**: Auto-generated target selection, preset pipelines, streaming XML-to-PyArrow coercion, MD5 pre-processing, dead-letter routing, and table transform specification.
+- **[XML to Dict Pipeline Specification](xmltodict_specification.md)**: Auto-generated outermost `<xml_tag>` streaming, `xmltodict` parsing (`_` attribute prefix and `_xmlns` stripping), MD5 pre-processing, dead-letter routing, and table transform specification.
+- **[JSONLines Extract Pipeline Specification](jsonlines_extract_specification.md)**: Auto-generated plain JSONL file discovery, `.gz` decompression, MD5 pre-processing, dead-letter routing, and table transform specification.
+- **[JSONLines (JSON Schema) Pipeline Specification](jsonlines_jsonschema_specification.md)**: Auto-generated `ENTITY_SCHEMAS` registry, JSON Schema dialect validation, PyArrow schema conversion, per-line validation, dead-letter routing, and table transform specification.
+- **[JSONLines (Pydantic) Pipeline Specification](jsonlines_pydantic_specification.md)**: Auto-generated `ENTITY_MODELS` registry, `PydanticToPyArrow` schema conversion, single-pass `model_validate` / `model_dump` coercion, dead-letter routing, and table transform specification.
 
 ### Code & Schema Reference
 
-- **[Python API Reference](api/index.md)**: Auto-generated API reference for all packages and modules under `src/cdm_data_loaders/`.
-- **[Bundled Schemas & XSD Assets](api/schemas.md)**: Catalog of bundled JSON Schemas and XML Schemas (`src/cdm_data_loaders/schemas/` and `parsers/`).
+- **[Python API Reference](api/cdm_data_loaders/index.md)**: Auto-generated API reference for all packages and modules under `src/cdm_data_loaders/`.
+- **[Bundled Schemas & XSD Assets](bundled_schemas.md)**: Catalog of bundled JSON Schemas and XML Schemas (`src/cdm_data_loaders/schemas/` and `parsers/`).
 

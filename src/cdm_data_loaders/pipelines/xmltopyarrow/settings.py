@@ -3,6 +3,7 @@
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Annotated, Any, ClassVar, Final
+from xml.etree import ElementTree as ET
 
 import pyarrow as pa
 import xmlschema
@@ -10,22 +11,37 @@ from lxml.etree import Element
 from pydantic import Field, FilePath, PositiveInt, PrivateAttr
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.converters.xsd_to_pyarrow import (
-    DEFAULT_MAX_RECURSION_DEPTH,
-    generate_pyarrow_schema,
-    generate_pyarrow_schemas_at_level,
-    load_schema,
+from cdm_data_loaders.coercion.xml import (
     make_xml_element_converter,
     make_xml_level_converters,
 )
-from cdm_data_loaders.core.fields import NonEmptyStr, XsdFile
-from cdm_data_loaders.core.registry import ArrowSchemaRegistry
+from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
+from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
+    XmlTagNotFoundError,
+    generate_pyarrow_schema,
+    generate_pyarrow_schemas_at_level,
+)
+from cdm_data_loaders.converters.readers.xsd import load_schema
+from cdm_data_loaders.core.fields import (
+    XML_GZ_FILE_GLOB,
+    FileGlob,
+    NonEmptyStr,
+    XsdFile,
+    file_glob_description,
+)
+from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
+from cdm_data_loaders.core.registry import (
+    ArrowSchemaRegistry,
+    FilePreprocessFn,
+    RecordTransformFn,
+    TransformRegistry,
+)
 from cdm_data_loaders.core.settings import (
     XML_CLI_SHORTCUTS,
     XmlIngestSettings,
     default_settings_with_shortcuts,
 )
-from cdm_data_loaders.core.transforms import TransformSettingsMixin, validate_table_transforms
+from cdm_data_loaders.core.transforms import TransformSettingsMixin
 from cdm_data_loaders.schemas.pubmed.schema import SCHEMAS as PUBMED_SCHEMAS
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMA as UNIPROT_SCHEMA
 from cdm_data_loaders.schemas.uniref.schema import SCHEMA as UNIREF_SCHEMA
@@ -48,6 +64,67 @@ UNIREF_XSD_FILE: Final[Path] = SCHEMAS_DIR / "uniref" / "uniref.xsd"
 UNIREF_FIFTY: Final[str] = "uniref50"
 UNIREF_NINETY: Final[str] = "uniref90"
 UNIREF_HUNDRED: Final[str] = "uniref100"
+
+
+class XmlToPyArrowConfigError(ValueError):
+    """Base error raised when XML-to-PyArrow target selection, XSD schema resolution, or hook validation fails."""
+
+    code: ClassVar[str] = ""
+    title: ClassVar[str] = ""
+
+
+class InvalidXmlTargetSelectionError(XmlToPyArrowConfigError):
+    """`xml_level` cannot be combined with `xml_tag` or `table_name`; `xml_tag` and `table_name` are both required when `xml_level` is not set; `root_tag` is only valid when `xml_level` is set."""
+
+    code: ClassVar[str] = "E1"
+    title: ClassVar[str] = "Invalid or mutually exclusive XML target selection"
+
+
+class InvalidXsdDocumentError(XmlToPyArrowConfigError):
+    """`xsd_file` must be a well-formed XML document and a valid W3C XML Schema (`xs:schema`)."""
+
+    code: ClassVar[str] = "E2"
+    title: ClassVar[str] = "Malformed XML or invalid W3C XML Schema"
+
+
+class XmlTargetNotFoundError(XmlToPyArrowConfigError):
+    """The configured `xml_tag`, `root_tag`, or `xml_level` does not resolve to any element declaration in the XSD."""
+
+    code: ClassVar[str] = "E3"
+    title: ClassVar[str] = "Target XML tag, root tag, or level not found in XSD"
+
+
+class UnsupportedXsdTargetError(XmlToPyArrowConfigError):
+    """The target element must map to a PyArrow struct table schema and cannot contain unsupported XSD constructs (such as scalar-only roots or recursive non-JSON types)."""
+
+    code: ClassVar[str] = "E4"
+    title: ClassVar[str] = "Target element or descendant uses an unsupported XSD construct"
+
+
+class InvalidXmlPipelineHookError(XmlToPyArrowConfigError):
+    """Configured `preprocessors_module`, `transforms_module`, or `output_schemas_module` references unknown table names or omits required output schemas."""
+
+    code: ClassVar[str] = "E5"
+    title: ClassVar[str] = "Invalid pre-processor, transform, or output schema hook"
+
+
+XMLTOPYARROW_CONFIG_ERRORS: Final[tuple[type[XmlToPyArrowConfigError], ...]] = (
+    InvalidXmlTargetSelectionError,
+    InvalidXsdDocumentError,
+    XmlTargetNotFoundError,
+    UnsupportedXsdTargetError,
+    InvalidXmlPipelineHookError,
+)
+
+
+def _classify_xmltopyarrow_xsd_error(exc: Exception) -> XmlToPyArrowConfigError:
+    """Classify an XSD loading or PyArrow schema generation error into an :class:`XmlToPyArrowConfigError` subclass."""
+    err_msg = f"Could not generate PyArrow schema from XSD: {exc!s}"
+    if isinstance(exc, (xmlschema.XMLSchemaException, ET.ParseError)):
+        return InvalidXsdDocumentError(err_msg)
+    if isinstance(exc, XmlTagNotFoundError):
+        return XmlTargetNotFoundError(err_msg)
+    return UnsupportedXsdTargetError(err_msg)
 
 
 class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin):
@@ -106,26 +183,39 @@ class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin):
         if self.xml_level is not None:
             if self.xml_tag is not None or self.table_name is not None:
                 err_msg = "xml_level cannot be combined with xml_tag or table_name"
-                raise ValueError(err_msg)
+                raise InvalidXmlTargetSelectionError(err_msg)
             return
 
         if self.table_name is None or self.xml_tag is None:
             missing = [name for name in ("table_name", "xml_tag") if getattr(self, name) is None]
             err_msg = f"Missing required field(s) when xml_level is not set: {', '.join(missing)}"
-            raise ValueError(err_msg)
+            raise InvalidXmlTargetSelectionError(err_msg)
         if self.root_tag is not None:
             err_msg = "root_tag can only be specified when xml_level is set"
-            raise ValueError(err_msg)
+            raise InvalidXmlTargetSelectionError(err_msg)
 
     def _resolve_level_schema_map(self) -> None:
-        """Validate `table_transforms` and populate `_schema_map` for level-based mode."""
-        validate_table_transforms(self, self._pyarrow_schemas)
-        resolved_schemas: dict[str, pa.Schema] = (
-            dict(self._unreconciled_output_schemas.registry) if self._unreconciled_output_schemas is not None else {}
-        )
-        for table_name, table_schema in self._pyarrow_schemas.items():
-            if self._needs_default_pyarrow_schema(table_name):
-                resolved_schemas[table_name] = table_schema
+        """Validate `file_preprocessors` and `table_transforms`, and populate `_schema_map` for level-based mode."""
+        valid_tables = self._xml_level_converters or self._pyarrow_schemas
+        try:
+            self._validate_configured_tables(valid_tables)
+        except ValueError as e:
+            raise InvalidXmlPipelineHookError(str(e)) from e
+        if not self.use_pyarrow:
+            self._schema_map = None
+            return
+        resolved_schemas: dict[str, pa.Schema] = {
+            **(
+                dict(self._unreconciled_output_schemas.registry)
+                if self._unreconciled_output_schemas is not None
+                else {}
+            ),
+            **{
+                table_name: table_schema
+                for table_name, table_schema in self._pyarrow_schemas.items()
+                if self._needs_default_pyarrow_schema(table_name)
+            },
+        }
         self._schema_map = ArrowSchemaRegistry(registry=resolved_schemas) if resolved_schemas else None
 
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
@@ -142,7 +232,7 @@ class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin):
                     root_tag=self.root_tag,
                     max_recursion_depth=self.max_recursion_depth,
                 )
-                self._pyarrow_schemas = self._resolve_pyarrow_schemas()
+                self._pyarrow_schemas = self._resolve_pyarrow_schemas() if self.use_pyarrow else {}
                 self._pyarrow_schema = None
             else:
                 table_name = self.table_name or ""
@@ -152,21 +242,23 @@ class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin):
                     xml_tag,
                     max_recursion_depth=self.max_recursion_depth,
                 )
-                pyarrow_schema = (
-                    default_pyarrow_schema
-                    if default_pyarrow_schema is not None or not self._needs_default_pyarrow_schema(table_name)
-                    else self._resolve_pyarrow_schema()
+                pyarrow_schema = self._resolve_default_table_schema(
+                    table_name,
+                    default_pyarrow_schema,
+                    self._resolve_pyarrow_schema,
                 )
                 self._pyarrow_schema = pyarrow_schema
                 self._pyarrow_schemas = {table_name: pyarrow_schema} if pyarrow_schema is not None else {}
         except Exception as e:
-            err_msg = f"Could not generate PyArrow schema from XSD: {e!s}"
-            raise ValueError(err_msg) from e
+            raise _classify_xmltopyarrow_xsd_error(e) from e
 
         if self.xml_level is not None:
             self._resolve_level_schema_map()
         else:
-            super()._resolve_settings_schema_map(default_pyarrow_schema=pyarrow_schema)
+            try:
+                super()._resolve_settings_schema_map(default_pyarrow_schema=pyarrow_schema)
+            except ValueError as e:
+                raise InvalidXmlPipelineHookError(str(e)) from e
 
     def _resolve_pyarrow_schema(self) -> pa.Schema:
         """Return the PyArrow schema for single-tag mode.
@@ -249,6 +341,17 @@ class PresetXmlToPyArrowSettings(XmlToPyArrowSettings):
         """
         return self._PRECOMPUTED_SCHEMA
 
+    def _bind_cdm_transform_and_schemas(
+        self,
+        transform: RecordTransformFn,
+        schema_map: ArrowSchemaRegistry,
+        default_pyarrow_schema: pa.Schema | None = None,
+    ) -> None:
+        """Bind a preset CDM record transform and output schema registry to ``self.table_name``."""
+        self._table_transforms = TransformRegistry(registry={self.table_name: transform})
+        self._unreconciled_output_schemas = schema_map
+        super()._resolve_settings_schema_map(default_pyarrow_schema=default_pyarrow_schema)
+
 
 class LevelPresetXmlToPyArrowSettings(XmlToPyArrowSettings):
     """Base settings for level-based XML-to-PyArrow pipelines backed by a bundled XSD and precomputed schemas."""
@@ -272,6 +375,7 @@ class PubMedXmlToPyArrowSettings(LevelPresetXmlToPyArrowSettings):
     """Settings for the PubMed XML to PyArrow ingestion pipeline."""
 
     _PRECOMPUTED_SCHEMAS: ClassVar[Mapping[str, pa.Schema]] = PUBMED_SCHEMAS
+    _DEFAULT_FILE_PREPROCESSORS: ClassVar[tuple[FilePreprocessFn, ...]] = (validate_md5_sidecar,)
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=PUBMED_PIPELINE_NAME,
@@ -279,8 +383,14 @@ class PubMedXmlToPyArrowSettings(LevelPresetXmlToPyArrowSettings):
     )
 
     dataset_name: ClassVar[str] = PUBMED_PIPELINE_NAME
-    root_tag: ClassVar[str | None] = PUBMED_ROOT_TAG
 
+    file_glob: Annotated[
+        FileGlob,
+        Field(
+            default=XML_GZ_FILE_GLOB,
+            description=file_glob_description("Glob pattern for PubMed XML files"),
+        ),
+    ]
     xsd_file: Annotated[
         FilePath,
         Field(

@@ -1,19 +1,30 @@
 """Pluggable record filtering, transformation, multi-table splitting, and PyArrow schema overrides."""
 
-from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Self
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import Any, ClassVar, Self
 
 import pyarrow as pa
 from pydantic import PrivateAttr, model_validator
 from pydantic_settings import BaseSettings
 
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import coerce_record_for_pyarrow
-from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME, OutputSchemasModuleSpec, TransformsModuleSpec
+from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.core.fields import (
+    PYARROW_FILE_FORMATS,
+    LoaderFileFormatEnum,
+    OutputSchemasModuleSpec,
+    PreprocessorsModuleSpec,
+    TransformsModuleSpec,
+)
+from cdm_data_loaders.core.preprocessors import validate_file_preprocessors
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
+    FilePreprocessFn,
+    PreprocessorRegistry,
     RecordTransformFn,
     TransformRegistry,
+    load_file_preprocessors,
     load_registry_dict,
+    validate_registry_table_names,
 )
 
 
@@ -55,7 +66,7 @@ def validate_routed_output(raw_routed: object) -> dict[str, list[dict[str, Any]]
 
     :param raw_routed: raw output from ``transform_fn`` for a single record
     :type  raw_routed: object
-    :raises ValueError: if ``raw_routed`` is not a mapping, any table name is empty or reserved,
+    :raises ValueError: if ``raw_routed`` is not a mapping, any table name is empty,
         or rows for any table are not a sequence of non-empty dicts
     :return: validated dictionary mapping destination table names to non-empty lists of row dictionaries
     :rtype : dict[str, list[dict[str, Any]]]
@@ -68,8 +79,6 @@ def validate_routed_output(raw_routed: object) -> dict[str, list[dict[str, Any]]
         for table_name, rows in raw_routed.items():
             if not isinstance(table_name, str) or not table_name.strip():
                 errors.append("transform_fn output keys must be non-empty table names")
-            elif table_name.strip() == REJECTED_TABLE_NAME:
-                errors.append(f"transform_fn cannot route rows to reserved table {REJECTED_TABLE_NAME!r}")
 
             if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes, bytearray, Mapping)):
                 errors.append(f"transform_fn rows for table {table_name!r} must be a sequence of dicts")
@@ -133,15 +142,47 @@ def validate_table_transforms(
     table_transforms: TransformRegistry | None = getattr(settings, "table_transforms", None)
     if table_transforms is None:
         return
-    unknown_transforms = sorted(set(table_transforms.registry) - set(valid_tables))
-    if unknown_transforms:
-        err_msg = f"Unknown table names in transforms_module: {', '.join(unknown_transforms)}"
-        raise ValueError(err_msg)
+    validate_registry_table_names(table_transforms.registry, valid_tables, "transforms_module")
+
+
+def uses_pyarrow_format(settings: Any) -> bool:  # noqa: ANN401
+    """Return whether ``settings.loader_file_format`` is a PyArrow-backed loader format."""
+    return getattr(settings, "loader_file_format", LoaderFileFormatEnum.PARQUET) in PYARROW_FILE_FORMATS
+
+
+def needs_default_pyarrow_schema(
+    table_name: str,
+    *,
+    use_pyarrow: bool = True,
+    table_transforms: TransformRegistry | None = None,
+    output_schemas: ArrowSchemaRegistry | None = None,
+) -> bool:
+    """Return whether ``table_name`` needs its PyArrow schema generated from the input schema.
+
+    :param table_name: target table name
+    :type table_name: str
+    :param use_pyarrow: whether PyArrow output is enabled
+    :type use_pyarrow: bool
+    :param table_transforms: optional configured table transforms registry
+    :type table_transforms: TransformRegistry | None
+    :param output_schemas: optional user-supplied output schemas registry
+    :type output_schemas: ArrowSchemaRegistry | None
+    :return: ``True`` if a default PyArrow schema should be generated for ``table_name``
+    :rtype: bool
+    """
+    if not use_pyarrow:
+        return False
+    if table_transforms is not None and table_name in table_transforms.registry:
+        return False
+    return not (output_schemas is not None and table_name in output_schemas.registry)
 
 
 class TransformSettingsMixin(BaseSettings):
-    """Mixin for pipelines that accept `TABLE_TRANSFORMS` and `OUTPUT_SCHEMAS` modules."""
+    """Mixin for pipelines that accept `FILE_PREPROCESSORS`, `TABLE_TRANSFORMS`, and `OUTPUT_SCHEMAS` modules."""
 
+    _DEFAULT_FILE_PREPROCESSORS: ClassVar[tuple[FilePreprocessFn, ...]] = ()
+
+    _file_preprocessors: PreprocessorRegistry | None = PrivateAttr(default=None)
     _table_transforms: TransformRegistry | None = PrivateAttr(default=None)
     _unreconciled_output_schemas: ArrowSchemaRegistry | None = PrivateAttr(default=None)
 
@@ -155,40 +196,82 @@ class TransformSettingsMixin(BaseSettings):
     schema generated from the input schema, since the transform may change the output fields.
     """
 
+    preprocessors_module: PreprocessorsModuleSpec
     transforms_module: TransformsModuleSpec
     output_schemas_module: OutputSchemasModuleSpec
 
     @model_validator(mode="after")
     def _validate_transforms_module(self) -> Self:
-        """Eagerly load and validate `TABLE_TRANSFORMS` and `OUTPUT_SCHEMAS` if configured."""
+        """Load and validate `FILE_PREPROCESSORS`, `TABLE_TRANSFORMS`, and `OUTPUT_SCHEMAS` if configured."""
+        if self.preprocessors_module is not None:
+            self._file_preprocessors = load_file_preprocessors(self.preprocessors_module)
+        elif self._DEFAULT_FILE_PREPROCESSORS:
+            self._file_preprocessors = PreprocessorRegistry(default=self._DEFAULT_FILE_PREPROCESSORS)
         if self.transforms_module is not None:
             self._table_transforms = load_registry_dict(self.transforms_module, "TABLE_TRANSFORMS")
-        if self.output_schemas_module is not None:
+        if self.output_schemas_module is not None and self.use_pyarrow:
             self._unreconciled_output_schemas = load_registry_dict(self.output_schemas_module, "OUTPUT_SCHEMAS")
         self._resolve_settings_schema_map()
         return self
 
+    @property
+    def use_pyarrow(self) -> bool:
+        """Return whether this pipeline yields ``pyarrow.Table`` pages instead of row dicts."""
+        return uses_pyarrow_format(self)
+
+    def _validate_configured_tables(
+        self,
+        valid_tables: Iterable[str],
+        *,
+        validate_transforms_fn: Callable[[Any, Iterable[str]], None] = validate_table_transforms,
+    ) -> None:
+        """Validate both ``file_preprocessors`` and ``table_transforms`` against ``valid_tables``."""
+        validate_file_preprocessors(self, valid_tables)
+        validate_transforms_fn(self, valid_tables)
+
     def _needs_default_pyarrow_schema(self, table_name: str) -> bool:
         """Return whether ``table_name`` needs its PyArrow schema generated from the input schema."""
-        if self.get_table_transform(table_name) is not None:
+        if not self.use_pyarrow or self.get_table_transform(table_name) is not None:
             return False
-        return not (
-            self._unreconciled_output_schemas is not None and table_name in self._unreconciled_output_schemas.registry
+        return needs_default_pyarrow_schema(
+            table_name,
+            use_pyarrow=self.use_pyarrow,
+            output_schemas=self._unreconciled_output_schemas,
         )
+
+    def _resolve_default_table_schema(
+        self,
+        table_name: str,
+        default_pyarrow_schema: pa.Schema | None,
+        build_default: Callable[[], pa.Schema],
+    ) -> pa.Schema | None:
+        """Return ``default_pyarrow_schema`` if provided, else call ``build_default`` when needed."""
+        if default_pyarrow_schema is not None or not self._needs_default_pyarrow_schema(table_name):
+            return default_pyarrow_schema
+        return build_default()
 
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
         """Resolve `_schema_map` from `_unreconciled_output_schemas`, `_table_transforms`, and any default PyArrow schema."""
         table_name = getattr(self, "table_name", None)
         if isinstance(table_name, str):
-            validate_table_transforms(self, {table_name})
-            self._schema_map = resolve_schema_map(
-                table_name,
-                transform=self.get_table_transform(table_name),
-                unreconciled_output_schemas=self._unreconciled_output_schemas,
-                default_pyarrow_schema=default_pyarrow_schema,
+            self._validate_configured_tables({table_name})
+            self._schema_map = (
+                resolve_schema_map(
+                    table_name,
+                    transform=self.get_table_transform(table_name),
+                    unreconciled_output_schemas=self._unreconciled_output_schemas,
+                    default_pyarrow_schema=default_pyarrow_schema,
+                )
+                if self.use_pyarrow
+                else None
             )
         else:
-            self._schema_map = self._unreconciled_output_schemas
+            self._schema_map = self._unreconciled_output_schemas if self.use_pyarrow else None
+
+    @property
+    def file_preprocessors(self) -> PreprocessorRegistry | None:
+        """The loaded `FILE_PREPROCESSORS` registry (`None` if not configured)."""
+        return self._file_preprocessors
 
     @property
     def table_transforms(self) -> TransformRegistry | None:
@@ -199,6 +282,12 @@ class TransformSettingsMixin(BaseSettings):
     def schema_map(self) -> ArrowSchemaRegistry | None:
         """The resolved `ArrowSchemaRegistry` for this pipeline (`None` if unschematized)."""
         return self._schema_map
+
+    def get_file_preprocessors(self, table_name: str | None = None) -> tuple[FilePreprocessFn, ...]:
+        """Return the `FilePreprocessFn` sequence for `table_name`, if configured."""
+        if self._file_preprocessors is None:
+            return ()
+        return self._file_preprocessors.get(table_name)
 
     def get_table_transform(self, table_name: str) -> RecordTransformFn | None:
         """Return the `RecordTransformFn` for `table_name`, if configured."""

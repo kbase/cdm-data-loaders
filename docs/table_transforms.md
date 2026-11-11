@@ -1,22 +1,26 @@
 # Record Filtering, Transformation, and Multi-Table Splitting
 
-All six file-format ingestion pipelines support pluggable record-level filtering, single-table row transformation, multi-table splitting, and `pyarrow.Schema` overrides through `--transforms-module` (`CDL_TRANSFORMS_MODULE`) and `--output-schemas-module` (`CDL_OUTPUT_SCHEMAS_MODULE`):
+All six file-format ingestion pipelines support pluggable file pre-processing, record-level filtering, single-table row transformation, multi-table splitting, and `pyarrow.Schema` overrides through `--preprocessors-module` (`CDL_PREPROCESSORS_MODULE`), `--transforms-module` (`CDL_TRANSFORMS_MODULE`), and `--output-schemas-module` (`CDL_OUTPUT_SCHEMAS_MODULE`):
 
-| Pipeline                                                                                                                       | CLI Entry Point        | Default Output Format                            | Source of Input `table_name`                                                          |
-| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| [extract_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | `jsonlines_extract`    | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                |
-| [extract_jsonschema_validate_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema` | `pyarrow.Table`                                  | Keys of `ENTITY_SCHEMAS`                                                              |
-| [extract_pydantic_validate_pipeline.py](../src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`   | `pyarrow.Table`                                  | Keys of `ENTITY_MODELS`                                                               |
-| [xsv/pipeline.py](../src/cdm_data_loaders/pipelines/xsv/pipeline.py)                                                           | `xsv`                  | `pyarrow.Table`                                  | `--table-name` (`settings.table_name`)                                                |
-| [xmltodict/pipeline.py](../src/cdm_data_loaders/pipelines/xmltodict/pipeline.py)                                               | `xmltodict`            | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                |
-| [xmltopyarrow/pipeline.py](../src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                         | `xmltopyarrow`         | `pyarrow.Table`                                  | `--table-name` (or preset entrypoints `uniprot`, `uniref50`, `uniref90`, `uniref100`) |
+| Pipeline                                                                                                                       | CLI Entry Point        | Default Output Format                            | Source of Input `table_name`                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| [extract_pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | `jsonlines_extract`    | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
+| [extract_jsonschema_validate_pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema` | `pyarrow.Table`                                  | Keys of `ENTITY_SCHEMAS` (or preset entrypoint `ncbi_datasets`)                                 |
+| [extract_pydantic_validate_pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`   | `pyarrow.Table`                                  | Keys of `ENTITY_MODELS`                                                                         |
+| [xsv/pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xsv/pipeline.py)                                                           | `xsv`                  | `pyarrow.Table`                                  | `--table-name` (`settings.table_name`)                                                          |
+| [xmltodict/pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltodict/pipeline.py)                                               | `xmltodict`            | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
+| [xmltopyarrow/pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                         | `xmltopyarrow`         | `pyarrow.Table`                                  | `--table-name` (or preset entrypoints `pubmed`, `uniprot`, `uniref50`, `uniref90`, `uniref100`) |
 
 ---
 
 ## Processing Lifecycle
 
-Transforms run **after** a record is parsed and validated against its input schema/model, and **before** rows are buffered into pages for `dlt`:
+File pre-processors run **before** a file is opened and parsed. Record transforms run **after** a record is parsed and validated against its input schema/model, and **before** rows are buffered into pages for `dlt`:
 
+0. **Pre-process File (`FilePreprocessFn`)**:
+   - Each `FileItemDict` yielded by `dlt.sources.filesystem` passes through any `FilePreprocessFn` functions registered in `FILE_PREPROCESSORS`.
+   - Returning `None` skips the file without error.
+   - Raising `FilePreprocessError` routes a diagnostic row to `_rejected` (with `source_file` and `error_detail`), logs an error, skips the file, and records the failure in `report.txt` (`load_errors`).
 1. **Parse & Validate**:
    - Malformed lines or records that fail input validation (`JSON Schema`, `Pydantic`, or `qsv`) are routed directly to `_rejected` (with `table_name` set to the input table name) without calling the transform function.
 2. **Transform & Route (`RecordTransformFn`)**:
@@ -24,9 +28,9 @@ Transforms run **after** a record is parsed and validated against its input sche
    - The transform function returns a mapping of `{destination_table_name: [row_dict, ...]}`.
    - Returning `{}` (or empty row lists) drops the record.
 3. **Coerce & Buffer (`DictBuffer`)**:
-   - All pipelines buffer rows using `DictBuffer`, which always includes the built-in `REJECTED_PYARROW_SCHEMA` for `_rejected` and merges any custom `table_to_schema_map`.
-   - If a destination table has an entry in `DictBuffer.table_to_schema_map` (either derived from the pipeline's input schema or supplied via `OUTPUT_SCHEMAS`), each emitted row is coerced against that table's `pyarrow.Schema` and emitted as a `pyarrow.Table` page.
-   - Otherwise, emitted rows for that table are emitted as `list[dict]` pages as-is.
+   - All pipelines buffer rows using `DictBuffer`.
+   - When `loader_file_format` is `parquet` or `iceberg` (`settings.use_pyarrow` is `True`), `_rejected` uses `REJECTED_PYARROW_SCHEMA`, and any destination table with an entry in `settings.schema_map` (either derived from the pipeline's input schema or supplied via `OUTPUT_SCHEMAS`) has its rows coerced against that `pyarrow.Schema` and emitted as a `pyarrow.Table` page.
+   - When `loader_file_format` is `jsonl` (`settings.use_pyarrow` is `False`), `settings.schema_map` is `None` (no PyArrow schemas are generated from input schemas) and all tables (including `_rejected`) are emitted as `list[dict]` pages.
 
 ---
 
@@ -47,12 +51,17 @@ from cdm_data_loaders.core.registry import RecordTransformFn
 
 ### Registry Exports
 
+- **`FILE_PREPROCESSORS`** (`--preprocessors-module` / `CDL_PREPROCESSORS_MODULE`):
+  - Accepts either a pipeline-wide sequence `Sequence[FilePreprocessFn]` or a per-table mapping `dict[str, Sequence[FilePreprocessFn] | FilePreprocessFn]`.
+  - Each `FilePreprocessFn` has signature `(file_item: FileItemDict) -> FileItemDict | None` and may return the `FileItemDict` to continue, return `None` to skip the file, or raise `FilePreprocessError` to reject the file and record the failure in `_rejected` and `report.txt`.
+  - Built-in pre-processor: `cdm_data_loaders.core.preprocessors.validate_md5_sidecar` (enabled by default on the `pubmed` pipeline, where `file_glob` defaults to `"*.xml.gz"`).
 - **`TABLE_TRANSFORMS`** (`--transforms-module` / `CDL_TRANSFORMS_MODULE`): `dict[str, RecordTransformFn]`
   - Each value is a callable `Callable[[dict[str, Any]], Mapping[str, Sequence[dict[str, Any]]]]`:
     - `{}` (or `{"table": []}`) -> **Filter out (drop)** the record.
     - `{"table": [new_row]}` -> **Transform** a row 1-to-1 in place.
     - `{"table": [row_1, row_2]}` -> **Unnest / fan out** 1-to-N rows into the same table.
     - `{"parent_table": [parent_row], "child_table": [child_1, child_2]}` -> **Split** a record across multiple destination tables.
+    - `{"_rejected": [rejected_row]}` -> **Reject** a record into the shared `_rejected` table (`REJECTED_TABLE_NAME`).
   - When no transform is configured for a table, records are routed unchanged to `{table_name: [record]}`.
 - **`OUTPUT_SCHEMAS`** (`--output-schemas-module` / `CDL_OUTPUT_SCHEMAS_MODULE`): `dict[str, pa.Schema]`
   - Optional mapping of `{destination_table_name: pyarrow.Schema}`.
@@ -82,7 +91,7 @@ NCBI Datasets API annotation report JSONL files contain summary lines where no a
 {"reports": [], "total_count": 0}
 ```
 
-Both lines are valid against `AnnotationReportResponse.schema.json`, so `jsonlines_jsonschema` accepts both during validation. To drop records with `total_count == 0` instead of writing empty rows to the `annotation_report` table:
+Both lines are valid against `annotationReport.schema.json`, so `jsonlines_jsonschema` accepts both during validation. To drop records with `total_count == 0` instead of writing empty rows to the `annotation_report` table:
 
 ```python
 # my_package/ncbi_transforms.py
@@ -93,9 +102,7 @@ from typing import Any
 from cdm_data_loaders.core.registry import RecordTransformFn
 
 ANNOTATION_REPORT_SCHEMA = json.loads(
-    files("cdm_data_loaders.parsers.ncbi.datasets_api")
-    .joinpath("AnnotationReportResponse.schema.json")
-    .read_text(encoding="utf-8")
+    files("cdm_data_loaders.schemas.ncbi_datasets").joinpath("annotationReport.schema.json").read_text(encoding="utf-8")
 )
 
 # ENTITY_SCHEMAS and TABLE_TRANSFORMS can live in the same module or separate modules.

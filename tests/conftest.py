@@ -21,15 +21,33 @@ import pytest
 from dlt.common.configuration.container import Container
 from dlt.common.pipeline import PipelineContext
 from frozendict import frozendict
+from hypothesis import HealthCheck, settings
 from moto import mock_aws
 from pyspark.sql import SparkSession
 from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
+from cdm_data_loaders.pipelines.core import _install_iceberg_catalog_cleanup
 from cdm_data_loaders.utils import cdm_logger
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
 from tests.xml_samples import LIBRARY_XSD
+
+_install_iceberg_catalog_cleanup()
+
+settings.register_profile(
+    "default",
+    max_examples=25,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow],
+)
+settings.register_profile(
+    "ci_thorough",
+    max_examples=100,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow],
+)
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
 
 pytest_plugins = ["tests.fs_backends", "tests.jsonlines_fixtures", "tests.jsonschema_fixtures", "tests.xsv_fixtures"]
 
@@ -43,6 +61,7 @@ TEST_DATA_DIR: Final[Path] = Path("tests") / "data"
 CASSETTES_DIR: Final[Path] = Path("tests") / "cassettes"
 SCHEMA_CONVERTER_SPECS_DIR: Final[Path] = BASE_DIR / "specs" / "schema_converters"
 XSD_SPEC_DIR: Final[Path] = SCHEMA_CONVERTER_SPECS_DIR / "xsd_to_pyarrow"
+PIPELINE_SPECS_DIR: Final[Path] = BASE_DIR / "specs" / "pipelines"
 
 REFERENCE_XML_NS: Final[str] = "http://uniprot.org/uniref"
 REFERENCE_XML_TAG: Final[str] = f"{{{REFERENCE_XML_NS}}}entry"
@@ -55,9 +74,6 @@ DEFAULT_VCR_CONFIG = frozendict(
         "record_mode": "once",  # record on first run, replay thereafter
         "serializer": "yaml",
         "match_on": ["method", "scheme", "host", "path", "query"],
-        # strip the NCBI API key from cassettes
-        "filter_query_parameters": ["api_key"],
-        "filter_headers": ["api_key"],
         "decode_compressed_response": True,
         "allow_playback_repeats": True,
     }
@@ -94,6 +110,36 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store",
         default=None,
         help="Pre-built Docker image tag to use for @pytest.mark.docker tests instead of building.",
+    )
+    parser.addoption(
+        "--dlt-config-dir",
+        action="store",
+        default=None,
+        help="Directory containing config.toml, secrets.toml, and optional settings.toml/.yaml for pipeline smoke tests.",
+    )
+    parser.addoption(
+        "--settings-file",
+        action="store",
+        default=None,
+        help="Path to a settings config file (.toml, .yaml, .yml, or .json) with environment Settings overrides.",
+    )
+    parser.addoption(
+        "--smoke-pipeline",
+        action="store",
+        default=None,
+        help="Filter pipeline smoke tests to a single pipeline name (e.g., pubmed, ncbi_datasets).",
+    )
+    parser.addoption(
+        "--drop-existing-tables",
+        action="store_true",
+        default=False,
+        help="Drop existing catalog/destination tables for the target pipeline before running each smoke test.",
+    )
+    parser.addoption(
+        "--drop-tables-after",
+        action="store_true",
+        default=False,
+        help="Drop catalog/destination tables added by the pipeline after each smoke test finishes.",
     )
 
 
@@ -290,19 +336,9 @@ def json_test_strings() -> dict[str, Any]:
 
 CONFIG_BUCKET = frozendict({LOCAL_FS: "/output_dir", S3: "s3://some/s3/bucket"})
 
-TEST_DLT_CONFIG = frozendict(
-    {
-        "destination.local_fs.bucket_url": CONFIG_BUCKET[LOCAL_FS],
-        "destination.local_fs.destination_type": "filesystem",
-        "destination.s3.bucket_url": CONFIG_BUCKET[S3],
-        "destination.s3.destination_type": "filesystem",
-        "normalize.data_writer.disable_compression": False,
-    }
-)
-
 
 def _generate_dlt_config() -> dict[str, Any]:
-    """Return a fresh DLT config dict (same shape as the conftest fixture)."""
+    """Return a fresh DLT config dict."""
     return {
         "destination": {
             LOCAL_FS: {"bucket_url": CONFIG_BUCKET[LOCAL_FS], "destination_type": "filesystem"},
@@ -314,12 +350,6 @@ def _generate_dlt_config() -> dict[str, Any]:
         "destination.s3.destination_type": "filesystem",
         "normalize.data_writer.disable_compression": False,
     }
-
-
-@pytest.fixture
-def dlt_config() -> dict[str, Any]:
-    """DLT config for testing purposes."""
-    return _generate_dlt_config()
 
 
 @pytest.fixture(autouse=True)

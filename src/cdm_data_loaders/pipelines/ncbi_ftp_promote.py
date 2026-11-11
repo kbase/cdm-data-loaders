@@ -19,7 +19,6 @@ DEFAULT_STAGING_BUCKET: PurePosixPath = PurePosixPath("cts")
 DEFAULT_DESTINATION_BUCKET: PurePosixPath = PurePosixPath("cdm-lake")
 DEFAULT_DESTINATION_PREFIX: PurePosixPath = PurePosixPath("tenant-general-warehouse/kbase/datasets/ncbi")
 DEFAULT_TRANSFER_MANIFEST_FILE: PurePosixPath = PurePosixPath("transfer_manifest.txt")
-ESTIMATED_FILES_PER_ASSEMBLY: int = 21
 
 
 class PromoteSettings(LoggerSettings):

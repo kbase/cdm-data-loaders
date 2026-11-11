@@ -1,0 +1,31 @@
+title: Scalars, Nullability, Column Ordering, and Unlisted Columns
+schema: schema.json
+rules:
+  - R-XSV-DIALECT
+  - R-XSV-REQUIRED-COLS
+  - R-XSV-METASCHEMA
+  - R-XSV-CONFIG
+  - R-XSV-COL-ORDER
+  - R-XSV-UNLISTED-COL
+  - R-XSV-NULLABILITY
+  - R-XSV-SCALAR-MAP
+  - R-XSV-CLEAN-INPUT
+  - R-XSV-FIRST-PASS
+  - R-XSV-SECOND-PASS
+  - R-XSV-DUCKDB-TYPES
+  - R-XSV-ARROW-CAST
+  - R-XSV-GLOB
+notes: |
+  - The schema omits `x-xsv-config`, so `CleanerValidatorArgs` defaults apply (`delimiter="\t"`, `comment_char="#"`, `missing_header=False`).
+  - `properties` declares `score` before `id`, but top-level `required` orders the output columns starting with `id`, `count`, `rank32`, `score`, ...
+  - `unlisted_tag` is listed in `required` but absent from `properties`, so it defaults to `pa.field("unlisted_tag", pa.string(), nullable=True)`.
+  - `extra_col` is declared in `properties` but absent from `required` and the TSV file; it is appended at the end of `pa.Schema` (`nullable=True`) and filled with `null` values on read.
+  - `status` (`{"type": "string"}`) is non-nullable (`nullable=False`, `force_not_null`), while `opt_note` (`{"type": ["string", "null"]}`) and `unlisted_tag` allow `null` and become `None` when empty.
+runs:
+  - id: default
+    data: data.tsv
+    expected_report:
+      status: completed
+      ingested_files:
+        - data.tsv
+      pipeline_load_info_errs: null

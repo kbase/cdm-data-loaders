@@ -16,7 +16,7 @@ from cdm_data_loaders.converters.core.extensions import (
 )
 from cdm_data_loaders.converters.core.ir import TypedNode
 from cdm_data_loaders.converters.core.ir_values import Value, freeze_value
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.custom_metaschema import X_XSV_CONFIG_SCHEMA
+from cdm_data_loaders.schemas.jsonschema import X_XSV_CONFIG_SCHEMA
 
 
 @pytest.mark.parametrize(
@@ -281,20 +281,39 @@ def test_extension_registry_fail_duplicates() -> None:
     assert registry.register(spec, replace=True) == registry
 
 
-def test_extension_spec_fail_invalid_schemas_and_payload_extensions() -> None:
-    """Invalid schemas, wrong registry entries and payload collisions fail early."""
-    with pytest.raises(ExtensionError, match="validation schemas"):
-        ExtensionSpec("x-bad", 1)
-    with pytest.raises(SchemaError):
-        ExtensionSpec("x-bad", {"type": "bogus"})
+@pytest.mark.parametrize(
+    ("schema", "error_type", "match"),
+    [
+        (1, ExtensionError, "validation schemas"),
+        ({"type": "bogus"}, SchemaError, None),
+    ],
+    ids=["non-schema", "invalid-schema"],
+)
+def test_extension_spec_fail_invalid_schemas(schema: object, error_type: type[Exception], match: str | None) -> None:
+    """Invalid extension validation schemas fail at spec construction."""
+    with pytest.raises(error_type, match=match):
+        ExtensionSpec("x-bad", schema)
+
+
+def test_extension_registry_fail_invalid_entries() -> None:
+    """Registry entries must be ExtensionSpec instances."""
     with pytest.raises(TypeError, match="entries"):
-        ExtensionRegistry(({},))
-    with pytest.raises(ExtensionError, match="Not an object"):
-        DEFAULT_EXTENSIONS.extend_payload("x-pii", {"extra": True})
-    with pytest.raises(ExtensionError, match="already registered"):
-        DEFAULT_EXTENSIONS.extend_payload("x-dlt", {"data_type": True})
-    with pytest.raises(ExtensionError, match="Unregistered"):
-        DEFAULT_EXTENSIONS.extend_payload("x-missing", {"extra": True})
+        ExtensionRegistry(({},))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("namespace", "properties", "match"),
+    [
+        ("x-pii", {"extra": True}, "Not an object"),
+        ("x-dlt", {"data_type": True}, "already registered"),
+        ("x-missing", {"extra": True}, "Unregistered"),
+    ],
+    ids=["non-object-payload", "duplicate-property", "unregistered-namespace"],
+)
+def test_extension_registry_fail_extend_payload(namespace: str, properties: dict[str, Any], match: str) -> None:
+    """Payload extensions fail on non-object schemas, collisions, and missing namespaces."""
+    with pytest.raises(ExtensionError, match=match):
+        DEFAULT_EXTENSIONS.extend_payload(namespace, properties)
 
 
 def test_extensions_pass_exact_xsv_schema_and_mapping_api() -> None:

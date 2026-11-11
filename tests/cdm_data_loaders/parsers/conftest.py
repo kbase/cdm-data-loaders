@@ -39,12 +39,6 @@ RESULTS = {
 
 
 @pytest.fixture(scope="session")
-def genome_paths_file() -> str:
-    """Input file for tests."""
-    return "tests/data/genome_paths.json"
-
-
-@pytest.fixture(scope="session")
 def checkm2_stats_results() -> dict[str, Any]:
     """Expected results from parsing checkm2 and bbmap stats files."""
     return RESULTS

@@ -8,12 +8,16 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from pyiceberg.catalog.sql import SqlCatalog
 
-from cdm_data_loaders.core.fields import PARQUET
+from cdm_data_loaders.converters.facades.pyiceberg_to_jsonschema import table_to_json_schema
+from cdm_data_loaders.converters.facades.pyiceberg_to_linkml import table_to_linkml
+from cdm_data_loaders.core.fields import ICEBERG, PARQUET
 from cdm_data_loaders.pipelines.jsonlines.settings import JSONSCHEMA_PIPELINE_NAME, JsonlJsonschemaIngestSettings
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
     LOADER_FILE_FORMATS,
+    assert_iceberg_table_metadata,
     assert_pipeline_report_written,
     assert_run_ok,
     parse_json_string,
@@ -92,12 +96,26 @@ def test_run_jsonlines_pipeline_pass_persists_valid_and_rejected_rows(
     )
     tables = read_data_tables(settings, load_info.dataset_name)
     assert set(tables) == {"widget", "_rejected", "gadget"}
+    expected_widget = EXPECTED_WIDGET_ROW if settings.use_pyarrow else WIDGET_RECORD
+    expected_gadget = EXPECTED_GADGET_ROW if settings.use_pyarrow else GADGET_RECORD
     assert [{key: parse_json_string(value) for key, value in row.items()} for row in tables["widget"]] == [
-        EXPECTED_WIDGET_ROW
+        expected_widget
     ] * 3
-    assert tables["gadget"] == [EXPECTED_GADGET_ROW]
-    if loader_file_format == PARQUET:
-        widget_parquet = next((Path(settings.output_dir) / load_info.dataset_name / "widget").glob("*.parquet"))
+    assert tables["gadget"] == [expected_gadget]
+    dataset_dir = Path(settings.output_dir) / load_info.dataset_name
+    if loader_file_format == ICEBERG:
+        for table_name in ("widget", "gadget", "_rejected"):
+            assert_iceberg_table_metadata(dataset_dir, table_name)
+        with SqlCatalog("test", uri="sqlite:///:memory:") as catalog:
+            catalog.create_namespace(load_info.dataset_name)
+            metadata_file = max((dataset_dir / "widget" / "metadata").glob("*.metadata.json"))
+            iceberg_table = catalog.register_table((load_info.dataset_name, "widget"), metadata_file.as_uri())
+            json_schema_doc = table_to_json_schema(iceberg_table, (load_info.dataset_name, "widget"))
+            linkml_doc = table_to_linkml(iceberg_table, (load_info.dataset_name, "widget"))
+        assert "widget_id" in json_schema_doc["properties"]
+        assert {"widget", "widget_nested"} <= set(linkml_doc.classes)
+    if loader_file_format in {PARQUET, ICEBERG}:
+        widget_parquet = next((dataset_dir / "widget").rglob("*.parquet"))
         parquet_schema = pq.read_schema(widget_parquet)
         assert parquet_schema.field("widget_id").type == pa.string()
         assert parquet_schema.field("count").type == pa.int64()
@@ -207,4 +225,5 @@ def test_cli_pass_loads_selected_entity(
     assert_pipeline_report_written(
         Path(settings.output_dir), load_info, metadata_moved=True, ingested_files=["gadget/records.jsonl"]
     )
-    assert read_data_tables(settings, load_info.dataset_name) == {"gadget": [EXPECTED_GADGET_ROW]}
+    expected_gadget = EXPECTED_GADGET_ROW if settings.use_pyarrow else GADGET_RECORD
+    assert read_data_tables(settings, load_info.dataset_name) == {"gadget": [expected_gadget]}

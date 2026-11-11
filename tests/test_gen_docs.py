@@ -3,21 +3,23 @@
 import ast
 import importlib
 import re
+import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
-import yaml
 from pydantic import AliasChoices
 
-from cdm_data_loaders.converters.jsonschema_to_pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
 from cdm_data_loaders.core.settings import CdmDataLoadersBase
 from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
     run_jsonlines_with_validation_pipeline,
 )
 from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
 from scripts.gen_docs import (
+    BUNDLED_SCHEMAS_PATH,
     CLI_REFERENCE_PATH,
+    GITHUB_BLOB_BASE,
     REPO_ROOT,
     CliEntryDoc,
     discover_api_modules,
@@ -25,7 +27,8 @@ from scripts.gen_docs import (
     load_cli_entries,
     main,
     render_cli_reference,
-    write_mkdocs_api_tree,
+    render_schema_assets_page,
+    repo_blob_url,
 )
 from tests.cdm_data_loaders.pipelines.reference.pipeline import ReferencePipelineSettings
 
@@ -33,31 +36,50 @@ pytestmark = pytest.mark.docs
 
 MIN_EXPECTED_CLIS = 16
 DOCS_DIR = REPO_ROOT / "docs"
-MKDOCS_PATH = REPO_ROOT / "mkdocs.yml"
+ZENSICAL_PATH = REPO_ROOT / "zensical.toml"
 INDEX_PATH = DOCS_DIR / "index.md"
 README_PATH = REPO_ROOT / "README.md"
-DEFAULT_MARKDOWN_PATHS: tuple[Path, ...] = (README_PATH, *sorted(DOCS_DIR.glob("*.md")))
 
+FENCED_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
 PYTHON_FENCE_RE = re.compile(r"```(?:python|py)\n(.*?)```", re.DOTALL)
 SHELL_FENCE_RE = re.compile(r"```(?:bash|sh|shell|console)\n(.*?)```", re.DOTALL)
 CDL_ENV_VAR_RE = re.compile(r"\bCDL_[A-Z0-9_]+\b")
 INDEX_MD_LINK_RE = re.compile(r"\]\(([a-zA-Z0-9_-]+\.md)(?:#[^)]*)?\)")
 README_DOCS_LINK_RE = re.compile(r"\]\(docs/([a-zA-Z0-9_-]+\.md)(?:#[^)]*)?\)")
+GITHUB_BLOB_LINK_RE = re.compile(r"\]\(https://github\.com/kbase/cdm-data-loaders/blob/([^/]+)/([^)#\s]+)(?:#[^)]*)?\)")
 SHELL_STOP_TOKENS = frozenset({"|", "||", "&&", ";", ">", ">>", "<"})
 
 
-class _MkDocsYamlLoader(yaml.SafeLoader):
-    """YAML SafeLoader that ignores MkDocs ``!!python/name:`` extension tags."""
+def _excluded_doc_names(zensical_path: Path = ZENSICAL_PATH) -> set[str]:
+    """Return the set of filenames listed under ``[project].exclude_docs`` in ``zensical.toml``.
+
+    :param zensical_path: path to ``zensical.toml``
+    :type zensical_path: Path
+    :return: excluded Markdown filenames
+    :rtype: set[str]
+    """
+    if not zensical_path.exists():
+        return set()
+    zensical_data = tomllib.loads(zensical_path.read_text(encoding="utf-8"))
+    project_data = zensical_data.get("project", {})
+    raw_exclude = project_data.get("exclude_docs", "") or ""
+    return {line.strip().lstrip("/") for line in str(raw_exclude).splitlines() if line.strip()}
 
 
-_MkDocsYamlLoader.add_multi_constructor(
-    "tag:yaml.org,2002:python/",
-    lambda _loader, _suffix, _node: None,
+DEFAULT_MARKDOWN_PATHS: tuple[Path, ...] = (
+    README_PATH,
+    *sorted(p for p in DOCS_DIR.glob("*.md") if p.name not in _excluded_doc_names()),
 )
 
 
 def _collect_nav_md_entries(nav_node: object) -> set[str]:
-    """Recursively collect ``.md`` file references from a parsed ``mkdocs.yml`` ``nav`` structure."""
+    """Collect ``.md`` file references from a parsed ``zensical.toml`` ``[project].nav`` structure.
+
+    :param nav_node: parsed TOML ``nav`` node
+    :type nav_node: object
+    :return: set of referenced ``.md`` paths
+    :rtype: set[str]
+    """
     found: set[str] = set()
     if isinstance(nav_node, str):
         if nav_node.endswith(".md"):
@@ -71,32 +93,71 @@ def _collect_nav_md_entries(nav_node: object) -> set[str]:
     return found
 
 
-def check_mkdocs_nav_and_index(
+def check_zensical_nav_and_index(
     docs_dir: Path = DOCS_DIR,
-    mkdocs_path: Path = MKDOCS_PATH,
+    zensical_path: Path = ZENSICAL_PATH,
     index_path: Path = INDEX_PATH,
     readme_path: Path = README_PATH,
 ) -> list[str]:
-    """Verify every ``docs/*.md`` file is registered in ``mkdocs.yml``, ``docs/index.md``, and ``README.md``."""
-    mkdocs_data = yaml.load(mkdocs_path.read_text(encoding="utf-8"), Loader=_MkDocsYamlLoader) or {}  # noqa: S506
-    raw_exclude = mkdocs_data.get("exclude_docs", "") or ""
-    excluded_names = {line.strip() for line in str(raw_exclude).splitlines() if line.strip()}
+    """Verify every ``docs/*.md`` file is registered in ``zensical.toml``, ``docs/index.md``, and ``README.md``.
+
+    :param docs_dir: documentation source directory
+    :type docs_dir: Path
+    :param zensical_path: path to ``zensical.toml``
+    :type zensical_path: Path
+    :param index_path: path to ``docs/index.md``
+    :type index_path: Path
+    :param readme_path: path to ``README.md``
+    :type readme_path: Path
+    :return: list of drift error messages
+    :rtype: list[str]
+    """
+    zensical_data = tomllib.loads(zensical_path.read_text(encoding="utf-8"))
+    project_data = zensical_data.get("project", {})
+    raw_exclude = project_data.get("exclude_docs", "") or ""
+    excluded_names = {line.strip().lstrip("/") for line in str(raw_exclude).splitlines() if line.strip()}
 
     docs_files = {p.name for p in docs_dir.glob("*.md") if p.name not in excluded_names}
-    nav_entries = _collect_nav_md_entries(mkdocs_data.get("nav", []))
+    nav_entries = _collect_nav_md_entries(project_data.get("nav", []))
 
     non_index_docs = docs_files - {"index.md"}
     index_links = set(INDEX_MD_LINK_RE.findall(index_path.read_text(encoding="utf-8")))
     readme_links = set(README_DOCS_LINK_RE.findall(readme_path.read_text(encoding="utf-8")))
 
     return [
-        *(f"docs/{name} is missing from mkdocs.yml nav" for name in sorted(docs_files - nav_entries)),
-        *(f"mkdocs.yml nav entry '{name}' does not exist in docs/" for name in sorted(nav_entries - docs_files)),
+        *(f"docs/{name} is missing from zensical.toml nav" for name in sorted(docs_files - nav_entries)),
+        *(f"zensical.toml nav entry '{name}' does not exist in docs/" for name in sorted(nav_entries - docs_files)),
         *(f"docs/{name} is not linked in docs/index.md" for name in sorted(non_index_docs - index_links)),
         *(f"docs/index.md links to non-existent 'docs/{name}'" for name in sorted(index_links - docs_files)),
         *(f"docs/{name} is not linked in README.md" for name in sorted(non_index_docs - readme_links)),
         *(f"README.md links to non-existent 'docs/{name}'" for name in sorted(readme_links - docs_files)),
     ]
+
+
+def check_github_repo_blob_links(
+    md_paths: Sequence[Path] = DEFAULT_MARKDOWN_PATHS,
+    repo_root: Path = REPO_ROOT,
+) -> list[str]:
+    """Verify every repository ``blob/develop`` link in Markdown docs uses ``develop`` and resolves to a file.
+
+    :param md_paths: Markdown files to inspect
+    :type md_paths: Sequence[Path]
+    :param repo_root: repository root directory
+    :type repo_root: Path
+    :return: list of broken or wrong-branch link error messages
+    :rtype: list[str]
+    """
+    errors: list[str] = []
+    for md_path in md_paths:
+        raw_text = md_path.read_text(encoding="utf-8")
+        stripped = FENCED_BLOCK_RE.sub("", raw_text)
+        label = md_path.relative_to(repo_root).as_posix() if md_path.is_relative_to(repo_root) else md_path.name
+        for branch, rel_target in sorted(set(GITHUB_BLOB_LINK_RE.findall(stripped))):
+            if branch != "develop":
+                errors.append(f"{label}: GitHub blob link uses branch '{branch}' instead of 'develop' ('{rel_target}')")
+            if not (repo_root / rel_target).exists():
+                errors.append(f"{label}: GitHub blob link target '{rel_target}' does not exist in repository")
+    return errors
 
 
 def _discover_settings_classes() -> dict[str, type[CdmDataLoadersBase]]:
@@ -314,19 +375,21 @@ def test_main_check_fail_when_output_stale(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Verify main --check returns 1 when the target file is missing or stale, and 0 after regeneration."""
+    """Verify main --check returns 1 when generated files are missing or stale, and 0 after regeneration."""
     out_file = tmp_path / "cli_reference.md"
-    assert main(["--check", "--output", str(out_file)]) == 1
+    schemas_file = tmp_path / "bundled_schemas.md"
+    assert main(["--check", "--output", str(out_file), "--schemas-output", str(schemas_file)]) == 1
     captured = capsys.readouterr()
     assert "stale:" in captured.err
 
-    assert main(["--output", str(out_file)]) == 0
+    assert main(["--output", str(out_file), "--schemas-output", str(schemas_file)]) == 0
     assert out_file.exists()
-    assert main(["--check", "--output", str(out_file)]) == 0
+    assert schemas_file.exists()
+    assert main(["--check", "--output", str(out_file), "--schemas-output", str(schemas_file)]) == 0
 
 
-def test_discover_and_write_mkdocs_api_tree_pass(tmp_path: Path) -> None:
-    """Verify module discovery, schema asset discovery, and MkDocs API tree generation."""
+def test_discover_and_render_schema_assets_pass() -> None:
+    """Verify module discovery, schema asset discovery, and docs/bundled_schemas.md freshness."""
     modules = discover_api_modules()
     module_paths = {mod.module_path for mod in modules}
     assert "cdm_data_loaders" in module_paths
@@ -337,38 +400,30 @@ def test_discover_and_write_mkdocs_api_tree_pass(tmp_path: Path) -> None:
     asset_paths = {asset.rel_path.as_posix() for asset in assets}
     assert "schemas/uniprot/uniprot.xsd" in asset_paths
     assert "schemas/uniref/uniref.xsd" in asset_paths
+    assert repo_blob_url(REPO_ROOT / "zensical.toml") == f"{GITHUB_BLOB_BASE}/zensical.toml"
 
-    written = write_mkdocs_api_tree(output_dir=tmp_path)
-    assert Path("api/SUMMARY.md") in written
-    assert Path("api/index.md") in written
-    assert Path("api/schemas.md") in written
-    assert (tmp_path / "api" / "SUMMARY.md").exists()
-    assert "::: cdm_data_loaders.core.settings" in (tmp_path / "api" / "core" / "settings.md").read_text(
-        encoding="utf-8"
-    )
+    rendered = render_schema_assets_page(assets)
+    assert "# Bundled Schemas & XSD Assets" in rendered
+    assert f"{GITHUB_BLOB_BASE}/src/cdm_data_loaders/schemas/uniprot/uniprot.xsd" in rendered
+    assert BUNDLED_SCHEMAS_PATH.exists()
+    assert BUNDLED_SCHEMAS_PATH.read_text(encoding="utf-8") == rendered
 
 
-def test_write_mkdocs_api_tree_fail_missing_writer_and_output_dir() -> None:
-    """Verify write_mkdocs_api_tree raises ValueError if neither writer nor output_dir is supplied."""
-    with pytest.raises(ValueError, match="Either writer or output_dir must be provided"):
-        write_mkdocs_api_tree(writer=None, output_dir=None)
-
-
-def test_check_mkdocs_nav_and_index_pass() -> None:
-    """Verify every docs/*.md file is indexed in mkdocs.yml nav, docs/index.md, and README.md."""
-    assert check_mkdocs_nav_and_index() == []
+def test_check_zensical_nav_and_index_pass() -> None:
+    """Verify every docs/*.md file is indexed in zensical.toml nav, docs/index.md, and README.md."""
+    assert check_zensical_nav_and_index() == []
 
 
 @pytest.mark.parametrize(
-    ("extra_doc_name", "mkdocs_text", "index_text", "readme_text", "expected_errors"),
+    ("extra_doc_name", "zensical_text", "index_text", "readme_text", "expected_errors"),
     [
         pytest.param(
             "orphan_spec.md",
-            "nav:\n  - Home: index.md\n  - Guide: guide.md\n",
+            '[project]\nnav = [{ "Home" = "index.md" }, { "Guide" = "guide.md" }]\n',
             "[Guide](guide.md)\n",
             "[Guide](docs/guide.md)\n",
             [
-                "docs/orphan_spec.md is missing from mkdocs.yml nav",
+                "docs/orphan_spec.md is missing from zensical.toml nav",
                 "docs/orphan_spec.md is not linked in docs/index.md",
                 "docs/orphan_spec.md is not linked in README.md",
             ],
@@ -376,11 +431,11 @@ def test_check_mkdocs_nav_and_index_pass() -> None:
         ),
         pytest.param(
             None,
-            "nav:\n  - Home: index.md\n  - Guide: guide.md\n  - Ghost: ghost.md\n",
+            '[project]\nnav = [{ "Home" = "index.md" }, { "Guide" = "guide.md" }, { "Ghost" = "ghost.md" }]\n',
             "[Guide](guide.md)\n[Missing](missing_index.md)\n",
             "[Guide](docs/guide.md)\n[Missing](docs/missing_readme.md)\n",
             [
-                "mkdocs.yml nav entry 'ghost.md' does not exist in docs/",
+                "zensical.toml nav entry 'ghost.md' does not exist in docs/",
                 "docs/index.md links to non-existent 'docs/missing_index.md'",
                 "README.md links to non-existent 'docs/missing_readme.md'",
             ],
@@ -388,7 +443,7 @@ def test_check_mkdocs_nav_and_index_pass() -> None:
         ),
         pytest.param(
             "implementation_plan.md",
-            "exclude_docs: |\n  implementation_plan.md\nnav:\n  - Home: index.md\n  - Guide: guide.md\n",
+            '[project]\nexclude_docs = """\nimplementation_plan.md\n"""\nnav = [{ "Home" = "index.md" }, { "Guide" = "guide.md" }]\n',
             "[Guide](guide.md)\n",
             "[Guide](docs/guide.md)\n",
             [],
@@ -396,15 +451,15 @@ def test_check_mkdocs_nav_and_index_pass() -> None:
         ),
     ],
 )
-def test_check_mkdocs_nav_and_index_fail_detects_drift(
+def test_check_zensical_nav_and_index_fail_detects_drift(
     tmp_path: Path,
     extra_doc_name: str | None,
-    mkdocs_text: str,
+    zensical_text: str,
     index_text: str,
     readme_text: str,
     expected_errors: list[str],
 ) -> None:
-    """Verify check_mkdocs_nav_and_index detects orphaned docs and broken links while honoring exclude_docs."""
+    """Verify check_zensical_nav_and_index detects orphaned docs and broken links while honoring exclude_docs."""
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
     index_path = docs_dir / "index.md"
@@ -413,12 +468,54 @@ def test_check_mkdocs_nav_and_index_fail_detects_drift(
     if extra_doc_name is not None:
         (docs_dir / extra_doc_name).write_text("# Extra\n", encoding="utf-8")
 
-    mkdocs_path = tmp_path / "mkdocs.yml"
-    mkdocs_path.write_text(mkdocs_text, encoding="utf-8")
+    zensical_path = tmp_path / "zensical.toml"
+    zensical_path.write_text(zensical_text, encoding="utf-8")
     readme_path = tmp_path / "README.md"
     readme_path.write_text(readme_text, encoding="utf-8")
 
-    assert check_mkdocs_nav_and_index(docs_dir, mkdocs_path, index_path, readme_path) == expected_errors
+    assert check_zensical_nav_and_index(docs_dir, zensical_path, index_path, readme_path) == expected_errors
+
+
+def test_check_github_repo_blob_links_pass() -> None:
+    """Verify every GitHub blob/develop link in docs/ and README.md resolves to an existing repository file."""
+    assert check_github_repo_blob_links() == []
+
+
+@pytest.mark.parametrize(
+    ("markdown_text", "expected_errors"),
+    [
+        pytest.param(
+            f"See [`existing.txt`]({GITHUB_BLOB_BASE}/existing.txt#L1).\n",
+            [],
+            id="existing_blob_target_with_anchor_passes",
+        ),
+        pytest.param(
+            f"See [`missing.py`]({GITHUB_BLOB_BASE}/src/missing.py).\n",
+            ["sample.md: GitHub blob link target 'src/missing.py' does not exist in repository"],
+            id="missing_blob_target_reported",
+        ),
+        pytest.param(
+            "See [`existing.txt`](https://github.com/kbase/cdm-data-loaders/blob/main/existing.txt).\n",
+            ["sample.md: GitHub blob link uses branch 'main' instead of 'develop' ('existing.txt')"],
+            id="non_develop_branch_reported",
+        ),
+        pytest.param(
+            f"```markdown\n[`ignored.py`]({GITHUB_BLOB_BASE}/src/ignored.py)\n```\n",
+            [],
+            id="fenced_code_block_links_ignored",
+        ),
+    ],
+)
+def test_check_github_repo_blob_links_detects_missing_target(
+    tmp_path: Path,
+    markdown_text: str,
+    expected_errors: list[str],
+) -> None:
+    """Verify check_github_repo_blob_links flags wrong branches, missing paths, and ignores fenced code blocks."""
+    (tmp_path / "existing.txt").write_text("ok\n", encoding="utf-8")
+    md_file = tmp_path / "sample.md"
+    md_file.write_text(markdown_text, encoding="utf-8")
+    assert check_github_repo_blob_links([md_file], repo_root=tmp_path) == expected_errors
 
 
 def test_check_markdown_python_blocks_pass() -> None:
@@ -435,8 +532,8 @@ def test_check_markdown_python_blocks_pass() -> None:
             id="removed_symbol_in_from_import",
         ),
         pytest.param(
-            "```python\nfrom cdm_data_loaders.converters.jsonschema_to_pyspark.converter import JSONSchemaToPySpark\n```\n",
-            "cannot import module 'cdm_data_loaders.converters.jsonschema_to_pyspark.converter'",
+            "```python\nfrom cdm_data_loaders.converters.facades.jsonschema_to_pyspark.converter import JSONSchemaToPySpark\n```\n",
+            "cannot import module 'cdm_data_loaders.converters.facades.jsonschema_to_pyspark.converter'",
             id="nonexistent_submodule_in_from_import",
         ),
         pytest.param(

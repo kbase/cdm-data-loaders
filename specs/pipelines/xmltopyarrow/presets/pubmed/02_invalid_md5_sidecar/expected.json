@@ -1,0 +1,8 @@
+{
+  "_rejected": [
+    {
+      "error_detail": "MD5 mismatch for corrupt_sample.xml.gz: expected 00000000000000000000000000000000, got 0db850c2bce102b7757053a174fed330",
+      "source_file": "corrupt_sample.xml.gz"
+    }
+  ]
+}
