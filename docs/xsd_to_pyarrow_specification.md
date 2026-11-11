@@ -530,7 +530,7 @@ This document specifies how an XML Schema (`.xsd`) and a target `xml_tag` determ
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/spec/01_scalars_and_simple_types/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/01_scalars_and_simple_types/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 01_scalars_and_simple_types (xml_tag='record')."""
@@ -724,7 +724,7 @@ Covers `targetNamespace` with `elementFormDefault="qualified"` and the three `xs
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/spec/02_namespaces_and_nillable/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/02_namespaces_and_nillable/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 02_namespaces_and_nillable (xml_tag='entry')."""
@@ -863,7 +863,7 @@ EXPECTED_SCHEMA = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/spec/03_mixed_content_raw_text/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/03_mixed_content_raw_text/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 03_mixed_content_raw_text (xml_tag='article')."""
@@ -1030,7 +1030,7 @@ With `max_recursion_depth=2`, `tree` (depth 1) and its `branch` children (depth 
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/spec/04_recursion_depth/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/04_recursion_depth/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 04_recursion_depth (xml_tag='record')."""
@@ -1310,7 +1310,7 @@ EXPECTED_SCHEMA_DEPTH_1 = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/spec/05_groups_and_compositors/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/05_groups_and_compositors/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 05_groups_and_compositors (xml_tag='item')."""
@@ -1490,7 +1490,7 @@ attribute. The ancestor paths differ, so each `leaf` gets its own type.
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/spec/06_context_dependent_paths/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/06_context_dependent_paths/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 06_context_dependent_paths (xml_tag='root')."""
@@ -1628,7 +1628,7 @@ resolving `xml_tag="entry"` is unambiguous.
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/spec/07_multi_root_shared_type/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/07_multi_root_shared_type/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 07_multi_root_shared_type (xml_tag='entry')."""
@@ -1725,7 +1725,7 @@ EXPECTED_SCHEMA = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/spec/08_nullability_and_empty_tags/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/08_nullability_and_empty_tags/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 08_nullability_and_empty_tags (xml_tag='entry')."""
@@ -1828,7 +1828,7 @@ markers to `pa.list_(pa.string())`.
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/spec/09_empty_marker_elements/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/09_empty_marker_elements/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 09_empty_marker_elements (xml_tag='book')."""
@@ -2732,7 +2732,7 @@ self-recursive type and `complexContent` extension.
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/spec/10_combinations/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/10_combinations/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 10_combinations (xml_tag='record')."""
@@ -3169,12 +3169,12 @@ EXPECTED_SCHEMA = pa.schema(
 DTD-derived schema with mixed-content titles and abstracts, the `(StartPage, EndPage?, MedlinePgn?) | MedlinePgn`
 pagination choice and element-`ref` self-recursion.
 
-**Schema:** [`specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/pubmed.xsd`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/pubmed.xsd)
+**Schema:** [`specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/pubmed.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/pubmed.xsd)
 
-- Run `minimal`: [`minimal.xml`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/minimal.xml), [`minimal_expected.json`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/minimal_expected.json), [`minimal_expected_table.py`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/minimal_expected_table.py)
-- Run `maximal`: [`maximal.xml`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/maximal.xml), [`maximal_expected.json`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/maximal_expected.json), [`maximal_expected_table.py`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/maximal_expected_table.py)
+- Run `minimal`: [`minimal.xml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/minimal.xml), [`minimal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/minimal_expected.json), [`minimal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/minimal_expected_table.py)
+- Run `maximal`: [`maximal.xml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/maximal.xml), [`maximal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/maximal_expected.json), [`maximal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/maximal_expected_table.py)
 
-**Expected PyArrow schema:** [`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/expected_schema.py)
+**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/expected_schema.py)
 
 ---
 
@@ -3189,12 +3189,12 @@ pagination choice and element-`ref` self-recursion.
 Book article variant of the PubMed schema, including recursive `Section` elements and the empty
 `BookInProcess` marker.
 
-**Schema:** [`specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/pubmed.xsd`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/pubmed.xsd)
+**Schema:** [`specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/pubmed.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/pubmed.xsd)
 
-- Run `minimal`: [`minimal.xml`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/minimal.xml), [`minimal_expected.json`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/minimal_expected.json), [`minimal_expected_table.py`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/minimal_expected_table.py)
-- Run `maximal`: [`maximal.xml`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/maximal.xml), [`maximal_expected.json`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/maximal_expected.json), [`maximal_expected_table.py`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/maximal_expected_table.py)
+- Run `minimal`: [`minimal.xml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/minimal.xml), [`minimal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/minimal_expected.json), [`minimal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/minimal_expected_table.py)
+- Run `maximal`: [`maximal.xml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/maximal.xml), [`maximal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/maximal_expected.json), [`maximal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/maximal_expected_table.py)
 
-**Expected PyArrow schema:** [`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/expected_schema.py)
+**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/expected_schema.py)
 
 ---
 
@@ -3209,12 +3209,12 @@ Book article variant of the PubMed schema, including recursive `Section` element
 Exercises `intListType` (`xs:list`), the `date | gYearMonth | gYear` union and nillable `comment` elements
 with attributes.
 
-**Schema:** [`specs/schema_converters/xsd_to_pyarrow/examples/uniprot/uniprot.xsd`](../specs/schema_converters/xsd_to_pyarrow/examples/uniprot/uniprot.xsd)
+**Schema:** [`specs/schema_converters/xsd_to_pyarrow/examples/uniprot/uniprot.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniprot/uniprot.xsd)
 
-- Run `minimal`: [`minimal.xml`](../specs/schema_converters/xsd_to_pyarrow/examples/uniprot/minimal.xml), [`minimal_expected.json`](../specs/schema_converters/xsd_to_pyarrow/examples/uniprot/minimal_expected.json), [`minimal_expected_table.py`](../specs/schema_converters/xsd_to_pyarrow/examples/uniprot/minimal_expected_table.py)
-- Run `maximal`: [`maximal.xml`](../specs/schema_converters/xsd_to_pyarrow/examples/uniprot/maximal.xml), [`maximal_expected.json`](../specs/schema_converters/xsd_to_pyarrow/examples/uniprot/maximal_expected.json), [`maximal_expected_table.py`](../specs/schema_converters/xsd_to_pyarrow/examples/uniprot/maximal_expected_table.py)
+- Run `minimal`: [`minimal.xml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniprot/minimal.xml), [`minimal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniprot/minimal_expected.json), [`minimal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniprot/minimal_expected_table.py)
+- Run `maximal`: [`maximal.xml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniprot/maximal.xml), [`maximal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniprot/maximal_expected.json), [`maximal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniprot/maximal_expected_table.py)
 
-**Expected PyArrow schema:** [`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/examples/uniprot/expected_schema.py)
+**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniprot/expected_schema.py)
 
 ---
 
@@ -3229,12 +3229,12 @@ with attributes.
 Four root elements (`UniRef100`, `UniRef90`, `UniRef50`, `UniRef`) declare `entry` with the shared
 `entryType`, so resolution succeeds.
 
-**Schema:** [`specs/schema_converters/xsd_to_pyarrow/examples/uniref/uniref.xsd`](../specs/schema_converters/xsd_to_pyarrow/examples/uniref/uniref.xsd)
+**Schema:** [`specs/schema_converters/xsd_to_pyarrow/examples/uniref/uniref.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniref/uniref.xsd)
 
-- Run `minimal`: [`minimal.xml`](../specs/schema_converters/xsd_to_pyarrow/examples/uniref/minimal.xml), [`minimal_expected.json`](../specs/schema_converters/xsd_to_pyarrow/examples/uniref/minimal_expected.json), [`minimal_expected_table.py`](../specs/schema_converters/xsd_to_pyarrow/examples/uniref/minimal_expected_table.py)
-- Run `maximal`: [`maximal.xml`](../specs/schema_converters/xsd_to_pyarrow/examples/uniref/maximal.xml), [`maximal_expected.json`](../specs/schema_converters/xsd_to_pyarrow/examples/uniref/maximal_expected.json), [`maximal_expected_table.py`](../specs/schema_converters/xsd_to_pyarrow/examples/uniref/maximal_expected_table.py)
+- Run `minimal`: [`minimal.xml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniref/minimal.xml), [`minimal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniref/minimal_expected.json), [`minimal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniref/minimal_expected_table.py)
+- Run `maximal`: [`maximal.xml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniref/maximal.xml), [`maximal_expected.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniref/maximal_expected.json), [`maximal_expected_table.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniref/maximal_expected_table.py)
 
-**Expected PyArrow schema:** [`expected_schema.py`](../specs/schema_converters/xsd_to_pyarrow/examples/uniref/expected_schema.py)
+**Expected PyArrow schema:** [`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniref/expected_schema.py)
 
 ---
 
@@ -3244,15 +3244,15 @@ Schema generation raises a subclass of `XsdToPyArrowError` (itself a `ValueError
 
 | Code | Exception | Condition | Reason | Fixtures |
 | :--- | :--- | :--- | :--- | :--- |
-| **E1** | `XmlTagNotFoundError` | `xml_tag` not found | The target element is not declared anywhere in the XSD. | [`empty_schema.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/empty_schema.xsd): Schema declares no elements.<br>[`uniref.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/uniref.xsd): `xml_tag` is not declared in an otherwise valid schema. |
-| **E2** | `AmbiguousXmlTagError` | Ambiguous `xml_tag` type | Declarations of `xml_tag` at the shallowest matching depth have different types, so no single `pa.Schema` can be chosen. | [`ambiguous_xml_tag.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/ambiguous_xml_tag.xsd): Root `A` declares `<entry type="Type1"/>` and root `B` declares `<entry type="Type2"/>`. |
-| **E3** | `NonStructXmlTagError` | Non-struct top-level `xml_tag` | A `pa.Table` schema needs top-level columns: the type of `xml_tag` must yield at least one attribute, `#text`, or child element field. | [`scalar_top_level.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/scalar_top_level.xsd): `xml_tag` has a simple type (`xs:string`).<br>[`empty_marker_top_level.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/empty_marker_top_level.xsd): `xml_tag` has an empty `complexType` with no attributes or children.<br>[`no_children.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/no_children.xsd): `xml_tag` is a scalar root element. |
-| **E4** | `WildcardElementError` | Element wildcard (`xs:any`) | Arbitrary undeclared child elements cannot be represented as fixed `pa.struct` fields. | [`wildcard_any_element.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/wildcard_any_element.xsd): `<xs:sequence><xs:any processContents="lax"/></xs:sequence>` |
-| **E5** | `WildcardAttributeError` | Attribute wildcard (`xs:anyAttribute`) | Arbitrary undeclared attributes cannot be represented as fixed `pa.struct` fields. | [`wildcard_any_attribute.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/wildcard_any_attribute.xsd): `<xs:anyAttribute processContents="skip"/>`<br>[`cdata_variety.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/cdata_variety.xsd): Legacy fixture containing `xs:anyAttribute`.<br>[`combinations.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/combinations.xsd): Legacy fixture containing `xs:anyAttribute`. |
-| **E6** | `AbstractComponentError` | Abstract element or type (`abstract="true"`) | Concrete instances of an abstract element or type require `xsi:type` or substitution polymorphism, which has no single schema. | [`abstract_element.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/abstract_element.xsd): Child element declared with `abstract="true"`.<br>[`abstract_type.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/abstract_type.xsd): Child element typed by a `complexType` with `abstract="true"`. |
-| **E7** | `SubstitutionGroupError` | Substitution group | Substituted elements introduce element names and types that are not declared in the parent content model. | [`substitution_group.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/substitution_group.xsd): `<xs:element name="sub" substitutionGroup="head" type="OtherType"/>` |
-| **E8** | `FieldNameCollisionError` | Attribute / child field name collision | An attribute (prefixed `_`) and a child element map to the same field name in one `pa.struct`. | [`attr_child_name_collision.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/attr_child_name_collision.xsd): Attribute `id` (field `_id`) and child element `_id` in the same type. |
-| **E9** | `RecursiveNonJsonTypeError` | Non-JSON-serializable scalar under recursion | Subtrees truncated beyond `max_recursion_depth` are serialized with `json.dumps`, which cannot encode `datetime.date` or `bytes` without lossy conversion. | [`nested_date_under_recursion.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/nested_date_under_recursion.xsd): Recursive `NodeType` has an `xs:date` child element.<br>[`nested_binary_under_recursion.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/errors/nested_binary_under_recursion.xsd): Recursive `NodeType` has an `xs:hexBinary` attribute. |
+| **E1** | `XmlTagNotFoundError` | `xml_tag` not found | The target element is not declared anywhere in the XSD. | [`empty_schema.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/empty_schema.xsd): Schema declares no elements.<br>[`uniref.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/uniref.xsd): `xml_tag` is not declared in an otherwise valid schema. |
+| **E2** | `AmbiguousXmlTagError` | Ambiguous `xml_tag` type | Declarations of `xml_tag` at the shallowest matching depth have different types, so no single `pa.Schema` can be chosen. | [`ambiguous_xml_tag.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/ambiguous_xml_tag.xsd): Root `A` declares `<entry type="Type1"/>` and root `B` declares `<entry type="Type2"/>`. |
+| **E3** | `NonStructXmlTagError` | Non-struct top-level `xml_tag` | A `pa.Table` schema needs top-level columns: the type of `xml_tag` must yield at least one attribute, `#text`, or child element field. | [`scalar_top_level.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/scalar_top_level.xsd): `xml_tag` has a simple type (`xs:string`).<br>[`empty_marker_top_level.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/empty_marker_top_level.xsd): `xml_tag` has an empty `complexType` with no attributes or children.<br>[`no_children.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/no_children.xsd): `xml_tag` is a scalar root element. |
+| **E4** | `WildcardElementError` | Element wildcard (`xs:any`) | Arbitrary undeclared child elements cannot be represented as fixed `pa.struct` fields. | [`wildcard_any_element.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/wildcard_any_element.xsd): `<xs:sequence><xs:any processContents="lax"/></xs:sequence>` |
+| **E5** | `WildcardAttributeError` | Attribute wildcard (`xs:anyAttribute`) | Arbitrary undeclared attributes cannot be represented as fixed `pa.struct` fields. | [`wildcard_any_attribute.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/wildcard_any_attribute.xsd): `<xs:anyAttribute processContents="skip"/>`<br>[`cdata_variety.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/cdata_variety.xsd): Legacy fixture containing `xs:anyAttribute`.<br>[`combinations.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/combinations.xsd): Legacy fixture containing `xs:anyAttribute`. |
+| **E6** | `AbstractComponentError` | Abstract element or type (`abstract="true"`) | Concrete instances of an abstract element or type require `xsi:type` or substitution polymorphism, which has no single schema. | [`abstract_element.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/abstract_element.xsd): Child element declared with `abstract="true"`.<br>[`abstract_type.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/abstract_type.xsd): Child element typed by a `complexType` with `abstract="true"`. |
+| **E7** | `SubstitutionGroupError` | Substitution group | Substituted elements introduce element names and types that are not declared in the parent content model. | [`substitution_group.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/substitution_group.xsd): `<xs:element name="sub" substitutionGroup="head" type="OtherType"/>` |
+| **E8** | `FieldNameCollisionError` | Attribute / child field name collision | An attribute (prefixed `_`) and a child element map to the same field name in one `pa.struct`. | [`attr_child_name_collision.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/attr_child_name_collision.xsd): Attribute `id` (field `_id`) and child element `_id` in the same type. |
+| **E9** | `RecursiveNonJsonTypeError` | Non-JSON-serializable scalar under recursion | Subtrees truncated beyond `max_recursion_depth` are serialized with `json.dumps`, which cannot encode `datetime.date` or `bytes` without lossy conversion. | [`nested_date_under_recursion.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/nested_date_under_recursion.xsd): Recursive `NodeType` has an `xs:date` child element.<br>[`nested_binary_under_recursion.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/errors/nested_binary_under_recursion.xsd): Recursive `NodeType` has an `xs:hexBinary` attribute. |
 
 ## 4. Fixture Index
 
@@ -3260,17 +3260,17 @@ Every case directory contains a `case.yaml` manifest; the test suite and this do
 
 | Case | `xml_tag` | Schema | Runs |
 | :--- | :--- | :--- | :--- |
-| [`spec/01_scalars_and_simple_types`](../specs/schema_converters/xsd_to_pyarrow/spec/01_scalars_and_simple_types/case.yaml) | `record` | [`schema.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/01_scalars_and_simple_types/schema.xsd) | default |
-| [`spec/02_namespaces_and_nillable`](../specs/schema_converters/xsd_to_pyarrow/spec/02_namespaces_and_nillable/case.yaml) | `entry` | [`schema.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/02_namespaces_and_nillable/schema.xsd) | default, clark-notation |
-| [`spec/03_mixed_content_raw_text`](../specs/schema_converters/xsd_to_pyarrow/spec/03_mixed_content_raw_text/case.yaml) | `article` | [`schema.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/03_mixed_content_raw_text/schema.xsd) | default |
-| [`spec/04_recursion_depth`](../specs/schema_converters/xsd_to_pyarrow/spec/04_recursion_depth/case.yaml) | `record` | [`schema.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/04_recursion_depth/schema.xsd) | depth-2, depth-1 |
-| [`spec/05_groups_and_compositors`](../specs/schema_converters/xsd_to_pyarrow/spec/05_groups_and_compositors/case.yaml) | `item` | [`schema.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/05_groups_and_compositors/schema.xsd) | default |
-| [`spec/06_context_dependent_paths`](../specs/schema_converters/xsd_to_pyarrow/spec/06_context_dependent_paths/case.yaml) | `root` | [`schema.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/06_context_dependent_paths/schema.xsd) | default |
-| [`spec/07_multi_root_shared_type`](../specs/schema_converters/xsd_to_pyarrow/spec/07_multi_root_shared_type/case.yaml) | `entry` | [`schema.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/07_multi_root_shared_type/schema.xsd) | default |
-| [`spec/08_nullability_and_empty_tags`](../specs/schema_converters/xsd_to_pyarrow/spec/08_nullability_and_empty_tags/case.yaml) | `entry` | [`schema.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/08_nullability_and_empty_tags/schema.xsd) | default |
-| [`spec/09_empty_marker_elements`](../specs/schema_converters/xsd_to_pyarrow/spec/09_empty_marker_elements/case.yaml) | `book` | [`schema.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/09_empty_marker_elements/schema.xsd) | default |
-| [`spec/10_combinations`](../specs/schema_converters/xsd_to_pyarrow/spec/10_combinations/case.yaml) | `record` | [`schema.xsd`](../specs/schema_converters/xsd_to_pyarrow/spec/10_combinations/schema.xsd) | default |
-| [`examples/pubmed_article`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/case.yaml) | `PubmedArticle` | [`pubmed.xsd`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/pubmed.xsd) | minimal, maximal |
-| [`examples/pubmed_book_article`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/case.yaml) | `PubmedBookArticle` | [`pubmed.xsd`](../specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/pubmed.xsd) | minimal, maximal |
-| [`examples/uniprot`](../specs/schema_converters/xsd_to_pyarrow/examples/uniprot/case.yaml) | `entry` | [`uniprot.xsd`](../specs/schema_converters/xsd_to_pyarrow/examples/uniprot/uniprot.xsd) | minimal, maximal |
-| [`examples/uniref`](../specs/schema_converters/xsd_to_pyarrow/examples/uniref/case.yaml) | `entry` | [`uniref.xsd`](../specs/schema_converters/xsd_to_pyarrow/examples/uniref/uniref.xsd) | minimal, maximal |
+| [`spec/01_scalars_and_simple_types`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/01_scalars_and_simple_types/case.yaml) | `record` | [`schema.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/01_scalars_and_simple_types/schema.xsd) | default |
+| [`spec/02_namespaces_and_nillable`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/02_namespaces_and_nillable/case.yaml) | `entry` | [`schema.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/02_namespaces_and_nillable/schema.xsd) | default, clark-notation |
+| [`spec/03_mixed_content_raw_text`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/03_mixed_content_raw_text/case.yaml) | `article` | [`schema.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/03_mixed_content_raw_text/schema.xsd) | default |
+| [`spec/04_recursion_depth`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/04_recursion_depth/case.yaml) | `record` | [`schema.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/04_recursion_depth/schema.xsd) | depth-2, depth-1 |
+| [`spec/05_groups_and_compositors`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/05_groups_and_compositors/case.yaml) | `item` | [`schema.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/05_groups_and_compositors/schema.xsd) | default |
+| [`spec/06_context_dependent_paths`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/06_context_dependent_paths/case.yaml) | `root` | [`schema.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/06_context_dependent_paths/schema.xsd) | default |
+| [`spec/07_multi_root_shared_type`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/07_multi_root_shared_type/case.yaml) | `entry` | [`schema.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/07_multi_root_shared_type/schema.xsd) | default |
+| [`spec/08_nullability_and_empty_tags`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/08_nullability_and_empty_tags/case.yaml) | `entry` | [`schema.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/08_nullability_and_empty_tags/schema.xsd) | default |
+| [`spec/09_empty_marker_elements`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/09_empty_marker_elements/case.yaml) | `book` | [`schema.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/09_empty_marker_elements/schema.xsd) | default |
+| [`spec/10_combinations`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/10_combinations/case.yaml) | `record` | [`schema.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/spec/10_combinations/schema.xsd) | default |
+| [`examples/pubmed_article`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/case.yaml) | `PubmedArticle` | [`pubmed.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_article/pubmed.xsd) | minimal, maximal |
+| [`examples/pubmed_book_article`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/case.yaml) | `PubmedBookArticle` | [`pubmed.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/pubmed_book_article/pubmed.xsd) | minimal, maximal |
+| [`examples/uniprot`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniprot/case.yaml) | `entry` | [`uniprot.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniprot/uniprot.xsd) | minimal, maximal |
+| [`examples/uniref`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniref/case.yaml) | `entry` | [`uniref.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/schema_converters/xsd_to_pyarrow/examples/uniref/uniref.xsd) | minimal, maximal |

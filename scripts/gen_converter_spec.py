@@ -96,6 +96,7 @@ from scripts.gen_docs import (
     format_value_code,
     mro_class_names,
     rel_posix,
+    repo_blob_url,
 )
 from tests.cdm_data_loaders.pipelines.framework import resolve_pipeline
 from tests.converter_spec import (
@@ -622,7 +623,6 @@ def _render_embedded_run(
 
 def _render_case(case: Case, catalogue: RuleCatalogue, config: ConverterSpecConfig) -> list[str]:
     """Render a single converter or base pipeline specification case section."""
-    doc_dir = config.output.parent
     out = [f'<a id="{case.anchor}"></a>', "", f"### {case.title} (`{case.suite}/{case.name}`)", ""]
     out += [f"**Rules:** {_format_rule_links(case.rules, catalogue)}", ""]
     if config.target_label and case.xml_tag:
@@ -634,7 +634,7 @@ def _render_case(case: Case, catalogue: RuleCatalogue, config: ConverterSpecConf
     if embed:
         out += [f"#### Schema (`{case.schema.name}`)", "", _code_block(case.schema, config.schema_lang), ""]
     else:
-        out += [f"**Schema:** [`{rel_posix(case.schema, REPO_ROOT)}`]({rel_posix(case.schema, doc_dir)})", ""]
+        out += [f"**Schema:** [`{rel_posix(case.schema, REPO_ROOT)}`]({repo_blob_url(case.schema)})", ""]
 
     seen_data: set[Path] = set()
     for run in case.runs:
@@ -646,12 +646,12 @@ def _render_case(case: Case, catalogue: RuleCatalogue, config: ConverterSpecConf
             out += _render_embedded_run(run, case, config, suffix, seen_data)
         else:
             files = [run.data, run.expected_json, run.expected_table]
-            listed = ", ".join(f"[`{f.name}`]({rel_posix(f, doc_dir)})" for f in files)
+            listed = ", ".join(f"[`{f.name}`]({repo_blob_url(f)})" for f in files)
             out += [f"- Run `{run.id}`{suffix}: {listed}"]
     if not embed:
         out.append("")
 
-    schema_link = f"[`{case.expected_schema.name}`]({rel_posix(case.expected_schema, doc_dir)})"
+    schema_link = f"[`{case.expected_schema.name}`]({repo_blob_url(case.expected_schema)})"
     if embed:
         out += [f"#### PyArrow schema ({schema_link})", "", _code_block(case.expected_schema, "python"), ""]
     else:
@@ -662,7 +662,6 @@ def _render_case(case: Case, catalogue: RuleCatalogue, config: ConverterSpecConf
 
 def _render_errors(errors: Sequence[ErrorCase], config: ConverterSpecConfig, *, heading_num: int = 3) -> list[str]:
     """Render the numbered error catalogue table for ``config``."""
-    doc_dir = config.output.parent
     by_code: dict[str, list[ErrorCase]] = {}
     for err in errors:
         by_code.setdefault(err.code, []).append(err)
@@ -681,7 +680,7 @@ def _render_errors(errors: Sequence[ErrorCase], config: ConverterSpecConfig, *, 
         title: str = getattr(cls, "title", "")
         reason = " ".join((cls.__doc__ or "").split())
         fixtures = "<br>".join(
-            f"[`{e.file.name}`]({rel_posix(e.file, doc_dir)}): {e.description}" for e in by_code.get(code, [])
+            f"[`{e.file.name}`]({repo_blob_url(e.file)}): {e.description}" for e in by_code.get(code, [])
         )
         out.append(f"| **{code}** | `{cls.__name__}` | {title} | {reason} | {fixtures} |")
     out.append("")
@@ -690,7 +689,6 @@ def _render_errors(errors: Sequence[ErrorCase], config: ConverterSpecConfig, *, 
 
 def _render_index(cases: Sequence[Case], config: ConverterSpecConfig, *, heading_num: int = 4) -> list[str]:
     """Render the fixture index table for a converter specification."""
-    doc_dir = config.output.parent
     out = [
         f"## {heading_num}. Fixture Index",
         "",
@@ -708,8 +706,8 @@ def _render_index(cases: Sequence[Case], config: ConverterSpecConfig, *, heading
         runs = ", ".join(r.id for r in case.runs)
         target_cell = f" `{case.xml_tag}` |" if target else ""
         out.append(
-            f"| [`{case.suite}/{case.name}`]({rel_posix(manifest, doc_dir)}) |{target_cell} "
-            f"[`{case.schema.name}`]({rel_posix(case.schema, doc_dir)}) | {runs} |"
+            f"| [`{case.suite}/{case.name}`]({repo_blob_url(manifest)}) |{target_cell} "
+            f"[`{case.schema.name}`]({repo_blob_url(case.schema)}) | {runs} |"
         )
     out.append("")
     return out
@@ -925,12 +923,10 @@ def _render_preset_case(case: PipelineCase, catalogue: RuleCatalogue) -> list[st
 
 def _render_pipeline_fixture_index(
     cases: Sequence[PipelineCase],
-    spec: PipelineSpecConfig,
     *,
     heading_num: int,
 ) -> list[str]:
     """Render the fixture index table for a pipeline specification."""
-    doc_dir = spec.output_path.parent
     out = [
         f"## {heading_num}. Fixture Index",
         "",
@@ -944,7 +940,7 @@ def _render_pipeline_fixture_index(
         runs = ", ".join(r.id for r in case.runs)
         out.append(
             f"| [`{case.suite}/{case.name}`](#{case.anchor}) | `{case.pipeline}` | "
-            f"[`case.yaml`]({rel_posix(manifest, doc_dir)}) | {runs} |"
+            f"[`case.yaml`]({repo_blob_url(manifest)}) | {runs} |"
         )
     out.append("")
     return out
@@ -1000,7 +996,7 @@ def _render_pipeline_cases_and_errors(
         lines.extend(_render_errors(errors, conv_cfg, heading_num=next_heading))
         next_heading += 1
 
-    lines.extend(_render_pipeline_fixture_index(cases, spec, heading_num=next_heading))
+    lines.extend(_render_pipeline_fixture_index(cases, heading_num=next_heading))
     return lines
 
 

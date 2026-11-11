@@ -558,6 +558,6 @@ Every case directory contains a `case.yaml` manifest; the test suites and this d
 
 | Case | Target CLI | Manifest | Runs |
 | :--- | :--- | :--- | :--- |
-| [`spec/01_nested_glob_gzip_and_parse_rejections`](#case-spec-01-nested-glob-gzip-and-parse-rejections) | `jsonlines_extract` | [`case.yaml`](../specs/pipelines/jsonlines_extract/spec/01_nested_glob_gzip_and_parse_rejections/case.yaml) | default |
-| [`spec/02_md5_sidecar_preprocessing`](#case-spec-02-md5-sidecar-preprocessing) | `jsonlines_extract` | [`case.yaml`](../specs/pipelines/jsonlines_extract/spec/02_md5_sidecar_preprocessing/case.yaml) | partial_md5_failure |
-| [`spec/03_table_transforms_and_output_schemas`](#case-spec-03-table-transforms-and-output-schemas) | `jsonlines_extract` | [`case.yaml`](../specs/pipelines/jsonlines_extract/spec/03_table_transforms_and_output_schemas/case.yaml) | default |
+| [`spec/01_nested_glob_gzip_and_parse_rejections`](#case-spec-01-nested-glob-gzip-and-parse-rejections) | `jsonlines_extract` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_extract/spec/01_nested_glob_gzip_and_parse_rejections/case.yaml) | default |
+| [`spec/02_md5_sidecar_preprocessing`](#case-spec-02-md5-sidecar-preprocessing) | `jsonlines_extract` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_extract/spec/02_md5_sidecar_preprocessing/case.yaml) | partial_md5_failure |
+| [`spec/03_table_transforms_and_output_schemas`](#case-spec-03-table-transforms-and-output-schemas) | `jsonlines_extract` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/jsonlines_extract/spec/03_table_transforms_and_output_schemas/case.yaml) | default |

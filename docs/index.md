@@ -45,6 +45,6 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Comparati
 
 ### Code & Schema Reference
 
-- **[Python API Reference](api/index.md)**: Auto-generated API reference for all packages and modules under `src/cdm_data_loaders/`.
-- **[Bundled Schemas & XSD Assets](api/schemas.md)**: Catalog of bundled JSON Schemas and XML Schemas (`src/cdm_data_loaders/schemas/` and `parsers/`).
+- **[Python API Reference](api/cdm_data_loaders/index.md)**: Auto-generated API reference for all packages and modules under `src/cdm_data_loaders/`.
+- **[Bundled Schemas & XSD Assets](bundled_schemas.md)**: Catalog of bundled JSON Schemas and XML Schemas (`src/cdm_data_loaders/schemas/` and `parsers/`).
 

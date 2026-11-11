@@ -167,5 +167,5 @@ errors:
 1. Create `specs/schema_converters/<new_converter>/rules.yaml`, `spec/`, and `spec/errors/manifest.yaml`.
 2. Register a `ConverterSpecConfig` entry in `CONFIGS` inside `scripts/gen_converter_spec.py`.
 3. Run `uv run python -m scripts.gen_converter_spec` to generate `docs/<new_converter>_specification.md`.
-4. Register `docs/<new_converter>_specification.md` in `mkdocs.yml` (`nav`), `docs/index.md`, and `README.md`.
-5. Verify with `uv run pytest -m docs` and `uv run mkdocs build --strict`.
+4. Register `docs/<new_converter>_specification.md` in `zensical.toml` (`[project].nav`), `docs/index.md`, and `README.md`.
+5. Verify with `uv run pytest -m docs` and `uv run --group docs zensical build --strict`.

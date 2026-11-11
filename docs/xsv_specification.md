@@ -436,7 +436,7 @@ rec-2	-100	0	-0.25	0.50	false	2025-02-20	2025-02-20T14:00:00Z	inactive
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xsv/spec/01_scalars_nullability_and_column_order/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/01_scalars_nullability_and_column_order/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 01_scalars_nullability_and_column_order."""
@@ -549,7 +549,7 @@ S#2;8.75;'escaped \'quote\' inside'
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xsv/spec/02_delimiters_comments_quotes_and_escapes/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/02_delimiters_comments_quotes_and_escapes/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 02_delimiters_comments_quotes_and_escapes."""
@@ -659,7 +659,7 @@ G0003,0,Saccharomyces cerevisiae
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xsv/spec/03_missing_header_and_defs_ref/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/03_missing_header_and_defs_ref/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 03_missing_header_and_defs_ref."""
@@ -787,7 +787,7 @@ station-4	25	null	OK
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xsv/spec/04_null_regex_and_null_cols/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/04_null_regex_and_null_cols/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 04_null_regex_and_null_cols."""
@@ -922,7 +922,7 @@ R2,100,not-a-date
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xsv/spec/05_partial_and_total_validation_rejections/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/05_partial_and_total_validation_rejections/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 05_partial_and_total_validation_rejections."""
@@ -1030,7 +1030,7 @@ sample_num,sample_name
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xsv/spec/06_multi_file_glob_and_subdirs/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/06_multi_file_glob_and_subdirs/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 06_multi_file_glob_and_subdirs."""
@@ -1124,7 +1124,7 @@ s-3,120.5,ok
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xsv/spec/07_table_transforms_and_output_schemas/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/07_table_transforms_and_output_schemas/expected_schema.py))
 
 ```python
 """Expected default PyArrow schema (from schema.json before output_schemas override) for 07_table_transforms_and_output_schemas."""
@@ -1148,11 +1148,11 @@ Schema generation raises a subclass of `XsvSchemaError` (itself a `RuntimeError`
 
 | Code | Exception | Condition | Reason | Fixtures |
 | :--- | :--- | :--- | :--- | :--- |
-| **E1** | `UnsupportedXsvDialectError` | Missing or unsupported `$schema` dialect | Only JSON Schema Draft 2020-12 and the KBase Draft 2020-12 XSV metaschema are supported. | [`missing_schema_keyword.json`](../specs/pipelines/xsv/spec/errors/missing_schema_keyword.json): No `$schema` keyword.<br>[`unsupported_dialect.json`](../specs/pipelines/xsv/spec/errors/unsupported_dialect.json): Declares an unknown `$schema` dialect URI. |
-| **E2** | `MissingRequiredColumnsError` | Missing or empty `required` column list | XSV schemas must declare a non-empty list of column headers in the top-level `required` array. | [`missing_required.json`](../specs/pipelines/xsv/spec/errors/missing_required.json): Top-level `required` keyword is omitted.<br>[`empty_required.json`](../specs/pipelines/xsv/spec/errors/empty_required.json): Top-level `required` is `[]`. |
-| **E3** | `InvalidXsvSchemaDefinitionError` | Invalid JSON Schema or `x-xsv-config` block | The document is not valid JSON Schema or contains an invalid `x-xsv-config` parser block. | [`invalid_xsv_config_delimiter.json`](../specs/pipelines/xsv/spec/errors/invalid_xsv_config_delimiter.json): `x-xsv-config.x-delimiter` is a two-character string `"::"`.<br>[`invalid_xsv_config_unknown_key.json`](../specs/pipelines/xsv/spec/errors/invalid_xsv_config_unknown_key.json): `x-xsv-config` contains an unrecognized property `"x-unknown"`.<br>[`invalid_json_schema_type.json`](../specs/pipelines/xsv/spec/errors/invalid_json_schema_type.json): Property declares `"type": "not-a-valid-type"`. |
-| **E4** | `UnresolvableXsvRefError` | Unresolvable `$ref` pointer | All `$ref` pointers in an XSV schema must resolve against local `$defs` before conversion. | [`unresolvable_ref.json`](../specs/pipelines/xsv/spec/errors/unresolvable_ref.json): Property references missing `#/$defs/MissingDef`. |
-| **E5** | `UnsupportedXsvArrowConstructError` | Unsupported PyArrow column construct | Every XSV column must convert to a supported PyArrow type under a top-level `object` schema. | [`non_struct_root.json`](../specs/pipelines/xsv/spec/errors/non_struct_root.json): Root declares `"type": "array"` despite having `required`.<br>[`unsupported_column_construct.json`](../specs/pipelines/xsv/spec/errors/unsupported_column_construct.json): Column property uses `"$dynamicRef": "#Node"`. |
+| **E1** | `UnsupportedXsvDialectError` | Missing or unsupported `$schema` dialect | Only JSON Schema Draft 2020-12 and the KBase Draft 2020-12 XSV metaschema are supported. | [`missing_schema_keyword.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/errors/missing_schema_keyword.json): No `$schema` keyword.<br>[`unsupported_dialect.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/errors/unsupported_dialect.json): Declares an unknown `$schema` dialect URI. |
+| **E2** | `MissingRequiredColumnsError` | Missing or empty `required` column list | XSV schemas must declare a non-empty list of column headers in the top-level `required` array. | [`missing_required.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/errors/missing_required.json): Top-level `required` keyword is omitted.<br>[`empty_required.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/errors/empty_required.json): Top-level `required` is `[]`. |
+| **E3** | `InvalidXsvSchemaDefinitionError` | Invalid JSON Schema or `x-xsv-config` block | The document is not valid JSON Schema or contains an invalid `x-xsv-config` parser block. | [`invalid_xsv_config_delimiter.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/errors/invalid_xsv_config_delimiter.json): `x-xsv-config.x-delimiter` is a two-character string `"::"`.<br>[`invalid_xsv_config_unknown_key.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/errors/invalid_xsv_config_unknown_key.json): `x-xsv-config` contains an unrecognized property `"x-unknown"`.<br>[`invalid_json_schema_type.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/errors/invalid_json_schema_type.json): Property declares `"type": "not-a-valid-type"`. |
+| **E4** | `UnresolvableXsvRefError` | Unresolvable `$ref` pointer | All `$ref` pointers in an XSV schema must resolve against local `$defs` before conversion. | [`unresolvable_ref.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/errors/unresolvable_ref.json): Property references missing `#/$defs/MissingDef`. |
+| **E5** | `UnsupportedXsvArrowConstructError` | Unsupported PyArrow column construct | Every XSV column must convert to a supported PyArrow type under a top-level `object` schema. | [`non_struct_root.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/errors/non_struct_root.json): Root declares `"type": "array"` despite having `required`.<br>[`unsupported_column_construct.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/errors/unsupported_column_construct.json): Column property uses `"$dynamicRef": "#Node"`. |
 
 ## 5. Fixture Index
 
@@ -1160,10 +1160,10 @@ Every case directory contains a `case.yaml` manifest; the test suites and this d
 
 | Case | Target CLI | Manifest | Runs |
 | :--- | :--- | :--- | :--- |
-| [`spec/01_scalars_nullability_and_column_order`](#case-spec-01-scalars-nullability-and-column-order) | `xsv` | [`case.yaml`](../specs/pipelines/xsv/spec/01_scalars_nullability_and_column_order/case.yaml) | default |
-| [`spec/02_delimiters_comments_quotes_and_escapes`](#case-spec-02-delimiters-comments-quotes-and-escapes) | `xsv` | [`case.yaml`](../specs/pipelines/xsv/spec/02_delimiters_comments_quotes_and_escapes/case.yaml) | default |
-| [`spec/03_missing_header_and_defs_ref`](#case-spec-03-missing-header-and-defs-ref) | `xsv` | [`case.yaml`](../specs/pipelines/xsv/spec/03_missing_header_and_defs_ref/case.yaml) | default |
-| [`spec/04_null_regex_and_null_cols`](#case-spec-04-null-regex-and-null-cols) | `xsv` | [`case.yaml`](../specs/pipelines/xsv/spec/04_null_regex_and_null_cols/case.yaml) | default |
-| [`spec/05_partial_and_total_validation_rejections`](#case-spec-05-partial-and-total-validation-rejections) | `xsv` | [`case.yaml`](../specs/pipelines/xsv/spec/05_partial_and_total_validation_rejections/case.yaml) | partial_recovery, total_failure |
-| [`spec/06_multi_file_glob_and_subdirs`](#case-spec-06-multi-file-glob-and-subdirs) | `xsv` | [`case.yaml`](../specs/pipelines/xsv/spec/06_multi_file_glob_and_subdirs/case.yaml) | default |
-| [`spec/07_table_transforms_and_output_schemas`](#case-spec-07-table-transforms-and-output-schemas) | `xsv` | [`case.yaml`](../specs/pipelines/xsv/spec/07_table_transforms_and_output_schemas/case.yaml) | with_transforms |
+| [`spec/01_scalars_nullability_and_column_order`](#case-spec-01-scalars-nullability-and-column-order) | `xsv` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/01_scalars_nullability_and_column_order/case.yaml) | default |
+| [`spec/02_delimiters_comments_quotes_and_escapes`](#case-spec-02-delimiters-comments-quotes-and-escapes) | `xsv` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/02_delimiters_comments_quotes_and_escapes/case.yaml) | default |
+| [`spec/03_missing_header_and_defs_ref`](#case-spec-03-missing-header-and-defs-ref) | `xsv` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/03_missing_header_and_defs_ref/case.yaml) | default |
+| [`spec/04_null_regex_and_null_cols`](#case-spec-04-null-regex-and-null-cols) | `xsv` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/04_null_regex_and_null_cols/case.yaml) | default |
+| [`spec/05_partial_and_total_validation_rejections`](#case-spec-05-partial-and-total-validation-rejections) | `xsv` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/05_partial_and_total_validation_rejections/case.yaml) | partial_recovery, total_failure |
+| [`spec/06_multi_file_glob_and_subdirs`](#case-spec-06-multi-file-glob-and-subdirs) | `xsv` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/06_multi_file_glob_and_subdirs/case.yaml) | default |
+| [`spec/07_table_transforms_and_output_schemas`](#case-spec-07-table-transforms-and-output-schemas) | `xsv` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xsv/spec/07_table_transforms_and_output_schemas/case.yaml) | with_transforms |

@@ -411,7 +411,7 @@ OUTPUT_SCHEMAS: dict[str, pa.Schema] = {
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xmltopyarrow/spec/01_single_tag_and_default_namespace/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/01_single_tag_and_default_namespace/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 01_single_tag_and_default_namespace (xml_tag='item')."""
@@ -544,7 +544,7 @@ EXPECTED_SCHEMA = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xmltopyarrow/spec/02_self_nested_tags_and_recursion_depth/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/02_self_nested_tags_and_recursion_depth/expected_schema.py))
 
 ```python
 """Expected PyArrow schemas for 02_self_nested_tags_and_recursion_depth (xml_tag='category')."""
@@ -697,7 +697,7 @@ EXPECTED_SCHEMA_DEPTH_1 = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xmltopyarrow/spec/03_level_mode_and_root_tag/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/03_level_mode_and_root_tag/expected_schema.py))
 
 ```python
 """Expected PyArrow schemas for 03_level_mode_and_root_tag."""
@@ -808,7 +808,7 @@ Not an XML file; ignored by file_glob.
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xmltopyarrow/spec/04_multi_file_gzip_and_subdirs/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/04_multi_file_gzip_and_subdirs/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 04_multi_file_gzip_and_subdirs (xml_tag='entry')."""
@@ -957,7 +957,7 @@ not-a-valid-md5-line
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xmltopyarrow/spec/05_md5_sidecar_preprocessing_and_rejected/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/05_md5_sidecar_preprocessing_and_rejected/expected_schema.py))
 
 ```python
 """Expected PyArrow schema for 05_md5_sidecar_preprocessing_and_rejected."""
@@ -1062,7 +1062,7 @@ EXPECTED_SCHEMA = pa.schema(
 ]
 ```
 
-#### PyArrow schema ([`expected_schema.py`](../specs/pipelines/xmltopyarrow/spec/06_table_transforms_and_output_schemas/expected_schema.py))
+#### PyArrow schema ([`expected_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/06_table_transforms_and_output_schemas/expected_schema.py))
 
 ```python
 """Expected PyArrow schemas for 06_table_transforms_and_output_schemas."""
@@ -1476,11 +1476,11 @@ Schema generation raises a subclass of `XmlToPyArrowConfigError` (itself a `Valu
 
 | Code | Exception | Condition | Reason | Fixtures |
 | :--- | :--- | :--- | :--- | :--- |
-| **E1** | `InvalidXmlTargetSelectionError` | Invalid or mutually exclusive XML target selection | `xml_level` cannot be combined with `xml_tag` or `table_name`; `xml_tag` and `table_name` are both required when `xml_level` is not set; `root_tag` is only valid when `xml_level` is set. | [`01_missing_xml_tag_in_single_mode.xsd`](../specs/pipelines/xmltopyarrow/spec/errors/01_missing_xml_tag_in_single_mode.xsd): Single-tag mode (`xml_level` omitted) without `xml_tag`.<br>[`02_root_tag_in_single_mode.xsd`](../specs/pipelines/xmltopyarrow/spec/errors/02_root_tag_in_single_mode.xsd): Specifying `root_tag` in single-tag mode without `xml_level`.<br>[`03_xml_tag_with_xml_level.xsd`](../specs/pipelines/xmltopyarrow/spec/errors/03_xml_tag_with_xml_level.xsd): Combining `xml_level` with `xml_tag` or `table_name`. |
-| **E2** | `InvalidXsdDocumentError` | Malformed XML or invalid W3C XML Schema | `xsd_file` must be a well-formed XML document and a valid W3C XML Schema (`xs:schema`). | [`04_malformed_xsd_xml.xsd`](../specs/pipelines/xmltopyarrow/spec/errors/04_malformed_xsd_xml.xsd): Malformed XML in `xsd_file` fails `load_schema`.<br>[`05_non_xsd_root_element.xsd`](../specs/pipelines/xmltopyarrow/spec/errors/05_non_xsd_root_element.xsd): XML file whose root element is not `<xs:schema>` fails `load_schema`. |
-| **E3** | `XmlTargetNotFoundError` | Target XML tag, root tag, or level not found in XSD | The configured `xml_tag`, `root_tag`, or `xml_level` does not resolve to any element declaration in the XSD. | [`06_unknown_xml_tag.xsd`](../specs/pipelines/xmltopyarrow/spec/errors/06_unknown_xml_tag.xsd): `xml_tag` does not match any element declaration in the XSD.<br>[`07_no_elements_at_xml_level.xsd`](../specs/pipelines/xmltopyarrow/spec/errors/07_no_elements_at_xml_level.xsd): `xml_level` exceeds the depth of all element declarations in the XSD. |
-| **E4** | `UnsupportedXsdTargetError` | Target element or descendant uses an unsupported XSD construct | The target element must map to a PyArrow struct table schema and cannot contain unsupported XSD constructs (such as scalar-only roots or recursive non-JSON types). | [`08_scalar_target_element.xsd`](../specs/pipelines/xmltopyarrow/spec/errors/08_scalar_target_element.xsd): Target element has a scalar simple type rather than a complex type (`E3` in `xsd_to_pyarrow`). |
-| **E5** | `InvalidXmlPipelineHookError` | Invalid pre-processor, transform, or output schema hook | Configured `preprocessors_module`, `transforms_module`, or `output_schemas_module` references unknown table names or omits required output schemas. | [`09_unknown_transform_table_single_mode.xsd`](../specs/pipelines/xmltopyarrow/spec/errors/09_unknown_transform_table_single_mode.xsd): `transforms_module` defines `TABLE_TRANSFORMS` for a table name not matching `table_name` in single-tag mode.<br>[`10_unknown_transform_table_level_mode.xsd`](../specs/pipelines/xmltopyarrow/spec/errors/10_unknown_transform_table_level_mode.xsd): `transforms_module` defines `TABLE_TRANSFORMS` for a table name not present among elements at `xml_level`. |
+| **E1** | `InvalidXmlTargetSelectionError` | Invalid or mutually exclusive XML target selection | `xml_level` cannot be combined with `xml_tag` or `table_name`; `xml_tag` and `table_name` are both required when `xml_level` is not set; `root_tag` is only valid when `xml_level` is set. | [`01_missing_xml_tag_in_single_mode.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/errors/01_missing_xml_tag_in_single_mode.xsd): Single-tag mode (`xml_level` omitted) without `xml_tag`.<br>[`02_root_tag_in_single_mode.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/errors/02_root_tag_in_single_mode.xsd): Specifying `root_tag` in single-tag mode without `xml_level`.<br>[`03_xml_tag_with_xml_level.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/errors/03_xml_tag_with_xml_level.xsd): Combining `xml_level` with `xml_tag` or `table_name`. |
+| **E2** | `InvalidXsdDocumentError` | Malformed XML or invalid W3C XML Schema | `xsd_file` must be a well-formed XML document and a valid W3C XML Schema (`xs:schema`). | [`04_malformed_xsd_xml.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/errors/04_malformed_xsd_xml.xsd): Malformed XML in `xsd_file` fails `load_schema`.<br>[`05_non_xsd_root_element.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/errors/05_non_xsd_root_element.xsd): XML file whose root element is not `<xs:schema>` fails `load_schema`. |
+| **E3** | `XmlTargetNotFoundError` | Target XML tag, root tag, or level not found in XSD | The configured `xml_tag`, `root_tag`, or `xml_level` does not resolve to any element declaration in the XSD. | [`06_unknown_xml_tag.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/errors/06_unknown_xml_tag.xsd): `xml_tag` does not match any element declaration in the XSD.<br>[`07_no_elements_at_xml_level.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/errors/07_no_elements_at_xml_level.xsd): `xml_level` exceeds the depth of all element declarations in the XSD. |
+| **E4** | `UnsupportedXsdTargetError` | Target element or descendant uses an unsupported XSD construct | The target element must map to a PyArrow struct table schema and cannot contain unsupported XSD constructs (such as scalar-only roots or recursive non-JSON types). | [`08_scalar_target_element.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/errors/08_scalar_target_element.xsd): Target element has a scalar simple type rather than a complex type (`E3` in `xsd_to_pyarrow`). |
+| **E5** | `InvalidXmlPipelineHookError` | Invalid pre-processor, transform, or output schema hook | Configured `preprocessors_module`, `transforms_module`, or `output_schemas_module` references unknown table names or omits required output schemas. | [`09_unknown_transform_table_single_mode.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/errors/09_unknown_transform_table_single_mode.xsd): `transforms_module` defines `TABLE_TRANSFORMS` for a table name not matching `table_name` in single-tag mode.<br>[`10_unknown_transform_table_level_mode.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/errors/10_unknown_transform_table_level_mode.xsd): `transforms_module` defines `TABLE_TRANSFORMS` for a table name not present among elements at `xml_level`. |
 
 ## 6. Fixture Index
 
@@ -1488,11 +1488,11 @@ Every case directory contains a `case.yaml` manifest; the test suites and this d
 
 | Case | Target CLI | Manifest | Runs |
 | :--- | :--- | :--- | :--- |
-| [`spec/01_single_tag_and_default_namespace`](#case-spec-01-single-tag-and-default-namespace) | `xmltopyarrow` | [`case.yaml`](../specs/pipelines/xmltopyarrow/spec/01_single_tag_and_default_namespace/case.yaml) | default |
-| [`spec/02_self_nested_tags_and_recursion_depth`](#case-spec-02-self-nested-tags-and-recursion-depth) | `xmltopyarrow` | [`case.yaml`](../specs/pipelines/xmltopyarrow/spec/02_self_nested_tags_and_recursion_depth/case.yaml) | depth_2, depth_1 |
-| [`spec/03_level_mode_and_root_tag`](#case-spec-03-level-mode-and-root-tag) | `xmltopyarrow` | [`case.yaml`](../specs/pipelines/xmltopyarrow/spec/03_level_mode_and_root_tag/case.yaml) | level_1 |
-| [`spec/04_multi_file_gzip_and_subdirs`](#case-spec-04-multi-file-gzip-and-subdirs) | `xmltopyarrow` | [`case.yaml`](../specs/pipelines/xmltopyarrow/spec/04_multi_file_gzip_and_subdirs/case.yaml) | default |
-| [`spec/05_md5_sidecar_preprocessing_and_rejected`](#case-spec-05-md5-sidecar-preprocessing-and-rejected) | `xmltopyarrow` | [`case.yaml`](../specs/pipelines/xmltopyarrow/spec/05_md5_sidecar_preprocessing_and_rejected/case.yaml) | partial_md5_failure, total_md5_failure |
-| [`spec/06_table_transforms_and_output_schemas`](#case-spec-06-table-transforms-and-output-schemas) | `xmltopyarrow` | [`case.yaml`](../specs/pipelines/xmltopyarrow/spec/06_table_transforms_and_output_schemas/case.yaml) | default |
-| [`presets/pubmed/01_multi_table_ingest`](#case-presets-pubmed-01-multi-table-ingest) | `pubmed` | [`case.yaml`](../specs/pipelines/xmltopyarrow/presets/pubmed/01_multi_table_ingest/case.yaml) | default |
-| [`presets/pubmed/02_invalid_md5_sidecar`](#case-presets-pubmed-02-invalid-md5-sidecar) | `pubmed` | [`case.yaml`](../specs/pipelines/xmltopyarrow/presets/pubmed/02_invalid_md5_sidecar/case.yaml) | mismatched_md5 |
+| [`spec/01_single_tag_and_default_namespace`](#case-spec-01-single-tag-and-default-namespace) | `xmltopyarrow` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/01_single_tag_and_default_namespace/case.yaml) | default |
+| [`spec/02_self_nested_tags_and_recursion_depth`](#case-spec-02-self-nested-tags-and-recursion-depth) | `xmltopyarrow` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/02_self_nested_tags_and_recursion_depth/case.yaml) | depth_2, depth_1 |
+| [`spec/03_level_mode_and_root_tag`](#case-spec-03-level-mode-and-root-tag) | `xmltopyarrow` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/03_level_mode_and_root_tag/case.yaml) | level_1 |
+| [`spec/04_multi_file_gzip_and_subdirs`](#case-spec-04-multi-file-gzip-and-subdirs) | `xmltopyarrow` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/04_multi_file_gzip_and_subdirs/case.yaml) | default |
+| [`spec/05_md5_sidecar_preprocessing_and_rejected`](#case-spec-05-md5-sidecar-preprocessing-and-rejected) | `xmltopyarrow` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/05_md5_sidecar_preprocessing_and_rejected/case.yaml) | partial_md5_failure, total_md5_failure |
+| [`spec/06_table_transforms_and_output_schemas`](#case-spec-06-table-transforms-and-output-schemas) | `xmltopyarrow` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/spec/06_table_transforms_and_output_schemas/case.yaml) | default |
+| [`presets/pubmed/01_multi_table_ingest`](#case-presets-pubmed-01-multi-table-ingest) | `pubmed` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/presets/pubmed/01_multi_table_ingest/case.yaml) | default |
+| [`presets/pubmed/02_invalid_md5_sidecar`](#case-presets-pubmed-02-invalid-md5-sidecar) | `pubmed` | [`case.yaml`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines/xmltopyarrow/presets/pubmed/02_invalid_md5_sidecar/case.yaml) | mismatched_md5 |
