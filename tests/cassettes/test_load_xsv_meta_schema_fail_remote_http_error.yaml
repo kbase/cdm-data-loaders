@@ -1,0 +1,26 @@
+interactions:
+- request:
+    body: ''
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Host:
+      - kbase.github.io
+      User-Agent:
+      - python-httpx/0.28.1
+    method: GET
+    uri: https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json
+  response:
+    body:
+      string: '404: Not Found'
+    headers:
+      Content-Type:
+      - text/plain; charset=utf-8
+    status:
+      code: 404
+      message: Not Found
+version: 1

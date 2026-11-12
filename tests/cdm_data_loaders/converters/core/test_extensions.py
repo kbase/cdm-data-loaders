@@ -16,7 +16,7 @@ from cdm_data_loaders.converters.core.extensions import (
 )
 from cdm_data_loaders.converters.core.ir import TypedNode
 from cdm_data_loaders.converters.core.ir_values import Value, freeze_value
-from cdm_data_loaders.schemas.jsonschema import X_XSV_CONFIG_SCHEMA
+from cdm_data_loaders.schemas.jsonschema import get_xsv_config_schema
 
 
 @pytest.mark.parametrize(
@@ -318,16 +318,54 @@ def test_extension_registry_fail_extend_payload(namespace: str, properties: dict
 
 def test_extensions_pass_exact_xsv_schema_and_mapping_api() -> None:
     """The exact existing XSV schema is reused, and mapping methods remain callable."""
+    xsv_config_schema = get_xsv_config_schema()
     spec = next(spec for spec in DEFAULT_EXTENSIONS.specs if spec.namespace == "x-xsv-config")
     extensions = Extensions({"x-pii": True})
     assert list(extensions.values()) == [True]
     assert list(extensions.items()) == [("x-pii", True)]
-    assert spec.schema["additionalProperties"] == X_XSV_CONFIG_SCHEMA["additionalProperties"]
-    assert tuple(spec.schema["properties"]) == tuple(X_XSV_CONFIG_SCHEMA["properties"])
+    assert spec.schema["additionalProperties"] == xsv_config_schema["additionalProperties"]
+    assert tuple(spec.schema["properties"]) == tuple(xsv_config_schema["properties"])
     with pytest.raises(KeyError):
         extensions["x-missing"]
     with pytest.raises(TypeError):
         spec.schema["properties"]["x-delimiter"]["type"] = "integer"
+
+
+def test_extension_spec_pass_lazy_loader_defers_until_accessed() -> None:
+    """A callable schema loader is invoked only on first schema access and cached thereafter."""
+    calls = 0
+
+    def load_schema() -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"type": "string", "minLength": 1}
+
+    spec = ExtensionSpec("x-lazy", load_schema)
+    registry = ExtensionRegistry((spec, ExtensionSpec("x-other", {"type": "boolean"})))
+    assert calls == 0
+    assert Extensions({"x-other": True}, registry)["x-other"] is True
+    assert calls == 0
+    assert Extensions({"x-lazy": "ok"}, registry)["x-lazy"] == "ok"
+    assert calls == 1
+    assert spec.schema == {"type": "string", "minLength": 1}
+    assert calls == 1
+    assert spec == ExtensionSpec("x-lazy", {"type": "string", "minLength": 1})
+    assert spec != "x-lazy"
+    assert hash(spec) == hash(ExtensionSpec("x-lazy", {"type": "string", "minLength": 1}))
+
+
+@pytest.mark.parametrize(
+    ("bad_schema", "error_type"),
+    [
+        pytest.param(1, ExtensionError, id="non-schema-from-loader"),
+        pytest.param({"type": "bogus"}, SchemaError, id="invalid-schema-from-loader"),
+    ],
+)
+def test_extension_spec_fail_lazy_loader_invalid_schema(bad_schema: object, error_type: type[Exception]) -> None:
+    """Invalid schemas returned by a lazy loader fail when `.schema` is accessed."""
+    spec = ExtensionSpec("x-lazy", lambda: bad_schema)  # type: ignore[arg-type, return-value]
+    with pytest.raises(error_type):
+        _ = spec.schema
 
 
 @pytest.mark.parametrize(

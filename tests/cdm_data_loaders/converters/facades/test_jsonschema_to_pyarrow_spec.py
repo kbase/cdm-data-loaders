@@ -23,6 +23,7 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     RecursiveNonJsonTypeError,
     generate_pyarrow_schema,
 )
+from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI
 from scripts.gen_converter_spec import (
     JSONSCHEMA_TO_PYARROW,
     render,
@@ -237,7 +238,7 @@ def test_generate_pyarrow_schema_pass_kbase_xsv_metaschema_dialect() -> None:
     """The KBase Draft 2020-12 XSV metaschema URI is accepted identically to standard Draft 2020-12."""
     fixture_dir = JSONSCHEMA_DATA_DIR / "spec" / "01_scalars_and_formats"
     schema = _load_json_object(fixture_dir / "schema.json")
-    schema["$schema"] = "https://json-schema.kbase.us/draft/2020-12-xsv/schema"
+    schema["$schema"] = CUSTOM_META_SCHEMA_URI
     assert_schema_matches_expected(generate_pyarrow_schema(schema), fixture_dir / "expected_schema.py")
 
 

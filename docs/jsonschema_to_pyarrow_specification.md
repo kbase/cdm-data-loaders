@@ -18,7 +18,7 @@ This document specifies how a **JSON Schema Draft 2020-12** document determines:
 <a id="r-dialect"></a>
 
 - **R-DIALECT**: The root must declare `"$schema": "https://json-schema.org/draft/2020-12/schema"` or the KBase
-  XSV metaschema `"https://json-schema.kbase.us/draft/2020-12-xsv/schema"`; anything else raises **E1**.
+  XSV metaschema `"https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json"`; anything else raises **E1**.
 
   *Cases:* [01_scalars_and_formats](#case-spec-01-scalars-and-formats)
 

@@ -2,10 +2,10 @@
 
 import json
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Annotated, Any, ClassVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, InstanceOf, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, InstanceOf
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
@@ -47,8 +47,17 @@ def load_schema_file(path: str | Path) -> dict[str, Any]:
 
 
 def coerce_extra_metadata_keywords(value: object) -> object:
-    """Normalize supported metadata keyword collections into a frozenset."""
+    """Normalize supported metadata keyword collections into a frozenset.
+
+    :param value: candidate keyword collection or raw input value
+    :type value: object
+    :return: normalized ``frozenset`` when ``value`` is a ``set``, ``list``, or ``tuple``, else ``value`` unchanged
+    :rtype: object
+    """
     return frozenset(value) if isinstance(value, (set, list, tuple)) else value
+
+
+ExtraMetadataKeywords = Annotated[frozenset[str], BeforeValidator(coerce_extra_metadata_keywords)]
 
 
 class JsonSchemaConverterBase[OutputT](BaseModel):
@@ -65,12 +74,6 @@ class JsonSchemaConverterBase[OutputT](BaseModel):
     _dereference_function: ClassVar[str] = "cdm_data_loaders.schemas.jsonschema.dereference_schema"
 
     extension_registry: InstanceOf[ExtensionRegistry] = DEFAULT_EXTENSIONS
-
-    @field_validator("extra_metadata_keywords", mode="before", check_fields=False)
-    @classmethod
-    def _coerce_extra_metadata_keywords(cls, value: object) -> object:
-        """Normalize supported metadata keyword collections into a frozenset."""
-        return coerce_extra_metadata_keywords(value)
 
     def _reader(self) -> JsonSchemaReader:
         """Configure reader diagnostics for this public facade."""

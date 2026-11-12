@@ -1,0 +1,145 @@
+interactions:
+- request:
+    body: ''
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Host:
+      - kbase.github.io
+      User-Agent:
+      - python-httpx/0.28.1
+    method: GET
+    uri: https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json
+  response:
+    body:
+      string: |
+        {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+                "https://json-schema.org/draft/2020-12/vocab/unevaluated": true,
+                "https://json-schema.org/draft/2020-12/vocab/validation": true,
+                "https://json-schema.org/draft/2020-12/vocab/meta-data": true,
+                "https://json-schema.org/draft/2020-12/vocab/format-annotation": true,
+                "https://json-schema.org/draft/2020-12/vocab/content": true
+            },
+            "title": "Draft 2020-12 meta-schema extended with x-xsv-config",
+            "allOf": [
+                {
+                    "$ref": "https://json-schema.org/draft/2020-12/schema"
+                }
+            ],
+            "properties": {
+                "x-xsv-config": {
+                    "type": "object",
+                    "properties": {
+                        "x-has-header": {
+                            "type": "boolean",
+                            "description": "whether or not the file has a header line"
+                        },
+                        "x-delimiter": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1,
+                            "description": "the delimiter used to demarcate columns in the xsv file"
+                        },
+                        "x-comment-char": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1,
+                            "description": "the comment character"
+                        },
+                        "x-quote": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1,
+                            "description": "quote character"
+                        },
+                        "x-escape": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1,
+                            "description": "escape character"
+                        },
+                        "x-quoting-policy": {
+                            "type": "string",
+                            "enum": [
+                                "all",
+                                "necessary",
+                                "nonnumeric",
+                                "never"
+                            ],
+                            "description": "Quoting style to use when writing XSV using qsv. Possible values: all, necessary, nonnumeric and never.\n\nAll: Quotes all fields. \nNecessary: Quotes fields only when necessary - when fields contain a quote, delimiter or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field).\nNonNumeric: Quotes all fields that are non-numeric.\nNever: Never write quotes, even if the resulting XSV file is invalid."
+                        },
+                        "x-null-regex": {
+                            "type": "string",
+                            "description": "regular expression capturing the strings that are used to represent NULL values"
+                        },
+                        "x-null-cols": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "minItems": 1,
+                            "description": "list of columns in which the null regex is applicable; if not supplied, it is assumed that all columns may contain the NULL value"
+                        }
+                    },
+                    "additionalProperties": false,
+                    "anyOf": [
+                        {
+                            "required": [
+                                "x-has-header"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "x-delimiter"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "x-comment-char"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "x-quote"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "x-escape"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "x-quoting-policy"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "x-null-regex"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "x-null-cols"
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    headers:
+      Content-Type:
+      - application/json; charset=utf-8
+    status:
+      code: 200
+      message: OK
+version: 1

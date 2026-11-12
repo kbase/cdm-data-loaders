@@ -5,8 +5,14 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import BaseModel, Field, ValidationError
 
-from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
+from cdm_data_loaders.converters.core.io import (
+    ExtraMetadataKeywords,
+    coerce_extra_metadata_keywords,
+    load_schema_file,
+    load_schema_text,
+)
 
 
 @pytest.mark.parametrize("allow_yaml", [False, True], ids=["json-only", "json-or-yaml"])
@@ -106,3 +112,45 @@ def test_load_schema_file_fail_missing_file(tmp_path: Path) -> None:
     """Propagate missing input files."""
     with pytest.raises(FileNotFoundError):
         load_schema_file(tmp_path / "missing.json")
+
+
+class _KeywordsModel(BaseModel):
+    extra_metadata_keywords: ExtraMetadataKeywords = Field(default_factory=frozenset)
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        pytest.param(["pattern", "x-custom"], frozenset({"pattern", "x-custom"}), id="list"),
+        pytest.param(("pattern", "x-custom"), frozenset({"pattern", "x-custom"}), id="tuple"),
+        pytest.param({"pattern", "x-custom"}, frozenset({"pattern", "x-custom"}), id="set"),
+        pytest.param(frozenset({"pattern"}), frozenset({"pattern"}), id="frozenset"),
+        pytest.param([], frozenset(), id="empty-list"),
+    ],
+)
+def test_coerce_extra_metadata_keywords_pass_collections(
+    raw_value: object,
+    expected: frozenset[str],
+) -> None:
+    """Normalize supported string collections to frozenset directly and via ExtraMetadataKeywords."""
+    assert coerce_extra_metadata_keywords(raw_value) == expected
+    model = _KeywordsModel.model_validate({"extra_metadata_keywords": raw_value})
+    assert model.extra_metadata_keywords == expected
+    assert isinstance(model.extra_metadata_keywords, frozenset)
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    [
+        pytest.param("pattern", id="bare-string"),
+        pytest.param(123, id="integer"),
+        pytest.param({"pattern": True}, id="dict"),
+    ],
+)
+def test_coerce_extra_metadata_keywords_fail_non_sequence_rejected_by_pydantic(
+    invalid_value: object,
+) -> None:
+    """Leave unsupported scalar and mapping values untouched so Pydantic rejects them."""
+    assert coerce_extra_metadata_keywords(invalid_value) == invalid_value
+    with pytest.raises(ValidationError):
+        _KeywordsModel.model_validate({"extra_metadata_keywords": invalid_value})

@@ -18,7 +18,6 @@ from cdm_data_loaders.schemas.jsonschema import (
     CUSTOM_META_SCHEMA_URI,
     X_XSV_CONFIG_KEY,
     ValidatedSchema,
-    register_xsv_validator,
 )
 
 
@@ -57,7 +56,6 @@ class ValidatedXsvSchema(ValidatedSchema):
         :return: the validated schema
         :rtype : dict[str, Any]
         """
-        register_xsv_validator()
         validated_schema = super().validate_jsonschema(schema)
         required_cols = validated_schema.get("required")
         if not isinstance(required_cols, list) or not required_cols:

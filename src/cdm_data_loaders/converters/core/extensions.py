@@ -1,6 +1,6 @@
 """Explicit, immutable extension namespaces validated using JSON Schema."""
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 from fractions import Fraction
@@ -11,8 +11,10 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.ir_values import Value, freeze_mapping, freeze_value, mutable_value
-from cdm_data_loaders.schemas.jsonschema import X_XSV_CONFIG_SCHEMA
+from cdm_data_loaders.converters.core.ir_values import Value, freeze_mapping, mutable_value
+from cdm_data_loaders.schemas.jsonschema import get_xsv_config_schema
+
+type ExtensionSchemaLoader = Callable[[], Mapping[str, object] | bool]
 
 
 class ExtensionError(ConversionError):
@@ -33,24 +35,96 @@ def _validation_value(value: Value) -> object:
     return value
 
 
-@dataclass(frozen=True, slots=True)
+def _freeze_and_validate_extension_schema(raw_schema: object) -> Mapping[str, Value] | bool:
+    """Validate and deep-freeze an extension JSON Schema mapping or boolean.
+
+    :param raw_schema: candidate JSON Schema mapping or boolean
+    :type raw_schema: object
+    :return: deep-frozen schema mapping or boolean
+    :rtype: Mapping[str, Value] | bool
+    :raises ExtensionError: if ``raw_schema`` is not a mapping or boolean
+    :raises jsonschema.exceptions.SchemaError: if ``raw_schema`` is not a valid Draft 2020-12 schema
+    """
+    if isinstance(raw_schema, bool):
+        owned: Mapping[str, Value] | bool = raw_schema
+    elif isinstance(raw_schema, Mapping):
+        owned = freeze_mapping(raw_schema)
+    else:
+        msg = "Extension validation schemas must be mappings or booleans"
+        raise ExtensionError(msg)
+    Draft202012Validator.check_schema(mutable_value(owned))
+    return owned
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class ExtensionSpec:
     """An exact namespace spelling and its complete validation schema."""
 
     namespace: str
-    schema: Mapping[str, Value] | bool
+    _schema: Mapping[str, Value] | bool | None = field(repr=False, compare=False)
+    _schema_loader: ExtensionSchemaLoader | None = field(repr=False, compare=False)
 
-    def __post_init__(self) -> None:
-        """Validate the namespace and own a valid draft 2020-12 schema."""
-        if not isinstance(self.namespace, str) or not self.namespace.startswith("x-") or self.namespace == "x-":
+    def __init__(
+        self,
+        namespace: str,
+        schema: Mapping[str, object] | bool | ExtensionSchemaLoader,  # noqa: FBT001
+    ) -> None:
+        """Validate the namespace and eagerly or lazily own a valid Draft 2020-12 schema.
+
+        :param namespace: ``x-``-prefixed extension namespace key
+        :type namespace: str
+        :param schema: Draft 2020-12 JSON Schema mapping, boolean schema, or zero-arg lazy loader
+        :type schema: Mapping[str, object] | bool | ExtensionSchemaLoader
+        :raises ExtensionError: if ``namespace`` or an eager ``schema`` is invalid
+        """
+        if not isinstance(namespace, str) or not namespace.startswith("x-") or namespace == "x-":
             msg = "Extension namespaces must start with 'x-' and have a name"
             raise ExtensionError(msg)
-        if not isinstance(self.schema, (Mapping, bool)):
-            msg = "Extension validation schemas must be mappings or booleans"
-            raise ExtensionError(msg)
-        owned = freeze_value(self.schema)
-        Draft202012Validator.check_schema(mutable_value(owned))
-        object.__setattr__(self, "schema", owned)
+        object.__setattr__(self, "namespace", namespace)
+        if callable(schema):
+            object.__setattr__(self, "_schema", None)
+            object.__setattr__(self, "_schema_loader", schema)
+        else:
+            owned = _freeze_and_validate_extension_schema(schema)
+            object.__setattr__(self, "_schema", owned)
+            object.__setattr__(self, "_schema_loader", None)
+
+    @property
+    def schema(self) -> Mapping[str, Value] | bool:
+        """Return the validated, deep-frozen Draft 2020-12 schema, loading lazily if needed.
+
+        :return: immutable validation schema
+        :rtype: Mapping[str, Value] | bool
+        """
+        if self._schema is None:
+            if self._schema_loader is None:
+                msg = f"Extension namespace {self.namespace!r} has no schema configured"
+                raise ExtensionError(msg)
+            owned = _freeze_and_validate_extension_schema(self._schema_loader())
+            object.__setattr__(self, "_schema", owned)
+        return self._schema
+
+    def __eq__(self, other: object) -> bool:
+        """Compare extension specs by namespace and resolved validation schema.
+
+        :param other: object to compare against
+        :type other: object
+        :return: ``True`` when ``other`` is an ``ExtensionSpec`` with equal namespace and schema
+        :rtype: bool
+        """
+        if self is other:
+            return True
+        if not isinstance(other, ExtensionSpec):
+            return NotImplemented
+        return self.namespace == other.namespace and self.schema == other.schema
+
+    def __hash__(self) -> int:
+        """Hash extension spec by namespace and resolved validation schema.
+
+        :return: hash value
+        :rtype: int
+        """
+        return hash((self.namespace, self.schema))
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,7 +247,7 @@ DEFAULT_EXTENSIONS: Final[ExtensionRegistry] = ExtensionRegistry(
     (
         ExtensionSpec("x-dlt", _object_schema(DLT_PROPERTIES)),
         ExtensionSpec("x-iceberg", _object_schema(ICEBERG_PROPERTIES)),
-        ExtensionSpec("x-xsv-config", X_XSV_CONFIG_SCHEMA),
+        ExtensionSpec("x-xsv-config", get_xsv_config_schema),
         ExtensionSpec("x-file-glob", {"type": "string"}),
         ExtensionSpec("x-delimiter", {"type": "string", "minLength": 1, "maxLength": 1}),
         ExtensionSpec("x-dlt-prefix", {"type": "string"}),

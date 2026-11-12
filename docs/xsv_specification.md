@@ -44,8 +44,8 @@ uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
 <a id="r-xsv-dialect"></a>
 
 - **R-XSV-DIALECT**: The root schema must declare `"$schema": "https://json-schema.org/draft/2020-12/schema"` or the KBase
-  XSV metaschema `"https://json-schema.kbase.us/draft/2020-12-xsv/schema"`; missing or unsupported
-  `$schema` URIs raise **E1** (`UnsupportedXsvDialectError`).
+  XSV metaschema `"https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json"`; missing
+  or unsupported `$schema` URIs raise **E1** (`UnsupportedXsvDialectError`).
 
   *Cases:* [`spec/01_scalars_nullability_and_column_order`](#case-spec-01-scalars-nullability-and-column-order), [`spec/02_delimiters_comments_quotes_and_escapes`](#case-spec-02-delimiters-comments-quotes-and-escapes), [`spec/03_missing_header_and_defs_ref`](#case-spec-03-missing-header-and-defs-ref)
 
@@ -58,10 +58,12 @@ uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
 
 <a id="r-xsv-metaschema"></a>
 
-- **R-XSV-METASCHEMA**: Schemas declaring the KBase XSV metaschema URI are validated against `CUSTOM_META_SCHEMA`. Standard
-  Draft 2020-12 schemas containing an `x-xsv-config` block validate that block against
-  `X_XSV_CONFIG_SCHEMA`. Invalid JSON Schema keywords or malformed `x-xsv-config` properties raise
-  **E3** (`InvalidXsvSchemaDefinitionError`).
+- **R-XSV-METASCHEMA**: Schemas declaring `"https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json"` lazily
+  load the custom metaschema (from bundled `schemas/xsv_config/0.1.0/schema.json` or its published URL),
+  validate it against Draft 2020-12, and validate the pipeline schema against it (`get_xsv_meta_schema`).
+  Standard Draft 2020-12 schemas containing an `x-xsv-config` block validate that block against the
+  `x-xsv-config` subschema (`get_xsv_config_schema`). Invalid JSON Schema keywords or malformed
+  `x-xsv-config` properties raise **E3** (`InvalidXsvSchemaDefinitionError`).
 
   *Cases:* [`spec/01_scalars_nullability_and_column_order`](#case-spec-01-scalars-nullability-and-column-order), [`spec/02_delimiters_comments_quotes_and_escapes`](#case-spec-02-delimiters-comments-quotes-and-escapes), [`spec/03_missing_header_and_defs_ref`](#case-spec-03-missing-header-and-defs-ref), [`spec/04_null_regex_and_null_cols`](#case-spec-04-null-regex-and-null-cols)
 
@@ -484,7 +486,7 @@ EXPECTED_SCHEMA = pa.schema(
 
 **Rules:** [R-XSV-DIALECT](#r-xsv-dialect), [R-XSV-REQUIRED-COLS](#r-xsv-required-cols), [R-XSV-METASCHEMA](#r-xsv-metaschema), [R-XSV-CONFIG](#r-xsv-config), [R-XSV-CLEAN-INPUT](#r-xsv-clean-input), [R-XSV-SECOND-PASS](#r-xsv-second-pass), [R-XSV-DUCKDB-TYPES](#r-xsv-duckdb-types), [R-XSV-ARROW-CAST](#r-xsv-arrow-cast)
 
-- Declares `"$schema": "https://json-schema.kbase.us/draft/2020-12-xsv/schema"` with `x-delimiter: ";"`, `x-comment-char: "%"`, `x-quote: "'"`, `x-escape: "\\"`, and `x-quoting-policy: "necessary"`.
+- Declares `"$schema": "https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json"` with `x-delimiter: ";"`, `x-comment-char: "%"`, `x-quote: "'"`, `x-escape: "\\"`, and `x-quoting-policy: "necessary"`.
 - Lines starting with `%` are stripped as comments, while `#` inside `sample_id` (`"S#2"`) is preserved as data.
 - `qsv input` strips surrounding single quotes (`'`) and unescapes `\'` sequences inside quoted fields.
 
@@ -492,7 +494,7 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```json
 {
-  "$schema": "https://json-schema.kbase.us/draft/2020-12-xsv/schema",
+  "$schema": "https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json",
   "title": "CustomDelimitersQuotesAndEscapes",
   "type": "object",
   "required": [
@@ -581,7 +583,7 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```json
 {
-  "$schema": "https://json-schema.kbase.us/draft/2020-12-xsv/schema",
+  "$schema": "https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json",
   "title": "MissingHeaderAndDefsRef",
   "type": "object",
   "required": [
@@ -706,7 +708,7 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```json
 {
-  "$schema": "https://json-schema.kbase.us/draft/2020-12-xsv/schema",
+  "$schema": "https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json",
   "title": "SelectiveNullRegexReplacement",
   "type": "object",
   "required": [
@@ -819,7 +821,7 @@ EXPECTED_SCHEMA = pa.schema(
 
 ```json
 {
-  "$schema": "https://json-schema.kbase.us/draft/2020-12-xsv/schema",
+  "$schema": "https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json",
   "title": "PartialAndTotalValidationRejections",
   "type": "object",
   "required": [

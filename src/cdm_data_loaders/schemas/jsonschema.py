@@ -1,9 +1,14 @@
 """JSON Schema validation, custom KBase XSV metaschema, and $ref/allOf dereferencing utilities."""
 
+import importlib.resources
+import json
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
+from functools import cache
+from importlib.resources.abc import Traversable
+from pathlib import Path
 from typing import Any, Final, Literal
 
 import jsonschema
@@ -11,90 +16,157 @@ import jsonschema.exceptions
 import jsonschema.protocols
 import jsonschema.validators
 from frozendict import frozendict
-from jsonschema import Draft202012Validator, validators
+from jsonschema import validators
 from pydantic import BaseModel, field_validator
 from referencing import Registry, Resource
 from referencing._core import Resolver
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import DRAFT201909, DRAFT202012, specification_with
 
+from cdm_data_loaders.utils.file_transfer.sync_client import get_httpx_client
+
 logger: logging.Logger = logging.getLogger(__name__)
 
-CUSTOM_META_SCHEMA_URI: Final[str] = "https://json-schema.kbase.us/draft/2020-12-xsv/schema"
+XSV_CONFIG_SCHEMA_REL_PATH: Final[str] = "xsv_config/0.1.0/schema.json"
+CUSTOM_META_SCHEMA_URI: Final[str] = f"https://kbase.github.io/cdm-data-loaders/schemas/{XSV_CONFIG_SCHEMA_REL_PATH}"
 X_XSV_CONFIG_KEY: Final[str] = "x-xsv-config"
 
-# schema for the "x-xsv-config" extension block
-X_XSV_CONFIG_SCHEMA: frozendict[str, Any] = frozendict(
-    {
-        "type": "object",
-        "properties": {
-            "x-has-header": {"type": "boolean", "description": "whether or not the file has a header line"},
-            "x-delimiter": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 1,
-                "description": "the delimiter used to demarcate columns in the xsv file",
-            },
-            "x-comment-char": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 1,
-                "description": "the comment character",
-            },
-            "x-quote": {"type": "string", "minLength": 1, "maxLength": 1, "description": "quote character"},
-            "x-escape": {"type": "string", "minLength": 1, "maxLength": 1, "description": "escape character"},
-            "x-quoting-policy": {
-                "type": "string",
-                "enum": ["all", "necessary", "nonnumeric", "never"],
-                "description": "Quoting style to use when writing XSV using qsv. Possible values: all, necessary, nonnumeric and never.\n\nAll: Quotes all fields. \nNecessary: Quotes fields only when necessary - when fields contain a quote, delimiter or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field).\nNonNumeric: Quotes all fields that are non-numeric.\nNever: Never write quotes, even if the resulting XSV file is invalid.",
-            },
-            "x-null-regex": {
-                "type": "string",
-                "description": "regular expression capturing the strings that are used to represent NULL values",
-            },
-            "x-null-cols": {
-                "type": "array",
-                "items": {"type": "string"},
-                "minItems": 1,
-                "description": "list of columns in which the null regex is applicable; if not supplied, it is assumed that all columns may contain the NULL value",
-            },
-        },
-        "additionalProperties": False,
-        "anyOf": [
-            {"required": ["x-has-header"]},
-            {"required": ["x-delimiter"]},
-            {"required": ["x-comment-char"]},
-            {"required": ["x-quote"]},
-            {"required": ["x-escape"]},
-            {"required": ["x-quoting-policy"]},
-            {"required": ["x-null-regex"]},
-            {"required": ["x-null-cols"]},
-        ],
-    }
-)
 
-CUSTOM_META_SCHEMA: frozendict[str, Any] = frozendict(
-    {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": CUSTOM_META_SCHEMA_URI,
-        "title": "Draft 2020-12 meta-schema extended with x-xsv-config",
-        "allOf": [
-            # pull in everything the official 2020-12 meta-schema requires/allows
-            {"$ref": "https://json-schema.org/draft/2020-12/schema"}
-        ],
-        "properties": {
-            X_XSV_CONFIG_KEY: X_XSV_CONFIG_SCHEMA,
-        },
-    }
-)
+def _read_raw_xsv_meta_schema(
+    local_schema_path: Path | Traversable | None = None,
+    remote_url: str = CUSTOM_META_SCHEMA_URI,
+) -> object:
+    """Read the raw XSV custom metaschema JSON from the bundled package file or remote URL.
 
-jsonschema.protocols.Validator.check_schema({**CUSTOM_META_SCHEMA})
+    Loads from ``schemas/xsv_config/0.1.0/schema.json`` when available locally, falling
+    back to fetching ``remote_url`` over HTTP when the local file is not present.
+
+    :param local_schema_path: optional local schema path or ``Traversable`` override
+    :type local_schema_path: Path | Traversable | None
+    :param remote_url: fallback URL to fetch the metaschema from when unavailable locally
+    :type remote_url: str
+    :return: parsed JSON value of the custom metaschema
+    :rtype: object
+    :raises httpx.HTTPError: if the fallback HTTP request fails
+    :raises json.JSONDecodeError: if the schema content is not valid JSON
+    """
+    resource: Path | Traversable | None = local_schema_path
+    if resource is None:
+        try:
+            resource = importlib.resources.files("cdm_data_loaders.schemas").joinpath(
+                *XSV_CONFIG_SCHEMA_REL_PATH.split("/")
+            )
+        except (FileNotFoundError, ModuleNotFoundError):
+            resource = None
+
+    is_local_file = False
+    if resource is not None:
+        try:
+            is_local_file = resource.is_file()
+        except (FileNotFoundError, ModuleNotFoundError):
+            is_local_file = False
+
+    if is_local_file and resource is not None:
+        return json.loads(resource.read_text(encoding="utf-8"))
+
+    with get_httpx_client() as client:
+        response = client.get(remote_url)
+        response.raise_for_status()
+        return response.json()
+
+
+def load_xsv_meta_schema(
+    local_schema_path: Path | Traversable | None = None,
+    remote_url: str = CUSTOM_META_SCHEMA_URI,
+) -> frozendict[str, Any]:
+    """Load the custom XSV metaschema and validate it against its declared metaschema.
+
+    Reads the custom metaschema from ``schemas/xsv_config/0.1.0/schema.json`` if available,
+    or from ``https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json``
+    otherwise, and validates the document against its own ``$schema`` metaschema.
+
+    :param local_schema_path: optional local schema path or ``Traversable`` override
+    :type local_schema_path: Path | Traversable | None
+    :param remote_url: fallback URL to fetch the metaschema from when unavailable locally
+    :type remote_url: str
+    :return: validated custom metaschema as an immutable mapping
+    :rtype: frozendict[str, Any]
+    :raises TypeError: if the document is not a JSON object
+    :raises ValueError: if the document omits ``$schema``, declares itself as its own metaschema,
+        or uses an unsupported JSON Schema draft
+    :raises jsonschema.exceptions.SchemaError: if the custom metaschema fails validation against its metaschema
+    """
+    raw_schema = _read_raw_xsv_meta_schema(local_schema_path=local_schema_path, remote_url=remote_url)
+    if not isinstance(raw_schema, dict):
+        err_msg = "Custom metaschema must be a JSON object"
+        raise TypeError(err_msg)
+
+    declared = raw_schema.get("$schema")
+    if not isinstance(declared, str) or not declared:
+        err_msg = "JSON Schema is missing the $schema keyword"
+        raise ValueError(err_msg)
+
+    if declared in {CUSTOM_META_SCHEMA_URI, remote_url}:
+        err_msg = f"Custom metaschema cannot declare itself as its own $schema: {declared}"
+        raise ValueError(err_msg)
+
+    meta_validator = jsonschema.validators.validator_for(raw_schema, default=None)  # type: ignore[arg-type]
+    if meta_validator is None:
+        err_msg = f"Unsupported JSON Schema draft: {declared}"
+        raise ValueError(err_msg)
+
+    meta_validator.check_schema(raw_schema)
+    return frozendict(raw_schema)
+
+
+@cache
+def get_xsv_meta_schema() -> frozendict[str, Any]:
+    """Lazily load, validate, and cache the custom KBase XSV metaschema.
+
+    :return: validated custom metaschema mapping
+    :rtype: frozendict[str, Any]
+    """
+    return load_xsv_meta_schema()
+
+
+def get_xsv_config_schema() -> frozendict[str, Any]:
+    """Lazily extract the ``x-xsv-config`` extension schema from the custom XSV metaschema.
+
+    :return: immutable ``x-xsv-config`` JSON Schema mapping
+    :rtype: frozendict[str, Any]
+    :raises ValueError: if the custom metaschema does not define ``properties['x-xsv-config']``
+    :raises TypeError: if ``properties['x-xsv-config']`` is not a mapping
+    """
+    meta_schema = get_xsv_meta_schema()
+    properties = meta_schema.get("properties")
+    xsv_config_schema = properties.get(X_XSV_CONFIG_KEY) if isinstance(properties, Mapping) else None
+    if xsv_config_schema is None:
+        err_msg = f"Custom metaschema is missing '{X_XSV_CONFIG_KEY}' object schema under 'properties'"
+        raise ValueError(err_msg)
+    if not isinstance(xsv_config_schema, Mapping):
+        err_msg = f"Custom metaschema '{X_XSV_CONFIG_KEY}' schema must be a mapping"
+        raise TypeError(err_msg)
+    return frozendict(xsv_config_schema)
 
 
 def register_xsv_validator() -> None:
-    """Register the custom validator for validating JSON Schema with embedded XSV parsing metadata."""
-    xsv_validator = validators.extend(Draft202012Validator)
-    xsv_validator.META_SCHEMA = CUSTOM_META_SCHEMA
+    """Lazily load, validate, and register the custom validator for the KBase XSV metaschema.
+
+    :return: None
+    :rtype: None
+    """
+    meta_schema = get_xsv_meta_schema()
+    effective_meta_schema = (
+        meta_schema
+        if meta_schema.get("$id") == CUSTOM_META_SCHEMA_URI
+        else frozendict({**meta_schema, "$id": CUSTOM_META_SCHEMA_URI})
+    )
+    existing = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI}, default=None)  # type: ignore[arg-type]
+    if existing is not None and getattr(existing, "META_SCHEMA", None) == effective_meta_schema:
+        return
+    base_validator = jsonschema.validators.validator_for({**meta_schema})
+    xsv_validator = validators.extend(base_validator)
+    xsv_validator.META_SCHEMA = effective_meta_schema
     validators.validates(CUSTOM_META_SCHEMA_URI)(xsv_validator)
 
 
@@ -121,6 +193,9 @@ class ValidatedSchema(BaseModel):
             raise ValueError(err_msg)
 
         declared = schema["$schema"]
+        if declared == CUSTOM_META_SCHEMA_URI:
+            register_xsv_validator()
+
         validator = jsonschema.validators.validator_for(schema, default=None)  # type: ignore[arg-type]
         if validator is None:
             err_msg = f"Unsupported JSON Schema draft: {declared}"

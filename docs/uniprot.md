@@ -1,17 +1,17 @@
-# UniProt & UniRef Ingestion Guide
+# UniProt and UniRef Ingestion Guide
 
 `cdm-data-loaders` provides two complementary families of `dlt` pipelines for ingesting UniProt Knowledgebase (UniProtKB) and UniRef XML datasets (`*.xml` and `*.xml.gz`), along with parsers and schemas for UniProt release metadata and ID mappings.
 
-| Pipeline CLI    | Mode                          | Source Module                                      | Bundled Schema / Parser                        | Default Dataset / Table        |
-| :-------------- | :---------------------------- | :------------------------------------------------- | :--------------------------------------------- | :----------------------------- |
-| `uniprot`       | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline` | `cdm_data_loaders/schemas/uniprot/uniprot.xsd` | `uniprot` / `entry`            |
-| `uniref50`      | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline` | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref50` / `entry`           |
-| `uniref90`      | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline` | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref90` / `entry`           |
-| `uniref100`     | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline` | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref100` / `entry`          |
-| `uniprot_cdm`   | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.uniprot_kb_cdm`        | `cdm_data_loaders.parsers.uniprot.uniprot_kb`  | `uniprot_cdm` (multi-table)    |
-| `uniref50_cdm`  | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.uniref_cdm`            | `cdm_data_loaders.parsers.uniprot.uniref`      | `uniref50_cdm` (multi-table)   |
-| `uniref90_cdm`  | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.uniref_cdm`            | `cdm_data_loaders.parsers.uniprot.uniref`      | `uniref90_cdm` (multi-table)   |
-| `uniref100_cdm` | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.uniref_cdm`            | `cdm_data_loaders.parsers.uniprot.uniref`      | `uniref100_cdm` (multi-table)  |
+| Pipeline CLI    | Mode                          | Source Module                                      | Bundled Schema / Parser                        | Default Dataset / Table       |
+| :-------------- | :---------------------------- | :------------------------------------------------- | :--------------------------------------------- | :---------------------------- |
+| `uniprot`       | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline` | `cdm_data_loaders/schemas/uniprot/uniprot.xsd` | `uniprot` / `entry`           |
+| `uniref50`      | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline` | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref50` / `entry`          |
+| `uniref90`      | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline` | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref90` / `entry`          |
+| `uniref100`     | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline` | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref100` / `entry`         |
+| `uniprot_cdm`   | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.uniprot_kb_cdm`        | `cdm_data_loaders.parsers.uniprot.uniprot_kb`  | `uniprot_cdm` (multi-table)   |
+| `uniref50_cdm`  | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.uniref_cdm`            | `cdm_data_loaders.parsers.uniprot.uniref`      | `uniref50_cdm` (multi-table)  |
+| `uniref90_cdm`  | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.uniref_cdm`            | `cdm_data_loaders.parsers.uniprot.uniref`      | `uniref90_cdm` (multi-table)  |
+| `uniref100_cdm` | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.uniref_cdm`            | `cdm_data_loaders.parsers.uniprot.uniref`      | `uniref100_cdm` (multi-table) |
 
 ---
 
@@ -62,14 +62,14 @@ When loading directly into the KBase Common Data Model (CDM) relational table st
 
 #### Output Tables
 
-| Table Name             | Contents                                                                                                                                                                                                                                                                                   |
-| :--------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `entity`               | Core entity record (`entity_id = "uniprot:<primary_accession>"`, `entity_type = "protein"`, `data_source = "UniProt/<dataset>"`, creation/modification dates, version, and ingestion timestamp).                                                                                           |
-| `protein`              | Protein sequence metadata (`protein_id`, `evidence_for_existence`, `length`, `hash`, `sequence`).                                                                                                                                                                                          |
-| `identifier`           | Primary and secondary UniProt accessions, database cross-references (`<dbReference>`) normalized with CURIE prefixes (`UniProt`, `NCBITaxon`, `NCBIGene`, `PMID`, Ensembl gene/protein/transcript splits), and organism relationships (`RO:0002162` in taxon).                               |
-| `name`                 | Entry names (`<name>`), protein recommended/alternative/submitted full and short names, and `<gene><name>` values with their name type description.                                                                                                                                        |
-| `entity_x_publication` | Links between `entity_id` and prioritized publication identifiers (`DOI`, `PMCID`, `PMID`, `AGRICOLA`).                                                                                                                                                                                    |
-| `_rejected`            | Entries that failed transformation (e.g., missing `<accession>`), recording `table_name`, `source_file`, `line_no`, `raw_record`, and `error_detail`.                                                                                                                                      |
+| Table Name             | Contents                                                                                                                                                                                                                                                       |
+| :--------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entity`               | Core entity record (`entity_id = "uniprot:<primary_accession>"`, `entity_type = "protein"`, `data_source = "UniProt/<dataset>"`, creation/modification dates, version, and ingestion timestamp).                                                               |
+| `protein`              | Protein sequence metadata (`protein_id`, `evidence_for_existence`, `length`, `hash`, `sequence`).                                                                                                                                                              |
+| `identifier`           | Primary and secondary UniProt accessions, database cross-references (`<dbReference>`) normalized with CURIE prefixes (`UniProt`, `NCBITaxon`, `NCBIGene`, `PMID`, Ensembl gene/protein/transcript splits), and organism relationships (`RO:0002162` in taxon). |
+| `name`                 | Entry names (`<name>`), protein recommended/alternative/submitted full and short names, and `<gene><name>` values with their name type description.                                                                                                            |
+| `entity_x_publication` | Links between `entity_id` and prioritized publication identifiers (`DOI`, `PMCID`, `PMID`, `AGRICOLA`).                                                                                                                                                        |
+| `_rejected`            | Entries that failed transformation (e.g., missing `<accession>`), recording `table_name`, `source_file`, `line_no`, `raw_record`, and `error_detail`.                                                                                                          |
 
 #### Running `uniprot_cdm`
 
@@ -104,7 +104,7 @@ uv run uniref90_cdm \
 
 ---
 
-## 3. Ancillary UniProt Parsers & Schemas
+## 3. Ancillary UniProt Parsers and Schemas
 
 In addition to the XML pipelines, `cdm_data_loaders` includes utilities for UniProt release metadata and tabular ID mappings:
 

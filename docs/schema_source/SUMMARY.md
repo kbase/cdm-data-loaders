@@ -1,0 +1,28 @@
+<!-- GENERATED FILE - DO NOT EDIT. Source: `pyproject.toml`, `src/cdm_data_loaders/`. Regenerate with `uv run python -m scripts.gen_docs`. -->
+
+- all_the_bacteria
+    - [all_atb_files.tsv.schema.json](all_the_bacteria/all_atb_files.tsv.schema.json.md)
+    - [assembly_index.tsv.schema.json](all_the_bacteria/assembly_index.tsv.schema.json.md)
+    - [bakta_index.tsv.schema.json](all_the_bacteria/bakta_index.tsv.schema.json.md)
+- gene_association_file
+    - [gene_association_file.schema.json](gene_association_file/gene_association_file.schema.json.md)
+- gff
+    - [gff.schema.json](gff/gff.schema.json.md)
+- gtdb
+    - [gtdb_metadata.schema.json](gtdb/gtdb_metadata.schema.json.md)
+    - [gtdb_taxonomy.schema.json](gtdb/gtdb_taxonomy.schema.json.md)
+- ncbi
+    - [ftp_mod_times.schema.json](ncbi/ftp_mod_times.schema.json.md)
+- ncbi_datasets
+    - [annotationReport.schema.json](ncbi_datasets/annotationReport.schema.json.md)
+    - [datasetReport.schema.json](ncbi_datasets/datasetReport.schema.json.md)
+- pubmed
+    - [pubmed.xsd](pubmed/pubmed.xsd.md)
+- uniprot
+    - [idmapping.schema.json](uniprot/idmapping.schema.json.md)
+    - [uniprot.xsd](uniprot/uniprot.xsd.md)
+- uniref
+    - [uniref.xsd](uniref/uniref.xsd.md)
+- xsv_config
+    - 0.1.0
+        - [schema.json](xsv_config/0.1.0/schema.json.md)

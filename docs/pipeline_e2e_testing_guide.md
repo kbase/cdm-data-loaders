@@ -1,4 +1,4 @@
-# Pipeline E2E & Smoke Testing Across Environments Guide
+# Pipeline E2E and Smoke Testing Across Environments Guide
 
 End-to-end (E2E) and smoke tests execute pipelines across multiple execution modes and storage backends.
 
@@ -13,20 +13,20 @@ End-to-end (E2E) and smoke tests execute pipelines across multiple execution mod
 
 `PipelineTestRunner` executes a pipeline scenario in one of three modes:
 
-| Execution Mode | Description | Entry Point |
-| --- | --- | --- |
-| `core` | In-process execution calling `pipeline_module.run(settings)` | Direct Python call |
-| `cli` | Subprocess execution via pydantic-settings' CliRunner (`CliRunner`) or `subprocess.run` | Registered CLI entry point (e.g., `load-pubmed`, `load-ncbi-datasets`) |
-| `docker` | Container execution mounting local paths or passing remote URLs | `docker run --rm ... <image> <cli_command> ...` |
+| Execution Mode | Description                                                                             | Entry Point                                                            |
+| -------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `core`         | In-process execution calling `pipeline_module.run(settings)`                            | Direct Python call                                                     |
+| `cli`          | Subprocess execution via pydantic-settings' CliRunner (`CliRunner`) or `subprocess.run` | Registered CLI entry point (e.g., `load-pubmed`, `load-ncbi-datasets`) |
+| `docker`       | Container execution mounting local paths or passing remote URLs                         | `docker run --rm ... <image> <cli_command> ...`                        |
 
 Built-in storage environments in `tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py`:
 
-| Environment ID | Input Storage | Output & Destination Storage | Markers / Requirements |
-| --- | --- | --- | --- |
-| `local_fs` | Local temporary directory | Local filesystem destination (`tmp_path / "local_fs_bucket"`) | Always enabled |
-| `s3_moto` | In-memory Moto S3 bucket (`s3://input-bucket/<run_slug>/...`) | In-memory Moto S3 bucket (`s3://cdm-lake/<run_slug>` and `s3://output-bucket/<run_slug>`) | Always enabled |
-| `s3_ceph` | Local Ceph Nano S3 bucket | Local Ceph Nano S3 bucket | Requires `-m requires_ceph` and running Ceph container |
-| `custom` | Configured via `--dlt-config-dir` and `--settings-file` | Configured via `--dlt-config-dir` and `--settings-file` | Enabled when `--dlt-config-dir` or `--settings-file` is passed |
+| Environment ID | Input Storage                                                 | Output and Destination Storage                                                            | Markers / Requirements                                         |
+| -------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `local_fs`     | Local temporary directory                                     | Local filesystem destination (`tmp_path / "local_fs_bucket"`)                             | Always enabled                                                 |
+| `s3_moto`      | In-memory Moto S3 bucket (`s3://input-bucket/<run_slug>/...`) | In-memory Moto S3 bucket (`s3://cdm-lake/<run_slug>` and `s3://output-bucket/<run_slug>`) | Always enabled                                                 |
+| `s3_ceph`      | Local Ceph Nano S3 bucket                                     | Local Ceph Nano S3 bucket                                                                 | Requires `-m requires_ceph` and running Ceph container         |
+| `custom`       | Configured via `--dlt-config-dir` and `--settings-file`       | Configured via `--dlt-config-dir` and `--settings-file`                                   | Enabled when `--dlt-config-dir` or `--settings-file` is passed |
 
 ---
 
@@ -142,10 +142,10 @@ When testing Iceberg output against a catalog (such as a Polaris REST catalog or
    - Because preset pipelines such as `ncbi_datasets` and `pubmed` use a fixed `dataset_name` (`ncbi_datasets` or `pubmed`), consecutive test cases writing to a persistent catalog (such as Polaris) will append to existing catalog tables unless tables are dropped before or after each run.
    - Use either `pytest` CLI flags or `settings.toml` keys to control catalog table cleanup:
 
-| CLI Flag | `settings.toml` Key | Behavior |
-| --- | --- | --- |
+| CLI Flag                 | `settings.toml` Key           | Behavior                                                                                                          |
+| ------------------------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `--drop-existing-tables` | `drop_existing_tables = true` | Drops any existing tables for the target pipeline's dataset from the Iceberg catalog before each test run starts. |
-| `--drop-tables-after` | `drop_tables_after = true` | Drops any tables added to the Iceberg catalog during the test run when the test finishes (`finally:` block). |
+| `--drop-tables-after`    | `drop_tables_after = true`    | Drops any tables added to the Iceberg catalog during the test run when the test finishes (`finally:` block).      |
 
 Both `drop_existing_tables` and `drop_tables_after` can be set at the top level of `settings.toml` or under `[pipelines.<pipeline_name>]`.
 

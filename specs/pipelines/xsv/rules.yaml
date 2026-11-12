@@ -29,18 +29,20 @@ sections:
       - id: R-XSV-DIALECT
         statement: |
           The root schema must declare `"$schema": "https://json-schema.org/draft/2020-12/schema"` or the KBase
-          XSV metaschema `"https://json-schema.kbase.us/draft/2020-12-xsv/schema"`; missing or unsupported
-          `$schema` URIs raise **E1** (`UnsupportedXsvDialectError`).
+          XSV metaschema `"https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json"`; missing
+          or unsupported `$schema` URIs raise **E1** (`UnsupportedXsvDialectError`).
       - id: R-XSV-REQUIRED-COLS
         statement: |
           Top-level `required` must be a non-empty list of column header strings declaring the ordered columns
           of the XSV file; a missing or empty `required` list raises **E2** (`MissingRequiredColumnsError`).
       - id: R-XSV-METASCHEMA
         statement: |
-          Schemas declaring the KBase XSV metaschema URI are validated against `CUSTOM_META_SCHEMA`. Standard
-          Draft 2020-12 schemas containing an `x-xsv-config` block validate that block against
-          `X_XSV_CONFIG_SCHEMA`. Invalid JSON Schema keywords or malformed `x-xsv-config` properties raise
-          **E3** (`InvalidXsvSchemaDefinitionError`).
+          Schemas declaring `"https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json"` lazily
+          load the custom metaschema (from bundled `schemas/xsv_config/0.1.0/schema.json` or its published URL),
+          validate it against Draft 2020-12, and validate the pipeline schema against it (`get_xsv_meta_schema`).
+          Standard Draft 2020-12 schemas containing an `x-xsv-config` block validate that block against the
+          `x-xsv-config` subschema (`get_xsv_config_schema`). Invalid JSON Schema keywords or malformed
+          `x-xsv-config` properties raise **E3** (`InvalidXsvSchemaDefinitionError`).
       - id: R-XSV-CONFIG
         statement: |
           `resolve_xsv_parsing_config` maps `x-xsv-config` keys (after stripping the `x-` prefix and replacing

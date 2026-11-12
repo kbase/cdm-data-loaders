@@ -2,8 +2,8 @@
 
 All six file-format ingestion pipelines support pluggable file pre-processing, record-level filtering, single-table row transformation, multi-table splitting, and `pyarrow.Schema` overrides through `--preprocessors-module` (`CDL_PREPROCESSORS_MODULE`), `--transforms-module` (`CDL_TRANSFORMS_MODULE`), and `--output-schemas-module` (`CDL_OUTPUT_SCHEMAS_MODULE`):
 
-| Pipeline                                                                                                                       | CLI Entry Point        | Default Output Format                            | Source of Input `table_name`                                                                    |
-| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| Pipeline                                                                                                                                                                           | CLI Entry Point        | Default Output Format                            | Source of Input `table_name`                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
 | [extract_pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | `jsonlines_extract`    | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
 | [extract_jsonschema_validate_pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema` | `pyarrow.Table`                                  | Keys of `ENTITY_SCHEMAS` (or preset entrypoint `ncbi_datasets`)                                 |
 | [extract_pydantic_validate_pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`   | `pyarrow.Table`                                  | Keys of `ENTITY_MODELS`                                                                         |
@@ -21,13 +21,13 @@ File pre-processors run **before** a file is opened and parsed. Record transform
    - Each `FileItemDict` yielded by `dlt.sources.filesystem` passes through any `FilePreprocessFn` functions registered in `FILE_PREPROCESSORS`.
    - Returning `None` skips the file without error.
    - Raising `FilePreprocessError` routes a diagnostic row to `_rejected` (with `source_file` and `error_detail`), logs an error, skips the file, and records the failure in `report.txt` (`load_errors`).
-1. **Parse & Validate**:
+1. **Parse and Validate**:
    - Malformed lines or records that fail input validation (`JSON Schema`, `Pydantic`, or `qsv`) are routed directly to `_rejected` (with `table_name` set to the input table name) without calling the transform function.
-2. **Transform & Route (`RecordTransformFn`)**:
+2. **Transform and Route (`RecordTransformFn`)**:
    - Each valid record (`dict[str, Any]`) is passed to the `RecordTransformFn` registered in `TABLE_TRANSFORMS` for the input `table_name`.
    - The transform function returns a mapping of `{destination_table_name: [row_dict, ...]}`.
    - Returning `{}` (or empty row lists) drops the record.
-3. **Coerce & Buffer (`DictBuffer`)**:
+3. **Coerce and Buffer (`DictBuffer`)**:
    - All pipelines buffer rows using `DictBuffer`.
    - When `loader_file_format` is `parquet` or `iceberg` (`settings.use_pyarrow` is `True`), `_rejected` uses `REJECTED_PYARROW_SCHEMA`, and any destination table with an entry in `settings.schema_map` (either derived from the pipeline's input schema or supplied via `OUTPUT_SCHEMAS`) has its rows coerced against that `pyarrow.Schema` and emitted as a `pyarrow.Table` page.
    - When `loader_file_format` is `jsonl` (`settings.use_pyarrow` is `False`), `settings.schema_map` is `None` (no PyArrow schemas are generated from input schemas) and all tables (including `_rejected`) are emitted as `list[dict]` pages.

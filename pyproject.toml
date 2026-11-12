@@ -82,6 +82,7 @@ mutants = [
     "mutmut>=3.8.1",
 ]
 docs = [
+    "griffe-pydantic>=1.3.2",
     "mkdocstrings[python]>=1.0.8",
     "zensical>=0.1.1",
 ]
