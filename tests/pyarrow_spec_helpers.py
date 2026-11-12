@@ -26,12 +26,14 @@ def list_field(
 
 
 def load_module(module_file: Path) -> ModuleType:
-    """Load and execute a Python module from a file path."""
-    mod_name = (
-        "expected_schema"
-        if module_file.stem == "expected_schema"
-        else f"_fixture_{module_file.parent.name}_{module_file.stem}"
-    )
+    """Load and execute a Python module from a file path.
+
+    :param module_file: Path to the Python module file.
+    :type module_file: Path
+    :return: Executed module object.
+    :rtype: ModuleType
+    """
+    mod_name = f"_fixture_{module_file.parent.name}_{module_file.stem}"
     spec = importlib.util.spec_from_file_location(mod_name, module_file)
     if spec is None or spec.loader is None:
         msg = f"Could not load module from {module_file}"

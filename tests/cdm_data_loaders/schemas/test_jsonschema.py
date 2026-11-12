@@ -839,7 +839,6 @@ def test_load_xsv_meta_schema_fail_invalid_metaschema_documents(
         load_xsv_meta_schema(local_schema_path=schema_path)
 
 
-@pytest.mark.usefixtures("isolated_xsv_metaschema_state")
 def test_get_xsv_meta_schema_and_config_schema_pass_cached() -> None:
     """get_xsv_meta_schema() caches the validated metaschema and get_xsv_config_schema() extracts x-xsv-config."""
     expected_hits = 2
@@ -856,7 +855,6 @@ def test_get_xsv_meta_schema_and_config_schema_pass_cached() -> None:
     assert dict(config_schema) == meta_first["properties"]["x-xsv-config"]
 
 
-@pytest.mark.usefixtures("isolated_xsv_metaschema_state")
 @pytest.mark.parametrize(
     ("meta_doc", "error_cls", "match"),
     [
@@ -895,7 +893,6 @@ def test_get_xsv_config_schema_fail_missing_or_non_mapping_xsv_config_property(
         get_xsv_config_schema()
 
 
-@pytest.mark.usefixtures("isolated_xsv_metaschema_state")
 def test_validated_schema_pass_lazy_loads_custom_metaschema_only_when_referenced() -> None:
     """ValidatedSchema leaves the custom metaschema unloaded for standard drafts and lazily loads/validates it for CUSTOM_META_SCHEMA_URI."""
     standard_schema = {
@@ -906,6 +903,7 @@ def test_validated_schema_pass_lazy_loads_custom_metaschema_only_when_referenced
     validated_standard = ValidatedSchema(jsonschema=standard_schema)
     assert validated_standard.jsonschema == standard_schema
     assert get_xsv_meta_schema.cache_info().currsize == 0
+    assert jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI}, default=None) is None  # type: ignore[arg-type]
 
     custom_schema = {
         "$schema": CUSTOM_META_SCHEMA_URI,
@@ -928,7 +926,6 @@ def test_validated_schema_pass_lazy_loads_custom_metaschema_only_when_referenced
         ValidatedSchema(jsonschema=invalid_custom_schema)
 
 
-@pytest.mark.usefixtures("isolated_xsv_metaschema_state")
 @pytest.mark.vcr
 @pytest.mark.default_cassette("test_load_xsv_meta_schema_pass_remote_fallback.yaml")
 def test_validated_schema_pass_lazy_remote_fallback_when_local_schema_absent(
@@ -950,7 +947,6 @@ def test_validated_schema_pass_lazy_remote_fallback_when_local_schema_absent(
     assert get_xsv_meta_schema.cache_info().currsize == 1
 
 
-@pytest.mark.usefixtures("isolated_xsv_metaschema_state")
 def test_json_schema_reader_pass_lazy_registers_xsv_validator() -> None:
     """JsonSchemaReader.read() lazily registers the custom XSV validator when reading a CUSTOM_META_SCHEMA_URI document."""
     schema = {
@@ -997,10 +993,11 @@ def test_preserve_xsv_metaschema_state_pass_restores_bundled_schema_while_monkey
     expected_error: type[Exception],
     error_match: str,
 ) -> None:
-    """preserve_xsv_metaschema_state() restores the bundled metaschema and validator even before monkeypatch tears down."""
+    """preserve_xsv_metaschema_state() restores a prior metaschema cache and validator even before monkeypatch tears down."""
     fake_dir = tmp_path / "xsv_config" / "0.1.0"
     fake_dir.mkdir(parents=True)
     (fake_dir / "schema.json").write_text(json.dumps(fake_metaschema), encoding="utf-8")
+    register_xsv_validator()
 
     with preserve_xsv_metaschema_state():
         monkeypatch.setattr(importlib.resources, "files", lambda _pkg: tmp_path)
@@ -1022,3 +1019,17 @@ def test_preserve_xsv_metaschema_state_pass_restores_bundled_schema_while_monkey
                 "x-xsv-config": {"x-delimiter": ",;"},
             }
         )
+
+
+def test_preserve_xsv_metaschema_state_pass_leaves_unregistered_when_initially_clean() -> None:
+    """preserve_xsv_metaschema_state() removes cache and validator registrations added inside the block when initially clean."""
+    assert get_xsv_meta_schema.cache_info().currsize == 0
+    assert jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI}, default=None) is None  # type: ignore[arg-type]
+
+    with preserve_xsv_metaschema_state():
+        register_xsv_validator()
+        assert get_xsv_meta_schema.cache_info().currsize == 1
+        assert jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI}, default=None) is not None  # type: ignore[arg-type]
+
+    assert get_xsv_meta_schema.cache_info().currsize == 0
+    assert jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI}, default=None) is None  # type: ignore[arg-type]

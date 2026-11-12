@@ -818,7 +818,6 @@ def make_recorder() -> tuple[list[CtsSettings], Callable[[CtsSettings], LoadInfo
     return received, pipeline_fn
 
 
-@pytest.mark.usefixtures("restore_logging")
 def test_pipeline_cli_pass_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """run() builds settings from cli_args, env vars and kwargs, then returns the pipeline function's result."""
     received, pipeline_fn = make_recorder()
@@ -833,7 +832,6 @@ def test_pipeline_cli_pass_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     ]
 
 
-@pytest.mark.usefixtures("restore_logging")
 def test_pipeline_cli_pass_call_reads_argv(dlt_test_settings: CtsSettings, monkeypatch: pytest.MonkeyPatch) -> None:
     """Calling the CLI parses sys.argv, runs the pipeline and returns None so the process exits with 0."""
     received, pipeline_fn = make_recorder()

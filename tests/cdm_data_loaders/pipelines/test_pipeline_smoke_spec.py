@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import boto3
 import pytest
 from _pytest.mark.structures import ParameterSet
 
@@ -274,6 +275,7 @@ def smoke_env(
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", creds["aws_secret_access_key"])
     monkeypatch.setenv("AWS_ENDPOINT_URL", creds["endpoint_url"])
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.setattr(boto3, "DEFAULT_SESSION", None)
     reset_s3_client()
     try:
         client = get_s3_client(creds)

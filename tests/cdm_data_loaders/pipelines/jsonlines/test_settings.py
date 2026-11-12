@@ -858,7 +858,6 @@ def test_validated_jsonl_settings_pass_skips_pyarrow_conversion_for_jsonl_format
     assert spy.call_count == 0
 
 
-@pytest.mark.usefixtures("isolated_xsv_metaschema_state")
 def test_jsonl_jsonschema_settings_pass_lazy_loads_and_validates_custom_metaschema(
     monkeypatch: pytest.MonkeyPatch,
     test_defaults: dict[str, Any],

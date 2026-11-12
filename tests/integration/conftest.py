@@ -60,7 +60,7 @@ def clone_assemblies(assemblies: dict[str, AssemblyRecord]) -> dict[str, Assembl
 def ceph_reachable() -> bool:
     """Return True if the CEPH endpoint accepts connections."""
     try:
-        client = boto3.client(
+        client = boto3.Session().client(
             "s3",
             config=botocore.config.Config(
                 connect_timeout=1,
