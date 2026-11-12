@@ -13,12 +13,14 @@ from copy import deepcopy
 from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Final, Self
 from unittest.mock import patch
 
 import boto3
 import dlt
 import pytest
+from _pytest.logging import LogCaptureHandler
 from dlt.common.configuration.container import Container
 from dlt.common.pipeline import PipelineContext
 from frozendict import frozendict
@@ -29,7 +31,7 @@ from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
 from cdm_data_loaders.pipelines.core import _install_iceberg_catalog_cleanup
-from cdm_data_loaders.schemas.jsonschema import get_xsv_meta_schema, register_xsv_validator
+from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI, get_xsv_meta_schema
 from cdm_data_loaders.utils import cdm_logger
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
@@ -64,6 +66,10 @@ CASSETTES_DIR: Final[Path] = Path("tests") / "cassettes"
 SCHEMA_CONVERTER_SPECS_DIR: Final[Path] = BASE_DIR / "specs" / "schema_converters"
 XSD_SPEC_DIR: Final[Path] = SCHEMA_CONVERTER_SPECS_DIR / "xsd_to_pyarrow"
 PIPELINE_SPECS_DIR: Final[Path] = BASE_DIR / "specs" / "pipelines"
+SPECS_ROOT: Final[Path] = (BASE_DIR / "specs").resolve()
+TRANSIENT_MODULE_NAMES: Final[frozenset[str]] = frozenset({"schema", "expected_schema"})
+TRANSIENT_MODULE_PREFIXES: Final[tuple[str, ...]] = ("_fixture_", "_test_")
+NATIVE_SPECLESS_PREFIXES: Final[tuple[str, ...]] = ("_openssl", "cryptography.")
 
 REFERENCE_XML_NS: Final[str] = "http://uniprot.org/uniref"
 REFERENCE_XML_TAG: Final[str] = f"{{{REFERENCE_XML_NS}}}entry"
@@ -206,9 +212,103 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         pytest.skip("Test is marked requires_spark, but Spark is not available in this environment.")
 
 
+def _is_transient_test_module(name: str, mod: ModuleType | None) -> bool:
+    """Determine whether a ``sys.modules`` entry is a transient test or spec fixture module.
+
+    :param name: Module key in ``sys.modules``.
+    :type name: str
+    :param mod: Module object bound in ``sys.modules``, or ``None``.
+    :type mod: ModuleType | None
+    :return: ``True`` if the entry is a synthetic or file-loaded spec fixture module.
+    :rtype: bool
+    """
+    if mod is None:
+        return False
+    if name in TRANSIENT_MODULE_NAMES or name.startswith(TRANSIENT_MODULE_PREFIXES):
+        return True
+    if getattr(mod, "__spec__", None) is None and getattr(mod, "__file__", None) is None:
+        return not name.startswith(NATIVE_SPECLESS_PREFIXES)
+    if name.startswith("specs."):
+        return False
+    mod_file = getattr(mod, "__file__", None)
+    return mod_file is not None and Path(mod_file).resolve().is_relative_to(SPECS_ROOT)
+
+
+@contextmanager
+def _preserve_transient_sys_modules() -> Generator[None]:
+    """Restore or remove any transient test/spec modules added or replaced during a block.
+
+    :return: Context manager yielding ``None``.
+    :rtype: Generator[None]
+    """
+    saved_modules = dict(sys.modules)
+    try:
+        yield
+    finally:
+        for name in list(sys.modules):
+            current_mod = sys.modules.get(name)
+            if name not in saved_modules:
+                if _is_transient_test_module(name, current_mod):
+                    sys.modules.pop(name, None)
+            elif current_mod is not saved_modules[name] and (
+                _is_transient_test_module(name, current_mod) or _is_transient_test_module(name, saved_modules[name])
+            ):
+                sys.modules[name] = saved_modules[name]
+
+
 @pytest.fixture(autouse=True)
-def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
-    """Fiddle with the loggers used in the tests for a better experience."""
+def _isolated_cli_and_env() -> Generator[None]:
+    """Isolate ``sys.argv``, ``os.environ``, ``boto3.DEFAULT_SESSION``, S3 client cache, and transient modules.
+
+    Declared before fixtures that depend on ``monkeypatch`` so teardown runs after ``monkeypatch.undo()``,
+    ensuring decorators such as ``@mock_aws`` cannot leak credentials through ``monkeypatch``'s undo stack.
+
+    :return: Generator yielding ``None``.
+    :rtype: Generator[None]
+    """
+    clean_env = {k: v for k, v in deepcopy(os.environ).items() if not k.lower().startswith("cdl_")}
+    reset_s3_client()
+    try:
+        with (
+            _preserve_transient_sys_modules(),
+            patch.object(sys, "argv", ["pytest"]),
+            patch.dict(os.environ, clean_env, clear=True),
+            patch.object(boto3, "DEFAULT_SESSION", None),
+        ):
+            yield
+    finally:
+        reset_s3_client()
+
+
+@pytest.fixture(autouse=True)
+def isolated_logging(_isolated_cli_and_env: None) -> Generator[None]:
+    """Reset ``init_logger``'s record of the applied config and undo any logging changes made by the test.
+
+    :param _isolated_cli_and_env: Root CLI/env isolation fixture ordered outside logging isolation.
+    :type _isolated_cli_and_env: None
+    :return: Generator yielding ``None``.
+    :rtype: Generator[None]
+    """
+    with preserve_logging_state():
+        yield
+
+
+@pytest.fixture(autouse=True)
+def isolated_xsv_metaschema_state(_isolated_cli_and_env: None) -> Generator[None]:
+    """Reset the XSV metaschema cache and validator registration around every test.
+
+    :param _isolated_cli_and_env: Root CLI/env isolation fixture ordered outside metaschema isolation.
+    :type _isolated_cli_and_env: None
+    :return: Generator yielding ``None``.
+    :rtype: Generator[None]
+    """
+    with preserve_xsv_metaschema_state():
+        yield
+
+
+@pytest.fixture(autouse=True)
+def logging_setup(_isolated_dlt_config: None, caplog: pytest.LogCaptureFixture) -> None:
+    """Configure test logger levels and propagation inside ``isolated_logging`` and after dlt runtime setup."""
     vcr_logger = logging.getLogger("vcr")
     vcr_logger.setLevel(logging.ERROR)
     # turn on log propagation for the dlt logger
@@ -219,7 +319,11 @@ def logging_setup(caplog: pytest.LogCaptureFixture) -> None:
 
 
 @pytest.fixture(autouse=True)
-def isolate_dlt_pipelines_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[None, Any]:
+def isolate_dlt_pipelines_dir(
+    _isolated_dlt_config: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[None, Any]:
     """Set the DLT_DATA_DIR (where dlt stores pipeline metadata) to the test temporary directory.
 
     Prevents accumulation of dlt pipeline artefacts in the user ~/.dlt directory.
@@ -229,16 +333,6 @@ def isolate_dlt_pipelines_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     if Container()[PipelineContext].is_active():
         Container()[PipelineContext].deactivate()
         gc.collect()
-
-
-@pytest.fixture(autouse=True)
-def _isolated_cli_and_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
-    """Clear sys.argv and the environment to prevent test-to-test pollution."""
-    monkeypatch.setattr(sys, "argv", ["pytest"])
-
-    current_env = deepcopy(os.environ)
-    with patch.dict(os.environ, {k: v for k, v in current_env.items() if not k.lower().startswith("cdl_")}, clear=True):
-        yield
 
 
 @pytest.fixture
@@ -355,12 +449,14 @@ def _generate_dlt_config() -> dict[str, Any]:
 
 
 @pytest.fixture(autouse=True)
-def _isolated_dlt_config() -> Generator[None]:
+def _isolated_dlt_config(request: pytest.FixtureRequest) -> Generator[None]:
     """Isolate every test's dlt config/secrets provider chain, seeded with the standard test config.
 
     Prevents mutation of the global dlt.config during tests. dlt.config can be set explicitly by
     passing dlt_config=... to a Settings object or using `isolated_dlt_config(...)`.
     """
+    request.getfixturevalue("isolated_logging")
+    request.getfixturevalue("isolated_xsv_metaschema_state")
     with isolated_dlt_config(_generate_dlt_config()):
         yield
 
@@ -401,7 +497,7 @@ def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[S3Client]:
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
     monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
     monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
-    boto3.DEFAULT_SESSION = None
+    monkeypatch.setattr(boto3, "DEFAULT_SESSION", None)
 
     with mock_aws():
         reset_s3_client()
@@ -435,8 +531,8 @@ class LoggerState:
 
     @classmethod
     def capture(cls, lg: logging.Logger, exclude: logging.Handler | None = None) -> Self:
-        """Record the current state of ``lg``, leaving out the ``exclude`` handler."""
-        handlers = tuple(h for h in lg.handlers if h is not exclude)
+        """Record the current state of ``lg``, omitting ``exclude`` and pytest's per-phase capture handlers."""
+        handlers = tuple(h for h in lg.handlers if h is not exclude and not isinstance(h, LogCaptureHandler))
         return cls(
             level=lg.level,
             propagate=lg.propagate,
@@ -447,23 +543,39 @@ class LoggerState:
         )
 
     def restore(self, lg: logging.Logger, *extra_handlers: logging.Handler) -> None:
-        """Put ``lg`` back into the recorded state and attach ``extra_handlers``."""
+        """Put ``lg`` back into the recorded state while keeping active pytest capture handlers."""
+        live_capture_handlers = [
+            h
+            for h in lg.handlers
+            if isinstance(h, LogCaptureHandler) and h not in self.handlers and h not in extra_handlers
+        ]
         lg.setLevel(self.level)
         lg.propagate = self.propagate
         lg.disabled = self.disabled
         lg.filters[:] = self.filters
-        lg.handlers[:] = [*self.handlers, *extra_handlers]
+        lg.handlers[:] = [*self.handlers, *extra_handlers, *live_capture_handlers]
         for handler, formatter in zip(self.handlers, self.formatters, strict=True):
             handler.setFormatter(formatter)
 
 
 @contextmanager
 def preserve_logging_state(exclude_handler: logging.Handler | None = None) -> Generator[None]:
-    """Snapshot all logger states and cdm_logger.applied_key, restoring them and closing new handlers on exit."""
+    """Snapshot all logger states and ``cdm_logger.applied_key``, restoring them and closing new handlers on exit.
+
+    :param exclude_handler: Optional handler managed externally per test phase.
+    :type exclude_handler: logging.Handler | None
+    :return: Context manager yielding ``None``.
+    :rtype: Generator[None]
+    """
     root = logging.getLogger()
     manager = logging.Logger.manager
+    saved_manager_disable = manager.disable
     root_state = LoggerState.capture(root, exclude=exclude_handler)
-    saved = {name: LoggerState.capture(lg) for name, lg in manager.loggerDict.items() if isinstance(lg, logging.Logger)}
+    saved = {
+        name: LoggerState.capture(lg, exclude=exclude_handler)
+        for name, lg in manager.loggerDict.items()
+        if isinstance(lg, logging.Logger)
+    }
     saved_applied_key = cdm_logger.applied_key
     cdm_logger.applied_key = None
 
@@ -475,44 +587,39 @@ def preserve_logging_state(exclude_handler: logging.Handler | None = None) -> Ge
         known = {*root_state.handlers, *extra_handlers, *(h for state in saved.values() for h in state.handlers)}
         for lg in [root, *loggers.values()]:
             for handler in lg.handlers:
-                if handler not in known:
+                if handler not in known and not isinstance(handler, LogCaptureHandler):
                     handler.close()
         root_state.restore(root, *extra_handlers)
         for name, lg in loggers.items():
             saved.get(name, LoggerState()).restore(lg)
+        logging.disable(saved_manager_disable)
         cdm_logger.applied_key = saved_applied_key
-
-
-@pytest.fixture
-def isolated_logging(caplog: pytest.LogCaptureFixture) -> Generator[None]:
-    """Reset init_logger's record of the applied config and undo any logging changes made by the test."""
-    # pytest attaches a new caplog handler to the root logger for each test phase, so this one must not be restored
-    with preserve_logging_state(exclude_handler=caplog.handler):
-        yield
 
 
 @contextmanager
 def preserve_xsv_metaschema_state() -> Generator[None]:
-    """Reset the XSV metaschema cache around a block and restore the bundled validator registration on exit.
+    """Reset the XSV metaschema cache around a block and restore prior validator state on exit.
 
-    Restores ``importlib.resources.files`` before re-registering the validator so teardown
-    remains isolated even when a caller's ``monkeypatch`` fixture tears down afterwards.
+    Restores ``importlib.resources.files``, ``get_xsv_meta_schema`` cache state, and
+    ``jsonschema.validators`` registrations on exit even when a caller's ``monkeypatch``
+    fixture tears down afterwards.
 
-    :return: context manager yielding ``None``
+    :return: Context manager yielding ``None``.
     :rtype: Generator[None]
     """
     original_resources_files = importlib.resources.files
+    was_cached = get_xsv_meta_schema.cache_info().currsize > 0
     get_xsv_meta_schema.cache_clear()
     try:
-        yield
+        with (
+            patch.dict("jsonschema.validators._VALIDATORS") as validators_reg,
+            patch.dict("jsonschema.validators._META_SCHEMAS") as meta_schemas_reg,
+        ):
+            validators_reg.pop(CUSTOM_META_SCHEMA_URI, None)
+            meta_schemas_reg.pop(CUSTOM_META_SCHEMA_URI, None)
+            yield
     finally:
         importlib.resources.files = original_resources_files
         get_xsv_meta_schema.cache_clear()
-        register_xsv_validator()
-
-
-@pytest.fixture
-def isolated_xsv_metaschema_state() -> Generator[None]:
-    """Reset the XSV metaschema cache before and after a test and restore the default validator registration."""
-    with preserve_xsv_metaschema_state():
-        yield
+        if was_cached:
+            get_xsv_meta_schema()

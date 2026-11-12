@@ -36,7 +36,6 @@ from tests.conftest import (
     REFERENCE_XML_FIXTURE_DIR,
     S3,
     TEST_DATA_DIR,
-    preserve_logging_state,
 )
 from tests.helpers import make_cts_settings
 
@@ -271,13 +270,6 @@ def isolated_run_factory(tmp_path: Path) -> Callable[..., Callable[..., tuple[Lo
 def destination_bucket(tmp_path: Path, dlt_destination_config: str) -> Path:  # noqa: ARG001
     """The bucket_url of the local_fs destination in dlt.config."""
     return tmp_path / "bucket"
-
-
-@pytest.fixture
-def restore_logging() -> Iterator[None]:
-    """Undo the global logging changes made by init_logger, so caplog and later tests are unaffected."""
-    with preserve_logging_state():
-        yield
 
 
 def copy_test_files(source_dir: Path, file_names: Iterable[str], dest_dir: Path) -> Path:

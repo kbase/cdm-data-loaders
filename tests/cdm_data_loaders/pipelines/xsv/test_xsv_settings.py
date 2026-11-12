@@ -390,7 +390,6 @@ def test_xsv_settings_pass_generates_pyarrow_schema_for_jsonl_format(
     assert settings.pyarrow_schema == convert_xsv_schema_to_pyarrow(settings.validated_schema)
 
 
-@pytest.mark.usefixtures("isolated_xsv_metaschema_state")
 def test_xsv_settings_pass_lazy_loads_and_validates_custom_metaschema(
     settings_factory: Callable[..., XsvIngestSettings],
     monkeypatch: pytest.MonkeyPatch,
