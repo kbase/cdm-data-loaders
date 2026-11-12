@@ -37,6 +37,7 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     NCBI_DATASETS_PIPELINE_NAME,
     NCBI_DATASETS_SCHEMA_MODULE,
     PYDANTIC_PIPELINE_NAME,
+    InvalidJsonlEntitySchemaError,
     JsonlExtractSettings,
     JsonlIngestSettings,
     JsonlJsonschemaIngestSettings,
@@ -44,7 +45,12 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     NcbiDatasetsSettings,
     build_output_schema_registry,
 )
-from cdm_data_loaders.schemas.jsonschema import DereferencingError, ValidatedSchema
+from cdm_data_loaders.schemas.jsonschema import (
+    CUSTOM_META_SCHEMA_URI,
+    DereferencingError,
+    ValidatedSchema,
+    get_xsv_meta_schema,
+)
 from cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi import (
     ANNOTATION_REPORT_TABLE,
     DATASET_REPORT_TABLE,
@@ -850,3 +856,63 @@ def test_validated_jsonl_settings_pass_skips_pyarrow_conversion_for_jsonl_format
     assert settings.use_pyarrow is False
     assert settings.schema_map is None
     assert spy.call_count == 0
+
+
+def test_jsonl_jsonschema_settings_pass_lazy_loads_and_validates_custom_metaschema(
+    monkeypatch: pytest.MonkeyPatch,
+    test_defaults: dict[str, Any],
+    widget_schema: dict[str, Any],
+) -> None:
+    """JsonlJsonschemaIngestSettings leaves the custom metaschema unloaded for Draft 2020-12 and lazily loads/validates it for CUSTOM_META_SCHEMA_URI."""
+    get_xsv_meta_schema.cache_clear()
+    try:
+        standard_mod = register_temp_module(
+            monkeypatch,
+            "_test_jsonl_standard_metaschema",
+            ENTITY_SCHEMAS={"widget": widget_schema},
+        )
+        JsonlJsonschemaIngestSettings(
+            **test_defaults,
+            dataset_name="test_ds",
+            entity_schemas=standard_mod,
+        )
+        assert get_xsv_meta_schema.cache_info().currsize == 0
+
+        custom_entity_schema = {
+            **GADGET_SCHEMA,
+            "$schema": CUSTOM_META_SCHEMA_URI,
+            "x-xsv-config": {"x-delimiter": "\t"},
+        }
+        custom_mod = register_temp_module(
+            monkeypatch,
+            "_test_jsonl_custom_metaschema",
+            ENTITY_SCHEMAS={"gadget": custom_entity_schema},
+        )
+        custom_settings = JsonlJsonschemaIngestSettings(
+            **test_defaults,
+            dataset_name="test_ds",
+            entity_schemas=custom_mod,
+        )
+        assert get_xsv_meta_schema.cache_info().currsize == 1
+        assert custom_settings.schema_map is not None
+        assert "gadget" in custom_settings.schema_map.registry
+
+        invalid_custom_mod = register_temp_module(
+            monkeypatch,
+            "_test_jsonl_invalid_custom_metaschema",
+            ENTITY_SCHEMAS={
+                "gadget": {
+                    **GADGET_SCHEMA,
+                    "$schema": CUSTOM_META_SCHEMA_URI,
+                    "x-xsv-config": {"x-delimiter": "::"},
+                }
+            },
+        )
+        with pytest.raises(InvalidJsonlEntitySchemaError, match="is too long"):
+            JsonlJsonschemaIngestSettings(
+                **test_defaults,
+                dataset_name="test_ds",
+                entity_schemas=invalid_custom_mod,
+            )
+    finally:
+        get_xsv_meta_schema.cache_clear()

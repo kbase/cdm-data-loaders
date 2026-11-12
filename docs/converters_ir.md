@@ -63,7 +63,7 @@ cli/                           converter CLI entry points and settings
 ```
 
 `core/` imports no dlt, PyIceberg or PySpark modules. The only cross-package import is the
-`x-xsv-config` contract, which reuses `X_XSV_CONFIG_SCHEMA` from
+`x-xsv-config` contract, which reuses `get_xsv_config_schema` from
 `cdm_data_loaders.schemas.jsonschema`. dlt table normalization lives in
 `cdm_data_loaders.converters.core.dlt_normalization`
 (`DltTableNode`, `unflatten_tables`, `flatten_nodes`, `tables_parents_first`, `child_key`,
@@ -78,7 +78,7 @@ live in `cdm_data_loaders.converters.cli`.
 | `core/extensions.py`            | `ExtensionError`, `ExtensionSpec`, `ExtensionRegistry`, `Extensions`, `DEFAULT_EXTENSIONS`, `validated_extensions`     |
 | `core/guards.py`                | `DEFAULT_MAX_RECURSION_DEPTH`, `validate_max_recursion_depth`, `require_schema_keyword`, `require_object_root`, `reject_unresolved_references` |
 | `core/inference.py`             | `infer_implicit_type`, `json_type_from_enum`, `decimal_places`, `decimal_pattern`, `resolve_union_type`                |
-| `core/io.py`                    | `load_schema_text`, `load_schema_file`, `coerce_extra_metadata_keywords`, `JsonSchemaConverterBase`                    |
+| `core/io.py`                    | `load_schema_text`, `load_schema_file`, `coerce_extra_metadata_keywords`, `ExtraMetadataKeywords`, `JsonSchemaConverterBase` |
 | `core/dlt_normalization.py`     | `DltTableNode`, `unflatten_tables`, `flatten_nodes`, `tables_parents_first`, `child_key`, `child_table_name`           |
 | `readers/json_schema.py`        | `JsonSchemaReader` (including `read_node`), `extract_constraints`, `extract_extensions`                                |
 | `readers/json_schema_strict.py` | `StrictJsonSchemaReader`, including `read_node`                                                                    |
@@ -307,7 +307,7 @@ Builtins:
   schema_id, format_version, current_snapshot_id, location, properties, partition_spec,
   identifier_field_ids and generated_at. Defaults allow arbitrary IR values; other keys
   have explicit scalar, array or closed-object contracts.
-- `x-xsv-config`: exactly `X_XSV_CONFIG_SCHEMA` from the existing custom metaschema,
+- `x-xsv-config`: exactly `get_xsv_config_schema()` from the custom XSV metaschema,
   including its nonempty recognized-key requirement and closed property set. This does
   not impose a nonempty root JSON Schema `required` array.
 - `x-file-glob`, `x-dlt-prefix`, `x-dlt-split`: strings; `x-delimiter`: one character;

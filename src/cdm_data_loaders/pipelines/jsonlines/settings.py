@@ -85,7 +85,7 @@ class InvalidEntitySchemasRegistryError(JsonlJsonschemaError):
 
 
 class UnsupportedJsonlSchemaDialectError(JsonlJsonschemaError):
-    """Every entity JSON Schema must declare a supported `$schema` draft URI (Draft 4, 6, 7, 2019-09, 2020-12, or KBase 2020-12-xsv)."""
+    """Every entity JSON Schema must declare a supported `$schema` draft URI (Draft 4, 6, 7, 2019-09, 2020-12, or KBase xsv_config)."""
 
     code: ClassVar[str] = "E2"
     title: ClassVar[str] = "Missing or unsupported JSON Schema $schema dialect"

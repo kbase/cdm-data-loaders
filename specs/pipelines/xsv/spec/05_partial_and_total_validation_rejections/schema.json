@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.kbase.us/draft/2020-12-xsv/schema",
+  "$schema": "https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json",
   "title": "PartialAndTotalValidationRejections",
   "type": "object",
   "required": [

@@ -4,7 +4,7 @@ This guide explains how to author, edit, and maintain specification rules, test 
 
 ---
 
-## 1. Architecture & Directory Layout
+## 1. Architecture and Directory Layout
 
 Each schema converter (`jsonschema_to_pyarrow`, `pydantic_to_pyarrow`, `xsd_to_pyarrow`) has a specification directory under `specs/schema_converters/<converter>/`:
 
@@ -45,7 +45,7 @@ The manifests in `specs/schema_converters/` drive two outputs:
 Rules live in `specs/schema_converters/<converter>/rules.yaml` and are loaded by `load_rules()` in `tests/converter_spec.py`.
 
 ```yaml
-title: XSD to PyArrow Schema & Record Conversion Specification
+title: XSD to PyArrow Schema and Record Conversion Specification
 intro: |
   Target specification for `cdm_data_loaders.converters.facades.xsd_to_pyarrow`.
 
@@ -79,11 +79,11 @@ Converter error codes (`E1`, `E2`, ...) are defined as exception subclasses in t
 
 Each converter defines a base error class and a tuple of numbered subclasses:
 
-| Converter | Source Module | Base Class | Error Tuple |
-| :--- | :--- | :--- | :--- |
+| Converter               | Source Module                                                      | Base Class                 | Error Tuple                    |
+| :---------------------- | :----------------------------------------------------------------- | :------------------------- | :----------------------------- |
 | `jsonschema_to_pyarrow` | `src/cdm_data_loaders/converters/facades/jsonschema_to_pyarrow.py` | `JSONSchemaToPyArrowError` | `JSONSCHEMA_TO_PYARROW_ERRORS` |
-| `pydantic_to_pyarrow` | `src/cdm_data_loaders/converters/facades/pydantic_to_pyarrow.py` | `PydanticToPyArrowError` | `PYDANTIC_TO_PYARROW_ERRORS` |
-| `xsd_to_pyarrow` | `src/cdm_data_loaders/converters/facades/xsd_to_pyarrow.py` | `XsdToPyArrowError` | `XSD_TO_PYARROW_ERRORS` |
+| `pydantic_to_pyarrow`   | `src/cdm_data_loaders/converters/facades/pydantic_to_pyarrow.py`   | `PydanticToPyArrowError`   | `PYDANTIC_TO_PYARROW_ERRORS`   |
+| `xsd_to_pyarrow`        | `src/cdm_data_loaders/converters/facades/xsd_to_pyarrow.py`        | `XsdToPyArrowError`        | `XSD_TO_PYARROW_ERRORS`        |
 
 Each error subclass defines:
 

@@ -83,8 +83,8 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import Cleane
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
 from cdm_data_loaders.schemas.jsonschema import (
     CUSTOM_META_SCHEMA_URI,
-    X_XSV_CONFIG_SCHEMA,
     dereference_schema,
+    get_xsv_config_schema,
     register_xsv_validator,
 )
 from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
@@ -332,7 +332,7 @@ def render_xsv_config_table() -> str:
     :return: Markdown table of ``x-xsv-config`` properties and ``CleanerValidatorArgs`` fields.
     :rtype: str
     """
-    props: Mapping[str, Any] = X_XSV_CONFIG_SCHEMA["properties"]
+    props: Mapping[str, Any] = get_xsv_config_schema()["properties"]
     arg_fields = CleanerValidatorArgs.model_fields
     lines = [
         "| `x-xsv-config` key | JSON Schema constraint | `CleanerValidatorArgs` field | Default |",

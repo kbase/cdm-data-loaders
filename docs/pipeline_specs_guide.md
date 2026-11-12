@@ -4,7 +4,7 @@ This guide explains how to author, edit, and maintain pipeline smoke test rules,
 
 ---
 
-## 1. Architecture & Directory Layout
+## 1. Architecture and Directory Layout
 
 Each pipeline family specification suite lives under `specs/pipelines/<family>/` and is loaded by `tests/pipeline_spec.py`:
 
@@ -41,7 +41,7 @@ The manifests in `specs/pipelines/` drive two outputs:
    - [JSONLines Extract Pipeline Specification](jsonlines_extract_specification.md) (`jsonlines_extract` pipeline)
    - [JSONLines (JSON Schema) Pipeline Specification](jsonlines_jsonschema_specification.md) (`jsonlines_jsonschema` base pipeline + `ncbi_datasets` preset subclass)
    - [JSONLines (Pydantic) Pipeline Specification](jsonlines_pydantic_specification.md) (`jsonlines_pydantic` pipeline)
-   - [XSV (CSV/TSV) Schema & Pipeline Specification](xsv_specification.md) (`xsv` pipeline)
+   - [XSV (CSV/TSV) Schema and Pipeline Specification](xsv_specification.md) (`xsv` pipeline)
 
 ---
 
@@ -49,15 +49,15 @@ The manifests in `specs/pipelines/` drive two outputs:
 
 Rules in `specs/pipelines/<pipeline>/rules.yaml` define the end-to-end behavioral contract of a pipeline across three stages:
 
-1. **File Discovery & Pre-processing** (for example, `P1-DISCOVERY`, `P1-MD5-SIDECAR`, `N1-ENTITY-DIRS`):
+1. **File Discovery and Pre-processing** (for example, `P1-DISCOVERY`, `P1-MD5-SIDECAR`, `N1-ENTITY-DIRS`):
    - Which files `input_dir` and `file_glob` match.
    - How subdirectories map to entity tables.
    - What file pre-processors (such as `validate_md5_sidecar` in `cdm_data_loaders.core.preprocessors`) verify before reading a file.
-2. **Parsing, Validation, Transforms & Coercion** (for example, `P2-LEVEL-ROUTING`, `N2-JSONSCHEMA-VALIDATE`, `N3-FILTER-ANNOTATION`):
+2. **Parsing, Validation, Transforms and Coercion** (for example, `P2-LEVEL-ROUTING`, `N2-JSONSCHEMA-VALIDATE`, `N3-FILTER-ANNOTATION`):
    - How records are parsed and validated against XSD or JSON Schema.
    - How `TABLE_TRANSFORMS` filter, mutate, or split records across tables.
    - How records are coerced to `OUTPUT_SCHEMAS` or precomputed PyArrow schemas (`PUBMED_SCHEMAS`, `SCHEMAS`).
-3. **Error Routing & Pipeline Reporting** (for example, `P3-PREPROCESS-ERROR`, `P3-REPORT`, `N4-REJECTED`, `N4-REPORT`):
+3. **Error Routing and Pipeline Reporting** (for example, `P3-PREPROCESS-ERROR`, `P3-REPORT`, `N4-REJECTED`, `N4-REPORT`):
    - How file pre-processing failures, JSON syntax errors, and schema validation errors populate `_rejected`.
    - What `report.txt` and `_load_info` record for `status`, `ingested_files`, `load_errors`, and `pipeline_load_info_errs`.
 
@@ -71,7 +71,7 @@ intro: |
 
 sections:
   - id: discovery_and_preprocessing
-    title: File Discovery & MD5 Pre-processing
+    title: File Discovery and MD5 Pre-processing
     rules:
       - id: P1-DISCOVERY
         name: Gzip XML discovery
@@ -91,7 +91,7 @@ sections:
 
 ## 3. How Pipeline Errors Are Modeled and Tested
 
-Unlike schema converters (which raise exceptions at schema-translation time), KBase CTS ingestion pipelines run on the CTS (CDM Task Service) must exit with code `0` so the container service preserves output tables, `_rejected` rows, `_load_info`, and `report.txt` (see [Core Pipeline & KBase CTS Execution Guide](core_cts_execution.md)).
+Unlike schema converters (which raise exceptions at schema-translation time), KBase CTS ingestion pipelines run on the CTS (CDM Task Service) must exit with code `0` so the container service preserves output tables, `_rejected` rows, `_load_info`, and `report.txt` (see [Core Pipeline and KBase CTS Execution Guide](core_cts_execution.md)).
 
 Pipeline error scenarios are modeled as `case.yaml` runs that verify three error outputs:
 
@@ -99,12 +99,12 @@ Pipeline error scenarios are modeled as `case.yaml` runs that verify three error
 
 Failed files and failed records are routed to the `_rejected` table (`REJECTED_PYARROW_SCHEMA` in `cdm_data_loaders.utils.buffer`) with five columns:
 
-| Column | File Pre-processor Failure | Record Parse / Validation Failure |
-| :--- | :--- | :--- |
-| `table_name` | Target table name or `None` (multi-table XML level mode) | Entity table name (for example, `"annotation_report"`) |
-| `source_file` | Relative path of the rejected file | Relative path of the input file |
-| `line_no` | `None` | 1-based line number in the input file |
-| `raw_record` | `None` | Raw unparsed text of the rejected line |
+| Column         | File Pre-processor Failure                                          | Record Parse / Validation Failure                                 |
+| :------------- | :------------------------------------------------------------------ | :---------------------------------------------------------------- |
+| `table_name`   | Target table name or `None` (multi-table XML level mode)            | Entity table name (for example, `"annotation_report"`)            |
+| `source_file`  | Relative path of the rejected file                                  | Relative path of the input file                                   |
+| `line_no`      | `None`                                                              | 1-based line number in the input file                             |
+| `raw_record`   | `None`                                                              | Raw unparsed text of the rejected line                            |
 | `error_detail` | Pre-processor error message (for example, `"MD5 mismatch for ..."`) | JSON decode error string or JSON list of schema validation errors |
 
 ### 2. `expected_report` in `case.yaml`

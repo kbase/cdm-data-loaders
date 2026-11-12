@@ -1,4 +1,4 @@
-# Core Pipeline & KBase CTS Execution Guide
+# Core Pipeline and KBase CTS Execution Guide
 
 This guide explains how `cdm-data-loaders` pipelines are configured, executed locally and inside containers on the KBase Container Task Service (CTS), and how they report results, logs, and rejected records.
 
@@ -81,17 +81,17 @@ Pipelines in production run on the **KBase Container Task Service (CTS)**. CTS e
 
 To preserve diagnostic artifacts, `PipelineCli` / `run_cli()` and `run_pipeline()` in `src/cdm_data_loaders/pipelines/core.py` separate failures into two phases:
 
-1. **Pre-execution configuration, CLI & destination validation errors (Non-zero exit)**:
+1. **Pre-execution configuration, CLI and destination validation errors (Non-zero exit)**:
    - Errors raised by `pydantic_settings.CliApp.run(settings_cls)` (missing required flags, invalid file paths, unknown options, or invalid `TABLE_TRANSFORMS` modules) or invalid `use_destination` configuration occur *before* pipeline extraction starts.
    - Because no output data has been produced yet, these errors raise immediately and terminate the process with a non-zero exit code so CTS flags the task failure and records the traceback from `STDERR`.
-2. **Runtime pipeline & `dlt` load errors (Exit code `0`)**:
+2. **Runtime pipeline and `dlt` load errors (Exit code `0`)**:
    - Once `pipeline.run()` begins inside `run_pipeline()`, runtime step failures (`PipelineStepFailed`) and failed jobs (`load_info.has_failed_jobs`) are caught and logged.
    - `save_pipeline_metadata()` writes the `LoadInfo` record to the `_load_info` table and writes `PipelineReport` YAML to `settings.report_path` (`report.txt`) with `status: error` or `status: completed with errors`, `pipeline_err_msg`, and `load_errors`.
    - `PipelineCli.__call__()` returns `None` so the container **exits with code `0`**, preserving `report.txt`, logs, `_load_info`, and `_rejected` tables in `/output_dir` for CTS to upload.
 
 ---
 
-## 3. Settings Class Hierarchy & CLI Configuration
+## 3. Settings Class Hierarchy and CLI Configuration
 
 All pipeline settings inherit from the `pydantic-settings` hierarchy defined in `src/cdm_data_loaders/core/settings.py`:
 
@@ -128,17 +128,17 @@ classDiagram
 - **Environment Variable Prefix (`CDL_`)**: Every setting can be populated via an environment variable prefixed with `CDL_`, e.g., `CDL_DATASET_NAME=my_dataset` or `CDL_INPUT_DIR=/data/in`.
 - **Kebab-Case CLI Flags**: Field names use `snake_case` in Python and `--kebab-case` on the CLI (e.g., `dataset_name` -> `--dataset-name`).
 - **Explicit CLI Parsing**: `cli_parse_args` is not enabled on model instantiation (`default_settings_with_shortcuts()`), so constructing settings objects in Python code or unit tests never reads `sys.argv`. CLI parsing only happens when `PipelineCli` invokes `pydantic_settings.CliApp.run(settings_cls)`.
-- **Compile-Time Alias & Shortcut Validation**: `CdmDataLoadersBase.__pydantic_init_subclass__` calls `check_aliases()` whenever a settings subclass is defined, ensuring no field name, `validation_alias`, or `cli_shortcuts` entry collides or claims `-h` / `--help`.
+- **Compile-Time Alias and Shortcut Validation**: `CdmDataLoadersBase.__pydantic_init_subclass__` calls `check_aliases()` whenever a settings subclass is defined, ensuring no field name, `validation_alias`, or `cli_shortcuts` entry collides or claims `-h` / `--help`.
 - **CTS-Safe Wildcard Tokens (`FileGlob`)**: The CTS `POST /jobs` API restricts `args` and `environment` values to `^[\w\./][\w\.\,+/-]*$`. CTS rejects raw glob metacharacters (`*`, `?`, `[`, `]`, `!`). `FileGlob` (`--file-glob`, `-g`, `CDL_FILE_GLOB`) expands readable wildcard tokens while keeping raw globs intact for local runs:
 
-| Token          | Glob Character | Example CTS Value                        | Expanded Glob     |
-| :------------- | :------------- | :--------------------------------------- | :---------------- |
-| `__STAR__`     | `*`            | `__STAR__.ext.__STAR__`                  | `*.ext.*`         |
-| `__GLOBSTAR__` | `**`           | `__GLOBSTAR__/__STAR__.xml.gz`           | `**/*.xml.gz`     |
-| `__QMARK__`    | `?`            | `batch___QMARK__.csv`                    | `batch_?.csv`     |
-| `__LBRACK__`   | `[`            | `part___LBRACK__0-9__RBRACK__.tsv`       | `part_[0-9].tsv`  |
-| `__RBRACK__`   | `]`            | `part___LBRACK__0-9__RBRACK__.tsv`       | `part_[0-9].tsv`  |
-| `__BANG__`     | `!`            | `data___LBRACK____BANG__a__RBRACK__.xml` | `data_[!a].xml`   |
+| Token          | Glob Character | Example CTS Value                        | Expanded Glob    |
+| :------------- | :------------- | :--------------------------------------- | :--------------- |
+| `__STAR__`     | `*`            | `__STAR__.ext.__STAR__`                  | `*.ext.*`        |
+| `__GLOBSTAR__` | `**`           | `__GLOBSTAR__/__STAR__.xml.gz`           | `**/*.xml.gz`    |
+| `__QMARK__`    | `?`            | `batch___QMARK__.csv`                    | `batch_?.csv`    |
+| `__LBRACK__`   | `[`            | `part___LBRACK__0-9__RBRACK__.tsv`       | `part_[0-9].tsv` |
+| `__RBRACK__`   | `]`            | `part___LBRACK__0-9__RBRACK__.tsv`       | `part_[0-9].tsv` |
+| `__BANG__`     | `!`            | `data___LBRACK____BANG__a__RBRACK__.xml` | `data_[!a].xml`  |
 
 Example CTS `POST /jobs` `params.args` list:
 
@@ -170,8 +170,8 @@ Configures structured JSON logging (`src/cdm_data_loaders/utils/cdm_logger.py`):
 
 Adds validated input and output directory settings (`src/cdm_data_loaders/core/path_fields.py`):
 
-| Field        | CLI Flag       | Shortcut | Default      | Description                                                                                                |
-| :----------- | :------------- | :------- | :----------- | :--------------------------------------------------------------------------------------------------------- |
+| Field        | CLI Flag       | Shortcut | Default      | Description                                                                                               |
+| :----------- | :------------- | :------- | :----------- | :-------------------------------------------------------------------------------------------------------- |
 | `input_dir`  | `--input-dir`  | `-i`     | *(Required)* | Local directory (plain path or `file://` URL, must exist) or `fsspec` URL containing file(s) to import.   |
 | `output_dir` | `--output-dir` | `-o`     | *(Required)* | Local directory for output artifacts, `report.txt`, and optional pipeline metadata (`pipeline_metadata`). |
 
@@ -195,20 +195,20 @@ Base settings for `dlt`-backed CTS pipelines (`CLI_SHORTCUTS`):
 
 Extends `CtsSettings` for file-format ingestion pipelines (`FILE_FORMAT_CLI_SHORTCUTS`):
 
-| Field                | CLI Flag               | Shortcut | Default      | Description                                                                |
-| :------------------- | :--------------------- | :------- | :----------- | :------------------------------------------------------------------------- |
-| `dataset_name`       | `--dataset-name`       | —        | *(Required)* | Name of the dataset / schema produced in the `dlt` destination.            |
+| Field                | CLI Flag               | Shortcut | Default      | Description                                                               |
+| :------------------- | :--------------------- | :------- | :----------- | :------------------------------------------------------------------------ |
+| `dataset_name`       | `--dataset-name`       | —        | *(Required)* | Name of the dataset / schema produced in the `dlt` destination.           |
 | `loader_file_format` | `--loader-file-format` | `-f`     | `"parquet"`  | Output file or table format for `dlt` (`iceberg`, `jsonl`, or `parquet`). |
 
-#### `XmlIngestSettings` & `SingleTableXmlIngestSettings`
+#### `XmlIngestSettings` and `SingleTableXmlIngestSettings`
 
 Extends `FileFormatIngestSettings` (and `TransformSettingsMixin`) for XML pipelines (`XML_CLI_SHORTCUTS`):
 
-| Field        | CLI Flag       | Shortcut | Default      | Description                                                                               |
-| :----------- | :------------- | :------- | :----------- | :---------------------------------------------------------------------------------------- |
+| Field        | CLI Flag       | Shortcut | Default      | Description                                                                                                                              |
+| :----------- | :------------- | :------- | :----------- | :--------------------------------------------------------------------------------------------------------------------------------------- |
 | `file_glob`  | `--file-glob`  | `-g`     | `"*.xml*"`   | Glob pattern matching XML files (including `.xml.gz`) under `input_dir`; accepts CTS wildcard tokens (`__STAR__`, `__GLOBSTAR__`, etc.). |
-| `table_name` | `--table-name` | `-t`     | *(Required)* | Target table name (`SingleTableXmlIngestSettings`; preset on `uniprot`/`uniref*`).        |
-| `xml_tag`    | `--xml-tag`    | `-x`     | *(Required)* | Repeating record XML tag (`SingleTableXmlIngestSettings`; preset on `uniprot`/`uniref*`). |
+| `table_name` | `--table-name` | `-t`     | *(Required)* | Target table name (`SingleTableXmlIngestSettings`; preset on `uniprot`/`uniref*`).                                                       |
+| `xml_tag`    | `--xml-tag`    | `-x`     | *(Required)* | Repeating record XML tag (`SingleTableXmlIngestSettings`; preset on `uniprot`/`uniref*`).                                                |
 
 #### `TransformSettingsMixin`
 
@@ -220,11 +220,11 @@ Mixed into `JsonlIngestSettings`, `XsvIngestSettings`, and `SingleTableXmlIngest
 | `transforms_module`     | `--transforms-module`     | —        | `None`  | Optional Python module path exporting `TABLE_TRANSFORMS` (`dict[str, RecordTransformFn]`).              |
 | `output_schemas_module` | `--output-schemas-module` | —        | `None`  | Optional Python module path exporting `OUTPUT_SCHEMAS` (`dict[str, pa.Schema]`) for destination tables. |
 
-See [Table & Column Transformations](table_transforms.md) for full details on `FILE_PREPROCESSORS`, `TABLE_TRANSFORMS`, and `OUTPUT_SCHEMAS`.
+See [Table and Column Transformations](table_transforms.md) for full details on `FILE_PREPROCESSORS`, `TABLE_TRANSFORMS`, and `OUTPUT_SCHEMAS`.
 
 ---
 
-## 4. Configuring `dlt` Destinations & Secrets
+## 4. Configuring `dlt` Destinations and Secrets
 
 Every `CtsSettings` pipeline requires `--use-destination <name>` (or `CDL_USE_DESTINATION=<name>`), where `<name>` is a named destination entry in `dlt` configuration (`destination.<name>.destination_type`).
 
@@ -277,7 +277,7 @@ When `--use-output-dir-for-pipeline-metadata` (`-p`) is passed, `dlt` stores its
 
 ---
 
-## 5. Pipeline Execution Lifecycle & Resource Builders
+## 5. Pipeline Execution Lifecycle and Resource Builders
 
 `src/cdm_data_loaders/pipelines/core.py` provides the shared execution lifecycle and composable `dlt` resource builders used across all pipelines.
 
@@ -288,9 +288,9 @@ sequenceDiagram
     participant DLT as dlt.Pipeline
     participant Out as output_dir
 
-    CLI->>CLI: CliApp.run(settings_cls) & init_logger(settings)
+    CLI->>CLI: CliApp.run(settings_cls) and init_logger(settings)
     CLI->>Core: run_pipeline(settings, resource, ...)
-    Core->>DLT: Configure dlt.pipeline & dlt.destination(settings.use_destination)
+    Core->>DLT: Configure dlt.pipeline and dlt.destination(settings.use_destination)
     Core->>Core: _attach_file_collector(resource)
     Core->>DLT: pipeline.run(resource, **pipeline_run_kwargs)
     Core->>DLT: save_pipeline_metadata -> load _load_info table (JSONL)
@@ -320,7 +320,7 @@ To minimize `dlt` item overhead, readers batch records using `settings.buffer_si
 
 ---
 
-## 6. Output Artifacts, Rejections & Observability
+## 6. Output Artifacts, Rejections and Observability
 
 Every pipeline run produces standardized observability artifacts in `output_dir` and the `dlt` destination:
 
@@ -353,7 +353,7 @@ Pipelines that validate or parse individual records route malformed records to t
 - **JSONLines pipelines (`jsonlines_extract`, `jsonlines_jsonschema`, `jsonlines_pydantic`)**: Unparseable JSON lines or schema/model validation failures are routed to `_rejected` with `table_name`, `source_file`, `line_no`, `raw_record`, and `error_detail`.
 - **XSV pipeline (`xsv`)**: If `qsv` two-pass validation detects structural errors or JSON Schema violations in a file, diagnostic rows are routed to `_rejected` while valid files continue loading into `<table_name>`.
 
-### 4. Structured Logging & Slack Alerts
+### 4. Structured Logging and Slack Alerts
 
 - **`init_logger(settings)` (`utils/cdm_logger.py`)**: Initializes logging from `settings.log_config_file` (or the default `logger_config.json`).
 - **Slack notifications**: If `runtime.slack_incoming_hook` (`RUNTIME__SLACK_INCOMING_HOOK`) is configured in `dlt`, `run_pipeline()` sends a completion or error summary message via `send_slack_message_carefully()`.

@@ -19,16 +19,29 @@ from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
 from scripts.gen_docs import (
     BUNDLED_SCHEMAS_PATH,
     CLI_REFERENCE_PATH,
+    GENERATED_BANNER,
     GITHUB_BLOB_BASE,
+    PUBLISHED_SCHEMAS_DOCS_DIR,
     REPO_ROOT,
+    SCHEMA_SOURCE_DOCS_DIR,
+    SITE_URL_BASE,
     CliEntryDoc,
+    SchemaAssetDoc,
+    build_schema_doc_outputs,
+    check_or_write_files,
+    code_fence_for_text,
     discover_api_modules,
     discover_schema_assets,
+    is_published_jsonschema,
     load_cli_entries,
     main,
+    prune_empty_parents,
     render_cli_reference,
+    render_schema_asset_detail_page,
     render_schema_assets_page,
+    render_schemas_summary,
     repo_blob_url,
+    resolve_schema_file_metadata,
 )
 from tests.cdm_data_loaders.pipelines.reference.pipeline import ReferencePipelineSettings
 
@@ -375,9 +388,11 @@ def test_main_check_fail_when_output_stale(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Verify main --check returns 1 when generated files are missing or stale, and 0 after regeneration."""
+    """Verify main --check detects missing, modified, and orphaned schema files and cleans orphans on write."""
     out_file = tmp_path / "cli_reference.md"
     schemas_file = tmp_path / "bundled_schemas.md"
+    schema_source_dir = tmp_path / "schema_source"
+    published_schemas_dir = tmp_path / "schemas"
     assert main(["--check", "--output", str(out_file), "--schemas-output", str(schemas_file)]) == 1
     captured = capsys.readouterr()
     assert "stale:" in captured.err
@@ -385,11 +400,37 @@ def test_main_check_fail_when_output_stale(
     assert main(["--output", str(out_file), "--schemas-output", str(schemas_file)]) == 0
     assert out_file.exists()
     assert schemas_file.exists()
+    assert (schema_source_dir / "SUMMARY.md").exists()
+    assert (published_schemas_dir / "xsv_config" / "0.1.0" / "schema.json").is_file()
+    assert main(["--check", "--output", str(out_file), "--schemas-output", str(schemas_file)]) == 0
+
+    orphan_source_dir = schema_source_dir / "obsolete_group"
+    orphan_source_file = orphan_source_dir / "removed.schema.json.md"
+    orphan_source_dir.mkdir(parents=True)
+    orphan_source_file.write_text("# Orphan\n", encoding="utf-8")
+
+    orphan_pub_dir = published_schemas_dir / "xsv_config" / "0.0.1"
+    orphan_pub_file = orphan_pub_dir / "schema.json"
+    orphan_pub_dir.mkdir(parents=True)
+    orphan_pub_file.write_text("{}\n", encoding="utf-8")
+
+    assert main(["--check", "--output", str(out_file), "--schemas-output", str(schemas_file)]) == 1
+    orphan_err = capsys.readouterr().err
+    assert "removed.schema.json.md" in orphan_err
+    assert "0.0.1/schema.json" in orphan_err
+
+    assert main(["--output", str(out_file), "--schemas-output", str(schemas_file)]) == 0
+    assert not orphan_source_file.exists()
+    assert not orphan_source_dir.exists()
+    assert not orphan_pub_file.exists()
+    assert not orphan_pub_dir.exists()
+    assert schema_source_dir.is_dir()
+    assert published_schemas_dir.is_dir()
     assert main(["--check", "--output", str(out_file), "--schemas-output", str(schemas_file)]) == 0
 
 
 def test_discover_and_render_schema_assets_pass() -> None:
-    """Verify module discovery, schema asset discovery, and docs/bundled_schemas.md freshness."""
+    """Verify module discovery, schema asset discovery, published xsv_config JSON Schemas, and docs freshness."""
     modules = discover_api_modules()
     module_paths = {mod.module_path for mod in modules}
     assert "cdm_data_loaders" in module_paths
@@ -400,13 +441,170 @@ def test_discover_and_render_schema_assets_pass() -> None:
     asset_paths = {asset.rel_path.as_posix() for asset in assets}
     assert "schemas/uniprot/uniprot.xsd" in asset_paths
     assert "schemas/uniref/uniref.xsd" in asset_paths
+    assert "schemas/xsv_config/0.1.0/schema.json" in asset_paths
+    assert all(not asset.rel_path.name.endswith(".py") for asset in assets)
     assert repo_blob_url(REPO_ROOT / "zensical.toml") == f"{GITHUB_BLOB_BASE}/zensical.toml"
+
+    published_paths = {asset.published_rel_path.as_posix() for asset in assets if asset.published_rel_path is not None}
+    assert "schemas/xsv_config/0.1.0/schema.json" in published_paths
+    assert all(pub.startswith("schemas/xsv_config/") and pub.endswith(".json") for pub in published_paths)
 
     rendered = render_schema_assets_page(assets)
     assert "# Bundled Schemas & XSD Assets" in rendered
+    assert "[`schemas/uniprot/uniprot.xsd`](schema_source/uniprot/uniprot.xsd.md)" in rendered
+    assert "[Site JSON](schemas/xsv_config/0.1.0/schema.json)" in rendered
     assert f"{GITHUB_BLOB_BASE}/src/cdm_data_loaders/schemas/uniprot/uniprot.xsd" in rendered
     assert BUNDLED_SCHEMAS_PATH.exists()
     assert BUNDLED_SCHEMAS_PATH.read_text(encoding="utf-8") == rendered
+
+    expected_outputs = dict(build_schema_doc_outputs(assets))
+    for out_path, expected_text in expected_outputs.items():
+        assert out_path.is_file()
+        assert out_path.read_text(encoding="utf-8") == expected_text
+
+    for managed_dir in (SCHEMA_SOURCE_DOCS_DIR, PUBLISHED_SCHEMAS_DOCS_DIR):
+        actual_files = {p.resolve() for p in managed_dir.rglob("*") if p.is_file()}
+        expected_files = {p.resolve() for p in expected_outputs if p.resolve().is_relative_to(managed_dir.resolve())}
+        assert actual_files == expected_files
+
+
+@pytest.mark.parametrize(
+    ("rel_to_schemas", "expected"),
+    [
+        pytest.param("xsv_config/0.1.0/schema.json", True, id="nested_xsv_config_json_published"),
+        pytest.param("xsv_config/README.md", False, id="non_json_under_xsv_config_not_published"),
+        pytest.param("gtdb/gtdb_metadata.schema.json", False, id="other_schema_group_not_published"),
+        pytest.param("schema.json", False, id="root_schema_file_not_published"),
+    ],
+)
+def test_is_published_jsonschema_cases(rel_to_schemas: str, expected: bool) -> None:
+    """Verify is_published_jsonschema matches only .json files under configured published subdirectories."""
+    assert is_published_jsonschema(Path(rel_to_schemas)) is expected
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        pytest.param("schema.json", ("JSON Schema", "json"), id="json_schema"),
+        pytest.param("uniprot.xsd", ("XML Schema (XSD)", "xml"), id="xsd_schema"),
+        pytest.param("model.YAML", ("YAML", "yaml"), id="uppercase_yaml"),
+        pytest.param("entity.dtd", ("DTD File", "text"), id="unknown_extension_fallback"),
+        pytest.param("NOTICE", ("File", "text"), id="extensionless_file_fallback"),
+    ],
+)
+def test_resolve_schema_file_metadata_cases(filename: str, expected: tuple[str, str]) -> None:
+    """Verify resolve_schema_file_metadata maps known, unknown, uppercase, and missing file extensions."""
+    assert resolve_schema_file_metadata(Path(filename)) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "min_backticks", "expected"),
+    [
+        pytest.param("", 4, "````", id="empty_text_uses_minimum_fence"),
+        pytest.param("```json\n{}\n```", 4, "````", id="triple_backticks_stay_at_four"),
+        pytest.param("````markdown\nhi\n````", 4, "`````", id="quadruple_backticks_expand_to_five"),
+        pytest.param("plain text", 3, "```", id="custom_minimum_three_backticks"),
+    ],
+)
+def test_code_fence_for_text_cases(text: str, min_backticks: int, expected: str) -> None:
+    """Verify code_fence_for_text returns a backtick delimiter longer than any backtick run in text."""
+    assert code_fence_for_text(text, min_backticks=min_backticks) == expected
+
+
+def test_discover_and_render_schema_helpers_edge_cases(tmp_path: Path) -> None:
+    """Verify schema discovery filtering, nested summary generation, detail rendering, and directory pruning."""
+    empty_src = tmp_path / "empty_pkg"
+    empty_src.mkdir()
+    assert discover_schema_assets(empty_src) == []
+    assert render_schemas_summary([]) == f"{GENERATED_BANNER}\n\n"
+    assert check_or_write_files([], check=True, repo_root=tmp_path, managed_dirs=(tmp_path / "nonexistent",)) == 0
+
+    pkg_root = tmp_path / "src" / "cdm_data_loaders"
+    schemas_dir = pkg_root / "schemas"
+    (schemas_dir / "__pycache__").mkdir(parents=True)
+    (schemas_dir / "__pycache__" / "cached.json").write_text("{}", encoding="utf-8")
+    (schemas_dir / ".hidden").mkdir()
+    (schemas_dir / ".hidden" / "secret.json").write_text("{}", encoding="utf-8")
+    (schemas_dir / ".DS_Store").write_text("ignored", encoding="utf-8")
+    (schemas_dir / "__init__.py").write_text("", encoding="utf-8")
+    (schemas_dir / "helper.pyi").write_text("", encoding="utf-8")
+    (schemas_dir / "root_notes.txt").write_text("note with ```` four backticks\n", encoding="utf-8")
+    nested_dir = schemas_dir / "domain" / "0.1.0"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "spec.yaml").write_text("id: example\n", encoding="utf-8")
+    xsv_dir = schemas_dir / "xsv_config" / "0.1.0"
+    xsv_dir.mkdir(parents=True)
+    (xsv_dir / "schema.json").write_text('{"type": "object"}\n', encoding="utf-8")
+
+    discovered = discover_schema_assets(pkg_root)
+    expected_assets = [
+        SchemaAssetDoc(
+            rel_path=Path("schemas/domain/0.1.0/spec.yaml"),
+            doc_rel_path=Path("schema_source/domain/0.1.0/spec.yaml.md"),
+            kind="YAML",
+            highlight_lang="yaml",
+            package_area="domain",
+            published_rel_path=None,
+        ),
+        SchemaAssetDoc(
+            rel_path=Path("schemas/root_notes.txt"),
+            doc_rel_path=Path("schema_source/root_notes.txt.md"),
+            kind="Text",
+            highlight_lang="text",
+            package_area="schemas",
+            published_rel_path=None,
+        ),
+        SchemaAssetDoc(
+            rel_path=Path("schemas/xsv_config/0.1.0/schema.json"),
+            doc_rel_path=Path("schema_source/xsv_config/0.1.0/schema.json.md"),
+            kind="JSON Schema",
+            highlight_lang="json",
+            package_area="xsv_config",
+            published_rel_path=Path("schemas/xsv_config/0.1.0/schema.json"),
+        ),
+    ]
+    assert discovered == expected_assets
+
+    summary = render_schemas_summary(discovered, src_root=pkg_root)
+    expected_summary = (
+        f"{GENERATED_BANNER}\n\n"
+        "- domain\n"
+        "    - 0.1.0\n"
+        "        - [spec.yaml](domain/0.1.0/spec.yaml.md)\n"
+        "- [root_notes.txt](root_notes.txt.md)\n"
+        "- xsv_config\n"
+        "    - 0.1.0\n"
+        "        - [schema.json](xsv_config/0.1.0/schema.json.md)\n"
+    )
+    assert summary == expected_summary
+
+    detail = render_schema_asset_detail_page(discovered[1], src_root=pkg_root, repo_root=tmp_path)
+    expected_detail = (
+        f"{GENERATED_BANNER}\n\n"
+        "# `root_notes.txt`\n\n"
+        f"- **Repository path**: [`src/cdm_data_loaders/schemas/root_notes.txt`]({GITHUB_BLOB_BASE}/src/cdm_data_loaders/schemas/root_notes.txt)\n"
+        "- **Format**: Text\n"
+        "- **Schema group**: `schemas`\n\n"
+        '`````text linenums="1" title="src/cdm_data_loaders/schemas/root_notes.txt"\n'
+        '--8<-- "src/cdm_data_loaders/schemas/root_notes.txt"\n'
+        "`````\n"
+    )
+    assert detail == expected_detail
+
+    published_detail = render_schema_asset_detail_page(discovered[2], src_root=pkg_root, repo_root=tmp_path)
+    assert (
+        f"- **Published URL**: [`{SITE_URL_BASE}/schemas/xsv_config/0.1.0/schema.json`]"
+        "(../../../schemas/xsv_config/0.1.0/schema.json)"
+    ) in published_detail
+
+    keep_root = tmp_path / "keep"
+    non_empty = keep_root / "sub"
+    empty_leaf = non_empty / "empty"
+    empty_leaf.mkdir(parents=True)
+    (non_empty / "file.txt").write_text("stay", encoding="utf-8")
+    prune_empty_parents(empty_leaf, keep_root)
+    assert not empty_leaf.exists()
+    assert non_empty.exists()
 
 
 def test_check_zensical_nav_and_index_pass() -> None:
@@ -668,3 +866,16 @@ def test_docstrings_and_descriptions_pass_no_stale_buffer_names_or_typos(
     assert forbidden not in text
     if required is not None:
         assert required in text
+
+
+def test_griffe_pydantic_collection_pass_all_models() -> None:
+    """Verify griffe and griffe-pydantic collect the entire cdm_data_loaders package without error."""
+    griffe = pytest.importorskip("griffe")
+    pytest.importorskip("griffe_pydantic")
+
+    loader = griffe.GriffeLoader(
+        extensions=griffe.load_extensions({"griffe_pydantic": {"schema": True}}),
+        search_paths=[str(REPO_ROOT / "src")],
+    )
+    pkg = loader.load("cdm_data_loaders", try_relative_path=False)
+    assert pkg.name == "cdm_data_loaders"

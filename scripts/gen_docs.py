@@ -1,8 +1,8 @@
-"""Generate CLI reference and bundled schema catalog documentation from codebase metadata.
+"""Generate CLI reference, schema source pages, and published JSON Schemas from codebase metadata.
 
 Usage::
 
-    uv run python -m scripts.gen_docs          # write docs/cli_reference.md and docs/bundled_schemas.md
+    uv run python -m scripts.gen_docs          # write docs/cli_reference.md, docs/bundled_schemas.md, docs/schema_source/, and docs/schemas/
     uv run python -m scripts.gen_docs --check  # exit 1 if generated docs are stale
 """
 
@@ -10,6 +10,7 @@ import argparse
 import ast
 import importlib
 import os
+import re
 import sys
 import tomllib
 import types
@@ -17,6 +18,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path, PurePath
+from types import MappingProxyType
 from typing import Annotated, Any, Final, Literal, get_args, get_origin
 
 from pydantic import AliasChoices
@@ -31,7 +33,36 @@ PYPROJECT_PATH: Final[Path] = REPO_ROOT / "pyproject.toml"
 SRC_ROOT: Final[Path] = REPO_ROOT / "src" / "cdm_data_loaders"
 CLI_REFERENCE_PATH: Final[Path] = DOCS_DIR / "cli_reference.md"
 BUNDLED_SCHEMAS_PATH: Final[Path] = DOCS_DIR / "bundled_schemas.md"
+SCHEMAS_SUBDIR: Final[str] = "schemas"
+SCHEMA_SOURCE_DOCS_SUBDIR: Final[str] = "schema_source"
+SCHEMA_SOURCE_DOCS_DIR: Final[Path] = DOCS_DIR / SCHEMA_SOURCE_DOCS_SUBDIR
+PUBLISHED_SCHEMAS_DOCS_DIR: Final[Path] = DOCS_DIR / SCHEMAS_SUBDIR
+PUBLISHED_JSONSCHEMA_SUBDIRS: Final[tuple[str, ...]] = ("xsv_config",)
+SCHEMAS_SUMMARY_FILENAME: Final[str] = "SUMMARY.md"
+SITE_URL_BASE: Final[str] = "https://kbase.github.io/cdm-data-loaders"
 GITHUB_BLOB_BASE: Final[str] = "https://github.com/kbase/cdm-data-loaders/blob/develop"
+PYTHON_ARTIFACT_SUFFIXES: Final[frozenset[str]] = frozenset({".py", ".pyc", ".pyo", ".pyd", ".pyi"})
+EXCLUDED_SCHEMA_DIR_NAMES: Final[frozenset[str]] = frozenset({"__pycache__"})
+BACKTICK_RUN_RE: Final[re.Pattern[str]] = re.compile(r"`+")
+SCHEMA_EXTENSION_METADATA: Final[MappingProxyType[str, tuple[str, str]]] = MappingProxyType(
+    {
+        ".avsc": ("Avro Schema", "json"),
+        ".csv": ("CSV", "text"),
+        ".graphql": ("GraphQL Schema", "graphql"),
+        ".json": ("JSON Schema", "json"),
+        ".jsonl": ("JSON Lines", "json"),
+        ".md": ("Markdown", "markdown"),
+        ".proto": ("Protocol Buffers", "protobuf"),
+        ".sql": ("SQL", "sql"),
+        ".toml": ("TOML", "toml"),
+        ".tsv": ("TSV", "text"),
+        ".txt": ("Text", "text"),
+        ".xml": ("XML", "xml"),
+        ".xsd": ("XML Schema (XSD)", "xml"),
+        ".yaml": ("YAML", "yaml"),
+        ".yml": ("YAML", "yaml"),
+    }
+)
 
 GENERATED_BANNER: Final[str] = (
     "<!-- GENERATED FILE - DO NOT EDIT. Source: `pyproject.toml`, `src/cdm_data_loaders/`. "
@@ -80,11 +111,14 @@ class ModuleDoc:
 
 @dataclass(frozen=True, slots=True)
 class SchemaAssetDoc:
-    """Documentation metadata for a bundled JSON Schema or XSD file under ``src/cdm_data_loaders/``."""
+    """Documentation metadata for a bundled non-Python file under ``src/cdm_data_loaders/schemas/``."""
 
     rel_path: Path
+    doc_rel_path: Path
     kind: str
+    highlight_lang: str
     package_area: str
+    published_rel_path: Path | None = None
 
 
 def _format_origin_annotation(origin: object, args: tuple[object, ...]) -> str:
@@ -335,25 +369,72 @@ def load_cli_entries(pyproject_path: Path = PYPROJECT_PATH, repo_root: Path = RE
     return entries
 
 
+def prune_empty_parents(directory: Path, stop_at: Path) -> None:
+    """Remove empty directories upward from ``directory`` without removing ``stop_at``.
+
+    :param directory: starting directory to prune if empty
+    :type directory: Path
+    :param stop_at: upper-bound directory that must not be removed
+    :type stop_at: Path
+    :return: None
+    :rtype: None
+    """
+    resolved_stop = stop_at.resolve()
+    current = directory
+    while current.resolve() != resolved_stop and current.is_relative_to(stop_at):
+        if not current.is_dir() or any(current.iterdir()):
+            break
+        current.rmdir()
+        current = current.parent
+
+
+def _sync_managed_directories(
+    managed_dirs: Iterable[Path],
+    expected_paths: set[Path],
+    *,
+    check: bool,
+) -> list[Path]:
+    """Detect or delete orphaned files inside ``managed_dirs`` that are not in ``expected_paths``."""
+    orphans: list[Path] = []
+    for managed_dir in managed_dirs:
+        if not managed_dir.is_dir():
+            continue
+        for existing_path in sorted(managed_dir.rglob("*")):
+            if not existing_path.is_file() or existing_path.resolve() in expected_paths:
+                continue
+            if check:
+                orphans.append(existing_path)
+            else:
+                parent_dir = existing_path.parent
+                existing_path.unlink()
+                prune_empty_parents(parent_dir, managed_dir)
+    return orphans
+
+
 def check_or_write_files(
     outputs: Iterable[tuple[Path, str]],
     *,
     check: bool,
     repo_root: Path = REPO_ROOT,
+    managed_dirs: Iterable[Path] = (),
 ) -> int:
     """Compare each ``(output_path, rendered_text)`` pair against disk and either report stale files or write updates.
 
     :param outputs: iterable of ``(output_path, rendered_text)`` pairs
     :type outputs: Iterable[tuple[Path, str]]
-    :param check: when ``True``, report stale files to ``sys.stderr`` and return ``1`` without writing
+    :param check: when ``True``, report stale or orphaned files to ``sys.stderr`` and return ``1`` without writing
     :type check: bool
     :param repo_root: repository root used to format relative paths on ``stderr``
     :type repo_root: Path
+    :param managed_dirs: directories whose extraneous files should be flagged (``check=True``) or deleted
+    :type managed_dirs: Iterable[Path]
     :return: ``0`` if all files are up to date (or written), ``1`` if ``check`` is ``True`` and any file is stale
     :rtype: int
     """
+    output_items = list(outputs)
+    expected_paths = {output_path.resolve() for output_path, _ in output_items}
     stale: list[Path] = []
-    for output_path, text in outputs:
+    for output_path, text in output_items:
         current = output_path.read_text(encoding="utf-8") if output_path.exists() else None
         if current == text:
             continue
@@ -362,6 +443,7 @@ def check_or_write_files(
         else:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(text, encoding="utf-8")
+    stale.extend(_sync_managed_directories(managed_dirs, expected_paths, check=check))
     for path in stale:
         rel_out = (
             path.relative_to(repo_root).as_posix() if path.is_relative_to(repo_root) else rel_posix(path, repo_root)
@@ -469,17 +551,111 @@ def discover_api_modules(src_root: Path = SRC_ROOT) -> list[ModuleDoc]:
     return modules
 
 
-def discover_schema_assets(src_root: Path = SRC_ROOT) -> list[SchemaAssetDoc]:
-    """Discover all bundled JSON Schema (``.json``) and XML Schema (``.xsd``) files under ``src_root``."""
+def resolve_schema_file_metadata(path: Path) -> tuple[str, str]:
+    """Return ``(kind, highlight_lang)`` metadata for a non-Python schema file.
+
+    :param path: schema asset file path
+    :type path: Path
+    :return: human-readable format label and Pygments highlight language identifier
+    :rtype: tuple[str, str]
+    """
+    suffix = path.suffix.lower()
+    if suffix in SCHEMA_EXTENSION_METADATA:
+        return SCHEMA_EXTENSION_METADATA[suffix]
+    if suffix:
+        return (f"{suffix.lstrip('.').upper()} File", "text")
+    return ("File", "text")
+
+
+def code_fence_for_text(text: str, min_backticks: int = 4) -> str:
+    """Return a backtick fence string strictly longer than any backtick run in ``text``.
+
+    :param text: text whose backtick runs must not prematurely close a fenced code block
+    :type text: str
+    :param min_backticks: minimum fence width in backticks
+    :type min_backticks: int
+    :return: backtick fence delimiter
+    :rtype: str
+    """
+    longest = max((len(run) for run in BACKTICK_RUN_RE.findall(text)), default=0)
+    return "`" * max(min_backticks, longest + 1)
+
+
+def is_published_jsonschema(
+    rel_to_schemas: Path,
+    published_subdirs: Sequence[str] = PUBLISHED_JSONSCHEMA_SUBDIRS,
+) -> bool:
+    """Return whether ``rel_to_schemas`` is a JSON Schema served directly under ``/schemas/`` on the docs site.
+
+    :param rel_to_schemas: path relative to ``src/cdm_data_loaders/schemas/``
+    :type rel_to_schemas: Path
+    :param published_subdirs: top-level schema subdirectories published as static JSON Schemas
+    :type published_subdirs: Sequence[str]
+    :return: ``True`` if the file should be copied into ``docs/schemas/``
+    :rtype: bool
+    """
+    return (
+        rel_to_schemas.suffix.lower() == ".json"
+        and len(rel_to_schemas.parts) > 1
+        and rel_to_schemas.parts[0] in published_subdirs
+    )
+
+
+def discover_schema_assets(
+    src_root: Path = SRC_ROOT,
+    published_subdirs: Sequence[str] = PUBLISHED_JSONSCHEMA_SUBDIRS,
+) -> list[SchemaAssetDoc]:
+    """Discover all bundled non-Python files under ``src_root / "schemas"``.
+
+    :param src_root: package source root directory
+    :type src_root: Path
+    :param published_subdirs: top-level schema subdirectories published as static JSON Schemas
+    :type published_subdirs: Sequence[str]
+    :return: sorted list of discovered non-Python schema asset descriptors
+    :rtype: list[SchemaAssetDoc]
+    """
+    schemas_dir = src_root / SCHEMAS_SUBDIR
+    if not schemas_dir.is_dir():
+        return []
+
     assets: list[SchemaAssetDoc] = []
-    for path in sorted(src_root.rglob("*")):
-        if not path.is_file() or path.suffix not in {".json", ".xsd"}:
+    for path in sorted(schemas_dir.rglob("*")):
+        if not path.is_file():
             continue
+        rel_to_schemas = path.relative_to(schemas_dir)
+        if any(part in EXCLUDED_SCHEMA_DIR_NAMES or part.startswith(".") for part in rel_to_schemas.parts):
+            continue
+        if path.suffix.lower() in PYTHON_ARTIFACT_SUFFIXES:
+            continue
+
         rel_path = path.relative_to(src_root)
-        kind = "JSON Schema" if path.suffix == ".json" else "XML Schema (XSD)"
-        package_area = rel_path.parts[0] if len(rel_path.parts) > 1 else "root"
-        assets.append(SchemaAssetDoc(rel_path=rel_path, kind=kind, package_area=package_area))
+        doc_rel_path = Path(SCHEMA_SOURCE_DOCS_SUBDIR) / rel_to_schemas.with_name(f"{rel_to_schemas.name}.md")
+        kind, highlight_lang = resolve_schema_file_metadata(path)
+        package_area = rel_to_schemas.parts[0] if len(rel_to_schemas.parts) > 1 else SCHEMAS_SUBDIR
+        published_rel_path = (
+            Path(SCHEMAS_SUBDIR) / rel_to_schemas
+            if is_published_jsonschema(rel_to_schemas, published_subdirs)
+            else None
+        )
+        assets.append(
+            SchemaAssetDoc(
+                rel_path=rel_path,
+                doc_rel_path=doc_rel_path,
+                kind=kind,
+                highlight_lang=highlight_lang,
+                package_area=package_area,
+                published_rel_path=published_rel_path,
+            )
+        )
     return assets
+
+
+def _format_asset_source_links(asset: SchemaAssetDoc, src_root: Path, repo_root: Path) -> str:
+    """Format the ``Source`` table cell links for ``asset`` in ``docs/bundled_schemas.md``."""
+    github_link = f"[GitHub]({repo_blob_url(src_root / asset.rel_path, repo_root)})"
+    if asset.published_rel_path is None:
+        return github_link
+    return f"{github_link} · [Site JSON]({asset.published_rel_path.as_posix()})"
 
 
 def render_schema_assets_page(
@@ -487,7 +663,7 @@ def render_schema_assets_page(
     src_root: Path = SRC_ROOT,
     repo_root: Path = REPO_ROOT,
 ) -> str:
-    """Render the ``docs/bundled_schemas.md`` page cataloging bundled JSON Schemas and XSDs.
+    """Render the ``docs/bundled_schemas.md`` page cataloging all non-Python files in ``schemas/``.
 
     :param assets: optional sequence of discovered schema assets
     :type assets: Sequence[SchemaAssetDoc] | None
@@ -504,26 +680,175 @@ def render_schema_assets_page(
         "",
         "# Bundled Schemas & XSD Assets",
         "",
-        "Static schema assets bundled inside `src/cdm_data_loaders/` for validation and PyArrow schema generation.",
+        (
+            "Static non-Python schema assets bundled inside `src/cdm_data_loaders/schemas/` for validation and "
+            "PyArrow schema generation. Select any schema path to open its syntax-highlighted source page."
+        ),
         "",
-        "| Relative Path (`src/cdm_data_loaders/`) | Format | Package Area |",
-        "| :--- | :--- | :--- |",
+        "| Relative Path (`src/cdm_data_loaders/`) | Format | Schema Group | Source |",
+        "| :--- | :--- | :--- | :--- |",
     ]
     lines.extend(
-        f"| [`{asset.rel_path.as_posix()}`]({repo_blob_url(src_root / asset.rel_path, repo_root)}) | "
-        f"{asset.kind} | `{asset.package_area}` |"
+        f"| [`{asset.rel_path.as_posix()}`]({asset.doc_rel_path.as_posix()}) | "
+        f"{escape_table_cell(asset.kind)} | `{asset.package_area}` | "
+        f"{_format_asset_source_links(asset, src_root, repo_root)} |"
         for asset in resolved_assets
     )
     lines.append("")
     return "\n".join(lines)
 
 
+def render_schema_asset_detail_page(
+    asset: SchemaAssetDoc,
+    src_root: Path = SRC_ROOT,
+    repo_root: Path = REPO_ROOT,
+) -> str:
+    """Render an individual ``docs/schema_source/<subpath>.md`` page embedding syntax-highlighted source via Snippets.
+
+    :param asset: schema asset metadata
+    :type asset: SchemaAssetDoc
+    :param src_root: package source root directory
+    :type src_root: Path
+    :param repo_root: repository root directory
+    :type repo_root: Path
+    :return: rendered Markdown document text
+    :rtype: str
+    """
+    source_path = src_root / asset.rel_path
+    repo_rel = rel_posix(source_path, repo_root)
+    short_title = (
+        asset.rel_path.relative_to(SCHEMAS_SUBDIR).as_posix()
+        if asset.rel_path.is_relative_to(SCHEMAS_SUBDIR)
+        else asset.rel_path.as_posix()
+    )
+    source_text = source_path.read_text(encoding="utf-8") if source_path.is_file() else ""
+    fence = code_fence_for_text(source_text)
+    metadata_lines = [
+        f"- **Repository path**: [`{repo_rel}`]({repo_blob_url(source_path, repo_root)})",
+    ]
+    if asset.published_rel_path is not None:
+        pub_posix = asset.published_rel_path.as_posix()
+        up_prefix = "../" * len(asset.doc_rel_path.parent.parts)
+        metadata_lines.append(f"- **Published URL**: [`{SITE_URL_BASE}/{pub_posix}`]({up_prefix}{pub_posix})")
+    metadata_lines.extend(
+        [
+            f"- **Format**: {asset.kind}",
+            f"- **Schema group**: `{asset.package_area}`",
+        ]
+    )
+    lines = [
+        GENERATED_BANNER,
+        "",
+        f"# `{short_title}`",
+        "",
+        *metadata_lines,
+        "",
+        f'{fence}{asset.highlight_lang} linenums="1" title="{repo_rel}"',
+        f'--8<-- "{repo_rel}"',
+        fence,
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def render_schemas_summary(
+    assets: Sequence[SchemaAssetDoc] | None = None,
+    src_root: Path = SRC_ROOT,
+) -> str:
+    """Render ``docs/schema_source/SUMMARY.md`` for Zensical ``literate-nav`` sidebar navigation.
+
+    :param assets: optional sequence of discovered schema assets
+    :type assets: Sequence[SchemaAssetDoc] | None
+    :param src_root: package source root directory
+    :type src_root: Path
+    :return: rendered literate-navigation Markdown summary
+    :rtype: str
+    """
+    resolved_assets = list(assets) if assets is not None else discover_schema_assets(src_root)
+    lines: list[str] = [GENERATED_BANNER, ""]
+    emitted_dirs: set[tuple[str, ...]] = set()
+
+    for asset in resolved_assets:
+        rel_to_schemas = (
+            asset.rel_path.relative_to(SCHEMAS_SUBDIR)
+            if asset.rel_path.is_relative_to(SCHEMAS_SUBDIR)
+            else asset.rel_path
+        )
+        doc_rel_to_source_dir = (
+            asset.doc_rel_path.relative_to(SCHEMA_SOURCE_DOCS_SUBDIR)
+            if asset.doc_rel_path.is_relative_to(SCHEMA_SOURCE_DOCS_SUBDIR)
+            else asset.doc_rel_path
+        )
+        dir_parts = rel_to_schemas.parent.parts
+        for depth, dir_name in enumerate(dir_parts):
+            prefix = dir_parts[: depth + 1]
+            if prefix not in emitted_dirs:
+                emitted_dirs.add(prefix)
+                lines.append(f"{'    ' * depth}- {dir_name}")
+        leaf_indent = "    " * len(dir_parts)
+        lines.append(f"{leaf_indent}- [{rel_to_schemas.name}]({doc_rel_to_source_dir.as_posix()})")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def build_schema_doc_outputs(
+    assets: Sequence[SchemaAssetDoc] | None = None,
+    *,
+    schemas_output: Path = BUNDLED_SCHEMAS_PATH,
+    schema_source_dir: Path = SCHEMA_SOURCE_DOCS_DIR,
+    published_schemas_dir: Path = PUBLISHED_SCHEMAS_DOCS_DIR,
+    src_root: Path = SRC_ROOT,
+) -> list[tuple[Path, str]]:
+    """Build ``(output_path, rendered_text)`` pairs for the catalog, source pages, and published JSON Schemas.
+
+    :param assets: optional sequence of discovered schema assets
+    :type assets: Sequence[SchemaAssetDoc] | None
+    :param schemas_output: output path for ``bundled_schemas.md``
+    :type schemas_output: Path
+    :param schema_source_dir: output directory for ``SUMMARY.md`` and per-schema ``.md`` source pages
+    :type schema_source_dir: Path
+    :param published_schemas_dir: output directory for static JSON Schemas served under ``/schemas/``
+    :type published_schemas_dir: Path
+    :param src_root: package source root directory (``<repo_root>/src/cdm_data_loaders``)
+    :type src_root: Path
+    :return: ordered list of ``(output_path, rendered_text)`` pairs
+    :rtype: list[tuple[Path, str]]
+    """
+    repo_root = src_root.parent.parent
+    resolved_assets = list(assets) if assets is not None else discover_schema_assets(src_root)
+    outputs: list[tuple[Path, str]] = [
+        (schemas_output, render_schema_assets_page(resolved_assets, src_root=src_root, repo_root=repo_root)),
+        (schema_source_dir / SCHEMAS_SUMMARY_FILENAME, render_schemas_summary(resolved_assets, src_root=src_root)),
+    ]
+    for asset in resolved_assets:
+        rel_doc = (
+            asset.doc_rel_path.relative_to(SCHEMA_SOURCE_DOCS_SUBDIR)
+            if asset.doc_rel_path.is_relative_to(SCHEMA_SOURCE_DOCS_SUBDIR)
+            else asset.doc_rel_path
+        )
+        outputs.append(
+            (
+                schema_source_dir / rel_doc,
+                render_schema_asset_detail_page(asset, src_root=src_root, repo_root=repo_root),
+            )
+        )
+        if asset.published_rel_path is not None:
+            rel_pub = (
+                asset.published_rel_path.relative_to(SCHEMAS_SUBDIR)
+                if asset.published_rel_path.is_relative_to(SCHEMAS_SUBDIR)
+                else asset.published_rel_path
+            )
+            outputs.append((published_schemas_dir / rel_pub, (src_root / asset.rel_path).read_text(encoding="utf-8")))
+    return outputs
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """Generate or check ``docs/cli_reference.md`` and ``docs/bundled_schemas.md``.
+    """Generate or check CLI docs, schema source pages, and published JSON Schemas.
 
     :param argv: optional CLI argument sequence
     :type argv: Sequence[str] | None
-    :return: exit code (``0`` on success, ``1`` if ``--check`` detects stale files)
+    :return: exit code (``0`` on success, ``1`` if ``--check`` detects stale or orphaned files)
     :rtype: int
     """
     parser = argparse.ArgumentParser(description=__doc__)
@@ -544,15 +869,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=BUNDLED_SCHEMAS_PATH,
         help="Output path for the generated bundled schemas Markdown file.",
     )
+    parser.add_argument(
+        "--schema-source-dir",
+        type=Path,
+        default=None,
+        help="Output directory for generated per-schema Markdown pages and SUMMARY.md.",
+    )
+    parser.add_argument(
+        "--published-schemas-dir",
+        type=Path,
+        default=None,
+        help="Output directory for static JSON Schemas served under /schemas/.",
+    )
     args = parser.parse_args(argv)
+    base_docs_dir = args.schemas_output.parent
+    schema_source_dir = (
+        args.schema_source_dir if args.schema_source_dir is not None else base_docs_dir / SCHEMA_SOURCE_DOCS_SUBDIR
+    )
+    published_schemas_dir = (
+        args.published_schemas_dir if args.published_schemas_dir is not None else base_docs_dir / SCHEMAS_SUBDIR
+    )
 
     return check_or_write_files(
         [
             (args.output, render_cli_reference()),
-            (args.schemas_output, render_schema_assets_page()),
+            *build_schema_doc_outputs(
+                schemas_output=args.schemas_output,
+                schema_source_dir=schema_source_dir,
+                published_schemas_dir=published_schemas_dir,
+            ),
         ],
         check=args.check,
         repo_root=REPO_ROOT,
+        managed_dirs=(schema_source_dir, published_schemas_dir),
     )
 
 

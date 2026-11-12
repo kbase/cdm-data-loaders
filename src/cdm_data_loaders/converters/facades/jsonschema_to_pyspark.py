@@ -7,7 +7,7 @@ from pydantic import Field, field_validator
 from pyspark.sql.types import DataType, StructType
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase
+from cdm_data_loaders.converters.core.io import ExtraMetadataKeywords, JsonSchemaConverterBase
 from cdm_data_loaders.converters.emitters.pyspark import (
     DEFAULT_FORMAT_MAP,
     PySparkEmitter,
@@ -34,7 +34,7 @@ class JSONSchemaToPySpark(JsonSchemaConverterBase[StructType]):
 
     format_map: frozendict[str, DataType] = Field(default_factory=lambda: DEFAULT_FORMAT_MAP)
     treat_unknown_as_string: bool = True
-    extra_metadata_keywords: frozenset[str] = Field(default_factory=frozenset)
+    extra_metadata_keywords: ExtraMetadataKeywords = Field(default_factory=frozenset)
 
     @field_validator("format_map", mode="before")
     @classmethod

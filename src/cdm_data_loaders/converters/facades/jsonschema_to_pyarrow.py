@@ -10,7 +10,7 @@ from pydantic import Field, PositiveInt, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
-from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase
+from cdm_data_loaders.converters.core.io import ExtraMetadataKeywords, JsonSchemaConverterBase
 from cdm_data_loaders.converters.emitters.pyarrow import DEFAULT_FORMAT_MAP, PyArrowEmitter, merge_format_map
 from cdm_data_loaders.converters.readers.json_schema_strict import StrictJsonSchemaReader
 from cdm_data_loaders.schemas.jsonschema import ValidatedSchema, dereference_schema
@@ -152,7 +152,7 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
     format_map: frozendict[str, pa.DataType] = Field(default_factory=lambda: DEFAULT_FORMAT_MAP)
     treat_unknown_as_string: bool = True
     emit_unions_as_json: bool = False
-    extra_metadata_keywords: frozenset[str] = Field(default_factory=frozenset)
+    extra_metadata_keywords: ExtraMetadataKeywords = Field(default_factory=frozenset)
     max_nesting: PositiveInt = Field(default=100)
 
     @field_validator("format_map", mode="before")

@@ -20,8 +20,8 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
     validate_jsonschema,
 )
 from cdm_data_loaders.schemas.jsonschema import (
-    CUSTOM_META_SCHEMA,
     CUSTOM_META_SCHEMA_URI,
+    get_xsv_meta_schema,
     register_xsv_validator,
 )
 from tests.cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.conftest import (
@@ -242,7 +242,7 @@ def test_register_xsv_validator_pass_registers_validator_for_custom_uri() -> Non
 
     validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
 
-    assert validator_cls.META_SCHEMA == CUSTOM_META_SCHEMA
+    assert get_xsv_meta_schema() == validator_cls.META_SCHEMA
 
 
 def test_register_xsv_validator_pass_idempotent() -> None:
@@ -251,7 +251,7 @@ def test_register_xsv_validator_pass_idempotent() -> None:
     register_xsv_validator()
 
     validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
-    assert validator_cls.META_SCHEMA == CUSTOM_META_SCHEMA
+    assert get_xsv_meta_schema() == validator_cls.META_SCHEMA
 
 
 @pytest.mark.parametrize(

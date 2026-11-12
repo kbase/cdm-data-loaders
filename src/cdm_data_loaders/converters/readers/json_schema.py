@@ -14,6 +14,7 @@ from cdm_data_loaders.converters.core.guards import (
 )
 from cdm_data_loaders.converters.core.inference import infer_implicit_type
 from cdm_data_loaders.converters.core.ir import Field, NodeType, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI, register_xsv_validator
 
 TYPES: Final[frozenset[str]] = frozenset({"object", "array", "string", "integer", "number", "boolean", "null"})
 ANNOTATIONS: Final[frozenset[str]] = frozenset(
@@ -122,6 +123,8 @@ class JsonSchemaReader:
             raise self.error_type(msg)
         schema = dict(source)
         require_schema_keyword(schema, self.error_type, converter_name=self.converter_name)
+        if schema.get("$schema") == CUSTOM_META_SCHEMA_URI:
+            register_xsv_validator()
         declaration = schema.get("type")
         if (
             declaration is not None
