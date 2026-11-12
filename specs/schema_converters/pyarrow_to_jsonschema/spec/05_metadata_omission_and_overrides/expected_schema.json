@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kbase.us/schemas/clean_sample.json",
+  "title": "CleanSample",
+  "description": "Pure Draft 2020-12 schema with x-pyarrow suppressed.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Record identifier."
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "gc_ratio": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^-?\\d{1,1}(\\.\\d{1,4})?$"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "GC fraction."
+    },
+    "digest": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "collected_on": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "count",
+    "digest"
+  ]
+}

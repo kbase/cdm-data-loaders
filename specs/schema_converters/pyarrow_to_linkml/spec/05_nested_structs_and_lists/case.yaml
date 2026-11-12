@@ -1,0 +1,25 @@
+title: Nested Struct Classes, Multivalued Lists, and Fixed-Size List Cardinality
+rules:
+  - R-SHAPE-STRUCT-CLASS
+  - R-SHAPE-LIST-SLOT
+  - R-SHAPE-FIXED-LIST-CARDINALITY
+  - R-REJECT-NESTED-MULTIVALUED
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-LIST-NON-NULL-ITEMS
+  - R-SER-ROW-ORDER
+notes: |
+  Demonstrates derived `<OwnerClass>_<field_name>` classes for nested `pa.struct` columns and struct-typed list
+  items (including a nested `list<string>` inside a struct element class), omission of scalar numeric bounds on
+  multivalued list slots for LinkML Pydantic compatibility, and `minimum_cardinality` / `maximum_cardinality`
+  on `pa.FixedSizeListType`.
+schema: schema.py
+expected_schema: expected_schema.yaml
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

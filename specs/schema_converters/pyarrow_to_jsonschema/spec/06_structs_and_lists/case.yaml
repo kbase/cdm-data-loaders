@@ -1,0 +1,26 @@
+title: Nested Structs, Variable/View Lists, Fixed-Size Lists, and 2D Lists
+rules:
+  - R-SHAPE-STRUCT
+  - R-SHAPE-LIST
+  - R-SHAPE-FIXED-LIST
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-NULL-LIST-ITEMS
+  - R-META-DESCRIPTION
+  - R-META-X-PYARROW-TYPE
+  - R-META-X-PYARROW-CUSTOM
+  - R-SER-ROW-ORDER
+notes: |
+  Exercises nested `pa.struct`, `pa.list_`, `pa.large_list`, `pa.list_view`, `pa.large_list_view`,
+  `pa.list_(item, 3)` (`minItems: 3, maxItems: 3`), 2D `list<list<int32>>`, nullable vs non-nullable list
+  elements, and element-level `comment` + custom metadata on inner `pa.field` items.
+schema: schema.py
+expected_schema: expected_schema.json
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

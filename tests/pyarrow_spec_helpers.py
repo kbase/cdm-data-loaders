@@ -1,4 +1,4 @@
-"""Shared helpers for XSD-to-PyArrow, JSON Schema-to-PyArrow, and Pydantic-to-PyArrow specification tests."""
+"""Shared helpers for schema converter specification tests."""
 
 import datetime as dt
 import importlib.util
@@ -60,6 +60,40 @@ def load_fixture_attr[T](module_file: Path, attr_name: str, expected_type: type[
         msg = f"Expected {attr_name} in {module_file} to be a {expected_type.__name__}, got {type(value)}"
         raise TypeError(msg)
     return value
+
+
+def load_input_schema(schema_file: Path, attr_name: str = "SCHEMA") -> pa.Schema:
+    """Load a ``pa.Schema`` constant from a ``schema.py`` fixture file.
+
+    :param schema_file: Path to the Python schema fixture file.
+    :type schema_file: Path
+    :param attr_name: Module attribute holding the PyArrow schema.
+    :type attr_name: str
+    :return: Loaded ``pa.Schema`` instance.
+    :rtype: pa.Schema
+    """
+    return load_fixture_attr(schema_file, attr_name, pa.Schema)
+
+
+def load_input_table(table_file: Path, attr_name: str = "TABLE") -> pa.Table:
+    """Load a ``pa.Table`` constant from a ``table.py`` fixture file with sibling ``schema.py`` bound as ``schema``.
+
+    :param table_file: Path to the Python table fixture file.
+    :type table_file: Path
+    :param attr_name: Module attribute holding the PyArrow table.
+    :type attr_name: str
+    :return: Loaded ``pa.Table`` instance.
+    :rtype: pa.Table
+    """
+    previous_schema_mod = sys.modules.get("schema")
+    sys.modules["schema"] = load_module(table_file.parent / "schema.py")
+    try:
+        return load_fixture_attr(table_file, attr_name, pa.Table)
+    finally:
+        if previous_schema_mod is None:
+            sys.modules.pop("schema", None)
+        else:
+            sys.modules["schema"] = previous_schema_mod
 
 
 def load_expected_schema(schema_file: Path, attr_name: str = "EXPECTED_SCHEMA") -> pa.Schema:

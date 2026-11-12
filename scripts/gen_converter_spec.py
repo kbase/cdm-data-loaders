@@ -37,6 +37,20 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     convert_xsv_schema_to_pyarrow,
     resolve_scalar_type,
 )
+from cdm_data_loaders.converters.facades.pyarrow_to_jsonschema import (
+    PYARROW_TO_JSONSCHEMA_ERRORS,
+    PyArrowToJSONSchemaError,
+)
+from cdm_data_loaders.converters.facades.pyarrow_to_jsonschema import (
+    resolve_scalar_type as resolve_pyarrow_jsonschema_scalar_type,
+)
+from cdm_data_loaders.converters.facades.pyarrow_to_linkml import (
+    PYARROW_TO_LINKML_ERRORS,
+    PyArrowToLinkMLError,
+)
+from cdm_data_loaders.converters.facades.pyarrow_to_linkml import (
+    resolve_scalar_type as resolve_pyarrow_linkml_scalar_type,
+)
 from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import (
     PYDANTIC_TO_PYARROW_ERRORS,
     PydanticToPyArrowError,
@@ -144,6 +158,9 @@ class ConverterSpecConfig:
     data_lang: str
     generated_tables: dict[str, Callable[[], str]]
     target_label: str | None = None
+    expected_schema_lang: str = "python"
+    expected_schema_heading: str = "PyArrow schema"
+    run_output_heading: str = "Converted rows"
 
 
 @dataclass(frozen=True, slots=True)
@@ -323,6 +340,87 @@ def render_pydantic_scalar_table() -> str:
         lines.append(
             f"| {cell_display} | {pyarrow_to_python_type_label(dtype)} | `{_pa_ctor(dtype)}` | `{cell_label}` |"
         )
+    return "\n".join(lines)
+
+
+PYARROW_SCALAR_PROBES: Final[tuple[tuple[pa.DataType, str], ...]] = (
+    (pa.bool_(), "`bool`"),
+    (pa.int8(), "`int`"),
+    (pa.int16(), "`int`"),
+    (pa.int32(), "`int`"),
+    (pa.int64(), "`int`"),
+    (pa.uint8(), "`int`"),
+    (pa.uint16(), "`int`"),
+    (pa.uint32(), "`int`"),
+    (pa.uint64(), "`int`"),
+    (pa.float16(), "`float`"),
+    (pa.float32(), "`float`"),
+    (pa.float64(), "`float`"),
+    (pa.decimal128(10, 2), "`str` (fixed-point decimal)"),
+    (pa.decimal128(2, 2), "`str` (fixed-point decimal)"),
+    (pa.decimal128(10, 0), "`str` (fixed-point integer decimal)"),
+    (pa.decimal256(50, 10), "`str` (fixed-point decimal)"),
+    (pa.string(), "`str`"),
+    (pa.large_string(), "`str`"),
+    (pa.string_view(), "`str`"),
+    (pa.binary(), "`str` (Base64)"),
+    (pa.large_binary(), "`str` (Base64)"),
+    (pa.binary_view(), "`str` (Base64)"),
+    (pa.binary(16), "`str` (Base64)"),
+    (pa.date32(), "`str` (ISO-8601 date)"),
+    (pa.date64(), "`str` (ISO-8601 date)"),
+    (pa.time32("s"), "`str` (ISO-8601 time)"),
+    (pa.time32("ms"), "`str` (ISO-8601 time)"),
+    (pa.time64("us"), "`str` (ISO-8601 time)"),
+    (pa.time64("ns"), "`str` (ISO-8601 time)"),
+    (pa.timestamp("s", tz="UTC"), "`str` (ISO-8601 date-time)"),
+    (pa.timestamp("us", tz="UTC"), "`str` (ISO-8601 date-time)"),
+    (pa.timestamp("ns", tz="America/Los_Angeles"), "`str` (ISO-8601 date-time)"),
+    (pa.timestamp("us"), "`str` (naive ISO-8601 timestamp)"),
+    (pa.timestamp("ns"), "`str` (naive ISO-8601 timestamp)"),
+    (pa.dictionary(pa.int16(), pa.string()), "`str`"),
+    (pa.dictionary(pa.int8(), pa.int64(), ordered=True), "`int`"),
+)
+
+
+def render_pyarrow_to_jsonschema_scalar_table() -> str:
+    """Render the PyArrow-to-JSON-Schema scalar mapping table from ``resolve_scalar_type``.
+
+    :return: Markdown table of PyArrow scalar probe mappings to Draft 2020-12 JSON Schema.
+    :rtype: str
+    """
+    lines = [
+        "| PyArrow `DataType` | Serialized JSON value | JSON Schema (core) | `x-pyarrow` |",
+        "| :--- | :--- | :--- | :--- |",
+    ]
+    for dtype, json_val_label in PYARROW_SCALAR_PROBES:
+        full_schema = resolve_pyarrow_jsonschema_scalar_type(dtype)
+        x_pa = full_schema.get("x-pyarrow", {})
+        core = {k: v for k, v in full_schema.items() if k != "x-pyarrow"}
+        core_cell = escape_table_cell(json.dumps(core))
+        x_pa_cell = escape_table_cell(json.dumps(x_pa))
+        lines.append(f"| `{_pa_ctor(dtype)}` | {json_val_label} | `{core_cell}` | `{x_pa_cell}` |")
+    return "\n".join(lines)
+
+
+def render_pyarrow_to_linkml_scalar_table() -> str:
+    """Render the PyArrow-to-LinkML scalar mapping table from ``resolve_scalar_type``.
+
+    :return: Markdown table of PyArrow scalar probe mappings to LinkML slot ranges and bounds.
+    :rtype: str
+    """
+    lines = [
+        "| PyArrow `DataType` | Serialized JSON value | LinkML `range` | Slot bounds (`minimum_value` .. `maximum_value`) |",
+        "| :--- | :--- | :--- | :--- |",
+    ]
+    for dtype, json_val_label in PYARROW_SCALAR_PROBES:
+        slot = resolve_pyarrow_linkml_scalar_type(dtype)
+        bounds = (
+            f"`{slot.minimum_value}` .. `{slot.maximum_value}`"
+            if slot.minimum_value is not None or slot.maximum_value is not None
+            else "—"
+        )
+        lines.append(f"| `{_pa_ctor(dtype)}` | {json_val_label} | `{slot.range}` | {bounds} |")
     return "\n".join(lines)
 
 
@@ -603,7 +701,12 @@ def _render_embedded_run(
         else:
             out += [f"#### Input (`{run.data.name}`)", "", _code_block(run.data, config.data_lang), ""]
         seen_data.add(run.data)
-    out += [f"#### Converted rows: run `{run.id}`{suffix}", "", _code_block(run.expected_json, "json"), ""]
+    out += [
+        f"#### {config.run_output_heading}: run `{run.id}`{suffix}",
+        "",
+        _code_block(run.expected_json, "json"),
+        "",
+    ]
     for extra_table, extra_path in run.extra_expected_json.items():
         out += [
             f"#### Converted rows (`{extra_table}`): run `{run.id}`{suffix}",
@@ -645,7 +748,7 @@ def _render_case(case: Case, catalogue: RuleCatalogue, config: ConverterSpecConf
         if embed:
             out += _render_embedded_run(run, case, config, suffix, seen_data)
         else:
-            files = [run.data, run.expected_json, run.expected_table]
+            files = list(dict.fromkeys((run.data, run.expected_json, run.expected_table)))
             listed = ", ".join(f"[`{f.name}`]({repo_blob_url(f)})" for f in files)
             out += [f"- Run `{run.id}`{suffix}: {listed}"]
     if not embed:
@@ -653,9 +756,14 @@ def _render_case(case: Case, catalogue: RuleCatalogue, config: ConverterSpecConf
 
     schema_link = f"[`{case.expected_schema.name}`]({repo_blob_url(case.expected_schema)})"
     if embed:
-        out += [f"#### PyArrow schema ({schema_link})", "", _code_block(case.expected_schema, "python"), ""]
+        out += [
+            f"#### {config.expected_schema_heading} ({schema_link})",
+            "",
+            _code_block(case.expected_schema, config.expected_schema_lang),
+            "",
+        ]
     else:
-        out += [f"**Expected PyArrow schema:** {schema_link}", ""]
+        out += [f"**Expected {config.expected_schema_heading}:** {schema_link}", ""]
     out += ["---", ""]
     return out
 
@@ -1188,6 +1296,40 @@ PYDANTIC_TO_PYARROW: Final[ConverterSpecConfig] = ConverterSpecConfig(
     generated_tables={"scalar_table": render_pydantic_scalar_table},
 )
 
+PYARROW_TO_JSONSCHEMA: Final[ConverterSpecConfig] = ConverterSpecConfig(
+    data_dir=REPO_ROOT / "specs" / "schema_converters" / "pyarrow_to_jsonschema",
+    output=DOCS_DIR / "pyarrow_to_jsonschema_specification.md",
+    suites=("spec", "examples"),
+    error_manifest=(
+        REPO_ROOT / "specs" / "schema_converters" / "pyarrow_to_jsonschema" / "spec" / "errors" / "manifest.yaml"
+    ),
+    error_base=PyArrowToJSONSchemaError,
+    error_classes=PYARROW_TO_JSONSCHEMA_ERRORS,
+    schema_lang="python",
+    data_lang="python",
+    generated_tables={"scalar_table": render_pyarrow_to_jsonschema_scalar_table},
+    expected_schema_lang="json",
+    expected_schema_heading="JSON Schema",
+    run_output_heading="Serialized records",
+)
+
+PYARROW_TO_LINKML: Final[ConverterSpecConfig] = ConverterSpecConfig(
+    data_dir=REPO_ROOT / "specs" / "schema_converters" / "pyarrow_to_linkml",
+    output=DOCS_DIR / "pyarrow_to_linkml_specification.md",
+    suites=("spec", "examples"),
+    error_manifest=(
+        REPO_ROOT / "specs" / "schema_converters" / "pyarrow_to_linkml" / "spec" / "errors" / "manifest.yaml"
+    ),
+    error_base=PyArrowToLinkMLError,
+    error_classes=PYARROW_TO_LINKML_ERRORS,
+    schema_lang="python",
+    data_lang="python",
+    generated_tables={"scalar_table": render_pyarrow_to_linkml_scalar_table},
+    expected_schema_lang="yaml",
+    expected_schema_heading="LinkML schema",
+    run_output_heading="Serialized records",
+)
+
 XSV_TO_PYARROW: Final[ConverterSpecConfig] = ConverterSpecConfig(
     data_dir=PIPELINE_SPECS_ROOT / "xsv",
     output=DOCS_DIR / "xsv_specification.md",
@@ -1292,6 +1434,8 @@ CONFIGS: Final[tuple[ConverterSpecConfig, ...]] = (
     XSD_TO_PYARROW,
     JSONSCHEMA_TO_PYARROW,
     PYDANTIC_TO_PYARROW,
+    PYARROW_TO_JSONSCHEMA,
+    PYARROW_TO_LINKML,
     XSV_TO_PYARROW,
     XMLTOPYARROW_PIPELINE,
     JSONLINES_JSONSCHEMA_PIPELINE,

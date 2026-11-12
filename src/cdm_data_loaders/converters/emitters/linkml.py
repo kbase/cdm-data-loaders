@@ -34,10 +34,19 @@ LOGICAL_RANGES: Final = {
     "timestamp-without-tz": "datetime",
     "decimal": "decimal",
 }
+UNSIGNED_LOGICAL_INTS: Final[frozenset[str]] = frozenset({"uint8", "uint16", "uint32", "uint64"})
 
 
 class LinkMLEmitterError(ConversionError):
     """Raised when a typed node has no faithful LinkML representation."""
+
+
+class EmptyLinkMLSlotNameError(LinkMLEmitterError):
+    """Raised when a field has an empty or whitespace-only name that cannot form a LinkML slot."""
+
+
+class NestedLinkMLMultivaluedError(LinkMLEmitterError):
+    """Raised when an array contains nested array or map items that cannot be represented as a flat LinkML slot."""
 
 
 @dataclass(slots=True)
@@ -138,7 +147,19 @@ class LinkMLEmitter:
         )
 
     def _emit_attribute(self, field: SchemaField, owner_name: str) -> SlotDefinition:
-        """Emit field cardinality, scalar constraints, and the target range."""
+        """Emit field cardinality, scalar constraints, and the target range.
+
+        :param field: IR field to convert.
+        :type field: SchemaField
+        :param owner_name: Owning LinkML class name.
+        :type owner_name: str
+        :return: Emitted LinkML ``SlotDefinition``.
+        :rtype: SlotDefinition
+        :raises EmptyLinkMLSlotNameError: If ``field.name`` is empty or whitespace-only.
+        """
+        if not field.name or not field.name.strip():
+            msg = f"LinkML slot names must be non-empty, got {field.name!r}."
+            raise EmptyLinkMLSlotNameError(msg)
         node = field.node
         result = self._node_expression(node, owner_name, field.name)
         if field.required:
@@ -150,7 +171,18 @@ class LinkMLEmitter:
         return result
 
     def _node_expression(self, node: TypedNode, owner_name: str, field_name: str) -> SlotDefinition:
-        """Emit one LinkML slot expression from a typed value node."""
+        """Emit one LinkML slot expression from a typed value node.
+
+        :param node: IR value node to convert.
+        :type node: TypedNode
+        :param owner_name: Owning LinkML class name.
+        :type owner_name: str
+        :param field_name: Slot attribute name.
+        :type field_name: str
+        :return: Emitted LinkML ``SlotDefinition``.
+        :rtype: SlotDefinition
+        :raises LinkMLEmitterError: If ``node`` cannot be represented in LinkML.
+        """
         if node.any_of is not None or node.one_of is not None or isinstance(node.declared_type, tuple):
             msg = f"LinkML emission does not support union node {field_name!r}"
             raise LinkMLEmitterError(msg)
@@ -159,8 +191,17 @@ class LinkMLEmitter:
             if not isinstance(node.items, TypedNode):
                 msg = f"LinkML emission requires one item schema for array field {field_name!r}"
                 raise LinkMLEmitterError(msg)
+            if node.items.type in {"array", "map"}:
+                msg = f"LinkML emission does not support nested {node.items.type!r} items inside array field {field_name!r}"
+                raise NestedLinkMLMultivaluedError(msg)
             result = self._node_expression(node.items, owner_name, field_name)
             result.multivalued = True
+            if node.provenance is not None and node.provenance.source == "pyarrow":
+                result.minimum_value = None
+                result.maximum_value = None
+            if node.hints.logical_type == "fixed-size-list" and node.hints.length is not None:
+                result.minimum_cardinality = node.hints.length
+                result.maximum_cardinality = node.hints.length
             return result
 
         if node.type == "map":
@@ -168,12 +209,17 @@ class LinkMLEmitter:
                 msg = f"LinkML emission requires key and value schemas for map field {field_name!r}"
                 raise LinkMLEmitterError(msg)
             map_class_name = self._unique_name(f"{owner_name}_{field_name}_map")
+            value_required = (
+                node.value_type.nullable is False
+                if node.provenance is not None and node.provenance.source == "pyarrow"
+                else False
+            )
             map_node = TypedNode(
                 type="object",
                 nullable=False,
                 properties=(
                     SchemaField("key", node.key_type, required=True),
-                    SchemaField("value", node.value_type, required=False),
+                    SchemaField("value", node.value_type, required=value_required),
                 ),
                 provenance=node.provenance,
             )
@@ -188,8 +234,32 @@ class LinkMLEmitter:
             result.range = self._emit_enum(node, owner_name, field_name)
         else:
             result.range = self._scalar_range(node, field_name)
+            self._emit_pyarrow_bounds(node, result)
         self._emit_constraints(node, result)
         return result
+
+    @staticmethod
+    def _emit_pyarrow_bounds(node: TypedNode, result: SlotDefinition) -> None:
+        """Attach signed or unsigned integer bit-width bounds for PyArrow integer nodes.
+
+        :param node: Scalar IR node.
+        :type node: TypedNode
+        :param result: Target LinkML ``SlotDefinition`` to populate.
+        :type result: SlotDefinition
+        """
+        if (
+            node.provenance is not None
+            and node.provenance.source == "pyarrow"
+            and node.type == "integer"
+            and node.hints.bit_width is not None
+        ):
+            if node.hints.logical_type in UNSIGNED_LOGICAL_INTS:
+                result.minimum_value = 0
+                result.maximum_value = (2**node.hints.bit_width) - 1
+            else:
+                bound = 2 ** (node.hints.bit_width - 1)
+                result.minimum_value = -bound
+                result.maximum_value = bound - 1
 
     def _emit_enum(self, node: TypedNode, owner_name: str, field_name: str) -> str:
         """Emit a named LinkML enum for string-only JSON enum values."""

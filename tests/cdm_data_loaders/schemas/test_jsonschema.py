@@ -2,7 +2,6 @@
 
 import importlib.resources
 import json
-from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Never
 
@@ -33,6 +32,7 @@ from cdm_data_loaders.schemas.jsonschema import (
     load_xsv_meta_schema,
     register_xsv_validator,
 )
+from tests.conftest import preserve_xsv_metaschema_state
 
 
 def _make_ctx(
@@ -684,15 +684,6 @@ def test_dereference_pass_dependencies_keyword_handles_mixed_schema_and_list_val
 """load_xsv_meta_schema, get_xsv_meta_schema, get_xsv_config_schema, register_xsv_validator, and ValidatedSchema"""
 
 
-@pytest.fixture
-def isolated_xsv_metaschema_state() -> Generator[None]:
-    """Reset the XSV metaschema cache before and after a test and restore the default validator registration."""
-    get_xsv_meta_schema.cache_clear()
-    yield
-    get_xsv_meta_schema.cache_clear()
-    register_xsv_validator()
-
-
 def test_module_constants_pass_no_hardcoded_metaschema() -> None:
     """Hardcoded CUSTOM_META_SCHEMA and X_XSV_CONFIG_SCHEMA are absent and CUSTOM_META_SCHEMA_URI points to GitHub Pages."""
     assert not hasattr(jsonschema_module, "CUSTOM_META_SCHEMA")
@@ -973,3 +964,61 @@ def test_json_schema_reader_pass_lazy_registers_xsv_validator() -> None:
     assert doc.jsonschema_validator_cls is not None
     assert get_xsv_meta_schema() == doc.jsonschema_validator_cls.META_SCHEMA
     register_xsv_validator()
+
+
+@pytest.mark.parametrize(
+    ("fake_metaschema", "expected_error", "error_match"),
+    [
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"x-xsv-config": True},
+            },
+            TypeError,
+            "must be a mapping",
+            id="valid-draft-boolean-xsv-config-schema",
+        ),
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "not-a-valid-type",
+            },
+            jsonschema.exceptions.SchemaError,
+            "not-a-valid-type",
+            id="invalid-draft-metaschema",
+        ),
+    ],
+)
+def test_preserve_xsv_metaschema_state_pass_restores_bundled_schema_while_monkeypatch_active(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    fake_metaschema: dict[str, Any],
+    expected_error: type[Exception],
+    error_match: str,
+) -> None:
+    """preserve_xsv_metaschema_state() restores the bundled metaschema and validator even before monkeypatch tears down."""
+    fake_dir = tmp_path / "xsv_config" / "0.1.0"
+    fake_dir.mkdir(parents=True)
+    (fake_dir / "schema.json").write_text(json.dumps(fake_metaschema), encoding="utf-8")
+
+    with preserve_xsv_metaschema_state():
+        monkeypatch.setattr(importlib.resources, "files", lambda _pkg: tmp_path)
+        with pytest.raises(expected_error, match=error_match):
+            get_xsv_config_schema()
+
+    meta_schema = get_xsv_meta_schema()
+    config_schema = get_xsv_config_schema()
+    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
+
+    assert meta_schema["$id"] == CUSTOM_META_SCHEMA_URI
+    assert config_schema["type"] == "object"
+    assert meta_schema == validator_cls.META_SCHEMA
+    with pytest.raises(jsonschema.exceptions.SchemaError, match="is too long"):
+        validator_cls.check_schema(
+            {
+                "$schema": CUSTOM_META_SCHEMA_URI,
+                "required": ["a"],
+                "x-xsv-config": {"x-delimiter": ",;"},
+            }
+        )

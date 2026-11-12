@@ -1,0 +1,96 @@
+name: CheckM2QualityReport
+description: CheckM2 genome completeness, contamination, and assembly metrics.
+id: https://kbase.us/linkml/cdm/checkm2_quality_report
+imports:
+- linkml:types
+prefixes:
+  CheckM2QualityReport:
+    prefix_prefix: CheckM2QualityReport
+    prefix_reference: https://kbase.us/linkml/cdm/checkm2_quality_report#
+  linkml:
+    prefix_prefix: linkml
+    prefix_reference: https://w3id.org/linkml/
+default_prefix: CheckM2QualityReport
+classes:
+  CheckM2QualityReport_assembly_stats:
+    name: CheckM2QualityReport_assembly_stats
+    attributes:
+      genome_size_bp:
+        name: genome_size_bp
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 18446744073709551615
+      max_contig_bp:
+        name: max_contig_bp
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 18446744073709551615
+      gc_fraction:
+        name: gc_fraction
+        range: float
+        required: true
+  CheckM2QualityReport_kmer_metrics_map:
+    name: CheckM2QualityReport_kmer_metrics_map
+    attributes:
+      key:
+        name: key
+        range: string
+        required: true
+      value:
+        name: value
+        range: float
+        required: true
+  CheckM2QualityReport:
+    name: CheckM2QualityReport
+    attributes:
+      bin_id:
+        name: bin_id
+        description: MAG or isolate bin identifier.
+        range: string
+        required: true
+      completeness:
+        name: completeness
+        description: Estimated completeness %.
+        range: decimal
+        required: true
+      contamination:
+        name: contamination
+        description: Estimated contamination %.
+        range: decimal
+        required: true
+      coding_density:
+        name: coding_density
+        range: float
+        required: true
+      contig_n50:
+        name: contig_n50
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 18446744073709551615
+      total_contigs:
+        name: total_contigs
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 4294967295
+      translation_table:
+        name: translation_table
+        range: integer
+        required: true
+        minimum_value: -2147483648
+        maximum_value: 2147483647
+      assembly_stats:
+        name: assembly_stats
+        range: CheckM2QualityReport_assembly_stats
+        required: true
+      kmer_metrics:
+        name: kmer_metrics
+        range: CheckM2QualityReport_kmer_metrics_map
+        multivalued: true
+      qc_warnings:
+        name: qc_warnings
+        range: string
+        multivalued: true

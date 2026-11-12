@@ -1,0 +1,39 @@
+[
+  {
+    "entry_id": "PROT-001",
+    "biotype": "protein_coding",
+    "priority_tier": 1,
+    "rate_bucket": "12.50",
+    "xref_hits": [
+      {
+        "key": "PF00001",
+        "value": {
+          "db": "Pfam",
+          "evalue": 1.25e-12
+        }
+      },
+      {
+        "key": "IPR000276",
+        "value": null
+      }
+    ],
+    "coverage_by_bin": [
+      {
+        "key": 1,
+        "value": 45.5
+      },
+      {
+        "key": 2,
+        "value": 88.25
+      }
+    ]
+  },
+  {
+    "entry_id": "PROT-002",
+    "biotype": "rRNA",
+    "priority_tier": null,
+    "rate_bucket": "0.75",
+    "xref_hits": [],
+    "coverage_by_bin": null
+  }
+]

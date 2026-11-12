@@ -1,0 +1,26 @@
+[
+  {
+    "id": "VIEW-01",
+    "payload_view": "yv66vg==",
+    "category": "metagenome",
+    "rank_code": 1024,
+    "weight_tier": "15.25",
+    "tags_view": [
+      "marine",
+      "pelagic"
+    ],
+    "scores_large_view": [
+      10,
+      200
+    ]
+  },
+  {
+    "id": "VIEW-02",
+    "payload_view": "cGxhaW4tYnl0ZXM=",
+    "category": "isolate",
+    "rank_code": null,
+    "weight_tier": "1.00",
+    "tags_view": [],
+    "scores_large_view": null
+  }
+]

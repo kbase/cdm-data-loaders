@@ -1,0 +1,72 @@
+name: genome_report_v1
+id: https://kbase.us/linkml/genome-report-v1
+imports:
+- linkml:types
+prefixes:
+  genome_report_v1:
+    prefix_prefix: genome_report_v1
+    prefix_reference: https://kbase.us/linkml/genome-report-v1#
+  linkml:
+    prefix_prefix: linkml
+    prefix_reference: https://w3id.org/linkml/
+default_prefix: genome_report_v1
+classes:
+  genome_report_v1_meta_info:
+    name: genome_report_v1_meta_info
+    attributes:
+      source:
+        name: source
+        range: string
+        required: true
+  genome_report_v1_meta_info_2:
+    name: genome_report_v1_meta_info_2
+    attributes:
+      version:
+        name: version
+        range: integer
+        required: true
+        minimum_value: -2147483648
+        maximum_value: 2147483647
+  genome_report_v1_meta:
+    name: genome_report_v1_meta
+    attributes:
+      info:
+        name: info
+        range: genome_report_v1_meta_info_2
+        required: true
+  genome_report_v1_labels_map:
+    name: genome_report_v1_labels_map
+    attributes:
+      key:
+        name: key
+        range: string
+        required: true
+      value:
+        name: value
+        range: string
+        required: true
+  genome_report_v1_labels_map_2:
+    name: genome_report_v1_labels_map_2
+    attributes:
+      note:
+        name: note
+        range: string
+  genome_report_v1:
+    name: genome_report_v1
+    attributes:
+      meta_info:
+        name: meta_info
+        range: genome_report_v1_meta_info
+        required: true
+      meta:
+        name: meta
+        range: genome_report_v1_meta
+        required: true
+      labels:
+        name: labels
+        range: genome_report_v1_labels_map
+        required: true
+        multivalued: true
+      labels_map:
+        name: labels_map
+        range: genome_report_v1_labels_map_2

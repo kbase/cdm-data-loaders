@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "flag": {
+      "type": "boolean",
+      "x-pyarrow": {
+        "arrow_type": "bool"
+      }
+    },
+    "i8": {
+      "type": "integer",
+      "minimum": -128,
+      "maximum": 127,
+      "x-pyarrow": {
+        "arrow_type": "int8"
+      }
+    },
+    "i16": {
+      "type": "integer",
+      "minimum": -32768,
+      "maximum": 32767,
+      "x-pyarrow": {
+        "arrow_type": "int16"
+      }
+    },
+    "i32": {
+      "type": "integer",
+      "minimum": -2147483648,
+      "maximum": 2147483647,
+      "x-pyarrow": {
+        "arrow_type": "int32"
+      }
+    },
+    "i64": {
+      "type": "integer",
+      "minimum": -9223372036854775808,
+      "maximum": 9223372036854775807,
+      "x-pyarrow": {
+        "arrow_type": "int64"
+      }
+    },
+    "u8": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255,
+      "x-pyarrow": {
+        "arrow_type": "uint8"
+      }
+    },
+    "u16": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "x-pyarrow": {
+        "arrow_type": "uint16"
+      }
+    },
+    "u32": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "x-pyarrow": {
+        "arrow_type": "uint32"
+      }
+    },
+    "u64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615,
+      "x-pyarrow": {
+        "arrow_type": "uint64"
+      }
+    },
+    "f16": {
+      "type": "number",
+      "x-pyarrow": {
+        "arrow_type": "float16"
+      }
+    },
+    "f32": {
+      "type": "number",
+      "x-pyarrow": {
+        "arrow_type": "float32"
+      }
+    },
+    "f64": {
+      "type": "number",
+      "x-pyarrow": {
+        "arrow_type": "float64"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "flag",
+    "i8",
+    "i16",
+    "i32",
+    "i64",
+    "u8",
+    "u16",
+    "u32",
+    "u64",
+    "f16",
+    "f32",
+    "f64"
+  ]
+}

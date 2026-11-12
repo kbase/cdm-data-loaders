@@ -1,0 +1,20 @@
+title: Dates, Times, and Timezone-Aware and Timezone-Naive Timestamps
+rules:
+  - R-SCALAR-TEMPORAL
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-SER-ROW-ORDER
+  - R-SER-TEMPORAL-ISO
+notes: |
+  Maps `date32`/`date64` to `range: date`, `time32`/`time64` to `range: time`, and both timezone-aware and
+  timezone-naive `timestamp` types across units (`s`, `ms`, `us`, `ns`) to `range: datetime`.
+schema: schema.py
+expected_schema: expected_schema.yaml
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

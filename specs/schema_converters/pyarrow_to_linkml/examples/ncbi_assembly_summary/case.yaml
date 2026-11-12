@@ -1,0 +1,31 @@
+title: NCBI Datasets Assembly Summary Table
+rules:
+  - R-SCHEMA-IDENTITY
+  - R-IMPORTS-PREFIXES
+  - R-SHAPE-STRUCT-CLASS
+  - R-SHAPE-LIST-SLOT
+  - R-SHAPE-DICTIONARY
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-SCALAR-BOOL
+  - R-SCALAR-SIGNED-INT
+  - R-SCALAR-UNSIGNED-INT
+  - R-SCALAR-DECIMAL
+  - R-SCALAR-STRING-BINARY
+  - R-SCALAR-TEMPORAL
+  - R-META-SCHEMA-DESC
+  - R-META-SLOT-DESC
+  - R-SER-ROW-ORDER
+  - R-SER-DECIMAL-STR
+  - R-SER-BASE64
+  - R-SER-TEMPORAL-ISO
+schema: schema.py
+expected_schema: expected_schema.yaml
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

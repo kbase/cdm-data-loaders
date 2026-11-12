@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "feature_id": {
+      "type": "string",
+      "x-pyarrow": {
+        "arrow_type": "string"
+      }
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "contig": {
+          "type": "string",
+          "x-pyarrow": {
+            "arrow_type": "string"
+          }
+        },
+        "start": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807,
+          "x-pyarrow": {
+            "arrow_type": "int64"
+          }
+        },
+        "end": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807,
+          "x-pyarrow": {
+            "arrow_type": "int64"
+          }
+        },
+        "strand": {
+          "anyOf": [
+            {
+              "type": "string",
+              "x-pyarrow": {
+                "arrow_type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "contig",
+        "start",
+        "end"
+      ],
+      "x-pyarrow": {
+        "arrow_type": "struct"
+      }
+    },
+    "go_terms": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Gene Ontology term accession.",
+        "x-pyarrow": {
+          "arrow_type": "string",
+          "metadata": {
+            "ontology": "GO"
+          }
+        }
+      },
+      "x-pyarrow": {
+        "arrow_type": "list"
+      }
+    },
+    "nullable_scores": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -2147483648,
+                "maximum": 2147483647,
+                "x-pyarrow": {
+                  "arrow_type": "int32"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "x-pyarrow": {
+            "arrow_type": "large_list"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "aliases_view": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "x-pyarrow": {
+          "arrow_type": "string"
+        }
+      },
+      "x-pyarrow": {
+        "arrow_type": "list_view"
+      }
+    },
+    "notes_large_view": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "x-pyarrow": {
+                  "arrow_type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "x-pyarrow": {
+            "arrow_type": "large_list_view"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rgb_triplet": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255,
+        "x-pyarrow": {
+          "arrow_type": "uint8"
+        }
+      },
+      "minItems": 3,
+      "maxItems": 3,
+      "x-pyarrow": {
+        "arrow_type": "fixed_size_list",
+        "list_size": 3
+      }
+    },
+    "score_matrix": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-pyarrow": {
+            "arrow_type": "int32"
+          }
+        },
+        "x-pyarrow": {
+          "arrow_type": "list"
+        }
+      },
+      "x-pyarrow": {
+        "arrow_type": "list"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "feature_id",
+    "location",
+    "go_terms",
+    "aliases_view",
+    "rgb_triplet",
+    "score_matrix"
+  ]
+}

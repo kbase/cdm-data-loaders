@@ -2,6 +2,7 @@
 
 import gc
 import gzip
+import importlib.resources
 import logging
 import os
 import shutil
@@ -28,6 +29,7 @@ from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
 from cdm_data_loaders.pipelines.core import _install_iceberg_catalog_cleanup
+from cdm_data_loaders.schemas.jsonschema import get_xsv_meta_schema, register_xsv_validator
 from cdm_data_loaders.utils import cdm_logger
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
@@ -486,4 +488,31 @@ def isolated_logging(caplog: pytest.LogCaptureFixture) -> Generator[None]:
     """Reset init_logger's record of the applied config and undo any logging changes made by the test."""
     # pytest attaches a new caplog handler to the root logger for each test phase, so this one must not be restored
     with preserve_logging_state(exclude_handler=caplog.handler):
+        yield
+
+
+@contextmanager
+def preserve_xsv_metaschema_state() -> Generator[None]:
+    """Reset the XSV metaschema cache around a block and restore the bundled validator registration on exit.
+
+    Restores ``importlib.resources.files`` before re-registering the validator so teardown
+    remains isolated even when a caller's ``monkeypatch`` fixture tears down afterwards.
+
+    :return: context manager yielding ``None``
+    :rtype: Generator[None]
+    """
+    original_resources_files = importlib.resources.files
+    get_xsv_meta_schema.cache_clear()
+    try:
+        yield
+    finally:
+        importlib.resources.files = original_resources_files
+        get_xsv_meta_schema.cache_clear()
+        register_xsv_validator()
+
+
+@pytest.fixture
+def isolated_xsv_metaschema_state() -> Generator[None]:
+    """Reset the XSV metaschema cache before and after a test and restore the default validator registration."""
+    with preserve_xsv_metaschema_state():
         yield

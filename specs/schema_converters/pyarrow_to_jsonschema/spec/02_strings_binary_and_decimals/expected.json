@@ -1,0 +1,28 @@
+[
+  {
+    "utf8_str": "contig_0001",
+    "large_str": "ATGCNATGCNATGCN",
+    "view_str": "short-view",
+    "raw_bin": "AAEC/w==",
+    "large_bin": "a2Jhc2UtbGFyZ2UtcGF5bG9hZA==",
+    "view_bin": "YmluYXJ5LXZpZXctYnl0ZXM=",
+    "fixed_bin_4": "3q2+7w==",
+    "dec_standard": "-12345678.95",
+    "dec_fraction_only": "0.0625",
+    "dec_integer_only": "98765432",
+    "dec256_high_prec": "0.0000000001"
+  },
+  {
+    "utf8_str": "",
+    "large_str": "second-large-string",
+    "view_str": "inlined-or-out-of-line-string-view-value",
+    "raw_bin": "",
+    "large_bin": "iVBORw==",
+    "view_bin": "MTIzNDU2Nzg5MGFiY2RlZg==",
+    "fixed_bin_4": "AAAAAQ==",
+    "dec_standard": "0.00",
+    "dec_fraction_only": "-0.9999",
+    "dec_integer_only": "-42",
+    "dec256_high_prec": null
+  }
+]

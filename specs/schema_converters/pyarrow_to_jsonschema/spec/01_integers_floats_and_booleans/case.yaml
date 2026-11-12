@@ -1,0 +1,31 @@
+title: Booleans, Signed and Unsigned Integers, and IEEE-754 Floats
+rules:
+  - R-SCHEMA-INPUT
+  - R-NON-EMPTY-ROOT
+  - R-DIALECT
+  - R-ENVELOPE-CLOSED
+  - R-FIELD-NAME
+  - R-FIELD-ORDER
+  - R-UNIQUE-FIELD-NAMES
+  - R-NULL-REQUIRED
+  - R-SCALAR-BOOL
+  - R-SCALAR-SIGNED-INT
+  - R-SCALAR-UNSIGNED-INT
+  - R-SCALAR-FLOAT
+  - R-META-X-PYARROW-TYPE
+  - R-SER-ROW-ORDER
+  - R-SER-FINITE-FLOAT
+notes: |
+  Exercises exact two's-complement `minimum`/`maximum` bounds for `int8`..`int64`, unsigned `0..2^w - 1` bounds
+  for `uint8`..`uint64` (including full 64-bit `18446744073709551615`), `bool_`, and `float16`/`float32`/`float64`
+  at boundary values.
+schema: schema.py
+expected_schema: expected_schema.json
+runs:
+  - id: boundary_values
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

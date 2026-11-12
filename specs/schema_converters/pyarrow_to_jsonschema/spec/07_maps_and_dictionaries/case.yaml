@@ -1,0 +1,27 @@
+title: String-Keyed and Non-String-Keyed Maps and Dictionary-Encoded Columns
+rules:
+  - R-SHAPE-MAP
+  - R-SHAPE-DICTIONARY
+  - R-SHAPE-STRUCT
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-NULL-MAP-VALUES
+  - R-META-DESCRIPTION
+  - R-META-X-PYARROW-TYPE
+  - R-SER-ROW-ORDER
+  - R-SER-MAP-ENTRIES
+  - R-SER-DECIMAL-STR
+notes: |
+  Exercises `pa.map_` with string keys and nullable struct values, `pa.map_` with sorted `int32` keys and
+  non-nullable `float64` values, and `pa.dictionary` columns wrapping `string`, `int64` (`ordered=True`), and
+  `decimal128(8, 2)`.
+schema: schema.py
+expected_schema: expected_schema.json
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

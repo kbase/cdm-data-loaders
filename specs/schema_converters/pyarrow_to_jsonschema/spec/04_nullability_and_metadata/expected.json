@@ -1,0 +1,17 @@
+[
+  {
+    "sample_id": "SAMN00010001",
+    "depth_m": 125.5,
+    "quality_score": 98,
+    "optional_details": {
+      "collector": "A. Smith",
+      "ph": 7.25
+    }
+  },
+  {
+    "sample_id": "SAMN00010002",
+    "depth_m": null,
+    "quality_score": null,
+    "optional_details": null
+  }
+]

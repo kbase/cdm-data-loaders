@@ -6,7 +6,7 @@ This guide explains how to author, edit, and maintain specification rules, test 
 
 ## 1. Architecture and Directory Layout
 
-Each schema converter (`jsonschema_to_pyarrow`, `pydantic_to_pyarrow`, `xsd_to_pyarrow`) has a specification directory under `specs/schema_converters/<converter>/`:
+Each schema converter (`jsonschema_to_pyarrow`, `pydantic_to_pyarrow`, `xsd_to_pyarrow`, `pyarrow_to_jsonschema`, `pyarrow_to_linkml`) has a specification directory under `specs/schema_converters/<converter>/`:
 
 ```text
 specs/schema_converters/<converter>/
@@ -15,10 +15,10 @@ specs/schema_converters/<converter>/
 │   ├── 01_<topic>/
 │   │   ├── case.yaml                # Case manifest (title, schema, rules, runs)
 │   │   ├── schema.<ext>             # Input schema (.json, .py, or .xsd)
-│   │   ├── expected_schema.py       # Expected PyArrow Schema (EXPECTED_SCHEMA)
-│   │   ├── data.<ext>               # Input records (.json or .xml)
-│   │   ├── expected.json            # Expected coerced rows as JSON
-│   │   └── expected_table.py        # Expected PyArrow Table (EXPECTED_TABLE)
+│   │   ├── expected_schema.<ext>    # Expected schema (.py, .json, or .yaml)
+│   │   ├── data.<ext> / table.py    # Input records (.json, .xml, or PyArrow Table .py)
+│   │   ├── expected.json            # Expected coerced/serialized rows as JSON
+│   │   └── expected_table.py        # Expected PyArrow Table (EXPECTED_TABLE / TABLE)
 │   └── errors/
 │       ├── manifest.yaml            # Error fixture manifest (file, code, match, description)
 │       └── <error_fixture>.<ext>    # Invalid/unsupported schemas triggering E1..En
@@ -33,10 +33,14 @@ The manifests in `specs/schema_converters/` drive two outputs:
    - `tests/cdm_data_loaders/converters/facades/test_jsonschema_to_pyarrow_spec.py`
    - `tests/cdm_data_loaders/converters/facades/test_pydantic_to_pyarrow_spec.py`
    - `tests/cdm_data_loaders/converters/facades/test_xsd_to_pyarrow_spec.py`
+   - `tests/cdm_data_loaders/converters/facades/test_pyarrow_to_jsonschema_spec.py`
+   - `tests/cdm_data_loaders/converters/facades/test_pyarrow_to_linkml_spec.py`
 2. **Generated Markdown specification pages**:
    - [JSON Schema to PyArrow Specification](jsonschema_to_pyarrow_specification.md)
    - [Pydantic to PyArrow Specification](pydantic_to_pyarrow_specification.md)
    - [XSD to PyArrow Specification](xsd_to_pyarrow_specification.md)
+   - [PyArrow to JSON Schema Specification](pyarrow_to_jsonschema_specification.md)
+   - [PyArrow to LinkML Specification](pyarrow_to_linkml_specification.md)
 
 ---
 
@@ -84,6 +88,8 @@ Each converter defines a base error class and a tuple of numbered subclasses:
 | `jsonschema_to_pyarrow` | `src/cdm_data_loaders/converters/facades/jsonschema_to_pyarrow.py` | `JSONSchemaToPyArrowError` | `JSONSCHEMA_TO_PYARROW_ERRORS` |
 | `pydantic_to_pyarrow`   | `src/cdm_data_loaders/converters/facades/pydantic_to_pyarrow.py`   | `PydanticToPyArrowError`   | `PYDANTIC_TO_PYARROW_ERRORS`   |
 | `xsd_to_pyarrow`        | `src/cdm_data_loaders/converters/facades/xsd_to_pyarrow.py`        | `XsdToPyArrowError`        | `XSD_TO_PYARROW_ERRORS`        |
+| `pyarrow_to_jsonschema` | `src/cdm_data_loaders/converters/facades/pyarrow_to_jsonschema.py` | `PyArrowToJSONSchemaError` | `PYARROW_TO_JSONSCHEMA_ERRORS` |
+| `pyarrow_to_linkml`     | `src/cdm_data_loaders/converters/facades/pyarrow_to_linkml.py`     | `PyArrowToLinkMLError`     | `PYARROW_TO_LINKML_ERRORS`     |
 
 Each error subclass defines:
 

@@ -1,0 +1,27 @@
+title: Identifier Sanitization, Explicit Overrides, and Class Name Collision Disambiguation
+rules:
+  - R-SCHEMA-IDENTITY
+  - R-IMPORTS-PREFIXES
+  - R-CLASS-IDENTIFIER
+  - R-CLASS-COLLISION
+  - R-SHAPE-STRUCT-CLASS
+  - R-SHAPE-MAP-CLASS
+  - R-SER-ROW-ORDER
+  - R-SER-MAP-ENTRIES
+notes: |
+  Exercises explicit `schema_name` and `schema_id` overrides with punctuation sanitization
+  (`"--genome-report.v1--"` -> `genome_report_v1`), plus deterministic `_2` suffix disambiguation when
+  `<OwnerClass>_meta_info` collides with `<OwnerClass>_meta`'s child `info` struct.
+schema: schema.py
+expected_schema: expected_schema.yaml
+runs:
+  - id: sanitized_override
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2
+    params:
+      schema_name: --genome-report.v1--
+      schema_id: https://kbase.us/linkml/genome-report-v1

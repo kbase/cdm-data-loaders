@@ -1,0 +1,80 @@
+name: schema
+id: urn:linkml:schema
+imports:
+- linkml:types
+prefixes:
+  schema:
+    prefix_prefix: schema
+    prefix_reference: urn:linkml:schema#
+  linkml:
+    prefix_prefix: linkml
+    prefix_reference: https://w3id.org/linkml/
+default_prefix: schema
+classes:
+  Root:
+    name: Root
+    attributes:
+      flag:
+        name: flag
+        range: boolean
+        required: true
+      i8:
+        name: i8
+        range: integer
+        required: true
+        minimum_value: -128
+        maximum_value: 127
+      i16:
+        name: i16
+        range: integer
+        required: true
+        minimum_value: -32768
+        maximum_value: 32767
+      i32:
+        name: i32
+        range: integer
+        required: true
+        minimum_value: -2147483648
+        maximum_value: 2147483647
+      i64:
+        name: i64
+        range: integer
+        required: true
+        minimum_value: -9223372036854775808
+        maximum_value: 9223372036854775807
+      u8:
+        name: u8
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 255
+      u16:
+        name: u16
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 65535
+      u32:
+        name: u32
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 4294967295
+      u64:
+        name: u64
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 18446744073709551615
+      f16:
+        name: f16
+        range: float
+        required: true
+      f32:
+        name: f32
+        range: float
+        required: true
+      f64:
+        name: f64
+        range: float
+        required: true

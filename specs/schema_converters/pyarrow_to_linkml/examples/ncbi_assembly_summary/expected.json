@@ -1,0 +1,32 @@
+[
+  {
+    "assembly_accession": "GCF_000005845.2",
+    "bioproject": "PRJNA57779",
+    "tax_id": 511145,
+    "is_reference": true,
+    "assembly_level": "Complete Genome",
+    "release_date": "2013-09-26",
+    "ingested_at": "2026-04-10T16:00:00+00:00",
+    "gc_percent": "50.79",
+    "fasta_md5": "ASNFZ4mrze/+3LqYdlQyEA==",
+    "replicons": [
+      {
+        "accession": "NC_000913.3",
+        "molecule_type": "Chromosome",
+        "length_bp": 4641652
+      }
+    ]
+  },
+  {
+    "assembly_accession": "GCA_009914755.4",
+    "bioproject": null,
+    "tax_id": 9606,
+    "is_reference": false,
+    "assembly_level": "Scaffold",
+    "release_date": "2022-03-31",
+    "ingested_at": "2026-04-10T16:05:30+00:00",
+    "gc_percent": null,
+    "fasta_md5": "qrvM3e7/ABEiM0RVZneImQ==",
+    "replicons": []
+  }
+]

@@ -1,0 +1,16 @@
+[
+  {
+    "id": "S-01",
+    "count": 1024,
+    "gc_ratio": "0.5125",
+    "digest": "MDEyMzQ1Njc=",
+    "collected_on": "2026-03-15"
+  },
+  {
+    "id": "S-02",
+    "count": 0,
+    "gc_ratio": null,
+    "digest": "AAECAwQFBgc=",
+    "collected_on": null
+  }
+]

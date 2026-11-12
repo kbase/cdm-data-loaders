@@ -243,10 +243,30 @@ ICEBERG_PROPERTIES: Final[dict[str, Any]] = {
         },
     },
 }
+PYARROW_PROPERTIES: Final[dict[str, Any]] = {
+    **{
+        name: {"type": "string"}
+        for name in (
+            "arrow_type",
+            "logical_type",
+            "unit",
+            "tz",
+            "index_type",
+            "value_type",
+        )
+    },
+    **{
+        name: {"type": "integer", "minimum": 0}
+        for name in ("bit_width", "precision", "scale", "byte_width", "list_size")
+    },
+    **{name: {"type": "boolean"} for name in ("ordered", "keys_sorted")},
+    "metadata": {"type": "object", "additionalProperties": {"type": "string"}},
+}
 DEFAULT_EXTENSIONS: Final[ExtensionRegistry] = ExtensionRegistry(
     (
         ExtensionSpec("x-dlt", _object_schema(DLT_PROPERTIES)),
         ExtensionSpec("x-iceberg", _object_schema(ICEBERG_PROPERTIES)),
+        ExtensionSpec("x-pyarrow", _object_schema(PYARROW_PROPERTIES)),
         ExtensionSpec("x-xsv-config", get_xsv_config_schema),
         ExtensionSpec("x-file-glob", {"type": "string"}),
         ExtensionSpec("x-delimiter", {"type": "string", "minLength": 1, "maxLength": 1}),

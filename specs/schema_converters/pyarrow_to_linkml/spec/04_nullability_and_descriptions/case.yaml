@@ -1,0 +1,25 @@
+title: Nullability, Schema Identity Metadata, and Slot Descriptions
+rules:
+  - R-SCHEMA-IDENTITY
+  - R-IMPORTS-PREFIXES
+  - R-SLOT-NAME
+  - R-SLOT-ORDER
+  - R-NULL-REQUIRED
+  - R-NULL-OPTIONAL
+  - R-META-SCHEMA-DESC
+  - R-META-SLOT-DESC
+  - R-SER-ROW-ORDER
+notes: |
+  Demonstrates resolution of `SchemaDefinition.name`, root `ClassDefinition.name`, `id`, `prefixes`, and
+  `description` from `pa.Schema.metadata` (`title`, `$id`, `comment`), alongside required vs optional slots and
+  slot-level `description` extraction (including fallback to list item `comment`).
+schema: schema.py
+expected_schema: expected_schema.yaml
+runs:
+  - id: default
+    data: table.py
+    expected_json: expected.json
+    expected_table: table.py
+    schema_attr: SCHEMA
+    table_attr: TABLE
+    expected_count: 2

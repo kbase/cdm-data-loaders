@@ -1,0 +1,79 @@
+name: ProteinAnnotation
+id: urn:linkml:ProteinAnnotation
+imports:
+- linkml:types
+prefixes:
+  ProteinAnnotation:
+    prefix_prefix: ProteinAnnotation
+    prefix_reference: urn:linkml:ProteinAnnotation#
+  linkml:
+    prefix_prefix: linkml
+    prefix_reference: https://w3id.org/linkml/
+default_prefix: ProteinAnnotation
+classes:
+  ProteinAnnotation_source_locus:
+    name: ProteinAnnotation_source_locus
+    attributes:
+      contig:
+        name: contig
+        range: string
+        required: true
+      strand:
+        name: strand
+        range: string
+  ProteinAnnotation_domain_hits:
+    name: ProteinAnnotation_domain_hits
+    attributes:
+      domain_acc:
+        name: domain_acc
+        range: string
+        required: true
+      start_aa:
+        name: start_aa
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 4294967295
+      end_aa:
+        name: end_aa
+        range: integer
+        required: true
+        minimum_value: 0
+        maximum_value: 4294967295
+      evidence_codes:
+        name: evidence_codes
+        range: string
+        required: true
+        multivalued: true
+  ProteinAnnotation:
+    name: ProteinAnnotation
+    attributes:
+      protein_id:
+        name: protein_id
+        range: string
+        required: true
+      source_locus:
+        name: source_locus
+        range: ProteinAnnotation_source_locus
+        required: true
+      ec_numbers:
+        name: ec_numbers
+        range: string
+        required: true
+        multivalued: true
+      quality_flags:
+        name: quality_flags
+        range: integer
+        multivalued: true
+      coords_3d:
+        name: coords_3d
+        range: float
+        required: true
+        multivalued: true
+        minimum_cardinality: 3
+        maximum_cardinality: 3
+      domain_hits:
+        name: domain_hits
+        range: ProteinAnnotation_domain_hits
+        required: true
+        multivalued: true

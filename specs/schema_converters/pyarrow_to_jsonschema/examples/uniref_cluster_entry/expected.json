@@ -1,0 +1,57 @@
+[
+  {
+    "cluster_id": "UniRef90_P0A7B8",
+    "cluster_name": "Cluster: ATP-dependent Clp protease proteolytic subunit",
+    "identity_threshold": 0.8999999761581421,
+    "member_count": 3,
+    "updated_at": "2026-02-18T08:00:00",
+    "representative": {
+      "uniprot_acc": "P0A7B8",
+      "length_aa": 207,
+      "crc64": "EjRWeJq83vA="
+    },
+    "embedding_preview": [
+      0.125,
+      -0.5,
+      0.75,
+      0.0
+    ],
+    "member_accessions": [
+      "P0A7B8",
+      "P0A7B9",
+      "Q8X685"
+    ],
+    "taxon_counts": [
+      {
+        "key": 562,
+        "value": 2
+      },
+      {
+        "key": 83334,
+        "value": 1
+      }
+    ]
+  },
+  {
+    "cluster_id": "UniRef50_Q9Y261",
+    "cluster_name": "Cluster: Forkhead box protein A2",
+    "identity_threshold": 0.5,
+    "member_count": 1,
+    "updated_at": "2026-02-18T08:30:00",
+    "representative": {
+      "uniprot_acc": "Q9Y261",
+      "length_aa": 457,
+      "crc64": "/ty6mHZUMhA="
+    },
+    "embedding_preview": null,
+    "member_accessions": [
+      "Q9Y261"
+    ],
+    "taxon_counts": [
+      {
+        "key": 9606,
+        "value": 1
+      }
+    ]
+  }
+]

@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kbase.us/schemas/environmental_sample.json",
+  "title": "EnvironmentalSample",
+  "description": "Environmental sample record with rich Arrow metadata.",
+  "type": "object",
+  "properties": {
+    "sample_id": {
+      "type": "string",
+      "x-pyarrow": {
+        "arrow_type": "string",
+        "metadata": {
+          "pydantic_type": "string",
+          "source_column": "biosample_acc"
+        }
+      },
+      "description": "Unique biosample identifier."
+    },
+    "depth_m": {
+      "anyOf": [
+        {
+          "type": "number",
+          "x-pyarrow": {
+            "arrow_type": "float64"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Sampling depth in meters below surface.",
+      "x-pyarrow": {
+        "metadata": {
+          "unit": "m"
+        }
+      }
+    },
+    "quality_score": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-pyarrow": {
+            "arrow_type": "int32"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "optional_details": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "collector": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "x-pyarrow": {
+                    "arrow_type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Field collector name."
+            },
+            "ph": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "x-pyarrow": {
+                    "arrow_type": "float32"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "x-pyarrow": {
+            "arrow_type": "struct"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional environmental annotations where every child field is nullable."
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "sample_id"
+  ],
+  "x-pyarrow": {
+    "metadata": {
+      "dataset_version": "2026.04",
+      "curator": "cdm-ingest"
+    }
+  }
+}
