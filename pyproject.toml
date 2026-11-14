@@ -60,6 +60,7 @@ xsv = "cdm_data_loaders.pipelines.xsv.pipeline:cli"
 [dependency-groups]
 dev = [
     "hypothesis>=6.130.0",
+    "jinja2>=3.1.6",
     "moto[s3,server]>=5.2.5",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.4.1.post1",
@@ -83,6 +84,7 @@ mutants = [
 ]
 docs = [
     "griffe-pydantic>=1.3.2",
+    "jinja2>=3.1.6",
     "mkdocstrings[python]>=1.0.8",
     "zensical>=0.1.1",
 ]
@@ -226,7 +228,7 @@ build-backend = "uv_build"
 
 [tool.mutmut]
 source_paths = [ "src/" ]
-pytest_add_cli_args_test_selection= [ "-m", "not requires_spark", "-m", "not slow_test", "-m", "not requires_ceph", "-m", "not external_request", "-m", "not docker", "-m", "not docs" ]
+pytest_add_cli_args_test_selection= [ "-m", "not requires_spark", "-m", "not slow_test", "-m", "not requires_ceph", "-m", "not external_request", "-m", "not docker", "-m", "not docs", "-m", "not state_audit" ]
 
 
 
@@ -246,6 +248,7 @@ markers = [
     "docker: tests that build and run the pipeline inside a Docker container",
     "docs: tests that verify documentation generation and drift across docs/ and README.md",
     "pbt: property-based tests powered by Hypothesis",
+    "state_audit: global state mutation audit across the test suite (opt-in via -m state_audit)",
 ]
 
 # environment settings for running tests

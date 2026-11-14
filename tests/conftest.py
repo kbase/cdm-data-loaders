@@ -11,6 +11,7 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import partial
 from importlib.util import find_spec
 from pathlib import Path
 from types import ModuleType
@@ -21,6 +22,7 @@ import boto3
 import dlt
 import pytest
 from _pytest.logging import LogCaptureHandler
+from _pytest.mark.expression import Expression
 from dlt.common.configuration.container import Container
 from dlt.common.pipeline import PipelineContext
 from frozendict import frozendict
@@ -30,10 +32,12 @@ from pyspark.sql import SparkSession
 from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
+from cdm_data_loaders.pipelines.core import _install_iceberg_catalog_cleanup
 from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI, get_xsv_meta_schema
 from cdm_data_loaders.utils import cdm_logger
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
+from tests.state_audit import StateAuditPlugin
 from tests.xml_samples import LIBRARY_XSD
 
 settings.register_profile(
@@ -66,7 +70,7 @@ PIPELINE_SPECS_DIR: Final[Path] = BASE_DIR / "specs" / "pipelines"
 SPECS_ROOT: Final[Path] = (BASE_DIR / "specs").resolve()
 TRANSIENT_MODULE_NAMES: Final[frozenset[str]] = frozenset({"schema", "expected_schema"})
 TRANSIENT_MODULE_PREFIXES: Final[tuple[str, ...]] = ("_fixture_", "_test_")
-NATIVE_SPECLESS_PREFIXES: Final[tuple[str, ...]] = ("_openssl", "cryptography.")
+NATIVE_SPECLESS_PREFIXES: Final[tuple[str, ...]] = ("_openssl", "cryptography.", "_cython_", "_duckdb.")
 
 REFERENCE_XML_NS: Final[str] = "http://uniprot.org/uniref"
 REFERENCE_XML_TAG: Final[str] = f"{{{REFERENCE_XML_NS}}}entry"
@@ -146,16 +150,82 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Drop catalog/destination tables added by the pipeline after each smoke test finishes.",
     )
+    parser.addoption(
+        "--state-audit",
+        action="store_true",
+        default=False,
+        help="Audit collected modules and executed tests for unreverted global state mutations.",
+    )
+
+
+def _matches_marker(target: str, name: str, **_kwargs: str | int | bool | None) -> bool:
+    """Return whether a marker expression identifier matches ``target``.
+
+    :param target: Marker name to match.
+    :type target: str
+    :param name: Candidate identifier passed by ``Expression.evaluate``.
+    :type name: str
+    :param _kwargs: Optional marker keyword arguments passed by ``Expression.evaluate``.
+    :type _kwargs: str | int | bool | None
+    :return: ``True`` when ``name == target``.
+    :rtype: bool
+    """
+    return name == target
+
+
+def is_marker_explicitly_selected(markexpr: str, marker: str) -> bool:
+    """Determine whether a ``-m`` marker expression explicitly selects ``marker``.
+
+    Returns ``False`` when ``markexpr`` is empty, omits ``marker`` (such as
+    ``not docs``), negates ``marker`` (such as ``not state_audit``), or fails
+    to parse.
+
+    :param markexpr: Raw ``-m`` marker expression string from ``config.option.markexpr``.
+    :type markexpr: str
+    :param marker: Marker identifier to check for explicit selection.
+    :type marker: str
+    :return: ``True`` if ``marker`` is referenced in ``markexpr`` and evaluates to selected.
+    :rtype: bool
+    """
+    stripped = markexpr.strip()
+    if not stripped:
+        return False
+    try:
+        compiled = Expression.compile(stripped)
+    except SyntaxError:
+        return False
+    return marker in compiled.idents() and compiled.evaluate(partial(_matches_marker, marker))
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Register the passive global state mutation audit plugin when ``--state-audit`` is enabled.
+
+    :param config: Active pytest configuration object.
+    :type config: pytest.Config
+    """
+    if config.getoption("--state-audit") and not config.pluginmanager.has_plugin("cdm_state_audit"):
+        config.pluginmanager.register(StateAuditPlugin(), name="cdm_state_audit")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Skip tests marked with ``docker`` unless ``--run-docker`` was passed on the command line."""
-    if config.getoption("--run-docker"):
+    """Skip opt-in ``docker`` and ``state_audit`` tests unless explicitly requested on the command line.
+
+    :param config: Active pytest configuration object.
+    :type config: pytest.Config
+    :param items: Collected test items to filter or mark in place.
+    :type items: list[pytest.Item]
+    """
+    run_docker = bool(config.getoption("--run-docker"))
+    run_state_audit = is_marker_explicitly_selected(config.option.markexpr, "state_audit")
+    if run_docker and run_state_audit:
         return
     skip_docker = pytest.mark.skip(reason="need --run-docker option to run Docker container tests")
+    skip_state_audit = pytest.mark.skip(reason="need -m state_audit option to run global state mutation audit")
     for item in items:
-        if "docker" in item.keywords:
+        if not run_docker and "docker" in item.keywords:
             item.add_marker(skip_docker)
+        if not run_state_audit and "state_audit" in item.keywords:
+            item.add_marker(skip_state_audit)
 
 
 def _find_notebook_utils() -> bool:
