@@ -48,6 +48,7 @@ from tests.fs_backends import MOTO_ACCESS_KEY, MOTO_SECRET_KEY
 from tests.helpers import make_cts_settings
 from tests.pipeline_env import (
     PipelineEnvSpec,
+    _resolve_destination_bucket_url,
     discover_env_settings_file,
     drop_iceberg_tables_for_dataset,
     list_iceberg_namespace_tables,
@@ -395,6 +396,7 @@ def execute_smoke_case_run(
     dataset_name = str(getattr(settings, "dataset_name", None) or case.pipeline)
     is_iceberg = str(getattr(settings, "loader_file_format", "")) == "iceberg"
     dlt_cfg, dlt_sec = env.isolated_dlt_configs(run_slug, isolate_bucket_url=not is_iceberg)
+    dest_bucket_url = _resolve_destination_bucket_url(dlt_cfg, dlt_sec, env.use_destination)
 
     with isolated_dlt_config(config=dlt_cfg, secrets=dlt_sec):
         if is_iceberg and should_drop_existing:
@@ -402,6 +404,10 @@ def execute_smoke_case_run(
                 dataset_name,
                 _known_pipeline_tables(case.pipeline),
                 include_namespace_tables=True,
+                bucket_url=dest_bucket_url,
+                s3_client=env.s3_client,
+                dlt_secrets=dlt_sec,
+                use_destination=env.use_destination,
             )
         pre_existing_tables = (
             list_iceberg_namespace_tables(dataset_name) if (is_iceberg and should_drop_after) else set()
@@ -417,6 +423,10 @@ def execute_smoke_case_run(
                     dataset_name,
                     added_tables,
                     include_namespace_tables=False,
+                    bucket_url=dest_bucket_url,
+                    s3_client=env.s3_client,
+                    dlt_secrets=dlt_sec,
+                    use_destination=env.use_destination,
                 )
 
 
@@ -614,6 +624,8 @@ def test_ncbi_datasets_iceberg_with_home_pyiceberg_yaml_and_table_cleanup_pass(
     )
     with isolated_dlt_config(config=env.dlt_config, secrets=env.dlt_secrets):
         assert list_iceberg_namespace_tables("ncbi_datasets") == set()
+    for table_name in remaining:
+        assert not (warehouse_dir / "ncbi_datasets" / table_name).exists()
 
 
 def test_pipeline_test_runner_docker_mode_copies_dlt_config_dir_and_preserves_remote_input(
