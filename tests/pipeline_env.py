@@ -378,7 +378,12 @@ def drop_iceberg_tables_for_dataset(
                 dropped_tables.append(table_name)
 
             for loc in locations:
-                if urlparse(loc).scheme in {"s3", "s3a"} and active_s3_client is None and dlt_secrets and use_destination:
+                if (
+                    urlparse(loc).scheme in {"s3", "s3a"}
+                    and active_s3_client is None
+                    and dlt_secrets
+                    and use_destination
+                ):
                     active_s3_client = _build_s3_client_from_secrets(dlt_secrets, use_destination)
                 _purge_location_files(loc, s3_client=active_s3_client)
 
