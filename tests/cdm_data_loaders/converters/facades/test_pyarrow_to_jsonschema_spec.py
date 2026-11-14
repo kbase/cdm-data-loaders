@@ -2,10 +2,11 @@
 
 Cases, rules, and error fixtures are declared in manifests under
 ``specs/schema_converters/pyarrow_to_jsonschema`` (``rules.yaml``, ``*/case.yaml``, and
-``spec/errors/manifest.yaml``). The same manifests generate ``docs/pyarrow_to_jsonschema_specification.md`` via
-``scripts/gen_converter_spec.py``.
+``spec/errors/manifest.yaml``). The same manifests render ``docs/pyarrow_to_jsonschema_specification.md`` via
+``docs_macros`` Jinja2 templates.
 """
 
+import importlib
 import json
 import math
 from pathlib import Path
@@ -34,11 +35,6 @@ from cdm_data_loaders.converters.facades.pyarrow_to_jsonschema import (
     convert_type,
     generate_json_schema,
     resolve_scalar_type,
-)
-from scripts.gen_converter_spec import (
-    PYARROW_TO_JSONSCHEMA,
-    render,
-    render_pyarrow_to_jsonschema_scalar_table,
 )
 from tests.cdm_data_loaders.converters.conftest import (
     JSON_SCHEMA_KEYWORDS,
@@ -155,11 +151,27 @@ def test_manifests_pass_consistency() -> None:
 
 @pytest.mark.docs
 def test_specification_document_pass_up_to_date() -> None:
-    """Verify the committed specification document and scalar table match scripts/gen_converter_spec.py."""
-    assert PYARROW_TO_JSONSCHEMA.output.read_text(encoding="utf-8") == render(PYARROW_TO_JSONSCHEMA), (
-        "docs are stale: run `uv run python -m scripts.gen_converter_spec`"
-    )
-    scalar_table = render_pyarrow_to_jsonschema_scalar_table()
+    """Verify the specification stub, rendered document, and scalar table match the manifest and converter."""
+    docs_env = importlib.import_module("docs_macros.env")
+    spec_ctx = importlib.import_module("docs_macros.spec_context")
+
+    spec_cfg = spec_ctx.CONVERTER_SPECS["pyarrow_to_jsonschema"]
+    stub_text = docs_env.build_generated_docs_plan()[Path(spec_cfg.output.name)]
+    assert "render_macros: true" in stub_text
+    assert 'render_converter_spec("pyarrow_to_jsonschema")' in stub_text
+
+    rendered = docs_env.render_converter_spec(spec_cfg)
+    assert f"# {RULES.title}" in rendered
+    for rule_id in RULES.rules:
+        assert f"**{rule_id}**" in rendered
+        assert f'<a id="{rule_id.lower()}"></a>' in rendered
+    for case in CASES:
+        assert f'<a id="{case.anchor}"></a>' in rendered
+    for err_cls in PYARROW_TO_JSONSCHEMA_ERRORS:
+        assert f"**{err_cls.code}**" in rendered
+        assert f"`{err_cls.__name__}`" in rendered
+
+    scalar_table = docs_env.render_reference_table("pyarrow_to_jsonschema_scalar_table")
     assert "| `pa.int64()` |" in scalar_table
     assert "| `pa.decimal128(10, 2)` |" in scalar_table
     assert '| `pa.timestamp("us", tz="UTC")` |' in scalar_table

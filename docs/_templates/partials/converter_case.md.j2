@@ -1,0 +1,55 @@
+{% from "macros/common.md.j2" import fenced_block, rule_links, run_suffix %}
+<a id="{{ case.anchor }}"></a>
+
+### {{ case.title }} (`{{ case.suite }}/{{ case.name }}`)
+
+**Rules:** {{ rule_links(case.rules, code_wrap=false) }}
+
+{% if case.xml_tag_repr is not none %}
+**Target:** `{{ case.target_label }}={{ case.xml_tag_repr }}`
+
+{% endif %}
+{% if case.notes %}
+{{ case.notes }}
+
+{% endif %}
+#### Schema (`{{ case.schema_name }}`)
+
+{{ fenced_block(case.schema_block) }}
+
+{% if case.embed %}
+{% for run in case.runs %}
+{% for inp in run.inputs %}
+#### Input (`{{ inp.label }}`)
+
+{{ fenced_block(inp.code_block) }}
+
+{% endfor %}
+#### {{ case.run_output_heading }}: run `{{ run.id }}`{{ run_suffix(run, case.target_label) }}
+
+{{ fenced_block(run.expected_json_block) }}
+
+{% for extra in run.extra_outputs %}
+#### Converted rows (`{{ extra.table_name }}`): run `{{ run.id }}`{{ run_suffix(run, case.target_label) }}
+
+{{ fenced_block(extra.code_block) }}
+
+{% endfor %}
+{% if run.expected_rejected_block is not none %}
+#### Rejected rows (`_rejected`): run `{{ run.id }}`{{ run_suffix(run, case.target_label) }}
+
+{{ fenced_block(run.expected_rejected_block) }}
+
+{% endif %}
+{% endfor %}
+{% else %}
+{% for run in case.runs %}
+- Run `{{ run.id }}`{{ run_suffix(run, case.target_label) }}: {% for f in run.linked_files %}[`{{ f.name }}`]({{ f.url }}){% if not loop.last %}, {% endif %}{% endfor %}
+
+{% endfor %}
+{% endif %}
+#### {{ case.expected_schema_heading }} ([`{{ case.expected_schema_name }}`]({{ case.expected_schema_url }}))
+
+{{ fenced_block(case.expected_schema_block) }}
+
+---

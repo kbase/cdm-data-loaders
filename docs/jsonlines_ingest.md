@@ -1,14 +1,14 @@
-# JSONL Ingestion Pipelines
+# JSONLines Ingestion Pipelines
 
-Three pipelines under `pipelines/jsonlines/` load JSONL files (`.jsonl` and gzip-compressed `.jsonl.gz`) through the shared CTS runner. They share settings, file discovery, table transformation hooks, and error routing, and differ in how (or whether) records are validated and buffered before loading:
+Three pipelines under [`src/cdm_data_loaders/pipelines/jsonlines`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines) (backed by [`src/cdm_data_loaders/readers/jsonlines.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/readers/jsonlines.py)) load JSONL files (`.jsonl` and gzip-compressed `.jsonl.gz`) through the shared CTS runner. They share file discovery, pre-processor and table transformation hooks, and error routing, and differ in how records are validated and buffered before loading:
 
-| Pipeline                                                                                                                       | CLI Entry Point                         | Validation                        | Default Output Format                            |
-| ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- | --------------------------------- | ------------------------------------------------ |
-| [extract_pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | `jsonlines_extract`                     | None beyond valid JSON            | `list[dict]` (`pyarrow.Table` if schema map set) |
-| [extract_jsonschema_validate_pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema`, `ncbi_datasets` | JSON Schema, per entity table     | `pyarrow.Table` (`JSONSchemaToPyArrow`)          |
-| [extract_pydantic_validate_pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`                    | Pydantic models, per entity table | `pyarrow.Table` (`PydanticToPyArrow`)            |
+| Pipeline | CLI Entry Point | Validation | Default Output Format |
+| --- | --- | --- | --- |
+| [`extract_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py) | [`jsonlines_extract`](cli_reference.md#jsonlines_extract) | None beyond valid JSON | `list[dict]` (`pyarrow.Table` if schema map set) |
+| [`extract_jsonschema_validate_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | [`jsonlines_jsonschema`](cli_reference.md#jsonlines_jsonschema), [`ncbi_datasets`](cli_reference.md#ncbi_datasets) | JSON Schema, per entity table | `pyarrow.Table` (`JSONSchemaToPyArrow`) |
+| [`extract_pydantic_validate_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py) | [`jsonlines_pydantic`](cli_reference.md#jsonlines_pydantic) | Pydantic models, per entity table | `pyarrow.Table` (`PydanticToPyArrow`) |
 
-All three support plain and gzip-compressed inputs, Parquet, JSONL, or Iceberg output, optional record-level transforms (`--transforms-module`), and a unified `_rejected` table for parse and validation failures.
+For behavioral specifications and fixture cases, see [JSONLines Extract](jsonlines_extract_specification.md), [JSONLines (JSON Schema)](jsonlines_jsonschema_specification.md), and [JSONLines (Pydantic)](jsonlines_pydantic_specification.md). For all CLI flags and `CDL_*` environment variables, see the [CLI Reference](cli_reference.md).
 
 ---
 
@@ -32,9 +32,9 @@ uv run jsonlines_extract \
 
 ---
 
-## The Two Validated Pipelines
+## Validated Pipelines (`jsonlines_jsonschema`, `ncbi_datasets`, `jsonlines_pydantic`)
 
-`jsonlines_jsonschema` and `jsonlines_pydantic` share the same per-entity directory layout and `_rejected` table behavior; they differ in how schemas/models are declared, how validation errors are formatted, and how valid records are typed and buffered.
+`jsonlines_jsonschema` and `jsonlines_pydantic` share the same per-entity directory layout and `_rejected` table behavior; they differ in how schemas and models are declared, how validation errors are formatted, and how valid records are typed and buffered.
 
 ### Input Directory Layout
 
@@ -60,8 +60,9 @@ input/
 Provide an importable Python module via `--entity-schemas` (`-m`) that defines `ENTITY_SCHEMAS: dict[str, dict[str, Any]]`. Each key names an entity table and its input subdirectory; each value is a JSON Schema dictionary declaring a supported `$schema` draft:
 
 ```python
-# my_schemas.py
-ENTITY_SCHEMAS = {
+from typing import Any, Final
+
+ENTITY_SCHEMAS: Final[dict[str, dict[str, Any]]] = {
     "widget": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -76,12 +77,14 @@ ENTITY_SCHEMAS = {
 ```
 
 Before any files are read, `jsonlines_jsonschema`:
-1. Validates the entire `ENTITY_SCHEMAS` registry (`load_registry_dict(..., "ENTITY_SCHEMAS")`). Missing or unsupported `$schema` drafts raise `ValueError`; invalid schemas across all tables are reported together in a `RuntimeError`.
-2. Dereferences `$ref` / `allOf` (`dereference_schema`) and converts each entity's JSON Schema to a `pyarrow.Schema` via `JSONSchemaToPyArrow` (`build_output_schema_registry`), unless that table has a configured transform in `--transforms-module` or an explicit schema override in `--output-schemas-module`. Any conversion failures across tables are reported together in a `RuntimeError`.
+
+- Validates the entire `ENTITY_SCHEMAS` registry; missing or unsupported `$schema` drafts or invalid schemas raise pre-execution configuration errors before extraction starts.
+- Dereferences `$ref` and `allOf` keywords and converts each entity's JSON Schema to a `pyarrow.Schema` via `JSONSchemaToPyArrow`, unless that table has a configured transform in `--transforms-module` or an explicit schema override in `--output-schemas-module`.
 
 During ingestion:
+
 - Validation uses each schema's declared draft with `jsonschema.FormatChecker()` enabled.
-- Valid records are coerced to the target `pyarrow.Schema` (`coerce_record_for_pyarrow`) and buffered into `pyarrow.Table` pages via `DictBuffer`. Nested objects and arrays are preserved as Arrow `struct` and `list` columns rather than flattened into child tables.
+- Valid records are coerced to the target `pyarrow.Schema` and buffered into `pyarrow.Table` pages via `DictBuffer` ([`src/cdm_data_loaders/utils/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/buffer.py)). Nested objects and arrays are preserved as Arrow `struct` and `list` columns rather than flattened into child tables.
 
 ```sh
 DESTINATION__LOCAL_FS__DESTINATION_TYPE=filesystem \
@@ -97,37 +100,52 @@ uv run jsonlines_jsonschema \
 
 #### NCBI Datasets Preset (`ncbi_datasets`)
 
-The `ncbi_datasets` CLI entry point runs `jsonlines_jsonschema` with `dataset_name` locked to `"ncbi_datasets"` and precomputed JSON Schemas, PyArrow schemas, and record transforms from `cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi`:
+The [`ncbi_datasets`](cli_reference.md#ncbi_datasets) CLI entry point runs `jsonlines_jsonschema` with `dataset_name` locked to `"ncbi_datasets"` and precomputed JSON Schemas, PyArrow schemas, and record transforms from [`src/cdm_data_loaders/schemas/ncbi_datasets/ncbi_openapi.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/ncbi_datasets/ncbi_openapi.py):
 
 - `dataset_report`: validates `<input_dir>/dataset_report/` records against `datasetReport.schema.json` and loads them into `dataset_report`.
 - `annotation_report`: validates `<input_dir>/annotation_report/` records against `annotationReport.schema.json`, discards records without a non-empty top-level `reports` array via `filter_annotation_report`, and loads the remaining records into `annotation_report`.
+
+```sh
+DESTINATION__LOCAL_FS__DESTINATION_TYPE=filesystem \
+uv run ncbi_datasets \
+  --input-dir ./ncbi_jsonl_input \
+  --output-dir ./output \
+  --use-destination local_fs \
+  --use-output-dir-for-pipeline-metadata true \
+  --loader-file-format parquet
+```
 
 ### Pydantic Pipeline (`jsonlines_pydantic`)
 
 Provide an importable Python module via `--entity-models` (`-m`) that defines `ENTITY_MODELS: dict[str, type[BaseModel]]`. Each key names an entity table and its input subdirectory; each value is the Pydantic `BaseModel` subclass used to validate that table's records:
 
 ```python
-# my_models.py
 from datetime import date
+from typing import Final
+
 from pydantic import BaseModel
 
 
 class Widget(BaseModel):
+    """Validated widget record model."""
+
     widget_id: str
     count: int
     collected: date | None = None
 
 
-ENTITY_MODELS: dict[str, type[BaseModel]] = {"widget": Widget}
+ENTITY_MODELS: Final[dict[str, type[BaseModel]]] = {"widget": Widget}
 ```
 
 Before any files are read, `jsonlines_pydantic`:
-1. Validates the `ENTITY_MODELS` registry (`load_registry_dict(..., "ENTITY_MODELS")`).
-2. Converts each entity's Pydantic model to a `pyarrow.Schema` via `PydanticToPyArrow` (`build_output_schema_registry`), unless that table has a configured transform in `--transforms-module` or an explicit schema override in `--output-schemas-module`. Any conversion failures across tables are reported together in a `RuntimeError`.
+
+- Validates the `ENTITY_MODELS` registry.
+- Converts each entity's Pydantic model to a `pyarrow.Schema` via `PydanticToPyArrow`, unless that table has a configured transform in `--transforms-module` or an explicit schema override in `--output-schemas-module`.
 
 During ingestion:
+
 - Each parsed JSON record is validated once with `model.model_validate(record)` and dumped via `model_dump(mode="python")`, so Pydantic's type coercion and field defaults apply.
-- By default, valid records are coerced to the target `pyarrow.Schema` and buffered into `pyarrow.Table` pages via `DictBuffer` (keeping nested structures as Arrow `struct` and `list` columns rather than normalizing into `dlt` child tables). If a table transform is configured without a corresponding `OUTPUT_SCHEMAS` entry, records are buffered as `list[dict]` pages with `max_table_nesting=0`.
+- Valid records are coerced to the target `pyarrow.Schema` and buffered into `pyarrow.Table` pages via `DictBuffer`. If a table transform is configured without a corresponding `OUTPUT_SCHEMAS` entry, records are buffered as `list[dict]` pages with `max_table_nesting=0`.
 
 ```sh
 DESTINATION__LOCAL_FS__DESTINATION_TYPE=filesystem \
@@ -145,33 +163,26 @@ uv run jsonlines_pydantic \
 
 ## Handling of Rows That Fail JSON Parsing or Validation
 
-All three JSONL pipelines route failed records to a single destination table named `_rejected` (`REJECTED_TABLE_NAME = "_rejected"`). If every record in a run is valid, `_rejected` is not created.
+All JSONL pipelines route failed records to a single destination table named `_rejected` (`REJECTED_TABLE_NAME = "_rejected"` in [`src/cdm_data_loaders/utils/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/buffer.py)). If every record in a run is valid, `_rejected` is not created.
 
 ### `_rejected` Table Schema
 
-Every row in `_rejected` has the same five columns (matching `REJECTED_PYARROW_SCHEMA` when buffered with Arrow):
+Every row in `_rejected` has the same five columns (`REJECTED_PYARROW_SCHEMA`):
 
-| Column         | Arrow Type | Description                                                                                                                                                                                                    |
-| -------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `table_name`   | `string`   | Target input table the record belonged to (`--table-name` for `jsonlines_extract`, or the entity key in `ENTITY_SCHEMAS` / `ENTITY_MODELS` for the validated pipelines, recorded before any `TableTransform`). |
-| `source_file`  | `string`   | Path to the input file relative to `input_dir` (e.g., `widget/batch.jsonl`).                                                                                                                                   |
-| `line_no`      | `int64`    | 1-based physical line number in `source_file`, counting blank lines.                                                                                                                                           |
-| `raw_record`   | `string`   | Stripped raw text of the line as read from the file (never re-serialized from parsed JSON).                                                                                                                    |
-| `error_detail` | `string`   | Diagnostic message describing why the line failed JSON parsing or validation.                                                                                                                                  |
+| Column | Arrow Type | Description |
+| --- | --- | --- |
+| `table_name` | `string` | Target input table the record belonged to (`--table-name` for `jsonlines_extract`, or the entity key in `ENTITY_SCHEMAS` or `ENTITY_MODELS` for the validated pipelines, recorded before any `TableTransform`). |
+| `source_file` | `string` | Path to the input file relative to `input_dir` (for example, `widget/batch.jsonl`). |
+| `line_no` | `int64` | 1-based physical line number in `source_file`, counting blank lines. |
+| `raw_record` | `string` | Stripped raw text of the line as read from the file (never re-serialized from parsed JSON). |
+| `error_detail` | `string` | Diagnostic message describing why the line failed JSON parsing or validation. |
 
-### Case 1: Row Fails JSON Parsing
+### Row Fails JSON Parsing
 
 When a non-blank line is not valid JSON (`json.loads` raises `json.JSONDecodeError`):
 
-1. **Validation and transforms are bypassed**: In `jsonlines_jsonschema` and `jsonlines_pydantic`, the schema or Pydantic validator is not called. Any configured `TableTransform` (`transform_fn`) is also skipped.
-2. **Routed to `_rejected`**: A row is emitted to `_rejected` with:
-   - `table_name`: the target input table name,
-   - `source_file`: the relative file path,
-   - `line_no`: the 1-based line number,
-   - `raw_record`: the stripped unparseable text,
-   - `error_detail`: the plain `str(JSONDecodeError)` message from Python's `json` parser.
-
-Example `_rejected` row for a malformed JSON line in `widget/batch.jsonl`:
+- **Validation and transforms are bypassed**: Schema or Pydantic validation and any configured `TableTransform` are skipped.
+- **Routed to `_rejected`**: A row is emitted to `_rejected` with `table_name`, `source_file`, the 1-based `line_no`, the stripped unparseable `raw_record`, and `error_detail` set to `str(JSONDecodeError)`:
 
 ```json
 {
@@ -183,85 +194,37 @@ Example `_rejected` row for a malformed JSON line in `widget/batch.jsonl`:
 }
 ```
 
-### Case 2: Row Is Valid JSON, Fails Validation
+### Row Is Valid JSON, Fails Validation
 
 When a line parses as a JSON object but fails schema or model validation:
 
-1. **`jsonlines_extract`**: Does not perform schema or model validation; any valid JSON object proceeds to transformation/buffering.
-2. **`jsonlines_jsonschema`**:
-   - Evaluates the parsed object with `validator.iter_errors(record)` (with `FormatChecker()` active).
-   - If one or more errors are found, any `TableTransform` is skipped and the record is routed to `_rejected`.
-   - `raw_record` preserves the original stripped line from the file.
-   - `error_detail` is a **JSON-encoded list of error message strings** sorted deterministically (`json.dumps([error.message for error in errors])`):
-     ```json
-     {
-       "table_name": "widget",
-       "source_file": "widget/batch.jsonl",
-       "line_no": 3,
-       "raw_record": "{\"widget_id\": \"\", \"count\": -1}",
-       "error_detail": "[\"-1 is less than the minimum of 0\", \"'' should be non-empty\"]"
-     }
-     ```
-3. **`jsonlines_pydantic`**:
-   - Evaluates the parsed object with `model.model_validate(record)`.
-   - If `pydantic.ValidationError` is raised, any `TableTransform` is skipped and the record is routed to `_rejected`.
-   - `raw_record` preserves the original stripped line from the file.
-   - `error_detail` is a **JSON-encoded list of Pydantic error dictionaries** (`json.dumps(e.errors(), default=str)`), where each entry includes `type`, `loc`, `msg`, `input`, and optional `ctx` / `url`:
-     ```json
-     {
-       "table_name": "widget",
-       "source_file": "widget/batch.jsonl",
-       "line_no": 3,
-       "raw_record": "{\"widget_id\": \"w1\", \"count\": \"not-an-int\"}",
-       "error_detail": "[{\"type\": \"int_parsing\", \"loc\": [\"count\"], \"msg\": \"Input should be a valid integer, unable to parse string as an integer\", \"input\": \"not-an-int\", \"url\": \"https://errors.pydantic.dev/2.13/v/int_parsing\"}]"
-     }
-     ```
+- **`jsonlines_extract`**: Performs no schema or model validation; any valid JSON object proceeds to transformation and buffering.
+- **`jsonlines_jsonschema` and `ncbi_datasets`**: Evaluates the parsed object with `validator.iter_errors(record)` (with `FormatChecker()` active). If errors are found, transforms are skipped and the record is routed to `_rejected` with `error_detail` set to a deterministic JSON-encoded list of error message strings:
+  ```json
+  {
+    "table_name": "widget",
+    "source_file": "widget/batch.jsonl",
+    "line_no": 3,
+    "raw_record": "{\"widget_id\": \"\", \"count\": -1}",
+    "error_detail": "[\"-1 is less than the minimum of 0\", \"'' should be non-empty\"]"
+  }
+  ```
+- **`jsonlines_pydantic`**: Evaluates the parsed object with `model.model_validate(record)`. If `pydantic.ValidationError` is raised, transforms are skipped and the record is routed to `_rejected` with `error_detail` set to `json.dumps(e.errors(), default=str)`:
+  ```json
+  {
+    "table_name": "widget",
+    "source_file": "widget/batch.jsonl",
+    "line_no": 3,
+    "raw_record": "{\"widget_id\": \"w1\", \"count\": \"not-an-int\"}",
+    "error_detail": "[{\"type\": \"int_parsing\", \"loc\": [\"count\"], \"msg\": \"Input should be a valid integer, unable to parse string as an integer\", \"input\": \"not-an-int\", \"url\": \"https://errors.pydantic.dev/2.13/v/int_parsing\"}]"
+  }
+  ```
 
 ---
 
-## Record Filtering, Transformation, and Multi-Table Splitting
+## Pre-processors, Transforms, and CLI Options
 
-All three JSONL pipelines accept `--transforms-module` (`CDL_TRANSFORMS_MODULE`), pointing to a Python module that defines `TABLE_TRANSFORMS: dict[str, RecordTransformFn]`, and `--output-schemas-module` (`CDL_OUTPUT_SCHEMAS_MODULE`), pointing to a Python module that defines `OUTPUT_SCHEMAS: dict[str, pa.Schema]`.
+All JSONL pipelines accept `--preprocessors-module` (`CDL_PREPROCESSORS_MODULE`), `--transforms-module` (`CDL_TRANSFORMS_MODULE`), and `--output-schemas-module` (`CDL_OUTPUT_SCHEMAS_MODULE`). In `jsonlines_jsonschema` and `jsonlines_pydantic`, every key in `TABLE_TRANSFORMS` must match a registered table name in `ENTITY_SCHEMAS` or `ENTITY_MODELS`.
 
-- Transforms run **after** a line has passed JSON parsing and schema/model validation.
-- A transform function (`RecordTransformFn`) can filter out records (by returning `{}`), transform fields within a row, and split one input record across multiple destination tables; custom `pyarrow.Schema` mappings can be supplied via `OUTPUT_SCHEMAS`.
-- In `jsonlines_jsonschema` and `jsonlines_pydantic`, every key in `TABLE_TRANSFORMS` must match a registered table name in `ENTITY_SCHEMAS` or `ENTITY_MODELS` (unknown table names raise `ValueError` before extraction begins).
-
-See [table_transforms.md](table_transforms.md) for full details and end-to-end examples.
-
----
-
-## CLI Options Reference
-
-Standard CTS settings and `CDL_`-prefixed environment variables apply to all three pipelines:
-
-| Option                                         | Env Var                                    | Applies To             | Description                                                                                                                                                                         |
-| ---------------------------------------------- | ------------------------------------------ | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--input-dir`, `-i`                            | `CDL_INPUT_DIR`                            | all                    | Input directory (local path, `file://`, or `fsspec` URL). Contains JSONL files directly (`jsonlines_extract`) or one subdirectory per entity table (`jsonlines_jsonschema`, `jsonlines_pydantic`). |
-| `--output-dir`, `-o`                           | `CDL_OUTPUT_DIR`                           | all                    | Local output directory for `report.txt` and optional pipeline metadata.                                                                                                             |
-| `--dataset-name`                               | `CDL_DATASET_NAME`                         | all                    | Non-empty destination dataset name.                                                                                                                                                 |
-| `--table-name`, `-t`                           | `CDL_TABLE_NAME`                           | `jsonlines_extract`    | Destination table name for valid records (and `table_name` value in `_rejected`).                                                                                                   |
-| `--entity-schemas`, `-m`                       | `CDL_ENTITY_SCHEMAS`                       | `jsonlines_jsonschema` | Dotted import path to a module defining `ENTITY_SCHEMAS: dict[str, dict]`.                                                                                                          |
-| `--entity-models`, `-m`                        | `CDL_ENTITY_MODELS`                        | `jsonlines_pydantic`   | Dotted import path to a module defining `ENTITY_MODELS: dict[str, type[BaseModel]]`.                                                                                                |
-| `--transforms-module`                          | `CDL_TRANSFORMS_MODULE`                    | all                    | Optional module path defining `TABLE_TRANSFORMS: dict[str, RecordTransformFn]`.                                                                                                     |
-| `--output-schemas-module`                      | `CDL_OUTPUT_SCHEMAS_MODULE`                | all                    | Optional module path defining `OUTPUT_SCHEMAS: dict[str, pa.Schema]`.                                                                                                               |
-| `--file-glob`, `-g`                            | `CDL_FILE_GLOB`                            | all                    | File glob pattern within each input directory; defaults to `*.jsonl*` and accepts CTS wildcard tokens (`__STAR__`, `__GLOBSTAR__`, etc.).                                           |
-| `--buffer-size`                                | `CDL_BUFFER_SIZE`                          | all                    | Number of rows buffered per table before yielding a page (positive integer, default `100`).                                                                                         |
-| `--loader-file-format`, `-f`                   | `CDL_LOADER_FILE_FORMAT`                   | all                    | Output file or table format: `parquet` (default), `jsonl`, or `iceberg`.                                                                                                            |
-| `--use-destination`, `-d`                      | `CDL_USE_DESTINATION`                      | all                    | Name of the `dlt` destination block (default `cts`).                                                                                                                                |
-| `--use-output-dir-for-pipeline-metadata`, `-p` | `CDL_USE_OUTPUT_DIR_FOR_PIPELINE_METADATA` | all                    | Store `dlt` pipeline metadata under `<output_dir>/pipeline_metadata` (default `false`).                                                                                             |
-| `--dlt-dev-mode`                               | `CDL_DLT_DEV_MODE`                         | all                    | Enable `dlt` dev mode (resets state and appends a timestamp to the dataset name; default `false`).                                                                                  |
-| `--log-config-file`                            | `CDL_LOG_CONFIG_FILE`                      | all                    | Optional path to a JSON logging configuration file.                                                                                                                                 |
-| `--log-interval`                               | `CDL_LOG_INTERVAL`                         | all                    | Progress log interval in processed entries (default `1000`).                                                                                                                        |
-
----
-
-## Tests
-
-Run the unit and end-to-end tests for the JSONL reader and pipelines:
-
-```sh
-uv run pytest \
-  tests/cdm_data_loaders/readers/test_readers_jsonlines.py \
-  tests/cdm_data_loaders/pipelines/jsonlines/
-```
+- See [Table and Column Transformations](table_transforms.md) for runnable pre-processor, filter, transform, and multi-table split examples.
+- See the [CLI Reference](cli_reference.md) for complete option tables: [`jsonlines_extract`](cli_reference.md#jsonlines_extract), [`jsonlines_jsonschema`](cli_reference.md#jsonlines_jsonschema), [`ncbi_datasets`](cli_reference.md#ncbi_datasets), and [`jsonlines_pydantic`](cli_reference.md#jsonlines_pydantic).

@@ -35,6 +35,7 @@ from cdm_data_loaders.core.fields import (
 from cdm_data_loaders.core.path_fields import InputDir, LocalOutputDir
 from cdm_data_loaders.core.transforms import TransformSettingsMixin, uses_pyarrow_format
 
+# cli_parse_args stays disabled so instantiating settings in Python never reads sys.argv
 DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
     {
         "cli_exit_on_error": False,

@@ -1,0 +1,22 @@
+# Bundled Schemas and XSD Assets
+
+Static non-Python schema assets bundled inside `src/cdm_data_loaders/schemas/` for validation and PyArrow schema generation. Select any schema path to jump to its inline collapsible source preview below.
+
+| Relative Path (`src/cdm_data_loaders/`) | Format | Schema Group | Source |
+| :--- | :--- | :--- | :--- |
+{% for asset in page.assets %}
+| [`{{ asset.rel_path.as_posix() }}`](#{{ asset.anchor_id }}) | {{ asset.kind }} | `{{ asset.package_area }}` | [GitHub]({{ asset.github_url }}){% if asset.published_rel_path is not none %} · [Site JSON]({{ asset.published_rel_path.as_posix() }}){% endif %} |
+{% endfor %}
+
+## Schema Source Files
+
+{% for group in page.groups %}
+<a id="{{ group.anchor_id }}"></a>
+
+### `{{ group.group_name }}`
+
+{% for asset in group.assets %}
+{% include "partials/schema_asset_block.md.j2" %}
+
+{% endfor %}
+{% endfor %}

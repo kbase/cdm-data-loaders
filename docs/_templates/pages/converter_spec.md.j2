@@ -1,0 +1,39 @@
+# {{ spec.title }}
+
+{% if spec.intro %}
+{{ spec.intro }}
+
+{% endif %}
+- **Converter Facade**: {% if spec.facade_url %}[`{{ spec.facade_module }}`]({{ spec.facade_url }}){% else %}`{{ spec.facade_module }}`{% endif %}
+- **Specification Directory**: [`{{ spec.spec_dir_rel }}/`]({{ spec.spec_dir_url }})
+
+**Contents:** [Conversion Rules](#conversion-rules) · [Errors](#errors-unsupported-invalid-input) · [Fixture Index](#fixture-index) · [Spec](#spec){% if spec.example_cases %} · [Examples](#examples){% endif %}
+
+## Conversion Rules
+
+{% with sections = spec.sections %}
+{% include "partials/rule_sections.md.j2" %}
+{% endwith %}
+
+{% with error_section = spec.error_section %}
+{% include "partials/errors_section.md.j2" %}
+{% endwith %}
+
+{% with fixture_index = spec.fixture_index_table, fixture_index_scope = "the test suite" %}
+{% include "partials/fixture_index.md.j2" %}
+{% endwith %}
+
+## Spec
+
+{% for case in spec.spec_cases %}
+{% include "partials/converter_case.md.j2" %}
+
+{% endfor %}
+{% if spec.example_cases %}
+## Examples
+
+{% for case in spec.example_cases %}
+{% include "partials/converter_case.md.j2" %}
+
+{% endfor %}
+{% endif %}

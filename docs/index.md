@@ -1,43 +1,38 @@
 # CDM Data Loaders Documentation
 
-Data loaders, schema converters, and ingestion wranglers for the KBase Comparative Data Model (CDM).
+Data loaders, schema converters, and ingestion wranglers for the KBase Common Data Model (CDM).
+
+`cdm-data-loaders` provides CLI entry points (registered under `[project.scripts]` in [`pyproject.toml`](https://github.com/kbase/cdm-data-loaders/blob/develop/pyproject.toml)) and Python APIs for:
+
+- **Ingestion pipelines** ([`src/cdm_data_loaders/pipelines`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines)): `dlt`-backed data loaders for JSONLines, XSV (CSV/TSV), XML, UniProt/UniRef, All The Bacteria, and NCBI FTP assemblies, designed to run locally via `uv run` or in containers on the KBase CDM Task Service (CTS).
+- **Schema converters** ([`src/cdm_data_loaders/converters`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/converters)): translation CLIs and Python facades across JSON Schema, Pydantic, XSD, PyArrow, PyIceberg, LinkML, `dlt`, and PySpark.
+- **Streaming readers, parsers, and bundled schemas** ([`src/cdm_data_loaders/readers`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/readers), [`src/cdm_data_loaders/parsers`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/parsers), [`src/cdm_data_loaders/schemas`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas)): streaming file readers, domain parsers, and bundled XSD and JSON Schema assets.
 
 ---
 
-## Architecture Overview
+## User Guides
 
-`cdm-data-loaders` separates domain logic from pipeline orchestration:
+- **[Core Pipeline and KBase CTS Execution Guide](core_cts_execution.md)**: Running pipelines locally and in CTS containers, `CDL_*` environment variables, `dlt` and Iceberg destination setup, `report.txt`, `_load_info` and `_rejected` tables, and the CTS exit-code-0 contract.
+- **[CLI Reference](cli_reference.md)**: Auto-generated reference of all registered `[project.scripts]` CLIs, flags, shortcuts, environment variables, and defaults.
+- **[Table and Column Transformations](table_transforms.md)**: Custom file pre-processors (`FILE_PREPROCESSORS`), record-level filtering, single-table row transformation, multi-table splitting (`TABLE_TRANSFORMS`), and PyArrow schema overrides (`OUTPUT_SCHEMAS`).
+- **[JSONLines Ingestion Pipelines](jsonlines_ingest.md)**: Running `jsonlines_extract`, `jsonlines_jsonschema`, `jsonlines_pydantic`, and `ncbi_datasets` with custom schema and model registries.
+- **[UniProt and UniRef Ingestion Guide](uniprot.md)**: XSD-driven XML-to-PyArrow pipelines (`uniprot`, `uniref50`, `uniref90`, `uniref100`), CDM-normalized multi-table pipelines (`uniprot_cdm`, `uniref50_cdm`, `uniref90_cdm`, `uniref100_cdm`), and metalink/release-note parsers.
+- **[Schema Converters Guide](schema_converters.md)**: Running `xsd_to_pyarrow`, `pyiceberg_to_jsonschema`, and `pyiceberg_to_linkml` from the CLI, calling converter facades from Python, and registering custom `x-` extensions.
+- **[NCBI FTP End-to-End Walkthrough](ncbi_ftp_e2e_walkthrough.md)**: Three-phase NCBI assembly manifest generation, FTP download (`ncbi_ftp_sync`), and S3 Lakehouse promotion (`ncbi_ftp_promote`).
+- **[Rclone Bulk Transfer Instructions](rclone_instructions.md)**: Configuring `rclone` remotes and running high-throughput bulk transfers to Lakehouse S3 buckets.
 
-- **Core and Settings (`cdm_data_loaders.core`)**: `pydantic-settings` base class hierarchy (`CdmDataLoadersBase` -> `LoggerSettings` -> `LocalInputOutputSettings` -> `CtsSettings` -> `FileFormatIngestSettings` -> `XmlIngestSettings` -> `SingleTableXmlIngestSettings`) and declarative table/column transforms (`TransformSettingsMixin`).
-- **Schema Converters (`cdm_data_loaders.converters`)**: Hub-and-spoke schema translation via a frozen Intermediate Representation (`IR`): source readers (`JsonSchemaReader`, `DltReader`, `IcebergReader`, `PyArrowReader`, `PydanticReader`, `XsdReader`) and target emitters (`JsonSchemaEmitter`, `DltEmitter`, `PySparkEmitter`, `PyArrowEmitter`, `LinkMLEmitter`).
-- **Readers and Parsers (`cdm_data_loaders.readers`, `cdm_data_loaders.parsers`)**: Streaming readers for JSONLines, XML (`xmltodict` and XSD-guided PyArrow), XSV (`qsv` + JSON Schema `x-xsv-config`), and domain parsers for UniProt/UniRef, NCBI Datasets, CheckM2, and BBMap.
-- **Pipelines (`cdm_data_loaders.pipelines`)**: `dlt`-backed ingestion pipelines designed to run locally via `uv run` or in containers on the KBase Container Task Service (CTS).
+## Specifications
 
----
+### Schema Converter Specifications
 
-## Guides and Specifications
-
-### Pipeline and Execution Guides
-
-- **[Core Pipeline and KBase CTS Execution Guide](core_cts_execution.md)**: Settings hierarchy, `CDL_*` environment variables, `dlt` destination configuration, `PipelineReport` (`report.txt`), `_load_info` and `_rejected` tables, and the KBase CTS exit-code-0 contract.
-- **[CLI Reference](cli_reference.md)**: Auto-generated reference of all 19 registered `[project.scripts]` pipeline CLIs, flags, shortcuts, environment variables, and defaults.
-- **[Pipeline E2E and Smoke Testing Across Environments Guide](pipeline_e2e_testing_guide.md)**: Running specification-driven smoke tests across `core`, `cli`, and `docker` modes and `local_fs`, `s3_moto`, `s3_ceph`, and custom `--dlt-config-dir` / Iceberg environments.
-- **[Pipeline Specifications Developer Guide](pipeline_specs_guide.md)**: Authoring and maintaining pipeline specification rules, `spec/` and `presets/` fixture manifests, and generated specification pages.
-- **[Schema Converter Specifications Developer Guide](schema_converter_specs_guide.md)**: Authoring and maintaining schema converter rules, error codes (`E1..En`), fixture manifests, and generated reference pages.
-- **[JSONLines Ingestion Pipelines](jsonlines_ingest.md)**: Guide to `jsonlines_extract`, `jsonlines_jsonschema`, and `jsonlines_pydantic`.
-- **[Table and Column Transformations](table_transforms.md)**: Record-level filtering, single-table row transformation, multi-table splitting, and PyArrow schema overrides (`TransformSettingsMixin`).
-- **[UniProt and UniRef Ingestion Guide](uniprot.md)**: XSD-driven XML-to-PyArrow pipelines (`uniprot`, `uniref50`, `uniref90`, `uniref100`) and normalized multi-table CDM pipelines (`uniprot_cdm`, `uniref50_cdm`, `uniref90_cdm`, `uniref100_cdm`).
-- **[NCBI FTP End-to-End Walkthrough](ncbi_ftp_e2e_walkthrough.md)**: Three-phase NCBI assembly manifest, FTP download (`ncbi_ftp_sync`), and S3 Lakehouse promotion (`ncbi_ftp_promote`) workflow.
-- **[Rclone Bulk Transfer Instructions](rclone_instructions.md)**: Bulk transfer setup for large datasets.
-
-### Schema Converter Architecture and Specifications
-
-- **[Schema Converters and Intermediate Representation (IR)](converters_ir.md)**: Reader -> IR -> Emitter architecture and invariants.
 - **[JSON Schema to PyArrow Specification](jsonschema_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
 - **[Pydantic to PyArrow Specification](pydantic_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
 - **[XSD to PyArrow Specification](xsd_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
 - **[PyArrow to JSON Schema Specification](pyarrow_to_jsonschema_specification.md)**: Auto-generated conversion rules, `x-pyarrow` extension contract, test cases, and error catalog.
 - **[PyArrow to LinkML Specification](pyarrow_to_linkml_specification.md)**: Auto-generated conversion rules, LinkML slot/class mapping, test cases, and error catalog.
+
+### Pipeline Specifications
+
 - **[XSV (CSV/TSV) Schema and Pipeline Specification](xsv_specification.md)**: Auto-generated XSV schema validation, `x-xsv-config` parsing, PyArrow conversion, two-pass `qsv` cleaning/validation, DuckDB coercion, and pipeline execution specification.
 - **[XML to PyArrow Pipeline Specification](xmltopyarrow_specification.md)**: Auto-generated target selection, preset pipelines, streaming XML-to-PyArrow coercion, MD5 pre-processing, dead-letter routing, and table transform specification.
 - **[XML to Dict Pipeline Specification](xmltodict_specification.md)**: Auto-generated outermost `<xml_tag>` streaming, `xmltodict` parsing (`_` attribute prefix and `_xmlns` stripping), MD5 pre-processing, dead-letter routing, and table transform specification.
@@ -45,7 +40,18 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Comparati
 - **[JSONLines (JSON Schema) Pipeline Specification](jsonlines_jsonschema_specification.md)**: Auto-generated `ENTITY_SCHEMAS` registry, JSON Schema dialect validation, PyArrow schema conversion, per-line validation, dead-letter routing, and table transform specification.
 - **[JSONLines (Pydantic) Pipeline Specification](jsonlines_pydantic_specification.md)**: Auto-generated `ENTITY_MODELS` registry, `PydanticToPyArrow` schema conversion, single-pass `model_validate` / `model_dump` coercion, dead-letter routing, and table transform specification.
 
-### Code and Schema Reference
+## Developer Guides
 
-- **[Python API Reference](api/cdm_data_loaders/index.md)**: Auto-generated API reference for all packages and modules under `src/cdm_data_loaders/`.
-- **[Bundled Schemas and XSD Assets](bundled_schemas.md)**: Auto-generated catalog and syntax-highlighted source pages for all non-Python schema assets bundled in `src/cdm_data_loaders/schemas/`.
+- **[Development and Testing Guide](development_and_testing.md)**: Local development setup, Spark container workflows, `pytest` markers and coverage, Ceph S3 and NCBI FTP integration tests, and building/verifying the documentation site.
+- **[Pipeline E2E and Smoke Testing Across Environments Guide](pipeline_e2e_testing_guide.md)**: Running specification-driven smoke tests across `core`, `cli`, and `docker` modes and `local_fs`, `s3_moto`, `s3_ceph`, and custom `--dlt-config-dir` / Iceberg environments.
+- **[Pipeline Specifications Developer Guide](pipeline_specs_guide.md)**: Authoring and maintaining pipeline specification rules, `spec/` and `presets/` fixture manifests, and rendered specification pages.
+- **[Schema Converter Specifications Developer Guide](schema_converter_specs_guide.md)**: Authoring and maintaining schema converter rules, error codes (`E1..En`), fixture manifests, and rendered specification pages.
+
+## API and Schema Reference
+
+- **[Python API Reference](api/cdm_data_loaders/index.md)**: Auto-generated API reference for all packages and modules under [`src/cdm_data_loaders`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders).
+- **[Bundled Schemas and XSD Assets](bundled_schemas.md)**: Auto-generated catalog and inline collapsible syntax-highlighted source previews for all non-Python schema assets bundled in [`src/cdm_data_loaders/schemas`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas).
+
+## About These Docs
+
+- **[About These Docs](about_these_docs.md)**: Site architecture, automated drift verification, and interactive primary and accent theme color customization.

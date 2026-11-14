@@ -34,17 +34,17 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups
 
-      - name: Verify converter specification docs are up to date
-        run: uv run python -m scripts.gen_converter_spec --check
-
-      - name: Verify CLI reference docs are up to date
-        run: uv run python -m scripts.gen_docs --check
-
       - name: Run documentation tests
-        run: uv run pytest -m docs
+        run: uv run --all-groups pytest -m docs
+
+      - name: Generate documentation stubs and schemas
+        run: uv run --all-groups python -m docs_macros
+
+      - name: Verify generated documentation files
+        run: uv run --all-groups python -m docs_macros --check
 
       - name: Build Zensical site
-        run: uv run zensical build --clean --strict
+        run: uv run --all-groups zensical build --clean --strict
 
       - name: Upload GitHub Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/develop'

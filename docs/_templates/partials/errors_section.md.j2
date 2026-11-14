@@ -1,0 +1,28 @@
+{% from "macros/common.md.j2" import fenced_block %}
+## Errors (Unsupported / Invalid Input)
+
+Schema generation raises a subclass of `{{ error_section.base_class_name }}` (itself a `{{ error_section.parent_type_name }}`).
+
+{% for row in error_section.rows %}
+<a id="{{ row.anchor }}"></a>
+
+- **{{ row.code }}** (`{{ row.exception_name }}`)  
+  *Condition:* {{ row.title }}  
+  *Reason:* {{ row.reason }}
+
+{% if row.fixtures %}
+    *Fixtures:*
+
+{% for fix in row.fixtures %}
+{% set params_suffix %}{% if fix.param_pairs %} ({% for k, v in fix.param_pairs %}`{{ k }}={{ v }}`{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}{% endset %}
+{% set desc_suffix = ': ' ~ fix.description if fix.description else '' %}
+    - [`{{ fix.name }}`]({{ fix.url }}){{ params_suffix }}{{ desc_suffix }}
+
+{{ fenced_block(fix.code_block, expandable=true, summary=fix.name) | indent(8, first=True) }}
+
+{% endfor %}
+{% else %}
+    *Fixtures:* —
+
+{% endif %}
+{% endfor %}

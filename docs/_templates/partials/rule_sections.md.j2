@@ -1,0 +1,23 @@
+{% from "macros/common.md.j2" import case_links %}
+{% for section in sections %}
+### {{ section.title }}
+
+{% if section.intro %}
+{{ section.intro }}
+
+{% endif %}
+{% for rule in section.rules %}
+<a id="{{ rule.anchor }}"></a>
+
+- **{{ rule.id }}**: {{ rule.statement }}
+
+  *Cases:* {{ case_links(rule.covering_cases, fallback=rule.empty_cases_fallback) }}
+
+{% endfor %}
+{% if section.table is not none %}
+{% with headers = section.table.headers, rows = section.table.rows %}
+{% include section.table.template %}
+{% endwith %}
+
+{% endif %}
+{% endfor %}

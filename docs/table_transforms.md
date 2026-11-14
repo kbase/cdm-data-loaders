@@ -1,86 +1,127 @@
 # Record Filtering, Transformation, and Multi-Table Splitting
 
-All six file-format ingestion pipelines support pluggable file pre-processing, record-level filtering, single-table row transformation, multi-table splitting, and `pyarrow.Schema` overrides through `--preprocessors-module` (`CDL_PREPROCESSORS_MODULE`), `--transforms-module` (`CDL_TRANSFORMS_MODULE`), and `--output-schemas-module` (`CDL_OUTPUT_SCHEMAS_MODULE`):
+All six file-format ingestion pipelines support pluggable file pre-processing, record-level filtering, single-table row transformation, multi-table splitting, and `pyarrow.Schema` overrides through `--preprocessors-module` (`CDL_PREPROCESSORS_MODULE`), `--transforms-module` (`CDL_TRANSFORMS_MODULE`), and `--output-schemas-module` (`CDL_OUTPUT_SCHEMAS_MODULE`) defined in [`src/cdm_data_loaders/core/transforms.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms.py) and [`src/cdm_data_loaders/core/registry.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/registry.py):
 
-| Pipeline                                                                                                                                                                           | CLI Entry Point        | Default Output Format                            | Source of Input `table_name`                                                                    |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| [extract_pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | `jsonlines_extract`    | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
-| [extract_jsonschema_validate_pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema` | `pyarrow.Table`                                  | Keys of `ENTITY_SCHEMAS` (or preset entrypoint `ncbi_datasets`)                                 |
-| [extract_pydantic_validate_pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`   | `pyarrow.Table`                                  | Keys of `ENTITY_MODELS`                                                                         |
-| [xsv/pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xsv/pipeline.py)                                                           | `xsv`                  | `pyarrow.Table`                                  | `--table-name` (`settings.table_name`)                                                          |
-| [xmltodict/pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltodict/pipeline.py)                                               | `xmltodict`            | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
-| [xmltopyarrow/pipeline.py](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                         | `xmltopyarrow`         | `pyarrow.Table`                                  | `--table-name` (or preset entrypoints `pubmed`, `uniprot`, `uniref50`, `uniref90`, `uniref100`) |
+| Pipeline                                                                                                                                                                             | CLI Entry Point        | Default Output Format                            | Source of Input `table_name`                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| [`extract_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | `jsonlines_extract`    | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
+| [`extract_jsonschema_validate_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema` | `pyarrow.Table`                                  | Keys of `ENTITY_SCHEMAS` (or preset entrypoint `ncbi_datasets`)                                 |
+| [`extract_pydantic_validate_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`   | `pyarrow.Table`                                  | Keys of `ENTITY_MODELS`                                                                         |
+| [`xsv/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xsv/pipeline.py)                                                           | `xsv`                  | `pyarrow.Table`                                  | `--table-name` (`settings.table_name`)                                                          |
+| [`xmltodict/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltodict/pipeline.py)                                               | `xmltodict`            | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
+| [`xmltopyarrow/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                         | `xmltopyarrow`         | `pyarrow.Table`                                  | `--table-name` (or preset entrypoints `pubmed`, `uniprot`, `uniref50`, `uniref90`, `uniref100`) |
 
 ---
 
 ## Processing Lifecycle
 
-File pre-processors run **before** a file is opened and parsed. Record transforms run **after** a record is parsed and validated against its input schema/model, and **before** rows are buffered into pages for `dlt`:
+File pre-processors run **before** a file is opened and parsed. Record transforms run **after** a record is parsed and validated against its input schema or model, and **before** rows are buffered into pages by `DictBuffer` ([`src/cdm_data_loaders/utils/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/buffer.py)):
 
-0. **Pre-process File (`FilePreprocessFn`)**:
-   - Each `FileItemDict` yielded by `dlt.sources.filesystem` passes through any `FilePreprocessFn` functions registered in `FILE_PREPROCESSORS`.
-   - Returning `None` skips the file without error.
-   - Raising `FilePreprocessError` routes a diagnostic row to `_rejected` (with `source_file` and `error_detail`), logs an error, skips the file, and records the failure in `report.txt` (`load_errors`).
-1. **Parse and Validate**:
-   - Malformed lines or records that fail input validation (`JSON Schema`, `Pydantic`, or `qsv`) are routed directly to `_rejected` (with `table_name` set to the input table name) without calling the transform function.
-2. **Transform and Route (`RecordTransformFn`)**:
-   - Each valid record (`dict[str, Any]`) is passed to the `RecordTransformFn` registered in `TABLE_TRANSFORMS` for the input `table_name`.
-   - The transform function returns a mapping of `{destination_table_name: [row_dict, ...]}`.
-   - Returning `{}` (or empty row lists) drops the record.
-3. **Coerce and Buffer (`DictBuffer`)**:
-   - All pipelines buffer rows using `DictBuffer`.
-   - When `loader_file_format` is `parquet` or `iceberg` (`settings.use_pyarrow` is `True`), `_rejected` uses `REJECTED_PYARROW_SCHEMA`, and any destination table with an entry in `settings.schema_map` (either derived from the pipeline's input schema or supplied via `OUTPUT_SCHEMAS`) has its rows coerced against that `pyarrow.Schema` and emitted as a `pyarrow.Table` page.
-   - When `loader_file_format` is `jsonl` (`settings.use_pyarrow` is `False`), `settings.schema_map` is `None` (no PyArrow schemas are generated from input schemas) and all tables (including `_rejected`) are emitted as `list[dict]` pages.
+**Pre-process File (`FilePreprocessFn`)**:
+
+  - Each `FileItemDict` yielded by `dlt.sources.filesystem` passes through any `FilePreprocessFn` functions registered in `FILE_PREPROCESSORS`.
+  - Returning `None` skips the file without error.
+  - Raising `FilePreprocessError` routes a diagnostic row to `_rejected` (with `source_file` and `error_detail`), logs an error, skips the file, and records the failure in `report.txt` (`load_errors`).
+
+**Parse and Validate**:
+
+  - Malformed lines or records that fail input validation (`JSON Schema`, `Pydantic`, or `qsv`) are routed directly to `_rejected` (with `table_name` set to the input table name) without calling the transform function.
+
+**Transform and Route (`RecordTransformFn`)**:
+
+  - Each valid record (`dict[str, Any]`) is passed to the `RecordTransformFn` registered in `TABLE_TRANSFORMS` for the input `table_name`.
+  - The transform function returns a mapping of `{destination_table_name: [row_dict, ...]}`.
+  - Returning `{}` (or empty row lists) drops the record.
+
+**Coerce and Buffer (`DictBuffer`)**:
+
+  - When `loader_file_format` is `parquet` or `iceberg` (`settings.use_pyarrow` is `True`), `_rejected` uses `REJECTED_PYARROW_SCHEMA`, and any destination table with an entry in `settings.schema_map` (either derived from the pipeline's input schema or supplied via `OUTPUT_SCHEMAS`) has its rows coerced against that `pyarrow.Schema` and emitted as a `pyarrow.Table` page.
+  - When `loader_file_format` is `jsonl` (`settings.use_pyarrow` is `False`), `settings.schema_map` is `None` and all tables (including `_rejected`) are emitted as `list[dict]` pages.
 
 ---
 
-## Defining Transforms and Output Schemas Modules
+## Defining Pre-processor, Transform, and Output Schema Modules
 
-Create an importable Python module exporting `TABLE_TRANSFORMS: dict[str, RecordTransformFn]` and/or `OUTPUT_SCHEMAS: dict[str, pa.Schema]`.
+Create an importable Python module exporting `FILE_PREPROCESSORS`, `TABLE_TRANSFORMS`, and/or `OUTPUT_SCHEMAS` using the callable types in [`src/cdm_data_loaders/core/registry.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/registry.py) and [`src/cdm_data_loaders/core/preprocessors.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/preprocessors.py):
+
+**`FILE_PREPROCESSORS`** (`--preprocessors-module` / `CDL_PREPROCESSORS_MODULE`):
+
+  - Accepts either a pipeline-wide sequence `Sequence[FilePreprocessFn]` or a per-table mapping `dict[str, Sequence[FilePreprocessFn] | FilePreprocessFn]`.
+  - Each `FilePreprocessFn` has signature `(file_item: FileItemDict) -> FileItemDict | None`.
+  - Built-in pre-processor: `validate_md5_sidecar` in [`src/cdm_data_loaders/core/preprocessors.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/preprocessors.py) (enabled by default on `pubmed`, and directly usable via `--preprocessors-module cdm_data_loaders.core.preprocessors`).
+
+**`TABLE_TRANSFORMS`** (`--transforms-module` / `CDL_TRANSFORMS_MODULE`): `dict[str, RecordTransformFn]`
+
+  - Each value is a callable `(record: dict[str, Any]) -> Mapping[str, Sequence[dict[str, Any]]]`:
+    - `{}` (or `{"table": []}`) filters out (drops) the record.
+    - `{"table": [new_row]}` transforms a row 1-to-1 in place.
+    - `{"table": [row_1, row_2]}` unnests or fans out 1-to-N rows into the same table.
+    - `{"parent_table": [parent_row], "child_table": [child_1, child_2]}` splits a record across multiple destination tables.
+    - `{"_rejected": [rejected_row]}` routes a record to the shared `_rejected` table.
+  - When no transform is configured for a table, records are routed unchanged to `{table_name: [record]}`.
+
+**`OUTPUT_SCHEMAS`** (`--output-schemas-module` / `CDL_OUTPUT_SCHEMAS_MODULE`): `dict[str, pa.Schema]`
+
+  - Optional mapping of `{destination_table_name: pyarrow.Schema}` overriding or supplying explicit `pyarrow.Schema` definitions for transformed or split destination tables.
+
+---
+
+## Example 1: Validating or Skipping Files Before Parsing (`FILE_PREPROCESSORS`)
+
+Combine the built-in `validate_md5_sidecar` pre-processor with a custom `FilePreprocessFn` that skips zero-byte placeholder files and rejects files exceeding a size threshold:
 
 ```python
-from collections.abc import Mapping, Sequence
-from typing import Any
-import pyarrow as pa
+from typing import Final
 
-from cdm_data_loaders.core.registry import RecordTransformFn
+from dlt.common.storages.fsspec_filesystem import FileItemDict
 
-# Signature of RecordTransformFn:
-# (record: dict[str, Any]) -> Mapping[str, Sequence[dict[str, Any]]]
+from cdm_data_loaders.core.preprocessors import FilePreprocessError, validate_md5_sidecar
+from cdm_data_loaders.core.registry import FilePreprocessFn
+from cdm_data_loaders.utils.file_items import source_id
+
+MAX_RAW_BYTES: Final[int] = 10 * 1024 * 1024 * 1024
+
+
+def check_nonempty_and_size(file_item: FileItemDict) -> FileItemDict | None:
+    """Skip empty files and reject files larger than MAX_RAW_BYTES.
+
+    :param file_item: Discovered input file item.
+    :type file_item: FileItemDict
+    :return: Validated file item, or ``None`` when the file is empty.
+    :rtype: FileItemDict | None
+    """
+    size_in_bytes = int(file_item.get("size_in_bytes") or 0)
+    if size_in_bytes == 0:
+        return None
+    if size_in_bytes > MAX_RAW_BYTES:
+        msg = f"File {source_id(file_item)} exceeds {MAX_RAW_BYTES} bytes ({size_in_bytes})"
+        raise FilePreprocessError(msg)
+    return file_item
+
+
+FILE_PREPROCESSORS: Final[tuple[FilePreprocessFn, ...]] = (
+    check_nonempty_and_size,
+    validate_md5_sidecar,
+)
 ```
 
-### Registry Exports
-
-- **`FILE_PREPROCESSORS`** (`--preprocessors-module` / `CDL_PREPROCESSORS_MODULE`):
-  - Accepts either a pipeline-wide sequence `Sequence[FilePreprocessFn]` or a per-table mapping `dict[str, Sequence[FilePreprocessFn] | FilePreprocessFn]`.
-  - Each `FilePreprocessFn` has signature `(file_item: FileItemDict) -> FileItemDict | None` and may return the `FileItemDict` to continue, return `None` to skip the file, or raise `FilePreprocessError` to reject the file and record the failure in `_rejected` and `report.txt`.
-  - Built-in pre-processor: `cdm_data_loaders.core.preprocessors.validate_md5_sidecar` (enabled by default on the `pubmed` pipeline, where `file_glob` defaults to `"*.xml.gz"`).
-- **`TABLE_TRANSFORMS`** (`--transforms-module` / `CDL_TRANSFORMS_MODULE`): `dict[str, RecordTransformFn]`
-  - Each value is a callable `Callable[[dict[str, Any]], Mapping[str, Sequence[dict[str, Any]]]]`:
-    - `{}` (or `{"table": []}`) -> **Filter out (drop)** the record.
-    - `{"table": [new_row]}` -> **Transform** a row 1-to-1 in place.
-    - `{"table": [row_1, row_2]}` -> **Unnest / fan out** 1-to-N rows into the same table.
-    - `{"parent_table": [parent_row], "child_table": [child_1, child_2]}` -> **Split** a record across multiple destination tables.
-    - `{"_rejected": [rejected_row]}` -> **Reject** a record into the shared `_rejected` table (`REJECTED_TABLE_NAME`).
-  - When no transform is configured for a table, records are routed unchanged to `{table_name: [record]}`.
-- **`OUTPUT_SCHEMAS`** (`--output-schemas-module` / `CDL_OUTPUT_SCHEMAS_MODULE`): `dict[str, pa.Schema]`
-  - Optional mapping of `{destination_table_name: pyarrow.Schema}`.
-  - When provided:
-    - Overrides or supplies explicit `pyarrow.Schema` definitions for transformed or split destination tables.
-    - Coerces emitted rows against each destination table's `pyarrow.Schema` and yields `pyarrow.Table` pages to `dlt`.
-
-### Specifying Modules on the CLI or via Environment Variable
-
-Pass `--transforms-module` (`CDL_TRANSFORMS_MODULE`) and/or `--output-schemas-module` (`CDL_OUTPUT_SCHEMAS_MODULE`):
+#### CLI Invocation
 
 ```sh
---transforms-module my_package.transforms
---output-schemas-module my_package.transforms
+DESTINATION__LOCAL_FS__DESTINATION_TYPE=filesystem \
+uv run jsonlines_extract \
+  --input-dir ./input \
+  --output-dir ./output \
+  --dataset-name raw_events \
+  --table-name events \
+  --file-glob "*.jsonl.gz" \
+  --preprocessors-module my_package.file_checks \
+  --use-destination local_fs
 ```
 
 ---
 
-## Example 1: Filtering Out Data
+## Example 2: Filtering Out Data
 
 ### Use Case: Dropping Empty NCBI Annotation Reports (`total_count == 0`)
 
@@ -91,22 +132,21 @@ NCBI Datasets API annotation report JSONL files contain summary lines where no a
 {"reports": [], "total_count": 0}
 ```
 
-Both lines are valid against `annotationReport.schema.json`, so `jsonlines_jsonschema` accepts both during validation. To drop records with `total_count == 0` instead of writing empty rows to the `annotation_report` table:
+Both lines are valid against [`annotationReport.schema.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/ncbi_datasets/annotationReport.schema.json), so `jsonlines_jsonschema` accepts both during validation. To drop records with `total_count == 0` instead of writing empty rows to the `annotation_report` table:
 
 ```python
-# my_package/ncbi_transforms.py
 import json
 from importlib.resources import files
-from typing import Any
+from typing import Any, Final
 
 from cdm_data_loaders.core.registry import RecordTransformFn
 
-ANNOTATION_REPORT_SCHEMA = json.loads(
+ANNOTATION_REPORT_SCHEMA: Final[dict[str, Any]] = json.loads(
     files("cdm_data_loaders.schemas.ncbi_datasets").joinpath("annotationReport.schema.json").read_text(encoding="utf-8")
 )
 
-# ENTITY_SCHEMAS and TABLE_TRANSFORMS can live in the same module or separate modules.
-ENTITY_SCHEMAS: dict[str, dict[str, Any]] = {
+# entity schemas and table transforms can live in the same module or separate modules
+ENTITY_SCHEMAS: Final[dict[str, dict[str, Any]]] = {
     "annotation_report": ANNOTATION_REPORT_SCHEMA,
 }
 
@@ -114,13 +154,19 @@ ENTITY_SCHEMAS: dict[str, dict[str, Any]] = {
 def filter_nonzero_annotation_reports(
     record: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
-    """Drop annotation report responses with total_count == 0."""
+    """Drop annotation report responses with total_count == 0.
+
+    :param record: Validated annotation report record.
+    :type record: dict[str, Any]
+    :return: Destination table row mapping.
+    :rtype: dict[str, list[dict[str, Any]]]
+    """
     if record.get("total_count", 0) == 0:
         return {}
     return {"annotation_report": [record]}
 
 
-TABLE_TRANSFORMS: dict[str, RecordTransformFn] = {
+TABLE_TRANSFORMS: Final[dict[str, RecordTransformFn]] = {
     "annotation_report": filter_nonzero_annotation_reports,
 }
 ```
@@ -142,18 +188,18 @@ uv run jsonlines_jsonschema \
 
 ---
 
-## Example 2: Data Transformation Within a Single Table Row
+## Example 3: Data Transformation Within a Single Table Row
 
-### 2a. Transforming Fields in a Single Table (`xsv` or `jsonlines_extract`)
+### Transforming Fields in a Single Table (`xsv` or `jsonlines_extract`)
 
 Suppose an XSV or JSONL pipeline ingests genome quality rows into table `genome_metrics` and you want to:
-1. Filter out low-completeness rows (`completeness < 50.0`),
-2. Normalize the `accession` prefix, and
-3. Compute a derived `quality_score = completeness - (5.0 * contamination)` field within the row.
+
+- filter out low-completeness rows (`completeness < 50.0`),
+- normalize the `accession` prefix, and
+- compute a derived `quality_score = completeness - (5.0 * contamination)` field within the row.
 
 ```python
-# my_package/quality_transforms.py
-from typing import Any
+from typing import Any, Final
 
 from cdm_data_loaders.core.registry import RecordTransformFn
 
@@ -161,7 +207,13 @@ from cdm_data_loaders.core.registry import RecordTransformFn
 def transform_genome_metrics(
     record: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
-    """Filter low-completeness rows and add a derived quality_score column."""
+    """Filter low-completeness rows and add a derived quality_score column.
+
+    :param record: Validated genome metrics row.
+    :type record: dict[str, Any]
+    :return: Destination table row mapping.
+    :rtype: dict[str, list[dict[str, Any]]]
+    """
     completeness = float(record["completeness"])
     contamination = float(record["contamination"])
     if completeness < 50.0:
@@ -175,7 +227,7 @@ def transform_genome_metrics(
     return {"genome_metrics": [transformed]}
 
 
-TABLE_TRANSFORMS: dict[str, RecordTransformFn] = {
+TABLE_TRANSFORMS: Final[dict[str, RecordTransformFn]] = {
     "genome_metrics": transform_genome_metrics,
 }
 ```
@@ -195,18 +247,18 @@ uv run xsv \
   --loader-file-format parquet
 ```
 
-### 2b. Single-Table Row Transformation with a Custom PyArrow Schema (`OUTPUT_SCHEMAS`)
+### Single-Table Row Transformation with a Custom PyArrow Schema (`OUTPUT_SCHEMAS`)
 
 When a single-table transformation adds, removes, or retypes columns relative to the input schema, supply `OUTPUT_SCHEMAS` via `--output-schemas-module` so `DictBuffer` serializes the transformed structure with the updated `pyarrow.Schema`:
 
 ```python
-# my_package/widget_transforms.py
-from typing import Any
+from typing import Any, Final
+
 import pyarrow as pa
 
 from cdm_data_loaders.core.registry import RecordTransformFn
 
-WIDGET_OUTPUT_SCHEMA = pa.schema(
+WIDGET_OUTPUT_SCHEMA: Final[pa.Schema] = pa.schema(
     [
         pa.field("widget_id", pa.string()),
         pa.field("count", pa.int64()),
@@ -216,7 +268,13 @@ WIDGET_OUTPUT_SCHEMA = pa.schema(
 
 
 def enrich_widget(record: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    """Project fields and add a boolean is_bulk flag."""
+    """Project fields and add a boolean is_bulk flag.
+
+    :param record: Input widget record.
+    :type record: dict[str, Any]
+    :return: Destination table row mapping.
+    :rtype: dict[str, list[dict[str, Any]]]
+    """
     count = int(record["count"])
     return {
         "widget": [
@@ -229,22 +287,22 @@ def enrich_widget(record: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     }
 
 
-TABLE_TRANSFORMS: dict[str, RecordTransformFn] = {
+TABLE_TRANSFORMS: Final[dict[str, RecordTransformFn]] = {
     "widget": enrich_widget,
 }
 
-OUTPUT_SCHEMAS: dict[str, pa.Schema] = {
+OUTPUT_SCHEMAS: Final[dict[str, pa.Schema]] = {
     "widget": WIDGET_OUTPUT_SCHEMA,
 }
 ```
 
 ---
 
-## Example 3: Splitting a Single Record Across Multiple Tables
+## Example 4: Splitting a Single Record Across Multiple Tables
 
 A single `RecordTransformFn` can decompose one input record into rows for multiple destination tables in one pass.
 
-### 3a. Multi-Table Split with `DictBuffer` (`jsonlines_extract`, `jsonlines_pydantic`, `xsv`, `xmltodict`)
+### Multi-Table Split with `DictBuffer` (`jsonlines_extract`, `jsonlines_pydantic`, `xsv`, `xmltodict`)
 
 Suppose each input record in `assembly_report` contains assembly-level metadata plus a nested `contigs` list:
 
@@ -263,8 +321,7 @@ Suppose each input record in `assembly_report` contains assembly-level metadata 
 To split each input record into an `assemblies` parent table and an `assembly_contigs` child table linked by `assembly_id`:
 
 ```python
-# my_package/assembly_split_transforms.py
-from typing import Any
+from typing import Any, Final
 
 from cdm_data_loaders.core.registry import RecordTransformFn
 
@@ -272,7 +329,13 @@ from cdm_data_loaders.core.registry import RecordTransformFn
 def split_assembly_and_contigs(
     record: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
-    """Filter empty reports and split assembly metadata from per-contig rows."""
+    """Filter empty reports and split assembly metadata from per-contig rows.
+
+    :param record: Input assembly report record.
+    :type record: dict[str, Any]
+    :return: Parent and child destination table rows.
+    :rtype: dict[str, list[dict[str, Any]]]
+    """
     if record.get("total_count", 0) == 0:
         return {}
 
@@ -298,22 +361,21 @@ def split_assembly_and_contigs(
     }
 
 
-TABLE_TRANSFORMS: dict[str, RecordTransformFn] = {
-    # Keyed by the input table_name ("assembly_report")
+TABLE_TRANSFORMS: Final[dict[str, RecordTransformFn]] = {
+    # keyed by the input table_name ("assembly_report")
     "assembly_report": split_assembly_and_contigs,
 }
 ```
 
-Notice how:
 - The key in `TABLE_TRANSFORMS` (`"assembly_report"`) matches the pipeline's input `table_name` (`--table-name assembly_report` or `ENTITY_MODELS["assembly_report"]`).
 - Any malformed or invalid input records are still written to `_rejected` with `table_name = "assembly_report"`.
 - Valid records are split and written to the `assemblies` and `assembly_contigs` destination tables.
-- If a record has `contigs: []`, `"assembly_contigs": []` is automatically ignored so only `"assemblies"` receives a row.
+- If a record has `contigs: []`, `"assembly_contigs": []` is ignored so only `"assemblies"` receives a row.
 
 #### CLI Invocation (`jsonlines_extract` or `xmltodict`)
 
 ```sh
-# With jsonlines_extract:
+# with jsonlines_extract
 DESTINATION__LOCAL_FS__DESTINATION_TYPE=filesystem \
 uv run jsonlines_extract \
   --input-dir ./input \
@@ -324,7 +386,7 @@ uv run jsonlines_extract \
   --use-destination local_fs \
   --loader-file-format parquet
 
-# With xmltodict:
+# with xmltodict
 DESTINATION__LOCAL_FS__DESTINATION_TYPE=filesystem \
 uv run xmltodict \
   --input-dir ./input_xml \
@@ -337,18 +399,19 @@ uv run xmltodict \
   --loader-file-format parquet
 ```
 
-### 3b. Multi-Table Split with PyArrow Schemas (`OUTPUT_SCHEMAS`)
+### Multi-Table Split with PyArrow Schemas (`OUTPUT_SCHEMAS`)
 
 When splitting records and supplying explicit Arrow schemas for output tables, provide a `pyarrow.Schema` for every output table in `OUTPUT_SCHEMAS`:
 
 ```python
-# my_package/assembly_arrow_transforms.py
+from typing import Final
+
 import pyarrow as pa
 
 from cdm_data_loaders.core.registry import RecordTransformFn
 from my_package.assembly_split_transforms import split_assembly_and_contigs
 
-ASSEMBLIES_SCHEMA = pa.schema(
+ASSEMBLIES_SCHEMA: Final[pa.Schema] = pa.schema(
     [
         pa.field("assembly_id", pa.string()),
         pa.field("organism_name", pa.string()),
@@ -356,7 +419,7 @@ ASSEMBLIES_SCHEMA = pa.schema(
     ]
 )
 
-ASSEMBLY_CONTIGS_SCHEMA = pa.schema(
+ASSEMBLY_CONTIGS_SCHEMA: Final[pa.Schema] = pa.schema(
     [
         pa.field("assembly_id", pa.string()),
         pa.field("contig_id", pa.string()),
@@ -365,17 +428,18 @@ ASSEMBLY_CONTIGS_SCHEMA = pa.schema(
     ]
 )
 
-TABLE_TRANSFORMS: dict[str, RecordTransformFn] = {
+TABLE_TRANSFORMS: Final[dict[str, RecordTransformFn]] = {
     "assembly_report": split_assembly_and_contigs,
 }
 
-OUTPUT_SCHEMAS: dict[str, pa.Schema] = {
+OUTPUT_SCHEMAS: Final[dict[str, pa.Schema]] = {
     "assemblies": ASSEMBLIES_SCHEMA,
     "assembly_contigs": ASSEMBLY_CONTIGS_SCHEMA,
 }
 ```
 
 When `OUTPUT_SCHEMAS` is provided:
+
 - Each row returned by `split_assembly_and_contigs` for a table present in `OUTPUT_SCHEMAS` is coerced to its target table's `pyarrow.Schema` via `coerce_record_for_pyarrow`.
 - `DictBuffer` accumulates rows per output table (`assemblies` and `assembly_contigs`) and flushes `pyarrow.Table` pages independently when a table reaches `--buffer-size`.
 - Any output table not present in the resolved schema map is left as uncoerced `dict` rows and emitted by `DictBuffer` as `list[dict]` pages.
@@ -384,10 +448,11 @@ When `OUTPUT_SCHEMAS` is provided:
 
 ## Programmatic Usage in Python
 
-You can also pass `transforms_module` and `output_schemas_module` directly when constructing any pipeline settings class in Python:
+Pass `preprocessors_module`, `transforms_module`, and `output_schemas_module` directly when constructing any pipeline settings class in Python:
 
 ```python
 from pathlib import Path
+
 from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
     run_jsonlines_pipeline,
 )
