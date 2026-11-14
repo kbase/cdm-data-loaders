@@ -2,7 +2,7 @@
 
 import json
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -220,3 +220,37 @@ def strip_none_values(value: Any) -> Any:  # noqa: ANN401
     if isinstance(value, list):
         return [strip_none_values(item) for item in value]
     return value
+
+
+class NestedPathError(ValueError):
+    """Raised for an invalid nested path or a non-dictionary intermediate value."""
+
+
+def set_nested(target: dict[str, Any], path: Sequence[str], value: object) -> None:
+    """Set a leaf through a nonempty sequence of string keys, creating missing dicts.
+
+    Existing leaves are replaced, including dicts and lists. Empty string keys are
+    valid. Intermediate values must be dicts; collisions fail without mutation.
+    The assigned value is not copied. A string alone is not a path sequence.
+
+    :param target: dictionary to mutate in place
+    :type target: dict[str, Any]
+    :param path: nonempty sequence of string keys leading to the leaf
+    :type path: Sequence[str]
+    :param value: value to assign at the leaf key
+    :type value: object
+    :raises NestedPathError: if ``path`` is empty, not a sequence of strings, or collides with a non-dict intermediate
+    """
+    if not path or isinstance(path, str | bytes) or not all(isinstance(fragment, str) for fragment in path):
+        message = "Path must be a nonempty sequence of string keys."
+        raise NestedPathError(message)
+    current = target
+    for fragment in path[:-1]:
+        if fragment not in current:
+            current[fragment] = {}
+        child = current[fragment]
+        if not isinstance(child, dict):
+            message = f"Path collision at {fragment!r}: intermediate value must be a dict."
+            raise NestedPathError(message)
+        current = child
+    current[path[-1]] = value

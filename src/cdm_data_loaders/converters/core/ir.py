@@ -294,14 +294,6 @@ class SchemaDocument:
         _init_common_metadata(self)
 
 
-class Reader[Input, Output](Protocol):
-    """Read a source into one document or a named document forest."""
-
-    def read(self, source: Input) -> Output:
-        """Build structural schema facts from a source."""
-        ...
-
-
 class Emitter[Output](Protocol):
     """Consume structural IR directly, applying target policy at emission."""
 

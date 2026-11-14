@@ -1554,7 +1554,7 @@ The root is `"$ref": "#/$defs/Document"`. `lead_author` declares its own `descri
 
 import pyarrow as pa
 
-_AUTHOR_STRUCT = pa.struct(
+AUTHOR_STRUCT = pa.struct(
     [
         pa.field("name", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
         pa.field("orcid", pa.string(), nullable=True, metadata={"jsonschema_type": "string"}),
@@ -1572,13 +1572,13 @@ EXPECTED_SCHEMA = pa.schema(
         ),
         pa.field(
             "lead_author",
-            _AUTHOR_STRUCT,
+            AUTHOR_STRUCT,
             nullable=False,
             metadata={"comment": "Primary corresponding author."},
         ),
         pa.field(
             "reviewer",
-            _AUTHOR_STRUCT,
+            AUTHOR_STRUCT,
             nullable=True,
             metadata={"comment": "Author contact record."},
         ),
@@ -1587,7 +1587,7 @@ EXPECTED_SCHEMA = pa.schema(
             pa.list_(
                 pa.field(
                     "item",
-                    _AUTHOR_STRUCT,
+                    AUTHOR_STRUCT,
                     nullable=False,
                     metadata={"comment": "Author contact record."},
                 ),
@@ -2614,7 +2614,7 @@ required-but-nullable `anyOf` property (`fallback_tag`), an array item (`tag_lis
 
 import pyarrow as pa
 
-_TAG_STRUCT = pa.struct(
+TAG_STRUCT = pa.struct(
     [
         pa.field("key", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
         pa.field("value", pa.string(), nullable=True, metadata={"jsonschema_type": "string"}),
@@ -2626,19 +2626,19 @@ EXPECTED_SCHEMA = pa.schema(
         pa.field("id", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
         pa.field(
             "primary_tag",
-            _TAG_STRUCT,
+            TAG_STRUCT,
             nullable=False,
             metadata={"comment": "Reusable key-value tag structure."},
         ),
         pa.field(
             "secondary_tag",
-            _TAG_STRUCT,
+            TAG_STRUCT,
             nullable=True,
             metadata={"comment": "Reusable key-value tag structure."},
         ),
         pa.field(
             "fallback_tag",
-            _TAG_STRUCT,
+            TAG_STRUCT,
             nullable=True,
             metadata={"comment": "Reusable key-value tag structure."},
         ),
@@ -2647,7 +2647,7 @@ EXPECTED_SCHEMA = pa.schema(
             pa.list_(
                 pa.field(
                     "item",
-                    _TAG_STRUCT,
+                    TAG_STRUCT,
                     nullable=False,
                     metadata={"comment": "Reusable key-value tag structure."},
                 ),
@@ -2660,7 +2660,7 @@ EXPECTED_SCHEMA = pa.schema(
                 pa.string(),
                 pa.field(
                     "value",
-                    _TAG_STRUCT,
+                    TAG_STRUCT,
                     nullable=False,
                     metadata={"comment": "Reusable key-value tag structure."},
                 ),

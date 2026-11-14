@@ -16,14 +16,14 @@ from cdm_data_loaders.pipelines.ncbi_ftp_download import (
 )
 from tests.conftest import TEST_BUCKET
 
-_MOCK_STATS = {
+MOCK_STATS = {
     "accession": "GCF_000001215.4",
     "assembly_dir": "GCF_000001215.4_Release_6_plus_ISO1_MT",
     "files_downloaded": 0,
     "files_skipped_checksum_mismatch": 0,
     "files_without_checksum": 0,
 }
-_EXPECTED_ATTEMPTED = 2
+EXPECTED_ATTEMPTED = 2
 
 
 @contextmanager
@@ -63,8 +63,8 @@ def test_download_batch_reads_manifest_and_calls_download(tmp_path: Path) -> Non
             ftp_host="ftp.example.com",
         )
 
-    assert report["total_attempted"] == _EXPECTED_ATTEMPTED
-    assert report["succeeded"] == _EXPECTED_ATTEMPTED
+    assert report["total_attempted"] == EXPECTED_ATTEMPTED
+    assert report["succeeded"] == EXPECTED_ATTEMPTED
     assert report["failed"] == 0
 
 
@@ -132,7 +132,7 @@ def test_download_batch_pass_callback_and_comments(tmp_path: Path, output_dir: P
         if str(path) == bad_path.rstrip("/"):
             msg = "simulated error"
             raise RuntimeError(msg)
-        return _MOCK_STATS
+        return MOCK_STATS
 
     with _patch_ftp_download(side_effect=_fake_download):
         report = download_batch(
@@ -142,7 +142,7 @@ def test_download_batch_pass_callback_and_comments(tmp_path: Path, output_dir: P
             on_assembly_downloaded=callback_paths.append,
         )
 
-    assert report["total_attempted"] == _EXPECTED_ATTEMPTED
+    assert report["total_attempted"] == EXPECTED_ATTEMPTED
     assert report["succeeded"] == 1
     assert report["failed"] == 1
     assert callback_paths == [PurePosixPath(good_path)]
@@ -150,12 +150,12 @@ def test_download_batch_pass_callback_and_comments(tmp_path: Path, output_dir: P
 
 # Helpers shared by download_and_stage tests
 
-_MANIFEST_CONTENT = (
+MANIFEST_CONTENT = (
     "/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/\n"
     "/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/\n"
 )
-_TEST_BUCKET = PurePosixPath(TEST_BUCKET)
-_STAGING_PREFIX = PurePosixPath("staging") / "run1"
+TEST_BUCKET_PATH = PurePosixPath(TEST_BUCKET)
+STAGING_PREFIX = PurePosixPath("staging") / "run1"
 
 
 # download_and_stage — manifest source
@@ -177,28 +177,30 @@ def test_download_and_stage_manifest_source(
     """Assembly paths from the manifest are processed regardless of source (S3 or local)."""
     manifest_local: Path | None = None
     if manifest_s3_key is not None:
-        mock_s3_client.put_object(Bucket=str(_TEST_BUCKET), Key=str(manifest_s3_key), Body=_MANIFEST_CONTENT.encode())
+        mock_s3_client.put_object(
+            Bucket=str(TEST_BUCKET_PATH), Key=str(manifest_s3_key), Body=MANIFEST_CONTENT.encode()
+        )
     else:
         manifest_local = tmp_path / "manifest.txt"
-        manifest_local.write_text(_MANIFEST_CONTENT)
+        manifest_local.write_text(MANIFEST_CONTENT)
 
     called_paths: list[Path] = []
 
     def _fake_download(path: Path, output_dir: Path, **kwargs: object) -> dict[str, str | int]:  # noqa: ARG001
         called_paths.append(path)
-        return _MOCK_STATS
+        return MOCK_STATS
 
     with _patch_ftp_download(side_effect=_fake_download):
         download_and_stage(
-            bucket=_TEST_BUCKET,
-            staging_key_prefix=_STAGING_PREFIX,
+            bucket=TEST_BUCKET_PATH,
+            staging_key_prefix=STAGING_PREFIX,
             manifest_s3_key=manifest_s3_key,
             manifest_local_path=manifest_local,
             dry_run=True,
             threads=1,
         )
 
-    expected_paths: list[Path] = [Path(line) for line in _MANIFEST_CONTENT.splitlines() if line.strip()]
+    expected_paths: list[Path] = [Path(line) for line in MANIFEST_CONTENT.splitlines() if line.strip()]
     assert sorted(called_paths) == sorted(expected_paths)
 
 
@@ -225,28 +227,28 @@ def test_download_and_stage_exactly_one_source_required(
     if should_raise:
         with pytest.raises(ValueError, match="manifest"):
             download_and_stage(
-                bucket=_TEST_BUCKET,
-                staging_key_prefix=_STAGING_PREFIX,
+                bucket=TEST_BUCKET_PATH,
+                staging_key_prefix=STAGING_PREFIX,
                 manifest_s3_key=s3_key,
                 manifest_local_path=local_path,
             )
     else:
         if s3_key is not None:
-            mock_s3_client.put_object(Bucket=str(_TEST_BUCKET), Key=str(s3_key), Body=_MANIFEST_CONTENT.encode())
+            mock_s3_client.put_object(Bucket=str(TEST_BUCKET_PATH), Key=str(s3_key), Body=MANIFEST_CONTENT.encode())
         if local_path is not None:
             real_local = tmp_path / "manifest.txt"
-            real_local.write_text(_MANIFEST_CONTENT)
+            real_local.write_text(MANIFEST_CONTENT)
             local_path = real_local
 
-        with _patch_ftp_download(return_value=_MOCK_STATS):
+        with _patch_ftp_download(return_value=MOCK_STATS):
             result = download_and_stage(
-                bucket=_TEST_BUCKET,
-                staging_key_prefix=_STAGING_PREFIX,
+                bucket=TEST_BUCKET_PATH,
+                staging_key_prefix=STAGING_PREFIX,
                 manifest_s3_key=s3_key,
                 manifest_local_path=local_path,
                 dry_run=True,
             )
-        assert result["succeeded"] == _EXPECTED_ATTEMPTED
+        assert result["succeeded"] == EXPECTED_ATTEMPTED
 
 
 # download_and_stage — uploads to staging
@@ -265,12 +267,12 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path, mock_s3_client: S
         asm_dir.mkdir(parents=True)
         (asm_dir / "genomic.fna.gz").write_bytes(b"fasta_data")
         (asm_dir / "genomic.fna.gz.md5").write_bytes(b"abc123")
-        return {**_MOCK_STATS, "files_downloaded": 2}
+        return {**MOCK_STATS, "files_downloaded": 2}
 
     with _patch_ftp_download(side_effect=_fake_download):
         report = download_and_stage(
-            bucket=_TEST_BUCKET,
-            staging_key_prefix=_STAGING_PREFIX,
+            bucket=TEST_BUCKET_PATH,
+            staging_key_prefix=STAGING_PREFIX,
             manifest_local_path=manifest_local,
             dry_run=False,
             threads=1,
@@ -279,14 +281,14 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path, mock_s3_client: S
     paginator = mock_s3_client.get_paginator("list_objects_v2")
     uploaded_keys: set[PurePosixPath] = {
         PurePosixPath(obj["Key"])
-        for page in paginator.paginate(Bucket=str(_TEST_BUCKET))
+        for page in paginator.paginate(Bucket=str(TEST_BUCKET_PATH))
         for obj in page.get("Contents", [])
     }
 
     expected_keys = {
-        _STAGING_PREFIX / assembly_rel / "genomic.fna.gz",
-        _STAGING_PREFIX / assembly_rel / "genomic.fna.gz.md5",
-        _STAGING_PREFIX / "download_report.json",
+        STAGING_PREFIX / assembly_rel / "genomic.fna.gz",
+        STAGING_PREFIX / assembly_rel / "genomic.fna.gz.md5",
+        STAGING_PREFIX / "download_report.json",
     }
     assert uploaded_keys == expected_keys
     assert report["staged_objects"] == len(expected_keys)
@@ -298,24 +300,24 @@ def test_download_and_stage_uploads_to_staging(tmp_path: Path, mock_s3_client: S
 def test_download_and_stage_dry_run_skips_upload(tmp_path: Path, mock_s3_client: S3Client) -> None:
     """dry_run=True leaves S3 empty and returns staged_objects=0."""
     manifest_local = tmp_path / "manifest.txt"
-    manifest_local.write_text(_MANIFEST_CONTENT)
+    manifest_local.write_text(MANIFEST_CONTENT)
 
     def _fake_download(path: Path, output_dir: Path, **kwargs: object) -> dict[str, str | int]:  # noqa: ARG001
         asm_dir = Path(output_dir) / "raw_data" / "GCF" / "000" / "001" / "215" / "GCF_000001215.4"
         asm_dir.mkdir(parents=True, exist_ok=True)
         (asm_dir / "genomic.fna.gz").write_bytes(b"fasta")
-        return _MOCK_STATS
+        return MOCK_STATS
 
     with _patch_ftp_download(side_effect=_fake_download):
         report = download_and_stage(
-            bucket=_TEST_BUCKET,
-            staging_key_prefix=_STAGING_PREFIX,
+            bucket=TEST_BUCKET_PATH,
+            staging_key_prefix=STAGING_PREFIX,
             manifest_local_path=manifest_local,
             dry_run=True,
             threads=1,
         )
 
-    listed = mock_s3_client.list_objects_v2(Bucket=str(_TEST_BUCKET))
+    listed = mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET_PATH))
     assert listed.get("KeyCount", 0) == 0
     assert report["staged_objects"] == 0
     assert report["dry_run"] is True
@@ -335,19 +337,19 @@ def test_download_and_stage_dry_run_skips_upload(tmp_path: Path, mock_s3_client:
 def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int) -> None:
     """The limit parameter truncates the number of assemblies processed."""
     manifest_local = tmp_path / "manifest.txt"
-    manifest_local.write_text(_MANIFEST_CONTENT)
+    manifest_local.write_text(MANIFEST_CONTENT)
 
-    with _patch_ftp_download(return_value=_MOCK_STATS) as mock_dl:
+    with _patch_ftp_download(return_value=MOCK_STATS) as mock_dl:
         download_and_stage(
-            bucket=_TEST_BUCKET,
-            staging_key_prefix=_STAGING_PREFIX,
+            bucket=TEST_BUCKET_PATH,
+            staging_key_prefix=STAGING_PREFIX,
             manifest_local_path=manifest_local,
             limit=limit,
             dry_run=True,
         )
 
     # The manifest has 2 entries; limit caps how many were processed
-    expected_calls = min(limit, _EXPECTED_ATTEMPTED)
+    expected_calls = min(limit, EXPECTED_ATTEMPTED)
     assert mock_dl.call_count == expected_calls
 
 
@@ -358,12 +360,12 @@ def test_download_and_stage_limit_forwarded(tmp_path: Path, limit: int) -> None:
 def test_download_and_stage_report_shape(tmp_path: Path) -> None:
     """Return value contains all expected keys including staged_objects, staging_key_prefix, dry_run."""
     manifest_local = tmp_path / "manifest.txt"
-    manifest_local.write_text(_MANIFEST_CONTENT)
+    manifest_local.write_text(MANIFEST_CONTENT)
 
-    with _patch_ftp_download(return_value=_MOCK_STATS):
+    with _patch_ftp_download(return_value=MOCK_STATS):
         report = download_and_stage(
-            bucket=_TEST_BUCKET,
-            staging_key_prefix=_STAGING_PREFIX,
+            bucket=TEST_BUCKET_PATH,
+            staging_key_prefix=STAGING_PREFIX,
             manifest_local_path=manifest_local,
             dry_run=True,
         )
@@ -378,17 +380,17 @@ def test_download_and_stage_report_shape(tmp_path: Path) -> None:
     ):
         assert key in report
     assert report["staged_objects"] == 0
-    assert report["staging_key_prefix"] == _STAGING_PREFIX
+    assert report["staging_key_prefix"] == STAGING_PREFIX
     assert report["dry_run"] is True
-    assert report["total_attempted"] == _EXPECTED_ATTEMPTED
-    assert report["succeeded"] == _EXPECTED_ATTEMPTED
+    assert report["total_attempted"] == EXPECTED_ATTEMPTED
+    assert report["succeeded"] == EXPECTED_ATTEMPTED
 
 
 @pytest.mark.usefixtures("mock_s3_client")
 def test_download_and_stage_pass_missing_dir_and_upload_failure(tmp_path: Path) -> None:
     """download_and_stage handles missing local assembly directory and failed S3 uploads gracefully."""
     manifest_local = tmp_path / "manifest.txt"
-    manifest_local.write_text(_MANIFEST_CONTENT)
+    manifest_local.write_text(MANIFEST_CONTENT)
 
     assembly_rel = "raw_data/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT"
 
@@ -398,7 +400,7 @@ def test_download_and_stage_pass_missing_dir_and_upload_failure(tmp_path: Path) 
             asm_dir.mkdir(parents=True)
             (asm_dir / "genomic.fna.gz").write_bytes(b"fasta_data")
         # For the second assembly, do not create any directory to exercise the missing-dir path
-        return _MOCK_STATS
+        return MOCK_STATS
 
     with (
         _patch_ftp_download(side_effect=_fake_download),
@@ -408,12 +410,12 @@ def test_download_and_stage_pass_missing_dir_and_upload_failure(tmp_path: Path) 
         ),
     ):
         report = download_and_stage(
-            bucket=_TEST_BUCKET,
-            staging_key_prefix=_STAGING_PREFIX,
+            bucket=TEST_BUCKET_PATH,
+            staging_key_prefix=STAGING_PREFIX,
             manifest_local_path=manifest_local,
             dry_run=False,
             threads=1,
         )
 
-    assert report["succeeded"] == _EXPECTED_ATTEMPTED
+    assert report["succeeded"] == EXPECTED_ATTEMPTED
     assert report["staged_objects"] == 0

@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Final
 
 import botocore.exceptions
 import tqdm
@@ -37,7 +37,7 @@ from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
 
 logger: Logger = getLogger(__name__)
 
-_MAX_DRY_RUN_LOGS = 10
+MAX_DRY_RUN_LOGS: Final[int] = 10
 
 
 # Promote from S3 staging prefix
@@ -294,7 +294,7 @@ def _dry_run_output(
     """
     _dry_run_log_count = log_count
     for source_key, dest_key in key_pairs:
-        if _dry_run_log_count < _MAX_DRY_RUN_LOGS:
+        if _dry_run_log_count < MAX_DRY_RUN_LOGS:
             logger.info("[dry-run] would %s: %s -> %s", action, source_key, dest_key)
         else:
             logger.debug("[dry-run] would %s: %s -> %s", action, source_key, dest_key)

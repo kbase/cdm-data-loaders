@@ -33,6 +33,7 @@ from pyiceberg.types import (
     StructType,
 )
 
+from cdm_data_loaders.pipelines.iceberg_cleanup import install_iceberg_catalog_cleanup
 from tests.cdm_data_loaders.pipelines.helpers import is_metadata_table, read_jsonl_file, strip_metadata_columns
 
 TABLE_NAME: Final[str] = "widget"
@@ -434,6 +435,8 @@ def run_filesystem_pipeline(
     resource = build_routed_resource(use_pyarrow=use_pyarrow, placement=placement)
     run_kwargs: dict[str, Any] = {"loader_file_format": loader_file_format}
     if table_format is not None:
+        if table_format == "iceberg":
+            install_iceberg_catalog_cleanup()
         run_kwargs["table_format"] = table_format
 
     load_info = pipeline.run(resource, **run_kwargs)

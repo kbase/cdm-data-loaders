@@ -2,7 +2,7 @@
 
 import pyarrow as pa
 
-_AUTHOR_STRUCT = pa.struct(
+AUTHOR_STRUCT = pa.struct(
     [
         pa.field("name", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
         pa.field("orcid", pa.string(), nullable=True, metadata={"jsonschema_type": "string"}),
@@ -20,13 +20,13 @@ EXPECTED_SCHEMA = pa.schema(
         ),
         pa.field(
             "lead_author",
-            _AUTHOR_STRUCT,
+            AUTHOR_STRUCT,
             nullable=False,
             metadata={"comment": "Primary corresponding author."},
         ),
         pa.field(
             "reviewer",
-            _AUTHOR_STRUCT,
+            AUTHOR_STRUCT,
             nullable=True,
             metadata={"comment": "Author contact record."},
         ),
@@ -35,7 +35,7 @@ EXPECTED_SCHEMA = pa.schema(
             pa.list_(
                 pa.field(
                     "item",
-                    _AUTHOR_STRUCT,
+                    AUTHOR_STRUCT,
                     nullable=False,
                     metadata={"comment": "Author contact record."},
                 ),

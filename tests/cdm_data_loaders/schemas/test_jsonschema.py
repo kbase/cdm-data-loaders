@@ -3,7 +3,7 @@
 import importlib.resources
 import json
 from pathlib import Path
-from typing import Any, Never
+from typing import Any, Final, Never
 
 import httpx
 import jsonschema.exceptions
@@ -33,6 +33,9 @@ from cdm_data_loaders.schemas.jsonschema import (
     register_xsv_validator,
 )
 from tests.conftest import preserve_xsv_metaschema_state
+
+SCHEMAS_PACKAGE_DIR: Final[Path] = Path(str(importlib.resources.files("cdm_data_loaders.schemas")))
+BUNDLED_JSON_SCHEMA_PATHS: Final[tuple[Path, ...]] = tuple(sorted(SCHEMAS_PACKAGE_DIR.rglob("*.json")))
 
 
 def _make_ctx(
@@ -1033,3 +1036,20 @@ def test_preserve_xsv_metaschema_state_pass_leaves_unregistered_when_initially_c
 
     assert get_xsv_meta_schema.cache_info().currsize == 0
     assert jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI}, default=None) is None  # type: ignore[arg-type]
+
+
+def test_validated_schema_pass_bundled_schemas_discovered() -> None:
+    """Bundled JSON Schema discovery under cdm_data_loaders.schemas finds schemas including xsv_config."""
+    assert BUNDLED_JSON_SCHEMA_PATHS
+    assert SCHEMAS_PACKAGE_DIR / XSV_CONFIG_SCHEMA_REL_PATH in BUNDLED_JSON_SCHEMA_PATHS
+
+
+@pytest.mark.parametrize(
+    "schema_path",
+    [pytest.param(path, id=path.relative_to(SCHEMAS_PACKAGE_DIR).as_posix()) for path in BUNDLED_JSON_SCHEMA_PATHS],
+)
+def test_validated_schema_pass_bundled_schemas(schema_path: Path) -> None:
+    """ValidatedSchema validates each JSON Schema under cdm_data_loaders.schemas against its declared metaschema."""
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    validated = ValidatedSchema(jsonschema=schema)
+    assert validated.jsonschema == schema

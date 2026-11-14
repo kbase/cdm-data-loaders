@@ -14,7 +14,7 @@ from tests.cdm_data_loaders.pipelines.ncbi_ftp_promote.test_ncbi_ftp_promote_set
 # run_promote
 
 
-_MOCK_REPORT_SUCCESS: dict[str, Any] = {
+MOCK_REPORT_SUCCESS: dict[str, Any] = {
     "timestamp": "2026-01-01T00:00:00+00:00",
     "promoted": 5,
     "archived": 0,
@@ -22,8 +22,8 @@ _MOCK_REPORT_SUCCESS: dict[str, Any] = {
     "dry_run": False,
 }
 
-_MOCK_REPORT_WITH_FAILURES: dict[str, Any] = {
-    **_MOCK_REPORT_SUCCESS,
+MOCK_REPORT_WITH_FAILURES: dict[str, Any] = {
+    **MOCK_REPORT_SUCCESS,
     "promoted": 3,
     "failed": 2,
 }
@@ -49,7 +49,7 @@ def test_run_promote_calls_promote_from_s3_with_correct_args(tmp_path: Path) -> 
 
     with patch(
         "cdm_data_loaders.pipelines.ncbi_ftp_promote.promote_from_s3",
-        return_value=_MOCK_REPORT_SUCCESS,
+        return_value=MOCK_REPORT_SUCCESS,
     ) as mock_promote:
         run_promote(config)
 
@@ -70,7 +70,7 @@ def test_run_promote_no_error_on_zero_failures() -> None:
     config = make_settings()
     with patch(
         "cdm_data_loaders.pipelines.ncbi_ftp_promote.promote_from_s3",
-        return_value=_MOCK_REPORT_SUCCESS,
+        return_value=MOCK_REPORT_SUCCESS,
     ):
         run_promote(config)  # should not raise
 
@@ -81,7 +81,7 @@ def test_run_promote_raises_runtime_error_on_failures() -> None:
     with (
         patch(
             "cdm_data_loaders.pipelines.ncbi_ftp_promote.promote_from_s3",
-            return_value=_MOCK_REPORT_WITH_FAILURES,
+            return_value=MOCK_REPORT_WITH_FAILURES,
         ),
         pytest.raises(RuntimeError, match="2 failures"),
     ):
@@ -93,7 +93,7 @@ def test_run_promote_dry_run_forwarded() -> None:
     config = make_settings(dry_run=True)
     with patch(
         "cdm_data_loaders.pipelines.ncbi_ftp_promote.promote_from_s3",
-        return_value=_MOCK_REPORT_SUCCESS,
+        return_value=MOCK_REPORT_SUCCESS,
     ) as mock_promote:
         run_promote(config)
 
@@ -106,7 +106,7 @@ def test_run_promote_transfer_manifest_none_forwarded() -> None:
     config = make_settings(transfer_manifest=None)
     with patch(
         "cdm_data_loaders.pipelines.ncbi_ftp_promote.promote_from_s3",
-        return_value=_MOCK_REPORT_SUCCESS,
+        return_value=MOCK_REPORT_SUCCESS,
     ) as mock_promote:
         run_promote(config)
 

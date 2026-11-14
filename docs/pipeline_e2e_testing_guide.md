@@ -207,7 +207,7 @@ When running against a shared S3 bucket or shared local directory, `test_pipelin
 
 - **Input files**: Staged under `<input_base>/<run_slug>/` (both local paths and `s3://` URLs via `fsspec`).
 - **Output reports and logs**: Written under `<output_base>/<run_slug>/`.
-- **dlt destination**: Written under `<bucket_url>/<run_slug>` with `preserve_dlt_destination=True`.
+- **dlt destination**: Written under `<bucket_url>/<run_slug>` with `preserve_dlt_destination=True` for `parquet`/`jsonl` runs; for `loader_file_format = "iceberg"`, `<bucket_url>` is preserved unchanged so table locations remain under the catalog namespace's allowed warehouse path (use `--drop-existing-tables` / `--drop-tables-after` for per-run isolation).
 
 This prevents table collisions, schema pollution, or report overwrites when multiple scenarios or pipelines target the same bucket.
 

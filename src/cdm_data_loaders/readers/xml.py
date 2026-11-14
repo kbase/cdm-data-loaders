@@ -1,4 +1,4 @@
-"""Common reusable XML pipeline elements for the xmltodict-based pipelines.
+"""Common reusable XML reader elements for the xmltodict and xmltopyarrow pipelines.
 
 Files are given as a local path or as a dlt ``FileItemDict``; file items work for any fsspec protocol (local, S3,
 ...). Every file is opened with ``FileItemDict.open``, which decompresses ``*.gz`` files.
@@ -10,14 +10,11 @@ from logging import Logger, getLogger
 from typing import IO, Any
 
 import xmltodict
-from dlt.extract import DltResource
 from dlt.extract.items import DataItemWithMeta
 from lxml.etree import Element, _Element, iterparse, tostring
 
 from cdm_data_loaders.core.registry import RecordTransformFn
-from cdm_data_loaders.core.settings import CtsSettings, XmlIngestSettings
 from cdm_data_loaders.core.transforms import route_and_coerce_record
-from cdm_data_loaders.pipelines.core import build_per_file_filesystem_resource
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from cdm_data_loaders.utils.buffer import DictBuffer, make_dict_buffer
@@ -454,72 +451,4 @@ def process_xml_file_to_dict(file_path: FileSource, settings: XmlToDictSettings)
         file_path,
         settings,
         _parse_element_to_dict,
-    )
-
-
-def process_xml_file(
-    file_path: FileSource,
-    settings: CtsSettings,
-    xml_tag: str,
-    parse_fn: Callable,
-) -> Generator[DataItemWithMeta, Any]:
-    """Core generator shared by XML-based dlt pipeline resources.
-
-    This processor is expected to return a dictionary of table names and lists of rows, unlike the
-    xmltodict parser, which creates a single dictionary for each element.
-
-    ``parse_fn`` receives the file's source id (see ``cdm_data_loaders.utils.file_items.source_id``) as
-    ``file_path``: the item's relative path for a file item, or the file name for a local path. The
-    recorded source file therefore does not depend on where the input lives.
-
-    :param file_path: local path or dlt file item for the XML file to be processed
-    :type  file_path: FileSource
-    :param settings: pipeline config with buffer_size and log_interval
-    :type  settings: CtsSettings
-    :param xml_tag: XML element tag to stream
-    :type  xml_tag: str
-    :param parse_fn: callable(entry, file_path) -> dict[str, rows]
-    :type  parse_fn: Callable
-    :yield: table-tagged rows
-    :rtype: Generator[DataItemWithMeta, Any]
-    """
-    buffer = make_dict_buffer(settings, DictBuffer)
-    file_source_id = source_id(file_path)
-    yield from _stream_and_buffer_xml_elements(
-        file_path=file_path,
-        xml_tag=xml_tag,
-        log_interval=settings.log_interval,
-        buffer=buffer,
-        buffer_element_fn=lambda element: buffer.add_items(parse_fn(entry=element, file_path=file_source_id)),
-    )
-
-
-def build_xml_file_resource(
-    settings: XmlIngestSettings,
-    xml_tag: str,
-    parse_fn: Callable,
-    resource_name: str,
-) -> DltResource:
-    """Build a dlt resource that parses the XML files in `settings.input_dir`.
-
-    Files are read using the dlt filesystem source.
-
-    :param settings: pipeline config with input_dir, file_glob, buffer_size and log_interval
-    :type  settings: XmlIngestSettings
-    :param xml_tag: XML element tag to stream
-    :type  xml_tag: str
-    :param parse_fn: function for parsing the XML
-    :type  parse_fn: Callable
-    :param resource_name: name of the resulting dlt resource
-    :type  resource_name: str
-    :return: resource yielding table-tagged rows
-    :rtype: DltResource
-    """
-    return build_per_file_filesystem_resource(
-        settings,
-        process_xml_file,
-        xml_tag,
-        parse_fn,
-        name=resource_name,
-        parallelized=False,
     )

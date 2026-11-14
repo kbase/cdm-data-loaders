@@ -65,7 +65,7 @@ def test_resolve_pipeline_pass_all_registered_targets(target_key: str) -> None:
     assert spec.settings_cls.model_config.get("cli_prog_name") == expected_cli
 
 
-_PRE_RESOLVED_CLI_SPEC = PipelineSpec(
+PRE_RESOLVED_CLI_SPEC = PipelineSpec(
     cli_command="jsonlines_extract",
     module_path="cdm_data_loaders.pipelines.jsonlines.extract_pipeline",
     settings_cls=JsonlExtractSettings,
@@ -110,7 +110,7 @@ _PRE_RESOLVED_CLI_SPEC = PipelineSpec(
             id="dotted-module-path",
         ),
         pytest.param(
-            _PRE_RESOLVED_CLI_SPEC,
+            PRE_RESOLVED_CLI_SPEC,
             "jsonlines_extract",
             JsonlExtractSettings,
             run_jsonlines_pipeline,
@@ -533,7 +533,7 @@ def test_pipeline_test_runner_fail_docker_mode_nonzero_exit(
         )
 
 
-_SPEC_NO_SETTINGS = PipelineSpec(cli_command="custom", module_path="custom.mod")
+SPEC_NO_SETTINGS = PipelineSpec(cli_command="custom", module_path="custom.mod")
 
 
 @pytest.mark.parametrize(
@@ -548,21 +548,21 @@ _SPEC_NO_SETTINGS = PipelineSpec(cli_command="custom", module_path="custom.mod")
         ),
         pytest.param(
             ExecutionMode.CORE,
-            _SPEC_NO_SETTINGS,
+            SPEC_NO_SETTINGS,
             None,
             "has no settings_cls",
             id="core-no-settings-cls",
         ),
         pytest.param(
             ExecutionMode.CORE,
-            _SPEC_NO_SETTINGS,
+            SPEC_NO_SETTINGS,
             "--output-dir",
             "does not expose settings_cls and pipeline_fn",
             id="core-missing-pipeline-fn",
         ),
         pytest.param(
             ExecutionMode.CLI,
-            _SPEC_NO_SETTINGS,
+            SPEC_NO_SETTINGS,
             "--output-dir",
             r"does not expose a cli\(\) entry point",
             id="cli-missing-cli-callable",

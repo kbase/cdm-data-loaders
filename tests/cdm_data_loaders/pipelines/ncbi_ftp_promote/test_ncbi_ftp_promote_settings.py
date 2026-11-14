@@ -15,27 +15,27 @@ from cdm_data_loaders.pipelines.ncbi_ftp_promote import (
 )
 from tests.conftest import _generate_dlt_config
 
-_DEFAULT_STAGING_PATH: PurePosixPath = PurePosixPath("staging") / "run1"
+DEFAULT_STAGING_PATH: PurePosixPath = PurePosixPath("staging") / "run1"
 
 
 def make_settings(**kwargs: str | int | bool | Path | PurePosixPath | None) -> PromoteSettings:
     """Generate a validated PromoteSettings object with a required staging_path default."""
-    kwargs.setdefault("staging_path", _DEFAULT_STAGING_PATH)
+    kwargs.setdefault("staging_path", DEFAULT_STAGING_PATH)
     return PromoteSettings(**kwargs)  # pyright: ignore[reportArgumentType]
 
 
 # Settings defaults / all params — (id, kwargs, expected resolved values)
-_DEFAULT_RESOLVED = {
+DEFAULT_RESOLVED = {
     "staging_bucket": DEFAULT_STAGING_BUCKET,
     "destination_bucket": DEFAULT_DESTINATION_BUCKET,
     "destination_path": DEFAULT_DESTINATION_PREFIX,
     "removed_manifest_path": None,
     "updated_manifest_path": None,
-    "transfer_manifest_path": _DEFAULT_STAGING_PATH / DEFAULT_TRANSFER_MANIFEST_FILE,
+    "transfer_manifest_path": DEFAULT_STAGING_PATH / DEFAULT_TRANSFER_MANIFEST_FILE,
     "dry_run": False,
 }
 
-_ALL_PARAMS_RESOLVED: dict[str, Any] = {
+ALL_PARAMS_RESOLVED: dict[str, Any] = {
     "staging_bucket": PurePosixPath("my-staging-bucket"),
     "destination_bucket": PurePosixPath("my-dest-bucket"),
     "staging_path": PurePosixPath("staging") / "run42",
@@ -44,7 +44,7 @@ _ALL_PARAMS_RESOLVED: dict[str, Any] = {
 }
 
 
-@pytest.mark.parametrize("case", [pytest.param(_DEFAULT_RESOLVED, id="defaults")])
+@pytest.mark.parametrize("case", [pytest.param(DEFAULT_RESOLVED, id="defaults")])
 def test_promote_settings_resolve_expected_values(case: dict) -> None:
     """Default PromoteSettings fields resolve to the expected values."""
     s = make_settings()
@@ -58,7 +58,7 @@ def test_promote_settings_all_params_resolve_expected_values(tmp_path: Path) -> 
     updated = tmp_path / "updated.txt"
     transfer = PurePosixPath("staging") / "run42" / "transfer_manifest.txt"
     kwargs = {
-        **_ALL_PARAMS_RESOLVED,
+        **ALL_PARAMS_RESOLVED,
         "removed_manifest": removed,
         "updated_manifest": updated,
         "transfer_manifest": transfer,
@@ -67,7 +67,7 @@ def test_promote_settings_all_params_resolve_expected_values(tmp_path: Path) -> 
     s = make_settings(**kwargs)
 
     expected = {
-        **_ALL_PARAMS_RESOLVED,
+        **ALL_PARAMS_RESOLVED,
         "removed_manifest_path": removed,
         "updated_manifest_path": updated,
         "transfer_manifest_path": transfer,
@@ -77,7 +77,7 @@ def test_promote_settings_all_params_resolve_expected_values(tmp_path: Path) -> 
 
 
 # Settings aliases — (alias kwargs, expected resolved values)
-_ALIAS_CASES = [
+ALIAS_CASES = [
     pytest.param(({"s": PurePosixPath("staging") / "runX"}, "staging_path"), id="staging_path_alias_s"),
     pytest.param(
         ({"destination_path": PurePosixPath("warehouse") / "custom"}, "destination_path"), id="destination_path_alias"
@@ -95,7 +95,7 @@ _ALIAS_CASES = [
 ]
 
 
-@pytest.mark.parametrize("case", _ALIAS_CASES)
+@pytest.mark.parametrize("case", ALIAS_CASES)
 def test_promote_settings_alias_resolves_to_expected_field(case: tuple) -> None:
     """Each CLI alias resolves to the expected settings field."""
     kwargs, field = case

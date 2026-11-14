@@ -1,5 +1,5 @@
 {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$schema": "https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json",
     "description": "JSON schema for the ftp mod times file from https://ftp.ncbi.nlm.nih.gov/genomes/ASSEMBLY_REPORTS/ftp_mod_times.txt.gz. From the file README (https://ftp.ncbi.nlm.nih.gov/genomes/ASSEMBLY_REPORTS/README_ftp_mod_times.txt):\nftp_mod_times.txt.gz provides information about the last date on which any file for the indicated assembly was touched. It is provided for users interested in mirroring whole assembly directories. This file is updated daily.",
     "properties": {
         "assembly_dir": {

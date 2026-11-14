@@ -26,7 +26,7 @@ UNIREF_LOG_INTERVAL: Final[int] = 10000
 class UniRefCdmSettings(UniRefXmlToPyArrowSettings):
     """Base settings for UniRef CDM XML-to-PyArrow ingestion pipelines."""
 
-    _PROTOCOL: ClassVar[str]
+    PROTOCOL: ClassVar[str]
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=UNIREF_CDM_PIPELINE_NAME,
@@ -46,7 +46,7 @@ class UniRefCdmSettings(UniRefXmlToPyArrowSettings):
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
         """Bind the variant-specific UniRef CDM transform and schemas to the entry table."""
         self._bind_cdm_transform_and_schemas(
-            make_uniref_cdm_transform(self._PROTOCOL),
+            make_uniref_cdm_transform(self.PROTOCOL),
             UNIREF_CDM_SCHEMA_MAP,
             default_pyarrow_schema=default_pyarrow_schema,
         )
@@ -55,7 +55,7 @@ class UniRefCdmSettings(UniRefXmlToPyArrowSettings):
 class UniRef50CdmSettings(UniRefCdmSettings):
     """UniRef 50 CDM XML-to-PyArrow ingest settings."""
 
-    _PROTOCOL: ClassVar[str] = "UniRef 50"
+    PROTOCOL: ClassVar[str] = "UniRef 50"
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=UNIREF50_CDM,
@@ -68,7 +68,7 @@ class UniRef50CdmSettings(UniRefCdmSettings):
 class UniRef90CdmSettings(UniRefCdmSettings):
     """UniRef 90 CDM XML-to-PyArrow ingest settings."""
 
-    _PROTOCOL: ClassVar[str] = "UniRef 90"
+    PROTOCOL: ClassVar[str] = "UniRef 90"
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=UNIREF90_CDM,
@@ -81,7 +81,7 @@ class UniRef90CdmSettings(UniRefCdmSettings):
 class UniRef100CdmSettings(UniRefCdmSettings):
     """UniRef 100 CDM XML-to-PyArrow ingest settings."""
 
-    _PROTOCOL: ClassVar[str] = "UniRef 100"
+    PROTOCOL: ClassVar[str] = "UniRef 100"
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=UNIREF100_CDM,

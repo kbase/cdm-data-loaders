@@ -11,13 +11,14 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import boto3
 from dlt.common.libs.pyiceberg import drop_iceberg_table, get_catalog, is_ephemeral_catalog
 from pydantic_settings import BaseSettings
-from pyiceberg.exceptions import NoSuchNamespaceError
+from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, RESTError
 
+from cdm_data_loaders.pipelines.iceberg_cleanup import install_iceberg_catalog_cleanup
 from tests.conftest import LOCAL_FS
 from tests.dlt_config_isolation import load_dlt_toml_files
 from tests.pipeline_spec import load_settings_file
@@ -197,11 +198,16 @@ class PipelineEnvSpec:
                 raise ValueError(msg)
         return filtered
 
-    def isolated_dlt_configs(self, run_slug: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    def isolated_dlt_configs(
+        self,
+        run_slug: str,
+        *,
+        isolate_bucket_url: bool = True,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Return deep-copied ``(dlt_config, dlt_secrets)`` with an isolated per-run ``bucket_url`` if configured."""
         cfg = deepcopy(self.dlt_config)
         sec = deepcopy(self.dlt_secrets)
-        if not self.preserve_dlt_destination:
+        if not self.preserve_dlt_destination or not isolate_bucket_url:
             return cfg, sec
 
         for doc in (cfg, sec):
@@ -250,6 +256,7 @@ def load_pipeline_env_from_dir(
 
 def list_iceberg_namespace_tables(dataset_name: str) -> set[str]:
     """Return table names (without namespace prefix) currently registered in ``dataset_name`` in the active Iceberg catalog."""
+    install_iceberg_catalog_cleanup()
     catalog = get_catalog()
     try:
         if is_ephemeral_catalog(catalog):
@@ -266,13 +273,86 @@ def list_iceberg_namespace_tables(dataset_name: str) -> set[str]:
             catalog.close()
 
 
+def _resolve_destination_bucket_url(
+    dlt_config: Mapping[str, Any],
+    dlt_secrets: Mapping[str, Any],
+    use_destination: str | None,
+) -> str | None:
+    """Return the configured ``bucket_url`` for ``use_destination`` from dlt config or secrets."""
+    if not use_destination:
+        return None
+    for doc in (dlt_config, dlt_secrets):
+        dest_section = doc.get("destination")
+        if isinstance(dest_section, Mapping):
+            block = dest_section.get(use_destination)
+            if isinstance(block, Mapping) and block.get("bucket_url"):
+                return str(block["bucket_url"]).rstrip("/")
+    return None
+
+
+def _purge_location_files(
+    location: str,
+    *,
+    s3_client: Any = None,  # noqa: ANN401
+) -> None:
+    """Delete any remaining files under ``location`` on local filesystem or S3."""
+    parsed = urlparse(location)
+    if parsed.scheme in {"s3", "s3a"}:
+        if s3_client is None:
+            return
+        bucket = parsed.netloc
+        prefix = parsed.path.lstrip("/").rstrip("/")
+        if not bucket or not prefix:
+            return
+        paginator = s3_client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/"):
+            contents = page.get("Contents") or []
+            if not contents:
+                continue
+            for start in range(0, len(contents), 1000):
+                batch = [{"Key": obj["Key"]} for obj in contents[start : start + 1000]]
+                s3_client.delete_objects(Bucket=bucket, Delete={"Objects": batch})
+        return
+
+    local_path = Path(unquote(parsed.path)) if parsed.scheme == "file" else Path(location)
+    if local_path.exists():
+        shutil.rmtree(local_path, ignore_errors=True)
+
+
+def _collect_table_locations(
+    catalog: Any,  # noqa: ANN401
+    table_id: str,
+    dataset_name: str,
+    table_name: str,
+    bucket_url: str | None,
+) -> list[str]:
+    """Return unique filesystem/S3 locations associated with ``table_id``."""
+    locations: list[str] = []
+    try:
+        table_loc = catalog.load_table(table_id).location()
+        if table_loc:
+            locations.append(table_loc)
+    except (NoSuchTableError, RESTError):
+        pass
+    if bucket_url:
+        fallback_loc = f"{bucket_url.rstrip('/')}/{dataset_name}/{table_name}"
+        if fallback_loc not in locations:
+            locations.append(fallback_loc)
+    return locations
+
+
 def drop_iceberg_tables_for_dataset(
     dataset_name: str,
     table_names: Iterable[str] | None = None,
     *,
     include_namespace_tables: bool = True,
+    bucket_url: str | None = None,
+    s3_client: Any = None,  # noqa: ANN401
+    dlt_secrets: Mapping[str, Any] | None = None,
+    use_destination: str | None = None,
 ) -> list[str]:
-    """Drop tables in ``dataset_name`` from the active Iceberg catalog and return dropped table names."""
+    """Drop tables in ``dataset_name`` from the active Iceberg catalog, purge their files, and return dropped table names."""
+    install_iceberg_catalog_cleanup()
     catalog = get_catalog()
     try:
         if is_ephemeral_catalog(catalog):
@@ -287,11 +367,27 @@ def drop_iceberg_tables_for_dataset(
                 ident[-1] if isinstance(ident, tuple) else str(ident).rsplit(".", maxsplit=1)[-1]
                 for ident in identifiers
             )
-        return [
-            table_name
-            for table_name in sorted(targets)
-            if drop_iceberg_table(catalog, f"{dataset_name}.{table_name}", purge=True)
-        ]
+
+        active_s3_client = s3_client
+        dropped_tables: list[str] = []
+        for table_name in sorted(targets):
+            table_id = f"{dataset_name}.{table_name}"
+            locations = _collect_table_locations(catalog, table_id, dataset_name, table_name, bucket_url)
+
+            if drop_iceberg_table(catalog, table_id, purge=True):
+                dropped_tables.append(table_name)
+
+            for loc in locations:
+                if (
+                    urlparse(loc).scheme in {"s3", "s3a"}
+                    and active_s3_client is None
+                    and dlt_secrets
+                    and use_destination
+                ):
+                    active_s3_client = _build_s3_client_from_secrets(dlt_secrets, use_destination)
+                _purge_location_files(loc, s3_client=active_s3_client)
+
+        return dropped_tables
     finally:
         if hasattr(catalog, "close"):
             catalog.close()

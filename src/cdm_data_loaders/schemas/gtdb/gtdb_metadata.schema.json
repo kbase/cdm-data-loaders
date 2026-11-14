@@ -1,7 +1,7 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json",
   "title": "JSON Schema for GTDB metadata files.",
-  "description": "Inferred JSON Schema with `qsv schema /Users/gwg/code/kbase/cdm-data-loaders/src/cdm_data_loaders/parsers/gtdb/files/ar53_metadata.tsv`",
+  "description": "Inferred JSON Schema with `qsv schema gtdb/files/ar53_metadata.tsv`",
   "type": "object",
   "properties": {
     "accession": {
@@ -1032,5 +1032,9 @@
     "trna_aa_count",
     "trna_count",
     "trna_selenocysteine_count"
-  ]
+  ],
+  "x-xsv-config": {
+    "x-has-header": false,
+    "x-delimiter": "\t"
+  }
 }
