@@ -818,7 +818,7 @@ def assert_smoke_run_output(
     )
 
     actual_counts = {name: len(rows) for name, rows in all_tables.items()}
-    assert actual_counts == run.expected_counts
+    assert actual_counts == run.expected_counts, f"Expected {run.expected_counts}; got {actual_counts}"
 
     if run.expected_tables is not None:
         expected_pa_tables = load_expected_tables(run)
