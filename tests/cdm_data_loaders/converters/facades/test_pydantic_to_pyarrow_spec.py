@@ -6,6 +6,7 @@ Cases, rules and error fixtures are declared in manifests under ``specs/schema_c
 """
 
 import datetime as dt
+import importlib
 import json
 from collections import deque
 from dataclasses import dataclass, field
@@ -36,8 +37,6 @@ from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import (
     generate_pyarrow_schema,
     resolve_scalar_type,
 )
-from docs_macros.env import build_generated_docs_plan, render_converter_spec
-from docs_macros.spec_context import CONVERTER_SPECS
 from tests.conftest import BASE_DIR
 from tests.converter_spec import Case, ErrorCase, RuleCatalogue, Run, load_cases, load_error_cases, load_rules
 from tests.pyarrow_spec_helpers import (
@@ -118,12 +117,15 @@ def test_manifests_pass_consistency() -> None:
 @pytest.mark.docs
 def test_specification_document_pass_up_to_date() -> None:
     """Verify the specification stub invokes render_converter_spec and renders all rules, cases, and errors."""
-    spec_cfg = CONVERTER_SPECS["pydantic_to_pyarrow"]
-    stub_text = build_generated_docs_plan()[Path(spec_cfg.output.name)]
+    docs_env = importlib.import_module("docs_macros.env")
+    spec_ctx = importlib.import_module("docs_macros.spec_context")
+
+    spec_cfg = spec_ctx.CONVERTER_SPECS["pydantic_to_pyarrow"]
+    stub_text = docs_env.build_generated_docs_plan()[Path(spec_cfg.output.name)]
     assert "render_macros: true" in stub_text
     assert 'render_converter_spec("pydantic_to_pyarrow")' in stub_text
 
-    rendered = render_converter_spec(spec_cfg)
+    rendered = docs_env.render_converter_spec(spec_cfg)
     assert f"# {RULES.title}" in rendered
     for rule_id in RULES.rules:
         assert f"**{rule_id}**" in rendered

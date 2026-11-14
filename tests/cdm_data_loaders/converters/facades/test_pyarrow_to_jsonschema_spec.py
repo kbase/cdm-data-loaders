@@ -6,6 +6,7 @@ Cases, rules, and error fixtures are declared in manifests under
 ``docs_macros`` Jinja2 templates.
 """
 
+import importlib
 import json
 import math
 from pathlib import Path
@@ -35,8 +36,6 @@ from cdm_data_loaders.converters.facades.pyarrow_to_jsonschema import (
     generate_json_schema,
     resolve_scalar_type,
 )
-from docs_macros.env import build_generated_docs_plan, render_converter_spec, render_reference_table
-from docs_macros.spec_context import CONVERTER_SPECS
 from tests.cdm_data_loaders.converters.conftest import (
     JSON_SCHEMA_KEYWORDS,
     iter_extension_keys,
@@ -153,12 +152,15 @@ def test_manifests_pass_consistency() -> None:
 @pytest.mark.docs
 def test_specification_document_pass_up_to_date() -> None:
     """Verify the specification stub, rendered document, and scalar table match the manifest and converter."""
-    spec_cfg = CONVERTER_SPECS["pyarrow_to_jsonschema"]
-    stub_text = build_generated_docs_plan()[Path(spec_cfg.output.name)]
+    docs_env = importlib.import_module("docs_macros.env")
+    spec_ctx = importlib.import_module("docs_macros.spec_context")
+
+    spec_cfg = spec_ctx.CONVERTER_SPECS["pyarrow_to_jsonschema"]
+    stub_text = docs_env.build_generated_docs_plan()[Path(spec_cfg.output.name)]
     assert "render_macros: true" in stub_text
     assert 'render_converter_spec("pyarrow_to_jsonschema")' in stub_text
 
-    rendered = render_converter_spec(spec_cfg)
+    rendered = docs_env.render_converter_spec(spec_cfg)
     assert f"# {RULES.title}" in rendered
     for rule_id in RULES.rules:
         assert f"**{rule_id}**" in rendered
@@ -169,7 +171,7 @@ def test_specification_document_pass_up_to_date() -> None:
         assert f"**{err_cls.code}**" in rendered
         assert f"`{err_cls.__name__}`" in rendered
 
-    scalar_table = render_reference_table("pyarrow_to_jsonschema_scalar_table")
+    scalar_table = docs_env.render_reference_table("pyarrow_to_jsonschema_scalar_table")
     assert "| `pa.int64()` |" in scalar_table
     assert "| `pa.decimal128(10, 2)` |" in scalar_table
     assert '| `pa.timestamp("us", tz="UTC")` |' in scalar_table

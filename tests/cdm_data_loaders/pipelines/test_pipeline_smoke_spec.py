@@ -5,6 +5,7 @@ Cases and rules live under ``specs/pipelines/<pipeline>/`` (``rules.yaml``, ``*/
 render ``docs/<pipeline>_specification.md`` via ``docs_macros`` Jinja2 templates.
 """
 
+import importlib
 import os
 import subprocess
 from collections.abc import Generator
@@ -17,8 +18,6 @@ import pytest
 from _pytest.mark.structures import ParameterSet
 
 from cdm_data_loaders.utils.file_transfer.s3.client import get_s3_client, reset_s3_client
-from docs_macros.env import build_generated_docs_plan, render_pipeline_spec
-from docs_macros.spec_context import PIPELINE_SPECS, PipelineSpecConfig
 from tests.cdm_data_loaders.pipelines import framework
 from tests.cdm_data_loaders.pipelines.framework import (
     ExecutionMode,
@@ -32,6 +31,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
 )
 from tests.conftest import (
     LOCAL_FS,
+    PIPELINE_SPECS_DIR,
     S3,
 )
 from tests.converter_spec import RuleCatalogue, load_rules
@@ -57,11 +57,21 @@ from tests.pipeline_spec import (
     load_settings_file,
 )
 
+PIPELINE_FAMILY_DIRS: dict[str, Path] = {
+    p.name: p for p in sorted(PIPELINE_SPECS_DIR.iterdir()) if p.is_dir() and (p / "rules.yaml").is_file()
+}
+PIPELINE_FAMILY_PRESETS: dict[str, tuple[str, ...]] = {
+    name: tuple(sorted(p.name for p in (family_dir / "presets").iterdir() if p.is_dir()))
+    if (family_dir / "presets").is_dir()
+    else ()
+    for name, family_dir in PIPELINE_FAMILY_DIRS.items()
+}
+
 CATALOGUES_BY_FAMILY: dict[str, RuleCatalogue] = {
-    name: load_rules(spec.data_dir / "rules.yaml") for name, spec in PIPELINE_SPECS.items()
+    name: load_rules(family_dir / "rules.yaml") for name, family_dir in PIPELINE_FAMILY_DIRS.items()
 }
 CASES_BY_FAMILY: dict[str, list[PipelineCase]] = {
-    name: load_pipeline_cases(spec.data_dir) for name, spec in PIPELINE_SPECS.items()
+    name: load_pipeline_cases(family_dir) for name, family_dir in PIPELINE_FAMILY_DIRS.items()
 }
 ALL_CASES: list[PipelineCase] = [case for cases in CASES_BY_FAMILY.values() for case in cases]
 CASES_BY_PIPELINE: dict[str, list[PipelineCase]] = {
@@ -83,14 +93,14 @@ SMOKE_RUN_PARAMS: list[ParameterSet] = [
 # Manifest, preset inheritance, and rule coverage invariants
 
 
-@pytest.mark.parametrize("spec", list(PIPELINE_SPECS.values()), ids=lambda s: s.name)
-def test_manifests_pass_preset_subclasses_inherit_base_settings_and_runner(spec: PipelineSpecConfig) -> None:
+@pytest.mark.parametrize("family_name", sorted(PIPELINE_FAMILY_DIRS), ids=str)
+def test_manifests_pass_preset_subclasses_inherit_base_settings_and_runner(family_name: str) -> None:
     """Every preset pipeline in a family subclasses the family's base Settings class and shares its pipeline_fn."""
-    base_resolved = resolve_pipeline(spec.name)
+    base_resolved = resolve_pipeline(family_name)
     assert base_resolved.settings_cls is not None
     assert base_resolved.pipeline_fn is not None
 
-    for preset_name in spec.presets:
+    for preset_name in PIPELINE_FAMILY_PRESETS[family_name]:
         preset_resolved = resolve_pipeline(preset_name)
         assert preset_resolved.settings_cls is not None
         assert issubclass(preset_resolved.settings_cls, base_resolved.settings_cls)
@@ -98,7 +108,7 @@ def test_manifests_pass_preset_subclasses_inherit_base_settings_and_runner(spec:
         assert preset_resolved.pipeline_fn is base_resolved.pipeline_fn
 
 
-@pytest.mark.parametrize("family_name", sorted(PIPELINE_SPECS), ids=str)
+@pytest.mark.parametrize("family_name", sorted(PIPELINE_FAMILY_DIRS), ids=str)
 def test_manifests_pass_every_case_rule_exists(family_name: str) -> None:
     """Every rule referenced by a pipeline case manifest is defined in that family's rules.yaml."""
     catalogue = CATALOGUES_BY_FAMILY[family_name]
@@ -107,7 +117,7 @@ def test_manifests_pass_every_case_rule_exists(family_name: str) -> None:
     assert {name: ids for name, ids in unknown.items() if ids} == {}
 
 
-@pytest.mark.parametrize("family_name", sorted(PIPELINE_SPECS), ids=str)
+@pytest.mark.parametrize("family_name", sorted(PIPELINE_FAMILY_DIRS), ids=str)
 def test_manifests_pass_every_rule_is_exercised(family_name: str) -> None:
     """Every rule in rules.yaml is exercised by at least one case manifest in the family."""
     catalogue = CATALOGUES_BY_FAMILY[family_name]
@@ -136,7 +146,7 @@ def test_manifests_pass_every_case_file_exists(case: PipelineCase) -> None:
 @pytest.mark.parametrize(("case", "run"), ALL_RUN_PARAMS)
 def test_manifests_pass_expected_tables_validate(case: PipelineCase, run: PipelineRun) -> None:
     """Every expected PyArrow table is valid and matches expected_counts and expected.json."""
-    assert case.family in PIPELINE_SPECS
+    assert case.family in PIPELINE_FAMILY_DIRS
     assert run.expected_tables is not None
     assert run.expected_json is not None
 
@@ -156,14 +166,18 @@ def test_manifests_pass_expected_tables_validate(case: PipelineCase, run: Pipeli
 
 
 @pytest.mark.docs
-@pytest.mark.parametrize("spec", list(PIPELINE_SPECS.values()), ids=lambda s: s.name)
-def test_spec_docs_pass_up_to_date_with_manifests(spec: PipelineSpecConfig) -> None:
+@pytest.mark.parametrize("family_name", sorted(PIPELINE_FAMILY_DIRS), ids=str)
+def test_spec_docs_pass_up_to_date_with_manifests(family_name: str) -> None:
     """Generated <family>_specification.md stub invokes render_pipeline_spec and renders all rules and cases."""
-    stub_text = build_generated_docs_plan()[Path(spec.output_path.name)]
+    docs_env = importlib.import_module("docs_macros.env")
+    spec_ctx = importlib.import_module("docs_macros.spec_context")
+
+    spec = spec_ctx.PIPELINE_SPECS[family_name]
+    stub_text = docs_env.build_generated_docs_plan()[Path(spec.output_path.name)]
     assert "render_macros: true" in stub_text
     assert f'render_pipeline_spec("{spec.name}")' in stub_text
 
-    rendered = render_pipeline_spec(spec)
+    rendered = docs_env.render_pipeline_spec(spec)
     catalogue = CATALOGUES_BY_FAMILY[spec.name]
     assert f"# {catalogue.title}" in rendered
     for rule_id in catalogue.rules:
@@ -176,17 +190,20 @@ def test_spec_docs_pass_up_to_date_with_manifests(spec: PipelineSpecConfig) -> N
 @pytest.mark.docs
 def test_render_pipeline_spec_custom_config_and_unknown_name() -> None:
     """render_pipeline_spec accepts a custom PipelineSpecConfig and raises KeyError on unknown names."""
-    custom_spec = PipelineSpecConfig(
+    docs_env = importlib.import_module("docs_macros.env")
+    spec_ctx = importlib.import_module("docs_macros.spec_context")
+
+    custom_spec = spec_ctx.PipelineSpecConfig(
         name="xmltopyarrow",
-        data_dir=PIPELINE_SPECS["xmltopyarrow"].data_dir,
-        output_path=PIPELINE_SPECS["xmltopyarrow"].output_path,
-        presets=PIPELINE_SPECS["xmltopyarrow"].presets,
+        data_dir=spec_ctx.PIPELINE_SPECS["xmltopyarrow"].data_dir,
+        output_path=spec_ctx.PIPELINE_SPECS["xmltopyarrow"].output_path,
+        presets=spec_ctx.PIPELINE_SPECS["xmltopyarrow"].presets,
     )
-    rendered = render_pipeline_spec(custom_spec)
+    rendered = docs_env.render_pipeline_spec(custom_spec)
     assert "# XML to PyArrow Pipeline Specification" in rendered
 
     with pytest.raises(KeyError, match="Unknown pipeline specification"):
-        render_pipeline_spec("nonexistent_pipeline")
+        docs_env.render_pipeline_spec("nonexistent_pipeline")
 
 
 # Built-in and user-supplied smoke test environments

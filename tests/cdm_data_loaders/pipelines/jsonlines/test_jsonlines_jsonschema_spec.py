@@ -5,6 +5,7 @@ Cases, rules, and error fixtures are declared in manifests under ``specs/pipelin
 ``docs/jsonlines_jsonschema_specification.md`` via ``docs_macros`` Jinja2 templates.
 """
 
+import importlib
 import json
 import shutil
 import sys
@@ -32,8 +33,6 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
 )
 from cdm_data_loaders.readers.jsonlines import make_page_router, stream_jsonl_lines
 from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
-from docs_macros.env import build_generated_docs_plan, render_pipeline_spec
-from docs_macros.spec_context import PIPELINE_SPECS
 from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_duckdb_pipeline
 from tests.conftest import PIPELINE_SPECS_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
@@ -186,12 +185,15 @@ def test_manifests_pass_error_codes_unique_and_covered() -> None:
 @pytest.mark.docs
 def test_specification_document_pass_up_to_date() -> None:
     """The JSONLines JSON Schema specification stub invokes render_pipeline_spec and renders all rules, cases, and errors."""
-    spec = PIPELINE_SPECS["jsonlines_jsonschema"]
-    stub_text = build_generated_docs_plan()[Path(spec.output_path.name)]
+    docs_env = importlib.import_module("docs_macros.env")
+    spec_ctx = importlib.import_module("docs_macros.spec_context")
+
+    spec = spec_ctx.PIPELINE_SPECS["jsonlines_jsonschema"]
+    stub_text = docs_env.build_generated_docs_plan()[Path(spec.output_path.name)]
     assert "render_macros: true" in stub_text
     assert 'render_pipeline_spec("jsonlines_jsonschema")' in stub_text
 
-    rendered = render_pipeline_spec(spec)
+    rendered = docs_env.render_pipeline_spec(spec)
     assert f"# {RULES.title}" in rendered
     for rule_id in RULES.rules:
         assert f"**{rule_id}**" in rendered
