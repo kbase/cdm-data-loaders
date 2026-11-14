@@ -1,8 +1,8 @@
 """Specification tests for XSD-to-PyArrow schema generation and XML-to-Arrow conversion.
 
 Cases, rules and error fixtures are declared in manifests under ``specs/schema_converters/xsd_to_pyarrow``
-(``rules.yaml``, ``*/case.yaml`` and ``spec/errors/manifest.yaml``). The same manifests generate
-``docs/xsd_to_pyarrow_specification.md`` via ``scripts/gen_converter_spec.py``.
+(``rules.yaml``, ``*/case.yaml`` and ``spec/errors/manifest.yaml``). The same manifests render
+``docs/xsd_to_pyarrow_specification.md`` via ``docs_macros`` Jinja2 templates.
 """
 
 import copy
@@ -92,7 +92,8 @@ from cdm_data_loaders.schemas.uniref.schema import (
     SCHEMAS as UNIREF_SCHEMAS,
 )
 from cdm_data_loaders.utils.xml_utils import local_name
-from scripts.gen_converter_spec import XSD_TO_PYARROW, render
+from docs_macros.env import build_generated_docs_plan, render_converter_spec
+from docs_macros.spec_context import CONVERTER_SPECS
 from scripts.gen_pyarrow_schema import (
     CONFIGS as SCHEMA_CODEGEN_CONFIGS,
 )
@@ -182,10 +183,22 @@ def test_manifests_pass_error_codes_unique_and_covered() -> None:
 
 @pytest.mark.docs
 def test_specification_document_pass_up_to_date() -> None:
-    """The committed specification document matches the output of scripts/gen_converter_spec.py."""
-    assert XSD_TO_PYARROW.output.read_text(encoding="utf-8") == render(XSD_TO_PYARROW), (
-        "docs are stale: run `uv run python -m scripts.gen_converter_spec`"
-    )
+    """The specification stub invokes render_converter_spec and renders all rules, cases, and errors."""
+    spec_cfg = CONVERTER_SPECS["xsd_to_pyarrow"]
+    stub_text = build_generated_docs_plan()[Path(spec_cfg.output.name)]
+    assert "render_macros: true" in stub_text
+    assert 'render_converter_spec("xsd_to_pyarrow")' in stub_text
+
+    rendered = render_converter_spec(spec_cfg)
+    assert f"# {RULES.title}" in rendered
+    for rule_id in RULES.rules:
+        assert f"**{rule_id}**" in rendered
+        assert f'<a id="{rule_id.lower()}"></a>' in rendered
+    for case in CASES:
+        assert f'<a id="{case.anchor}"></a>' in rendered
+    for err_cls in XSD_TO_PYARROW_ERRORS:
+        assert f"**{err_cls.code}**" in rendered
+        assert f"`{err_cls.__name__}`" in rendered
 
 
 # Fixture validity

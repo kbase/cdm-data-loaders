@@ -151,6 +151,10 @@ venv.bak/
 
 # zensical documentation
 /site
+/docs/cli_reference.md
+/docs/bundled_schemas.md
+/docs/*_specification.md
+/docs/schemas/
 
 # mypy
 .mypy_cache/

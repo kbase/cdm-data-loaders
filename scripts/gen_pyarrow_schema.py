@@ -7,8 +7,9 @@ Usage::
 """
 
 import argparse
+import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Final
 
@@ -16,8 +17,8 @@ from cdm_data_loaders.converters.cli.xsd_to_pyarrow import (
     SchemaCodegenConfig,
     render_schema_module,
 )
-from scripts.gen_docs import REPO_ROOT, check_or_write_files
 
+REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 SCHEMAS_DIR: Final[Path] = REPO_ROOT / "src" / "cdm_data_loaders" / "schemas"
 
 UNIREF_SCHEMA_CONFIG: Final[SchemaCodegenConfig] = SchemaCodegenConfig(
@@ -47,6 +48,43 @@ CONFIGS: Final[tuple[SchemaCodegenConfig, ...]] = (
     UNIPROT_SCHEMA_CONFIG,
     PUBMED_SCHEMA_CONFIG,
 )
+
+
+def check_or_write_files(
+    outputs: Iterable[tuple[Path, str]],
+    *,
+    check: bool,
+    repo_root: Path = REPO_ROOT,
+) -> int:
+    """Compare each ``(output_path, rendered_text)`` pair against disk and report stale files or write updates.
+
+    :param outputs: Iterable of ``(output_path, rendered_text)`` pairs.
+    :type outputs: Iterable[tuple[Path, str]]
+    :param check: When ``True``, report stale files to ``sys.stderr`` and return ``1`` without writing.
+    :type check: bool
+    :param repo_root: Repository root used to format relative paths on ``stderr``.
+    :type repo_root: Path
+    :return: ``0`` if all files are up to date (or written), ``1`` if ``check`` is ``True`` and any file is stale.
+    :rtype: int
+    """
+    stale: list[Path] = []
+    for output_path, text in outputs:
+        current = output_path.read_text(encoding="utf-8") if output_path.exists() else None
+        if current == text:
+            continue
+        if check:
+            stale.append(output_path)
+        else:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(text, encoding="utf-8")
+    for path in stale:
+        rel_out = (
+            path.relative_to(repo_root).as_posix()
+            if path.is_relative_to(repo_root)
+            else Path(os.path.relpath(path.resolve(), repo_root.resolve())).as_posix()
+        )
+        sys.stderr.write(f"stale: {rel_out} is out of date\n")
+    return 1 if stale else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:

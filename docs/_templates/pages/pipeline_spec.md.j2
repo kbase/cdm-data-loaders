@@ -1,0 +1,94 @@
+{% from "macros/common.md.j2" import fenced_block, rule_links %}
+# {{ spec.title }}
+
+{% if spec.intro %}
+{{ spec.intro }}
+
+{% endif %}
+| Property | Value |
+| --- | --- |
+| **Base Pipeline Family** | `{{ spec.name }}` |
+| **Base CLI Entry Point** | `{{ spec.cli_command }}` |
+| **Base Settings Class** | {% if spec.settings_class_url %}[`{{ spec.settings_class }}`]({{ spec.settings_class_url }}){% else %}`{{ spec.settings_class }}`{% endif %} |
+| **Pipeline Runner** | {% if spec.pipeline_runner_url %}[`{{ spec.pipeline_runner }}`]({{ spec.pipeline_runner_url }}){% else %}`{{ spec.pipeline_runner }}`{% endif %} |
+| **Preset Subclasses Covered** | {% if spec.presets %}{% for preset in spec.presets %}`{{ preset }}`{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %} |
+| **Specification Directory** | [`{{ spec.spec_dir_rel }}/`]({{ spec.spec_dir_url }}) |
+
+{% if spec.hierarchy is not none %}
+{% with hierarchy = spec.hierarchy %}
+{% include "partials/settings_hierarchy.md.j2" %}
+{% endwith %}
+{% endif %}
+## Running Smoke Tests Across Environments
+
+```bash
+# run all base and preset smoke tests for {{ spec.name }} across built-in environments
+uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py --smoke-pipeline {{ spec.name }}
+{% for preset in spec.presets %}
+
+# run only the {{ preset }} preset subclass smoke tests
+uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py --smoke-pipeline {{ preset }}
+{% endfor %}
+
+# run against a custom environment directory (config.toml, secrets.toml, settings.toml)
+uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
+    --smoke-pipeline {{ spec.name }} \
+    --dlt-config-dir /path/to/env_dlt_config \
+    --settings-file /path/to/env_dlt_config/settings.toml
+```
+
+---
+
+## Conversion and Pipeline Rules
+
+{% with sections = spec.sections %}
+{% include "partials/rule_sections.md.j2" %}
+{% endwith %}
+---
+
+## Case Coverage Matrix
+
+| Suite | Target CLI | Settings Class | Case | Title | Rules | Expected Table Counts |
+| --- | --- | --- | --- | --- | --- | --- |
+{% for case in spec.all_cases %}
+| `{{ case.suite }}` | `{{ case.pipeline }}` | `{{ case.settings_class_name }}` | [`{{ case.name }}`](#{{ case.anchor }}) | {{ case.title | escape_cell }} | {{ rule_links(case.rules, code_wrap=true) }} | {% for run_id, counts_repr in case.run_count_entries %}{{ ("`" ~ run_id ~ "`: `" ~ counts_repr ~ "`") | escape_cell }}{% if not loop.last %}; {% endif %}{% endfor %} |
+{% endfor %}
+
+---
+
+## Base Pipeline Specification Cases (`{{ spec.name }}` / `spec/`)
+
+{% for sf in spec.shared_files %}
+**Shared Fixture Module ([`{{ sf.repo_rel }}`]({{ sf.url }}))**
+
+{{ fenced_block(sf.code_block) }}
+
+{% endfor %}
+{% if spec.use_converter_base_cases %}
+{% for case in spec.converter_base_cases %}
+{% include "partials/converter_case.md.j2" %}
+
+{% endfor %}
+{% else %}
+{% for case in spec.smoke_base_cases %}
+{% include "partials/pipeline_case.md.j2" %}
+
+{% endfor %}
+{% endif %}
+{% if spec.preset_cases %}
+## Preset Subclass Specification Cases (`presets/`)
+
+{% for case in spec.preset_cases %}
+{% include "partials/pipeline_case.md.j2" %}
+
+{% endfor %}
+{% endif %}
+{% if spec.error_section is not none %}
+{% with error_section = spec.error_section %}
+{% include "partials/errors_section.md.j2" %}
+{% endwith %}
+
+{% endif %}
+{% with fixture_index = spec.fixture_index_table, fixture_index_scope = "the test suites" %}
+{% include "partials/fixture_index.md.j2" %}
+{% endwith %}

@@ -1,0 +1,30 @@
+# CLI Reference
+
+Reference for all registered CLIs in [`pyproject.toml`]({{ page.pyproject_url }}) (`[project.scripts]`).
+
+- **Local execution**: `uv run <cli_command> [OPTIONS]`
+- **Container execution**: [`./scripts/entrypoint.sh`]({{ page.entrypoint_url }}) `pipeline <cli_command> [OPTIONS]`
+- **Environment variables**: Every CLI option can also be configured via its `CDL_*` environment variable.
+- **Execution and CTS semantics**: See [Core Pipeline and KBase CTS Execution Guide](core_cts_execution.md).
+
+## Registered CLIs
+
+| CLI Command | Entry Point | Summary |
+| :--- | :--- | :--- |
+{% for entry in page.entries %}
+| [`{{ entry.cli_name }}`](#{{ entry.cli_name | lower }}) | {% if entry.entry_api_url %}[`{{ entry.entry_point }}`]({{ entry.entry_api_url }}){% else %}`{{ entry.entry_point }}`{% endif %} | {{ entry.summary | escape_cell }} |
+{% endfor %}
+
+{% for entry in page.entries %}
+## `{{ entry.cli_name }}`
+
+{{ entry.summary }}
+
+- **Entry point**: {% if entry.entry_api_url %}[`{{ entry.entry_point }}`]({{ entry.entry_api_url }}){% else %}`{{ entry.entry_point }}`{% endif %}
+
+- **Settings class**: {% if entry.settings_api_url %}[`{{ entry.settings_class_name }}`]({{ entry.settings_api_url }}){% else %}`{{ entry.settings_class_name }}`{% endif %}
+
+
+{% include "partials/cli_fields_table.md.j2" %}
+
+{% endfor %}

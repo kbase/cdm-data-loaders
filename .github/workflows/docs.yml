@@ -34,14 +34,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups
 
-      - name: Verify converter specification docs are up to date
-        run: uv run python -m scripts.gen_converter_spec --check
-
-      - name: Verify CLI reference docs are up to date
-        run: uv run python -m scripts.gen_docs --check
-
       - name: Run documentation tests
         run: uv run pytest -m docs
+
+      - name: Generate documentation stubs and schemas
+        run: uv run -m docs_macros
+
+      - name: Verify generated documentation files
+        run: uv run -m docs_macros --check
 
       - name: Build Zensical site
         run: uv run zensical build --clean --strict

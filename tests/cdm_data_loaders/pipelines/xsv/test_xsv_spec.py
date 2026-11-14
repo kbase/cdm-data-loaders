@@ -1,8 +1,8 @@
 """Specification tests for the XSV schema converter, reader, and ingestion pipeline.
 
 Cases, rules, and error fixtures are declared in manifests under ``specs/pipelines/xsv`` (``rules.yaml``,
-``spec/*/case.yaml``, and ``spec/errors/manifest.yaml``). The same manifests generate
-``docs/xsv_specification.md`` via ``scripts/gen_converter_spec.py``.
+``spec/*/case.yaml``, and ``spec/errors/manifest.yaml``). The same manifests render
+``docs/xsv_specification.md`` via ``docs_macros`` Jinja2 templates.
 """
 
 import datetime as dt
@@ -31,7 +31,8 @@ from cdm_data_loaders.pipelines.xsv.settings import (
 )
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import validate_jsonschema
 from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
-from scripts.gen_converter_spec import XSV_TO_PYARROW, render
+from docs_macros.env import build_generated_docs_plan, render_pipeline_spec
+from docs_macros.spec_context import PIPELINE_SPECS
 from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_duckdb_pipeline
 from tests.conftest import PIPELINE_SPECS_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
@@ -150,10 +151,22 @@ def test_manifests_pass_error_codes_unique_and_covered() -> None:
 
 @pytest.mark.docs
 def test_specification_document_pass_up_to_date() -> None:
-    """The committed specification document matches the output of scripts/gen_converter_spec.py."""
-    assert XSV_TO_PYARROW.output.read_text(encoding="utf-8") == render(XSV_TO_PYARROW), (
-        "docs are stale: run `uv run python -m scripts.gen_converter_spec`"
-    )
+    """The XSV specification stub invokes render_pipeline_spec and renders all rules, cases, and errors."""
+    spec = PIPELINE_SPECS["xsv"]
+    stub_text = build_generated_docs_plan()[Path(spec.output_path.name)]
+    assert "render_macros: true" in stub_text
+    assert 'render_pipeline_spec("xsv")' in stub_text
+
+    rendered = render_pipeline_spec(spec)
+    assert f"# {RULES.title}" in rendered
+    for rule_id in RULES.rules:
+        assert f"**{rule_id}**" in rendered
+        assert f'<a id="{rule_id.lower()}"></a>' in rendered
+    for case in CASES:
+        assert f'<a id="{case.anchor}"></a>' in rendered
+    for err_cls in XSV_SCHEMA_ERRORS:
+        assert f"**{err_cls.code}**" in rendered
+        assert f"`{err_cls.__name__}`" in rendered
 
 
 # Schema generation

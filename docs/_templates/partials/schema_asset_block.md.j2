@@ -1,0 +1,15 @@
+{% from "macros/common.md.j2" import fenced_block %}
+<a id="{{ asset.anchor_id }}"></a>
+
+#### `{{ asset.short_title }}`
+
+- **Repository path**: [`{{ asset.repo_rel_path }}`]({{ asset.github_url }})
+{% if asset.published_rel_path is not none %}
+- **Published URL**: [`{{ asset.published_site_url }}`]({{ asset.published_rel_path.as_posix() }})
+{% endif %}
+- **Format**: {{ asset.kind }}
+- **Schema group**: `{{ asset.package_area }}`
+
+??? note "Source (`{{ asset.repo_rel_path }}`)"
+
+{{ fenced_block(asset.code_block, expandable=false) | indent(4, first=True) }}

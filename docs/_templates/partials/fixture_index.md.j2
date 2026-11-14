@@ -1,0 +1,7 @@
+## Fixture Index
+
+Every case directory contains a `case.yaml` manifest; {{ fixture_index_scope }} and this document are both driven by it.
+
+{% with headers = fixture_index.headers, rows = fixture_index.rows %}
+{% include "tables/reference_table.md.j2" %}
+{% endwith %}

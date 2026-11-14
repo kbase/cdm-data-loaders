@@ -1,0 +1,18 @@
+## Preset Pipelines and Parameter Overrides
+
+The generic `{{ hierarchy.base_cli_command }}` pipeline is configured by {% if hierarchy.base_settings_url %}[`{{ hierarchy.base_class_name }}`]({{ hierarchy.base_settings_url }}){% else %}`{{ hierarchy.base_class_name }}`{% endif %} and executed by {% if hierarchy.runner_url %}[`{{ hierarchy.runner_name }}`]({{ hierarchy.runner_url }}){% else %}`{{ hierarchy.runner_name }}`{% endif %}. Domain preset pipelines lock schema, table, and transform parameters as `ClassVar` constants or narrowed defaults while delegating execution to the same pipeline runner.
+
+{% for preset in hierarchy.presets %}
+### Preset Pipeline: `{{ preset.cli_command }}` (`{{ preset.class_name }}`)
+
+- **CLI Command**: `{{ preset.cli_command }}`
+- **Settings Class**: {% if preset.settings_api_url %}[`{{ preset.class_name }}`]({{ preset.settings_api_url }}){% else %}`{{ preset.class_name }}`{% endif %}
+- **Shared Runner**: {% if preset.shared_runner_url %}[`{{ preset.shared_runner }}`]({{ preset.shared_runner_url }}){% else %}`{{ preset.shared_runner }}`{% endif %}
+
+| Setting / Class Attribute | Override Kind | Base (`{{ preset.base_class_name }}`) | Preset (`{{ preset.class_name }}`) |
+| --- | --- | --- | --- |
+{% for row in preset.overrides %}
+| `{{ row.attr_name }}` | {{ row.kind | escape_cell }} | {{ row.base_val | escape_cell }} | {{ row.preset_val | escape_cell }} |
+{% endfor %}
+
+{% endfor %}

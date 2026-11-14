@@ -6,20 +6,17 @@ repo_url = "https://github.com/kbase/cdm-data-loaders"
 repo_name = "kbase/cdm-data-loaders"
 nav = [
   { "Home" = "index.md" },
-  { "Guides" = [
+  { "User Guides" = [
     { "Core and CTS Execution" = "core_cts_execution.md" },
     { "CLI Reference" = "cli_reference.md" },
-    { "Pipeline E2E and Smoke Testing" = "pipeline_e2e_testing_guide.md" },
-    { "Pipeline Specifications Guide" = "pipeline_specs_guide.md" },
-    { "Schema Converter Specifications Guide" = "schema_converter_specs_guide.md" },
-    { "JSONLines Ingestion" = "jsonlines_ingest.md" },
     { "Table and Column Transforms" = "table_transforms.md" },
+    { "JSONLines Ingestion" = "jsonlines_ingest.md" },
     { "UniProt and UniRef Ingestion" = "uniprot.md" },
+    { "Schema Converters" = "schema_converters.md" },
     { "NCBI FTP E2E Walkthrough" = "ncbi_ftp_e2e_walkthrough.md" },
     { "Rclone Bulk Transfer" = "rclone_instructions.md" },
   ] },
-  { "Converters and Specifications" = [
-    { "Converter IR Architecture" = "converters_ir.md" },
+  { "Specifications" = [
     { "JSON Schema to PyArrow Spec" = "jsonschema_to_pyarrow_specification.md" },
     { "Pydantic to PyArrow Spec" = "pydantic_to_pyarrow_specification.md" },
     { "XSD to PyArrow Spec" = "xsd_to_pyarrow_specification.md" },
@@ -32,15 +29,34 @@ nav = [
     { "JSONLines (JSON Schema) Pipeline Spec" = "jsonlines_jsonschema_specification.md" },
     { "JSONLines (Pydantic) Pipeline Spec" = "jsonlines_pydantic_specification.md" },
   ] },
+  { "Developer Guides" = [
+    { "Development and Testing" = "development_and_testing.md" },
+    { "Pipeline E2E and Smoke Testing" = "pipeline_e2e_testing_guide.md" },
+    { "Pipeline Specifications Guide" = "pipeline_specs_guide.md" },
+    { "Schema Converter Specifications Guide" = "schema_converter_specs_guide.md" },
+  ] },
   { "API and Schema Reference" = [
     { "Bundled Schemas and XSDs" = "bundled_schemas.md" },
-    { "Schema Source Files" = "schema_source/" },
   ] },
+  { "About These Docs" = "about_these_docs.md" },
 ]
-watch = ["src/cdm_data_loaders/schemas"]
+exclude_docs = "_templates/"
+watch = [
+  "src/cdm_data_loaders/schemas",
+  "docs/_templates",
+  "docs/css",
+  "docs/js",
+  "docs_macros",
+  "specs",
+]
+extra_css = [
+  "css/palette.css",
+  "css/custom.css"
+]
 extra_javascript = [
   "https://unpkg.com/tablesort@5.3.0/dist/tablesort.min.js",
   "js/tablesort.js",
+  "js/palette.js",
 ]
 [project.validation]
 invalid_links = true
@@ -63,26 +79,35 @@ features = [
 
 [[project.theme.palette]]
 media = "(prefers-color-scheme)"
+primary = "teal"
+accent = "teal"
 toggle.icon = "lucide/sun-moon"
 toggle.name = "Use system preference"
-palette.primary = "teal"
-palette.accent = "teal"
 
 [[project.theme.palette]]
 media = "(prefers-color-scheme: light)"
 scheme = "default"
+primary = "teal"
+accent = "teal"
 toggle.icon = "lucide/sun"
 toggle.name = "Switch to dark mode"
 
 [[project.theme.palette]]
 media = "(prefers-color-scheme: dark)"
 scheme = "slate"
+primary = "teal"
+accent = "teal"
 toggle.icon = "lucide/moon"
 toggle.name = "Switch to dark mode"
 
 [project.plugins.search]
 
-[project.plugins.literate-nav]
+[project.plugins.macros]
+module_name = "docs_macros"
+include_dir = "docs/_templates"
+render_by_default = false
+on_error_fail = true
+on_undefined = "strict"
 
 [project.plugins.api-autonav]
 modules = ["src/cdm_data_loaders"]

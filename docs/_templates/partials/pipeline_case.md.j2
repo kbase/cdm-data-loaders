@@ -1,0 +1,48 @@
+{% from "macros/common.md.j2" import fenced_block, rule_links %}
+<a id="{{ case.anchor }}"></a>
+
+### {{ case.title }} (`{{ case.suite }}/{{ case.name }}`)
+
+**Suite:** `{{ case.suite }}` · **Target CLI:** `{{ case.pipeline }}` · **Settings Class:** `{{ case.settings_class_name }}`  
+**Directory:** `{{ case.directory_rel }}/`  
+**Rules:** {{ rule_links(case.rules, code_wrap=true) }}
+
+{% if case.notes %}
+{{ case.notes }}
+
+{% endif %}
+{% for run in case.runs %}
+{% if run.show_heading %}
+#### Run: `{{ run.id }}`
+
+{% endif %}
+{% if run.settings_block is not none %}
+**Settings (`{{ run.settings_rel }}`)**
+
+{{ fenced_block(run.settings_block) }}
+
+{% endif %}
+{% for inp in run.inputs %}
+**Input `{{ inp.rel_in }}` (`{{ inp.repo_rel }}`){% if inp.decompressed %} (decompressed preview){% endif %}**
+
+{{ fenced_block(inp.code_block) }}
+
+{% endfor %}
+**Expected `report.txt` Summary and Row Counts (`{{ run.expected_counts_repr }}`)**
+
+{{ fenced_block(run.report_yaml_block) }}
+
+{% if run.expected_tables_block is not none %}
+**Expected PyArrow Tables (`{{ run.expected_tables_rel }}` — `{{ run.tables_attr }}`)**
+
+{{ fenced_block(run.expected_tables_block) }}
+
+{% endif %}
+{% if run.expected_json_block is not none %}
+**Expected Canonical Table Rows (`{{ run.expected_json_rel }}`)**
+
+{{ fenced_block(run.expected_json_block) }}
+
+{% endif %}
+{% endfor %}
+---

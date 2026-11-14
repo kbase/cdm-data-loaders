@@ -1,48 +1,48 @@
 # Pipeline E2E and Smoke Testing Across Environments Guide
 
-End-to-end (E2E) and smoke tests execute pipelines across multiple execution modes and storage backends.
+End-to-end (E2E) and smoke tests execute specification-driven pipeline cases across multiple execution modes and storage backends. For general `pytest` markers, coverage options, and starting the local Ceph RGW container, see the [Development and Testing Guide](development_and_testing.md).
 
-- **Specification-driven smoke suite**: `tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py`
-- **Unified test runner**: `tests/cdm_data_loaders/pipelines/framework.py` (`PipelineTestRunner`)
-- **Environment resolver**: `tests/pipeline_env.py` (`SmokeEnvConfig`, `resolve_smoke_env`)
-- **dlt config isolation**: `tests/dlt_config_isolation.py` (`write_dlt_config_dir`)
-
----
-
-## 1. Execution Modes and Storage Backends
-
-`PipelineTestRunner` executes a pipeline scenario in one of three modes:
-
-| Execution Mode | Description                                                                             | Entry Point                                                            |
-| -------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `core`         | In-process execution calling `pipeline_module.run(settings)`                            | Direct Python call                                                     |
-| `cli`          | Subprocess execution via pydantic-settings' CliRunner (`CliRunner`) or `subprocess.run` | Registered CLI entry point (e.g., `load-pubmed`, `load-ncbi-datasets`) |
-| `docker`       | Container execution mounting local paths or passing remote URLs                         | `docker run --rm ... <image> <cli_command> ...`                        |
-
-Built-in storage environments in `tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py`:
-
-| Environment ID | Input Storage                                                 | Output and Destination Storage                                                            | Markers / Requirements                                         |
-| -------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `local_fs`     | Local temporary directory                                     | Local filesystem destination (`tmp_path / "local_fs_bucket"`)                             | Always enabled                                                 |
-| `s3_moto`      | In-memory Moto S3 bucket (`s3://input-bucket/<run_slug>/...`) | In-memory Moto S3 bucket (`s3://cdm-lake/<run_slug>` and `s3://output-bucket/<run_slug>`) | Always enabled                                                 |
-| `s3_ceph`      | Local Ceph Nano S3 bucket                                     | Local Ceph Nano S3 bucket                                                                 | Requires `-m requires_ceph` and running Ceph container         |
-| `custom`       | Configured via `--dlt-config-dir` and `--settings-file`       | Configured via `--dlt-config-dir` and `--settings-file`                                   | Enabled when `--dlt-config-dir` or `--settings-file` is passed |
+- **Specification-driven smoke suite**: [`tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py)
+- **Unified test runner**: [`tests/cdm_data_loaders/pipelines/framework.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/framework.py) (`PipelineTestRunner`)
+- **Environment specification and staging**: [`tests/pipeline_env.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/pipeline_env.py) (`PipelineEnvSpec`, `load_pipeline_env_from_dir`, `stage_input_directory`)
+- **`dlt` configuration isolation**: [`tests/dlt_config_isolation.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/dlt_config_isolation.py) (`isolated_dlt_config`, `load_dlt_toml_files`)
 
 ---
 
-## 2. Running Built-In Environments
+## Execution Modes and Storage Backends
 
-### Run All Smoke Scenarios (`local_fs` and `s3_moto`)
+`PipelineTestRunner` ([`tests/cdm_data_loaders/pipelines/framework.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/framework.py)) executes each pipeline scenario in one of three modes:
 
-```bash
+| Execution Mode | Description                                                                                                                                                                        | Entry Point                                                                   |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `core`         | In-process execution calling `cdm_data_loaders.pipelines.core.run_cli`                                                                                                             | Direct Python call                                                            |
+| `cli`          | CLI entrypoint invocation with patched `sys.argv` and reconstructed `LoadInfo`                                                                                                     | Registered `[project.scripts]` CLI (for example, `pubmed` or `ncbi_datasets`) |
+| `docker`       | Container execution via [`scripts/entrypoint.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/entrypoint.sh) (`@pytest.mark.docker`, enabled by `--run-docker`) | `docker run --rm ... <image> pipeline <cli_command> ...`                      |
+
+Built-in and custom storage environments in [`tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py):
+
+| Environment ID | Input Storage                                                 | Output and Destination Storage                                             | Markers and Requirements                                       |
+| -------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `local_fs`     | Local temporary directory                                     | Local filesystem destination                                               | Always enabled                                                 |
+| `s3_moto`      | In-memory Moto S3 bucket (`s3://input-bucket/<run_slug>/...`) | In-memory Moto S3 bucket (`s3://cdm-lake/<run_slug>` and local output dir) | Always enabled                                                 |
+| `s3_ceph`      | Local Ceph RGW S3 bucket                                      | Local Ceph RGW S3 bucket                                                   | Requires `-m requires_ceph` and a running Ceph container       |
+| `custom`       | Configured via `--dlt-config-dir` and `--settings-file`       | Configured via `--dlt-config-dir` and `--settings-file`                    | Enabled when `--dlt-config-dir` or `--settings-file` is passed |
+
+---
+
+## Running Built-In Environments
+
+### Run All Local and Moto Smoke Scenarios (`local_fs` and `s3_moto`)
+
+```sh
 uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py -m "not requires_ceph"
 ```
 
-### Filter by Pipeline (`--smoke-pipeline`)
+### Filter to a Single Pipeline (`--smoke-pipeline`)
 
-Pass `--smoke-pipeline` once or multiple times to restrict the suite to specific pipelines:
+Pass `--smoke-pipeline` to restrict execution to one pipeline (such as `pubmed`, `ncbi_datasets`, `xsv`, or `xmltopyarrow`):
 
-```bash
+```sh
 uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
   --smoke-pipeline pubmed \
   -m "not requires_ceph"
@@ -52,31 +52,31 @@ uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
 
 Run only `local_fs` in `core` mode:
 
-```bash
+```sh
 uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py -k "local_fs and core"
 ```
 
 Run only `s3_moto` in `cli` mode:
 
-```bash
+```sh
 uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py -k "s3_moto and cli"
 ```
 
 ### Run Against Local Ceph (`s3_ceph`)
 
-When a local Ceph Nano container is running, select the `requires_ceph` marker:
+When a local Ceph RGW container is running (see [Development and Testing Guide](development_and_testing.md)), select the `requires_ceph` marker:
 
-```bash
+```sh
 uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py -m requires_ceph
 ```
 
 ---
 
-## 3. Running Against a Custom Environment
+## Running Against a Custom Environment
 
-When `--dlt-config-dir` or `--settings-file` is provided on the `pytest` command line, the test parametrization switches from the built-in `local_fs` / `s3_moto` / `s3_ceph` fixtures to a single `custom` environment.
+When `--dlt-config-dir` or `--settings-file` is provided on the `pytest` command line, `load_pipeline_env_from_dir()` in [`tests/pipeline_env.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/pipeline_env.py) builds a `PipelineEnvSpec` and switches parametrization from the built-in fixtures to that custom environment.
 
-### Step 1: Create a dlt Configuration Directory (`--dlt-config-dir`)
+### Create a `dlt` Configuration Directory (`--dlt-config-dir`)
 
 Create a directory (for example, `/tmp/my-env/dlt_conf`) containing `config.toml` and `secrets.toml`:
 
@@ -94,9 +94,9 @@ aws_access_key_id = "YOUR_ACCESS_KEY"
 aws_secret_access_key = "YOUR_SECRET_KEY"
 ```
 
-Any destination supported by dlt (for example, `filesystem`, `duckdb`, `snowflake`, `postgres`) or Iceberg catalog configuration can be specified inside `config.toml` and `secrets.toml`.
+Any destination supported by `dlt` (for example, `filesystem`, `duckdb`, `snowflake`, or `postgres`) can be configured inside `config.toml` and `secrets.toml`.
 
-### Step 2: Create a Settings File (`--settings-file`)
+### Create a Settings File (`--settings-file`)
 
 Create a TOML, YAML, or JSON settings file (for example, `/tmp/my-env/settings.toml`) with top-level shared settings or per-pipeline sections under `[pipelines.<pipeline_name>]`:
 
@@ -113,15 +113,16 @@ buffer_size = 500
 buffer_size = 100
 ```
 
-Settings Precedence (lowest to highest):
-1. Scenario `settings` defined in `specs/pipelines/<pipeline>/<case>/settings.toml` and `case.yaml`.
-2. Top-level keys in `--settings-file` (filtered to valid fields of the target pipeline's `Settings` model).
-3. Pipeline-specific keys in `[pipelines.<pipeline_name>]` inside `--settings-file`.
-4. Per-run isolated `input_dir` and `output_dir` generated by the test runner.
+Settings merge order from lowest to highest precedence:
 
-### Step 3: Execute the Smoke Test Suite
+- Scenario settings defined in [`specs/pipelines`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines) (`settings.toml` and `case.yaml`).
+- Top-level keys in `--settings-file` (filtered to valid fields of the target pipeline's `Settings` class).
+- Pipeline-specific keys under `[pipelines.<pipeline_name>]` inside `--settings-file`.
+- Per-run isolated `input_dir` and `output_dir` paths generated by the test runner.
 
-```bash
+### Execute the Smoke Test Suite
+
+```sh
 uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
   --dlt-config-dir /tmp/my-env/dlt_conf \
   --settings-file /tmp/my-env/settings.toml \
@@ -130,24 +131,21 @@ uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
 
 ---
 
-## 4. Running with Apache Iceberg (`loader_file_format = "iceberg"` and `.pyiceberg.yaml`)
+## Running with Apache Iceberg (`loader_file_format = "iceberg"` and `.pyiceberg.yaml`)
 
 When testing Iceberg output against a catalog (such as a Polaris REST catalog or SQL catalog) configured via `.pyiceberg.yaml`:
 
-1. **Place `.pyiceberg.yaml` in `$HOME` (`~/.pyiceberg.yaml`)**:
-   - Standard PyIceberg configuration lives at `$HOME/.pyiceberg.yaml`.
-   - `load_pipeline_env_from_dir()` and `PipelineTestRunner` ignore any `.pyiceberg.yaml` placed inside `--dlt-config-dir`.
-   - In Docker mode (`--run-docker`), `PipelineTestRunner` stages `$HOME/.pyiceberg.yaml` from the host into `/input_dir/dlt_conf/.pyiceberg.yaml`, and `scripts/entrypoint.sh` copies it to `$HOME/.pyiceberg.yaml` inside the container.
-2. **Manage Table Lifecycle Across Runs in a Scratch Catalog**:
-   - Because preset pipelines such as `ncbi_datasets` and `pubmed` use a fixed `dataset_name` (`ncbi_datasets` or `pubmed`), consecutive test cases writing to a persistent catalog (such as Polaris) will append to existing catalog tables unless tables are dropped before or after each run.
-   - Use either `pytest` CLI flags or `settings.toml` keys to control catalog table cleanup:
+- **Place `.pyiceberg.yaml` in `$HOME` (`~/.pyiceberg.yaml`)**:
+  - Standard PyIceberg configuration lives at `$HOME/.pyiceberg.yaml`; `load_pipeline_env_from_dir()` ignores any `.pyiceberg.yaml` placed inside `--dlt-config-dir`.
+  - In Docker mode (`--run-docker`), `PipelineTestRunner` copies `$HOME/.pyiceberg.yaml` from the host into `/input_dir/dlt_conf/.pyiceberg.yaml`, and [`scripts/entrypoint.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/entrypoint.sh) copies it to `$HOME/.pyiceberg.yaml` inside the container.
+- **Manage Table Lifecycle Across Runs in a Persistent Catalog**:
+  - Preset pipelines such as `ncbi_datasets` and `pubmed` use a fixed `dataset_name`, so consecutive test cases targeting a persistent catalog append to existing catalog tables unless tables are dropped before or after each run.
+  - Use either `pytest` CLI flags or `settings.toml` keys (at the top level or under `[pipelines.<pipeline_name>]`) to control catalog cleanup:
 
-| CLI Flag                 | `settings.toml` Key           | Behavior                                                                                                          |
-| ------------------------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `--drop-existing-tables` | `drop_existing_tables = true` | Drops any existing tables for the target pipeline's dataset from the Iceberg catalog before each test run starts. |
-| `--drop-tables-after`    | `drop_tables_after = true`    | Drops any tables added to the Iceberg catalog during the test run when the test finishes (`finally:` block).      |
-
-Both `drop_existing_tables` and `drop_tables_after` can be set at the top level of `settings.toml` or under `[pipelines.<pipeline_name>]`.
+| CLI Flag                 | `settings.toml` Key           | Behavior                                                                                                               |
+| ------------------------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `--drop-existing-tables` | `drop_existing_tables = true` | Drops existing tables in the target pipeline's dataset namespace from the Iceberg catalog before each test run starts. |
+| `--drop-tables-after`    | `drop_tables_after = true`    | Drops tables added to the Iceberg catalog during the test run when the test finishes (`finally:` block).               |
 
 Example `settings.toml` for running `ncbi_datasets` with Iceberg and a Polaris REST catalog configured in `~/.pyiceberg.yaml`:
 
@@ -161,7 +159,7 @@ drop_tables_after = true
 
 Example `pytest` invocation:
 
-```bash
+```sh
 uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
   --dlt-config-dir /tmp/my-env/dlt_conf \
   --settings-file /tmp/my-env/settings.toml \
@@ -172,15 +170,15 @@ uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
 
 ---
 
-## 5. Running in Docker Mode (`--run-docker`)
+## Running in Docker Mode (`--run-docker`)
 
-Enable the `docker` execution mode by passing `--run-docker` and `--docker-image` (defaults to `cdm-data-loaders:latest`):
+Enable the `docker` execution mode by passing `--run-docker` (and optionally `--docker-image`; if omitted, `PipelineTestRunner` builds `ghcr.io/kbase/cdm-data-loaders:test_container` automatically):
 
-```bash
-# Build the image first
+```sh
+# optionally pre-build a local image tag
 docker build -t cdm-data-loaders:latest .
 
-# Run smoke tests in Docker against a custom S3 environment
+# run smoke tests in Docker mode
 uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
   --dlt-config-dir /tmp/my-env/dlt_conf \
   --settings-file /tmp/my-env/settings.toml \
@@ -189,23 +187,23 @@ uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
   -k "docker"
 ```
 
-How `PipelineTestRunner` handles Docker mounts and environment variables:
-- **Local paths**: When `input_dir`, `output_dir`, or `dlt` `bucket_url` are local paths, `PipelineTestRunner` bind-mounts them into `/mnt/input`, `/mnt/output`, and `/mnt/dlt_dest` inside the container.
-- **Remote URLs (`s3://...`)**: When `input_dir` or `output_dir` are `s3://` URLs, `PipelineTestRunner` passes the remote URLs to the CLI command inside the container without bind-mounting local directories.
-- **dlt configuration**: `PipelineTestRunner` mounts the isolated `dlt_conf` directory at `/mnt/dlt_conf` and sets `DLT_PROJECT_DIR=/mnt/dlt_conf` and `DLT_DATA_DIR=/mnt/dlt_data` inside the container.
-- **S3 credentials**: AWS/S3 environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_ENDPOINT`, `FSSPEC_S3_ENDPOINT_URL`, `FSSPEC_S3_KEY`, `FSSPEC_S3_SECRET`) are forwarded into the container when set.
+How `PipelineTestRunner` ([`tests/cdm_data_loaders/pipelines/framework.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/framework.py)) stages files and mounts directories in `docker` mode:
+
+- **Input directory and `dlt` configuration**: Local `input_dir` contents (along with `dlt_conf/config.toml`, `dlt_conf/secrets.toml`, and `$HOME/.pyiceberg.yaml` when present) are staged on the host and bind-mounted at `/input_dir`, while `output_dir` is bind-mounted at `/output_dir`.
+- **Remote URLs (`s3://...`)**: When `--input-dir` is an `s3://` URL, `PipelineTestRunner` passes the remote URL directly to the CLI command inside the container while still mounting `/input_dir` so [`scripts/entrypoint.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/entrypoint.sh) copies `/input_dir/dlt_conf` into `$HOME/.dlt`.
+- **Auxiliary schema files and dynamic Python modules**: Local files passed via `--xsd-file`, `--schema-file`, `-s`, or `--log-config-file` are staged read-only at `/aux_dir`, and dynamically generated schema/model modules (`--entity-models`, `--entity-schemas`, `-m`) are materialized read-only at `/pymodules` on `PYTHONPATH`.
 
 ---
 
-## 6. Per-Run Isolation on Shared Buckets
+## Per-Run Isolation on Shared Buckets
 
-When running against a shared S3 bucket or shared local directory, `test_pipeline_smoke_spec.py` isolates each test invocation using a deterministic `run_slug`:
+When running against a shared S3 bucket or shared local directory, [`tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py) isolates each test invocation using a per-run `run_slug`:
 
 ```text
 <pipeline>_<run_id>_<mode>_<8-char-uuid>
 ```
 
-- **Input files**: Staged under `<input_base>/<run_slug>/` (both local paths and `s3://` URLs via `fsspec`).
+- **Input files**: Staged under `<input_base>/<run_slug>/` (both local directories and `s3://` prefixes via `stage_input_directory()`).
 - **Output reports and logs**: Written under `<output_base>/<run_slug>/`.
 - **dlt destination**: Written under `<bucket_url>/<run_slug>` with `preserve_dlt_destination=True` for `parquet`/`jsonl` runs; for `loader_file_format = "iceberg"`, `<bucket_url>` is preserved unchanged so table locations remain under the catalog namespace's allowed warehouse path (use `--drop-existing-tables` / `--drop-tables-after` for per-run isolation).
 
@@ -213,11 +211,11 @@ This prevents table collisions, schema pollution, or report overwrites when mult
 
 ---
 
-## 7. What Every Run Verifies
+## What Every Run Verifies
 
-Regardless of execution mode (`core`, `cli`, `docker`) or storage backend (`local_fs`, `s3_moto`, `s3_ceph`, `custom`), `assert_smoke_run_output()` in `tests/cdm_data_loaders/pipelines/helpers.py` verifies:
+Regardless of execution mode (`core`, `cli`, or `docker`) or storage backend (`local_fs`, `s3_moto`, `s3_ceph`, or `custom`), `assert_smoke_run_output()` in [`tests/cdm_data_loaders/pipelines/helpers.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/helpers.py) verifies:
 
-1. **Exit Code Contract**: Even when a run records rejected files or failed records (`status: "completed with errors"`), the CLI and Docker process must exit with code `0` so the KBase Container Task Service (CTS) preserves output artifacts and logs.
-2. **Summary Report (`report.txt`)**: Parses `status`, `Metrics` (`files_processed`, `records_extracted`, `records_failed`, `files_rejected`), `Output Tables`, and `Errors` from `<output_dir>/<run_id>/report.txt` and matches them against `expected_report` in `rules.yaml`.
-3. **Audit Table (`_load_info`)**: Reads the `_load_info` table from the dlt destination and asserts that the audit row exists for `run_id`.
-4. **Destination Tables (`expected/*.json`)**: Reads every output table from the dlt dataset via `read_destination_tables()`, normalizes volatile dlt metadata (`_dlt_load_id`, `_dlt_id`), strips null columns that dlt omits from materialization, and asserts row-level equality against `specs/pipelines/<pipeline>/expected/<scenario>_<table>.json`.
+- **Exit Code Contract**: Even when a run records rejected files or failed records (`status: "completed with errors"`), the CLI and Docker process exit with code `0` so the KBase CDM Task Service (CTS) preserves output artifacts and logs.
+- **Summary Report (`report.txt`)**: Parses `<output_dir>/report.txt` and matches `pipeline`, `dataset`, `status`, `ingested_files`, `load_errors`, `pipeline_load_info_errs`, `load_ids`, and `started` / `finished` timestamps against `expected_report` in `case.yaml`.
+- **Audit Table (`_load_info`)**: Reads `_load_info` from the `dlt` destination and asserts that the run audit row is present.
+- **Destination Tables (`expected_tables.py` and `expected.json`)**: Reads every output table from the `dlt` destination, strips volatile `_dlt_*` metadata columns and unmaterialized `null` fields, checks `expected_counts`, and asserts canonical row equality against both `expected_tables.py` and `expected.json`.

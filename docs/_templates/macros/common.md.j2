@@ -1,0 +1,30 @@
+{% macro fenced_block(block, expandable=true, summary="") -%}
+{% set linenums_attr = ' linenums="1"' if block.linenums else '' %}
+{% set title_attr = ' title="' ~ block.title ~ '"' if block.title else '' %}
+{% set rendered -%}
+{{ block.fence }}{{ block.lang }}{{ linenums_attr }}{{ title_attr }}
+{{ block.content }}
+{{ block.fence }}
+{%- endset %}
+{% if expandable -%}
+??? abstract "{{ summary or block.title or block.lang }}"
+
+{{ rendered | indent(4, first=True) }}
+{%- else -%}
+{{ rendered }}
+{%- endif %}
+{%- endmacro %}
+
+{% macro rule_links(rules, code_wrap=false) -%}
+{% if rules %}{% for r in rules %}{% if code_wrap %}[`{{ r.id }}`](#{{ r.anchor }}){% else %}[{{ r.id }}](#{{ r.anchor }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}
+{%- endmacro %}
+
+{% macro case_links(cases, fallback="") -%}
+{% if cases %}{% for c in cases %}{% if c.code_wrap %}[`{{ c.label }}`](#{{ c.anchor }}){% else %}[{{ c.label }}](#{{ c.anchor }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}{{ fallback }}{% endif %}
+{%- endmacro %}
+
+{% macro run_suffix(run, target_label=none) -%}
+{% set params_str %}{% if run.param_pairs %} ({% for k, v in run.param_pairs %}`{{ k }}={{ v }}`{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}{% endset -%}
+{% set target_str %}{% if target_label and run.xml_tag_override_repr is not none %} (`{{ target_label }}={{ run.xml_tag_override_repr }}`){% endif %}{% endset -%}
+{{ params_str }}{{ target_str }}
+{%- endmacro %}

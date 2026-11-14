@@ -1,0 +1,5 @@
+| {{ headers | join(" | ") }} |
+|{% for _ in headers %} :--- |{% endfor %}
+{% for row in rows %}
+| {{ row.cells | join(" | ") }} |
+{% endfor %}
