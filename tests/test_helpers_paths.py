@@ -1,4 +1,4 @@
-"""Tests for generic dictionary path assignment."""
+"""Tests for generic dictionary path assignment in ``tests.helpers``."""
 
 from collections.abc import Sequence
 from copy import deepcopy
@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from cdm_data_loaders.utils.paths import NestedPathError, set_nested
+from tests.helpers import NestedPathError, set_nested
 
 
 @pytest.mark.parametrize(

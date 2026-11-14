@@ -21,7 +21,7 @@ import tempfile
 from datetime import UTC, datetime
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
-from typing import Any, TypedDict
+from typing import Any, Final, TypedDict
 
 from frictionless import Package
 
@@ -30,18 +30,18 @@ from cdm_data_loaders.utils.file_transfer.s3.object_utils import copy_object, ob
 
 logger: Logger = getLogger(__name__)
 
-_NCBI_CONTRIBUTOR = {
+NCBI_CONTRIBUTOR: Final[dict[str, str]] = {
     "contributor_type": "Organization",
     "name": "National Center for Biotechnology Information",
     "contributor_id": "ROR:02meqm098",
     "contributor_roles": "DataCurator",
 }
-_NCBI_PUBLISHER = {
+NCBI_PUBLISHER: Final[dict[str, str]] = {
     "organization_name": "National Center for Biotechnology Information",
     "organization_id": "ROR:02meqm098",
 }
-_SAVED_BY = "cdm-data-loaders-ncbi-ftp"
-_SCHEMA_VERSION = "1.0"
+SAVED_BY: Final[str] = "cdm-data-loaders-ncbi-ftp"
+SCHEMA_VERSION: Final[str] = "1.0"
 
 
 class DescriptorResource(TypedDict, total=False):
@@ -153,11 +153,11 @@ def create_descriptor(
             {"description_text": (f"Genome assembly files for {accession_full} downloaded from NCBI Datasets")}
         ],
         "url": f"https://www.ncbi.nlm.nih.gov/datasets/genome/{accession_full}/",
-        "contributors": [_NCBI_CONTRIBUTOR],
-        "publisher": _NCBI_PUBLISHER,
+        "contributors": [NCBI_CONTRIBUTOR],
+        "publisher": NCBI_PUBLISHER,
         "license": {},
         "meta": {
-            "credit_metadata_schema_version": _SCHEMA_VERSION,
+            "credit_metadata_schema_version": SCHEMA_VERSION,
             "credit_metadata_source": [
                 {
                     "source_name": "NCBI Genomes FTP",
@@ -165,7 +165,7 @@ def create_descriptor(
                     "access_timestamp": ts,
                 }
             ],
-            "saved_by": _SAVED_BY,
+            "saved_by": SAVED_BY,
             "timestamp": ts,
         },
         "resources": normalised,

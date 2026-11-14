@@ -16,7 +16,7 @@ All paths below are under `src/cdm_data_loaders/converters/`.
 core/                          shared, target-independent foundation
   errors.py                    ConversionError base class
   ir.py                        NodeType, Source, Provenance, NodeHints, TypedNode,
-                               Field, SchemaDocument, Reader/Emitter protocols, SPEC_* constants
+                               Field, SchemaDocument, Emitter protocol, SPEC_* constants
   ir_values.py                 Value, freeze_value, freeze_mapping, mutable_value
   extensions.py                ExtensionError, ExtensionSpec, ExtensionRegistry,
                                Extensions, DEFAULT_EXTENSIONS, validated_extensions
@@ -75,7 +75,7 @@ live in `cdm_data_loaders.converters.cli`.
 
 | Module                               | Public API                                                                                                                                     |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `core/ir.py`                         | `NodeType`, `Source`, `Provenance`, `NodeHints`, `TypedNode`, `Field`, `SchemaDocument`, `Reader`, `Emitter`, `SPEC_*`                         |
+| `core/ir.py`                         | `NodeType`, `Source`, `Provenance`, `NodeHints`, `TypedNode`, `Field`, `SchemaDocument`, `Emitter`, `SPEC_*`                                 |
 | `core/ir_values.py`                  | `Value`, `freeze_value`, `freeze_mapping`, `mutable_value`                                                                                     |
 | `core/extensions.py`                 | `ExtensionError`, `ExtensionSpec`, `ExtensionRegistry`, `Extensions`, `DEFAULT_EXTENSIONS`, `validated_extensions`                             |
 | `core/guards.py`                     | `DEFAULT_MAX_RECURSION_DEPTH`, `validate_max_recursion_depth`, `require_schema_keyword`, `require_object_root`, `reject_unresolved_references` |
@@ -402,9 +402,6 @@ JsonSchemaEmitter.emit_node(node: TypedNode) -> dict[str, Any] | bool
 JsonSchemaEmitter.emit_field(field: Field) -> dict[str, Any] | bool
 PySparkEmitter.emit_node(node: TypedNode, ctx: ConversionContext | None = None) -> DataType
 PyArrowEmitter.emit_node(node: TypedNode, ctx: ConversionContext | None = None) -> pa.DataType
-
-class Reader[Input, Output](Protocol):
-    def read(self, source: Input) -> Output: ...
 
 class Emitter[Output](Protocol):
     def emit(self, document: SchemaDocument) -> Output: ...

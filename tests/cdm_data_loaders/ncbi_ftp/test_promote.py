@@ -30,17 +30,17 @@ from tests.cdm_data_loaders.ncbi_ftp.conftest import (
 
 # Promotion test constants
 
-_STAGE_PREFIX: PurePosixPath = PurePosixPath("staging") / "run1"
+STAGE_PREFIX: PurePosixPath = PurePosixPath("staging") / "run1"
 
 # Assembly 1
-_ACC1: str = "GCF_000001215.4"
-_STG1: PurePosixPath = _STAGE_PREFIX / "raw_data" / ACC_PATH_215
-_LKH1: PurePosixPath = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215
+ACC1: str = "GCF_000001215.4"
+STG1: PurePosixPath = STAGE_PREFIX / "raw_data" / ACC_PATH_215
+LKH1: PurePosixPath = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_215
 
 # Assembly 2
-_ACC2: str = "GCF_000005845.2"
-_STG2: PurePosixPath = _STAGE_PREFIX / "raw_data" / ACC_PATH_845
-_LKH2: PurePosixPath = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_845
+ACC2: str = "GCF_000005845.2"
+STG2: PurePosixPath = STAGE_PREFIX / "raw_data" / ACC_PATH_845
+LKH2: PurePosixPath = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_845
 
 
 class DownloadFileClient(Protocol):
@@ -912,16 +912,16 @@ def test_promote_multi_file_all_land_at_final_path(
 ) -> None:
     """All files for an assembly are promoted concurrently — none missed."""
     file_names = [
-        f"{_ACC1}_genomic.fna.gz",
-        f"{_ACC1}_protein.faa.gz",
-        f"{_ACC1}_rna.fna.gz",
-        f"{_ACC1}_assembly_report.txt",
-        f"{_ACC1}_assembly_stats.txt",
+        f"{ACC1}_genomic.fna.gz",
+        f"{ACC1}_protein.faa.gz",
+        f"{ACC1}_rna.fna.gz",
+        f"{ACC1}_assembly_report.txt",
+        f"{ACC1}_assembly_stats.txt",
     ]
-    stage_files_with_sidecars(mock_s3_client, _STG1, {PurePosixPath(f): f.encode() for f in file_names})
+    stage_files_with_sidecars(mock_s3_client, STG1, {PurePosixPath(f): f.encode() for f in file_names})
 
     report = promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
@@ -930,7 +930,7 @@ def test_promote_multi_file_all_land_at_final_path(
     assert report["promoted"] == len(file_names)
     assert report["failed"] == 0
     for fname in file_names:
-        resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=f"{_LKH1 / fname}")
+        resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=f"{LKH1 / fname}")
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == HTTPStatus.OK
 
 
@@ -940,21 +940,21 @@ def test_promote_multi_file_content_preserved(
 ) -> None:
     """Content at the final key is byte-identical to the staged content."""
     files = {
-        PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"\x1f\x8bGENOMIC",
-        PurePosixPath(f"{_ACC1}_protein.faa.gz"): b"\x1f\x8bPROTEIN",
-        PurePosixPath(f"{_ACC1}_rna.fna.gz"): b"\x1f\x8bRNA",
+        PurePosixPath(f"{ACC1}_genomic.fna.gz"): b"\x1f\x8bGENOMIC",
+        PurePosixPath(f"{ACC1}_protein.faa.gz"): b"\x1f\x8bPROTEIN",
+        PurePosixPath(f"{ACC1}_rna.fna.gz"): b"\x1f\x8bRNA",
     }
-    stage_files_with_sidecars(mock_s3_client, _STG1, files)
+    stage_files_with_sidecars(mock_s3_client, STG1, files)
 
     promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
     for fname, expected in files.items():
-        obj = mock_s3_client.get_object(Bucket=str(TEST_BUCKET), Key=f"{_LKH1 / fname}")
+        obj = mock_s3_client.get_object(Bucket=str(TEST_BUCKET), Key=f"{LKH1 / fname}")
         assert obj["Body"].read() == expected, f"Content mismatch for {fname}"
 
 
@@ -964,18 +964,18 @@ def test_promote_md5_metadata_set_from_sidecar(
 ) -> None:
     """MD5 metadata on the promoted object matches the .md5 sidecar value."""
     content = b"\x1f\x8bGENOMIC"
-    fname = PurePosixPath(f"{_ACC1}_genomic.fna.gz")
-    stage_files_with_sidecars(mock_s3_client, _STG1, {fname: content}, with_md5=True)
+    fname = PurePosixPath(f"{ACC1}_genomic.fna.gz")
+    stage_files_with_sidecars(mock_s3_client, STG1, {fname: content}, with_md5=True)
     expected_md5 = md5_hex(content)
 
     promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
-    resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(_LKH1 / fname))
+    resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(LKH1 / fname))
     assert resp["Metadata"].get("md5") == expected_md5
 
 
@@ -984,17 +984,17 @@ def test_promote_no_sidecar_no_md5_metadata(
     mock_s3_client: botocore.client.BaseClient,
 ) -> None:
     """A file staged without a .md5 sidecar is promoted but carries no md5 metadata."""
-    fname = PurePosixPath(f"{_ACC1}_genomic.fna.gz")
-    stage_files_with_sidecars(mock_s3_client, _STG1, {fname: b"data"}, with_md5=False)
+    fname = PurePosixPath(f"{ACC1}_genomic.fna.gz")
+    stage_files_with_sidecars(mock_s3_client, STG1, {fname: b"data"}, with_md5=False)
 
     promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
-    resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(_LKH1 / fname))
+    resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(LKH1 / fname))
     assert resp["Metadata"].get("md5") is None
 
 
@@ -1004,13 +1004,13 @@ def test_promote_staging_data_files_deleted_after_promote(
 ) -> None:
     """Staged data files are deleted from staging after a fully successful assembly promote."""
     files = {
-        PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"genomic",
-        PurePosixPath(f"{_ACC1}_protein.faa.gz"): b"protein",
+        PurePosixPath(f"{ACC1}_genomic.fna.gz"): b"genomic",
+        PurePosixPath(f"{ACC1}_protein.faa.gz"): b"protein",
     }
-    staged_keys = stage_files_with_sidecars(mock_s3_client, _STG1, files)
+    staged_keys = stage_files_with_sidecars(mock_s3_client, STG1, files)
 
     promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
@@ -1027,13 +1027,13 @@ def test_promote_md5_sidecars_deleted_after_promote(
 ) -> None:
     """Staged .md5 sidecar files are deleted from staging after a successful promote."""
     files = {
-        PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"genomic",
-        PurePosixPath(f"{_ACC1}_protein.faa.gz"): b"protein",
+        PurePosixPath(f"{ACC1}_genomic.fna.gz"): b"genomic",
+        PurePosixPath(f"{ACC1}_protein.faa.gz"): b"protein",
     }
-    staged_keys = stage_files_with_sidecars(mock_s3_client, _STG1, files, with_md5=True)
+    staged_keys = stage_files_with_sidecars(mock_s3_client, STG1, files, with_md5=True)
 
     promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
@@ -1050,17 +1050,17 @@ def test_promote_crc64nvme_sidecars_deleted_after_promote(
     mock_s3_client: botocore.client.BaseClient,
 ) -> None:
     """Staged .crc64nvme sidecar files are also batch-deleted after a successful promote."""
-    fname = PurePosixPath(f"{_ACC1}_genomic.fna.gz")
-    stage_files_with_sidecars(mock_s3_client, _STG1, {fname: b"data"}, with_md5=True, with_crc64=True)
+    fname = PurePosixPath(f"{ACC1}_genomic.fna.gz")
+    stage_files_with_sidecars(mock_s3_client, STG1, {fname: b"data"}, with_md5=True, with_crc64=True)
 
     promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
 
-    staged_key = f"{_STG1}{fname}"
+    staged_key = f"{STG1}{fname}"
     for sidecar_key in (f"{staged_key}.md5", f"{staged_key}.crc64nvme"):
         result = mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(sidecar_key))
         assert result.get("KeyCount", 0) == 0, f"Sidecar not deleted: {sidecar_key}"
@@ -1090,16 +1090,16 @@ def test_promote_partial_failure_staging_not_cleaned(
     Preserving staging on partial failure lets an operator re-run without
     re-staging and without losing the partially-promoted state.
     """
-    file_ok = PurePosixPath(f"{_ACC1}_genomic.fna.gz")
-    file_fail = PurePosixPath(f"{_ACC1}_protein.faa.gz")
-    stage_files_with_sidecars(mock_s3_client, _STG1, {file_ok: b"ok", file_fail: b"fail"})
-    staged_ok = _STG1 / file_ok
-    staged_fail = _STG1 / file_fail
+    file_ok = PurePosixPath(f"{ACC1}_genomic.fna.gz")
+    file_fail = PurePosixPath(f"{ACC1}_protein.faa.gz")
+    stage_files_with_sidecars(mock_s3_client, STG1, {file_ok: b"ok", file_fail: b"fail"})
+    staged_ok = STG1 / file_ok
+    staged_fail = STG1 / file_fail
 
     _fail_download_for_key(mock_s3_client, staged_fail)
 
     report = promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
@@ -1120,16 +1120,16 @@ def test_promote_partial_failure_failed_count(
 ) -> None:
     r"""report[\"failed\"] reflects the number of files that could not be promoted."""
     file_names = [
-        PurePosixPath(f"{_ACC1}_genomic.fna.gz"),
-        PurePosixPath(f"{_ACC1}_protein.faa.gz"),
-        PurePosixPath(f"{_ACC1}_rna.fna.gz"),
+        PurePosixPath(f"{ACC1}_genomic.fna.gz"),
+        PurePosixPath(f"{ACC1}_protein.faa.gz"),
+        PurePosixPath(f"{ACC1}_rna.fna.gz"),
     ]
-    stage_files_with_sidecars(mock_s3_client, _STG1, dict.fromkeys(file_names, b"data"))
+    stage_files_with_sidecars(mock_s3_client, STG1, dict.fromkeys(file_names, b"data"))
 
-    _fail_download_for_key(mock_s3_client, _STG1 / file_names[1])
+    _fail_download_for_key(mock_s3_client, STG1 / file_names[1])
 
     report = promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
@@ -1151,19 +1151,19 @@ def test_promote_two_assemblies_independent_cleanup(
     # Assembly 1: two files, both succeed
     stage_files_with_sidecars(
         mock_s3_client,
-        _STG1,
-        {PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"g1", PurePosixPath(f"{_ACC1}_protein.faa.gz"): b"p1"},
+        STG1,
+        {PurePosixPath(f"{ACC1}_genomic.fna.gz"): b"g1", PurePosixPath(f"{ACC1}_protein.faa.gz"): b"p1"},
     )
     # Assembly 2: two files, one will fail
     stage_files_with_sidecars(
         mock_s3_client,
-        _STG2,
-        {PurePosixPath(f"{_ACC2}_genomic.fna.gz"): b"g2", PurePosixPath(f"{_ACC2}_protein.faa.gz"): b"p2"},
+        STG2,
+        {PurePosixPath(f"{ACC2}_genomic.fna.gz"): b"g2", PurePosixPath(f"{ACC2}_protein.faa.gz"): b"p2"},
     )
-    _fail_download_for_key(mock_s3_client, f"{_STG2 / _ACC2}_protein.faa.gz")
+    _fail_download_for_key(mock_s3_client, f"{STG2 / ACC2}_protein.faa.gz")
 
     report = promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
@@ -1172,13 +1172,13 @@ def test_promote_two_assemblies_independent_cleanup(
     assert report["failed"] == 1
 
     # Assembly 1 staging must be gone
-    for fname in (f"{_ACC1}_genomic.fna.gz", f"{_ACC1}_protein.faa.gz"):
-        result = mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(_STG1 / fname))
+    for fname in (f"{ACC1}_genomic.fna.gz", f"{ACC1}_protein.faa.gz"):
+        result = mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(STG1 / fname))
         assert result.get("KeyCount", 0) == 0, f"Assembly 1 staging should be cleaned: {fname}"
 
     # Assembly 2 staging must remain (partial failure)
-    for fname in (f"{_ACC2}_genomic.fna.gz", f"{_ACC2}_protein.faa.gz"):
-        resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(_STG2 / fname))
+    for fname in (f"{ACC2}_genomic.fna.gz", f"{ACC2}_protein.faa.gz"):
+        resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(STG2 / fname))
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == HTTPStatus.OK, (
             f"Assembly 2 staging must survive partial failure: {fname}"
         )
@@ -1189,11 +1189,11 @@ def test_promote_multi_assembly_all_succeed_all_cleaned(
     mock_s3_client: botocore.client.BaseClient,
 ) -> None:
     """Two assemblies both fully succeed → all staged files removed for both."""
-    stage_files_with_sidecars(mock_s3_client, _STG1, {PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"g1"})
-    stage_files_with_sidecars(mock_s3_client, _STG2, {PurePosixPath(f"{_ACC2}_genomic.fna.gz"): b"g2"})
+    stage_files_with_sidecars(mock_s3_client, STG1, {PurePosixPath(f"{ACC1}_genomic.fna.gz"): b"g1"})
+    stage_files_with_sidecars(mock_s3_client, STG2, {PurePosixPath(f"{ACC2}_genomic.fna.gz"): b"g2"})
 
     report = promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
@@ -1203,8 +1203,8 @@ def test_promote_multi_assembly_all_succeed_all_cleaned(
     assert report["failed"] == 0
 
     for stg, fname, lkh in (
-        (_STG1, f"{_ACC1}_genomic.fna.gz", _LKH1),
-        (_STG2, f"{_ACC2}_genomic.fna.gz", _LKH2),
+        (STG1, f"{ACC1}_genomic.fna.gz", LKH1),
+        (STG2, f"{ACC2}_genomic.fna.gz", LKH2),
     ):
         result = mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(stg / fname))
         assert result.get("KeyCount", 0) == 0, f"Staging not cleaned: {fname}"
@@ -1217,11 +1217,11 @@ def test_promote_dry_run_multi_file_no_writes_no_cleanup(
     mock_s3_client: botocore.client.BaseClient,
 ) -> None:
     """dry_run with multiple files writes nothing to final path and does not delete staging."""
-    file_names = [f"{_ACC1}_genomic.fna.gz", f"{_ACC1}_protein.faa.gz", f"{_ACC1}_rna.fna.gz"]
-    staged_keys = stage_files_with_sidecars(mock_s3_client, _STG1, {PurePosixPath(f): f.encode() for f in file_names})
+    file_names = [f"{ACC1}_genomic.fna.gz", f"{ACC1}_protein.faa.gz", f"{ACC1}_rna.fna.gz"]
+    staged_keys = stage_files_with_sidecars(mock_s3_client, STG1, {PurePosixPath(f): f.encode() for f in file_names})
 
     report = promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
@@ -1232,7 +1232,7 @@ def test_promote_dry_run_multi_file_no_writes_no_cleanup(
     assert report["dry_run"] is True
 
     # Final path must be empty
-    result = mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(_LKH1))
+    result = mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(LKH1))
     assert result.get("KeyCount", 0) == 0
 
     # Staging keys must survive
@@ -1247,12 +1247,12 @@ def test_promote_skips_non_raw_data_paths(
 ) -> None:
     """Files outside raw_data/ (e.g. download_report.json) are silently skipped."""
     # Stage a real data file alongside non-promotable files
-    stage_files_with_sidecars(mock_s3_client, _STG1, {PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"data"})
-    mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(_STAGE_PREFIX / "download_report.json"), Body=b"{}")
-    mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(_STAGE_PREFIX / "logs/run.log"), Body=b"logs")
+    stage_files_with_sidecars(mock_s3_client, STG1, {PurePosixPath(f"{ACC1}_genomic.fna.gz"): b"data"})
+    mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(STAGE_PREFIX / "download_report.json"), Body=b"{}")
+    mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(STAGE_PREFIX / "logs/run.log"), Body=b"logs")
 
     report = promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
@@ -1267,16 +1267,16 @@ def test_promote_idempotent_second_run_on_empty_staging(
     mock_s3_client: botocore.client.BaseClient,
 ) -> None:
     """Second promote run after staging has been cleaned promotes 0 files without error."""
-    stage_files_with_sidecars(mock_s3_client, _STG1, {PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"data"})
+    stage_files_with_sidecars(mock_s3_client, STG1, {PurePosixPath(f"{ACC1}_genomic.fna.gz"): b"data"})
 
     report1 = promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
     )
     report2 = promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
@@ -1287,7 +1287,7 @@ def test_promote_idempotent_second_run_on_empty_staging(
     assert report2["failed"] == 0
 
     # Final key still present after second run
-    resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=f"{_LKH1 / _ACC1}_genomic.fna.gz")
+    resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=f"{LKH1 / ACC1}_genomic.fna.gz")
     assert resp["ResponseMetadata"]["HTTPStatusCode"] == HTTPStatus.OK
 
 
@@ -1297,14 +1297,14 @@ def test_promote_multi_file_md5_per_file(
 ) -> None:
     """Each promoted file carries the MD5 matching its own content, not another file's."""
     files = {
-        PurePosixPath(f"{_ACC1}_genomic.fna.gz"): b"GENOMIC_UNIQUE",
-        PurePosixPath(f"{_ACC1}_protein.faa.gz"): b"PROTEIN_UNIQUE",
-        PurePosixPath(f"{_ACC1}_rna.fna.gz"): b"RNA_UNIQUE",
+        PurePosixPath(f"{ACC1}_genomic.fna.gz"): b"GENOMIC_UNIQUE",
+        PurePosixPath(f"{ACC1}_protein.faa.gz"): b"PROTEIN_UNIQUE",
+        PurePosixPath(f"{ACC1}_rna.fna.gz"): b"RNA_UNIQUE",
     }
-    stage_files_with_sidecars(mock_s3_client, _STG1, files, with_md5=True)
+    stage_files_with_sidecars(mock_s3_client, STG1, files, with_md5=True)
 
     promote_from_s3(
-        staging_key_prefix=_STAGE_PREFIX,
+        staging_key_prefix=STAGE_PREFIX,
         staging_bucket=TEST_BUCKET,
         lakehouse_bucket=TEST_BUCKET,
         lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
@@ -1312,5 +1312,5 @@ def test_promote_multi_file_md5_per_file(
 
     for fname, content in files.items():
         expected_md5 = md5_hex(content)
-        resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(_LKH1 / fname))
+        resp = mock_s3_client.head_object(Bucket=str(TEST_BUCKET), Key=str(LKH1 / fname))
         assert resp["Metadata"].get("md5") == expected_md5, f"Wrong MD5 on {fname}"

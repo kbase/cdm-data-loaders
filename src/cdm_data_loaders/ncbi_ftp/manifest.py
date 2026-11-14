@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from ftplib import FTP
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Final
 from urllib.parse import urlsplit
 
 from cdm_data_loaders.ncbi_ftp.assembly import (
@@ -40,7 +40,7 @@ from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
 
 logger: Logger = getLogger(__name__)
 
-_DATABASE_ACC_PREFIX: dict[str, str] = {
+DATABASE_ACC_PREFIX: Final[dict[str, str]] = {
     "refseq": "GCF_",
     "genbank": "GCA_",
 }
@@ -51,11 +51,11 @@ SUMMARY_FTP_PATHS: dict[str, PurePosixPath] = {
 }
 
 # Assembly summary file columns of interest
-_ACCESSION_COL = 0
-_STATUS_COL = 10
-_SEQ_REL_DATE_COL = 14
-_FTP_URL_COL = 19
-_MIN_COL = 20
+ACCESSION_COL: Final[int] = 0
+STATUS_COL: Final[int] = 10
+SEQ_REL_DATE_COL: Final[int] = 14
+FTP_URL_COL: Final[int] = 19
+MIN_COL: Final[int] = 20
 
 # Data structures
 
@@ -138,10 +138,10 @@ def parse_assembly_summary(source: str | Path | list[str]) -> dict[str, Assembly
             delimiter="\t",
         )
         for row in reader:
-            if len(row) < _MIN_COL:
+            if len(row) < MIN_COL:
                 continue
-            accession = row[_ACCESSION_COL]
-            ftp_url = row[_FTP_URL_COL]
+            accession = row[ACCESSION_COL]
+            ftp_url = row[FTP_URL_COL]
             if "https://ftp" not in ftp_url:
                 for col in row:
                     if "https://ftp" in col:
@@ -154,8 +154,8 @@ def parse_assembly_summary(source: str | Path | list[str]) -> dict[str, Assembly
             assembly_dir = PurePosixPath(_ftp_dir_from_url(ftp_url).name)
             assemblies[accession] = AssemblyRecord(
                 accession=accession,
-                status=row[_STATUS_COL],
-                seq_rel_date=row[_SEQ_REL_DATE_COL],
+                status=row[STATUS_COL],
+                seq_rel_date=row[SEQ_REL_DATE_COL],
                 ftp_url=ftp_url,
                 assembly_dir=assembly_dir,
             )
@@ -363,7 +363,7 @@ def scan_store_to_synthetic_summary(
         msg = f"Invalid release_date '{release_date}'. Expected format YYYY/MM/DD."
         raise ValueError(msg) from exc
 
-    acc_prefix = _DATABASE_ACC_PREFIX.get(database)
+    acc_prefix = DATABASE_ACC_PREFIX.get(database)
     if acc_prefix is None:
         msg = f"Unknown database: {database!r}. Expected 'refseq' or 'genbank'."
         raise ValueError(msg)

@@ -245,10 +245,10 @@ def test_preset_xmltopyarrow_settings_pass_base_defaults(
     settings_factory: Callable[..., Any],
     copy_xsd_fixture: Callable[[str], str],
 ) -> None:
-    """PresetXmlToPyArrowSettings subclasses inherit default table_name and xml_tag as 'entry' and use _PRECOMPUTED_SCHEMA."""
+    """PresetXmlToPyArrowSettings subclasses inherit default table_name and xml_tag as 'entry' and use PRECOMPUTED_SCHEMA."""
 
     class CustomPresetSettings(PresetXmlToPyArrowSettings):
-        _PRECOMPUTED_SCHEMA: ClassVar[pa.Schema] = UNIREF_SCHEMA
+        PRECOMPUTED_SCHEMA: ClassVar[pa.Schema] = UNIREF_SCHEMA
 
     xsd_path = copy_xsd_fixture(UNIREF_LIKE_XSD)
     settings = settings_factory(
@@ -268,9 +268,9 @@ def test_preset_xmltopyarrow_settings_fail_missing_precomputed_schema(
     settings_factory: Callable[..., Any],
     copy_xsd_fixture: Callable[[str], str],
 ) -> None:
-    """PresetXmlToPyArrowSettings raises ValidationError when _PRECOMPUTED_SCHEMA is not defined on the class."""
+    """PresetXmlToPyArrowSettings raises ValidationError when PRECOMPUTED_SCHEMA is not defined on the class."""
     xsd_path = copy_xsd_fixture(UNIREF_LIKE_XSD)
-    with pytest.raises(ValidationError, match="_PRECOMPUTED_SCHEMA"):
+    with pytest.raises(ValidationError, match="PRECOMPUTED_SCHEMA"):
         settings_factory(
             PresetXmlToPyArrowSettings,
             dataset_name="preset_ds",
@@ -470,9 +470,9 @@ def test_level_preset_xmltopyarrow_settings_fail_missing_precomputed_schemas(
     settings_factory: Callable[..., Any],
     copy_xsd_fixture: Callable[[str], str],
 ) -> None:
-    """LevelPresetXmlToPyArrowSettings raises ValidationError when _PRECOMPUTED_SCHEMAS is not defined on the class."""
+    """LevelPresetXmlToPyArrowSettings raises ValidationError when PRECOMPUTED_SCHEMAS is not defined on the class."""
     xsd_path = copy_xsd_fixture(UNIREF_LIKE_XSD)
-    with pytest.raises(ValidationError, match="_PRECOMPUTED_SCHEMAS"):
+    with pytest.raises(ValidationError, match="PRECOMPUTED_SCHEMAS"):
         settings_factory(
             LevelPresetXmlToPyArrowSettings,
             dataset_name="preset_ds",

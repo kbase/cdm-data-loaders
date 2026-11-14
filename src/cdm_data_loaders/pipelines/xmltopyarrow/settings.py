@@ -326,7 +326,7 @@ class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin):
 class PresetXmlToPyArrowSettings(XmlToPyArrowSettings):
     """Base settings for XML-to-PyArrow pipelines backed by a bundled XSD and precomputed PyArrow schema."""
 
-    _PRECOMPUTED_SCHEMA: ClassVar[pa.Schema]
+    PRECOMPUTED_SCHEMA: ClassVar[pa.Schema]
 
     table_name: ClassVar[str] = ENTRY_TABLE_NAME
     xml_tag: ClassVar[str] = ENTRY_XML_TAG
@@ -339,7 +339,7 @@ class PresetXmlToPyArrowSettings(XmlToPyArrowSettings):
         :return: precomputed PyArrow schema
         :rtype : pa.Schema
         """
-        return self._PRECOMPUTED_SCHEMA
+        return self.PRECOMPUTED_SCHEMA
 
     def _bind_cdm_transform_and_schemas(
         self,
@@ -356,7 +356,7 @@ class PresetXmlToPyArrowSettings(XmlToPyArrowSettings):
 class LevelPresetXmlToPyArrowSettings(XmlToPyArrowSettings):
     """Base settings for level-based XML-to-PyArrow pipelines backed by a bundled XSD and precomputed schemas."""
 
-    _PRECOMPUTED_SCHEMAS: ClassVar[Mapping[str, pa.Schema]]
+    PRECOMPUTED_SCHEMAS: ClassVar[Mapping[str, pa.Schema]]
 
     table_name: ClassVar[str | None] = None
     xml_tag: ClassVar[str | None] = None
@@ -368,14 +368,14 @@ class LevelPresetXmlToPyArrowSettings(XmlToPyArrowSettings):
         :return: mapping of table names to precomputed PyArrow schemas
         :rtype : dict[str, pa.Schema]
         """
-        return dict(self._PRECOMPUTED_SCHEMAS)
+        return dict(self.PRECOMPUTED_SCHEMAS)
 
 
 class PubMedXmlToPyArrowSettings(LevelPresetXmlToPyArrowSettings):
     """Settings for the PubMed XML to PyArrow ingestion pipeline."""
 
-    _PRECOMPUTED_SCHEMAS: ClassVar[Mapping[str, pa.Schema]] = PUBMED_SCHEMAS
-    _DEFAULT_FILE_PREPROCESSORS: ClassVar[tuple[FilePreprocessFn, ...]] = (validate_md5_sidecar,)
+    PRECOMPUTED_SCHEMAS: ClassVar[Mapping[str, pa.Schema]] = PUBMED_SCHEMAS
+    DEFAULT_FILE_PREPROCESSORS: ClassVar[tuple[FilePreprocessFn, ...]] = (validate_md5_sidecar,)
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=PUBMED_PIPELINE_NAME,
@@ -403,7 +403,7 @@ class PubMedXmlToPyArrowSettings(LevelPresetXmlToPyArrowSettings):
 class UniProtXmlToPyArrowSettings(PresetXmlToPyArrowSettings):
     """Settings for the UniProt XML to PyArrow ingestion pipeline."""
 
-    _PRECOMPUTED_SCHEMA: ClassVar[pa.Schema] = UNIPROT_SCHEMA
+    PRECOMPUTED_SCHEMA: ClassVar[pa.Schema] = UNIPROT_SCHEMA
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=UNIPROT_PIPELINE_NAME,
@@ -424,7 +424,7 @@ class UniProtXmlToPyArrowSettings(PresetXmlToPyArrowSettings):
 class UniRefXmlToPyArrowSettings(PresetXmlToPyArrowSettings):
     """Settings for the UniRef XML to PyArrow ingestion pipeline."""
 
-    _PRECOMPUTED_SCHEMA: ClassVar[pa.Schema] = UNIREF_SCHEMA
+    PRECOMPUTED_SCHEMA: ClassVar[pa.Schema] = UNIREF_SCHEMA
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
         cli_prog_name=UNIREF_PIPELINE_NAME,

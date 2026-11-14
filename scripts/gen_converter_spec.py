@@ -567,7 +567,7 @@ def render_xmltopyarrow_presets_table() -> str:
         else:
             target_cell = "`xml_tag` + `table_name` **or** `xml_level` (+ optional `root_tag`)"
         glob_default = cls.model_fields["file_glob"].default
-        preprocessors = getattr(cls, "_DEFAULT_FILE_PREPROCESSORS", ())
+        preprocessors = getattr(cls, "DEFAULT_FILE_PREPROCESSORS", ())
         prep_cell = ", ".join(f"`{fn.__name__}`" for fn in preprocessors) if preprocessors else "—"
         lines.append(
             f"| `{cli_name}` | `{cls.__name__}` | {dataset_cell} | {target_cell} | `{glob_default!r}` | {prep_cell} |"
@@ -850,7 +850,7 @@ def _introspect_preset_overrides(base_cls: type[Any], preset_cls: type[Any]) -> 
                     )
                 )
 
-    for extra_attr in ("_PRECOMPUTED_SCHEMAS", "_PRECOMPUTED_SCHEMA", "_DEFAULT_FILE_PREPROCESSORS"):
+    for extra_attr in ("PRECOMPUTED_SCHEMAS", "PRECOMPUTED_SCHEMA", "DEFAULT_FILE_PREPROCESSORS"):
         val = getattr(preset_cls, extra_attr, None)
         if val:
             base_val = getattr(base_cls, extra_attr, None)

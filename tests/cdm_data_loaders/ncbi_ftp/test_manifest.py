@@ -30,13 +30,13 @@ from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREF
 
 from .conftest import ACC_PATH_215, ACC_PATH_405, SAMPLE_SUMMARY
 
-_EXPECTED_TWO = 2
+EXPECTED_TWO = 2
 
 
 # parse_assembly_summary
 
 
-_EXPECTED_ASSEMBLIES = {
+EXPECTED_ASSEMBLIES = {
     "GCF_000001215.4": AssemblyRecord(
         accession="GCF_000001215.4",
         status="latest",
@@ -71,7 +71,7 @@ _EXPECTED_ASSEMBLIES = {
 
 def test_parse_assembly_summary() -> None:
     """SAMPLE_SUMMARY is parsed to the expected assemblies."""
-    assert parse_assembly_summary(SAMPLE_SUMMARY) == _EXPECTED_ASSEMBLIES
+    assert parse_assembly_summary(SAMPLE_SUMMARY) == EXPECTED_ASSEMBLIES
 
 
 def test_parse_assembly_summary_empty() -> None:
@@ -88,7 +88,7 @@ def test_parse_assembly_summary_input_types(source: str, tmp_path: Path) -> None
         f = tmp_path / "summary.tsv"
         f.write_text(SAMPLE_SUMMARY)
         arg = f if source == "file" else str(f)
-    assert parse_assembly_summary(arg) == _EXPECTED_ASSEMBLIES
+    assert parse_assembly_summary(arg) == EXPECTED_ASSEMBLIES
 
 
 # get_latest_assembly_paths
@@ -221,9 +221,9 @@ def test_write_removed_manifest(tmp_path: Path) -> None:
     diff = compute_diff(current, previous_accessions={"GCF_000005845.2", "GCF_000009999.1"})
     removed_file = tmp_path / "removed.txt"
     removed = write_removed_manifest(diff, removed_file)
-    assert len(removed) == _EXPECTED_TWO
+    assert len(removed) == EXPECTED_TWO
     lines = [line.strip() for line in removed_file.read_text().splitlines() if line.strip()]
-    assert len(lines) == _EXPECTED_TWO
+    assert len(lines) == EXPECTED_TWO
 
 
 def test_write_updated_manifest(tmp_path: Path) -> None:
@@ -231,7 +231,7 @@ def test_write_updated_manifest(tmp_path: Path) -> None:
     diff = DiffResult(new=["GCF_000001215.4"], updated=["GCF_000005845.2", "GCF_000001405.40"])
     updated_file = tmp_path / "updated.txt"
     updated = write_updated_manifest(diff, updated_file)
-    assert len(updated) == _EXPECTED_TWO
+    assert len(updated) == EXPECTED_TWO
     lines = [line.strip() for line in updated_file.read_text().splitlines() if line.strip()]
     assert lines == ["GCF_000001405.40", "GCF_000005845.2"]
 
@@ -301,14 +301,14 @@ def test_ftp_dir_from_url(url: str, expected: str | None, kwargs: dict) -> None:
 # verify_transfer_candidates
 
 
-_BUCKET: PurePosixPath = PurePosixPath("cdm-lake")
+BUCKET: PurePosixPath = PurePosixPath("cdm-lake")
 
 
 def _assemblies() -> dict:
     return parse_assembly_summary(SAMPLE_SUMMARY)
 
 
-_MATCHING_FILE_MD5S: dict[str, str] = {
+MATCHING_FILE_MD5S: dict[str, str] = {
     "_genomic.fna.gz": "d41d8cd98f00b204e9800998ecf8427e",
     "_protein.faa.gz": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
     "_assembly_report.txt": "ffffffffffffffffffffffffffffffff",
@@ -316,7 +316,7 @@ _MATCHING_FILE_MD5S: dict[str, str] = {
 
 
 def _matching_object_info(s3_path: str) -> dict[str, Any] | None:
-    for suffix, md5 in _MATCHING_FILE_MD5S.items():
+    for suffix, md5 in MATCHING_FILE_MD5S.items():
         if suffix in s3_path:
             return {
                 "ContentLength": 100,
@@ -336,7 +336,7 @@ def test_verify_transfer_candidates_prunes_when_all_match(
     """Assemblies where every file matches S3 are pruned from the list."""
     mock_connect.return_value = MagicMock()
     mock_head.side_effect = _matching_object_info
-    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX) == []
+    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), BUCKET, DEFAULT_DESTINATION_PREFIX) == []
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
@@ -349,7 +349,7 @@ def test_verify_transfer_candidates_keeps_when_md5_differs(
     """Assembly is kept when at least one file has a different MD5."""
     mock_connect.return_value = MagicMock()
     mock_head.return_value = {"ContentLength": 100, "Metadata": {"md5": "WRONG"}, "ChecksumCRC64NVME": None}
-    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX) == [
+    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), BUCKET, DEFAULT_DESTINATION_PREFIX) == [
         "GCF_000001215.4"
     ]
 
@@ -364,7 +364,7 @@ def test_verify_transfer_candidates_keeps_when_s3_object_missing(
     """Assembly is kept when at least one file doesn't exist in S3."""
     mock_connect.return_value = MagicMock()
     mock_head.side_effect = lambda s3_path: None if "GCF_000001215.4" in s3_path else {}
-    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX) == [
+    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), BUCKET, DEFAULT_DESTINATION_PREFIX) == [
         "GCF_000001215.4"
     ]
 
@@ -379,7 +379,7 @@ def test_verify_transfer_candidates_keeps_when_no_md5_metadata(
     """Assembly is kept when S3 object exists but has no md5 metadata."""
     mock_connect.return_value = MagicMock()
     mock_head.return_value = {"ContentLength": 100, "Metadata": {}, "ChecksumCRC64NVME": None}
-    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX) == [
+    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), BUCKET, DEFAULT_DESTINATION_PREFIX) == [
         "GCF_000001215.4"
     ]
 
@@ -391,7 +391,7 @@ def test_verify_transfer_candidates_keeps_when_ftp_fails(
     """Assembly is kept (conservative) when md5checksums.txt cannot be fetched."""
     mock_connect.return_value = MagicMock()
     manifest_transfer_mocks.retrieve.side_effect = Exception("FTP error")
-    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX) == [
+    assert verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), BUCKET, DEFAULT_DESTINATION_PREFIX) == [
         "GCF_000001215.4"
     ]
 
@@ -399,7 +399,7 @@ def test_verify_transfer_candidates_keeps_when_ftp_fails(
 def test_verify_transfer_candidates_empty_input() -> None:
     """Empty accession list returns empty result without connecting."""
     with patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp", return_value=MagicMock()):
-        assert verify_transfer_candidates([], {}, _BUCKET, PurePosixPath("prefix")) == []
+        assert verify_transfer_candidates([], {}, BUCKET, PurePosixPath("prefix")) == []
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
@@ -409,7 +409,7 @@ def test_verify_transfer_candidates_unknown_accession_kept(
 ) -> None:
     """Accessions not in assemblies dict are kept (conservative)."""
     mock_connect.return_value = MagicMock()
-    assert verify_transfer_candidates(["GCF_999999999.1"], {}, _BUCKET, PurePosixPath("prefix")) == ["GCF_999999999.1"]
+    assert verify_transfer_candidates(["GCF_999999999.1"], {}, BUCKET, PurePosixPath("prefix")) == ["GCF_999999999.1"]
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
@@ -422,7 +422,7 @@ def test_verify_transfer_candidates_short_circuits_on_first_mismatch(
     """Verification stops checking after the first missing/mismatched file."""
     mock_connect.return_value = MagicMock()
     mock_head.side_effect = lambda s3_path: None if "GCF_000001215.4" in s3_path else {}
-    verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX)
+    verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), BUCKET, DEFAULT_DESTINATION_PREFIX)
     assert mock_head.call_count == 1
 
 
@@ -439,7 +439,7 @@ def test_verify_transfer_candidates_mixed(
         _matching_object_info(s3_path) if "GCF_000001215.4_Release_6_plus_ISO1_MT/" in s3_path else None
     )
     result = verify_transfer_candidates(
-        ["GCF_000001215.4", "GCF_000001405.40"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX
+        ["GCF_000001215.4", "GCF_000001405.40"], _assemblies(), BUCKET, DEFAULT_DESTINATION_PREFIX
     )
     assert result == ["GCF_000001405.40"]
     mock_connect.assert_called_once()
@@ -454,7 +454,7 @@ def test_verify_transfer_candidates_skips_ftp_when_folder_missing(
 ) -> None:
     """Accessions with no objects in S3 are confirmed without FTP round-trip."""
     manifest_transfer_mocks.list.return_value = []
-    result = verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), _BUCKET, DEFAULT_DESTINATION_PREFIX)
+    result = verify_transfer_candidates(["GCF_000001215.4"], _assemblies(), BUCKET, DEFAULT_DESTINATION_PREFIX)
     assert result == ["GCF_000001215.4"]
     mock_connect.assert_not_called()
 

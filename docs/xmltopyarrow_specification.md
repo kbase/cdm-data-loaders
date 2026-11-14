@@ -44,8 +44,8 @@ classDiagram
 | `xml_tag` | Locked `ClassVar` (CLI flag removed) | `None` | `None` |
 | `xml_level` | Locked `ClassVar` (CLI flag removed) | `None` | `1` |
 | `xsd_file` | Overridden field default | *(required)* | `src/cdm_data_loaders/schemas/pubmed/pubmed.xsd` |
-| `_PRECOMPUTED_SCHEMAS` | Preset class binding | `None` | mapping with keys `['DeleteCitation', 'PubmedArticle', 'PubmedBookArticle']` |
-| `_DEFAULT_FILE_PREPROCESSORS` | Preset class binding | `None` | `(validate_md5_sidecar,)` |
+| `PRECOMPUTED_SCHEMAS` | Preset class binding | `None` | mapping with keys `['DeleteCitation', 'PubmedArticle', 'PubmedBookArticle']` |
+| `DEFAULT_FILE_PREPROCESSORS` | Preset class binding | `None` | `(validate_md5_sidecar,)` |
 
 ## Running Smoke Tests Across Environments
 
@@ -216,7 +216,7 @@ uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
 
 <a id="r-pubmed-md5-pass"></a>
 
-- **R-PUBMED-MD5-PASS**: `PubMedXmlToPyArrowSettings` enables `validate_md5_sidecar` by default in `_DEFAULT_FILE_PREPROCESSORS`,
+- **R-PUBMED-MD5-PASS**: `PubMedXmlToPyArrowSettings` enables `validate_md5_sidecar` by default in `DEFAULT_FILE_PREPROCESSORS`,
   verifying each `.xml.gz` file against its `<file>.md5` sidecar before streaming `<PubmedArticle>`,
   `<PubmedBookArticle>`, and `<DeleteCitation>` records into their destination tables.
 

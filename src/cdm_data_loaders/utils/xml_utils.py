@@ -1,21 +1,4 @@
-"""Shared XML helper utilities used by XML readers and converters.
-
-This module centralizes common operations:
-- Safe text extraction
-- Local (namespace-stripped) XML tag/attribute name extraction
-"""
-
-from lxml.etree import Element
-
-
-def get_text(elem: Element | None, default: str | None = None) -> str | None:
-    """Return elem.text if exists and non-empty."""
-    if elem is None:
-        return default
-    if elem.text is None:
-        return default
-    text = elem.text.strip()
-    return text or default
+"""Shared XML helper utilities used by XML readers and converters."""
 
 
 def local_name(tag: str) -> str:
@@ -23,5 +6,10 @@ def local_name(tag: str) -> str:
 
     Handles Clark notation (``"{http://example.com}entry"`` -> ``"entry"``) and returns
     already-unprefixed names unchanged.
+
+    :param tag: XML tag or attribute name, optionally in Clark notation.
+    :type tag: str
+    :return: local tag or attribute name without namespace braces.
+    :rtype: str
     """
     return tag.rsplit("}", 1)[-1] if isinstance(tag, str) and "}" in tag else tag

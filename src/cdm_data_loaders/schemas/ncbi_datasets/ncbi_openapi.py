@@ -12,13 +12,13 @@ from cdm_data_loaders.schemas.ncbi_datasets.schema import SCHEMAS
 ANNOTATION_REPORT_TABLE: Final[str] = "annotation_report"
 DATASET_REPORT_TABLE: Final[str] = "dataset_report"
 
-_PACKAGE_FILES = files("cdm_data_loaders.schemas.ncbi_datasets")
+PACKAGE_FILES: Final = files("cdm_data_loaders.schemas.ncbi_datasets")
 
 ANNOTATION_REPORT_JSONSCHEMA: Final[dict[str, Any]] = json.loads(
-    _PACKAGE_FILES.joinpath("annotationReport.schema.json").read_text(encoding="utf-8")
+    PACKAGE_FILES.joinpath("annotationReport.schema.json").read_text(encoding="utf-8")
 )
 DATASET_REPORT_JSONSCHEMA: Final[dict[str, Any]] = json.loads(
-    _PACKAGE_FILES.joinpath("datasetReport.schema.json").read_text(encoding="utf-8")
+    PACKAGE_FILES.joinpath("datasetReport.schema.json").read_text(encoding="utf-8")
 )
 
 ENTITY_SCHEMAS: Final[dict[str, dict[str, Any]]] = {

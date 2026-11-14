@@ -1,5 +1,5 @@
 {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$schema": "https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json",
     "description": "JSON Schema for the UniProt ID mapping files, which map UniProt IDs to IDs in other databases. The schema defines the expected structure and data types for the fields in the ID mapping files.",
     "properties": {
         "uniprot_id": {
@@ -30,5 +30,9 @@
         "xref"
     ],
     "title": "JSON Schema for UniProt ID mapping files",
-    "type": "object"
+    "type": "object",
+    "x-xsv-config": {
+        "x-has-header": false,
+        "x-delimiter": "\t"
+    }
 }

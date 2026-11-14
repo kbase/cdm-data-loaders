@@ -119,7 +119,7 @@ sections:
           `pubmed_article`, `pubmed_book_article`, and `delete_citation`.
       - id: R-PUBMED-MD5-PASS
         statement: |
-          `PubMedXmlToPyArrowSettings` enables `validate_md5_sidecar` by default in `_DEFAULT_FILE_PREPROCESSORS`,
+          `PubMedXmlToPyArrowSettings` enables `validate_md5_sidecar` by default in `DEFAULT_FILE_PREPROCESSORS`,
           verifying each `.xml.gz` file against its `<file>.md5` sidecar before streaming `<PubmedArticle>`,
           `<PubmedBookArticle>`, and `<DeleteCitation>` records into their destination tables.
       - id: R-PUBMED-MD5-FAIL

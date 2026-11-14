@@ -19,12 +19,12 @@ from cdm_data_loaders.utils.file_transfer.ftp_client import (
     ftp_retrieve_text,
 )
 
-_IDLE_SECONDS = 30
-_KEEPIDLE_VALUE = 60
-_KEEPALIVE_INTERVAL = 25
-_EXPECTED_RETRY_COUNT = 2
-_FTP_TIMEOUT = 30
-_ERR_421 = "421 timeout"
+IDLE_SECONDS = 30
+KEEPIDLE_VALUE = 60
+KEEPALIVE_INTERVAL = 25
+EXPECTED_RETRY_COUNT = 2
+FTP_TIMEOUT = 30
+ERR_421 = "421 timeout"
 
 
 def test_sets_so_keepalive() -> None:
@@ -41,9 +41,9 @@ def test_sets_tcp_keepidle() -> None:
     mock_ftp = MagicMock(spec=FTP)
     mock_sock = MagicMock()
     mock_ftp.sock = mock_sock
-    _set_keepalive(mock_ftp, idle=_KEEPIDLE_VALUE)
+    _set_keepalive(mock_ftp, idle=KEEPIDLE_VALUE)
     if hasattr(socket, "TCP_KEEPIDLE"):
-        mock_sock.setsockopt.assert_any_call(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, _KEEPIDLE_VALUE)
+        mock_sock.setsockopt.assert_any_call(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, KEEPIDLE_VALUE)
 
 
 @patch("cdm_data_loaders.utils.file_transfer.ftp_client.FTP")
@@ -52,8 +52,8 @@ def test_connect_and_login(mock_ftp_cls: MagicMock) -> None:
     mock_ftp = MagicMock()
     mock_ftp.sock = MagicMock()
     mock_ftp_cls.return_value = mock_ftp
-    result = connect_ftp("ftp.example.com", timeout=_FTP_TIMEOUT)
-    mock_ftp_cls.assert_called_once_with("ftp.example.com", timeout=_FTP_TIMEOUT)
+    result = connect_ftp("ftp.example.com", timeout=FTP_TIMEOUT)
+    mock_ftp_cls.assert_called_once_with("ftp.example.com", timeout=FTP_TIMEOUT)
     mock_ftp.login.assert_called_once()
     assert result is mock_ftp
 
@@ -61,8 +61,8 @@ def test_connect_and_login(mock_ftp_cls: MagicMock) -> None:
 def test_sends_noop_when_idle() -> None:
     """Verify NOOP is sent when idle exceeds interval."""
     mock_ftp = MagicMock(spec=FTP)
-    old_time = time.monotonic() - _IDLE_SECONDS
-    new_time = ftp_noop_keepalive(mock_ftp, old_time, interval=_KEEPALIVE_INTERVAL)
+    old_time = time.monotonic() - IDLE_SECONDS
+    new_time = ftp_noop_keepalive(mock_ftp, old_time, interval=KEEPALIVE_INTERVAL)
     mock_ftp.sendcmd.assert_called_once_with("NOOP")
     assert new_time > old_time
 
@@ -71,7 +71,7 @@ def test_no_noop_when_recent() -> None:
     """Verify no NOOP is sent when activity is recent."""
     mock_ftp = MagicMock(spec=FTP)
     recent = time.monotonic()
-    result = ftp_noop_keepalive(mock_ftp, recent, interval=_KEEPALIVE_INTERVAL)
+    result = ftp_noop_keepalive(mock_ftp, recent, interval=KEEPALIVE_INTERVAL)
     mock_ftp.sendcmd.assert_not_called()
     assert result == recent
 
@@ -98,22 +98,22 @@ def test_retries_on_error_temp() -> None:
     def fake_retrlines(_cmd: str, callback: Callable[[str], None]) -> None:
         nonlocal call_count
         call_count += 1
-        if call_count < _EXPECTED_RETRY_COUNT:
-            raise error_temp(_ERR_421)  # noqa: S321
+        if call_count < EXPECTED_RETRY_COUNT:
+            raise error_temp(ERR_421)  # noqa: S321
         callback("file.txt")
 
     mock_ftp.retrlines.side_effect = fake_retrlines
     result = ftp_list_dir(mock_ftp, PurePosixPath("/path"), retries=3)
     assert result == [PurePosixPath("file.txt")]
-    assert call_count == _EXPECTED_RETRY_COUNT
+    assert call_count == EXPECTED_RETRY_COUNT
 
 
 def test_raises_after_exhausted_retries() -> None:
     """Verify error is raised after all retries are exhausted."""
     mock_ftp = MagicMock(spec=FTP)
-    mock_ftp.retrlines.side_effect = error_temp(_ERR_421)  # noqa: S321
+    mock_ftp.retrlines.side_effect = error_temp(ERR_421)  # noqa: S321
     with pytest.raises(error_temp):
-        ftp_list_dir(mock_ftp, PurePosixPath("/") / "path", retries=_EXPECTED_RETRY_COUNT)
+        ftp_list_dir(mock_ftp, PurePosixPath("/") / "path", retries=EXPECTED_RETRY_COUNT)
 
 
 def test_downloads_file(tmp_path: Path) -> None:
@@ -137,7 +137,7 @@ def test_download_retries_on_error_temp(tmp_path: Path) -> None:
     def fake_retrbinary(_cmd: str, callback: Callable[[bytes], None]) -> None:
         nonlocal call_count
         call_count += 1
-        if call_count < _EXPECTED_RETRY_COUNT:
+        if call_count < EXPECTED_RETRY_COUNT:
             msg = "421"
             raise error_temp(msg)  # noqa: S321
         callback(b"ok")
@@ -145,7 +145,7 @@ def test_download_retries_on_error_temp(tmp_path: Path) -> None:
     mock_ftp.retrbinary.side_effect = fake_retrbinary
     local = tmp_path / "out.bin"
     ftp_download_file(mock_ftp, PurePosixPath("remote.bin"), local, retries=3)
-    assert call_count == _EXPECTED_RETRY_COUNT
+    assert call_count == EXPECTED_RETRY_COUNT
 
 
 def test_retrieve_text_returns_content() -> None:

@@ -14,7 +14,7 @@ from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.ir import Field, NodeHints, Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.ir_values import freeze_mapping, freeze_value, mutable_value
 
-_METADATA_POSITIONS: Final = [
+METADATA_POSITIONS: Final = [
     pytest.param(partial(TypedNode, type="any"), "constraints", id="type-constraints"),
     pytest.param(partial(TypedNode, type="any"), "annotations", id="type-annotations"),
     pytest.param(partial(Field, "value", TypedNode(type="any")), "annotations", id="field-annotations"),
@@ -22,7 +22,7 @@ _METADATA_POSITIONS: Final = [
 ]
 
 
-@pytest.mark.parametrize(("constructor", "keyword"), _METADATA_POSITIONS)
+@pytest.mark.parametrize(("constructor", "keyword"), METADATA_POSITIONS)
 @pytest.mark.parametrize(
     ("namespace", "value"),
     [("x-pii", "bad"), ("x-unregistered", "bad"), ("x-pii", True)],
@@ -36,7 +36,7 @@ def test_ir_metadata_fail_extension_namespace(
         constructor(**{keyword: {namespace: value}})
 
 
-@pytest.mark.parametrize(("constructor", "keyword"), _METADATA_POSITIONS)
+@pytest.mark.parametrize(("constructor", "keyword"), METADATA_POSITIONS)
 def test_ir_metadata_pass_literal_extension_keys(
     constructor: Callable[..., TypedNode | Field | SchemaDocument], keyword: str
 ) -> None:

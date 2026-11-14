@@ -30,7 +30,7 @@ from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset
 from tests.cdm_data_loaders.ncbi_ftp.conftest import md5_hex
 
 # Maximum length of a bucket name per S3/DNS spec
-_MAX_BUCKET_LEN = 63
+MAX_BUCKET_LEN = 63
 
 # High-numbered prefix range that typically has only a handful of assemblies, keeping FTP traffic minimal.
 STABLE_PREFIX = "900"
@@ -120,10 +120,10 @@ def _bucket_name_from_node(node_id: str, prefix: str | None = None) -> str:
     name = f"integ-{prefix}-{name}" if prefix else f"integ-{name}"
     # Lowercase, replace non-alphanumeric with hyphens, collapse multiples
     name = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    if len(name) > _MAX_BUCKET_LEN:
+    if len(name) > MAX_BUCKET_LEN:
         # Truncate but keep it unique via a short hash suffix
         suffix = md5_hex(name.encode())[:6]
-        name = f"{name[: _MAX_BUCKET_LEN - 7]}-{suffix}"
+        name = f"{name[: MAX_BUCKET_LEN - 7]}-{suffix}"
     return name
 
 

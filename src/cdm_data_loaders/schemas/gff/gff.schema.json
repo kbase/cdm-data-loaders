@@ -1,5 +1,7 @@
 {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$schema": "https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json",
+    "title": "Preliminary JSON Schema for GFF3 files",
+    "type": "object",
     "description": "GFF3 files are nine-column, tab-delimited, plain text files. Literal use of tab, newline, carriage return, the percent (%) sign, and control characters must be encoded using RFC 3986 Percent-Encoding; no other characters may be encoded. Backslash and other ad-hoc escaping conventions that have been added to the GFF format are not allowed. The file contents may include any character in the set supported by the operating environment, although for portability with other systems, use of UTF-8 is recommended.\n\n    tab (%09)\n    newline (%0A)\n    carriage return (%0D)\n    % percent (%25)\n    control characters (%00 through %1F, %7F)\n\nIn addition, the following characters have reserved meanings in column 9 and must be escaped when used in other contexts:\n\n    ; semicolon (%3B)\n    = equals (%3D)\n    & ampersand (%26)\n    , comma (%2C)\n\nNote that unescaped spaces are allowed within fields, meaning that parsers must split on tabs, not spaces. Use of the '+' (plus) character to encode spaces is deprecated from early versions of the spec and is no longer allowed.\n\nUndefined fields are replaced with the '.' character, as described in the original GFF spec.\n",
     "properties": {
         "seqid": {
@@ -103,6 +105,8 @@
         "phase",
         "attributes"
     ],
-    "title": "Preliminary JSON Schema for GFF3 files",
-    "type": "object"
+    "x-xsv-config": {
+        "x-has-header": false,
+        "x-delimiter": "\t"
+    }
 }

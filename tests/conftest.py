@@ -30,14 +30,11 @@ from pyspark.sql import SparkSession
 from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
-from cdm_data_loaders.pipelines.core import _install_iceberg_catalog_cleanup
 from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI, get_xsv_meta_schema
 from cdm_data_loaders.utils import cdm_logger
 from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.dlt_config_isolation import isolated_dlt_config
 from tests.xml_samples import LIBRARY_XSD
-
-_install_iceberg_catalog_cleanup()
 
 settings.register_profile(
     "default",

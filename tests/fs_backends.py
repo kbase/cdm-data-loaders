@@ -49,7 +49,7 @@ MOTO_ACCESS_KEY: Final[str] = "test_access_key"
 MOTO_SECRET_KEY: Final[str] = "test_access_secret"  # noqa: S105
 CEPH_BUCKET: Final[str] = "cdm-test-fs-backends"
 
-_DRIVER_MARKS: Final[dict[str, tuple[pytest.MarkDecorator, ...]]] = {S3_CEPH: (pytest.mark.requires_ceph,)}
+DRIVER_MARKS: Final[dict[str, tuple[pytest.MarkDecorator, ...]]] = {S3_CEPH: (pytest.mark.requires_ceph,)}
 
 
 def selected_drivers() -> tuple[str, ...]:
@@ -203,7 +203,7 @@ def _remove_backend(backend: FsBackend) -> None:
 def _driver_params(*, include_local: bool) -> list[Any]:
     """Return ``pytest.param`` entries for the selected backends, with their marks."""
     return [
-        pytest.param(driver, id=driver, marks=_DRIVER_MARKS.get(driver, ()))
+        pytest.param(driver, id=driver, marks=DRIVER_MARKS.get(driver, ()))
         for driver in selected_drivers()
         if include_local or driver not in LOCAL_DRIVERS
     ]
