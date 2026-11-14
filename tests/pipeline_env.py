@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlparse
 import boto3
 from dlt.common.libs.pyiceberg import drop_iceberg_table, get_catalog, is_ephemeral_catalog
 from pydantic_settings import BaseSettings
-from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, RESTError
 
 from cdm_data_loaders.pipelines.iceberg_cleanup import install_iceberg_catalog_cleanup
 from tests.conftest import LOCAL_FS
@@ -332,7 +332,7 @@ def _collect_table_locations(
         table_loc = catalog.load_table(table_id).location()
         if table_loc:
             locations.append(table_loc)
-    except NoSuchTableError:
+    except (NoSuchTableError, RESTError):
         pass
     if bucket_url:
         fallback_loc = f"{bucket_url.rstrip('/')}/{dataset_name}/{table_name}"
