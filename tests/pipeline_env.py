@@ -18,6 +18,7 @@ from dlt.common.libs.pyiceberg import drop_iceberg_table, get_catalog, is_epheme
 from pydantic_settings import BaseSettings
 from pyiceberg.exceptions import NoSuchNamespaceError
 
+from cdm_data_loaders.pipelines.iceberg_cleanup import install_iceberg_catalog_cleanup
 from tests.conftest import LOCAL_FS
 from tests.dlt_config_isolation import load_dlt_toml_files
 from tests.pipeline_spec import load_settings_file
@@ -197,11 +198,16 @@ class PipelineEnvSpec:
                 raise ValueError(msg)
         return filtered
 
-    def isolated_dlt_configs(self, run_slug: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    def isolated_dlt_configs(
+        self,
+        run_slug: str,
+        *,
+        isolate_bucket_url: bool = True,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Return deep-copied ``(dlt_config, dlt_secrets)`` with an isolated per-run ``bucket_url`` if configured."""
         cfg = deepcopy(self.dlt_config)
         sec = deepcopy(self.dlt_secrets)
-        if not self.preserve_dlt_destination:
+        if not self.preserve_dlt_destination or not isolate_bucket_url:
             return cfg, sec
 
         for doc in (cfg, sec):
@@ -250,6 +256,7 @@ def load_pipeline_env_from_dir(
 
 def list_iceberg_namespace_tables(dataset_name: str) -> set[str]:
     """Return table names (without namespace prefix) currently registered in ``dataset_name`` in the active Iceberg catalog."""
+    install_iceberg_catalog_cleanup()
     catalog = get_catalog()
     try:
         if is_ephemeral_catalog(catalog):
@@ -273,6 +280,7 @@ def drop_iceberg_tables_for_dataset(
     include_namespace_tables: bool = True,
 ) -> list[str]:
     """Drop tables in ``dataset_name`` from the active Iceberg catalog and return dropped table names."""
+    install_iceberg_catalog_cleanup()
     catalog = get_catalog()
     try:
         if is_ephemeral_catalog(catalog):

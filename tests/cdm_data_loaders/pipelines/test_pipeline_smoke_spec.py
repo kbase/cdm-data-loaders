@@ -338,7 +338,6 @@ def execute_smoke_case_run(
     assert spec.settings_cls is not None
 
     run_slug = f"{case.pipeline}_{case.name}_{run.id}_{uuid4().hex[:8]}"
-    dlt_cfg, dlt_sec = env.isolated_dlt_configs(run_slug)
 
     env_overrides = env.settings_for_pipeline(case.pipeline, spec.settings_cls)
     merged_kwargs: dict[str, Any] = {
@@ -364,7 +363,7 @@ def execute_smoke_case_run(
         target_input,
         input_subdir=run.input_subdir,
         s3_client=env.s3_client,
-        dlt_secrets=dlt_sec,
+        dlt_secrets=env.dlt_secrets,
         use_destination=env.use_destination,
     )
 
@@ -395,6 +394,7 @@ def execute_smoke_case_run(
     should_drop_after = env.should_drop_tables_after(case.pipeline, cli_flag=drop_tables_after)
     dataset_name = str(getattr(settings, "dataset_name", None) or case.pipeline)
     is_iceberg = str(getattr(settings, "loader_file_format", "")) == "iceberg"
+    dlt_cfg, dlt_sec = env.isolated_dlt_configs(run_slug, isolate_bucket_url=not is_iceberg)
 
     with isolated_dlt_config(config=dlt_cfg, secrets=dlt_sec):
         if is_iceberg and should_drop_existing:
