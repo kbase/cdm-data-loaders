@@ -327,8 +327,8 @@ def execute_smoke_case_run(
     tmp_path: Path,
     *,
     docker_image: str | None = None,
-    drop_existing_tables: bool = False,
-    drop_tables_after: bool = False,
+    drop_existing_tables: bool = True,
+    drop_tables_after: bool = True,
 ) -> None:
     """Stage input files, merge case and environment settings, run the pipeline, and verify all outputs."""
     if execution_mode == ExecutionMode.DOCKER and env.name == "s3_moto":

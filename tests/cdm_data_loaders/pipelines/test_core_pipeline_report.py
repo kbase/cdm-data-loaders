@@ -11,8 +11,10 @@ from unittest.mock import MagicMock
 
 import dlt
 import pytest
+import yaml
 from dlt.common.destination.exceptions import DestinationHasFailedJobs
 from dlt.common.metrics import LoadJobMetrics, LoadMetrics
+from dlt.common.pendulum import pendulum
 from dlt.common.pipeline import LoadInfo, SupportsPipeline
 from dlt.common.schema import Schema
 from dlt.common.storages.load_package import (
@@ -1070,6 +1072,43 @@ def test_run_pipeline_pass_file_preprocessors_reject_skip_and_record_report_erro
             "status": "completed with errors",
             "ingested_files": ["good.jsonl"],
             "load_errors": ["File pre-processing failed for bad.jsonl: checksum mismatch"],
+            "pipeline_load_info_errs": None,
+        },
+    )
+
+
+def test_write_pipeline_report_pass_datetime_subclass_without_global_safe_dumper_mutation(
+    tmp_path: Path,
+) -> None:
+    """write_pipeline_report serializes pendulum.DateTime without mutating yaml.SafeDumper."""
+    assert datetime not in yaml.SafeDumper.yaml_multi_representers
+
+    started_at = pendulum.instance(MOCK_START_TIME)
+    finished_at = pendulum.instance(MOCK_FINISH_TIME)
+    with pytest.raises(yaml.representer.RepresenterError):
+        yaml.safe_dump({"started": started_at})
+
+    report_path = tmp_path / REPORT_FILE_NAME
+    report = PipelineReport(
+        pipeline_name=TEST_PIPELINE_NAME,
+        dataset_name=TEST_DATASET_NAME,
+        started_at=started_at,
+        finished_at=finished_at,
+        pipeline_load_info=MagicMock(loads_ids=["1700000000.123"]),
+    )
+
+    write_pipeline_report(report_path, report)
+
+    assert datetime not in yaml.SafeDumper.yaml_multi_representers
+    check_pipeline_report(
+        report_path,
+        {
+            "pipeline": TEST_PIPELINE_NAME,
+            "dataset": TEST_DATASET_NAME,
+            "started": MOCK_START_TIME,
+            "finished": MOCK_FINISH_TIME,
+            "status": "completed",
+            "load_ids": ["1700000000.123"],
             "pipeline_load_info_errs": None,
         },
     )

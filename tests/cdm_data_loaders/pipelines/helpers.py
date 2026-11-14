@@ -23,13 +23,13 @@ from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.extract import DltResource
 from pandas import DataFrame
+from pyiceberg.exceptions import NoSuchTableError
 
 from cdm_data_loaders.core.fields import ICEBERG, PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import CtsSettings, FileFormatIngestSettings
 from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.utils.file_items import as_file_item, open_binary
-from cdm_data_loaders.utils.paths import set_nested
-from tests.helpers import strip_none_values
+from tests.helpers import set_nested, strip_none_values
 from tests.pipeline_spec import PipelineRun, load_expected_json_tables, load_expected_tables
 from tests.pyarrow_spec_helpers import json_default
 
@@ -694,7 +694,15 @@ def read_destination_tables_from_load_info(
                     continue
                 if entry.get("type") != "directory" and not fs.isdir(entry_path):
                     continue
-                rows = _read_fsspec_table_rows(fs, entry_path)
+                if hasattr(client, "is_open_table") and client.is_open_table("iceberg", table_name):  # pyright: ignore[reportAttributeAccessIssue]
+                    catalog = client.get_open_table_catalog("iceberg")  # pyright: ignore[reportAttributeAccessIssue]
+                    try:
+                        iceberg_table = catalog.load_table(f"{client.dataset_name}.{table_name}")  # pyright: ignore[reportAttributeAccessIssue]
+                    except NoSuchTableError:
+                        continue
+                    rows = iceberg_table.scan().to_arrow().to_pylist()
+                else:
+                    rows = _read_fsspec_table_rows(fs, entry_path)
                 tables[table_name].extend(
                     rows if table_name == LOAD_INFO_TABLE_NAME else (strip_metadata_columns(r) for r in rows)
                 )
@@ -802,7 +810,12 @@ def assert_smoke_run_output(
     all_tables = read_destination_tables_from_load_info(load_info, include_load_info=True)
     assert LOAD_INFO_TABLE_NAME in all_tables, f"Missing {LOAD_INFO_TABLE_NAME!r} table in destination"
     load_info_rows = all_tables.pop(LOAD_INFO_TABLE_NAME)
-    assert len(load_info_rows) == 1
+    expected_load_ids = list(load_info.loads_ids)
+    matching_load_info_rows = [row for row in load_info_rows if row.get("loads_ids") == expected_load_ids]
+    assert len(matching_load_info_rows) == 1, (
+        f"Expected 1 {LOAD_INFO_TABLE_NAME!r} row for loads_ids={expected_load_ids!r}, "
+        f"found {len(matching_load_info_rows)} out of {len(load_info_rows)}"
+    )
 
     actual_counts = {name: len(rows) for name, rows in all_tables.items()}
     assert actual_counts == run.expected_counts

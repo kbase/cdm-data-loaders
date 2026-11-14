@@ -180,7 +180,7 @@ def needs_default_pyarrow_schema(
 class TransformSettingsMixin(BaseSettings):
     """Mixin for pipelines that accept `FILE_PREPROCESSORS`, `TABLE_TRANSFORMS`, and `OUTPUT_SCHEMAS` modules."""
 
-    _DEFAULT_FILE_PREPROCESSORS: ClassVar[tuple[FilePreprocessFn, ...]] = ()
+    DEFAULT_FILE_PREPROCESSORS: ClassVar[tuple[FilePreprocessFn, ...]] = ()
 
     _file_preprocessors: PreprocessorRegistry | None = PrivateAttr(default=None)
     _table_transforms: TransformRegistry | None = PrivateAttr(default=None)
@@ -205,8 +205,8 @@ class TransformSettingsMixin(BaseSettings):
         """Load and validate `FILE_PREPROCESSORS`, `TABLE_TRANSFORMS`, and `OUTPUT_SCHEMAS` if configured."""
         if self.preprocessors_module is not None:
             self._file_preprocessors = load_file_preprocessors(self.preprocessors_module)
-        elif self._DEFAULT_FILE_PREPROCESSORS:
-            self._file_preprocessors = PreprocessorRegistry(default=self._DEFAULT_FILE_PREPROCESSORS)
+        elif self.DEFAULT_FILE_PREPROCESSORS:
+            self._file_preprocessors = PreprocessorRegistry(default=self.DEFAULT_FILE_PREPROCESSORS)
         if self.transforms_module is not None:
             self._table_transforms = load_registry_dict(self.transforms_module, "TABLE_TRANSFORMS")
         if self.output_schemas_module is not None and self.use_pyarrow:
