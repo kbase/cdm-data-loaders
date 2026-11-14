@@ -30,7 +30,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --all-groups
 
       - name: Run code formatting checks
         shell: bash
@@ -124,7 +124,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --all-groups
 
       - name: Install qsv
         shell: bash
@@ -166,7 +166,7 @@ jobs:
       - name: Run local tests
         shell: bash
         continue-on-error: false
-        run: uv run pytest -m "${{ matrix.suite.markers }}" --junitxml=junit.xml -o junit_family=legacy ${{ matrix.suite.args }}
+        run: uv run --all-groups pytest -m "${{ matrix.suite.markers }}" --junitxml=junit.xml -o junit_family=legacy ${{ matrix.suite.args }}
 
       - name: Send test reports to Codecov
         id: upload_test_reports
