@@ -2,7 +2,7 @@
 | CLI Flag | Shortcut | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 {% for field_doc in entry.fields %}
-| `{{ field_doc.cli_flag }}` | {% if field_doc.shortcuts %}{% for s in field_doc.shortcuts %}`{{ s }}`{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %} | `{{ field_doc.env_var }}` | {{ ("`" ~ field_doc.type_label ~ "`") | escape_cell }} | {{ field_doc.default_label | escape_cell }} | {{ (field_doc.description or "—") | escape_cell }} |
+| `{{ field_doc.cli_flag }}` | {% if field_doc.shortcuts %}{% for s in field_doc.shortcuts %}`{{ s }}`{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %} | `{{ field_doc.env_var }}` | `{{ field_doc.type_label }}` | {{ field_doc.default_label | escape_cell }} | {{ (field_doc.description or "—") | escape_cell }} |
 {% endfor %}
 {% else %}
 _No configurable fields._
