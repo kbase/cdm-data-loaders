@@ -12,8 +12,8 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Common Da
 
 ## User Guides
 
-- **[Core Pipeline and KBase CTS Execution Guide](core_cts_execution.md)**: Running pipelines locally and in CTS containers, `CDL_*` environment variables, `dlt` and Iceberg destination setup, `report.txt`, `_load_info` and `_rejected` tables, and the CTS exit-code-0 contract.
 - **[CLI Reference](cli_reference.md)**: Auto-generated reference of all registered `[project.scripts]` CLIs, flags, shortcuts, environment variables, and defaults.
+- **[Core Pipeline and KBase CTS Execution Guide](core_cts_execution.md)**: Running pipelines locally and in CTS containers, `CDL_*` environment variables, `dlt` and Iceberg destination setup, `report.txt`, `_load_info` and `_rejected` tables, and the CTS exit-code-0 contract.
 - **[Table and Column Transformations](table_transforms.md)**: Custom file pre-processors (`FILE_PREPROCESSORS`), record-level filtering, single-table row transformation, multi-table splitting (`TABLE_TRANSFORMS`), and PyArrow schema overrides (`OUTPUT_SCHEMAS`).
 - **[JSONLines Ingestion Pipelines](jsonlines_ingest.md)**: Running `jsonlines_extract`, `jsonlines_jsonschema`, `jsonlines_pydantic`, and `ncbi_datasets` with custom schema and model registries.
 - **[UniProt and UniRef Ingestion Guide](uniprot.md)**: XSD-driven XML-to-PyArrow pipelines (`uniprot`, `uniref50`, `uniref90`, `uniref100`), CDM-normalized multi-table pipelines (`uniprot_cdm`, `uniref50_cdm`, `uniref90_cdm`, `uniref100_cdm`), and metalink/release-note parsers.

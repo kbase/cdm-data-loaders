@@ -93,7 +93,7 @@ REPORT_FILE_NAME: Final[str] = "report.txt"
 # Default values for the common fields
 DEFAULTS = frozendict(
     {
-        BUFFER_SIZE: 100,
+        BUFFER_SIZE: 1000,
         DLT_DEV_MODE: False,
         FILE_GLOB: "*",
         LOADER_FILE_FORMAT: LoaderFileFormatEnum.PARQUET,

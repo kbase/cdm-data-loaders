@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Final
 
 import jinja2
+import markdown
 import pytest
 import yaml
 from pydantic import AliasChoices
@@ -625,6 +626,13 @@ def test_load_cli_entries_and_render_cli_reference_pass() -> None:
     assert "## `jsonlines_extract`" in rendered
     assert "`--dataset-name`" in rendered
     assert "`CDL_DATASET_NAME`" in rendered
+    assert "| `str | None` |" in rendered
+    assert "| `'iceberg' | 'jsonl' | 'parquet'` |" in rendered
+    assert r"`str \| None`" not in rendered
+
+    rendered_html = markdown.markdown(rendered, extensions=["tables"])
+    assert '<td style="text-align: left;"><code>str | None</code></td>' in rendered_html
+    assert r"\|" not in rendered_html
 
     stub_text = build_generated_docs_plan()[Path("cli_reference.md")]
     assert "render_cli_reference()" in stub_text
