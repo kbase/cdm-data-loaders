@@ -22,13 +22,14 @@ from cdm_data_loaders.converters.core.ir import Field, TypedNode
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter
 from cdm_data_loaders.converters.emitters.pyspark import PySparkEmitter
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
+    InvalidJSONSchemaError as InvalidArrowSchemaError,
+)
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import JSONSchemaToPyArrowError
 from cdm_data_loaders.converters.facades.dlt_to_jsonschema import DltToJSONSchema, DltToJSONSchemaError
 from cdm_data_loaders.converters.facades.jsonschema_to_dlt import InvalidJSONSchemaError as InvalidDltSchemaError
 from cdm_data_loaders.converters.facades.jsonschema_to_dlt import JSONSchemaToDlt, JSONSchemaToDltError
-from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
-    InvalidJSONSchemaError as InvalidArrowSchemaError,
-)
-from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import JSONSchemaToPyArrow, JSONSchemaToPyArrowError
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import JSONSchemaToPyArrow
 from cdm_data_loaders.converters.facades.jsonschema_to_pyspark import (
     InvalidJSONSchemaError as InvalidSparkSchemaError,
 )

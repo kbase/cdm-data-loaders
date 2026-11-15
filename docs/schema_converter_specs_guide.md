@@ -72,11 +72,11 @@ sections:
 
 ## How Errors Are Created and Structured
 
-Converter error codes (`E1`, `E2`, ...) are defined as `ConversionError` subclasses in [`src/cdm_data_loaders/converters/facades`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/converters/facades) and paired with fixtures in `spec/errors/manifest.yaml`.
+Converter error codes (`E1`, `E2`, ...) are defined as `ConversionError` subclasses in [`src/cdm_data_loaders/converters/exceptions/facades`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/converters/exceptions/facades) and paired with fixtures in `spec/errors/manifest.yaml`.
 
 ### Error Tuple Convention
 
-Each facade module `cdm_data_loaders.converters.facades.<converter>` exports a `<CONVERTER>_ERRORS` tuple of numbered exception subclasses, which `discover_converter_specs()` in [`docs_macros/spec_context.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/spec_context.py) introspects automatically when rendering the error catalog section. Each error subclass defines:
+Each converter exceptions module `cdm_data_loaders.converters.exceptions.facades.<converter>` exports a `<CONVERTER>_ERRORS` tuple of numbered exception subclasses, which `discover_converter_specs()` in [`docs_macros/spec_context.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/spec_context.py) introspects automatically when rendering the error catalog section. Each error subclass defines:
 
 - `code`: unique identifier (`"E1"`, `"E2"`, ...).
 - `title`: short condition label rendered in the error specification.
@@ -128,7 +128,7 @@ Specification pages render dynamically at build and serve time from [`specs/sche
 ### Adding a New Error Code
 
 - **Define the exception subclass**:
-  - Subclass the converter's base error class in `src/cdm_data_loaders/converters/facades/<converter>.py` with `code = "E<N>"`, `title = "..."`, and a docstring.
+  - Subclass the converter's base error class in `src/cdm_data_loaders/converters/exceptions/facades/<converter>.py` with `code = "E<N>"`, `title = "..."`, and a docstring.
   - Append the new class to `<CONVERTER>_ERRORS` and raise it in the reader, emitter, or facade when the invalid construct is detected.
 - **Add an error fixture**:
   - Place a minimal schema file reproducing the error in `specs/schema_converters/<converter>/spec/errors/`.
@@ -155,7 +155,7 @@ Specification pages render dynamically at build and serve time from [`specs/sche
 
 ### Adding a New Converter Specification Suite
 
-- Create `specs/schema_converters/<new_converter>/rules.yaml`, `spec/`, and `spec/errors/manifest.yaml` (where `<new_converter>` matches `cdm_data_loaders.converters.facades.<new_converter>` and `<NEW_CONVERTER>_ERRORS`).
+- Create `specs/schema_converters/<new_converter>/rules.yaml`, `spec/`, and `spec/errors/manifest.yaml` (where `<new_converter>` matches `cdm_data_loaders.converters.facades.<new_converter>` and `cdm_data_loaders.converters.exceptions.facades.<new_converter>` defining `<NEW_CONVERTER>_ERRORS`).
 - If the converter introduces a new `generated:` reference table, register its column headers and row builder in `TABLE_TEMPLATE_REGISTRY` inside [`docs_macros/tables_context.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/tables_context.py) (rendered via [`docs/_templates/tables/reference_table.md.j2`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs/_templates/tables/reference_table.md.j2)). (`CONVERTER_SPECS` in [`docs_macros/spec_context.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/spec_context.py) auto-discovers `<new_converter>` from `specs/schema_converters/` and its facade module.)
 - Add `<new_converter>_specification.md` under `"Specifications"` in [`zensical.toml`](https://github.com/kbase/cdm-data-loaders/blob/develop/zensical.toml) (`[project].nav`) and link it under `## Specifications` in [`docs/index.md`](index.md) (`docs/<new_converter>_specification.md` itself is `.gitignore`d and generated on demand from [`docs/_templates/pages/macro_stub.md.j2`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs/_templates/pages/macro_stub.md.j2)).
 - Verify with `uv run pytest -m docs`, `uv run python -m docs_macros`, `uv run --group docs zensical build --clean --strict`, and `uv run python -m docs_macros --clean`.

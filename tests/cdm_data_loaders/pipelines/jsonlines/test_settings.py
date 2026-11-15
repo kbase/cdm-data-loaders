@@ -10,8 +10,10 @@ from pydantic import BaseModel, ValidationError
 from pydantic_settings import CliApp, SettingsError
 
 import cdm_data_loaders.pipelines.jsonlines.settings as jsonlines_settings_module
-from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrowError,
+)
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     convert_schema_to_pyarrow,
 )
 from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
@@ -28,6 +30,7 @@ from cdm_data_loaders.core.registry import (
     TransformRegistry,
 )
 from cdm_data_loaders.core.settings import CdmDataLoadersBase
+from cdm_data_loaders.pipelines.jsonlines.exceptions import InvalidJsonlEntitySchemaError
 from cdm_data_loaders.pipelines.jsonlines.settings import (
     ENTITY_MODELS_MODULE,
     ENTITY_SCHEMAS_MODULE,
@@ -37,7 +40,6 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     NCBI_DATASETS_PIPELINE_NAME,
     NCBI_DATASETS_SCHEMA_MODULE,
     PYDANTIC_PIPELINE_NAME,
-    InvalidJsonlEntitySchemaError,
     JsonlExtractSettings,
     JsonlIngestSettings,
     JsonlJsonschemaIngestSettings,

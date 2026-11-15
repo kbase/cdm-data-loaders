@@ -2,12 +2,13 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
+from frozendict import frozendict
 from pyspark.sql.types import ArrayType, DataType, DoubleType, LongType, NullType, StringType, StructType
 
-from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.errors import ConversionError, build_error_by_code
 from cdm_data_loaders.converters.core.inference import decimal_places, infer_implicit_type
 from cdm_data_loaders.converters.facades import dlt_to_jsonschema as reverse_module
 from cdm_data_loaders.converters.facades import jsonschema_to_dlt as dlt_module
@@ -184,3 +185,25 @@ def test_convert_type_pass_one_of_before_any_of() -> None:
     assert stored["tables"]["test"]["columns"]["value"] == {"name": "value", "data_type": "bigint", "nullable": True}
     converter = spark_module.JSONSchemaToPySpark()
     assert converter.convert(schema)["value"].dataType == LongType()
+
+
+def test_build_error_by_code_pass_populates_and_empty_boundary() -> None:
+    """build_error_by_code returns an immutable code-to-class mapping for populated and empty error tuples."""
+
+    class SampleConverterError(ConversionError):
+        """Sample converter base error."""
+
+    class FirstError(SampleConverterError):
+        """First numbered error."""
+
+        code: ClassVar[str] = "E1"
+        title: ClassVar[str] = "First condition"
+
+    class SecondError(SampleConverterError):
+        """Second numbered error."""
+
+        code: ClassVar[str] = "E2"
+        title: ClassVar[str] = "Second condition"
+
+    assert build_error_by_code(()) == frozendict()
+    assert build_error_by_code((FirstError, SecondError)) == frozendict({"E1": FirstError, "E2": SecondError})

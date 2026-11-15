@@ -11,15 +11,15 @@ import yaml
 from pydantic import BeforeValidator, computed_field, model_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.pipelines.jsonlines.settings import (
+from cdm_data_loaders.pipelines.jsonlines.exceptions import (
     JSONLINES_JSONSCHEMA_ERRORS,
     JsonlJsonschemaError,
 )
-from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
+from cdm_data_loaders.pipelines.xmltopyarrow.exceptions import (
     XMLTOPYARROW_CONFIG_ERRORS,
     XmlToPyArrowConfigError,
 )
-from cdm_data_loaders.pipelines.xsv.settings import (
+from cdm_data_loaders.pipelines.xsv.exceptions import (
     XSV_SCHEMA_ERRORS,
     XsvSchemaError,
 )
@@ -502,6 +502,7 @@ PRESET_EXTRA_ATTRS: Final[tuple[str, ...]] = (
 
 CONVERTER_SUITE_NAMES: Final[tuple[str, ...]] = ("spec", "examples")
 CONVERTER_FACADES_PACKAGE: Final[str] = "cdm_data_loaders.converters.facades"
+CONVERTER_FACADE_EXCEPTIONS_PACKAGE: Final[str] = "cdm_data_loaders.converters.exceptions.facades"
 
 SOURCE_FORMAT_DEFAULTS: Final[MappingProxyType[str, SourceFormatDefaults]] = MappingProxyType(
     {
@@ -554,34 +555,38 @@ DEFAULT_PIPELINE_TABLES: Final[MappingProxyType[str, str]] = MappingProxyType(
 
 def _resolve_converter_facade_errors(
     name: str,
-    facade_module_name: str,
+    exceptions_module_name: str,
 ) -> tuple[type[Exception], tuple[type[Exception], ...]]:
-    """Introspect ``facade_module_name`` to resolve ``(error_base, error_classes)`` for converter ``name``.
+    """Introspect ``exceptions_module_name`` to resolve ``(error_base, error_classes)`` for converter ``name``.
 
     :param name: Converter identifier (e.g. ``"pydantic_to_pyarrow"``).
     :type name: str
-    :param facade_module_name: Dotted Python module path of the converter facade.
-    :type facade_module_name: str
+    :param exceptions_module_name: Dotted Python module path of the converter exceptions module.
+    :type exceptions_module_name: str
     :return: Pair of ``(error_base_cls, error_classes_tuple)``.
     :rtype: tuple[type[Exception], tuple[type[Exception], ...]]
     """
-    facade_mod = importlib.import_module(facade_module_name)
     errors_attr = f"{name.upper()}_ERRORS"
-    if not hasattr(facade_mod, errors_attr):
-        msg = f"Facade module {facade_module_name!r} does not define {errors_attr!r}"
+    try:
+        exceptions_mod = importlib.import_module(exceptions_module_name)
+    except ModuleNotFoundError as exc:
+        msg = f"Converter exceptions module {exceptions_module_name!r} does not define {errors_attr!r}"
+        raise ValueError(msg) from exc
+    if not hasattr(exceptions_mod, errors_attr):
+        msg = f"Converter exceptions module {exceptions_module_name!r} does not define {errors_attr!r}"
         raise ValueError(msg)
-    error_classes = tuple(getattr(facade_mod, errors_attr))
+    error_classes = tuple(getattr(exceptions_mod, errors_attr))
     candidates = [
         obj
-        for obj in vars(facade_mod).values()
+        for obj in vars(exceptions_mod).values()
         if isinstance(obj, type)
         and issubclass(obj, ConversionError)
-        and obj.__module__ == facade_mod.__name__
+        and obj.__module__ == exceptions_mod.__name__
         and ConversionError in obj.__bases__
         and all(issubclass(err_cls, obj) for err_cls in error_classes)
     ]
     if not candidates:
-        msg = f"Cannot resolve direct ConversionError base subclass in {facade_module_name!r}"
+        msg = f"Cannot resolve direct ConversionError base subclass in {exceptions_module_name!r}"
         raise ValueError(msg)
     return candidates[0], error_classes
 
@@ -630,6 +635,7 @@ def _build_converter_spec_config(
     docs_dir: Path,
     *,
     facade_package: str = CONVERTER_FACADES_PACKAGE,
+    exceptions_package: str = CONVERTER_FACADE_EXCEPTIONS_PACKAGE,
 ) -> ConverterSpecConfig:
     """Construct a ``ConverterSpecConfig`` from a ``specs/schema_converters/<xxx_to_yyy>/`` directory.
 
@@ -639,6 +645,8 @@ def _build_converter_spec_config(
     :type docs_dir: Path
     :param facade_package: Base package containing converter facade modules.
     :type facade_package: str
+    :param exceptions_package: Base package containing converter exception modules.
+    :type exceptions_package: str
     :return: Populated ``ConverterSpecConfig`` instance.
     :rtype: ConverterSpecConfig
     """
@@ -669,7 +677,8 @@ def _build_converter_spec_config(
         raise ValueError(msg)
 
     facade_module_name = str(raw_rules.get("facade_module", f"{facade_package}.{name}"))
-    error_base, error_classes = _resolve_converter_facade_errors(name, facade_module_name)
+    exceptions_module_name = str(raw_rules.get("exceptions_module", f"{exceptions_package}.{name}"))
+    error_base, error_classes = _resolve_converter_facade_errors(name, exceptions_module_name)
     discovered_suites = tuple(suite for suite in CONVERTER_SUITE_NAMES if (data_dir / suite).is_dir())
 
     return ConverterSpecConfig(
@@ -696,6 +705,7 @@ def discover_converter_specs(
     docs_dir: Path = DOCS_DIR,
     *,
     facade_package: str = CONVERTER_FACADES_PACKAGE,
+    exceptions_package: str = CONVERTER_FACADE_EXCEPTIONS_PACKAGE,
 ) -> MappingProxyType[str, ConverterSpecConfig]:
     """Auto-discover all converter specification suites under ``specs_root``.
 
@@ -705,6 +715,8 @@ def discover_converter_specs(
     :type docs_dir: Path
     :param facade_package: Base package containing ``<source>_to_<target>`` facade modules.
     :type facade_package: str
+    :param exceptions_package: Base package containing ``<source>_to_<target>`` exception modules.
+    :type exceptions_package: str
     :return: Read-only mapping from converter name to ``ConverterSpecConfig``.
     :rtype: MappingProxyType[str, ConverterSpecConfig]
     """
@@ -717,6 +729,7 @@ def discover_converter_specs(
                 candidate,
                 docs_dir,
                 facade_package=facade_package,
+                exceptions_package=exceptions_package,
             )
     return MappingProxyType(configs)
 
