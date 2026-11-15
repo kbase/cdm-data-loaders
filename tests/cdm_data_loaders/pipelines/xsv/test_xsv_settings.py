@@ -12,8 +12,10 @@ import pytest
 from pydantic import ValidationError
 
 import cdm_data_loaders.pipelines.xsv.settings as xsv_settings_module
-from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrowError,
+)
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     convert_xsv_schema_to_pyarrow,
 )
 from cdm_data_loaders.core.fields import DEFAULTS

@@ -23,12 +23,14 @@ from dlt.sources.filesystem import filesystem
 import cdm_data_loaders.pipelines.xsv.pipeline as xsv_pipeline_module
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import convert_xsv_schema_to_pyarrow
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.pipelines.xsv.exceptions import (
+    XSV_SCHEMA_ERRORS,
+    XsvSchemaError,
+)
 from cdm_data_loaders.pipelines.xsv.pipeline import XsvWorkPaths, _process_xsv_file, run_xsv_pipeline
 from cdm_data_loaders.pipelines.xsv.settings import (
     PIPELINE_NAME,
-    XSV_SCHEMA_ERRORS,
     XsvIngestSettings,
-    XsvSchemaError,
 )
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import validate_jsonschema
 from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA

@@ -26,15 +26,17 @@ from cdm_data_loaders.coercion.pyarrow import (
     serialize_record_for_linkml,
     serialize_table_for_linkml,
 )
-from cdm_data_loaders.converters.facades.pyarrow_to_linkml import (
+from cdm_data_loaders.converters.exceptions.facades.pyarrow_to_linkml import (
     ERROR_BY_CODE,
     PYARROW_TO_LINKML_ERRORS,
     EmptyFieldNameError,
     InvalidPyArrowSchemaError,
     NestedMultivaluedSlotError,
-    PyArrowToLinkML,
     PyArrowToLinkMLError,
     UnsupportedArrowTypeError,
+)
+from cdm_data_loaders.converters.facades.pyarrow_to_linkml import (
+    PyArrowToLinkML,
     convert_field,
     convert_type,
     generate_linkml_schema,

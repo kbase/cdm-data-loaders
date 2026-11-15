@@ -43,13 +43,15 @@ from cdm_data_loaders.converters.emitters.pyarrow_codegen import (
     _to_upper_snake,
 )
 from cdm_data_loaders.converters.emitters.pyspark import PySparkEmitter
-from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
+from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
     XSD_TO_PYARROW_ERRORS,
     NonStructXmlTagError,
     RecursiveNonJsonTypeError,
     XmlTagNotFoundError,
-    XsdToPyArrow,
     XsdToPyArrowError,
+)
+from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
+    XsdToPyArrow,
     generate_pyarrow_schema,
     generate_pyarrow_schemas_at_level,
     generate_pyarrow_struct,

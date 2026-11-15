@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Final
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import pyarrow as pa
 from frozendict import frozendict
@@ -12,131 +12,16 @@ from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.io import ExtraMetadataKeywords, JsonSchemaConverterBase
 from cdm_data_loaders.converters.emitters.pyarrow import DEFAULT_FORMAT_MAP, PyArrowEmitter, merge_format_map
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
+    ERROR_BY_CODE,
+    JSONSchemaToPyArrowError,
+    UnsupportedDialectError,
+)
 from cdm_data_loaders.converters.readers.json_schema_strict import StrictJsonSchemaReader
 from cdm_data_loaders.schemas.jsonschema import ValidatedSchema, dereference_schema
 
 if TYPE_CHECKING:
     from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
-
-
-class JSONSchemaToPyArrowError(ConversionError):
-    """Raised when a JSON Schema construct cannot be converted.
-
-    Subclasses raised by :func:`generate_pyarrow_schema` carry a stable specification ``code`` and a short
-    ``title``; their docstrings state why the construct is rejected. The converter specification document is
-    generated from these attributes.
-    """
-
-    code: ClassVar[str] = ""
-    title: ClassVar[str] = ""
-
-
-class InvalidJSONSchemaError(JSONSchemaToPyArrowError):
-    """Raised when the input document is not a valid JSON Schema."""
-
-
-class UnsupportedDialectError(InvalidJSONSchemaError):
-    """Only JSON Schema Draft 2020-12 and the KBase Draft 2020-12 XSV metaschema are supported."""
-
-    code = "E1"
-    title = "Missing or unsupported `$schema` dialect"
-
-
-class NonStructRootError(JSONSchemaToPyArrowError):
-    """A `pa.Schema` needs top-level columns, so the root must resolve to a fixed-property object."""
-
-    code = "E2"
-    title = "Non-struct top-level schema"
-
-
-class EmptyObjectError(JSONSchemaToPyArrowError):
-    """Parquet cannot store a `pa.struct([])` with no child fields."""
-
-    code = "E3"
-    title = "Empty object or tuple (zero fields)"
-
-
-class UnconstrainedSchemaError(JSONSchemaToPyArrowError):
-    """An untyped JSON value cannot be assigned a concrete Arrow `DataType`."""
-
-    code = "E4"
-    title = "Unconstrained or boolean schema"
-
-
-class OpenTupleError(JSONSchemaToPyArrowError):
-    """A field cannot be both a positional `pa.struct` and an unbounded `pa.list_`."""
-
-    code = "E5"
-    title = "Open tuple (`prefixItems` with schema-valued `items`)"
-
-
-class MixedPropertiesAndMapError(JSONSchemaToPyArrowError):
-    """An object cannot be both a fixed-field `pa.struct` and a dynamic `pa.map_`."""
-
-    code = "E6"
-    title = "Fixed `properties` mixed with a dynamic map"
-
-
-class NegationError(JSONSchemaToPyArrowError):
-    """A complement type does not define a positive storage `DataType`."""
-
-    code = "E7"
-    title = "Negation (`not`)"
-
-
-class IncompatibleBranchShapesError(JSONSchemaToPyArrowError):
-    """Branches with different structural shapes (object vs array, array vs scalar, object vs map) cannot share one column."""
-
-    code = "E8"
-    title = "Incompatible structural union branches"
-
-
-class UnsupportedRefError(JSONSchemaToPyArrowError):
-    """Every `$ref` must resolve to a local `#/$defs/...` definition; `$dynamicRef` and `$recursiveRef` are not supported."""
-
-    code = "E9"
-    title = "Unresolvable or unsupported reference"
-
-
-class RecursiveNonJsonTypeError(JSONSchemaToPyArrowError):
-    """Truncated recursive subtrees are serialized with `json.dumps`, which cannot encode `datetime.date` or `bytes`."""
-
-    code = "E10"
-    title = "Non-JSON-serializable type in a recursive `$ref` cycle"
-
-
-class NullOnlySchemaError(JSONSchemaToPyArrowError):
-    """Parquet has no physical storage type for a `pa.null()` column."""
-
-    code = "E11"
-    title = "Null-only schema"
-
-
-class ValueFieldCollisionError(JSONSchemaToPyArrowError):
-    """The synthesized `_value` field of a scalar + object union would collide with a declared `_value` property."""
-
-    code = "E12"
-    title = "`_value` collision in a scalar + object union"
-
-
-JSONSCHEMA_TO_PYARROW_ERRORS: Final[tuple[type[JSONSchemaToPyArrowError], ...]] = (
-    UnsupportedDialectError,
-    NonStructRootError,
-    EmptyObjectError,
-    UnconstrainedSchemaError,
-    OpenTupleError,
-    MixedPropertiesAndMapError,
-    NegationError,
-    IncompatibleBranchShapesError,
-    UnsupportedRefError,
-    RecursiveNonJsonTypeError,
-    NullOnlySchemaError,
-    ValueFieldCollisionError,
-)
-
-ERROR_BY_CODE: Final[frozendict[str, type[JSONSchemaToPyArrowError]]] = frozendict(
-    {cls.code: cls for cls in JSONSCHEMA_TO_PYARROW_ERRORS}
-)
 
 
 class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):

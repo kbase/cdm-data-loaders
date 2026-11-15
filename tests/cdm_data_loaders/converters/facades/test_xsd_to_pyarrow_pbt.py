@@ -31,8 +31,10 @@ from cdm_data_loaders.converters.emitters.pyarrow_codegen import (
     _IRComponentCollector,
     _to_upper_snake,
 )
-from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
+from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
     RecursiveNonJsonTypeError,
+)
+from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schema,
     resolve_scalar_type,
 )

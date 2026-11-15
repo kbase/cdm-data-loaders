@@ -12,9 +12,11 @@ from cdm_data_loaders.coercion.pyarrow import (
     coerce_record_for_pyarrow,
     pyarrow_to_python_type_label,
 )
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
+    JSONSchemaToPyArrowError,
+)
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrow,
-    JSONSchemaToPyArrowError,
 )
 from cdm_data_loaders.schemas.jsonschema import dereference_schema
 from tests.cdm_data_loaders.converters.conftest import base_object_schema

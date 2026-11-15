@@ -1,122 +1,27 @@
 """Convert PyArrow schemas, fields, and data types to official LinkML schema definitions."""
 
 from pathlib import Path
-from typing import ClassVar, Final
 
 import pyarrow as pa
-from frozendict import frozendict
 from linkml_runtime.dumpers import yaml_dumper
 from linkml_runtime.linkml_model.meta import SchemaDefinition, SlotDefinition
 from pydantic import BaseModel, ConfigDict
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.emitters.linkml import (
+from cdm_data_loaders.converters.emitters.linkml import LinkMLEmitter
+from cdm_data_loaders.converters.exceptions.emitters.linkml import (
     EmptyLinkMLSlotNameError,
-    LinkMLEmitter,
     LinkMLEmitterError,
     NestedLinkMLMultivaluedError,
 )
-from cdm_data_loaders.converters.readers.pyarrow import PyArrowReader
-
-
-class PyArrowToLinkMLError(ConversionError):
-    """Raised when a PyArrow schema, field, or data type cannot be converted to a LinkML schema.
-
-    Subclasses raised by :func:`generate_linkml_schema` carry a stable specification ``code`` and a short
-    ``title``; their docstrings state why the construct is rejected. The converter specification document is
-    generated from these attributes.
-    """
-
-    code: ClassVar[str] = ""
-    title: ClassVar[str] = ""
-
-
-class InvalidPyArrowSchemaError(PyArrowToLinkMLError):
-    """Schema generation requires a concrete PyArrow `pa.Schema` object; bare `pa.DataType`, `pa.Field`, or Python mappings are not table schemas."""
-
-    code = "E1"
-    title = "Input is not a `pa.Schema` instance"
-
-
-class EmptyStructError(PyArrowToLinkMLError):
-    """Arrow tables and LinkML record classes generated from Arrow structs require at least one named attribute."""
-
-    code = "E2"
-    title = "Empty root schema or nested `pa.struct([])` (zero fields)"
-
-
-class DuplicateFieldNameError(PyArrowToLinkMLError):
-    """LinkML class `attributes` is keyed by slot name and cannot represent duplicate sibling field names."""
-
-    code = "E3"
-    title = "Duplicate field name in schema or `pa.struct`"
-
-
-class NullOnlyTypeError(PyArrowToLinkMLError):
-    """A column or container element typed solely as `pa.null()` carries no value domain; nullable columns must wrap a concrete Arrow value type with `nullable=True`."""
-
-    code = "E4"
-    title = "Standalone `pa.null()` field or element type"
-
-
-class InvalidDecimalTypeError(PyArrowToLinkMLError):
-    """Fixed-point decimal representations require `0 <= scale <= precision`; negative scales or `scale > precision` have no plain decimal slot representation."""
-
-    code = "E5"
-    title = "Decimal type with negative scale or `scale > precision`"
-
-
-class UnsupportedTemporalIntervalError(PyArrowToLinkMLError):
-    """Relative durations and `month_day_nano` intervals have no lossless built-in `linkml:types` scalar range."""
-
-    code = "E6"
-    title = "Duration or calendar interval type (`pa.duration`, `pa.month_day_nano_interval`)"
-
-
-class UnsupportedUnionTypeError(PyArrowToLinkMLError):
-    """Arrow type-code unions cannot be represented as typed LinkML slots without class/union redesign."""
-
-    code = "E7"
-    title = "Arrow union type (`pa.sparse_union` or `pa.dense_union`)"
-
-
-class UnsupportedArrowTypeError(PyArrowToLinkMLError):
-    """Specialized physical encodings such as `pa.run_end_encoded` and custom `pa.ExtensionType` subclasses have no general LinkML mapping."""
-
-    code = "E8"
-    title = "Unsupported Arrow physical or extension type (`run_end_encoded`, `ExtensionType`, etc.)"
-
-
-class EmptyFieldNameError(PyArrowToLinkMLError):
-    """LinkML `SlotDefinition` identifiers require a non-empty attribute name; blank Arrow field names cannot form valid LinkML slots."""
-
-    code = "E9"
-    title = "Blank or empty field name"
-
-
-class NestedMultivaluedSlotError(PyArrowToLinkMLError):
-    """LinkML slots use a flat `multivalued: true` flag on a single `range` and cannot represent multidimensional lists or lists of map-entry lists without intermediate wrapper classes."""
-
-    code = "E10"
-    title = "Directly nested list or map inside a list (`list<list<...>>` or `list<map<...>>`)"
-
-
-PYARROW_TO_LINKML_ERRORS: Final[tuple[type[PyArrowToLinkMLError], ...]] = (
-    InvalidPyArrowSchemaError,
-    EmptyStructError,
-    DuplicateFieldNameError,
-    NullOnlyTypeError,
-    InvalidDecimalTypeError,
-    UnsupportedTemporalIntervalError,
-    UnsupportedUnionTypeError,
-    UnsupportedArrowTypeError,
+from cdm_data_loaders.converters.exceptions.facades.pyarrow_to_linkml import (
+    ERROR_BY_CODE,
     EmptyFieldNameError,
+    InvalidPyArrowSchemaError,
     NestedMultivaluedSlotError,
+    PyArrowToLinkMLError,
 )
-
-ERROR_BY_CODE: Final[frozendict[str, type[PyArrowToLinkMLError]]] = frozendict(
-    {cls.code: cls for cls in PYARROW_TO_LINKML_ERRORS}
-)
+from cdm_data_loaders.converters.readers.pyarrow import PyArrowReader
 
 
 def _reader() -> PyArrowReader:

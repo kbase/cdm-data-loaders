@@ -1,7 +1,7 @@
 """Settings for the XSV (CSV/TSV) ingestion pipeline for the KBase CTS."""
 
 from logging import Logger, getLogger
-from typing import Annotated, Any, ClassVar, Final
+from typing import Annotated, Any, Final
 
 import pyarrow as pa
 from pydantic import Field, FilePath, PrivateAttr
@@ -20,6 +20,14 @@ from cdm_data_loaders.core.settings import (
     default_settings_with_shortcuts,
 )
 from cdm_data_loaders.core.transforms import TransformSettingsMixin
+from cdm_data_loaders.pipelines.xsv.exceptions import (
+    InvalidXsvSchemaDefinitionError,
+    MissingRequiredColumnsError,
+    UnresolvableXsvRefError,
+    UnsupportedXsvArrowConstructError,
+    UnsupportedXsvDialectError,
+    XsvSchemaError,
+)
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import resolve_xsv_parsing_config
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
     ValidatedXsvSchema,
@@ -39,61 +47,6 @@ SHORTCUTS: Final[dict[str, str]] = {
     "schema_file": "s",
     "table_name": "t",
 }
-
-
-class XsvSchemaError(RuntimeError):
-    """Raised when an XSV JSON Schema cannot be validated or converted to a PyArrow schema.
-
-    Subclasses carry a stable specification ``code`` and a short ``title``; their docstrings state
-    why the schema is rejected. The XSV specification document is generated from these attributes.
-    """
-
-    code: ClassVar[str] = ""
-    title: ClassVar[str] = ""
-
-
-class UnsupportedXsvDialectError(XsvSchemaError):
-    """Only JSON Schema Draft 2020-12 and the KBase Draft 2020-12 XSV metaschema are supported."""
-
-    code = "E1"
-    title = "Missing or unsupported `$schema` dialect"
-
-
-class MissingRequiredColumnsError(XsvSchemaError):
-    """XSV schemas must declare a non-empty list of column headers in the top-level `required` array."""
-
-    code = "E2"
-    title = "Missing or empty `required` column list"
-
-
-class InvalidXsvSchemaDefinitionError(XsvSchemaError):
-    """The document is not valid JSON Schema or contains an invalid `x-xsv-config` parser block."""
-
-    code = "E3"
-    title = "Invalid JSON Schema or `x-xsv-config` block"
-
-
-class UnresolvableXsvRefError(XsvSchemaError):
-    """All `$ref` pointers in an XSV schema must resolve against local `$defs` before conversion."""
-
-    code = "E4"
-    title = "Unresolvable `$ref` pointer"
-
-
-class UnsupportedXsvArrowConstructError(XsvSchemaError):
-    """Every XSV column must convert to a supported PyArrow type under a top-level `object` schema."""
-
-    code = "E5"
-    title = "Unsupported PyArrow column construct"
-
-
-XSV_SCHEMA_ERRORS: Final[tuple[type[XsvSchemaError], ...]] = (
-    UnsupportedXsvDialectError,
-    MissingRequiredColumnsError,
-    InvalidXsvSchemaDefinitionError,
-    UnresolvableXsvRefError,
-    UnsupportedXsvArrowConstructError,
-)
 
 
 def _classify_xsv_schema_error(exc: Exception, err_msg: str) -> XsvSchemaError:

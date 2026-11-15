@@ -17,11 +17,13 @@ from jsonschema import Draft202012Validator
 
 from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
-from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
     JSONSCHEMA_TO_PYARROW_ERRORS,
-    JSONSchemaToPyArrow,
     JSONSchemaToPyArrowError,
     RecursiveNonJsonTypeError,
+)
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
+    JSONSchemaToPyArrow,
     generate_pyarrow_schema,
 )
 from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI

@@ -1,6 +1,6 @@
 # Error specification fixtures for the XSV schema and ingestion pipeline.
 # `code` must match the `code` of an XsvSchemaError subclass in
-# cdm_data_loaders.pipelines.xsv.settings. `file` is relative to this directory.
+# cdm_data_loaders.pipelines.xsv.exceptions. `file` is relative to this directory.
 # `match` is a regex applied to the exception message.
 errors:
   - file: missing_schema_keyword.json

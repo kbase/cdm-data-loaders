@@ -15,9 +15,11 @@ from hypothesis.strategies import SearchStrategy
 from jsonschema import Draft202012Validator
 
 from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
+    RecursiveNonJsonTypeError,
+)
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrow,
-    RecursiveNonJsonTypeError,
     generate_pyarrow_schema,
 )
 from tests.conftest import BASE_DIR

@@ -24,13 +24,15 @@ from cdm_data_loaders.coercion.pyarrow import (
     serialize_table_for_jsonschema,
 )
 from cdm_data_loaders.converters.core.extensions import ExtensionRegistry
-from cdm_data_loaders.converters.facades.pyarrow_to_jsonschema import (
+from cdm_data_loaders.converters.exceptions.facades.pyarrow_to_jsonschema import (
     ERROR_BY_CODE,
     PYARROW_TO_JSONSCHEMA_ERRORS,
     InvalidPyArrowSchemaError,
-    PyArrowToJSONSchema,
     PyArrowToJSONSchemaError,
     UnsupportedArrowTypeError,
+)
+from cdm_data_loaders.converters.facades.pyarrow_to_jsonschema import (
+    PyArrowToJSONSchema,
     convert_field,
     convert_type,
     generate_json_schema,

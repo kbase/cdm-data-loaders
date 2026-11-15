@@ -13,7 +13,7 @@ from xmlschema.validators import XsdComplexType, XsdElement, XsdType
 
 from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.ir import NodeHints, NodeType
-from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
+from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
     ERROR_BY_CODE,
     XsdToPyArrowError,
 )

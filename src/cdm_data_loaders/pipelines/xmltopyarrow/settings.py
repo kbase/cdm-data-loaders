@@ -16,8 +16,10 @@ from cdm_data_loaders.coercion.xml import (
     make_xml_level_converters,
 )
 from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
-from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
+from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
     XmlTagNotFoundError,
+)
+from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schema,
     generate_pyarrow_schemas_at_level,
 )
@@ -42,6 +44,14 @@ from cdm_data_loaders.core.settings import (
     default_settings_with_shortcuts,
 )
 from cdm_data_loaders.core.transforms import TransformSettingsMixin
+from cdm_data_loaders.pipelines.xmltopyarrow.exceptions import (
+    InvalidXmlPipelineHookError,
+    InvalidXmlTargetSelectionError,
+    InvalidXsdDocumentError,
+    UnsupportedXsdTargetError,
+    XmlTargetNotFoundError,
+    XmlToPyArrowConfigError,
+)
 from cdm_data_loaders.schemas.pubmed.schema import SCHEMAS as PUBMED_SCHEMAS
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMA as UNIPROT_SCHEMA
 from cdm_data_loaders.schemas.uniref.schema import SCHEMA as UNIREF_SCHEMA
@@ -64,57 +74,6 @@ UNIREF_XSD_FILE: Final[Path] = SCHEMAS_DIR / "uniref" / "uniref.xsd"
 UNIREF_FIFTY: Final[str] = "uniref50"
 UNIREF_NINETY: Final[str] = "uniref90"
 UNIREF_HUNDRED: Final[str] = "uniref100"
-
-
-class XmlToPyArrowConfigError(ValueError):
-    """Base error raised when XML-to-PyArrow target selection, XSD schema resolution, or hook validation fails."""
-
-    code: ClassVar[str] = ""
-    title: ClassVar[str] = ""
-
-
-class InvalidXmlTargetSelectionError(XmlToPyArrowConfigError):
-    """`xml_level` cannot be combined with `xml_tag` or `table_name`; `xml_tag` and `table_name` are both required when `xml_level` is not set; `root_tag` is only valid when `xml_level` is set."""
-
-    code: ClassVar[str] = "E1"
-    title: ClassVar[str] = "Invalid or mutually exclusive XML target selection"
-
-
-class InvalidXsdDocumentError(XmlToPyArrowConfigError):
-    """`xsd_file` must be a well-formed XML document and a valid W3C XML Schema (`xs:schema`)."""
-
-    code: ClassVar[str] = "E2"
-    title: ClassVar[str] = "Malformed XML or invalid W3C XML Schema"
-
-
-class XmlTargetNotFoundError(XmlToPyArrowConfigError):
-    """The configured `xml_tag`, `root_tag`, or `xml_level` does not resolve to any element declaration in the XSD."""
-
-    code: ClassVar[str] = "E3"
-    title: ClassVar[str] = "Target XML tag, root tag, or level not found in XSD"
-
-
-class UnsupportedXsdTargetError(XmlToPyArrowConfigError):
-    """The target element must map to a PyArrow struct table schema and cannot contain unsupported XSD constructs (such as scalar-only roots or recursive non-JSON types)."""
-
-    code: ClassVar[str] = "E4"
-    title: ClassVar[str] = "Target element or descendant uses an unsupported XSD construct"
-
-
-class InvalidXmlPipelineHookError(XmlToPyArrowConfigError):
-    """Configured `preprocessors_module`, `transforms_module`, or `output_schemas_module` references unknown table names or omits required output schemas."""
-
-    code: ClassVar[str] = "E5"
-    title: ClassVar[str] = "Invalid pre-processor, transform, or output schema hook"
-
-
-XMLTOPYARROW_CONFIG_ERRORS: Final[tuple[type[XmlToPyArrowConfigError], ...]] = (
-    InvalidXmlTargetSelectionError,
-    InvalidXsdDocumentError,
-    XmlTargetNotFoundError,
-    UnsupportedXsdTargetError,
-    InvalidXmlPipelineHookError,
-)
 
 
 def _classify_xmltopyarrow_xsd_error(exc: Exception) -> XmlToPyArrowConfigError:

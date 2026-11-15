@@ -9,7 +9,8 @@ from linkml_runtime.linkml_model.meta import ClassDefinition, EnumDefinition, Sc
 from linkml_runtime.loaders import yaml_loader
 
 from cdm_data_loaders.converters.core.ir import Field, SchemaDocument, TypedNode
-from cdm_data_loaders.converters.emitters.linkml import LinkMLEmitter, LinkMLEmitterError
+from cdm_data_loaders.converters.emitters.linkml import LinkMLEmitter
+from cdm_data_loaders.converters.exceptions.emitters.linkml import LinkMLEmitterError
 from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 
 

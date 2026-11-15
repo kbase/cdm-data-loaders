@@ -21,14 +21,16 @@ from dlt.sources.filesystem import filesystem
 
 import cdm_data_loaders.pipelines.jsonlines.base as jsonl_base_module
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.pipelines.jsonlines.exceptions import (
+    JSONLINES_JSONSCHEMA_ERRORS,
+    JsonlJsonschemaError,
+)
 from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
     _make_resolve_error,
     run_jsonlines_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import (
-    JSONLINES_JSONSCHEMA_ERRORS,
     JSONSCHEMA_PIPELINE_NAME,
-    JsonlJsonschemaError,
     JsonlJsonschemaIngestSettings,
 )
 from cdm_data_loaders.readers.jsonlines import make_page_router, stream_jsonl_lines

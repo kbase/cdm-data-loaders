@@ -22,15 +22,17 @@ from pydantic import ValidationError
 
 import cdm_data_loaders.pipelines.xmltopyarrow.pipeline as xml_pipeline_module
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.pipelines.xmltopyarrow.exceptions import (
+    XMLTOPYARROW_CONFIG_ERRORS,
+    XmlToPyArrowConfigError,
+)
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
     PUBMED_SCHEMAS,
     UNIPROT_SCHEMA,
-    XMLTOPYARROW_CONFIG_ERRORS,
     PubMedXmlToPyArrowSettings,
     UniProtXmlToPyArrowSettings,
-    XmlToPyArrowConfigError,
     XmlToPyArrowSettings,
 )
 from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow

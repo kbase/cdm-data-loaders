@@ -13,10 +13,14 @@ from linkml_runtime.linkml_model.meta import (
     SlotDefinition,
 )
 
-from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.ir_values import mutable_value
+from cdm_data_loaders.converters.exceptions.emitters.linkml import (
+    EmptyLinkMLSlotNameError,
+    LinkMLEmitterError,
+    NestedLinkMLMultivaluedError,
+)
 
 LINKML_PREFIX: Final = "https://w3id.org/linkml/"
 IDENTIFIER_PATTERN: Final = re.compile(r"[^A-Za-z0-9_]")
@@ -35,18 +39,6 @@ LOGICAL_RANGES: Final = {
     "decimal": "decimal",
 }
 UNSIGNED_LOGICAL_INTS: Final[frozenset[str]] = frozenset({"uint8", "uint16", "uint32", "uint64"})
-
-
-class LinkMLEmitterError(ConversionError):
-    """Raised when a typed node has no faithful LinkML representation."""
-
-
-class EmptyLinkMLSlotNameError(LinkMLEmitterError):
-    """Raised when a field has an empty or whitespace-only name that cannot form a LinkML slot."""
-
-
-class NestedLinkMLMultivaluedError(LinkMLEmitterError):
-    """Raised when an array contains nested array or map items that cannot be represented as a flat LinkML slot."""
 
 
 @dataclass(slots=True)
