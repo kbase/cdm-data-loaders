@@ -90,11 +90,11 @@ case "$cmd" in
     exec /usr/bin/tini -- xml_file_splitter "$@"
     ;;
   test)
-    exec /usr/bin/tini -- uv run --no-sync pytest -m "not requires_spark and not requires_ceph and not docs and not state_audit" --ignore=tests/test_docs_templates.py --cov=src --cov-report=xml "$@"
+    exec /usr/bin/tini -- uv run --all-groups pytest -m "not requires_spark and not requires_ceph and not docs and not state_audit" --ignore=tests/docs --cov=src --cov-report=xml "$@"
     ;;
   ceph_integration_test)
     # run the CEPH-backed integration tests (requires a running CEPH instance)
-    exec /usr/bin/tini -- uv run --no-sync pytest -m "requires_ceph" -v "$@"
+    exec /usr/bin/tini -- uv run --all-groups pytest -m "requires_ceph" -v "$@"
     ;;
   bash)
     exec /usr/bin/tini -- /bin/bash

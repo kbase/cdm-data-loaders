@@ -535,21 +535,6 @@ def _invoke_transform(
     return validate_routed_output(_call_transform(transform, one_row_table, ctx, takes_ctx=takes_ctx))
 
 
-@functools.cache
-def _compose_transform_tuple(step_tuple: tuple[TableTransformFn, ...]) -> TableTransformFn:
-    """Build a cached composed transform function from a tuple of two or more transforms.
-
-    :param step_tuple: ordered tuple of table transform callables
-    :type step_tuple: tuple[TableTransformFn, ...]
-    :return: composed ``TableTransformFn`` executing every transform in ``step_tuple`` in order
-    :rtype: TableTransformFn
-    """
-    return _ComposedTransform(
-        steps=step_tuple,
-        accepts_pyarrow=all(accepts_pyarrow_table(step) for step in step_tuple),
-    )
-
-
 def compose_transforms(transforms: Sequence[TableTransformFn]) -> TableTransformFn:
     """Compose one or more table transforms so their routed outputs are merged in order.
 
@@ -565,7 +550,10 @@ def compose_transforms(transforms: Sequence[TableTransformFn]) -> TableTransform
         raise ValueError(err_msg)
     if len(step_tuple) == 1:
         return step_tuple[0]
-    return _compose_transform_tuple(step_tuple)
+    return _ComposedTransform(
+        steps=step_tuple,
+        accepts_pyarrow=all(accepts_pyarrow_table(step) for step in step_tuple),
+    )
 
 
 def _resolve_transform_context(
@@ -758,6 +746,8 @@ class TransformSettingsMixin(BaseSettings):
 
     _file_preprocessors: PreprocessorRegistry | None = PrivateAttr(default=None)
     _table_transforms: TransformRegistry | None = PrivateAttr(default=None)
+    _composed_transforms_source: TransformRegistry | None = PrivateAttr(default=None)
+    _composed_transforms: dict[str, TableTransformFn] | None = PrivateAttr(default=None)
     _unreconciled_output_schemas: ArrowSchemaRegistry | None = PrivateAttr(default=None)
 
     """User-supplied output table schemas in pyarrow format."""
@@ -786,7 +776,24 @@ class TransformSettingsMixin(BaseSettings):
         if self.output_schemas_module is not None and self.use_pyarrow:
             self._unreconciled_output_schemas = load_registry_dict(self.output_schemas_module, "OUTPUT_SCHEMAS")
         self._resolve_settings_schema_map()
+        self._sync_composed_transforms()
         return self
+
+    def _sync_composed_transforms(self) -> dict[str, TableTransformFn] | None:
+        """Build and cache per-table composed transforms on this instance for ``self._table_transforms``.
+
+        :return: mapping of table names to single or composed transform callables, or ``None``
+        :rtype: dict[str, TableTransformFn] | None
+        """
+        if self._table_transforms is None:
+            return None
+        if self._composed_transforms is None or self._composed_transforms_source is not self._table_transforms:
+            self._composed_transforms = {
+                name: compose_transforms(self._table_transforms.get_tuple(name))
+                for name in self._table_transforms.registry
+            }
+            self._composed_transforms_source = self._table_transforms
+        return self._composed_transforms
 
     @property
     def use_pyarrow(self) -> bool:
@@ -883,10 +890,10 @@ class TransformSettingsMixin(BaseSettings):
         :return: configured or composed transform callable, or ``None``
         :rtype: TableTransformFn | None
         """
-        transforms = self.get_table_transforms(table_name)
-        if not transforms:
+        composed = self._sync_composed_transforms()
+        if composed is None:
             return None
-        return compose_transforms(transforms)
+        return composed.get(table_name)
 
     def get_output_table_hints(self) -> tuple[OutputTableHints, ...]:
         """Return per-table output hints (descriptions and Iceberg partitions) for this pipeline.
