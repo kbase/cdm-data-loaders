@@ -13,6 +13,7 @@ from typing import Any
 
 import pyarrow as pa
 import pytest
+import yaml
 from dlt.sources.filesystem import filesystem
 
 import cdm_data_loaders.pipelines.xsv.pipeline as xsv_pipeline_module
@@ -469,3 +470,60 @@ def test_process_xsv_file_pass_jsonl_format_yields_lists_of_dicts(
     assert len(by_table[REJECTED_TABLE_NAME]) == 1
     assert by_table[REJECTED_TABLE_NAME][0]["table_name"] == "my_table"
     assert by_table[REJECTED_TABLE_NAME][0]["source_file"] == "mixed.csv"
+
+
+def test_run_xsv_pipeline_pass_file_listing_skips_qsv_and_writes_listing(
+    settings_factory: Callable[..., XsvIngestSettings],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run_xsv_pipeline with loader_file_format='file_listing' writes file_listing.txt without invoking qsv_check."""
+
+    def fail_qsv_check() -> str:
+        msg = "qsv_check must not run during file_listing"
+        raise AssertionError(msg)
+
+    def fail_preprocess(_file_item: Any) -> Any:  # noqa: ANN401
+        msg = "FILE_PREPROCESSORS must not run during file_listing"
+        raise AssertionError(msg)
+
+    def fail_transform(_row: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+        msg = "TABLE_TRANSFORMS must not run during file_listing"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(xsv_pipeline_module, "qsv_check", fail_qsv_check)
+    hooks_mod = register_temp_module(
+        monkeypatch,
+        "_test_xsv_file_listing_hooks",
+        FILE_PREPROCESSORS=[fail_preprocess],
+        TABLE_TRANSFORMS={"my_table": fail_transform},
+    )
+    settings = settings_factory(
+        SIMPLE_SCHEMA,
+        {
+            "batch_1/data.csv": "ragged,row,extra,cols\n",
+            "top.csv": "not_an_int,alice\n",
+            "notes.txt": "ignored\n",
+        },
+        file_glob="**/*.csv",
+        loader_file_format="file_listing",
+        use_destination="unconfigured_dest",
+        preprocessors_module=hooks_mod,
+        transforms_module=hooks_mod,
+    )
+
+    result = run_xsv_pipeline(settings)
+
+    assert result is None
+    assert not settings.report_path.exists()
+    assert yaml.safe_load(settings.file_listing_path.read_text(encoding="utf-8")) == {
+        "input_dir_files": [
+            "batch_1/data.csv",
+            "notes.txt",
+            "schema.json",
+            "top.csv",
+        ],
+        "matched_files": [
+            "batch_1/data.csv",
+            "top.csv",
+        ],
+    }

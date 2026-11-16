@@ -23,7 +23,7 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Common Da
 
 ## Specifications
 
-### Schema Converter Specifications
+### Schema Converter Architecture and Specifications
 
 - **[JSON Schema to PyArrow Specification](jsonschema_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
 - **[Pydantic to PyArrow Specification](pydantic_to_pyarrow_specification.md)**: Auto-generated conversion rules, test cases, and error catalog.
@@ -46,6 +46,8 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Common Da
 - **[Pipeline E2E and Smoke Testing Across Environments Guide](pipeline_e2e_testing_guide.md)**: Running specification-driven smoke tests across `core`, `cli`, and `docker` modes and `local_fs`, `s3_moto`, `s3_ceph`, and custom `--dlt-config-dir` / Iceberg environments.
 - **[Pipeline Specifications Developer Guide](pipeline_specs_guide.md)**: Authoring and maintaining pipeline specification rules, `spec/` and `presets/` fixture manifests, and rendered specification pages.
 - **[Schema Converter Specifications Developer Guide](schema_converter_specs_guide.md)**: Authoring and maintaining schema converter rules, error codes (`E1..En`), fixture manifests, and rendered specification pages.
+- **[dlt PyArrow Table and Column Definitions](dlt_pyarrow_definitions.md)**: Characterisation of table metadata, field descriptions, scalar and nested types, nullability, and identifier normalization across `dlt` schemas, Parquet files, and Iceberg tables.
+- **[dlt Nested Output Behaviour](dlt_nested_output_behaviour.md)**: Characterisation of Python `dict` vs `pyarrow.Table` nested output, `max_table_nesting` propagation across `@dlt.resource` and `@dlt.transformer`, and Parquet, Iceberg, and JSONL representations.
 
 ## API and Schema Reference
 

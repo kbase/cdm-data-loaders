@@ -38,11 +38,13 @@ from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_
 from tests.conftest import PIPELINE_SPECS_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
 from tests.helpers import make_cts_settings
+from tests.pipeline_spec import load_pipeline_cases
 from tests.pyarrow_spec_helpers import assert_schema_matches_expected, load_expected_table
 
 XSV_DATA_DIR = (PIPELINE_SPECS_DIR / "xsv").resolve()
 RULES = load_rules(XSV_DATA_DIR / "rules.yaml")
 CASES: list[Case] = load_cases(XSV_DATA_DIR / "spec")
+PIPELINE_CASES = load_pipeline_cases(XSV_DATA_DIR)
 ERROR_CASES: list[ErrorCase] = load_error_cases(XSV_DATA_DIR / "spec" / "errors" / "manifest.yaml")
 ERRORS_BY_CODE: dict[str, type[XsvSchemaError]] = {cls.code: cls for cls in XSV_SCHEMA_ERRORS}
 
@@ -111,13 +113,13 @@ def _stage_run_settings(
 
 def test_manifests_pass_every_case_rule_exists() -> None:
     """Every rule referenced by a case manifest is defined in rules.yaml."""
-    unknown = {f"{case.suite}/{case.name}": sorted(set(case.rules) - RULES.rules.keys()) for case in CASES}
+    unknown = {f"{case.suite}/{case.name}": sorted(set(case.rules) - RULES.rules.keys()) for case in PIPELINE_CASES}
     assert {name: ids for name, ids in unknown.items() if ids} == {}
 
 
 def test_manifests_pass_every_rule_is_exercised() -> None:
     """Every rule in rules.yaml is exercised by at least one case."""
-    used = {rule_id for case in CASES for rule_id in case.rules}
+    used = {rule_id for case in PIPELINE_CASES for rule_id in case.rules}
     assert sorted(RULES.rules.keys() - used) == []
 
 

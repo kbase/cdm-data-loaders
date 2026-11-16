@@ -18,7 +18,7 @@ from dlt.common.libs.pyiceberg import drop_iceberg_table, get_catalog, is_epheme
 from pydantic_settings import BaseSettings
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, RESTError
 
-from cdm_data_loaders.pipelines.iceberg_cleanup import install_iceberg_catalog_cleanup
+from cdm_data_loaders.utils.iceberg_cleanup import install_iceberg_catalog_cleanup
 from tests.conftest import LOCAL_FS
 from tests.dlt_config_isolation import load_dlt_toml_files
 from tests.pipeline_spec import load_settings_file

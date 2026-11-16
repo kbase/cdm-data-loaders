@@ -22,9 +22,10 @@ from dlt.common.pipeline import LoadInfo
 from dlt.destinations import filesystem
 
 from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
+from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
 from cdm_data_loaders.pipelines import core
-from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME, PipelineCli
+from cdm_data_loaders.pipelines.core import PipelineCli
 from tests.cdm_data_loaders.pipelines.helpers import read_jsonl_file
 from tests.conftest import BASE_DIR, CONFIG_BUCKET, LOCAL_FS, preserve_logging_state
 from tests.helpers import settings_to_argv

@@ -17,6 +17,8 @@ from cdm_data_loaders.core.fields import (
     CTS_STAR,
     REJECTED_TABLE_NAME,
     DatasetName,
+    DestinationFileFormat,
+    DestinationFileFormatEnum,
     FileGlob,
     LoaderFileFormat,
     LoaderFileFormatEnum,
@@ -25,7 +27,8 @@ from cdm_data_loaders.core.fields import (
     file_glob_description,
 )
 
-FORMAT_ERROR: Final[str] = "Input should be 'iceberg', 'jsonl' or 'parquet'"
+FORMAT_ERROR: Final[str] = "Input should be 'file_listing', 'iceberg', 'jsonl' or 'parquet'"
+DEST_FORMAT_ERROR: Final[str] = "Input should be 'iceberg', 'jsonl' or 'parquet'"
 CTS_PARAM_VALUE_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[\w\./][\w\.\,+/-]*$")
 
 
@@ -36,6 +39,12 @@ class PipelineFieldsModel(BaseModel):
     loader_file_format: LoaderFileFormat
 
 
+class DestinationFieldsModel(BaseModel):
+    """Model holding DestinationFileFormat for non-filesystem pipelines."""
+
+    loader_file_format: DestinationFileFormat
+
+
 @pytest.mark.parametrize(
     ("kwargs", "expected"),
     [
@@ -43,6 +52,16 @@ class PipelineFieldsModel(BaseModel):
             {"dataset_name": "ds"},
             {"dataset_name": "ds", "loader_file_format": "parquet"},
             id="defaults",
+        ),
+        pytest.param(
+            {"dataset_name": "ds", "loader_file_format": "file_listing"},
+            {"dataset_name": "ds", "loader_file_format": "file_listing"},
+            id="file_listing_string",
+        ),
+        pytest.param(
+            {"dataset_name": "ds", "loader_file_format": LoaderFileFormatEnum.FILE_LISTING},
+            {"dataset_name": "ds", "loader_file_format": "file_listing"},
+            id="file_listing_enum_member",
         ),
         pytest.param(
             {"dataset_name": "ds", "loader_file_format": "jsonl"},
@@ -72,6 +91,23 @@ def test_pipeline_fields_pass_valid_values(kwargs: dict[str, object], expected: 
     assert model.model_dump() == expected
     assert isinstance(model.loader_file_format, LoaderFileFormatEnum)
     assert str(model.loader_file_format) == expected["loader_file_format"]
+
+
+def test_destination_file_format_pass_and_rejects_file_listing() -> None:
+    """DestinationFileFormat accepts destination table formats and rejects file_listing."""
+    default_model = DestinationFieldsModel.model_validate({})
+    assert default_model.loader_file_format == DestinationFileFormatEnum.PARQUET
+
+    for fmt in ("iceberg", "jsonl", "parquet", LoaderFileFormatEnum.PARQUET):
+        validated = DestinationFieldsModel.model_validate({"loader_file_format": fmt})
+        assert isinstance(validated.loader_file_format, DestinationFileFormatEnum)
+        assert str(validated.loader_file_format) == str(fmt)
+
+    with pytest.raises(ValidationError) as exc_info:
+        DestinationFieldsModel.model_validate({"loader_file_format": "file_listing"})
+    assert [(err["loc"], err["msg"]) for err in exc_info.value.errors()] == [
+        (("loader_file_format",), DEST_FORMAT_ERROR)
+    ]
 
 
 @pytest.mark.parametrize(

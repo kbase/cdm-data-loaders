@@ -9,7 +9,7 @@ from frozendict import frozendict
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
-from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME, REPORT_FILE_NAME
+from cdm_data_loaders.core.fields import FILE_LISTING_FILE_NAME, PIPELINE_DIR_NAME, REPORT_FILE_NAME
 from cdm_data_loaders.core.settings import (
     DEFAULT_SETTINGS_CONFIG_DICT,
     FILE_FORMAT_CLI_SHORTCUTS,
@@ -572,6 +572,32 @@ def test_cts_settings_report_path_pass(
         }
     )
     assert settings.report_path == settings.output_dir / expected_rel_path
+
+
+@pytest.mark.parametrize(
+    ("use_output_dir_for_pipeline_metadata", "expected_rel_path"),
+    [
+        pytest.param(False, Path(FILE_LISTING_FILE_NAME), id="output_dir_root"),
+        pytest.param(
+            True,
+            Path(PIPELINE_DIR_NAME) / FILE_LISTING_FILE_NAME,
+            id="pipeline_metadata_subdir",
+        ),
+    ],
+)
+def test_cts_settings_file_listing_path_pass(
+    test_defaults: dict[str, Any],
+    use_output_dir_for_pipeline_metadata: bool,
+    expected_rel_path: Path,
+) -> None:
+    """Resolve file_listing_path in output_dir or pipeline_dir based on use_output_dir_for_pipeline_metadata."""
+    settings = CtsSettings(
+        **{
+            **test_defaults,
+            "use_output_dir_for_pipeline_metadata": use_output_dir_for_pipeline_metadata,
+        }
+    )
+    assert settings.file_listing_path == settings.output_dir / expected_rel_path
 
 
 @pytest.mark.parametrize("missing_field", ["table_name", "xml_tag"], ids=["missing-table-name", "missing-xml-tag"])

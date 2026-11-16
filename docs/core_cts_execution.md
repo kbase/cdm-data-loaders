@@ -95,7 +95,7 @@ Pipeline settings models are defined in [`src/cdm_data_loaders/core/settings.py`
 
 - **Environment Variable Prefix (`CDL_`)**: Every CLI option can be supplied via a `CDL_`-prefixed environment variable, such as `CDL_DATASET_NAME=my_dataset` or `CDL_INPUT_DIR=/data/in`.
 - **Kebab-Case CLI Flags**: Field names use `snake_case` in Python and `--kebab-case` on the CLI (for example, `dataset_name` maps to `--dataset-name`).
-- **Pipeline Metadata Location (`-p` / `--use-output-dir-for-pipeline-metadata`)**: Passing `-p` stores `dlt` internal state and schema metadata under `<output_dir>/pipeline_metadata/<pipeline_name>/` and writes `report.txt` to `<output_dir>/pipeline_metadata/report.txt`, keeping stateless CTS runs self-contained inside `/output_dir`.
+- **Pipeline Metadata Location (`-p` / `--use-output-dir-for-pipeline-metadata`)**: Passing `-p` stores `dlt` internal state and schema metadata under `<output_dir>/pipeline_metadata/<pipeline_name>/` and writes `report.txt` (or `file_listing.txt`) under `<output_dir>/pipeline_metadata/`, keeping stateless CTS runs self-contained inside `/output_dir`.
 - **Custom Pre-processors, Transforms, and Output Schemas**: File-format ingestion pipelines accept `--preprocessors-module`, `--transforms-module`, and `--output-schemas-module`; see [Table and Column Transformations](table_transforms.md) for runnable examples.
 - **CTS-Safe Wildcard Tokens (`FileGlob`)**: The CTS `POST /jobs` API restricts `args` and `environment` values to `^[\w\./][\w\.\,+/-]*$` and rejects raw glob metacharacters (`*`, `?`, `[`, `]`, `!`). `FileGlob` (`--file-glob`, `-g`, `CDL_FILE_GLOB`) expands readable wildcard tokens while keeping raw globs intact for local runs:
 
@@ -193,6 +193,22 @@ pipeline_load_info_errs: null
 ```
 
 If `pipeline.run()` fails or reports failed jobs, `status` is set to `"error"` or `"completed with errors"` and `pipeline_err_msg` and `load_errors` are populated.
+
+### `file_listing.txt` (`--loader-file-format file_listing`)
+
+Passing `--loader-file-format file_listing` (`-f file_listing`) on any `filesystem`-backed pipeline discovers input files and exits without opening files, running `FILE_PREPROCESSORS` or `TABLE_TRANSFORMS`, initializing a `dlt` destination, writing `report.txt` or `_load_info`, or sending Slack alerts. `write_file_listing()` writes YAML to `settings.file_listing_path` (`<output_dir>/file_listing.txt`, or `<output_dir>/pipeline_metadata/file_listing.txt` when `-p` is set):
+
+```yaml
+input_dir_files:
+  - batch_01.jsonl.gz
+  - notes/readme.txt
+  - sub/batch_02.jsonl.gz
+matched_files:
+  - batch_01.jsonl.gz
+  - sub/batch_02.jsonl.gz
+```
+
+`input_dir_files` lists all files discovered under `input_dir` via `dlt` `filesystem(..., file_glob="**")` as sorted POSIX relative paths, and `matched_files` lists the subset matched by the pipeline's `dlt` `filesystem` glob(s). Pipelines that do not read via `dlt.sources.filesystem` (such as `all_the_bacteria`) reject `file_listing` during settings validation.
 
 ### `_load_info` Destination Table
 

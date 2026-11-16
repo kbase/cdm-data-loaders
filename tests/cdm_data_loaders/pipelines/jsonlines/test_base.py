@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import dlt
 import pyarrow as pa
 import pytest
+import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.extract.resource import DltResource
 from pydantic import BaseModel
@@ -228,3 +229,63 @@ def test_run_registry_ingest_pass_builds_sorted_resources_and_delegates_to_run_p
         },
         pipeline_run_kwargs=expected_run_kwargs,
     )
+
+
+def test_run_registry_ingest_pass_file_listing_multi_entity_skips_validation_and_transforms(
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
+    widget_model: type[BaseModel],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run_registry_ingest with loader_file_format='file_listing' lists all files and per-entity matches without parsing."""
+
+    def fail_resolve_error(_record: dict[str, Any]) -> str | None:
+        msg = "validator must not run during file_listing"
+        raise AssertionError(msg)
+
+    def fail_transform(_row: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+        msg = "TABLE_TRANSFORMS must not run during file_listing"
+        raise AssertionError(msg)
+
+    registry: dict[str, type[BaseModel]] = {
+        "zeta": widget_model,
+        "missing_entity": widget_model,
+        "alpha": widget_model,
+    }
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_registry_file_listing_transforms",
+        ENTITY_MODELS=registry,
+        TABLE_TRANSFORMS={"alpha": fail_transform, "zeta": fail_transform},
+    )
+    settings = settings_factory(
+        dataset_name="registry_listing_ds",
+        entity_models=transforms_mod,
+        loader_file_format="file_listing",
+        transforms_module=transforms_mod,
+    )
+    input_dir = Path(settings.input_dir)
+    (input_dir / "alpha").mkdir()
+    (input_dir / "zeta").mkdir()
+    (input_dir / "alpha" / "part.jsonl").write_text("{corrupt\n", encoding="utf-8")
+    (input_dir / "zeta" / "part.jsonl").write_text("{corrupt\n", encoding="utf-8")
+    (input_dir / "alpha" / "skip.txt").write_text("ignored", encoding="utf-8")
+    (input_dir / "root_manifest.txt").write_text("manifest", encoding="utf-8")
+
+    result = run_registry_ingest(
+        settings=settings,
+        registry=registry,  # type: ignore[arg-type]
+        build_resource=lambda table_name, _entry, cfg: build_entity_resource(table_name, cfg, fail_resolve_error),
+        pipeline_name="test_registry_listing_pipeline",
+    )
+
+    assert result is None
+    assert not settings.report_path.exists()
+    assert yaml.safe_load(settings.file_listing_path.read_text(encoding="utf-8")) == {
+        "input_dir_files": [
+            "alpha/part.jsonl",
+            "alpha/skip.txt",
+            "root_manifest.txt",
+            "zeta/part.jsonl",
+        ],
+        "matched_files": ["alpha/part.jsonl", "zeta/part.jsonl"],
+    }

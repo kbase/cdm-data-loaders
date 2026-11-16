@@ -38,6 +38,8 @@ nav = [
     { "Pipeline E2E and Smoke Testing" = "pipeline_e2e_testing_guide.md" },
     { "Pipeline Specifications Guide" = "pipeline_specs_guide.md" },
     { "Schema Converter Specifications Guide" = "schema_converter_specs_guide.md" },
+    { "dlt PyArrow Table and Column Definitions" = "dlt_pyarrow_definitions.md" },
+    { "dlt Nested Output Behaviour" = "dlt_nested_output_behaviour.md" },
   ] },
   { "API and Schema Reference" = [
     { "Bundled Schemas and XSDs" = "bundled_schemas.md" },
@@ -52,6 +54,7 @@ watch = [
   "docs/js",
   "docs_macros",
   "specs",
+  "tests/dependencies",
 ]
 extra_css = [
   "css/palette.css",

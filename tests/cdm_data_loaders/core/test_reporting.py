@@ -1,7 +1,6 @@
-"""Tests for pipeline report and metadata saving using real dlt LoadInfo objects."""
+"""Unit tests for `cdm_data_loaders.core.reporting`."""
 
 import logging
-from collections.abc import Iterator
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,7 +8,6 @@ from types import SimpleNamespace
 from typing import Any, Final
 from unittest.mock import MagicMock
 
-import dlt
 import pytest
 import yaml
 from dlt.common.destination.exceptions import DestinationHasFailedJobs
@@ -23,29 +21,81 @@ from dlt.common.storages.load_package import (
     ParsedLoadJobFileName,
     TPackageJobState,
 )
-from dlt.common.typing import TDataItems
-from dlt.sources.filesystem import filesystem
+from requests import RequestException
 
-from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME, REJECTED_TABLE_NAME, REPORT_FILE_NAME
-from cdm_data_loaders.core.preprocessors import FilePreprocessError
-from cdm_data_loaders.core.settings import CtsSettings
-from cdm_data_loaders.pipelines.core import (
+from cdm_data_loaders.core.fields import FILE_LISTING_FILE_NAME, PIPELINE_DIR_NAME, REPORT_FILE_NAME
+from cdm_data_loaders.core.reporting import (
+    NO_MESSAGE,
+    WEBHOOK_NOT_CONFIGURED,
     PipelineReport,
-    build_filesystem_resource,
-    run_pipeline,
     save_pipeline_metadata,
+    send_slack_message_carefully,
+    write_file_listing,
     write_pipeline_report,
 )
-from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
-from tests.cdm_data_loaders.pipelines.conftest import (
+from cdm_data_loaders.core.settings import CtsSettings
+from tests.cdm_data_loaders.conftest import (
     LOAD_INFO_SAVE_FAILED,
     LOAD_INFO_SAVE_FAILED_JOBS,
+    SLACK_HOOK,
 )
-from tests.cdm_data_loaders.pipelines.helpers import (
-    check_pipeline_report,
-    read_destination_rows,
+from tests.cdm_data_loaders.pipelines.helpers import check_pipeline_report
+
+TEST_MESSAGE: Final[str] = "3... 2... 1... testing?"
+
+
+@pytest.mark.parametrize(
+    ("slack_hook", "message", "err_msg"),
+    [
+        pytest.param(None, TEST_MESSAGE, WEBHOOK_NOT_CONFIGURED, id="hook_none"),
+        pytest.param("", TEST_MESSAGE, WEBHOOK_NOT_CONFIGURED, id="hook_empty"),
+        pytest.param(SLACK_HOOK, "", NO_MESSAGE, id="message_empty"),
+        pytest.param(SLACK_HOOK, "   ", NO_MESSAGE, id="message_spaces"),
+        pytest.param(SLACK_HOOK, "\n\t", NO_MESSAGE, id="message_newline_tab"),
+        pytest.param("", "", WEBHOOK_NOT_CONFIGURED, id="both_empty"),
+    ],
 )
-from tests.helpers import register_temp_module
+def test_send_slack_message_carefully_params_fail(
+    slack_hook: str | None,
+    message: str,
+    err_msg: str,
+    caplog: pytest.LogCaptureFixture,
+    slack_mock: MagicMock,
+) -> None:
+    """A missing/empty hook or a blank message logs exactly one warning and sends nothing."""
+    send_slack_message_carefully(slack_hook, message)  # pyright: ignore[reportArgumentType]
+    slack_mock.assert_not_called()
+    assert [(record.levelno, record.getMessage()) for record in caplog.records] == [
+        (logging.WARNING, f"Cannot send slack message: {err_msg}")
+    ]
+
+
+@pytest.mark.parametrize("markdown", [True, False, None], ids=["markdown-true", "markdown-false", "markdown-default"])
+def test_send_slack_message_carefully_markdown_params(markdown: bool | None, slack_mock: MagicMock) -> None:
+    """The message is stripped and sent once, with the is_markdown flag passed through."""
+    if markdown is None:
+        send_slack_message_carefully(SLACK_HOOK, f"  {TEST_MESSAGE} \n")
+    else:
+        send_slack_message_carefully(SLACK_HOOK, f"  {TEST_MESSAGE} \n", markdown)
+
+    slack_mock.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, bool(markdown))
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [RequestException("Oh no! An error!"), ValueError("bad payload")],
+    ids=["request-exception", "value-error"],
+)
+def test_send_slack_message_fail_error_oh_no(
+    exc: Exception, slack_mock: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Any error from the Slack sender is caught and logged as an error."""
+    slack_mock.side_effect = exc
+    send_slack_message_carefully(SLACK_HOOK, TEST_MESSAGE)
+    assert [(record.levelno, record.getMessage()) for record in caplog.records] == [
+        (logging.ERROR, "Failed to send slack message")
+    ]
+
 
 TEST_PIPELINE_NAME: Final[str] = "test_pipeline"
 TEST_DATASET_NAME: Final[str] = "test_dataset"
@@ -899,182 +949,123 @@ def test_save_pipeline_metadata_pass_forwards_ingested_files(
     )
 
 
-def test_run_pipeline_pass_filesystem_resource_records_ingested_files_in_report(
-    dlt_test_settings: CtsSettings,
+@pytest.mark.parametrize(
+    ("failed_job_messages", "preprocess_errors", "expected_load_errors"),
+    [
+        pytest.param(
+            [],
+            ["File pre-processing failed for bad.jsonl: checksum mismatch"],
+            ["File pre-processing failed for bad.jsonl: checksum mismatch"],
+            id="preprocess_errors_only",
+        ),
+        pytest.param(
+            ["job 1 failed"],
+            ["File pre-processing failed for bad.jsonl: checksum mismatch"],
+            ["job 1 failed", "File pre-processing failed for bad.jsonl: checksum mismatch"],
+            id="failed_jobs_and_preprocess_errors",
+        ),
+    ],
+)
+def test_write_pipeline_report_pass_preprocess_errors(
+    tmp_path: Path,
+    failed_job_messages: list[str],
+    preprocess_errors: list[str],
+    expected_load_errors: list[str],
 ) -> None:
-    """run_pipeline records relative paths from filesystem resources and writes them to report.txt."""
-    input_dir = Path(dlt_test_settings.input_dir)
-    (input_dir / "first.xml").write_text("one", encoding="utf-8")
-    (input_dir / "sub").mkdir()
-    (input_dir / "sub" / "second.xml").write_text("two", encoding="utf-8")
-
-    def read_items(items: TDataItems, _settings: CtsSettings) -> Iterator[dict[str, Any]]:
-        for item in items:
-            text = Path(item["file_url"].removeprefix("file://")).read_text(encoding="utf-8")
-            yield {"file": item["relative_path"], "text": text}
-
-    resource = build_filesystem_resource(
-        dlt_test_settings,
-        read_items,
-        name="xml_items",
-        file_glob="**/*.xml",
+    """write_pipeline_report marks status 'completed with errors' and appends preprocess_errors to load_errors."""
+    report_path = tmp_path / REPORT_FILE_NAME
+    load_packages = (
+        [MagicMock(jobs={"failed_jobs": [MagicMock(failed_message=msg) for msg in failed_job_messages]})]
+        if failed_job_messages
+        else []
+    )
+    report = PipelineReport(
+        pipeline_name=TEST_PIPELINE_NAME,
+        dataset_name=TEST_DATASET_NAME,
+        started_at=MOCK_START_TIME,
+        finished_at=MOCK_FINISH_TIME,
+        pipeline_load_info=MagicMock(loads_ids=["1700000000.123"], load_packages=load_packages),
+        preprocess_errors=preprocess_errors,
     )
 
-    load_info = run_pipeline(
-        dlt_test_settings,
-        resource,
-        pipeline_kwargs={"pipeline_name": TEST_PIPELINE_NAME, "dataset_name": "fs_report_ds"},
-    )
-
-    assert load_info is not None
-    report_data = check_pipeline_report(
-        dlt_test_settings.report_path,
-        {
-            "pipeline": TEST_PIPELINE_NAME,
-            "dataset": "fs_report_ds",
-            "status": "completed",
-            "pipeline_load_info_errs": None,
-        },
-    )
-    assert set(report_data["ingested_files"]) == {"first.xml", "sub/second.xml"}
-
-
-def test_run_pipeline_pass_shared_and_multiple_filesystem_roots_deduplicated(
-    dlt_test_settings: CtsSettings,
-) -> None:
-    """run_pipeline deduplicates shared filesystem roots and collects across multiple filesystem roots."""
-    input_dir = Path(dlt_test_settings.input_dir)
-    dir_a = input_dir / "dir_a"
-    dir_b = input_dir / "dir_b"
-    dir_a.mkdir()
-    dir_b.mkdir()
-    (dir_a / "a.txt").write_text("alpha", encoding="utf-8")
-    (dir_b / "b.txt").write_text("beta", encoding="utf-8")
-
-    shared_fs = filesystem(bucket_url=str(dir_a), file_glob="*.txt")
-    second_fs = filesystem(bucket_url=str(dir_b), file_glob="*.txt")
-
-    @dlt.transformer(name="trans_one")
-    def trans_one(items: TDataItems) -> Iterator[dict[str, Any]]:
-        for item in items:
-            yield {"path": item["relative_path"], "branch": 1}
-
-    @dlt.transformer(name="trans_two")
-    def trans_two(items: TDataItems) -> Iterator[dict[str, Any]]:
-        for item in items:
-            yield {"path": item["relative_path"], "branch": 2}
-
-    @dlt.transformer(name="trans_three")
-    def trans_three(items: TDataItems) -> Iterator[dict[str, Any]]:
-        for item in items:
-            yield {"path": item["relative_path"], "branch": 3}
-
-    load_info = run_pipeline(
-        dlt_test_settings,
-        [shared_fs | trans_one, shared_fs | trans_two, second_fs | trans_three],
-        pipeline_kwargs={"pipeline_name": TEST_PIPELINE_NAME, "dataset_name": "multi_fs_ds"},
-    )
-
-    assert load_info is not None
-    check_pipeline_report(
-        dlt_test_settings.report_path,
-        {
-            "pipeline": TEST_PIPELINE_NAME,
-            "dataset": "multi_fs_ds",
-            "status": "completed",
-            "ingested_files": ["a.txt", "b.txt"],
-            "pipeline_load_info_errs": None,
-        },
-    )
-
-
-def test_run_pipeline_pass_file_preprocessors_reject_skip_and_record_report_errors(
-    dlt_test_settings: CtsSettings,
-    destination_bucket: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """File pre-processing failures emit to _rejected, log an error, skip the file, and record load_errors in report.txt."""
-    input_dir = Path(dlt_test_settings.input_dir)
-    (input_dir / "good.jsonl").write_text('{"id": "1"}\n', encoding="utf-8")
-    (input_dir / "skip.jsonl").write_text('{"id": "2"}\n', encoding="utf-8")
-    (input_dir / "bad.jsonl").write_text('{"id": "3"}\n', encoding="utf-8")
-
-    def preprocess_file(file_item: Any) -> Any:  # noqa: ANN401
-        rel = file_item["relative_path"]
-        if rel == "skip.jsonl":
-            return None
-        if rel == "bad.jsonl":
-            msg = "checksum mismatch"
-            raise FilePreprocessError(msg)
-        return file_item
-
-    pre_mod = register_temp_module(
-        monkeypatch,
-        "_test_pipeline_report_preprocessors",
-        FILE_PREPROCESSORS=[preprocess_file],
-    )
-    settings = JsonlExtractSettings(
-        **dlt_test_settings.model_dump(exclude={"pipeline_dir", "report_path"}),
-        dataset_name="preprocess_report_ds",
-        table_name="items",
-        loader_file_format="jsonl",
-        preprocessors_module=pre_mod,
-    )
-
-    read_files: list[str] = []
-
-    def read_items(items: TDataItems, cfg: JsonlExtractSettings) -> Iterator[Any]:
-        for item in items:
-            read_files.append(item["relative_path"])
-            yield dlt.mark.with_table_name({"file": item["relative_path"]}, cfg.table_name)
-
-    resource = build_filesystem_resource(
-        settings,
-        read_items,
-        name="jsonl_items",
-        parallelized=False,
-    )
-
-    load_info = run_pipeline(
-        settings,
-        resource,
-        pipeline_kwargs={"pipeline_name": TEST_PIPELINE_NAME, "dataset_name": "preprocess_report_ds"},
-        pipeline_run_kwargs={"loader_file_format": "jsonl"},
-    )
-
-    assert load_info is not None
-    assert read_files == ["good.jsonl"]
-
-    error_logs = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
-    assert error_logs == ["File pre-processing failed for bad.jsonl: checksum mismatch"]
-
-    valid_rows = read_destination_rows(destination_bucket, "items")
-    assert valid_rows == [{"file": "good.jsonl"}]
-
-    rejected_rows = read_destination_rows(
-        destination_bucket,
-        REJECTED_TABLE_NAME,
-    )
-    assert rejected_rows == [
-        {
-            "table_name": "items",
-            "source_file": "bad.jsonl",
-            "error_detail": "checksum mismatch",
-        }
-    ]
+    write_pipeline_report(report_path, report)
 
     check_pipeline_report(
-        settings.report_path,
+        report_path,
         {
             "pipeline": TEST_PIPELINE_NAME,
-            "dataset": "preprocess_report_ds",
+            "dataset": TEST_DATASET_NAME,
+            "started": MOCK_START_TIME,
+            "finished": MOCK_FINISH_TIME,
             "status": "completed with errors",
+            "load_ids": ["1700000000.123"],
+            "load_errors": expected_load_errors,
+            "pipeline_load_info_errs": None,
+        },
+    )
+
+
+def test_save_pipeline_metadata_pass_forwards_preprocess_errors(
+    dlt_test_settings: CtsSettings,
+) -> None:
+    """save_pipeline_metadata forwards preprocess_errors to PipelineReport and writes load_errors in report.txt."""
+    assert dlt_test_settings.pipeline_dir is not None
+    Path(dlt_test_settings.pipeline_dir).mkdir(parents=True, exist_ok=True)
+    pipeline, load_info = make_metadata_pipeline_and_load_info()
+
+    save_pipeline_metadata(
+        dlt_test_settings,
+        pipeline,
+        load_info,
+        None,
+        ingested_files=["good.jsonl"],
+        preprocess_errors=["File pre-processing failed for bad.jsonl: checksum mismatch"],
+    )
+
+    check_pipeline_report(
+        dlt_test_settings.report_path,
+        {
+            "pipeline": TEST_PIPELINE_NAME,
+            "dataset": TEST_DATASET_NAME,
+            "started": MOCK_START_TIME,
+            "finished": MOCK_FINISH_TIME,
+            "status": "completed with errors",
+            "load_ids": ["1700000000.123"],
             "ingested_files": ["good.jsonl"],
             "load_errors": ["File pre-processing failed for bad.jsonl: checksum mismatch"],
             "pipeline_load_info_errs": None,
         },
     )
+
+
+@pytest.mark.parametrize(
+    ("input_dir_files", "matched_files"),
+    [
+        pytest.param([], [], id="empty_lists"),
+        pytest.param(
+            ["a.xml", "sub/b.xml.gz", "sub/notes.txt"],
+            ["a.xml", "sub/b.xml.gz"],
+            id="populated_lists",
+        ),
+    ],
+)
+def test_write_file_listing_pass(
+    tmp_path: Path,
+    input_dir_files: list[str],
+    matched_files: list[str],
+) -> None:
+    """write_file_listing creates parent directories and writes input_dir_files and matched_files in YAML order."""
+    listing_path = tmp_path / "nested" / PIPELINE_DIR_NAME / FILE_LISTING_FILE_NAME
+
+    write_file_listing(listing_path, input_dir_files, matched_files)
+
+    assert listing_path.is_file()
+    parsed = yaml.safe_load(listing_path.read_text(encoding="utf-8"))
+    assert list(parsed.keys()) == ["input_dir_files", "matched_files"]
+    assert parsed == {
+        "input_dir_files": input_dir_files,
+        "matched_files": matched_files,
+    }
 
 
 def test_write_pipeline_report_pass_datetime_subclass_without_global_safe_dumper_mutation(

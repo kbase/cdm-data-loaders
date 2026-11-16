@@ -627,6 +627,7 @@ def test_load_cli_entries_and_render_cli_reference_pass() -> None:
     assert "`--dataset-name`" in rendered
     assert "`CDL_DATASET_NAME`" in rendered
     assert "| `str | None` |" in rendered
+    assert "| `'file_listing' | 'iceberg' | 'jsonl' | 'parquet'` |" in rendered
     assert "| `'iceberg' | 'jsonl' | 'parquet'` |" in rendered
     assert r"`str \| None`" not in rendered
 
@@ -644,8 +645,11 @@ def test_discover_and_render_bundled_schemas_and_published_jsonschemas_pass() ->
     modules = discover_api_modules()
     module_paths = {mod.module_path for mod in modules}
     assert "cdm_data_loaders" in module_paths
+    assert "cdm_data_loaders.core.filesystem" in module_paths
+    assert "cdm_data_loaders.core.reporting" in module_paths
     assert "cdm_data_loaders.core.settings" in module_paths
     assert "cdm_data_loaders.pipelines.core" in module_paths
+    assert "cdm_data_loaders.utils.iceberg_cleanup" in module_paths
 
     assert not (DOCS_DIR / "schema_source").exists()
 
@@ -683,12 +687,14 @@ def test_discover_and_render_bundled_schemas_and_published_jsonschemas_pass() ->
 
 @pytest.mark.parametrize("table_id", sorted(TABLE_TEMPLATE_REGISTRY), ids=str)
 def test_render_reference_table_all_registered_tables_pass(table_id: str) -> None:
-    """Verify every registered reference table in TABLE_TEMPLATE_REGISTRY renders a Markdown table."""
+    """Verify every registered reference table in TABLE_TEMPLATE_REGISTRY renders an HTML Markdown table."""
     rendered = render_reference_table(table_id)
     lines = rendered.splitlines()
     assert len(lines) >= MIN_MARKDOWN_TABLE_LINES
     assert lines[0].startswith("| ")
     assert lines[1].startswith("| ")
+    assert "||" not in lines[1]
+    assert "<table>" in markdown.markdown(rendered, extensions=["tables"])
 
 
 def test_render_unknown_keys_raise_key_error() -> None:
