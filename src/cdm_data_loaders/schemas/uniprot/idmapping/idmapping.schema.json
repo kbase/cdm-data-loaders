@@ -9,15 +9,15 @@
                 "string"
             ]
         },
-        "db": {
-            "description": "Abbreviation for the database from which the internal ID in the `xref` column is derived.",
+        "db_reference_type": {
+            "description": "Abbreviation for the database from which the internal ID in the `db_reference_id` column is derived.",
             "minLength": 1,
             "type": [
                 "string"
             ]
         },
-        "xref": {
-            "description": "Internal ID at the database in the `db` column.",
+        "db_reference_id": {
+            "description": "Internal ID at the database in the `db_reference_type` column.",
             "minLength": 1,
             "type": [
                 "string"
@@ -26,8 +26,8 @@
     },
     "required": [
         "uniprot_id",
-        "db",
-        "xref"
+        "db_reference_type",
+        "db_reference_id"
     ],
     "title": "JSON Schema for UniProt ID mapping files",
     "type": "object",
