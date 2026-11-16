@@ -1,0 +1,28 @@
+title: Dual-Table UniProt ID Mapping Ingest (`raw_id_mapping` and `id_mapping`)
+pipeline: uniprot_idmapping
+settings_file: settings.toml
+rules:
+  - R-XSV-HEADER
+  - R-XSV-GZIP
+  - R-UNIPROT-IDMAPPING-PRESET
+  - R-UNIPROT-IDMAPPING-TABLES
+  - R-UNIPROT-IDMAPPING-PARTITION
+notes: |
+  A gzip-compressed headerless UniProt ID mapping file (`HUMAN_9606_idmapping.dat.gz`) ingested via the
+  `uniprot_idmapping` preset CLI. Validates gzip streaming decompression, two-pass `qsv` validation against
+  `idmapping.schema.json`, generic `raw_id_mapping` emission (`emit_raw_table`), standardised `id_mapping`
+  PyArrow table transformation (`uniprot:` CURIE prefix, `<db_reference_type>:<db_reference_id>`, and `source`
+  basename via `TransformContext`), and report output.
+runs:
+  - id: default
+    input_dir: input
+    expected_report:
+      status: completed
+      ingested_files:
+        - HUMAN_9606_idmapping.dat.gz
+      pipeline_load_info_errs: null
+    expected_counts:
+      raw_id_mapping: 3
+      id_mapping: 3
+    expected_tables: expected_tables.py
+    expected_json: expected.json

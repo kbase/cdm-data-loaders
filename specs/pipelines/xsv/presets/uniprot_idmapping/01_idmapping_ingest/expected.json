@@ -1,0 +1,36 @@
+{
+  "id_mapping": [
+    {
+      "db_reference": "UniProtKB-ID:NUD4B_HUMAN",
+      "source": "HUMAN_9606_idmapping.dat.gz",
+      "uniprot_id": "uniprot:A0A024RBG1"
+    },
+    {
+      "db_reference": "NCBI_TaxID:9606",
+      "source": "HUMAN_9606_idmapping.dat.gz",
+      "uniprot_id": "uniprot:P12345"
+    },
+    {
+      "db_reference": "GeneID:284697",
+      "source": "HUMAN_9606_idmapping.dat.gz",
+      "uniprot_id": "uniprot:Q8N158"
+    }
+  ],
+  "raw_id_mapping": [
+    {
+      "db_reference_id": "NUD4B_HUMAN",
+      "db_reference_type": "UniProtKB-ID",
+      "uniprot_id": "A0A024RBG1"
+    },
+    {
+      "db_reference_id": "9606",
+      "db_reference_type": "NCBI_TaxID",
+      "uniprot_id": "P12345"
+    },
+    {
+      "db_reference_id": "284697",
+      "db_reference_type": "GeneID",
+      "uniprot_id": "Q8N158"
+    }
+  ]
+}
