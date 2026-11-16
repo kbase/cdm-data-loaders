@@ -80,6 +80,7 @@ PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
     "pubmed": ("pubmed", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
     "uniprot": ("uniprot", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
     "uniprot_cdm": ("uniprot_cdm", "cdm_data_loaders.pipelines.uniprot_kb_cdm"),
+    "uniprot_idmapping": ("uniprot_idmapping", "cdm_data_loaders.pipelines.uniprot_idmapping"),
     "uniref50": ("uniref50", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
     "uniref50_cdm": ("uniref50_cdm", "cdm_data_loaders.pipelines.uniref_cdm"),
     "uniref90": ("uniref90", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),

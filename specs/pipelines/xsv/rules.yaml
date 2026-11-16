@@ -144,8 +144,41 @@ sections:
           `error_detail` set to the `qsv` diagnostic message.
       - id: R-XSV-TRANSFORMS
         statement: |
-          When `settings.table_transforms` defines a callable for `settings.table_name`, `read_validated_rows`
-          yields Python row dicts (`use_pyarrow=False`) routed through `route_and_coerce_record` and
-          `DictBuffer`. The transform may mutate rows, drop rows (`None` / `[]`), fan out records across
-          multiple tables, and coerce each output table against `settings.output_schemas` (or the default XSV
-          PyArrow schema).
+          When `settings.table_transforms` defines one or more callables for `settings.table_name`, transforms whose
+          first parameter accepts `pyarrow.Table` (`accepts_pyarrow_table(transform)`) receive streamed `pyarrow.Table`
+          chunks directly from `read_validated_rows(..., use_pyarrow=True)` via `route_and_coerce_table`, whereas
+          row-dict transforms receive Python dicts via `route_and_coerce_record` and `DictBuffer`. Transforms may
+          accept an optional second `TransformContext(table_name, source_file, file_name)` parameter, compose as a
+          tuple (e.g., `(emit_raw_table, custom_transform)`), drop rows/batches (`{}` / `[]` / 0-row `pa.Table`), fan
+          out across multiple tables, and cast/coerce each output table against `settings.schema_map`.
+      - id: R-XSV-GZIP
+        statement: |
+          When an input file ends with `.gz`, `_process_local_xsv_file` stream-decompresses it into the
+          per-file scratch directory before running `clean_validate_file`, while preserving the original
+          `.gz` relative path in `report.txt` (`ingested_files`), `_rejected` (`source_file`), and
+          `TransformContext` (`source_file` and `file_name`). Corrupt `.gz` streams are routed to
+          `_rejected`.
+
+  - id: uniprot_idmapping_preset
+    title: UniProt ID Mapping Preset Subclass (`UniProtIdMappingSettings`)
+    rules:
+      - id: R-UNIPROT-IDMAPPING-PRESET
+        statement: |
+          `UniProtIdMappingSettings` (`uniprot_idmapping` CLI) subclasses `XsvIngestSettings` and shares
+          `run_xsv_pipeline`, locking `dataset_name="uniprot_idmapping"`, `table_name="id_mapping"`,
+          defaulting `schema_file=IDMAPPING_SCHEMA_FILE`, `file_glob="**/*idmapping*.dat*"`, and
+          `partition_buckets=64`.
+      - id: R-UNIPROT-IDMAPPING-TABLES
+        statement: |
+          `UniProtIdMappingSettings` binds `(emit_raw_table, transform_uniprot_id_mapping)` in `TABLE_TRANSFORMS`
+          for `id_mapping`: the generic `emit_raw_table` transform emits `raw_id_mapping` (`RAW_ID_MAPPING_SCHEMA`
+          generated from `idmapping.schema.json` via `JSONSchemaToPyArrow` / `convert_xsv_schema_to_pyarrow`, table
+          description `"raw ID mapping data from UniProt"`), and `transform_uniprot_id_mapping` (`ID_MAPPING_SCHEMA`,
+          table description `"Standardised mapping data from UniProt"`) emits `id_mapping` with
+          `uniprot_id=f"uniprot:{uniprot_id}"`, `db_reference=f"{db_reference_type}:{db_reference_id}"`, and
+          `source` set to the input file basename from `TransformContext`.
+      - id: R-UNIPROT-IDMAPPING-PARTITION
+        statement: |
+          `UniProtIdMappingSettings.get_output_table_hints()` registers per-table `OutputTableHints` with
+          `iceberg_partition.bucket(partition_buckets, "uniprot_id")` (`x-iceberg-partition`) and table/column
+          descriptions on both `raw_id_mapping` and `id_mapping`.

@@ -152,7 +152,10 @@ def run_pipeline(
     :return: a load info object, if successful; otherwise None
     :rtype: LoadInfo | None
     """
-    if isinstance(settings, FileFormatIngestSettings) and settings.loader_file_format == LoaderFileFormatEnum.FILE_LISTING:
+    if (
+        isinstance(settings, FileFormatIngestSettings)
+        and settings.loader_file_format == LoaderFileFormatEnum.FILE_LISTING
+    ):
         input_dir_files, matched_files = collect_file_listing(settings, resource)
         write_file_listing(settings.file_listing_path, input_dir_files, matched_files)
         return None

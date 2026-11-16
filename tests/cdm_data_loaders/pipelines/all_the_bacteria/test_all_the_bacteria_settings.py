@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 from frozendict import frozendict
+from pydantic import ValidationError
 
 from cdm_data_loaders.pipelines.all_the_bacteria import (
     AtbSettings,
@@ -43,3 +44,12 @@ def test_cli_pattern_file_parses_correctly(
         expected_value=reconciled["pattern_file"],
         required=test_defaults,
     )
+
+
+def test_atb_settings_fail_file_listing_loader_file_format(test_defaults: dict[str, Any]) -> None:
+    """Reject loader_file_format='file_listing' on AtbSettings."""
+    with pytest.raises(ValidationError) as exc_info:
+        AtbSettings(**test_defaults, loader_file_format="file_listing")  # type: ignore[arg-type]
+    assert [(err["loc"], err["msg"]) for err in exc_info.value.errors()] == [
+        (("loader_file_format",), "Input should be 'iceberg', 'jsonl' or 'parquet'")
+    ]
