@@ -60,6 +60,8 @@ RAW_TABLE_PREFIX: Final[str] = "raw_"
 CONTEXT_POSITIONAL_ARITY: Final[int] = 2
 CONTEXT_PARAM_NAMES: Final[frozenset[str]] = frozenset({"ctx", "context"})
 
+type RecordCoercerFn = Callable[[Any, pa.Schema], dict[str, Any]]
+
 
 def extract_schema_descriptions(schema: pa.Schema) -> tuple[str | None, dict[str, str]]:
     """Extract the table description and per-column descriptions from ``schema`` metadata.
@@ -578,8 +580,62 @@ def _resolve_transform_context(
     return TransformContext.for_source(default_table, source_file)
 
 
+def make_record_router(
+    default_table: str | TransformContext,
+    *,
+    transform: TableTransformFn | None = None,
+    schema_map: ArrowSchemaRegistry | None = None,
+    record_coercer: RecordCoercerFn = coerce_record_for_pyarrow,
+) -> Callable[[BaseModel | dict[str, Any], str | None], dict[str, list[dict[str, Any]]]]:
+    """Build a reusable per-record router and PyArrow coercer for ``default_table``.
+
+    :param default_table: destination table name or :class:`TransformContext` when ``transform`` is ``None``
+    :type default_table: str | TransformContext
+    :param transform: optional ``TableTransformFn`` for ``default_table``
+    :type transform: TableTransformFn | None
+    :param schema_map: active destination ``ArrowSchemaRegistry``, if any
+    :type schema_map: ArrowSchemaRegistry | None
+    :param record_coercer: callable coercing a record or model against a target ``pa.Schema``
+    :type record_coercer: RecordCoercerFn
+    :return: callable accepting ``(record, source_file)`` and returning routed per-table row lists
+    :rtype: Callable[[BaseModel | dict[str, Any], str | None], dict[str, list[dict[str, Any]]]]
+    """
+
+    def _route_record(
+        record: BaseModel | dict[str, Any],
+        source_file: str | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        ctx = _resolve_transform_context(default_table, source_file)
+        if transform is not None:
+            if isinstance(record, BaseModel):
+                err_msg = "TableTransformFn requires a dict[str, Any] input record, got BaseModel"
+                raise TypeError(err_msg)
+            routed: dict[str, list[dict[str, Any]] | pa.Table] = _invoke_transform(transform, record, ctx)
+        else:
+            routed = {ctx.table_name: [record]}  # type: ignore[list-item]
+
+        if not routed:
+            return {}
+
+        result: dict[str, list[dict[str, Any]]] = {}
+        for out_table, out_val in routed.items():
+            target_schema = schema_map.registry.get(out_table) if schema_map is not None else None
+            if isinstance(out_val, pa.Table):
+                cast_tbl = align_and_cast_table(out_val, target_schema) if target_schema is not None else out_val
+                rows = cast_tbl.to_pylist()
+                if rows:
+                    result[out_table] = rows
+            elif target_schema is not None:
+                result[out_table] = [record_coercer(row, target_schema) for row in out_val]
+            else:
+                result[out_table] = out_val
+        return result
+
+    return _route_record
+
+
 def route_and_coerce_record(
-    record: dict[str, Any],
+    record: BaseModel | dict[str, Any],
     default_table: str | TransformContext,
     *,
     transform: TableTransformFn | None = None,
@@ -588,8 +644,8 @@ def route_and_coerce_record(
 ) -> dict[str, list[dict[str, Any]]]:
     """Route a validated record through ``transform`` and optionally coerce rows for PyArrow.
 
-    :param record: parsed and validated input record dictionary
-    :type record: dict[str, Any]
+    :param record: parsed and validated input record dictionary or ``BaseModel`` instance
+    :type record: BaseModel | dict[str, Any]
     :param default_table: destination table name or :class:`TransformContext` when ``transform`` is ``None``
     :type default_table: str | TransformContext
     :param transform: optional ``TableTransformFn`` for ``default_table``
@@ -601,27 +657,11 @@ def route_and_coerce_record(
     :return: dictionary mapping destination table names to non-empty lists of row dictionaries
     :rtype: dict[str, list[dict[str, Any]]]
     """
-    ctx = _resolve_transform_context(default_table, source_file)
-    routed: dict[str, list[dict[str, Any]] | pa.Table] = (
-        _invoke_transform(transform, record, ctx) if transform is not None else {ctx.table_name: [record]}
-    )
-
-    if not routed:
-        return {}
-
-    result: dict[str, list[dict[str, Any]]] = {}
-    for out_table, out_val in routed.items():
-        target_schema = schema_map.registry.get(out_table) if schema_map is not None else None
-        if isinstance(out_val, pa.Table):
-            cast_tbl = align_and_cast_table(out_val, target_schema) if target_schema is not None else out_val
-            rows = cast_tbl.to_pylist()
-            if rows:
-                result[out_table] = rows
-        elif target_schema is not None:
-            result[out_table] = [coerce_record_for_pyarrow(row, target_schema) for row in out_val]
-        else:
-            result[out_table] = out_val
-    return result
+    return make_record_router(
+        default_table,
+        transform=transform,
+        schema_map=schema_map,
+    )(record, source_file)
 
 
 def route_and_coerce_table(

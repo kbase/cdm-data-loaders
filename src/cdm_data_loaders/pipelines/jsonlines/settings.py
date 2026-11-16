@@ -9,9 +9,10 @@ if TYPE_CHECKING:
 import pyarrow as pa
 from frozendict import frozendict
 from jsonschema.exceptions import SchemaError
-from pydantic import Field, PrivateAttr
+from pydantic import Field, PositiveInt, PrivateAttr
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrowError,
 )
@@ -71,6 +72,8 @@ NCBI_DATASETS_SCHEMA_MODULE: Final[str] = "cdm_data_loaders.schemas.ncbi_dataset
 
 ENTITY_MODELS_MODULE: Final[str] = "entity_models"
 ENTITY_SCHEMAS_MODULE: Final[str] = "entity_schemas"
+BY_ALIAS: Final[str] = "by_alias"
+MAX_RECURSION_DEPTH: Final[str] = "max_recursion_depth"
 
 LOCAL_CLI_SHORTCUTS: Final[frozendict[str, str]] = frozendict(
     {
@@ -97,6 +100,8 @@ def build_output_schema_registry(
     *,
     table_transforms: TransformRegistry | None = None,
     output_schemas: ArrowSchemaRegistry | None = None,
+    max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH,
+    by_alias: bool = False,
 ) -> ArrowSchemaRegistry | None:
     """Convert all entity JSON Schemas or Pydantic models to PyArrow schemas up front.
 
@@ -113,6 +118,10 @@ def build_output_schema_registry(
     :type  table_transforms: TransformRegistry | None
     :param output_schemas: optional PyArrow schema registry
     :type  output_schemas: ArrowSchemaRegistry | None
+    :param max_recursion_depth: maximum expansion depth for recursive Pydantic ``BaseModel`` references
+    :type  max_recursion_depth: int
+    :param by_alias: when ``True``, use Pydantic ``serialization_alias`` or ``alias`` for field names
+    :type  by_alias: bool
     :return: PyArrow schema registry combining ``output_schemas`` and converted entity schemas, or ``None`` if empty
     :rtype: ArrowSchemaRegistry | None
     :raises RuntimeError: if one or more schemas cannot be converted to PyArrow schemas
@@ -122,7 +131,7 @@ def build_output_schema_registry(
     has_arrow_error = False
     is_model_registry = isinstance(validation_schema_registry, ModelRegistry)
     if is_model_registry:
-        pydantic_converter = PydanticToPyArrow()
+        pydantic_converter = PydanticToPyArrow(max_recursion_depth=max_recursion_depth, by_alias=by_alias)
         fn: Callable[..., Any] = pydantic_converter.convert
     else:
         fn = convert_schema_to_pyarrow
@@ -187,6 +196,8 @@ class JsonlIngestSettings(FileFormatIngestSettings):
                 registry,
                 table_transforms=self._table_transforms,
                 output_schemas=self._unreconciled_output_schemas,
+                max_recursion_depth=getattr(self, MAX_RECURSION_DEPTH, DEFAULT_MAX_RECURSION_DEPTH),
+                by_alias=getattr(self, BY_ALIAS, False),
             )
             if self.use_pyarrow
             else None
@@ -221,6 +232,26 @@ class JsonlPydanticIngestSettings(JsonlIngestSettings, TransformSettingsMixin):
                 "Dotted import path to a module that defines `ENTITY_MODELS: dict[str, type[BaseModel]]`. "
                 "Each key is a table name and a subdirectory of `input_dir`. "
                 "Each value is the Pydantic model for that table."
+            ),
+        ),
+    ]
+    max_recursion_depth: Annotated[
+        PositiveInt,
+        Field(
+            default=DEFAULT_MAX_RECURSION_DEPTH,
+            description=(
+                "Maximum recursion depth for self-referential Pydantic models before serializing "
+                "deeper content as JSON."
+            ),
+        ),
+    ]
+    by_alias: Annotated[
+        bool,
+        Field(
+            default=False,
+            description=(
+                "Use field `serialization_alias` or `alias` (instead of Python attribute names) "
+                "for generated PyArrow column names and serialized record keys."
             ),
         ),
     ]

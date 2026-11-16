@@ -140,12 +140,12 @@ ENTITY_MODELS: Final[dict[str, type[BaseModel]]] = {"widget": Widget}
 Before any files are read, `jsonlines_pydantic`:
 
 - Validates the `ENTITY_MODELS` registry.
-- Converts each entity's Pydantic model to a `pyarrow.Schema` via `PydanticToPyArrow`, unless that table has a configured transform in `--transforms-module` or an explicit schema override in `--output-schemas-module`.
+- Converts each entity's Pydantic model to a `pyarrow.Schema` via `PydanticToPyArrow` (honoring `--max-recursion-depth` and `--by-alias`), unless that table has a configured transform in `--transforms-module` or an explicit schema override in `--output-schemas-module`.
 
 During ingestion:
 
-- Each parsed JSON record is validated once with `model.model_validate(record)` and dumped via `model_dump(mode="python")`, so Pydantic's type coercion and field defaults apply.
-- Valid records are coerced to the target `pyarrow.Schema` and buffered into `pyarrow.Table` pages via `DictBuffer`. If a table transform is configured without a corresponding `OUTPUT_SCHEMAS` entry, records are buffered as `list[dict]` pages with `max_table_nesting=0`.
+- Each parsed JSON record is validated once with `model.model_validate(record)`, so Pydantic's type coercion and field defaults apply.
+- Validated models are coerced to the target `pyarrow.Schema` via `cdm_data_loaders.coercion.pydantic.coerce_record_for_pyarrow` (unwrapping `SecretStr` and `SecretBytes`, sorting `set` and `frozenset` values, quantizing `Decimal` fields, normalizing temporal values, and serializing overflowed recursion depths as JSON) and buffered into `pyarrow.Table` pages via `DictBuffer`. When a table transform is configured or `--loader-file-format jsonl` is selected, records are dumped via `model_dump(mode="python", by_alias=settings.by_alias)` before routing, and any `OUTPUT_SCHEMAS` destination tables are still coerced via `coerce_record_for_pyarrow`.
 
 ```sh
 DESTINATION__LOCAL_FS__DESTINATION_TYPE=filesystem \
