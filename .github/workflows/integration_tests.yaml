@@ -29,6 +29,8 @@ jobs:
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
             - name: Run CEPH-backed integration tests
+              env:
+                  PYTEST_ADDOPTS: "--durations=0 --durations-min=5"
               run: |
                   docker compose up \
                     --build \

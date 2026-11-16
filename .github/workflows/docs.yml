@@ -35,7 +35,7 @@ jobs:
         run: uv sync --all-groups
 
       - name: Run documentation tests
-        run: uv run --all-groups pytest -m docs
+        run: uv run --all-groups pytest -m docs --durations=0 --durations-min=5
 
       - name: Generate documentation stubs and schemas
         run: uv run --all-groups python -m docs_macros

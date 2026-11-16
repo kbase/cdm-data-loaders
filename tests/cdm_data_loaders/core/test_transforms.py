@@ -566,6 +566,8 @@ def test_transform_settings_mixin_pass_loads_transforms(
     assert settings.output_schemas_module == output_schemas_module
     assert settings.table_transforms == expected_transforms
     assert settings.schema_map == expected_schema_map
+    assert settings.get_table_transforms("items") == ((expected_item_transform,) if expected_item_transform else ())
+    assert settings.get_table_transforms("other") == ()
     assert settings.get_table_transform("items") is expected_item_transform
     assert settings.get_table_transform("other") is None
 
@@ -906,12 +908,19 @@ def test_extract_schema_descriptions_and_output_table_hints() -> None:
     ]
 
 
-def test_compose_transforms_merges_arrow_dict_and_mixed_outputs() -> None:
-    """compose_transforms validates non-empty input, unwraps singletons, and merges Arrow, dict, and mixed outputs."""
+def test_compose_transforms_fails_with_no_transforms() -> None:
+    """compose_transforms throws an error without any transforms."""
     with pytest.raises(ValueError, match="transforms must contain at least one callable"):
         compose_transforms(())
 
+
+def test_compose_transforms_returns_single_transform_as_is() -> None:
+    """compose_transforms validates a single non-empty input and returns it."""
     assert compose_transforms((_identity_items_transform,)) is _identity_items_transform
+
+
+def test_compose_transforms_merges_arrow_dict_and_mixed_outputs() -> None:
+    """compose_transforms merges Arrow, dict, and mixed outputs in step order."""
 
     def _arrow_part_a(table: pa.Table) -> dict[str, pa.Table]:
         """Route ``table`` to ``same_arrow`` and ``mixed``.
@@ -1099,11 +1108,11 @@ def test_route_and_coerce_table_pass_arrow_dict_rejected_and_jsonl_modes(
             assert out_val.to_pylist() == expected_rows_by_table[out_table]
 
 
-def test_source_file_propagated_to_table_transforms_in_jsonlines_and_xml_readers(
+def test_source_file_propagated_to_table_transforms_in_jsonlines(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """route_jsonl_lines and process_xml_file_to_dict pass source_file into 2-arg TABLE_TRANSFORMS."""
+    """route_jsonl_lines passes source_file into 2-arg TABLE_TRANSFORMS."""
     mod_name = register_temp_module(
         monkeypatch,
         "_test_reader_ctx_transforms_mod",
@@ -1124,6 +1133,7 @@ def test_source_file_propagated_to_table_transforms_in_jsonlines_and_xml_readers
         transforms_module=mod_name,
     )
     assert jsonl_settings.get_table_transforms("items") == (emit_raw_table, _dict_with_optional_ctx_param)
+    assert jsonl_settings.get_table_transform("items") is jsonl_settings.get_table_transform("items")
     jsonl_pages = {
         page.meta.table_name: page.data for page in route_jsonl_lines(iter([as_file_item(jsonl_file)]), jsonl_settings)
     }
@@ -1132,6 +1142,12 @@ def test_source_file_propagated_to_table_transforms_in_jsonlines_and_xml_readers
         "items": [{"id": "j1", "source": "events.jsonl"}],
     }
 
+
+def test_source_file_propagated_to_table_transforms_in_xml_readers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """process_xml_file_to_dict passes source_file into 2-arg TABLE_TRANSFORMS."""
     xml_dir = tmp_path / "xml_in"
     xml_dir.mkdir()
     xml_file = xml_dir / "records.xml"
