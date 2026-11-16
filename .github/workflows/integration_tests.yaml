@@ -30,7 +30,7 @@ jobs:
 
             - name: Run CEPH-backed integration tests
               env:
-                  PYTEST_ADDOPTS: "--durations=0 --durations-min=30"
+                  PYTEST_ADDOPTS: "--durations=0 --durations-min=5"
               run: |
                   docker compose up \
                     --build \

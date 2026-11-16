@@ -3,99 +3,99 @@
 name: Docker workflows
 
 on:
-    workflow_call:
+  workflow_call:
 
-    push:
-        branches:
-            - main
-    pull_request:
-        types:
-            - opened
-            - reopened
-            - synchronize
-            - ready_for_review
-    release:
-        types: [published]
+  push:
+    branches:
+      - main
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+  release:
+    types: [published]
 
 concurrency:
-    group: ${{ github.workflow }}-${{ github.ref }}
-    cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
-    REGISTRY: ghcr.io
-    IMAGE_NAME: ${{ github.repository }}
-    TEST_TAG: test_container
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  TEST_TAG: test_container
 
 jobs:
-    build_test_push:
-        runs-on: ubuntu-latest
-        permissions:
-            contents: read
-            packages: write
+  build_test_push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
-        steps:
-            - name: Login to GitHub Container Registry
-              uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
 
-              with:
-                  registry: ${{ env.REGISTRY }}
-                  username: ${{ github.actor }}
-                  password: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Checkout
-              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
 
-            - name: Extract Docker metadata
-              uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
-              id: meta
-              with:
-                  images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      - name: Extract Docker metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
-            - name: Build test Docker image
-              uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
-              id: build-test-image
-              with:
-                  context: .
-                  load: true
-                  tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TEST_TAG }}
-                  cache-from: type=gha
-                  cache-to: type=gha,mode=max
+      - name: Build test Docker image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        id: build-test-image
+        with:
+          context: .
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TEST_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-            - name: Install uv
-              uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
 
-            - name: Set up Python
-              uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-              with:
-                  python-version: "3.14"
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.14"
 
-            - name: Install dependencies
-              run: uv sync --dev
+      - name: Install dependencies
+        run: uv sync --dev
 
-            - name: Run docker pipeline tests
-              id: run-tests-docker
-              shell: bash
-              continue-on-error: false
-              run: uv run pytest --run-docker -m "docker and not requires_spark and not requires_ceph" --durations=0 --durations-min=30 --cov --junitxml=junit.xml -o junit_family=legacy tests/cdm_data_loaders/pipelines/
+      - name: Run docker pipeline tests
+        id: run-tests-docker
+        shell: bash
+        continue-on-error: false
+        run: uv run pytest --run-docker -m "docker and not requires_spark and not requires_ceph" --durations=0 --durations-min=5 --cov --junitxml=junit.xml -o junit_family=legacy tests/cdm_data_loaders/pipelines/
 
-            - name: Send test reports to Codecov
-              id: upload_test_reports
-              uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
-              if: ${{ !cancelled() }}
-              with:
-                  token: ${{ secrets.CODECOV_TOKEN }}
-                  report_type: test_results
+      - name: Send test reports to Codecov
+        id: upload_test_reports
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        if: ${{ !cancelled() }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          report_type: test_results
 
-            - name: Build and push
-              uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
-              id: build-push-image
-              if: ${{ github.event_name == 'release' || github.event_name == 'push' }}
-              with:
-                  context: .
-                  push: true
-                  tags: ${{ steps.meta.outputs.tags }}
-                  labels: ${{ steps.meta.outputs.labels }}
-                  platforms: linux/amd64,linux/arm64/v8
+      - name: Build and push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        id: build-push-image
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' }}
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64/v8

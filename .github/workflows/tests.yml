@@ -67,7 +67,7 @@ jobs:
           echo "Running tests inside container..."
           # slightly nasty hack
           chmod 777 .
-          docker run --rm -v .:/out cdm-data-loaders-test:latest test --durations=0 --durations-min=30 --cov-report=xml:/out/coverage.xml --junitxml=/out/junit.xml -o junit_family=legacy ${{ matrix.suite.args }}
+          docker run --rm -v .:/out cdm-data-loaders-test:latest test --durations=0 --durations-min=5 --cov-report=xml:/out/coverage.xml --junitxml=/out/junit.xml -o junit_family=legacy ${{ matrix.suite.args }}
 
       - name: Send coverage to Codecov
         id: upload_coverage
@@ -166,7 +166,7 @@ jobs:
       - name: Run local tests
         shell: bash
         continue-on-error: false
-        run: uv run --all-groups pytest -m "${{ matrix.suite.markers }}" --durations=0 --durations-min=30 --junitxml=junit.xml -o junit_family=legacy ${{ matrix.suite.args }}
+        run: uv run --all-groups pytest -m "${{ matrix.suite.markers }}" --durations=0 --durations-min=5 --junitxml=junit.xml -o junit_family=legacy ${{ matrix.suite.args }}
 
       - name: Send test reports to Codecov
         id: upload_test_reports
