@@ -1,9 +1,16 @@
 """Unit tests for UniProt ID mapping schemas, table transforms, and CLI entrypoint wiring."""
 
+import importlib
+import sys
+
+import jsonschema.validators
 import pyarrow as pa
 import pytest
 
-from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import convert_xsv_schema_to_pyarrow
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
+    JSONSchemaToPyArrow,
+    convert_xsv_schema_to_pyarrow,
+)
 from cdm_data_loaders.core.registry import TransformContext
 from cdm_data_loaders.core.transforms import emit_raw_table
 from cdm_data_loaders.parsers.uniprot.idmapping import (
@@ -19,6 +26,7 @@ from cdm_data_loaders.pipelines.uniprot_idmapping import (
 )
 from cdm_data_loaders.pipelines.xsv.pipeline import run_xsv_pipeline
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import validate_jsonschema
+from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI, get_xsv_meta_schema
 from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     DB_REFERENCE_DESCRIPTION,
     ID_MAPPING_DESCRIPTION,
@@ -39,7 +47,13 @@ def test_uniprot_idmapping_schemas_match_jsonschema_and_descriptions() -> None:
     derived = convert_xsv_schema_to_pyarrow(validate_jsonschema(IDMAPPING_SCHEMA_FILE)).with_metadata(
         {"comment": RAW_ID_MAPPING_DESCRIPTION}
     )
+    from_file = (
+        JSONSchemaToPyArrow()
+        .convert_from_file(str(IDMAPPING_SCHEMA_FILE))
+        .with_metadata({"comment": RAW_ID_MAPPING_DESCRIPTION})
+    )
     assert RAW_ID_MAPPING_SCHEMA.equals(derived, check_metadata=True)
+    assert RAW_ID_MAPPING_SCHEMA.equals(from_file, check_metadata=True)
     assert all(not field.nullable and field.type == pa.string() for field in RAW_ID_MAPPING_SCHEMA)
 
     assert ID_MAPPING_SCHEMA.names == ["uniprot_id", "db_reference", "source"]
@@ -53,6 +67,33 @@ def test_uniprot_idmapping_schemas_match_jsonschema_and_descriptions() -> None:
     expected_schemas = dict(UNIPROT_IDMAPPING_OUTPUT_SCHEMAS.registry)
     assert expected_transforms == TABLE_TRANSFORMS
     assert expected_schemas == OUTPUT_SCHEMAS
+
+
+def test_import_uniprot_idmapping_modules_does_not_mutate_jsonschema_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Importing UniProt ID mapping schema, parser, and pipeline modules leaves XSV metaschema state untouched."""
+    target_modules = (
+        "cdm_data_loaders.schemas.uniprot.idmapping.schema",
+        "cdm_data_loaders.parsers.uniprot.idmapping",
+        "cdm_data_loaders.pipelines.uniprot_idmapping",
+    )
+    for mod_name in target_modules:
+        parent_name, _, child_attr = mod_name.rpartition(".")
+        parent_mod = sys.modules.get(parent_name)
+        if parent_mod is not None and hasattr(parent_mod, child_attr):
+            monkeypatch.delattr(parent_mod, child_attr)
+        monkeypatch.delitem(sys.modules, mod_name, raising=False)
+
+    assert get_xsv_meta_schema.cache_info().currsize == 0
+    assert CUSTOM_META_SCHEMA_URI not in vars(jsonschema.validators)["_VALIDATORS"]
+    assert CUSTOM_META_SCHEMA_URI not in vars(jsonschema.validators)["_META_SCHEMAS"]
+
+    importlib.import_module("cdm_data_loaders.pipelines.uniprot_idmapping")
+
+    assert get_xsv_meta_schema.cache_info().currsize == 0
+    assert CUSTOM_META_SCHEMA_URI not in vars(jsonschema.validators)["_VALIDATORS"]
+    assert CUSTOM_META_SCHEMA_URI not in vars(jsonschema.validators)["_META_SCHEMAS"]
 
 
 def test_cli_wires_settings_and_runner() -> None:
