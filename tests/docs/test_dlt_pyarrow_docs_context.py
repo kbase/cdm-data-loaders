@@ -44,7 +44,7 @@ from tests.dependencies.test_dlt_pyarrow_table_definitions import (
     extract_arrow_field_metadata,
     with_parquet_compliant_list_elements,
 )
-from tests.test_docs_templates import materialize_markdown_file
+from tests.docs.helpers import materialize_markdown_file
 
 pytestmark = pytest.mark.docs
 
@@ -197,7 +197,7 @@ def test_build_dlt_pyarrow_flat_and_nested_dlt_column_rows_match_fixtures() -> N
     assert by_name["small_code"].iceberg_scan_summary == "`pa.int32()`, `nullable=True` (`doc`)"
     assert len(by_name["small_code"].cells) == len(TABLE_TEMPLATE_REGISTRY["dlt_pyarrow_flat_columns_table"][0])
 
-    # count_32 has comment + description + xsd_type without doc -> Iceberg doc=None
+    # count_32 has comment, description, and xsd_type without doc -> Iceberg doc=None
     assert by_name["count_32"].input_metadata_keys == "`comment`, `description`, `xsd_type`"
     assert "`doc=None`" in by_name["count_32"].iceberg_field_summary
 

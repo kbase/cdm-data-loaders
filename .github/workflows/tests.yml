@@ -53,7 +53,7 @@ jobs:
           - name: integration
             args: tests/integration/
           - name: everything else
-            args: --ignore=tests/integration --ignore=tests/cdm_data_loaders/pipelines
+            args: --ignore=tests/integration --ignore=tests/cdm_data_loaders/pipelines --ignore=tests/docs
 
     steps:
       - name: Checkout
@@ -102,7 +102,7 @@ jobs:
             args: --cov tests/integration/
           - name: everything else
             markers: "not requires_spark and not requires_ceph and not docs and not state_audit"
-            args: --cov --ignore=tests/integration --ignore=tests/cdm_data_loaders/pipelines
+            args: --cov --ignore=tests/integration --ignore=tests/cdm_data_loaders/pipelines --ignore=tests/docs
         include:
           - python-version: "3.13"
             os: "ubuntu-latest"

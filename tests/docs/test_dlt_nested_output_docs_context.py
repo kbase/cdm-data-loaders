@@ -33,7 +33,7 @@ from tests.dependencies.test_dlt_nested_output_behaviour import (
     EXPECTED_DLT_COLUMNS_DICT_UNNESTED,
     NestingPlacement,
 )
-from tests.test_docs_templates import materialize_markdown_file
+from tests.docs.helpers import materialize_markdown_file
 
 pytestmark = pytest.mark.docs
 

@@ -5,7 +5,6 @@ Cases and rules live under ``specs/pipelines/<pipeline>/`` (``rules.yaml``, ``*/
 render ``docs/<pipeline>_specification.md`` via ``docs_macros`` Jinja2 templates.
 """
 
-import importlib
 import os
 import subprocess
 from collections.abc import Generator
@@ -160,50 +159,6 @@ def test_manifests_pass_expected_tables_validate(case: PipelineCase, run: Pipeli
     normalized_from_tables = {name: normalize_expected_table_rows(table) for name, table in sorted(tables.items())}
     normalized_from_json = {name: canonicalize_table_rows(rows) for name, rows in sorted(expected_json_data.items())}
     assert normalized_from_tables == normalized_from_json
-
-
-# Documentation sync tests
-
-
-@pytest.mark.docs
-@pytest.mark.parametrize("family_name", sorted(PIPELINE_FAMILY_DIRS), ids=str)
-def test_spec_docs_pass_up_to_date_with_manifests(family_name: str) -> None:
-    """Generated <family>_specification.md stub invokes render_pipeline_spec and renders all rules and cases."""
-    docs_env = importlib.import_module("docs_macros.env")
-    spec_ctx = importlib.import_module("docs_macros.spec_context")
-
-    spec = spec_ctx.PIPELINE_SPECS[family_name]
-    stub_text = docs_env.build_generated_docs_plan()[Path(spec.output_path.name)]
-    assert "render_macros: true" in stub_text
-    assert f'render_pipeline_spec("{spec.name}")' in stub_text
-
-    rendered = docs_env.render_pipeline_spec(spec)
-    catalogue = CATALOGUES_BY_FAMILY[spec.name]
-    assert f"# {catalogue.title}" in rendered
-    for rule_id in catalogue.rules:
-        assert f"**{rule_id}**" in rendered
-        assert f'<a id="{rule_id.lower()}"></a>' in rendered
-    for case in CASES_BY_FAMILY[spec.name]:
-        assert f'<a id="{case.anchor}"></a>' in rendered
-
-
-@pytest.mark.docs
-def test_render_pipeline_spec_custom_config_and_unknown_name() -> None:
-    """render_pipeline_spec accepts a custom PipelineSpecConfig and raises KeyError on unknown names."""
-    docs_env = importlib.import_module("docs_macros.env")
-    spec_ctx = importlib.import_module("docs_macros.spec_context")
-
-    custom_spec = spec_ctx.PipelineSpecConfig(
-        name="xmltopyarrow",
-        data_dir=spec_ctx.PIPELINE_SPECS["xmltopyarrow"].data_dir,
-        output_path=spec_ctx.PIPELINE_SPECS["xmltopyarrow"].output_path,
-        presets=spec_ctx.PIPELINE_SPECS["xmltopyarrow"].presets,
-    )
-    rendered = docs_env.render_pipeline_spec(custom_spec)
-    assert "# XML to PyArrow Pipeline Specification" in rendered
-
-    with pytest.raises(KeyError, match="Unknown pipeline specification"):
-        docs_env.render_pipeline_spec("nonexistent_pipeline")
 
 
 # Built-in and user-supplied smoke test environments

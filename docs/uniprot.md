@@ -86,9 +86,9 @@ uv run uniref90_cdm \
 
 ## 3. UniProt ID Mapping Pipeline (`uniprot_idmapping`)
 
-[`uniprot_idmapping.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/uniprot_idmapping.py) provides a preset XSV pipeline (`UniProtIdMappingSettings`, sharing `run_xsv_pipeline`) for ingesting headerless, tab-delimited UniProt `idmapping.dat` and `idmapping.dat.gz` files validated against [`idmapping.schema.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/idmapping.schema.json).
+[`uniprot_idmapping.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/uniprot_idmapping.py) provides a preset XSV pipeline (`UniProtIdMappingSettings`, sharing `run_xsv_pipeline`) for ingesting headerless, tab-delimited UniProt `idmapping.dat` and `idmapping.dat.gz` files validated against [`idmapping.schema.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/idmapping/idmapping.schema.json).
 
-Each validated `pyarrow.Table` batch passes through two composed `TABLE_TRANSFORMS` steps ([`emit_raw_table`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms.py) and [`transform_uniprot_id_mapping`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/parsers/uniprot/idmapping.py)), emitting both a raw table and a standardised cross-reference table under dataset `uniprot_idmapping`. Both tables carry explicit PyArrow schemas ([`schemas/uniprot/idmapping.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/idmapping.py)) and Iceberg hash-bucket partition specs (`bucket(N, "uniprot_id")`, configurable via `--partition-buckets`).
+Each validated `pyarrow.Table` batch passes through two composed `TABLE_TRANSFORMS` steps ([`emit_raw_table`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms.py) and [`transform_uniprot_id_mapping`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/parsers/uniprot/idmapping.py)), emitting both a raw table and a standardised cross-reference table under dataset `uniprot_idmapping`. Both tables carry explicit PyArrow schemas ([`schemas/uniprot/idmapping/schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/idmapping/schema.py)) and Iceberg hash-bucket partition specs (`bucket(N, "uniprot_id")`, configurable via `--partition-buckets`).
 
 ### Output Tables
 
@@ -121,13 +121,13 @@ In addition to the ingestion pipelines, `cdm_data_loaders` includes utilities fo
   - `get_files(path, files_to_find=...)` extracts download URLs, file sizes, and checksums for release files.
 - **Release Notes Parser (`cdm_data_loaders.parsers.uniprot.relnotes`)**:
   - `parse_relnotes(path)` parses UniProt `relnotes.txt` files to extract the release version, release date, and entry counts across `UniProtKB`, `UniProtKB/Swiss-Prot`, `UniProtKB/TrEMBL`, `UniRef100`, `UniRef90`, `UniRef50`, and `UniParc`.
-- **ID Mapping TSV Schema (`cdm_data_loaders/schemas/uniprot/idmapping.schema.json`)**:
-  - JSON Schema with `x-xsv-config` metadata (tab-delimited, headerless, columns `uniprot_id`, `db_reference_type`, `db_reference_id`) used by `uniprot_idmapping` and directly usable with the generic `xsv` pipeline:
+- **ID Mapping TSV Schema (`cdm_data_loaders/schemas/uniprot/idmapping/idmapping.schema.json`)**:
+  - JSON Schema with `x-xsv-config` metadata (tab-delimited, headerless, columns `uniprot_id`, `db_reference_type`, `db_reference_id`) used by `uniprot_idmapping` and usable with the generic `xsv` pipeline:
     ```bash
     uv run xsv \
       --input-dir /path/to/idmapping \
       --output-dir /path/to/output \
       --file-glob "*idmapping*.dat.gz" \
-      --schema-file src/cdm_data_loaders/schemas/uniprot/idmapping.schema.json \
+      --schema-file src/cdm_data_loaders/schemas/uniprot/idmapping/idmapping.schema.json \
       --table-name raw_id_mapping
     ```
