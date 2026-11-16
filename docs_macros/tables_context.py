@@ -66,6 +66,17 @@ from cdm_data_loaders.schemas.jsonschema import (
 )
 from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
 from docs_macros.constants import PIPELINE_SPECS_ROOT
+from docs_macros.dlt_nested_output_context import (
+    build_dlt_nested_placement_rows,
+    build_dlt_nested_single_table_column_rows,
+    build_dlt_unnested_table_rows,
+)
+from docs_macros.dlt_pyarrow_context import (
+    build_dlt_pyarrow_flat_column_rows,
+    build_dlt_pyarrow_identifier_rows,
+    build_dlt_pyarrow_nested_dlt_column_rows,
+    build_dlt_pyarrow_nested_path_rows,
+)
 from docs_macros.formatting import (
     FrozenDocModel,
     JsonText,
@@ -890,14 +901,7 @@ def build_xsv_column_type_rows() -> tuple[XsvColumnTypeRow, ...]:
             "required": ["col"],
             "properties": properties,
         }
-        pa_schema = convert_xsv_schema_to_pyarrow(
-            ValidatedXsvSchema(
-                jsonschema=raw_schema,
-                has_xsv_metaschema=False,
-                has_xsv_parser_config=False,
-                required_cols=["col"],
-            )
-        )
+        pa_schema = convert_xsv_schema_to_pyarrow(ValidatedXsvSchema(jsonschema=raw_schema))
         pa_field = pa_schema.field("col")
         duckdb_cfg = resolve_duckdb_column_config(pa_schema if probe is not None else None)
         duckdb_dtype = str(duckdb_cfg.get("dtype", {}).get("col", "VARCHAR (auto)"))
@@ -1050,6 +1054,78 @@ TABLE_TEMPLATE_REGISTRY: Final[MappingProxyType[str, tuple[tuple[str, ...], Call
             "rejected_schema_table": (
                 ("Column", "PyArrow `DataType`", "`Field.nullable`", "Description"),
                 build_rejected_schema_rows,
+            ),
+            "dlt_pyarrow_flat_columns_table": (
+                (
+                    "Column",
+                    "Input PyArrow Field",
+                    "Input Metadata Keys",
+                    "`dlt` Column",
+                    "Parquet Field",
+                    "Iceberg `NestedField`",
+                    "Iceberg Scan (`to_arrow()`)",
+                ),
+                build_dlt_pyarrow_flat_column_rows,
+            ),
+            "dlt_pyarrow_nested_dlt_columns_table": (
+                (
+                    "Column",
+                    "Input PyArrow Field",
+                    "`dlt` Column",
+                    "Arrow IPC Hint (`deserialize_type`)",
+                ),
+                build_dlt_pyarrow_nested_dlt_column_rows,
+            ),
+            "dlt_pyarrow_nested_paths_table": (
+                (
+                    "Input Path",
+                    "Slot Kind",
+                    "Input Type and Metadata",
+                    "Parquet Type and Metadata",
+                    "Iceberg Slot and `doc`",
+                    "Iceberg Scan (`to_arrow()`)",
+                ),
+                build_dlt_pyarrow_nested_path_rows,
+            ),
+            "dlt_pyarrow_identifier_normalization_table": (
+                (
+                    "Fixture",
+                    "Input Path",
+                    "Slot Kind",
+                    "`dlt` Path (`default_schema` / `x-nested-type`)",
+                    "Parquet Path",
+                    "Iceberg Path and `doc`",
+                ),
+                build_dlt_pyarrow_identifier_rows,
+            ),
+            "dlt_nested_placement_matrix_table": (
+                (
+                    "Placement",
+                    "Where `max_table_nesting=0` Is Set",
+                    "Python `dict` Outcome",
+                    "`pyarrow.Table` Outcome",
+                ),
+                build_dlt_nested_placement_rows,
+            ),
+            "dlt_nested_single_table_columns_table": (
+                (
+                    "Column",
+                    "`dict` (`nesting=0`): `dlt` / Parquet / Iceberg",
+                    "`dict` (`nesting=0`): JSONL",
+                    "`pyarrow.Table`: `dlt` / Parquet / Iceberg",
+                    "`pyarrow.Table`: JSONL (`ArrowToJsonlWriter`)",
+                ),
+                build_dlt_nested_single_table_column_rows,
+            ),
+            "dlt_nested_unnested_tables_table": (
+                (
+                    "Generated Table",
+                    "Source Path and Role",
+                    "`dlt` Columns",
+                    "Parquet Schema",
+                    "Iceberg Schema",
+                ),
+                build_dlt_unnested_table_rows,
             ),
         }
     )

@@ -43,6 +43,7 @@ CTS_GLOB_WILDCARDS_DESCRIPTION: Final[str] = (
 )
 
 # output file formats
+FILE_LISTING: Final[str] = "file_listing"
 ICEBERG: Final[str] = "iceberg"
 JSONL: Final[str] = "jsonl"
 PARQUET: Final[str] = "parquet"
@@ -50,6 +51,15 @@ PARQUET: Final[str] = "parquet"
 
 class LoaderFileFormatEnum(StrEnum):
     """Valid values for loader file format."""
+
+    FILE_LISTING = FILE_LISTING
+    ICEBERG = ICEBERG
+    JSONL = JSONL
+    PARQUET = PARQUET
+
+
+class DestinationFileFormatEnum(StrEnum):
+    """Valid values for destination table file format on non-filesystem pipelines."""
 
     ICEBERG = ICEBERG
     JSONL = JSONL
@@ -88,6 +98,8 @@ PIPELINE_DIR_NAME: Final[str] = "pipeline_metadata"
 """Directory where dlt will put run metadata, schemas, etc."""
 REPORT_FILE_NAME: Final[str] = "report.txt"
 """Name of the report file."""
+FILE_LISTING_FILE_NAME: Final[str] = "file_listing.txt"
+"""Name of the file listing output file."""
 
 
 # Default values for the common fields
@@ -176,6 +188,13 @@ LoaderFileFormat = Annotated[
     Field(
         default=DEFAULTS[LOADER_FILE_FORMAT],
         description=f"Format of the output files. Choices: {[member.value for member in LoaderFileFormatEnum]}",
+    ),
+]
+DestinationFileFormat = Annotated[
+    DestinationFileFormatEnum,
+    Field(
+        default=DestinationFileFormatEnum.PARQUET,
+        description=f"Format of the output files. Choices: {[member.value for member in DestinationFileFormatEnum]}",
     ),
 ]
 LogConfigFile = Annotated[

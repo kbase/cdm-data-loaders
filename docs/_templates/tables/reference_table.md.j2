@@ -1,5 +1,5 @@
 | {{ headers | join(" | ") }} |
-|{% for _ in headers %} :--- |{% endfor %}
+|{% for _ in headers %} :--- {% if not loop.last %}|{% endif %}{% endfor %}|
 {% for row in rows %}
 | {{ row.cells | join(" | ") }} |
 {% endfor %}

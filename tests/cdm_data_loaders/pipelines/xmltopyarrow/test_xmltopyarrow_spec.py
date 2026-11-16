@@ -5,7 +5,6 @@ Cases, rules, and error fixtures are declared in manifests under ``specs/pipelin
 ``docs/xmltopyarrow_specification.md`` via ``docs_macros`` Jinja2 templates.
 """
 
-import importlib
 import json
 import re
 import shutil
@@ -163,29 +162,6 @@ def test_manifests_pass_error_codes_unique_and_covered() -> None:
     manifest_codes = {err.code for err in ERROR_CASES}
     assert sorted(manifest_codes - ERRORS_BY_CODE.keys()) == []
     assert sorted(ERRORS_BY_CODE.keys() - manifest_codes) == []
-
-
-@pytest.mark.docs
-def test_specification_document_pass_up_to_date() -> None:
-    """The XML-to-PyArrow specification stub invokes render_pipeline_spec and renders all rules, cases, and errors."""
-    docs_env = importlib.import_module("docs_macros.env")
-    spec_ctx = importlib.import_module("docs_macros.spec_context")
-
-    spec = spec_ctx.PIPELINE_SPECS["xmltopyarrow"]
-    stub_text = docs_env.build_generated_docs_plan()[Path(spec.output_path.name)]
-    assert "render_macros: true" in stub_text
-    assert 'render_pipeline_spec("xmltopyarrow")' in stub_text
-
-    rendered = docs_env.render_pipeline_spec(spec)
-    assert f"# {RULES.title}" in rendered
-    for rule_id in RULES.rules:
-        assert f"**{rule_id}**" in rendered
-        assert f'<a id="{rule_id.lower()}"></a>' in rendered
-    for case in CASES:
-        assert f'<a id="{case.anchor}"></a>' in rendered
-    for err_cls in XMLTOPYARROW_CONFIG_ERRORS:
-        assert f"**{err_cls.code}**" in rendered
-        assert f"`{err_cls.__name__}`" in rendered
 
 
 # Schema resolution and presets

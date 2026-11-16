@@ -8,10 +8,11 @@ from typing import Any
 import dlt
 import pyarrow as pa
 import pytest
+import yaml
 
 import cdm_data_loaders.pipelines.jsonlines.extract_pipeline as extract_pipeline_module
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
-from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
+from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import cli, run_jsonlines_pipeline
 from cdm_data_loaders.pipelines.jsonlines.settings import EXTRACT_PIPELINE_NAME, JsonlExtractSettings
 from cdm_data_loaders.readers.jsonlines import route_jsonl_lines
@@ -243,3 +244,45 @@ def test_run_jsonlines_pipeline_pass_filters_and_splits_with_transforms_module(
     assert dataset.widget_counts.df()[["widget_id", "count"]].to_dict(orient="records") == [
         {"widget_id": "keep", "count": 5}
     ]
+
+
+def test_run_jsonlines_pipeline_pass_file_listing_skips_preprocessors_parser_and_transforms(
+    extract_settings_factory: Callable[..., JsonlExtractSettings],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run_jsonlines_pipeline with loader_file_format='file_listing' writes file_listing.txt without parsing files."""
+
+    def fail_preprocess(_file_item: Any) -> Any:  # noqa: ANN401
+        msg = "FILE_PREPROCESSORS must not run during file_listing"
+        raise AssertionError(msg)
+
+    def fail_transform(_row: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+        msg = "TABLE_TRANSFORMS must not run during file_listing"
+        raise AssertionError(msg)
+
+    hooks_mod = register_temp_module(
+        monkeypatch,
+        "_test_extract_file_listing_hooks",
+        FILE_PREPROCESSORS=[fail_preprocess],
+        TABLE_TRANSFORMS={"widget": fail_transform},
+    )
+    settings = extract_settings_factory(
+        file_glob="**/*.jsonl*",
+        loader_file_format="file_listing",
+        preprocessors_module=hooks_mod,
+        transforms_module=hooks_mod,
+    )
+    input_dir = Path(settings.input_dir)
+    (input_dir / "nested").mkdir(parents=True)
+    (input_dir / "top.jsonl").write_text("{corrupt_json\n", encoding="utf-8")
+    (input_dir / "nested" / "part.jsonl.gz").write_bytes(b"not-valid-gzip")
+    (input_dir / "nested" / "notes.txt").write_text("ignored", encoding="utf-8")
+
+    result = run_jsonlines_pipeline(settings)
+
+    assert result is None
+    assert not settings.report_path.exists()
+    assert yaml.safe_load(settings.file_listing_path.read_text(encoding="utf-8")) == {
+        "input_dir_files": ["nested/notes.txt", "nested/part.jsonl.gz", "top.jsonl"],
+        "matched_files": ["nested/part.jsonl.gz", "top.jsonl"],
+    }

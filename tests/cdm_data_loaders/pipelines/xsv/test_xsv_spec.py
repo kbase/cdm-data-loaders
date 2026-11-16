@@ -6,7 +6,6 @@ Cases, rules, and error fixtures are declared in manifests under ``specs/pipelin
 """
 
 import datetime as dt
-import importlib
 import json
 import shutil
 from collections.abc import Callable
@@ -38,11 +37,13 @@ from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_
 from tests.conftest import PIPELINE_SPECS_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
 from tests.helpers import make_cts_settings
+from tests.pipeline_spec import load_pipeline_cases
 from tests.pyarrow_spec_helpers import assert_schema_matches_expected, load_expected_table
 
 XSV_DATA_DIR = (PIPELINE_SPECS_DIR / "xsv").resolve()
 RULES = load_rules(XSV_DATA_DIR / "rules.yaml")
 CASES: list[Case] = load_cases(XSV_DATA_DIR / "spec")
+PIPELINE_CASES = load_pipeline_cases(XSV_DATA_DIR)
 ERROR_CASES: list[ErrorCase] = load_error_cases(XSV_DATA_DIR / "spec" / "errors" / "manifest.yaml")
 ERRORS_BY_CODE: dict[str, type[XsvSchemaError]] = {cls.code: cls for cls in XSV_SCHEMA_ERRORS}
 
@@ -111,13 +112,13 @@ def _stage_run_settings(
 
 def test_manifests_pass_every_case_rule_exists() -> None:
     """Every rule referenced by a case manifest is defined in rules.yaml."""
-    unknown = {f"{case.suite}/{case.name}": sorted(set(case.rules) - RULES.rules.keys()) for case in CASES}
+    unknown = {f"{case.suite}/{case.name}": sorted(set(case.rules) - RULES.rules.keys()) for case in PIPELINE_CASES}
     assert {name: ids for name, ids in unknown.items() if ids} == {}
 
 
 def test_manifests_pass_every_rule_is_exercised() -> None:
     """Every rule in rules.yaml is exercised by at least one case."""
-    used = {rule_id for case in CASES for rule_id in case.rules}
+    used = {rule_id for case in PIPELINE_CASES for rule_id in case.rules}
     assert sorted(RULES.rules.keys() - used) == []
 
 
@@ -148,29 +149,6 @@ def test_manifests_pass_error_codes_unique_and_covered() -> None:
     manifest_codes = {err.code for err in ERROR_CASES}
     assert sorted(manifest_codes - ERRORS_BY_CODE.keys()) == []
     assert sorted(ERRORS_BY_CODE.keys() - manifest_codes) == []
-
-
-@pytest.mark.docs
-def test_specification_document_pass_up_to_date() -> None:
-    """The XSV specification stub invokes render_pipeline_spec and renders all rules, cases, and errors."""
-    docs_env = importlib.import_module("docs_macros.env")
-    spec_ctx = importlib.import_module("docs_macros.spec_context")
-
-    spec = spec_ctx.PIPELINE_SPECS["xsv"]
-    stub_text = docs_env.build_generated_docs_plan()[Path(spec.output_path.name)]
-    assert "render_macros: true" in stub_text
-    assert 'render_pipeline_spec("xsv")' in stub_text
-
-    rendered = docs_env.render_pipeline_spec(spec)
-    assert f"# {RULES.title}" in rendered
-    for rule_id in RULES.rules:
-        assert f"**{rule_id}**" in rendered
-        assert f'<a id="{rule_id.lower()}"></a>' in rendered
-    for case in CASES:
-        assert f'<a id="{case.anchor}"></a>' in rendered
-    for err_cls in XSV_SCHEMA_ERRORS:
-        assert f"**{err_cls.code}**" in rendered
-        assert f"`{err_cls.__name__}`" in rendered
 
 
 # Schema generation

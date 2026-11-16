@@ -22,9 +22,10 @@ from dlt.common.pipeline import LoadInfo
 from dlt.destinations import filesystem
 
 from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
+from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
 from cdm_data_loaders.pipelines import core
-from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME, PipelineCli
+from cdm_data_loaders.pipelines.core import PipelineCli
 from tests.cdm_data_loaders.pipelines.helpers import read_jsonl_file
 from tests.conftest import BASE_DIR, CONFIG_BUCKET, LOCAL_FS, preserve_logging_state
 from tests.helpers import settings_to_argv
@@ -79,6 +80,7 @@ PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
     "pubmed": ("pubmed", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
     "uniprot": ("uniprot", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
     "uniprot_cdm": ("uniprot_cdm", "cdm_data_loaders.pipelines.uniprot_kb_cdm"),
+    "uniprot_idmapping": ("uniprot_idmapping", "cdm_data_loaders.pipelines.uniprot_idmapping"),
     "uniref50": ("uniref50", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
     "uniref50_cdm": ("uniref50_cdm", "cdm_data_loaders.pipelines.uniref_cdm"),
     "uniref90": ("uniref90", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),

@@ -2,12 +2,11 @@
 
 import gzip
 import json
-import os
-from collections.abc import Callable, Generator, Iterable, Iterator
+from collections.abc import Callable, Generator, Iterable
 from itertools import count
 from pathlib import Path
-from typing import Any, Final
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import MagicMock
 
 import dlt
 import duckdb
@@ -16,9 +15,8 @@ import xmltodict
 from dlt.common.pipeline import LoadInfo
 
 from cdm_data_loaders.core.fields import GZIP_SUFFIX
-from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.pipelines import core
-from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.readers.xml import DEFAULT_XMLTODICT_ARGS
 from tests.cdm_data_loaders.pipelines.framework import (
     EXECUTION_MODES,
@@ -40,24 +38,7 @@ from tests.conftest import (
 from tests.helpers import make_cts_settings
 
 DEFAULT_DLT_TABLES = {"_dlt_version", "_dlt_loads", "_dlt_pipeline_state", LOAD_INFO_TABLE_NAME}
-
-HOOK_ENV_VAR: Final[str] = "RUNTIME__SLACK_INCOMING_HOOK"
-HOOK_PART_ENV_VARS: Final[tuple[str, ...]] = ("VARIABLE_B", "VARIABLE_T", "CHAR_STR")
 VALID_DESTINATIONS = [LOCAL_FS, S3]
-LOAD_INFO_SAVE_FAILED: Final[str] = "Loading pipeline load info failed: "
-LOAD_INFO_SAVE_FAILED_JOBS: Final[str] = "Loading pipeline load info had failed jobs: "
-
-
-@pytest.fixture
-def dlt_test_settings(tmp_path: Path, dlt_destination_config: str) -> CtsSettings:
-    """Settings that load into the local_fs destination and keep pipeline metadata in a separate output_dir."""
-    return make_cts_settings(
-        CtsSettings,
-        tmp_path,
-        log_config_file=None,
-        use_destination=dlt_destination_config,
-        use_output_dir_for_pipeline_metadata=True,
-    )
 
 
 @pytest.fixture
@@ -147,24 +128,6 @@ def reference_xml_dataset(reference_xml_as_jsonl: Path) -> Generator[duckdb.Duck
 def reference_xml_data_dir() -> Path:
     """Path to the uniref fixture directory."""
     return REFERENCE_XML_FIXTURE_DIR
-
-
-@pytest.fixture(autouse=True)
-def clean_env() -> Iterator[None]:
-    """Remove env vars that core reads or writes, and restore the whole environment afterwards."""
-    with patch.dict(os.environ):
-        for name in (*HOOK_PART_ENV_VARS, HOOK_ENV_VAR):
-            os.environ.pop(name, None)
-        os.environ["RUNTIME__DLTHUB_TELEMETRY"] = "false"
-        yield
-
-
-@pytest.fixture
-def slack_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    """Replace the dlt Slack sender used by send_slack_message_carefully."""
-    mock = MagicMock()
-    monkeypatch.setattr(core, "send_slack_message", mock)
-    return mock
 
 
 @pytest.fixture
@@ -264,12 +227,6 @@ def isolated_run_factory(tmp_path: Path) -> Callable[..., Callable[..., tuple[Lo
         return isolated_run(tmp_path, dataset_prefix, run_fn, base_kwargs, pipeline_runner=pipeline_runner)
 
     return _build
-
-
-@pytest.fixture
-def destination_bucket(tmp_path: Path, dlt_destination_config: str) -> Path:  # noqa: ARG001
-    """The bucket_url of the local_fs destination in dlt.config."""
-    return tmp_path / "bucket"
 
 
 def copy_test_files(source_dir: Path, file_names: Iterable[str], dest_dir: Path) -> Path:

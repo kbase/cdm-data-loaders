@@ -15,6 +15,7 @@ from cdm_data_loaders.core.registry import (
     ModelRegistry,
     RejectedFreezerMixin,
     SchemaRegistry,
+    TransformContext,
     TransformRegistry,
     load_registry_dict,
 )
@@ -469,3 +470,63 @@ def test_load_registry_dict_fail_invalid_output_schemas(
     mod_name = register_temp_module(monkeypatch, "_test_invalid_output_schemas_mod", **attrs)
     with pytest.raises(exc_type, match=match):
         load_registry_dict(mod_name, "OUTPUT_SCHEMAS")
+
+
+def _arrow_widget_transform(table: pa.Table, ctx: TransformContext) -> dict[str, pa.Table]:
+    """Route an Arrow batch to a source-prefixed widget table."""
+    return {f"raw_{ctx.table_name}": table}
+
+
+@pytest.mark.parametrize(
+    ("source_file", "expected_file_name"),
+    [
+        pytest.param("nested/sub/HUMAN_idmapping.dat.gz", "HUMAN_idmapping.dat.gz", id="nested_path"),
+        pytest.param("plain.tsv", "plain.tsv", id="basename_only"),
+        pytest.param(None, None, id="none_source_file"),
+        pytest.param("", None, id="empty_source_file"),
+    ],
+)
+def test_transform_context_for_source_derives_file_name(
+    source_file: str | None,
+    expected_file_name: str | None,
+) -> None:
+    """TransformContext.for_source derives file_name from source_file when non-empty."""
+    ctx = TransformContext.for_source("id_mapping", source_file)
+    assert ctx == TransformContext(table_name="id_mapping", source_file=source_file, file_name=expected_file_name)
+
+
+def test_transform_registry_supports_callable_sequences_and_get_tuple(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TransformRegistry coerces sequences of transforms to tuples and exposes ordered callables via get_tuple."""
+    reg = TransformRegistry(
+        registry={
+            "single": _identity_widget_transform,
+            "chained": [_arrow_widget_transform, _identity_widget_transform],
+        }
+    )
+    assert reg.registry["single"] is _identity_widget_transform
+    assert reg.registry["chained"] == (_arrow_widget_transform, _identity_widget_transform)
+    assert reg.get_tuple("single") == (_identity_widget_transform,)
+    assert reg.get_tuple("chained") == (_arrow_widget_transform, _identity_widget_transform)
+    assert reg.get_tuple("missing") == ()
+
+    mod_name = register_temp_module(
+        monkeypatch,
+        "_test_chained_table_transforms_mod",
+        TABLE_TRANSFORMS={"widget": [_arrow_widget_transform, _identity_widget_transform]},
+    )
+    loaded = load_registry_dict(mod_name, "TABLE_TRANSFORMS")
+    assert loaded.get_tuple("widget") == (_arrow_widget_transform, _identity_widget_transform)
+
+
+@pytest.mark.parametrize(
+    ("entry", "match"),
+    [
+        pytest.param([], "Tuple should have at least 1 item", id="empty_list"),
+        pytest.param((), "Tuple should have at least 1 item", id="empty_tuple"),
+        pytest.param([_identity_widget_transform, "bad"], "Input should be callable", id="non_callable_in_list"),
+    ],
+)
+def test_transform_registry_fail_invalid_transform_sequence(entry: object, match: str) -> None:
+    """TransformRegistry rejects empty transform sequences and sequences containing non-callables."""
+    with pytest.raises(ValidationError, match=match):
+        TransformRegistry(registry={"widget": entry})  # type: ignore[dict-item]

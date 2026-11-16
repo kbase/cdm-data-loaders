@@ -6,7 +6,6 @@ Cases, rules and error fixtures are declared in manifests under ``specs/schema_c
 """
 
 import datetime as dt
-import importlib
 import json
 from collections import deque
 from dataclasses import dataclass, field
@@ -114,29 +113,6 @@ def test_manifests_pass_consistency() -> None:
     manifest_codes = {err.code for err in ERROR_CASES}
     assert sorted(manifest_codes - ERRORS_BY_CODE.keys()) == []
     assert sorted(ERRORS_BY_CODE.keys() - manifest_codes) == []
-
-
-@pytest.mark.docs
-def test_specification_document_pass_up_to_date() -> None:
-    """Verify the specification stub invokes render_converter_spec and renders all rules, cases, and errors."""
-    docs_env = importlib.import_module("docs_macros.env")
-    spec_ctx = importlib.import_module("docs_macros.spec_context")
-
-    spec_cfg = spec_ctx.CONVERTER_SPECS["pydantic_to_pyarrow"]
-    stub_text = docs_env.build_generated_docs_plan()[Path(spec_cfg.output.name)]
-    assert "render_macros: true" in stub_text
-    assert 'render_converter_spec("pydantic_to_pyarrow")' in stub_text
-
-    rendered = docs_env.render_converter_spec(spec_cfg)
-    assert f"# {RULES.title}" in rendered
-    for rule_id in RULES.rules:
-        assert f"**{rule_id}**" in rendered
-        assert f'<a id="{rule_id.lower()}"></a>' in rendered
-    for case in CASES:
-        assert f'<a id="{case.anchor}"></a>' in rendered
-    for err_cls in PYDANTIC_TO_PYARROW_ERRORS:
-        assert f"**{err_cls.code}**" in rendered
-        assert f"`{err_cls.__name__}`" in rendered
 
 
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)

@@ -33,8 +33,8 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import JSONSchema
 from cdm_data_loaders.core.fields import NonEmptyStr
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.core.settings import LoggerSettings, default_settings_with_shortcuts
-from cdm_data_loaders.pipelines.iceberg_cleanup import install_iceberg_catalog_cleanup
 from cdm_data_loaders.utils.cdm_logger import init_logger
+from cdm_data_loaders.utils.iceberg_cleanup import install_iceberg_catalog_cleanup
 
 logger: Logger = getLogger(__name__)
 

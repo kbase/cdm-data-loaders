@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from frozendict import frozendict
 
-from cdm_data_loaders.pipelines.core import build_per_file_filesystem_resource
+from cdm_data_loaders.core.filesystem import build_per_file_filesystem_resource
 from cdm_data_loaders.pipelines.uniprot_kb_cdm import (
     PIPELINE_NAME,
     UniProtSettings,

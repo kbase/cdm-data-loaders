@@ -24,7 +24,8 @@ from dlt.sources.helpers.rest_client.client import RESTClient
 from pydantic import Field, FilePath, computed_field, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.core.fields import NonEmptyStr
+from cdm_data_loaders.core.fields import DestinationFileFormat, NonEmptyStr
+from cdm_data_loaders.core.filesystem import build_file_ingest_kwargs
 from cdm_data_loaders.core.settings import (
     FILE_FORMAT_CLI_SHORTCUTS,
     FileFormatIngestSettings,
@@ -32,7 +33,6 @@ from cdm_data_loaders.core.settings import (
 )
 from cdm_data_loaders.pipelines.core import (
     PipelineCli,
-    build_file_ingest_kwargs,
     run_pipeline,
 )
 from cdm_data_loaders.utils.file_transfer.sync_client import FileDownloader
@@ -64,6 +64,8 @@ class AtbSettings(FileFormatIngestSettings):
     )
 
     dataset_name: ClassVar[str] = DATASET_NAME
+
+    loader_file_format: DestinationFileFormat  # type: ignore[assignment]
 
     version: NonEmptyStr = Field(
         default=ATB_VERSION,

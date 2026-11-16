@@ -26,8 +26,8 @@ from pandas import DataFrame
 from pyiceberg.exceptions import NoSuchTableError
 
 from cdm_data_loaders.core.fields import ICEBERG, PARQUET, PIPELINE_DIR_NAME, LoaderFileFormatEnum
+from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.core.settings import CtsSettings, FileFormatIngestSettings
-from cdm_data_loaders.pipelines.core import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.utils.file_items import as_file_item, open_binary
 from tests.helpers import set_nested, strip_none_values
 from tests.pipeline_spec import PipelineRun, load_expected_json_tables, load_expected_tables
@@ -38,7 +38,7 @@ logger: Logger = getLogger(__name__)
 
 WORKER_CONFIGS = ((1, 1, 1), (3, 2, 2), (5, 3, 4))
 BUFFER_SIZES = (1, 5, 100, 500)
-LOADER_FILE_FORMATS = list(LoaderFileFormatEnum)
+LOADER_FILE_FORMATS = [fmt for fmt in LoaderFileFormatEnum if fmt != LoaderFileFormatEnum.FILE_LISTING]
 
 DLT_METADATA_PREFIX: Final[str] = "_dlt"
 

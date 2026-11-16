@@ -1,7 +1,9 @@
 """Validated registries and module loaders for entity models, JSON Schemas, PyArrow schemas, transforms, and pre-processors."""
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from importlib import import_module
+from pathlib import Path
 from types import MappingProxyType
 from typing import Annotated, Any, Final, Literal, Self, overload
 
@@ -14,8 +16,48 @@ from cdm_data_loaders.schemas.jsonschema import ValidatedSchema
 
 DEFAULT_PREPROCESSORS_ATTR: Final[str] = "FILE_PREPROCESSORS"
 
+
+@dataclass(frozen=True, slots=True)
+class TransformContext:
+    """Metadata describing the input table and source file for a table transform invocation.
+
+    :param table_name: configured input table name
+    :type table_name: str
+    :param source_file: relative path or identifier of the file being parsed, if any
+    :type source_file: str | None
+    :param file_name: basename of ``source_file``, if any
+    :type file_name: str | None
+    """
+
+    table_name: str
+    source_file: str | None = None
+    file_name: str | None = None
+
+    @classmethod
+    def for_source(cls, table_name: str, source_file: str | None = None) -> Self:
+        """Create a transform context with ``file_name`` derived from ``source_file``.
+
+        :param table_name: configured input table name
+        :type table_name: str
+        :param source_file: relative path or identifier of the file being parsed, if any
+        :type source_file: str | None
+        :return: populated transform context
+        :rtype: Self
+        """
+        file_name = Path(source_file).name if source_file else None
+        return cls(table_name=table_name, source_file=source_file, file_name=file_name)
+
+
 RegistryKey = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True, strict=True)]
-type RecordTransformFn = Callable[[dict[str, Any]], Mapping[str, Sequence[dict[str, Any]]]]
+type RoutedTransformOutput = Mapping[str, Sequence[dict[str, Any]] | pa.Table]
+type RecordTransformFn = (
+    Callable[[dict[str, Any]], RoutedTransformOutput]
+    | Callable[[dict[str, Any], TransformContext], RoutedTransformOutput]
+)
+type ArrowTableTransformFn = (
+    Callable[[pa.Table], RoutedTransformOutput] | Callable[[pa.Table, TransformContext], RoutedTransformOutput]
+)
+type TableTransformFn = RecordTransformFn | ArrowTableTransformFn
 type FilePreprocessFn = Callable[[FileItemDict], FileItemDict | None]
 
 
@@ -35,10 +77,31 @@ def _coerce_preprocessor_seq(v: Any) -> Any:  # noqa: ANN401
     return v
 
 
+def _coerce_transform_entry(v: object) -> object:
+    """Convert non-string sequences of transform callables into a tuple while preserving single values.
+
+    :param v: raw transform registry value
+    :type v: object
+    :return: tuple when ``v`` is a non-bytes/string sequence, else ``v`` unchanged
+    :rtype: object
+    """
+    if isinstance(v, Sequence) and not isinstance(v, (str, bytes, bytearray)):
+        return tuple(v)
+    return v
+
+
 type PreprocessorTuple = Annotated[
     tuple[FilePreprocessFn, ...],
     BeforeValidator(_coerce_preprocessor_seq),
     Field(min_length=1),
+]
+type TransformTuple = Annotated[
+    tuple[TableTransformFn, ...],
+    Field(min_length=1),
+]
+type TransformEntry = Annotated[
+    TableTransformFn | TransformTuple,
+    BeforeValidator(_coerce_transform_entry),
 ]
 
 
@@ -89,11 +152,26 @@ class ArrowSchemaRegistry(RejectedFreezerMixin, BaseModel):
 
 
 class TransformRegistry(RejectedFreezerMixin, BaseModel):
-    """A validated registry of per-table record transform functions."""
+    """A validated registry of per-table record or PyArrow table transform functions."""
 
     model_config = ConfigDict(frozen=True, str_strip_whitespace=True)
 
-    registry: Annotated[dict[RegistryKey, RecordTransformFn], Field(min_length=1)]
+    registry: Annotated[dict[RegistryKey, TransformEntry], Field(min_length=1)]
+
+    def get_tuple(self, table_name: str) -> tuple[TableTransformFn, ...]:
+        """Return the configured transform functions for ``table_name`` as an ordered tuple.
+
+        :param table_name: input table name
+        :type table_name: str
+        :return: tuple of configured transform callables (empty if unconfigured)
+        :rtype: tuple[TableTransformFn, ...]
+        """
+        entry = self.registry.get(table_name)
+        if entry is None:
+            return ()
+        if isinstance(entry, tuple):
+            return entry
+        return (entry,)
 
 
 class PreprocessorRegistry(RejectedFreezerMixin, BaseModel):

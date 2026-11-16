@@ -10,7 +10,7 @@ from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformFn
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry, TableTransformFn
 from cdm_data_loaders.core.transforms import route_and_coerce_record
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from cdm_data_loaders.utils.buffer import DictBuffer, make_rejected_row
@@ -81,7 +81,7 @@ def _route_line_record(  # noqa: PLR0913
     *,
     resolve_error: ParseErrorResolver | None = None,
     transform_valid: Callable[[Any], Any] | None = None,
-    table_transform: RecordTransformFn | None = None,
+    table_transform: TableTransformFn | None = None,
     schema_map: ArrowSchemaRegistry | None = None,
 ) -> Generator[Any, Any, Any]:
     """Validate and route a single parsed line record into ``buffer``."""
@@ -105,6 +105,7 @@ def _route_line_record(  # noqa: PLR0913
                 table_name,
                 transform=table_transform,
                 schema_map=schema_map,
+                source_file=item.get("source_file"),
             )
         )
 
@@ -115,7 +116,7 @@ def make_page_router(  # noqa: PLR0913
     resolve_error: ParseErrorResolver | None = None,
     *,
     transform_valid: Callable[[Any], Any] | None = None,
-    table_transform: RecordTransformFn | None = None,
+    table_transform: TableTransformFn | None = None,
     schema_map: ArrowSchemaRegistry | None = None,
     use_pyarrow: bool = True,
 ) -> Callable[[Iterable[dict[str, Any]]], Generator[Any, Any, Any]]:
@@ -141,7 +142,7 @@ def make_page_router(  # noqa: PLR0913
     :param transform_valid: function applied to each valid record before routing
     :type  transform_valid: Callable[[Any], Any] | None
     :param table_transform: optional transform function for filtering, transforming, or splitting records
-    :type  table_transform: RecordTransformFn | None
+    :type  table_transform: TableTransformFn | None
     :param schema_map: optional per-table PyArrow schema registry
     :type  schema_map: ArrowSchemaRegistry | None
     :param use_pyarrow: whether buffered pages are emitted as ``pyarrow.Table`` instances

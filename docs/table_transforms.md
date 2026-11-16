@@ -37,6 +37,7 @@ File pre-processors run **before** a file is opened and parsed. Record transform
 
   - When `loader_file_format` is `parquet` or `iceberg` (`settings.use_pyarrow` is `True`), `_rejected` uses `REJECTED_PYARROW_SCHEMA`, and any destination table with an entry in `settings.schema_map` (either derived from the pipeline's input schema or supplied via `OUTPUT_SCHEMAS`) has its rows coerced against that `pyarrow.Schema` and emitted as a `pyarrow.Table` page.
   - When `loader_file_format` is `jsonl` (`settings.use_pyarrow` is `False`), `settings.schema_map` is `None` and all tables (including `_rejected`) are emitted as `list[dict]` pages.
+  - When `loader_file_format` is `file_listing`, file pre-processors, parsers, validators, and table transforms are skipped, and the pipeline writes `file_listing.txt` instead (see [Core Pipeline and KBase CTS Execution Guide](core_cts_execution.md)).
 
 ---
 
@@ -470,4 +471,65 @@ settings = JsonlJsonschemaIngestSettings(
 )
 
 load_info = run_jsonlines_pipeline(settings)
+```
+
+---
+
+## Example 4: Vectorized PyArrow Table Transforms and Raw Table Emission (`emit_raw_table` and `TransformContext`)
+
+When ingesting large tabular files via `xsv` (or a preset XSV pipeline such as `uniprot_idmapping`), annotating a transform's first parameter as `pyarrow.Table` keeps the entire batch vectorized in Arrow without materializing per-row Python dicts. Composing `emit_raw_table` with a specialised Arrow transform in `TABLE_TRANSFORMS` emits both `raw_<table_name>` and the standardised destination table in a single pass (as implemented in [`parsers/uniprot/idmapping.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/parsers/uniprot/idmapping.py)):
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+from cdm_data_loaders.core.registry import TableTransformFn, TransformContext
+from cdm_data_loaders.core.transforms import emit_raw_table
+
+RAW_ID_MAPPING_SCHEMA = pa.schema(
+    [
+        pa.field("uniprot_id", pa.string(), nullable=False),
+        pa.field("db_reference_type", pa.string(), nullable=False),
+        pa.field("db_reference_id", pa.string(), nullable=False),
+    ],
+    metadata={"comment": "raw ID mapping data from UniProt"},
+)
+
+ID_MAPPING_SCHEMA = pa.schema(
+    [
+        pa.field("uniprot_id", pa.string(), nullable=False),
+        pa.field("db_reference", pa.string(), nullable=False),
+        pa.field("source", pa.string(), nullable=False),
+    ],
+    metadata={"comment": "Standardised mapping data from UniProt"},
+)
+
+
+def transform_id_mapping(table: pa.Table, ctx: TransformContext) -> dict[str, pa.Table]:
+    """Build CURIE-prefixed identifiers and attach the input file basename."""
+    if table.num_rows == 0:
+        return {}
+    uniprot_col = pc.binary_join_element_wise("uniprot:", table.column("uniprot_id"), "")
+    db_ref_col = pc.binary_join_element_wise(
+        table.column("db_reference_type"),
+        table.column("db_reference_id"),
+        ":",
+    )
+    source_col = pa.repeat(pa.scalar(ctx.file_name or "", type=pa.string()), table.num_rows)
+    return {
+        "id_mapping": pa.Table.from_arrays(
+            [uniprot_col, db_ref_col, source_col],
+            schema=ID_MAPPING_SCHEMA,
+        )
+    }
+
+
+TABLE_TRANSFORMS: dict[str, tuple[TableTransformFn, ...]] = {
+    "id_mapping": (emit_raw_table, transform_id_mapping),
+}
+
+OUTPUT_SCHEMAS: dict[str, pa.Schema] = {
+    "raw_id_mapping": RAW_ID_MAPPING_SCHEMA,
+    "id_mapping": ID_MAPPING_SCHEMA,
+}
 ```

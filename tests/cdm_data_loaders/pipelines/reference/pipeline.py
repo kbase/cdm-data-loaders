@@ -17,6 +17,7 @@ from cdm_data_loaders.core.fields import (
     FileGlob,
     TableName,
 )
+from cdm_data_loaders.core.filesystem import build_file_ingest_kwargs
 from cdm_data_loaders.core.settings import (
     FILE_FORMAT_CLI_SHORTCUTS,
     default_settings_with_shortcuts,
@@ -24,7 +25,6 @@ from cdm_data_loaders.core.settings import (
 from cdm_data_loaders.pipelines.core import (
     DEFAULT_SCHEMA_CONTRACT,
     PipelineCli,
-    build_file_ingest_kwargs,
     run_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings

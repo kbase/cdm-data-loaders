@@ -198,7 +198,7 @@ uv run --group docs zensical serve
 
 ### Running Documentation Verification Checks
 
-Run the full verification sequence enforced by CI (and [`tests/test_docs_templates.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/test_docs_templates.py)) after editing `src/`, `docs_macros/`, `scripts/`, `specs/`, `pyproject.toml`, or `docs/`:
+Run the full verification sequence enforced by CI (and [`tests/docs`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/docs)) after editing `src/`, `docs_macros/`, `scripts/`, `specs/`, `pyproject.toml`, or `docs/`:
 
 ```sh
 # run documentation template, CLI flag, Python snippet, link, and nav parity tests

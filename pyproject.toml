@@ -46,6 +46,7 @@ pyiceberg_to_jsonschema = "cdm_data_loaders.converters.cli.pyiceberg_to_jsonsche
 pyiceberg_to_linkml = "cdm_data_loaders.converters.cli.pyiceberg_to_linkml:cli"
 uniprot = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniprot_cli"
 uniprot_cdm = "cdm_data_loaders.pipelines.uniprot_kb_cdm:cli"
+uniprot_idmapping = "cdm_data_loaders.pipelines.uniprot_idmapping:cli"
 uniref50 = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref50_cli"
 uniref50_cdm = "cdm_data_loaders.pipelines.uniref_cdm:uniref50_cdm_cli"
 uniref90 = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref90_cli"
@@ -85,6 +86,7 @@ mutants = [
 docs = [
     "griffe-pydantic>=1.3.2",
     "jinja2>=3.1.6",
+    "markdown>=3.11.3",
     "mkdocstrings[python]>=1.0.8",
     "zensical>=0.1.1",
 ]

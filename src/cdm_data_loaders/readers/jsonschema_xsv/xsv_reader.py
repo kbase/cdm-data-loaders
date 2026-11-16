@@ -15,6 +15,7 @@ import duckdb
 import pyarrow as pa
 from dlt.sources.filesystem import read_csv_duckdb
 
+from cdm_data_loaders.core.transforms import align_and_cast_table
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import non_header_lines_present
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
     ValidatedXsvSchema,
@@ -119,10 +120,7 @@ def _coerce_batch_to_table(batch: pa.RecordBatch, pa_schema: pa.Schema | None) -
     table = pa.Table.from_batches([batch])
     if pa_schema is None:
         return table
-    for field in pa_schema:
-        if field.name not in table.column_names:
-            table = table.append_column(field, pa.nulls(table.num_rows, type=field.type))
-    return table.select(pa_schema.names).cast(pa_schema)
+    return align_and_cast_table(table, pa_schema)
 
 
 def read_validated_rows(  # noqa: PLR0913

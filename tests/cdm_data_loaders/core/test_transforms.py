@@ -1,27 +1,50 @@
 """Tests for `cdm_data_loaders.core.transforms` and `TransformSettingsMixin`."""
 
+import functools
 from collections.abc import Iterable
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Annotated, Any, Final
 
+import dlt
 import pyarrow as pa
 import pytest
+from dlt.destinations.impl.filesystem.iceberg_adapter import (
+    PARTITION_HINT,
+    TABLE_PROPERTIES_HINT,
+    iceberg_partition,
+)
 from frozendict import frozendict
 from pydantic import ValidationError
 
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
     RecordTransformFn,
+    TableTransformFn,
+    TransformContext,
     TransformRegistry,
 )
 from cdm_data_loaders.core.transforms import (
+    OutputTableHints,
+    accepts_pyarrow_table,
+    accepts_record_dict,
+    align_and_cast_table,
+    compose_transforms,
+    emit_raw_table,
+    extract_schema_descriptions,
     resolve_schema_map,
     route_and_coerce_record,
+    route_and_coerce_table,
     validate_routed_output,
     validate_table_transforms,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
-from tests.helpers import register_temp_module
+from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
+from cdm_data_loaders.readers.jsonlines import route_jsonl_lines
+from cdm_data_loaders.readers.xml import process_xml_file_to_dict
+from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA, make_rejected_row
+from cdm_data_loaders.utils.file_items import as_file_item
+from tests.helpers import make_cts_settings, register_temp_module
 
 
 def _identity_items_transform(record: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -178,9 +201,12 @@ def test_route_and_coerce_record_pass_filter_transform_and_split(
     )
 
 
+SAMPLE_PA_TABLE = pa.table({"id": ["1", "2"]})
+
 VALID_ROUTED_OUTPUT_CASES = [
     pytest.param({}, {}, id="empty_mapping"),
     pytest.param({"items": [], "other": ()}, {}, id="only_empty_sequences"),
+    pytest.param({"items": ITEMS_SCHEMA.empty_table()}, {}, id="empty_pyarrow_table_stripped"),
     pytest.param({"items": [{"id": "1"}]}, {"items": [{"id": "1"}]}, id="single_table_list"),
     pytest.param({"  items \n": [{"id": "1"}]}, {"items": [{"id": "1"}]}, id="whitespace_padded_table_name"),
     pytest.param({"_rejected": [{"id": "1"}]}, {"_rejected": [{"id": "1"}]}, id="rejected_table_key"),
@@ -209,22 +235,22 @@ VALID_ROUTED_OUTPUT_CASES = [
 INVALID_ROUTED_OUTPUT_CASES = [
     pytest.param(
         None,
-        "transform_fn must return a mapping of table names to sequences of row dicts",
+        "transform_fn must return a mapping of table names to sequences of row dicts or pyarrow.Table",
         id="not_mapping_none",
     ),
     pytest.param(
         ["not_a_mapping"],
-        "transform_fn must return a mapping of table names to sequences of row dicts",
+        "transform_fn must return a mapping of table names to sequences of row dicts or pyarrow.Table",
         id="not_mapping_list",
     ),
     pytest.param(
         "not_a_mapping",
-        "transform_fn must return a mapping of table names to sequences of row dicts",
+        "transform_fn must return a mapping of table names to sequences of row dicts or pyarrow.Table",
         id="not_mapping_str",
     ),
     pytest.param(
         123,
-        "transform_fn must return a mapping of table names to sequences of row dicts",
+        "transform_fn must return a mapping of table names to sequences of row dicts or pyarrow.Table",
         id="not_mapping_int",
     ),
     pytest.param(
@@ -249,38 +275,43 @@ INVALID_ROUTED_OUTPUT_CASES = [
     ),
     pytest.param(
         {"items": None},
-        "transform_fn rows for table 'items' must be a sequence of dicts",
+        "transform_fn rows for table 'items' must be a sequence of dicts or pyarrow.Table",
         id="rows_none",
     ),
     pytest.param(
         {"items": 123},
-        "transform_fn rows for table 'items' must be a sequence of dicts",
+        "transform_fn rows for table 'items' must be a sequence of dicts or pyarrow.Table",
         id="rows_int",
     ),
     pytest.param(
         {"items": {"a"}},
-        "transform_fn rows for table 'items' must be a sequence of dicts",
+        "transform_fn rows for table 'items' must be a sequence of dicts or pyarrow.Table",
         id="rows_set",
     ),
     pytest.param(
         {"items": "not_a_sequence_of_dicts"},
-        "transform_fn rows for table 'items' must be a sequence of dicts",
+        "transform_fn rows for table 'items' must be a sequence of dicts or pyarrow.Table",
         id="rows_str",
     ),
     pytest.param(
         {"items": b"not_a_sequence_of_dicts"},
-        "transform_fn rows for table 'items' must be a sequence of dicts",
+        "transform_fn rows for table 'items' must be a sequence of dicts or pyarrow.Table",
         id="rows_bytes",
     ),
     pytest.param(
         {"items": bytearray(b"not_a_sequence_of_dicts")},
-        "transform_fn rows for table 'items' must be a sequence of dicts",
+        "transform_fn rows for table 'items' must be a sequence of dicts or pyarrow.Table",
         id="rows_bytearray",
     ),
     pytest.param(
         {"items": {"id": 1}},
-        "transform_fn rows for table 'items' must be a sequence of dicts",
+        "transform_fn rows for table 'items' must be a sequence of dicts or pyarrow.Table",
         id="rows_dict",
+    ),
+    pytest.param(
+        {"items": SAMPLE_PA_TABLE.select([])},
+        "transform_fn table for table 'items' must have at least one column",
+        id="pyarrow_table_zero_columns_with_rows",
     ),
     pytest.param(
         {"items": ["not_a_dict"]},
@@ -305,7 +336,7 @@ INVALID_ROUTED_OUTPUT_CASES = [
     pytest.param(
         {"": "not_a_seq"},
         "transform_fn output keys must be non-empty table names\n"
-        "transform_fn rows for table '' must be a sequence of dicts",
+        "transform_fn rows for table '' must be a sequence of dicts or pyarrow.Table",
         id="empty_key_and_bad_rows_sequence",
     ),
     pytest.param(
@@ -329,9 +360,9 @@ INVALID_ROUTED_OUTPUT_CASES = [
         (
             "transform_fn output keys must be non-empty table names\n"
             "transform_fn output keys must be non-empty table names\n"
-            "transform_fn rows for table 123 must be a sequence of dicts\n"
+            "transform_fn rows for table 123 must be a sequence of dicts or pyarrow.Table\n"
             "transform_fn rows for table '  _rejected\\n' must be non-empty dicts\n"
-            "transform_fn rows for table 'bad_rows' must be a sequence of dicts\n"
+            "transform_fn rows for table 'bad_rows' must be a sequence of dicts or pyarrow.Table\n"
             "transform_fn rows for table 'non_dict_row' must be non-empty dicts\n"
             "transform_fn rows for table 'empty_dict_row' must be non-empty dicts"
         ),
@@ -634,3 +665,507 @@ def test_transform_settings_mixin_pass_use_pyarrow_respects_loader_file_format(
     assert settings.use_pyarrow is expected_use_pyarrow
     assert settings.schema_map == expected_schema_map
     assert settings.table_transforms == ITEMS_TRANSFORM_REGISTRY
+
+
+type PolymorphicBatch = pa.Table | dict[str, Any]
+type AnnotatedArrowTable = Annotated[pa.Table, "batch"]
+
+RAW_SOURCED_ITEMS_SCHEMA: Final[pa.Schema] = pa.schema(
+    [pa.field("id", pa.string(), nullable=False)],
+    metadata={"comment": "Raw items"},
+)
+SOURCED_ITEMS_SCHEMA: Final[pa.Schema] = pa.schema(
+    [pa.field("id", pa.string(), nullable=False), pa.field("source", pa.string(), nullable=False)],
+    metadata={"comment": "Sourced items"},
+)
+SOURCED_ITEMS_SCHEMA_MAP: Final[ArrowSchemaRegistry] = ArrowSchemaRegistry(
+    registry={"raw_items": RAW_SOURCED_ITEMS_SCHEMA, "items": SOURCED_ITEMS_SCHEMA}
+)
+
+
+def _unannotated_transform(record: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Route a record whose runtime annotations have been cleared to items.
+
+    :param record: input record dictionary
+    :type record: dict[str, Any]
+    :return: routed mapping targeting ``items``
+    :rtype: dict[str, list[dict[str, Any]]]
+    """
+    return {"items": [record]}
+
+
+_unannotated_transform.__annotations__.clear()
+
+
+def _arrow_only_transform(table: pa.Table, ctx: TransformContext) -> dict[str, pa.Table]:
+    """Attach a ``source`` basename column to an Arrow table batch.
+
+    :param table: input PyArrow table batch
+    :type table: pa.Table
+    :param ctx: transform context carrying ``file_name``
+    :type ctx: TransformContext
+    :return: routed mapping targeting ``items``
+    :rtype: dict[str, pa.Table]
+    """
+    src_col = pa.repeat(pa.scalar(ctx.file_name or "", type=pa.string()), table.num_rows)
+    return {"items": table.append_column("source", src_col)}
+
+
+def _annotated_arrow_transform(table: AnnotatedArrowTable) -> dict[str, pa.Table]:
+    """Route an ``Annotated`` ``pyarrow.Table`` batch to ``items``.
+
+    :param table: input annotated PyArrow table batch
+    :type table: AnnotatedArrowTable
+    :return: routed mapping targeting ``items``
+    :rtype: dict[str, pa.Table]
+    """
+    return {"items": table}
+
+
+def _polymorphic_alias_transform(
+    data: PolymorphicBatch, ctx: TransformContext
+) -> dict[str, pa.Table | list[dict[str, Any]]]:
+    """Route either an Arrow table or a record dict using a ``TypeAliasType`` union.
+
+    :param data: input PyArrow table batch or record dictionary
+    :type data: PolymorphicBatch
+    :param ctx: transform context for the input table
+    :type ctx: TransformContext
+    :return: routed raw table mapping
+    :rtype: dict[str, pa.Table | list[dict[str, Any]]]
+    """
+    return emit_raw_table(data, ctx)
+
+
+def _dict_with_optional_non_ctx_param(
+    record: dict[str, Any], uppercase: bool = True
+) -> dict[str, list[dict[str, Any]]]:
+    """Route a record with an optional boolean flag that must not receive ``TransformContext``.
+
+    :param record: input record dictionary
+    :type record: dict[str, Any]
+    :param uppercase: whether to uppercase ``record["id"]``
+    :type uppercase: bool
+    :return: routed mapping targeting ``items``
+    :rtype: dict[str, list[dict[str, Any]]]
+    """
+    val = str(record["id"]).upper() if uppercase else str(record["id"])
+    return {"items": [{"id": val}]}
+
+
+def _dict_with_optional_ctx_param(
+    record: dict[str, Any],
+    ctx: TransformContext | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Route a record with an optional ``TransformContext`` parameter.
+
+    :param record: input record dictionary
+    :type record: dict[str, Any]
+    :param ctx: optional transform context
+    :type ctx: TransformContext | None
+    :return: routed mapping targeting ``items``
+    :rtype: dict[str, list[dict[str, Any]]]
+    """
+    return {"items": [{"id": record["id"], "source": ctx.file_name if ctx else ""}]}
+
+
+def _emit_items_and_rejected(
+    table: pa.Table,
+    ctx: TransformContext,
+) -> dict[str, pa.Table | list[dict[str, Any]]]:
+    """Emit ``items`` with ``source``, a ``_rejected`` row, and an unmapped dict table.
+
+    :param table: input PyArrow table batch
+    :type table: pa.Table
+    :param ctx: transform context for the input table and source file
+    :type ctx: TransformContext
+    :return: multi-table routed outputs mixing ``pa.Table`` and ``list[dict[str, Any]]``
+    :rtype: dict[str, pa.Table | list[dict[str, Any]]]
+    """
+    src = pa.repeat(pa.scalar(ctx.file_name or "", type=pa.string()), table.num_rows)
+    return {
+        "items": table.append_column("source", src),
+        "_rejected": [make_rejected_row(ctx.table_name, "bad row", source_file=ctx.source_file)],
+        "unmapped": [{"id": "u1"}],
+    }
+
+
+@pytest.mark.parametrize(
+    ("fn", "expected_arrow", "expected_dict"),
+    [
+        pytest.param(None, False, True, id="none_transform"),
+        pytest.param(_unannotated_transform, False, True, id="unannotated_fn"),
+        pytest.param(_identity_items_transform, False, True, id="dict_only_fn"),
+        pytest.param(_arrow_only_transform, True, False, id="arrow_table_only_fn"),
+        pytest.param(_annotated_arrow_transform, True, False, id="annotated_arrow_table_fn"),
+        pytest.param(emit_raw_table, True, True, id="polymorphic_emit_raw_table"),
+        pytest.param(_polymorphic_alias_transform, True, True, id="type_alias_polymorphic_fn"),
+        pytest.param(
+            functools.partial(emit_raw_table, prefix="orig_"),
+            True,
+            True,
+            id="partial_polymorphic_fn",
+        ),
+        pytest.param(
+            compose_transforms((emit_raw_table, _arrow_only_transform)),
+            True,
+            True,
+            id="composed_all_arrow_capable",
+        ),
+        pytest.param(
+            compose_transforms((emit_raw_table, _identity_items_transform)),
+            False,
+            True,
+            id="composed_mixed_arrow_and_dict",
+        ),
+    ],
+)
+def test_accepts_pyarrow_table_and_record_dict(
+    fn: TableTransformFn | None,
+    expected_arrow: bool,
+    expected_dict: bool,
+) -> None:
+    """accepts_pyarrow_table and accepts_record_dict inspect annotations, partials, aliases, and compositions."""
+    assert accepts_pyarrow_table(fn) is expected_arrow
+    assert accepts_record_dict(fn) is expected_dict
+
+
+@pytest.mark.parametrize(
+    ("data", "prefix", "expected"),
+    [
+        pytest.param(SAMPLE_PA_TABLE, "raw_", {"raw_id_mapping": SAMPLE_PA_TABLE}, id="arrow_table_default_prefix"),
+        pytest.param({"id": "1"}, "orig_", {"orig_id_mapping": [{"id": "1"}]}, id="dict_record_custom_prefix"),
+    ],
+)
+def test_emit_raw_table_pass_arrow_and_dict(
+    data: pa.Table | dict[str, Any],
+    prefix: str,
+    expected: dict[str, pa.Table | list[dict[str, Any]]],
+) -> None:
+    """emit_raw_table prefixes ctx.table_name for both pyarrow.Table and dict inputs."""
+    ctx = TransformContext.for_source("id_mapping", "dir/sample.dat")
+    assert emit_raw_table(data, ctx, prefix=prefix) == expected
+
+
+def test_emit_raw_table_fail_empty_prefix() -> None:
+    """emit_raw_table raises ValueError when prefix is empty."""
+    ctx = TransformContext.for_source("id_mapping", "dir/sample.dat")
+    with pytest.raises(ValueError, match="prefix must be a non-empty string"):
+        emit_raw_table({"id": "1"}, ctx, prefix="")
+
+
+def test_align_and_cast_table_casts_reorders_fills_missing_and_attaches_metadata() -> None:
+    """align_and_cast_table appends missing nullable columns, casts types, orders fields, and sets schema metadata."""
+    target_schema = pa.schema(
+        [
+            pa.field("id", pa.string(), nullable=False, metadata={"comment": "Identifier"}),
+            pa.field("count", pa.int64(), nullable=True, metadata={"comment": "Count"}),
+            pa.field("note", pa.string(), nullable=True),
+        ],
+        metadata={"comment": "Target table description"},
+    )
+    raw_table = pa.table({"extra": ["drop"], "count": pa.array([3], type=pa.int32()), "id": ["a1"]})
+    aligned = align_and_cast_table(raw_table, target_schema)
+    assert aligned.schema.equals(target_schema, check_metadata=True)
+    assert aligned.to_pylist() == [{"id": "a1", "count": 3, "note": None}]
+    # fast-path returns the exact same table instance when schema and metadata already match
+    assert align_and_cast_table(aligned, target_schema) is aligned
+
+
+def test_extract_schema_descriptions_and_output_table_hints() -> None:
+    """OutputTableHints registers isolated table descriptions, column descriptions, and Iceberg partitions on DltResource."""
+    commented_schema = pa.schema(
+        [
+            pa.field("uniprot_id", pa.string(), nullable=False, metadata={"comment": "Protein ID"}),
+            pa.field("uncommented", pa.string(), nullable=True),
+        ],
+        metadata={"comment": "Schema-level table comment"},
+    )
+    table_desc, col_descs = extract_schema_descriptions(commented_schema)
+    assert table_desc == "Schema-level table comment"
+    assert col_descs == {"uniprot_id": "Protein ID"}
+    assert extract_schema_descriptions(pa.schema([pa.field("x", pa.int64())])) == (None, {})
+
+    resource = dlt.resource([{"uniprot_id": "P12345"}], name="src")
+    bucket_count = 32
+    hint = OutputTableHints(
+        table_name="id_mapping",
+        pyarrow_schema=commented_schema,
+        description="Explicit override description",
+        iceberg_partitions=(iceberg_partition.bucket(bucket_count, "uniprot_id"),),
+    )
+    hint.apply_to_resource(resource)
+    marked = dlt.mark.with_table_name({"uniprot_id": "P12345"}, "id_mapping")
+    computed = resource.compute_table_schema(marked.data, marked.meta)
+    assert computed["name"] == "id_mapping"
+    assert computed["description"] == "Explicit override description"
+    assert computed["columns"]["uniprot_id"]["description"] == "Protein ID"
+    assert computed[TABLE_PROPERTIES_HINT] == {"comment": "Explicit override description"}
+    assert computed[PARTITION_HINT] == [
+        {"transform": "bucket", "source_column": "uniprot_id", "param_value": bucket_count}
+    ]
+
+
+def test_compose_transforms_merges_arrow_dict_and_mixed_outputs() -> None:
+    """compose_transforms validates non-empty input, unwraps singletons, and merges Arrow, dict, and mixed outputs."""
+    with pytest.raises(ValueError, match="transforms must contain at least one callable"):
+        compose_transforms(())
+
+    assert compose_transforms((_identity_items_transform,)) is _identity_items_transform
+
+    def _arrow_part_a(table: pa.Table) -> dict[str, pa.Table]:
+        """Route ``table`` to ``same_arrow`` and ``mixed``.
+
+        :param table: input PyArrow table batch
+        :type table: pa.Table
+        :return: routed Arrow table mapping
+        :rtype: dict[str, pa.Table]
+        """
+        return {"same_arrow": table, "mixed": table}
+
+    def _arrow_part_b(table: pa.Table) -> dict[str, pa.Table | list[dict[str, Any]]]:
+        """Route ``table`` to ``same_arrow`` and a dict list to ``mixed``.
+
+        :param table: input PyArrow table batch
+        :type table: pa.Table
+        :return: routed mapping mixing ``pa.Table`` and ``list[dict[str, Any]]``
+        :rtype: dict[str, pa.Table | list[dict[str, Any]]]
+        """
+        return {"same_arrow": table, "mixed": [{"id": "from_dict"}]}
+
+    composed = compose_transforms((_arrow_part_a, _arrow_part_b))
+    input_table = pa.table({"id": ["r1"]})
+    routed = route_and_coerce_table(input_table, "items", transform=composed, use_pyarrow=True)
+    assert isinstance(routed["same_arrow"], pa.Table)
+    assert routed["same_arrow"].to_pylist() == [{"id": "r1"}, {"id": "r1"}]
+    assert routed["mixed"] == [{"id": "r1"}, {"id": "from_dict"}]
+
+
+@pytest.mark.parametrize(
+    ("record", "transform", "schema_map", "source_file", "expected"),
+    [
+        pytest.param(
+            {"id": "abc"},
+            _dict_with_optional_non_ctx_param,
+            None,
+            "nested/file.jsonl",
+            {"items": [{"id": "ABC"}]},
+            id="preserves_optional_non_context_default",
+        ),
+        pytest.param(
+            {"id": "abc"},
+            _dict_with_optional_ctx_param,
+            None,
+            "nested/file.jsonl",
+            {"items": [{"id": "abc", "source": "file.jsonl"}]},
+            id="passes_optional_transform_context",
+        ),
+        pytest.param(
+            {"id": "abc", "extra": 99},
+            _arrow_only_transform,
+            ArrowSchemaRegistry(registry={"items": SOURCED_ITEMS_SCHEMA}),
+            "sub/batch.tsv",
+            {"items": [{"id": "abc", "source": "batch.tsv"}]},
+            id="adapts_arrow_only_transform_for_single_record",
+        ),
+    ],
+)
+def test_route_and_coerce_record_pass_context_and_arrow_adaptation(
+    record: dict[str, Any],
+    transform: TableTransformFn,
+    schema_map: ArrowSchemaRegistry | None,
+    source_file: str,
+    expected: dict[str, list[dict[str, Any]]],
+) -> None:
+    """route_and_coerce_record passes TransformContext when requested, preserves non-context defaults, and adapts Arrow transforms."""
+    assert (
+        route_and_coerce_record(
+            record,
+            "items",
+            transform=transform,
+            schema_map=schema_map,
+            source_file=source_file,
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("table", "default_table", "transform", "schema_map", "use_pyarrow", "expected_rows_by_table"),
+    [
+        pytest.param(
+            ITEMS_SCHEMA.empty_table(),
+            "items",
+            None,
+            None,
+            True,
+            {},
+            id="empty_untransformed_table_dropped",
+        ),
+        pytest.param(
+            SAMPLE_PA_TABLE,
+            "items",
+            None,
+            None,
+            False,
+            {"items": [{"id": "1"}, {"id": "2"}]},
+            id="untransformed_jsonl_mode_converts_to_dicts",
+        ),
+        pytest.param(
+            SAMPLE_PA_TABLE,
+            TransformContext.for_source("items", "dir/input.tsv.gz"),
+            compose_transforms((emit_raw_table, _emit_items_and_rejected)),
+            SOURCED_ITEMS_SCHEMA_MAP,
+            True,
+            {
+                "raw_items": [{"id": "1"}, {"id": "2"}],
+                "items": [{"id": "1", "source": "input.tsv.gz"}, {"id": "2", "source": "input.tsv.gz"}],
+                "_rejected": [
+                    {
+                        "table_name": "items",
+                        "source_file": "dir/input.tsv.gz",
+                        "line_no": None,
+                        "raw_record": None,
+                        "error_detail": "bad row",
+                    }
+                ],
+                "unmapped": [{"id": "u1"}],
+            },
+            id="composed_arrow_transform_with_schema_map_and_rejected",
+        ),
+        pytest.param(
+            SAMPLE_PA_TABLE,
+            TransformContext.for_source("items", "dir/input.tsv.gz"),
+            compose_transforms((emit_raw_table, _emit_items_and_rejected)),
+            None,
+            False,
+            {
+                "raw_items": [{"id": "1"}, {"id": "2"}],
+                "items": [{"id": "1", "source": "input.tsv.gz"}, {"id": "2", "source": "input.tsv.gz"}],
+                "_rejected": [
+                    {
+                        "table_name": "items",
+                        "source_file": "dir/input.tsv.gz",
+                        "line_no": None,
+                        "raw_record": None,
+                        "error_detail": "bad row",
+                    }
+                ],
+                "unmapped": [{"id": "u1"}],
+            },
+            id="composed_arrow_transform_in_jsonl_mode",
+        ),
+        pytest.param(
+            pa.table({"id": ["p1"], "total_count": [1], "tags": [["x", "y"]]}),
+            "raw",
+            _split_parent_child_transform,
+            SPLIT_SCHEMA_REGISTRY,
+            True,
+            {
+                "parent": [{"id": "p1", "note": None}],
+                "child": [{"parent_id": "p1", "tag": "x"}, {"parent_id": "p1", "tag": "y"}],
+            },
+            id="dict_only_transform_adapted_on_arrow_table",
+        ),
+    ],
+)
+def test_route_and_coerce_table_pass_arrow_dict_rejected_and_jsonl_modes(
+    table: pa.Table,
+    default_table: str | TransformContext,
+    transform: TableTransformFn | None,
+    schema_map: ArrowSchemaRegistry | None,
+    use_pyarrow: bool,
+    expected_rows_by_table: dict[str, list[dict[str, Any]]],
+) -> None:
+    """route_and_coerce_table handles untransformed tables, Arrow transforms, dict transforms, _rejected, and use_pyarrow=False."""
+    routed = route_and_coerce_table(
+        table,
+        default_table,
+        transform=transform,
+        schema_map=schema_map,
+        use_pyarrow=use_pyarrow,
+    )
+    assert set(routed) == set(expected_rows_by_table)
+    for out_table, out_val in routed.items():
+        if not use_pyarrow or out_table == "unmapped":
+            assert isinstance(out_val, list)
+            assert out_val == expected_rows_by_table[out_table]
+        else:
+            assert isinstance(out_val, pa.Table)
+            if out_table == "_rejected":
+                assert out_val.schema.equals(REJECTED_PYARROW_SCHEMA)
+            elif schema_map is not None and out_table in schema_map.registry:
+                assert out_val.schema.equals(schema_map.registry[out_table], check_metadata=True)
+            assert out_val.to_pylist() == expected_rows_by_table[out_table]
+
+
+def test_source_file_propagated_to_table_transforms_in_jsonlines_and_xml_readers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """route_jsonl_lines and process_xml_file_to_dict pass source_file into 2-arg TABLE_TRANSFORMS."""
+    mod_name = register_temp_module(
+        monkeypatch,
+        "_test_reader_ctx_transforms_mod",
+        TABLE_TRANSFORMS={"items": (emit_raw_table, _dict_with_optional_ctx_param)},
+    )
+
+    jsonl_dir = tmp_path / "jsonl_in"
+    jsonl_dir.mkdir()
+    jsonl_file = jsonl_dir / "events.jsonl"
+    jsonl_file.write_text('{"id": "j1"}\n', encoding="utf-8")
+    jsonl_settings = make_cts_settings(
+        JsonlExtractSettings,
+        tmp_path,
+        input_dir=str(jsonl_dir),
+        dataset_name="ds",
+        table_name="items",
+        loader_file_format="jsonl",
+        transforms_module=mod_name,
+    )
+    assert jsonl_settings.get_table_transforms("items") == (emit_raw_table, _dict_with_optional_ctx_param)
+    jsonl_pages = {
+        page.meta.table_name: page.data for page in route_jsonl_lines(iter([as_file_item(jsonl_file)]), jsonl_settings)
+    }
+    assert jsonl_pages == {
+        "raw_items": [{"id": "j1"}],
+        "items": [{"id": "j1", "source": "events.jsonl"}],
+    }
+
+    xml_dir = tmp_path / "xml_in"
+    xml_dir.mkdir()
+    xml_file = xml_dir / "records.xml"
+    xml_file.write_text("<root><item><id>x1</id></item></root>", encoding="utf-8")
+
+    def _xml_ctx_transform(record: dict[str, Any], ctx: TransformContext) -> dict[str, list[dict[str, Any]]]:
+        """Extract ``id`` from ``record["item"]`` and attach ``ctx.file_name``.
+
+        :param record: parsed XML element dictionary
+        :type record: dict[str, Any]
+        :param ctx: transform context carrying ``file_name``
+        :type ctx: TransformContext
+        :return: routed mapping targeting ``items``
+        :rtype: dict[str, list[dict[str, Any]]]
+        """
+        item_obj = record["item"]
+        return {"items": [{"id": item_obj["id"], "source": ctx.file_name or ""}]}
+
+    xml_mod = register_temp_module(
+        monkeypatch,
+        "_test_xml_ctx_transforms_mod",
+        TABLE_TRANSFORMS={"items": _xml_ctx_transform},
+    )
+    xml_settings = make_cts_settings(
+        XmlToDictSettings,
+        tmp_path,
+        input_dir=str(xml_dir),
+        dataset_name="ds",
+        table_name="items",
+        xml_tag="item",
+        loader_file_format="jsonl",
+        transforms_module=xml_mod,
+    )
+    xml_pages = {
+        page.meta.table_name: page.data for page in process_xml_file_to_dict(as_file_item(xml_file), xml_settings)
+    }
+    assert xml_pages == {"items": [{"id": "x1", "source": "records.xml"}]}

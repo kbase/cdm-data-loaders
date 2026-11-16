@@ -6,7 +6,6 @@ Cases, rules, and error fixtures are declared in manifests under
 ``docs_macros`` Jinja2 templates.
 """
 
-import importlib
 import json
 import math
 from pathlib import Path
@@ -133,34 +132,6 @@ def test_manifests_pass_consistency() -> None:
     manifest_codes = {err.code for err in ERROR_CASES}
     assert sorted(manifest_codes - ERRORS_BY_CODE.keys()) == []
     assert sorted(ERRORS_BY_CODE.keys() - manifest_codes) == []
-
-
-@pytest.mark.docs
-def test_specification_document_pass_up_to_date() -> None:
-    """Verify the specification stub, rendered document, and scalar table match the manifest and converter."""
-    docs_env = importlib.import_module("docs_macros.env")
-    spec_ctx = importlib.import_module("docs_macros.spec_context")
-
-    spec_cfg = spec_ctx.CONVERTER_SPECS["pyarrow_to_linkml"]
-    stub_text = docs_env.build_generated_docs_plan()[Path(spec_cfg.output.name)]
-    assert "render_macros: true" in stub_text
-    assert 'render_converter_spec("pyarrow_to_linkml")' in stub_text
-
-    rendered = docs_env.render_converter_spec(spec_cfg)
-    assert f"# {RULES.title}" in rendered
-    for rule_id in RULES.rules:
-        assert f"**{rule_id}**" in rendered
-        assert f'<a id="{rule_id.lower()}"></a>' in rendered
-    for case in CASES:
-        assert f'<a id="{case.anchor}"></a>' in rendered
-    for err_cls in PYARROW_TO_LINKML_ERRORS:
-        assert f"**{err_cls.code}**" in rendered
-        assert f"`{err_cls.__name__}`" in rendered
-
-    scalar_table = docs_env.render_reference_table("pyarrow_to_linkml_scalar_table")
-    assert "| `pa.uint8()` | `int` | `integer` | `0` .. `255` |" in scalar_table
-    assert "| `pa.decimal128(10, 2)` | `str` (fixed-point decimal) | `decimal` | — |" in scalar_table
-    assert '| `pa.timestamp("us", tz="UTC")` |' in scalar_table
 
 
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)

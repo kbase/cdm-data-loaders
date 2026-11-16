@@ -1,17 +1,21 @@
 """Shared fixtures and functions for cdm_data_loaders tests."""
 
-from collections.abc import Callable, Mapping
+import os
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, Final
+from unittest.mock import MagicMock, patch
 
 import pytest
 from frozendict import frozendict
 from pydantic_settings import BaseSettings, CliApp
 
+from cdm_data_loaders.core import reporting
 from cdm_data_loaders.core.fields import (
     BUFFER_SIZE,
     DEFAULTS,
     DLT_DEV_MODE,
+    FILE_LISTING_FILE_NAME,
     INPUT_DIR,
     LOG_CONFIG_FILE,
     LOG_INTERVAL,
@@ -21,8 +25,15 @@ from cdm_data_loaders.core.fields import (
     USE_DESTINATION,
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
 )
+from cdm_data_loaders.core.settings import CtsSettings
 from tests.conftest import LOCAL_FS
-from tests.helpers import make_cli_arg
+from tests.helpers import make_cli_arg, make_cts_settings
+
+HOOK_ENV_VAR: Final[str] = "RUNTIME__SLACK_INCOMING_HOOK"
+HOOK_PART_ENV_VARS: Final[tuple[str, ...]] = ("VARIABLE_B", "VARIABLE_T", "CHAR_STR")
+SLACK_HOOK: Final[str] = "https://slack.hook/what/ever"
+LOAD_INFO_SAVE_FAILED: Final[str] = "Loading pipeline load info failed: "
+LOAD_INFO_SAVE_FAILED_JOBS: Final[str] = "Loading pipeline load info had failed jobs: "
 
 
 def check_settings(
@@ -91,6 +102,7 @@ def cts_expected(input_dir: Path | str, output_dir: Path, **overrides: Any) -> d
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: DEFAULTS[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA],
         "pipeline_dir": pipeline_dir,
         "report_path": (pipeline_dir or resolved_output_dir) / REPORT_FILE_NAME,
+        "file_listing_path": (pipeline_dir or resolved_output_dir) / FILE_LISTING_FILE_NAME,
         **overrides,
     }
 
@@ -145,5 +157,42 @@ def test_cts_settings_reconciled(test_cts_settings: frozendict[str, Any]) -> fro
             LOG_INTERVAL: 5000,
             "pipeline_dir": pipeline_dir,
             "report_path": pipeline_dir / REPORT_FILE_NAME,
+            "file_listing_path": pipeline_dir / FILE_LISTING_FILE_NAME,
         }
     )
+
+
+@pytest.fixture(autouse=True)
+def clean_env() -> Iterator[None]:
+    """Remove Slack hook env vars, disable dlt telemetry, and restore the environment afterwards."""
+    with patch.dict(os.environ):
+        for name in (*HOOK_PART_ENV_VARS, HOOK_ENV_VAR):
+            os.environ.pop(name, None)
+        os.environ["RUNTIME__DLTHUB_TELEMETRY"] = "false"
+        yield
+
+
+@pytest.fixture
+def dlt_test_settings(tmp_path: Path, dlt_destination_config: str) -> CtsSettings:
+    """Settings that load into the local_fs destination and keep pipeline metadata in a separate output_dir."""
+    return make_cts_settings(
+        CtsSettings,
+        tmp_path,
+        log_config_file=None,
+        use_destination=dlt_destination_config,
+        use_output_dir_for_pipeline_metadata=True,
+    )
+
+
+@pytest.fixture
+def destination_bucket(tmp_path: Path, dlt_destination_config: str) -> Path:  # noqa: ARG001
+    """The bucket_url of the local_fs destination in dlt.config."""
+    return tmp_path / "bucket"
+
+
+@pytest.fixture
+def slack_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Replace the dlt Slack sender used by send_slack_message_carefully."""
+    mock = MagicMock()
+    monkeypatch.setattr(reporting, "send_slack_message", mock)
+    return mock

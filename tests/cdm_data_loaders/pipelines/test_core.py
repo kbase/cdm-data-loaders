@@ -8,49 +8,53 @@ from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, cast
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import dlt
+import pyarrow as pa
 import pytest
+import yaml
 from dlt.common.destination.exceptions import DestinationTerminalException
 from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TTableSchema
-from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 from dlt.destinations.impl.filesystem.filesystem import FilesystemLoadJob
 from dlt.extract.resource import DltResource
+from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
-from pydantic_settings import CliApp, SettingsError
-from requests import RequestException
+from pydantic_settings import SettingsError
 
-from cdm_data_loaders.core.fields import OUTPUT_DIR, PIPELINE_DIR_NAME, USE_DESTINATION
+from cdm_data_loaders.core import reporting
+from cdm_data_loaders.core.fields import (
+    OUTPUT_DIR,
+    PIPELINE_DIR_NAME,
+    REJECTED_TABLE_NAME,
+    USE_DESTINATION,
+)
+from cdm_data_loaders.core.filesystem import build_filesystem_resource
+from cdm_data_loaders.core.preprocessors import FilePreprocessError
+from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME, WEBHOOK_NOT_CONFIGURED
 from cdm_data_loaders.core.settings import (
     CdmDataLoadersBase,
     CtsSettings,
     FileFormatIngestSettings,
     InputLocalOutputSettings,
     LoggerSettings,
-    XmlIngestSettings,
 )
+from cdm_data_loaders.core.transforms import OutputTableHints
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.pipelines.core import (
-    DEFAULT_SCHEMA_CONTRACT,
-    LOAD_INFO_TABLE_NAME,
-    NO_MESSAGE,
-    WEBHOOK_NOT_CONFIGURED,
     PipelineCli,
-    build_file_ingest_kwargs,
-    build_filesystem_resource,
-    build_per_file_filesystem_resource,
-    make_per_file_reader,
+    propagate_run_hints_to_variants,
     run_cli,
     run_pipeline,
-    send_slack_message_carefully,
 )
-from tests.cdm_data_loaders.pipelines.conftest import (
+from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
+from tests.cdm_data_loaders.conftest import (
     HOOK_ENV_VAR,
     LOAD_INFO_SAVE_FAILED,
     LOAD_INFO_SAVE_FAILED_JOBS,
+    SLACK_HOOK,
 )
 from tests.cdm_data_loaders.pipelines.helpers import (
     check_pipeline_report,
@@ -58,8 +62,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
 )
 from tests.conftest import LOCAL_FS, S3
 from tests.dlt_config_isolation import dlt_config_unset, isolated_dlt_config
-from tests.fs_backends import MOTO_ACCESS_KEY, MOTO_SECRET_KEY, S3_MOTO, FsBackend
-from tests.helpers import make_cts_settings, settings_to_argv
+from tests.helpers import make_cts_settings, register_temp_module, settings_to_argv
 
 TINY_RESOURCE_DATA: Final[list[dict[str, Any]]] = [
     {"entity_id": "tiny:one", "value": 1},
@@ -67,6 +70,7 @@ TINY_RESOURCE_DATA: Final[list[dict[str, Any]]] = [
 ]
 TINY_PIPELINE_NAME: Final[str] = "test_core_tiny_pipeline"
 TINY_TABLE_NAME: Final[str] = "tiny"
+EXPECTED_PIPELINE_RUNS: Final[int] = 2
 ALL_JOBS_COMPLETED: Final[str] = "All pipeline jobs completed successfully"
 FAILED_JOBS_WARNING: Final[str] = "Pipeline contains failed jobs"
 
@@ -125,64 +129,6 @@ def settings_missing_sync_attrs(
     input_dir = tmp_path / "input"
     input_dir.mkdir(exist_ok=True)
     return InputLocalOutputSettings.model_validate({"input_dir": input_dir, "output_dir": tmp_path / "output"})
-
-
-# send slack message carefully
-SLACK_HOOK: Final[str] = "https://slack.hook/what/ever"
-TEST_MESSAGE: Final[str] = "3... 2... 1... testing?"
-
-
-@pytest.mark.parametrize(
-    ("slack_hook", "message", "err_msg"),
-    [
-        pytest.param(None, TEST_MESSAGE, WEBHOOK_NOT_CONFIGURED, id="hook_none"),
-        pytest.param("", TEST_MESSAGE, WEBHOOK_NOT_CONFIGURED, id="hook_empty"),
-        pytest.param(SLACK_HOOK, "", NO_MESSAGE, id="message_empty"),
-        pytest.param(SLACK_HOOK, "   ", NO_MESSAGE, id="message_spaces"),
-        pytest.param(SLACK_HOOK, "\n\t", NO_MESSAGE, id="message_newline_tab"),
-        pytest.param("", "", WEBHOOK_NOT_CONFIGURED, id="both_empty"),
-    ],
-)
-def test_send_slack_message_carefully_params_fail(
-    slack_hook: str | None,
-    message: str,
-    err_msg: str,
-    caplog: pytest.LogCaptureFixture,
-    slack_mock: MagicMock,
-) -> None:
-    """A missing/empty hook or a blank message logs exactly one warning and sends nothing."""
-    send_slack_message_carefully(slack_hook, message)  # pyright: ignore[reportArgumentType]
-    slack_mock.assert_not_called()
-    assert [(record.levelno, record.getMessage()) for record in caplog.records] == [
-        (logging.WARNING, f"Cannot send slack message: {err_msg}")
-    ]
-
-
-@pytest.mark.parametrize("markdown", [True, False, None], ids=["markdown-true", "markdown-false", "markdown-default"])
-def test_send_slack_message_carefully_markdown_params(markdown: bool | None, slack_mock: MagicMock) -> None:
-    """The message is stripped and sent once, with the is_markdown flag passed through."""
-    if markdown is None:
-        send_slack_message_carefully(SLACK_HOOK, f"  {TEST_MESSAGE} \n")
-    else:
-        send_slack_message_carefully(SLACK_HOOK, f"  {TEST_MESSAGE} \n", markdown)
-
-    slack_mock.assert_called_once_with(SLACK_HOOK, TEST_MESSAGE, bool(markdown))
-
-
-@pytest.mark.parametrize(
-    "exc",
-    [RequestException("Oh no! An error!"), ValueError("bad payload")],
-    ids=["request-exception", "value-error"],
-)
-def test_send_slack_message_fail_error_oh_no(
-    exc: Exception, slack_mock: MagicMock, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Any error from the Slack sender is caught and logged as an error."""
-    slack_mock.side_effect = exc
-    send_slack_message_carefully(SLACK_HOOK, TEST_MESSAGE)
-    assert [(record.levelno, record.getMessage()) for record in caplog.records] == [
-        (logging.ERROR, "Failed to send slack message")
-    ]
 
 
 def test_settings_missing_sync_attrs_pass_fixture_shape(
@@ -387,7 +333,7 @@ def test_run_pipeline_builds_destination_from_settings(mock_dlt: MagicMock, tmp_
     mock_dlt.destination.assert_called_once_with(S3)
     mock_dlt.pipeline.assert_called_once_with(dev_mode=True)
     assert mock_dlt.pipeline.return_value.destination == mock_dlt.destination.return_value
-    assert mock_dlt.pipeline.return_value.run.call_count == 2
+    assert mock_dlt.pipeline.return_value.run.call_count == EXPECTED_PIPELINE_RUNS
 
 
 @pytest.mark.parametrize(
@@ -649,10 +595,11 @@ def test_run_pipeline_load_info_runs_accumulate(dlt_test_settings: CtsSettings, 
     second = run_pipeline(dlt_test_settings, tiny_resource())
     assert second is not None
 
+    expected_runs = 2
     rows = read_destination_rows(destination_bucket, LOAD_INFO_TABLE_NAME)
-    assert len(rows) == 2
+    assert len(rows) == expected_runs
     saved_load_ids = {tuple(row["loads_ids"]) for row in rows}
-    assert len(saved_load_ids) == 2
+    assert len(saved_load_ids) == expected_runs
     # each accumulated row references one of the entity data loads
     tiny_load_ids = {
         row["_dlt_load_id"] for row in read_destination_rows(destination_bucket, TINY_TABLE_NAME, strip_metadata=False)
@@ -699,7 +646,7 @@ def test_run_pipeline_load_info_save_resource_error_still_returns_load_info(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """An error building the load_info resource is logged; the entity load_info is still returned."""
-    real_resource = core.dlt.resource
+    real_resource = dlt.resource
 
     def resource_boom(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
         if kwargs.get("name") == LOAD_INFO_TABLE_NAME:
@@ -708,7 +655,7 @@ def test_run_pipeline_load_info_save_resource_error_still_returns_load_info(
         return real_resource(*args, **kwargs)
 
     resource = tiny_resource()
-    monkeypatch.setattr(core.dlt, "resource", resource_boom)
+    monkeypatch.setattr(dlt, "resource", resource_boom)
     load_info = run_pipeline(dlt_test_settings, resource)
 
     assert load_info is not None
@@ -789,7 +736,7 @@ def test_run_pipeline_load_info_save_run_mock_shape(
     run_pipeline(dlt_test_settings, tiny_resource())
 
     assert mock_dlt.pipeline.call_count == 1
-    assert mock_dlt.pipeline.return_value.run.call_count == 2
+    assert mock_dlt.pipeline.return_value.run.call_count == EXPECTED_PIPELINE_RUNS
     first_call, save_call = mock_dlt.pipeline.return_value.run.call_args_list
     assert first_call.args[0] is not None
     assert save_call.args[0] is not None
@@ -895,15 +842,15 @@ def test_run_pipeline_pass_failed_jobs_reported(
 
     assert load_info is not None
     assert load_info.has_failed_jobs
-    assert slack_mock.call_args_list == [call(SLACK_HOOK, "Pipeline completed with errors", False)]
-    core_errors = [
+    assert [c.args for c in slack_mock.call_args_list] == [(SLACK_HOOK, "Pipeline completed with errors", False)]
+    reporting_errors = [
         record.getMessage()
         for record in caplog.records
-        if record.name == core.__name__ and record.levelno == logging.ERROR
+        if record.name == reporting.__name__ and record.levelno == logging.ERROR
     ]
     # the load info is saved to the same failing sink, so saving it fails too; the run is still returned
-    assert len(core_errors) == 1
-    assert core_errors[0].startswith((LOAD_INFO_SAVE_FAILED_JOBS, LOAD_INFO_SAVE_FAILED))
+    assert len(reporting_errors) == 1
+    assert reporting_errors[0].startswith((LOAD_INFO_SAVE_FAILED_JOBS, LOAD_INFO_SAVE_FAILED))
 
 
 def test_run_pipeline_pass_partial_load_worker_failure_filesystem(
@@ -937,9 +884,7 @@ def test_run_pipeline_pass_partial_load_worker_failure_filesystem(
 
     assert load_info is not None
     assert load_info.has_failed_jobs
-    assert slack_mock.call_args_list == [
-        call(SLACK_HOOK, "Pipeline completed with errors", False),  # noqa: FBT003
-    ]
+    assert [c.args for c in slack_mock.call_args_list] == [(SLACK_HOOK, "Pipeline completed with errors", False)]
 
     # The record from the succeeding worker thread is in the tiny table; the failed worker's record is missing
     assert read_output_jsonl_records(destination_bucket) == [TINY_RESOURCE_DATA[0]]
@@ -961,7 +906,9 @@ def test_run_pipeline_pass_partial_load_worker_failure_filesystem(
     assert [job["failed_message"] for job in completed_jobs] == [None, None]
 
     assert FAILED_JOBS_WARNING in caplog.messages
-    assert [r for r in caplog.records if r.name == core.__name__ and r.levelno == logging.ERROR] == []
+    assert [
+        r for r in caplog.records if r.name in {core.__name__, reporting.__name__} and r.levelno == logging.ERROR
+    ] == []
     report_data = check_pipeline_report(
         dlt_test_settings.report_path,
         {
@@ -1028,330 +975,329 @@ def test_run_pipeline_fail_partial_extract_worker_failure_filesystem(
     assert SINK_ERROR in report_data["pipeline_err_msg"]
 
 
-def test_build_filesystem_resource_pass_default_glob_and_callable_transformer(
-    input_dir: Path, output_dir: Path
+@pytest.mark.parametrize(
+    ("has_hint_method", "hints_empty", "pipeline_run_kwargs"),
+    [
+        pytest.param(True, False, None, id="run_kwargs_none"),
+        pytest.param(True, False, {}, id="run_kwargs_empty"),
+        pytest.param(False, False, {"loader_file_format": "parquet"}, id="no_get_output_table_hints_method"),
+        pytest.param(True, True, {"loader_file_format": "parquet"}, id="empty_output_table_hints"),
+        pytest.param(True, False, {"schema_contract": "evolve"}, id="irrelevant_run_kwargs_only"),
+    ],
+)
+def test_propagate_run_hints_to_variants_pass_noop_cases(
+    tmp_path: Path,
+    *,
+    has_hint_method: bool,
+    hints_empty: bool,
+    pipeline_run_kwargs: dict[str, Any] | None,
 ) -> None:
-    """build_filesystem_resource uses settings.file_glob and wraps a callable in dlt.transformer with settings bound."""
-    file_path = input_dir / "sample.xml"
-    file_path.write_text("hello", encoding="utf-8")
-    settings = InputLocalOutputSettings(input_dir=input_dir, output_dir=output_dir)
+    """propagate_run_hints_to_variants leaves resources untouched when hints or relevant run kwargs are absent."""
+    schema = pa.schema([pa.field("id", pa.string())])
 
-    def read_items(
-        items: TDataItems,
-        cfg: InputLocalOutputSettings,
-        prefix: str,
-    ) -> Iterator[dict[str, Any]]:
-        assert cfg is settings
+    class _HintedSettings(CtsSettings):
+        def get_output_table_hints(self) -> tuple[OutputTableHints, ...]:
+            return () if hints_empty else (OutputTableHints(table_name="variant_tbl", pyarrow_schema=schema),)
+
+    settings_cls = _HintedSettings if has_hint_method else CtsSettings
+    settings = make_cts_settings(settings_cls, tmp_path)
+    res = tiny_resource()
+
+    propagate_run_hints_to_variants(settings, res, pipeline_run_kwargs)
+
+    marked = dlt.mark.with_table_name({"id": "1"}, "variant_tbl")
+    variant_schema = res.compute_table_schema(marked.data, marked.meta)
+    assert "table_format" not in variant_schema
+    assert "file_format" not in variant_schema
+    assert variant_schema.get("write_disposition") != "replace"
+
+
+def test_propagate_run_hints_to_variants_pass_single_and_list_resources(tmp_path: Path) -> None:
+    """propagate_run_hints_to_variants applies table_format, file_format, and write_disposition onto variants."""
+    schema = pa.schema([pa.field("id", pa.string())])
+
+    class _MultiHintSettings(CtsSettings):
+        def get_output_table_hints(self) -> tuple[OutputTableHints, ...]:
+            return (
+                OutputTableHints(table_name="tbl_one", pyarrow_schema=schema),
+                OutputTableHints(table_name="tbl_two", pyarrow_schema=schema),
+            )
+
+    settings = make_cts_settings(_MultiHintSettings, tmp_path)
+    single_res = tiny_resource()
+    list_res_a = tiny_resource()
+    list_res_b = tiny_resource()
+    run_kwargs = {
+        "table_format": "iceberg",
+        "loader_file_format": "parquet",
+        "write_disposition": "replace",
+    }
+
+    propagate_run_hints_to_variants(settings, single_res, run_kwargs)
+    propagate_run_hints_to_variants(settings, [list_res_a, list_res_b], run_kwargs)
+
+    for res in (single_res, list_res_a, list_res_b):
+        for tbl_name in ("tbl_one", "tbl_two"):
+            marked = dlt.mark.with_table_name({"id": "1"}, tbl_name)
+            variant_schema = res.compute_table_schema(marked.data, marked.meta)
+            assert variant_schema["table_format"] == "iceberg"
+            assert variant_schema["file_format"] == "parquet"
+            assert variant_schema["write_disposition"] == "replace"
+
+
+def test_run_pipeline_pass_filesystem_resource_records_ingested_files_in_report(
+    dlt_test_settings: CtsSettings,
+) -> None:
+    """run_pipeline records relative paths from filesystem resources and writes them to report.txt."""
+    input_dir = Path(dlt_test_settings.input_dir)
+    (input_dir / "first.xml").write_text("one", encoding="utf-8")
+    (input_dir / "sub").mkdir()
+    (input_dir / "sub" / "second.xml").write_text("two", encoding="utf-8")
+
+    def read_items(items: TDataItems, _settings: CtsSettings) -> Iterator[dict[str, Any]]:
         for item in items:
             text = Path(item["file_url"].removeprefix("file://")).read_text(encoding="utf-8")
-            yield {"text": f"{prefix}:{text}"}
+            yield {"file": item["relative_path"], "text": text}
 
-    resource = build_filesystem_resource(settings, read_items, "tag", name="sample_reader")
-    rows = list(resource)
-    assert rows == [{"text": "tag:hello"}]
+    resource = build_filesystem_resource(
+        dlt_test_settings,
+        read_items,
+        name="xml_items",
+        file_glob="**/*.xml",
+    )
+
+    load_info = run_pipeline(
+        dlt_test_settings,
+        resource,
+        pipeline_kwargs={"pipeline_name": TINY_PIPELINE_NAME, "dataset_name": "fs_report_ds"},
+    )
+
+    assert load_info is not None
+    report_data = check_pipeline_report(
+        dlt_test_settings.report_path,
+        {
+            "pipeline": TINY_PIPELINE_NAME,
+            "dataset": "fs_report_ds",
+            "status": "completed",
+            "pipeline_load_info_errs": None,
+        },
+    )
+    assert set(report_data["ingested_files"]) == {"first.xml", "sub/second.xml"}
 
 
-def test_build_filesystem_resource_pass_custom_glob_resource_transformer_and_contract(
-    input_dir: Path, output_dir: Path
+def test_run_pipeline_pass_shared_and_multiple_filesystem_roots_deduplicated(
+    dlt_test_settings: CtsSettings,
 ) -> None:
-    """build_filesystem_resource accepts a DltResource transformer, explicit file_glob, and schema_contract."""
-    matched = input_dir / "data.jsonl"
-    matched.write_text("matched", encoding="utf-8")
-    ignored = input_dir / "ignore.txt"
-    ignored.write_text("ignored", encoding="utf-8")
-    settings = InputLocalOutputSettings(input_dir=input_dir, output_dir=output_dir)
+    """run_pipeline deduplicates shared filesystem roots and collects across multiple filesystem roots."""
+    input_dir = Path(dlt_test_settings.input_dir)
+    dir_a = input_dir / "dir_a"
+    dir_b = input_dir / "dir_b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    (dir_a / "a.txt").write_text("alpha", encoding="utf-8")
+    (dir_b / "b.txt").write_text("beta", encoding="utf-8")
 
-    @dlt.transformer(name="jsonl_test_reader")
-    def read_jsonl_items(
-        items: TDataItems,
-        cfg: InputLocalOutputSettings,
-    ) -> Iterator[dict[str, Any]]:
-        assert cfg is settings
+    shared_fs = filesystem(bucket_url=str(dir_a), file_glob="*.txt")
+    second_fs = filesystem(bucket_url=str(dir_b), file_glob="*.txt")
+
+    @dlt.transformer(name="trans_one")
+    def trans_one(items: TDataItems) -> Iterator[dict[str, Any]]:
         for item in items:
-            yield {"name": Path(item["file_url"].removeprefix("file://")).name}
+            yield {"path": item["relative_path"], "branch": 1}
+
+    @dlt.transformer(name="trans_two")
+    def trans_two(items: TDataItems) -> Iterator[dict[str, Any]]:
+        for item in items:
+            yield {"path": item["relative_path"], "branch": 2}
+
+    @dlt.transformer(name="trans_three")
+    def trans_three(items: TDataItems) -> Iterator[dict[str, Any]]:
+        for item in items:
+            yield {"path": item["relative_path"], "branch": 3}
+
+    load_info = run_pipeline(
+        dlt_test_settings,
+        [shared_fs | trans_one, shared_fs | trans_two, second_fs | trans_three],
+        pipeline_kwargs={"pipeline_name": TINY_PIPELINE_NAME, "dataset_name": "multi_fs_ds"},
+    )
+
+    assert load_info is not None
+    check_pipeline_report(
+        dlt_test_settings.report_path,
+        {
+            "pipeline": TINY_PIPELINE_NAME,
+            "dataset": "multi_fs_ds",
+            "status": "completed",
+            "ingested_files": ["a.txt", "b.txt"],
+            "pipeline_load_info_errs": None,
+        },
+    )
+
+
+def test_run_pipeline_pass_file_preprocessors_reject_skip_and_record_report_errors(
+    dlt_test_settings: CtsSettings,
+    destination_bucket: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    slack_mock: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """File pre-processing failures emit to _rejected, log an error, notify Slack, and record load_errors."""
+    monkeypatch.setenv(HOOK_ENV_VAR, SLACK_HOOK)
+    input_dir = Path(dlt_test_settings.input_dir)
+    (input_dir / "good.jsonl").write_text('{"id": "1"}\n', encoding="utf-8")
+    (input_dir / "skip.jsonl").write_text('{"id": "2"}\n', encoding="utf-8")
+    (input_dir / "bad.jsonl").write_text('{"id": "3"}\n', encoding="utf-8")
+
+    def preprocess_file(file_item: Any) -> Any:  # noqa: ANN401
+        rel = file_item["relative_path"]
+        if rel == "skip.jsonl":
+            return None
+        if rel == "bad.jsonl":
+            msg = "checksum mismatch"
+            raise FilePreprocessError(msg)
+        return file_item
+
+    pre_mod = register_temp_module(
+        monkeypatch,
+        "_test_pipeline_report_preprocessors",
+        FILE_PREPROCESSORS=[preprocess_file],
+    )
+    settings = JsonlExtractSettings(
+        **dlt_test_settings.model_dump(exclude={"pipeline_dir", "report_path", "file_listing_path"}),
+        dataset_name="preprocess_report_ds",
+        table_name="items",
+        loader_file_format="jsonl",
+        preprocessors_module=pre_mod,
+    )
+
+    read_files: list[str] = []
+
+    def read_items(items: TDataItems, cfg: JsonlExtractSettings) -> Iterator[Any]:
+        for item in items:
+            read_files.append(item["relative_path"])
+            yield dlt.mark.with_table_name({"file": item["relative_path"]}, cfg.table_name)
 
     resource = build_filesystem_resource(
         settings,
-        read_jsonl_items,
-        name="jsonl_test_reader",
-        file_glob="*.jsonl",
-        schema_contract=DEFAULT_SCHEMA_CONTRACT,
+        read_items,
+        name="jsonl_items",
+        parallelized=False,
     )
-    rows = list(resource)
-    assert rows == [{"name": "data.jsonl"}]
 
-
-def test_build_filesystem_resource_pass_cts_wildcard_tokens_on_settings_file_glob(
-    input_dir: Path, output_dir: Path
-) -> None:
-    """build_filesystem_resource discovers files matching settings.file_glob expanded from CTS wildcard tokens."""
-    (input_dir / "alpha.ext.xml").write_text("<a/>", encoding="utf-8")
-    (input_dir / "beta.ext.gz").write_text("<b/>", encoding="utf-8")
-    (input_dir / "gamma.xml").write_text("<c/>", encoding="utf-8")
-    settings = CliApp.run(
-        XmlIngestSettings,
-        cli_args=[
-            "--input-dir",
-            str(input_dir),
-            "--output-dir",
-            str(output_dir),
-            "--use-destination",
-            "cts",
-            "--dataset-name",
-            "ext_ds",
-            "--file-glob",
-            "__STAR__.ext.__STAR__",
-        ],
-    )
-    assert settings.file_glob == "*.ext.*"
-
-    def read_names(
-        items: TDataItems,
-        cfg: XmlIngestSettings,
-    ) -> Iterator[dict[str, str]]:
-        assert cfg is settings
-        for item in items:
-            yield {"name": Path(item["file_url"].removeprefix("file://")).name}
-
-    resource = build_filesystem_resource(settings, read_names, name="cts_glob_reader")
-    names = sorted(row["name"] for row in resource)
-    assert names == ["alpha.ext.xml", "beta.ext.gz"]
-
-
-@pytest.mark.parametrize(
-    ("file_items", "extra_args", "expected_rows", "expected_calls"),
-    [
-        pytest.param([], (), [], [], id="empty_items"),
-        pytest.param(
-            [{"relative_path": "one.txt", "rows": [{"id": 1}]}],
-            (),
-            [{"id": 1}],
-            [(({"relative_path": "one.txt", "rows": [{"id": 1}]},),)],
-            id="single_item_no_extra_args",
-        ),
-        pytest.param(
-            [
-                {"relative_path": "first.txt", "rows": [{"id": 1}, {"id": 2}]},
-                {"relative_path": "empty.txt", "rows": []},
-                {"relative_path": "second.txt", "rows": [{"id": 3}]},
-            ],
-            ("prefix", 99),
-            [{"id": 1}, {"id": 2}, {"id": 3}],
-            [
-                (({"relative_path": "first.txt", "rows": [{"id": 1}, {"id": 2}]}, "prefix", 99),),
-                (({"relative_path": "empty.txt", "rows": []}, "prefix", 99),),
-                (({"relative_path": "second.txt", "rows": [{"id": 3}]}, "prefix", 99),),
-            ],
-            id="multiple_items_with_extra_args_and_empty_file",
-        ),
-    ],
-)
-def test_make_per_file_reader_pass(
-    file_items: list[dict[str, Any]],
-    extra_args: tuple[Any, ...],
-    expected_rows: list[dict[str, Any]],
-    expected_calls: list[tuple[tuple[Any, ...], ...]],
-) -> None:
-    """make_per_file_reader calls file_fn(file_item, *args) for each item and yields all resulting records."""
-    recorded_calls: list[tuple[tuple[Any, ...], ...]] = []
-
-    def file_fn(file_item: dict[str, Any], *args: Any) -> list[dict[str, Any]]:  # noqa: ANN401
-        recorded_calls.append(((file_item, *args),))
-        return list(file_item["rows"])
-
-    reader = make_per_file_reader(file_fn)
-    assert list(reader(file_items, *extra_args)) == expected_rows
-    assert recorded_calls == expected_calls
-
-
-def test_make_per_file_reader_fail_propagates_file_fn_error() -> None:
-    """make_per_file_reader propagates exceptions raised by file_fn when iterating."""
-
-    def failing_file_fn(file_item: dict[str, Any]) -> Iterator[dict[str, Any]]:
-        if file_item["relative_path"] == "bad.txt":
-            err_msg = "corrupt file"
-            raise ValueError(err_msg)
-        yield {"path": file_item["relative_path"]}
-
-    reader = make_per_file_reader(failing_file_fn)
-    gen = reader([{"relative_path": "good.txt"}, {"relative_path": "bad.txt"}])
-    assert next(gen) == {"path": "good.txt"}
-    with pytest.raises(ValueError, match="corrupt file"):
-        next(gen)
-
-
-@pytest.mark.parametrize(
-    ("file_glob", "reader_args", "schema_contract", "transformer_kwargs", "expected"),
-    [
-        pytest.param(
-            None,
-            ("tag",),
-            None,
-            {},
-            [
-                {"file": "a.xml", "arg": "tag", "content": "alpha"},
-                {"file": "b.txt", "arg": "tag", "content": "beta"},
-            ],
-            id="default_glob_with_reader_args",
-        ),
-        pytest.param(
-            "*.txt",
-            ("custom",),
-            DEFAULT_SCHEMA_CONTRACT,
-            {"parallelized": False, "max_table_nesting": 0},
-            [{"file": "b.txt", "arg": "custom", "content": "beta"}],
-            id="explicit_glob_contract_and_transformer_kwargs",
-        ),
-        pytest.param(
-            "*.missing",
-            ("none",),
-            None,
-            {},
-            [],
-            id="no_matching_files",
-        ),
-    ],
-)
-def test_build_per_file_filesystem_resource_pass(
-    input_dir: Path,
-    output_dir: Path,
-    file_glob: str | None,
-    reader_args: tuple[str, ...],
-    schema_contract: dict[str, str] | None,
-    transformer_kwargs: dict[str, Any],
-    expected: list[dict[str, Any]],
-) -> None:
-    """build_per_file_filesystem_resource wraps file_fn via make_per_file_reader and reads matching files."""
-    (input_dir / "a.xml").write_text("alpha", encoding="utf-8")
-    (input_dir / "b.txt").write_text("beta", encoding="utf-8")
-    settings = InputLocalOutputSettings(input_dir=input_dir, output_dir=output_dir)
-
-    def read_single_file(
-        file_item: dict[str, Any],
-        cfg: InputLocalOutputSettings,
-        label: str,
-    ) -> Iterator[dict[str, Any]]:
-        assert cfg is settings
-        path = Path(file_item["file_url"].removeprefix("file://"))
-        yield {"file": path.name, "arg": label, "content": path.read_text(encoding="utf-8")}
-
-    resource = build_per_file_filesystem_resource(
+    load_info = run_pipeline(
         settings,
-        read_single_file,
-        *reader_args,
-        name="per_file_test_reader",
-        file_glob=file_glob,
-        schema_contract=schema_contract,  # type: ignore[arg-type]
-        **transformer_kwargs,
+        resource,
+        pipeline_kwargs={"pipeline_name": TINY_PIPELINE_NAME, "dataset_name": "preprocess_report_ds"},
+        pipeline_run_kwargs={"loader_file_format": "jsonl"},
     )
-    assert resource.name == "per_file_test_reader"
-    assert resource.schema_contract == schema_contract
-    if "max_table_nesting" in transformer_kwargs:
-        assert resource.max_table_nesting == transformer_kwargs["max_table_nesting"]
-    assert sorted(resource, key=lambda row: row["file"]) == expected
 
+    assert load_info is not None
+    assert read_files == ["good.jsonl"]
+    assert [c.args for c in slack_mock.call_args_list] == [(SLACK_HOOK, "Pipeline completed with errors", False)]
 
-def test_build_per_file_filesystem_resource_pass_across_fs_backends(
-    fs_backend: FsBackend,
-    output_dir: Path,
-    request: pytest.FixtureRequest,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """build_per_file_filesystem_resource reads files from any fsspec backend configured via settings.input_dir."""
-    fs_backend.put("a.txt", b"alpha")
-    fs_backend.put("b.txt", b"beta")
-    settings = InputLocalOutputSettings(input_dir=fs_backend.bucket_url, output_dir=output_dir)
+    error_logs = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert error_logs == ["File pre-processing failed for bad.jsonl: checksum mismatch"]
 
-    def read_single_file(
-        file_item: FileItemDict,
-        cfg: InputLocalOutputSettings,
-    ) -> Iterator[dict[str, str]]:
-        assert cfg is settings
-        with file_item.open(mode="rt", encoding="utf-8") as fh:
-            yield {"file": file_item["relative_path"], "content": fh.read()}
+    valid_rows = read_destination_rows(destination_bucket, "items")
+    assert valid_rows == [{"file": "good.jsonl"}]
 
-    dlt_secrets: dict[str, Any] = {}
-    if fs_backend.name == S3_MOTO:
-        endpoint_url = request.getfixturevalue("s3_moto_endpoint")
-        monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
-        monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
-        monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
-        dlt_secrets = {
-            "sources": {
-                "filesystem": {
-                    "credentials": {
-                        "aws_access_key_id": MOTO_ACCESS_KEY,
-                        "aws_secret_access_key": MOTO_SECRET_KEY,
-                        "endpoint_url": endpoint_url,
-                    }
-                }
-            }
+    rejected_rows = read_destination_rows(
+        destination_bucket,
+        REJECTED_TABLE_NAME,
+    )
+    assert rejected_rows == [
+        {
+            "table_name": "items",
+            "source_file": "bad.jsonl",
+            "error_detail": "checksum mismatch",
         }
-
-    with isolated_dlt_config(secrets=dlt_secrets):
-        resource = build_per_file_filesystem_resource(
-            settings,
-            read_single_file,
-            name="fs_backend_reader",
-            file_glob="*.txt",
-            parallelized=False,
-        )
-        rows = sorted(resource, key=lambda row: row["file"])
-
-    assert rows == [
-        {"file": "a.txt", "content": "alpha"},
-        {"file": "b.txt", "content": "beta"},
     ]
 
-
-@pytest.mark.parametrize(
-    ("loader_file_format", "expected_run_kwargs"),
-    [
-        pytest.param("jsonl", {"loader_file_format": "jsonl"}, id="jsonl"),
-        pytest.param("parquet", {"loader_file_format": "parquet"}, id="parquet"),
-        pytest.param(
-            "iceberg",
-            {"loader_file_format": "parquet", "table_format": "iceberg"},
-            id="iceberg",
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    ("dataset_name", "fallback_dataset_name", "expected_dataset_name"),
-    [
-        pytest.param("custom_ds", False, "custom_ds", id="explicit_no_fallback"),
-        pytest.param("custom_ds", True, "custom_ds", id="explicit_with_fallback"),
-        pytest.param(None, False, None, id="none_no_fallback"),
-        pytest.param(None, True, TINY_PIPELINE_NAME, id="none_with_fallback"),
-    ],
-)
-def test_build_file_ingest_kwargs_pass(
-    tmp_path: Path,
-    dataset_name: str | None,
-    fallback_dataset_name: bool,
-    expected_dataset_name: str | None,
-    loader_file_format: str,
-    expected_run_kwargs: dict[str, str],
-) -> None:
-    """build_file_ingest_kwargs constructs pipeline_kwargs and pipeline_run_kwargs from FileFormatIngestSettings."""
-    base_settings: FileFormatIngestSettings = make_cts_settings(
-        FileFormatIngestSettings,
-        tmp_path,
-        dataset_name="custom_ds",
-        loader_file_format=loader_file_format,
-    )
-    settings = base_settings.model_copy(update={"dataset_name": dataset_name})
-
-    result = build_file_ingest_kwargs(
-        settings,
-        TINY_PIPELINE_NAME,
-        fallback_dataset_name=fallback_dataset_name,
-    )
-
-    assert result == {
-        "pipeline_kwargs": {
-            "pipeline_name": TINY_PIPELINE_NAME,
-            "dataset_name": expected_dataset_name,
+    check_pipeline_report(
+        settings.report_path,
+        {
+            "pipeline": TINY_PIPELINE_NAME,
+            "dataset": "preprocess_report_ds",
+            "status": "completed with errors",
+            "ingested_files": ["good.jsonl"],
+            "load_errors": ["File pre-processing failed for bad.jsonl: checksum mismatch"],
+            "pipeline_load_info_errs": None,
         },
-        "pipeline_run_kwargs": expected_run_kwargs,
+    )
+
+
+@pytest.mark.parametrize("use_metadata_dir", [False, True], ids=["output-root", "pipeline-metadata-dir"])
+def test_run_pipeline_pass_file_listing_writes_yaml_and_skips_pipeline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    slack_mock: MagicMock,
+    *,
+    use_metadata_dir: bool,
+) -> None:
+    """When loader_file_format is 'file_listing', run_pipeline writes file_listing.txt and skips dlt and preprocessors."""
+    monkeypatch.setenv(HOOK_ENV_VAR, SLACK_HOOK)
+
+    def fail_preprocess(_file_item: Any) -> Any:  # noqa: ANN401
+        msg = "preprocessor must not run during file_listing"
+        raise AssertionError(msg)
+
+    pre_mod = register_temp_module(
+        monkeypatch,
+        f"_test_core_listing_preprocessors_{int(use_metadata_dir)}",
+        FILE_PREPROCESSORS=[fail_preprocess],
+    )
+    settings = make_cts_settings(
+        JsonlExtractSettings,
+        tmp_path,
+        use_destination="unconfigured_dest",
+        use_output_dir_for_pipeline_metadata=use_metadata_dir,
+        dataset_name="listing_ds",
+        table_name="listing_tbl",
+        loader_file_format="file_listing",
+        file_glob="**/*.xml*",
+        preprocessors_module=pre_mod,
+    )
+    input_dir = Path(settings.input_dir)
+    (input_dir / "sub").mkdir()
+    (input_dir / "b.xml").write_text("<broken", encoding="utf-8")
+    (input_dir / "sub" / "a.xml.gz").write_bytes(b"not-valid-gzip")
+    (input_dir / "sub" / "readme.txt").write_text("ignored", encoding="utf-8")
+
+    def fail_if_called(_items: TDataItems, _cfg: JsonlExtractSettings) -> Iterator[dict[str, Any]]:
+        msg = "reader must not run during file_listing"
+        raise AssertionError(msg)
+
+    resource = build_filesystem_resource(settings, fail_if_called, name="xml_listing")
+    with isolated_dlt_config({}):
+        load_info = run_pipeline(settings, resource)
+
+    expected_path = (
+        settings.output_dir / PIPELINE_DIR_NAME / "file_listing.txt"
+        if use_metadata_dir
+        else settings.output_dir / "file_listing.txt"
+    )
+    assert load_info is None
+    assert settings.file_listing_path == expected_path
+    assert expected_path.is_file()
+    assert not settings.report_path.exists()
+    slack_mock.assert_not_called()
+    assert yaml.safe_load(expected_path.read_text(encoding="utf-8")) == {
+        "input_dir_files": ["b.xml", "sub/a.xml.gz", "sub/readme.txt"],
+        "matched_files": ["b.xml", "sub/a.xml.gz"],
     }
+
+
+def test_run_pipeline_fail_file_listing_without_filesystem_resource(
+    dlt_test_settings: CtsSettings,
+) -> None:
+    """When loader_file_format is 'file_listing' and resource has no filesystem root, run_pipeline raises ValueError."""
+    settings = FileFormatIngestSettings(
+        **dlt_test_settings.model_dump(exclude={"pipeline_dir", "report_path", "file_listing_path"}),
+        dataset_name="listing_ds",
+        loader_file_format="file_listing",
+    )
+    with pytest.raises(
+        ValueError,
+        match="loader_file_format='file_listing' requires at least one dlt filesystem resource",
+    ):
+        run_pipeline(settings, tiny_resource())

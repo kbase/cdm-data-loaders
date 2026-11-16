@@ -15,7 +15,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.types import LongType, NestedField, StringType
 from pyiceberg.utils.config import Config
 
-from cdm_data_loaders.pipelines.iceberg_cleanup import install_iceberg_catalog_cleanup
+from cdm_data_loaders.utils.iceberg_cleanup import install_iceberg_catalog_cleanup
 from scripts.apply_polaris_schema_definitions import (
     DefinitionSyncOptions,
     PolarisCatalogConfig,

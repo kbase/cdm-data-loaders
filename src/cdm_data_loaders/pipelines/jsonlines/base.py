@@ -18,13 +18,12 @@ from dlt.common.typing import TDataItems
 from dlt.extract.resource import DltResource
 from pydantic import BaseModel
 
+from cdm_data_loaders.core.filesystem import build_file_ingest_kwargs, build_filesystem_resource
 from cdm_data_loaders.core.registry import (
     RegistryKey,
 )
 from cdm_data_loaders.pipelines.core import (
     DEFAULT_SCHEMA_CONTRACT,
-    build_file_ingest_kwargs,
-    build_filesystem_resource,
     run_pipeline,
 )
 from cdm_data_loaders.readers.jsonlines import (

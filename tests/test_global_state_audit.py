@@ -20,6 +20,7 @@ AUDIT_SUBPROCESS_MARKEXPR: Final[str] = (
             (
                 "--ignore=tests/integration",
                 "--ignore=tests/cdm_data_loaders/pipelines",
+                "--ignore=tests/docs",
                 "--ignore=tests/test_global_state_audit.py",
             ),
             id="core-and-converters",

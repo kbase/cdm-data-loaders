@@ -46,8 +46,8 @@ from pyiceberg.types import (
 
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
-from cdm_data_loaders.pipelines.iceberg_cleanup import install_iceberg_catalog_cleanup
 from cdm_data_loaders.utils.buffer import DictBuffer
+from cdm_data_loaders.utils.iceberg_cleanup import install_iceberg_catalog_cleanup
 from tests.cdm_data_loaders.pipelines.helpers import is_metadata_table
 
 TABLE_NAME: Final[str] = "assay_record"

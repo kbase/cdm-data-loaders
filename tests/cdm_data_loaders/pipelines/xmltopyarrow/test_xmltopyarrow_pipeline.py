@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pyarrow as pa
 import pytest
+import yaml
 from dlt.extract import DltResource
 
 import cdm_data_loaders.pipelines.xmltopyarrow.pipeline as xmltopyarrow_module
@@ -344,3 +345,43 @@ def test_run_xmltopyarrow_pipeline_pass_filters_and_splits_with_transforms_modul
         ("book", [{"_id": "2", "title": "The Stand"}]),
         ("book_id_only", [{"book_id": "2"}]),
     ]
+
+
+def test_pubmed_cli_pass_file_listing_skips_md5_sidecar_preprocessor(
+    settings_factory: Callable[..., Any],
+) -> None:
+    """pubmed_cli with --loader-file-format file_listing writes file_listing.txt without running validate_md5_sidecar."""
+    base_settings = settings_factory(
+        CtsSettings,
+        dlt_dev_mode=False,
+        use_destination="unconfigured_dest",
+    )
+    input_dir = Path(base_settings.input_dir)
+    (input_dir / "nested").mkdir()
+    (input_dir / "pubmed25n0001.xml.gz").write_bytes(b"not-valid-gzip-and-no-md5-sidecar")
+    (input_dir / "nested" / "pubmed25n0002.xml.gz").write_bytes(b"also-no-md5-sidecar")
+    (input_dir / "nested" / "README.txt").write_text("notes", encoding="utf-8")
+
+    result = pubmed_cli.run(
+        cli_args=[
+            *settings_to_argv(base_settings),
+            "--file-glob",
+            "**/*.xml.gz",
+            "--loader-file-format",
+            "file_listing",
+        ],
+    )
+
+    assert result is None
+    assert not base_settings.report_path.exists()
+    assert yaml.safe_load(base_settings.file_listing_path.read_text(encoding="utf-8")) == {
+        "input_dir_files": [
+            "nested/README.txt",
+            "nested/pubmed25n0002.xml.gz",
+            "pubmed25n0001.xml.gz",
+        ],
+        "matched_files": [
+            "nested/pubmed25n0002.xml.gz",
+            "pubmed25n0001.xml.gz",
+        ],
+    }

@@ -12,6 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 from cdm_data_loaders.core.fields import (
     DEFAULT_XML_FILE_GLOB,
     FILE_GLOB,
+    FILE_LISTING_FILE_NAME,
     INPUT_DIR,
     LOADER_FILE_FORMAT,
     OUTPUT_DIR,
@@ -244,6 +245,21 @@ class CtsSettings(InputLocalOutputSettings):
         if self.pipeline_dir:
             return self.pipeline_dir / REPORT_FILE_NAME
         return self.output_dir / REPORT_FILE_NAME
+
+    @computed_field
+    @property
+    def file_listing_path(self) -> Path:
+        """Path to the file listing output file.
+
+        If ``use_output_dir_for_pipeline_metadata`` is true, the listing is saved in ``pipeline_dir``;
+        otherwise, it is saved to ``output_dir``.
+
+        :return: path to ``file_listing.txt``
+        :rtype: Path
+        """
+        if self.pipeline_dir:
+            return self.pipeline_dir / FILE_LISTING_FILE_NAME
+        return self.output_dir / FILE_LISTING_FILE_NAME
 
 
 class FileFormatIngestSettings(CtsSettings):
