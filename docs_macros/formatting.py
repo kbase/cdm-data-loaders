@@ -188,6 +188,25 @@ def module_api_url(module_or_symbol: str, src_root: Path = SRC_ROOT) -> str | No
     return doc_rel.as_posix()
 
 
+def _summarize_container_value(val: object) -> str | None:
+    """Return a concise Markdown summary for ``pa.Schema``, callable tuples, or mappings.
+
+    :param val: Candidate container or schema value.
+    :type val: object
+    :return: Concise Markdown label, or ``None`` when ``val`` is not a summarized container.
+    :rtype: str | None
+    """
+    if isinstance(val, pa.Schema):
+        return f"`pa.Schema` ({len(val)} fields)"
+    if isinstance(val, tuple) and val and all(callable(item) for item in val):
+        names = ", ".join(getattr(fn, "__name__", repr(fn)) for fn in val)
+        return f"`({names},)`"
+    if isinstance(val, Mapping):
+        keys = sorted(str(k) for k in val)
+        return f"mapping with keys `{keys}`"
+    return None
+
+
 def format_value_code(
     val: object,
     *,
@@ -215,12 +234,8 @@ def format_value_code(
     if isinstance(val, Path | PurePath):
         rel = val.relative_to(repo_root) if isinstance(val, Path) and val.is_relative_to(repo_root) else val
         return f"`{rel.as_posix()}`"
-    if summarize_containers and isinstance(val, tuple) and val and all(callable(item) for item in val):
-        names = ", ".join(getattr(fn, "__name__", repr(fn)) for fn in val)
-        return f"`({names},)`"
-    if summarize_containers and isinstance(val, dict):
-        keys = sorted(str(k) for k in val)
-        return f"mapping with keys `{keys}`"
+    if summarize_containers and (summary := _summarize_container_value(val)) is not None:
+        return summary
     return f"`{val!r}`"
 
 

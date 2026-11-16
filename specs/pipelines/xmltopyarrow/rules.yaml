@@ -115,7 +115,7 @@ sections:
         statement: |
           `PubMedXmlToPyArrowSettings` (`pubmed` CLI) subclasses `LevelPresetXmlToPyArrowSettings` and
           `XmlToPyArrowSettings`, locking `dataset_name="pubmed"`, `xml_level=1`, `root_tag="PubmedArticleSet"`,
-          `xsd_file=PUBMED_XSD`, `file_glob="*.xml.gz"`, and precomputed `PUBMED_SCHEMAS` for
+          `xsd_file=PUBMED_XSD_FILE`, `file_glob="*.xml.gz"`, and precomputed `PUBMED_SCHEMAS` for
           `pubmed_article`, `pubmed_book_article`, and `delete_citation`.
       - id: R-PUBMED-MD5-PASS
         statement: |

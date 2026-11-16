@@ -172,7 +172,7 @@ sections:
         statement: |
           `UniProtIdMappingSettings` binds `(emit_raw_table, transform_uniprot_id_mapping)` in `TABLE_TRANSFORMS`
           for `id_mapping`: the generic `emit_raw_table` transform emits `raw_id_mapping` (`RAW_ID_MAPPING_SCHEMA`
-          generated from `idmapping.schema.json` via `JSONSchemaToPyArrow` / `convert_xsv_schema_to_pyarrow`, table
+          in `schemas/uniprot/idmapping/schema.py` matching `idmapping.schema.json`, table
           description `"raw ID mapping data from UniProt"`), and `transform_uniprot_id_mapping` (`ID_MAPPING_SCHEMA`,
           table description `"Standardised mapping data from UniProt"`) emits `id_mapping` with
           `uniprot_id=f"uniprot:{uniprot_id}"`, `db_reference=f"{db_reference_type}:{db_reference_id}"`, and

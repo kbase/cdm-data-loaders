@@ -84,7 +84,7 @@ uv run uniref90_cdm \
 
 ---
 
-## 3. UniProt ID Mapping Pipeline (`uniprot_idmapping`)
+## UniProt ID Mapping Pipeline (`uniprot_idmapping`)
 
 [`uniprot_idmapping.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/uniprot_idmapping.py) provides a preset XSV pipeline (`UniProtIdMappingSettings`, sharing `run_xsv_pipeline`) for ingesting headerless, tab-delimited UniProt `idmapping.dat` and `idmapping.dat.gz` files validated against [`idmapping.schema.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/idmapping/idmapping.schema.json).
 
@@ -111,7 +111,7 @@ uv run uniprot_idmapping \
 
 ---
 
-## 4. Ancillary UniProt Parsers and Schemas
+## Ancillary UniProt Parsers and Schemas
 
 In addition to the ingestion pipelines, `cdm_data_loaders` includes utilities for UniProt release metadata and raw TSV schemas:
 

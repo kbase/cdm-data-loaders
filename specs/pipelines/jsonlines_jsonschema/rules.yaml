@@ -18,7 +18,7 @@ intro: |
   1. **Entity schema registration, JSON Schema dialect validation, and PyArrow schema generation** (`JsonlJsonschemaIngestSettings`, `SchemaRegistry`, `build_output_schema_registry`).
   2. **Per-line JSON parsing, JSON Schema validation with `FormatChecker`, and dead-letter routing (`_rejected`)** (`iter_file_jsonl_records`, `_make_resolve_error`, `make_page_router`).
   3. **Per-entity directory discovery, `.gz` decompression, MD5 sidecar pre-processing, table transforms, and pipeline reporting** (`build_entity_resource`, `run_jsonlines_pipeline`).
-  4. **Preset subclass behavior** (`ncbi_datasets` / `NcbiDatasetsIngestSettings`).
+  4. **Preset subclass behavior** (`ncbi_datasets` / `NcbiDatasetsSettings`).
   5. **Errors** (`JsonlJsonschemaError` subclasses) raised for invalid `ENTITY_SCHEMAS` registries or invalid JSON Schemas.
 
 sections:
@@ -97,17 +97,17 @@ sections:
           `load_errors`, and `pipeline_load_info_errs`.
 
   - id: ncbi_datasets_preset
-    title: NCBI Datasets Preset Subclass (`NcbiDatasetsIngestSettings`)
+    title: NCBI Datasets Preset Subclass (`NcbiDatasetsSettings`)
     rules:
       - id: R-NCBI-PRESET
         statement: |
-          `NcbiDatasetsIngestSettings` (`ncbi_datasets` CLI) subclasses `JsonlJsonschemaIngestSettings`,
-          locking `dataset_name="ncbi_datasets"`, `entity_schemas="cdm_data_loaders.parsers.ncbi_datasets"`,
-          `transforms_module="cdm_data_loaders.parsers.ncbi_datasets"`,
-          `output_schemas_module="cdm_data_loaders.parsers.ncbi_datasets"`, and precomputed `SCHEMAS` for
+          `NcbiDatasetsSettings` (`ncbi_datasets` CLI) subclasses `JsonlJsonschemaIngestSettings`,
+          locking `dataset_name="ncbi_datasets"`, `entity_schemas="cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi"`,
+          `transforms_module="cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi"`,
+          `output_schemas_module="cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi"`, and precomputed `SCHEMAS` for
           `annotation_report` and `dataset_report`.
       - id: R-NCBI-FILTER-EMPTY
         statement: |
-          `filter_annotation_report` in `cdm_data_loaders.parsers.ncbi_datasets` drops `annotation_report`
+          `filter_annotation_report` in `cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi` drops `annotation_report`
           records whose `reports` list is missing or empty (such as `{"total_count": 0}`) before buffering,
           retaining only records with a non-empty `reports` list.

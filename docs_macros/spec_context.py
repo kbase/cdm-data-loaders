@@ -495,9 +495,9 @@ class TargetFormatDefaults(FrozenDocModel):
 
 
 PRESET_EXTRA_ATTRS: Final[tuple[str, ...]] = (
-    "_PRECOMPUTED_SCHEMAS",
-    "_PRECOMPUTED_SCHEMA",
-    "_DEFAULT_FILE_PREPROCESSORS",
+    "PRECOMPUTED_SCHEMAS",
+    "PRECOMPUTED_SCHEMA",
+    "DEFAULT_FILE_PREPROCESSORS",
 )
 
 CONVERTER_SUITE_NAMES: Final[tuple[str, ...]] = ("spec", "examples")
@@ -816,7 +816,7 @@ PIPELINE_SPECS: Final[MappingProxyType[str, PipelineSpecConfig]] = MappingProxyT
             name="xsv",
             data_dir=PIPELINE_SPECS_ROOT / "xsv",
             output_path=DOCS_DIR / "xsv_specification.md",
-            presets=(),
+            presets=("uniprot_idmapping",),
             shared_files=(PIPELINE_SPECS_ROOT / "xsv" / "transforms.py",),
             converter_config=XSV_TO_PYARROW,
         ),
@@ -1138,6 +1138,17 @@ def _introspect_preset_overrides(
                     kind="Overridden field default",
                     base_val=format_value_code(base_field.default),
                     preset_val=format_value_code(preset_fields[field_name].default),
+                )
+            )
+
+    for field_name, preset_field in preset_fields.items():
+        if field_name not in base_fields:
+            rows.append(
+                PresetOverrideRowContext(
+                    attr_name=field_name,
+                    kind="Added preset field",
+                    base_val="—",
+                    preset_val=format_value_code(preset_field.default),
                 )
             )
 

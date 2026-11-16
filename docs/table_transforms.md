@@ -7,7 +7,7 @@ All six file-format ingestion pipelines support pluggable file pre-processing, r
 | [`extract_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | `jsonlines_extract`    | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
 | [`extract_jsonschema_validate_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema` | `pyarrow.Table`                                  | Keys of `ENTITY_SCHEMAS` (or preset entrypoint `ncbi_datasets`)                                 |
 | [`extract_pydantic_validate_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`   | `pyarrow.Table`                                  | Keys of `ENTITY_MODELS`                                                                         |
-| [`xsv/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xsv/pipeline.py)                                                           | `xsv`                  | `pyarrow.Table`                                  | `--table-name` (`settings.table_name`)                                                          |
+| [`xsv/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xsv/pipeline.py)                                                           | `xsv`                  | `pyarrow.Table`                                  | `--table-name` (or preset entrypoint `uniprot_idmapping`)                                       |
 | [`xmltodict/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltodict/pipeline.py)                                               | `xmltodict`            | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
 | [`xmltopyarrow/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                         | `xmltopyarrow`         | `pyarrow.Table`                                  | `--table-name` (or preset entrypoints `pubmed`, `uniprot`, `uniref50`, `uniref90`, `uniref100`) |
 
@@ -27,11 +27,12 @@ File pre-processors run **before** a file is opened and parsed. Record transform
 
   - Malformed lines or records that fail input validation (`JSON Schema`, `Pydantic`, or `qsv`) are routed directly to `_rejected` (with `table_name` set to the input table name) without calling the transform function.
 
-**Transform and Route (`RecordTransformFn`)**:
+**Transform and Route (`TableTransformFn`)**:
 
-  - Each valid record (`dict[str, Any]`) is passed to the `RecordTransformFn` registered in `TABLE_TRANSFORMS` for the input `table_name`.
-  - The transform function returns a mapping of `{destination_table_name: [row_dict, ...]}`.
-  - Returning `{}` (or empty row lists) drops the record.
+  - Each valid record (`dict[str, Any]`) or Arrow batch (`pyarrow.Table`) passes through the `TableTransformFn` (or composed tuple of `TableTransformFn` steps) registered in `TABLE_TRANSFORMS` for the input `table_name`.
+  - A transform can accept an optional second `TransformContext` parameter (`table_name`, `source_file`, `file_name`).
+  - The transform returns `{destination_table_name: [row_dict, ...]}` or `{destination_table_name: pa.Table}`.
+  - Returning `{}` (or empty row lists / zero-row Arrow tables) drops the data.
 
 **Coerce and Buffer (`DictBuffer`)**:
 
@@ -51,23 +52,24 @@ Create an importable Python module exporting `FILE_PREPROCESSORS`, `TABLE_TRANSF
   - Each `FilePreprocessFn` has signature `(file_item: FileItemDict) -> FileItemDict | None`.
   - Built-in pre-processor: `validate_md5_sidecar` in [`src/cdm_data_loaders/core/preprocessors.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/preprocessors.py) (enabled by default on `pubmed`, and directly usable via `--preprocessors-module cdm_data_loaders.core.preprocessors`).
 
-**`TABLE_TRANSFORMS`** (`--transforms-module` / `CDL_TRANSFORMS_MODULE`): `dict[str, RecordTransformFn]`
+**`TABLE_TRANSFORMS`** (`--transforms-module` / `CDL_TRANSFORMS_MODULE`): `dict[str, TableTransformFn | tuple[TableTransformFn, ...]]`
 
-  - Each value is a callable `(record: dict[str, Any]) -> Mapping[str, Sequence[dict[str, Any]]]`:
-    - `{}` (or `{"table": []}`) filters out (drops) the record.
-    - `{"table": [new_row]}` transforms a row 1-to-1 in place.
+  - Each entry accepts a single `dict[str, Any]` record (`RecordTransformFn`) or a vectorized `pyarrow.Table` batch (`ArrowTableTransformFn`), plus an optional second `TransformContext` parameter (`table_name`, `source_file`, `file_name`):
+    - `{}` (or `{"table": []}`) filters out (drops) the record or batch.
+    - `{"table": [new_row]}` or `{"table": new_pa_table}` transforms data 1-to-1.
     - `{"table": [row_1, row_2]}` unnests or fans out 1-to-N rows into the same table.
-    - `{"parent_table": [parent_row], "child_table": [child_1, child_2]}` splits a record across multiple destination tables.
-    - `{"_rejected": [rejected_row]}` routes a record to the shared `_rejected` table.
-  - When no transform is configured for a table, records are routed unchanged to `{table_name: [record]}`.
+    - `{"parent_table": [parent_row], "child_table": [child_1, child_2]}` splits data across multiple destination tables.
+    - `{"_rejected": [rejected_row]}` routes rows to the shared `_rejected` table.
+  - Supplying a tuple `(step_1, step_2)` composes two or more transforms in a single pass (such as `(emit_raw_table, transform_fn)` from [`src/cdm_data_loaders/core/transforms.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms.py)).
+  - When no transform is configured for a table, records are routed unchanged to `{table_name: [record]}` (or `{table_name: batch}`).
 
 **`OUTPUT_SCHEMAS`** (`--output-schemas-module` / `CDL_OUTPUT_SCHEMAS_MODULE`): `dict[str, pa.Schema]`
 
-  - Optional mapping of `{destination_table_name: pyarrow.Schema}` overriding or supplying explicit `pyarrow.Schema` definitions for transformed or split destination tables.
+  - Optional mapping of `{destination_table_name: pyarrow.Schema}` overriding or supplying `pyarrow.Schema` definitions for transformed or split destination tables. Preset settings subclasses can also return `OutputTableHints` from `get_output_table_hints()` ([`src/cdm_data_loaders/core/transforms.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms.py)) to register table/column descriptions and Iceberg partition specs on `DltResource` variants.
 
 ---
 
-## Example 1: Validating or Skipping Files Before Parsing (`FILE_PREPROCESSORS`)
+## Validating or Skipping Files Before Parsing (`FILE_PREPROCESSORS`)
 
 Combine the built-in `validate_md5_sidecar` pre-processor with a custom `FilePreprocessFn` that skips zero-byte placeholder files and rejects files exceeding a size threshold:
 
@@ -122,7 +124,7 @@ uv run jsonlines_extract \
 
 ---
 
-## Example 2: Filtering Out Data
+## Filtering Out Data
 
 ### Use Case: Dropping Empty NCBI Annotation Reports (`total_count == 0`)
 
@@ -189,7 +191,7 @@ uv run jsonlines_jsonschema \
 
 ---
 
-## Example 3: Data Transformation Within a Single Table Row
+## Data Transformation Within a Single Table Row
 
 ### Transforming Fields in a Single Table (`xsv` or `jsonlines_extract`)
 
@@ -299,7 +301,7 @@ OUTPUT_SCHEMAS: Final[dict[str, pa.Schema]] = {
 
 ---
 
-## Example 4: Splitting a Single Record Across Multiple Tables
+## Splitting a Single Record Across Multiple Tables
 
 A single `RecordTransformFn` can decompose one input record into rows for multiple destination tables in one pass.
 
@@ -475,7 +477,7 @@ load_info = run_jsonlines_pipeline(settings)
 
 ---
 
-## Example 4: Vectorized PyArrow Table Transforms and Raw Table Emission (`emit_raw_table` and `TransformContext`)
+## Vectorized PyArrow Table Transforms and Raw Table Emission (`emit_raw_table` and `TransformContext`)
 
 When ingesting large tabular files via `xsv` (or a preset XSV pipeline such as `uniprot_idmapping`), annotating a transform's first parameter as `pyarrow.Table` keeps the entire batch vectorized in Arrow without materializing per-row Python dicts. Composing `emit_raw_table` with a specialised Arrow transform in `TABLE_TRANSFORMS` emits both `raw_<table_name>` and the standardised destination table in a single pass (as implemented in [`parsers/uniprot/idmapping.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/parsers/uniprot/idmapping.py)):
 

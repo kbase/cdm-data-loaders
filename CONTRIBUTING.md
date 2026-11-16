@@ -43,14 +43,17 @@ This repository requires Python >= 3.13 and is managed with [`uv`](https://docs.
    ```bash
    uv run ruff check
    ```
-3. Run the local unit test suite (skipping container-only Spark and Ceph tests):
+3. Run the local unit test suite (skipping container Spark, Ceph, and docs drift tests):
    ```bash
-   uv run pytest -m "not requires_spark and not requires_ceph"
+   uv run pytest -m "not requires_spark and not requires_ceph and not docs"
    ```
-4. Regenerate and verify documentation artifacts if converter rules, CLI settings, or docstrings change:
+4. Verify committed PyArrow schemas and documentation if bundled XSDs, converter rules, CLI settings, specs, or docstrings change:
    ```bash
-   uv run python -m scripts.gen_converter_spec
-   uv run python -m scripts.gen_docs
+   uv run python -m scripts.gen_pyarrow_schema --check
+   uv run pytest -m docs
+   uv run python -m docs_macros
+   uv run --group docs zensical build --clean --strict
+   uv run python -m docs_macros --clean
    ```
 
 <a id="contributions"></a>

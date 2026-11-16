@@ -102,7 +102,7 @@ Pipelines and schema converter CLIs can be run directly via `uv run <cli_command
 ### Container Entrypoint Modes (`scripts/entrypoint.sh`)
 
 - `pipeline <cli_command> [args...]`: copies `/input_dir/dlt_conf/{config.toml,secrets.toml,.pyiceberg.yaml}` (if present) into `$HOME/.dlt` and executes `uv run <cli_command> [args...]`.
-- `xml_split <n_elements> <tag> <file_1> [<file_2> ...]`: splits XML files into chunks of `<n_elements>` `<tag>` elements using `xml_split`.
+- `xml_split [args...]`: splits XML files into chunks via `xml_file_splitter`.
 - `bash`: launches an interactive shell inside the container.
 
 Container test runner modes (`test` and `ceph_integration_test`) are covered in the [Developer Guides](https://kbase.github.io/cdm-data-loaders/#developer-guides).

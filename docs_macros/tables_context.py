@@ -935,7 +935,7 @@ def build_xmltopyarrow_preset_rows() -> tuple[XmlPresetRow, ...]:
         root_tag = getattr(cls, "root_tag", None)
         table_name = getattr(cls, "table_name", None)
         glob_default = cls.model_fields["file_glob"].default
-        preprocessors = getattr(cls, "_DEFAULT_FILE_PREPROCESSORS", ())
+        preprocessors = getattr(cls, "DEFAULT_FILE_PREPROCESSORS", ())
         rows.append(
             XmlPresetRow.model_validate(
                 {

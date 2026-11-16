@@ -80,21 +80,22 @@ docker run -d \
   ghcr.io/kbasetest/ceph-rgw-test-image:0.1.5
 ```
 
-Set CEPH credentials as environment variables:
+Set CEPH credentials and region as environment variables:
 
 ```sh
 export AWS_ENDPOINT_URL=http://localhost:9000
 export AWS_ACCESS_KEY_ID=test_access_key
 export AWS_SECRET_ACCESS_KEY=test_access_secret
+export AWS_DEFAULT_REGION=us-east-1
 ```
 
 (A matching service is configured in [`docker-compose.yml`](https://github.com/kbase/cdm-data-loaders/blob/develop/docker-compose.yml) for CI integration workflows.)
 
-Create test buckets from the command line using [`scripts/s3_local.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/s3_local.py):
+Create test buckets from the command line using the AWS CLI:
 
 ```sh
-uv run python scripts/s3_local.py mb s3://cdm-lake
-uv run python scripts/s3_local.py mb s3://cts
+aws s3 mb s3://cdm-lake
+aws s3 mb s3://cts
 ```
 
 ### Lakehouse: Build `cdm-data-loaders`
@@ -268,8 +269,8 @@ staging/
 Upload the staged files into CEPH under a staging prefix to feed Step 4:
 
 ```sh
-uv run python scripts/s3_local.py cp notebooks/staging/raw_data/ s3://cts/staging/run1/raw_data/
-uv run python scripts/s3_local.py ls s3://cts/staging/run1/
+aws s3 cp --recursive notebooks/staging/raw_data/ s3://cts/staging/run1/raw_data/
+aws s3 ls --recursive s3://cts/staging/run1/
 ```
 
 ---
@@ -307,16 +308,18 @@ PROMOTE SUMMARY: 10 promoted, 0 archived, 0 failed
 
 ## 5. Inspect Results in CEPH
 
-Use [`scripts/s3_local.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/s3_local.py) to inspect promoted objects and their user metadata:
+Use the AWS CLI to inspect promoted objects and their user metadata:
 
 ```sh
 # list final Lakehouse objects
-uv run python scripts/s3_local.py ls \
+aws s3 ls --recursive \
   s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/raw_data/
 
 # inspect user metadata (md5) on a specific object
-uv run python scripts/s3_local.py head \
-  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/raw_data/GCF/900/000/615/GCF_900000615.1_PRJEB7657_assembly/GCF_900000615.1_PRJEB7657_assembly_genomic.fna.gz
+aws s3api head-object \
+  --bucket cdm-lake \
+  --key tenant-general-warehouse/kbase/datasets/ncbi/raw_data/GCF/900/000/615/GCF_900000615.1_PRJEB7657_assembly/GCF_900000615.1_PRJEB7657_assembly_genomic.fna.gz \
+  --query Metadata
 ```
 
 ### Frictionless Metadata Descriptors
@@ -333,14 +336,15 @@ When an assembly is archived (updated or removed), its live descriptor is copied
 s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}archive/{release_tag}/metadata/{assembly_dir}_datapackage.json
 ```
 
-List and inspect descriptors with `scripts/s3_local.py`:
+List and inspect descriptors with the AWS CLI:
 
 ```sh
-uv run python scripts/s3_local.py ls \
+aws s3 ls \
   s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/metadata/
 
-uv run python scripts/s3_local.py cat \
-  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/metadata/GCF_900000615.1_PRJEB7657_assembly_datapackage.json
+aws s3 cp \
+  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/metadata/GCF_900000615.1_PRJEB7657_assembly_datapackage.json \
+  -
 ```
 
 ---

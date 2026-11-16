@@ -34,14 +34,14 @@ specs/pipelines/<family>/
 
 The manifests in [`specs/pipelines`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines) drive both test execution and rendered documentation:
 
-- **End-to-end smoke and unit specification tests**: [`tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py), [`tests/cdm_data_loaders/pipelines/xmltopyarrow/test_xmltopyarrow_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/xmltopyarrow/test_xmltopyarrow_spec.py), [`tests/cdm_data_loaders/pipelines/jsonlines/test_jsonlines_jsonschema_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/jsonlines/test_jsonlines_jsonschema_spec.py), and [`tests/cdm_data_loaders/pipelines/xsv/test_xsv_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/xsv/test_xsv_spec.py)
+- **End-to-end smoke, unit, and documentation specification tests**: [`tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py), [`tests/cdm_data_loaders/pipelines/xmltopyarrow/test_xmltopyarrow_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/xmltopyarrow/test_xmltopyarrow_spec.py), [`tests/cdm_data_loaders/pipelines/jsonlines/test_jsonlines_jsonschema_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/jsonlines/test_jsonlines_jsonschema_spec.py), [`tests/cdm_data_loaders/pipelines/xsv/test_xsv_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/xsv/test_xsv_spec.py), and [`tests/docs/test_spec_docs.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/docs/test_spec_docs.py)
 - **Rendered Markdown specification pages**:
   - [XML to PyArrow Pipeline Specification](xmltopyarrow_specification.md) (`xmltopyarrow` base pipeline and preset subclasses)
   - [XML to Dict Pipeline Specification](xmltodict_specification.md) (`xmltodict` pipeline)
   - [JSONLines Extract Pipeline Specification](jsonlines_extract_specification.md) (`jsonlines_extract` pipeline)
   - [JSONLines (JSON Schema) Pipeline Specification](jsonlines_jsonschema_specification.md) (`jsonlines_jsonschema` base pipeline and `ncbi_datasets` preset subclass)
   - [JSONLines (Pydantic) Pipeline Specification](jsonlines_pydantic_specification.md) (`jsonlines_pydantic` pipeline)
-  - [XSV (CSV/TSV) Schema and Pipeline Specification](xsv_specification.md) (`xsv` pipeline)
+  - [XSV (CSV/TSV) Schema and Pipeline Specification](xsv_specification.md) (`xsv` base pipeline and `uniprot_idmapping` preset subclass)
 
 ---
 

@@ -89,6 +89,9 @@ uv run pytest tests/cdm_data_loaders/readers/test_jsonlines.py tests/cdm_data_lo
 # run Hypothesis property-based tests (use HYPOTHESIS_PROFILE=ci_thorough for 100 examples)
 uv run pytest -m pbt
 HYPOTHESIS_PROFILE=ci_thorough uv run pytest -m pbt
+
+# report tests taking 5 seconds or longer (matching CI workflow reporting)
+uv run pytest -m "not requires_spark and not requires_ceph and not docs" --durations=0 --durations-min=5.0
 ```
 
 For multi-environment pipeline smoke tests (`core`, `cli`, and `docker` modes across `local_fs`, `s3_moto`, `s3_ceph`, and custom `--dlt-config-dir` / Iceberg environments), see the [Pipeline E2E and Smoke Testing Across Environments Guide](pipeline_e2e_testing_guide.md).
@@ -110,7 +113,7 @@ uv run pytest --state-audit tests/cdm_data_loaders/schemas/test_jsonschema.py
 
 ### Container `test` Mode
 
-[`scripts/entrypoint.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/entrypoint.sh) provides a `test` command that runs `uv run --no-sync pytest -m "not requires_spark and not requires_ceph and not docs and not state_audit" --cov=src --cov-report=xml` inside the built image (with `qsv` and all runtime binaries pre-installed):
+[`scripts/entrypoint.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/entrypoint.sh) provides a `test` command that runs `uv run --all-groups pytest -m "not requires_spark and not requires_ceph and not docs and not state_audit" --ignore=tests/docs --cov=src --cov-report=xml` inside the built image (with `qsv` and all runtime binaries pre-installed):
 
 ```sh
 docker build -t cdm-data-loaders-test:latest .
