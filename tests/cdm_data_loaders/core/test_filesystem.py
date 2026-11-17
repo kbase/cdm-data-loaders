@@ -29,6 +29,7 @@ from cdm_data_loaders.core.filesystem import (
     find_filesystem_resources,
     list_input_dir_files,
     make_per_file_reader,
+    resolve_pipeline_name,
 )
 from cdm_data_loaders.core.preprocessors import FilePreprocessError
 from cdm_data_loaders.core.settings import (
@@ -793,4 +794,46 @@ def test_build_file_ingest_kwargs_pass(
             "dataset_name": expected_dataset_name,
         },
         "pipeline_run_kwargs": expected_run_kwargs,
+    }
+
+
+@pytest.mark.parametrize(
+    ("settings_obj", "expected"),
+    [
+        pytest.param(type("Cfg", (), {"model_config": {"cli_prog_name": "preset_cli"}})(), "preset_cli", id="prog-set"),
+        pytest.param(type("Cfg", (), {"model_config": {"cli_prog_name": None}})(), "default_pipe", id="prog-none"),
+        pytest.param(type("Cfg", (), {"model_config": {"cli_prog_name": ""}})(), "default_pipe", id="prog-empty"),
+        pytest.param(object(), "default_pipe", id="no-model-config"),
+    ],
+)
+def test_resolve_pipeline_name_prefers_cli_prog_name_or_falls_back(
+    settings_obj: object,
+    expected: str,
+) -> None:
+    """resolve_pipeline_name returns cli_prog_name when non-empty and falls back to default_pipeline_name."""
+    assert resolve_pipeline_name(settings_obj, "default_pipe") == expected
+
+
+def test_build_file_ingest_kwargs_prefers_subclass_cli_prog_name(tmp_path: Path) -> None:
+    """build_file_ingest_kwargs uses settings.model_config['cli_prog_name'] for pipeline_name and dataset fallback."""
+
+    class PresetIngestSettings(FileFormatIngestSettings, cli_prog_name="preset_ingest"):
+        pass
+
+    base_settings: PresetIngestSettings = make_cts_settings(
+        PresetIngestSettings,
+        tmp_path,
+        dataset_name="unused_ds",
+        loader_file_format="parquet",
+    )
+    settings = base_settings.model_copy(update={"dataset_name": None})
+
+    result = build_file_ingest_kwargs(settings, TINY_PIPELINE_NAME, fallback_dataset_name=True)
+
+    assert result == {
+        "pipeline_kwargs": {
+            "pipeline_name": "preset_ingest",
+            "dataset_name": "preset_ingest",
+        },
+        "pipeline_run_kwargs": {"loader_file_format": "parquet"},
     }

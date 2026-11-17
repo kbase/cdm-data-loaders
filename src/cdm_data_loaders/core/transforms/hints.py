@@ -13,6 +13,7 @@ from dlt.extract import DltResource
 from pydantic import BaseModel, ConfigDict, InstanceOf
 
 from cdm_data_loaders.core.registry import RegistryKey
+from cdm_data_loaders.utils.arrow_schema import SCHEMA_COMMENT_METADATA_KEY
 
 if TYPE_CHECKING:
     from dlt.common.schema.typing import TAnySchemaColumns
@@ -27,15 +28,15 @@ def extract_schema_descriptions(schema: pa.Schema) -> tuple[str | None, dict[str
     :rtype: tuple[str | None, dict[str, str]]
     """
     table_desc: str | None = None
-    if schema.metadata and b"comment" in schema.metadata:
-        decoded = schema.metadata[b"comment"].decode("utf-8")
+    if schema.metadata and SCHEMA_COMMENT_METADATA_KEY in schema.metadata:
+        decoded = schema.metadata[SCHEMA_COMMENT_METADATA_KEY].decode("utf-8")
         if decoded:
             table_desc = decoded
 
     col_descs: dict[str, str] = {}
     for field in schema:
-        if field.metadata and b"comment" in field.metadata:
-            col_comment = field.metadata[b"comment"].decode("utf-8")
+        if field.metadata and SCHEMA_COMMENT_METADATA_KEY in field.metadata:
+            col_comment = field.metadata[SCHEMA_COMMENT_METADATA_KEY].decode("utf-8")
             if col_comment:
                 col_descs[field.name] = col_comment
     return table_desc, col_descs

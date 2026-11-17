@@ -1,0 +1,28 @@
+title: UniRef50 CDM Cluster Fan-Out and Missing-ID Rejection (`_rejected`)
+pipeline: uniref50_cdm
+settings_file: settings.toml
+rules:
+  - R-XML-DEFAULT-NS
+  - R-XML-TRANSFORMS
+  - R-XML-REPORT
+  - R-UNIREF-CDM-PRESET
+notes: |
+  A `<UniRef50>` XML file with one valid `<entry>` (`UniRef50_A0AB34IYJ6`) and one `<entry>` missing `id`.
+  `UniRef50CdmSettings` fans the valid cluster across `entity`, `cluster`, and `clustermember`
+  (`UNIREF_CDM_SCHEMA_MAP`) and routes the entry without `id` to `_rejected` with `table_name="entry"`
+  and `source_file="uniref50_sample.xml"`.
+runs:
+  - id: default
+    input_dir: input
+    expected_report:
+      status: completed
+      ingested_files:
+        - uniref50_sample.xml
+      pipeline_load_info_errs: null
+    expected_counts:
+      entity: 1
+      cluster: 1
+      clustermember: 2
+      _rejected: 1
+    expected_tables: null
+    expected_json: null

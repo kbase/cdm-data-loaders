@@ -7,12 +7,14 @@ import pyarrow as pa
 import pytest
 
 from cdm_data_loaders.utils.arrow_schema import (
+    SCHEMA_COMMENT_METADATA_KEY,
     assemble_pyarrow_schema,
     decode_field_metadata,
     is_any_binary_type,
     is_any_list_type,
     is_any_string_type,
     is_non_json_arrow_type,
+    with_schema_description,
 )
 
 SAMPLE_FIELDS: Final[tuple[pa.Field, ...]] = (
@@ -118,3 +120,40 @@ def test_arrow_type_predicates_classify_binary_string_and_list_variants(
 def test_is_non_json_arrow_type(dtype: pa.DataType, expected: bool) -> None:
     """Detect temporal, decimal, and binary Arrow types that cannot serialize with json.dumps."""
     assert is_non_json_arrow_type(dtype) is expected
+
+
+@pytest.mark.parametrize(
+    ("initial_metadata", "expected_metadata"),
+    [
+        pytest.param(
+            None,
+            {SCHEMA_COMMENT_METADATA_KEY: b"Protein identifier mapping."},
+            id="no-prior-metadata",
+        ),
+        pytest.param(
+            {b"source": b"unit"},
+            {b"source": b"unit", SCHEMA_COMMENT_METADATA_KEY: b"Protein identifier mapping."},
+            id="preserves-existing-keys",
+        ),
+        pytest.param(
+            {SCHEMA_COMMENT_METADATA_KEY: b"stale", b"keep": b"yes"},
+            {SCHEMA_COMMENT_METADATA_KEY: b"Protein identifier mapping.", b"keep": b"yes"},
+            id="replaces-existing-comment",
+        ),
+    ],
+)
+def test_with_schema_description_attaches_comment_and_preserves_metadata(
+    initial_metadata: dict[bytes, bytes] | None,
+    expected_metadata: dict[bytes, bytes],
+) -> None:
+    """Attach UTF-8 comment metadata to a PyArrow schema without mutating the input schema."""
+    base_schema = pa.schema(
+        [pa.field("id", pa.string(), nullable=False, metadata={b"definition": b"ID"})],
+        metadata=initial_metadata,
+    )
+    updated = with_schema_description(base_schema, "Protein identifier mapping.")
+
+    assert SCHEMA_COMMENT_METADATA_KEY == b"comment"
+    assert updated.metadata == expected_metadata
+    assert updated.field("id").metadata == {b"definition": b"ID"}
+    assert base_schema.metadata == initial_metadata

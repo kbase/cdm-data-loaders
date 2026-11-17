@@ -424,3 +424,22 @@ def test_build_entity_resource_pass_per_table_preprocessors_route_failed_files_t
     assert row["table_name"] == "widget"
     assert row["source_file"] == "widget/corrupt.jsonl"
     assert row["error_detail"] == "corrupt file header"
+
+
+def test_run_jsonlines_with_validation_pipeline_uses_subclass_cli_prog_name(
+    scenario_input_dir: Callable[[str], str],
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
+    tmp_path: Path,
+) -> None:
+    """run_jsonlines_with_validation_pipeline uses a preset subclass cli_prog_name as pipeline_name."""
+
+    class PresetPydanticSettings(JsonlPydanticIngestSettings, cli_prog_name="preset_pydantic"):
+        pass
+
+    base_settings = settings_factory(input_dir=scenario_input_dir("happy_path"), output_dir=str(tmp_path / "out"))
+    preset_settings = PresetPydanticSettings.model_validate(
+        base_settings.model_dump(exclude=set(JsonlPydanticIngestSettings.model_computed_fields))
+    )
+    load_info = assert_run_ok(run_jsonlines_with_validation_pipeline(preset_settings))
+
+    assert load_info.pipeline.pipeline_name == "preset_pydantic"

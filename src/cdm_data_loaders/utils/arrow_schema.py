@@ -12,8 +12,26 @@ ARROW_LIST_TYPES: Final[tuple[type[pa.DataType], ...]] = (
     pa.ListViewType,
     pa.LargeListViewType,
 )
+SCHEMA_COMMENT_METADATA_KEY: Final[bytes] = b"comment"
 
 type ArrowListType = pa.ListType | pa.LargeListType | pa.FixedSizeListType | pa.ListViewType | pa.LargeListViewType
+
+
+def with_schema_description(schema: pa.Schema, description: str) -> pa.Schema:
+    """Return a copy of ``schema`` with UTF-8 ``b"comment"`` metadata set to ``description``.
+
+    :param schema: Input PyArrow schema.
+    :type schema: pa.Schema
+    :param description: Table description text stored under ``b"comment"``.
+    :type description: str
+    :return: PyArrow schema with updated ``b"comment"`` metadata.
+    :rtype: pa.Schema
+    """
+    merged_metadata = {
+        **(schema.metadata or {}),
+        SCHEMA_COMMENT_METADATA_KEY: description.encode("utf-8"),
+    }
+    return schema.with_metadata(merged_metadata)
 
 
 def assemble_pyarrow_schema(

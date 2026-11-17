@@ -1,31 +1,29 @@
 """UniRef XML entry transforms and CDM PyArrow output schemas."""
 
 import datetime as dt
-import functools
 from collections.abc import Mapping
 from logging import Logger, getLogger
 from typing import Any, Final
 
 import pyarrow as pa
 
-from cdm_data_loaders.core.buffer import make_rejected_table_result
-from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformFn
-from cdm_data_loaders.datasets.uniprot.common import format_date, iter_mappings
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformFn, TransformContext
+from cdm_data_loaders.datasets.uniprot.common import (
+    UNIPROT_CURIE_PREFIX,
+    UNIREF_CURIE_PREFIX,
+    format_curie,
+    format_date,
+    iter_mappings,
+    make_cdm_entry_transform,
+    reject_cdm_entry,
+    resolve_timestamp,
+    run_cdm_entry_parser,
+)
 
 UNIREF_URL: Final[str] = "http://uniprot.org/uniref"
 ENTRY_XML_TAG: Final[str] = f"{{{UNIREF_URL}}}entry"
 UNIREF: Final[str] = "UniRef"
 ENTITY_ID: Final[str] = "entity_id"
-
-PREFIX_TRANSLATION: Final[dict[str, str]] = {
-    "UniProtKB ID": "uniprot_name",
-    "UniProtKB accession": "uniprot",
-    "UniParc ID": "uniparc",
-    "UniRef90 ID": "uniref",
-    "UniRef50 ID": "uniref",
-    "UniRef100 ID": "uniref",
-    "NCBI taxonomy": "NCBITaxon",
-}
 
 CLUSTER_SCHEMA: Final[pa.Schema] = pa.schema(
     [
@@ -78,7 +76,7 @@ def generate_dbxref(db: str, acc: str) -> str:
     :return: CURIE-formatted identifier
     :rtype: str
     """
-    return f"{PREFIX_TRANSLATION.get(db, db)}:{acc}"
+    return format_curie(db, acc)
 
 
 def extract_cluster(entry: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -92,7 +90,7 @@ def extract_cluster(entry: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str,
     entry_id = entry.get("_id")
     if not entry_id:
         return ({}, {})
-    cluster_id = f"uniref:{entry_id}"
+    cluster_id = f"{UNIREF_CURIE_PREFIX}{entry_id}"
     updated_str = format_date(entry.get("_updated"))
     cluster: dict[str, Any] = {
         "cluster_id": cluster_id,
@@ -143,7 +141,7 @@ def extract_cross_refs(
             None,
         )
         if uniprot_id:
-            entity_id = f"uniprot:{uniprot_id}"
+            entity_id = f"{UNIPROT_CURIE_PREFIX}{uniprot_id}"
         else:
             logger.warning("Could not find UniProt accession for UniProtKB ID %s", entity_xref)
 
@@ -165,6 +163,8 @@ def parse_uniref_entry(
     entry: Mapping[str, Any],
     timestamp: dt.datetime,
     uniref_variant: str,
+    *,
+    ctx: TransformContext | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Parse a single XSD-converted UniRef ``entry`` dictionary into CDM table rows.
 
@@ -174,36 +174,48 @@ def parse_uniref_entry(
     :type timestamp: dt.datetime
     :param uniref_variant: protocol label for the UniRef variant (for example, ``"UniRef 50"``)
     :type uniref_variant: str
+    :param ctx: optional transform context carrying table name and source file
+    :type ctx: TransformContext | None
     :return: dictionary of parsed table rows keyed by destination table name
     :rtype: dict[str, list[dict[str, Any]]]
     """
-    cluster, entity = extract_cluster(entry)
-    cluster_id = cluster.get("cluster_id")
-    if not cluster_id:
-        logger.debug("No cluster ID found in entry")
-        return make_rejected_table_result("entry", entry, "No cluster ID found in entry")
 
-    entity["updated"] = timestamp
-    cluster["protocol"] = uniref_variant
+    def _parse() -> dict[str, list[dict[str, Any]]]:
+        cluster, entity = extract_cluster(entry)
+        cluster_id = cluster.get("cluster_id")
+        if not cluster_id:
+            logger.error("No cluster ID found in entry")
+            return reject_cdm_entry(entry, "No cluster ID found in entry", ctx)
 
-    cluster_members = [
-        *(
-            extract_cross_refs(repr_db, cluster_id, is_representative=True)
-            for repr_member in iter_mappings(entry.get("representativeMember"))
-            for repr_db in iter_mappings(repr_member.get("dbReference"))
-        ),
-        *(
-            extract_cross_refs(mem_db, cluster_id, is_representative=False)
-            for member in iter_mappings(entry.get("member"))
-            for mem_db in iter_mappings(member.get("dbReference"))
-        ),
-    ]
+        entity["updated"] = timestamp
+        cluster["protocol"] = uniref_variant
 
-    return {
-        "entity": [entity],
-        "cluster": [cluster],
-        "clustermember": [c for c in cluster_members if c],
-    }
+        cluster_members = [
+            *(
+                extract_cross_refs(repr_db, cluster_id, is_representative=True)
+                for repr_member in iter_mappings(entry.get("representativeMember"))
+                for repr_db in iter_mappings(repr_member.get("dbReference"))
+            ),
+            *(
+                extract_cross_refs(mem_db, cluster_id, is_representative=False)
+                for member in iter_mappings(entry.get("member"))
+                for mem_db in iter_mappings(member.get("dbReference"))
+            ),
+        ]
+
+        return {
+            "entity": [entity],
+            "cluster": [cluster],
+            "clustermember": [c for c in cluster_members if c],
+        }
+
+    return run_cdm_entry_parser(
+        entry,
+        _parse,
+        ctx=ctx,
+        logger=logger,
+        error_message="Parse error while processing UniRef entry",
+    )
 
 
 def make_uniref_cdm_transform(
@@ -219,9 +231,12 @@ def make_uniref_cdm_transform(
     :return: ``RecordTransformFn`` transforming ``entry`` records into CDM table rows
     :rtype: RecordTransformFn
     """
-    resolved_ts = timestamp if timestamp is not None else dt.datetime.now(dt.UTC)
-    return functools.partial(
-        parse_uniref_entry,
-        timestamp=resolved_ts,
-        uniref_variant=uniref_variant,
-    )
+    resolved_ts = resolve_timestamp(timestamp)
+
+    def _parse_entry(
+        entry: Mapping[str, Any],
+        ctx: TransformContext | None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        return parse_uniref_entry(entry, resolved_ts, uniref_variant, ctx=ctx)
+
+    return make_cdm_entry_transform(_parse_entry)

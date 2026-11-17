@@ -13,6 +13,9 @@ from cdm_data_loaders.core.buffer import (
     DEFAULT_BUFFER_MAX_ITEMS,
     REJECTED_PYARROW_SCHEMA,
     DictBuffer,
+    format_rejected_records,
+    make_rejected_row,
+    resolve_destination_schema,
 )
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
@@ -423,3 +426,39 @@ def test_dict_buffer_pass_loses_nothing_under_parallelized_transformer() -> None
     values = _run_page_per_call_transformer(total=total, max_items=5, chunk_size=7)
 
     assert sorted(values) == list(range(total))
+
+
+@pytest.mark.parametrize(
+    ("table_name", "schema_map", "expected_schema"),
+    [
+        pytest.param(REJECTED_TABLE_NAME, None, REJECTED_PYARROW_SCHEMA, id="rejected-without-schema-map"),
+        pytest.param(REJECTED_TABLE_NAME, PEOPLE_SCHEMA_MAP, REJECTED_PYARROW_SCHEMA, id="rejected-with-schema-map"),
+        pytest.param(PEOPLE, PEOPLE_SCHEMA_MAP, PEOPLE_SCHEMA, id="mapped-table"),
+        pytest.param("unmapped", PEOPLE_SCHEMA_MAP, None, id="unmapped-table"),
+        pytest.param(PEOPLE, None, None, id="none-schema-map"),
+    ],
+)
+def test_resolve_destination_schema_resolves_rejected_and_mapped_tables(
+    table_name: str,
+    schema_map: ArrowSchemaRegistry | None,
+    expected_schema: pa.Schema | None,
+) -> None:
+    """resolve_destination_schema returns REJECTED_PYARROW_SCHEMA for _rejected and looks up other tables."""
+    assert resolve_destination_schema(table_name, schema_map) == expected_schema
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False], ids=["pyarrow-page", "dict-list-page"])
+def test_format_rejected_records_formats_pyarrow_and_dict_pages(use_pyarrow: bool) -> None:
+    """format_rejected_records wraps rejected rows with _rejected table metadata as PyArrow or list pages."""
+    rows = [
+        make_rejected_row("people", "bad row", source_file="people.csv", line_no=2, raw_record="x"),
+    ]
+    item = format_rejected_records(rows, use_pyarrow=use_pyarrow)
+
+    assert item.meta.table_name == REJECTED_TABLE_NAME
+    if use_pyarrow:
+        assert isinstance(item.data, pa.Table)
+        assert item.data.schema.equals(REJECTED_PYARROW_SCHEMA)
+        assert item.data.to_pylist() == rows
+    else:
+        assert item.data == rows

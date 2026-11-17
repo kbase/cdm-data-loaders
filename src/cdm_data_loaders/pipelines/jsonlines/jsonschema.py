@@ -82,12 +82,11 @@ def run_jsonlines_pipeline(settings: JsonlJsonschemaIngestSettings) -> LoadInfo 
     :return: load information for the pipeline
     :rtype: LoadInfo | None
     """
-    pipeline_name = str(settings.model_config.get("cli_prog_name") or JSONSCHEMA_PIPELINE_NAME)
     return run_registry_ingest(
         settings,
         registry=settings.schema_registry.registry,
         build_resource=build_entity_resource,
-        pipeline_name=pipeline_name,
+        pipeline_name=JSONSCHEMA_PIPELINE_NAME,
     )
 
 

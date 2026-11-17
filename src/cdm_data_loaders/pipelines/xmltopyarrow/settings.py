@@ -9,7 +9,6 @@ import pyarrow as pa
 import xmlschema
 from lxml.etree import Element
 from pydantic import Field, PositiveInt, PrivateAttr
-from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.coercion.xml import (
     make_xml_element_converter,
@@ -30,12 +29,8 @@ from cdm_data_loaders.core.registry import (
     RecordTransformFn,
     TransformRegistry,
 )
-from cdm_data_loaders.core.settings import (
-    default_settings_with_shortcuts,
-)
 from cdm_data_loaders.core.transforms.settings_mixin import TransformSettingsMixin
 from cdm_data_loaders.pipelines.xml_common import (
-    XML_CLI_SHORTCUTS,
     XmlIngestSettings,
     XsdFile,
 )
@@ -66,13 +61,8 @@ def _classify_xmltopyarrow_xsd_error(exc: Exception) -> XmlToPyArrowConfigError:
     return UnsupportedXsdTargetError(err_msg)
 
 
-class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin):
+class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin, cli_prog_name=PIPELINE_NAME):
     """Settings for the XML to PyArrow ingestion pipeline."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=PIPELINE_NAME,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
 
     _xsd_schema: xmlschema.XMLSchema = PrivateAttr()
     _xml_element_converter: Callable[[Element], dict[str, Any]] | None = PrivateAttr(default=None)
@@ -140,22 +130,7 @@ class XmlToPyArrowSettings(XmlIngestSettings, TransformSettingsMixin):
             self._validate_configured_tables(valid_tables)
         except ValueError as e:
             raise InvalidXmlPipelineHookError(str(e)) from e
-        if not self.use_pyarrow:
-            self._schema_map = None
-            return
-        resolved_schemas: dict[str, pa.Schema] = {
-            **(
-                dict(self._unreconciled_output_schemas.registry)
-                if self._unreconciled_output_schemas is not None
-                else {}
-            ),
-            **{
-                table_name: table_schema
-                for table_name, table_schema in self._pyarrow_schemas.items()
-                if self._needs_default_pyarrow_schema(table_name)
-            },
-        }
-        self._schema_map = ArrowSchemaRegistry(registry=resolved_schemas) if resolved_schemas else None
+        self._resolve_multi_table_schema_map(self._pyarrow_schemas)
 
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
         """Validate target selection mode, load the XSD, and resolve `_schema_map`."""

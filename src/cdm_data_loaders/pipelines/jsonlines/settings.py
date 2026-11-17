@@ -46,7 +46,7 @@ from cdm_data_loaders.core.settings import (
 )
 from cdm_data_loaders.core.transforms.settings_mixin import (
     TransformSettingsMixin,
-    needs_default_pyarrow_schema,
+    reconcile_multi_table_schema_map,
     validate_table_transforms,
 )
 from cdm_data_loaders.pipelines.jsonlines.exceptions import (
@@ -124,7 +124,6 @@ def build_output_schema_registry(
     :rtype: ArrowSchemaRegistry | None
     :raises RuntimeError: if one or more schemas cannot be converted to PyArrow schemas
     """
-    pyarrow_schemas: dict[str, pa.Schema] = dict(output_schemas.registry) if output_schemas is not None else {}
     errors: dict[str, str] = {}
     has_arrow_error = False
     is_model_registry = isinstance(validation_schema_registry, ModelRegistry)
@@ -134,15 +133,11 @@ def build_output_schema_registry(
     else:
         fn = convert_schema_to_pyarrow
 
-    for table_name, model_or_schema in validation_schema_registry.registry.items():
-        if not needs_default_pyarrow_schema(
-            table_name,
-            table_transforms=table_transforms,
-            output_schemas=output_schemas,
-        ):
-            continue
+    def _convert_table_schema(table_name: str) -> pa.Schema | None:
+        nonlocal has_arrow_error
+        model_or_schema = validation_schema_registry.registry[table_name]
         try:
-            pyarrow_schemas[table_name] = fn(model_or_schema)
+            return fn(model_or_schema)
         except PydanticToPyArrowError as error:
             logger.exception("Error converting Pydantic model to PyArrow for %s", table_name)
             errors[table_name] = str(error)
@@ -153,6 +148,14 @@ def build_output_schema_registry(
             logger.exception("Error converting JSON Schema to PyArrow for %s", table_name)
             has_arrow_error = True
             errors[table_name] = str(error)
+        return None
+
+    registry_result = reconcile_multi_table_schema_map(
+        validation_schema_registry.registry,
+        _convert_table_schema,
+        table_transforms=table_transforms,
+        output_schemas=output_schemas,
+    )
 
     if errors:
         details = "".join(f"{table_name}: {error}\n" for table_name, error in errors.items())
@@ -163,10 +166,7 @@ def build_output_schema_registry(
             raise UnsupportedJsonlArrowSchemaError(err_msg)
         raise UnresolvableJsonlSchemaRefError(err_msg)
 
-    if not pyarrow_schemas:
-        return None
-
-    return ArrowSchemaRegistry(registry=pyarrow_schemas)
+    return registry_result
 
 
 class JsonlIngestSettings(FileFormatIngestSettings):

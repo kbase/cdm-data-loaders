@@ -7,12 +7,13 @@ rules:
 notes: |
   - `transforms_module="specs.pipelines.xmltopyarrow.transforms"` defines `TABLE_TRANSFORMS["measurements"] = transform_measurement` and `OUTPUT_SCHEMAS` for `measurements` and `measurement_tags`.
   - `XmlToPyArrowSettings` skips default XSD-to-PyArrow schema generation for `measurements` and uses `OUTPUT_SCHEMAS`.
-  - `transform_measurement` drops `<measurement status="drop">` (`s2`), uppercases `_id` into `sensor_id`, computes `scaled_value`, and fans out `<tag>` values into `measurement_tags`.
+  - `transform_measurement` receives `TransformContext(table_name="measurements", source_file="data.xml")`, drops `<measurement status="drop">` (`s2`), routes `<measurement status="invalid">` (`s4`) to `_rejected` with `table_name` and `source_file` provenance, uppercases `_id` into `sensor_id`, computes `scaled_value`, and fans out `<tag>` values into `measurement_tags`.
 runs:
   - id: default
     data: data.xml
     expected_json: expected.json
     expected_table: expected_table.py
+    expected_rejected: expected_rejected.json
     extra_expected_json:
       measurement_tags: expected_tags.json
     params:

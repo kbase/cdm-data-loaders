@@ -8,6 +8,12 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import convert_xs
 from cdm_data_loaders.converters.sources.json_schema.strict_scalars import NON_EXTENDABLE_SCALAR_HINTS
 from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.pipelines.presets.pubmed import PubMedXmlToPyArrowSettings
+from cdm_data_loaders.pipelines.presets.uniprot_cdm import (
+    UniProtSettings,
+    UniRef50CdmSettings,
+    UniRef90CdmSettings,
+    UniRef100CdmSettings,
+)
 from cdm_data_loaders.pipelines.presets.uniprot_xml import (
     UniProtXmlToPyArrowSettings,
     UniRef50XmlToPyArrowSettings,
@@ -37,9 +43,13 @@ from specs._loader.converter_spec import load_cases
 XMLTOPYARROW_SETTINGS_CLASSES: Final[tuple[type[XmlToPyArrowSettings], ...]] = (
     XmlToPyArrowSettings,
     UniProtXmlToPyArrowSettings,
+    UniProtSettings,
     UniRef50XmlToPyArrowSettings,
+    UniRef50CdmSettings,
     UniRef90XmlToPyArrowSettings,
+    UniRef90CdmSettings,
     UniRef100XmlToPyArrowSettings,
+    UniRef100CdmSettings,
     PubMedXmlToPyArrowSettings,
 )
 

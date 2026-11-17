@@ -119,6 +119,46 @@ def make_rejected_table_result(
     }
 
 
+def resolve_destination_schema(
+    table_name: str,
+    schema_map: ArrowSchemaRegistry | None = None,
+) -> pa.Schema | None:
+    """Resolve the destination ``pyarrow.Schema`` for ``table_name``, including ``_rejected``.
+
+    :param table_name: destination table name
+    :type table_name: str
+    :param schema_map: active ``ArrowSchemaRegistry`` for pipeline output tables, if any
+    :type schema_map: ArrowSchemaRegistry | None
+    :return: ``REJECTED_PYARROW_SCHEMA`` for ``_rejected``, registered table schema when mapped, else ``None``
+    :rtype: pa.Schema | None
+    """
+    if table_name == REJECTED_TABLE_NAME:
+        return REJECTED_PYARROW_SCHEMA
+    if schema_map is not None:
+        return schema_map.registry.get(table_name)
+    return None
+
+
+def format_rejected_records(
+    rows: list[dict[str, Any]],
+    *,
+    use_pyarrow: bool = True,
+) -> DataItemWithMeta:
+    """Format ``_rejected`` row dictionaries and tag the page with ``_rejected`` table metadata.
+
+    :param rows: standardized ``_rejected`` row dictionaries
+    :type rows: list[dict[str, Any]]
+    :param use_pyarrow: when ``True``, convert ``rows`` using ``REJECTED_PYARROW_SCHEMA``
+    :type use_pyarrow: bool
+    :return: ``DataItemWithMeta`` carrying a ``pyarrow.Table`` or ``rows`` for ``_rejected``
+    :rtype: DataItemWithMeta
+    """
+    page: pa.Table | list[dict[str, Any]] = (
+        pa.Table.from_pylist(rows, schema=REJECTED_PYARROW_SCHEMA) if use_pyarrow else rows
+    )
+    return dlt.mark.with_table_name(page, REJECTED_TABLE_NAME)
+
+
 class DictBuffer(BaseModel):
     """Accumulates rows per table and yields them as pages to dlt.
 
@@ -158,10 +198,9 @@ class DictBuffer(BaseModel):
         """
         if not self.use_pyarrow:
             return rows
-        if table_name == REJECTED_TABLE_NAME:
-            return pa.Table.from_pylist(rows, schema=REJECTED_PYARROW_SCHEMA)
-        if self.schema_map and table_name in self.schema_map.registry:
-            return pa.Table.from_pylist(rows, schema=self.schema_map.registry[table_name])
+        target_schema = resolve_destination_schema(table_name, self.schema_map)
+        if target_schema is not None:
+            return pa.Table.from_pylist(rows, schema=target_schema)
         return rows
 
     def _flush_if_full(self, table_name: str) -> Generator[DataItemWithMeta, Any]:

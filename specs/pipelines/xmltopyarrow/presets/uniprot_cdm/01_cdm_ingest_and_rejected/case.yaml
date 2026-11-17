@@ -1,0 +1,30 @@
+title: UniProtKB CDM Fan-Out and Missing-Accession Rejection (`_rejected`)
+pipeline: uniprot_cdm
+settings_file: settings.toml
+rules:
+  - R-XML-DEFAULT-NS
+  - R-XML-TRANSFORMS
+  - R-XML-REPORT
+  - R-UNIPROT-CDM-PRESET
+notes: |
+  A `<uniprot>` XML file with one complete `<entry>` (`P12345`) and one `<entry>` whose `<accession>` is blank.
+  `UniProtSettings` fans the valid entry across `entity`, `identifier`, `name`, `protein`, and
+  `entity_x_publication` (`UNIPROT_CDM_SCHEMA_MAP`) and routes the blank-accession entry to `_rejected`
+  with `table_name="entry"` and `source_file="uniprot_sample.xml"`.
+runs:
+  - id: default
+    input_dir: input
+    expected_report:
+      status: completed
+      ingested_files:
+        - uniprot_sample.xml
+      pipeline_load_info_errs: null
+    expected_counts:
+      entity: 1
+      identifier: 4
+      name: 3
+      protein: 1
+      entity_x_publication: 1
+      _rejected: 1
+    expected_tables: null
+    expected_json: null

@@ -4,8 +4,9 @@ from typing import Any
 
 import pyarrow as pa
 
+from cdm_data_loaders.core.buffer import make_rejected_table_result
 from cdm_data_loaders.core.md5_preprocessor import validate_md5_sidecar
-from cdm_data_loaders.core.registry import FilePreprocessFn, RecordTransformFn
+from cdm_data_loaders.core.registry import FilePreprocessFn, RecordTransformFn, TransformContext
 
 FILE_PREPROCESSORS: tuple[FilePreprocessFn, ...] = (validate_md5_sidecar,)
 
@@ -25,10 +26,17 @@ MEASUREMENT_TAG_SCHEMA = pa.schema(
 )
 
 
-def transform_measurement(row: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    """Drop draft measurements, compute ``scaled_value``, and fan out tags to ``measurement_tags``."""
+def transform_measurement(row: dict[str, Any], ctx: TransformContext) -> dict[str, list[dict[str, Any]]]:
+    """Drop draft rows, reject invalid rows with ``ctx`` provenance, compute ``scaled_value``, and fan out tags."""
     if row.get("_status") == "drop":
         return {}
+    if row.get("_status") == "invalid":
+        return make_rejected_table_result(
+            ctx.table_name,
+            row,
+            "Invalid measurement status",
+            source_file=ctx.source_file,
+        )
     sensor_id = str(row["_id"]).upper()
     value = float(row["value"])
     routed: dict[str, list[dict[str, Any]]] = {

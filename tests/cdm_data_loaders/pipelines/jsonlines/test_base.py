@@ -162,23 +162,37 @@ def test_build_entity_resource_pass_no_matching_files(
 
 
 @pytest.mark.parametrize(
-    ("pipeline_run_kwargs", "run_pipeline_return", "expected_run_kwargs"),
+    ("cli_prog_name", "pipeline_run_kwargs", "run_pipeline_return", "expected_pipeline_name", "expected_run_kwargs"),
     [
         pytest.param(
+            "jsonlines_pydantic",
             None,
             MagicMock(spec=LoadInfo),
+            "jsonlines_pydantic",
             {"loader_file_format": "parquet"},
-            id="default_pipeline_run_kwargs",
+            id="uses_settings_cli_prog_name_with_default_run_kwargs",
         ),
         pytest.param(
+            None,
+            None,
+            MagicMock(spec=LoadInfo),
+            "test_registry_pipeline",
+            {"loader_file_format": "parquet"},
+            id="falls_back_to_pipeline_name_when_cli_prog_name_unset",
+        ),
+        pytest.param(
+            "jsonlines_pydantic",
             {"loader_file_format": "jsonl", "schema_contract": "freeze"},
             MagicMock(spec=LoadInfo),
+            "jsonlines_pydantic",
             {"loader_file_format": "jsonl", "schema_contract": "freeze"},
             id="merges_and_overrides_pipeline_run_kwargs",
         ),
         pytest.param(
+            "jsonlines_pydantic",
             None,
             None,
+            "jsonlines_pydantic",
             {"loader_file_format": "parquet"},
             id="propagates_none_on_pipeline_failure",
         ),
@@ -187,12 +201,21 @@ def test_build_entity_resource_pass_no_matching_files(
 def test_run_registry_ingest_pass_builds_sorted_resources_and_delegates_to_run_pipeline(
     settings_factory: Callable[..., JsonlPydanticIngestSettings],
     widget_model: type[BaseModel],
+    cli_prog_name: str | None,
     pipeline_run_kwargs: dict[str, Any] | None,
     run_pipeline_return: LoadInfo | None,
+    expected_pipeline_name: str,
     expected_run_kwargs: dict[str, Any],
 ) -> None:
     """run_registry_ingest builds resources in sorted table order and delegates to core.run_pipeline."""
-    settings = settings_factory(dataset_name="registry_ds", loader_file_format="parquet")
+
+    class CustomProgSettings(JsonlPydanticIngestSettings, cli_prog_name=cli_prog_name):
+        pass
+
+    base_settings = settings_factory(dataset_name="registry_ds", loader_file_format="parquet")
+    settings = CustomProgSettings.model_validate(
+        base_settings.model_dump(exclude=set(JsonlPydanticIngestSettings.model_computed_fields))
+    )
     registry: dict[str, type[BaseModel]] = {
         "zeta": widget_model,
         "alpha": widget_model,
@@ -224,7 +247,7 @@ def test_run_registry_ingest_pass_builds_sorted_resources_and_delegates_to_run_p
         settings=settings,
         resource=[built_resources["alpha"], built_resources["zeta"]],
         pipeline_kwargs={
-            "pipeline_name": "test_registry_pipeline",
+            "pipeline_name": expected_pipeline_name,
             "dataset_name": "registry_ds",
         },
         pipeline_run_kwargs=expected_run_kwargs,

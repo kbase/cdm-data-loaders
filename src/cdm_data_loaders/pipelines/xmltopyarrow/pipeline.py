@@ -26,12 +26,11 @@ def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None
         name="xmltopyarrow_reader",
         parallelized=False,
     )
-    pipeline_name = str(settings.model_config.get("cli_prog_name") or PIPELINE_NAME)
 
     return run_pipeline(
         settings=settings,
         resource=xmltopyarrow_resource,
-        **build_file_ingest_kwargs(settings, pipeline_name),
+        **build_file_ingest_kwargs(settings, PIPELINE_NAME),
     )
 
 
