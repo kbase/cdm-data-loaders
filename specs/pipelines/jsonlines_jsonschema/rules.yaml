@@ -93,7 +93,9 @@ sections:
         statement: |
           When `transforms_module` defines `TABLE_TRANSFORMS`, validated record dicts for that entity are passed to
           its `RecordTransformFn`, which may drop records (`{}`), compute derived fields, or fan out records across
-          multiple destination tables coerced with `OUTPUT_SCHEMAS`.
+          multiple destination tables coerced against `OUTPUT_SCHEMAS` via `coerce_json_record_for_pyarrow`
+          (including `pa.date32()`, UTC and naive `pa.timestamp`, `pa.time64`, scale-quantized
+          `pa.decimal128`/`pa.decimal256`, metadata-decoded binary fields, and numeric strings).
       - id: R-JSONL-REPORT
         statement: |
           Every pipeline execution writes one audit row to `_load_info` and a YAML summary to

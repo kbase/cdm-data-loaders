@@ -63,7 +63,9 @@ sections:
           `transform=settings.get_table_transform(settings.table_name)` (`transforms_module`), and
           `schema_map=settings.schema_map` (`output_schemas_module`). Transforms may drop records (`{}`), enrich
           fields, or fan out records across multiple destination tables, and any output table with a registered
-          `pa.Schema` in `OUTPUT_SCHEMAS` is buffered in `DictBuffer` (`max_items=settings.buffer_size`) and emitted
+          `pa.Schema` in `OUTPUT_SCHEMAS` is coerced via `coerce_json_record_for_pyarrow` (supporting `pa.date32()`,
+          UTC and naive `pa.timestamp`, `pa.time64`, scale-quantized `pa.decimal128`/`pa.decimal256`, metadata-decoded
+          binary fields, and numeric strings), buffered in `DictBuffer` (`max_items=settings.buffer_size`), and emitted
           as a typed `pa.Table`.
       - id: R-JSONL-EXTRACT-REPORT
         statement: |

@@ -8,7 +8,7 @@ rules:
 notes: |
   - `transforms_module="specs.pipelines.jsonlines_jsonschema.transforms"` defines `TABLE_TRANSFORMS["samples"] = transform_sample` and `OUTPUT_SCHEMAS` for `samples` and `sample_measurements`.
   - `build_output_schema_registry` skips `convert_schema_to_pyarrow` for `samples` (allowing input-only `anyOf` fields such as `raw_payload` in `schema.json` to validate input lines without raising `E5`).
-  - `transform_sample` drops `exclude=True` rows, uppercases `sample_id`, computes `ph_bucket`, and fans out `metrics` to `sample_measurements`.
+  - `transform_sample` drops `exclude=True` rows, uppercases `sample_id`, computes `ph_bucket`, fans out `metrics` to `sample_measurements`, and leaves `ph`, `collected_date`, `collected_at`, `sample_time`, and `checksum` for `coerce_json_record_for_pyarrow` to coerce into `pa.decimal128(4, 2)`, `pa.date32()`, UTC `pa.timestamp("us", tz="UTC")`, `pa.time64("us")`, and `pa.binary()` (`xsd_type="xs:hexBinary"`).
 runs:
   - id: default
     data: data.jsonl

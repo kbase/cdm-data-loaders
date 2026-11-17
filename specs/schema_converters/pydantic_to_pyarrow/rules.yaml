@@ -210,16 +210,21 @@ sections:
           Temporal strings or objects are coerced to `datetime.date` (`pa.date32()`), UTC-aware
           `datetime.datetime` (`pa.timestamp("us", tz="UTC")`, converting aware datetimes via
           `.astimezone(timezone.utc)` and attaching UTC to naive inputs), naive `datetime.datetime`
-          (`pa.timestamp("us")`), or `datetime.time` (`pa.time64("us")`). `timedelta` becomes an ISO-8601
-          duration string (`P...T...`). `UUID`, `Path`, `IPv*Address`, `AnyUrl`, and `SecretStr`
-          (`.get_secret_value()`) become `str`. `SecretBytes` (`.get_secret_value()`), `bytearray`, and
-          `Base64Bytes` become `bytes`. `Enum` instances unwrap to `.value`. `Decimal` values are quantized to
-          the target scale for `pa.decimal128(p, s)` or converted to `float` for `pa.float64()`.
+          (`pa.timestamp("us")`, converting aware inputs to UTC before stripping `tzinfo`), or timezone-stripped
+          `datetime.time` (`pa.time64("us")`).
+          `timedelta` becomes an ISO-8601 duration string (`P...T...`). `UUID`, `Path`, `IPv*Address`, `AnyUrl`,
+          and `SecretStr` (`.get_secret_value()`) become `str`. `SecretBytes` (`.get_secret_value()`), `bytearray`,
+          and binary strings across `pa.binary()`, `pa.large_binary()`, `pa.binary_view()`, and `pa.binary(n)` become
+          `bytes` (hex when `jsonschema_type` or `xsd_type` indicates `base16` / `xs:hexBinary`, Base64 when metadata
+          indicates `base64` / `xs:base64Binary`, and UTF-8 otherwise). `Enum` instances unwrap to `.value`. Strings,
+          ints, floats, and `Decimal` values are quantized to scale `s` for `pa.decimal128(p, s)` and
+          `pa.decimal256(p, s)`, and numeric strings, ints, and integral floats coerce across integer and float fields.
       - id: R-COERCE-STRING-FALLBACK
         statement: |
-          Non-string values written to a `pa.string()` field (e.g. heterogeneous scalar unions or
-          recursion-truncated subtrees) are stringified: booleans, dicts, lists, and `BaseModel`s with
-          `json.dumps` (`true`/`false`), numbers with `str()`.
+          Non-string values written to a string field (`pa.string()`, `pa.large_string()`, `pa.string_view()`)—such as
+          heterogeneous scalar unions or recursion-truncated subtrees—are stringified: booleans, dicts, lists, sets,
+          dataclasses, and `BaseModel`s with `json.dumps` (`true`/`false`), UTF-8 `bytes`/`bytearray` with
+          `.decode("utf-8")`, and numbers or temporal/UUID/path scalars with `str()` or `.isoformat()`.
       - id: R-COERCE-TUPLE
         statement: |
           A Python `tuple` or JSON `list` for a fixed-length tuple becomes `{"item_0": v_0, ...}`; positions

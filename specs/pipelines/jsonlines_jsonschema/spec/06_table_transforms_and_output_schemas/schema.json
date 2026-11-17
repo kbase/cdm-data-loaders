@@ -2,13 +2,23 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "SampleRecord",
   "type": "object",
-  "required": ["sample_id", "ph"],
+  "required": ["sample_id", "ph", "collected_at", "sample_time"],
   "properties": {
     "sample_id": {
       "type": "string"
     },
     "ph": {
       "type": "number"
+    },
+    "collected_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sample_time": {
+      "type": "string"
+    },
+    "checksum_hex": {
+      "type": "string"
     },
     "exclude": {
       "type": "boolean"
@@ -27,4 +37,3 @@
     }
   }
 }
-

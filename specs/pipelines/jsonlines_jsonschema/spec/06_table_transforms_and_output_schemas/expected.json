@@ -1,13 +1,20 @@
 [
   {
-    "ph": 6.4,
+    "checksum": "Hello",
+    "collected_at": "2025-06-15T12:30:00+00:00",
+    "collected_date": "2025-06-15",
+    "ph": "6.46",
     "ph_bucket": "acidic",
-    "sample_id": "SMP-1"
+    "sample_id": "SMP-1",
+    "sample_time": "14:30:00"
   },
   {
-    "ph": 7.8,
+    "checksum": null,
+    "collected_at": "2025-06-16T09:00:00+00:00",
+    "collected_date": "2025-06-16",
+    "ph": "7.80",
     "ph_bucket": "neutral_or_basic",
-    "sample_id": "SMP-3"
+    "sample_id": "SMP-3",
+    "sample_time": "09:00:00"
   }
 ]
-

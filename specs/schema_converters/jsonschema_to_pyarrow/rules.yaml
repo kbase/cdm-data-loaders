@@ -156,14 +156,21 @@ sections:
     rules:
       - id: R-COERCE-SCALAR
         statement: |
-          Strings for `pa.date32()` are parsed with `datetime.date.fromisoformat`; `pa.binary()` strings are
-          decoded as Base16 (`bytes.fromhex`) when `jsonschema_type` mentions `base16`, otherwise Base64. Ints
-          become floats for float fields, and integral floats become ints for integer fields.
+          Strings for `pa.date32()` are parsed with `datetime.date.fromisoformat`. When coercing against custom
+          `pa.Schema` definitions (such as `OUTPUT_SCHEMAS`), temporal strings or objects for
+          `pa.timestamp(..., tz="UTC")`, naive `pa.timestamp(...)`, and `pa.time64(...)` are normalized to UTC-aware
+          `datetime.datetime`, naive `datetime.datetime`, and timezone-stripped `datetime.time`; strings, ints, floats,
+          and `Decimal`s for `pa.decimal128(p, s)` or `pa.decimal256(p, s)` are quantized to scale `s`. Binary strings
+          across `pa.binary()`, `pa.large_binary()`, `pa.binary_view()`, and fixed-size `pa.binary(n)` are decoded as
+          Base16 (`bytes.fromhex`) when `jsonschema_type` or `xsd_type` indicates hex (`base16` or `xs:hexBinary`),
+          UTF-8 when `pydantic_type == "binary"`, and Base64 otherwise. Numeric strings, ints, and integral floats
+          coerce across integer and float fields.
       - id: R-COERCE-STRING-FALLBACK
         statement: |
-          Non-string values written to a `pa.string()` field are stringified: booleans, objects and arrays with
-          `json.dumps` (`true`/`false`), numbers with `str()`. This covers heterogeneous scalar unions and
-          recursion-truncated subtrees.
+          Non-string values written to a string field (`pa.string()`, `pa.large_string()`, `pa.string_view()`) are
+          stringified: booleans, objects, and arrays with `json.dumps` (`true`/`false`), UTF-8 `bytes`/`bytearray` with
+          `.decode("utf-8")`, and numbers or temporal/UUID/path scalars with `str()` or `.isoformat()`. This covers
+          heterogeneous scalar unions and recursion-truncated subtrees.
       - id: R-COERCE-TUPLE
         statement: |
           A JSON array for a closed tuple becomes `{"item_0": v_0, ...}`; positions that are missing or `null`
