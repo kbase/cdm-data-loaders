@@ -30,7 +30,6 @@ from cdm_data_loaders.io.s3.object_utils import (
     upload_fileobj,
 )
 from cdm_data_loaders.utils.urls import split_s3_path
-from tests.helpers.paths_and_constants import ALT_BUCKET, BUCKETS, TEST_BUCKET
 from tests.cdm_data_loaders.io.s3._helpers import (
     COULD_NOT_PARSE,
     FILES_IN_BUCKETS,
@@ -44,6 +43,7 @@ from tests.cdm_data_loaders.io.s3._helpers import (
     TEST_PROTOCOLS,
     populate_mock_s3,
 )
+from tests.helpers.paths_and_constants import ALT_BUCKET, BUCKETS, TEST_BUCKET
 
 # split_s3_path
 PATH = "path"

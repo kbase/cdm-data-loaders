@@ -6,16 +6,16 @@ from typing import Any
 import duckdb
 
 from cdm_data_loaders.core.fields import PARQUET
+from tests.e2e.pipelines.xmltopyarrow._helpers import (
+    normalize_uniref_entry_for_xsd,
+    reconstruct_xsd_entries,
+    strip_xsd_arrow_row,
+)
 from tests.helpers.table_readers import (
     read_pipeline_tables,
     reference_entries_from_duckdb,
     run_and_read,
     sorted_json,
-)
-from tests.e2e.pipelines.xmltopyarrow._helpers import (
-    normalize_uniref_entry_for_xsd,
-    reconstruct_xsd_entries,
-    strip_xsd_arrow_row,
 )
 
 EXPECTED_ENTRY_COUNT = 100

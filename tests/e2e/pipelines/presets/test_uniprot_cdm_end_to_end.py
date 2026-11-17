@@ -16,6 +16,7 @@ from cdm_data_loaders.pipelines.presets.uniprot_cdm import (
     UniProtSettings,
 )
 from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
+from tests.e2e.framework import PipelineTestRunner
 from tests.helpers.cli_assertions import make_cts_settings
 from tests.helpers.paths_and_constants import TEST_DATA_DIR
 from tests.helpers.table_readers import (
@@ -26,7 +27,6 @@ from tests.helpers.table_readers import (
     duckdb_pipeline,
     fetch_all_duckdb,
 )
-from tests.e2e.framework import PipelineTestRunner
 
 UNIPROT_FIXTURE_DIR = TEST_DATA_DIR / "uniprot" / "uniprot_kb" / "chunk_4"
 UNIPROT_FIXTURE_FILES = ("chunk_00001.xml", "chunk_00002.xml", "chunk_00003.xml", "chunk_00004.xml")

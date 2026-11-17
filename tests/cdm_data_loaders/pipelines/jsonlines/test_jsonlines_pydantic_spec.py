@@ -32,10 +32,17 @@ from cdm_data_loaders.pipelines.jsonlines.pydantic import (
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
 from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
+from tests.cdm_data_loaders.converters.facades.test_pydantic_to_pyarrow_pbt import (
+    pydantic_raw_inputs_for_model,
+)
 from tests.helpers.cli_assertions import make_cts_settings, register_temp_module
 from tests.helpers.fixtures_jsonlines import (
     PYDANTIC_SPEC_ENTITY_TABLE_NAME as ENTITY_TABLE_NAME,
+)
+from tests.helpers.fixtures_jsonlines import (
     pydantic_run_settings_overrides,
+)
+from tests.helpers.fixtures_jsonlines import (
     stage_pydantic_jsonl_run as stage_jsonl_run,
 )
 from tests.helpers.paths_and_constants import LOCAL_FS, SCHEMA_CONVERTER_SPECS_DIR
@@ -45,9 +52,6 @@ from tests.helpers.pyarrow_spec import (
     load_expected_table,
     load_fixture_attr,
     load_json_records,
-)
-from tests.cdm_data_loaders.converters.facades.test_pydantic_to_pyarrow_pbt import (
-    pydantic_raw_inputs_for_model,
 )
 
 PYDANTIC_CONVERTER_SPEC_DIR: Final[Path] = (SCHEMA_CONVERTER_SPECS_DIR / "pydantic_to_pyarrow").resolve()

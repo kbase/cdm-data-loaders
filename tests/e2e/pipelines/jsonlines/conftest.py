@@ -24,6 +24,9 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlJsonschemaIngestSettings,
     JsonlPydanticIngestSettings,
 )
+from tests.data.ncbi_datasets.dataset_report_models import ENTITY_MODELS
+from tests.data.ncbi_datasets.dataset_report_schemas import ENTITY_SCHEMAS
+from tests.e2e.pipelines.jsonlines.jsonlines_reference_helpers import canonicalize_entry
 from tests.helpers.cli_assertions import make_cts_settings
 from tests.helpers.fixtures_jsonlines import (
     Widget,
@@ -35,9 +38,6 @@ from tests.helpers.fixtures_jsonschema import (
     make_entity_schemas_factory,
     make_schema_settings_factory,
 )
-from tests.data.ncbi_datasets.dataset_report_models import ENTITY_MODELS
-from tests.data.ncbi_datasets.dataset_report_schemas import ENTITY_SCHEMAS
-from tests.e2e.pipelines.jsonlines.jsonlines_reference_helpers import canonicalize_entry
 
 type PipelineRunner = Callable[..., tuple[LoadInfo | None, Path]]
 type PrepareReference = Callable[[dict[str, Any]], dict[str, Any]]

@@ -54,7 +54,6 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlPydanticIngestSettings,
     build_output_schema_registry,
 )
-from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.pipelines.presets.ncbi_datasets import (
     NCBI_DATASETS_PIPELINE_NAME,
     NCBI_DATASETS_SCHEMA_MODULE,

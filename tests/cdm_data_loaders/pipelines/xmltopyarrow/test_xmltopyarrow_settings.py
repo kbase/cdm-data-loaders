@@ -47,7 +47,6 @@ from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     XmlToPyArrowSettings,
 )
 from cdm_data_loaders.schemas.pubmed.schema import SCHEMAS as PUBMED_SCHEMAS
-from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMA as UNIPROT_SCHEMA
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMAS as UNIPROT_SCHEMAS
 from cdm_data_loaders.schemas.uniref.schema import SCHEMA as UNIREF_SCHEMA

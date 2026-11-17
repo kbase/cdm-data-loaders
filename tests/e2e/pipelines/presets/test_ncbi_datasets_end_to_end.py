@@ -19,10 +19,10 @@ from cdm_data_loaders.pipelines.presets.ncbi_datasets import (
 from cdm_data_loaders.pipelines.presets.ncbi_datasets import (
     cli as ncbi_datasets_cli,
 )
+from tests.e2e.framework import PipelineTestRunner
 from tests.helpers.cli_assertions import make_cts_settings, settings_to_argv
 from tests.helpers.paths_and_constants import TEST_DATA_DIR
 from tests.helpers.table_readers import assert_run_ok, read_pipeline_tables
-from tests.e2e.framework import PipelineTestRunner
 
 MIN_EMPTY_RESPONSE_RATIO: Final[float] = 0.25
 

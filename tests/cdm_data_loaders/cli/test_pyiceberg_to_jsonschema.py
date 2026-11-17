@@ -31,13 +31,13 @@ from cdm_data_loaders.cli.pyiceberg_to_linkml import (
 from cdm_data_loaders.cli.pyiceberg_to_linkml import (
     dump_catalog_schemas as dump_linkml_catalog_schemas,
 )
-from tests.helpers.iceberg_catalog import CATALOG_NAME
 from tests.cdm_data_loaders.converters._helpers import (
     JSON_SCHEMA_KEYWORDS,
     iter_extension_keys,
     iter_schema_keywords,
     to_snake_case,
 )
+from tests.helpers.iceberg_catalog import CATALOG_NAME
 
 
 @dataclass(frozen=True, slots=True)

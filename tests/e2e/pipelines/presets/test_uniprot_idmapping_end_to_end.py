@@ -28,6 +28,7 @@ from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     SOURCE_DESCRIPTION,
     UNIPROT_ID_DESCRIPTION,
 )
+from tests.e2e.pipelines.presets._helpers import SAMPLE_RAW_ROWS
 from tests.helpers.cli_assertions import make_cts_settings
 from tests.helpers.dlt_isolation import isolated_dlt_config
 from tests.helpers.paths_and_constants import LOCAL_FS
@@ -35,7 +36,6 @@ from tests.helpers.table_readers import (
     fetch_all_duckdb,
     run_with_duckdb_pipeline,
 )
-from tests.e2e.pipelines.presets._helpers import SAMPLE_RAW_ROWS
 
 
 @pytest.mark.usefixtures("qsv_cmd")

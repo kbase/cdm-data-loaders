@@ -9,6 +9,7 @@ from _pytest.mark.structures import ParameterSet
 
 from cdm_data_loaders.pipelines.jsonlines.settings import PYDANTIC_PIPELINE_NAME, JsonlPydanticIngestSettings
 from specs._loader.converter_spec import Case, Run, load_cases
+from tests.e2e.framework import PipelineTestRunner
 from tests.helpers.cli_assertions import settings_to_argv
 from tests.helpers.fixtures_jsonlines import (
     PYDANTIC_SPEC_ENTITY_TABLE_NAME as ENTITY_TABLE_NAME,
@@ -21,7 +22,6 @@ from tests.helpers.table_readers import (
     assert_pipeline_report_written,
     assert_run_ok,
 )
-from tests.e2e.framework import PipelineTestRunner
 
 PYDANTIC_CONVERTER_SPEC_DIR: Final[Path] = (SCHEMA_CONVERTER_SPECS_DIR / "pydantic_to_pyarrow").resolve()
 CASES: Final[tuple[Case, ...]] = tuple(

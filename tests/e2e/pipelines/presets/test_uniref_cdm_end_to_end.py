@@ -12,6 +12,8 @@ from frozendict import frozendict
 
 from cdm_data_loaders.pipelines.presets.uniprot_cdm import UniRefCdmSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
+from tests.e2e.framework import PipelineTestRunner
+from tests.e2e.pipelines.presets._helpers import UNIREF_CDM_VARIANTS
 from tests.helpers.cli_assertions import make_cts_settings
 from tests.helpers.paths_and_constants import TEST_DATA_DIR
 from tests.helpers.table_readers import (
@@ -22,8 +24,6 @@ from tests.helpers.table_readers import (
     duckdb_pipeline,
     fetch_all_duckdb,
 )
-from tests.e2e.framework import PipelineTestRunner
-from tests.e2e.pipelines.presets._helpers import UNIREF_CDM_VARIANTS
 
 UNIREF_FIXTURE_DIR = TEST_DATA_DIR / "uniprot" / "uniref" / "integration"
 UNIREF_FIXTURE_FILE = "uniref_chunk_00001.xml"

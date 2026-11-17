@@ -14,11 +14,6 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JSONSCHEMA_PIPELINE_NAME,
     PYDANTIC_PIPELINE_NAME,
 )
-from tests.helpers.table_readers import (
-    LOADER_FILE_FORMATS,
-    read_pipeline_tables,
-    run_and_read,
-)
 from tests.data.ncbi_datasets.dataset_report_models import ENTITY_MODELS
 from tests.data.ncbi_datasets.dataset_report_schemas import ENTITY_SCHEMAS
 from tests.e2e.pipelines.jsonlines.jsonlines_reference_helpers import (
@@ -26,6 +21,11 @@ from tests.e2e.pipelines.jsonlines.jsonlines_reference_helpers import (
     canonicalize_entry,
     reconstructed_entries,
     reference_entries_from_duckdb,
+)
+from tests.helpers.table_readers import (
+    LOADER_FILE_FORMATS,
+    read_pipeline_tables,
+    run_and_read,
 )
 
 

@@ -22,17 +22,17 @@ from cdm_data_loaders.readers.xsv.models import (
     non_header_lines_present,
     prepend_header,
 )
-from tests.helpers.fixtures_xsv import (
-    COLUMNS,
-    VALID_ROWS,
-    WriteFile,
-    build_xsv_content,
-)
 from tests.cdm_data_loaders.readers.xsv._helpers import (
     DELIMITERS,
 )
 from tests.cdm_data_loaders.readers.xsv._helpers import (
     touch as _touch,
+)
+from tests.helpers.fixtures_xsv import (
+    COLUMNS,
+    VALID_ROWS,
+    WriteFile,
+    build_xsv_content,
 )
 
 """copy_safely and move_safely"""

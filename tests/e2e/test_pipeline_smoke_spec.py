@@ -24,6 +24,11 @@ from specs._loader.pipeline_spec import (
     load_pipeline_cases,
     load_settings_file,
 )
+from tests.e2e import framework
+from tests.e2e.framework import (
+    ExecutionMode,
+    PipelineTestRunner,
+)
 from tests.helpers.cli_assertions import make_cts_settings
 from tests.helpers.dlt_isolation import isolated_dlt_config, load_dlt_toml_files
 from tests.helpers.fs_backends import MOTO_AWS_CREDENTIALS
@@ -43,11 +48,6 @@ from tests.helpers.pipeline_env import (
     stage_input_directory,
 )
 from tests.helpers.table_readers import assert_smoke_run_output
-from tests.e2e import framework
-from tests.e2e.framework import (
-    ExecutionMode,
-    PipelineTestRunner,
-)
 
 PIPELINE_FAMILY_DIRS: dict[str, Path] = {
     p.name: p for p in sorted(PIPELINE_SPECS_DIR.iterdir()) if p.is_dir() and (p / "rules.yaml").is_file()

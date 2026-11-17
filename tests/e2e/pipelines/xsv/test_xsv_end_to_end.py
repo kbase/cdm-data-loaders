@@ -9,6 +9,7 @@ import pytest
 
 from cdm_data_loaders.core.fields import ICEBERG, PARQUET
 from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
+from tests.e2e.framework import PipelineTestRunner
 from tests.helpers.cli_assertions import settings_to_argv
 from tests.helpers.fixtures_xsv import (
     ALL_RAGGED_ROWS,
@@ -24,7 +25,6 @@ from tests.helpers.table_readers import (
     assert_pipeline_report_written,
     assert_run_ok,
 )
-from tests.e2e.framework import PipelineTestRunner
 
 pytestmark = pytest.mark.usefixtures("qsv_cmd")
 

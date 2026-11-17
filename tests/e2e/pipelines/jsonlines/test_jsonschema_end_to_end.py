@@ -14,6 +14,7 @@ from cdm_data_loaders.converters.facades.pyiceberg_to_jsonschema import table_to
 from cdm_data_loaders.converters.facades.pyiceberg_to_linkml import table_to_linkml
 from cdm_data_loaders.core.fields import ICEBERG, PARQUET
 from cdm_data_loaders.pipelines.jsonlines.settings import JSONSCHEMA_PIPELINE_NAME, JsonlJsonschemaIngestSettings
+from tests.e2e.framework import PipelineTestRunner
 from tests.helpers.cli_assertions import settings_to_argv
 from tests.helpers.table_readers import (
     LOADER_FILE_FORMATS,
@@ -23,7 +24,6 @@ from tests.helpers.table_readers import (
     parse_json_string,
     read_data_rows,
 )
-from tests.e2e.framework import PipelineTestRunner
 
 pytestmark = pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS, ids=str)
 

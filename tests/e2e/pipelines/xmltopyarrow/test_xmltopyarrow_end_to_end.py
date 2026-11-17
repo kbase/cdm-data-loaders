@@ -19,6 +19,7 @@ from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
     XmlToPyArrowSettings,
 )
+from tests.e2e.framework import PipelineTestRunner
 from tests.helpers.cli_assertions import settings_to_argv
 from tests.helpers.paths_and_constants import DEFAULT_DLT_TABLES, XSD_SPEC_DIR, copy_test_files
 from tests.helpers.table_readers import (
@@ -28,7 +29,6 @@ from tests.helpers.table_readers import (
     check_book_list_results,
 )
 from tests.helpers.xml_samples import SIMPLE_LIBRARY_XML
-from tests.e2e.framework import PipelineTestRunner
 
 
 @pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS)

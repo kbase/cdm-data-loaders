@@ -31,8 +31,8 @@ from cdm_data_loaders.datasets.uniprot.kb import (
 from cdm_data_loaders.pipelines.presets.uniprot_xml import UNIPROT_XSD_FILE
 from cdm_data_loaders.readers.xml import stream_xml_file
 from cdm_data_loaders.validation.xsd.traversal import load_schema
-from tests.helpers.paths_and_constants import TEST_DATA_DIR
 from tests.cdm_data_loaders.datasets.uniprot._helpers import wrap_entry_xml
+from tests.helpers.paths_and_constants import TEST_DATA_DIR
 
 UNIPROT_XSD = load_schema(UNIPROT_XSD_FILE)
 CONVERT_ENTRY = make_xml_element_converter(UNIPROT_XSD, "entry")

@@ -6,7 +6,6 @@ Cases, rules, and error fixtures are declared in manifests under
 ``docs_macros`` Jinja2 templates.
 """
 
-import json
 import math
 from pathlib import Path
 from typing import Any, Final
@@ -25,7 +24,6 @@ from cdm_data_loaders.coercion.arrow_to_records import (
 from cdm_data_loaders.converters.core.extensions import ExtensionRegistry
 from cdm_data_loaders.converters.exceptions.facades.pyarrow_to_jsonschema import (
     ERROR_BY_CODE,
-    PYARROW_TO_JSONSCHEMA_ERRORS,
     InvalidPyArrowSchemaError,
     PyArrowToJSONSchemaError,
     UnsupportedArrowTypeError,
@@ -38,6 +36,11 @@ from cdm_data_loaders.converters.facades.pyarrow_to_jsonschema import (
     resolve_scalar_type,
 )
 from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
+from tests.cdm_data_loaders.converters._helpers import (
+    JSON_SCHEMA_KEYWORDS,
+    iter_extension_keys,
+    iter_schema_keywords,
+)
 from tests.helpers.paths_and_constants import BASE_DIR
 from tests.helpers.pyarrow_spec import (
     load_fixture_attr,
@@ -45,11 +48,6 @@ from tests.helpers.pyarrow_spec import (
     load_input_table,
     load_json_object,
     load_json_records,
-)
-from tests.cdm_data_loaders.converters._helpers import (
-    JSON_SCHEMA_KEYWORDS,
-    iter_extension_keys,
-    iter_schema_keywords,
 )
 
 PYARROW_JS_DATA_DIR: Final[Path] = (BASE_DIR / "specs" / "schema_converters" / "pyarrow_to_jsonschema").resolve()

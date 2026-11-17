@@ -10,6 +10,12 @@ import dlt
 import duckdb
 import pytest
 
+from tests.e2e.pipelines.jsonlines.jsonlines_reference_helpers import (
+    EXPECTED_ENTRY_COUNT,
+    canonicalize_entry,
+    reconstructed_entries,
+    reference_entries_from_duckdb,
+)
 from tests.helpers.table_readers import (
     BUFFER_SIZES,
     LOADER_FILE_FORMATS,
@@ -18,12 +24,6 @@ from tests.helpers.table_readers import (
     read_pipeline_tables,
     run_and_compare_variations,
     run_and_read,
-)
-from tests.e2e.pipelines.jsonlines.jsonlines_reference_helpers import (
-    EXPECTED_ENTRY_COUNT,
-    canonicalize_entry,
-    reconstructed_entries,
-    reference_entries_from_duckdb,
 )
 
 CHUNK_DIRS = ("chunk_4", "chunk_10", "chunk_52")
