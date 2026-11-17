@@ -39,9 +39,9 @@ from cdm_data_loaders.core.transforms.hints import (
     OutputTableHints,
     propagate_run_hints_to_variants,
 )
-from cdm_data_loaders.pipelines import core
-from cdm_data_loaders.pipelines.core import run_pipeline
+from cdm_data_loaders.pipelines import runner as core
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
+from cdm_data_loaders.pipelines.runner import run_pipeline
 from tests.cdm_data_loaders.conftest import (
     HOOK_ENV_VAR,
     LOAD_INFO_SAVE_FAILED,

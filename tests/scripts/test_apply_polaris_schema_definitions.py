@@ -1,4 +1,4 @@
-"""Unit and integration tests for scripts.apply_polaris_schema_definitions."""
+"""Unit and integration tests for cdm_data_loaders.cli.polaris_schema_definitions."""
 
 import json
 from collections.abc import Generator
@@ -15,6 +15,12 @@ from pyiceberg.schema import Schema
 from pyiceberg.types import LongType, NestedField, StringType
 from pyiceberg.utils.config import Config
 
+from cdm_data_loaders.cli.polaris_schema_definitions import (
+    load_pyarrow_schema,
+)
+from cdm_data_loaders.cli.polaris_schema_definitions import (
+    main as cli_main,
+)
 from cdm_data_loaders.utils.iceberg.catalog import PolarisCatalogConfig, connect_polaris_catalog
 from cdm_data_loaders.utils.iceberg.cleanup import install_iceberg_catalog_cleanup
 from cdm_data_loaders.utils.iceberg.schema_sync import (
@@ -24,10 +30,6 @@ from cdm_data_loaders.utils.iceberg.schema_sync import (
     apply_schema_definitions_to_table,
     extract_metadata_definition,
     plan_schema_definitions,
-)
-from scripts.apply_polaris_schema_definitions import load_pyarrow_schema
-from scripts.apply_polaris_schema_definitions import (
-    main as cli_main,
 )
 from tests.dlt_config_isolation import isolated_dlt_config
 
@@ -499,7 +501,7 @@ def test_load_pyarrow_schema_sources_and_errors(tmp_path: Path) -> None:
 
     # 2. Dotted module + ArrowSchemaRegistry + schema_key
     reg_schema = load_pyarrow_schema(
-        "cdm_data_loaders.parsers.uniprot.idmapping:UNIPROT_IDMAPPING_OUTPUT_SCHEMAS",
+        "cdm_data_loaders.datasets.uniprot.idmapping:UNIPROT_IDMAPPING_OUTPUT_SCHEMAS",
         schema_key="id_mapping",
     )
     assert reg_schema.equals(id_mapping_schema, check_metadata=True)
@@ -590,7 +592,7 @@ def test_cli_main_applies_definitions_and_prints_json_report(
             "--table",
             f"{NAMESPACE}.id_mapping",
             "--schema-source",
-            "cdm_data_loaders.parsers.uniprot.idmapping:UNIPROT_IDMAPPING_OUTPUT_SCHEMAS",
+            "cdm_data_loaders.datasets.uniprot.idmapping:UNIPROT_IDMAPPING_OUTPUT_SCHEMAS",
             "--schema-key",
             "id_mapping",
         ]

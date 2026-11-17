@@ -1,5 +1,5 @@
 # Rule catalogue for the JSONLines Extract ingestion pipeline
-# (cdm_data_loaders.pipelines.jsonlines.extract_pipeline).
+# (cdm_data_loaders.pipelines.jsonlines.extract).
 #
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/jsonlines_extract_specification.md, rendered via docs_macros and docs/_templates/pages/pipeline_spec.md.j2.
@@ -8,10 +8,10 @@ title: JSONLines Extract Pipeline Specification
 pipeline: jsonlines_extract
 cli_command: jsonlines_extract
 settings_class: cdm_data_loaders.pipelines.jsonlines.settings.JsonlExtractSettings
-pipeline_runner: cdm_data_loaders.pipelines.jsonlines.extract_pipeline.run_jsonlines_pipeline
+pipeline_runner: cdm_data_loaders.pipelines.jsonlines.extract.run_jsonlines_pipeline
 intro: |
   This document specifies how the **JSONLines Extract ingestion pipeline**
-  (`cdm_data_loaders.pipelines.jsonlines.extract_pipeline` and `cdm_data_loaders.readers.jsonlines`)
+  (`cdm_data_loaders.pipelines.jsonlines.extract` and `cdm_data_loaders.readers.jsonl`)
   discovers, pre-processes, streams, transforms, and loads JSON Lines (`.jsonl` and `.jsonl.gz`)
   files into a single target table (or transform-routed tables) without an upfront schema:
 

@@ -18,7 +18,7 @@ Three schema converter entry points are registered in [`pyproject.toml`](https:/
 
 ### Generating Static PyArrow Modules from XSD (`xsd_to_pyarrow`)
 
-[`xsd_to_pyarrow`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/converters/cli/xsd_to_pyarrow.py) reads an `.xsd` schema and writes a formatted Python module containing reusable `pa.struct` components and `pa.Schema` definitions ([CLI options](cli_reference.md#xsd_to_pyarrow)):
+[`xsd_to_pyarrow`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/xsd_to_pyarrow.py) reads an `.xsd` schema and writes a formatted Python module containing reusable `pa.struct` components and `pa.Schema` definitions ([CLI options](cli_reference.md#xsd_to_pyarrow)):
 
 ```sh
 # generate a PyArrow schema module for a single repeating XML element (<entry>)
@@ -38,7 +38,7 @@ uv run xsd_to_pyarrow \
 
 ### Exporting Iceberg Catalog Schemas (`pyiceberg_to_jsonschema` and `pyiceberg_to_linkml`)
 
-[`pyiceberg_to_jsonschema`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/converters/cli/pyiceberg_to_jsonschema.py) ([CLI options](cli_reference.md#pyiceberg_to_jsonschema)) and [`pyiceberg_to_linkml`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/converters/cli/pyiceberg_to_linkml.py) ([CLI options](cli_reference.md#pyiceberg_to_linkml)) connect to a named PyIceberg catalog and export table schemas as Draft 2020-12 `.schema.json` or LinkML `.schema.yaml` files.
+[`pyiceberg_to_jsonschema`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/pyiceberg_to_jsonschema.py) ([CLI options](cli_reference.md#pyiceberg_to_jsonschema)) and [`pyiceberg_to_linkml`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/pyiceberg_to_linkml.py) ([CLI options](cli_reference.md#pyiceberg_to_linkml)) connect to a named PyIceberg catalog and export table schemas as Draft 2020-12 `.schema.json` or LinkML `.schema.yaml` files.
 
 Configure the catalog in `~/.pyiceberg.yaml` (or via `PYICEBERG_CATALOG__*` environment variables):
 

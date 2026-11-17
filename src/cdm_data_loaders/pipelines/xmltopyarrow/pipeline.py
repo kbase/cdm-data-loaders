@@ -1,29 +1,24 @@
-"""XML to pyarrow pipeline for the KBase CTS."""
+"""XML to PyArrow pipeline for the KBase CTS."""
 
 from dlt.common.pipeline import LoadInfo
 
 from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.filesystem import build_file_ingest_kwargs, build_per_file_filesystem_resource
-from cdm_data_loaders.pipelines.core import run_pipeline
+from cdm_data_loaders.pipelines.runner import run_pipeline
+from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
-    PubMedXmlToPyArrowSettings,
-    UniProtXmlToPyArrowSettings,
-    UniRef50XmlToPyArrowSettings,
-    UniRef90XmlToPyArrowSettings,
-    UniRef100XmlToPyArrowSettings,
     XmlToPyArrowSettings,
 )
-from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
 
 
 def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None:
-    """Run the XML to PyArrow pipeline on matching files in settings.input_dir.
+    """Run the XML to PyArrow pipeline on matching files in ``settings.input_dir``.
 
     :param settings: pipeline configuration
-    :type  settings: XmlToPyArrowSettings
-    :return: DLT pipeline LoadInfo or None
-    :rtype : LoadInfo | None
+    :type settings: XmlToPyArrowSettings
+    :return: DLT pipeline ``LoadInfo`` or ``None``
+    :rtype: LoadInfo | None
     """
     xmltopyarrow_resource = build_per_file_filesystem_resource(
         settings,
@@ -41,16 +36,6 @@ def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None
 
 
 cli = CliRunner(XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
-
-pubmed_cli = CliRunner(PubMedXmlToPyArrowSettings, run_xmltopyarrow_pipeline)
-
-uniprot_cli = CliRunner(UniProtXmlToPyArrowSettings, run_xmltopyarrow_pipeline)
-
-uniref50_cli = CliRunner(UniRef50XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
-
-uniref90_cli = CliRunner(UniRef90XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
-
-uniref100_cli = CliRunner(UniRef100XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 
 if __name__ == "__main__":
     cli()

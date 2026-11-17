@@ -25,15 +25,16 @@ from cdm_data_loaders.pipelines.jsonlines.exceptions import (
     JSONLINES_JSONSCHEMA_ERRORS,
     JsonlJsonschemaError,
 )
-from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
+from cdm_data_loaders.pipelines.jsonlines.jsonschema import (
     _make_resolve_error,
     run_jsonlines_pipeline,
 )
+from cdm_data_loaders.pipelines.jsonlines.routing import make_page_router
 from cdm_data_loaders.pipelines.jsonlines.settings import (
     JSONSCHEMA_PIPELINE_NAME,
     JsonlJsonschemaIngestSettings,
 )
-from cdm_data_loaders.readers.jsonlines import make_page_router, stream_jsonl_lines
+from cdm_data_loaders.readers.jsonl import stream_jsonl_lines
 from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_duckdb_pipeline
 from tests.conftest import PIPELINE_SPECS_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules

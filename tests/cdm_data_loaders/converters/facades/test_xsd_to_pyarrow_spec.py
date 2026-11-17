@@ -16,17 +16,21 @@ from _pytest.mark.structures import ParameterSet
 from lxml.etree import Element, fromstring, parse, tostring
 from pydantic import ValidationError
 
-import scripts.gen_pyarrow_schema as gen_pyarrow_schema_module
+import cdm_data_loaders.cli.xsd_to_pyarrow as xsd_to_pyarrow_cli_module
+from cdm_data_loaders.cli.xsd_to_pyarrow import (
+    CONFIGS as SCHEMA_CODEGEN_CONFIGS,
+)
+from cdm_data_loaders.cli.xsd_to_pyarrow import (
+    SchemaCodegenConfig,
+    render_schema_module,
+    run_bundled_codegen,
+)
+from cdm_data_loaders.cli.xsd_to_pyarrow import (
+    cli as xsd_to_pyarrow_cli,
+)
 from cdm_data_loaders.coercion.xml import (
     convert_xml_element,
     make_xml_level_converters,
-)
-from cdm_data_loaders.converters.cli.xsd_to_pyarrow import (
-    SchemaCodegenConfig,
-    render_schema_module,
-)
-from cdm_data_loaders.converters.cli.xsd_to_pyarrow import (
-    cli as xsd_to_pyarrow_cli,
 )
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.emitters.json_schema.emitter import JsonSchemaEmitter
@@ -96,12 +100,6 @@ from cdm_data_loaders.validation.xsd.traversal import (
     load_schema,
     resolve_elements_at_level,
     resolve_root_elements,
-)
-from scripts.gen_pyarrow_schema import (
-    CONFIGS as SCHEMA_CODEGEN_CONFIGS,
-)
-from scripts.gen_pyarrow_schema import (
-    main as gen_pyarrow_schema_main,
 )
 from tests.conftest import BASE_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
@@ -605,7 +603,7 @@ def test_component_schema_helpers_fail_non_struct_or_empty_inputs() -> None:
     ids=[c.output.parent.name for c in SCHEMA_CODEGEN_CONFIGS],
 )
 def test_precomputed_schema_modules_pass_match_generator_output(config: SchemaCodegenConfig) -> None:
-    """Committed uniref, uniprot, and pubmed schema.py modules match scripts.gen_pyarrow_schema output."""
+    """Committed uniref, uniprot, and pubmed schema.py modules match xsd_to_pyarrow codegen output."""
     assert config.output.read_text(encoding="utf-8") == render_schema_module(config)
 
 
@@ -614,8 +612,9 @@ def test_gen_pyarrow_schema_cli_pass_and_fail(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """xsd_to_pyarrow CLI and scripts.gen_pyarrow_schema.main support custom CLI args, --check, and default write mode."""
-    assert gen_pyarrow_schema_main(["--check"]) == 0
+    """xsd_to_pyarrow CLI supports custom CLI args, --bundled, --check, and default write mode."""
+    assert run_bundled_codegen(check=True) == 0
+    xsd_to_pyarrow_cli.run(cli_args=["--bundled", "--check"])
 
     uniref_xsd = XSD_DATA_DIR / "examples" / "uniref" / "uniref.xsd"
     level_out = tmp_path / "uniref_level.py"
@@ -637,13 +636,15 @@ def test_gen_pyarrow_schema_cli_pass_and_fail(
         docstring="Temporary configured schema.",
         xml_level=1,
     )
-    monkeypatch.setattr(gen_pyarrow_schema_module, "CONFIGS", (temp_cfg,))
-    assert gen_pyarrow_schema_main(["--check"]) == 1
+    monkeypatch.setattr(xsd_to_pyarrow_cli_module, "CONFIGS", (temp_cfg,))
+    with pytest.raises(SystemExit) as exc_info:
+        xsd_to_pyarrow_cli.run(cli_args=["--bundled", "--check"])
+    assert exc_info.value.code == 1
     assert "stale:" in capsys.readouterr().err
 
-    assert gen_pyarrow_schema_main([]) == 0
+    xsd_to_pyarrow_cli.run(cli_args=["--bundled"])
     assert stale_target.is_file()
-    assert gen_pyarrow_schema_main(["--check"]) == 0
+    xsd_to_pyarrow_cli.run(cli_args=["--bundled", "--check"])
 
 
 def test_render_schema_module_pass_codegen_rules_and_formatting(tmp_path: Path) -> None:

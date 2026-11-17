@@ -26,11 +26,11 @@ from hypothesis import strategies as st
 from pydantic import BaseModel, Field, SecretStr, TypeAdapter, ValidationError
 
 from cdm_data_loaders.coercion.pydantic_to_arrow import coerce_pydantic_record_for_pyarrow
-from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
+from cdm_data_loaders.pipelines.jsonlines.pydantic import (
     build_entity_resource,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
-from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from tests.cdm_data_loaders.converters.facades.test_pydantic_to_pyarrow_pbt import (
     pydantic_raw_inputs_for_model,
 )

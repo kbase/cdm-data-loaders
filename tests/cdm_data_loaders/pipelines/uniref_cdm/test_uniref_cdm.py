@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cdm_data_loaders.core.cli import CliRunner
-from cdm_data_loaders.pipelines.uniref_cdm import UniRefCdmSettings
+from cdm_data_loaders.pipelines.presets.uniprot_cdm import UniRefCdmSettings
 from cdm_data_loaders.pipelines.xmltopyarrow import pipeline as xmltopyarrow_pipeline_module
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
 from tests.cdm_data_loaders.pipelines.uniref_cdm.conftest import UNIREF_CDM_VARIANTS

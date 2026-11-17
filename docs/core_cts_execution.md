@@ -56,10 +56,8 @@ docker run --rm \
 In Python, instantiate the pipeline's settings class and pass it to the pipeline runner (or call `CliRunner.run()` from [`src/cdm_data_loaders/core/cli.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/cli.py)):
 
 ```python
-from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import (
-    JsonlExtractSettings,
-    run_jsonlines_pipeline,
-)
+from cdm_data_loaders.pipelines.jsonlines.extract import run_jsonlines_pipeline
+from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 
 settings = JsonlExtractSettings(
     input_dir="/path/to/input_dir",
@@ -80,7 +78,7 @@ Pipelines in production run on the **KBase CDM Task Service (CTS)**. CTS enforce
 
 > **CTS only uploads the contents of `/output_dir` (and pipeline artifacts written there) if the container exits with exit code `0`.** If a container exits with a non-zero exit code, CTS captures `STDOUT` and `STDERR` logs, **but discards everything written to `/output_dir`**.
 
-To preserve diagnostic artifacts, `CliRunner` ([`src/cdm_data_loaders/core/cli.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/cli.py)) and `run_pipeline()` ([`src/cdm_data_loaders/pipelines/core.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/core.py)) separate failures by phase:
+To preserve diagnostic artifacts, `CliRunner` ([`src/cdm_data_loaders/core/cli.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/cli.py)) and `run_pipeline()` ([`src/cdm_data_loaders/pipelines/runner.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/runner.py)) separate failures by phase:
 
 - **Pre-execution configuration, CLI, and destination validation errors (non-zero exit)**:
   Errors raised during CLI settings parsing (missing required flags, invalid file paths, unknown options, or invalid transform/preprocessor modules) or invalid `use_destination` lookup occur before pipeline extraction starts. Because no output artifacts exist yet, these errors raise and terminate the process with a non-zero exit code so CTS flags the task failure and records `STDERR`.

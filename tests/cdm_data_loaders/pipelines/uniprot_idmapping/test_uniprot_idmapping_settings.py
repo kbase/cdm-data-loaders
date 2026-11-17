@@ -12,11 +12,11 @@ from pydantic_settings import CliApp, SettingsError
 
 from cdm_data_loaders.core.transforms.introspection import accepts_pyarrow_table
 from cdm_data_loaders.core.transforms.routing import emit_raw_table
-from cdm_data_loaders.parsers.uniprot.idmapping import (
+from cdm_data_loaders.datasets.uniprot.idmapping import (
     UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
     transform_uniprot_id_mapping,
 )
-from cdm_data_loaders.pipelines.uniprot_idmapping import (
+from cdm_data_loaders.pipelines.presets.uniprot_idmapping import (
     DEFAULT_IDMAPPING_FILE_GLOB,
     DEFAULT_PARTITION_BUCKETS,
     PIPELINE_NAME,

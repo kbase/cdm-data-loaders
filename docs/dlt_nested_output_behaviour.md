@@ -8,8 +8,8 @@ This guide summarises how `dlt` normalizes and writes nested records across Pyth
 
 - **Characterisation test suite**: [`tests/dependencies/test_dlt_nested_output_behaviour.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/dependencies/test_dlt_nested_output_behaviour.py)
 - **JSONL resource and transformer setup**: [`src/cdm_data_loaders/pipelines/jsonlines/base.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/base.py)
-- **Destination-level `max_table_nesting` example**: [`src/cdm_data_loaders/pipelines/all_the_bacteria.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/all_the_bacteria.py)
-- **Shared pipeline runner (`destination_kwargs`)**: [`src/cdm_data_loaders/pipelines/core.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/core.py)
+- **Destination-level `max_table_nesting` example**: [`src/cdm_data_loaders/pipelines/all_the_bacteria/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/all_the_bacteria/pipeline.py)
+- **Shared pipeline runner (`destination_kwargs`)**: [`src/cdm_data_loaders/pipelines/runner.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/runner.py)
 - **Companion PyArrow schema and metadata guide**: [`dlt` PyArrow Table and Column Definitions](dlt_pyarrow_definitions.md)
 
 ---
@@ -50,7 +50,7 @@ The test suite runs 30 parametrized pipeline executions across three axes, routi
 
 Key placement rules:
 
-- **Transformer-emitted `dict` pages**: set `max_table_nesting=0` on `@dlt.transformer` (`transformer_only` or `resource_and_transformer`), as done in [`build_entity_resource`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/base.py), or pass `destination_kwargs={"max_table_nesting": 0}` to `run_pipeline`, as done in [`run_atb_pipeline`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/all_the_bacteria.py).
+- **Transformer-emitted `dict` pages**: set `max_table_nesting=0` on `@dlt.transformer` (`transformer_only` or `resource_and_transformer`), as done in [`build_entity_resource`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/base.py), or pass `destination_kwargs={"max_table_nesting": 0}` to `run_pipeline`, as done in [`run_atb_pipeline`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/all_the_bacteria/pipeline.py).
 - **`pyarrow.Table` pages**: `dlt` bypasses its relational normalizer for Arrow tables. Every placement produces one `widget` table with native nested types and no `_dlt_*` columns.
 
 ---

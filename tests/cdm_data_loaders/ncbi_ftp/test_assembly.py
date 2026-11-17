@@ -4,7 +4,7 @@ from pathlib import PurePosixPath
 
 import pytest
 
-from cdm_data_loaders.ncbi_ftp.assembly import (
+from cdm_data_loaders.datasets.ncbi_ftp.assembly import (
     build_accession_path,
     parse_assembly_path,
 )

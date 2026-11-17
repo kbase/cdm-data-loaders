@@ -8,6 +8,7 @@ import markdown
 import pytest
 from zensical.extensions.macros import MacroEnv, _load_module
 
+from cdm_data_loaders.cli.xsd_to_pyarrow import check_or_write_files
 from docs_macros import define_env
 from docs_macros.__main__ import main as docs_macros_cli_main
 from docs_macros.cli_context import (
@@ -63,7 +64,6 @@ from docs_macros.spec_context import (
     discover_converter_specs,
 )
 from docs_macros.tables_context import TABLE_TEMPLATE_REGISTRY
-from scripts.gen_pyarrow_schema import check_or_write_files
 from tests.docs.conftest import pytest_ignore_collect
 from tests.docs.helpers import (
     FRONT_MATTER_RE,
@@ -165,7 +165,7 @@ def test_discover_and_render_bundled_schemas_and_published_jsonschemas_pass() ->
     assert "cdm_data_loaders.core.filesystem" in module_paths
     assert "cdm_data_loaders.core.reporting" in module_paths
     assert "cdm_data_loaders.core.settings" in module_paths
-    assert "cdm_data_loaders.pipelines.core" in module_paths
+    assert "cdm_data_loaders.pipelines.runner" in module_paths
     assert "cdm_data_loaders.utils.iceberg.cleanup" in module_paths
 
     assert not (DOCS_DIR / "schema_source").exists()

@@ -13,7 +13,7 @@ from cdm_data_loaders.core.fields import (
     PREPROCESSORS_MODULE,
     LoaderFileFormatEnum,
 )
-from cdm_data_loaders.pipelines.uniref_cdm import (
+from cdm_data_loaders.pipelines.presets.uniprot_cdm import (
     UNIREF50_CDM,
     UNIREF90_CDM,
     UNIREF100_CDM,
@@ -25,7 +25,7 @@ from cdm_data_loaders.pipelines.uniref_cdm import (
     uniref90_cdm_cli,
     uniref100_cdm_cli,
 )
-from cdm_data_loaders.pipelines.xmltopyarrow.settings import UNIREF_XSD_FILE
+from cdm_data_loaders.pipelines.presets.uniprot_xml import UNIREF_XSD_FILE
 
 type UniRefCliRunner = CliRunner[UniRefCdmSettings, LoadInfo | None]
 

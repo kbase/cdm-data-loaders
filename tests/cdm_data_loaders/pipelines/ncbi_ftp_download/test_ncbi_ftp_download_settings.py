@@ -1,15 +1,16 @@
-"""Tests for pipelines.ncbi_ftp_download — settings, batch orchestration, CLI."""
+"""Tests for cli.ncbi_ftp_sync — settings and CLI shortcuts."""
 
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from pydantic_settings import CliApp
 
-from cdm_data_loaders.core.fields import INPUT_MOUNT, OUTPUT_MOUNT
-from cdm_data_loaders.ncbi_ftp.constants import FTP_HOST
-from cdm_data_loaders.pipelines.ncbi_ftp_download import (
+from cdm_data_loaders.cli.ncbi_ftp_sync import (
     DownloadSettings,
 )
+from cdm_data_loaders.core.fields import INPUT_MOUNT, OUTPUT_MOUNT
+from cdm_data_loaders.datasets.ncbi_ftp.constants import FTP_HOST
 
 DEFAULT_THREADS = 4
 CUSTOM_THREADS = 8
@@ -49,18 +50,6 @@ ALIAS_SETTINGS = {
 SETTINGS_CASES = [
     pytest.param(({}, DEFAULT_SETTINGS), id="defaults"),
     pytest.param((dict(ALL_PARAMS_SETTINGS), ALL_PARAMS_SETTINGS), id="all_params"),
-    pytest.param(
-        (
-            {
-                "m": ALIAS_SETTINGS["manifest"],
-                "output_dir": ALIAS_SETTINGS["output_dir"],
-                "t": ALIAS_SETTINGS["threads"],
-                "l": ALIAS_SETTINGS["limit"],
-            },
-            ALIAS_SETTINGS,
-        ),
-        id="aliases",
-    ),
 ]
 
 invalid_settings = [
@@ -72,10 +61,29 @@ invalid_settings = [
 
 @pytest.mark.parametrize("case", SETTINGS_CASES)
 def test_settings_resolve_expected_values(case: tuple) -> None:
-    """Defaults, explicit params, and CLI aliases all resolve to the expected settings values."""
+    """Defaults and explicit params resolve to the expected settings values."""
     kwargs, expected = case
     s = DownloadSettings(**kwargs)
     for field, expected_value in expected.items():
+        assert getattr(s, field) == expected_value
+
+
+def test_settings_cli_shortcuts_resolve_expected_values() -> None:
+    """CLI short flags (-m, -t, -l) resolve to the expected DownloadSettings fields."""
+    s = CliApp.run(
+        DownloadSettings,
+        cli_args=[
+            "-m",
+            str(ALIAS_SETTINGS["manifest"]),
+            "--output-dir",
+            str(ALIAS_SETTINGS["output_dir"]),
+            "-t",
+            str(ALIAS_SETTINGS["threads"]),
+            "-l",
+            str(ALIAS_SETTINGS["limit"]),
+        ],
+    )
+    for field, expected_value in ALIAS_SETTINGS.items():
         assert getattr(s, field) == expected_value
 
 

@@ -12,11 +12,9 @@ from pathlib import Path, PurePosixPath
 import pytest
 from types_boto3_s3 import S3Client
 
-from cdm_data_loaders.ncbi_ftp.manifest import (
-    compute_diff,
-    write_transfer_manifest,
-)
-from cdm_data_loaders.pipelines.ncbi_ftp_download import download_and_stage, download_batch
+from cdm_data_loaders.datasets.ncbi_ftp.download import download_and_stage, download_batch
+from cdm_data_loaders.datasets.ncbi_ftp.manifest import write_transfer_manifest
+from cdm_data_loaders.datasets.ncbi_ftp.summary import compute_diff
 from tests.integration.conftest import STABLE_PREFIX, download_and_filter_refseq, list_all_keys, s3_backends
 
 

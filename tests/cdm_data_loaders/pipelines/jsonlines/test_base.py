@@ -16,12 +16,12 @@ from pydantic import BaseModel
 import cdm_data_loaders.pipelines.jsonlines.base as jsonlines_base_module
 from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-from cdm_data_loaders.pipelines.core import DEFAULT_SCHEMA_CONTRACT
 from cdm_data_loaders.pipelines.jsonlines.base import (
     build_entity_resource,
     run_registry_ingest,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
+from cdm_data_loaders.pipelines.runner import DEFAULT_SCHEMA_CONTRACT
 from tests.helpers import register_temp_module
 
 

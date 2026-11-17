@@ -1,4 +1,4 @@
-"""Unit tests for cdm_data_loaders.ncbi_ftp.metadata."""
+"""Unit tests for cdm_data_loaders.datasets.ncbi_ftp.metadata."""
 
 import json
 import time
@@ -10,8 +10,9 @@ from urllib.parse import urlparse
 import pytest
 from types_boto3_s3.client import S3Client
 
-import cdm_data_loaders.ncbi_ftp.metadata as metadata_mod
-from cdm_data_loaders.ncbi_ftp.metadata import (
+import cdm_data_loaders.datasets.ncbi_ftp.metadata as metadata_mod
+from cdm_data_loaders.datasets.ncbi_ftp.constants import DEFAULT_DESTINATION_PREFIX
+from cdm_data_loaders.datasets.ncbi_ftp.metadata import (
     DescriptorResource,
     archive_descriptor,
     build_archive_descriptor_key,
@@ -20,7 +21,6 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
     upload_descriptor,
     validate_descriptor,
 )
-from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREFIX
 from tests.cdm_data_loaders.ncbi_ftp.conftest import TEST_BUCKET
 
 ACCESSION = "GCF_000001215.4"

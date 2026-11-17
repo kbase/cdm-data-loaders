@@ -7,7 +7,7 @@ import duckdb
 import pyarrow as pa
 import pytest
 
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import (
+from cdm_data_loaders.readers.xsv.duckdb_reader import (
     read_validated_rows,
     resolve_duckdb_column_config,
     resolve_xsv_parsing_config,

@@ -11,7 +11,7 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.transforms import BucketTransform
 
 import cdm_data_loaders.pipelines.xsv.pipeline as xsv_pipeline_module
-from cdm_data_loaders.pipelines.uniprot_idmapping import (
+from cdm_data_loaders.pipelines.presets.uniprot_idmapping import (
     DEFAULT_PARTITION_BUCKETS,
     PIPELINE_NAME,
     UniProtIdMappingSettings,
@@ -127,7 +127,7 @@ def test_run_xsv_pipeline_uniprot_idmapping_duckdb_multi_file_and_rejections(
 
 @pytest.mark.usefixtures("qsv_cmd")
 def test_run_xsv_pipeline_generic_settings_with_idmapping_transforms_module(tmp_path: Path) -> None:
-    """Generic XsvIngestSettings runs cdm_data_loaders.parsers.uniprot.idmapping via --transforms-module and --output-schemas-module."""
+    """Generic XsvIngestSettings runs cdm_data_loaders.datasets.uniprot.idmapping via --transforms-module and --output-schemas-module."""
     input_dir = tmp_path / "xsv_in"
     input_dir.mkdir()
     (input_dir / "YEAST_idmapping.dat").write_text("P00549\tGeneID\t851487\n", encoding="utf-8")
@@ -140,8 +140,8 @@ def test_run_xsv_pipeline_generic_settings_with_idmapping_transforms_module(tmp_
         table_name=ID_MAPPING_TABLE_NAME,
         file_glob="*.dat",
         schema_file=str(IDMAPPING_SCHEMA_FILE),
-        transforms_module="cdm_data_loaders.parsers.uniprot.idmapping",
-        output_schemas_module="cdm_data_loaders.parsers.uniprot.idmapping",
+        transforms_module="cdm_data_loaders.datasets.uniprot.idmapping",
+        output_schemas_module="cdm_data_loaders.datasets.uniprot.idmapping",
         use_destination=LOCAL_FS,
     )
 

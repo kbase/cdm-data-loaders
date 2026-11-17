@@ -1,5 +1,5 @@
 # Rule catalogue for the XSV (CSV/TSV) converter and ingestion pipeline
-# (cdm_data_loaders.pipelines.xsv & cdm_data_loaders.readers.jsonschema_xsv).
+# (cdm_data_loaders.pipelines.xsv and cdm_data_loaders.readers.xsv).
 #
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/xsv_specification.md, rendered via docs_macros and docs/_templates/pages/pipeline_spec.md.j2.
@@ -11,7 +11,7 @@ settings_class: cdm_data_loaders.pipelines.xsv.settings.XsvIngestSettings
 pipeline_runner: cdm_data_loaders.pipelines.xsv.pipeline.run_xsv_pipeline
 intro: |
   This document specifies how an **XSV JSON Schema** (Draft 2020-12 or the KBase Draft 2020-12 XSV metaschema)
-  and the **XSV ingestion pipeline** (`cdm_data_loaders.pipelines.xsv` and `cdm_data_loaders.readers.jsonschema_xsv`)
+  and the **XSV ingestion pipeline** (`cdm_data_loaders.pipelines.xsv` and `cdm_data_loaders.readers.xsv`)
   determine:
 
   1. **Schema validation and `x-xsv-config` parser configuration** (`validate_jsonschema`, `resolve_xsv_parsing_config`).

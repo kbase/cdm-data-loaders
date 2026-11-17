@@ -21,6 +21,7 @@ from dlt.sources.filesystem import filesystem
 
 import cdm_data_loaders.pipelines.xsv.pipeline as xsv_pipeline_module
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import convert_xsv_schema_to_pyarrow
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.pipelines.xsv.exceptions import (
     XSV_SCHEMA_ERRORS,
@@ -31,7 +32,6 @@ from cdm_data_loaders.pipelines.xsv.settings import (
     PIPELINE_NAME,
     XsvIngestSettings,
 )
-from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.validation.jsonschema.models import validate_xsv_jsonschema
 from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_duckdb_pipeline
 from tests.conftest import PIPELINE_SPECS_DIR

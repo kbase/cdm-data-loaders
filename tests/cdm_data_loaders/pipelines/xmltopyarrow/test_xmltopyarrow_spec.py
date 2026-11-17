@@ -22,20 +22,20 @@ from pydantic import ValidationError
 import cdm_data_loaders.pipelines.xmltopyarrow.pipeline as xml_pipeline_module
 from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.pipelines.presets.pubmed import PubMedXmlToPyArrowSettings
+from cdm_data_loaders.pipelines.presets.uniprot_xml import UniProtXmlToPyArrowSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.exceptions import (
     XMLTOPYARROW_CONFIG_ERRORS,
     XmlToPyArrowConfigError,
 )
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
+from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
-    PUBMED_SCHEMAS,
-    UNIPROT_SCHEMA,
-    PubMedXmlToPyArrowSettings,
-    UniProtXmlToPyArrowSettings,
     XmlToPyArrowSettings,
 )
-from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
+from cdm_data_loaders.schemas.pubmed.schema import SCHEMAS as PUBMED_SCHEMAS
+from cdm_data_loaders.schemas.uniprot.schema import SCHEMA as UNIPROT_SCHEMA
 from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_duckdb_pipeline
 from tests.conftest import PIPELINE_SPECS_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules

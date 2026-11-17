@@ -134,7 +134,7 @@ uv run xsd_to_pyarrow \
 
 ## Running bbmap stats and checkm2 on genome or contigset files
 
-[`scripts/run_tools.sh`](scripts/run_tools.sh) runs the stats script from [bbmap](https://sourceforge.net/projects/bbmap/) and [checkm2](https://github.com/chklovski/CheckM2) on genome FASTA (`fna`) files listed in a genome paths JSON file (parsed downstream by [`bbmap_stats.py`](src/cdm_data_loaders/parsers/bbmap_stats.py) and [`checkm2.py`](src/cdm_data_loaders/parsers/checkm2.py)):
+[`scripts/ops/run_tools.sh`](scripts/ops/run_tools.sh) runs the stats script from [bbmap](https://sourceforge.net/projects/bbmap/) and [checkm2](https://github.com/chklovski/CheckM2) on genome FASTA (`fna`) files listed in a genome paths JSON file (parsed downstream by [`bbmap_stats.py`](src/cdm_data_loaders/parsers/bbmap_stats.py) and [`checkm2.py`](src/cdm_data_loaders/parsers/checkm2.py)):
 
 ```json
 {
@@ -163,7 +163,7 @@ checkm2 database --download
 Run the stats and checkm2 tools with the following command:
 
 ```sh
-bash scripts/run_tools.sh path/to/genome_paths_file.json output_dir
+bash scripts/ops/run_tools.sh path/to/genome_paths_file.json output_dir
 ```
 
 where `path/to/genome_paths_file.json` specifies the path to the genome paths file (format specified above) and `output_dir` is the directory for the results.

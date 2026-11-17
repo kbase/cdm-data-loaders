@@ -14,13 +14,13 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
 from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.registry import TransformContext
 from cdm_data_loaders.core.transforms.routing import emit_raw_table
-from cdm_data_loaders.parsers.uniprot.idmapping import (
+from cdm_data_loaders.datasets.uniprot.idmapping import (
     OUTPUT_SCHEMAS,
     TABLE_TRANSFORMS,
     UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
     transform_uniprot_id_mapping,
 )
-from cdm_data_loaders.pipelines.uniprot_idmapping import (
+from cdm_data_loaders.pipelines.presets.uniprot_idmapping import (
     PIPELINE_NAME,
     UniProtIdMappingSettings,
     cli,
@@ -75,8 +75,8 @@ def test_import_uniprot_idmapping_modules_does_not_mutate_jsonschema_registry(
     """Importing UniProt ID mapping schema, parser, and pipeline modules leaves XSV metaschema state untouched."""
     target_modules = (
         "cdm_data_loaders.schemas.uniprot.idmapping.schema",
-        "cdm_data_loaders.parsers.uniprot.idmapping",
-        "cdm_data_loaders.pipelines.uniprot_idmapping",
+        "cdm_data_loaders.datasets.uniprot.idmapping",
+        "cdm_data_loaders.pipelines.presets.uniprot_idmapping",
     )
     for mod_name in target_modules:
         parent_name, _, child_attr = mod_name.rpartition(".")
@@ -89,7 +89,7 @@ def test_import_uniprot_idmapping_modules_does_not_mutate_jsonschema_registry(
     assert CUSTOM_META_SCHEMA_URI not in vars(jsonschema.validators)["_VALIDATORS"]
     assert CUSTOM_META_SCHEMA_URI not in vars(jsonschema.validators)["_META_SCHEMAS"]
 
-    importlib.import_module("cdm_data_loaders.pipelines.uniprot_idmapping")
+    importlib.import_module("cdm_data_loaders.pipelines.presets.uniprot_idmapping")
 
     assert get_xsv_meta_schema.cache_info().currsize == 0
     assert CUSTOM_META_SCHEMA_URI not in vars(jsonschema.validators)["_VALIDATORS"]

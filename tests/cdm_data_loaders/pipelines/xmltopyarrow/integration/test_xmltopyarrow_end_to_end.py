@@ -5,8 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
-    PIPELINE_NAME,
+from cdm_data_loaders.pipelines.presets.uniprot_xml import (
     UNIPROT_PIPELINE_NAME,
     UNIREF_FIFTY,
     UNIREF_HUNDRED,
@@ -15,6 +14,9 @@ from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     UniRef50XmlToPyArrowSettings,
     UniRef90XmlToPyArrowSettings,
     UniRef100XmlToPyArrowSettings,
+)
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
+    PIPELINE_NAME,
     XmlToPyArrowSettings,
 )
 from tests.cdm_data_loaders.pipelines.conftest import DEFAULT_DLT_TABLES, copy_test_files

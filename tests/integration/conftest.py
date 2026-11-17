@@ -20,8 +20,8 @@ from types_boto3_s3 import S3Client
 
 from cdm_data_loaders.io.s3 import client
 from cdm_data_loaders.io.s3.client import _client_config, reset_s3_client
-from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
-from cdm_data_loaders.ncbi_ftp.manifest import (
+from cdm_data_loaders.datasets.ncbi_ftp.assembly import build_accession_path
+from cdm_data_loaders.datasets.ncbi_ftp.summary import (
     AssemblyRecord,
     download_assembly_summary,
     filter_by_prefix_range,

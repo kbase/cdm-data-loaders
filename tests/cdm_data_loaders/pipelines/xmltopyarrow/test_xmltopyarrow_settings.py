@@ -21,26 +21,30 @@ from cdm_data_loaders.core.fields import DEFAULTS
 from cdm_data_loaders.core.md5_preprocessor import validate_md5_sidecar
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.core.settings import CtsSettings
-from cdm_data_loaders.pipelines.xml_common import XML_GZ_FILE_GLOB
-from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
-    ENTRY_TABLE_NAME,
-    ENTRY_XML_TAG,
+from cdm_data_loaders.pipelines.presets.pubmed import (
     PUBMED_PIPELINE_NAME,
     PUBMED_ROOT_TAG,
     PUBMED_XSD_FILE,
+    PubMedXmlToPyArrowSettings,
+)
+from cdm_data_loaders.pipelines.presets.uniprot_xml import (
     UNIPROT_PIPELINE_NAME,
     UNIPROT_XSD_FILE,
     UNIREF_FIFTY,
     UNIREF_HUNDRED,
     UNIREF_NINETY,
     UNIREF_XSD_FILE,
-    LevelPresetXmlToPyArrowSettings,
-    PresetXmlToPyArrowSettings,
-    PubMedXmlToPyArrowSettings,
     UniProtXmlToPyArrowSettings,
     UniRef50XmlToPyArrowSettings,
     UniRef90XmlToPyArrowSettings,
     UniRef100XmlToPyArrowSettings,
+)
+from cdm_data_loaders.pipelines.xml_common import XML_GZ_FILE_GLOB
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
+    ENTRY_TABLE_NAME,
+    ENTRY_XML_TAG,
+    LevelPresetXmlToPyArrowSettings,
+    PresetXmlToPyArrowSettings,
     XmlToPyArrowSettings,
 )
 from cdm_data_loaders.schemas.pubmed.schema import SCHEMAS as PUBMED_SCHEMAS

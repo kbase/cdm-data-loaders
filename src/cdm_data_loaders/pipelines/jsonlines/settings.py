@@ -1,7 +1,7 @@
 """Setting for the JSONL validate-and-load pipeline for the KBase CTS."""
 
 from logging import Logger, getLogger
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Final
+from typing import TYPE_CHECKING, Annotated, Any, Final
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -67,8 +67,6 @@ DEFAULT_JSONL_FILE_GLOB: Final[str] = "*.jsonl*"
 EXTRACT_PIPELINE_NAME: Final[str] = "jsonlines_extract"
 PYDANTIC_PIPELINE_NAME: Final[str] = "jsonlines_pydantic"
 JSONSCHEMA_PIPELINE_NAME: Final[str] = "jsonlines_jsonschema"
-NCBI_DATASETS_PIPELINE_NAME: Final[str] = "ncbi_datasets"
-NCBI_DATASETS_SCHEMA_MODULE: Final[str] = "cdm_data_loaders.datasets.ncbi_datasets.hooks"
 
 ENTITY_MODELS_MODULE: Final[str] = "entity_models"
 ENTITY_SCHEMAS_MODULE: Final[str] = "entity_schemas"
@@ -256,8 +254,9 @@ class JsonlPydanticIngestSettings(JsonlIngestSettings, TransformSettingsMixin):
         ),
     ]
 
-    def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:  # noqa: ARG002
-        """Load and validate the entity registry from the configured module and resolve `_schema_map`."""
+    def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
+        """Load and validate the entity registry from the configured module and resolve ``_schema_map``."""
+        del default_pyarrow_schema
         self._model_registry = load_registry_dict(self.entity_models, "ENTITY_MODELS")
         self._resolve_entity_registry_schema_map(self._model_registry)
 
@@ -288,8 +287,9 @@ class JsonlJsonschemaIngestSettings(JsonlIngestSettings, TransformSettingsMixin)
         ),
     ]
 
-    def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:  # noqa: ARG002
+    def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
         """Load and validate the schema registry and precompute PyArrow schemas."""
+        del default_pyarrow_schema
         try:
             self._schema_registry = load_registry_dict(self.entity_schemas, "ENTITY_SCHEMAS")
         except Exception as exc:
@@ -300,17 +300,3 @@ class JsonlJsonschemaIngestSettings(JsonlIngestSettings, TransformSettingsMixin)
     def schema_registry(self) -> SchemaRegistry:
         """The loaded `ENTITY_SCHEMAS` mapping."""
         return self._schema_registry
-
-
-class NcbiDatasetsSettings(JsonlJsonschemaIngestSettings):
-    """Pipeline settings for NCBI Datasets JSONL ingestion (`annotation_report` and `dataset_report`)."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=NCBI_DATASETS_PIPELINE_NAME,
-        cli_shortcuts=select_cli_shortcuts(LOCAL_CLI_SHORTCUTS, FILE_GLOB),  # pyright: ignore[reportArgumentType]
-    )
-
-    dataset_name: ClassVar[str] = NCBI_DATASETS_PIPELINE_NAME
-    entity_schemas: ClassVar[str] = NCBI_DATASETS_SCHEMA_MODULE
-    transforms_module: ClassVar[str | None] = NCBI_DATASETS_SCHEMA_MODULE
-    output_schemas_module: ClassVar[str | None] = NCBI_DATASETS_SCHEMA_MODULE

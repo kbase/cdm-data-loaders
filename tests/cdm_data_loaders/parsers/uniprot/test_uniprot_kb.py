@@ -7,10 +7,10 @@ from typing import Any
 import pytest
 from lxml.etree import XMLParser, fromstring
 
-import cdm_data_loaders.parsers.uniprot.uniprot_kb as uniprot_kb_module
+import cdm_data_loaders.datasets.uniprot.kb as uniprot_kb_module
 from cdm_data_loaders.coercion.xml import make_xml_element_converter
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-from cdm_data_loaders.parsers.uniprot.uniprot_kb import (
+from cdm_data_loaders.datasets.uniprot.kb import (
     DB,
     DESCRIPTION,
     ENTITY_ID,
@@ -28,7 +28,7 @@ from cdm_data_loaders.parsers.uniprot.uniprot_kb import (
     parse_references,
     parse_uniprot_entry,
 )
-from cdm_data_loaders.pipelines.xmltopyarrow.settings import UNIPROT_XSD_FILE
+from cdm_data_loaders.pipelines.presets.uniprot_xml import UNIPROT_XSD_FILE
 from cdm_data_loaders.readers.xml import stream_xml_file
 from cdm_data_loaders.validation.xsd.traversal import load_schema
 from tests.cdm_data_loaders.parsers.conftest import wrap_entry_xml

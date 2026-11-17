@@ -10,8 +10,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator import qsv
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
+from cdm_data_loaders.readers.xsv import qsv
+from cdm_data_loaders.readers.xsv.models import (
     CLEANED_SUFFIX,
     HEADER_SUFFIX,
     SEP_TO_EXT,

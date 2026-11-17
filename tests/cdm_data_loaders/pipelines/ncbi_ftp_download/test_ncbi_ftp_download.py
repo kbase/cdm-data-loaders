@@ -1,4 +1,4 @@
-"""Tests for pipelines.ncbi_ftp_download — settings, batch orchestration, CLI."""
+"""Tests for datasets.ncbi_ftp.download — batch download and S3 staging."""
 
 import json
 from collections.abc import Generator
@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from types_boto3_s3 import S3Client
 
-from cdm_data_loaders.pipelines.ncbi_ftp_download import (
+from cdm_data_loaders.datasets.ncbi_ftp.download import (
     download_and_stage,
     download_batch,
 )
@@ -34,9 +34,9 @@ def _patch_ftp_download(
 ) -> Generator[MagicMock]:
     """Patch ``ThreadLocalFTP`` and ``download_assembly_to_local`` in ``ncbi_ftp_download``."""
     with (
-        patch("cdm_data_loaders.pipelines.ncbi_ftp_download.ThreadLocalFTP"),
+        patch("cdm_data_loaders.datasets.ncbi_ftp.download.ThreadLocalFTP"),
         patch(
-            "cdm_data_loaders.pipelines.ncbi_ftp_download.download_assembly_to_local",
+            "cdm_data_loaders.datasets.ncbi_ftp.download.download_assembly_to_local",
             return_value=return_value,
             side_effect=side_effect,
         ) as mock_dl,
@@ -405,7 +405,7 @@ def test_download_and_stage_pass_missing_dir_and_upload_failure(tmp_path: Path) 
     with (
         _patch_ftp_download(side_effect=_fake_download),
         patch(
-            "cdm_data_loaders.pipelines.ncbi_ftp_download.upload_file",
+            "cdm_data_loaders.datasets.ncbi_ftp.download.upload_file",
             return_value=False,
         ),
     ):

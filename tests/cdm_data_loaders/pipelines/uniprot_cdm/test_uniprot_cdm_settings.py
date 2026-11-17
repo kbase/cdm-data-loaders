@@ -7,16 +7,16 @@ from frozendict import frozendict
 from pydantic_settings import CliApp, SettingsError
 
 from cdm_data_loaders.core.registry import TransformRegistry
-from cdm_data_loaders.parsers.uniprot.uniprot_kb import UNIPROT_CDM_SCHEMA_MAP
-from cdm_data_loaders.pipelines.uniprot_kb_cdm import (
+from cdm_data_loaders.datasets.uniprot.kb import UNIPROT_CDM_SCHEMA_MAP
+from cdm_data_loaders.pipelines.presets.uniprot_cdm import (
     PIPELINE_NAME,
     UNIPROT_LOG_INTERVAL,
     UniProtSettings,
 )
+from cdm_data_loaders.pipelines.presets.uniprot_xml import UNIPROT_XSD_FILE
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     ENTRY_TABLE_NAME,
     ENTRY_XML_TAG,
-    UNIPROT_XSD_FILE,
 )
 from tests.cdm_data_loaders.conftest import check_settings
 from tests.helpers import assert_cli_field_roundtrips, settings_to_argv

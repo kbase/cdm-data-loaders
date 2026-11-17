@@ -1,5 +1,5 @@
 # Rule catalogue for the JSONLines (Pydantic) ingestion pipeline
-# (cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline).
+# (cdm_data_loaders.pipelines.jsonlines.pydantic).
 #
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/jsonlines_pydantic_specification.md, rendered via docs_macros and docs/_templates/pages/pipeline_spec.md.j2.
@@ -8,11 +8,11 @@ title: JSONLines (Pydantic) Pipeline Specification
 pipeline: jsonlines_pydantic
 cli_command: jsonlines_pydantic
 settings_class: cdm_data_loaders.pipelines.jsonlines.settings.JsonlPydanticIngestSettings
-pipeline_runner: cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline.run_jsonlines_with_validation_pipeline
+pipeline_runner: cdm_data_loaders.pipelines.jsonlines.pydantic.run_jsonlines_with_validation_pipeline
 intro: |
   This document specifies how an **`ENTITY_MODELS` registry** of Pydantic `BaseModel` classes and the
   **JSONLines (Pydantic) ingestion pipeline**
-  (`cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline`,
+  (`cdm_data_loaders.pipelines.jsonlines.pydantic`,
   `cdm_data_loaders.pipelines.jsonlines.settings.JsonlPydanticIngestSettings`,
   `cdm_data_loaders.converters.facades.pydantic_to_pyarrow`, and
   `cdm_data_loaders.coercion.pydantic_to_arrow`) determine:

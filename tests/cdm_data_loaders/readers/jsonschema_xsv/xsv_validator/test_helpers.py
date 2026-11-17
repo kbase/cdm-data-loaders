@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 from _pytest.mark.structures import ParameterSet
 
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
+from cdm_data_loaders.readers.xsv.models import (
     SEP_TO_EXT,
     VALID_SUFFIX,
     VALIDATION_ERRORS,
@@ -239,11 +239,11 @@ def test_generate_qsv_validate_file_names(first_pass_value: bool | None, input_f
         valid_file_suffix=f"valid{ext}",
     )
 
-    args = (cv_args, input_file_name) if first_pass_value is None else (cv_args, input_file_name, first_pass_value)
-
-    # file_names_tuple consists of
-    # valid_output_file, _errors_file, _valid_lines_file, _invalid_lines_file
-    file_names = generate_qsv_validate_file_names(*args)
+    file_names = (
+        generate_qsv_validate_file_names(cv_args, input_file_name)
+        if first_pass_value is None
+        else generate_qsv_validate_file_names(cv_args, input_file_name, first_pass=first_pass_value)
+    )
 
     valid_output_file_name = f"some_name-first-pass{VALID_SUFFIX}{ext}"
     schema_file_name = "some_name-first-pass.jsonschema.json"

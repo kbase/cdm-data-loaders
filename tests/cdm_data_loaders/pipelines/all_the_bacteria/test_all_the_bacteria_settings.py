@@ -6,7 +6,7 @@ import pytest
 from frozendict import frozendict
 from pydantic import ValidationError
 
-from cdm_data_loaders.pipelines.all_the_bacteria import (
+from cdm_data_loaders.pipelines.all_the_bacteria.settings import (
     AtbSettings,
 )
 from tests.helpers import assert_cli_field_roundtrips

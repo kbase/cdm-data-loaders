@@ -9,7 +9,8 @@ from unittest.mock import patch
 import botocore.client
 import pytest
 
-from cdm_data_loaders.ncbi_ftp.promote import (
+from cdm_data_loaders.datasets.ncbi_ftp.constants import DEFAULT_DESTINATION_PREFIX
+from cdm_data_loaders.datasets.ncbi_ftp.promote import (
     _archive_assemblies,
     _archive_objects,
     _dry_run_output,
@@ -18,7 +19,6 @@ from cdm_data_loaders.ncbi_ftp.promote import (
     _trim_manifest,
     promote_from_s3,
 )
-from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREFIX
 from tests.cdm_data_loaders.ncbi_ftp.conftest import (
     ACC_PATH_215,
     ACC_PATH_845,
@@ -279,7 +279,7 @@ def test_get_source_dest_pairs_for_accession(
     expected: list[tuple[str, str]],
 ) -> None:
     """get_source_dest_pairs_for_accession returns correct source-dest pairs for valid accessions, empty list for invalid."""
-    with patch("cdm_data_loaders.ncbi_ftp.promote.list_objects", side_effect=_mock_list_objects):
+    with patch("cdm_data_loaders.datasets.ncbi_ftp.promote.list_objects", side_effect=_mock_list_objects):
         result = _get_source_dest_pairs_for_accession(
             accession,
             bucket,

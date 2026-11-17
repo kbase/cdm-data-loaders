@@ -15,10 +15,10 @@ from cdm_data_loaders.core.pipeline_catalog import (
     load_project_scripts,
     resolve_pipeline,
 )
-from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import (
+from cdm_data_loaders.pipelines.jsonlines.extract import (
     cli as jsonl_extract_cli,
 )
-from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import (
+from cdm_data_loaders.pipelines.jsonlines.extract import (
     run_jsonlines_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
@@ -74,10 +74,10 @@ def test_load_project_scripts_falls_back_to_entry_points(
 
 def test_resolve_pipeline_short_name_and_unregistered_runner(tmp_path: Path) -> None:
     """Resolve short pipeline names and unregistered CliRunner instances."""
-    spec = resolve_pipeline("jsonlines.extract_pipeline")
+    spec = resolve_pipeline("jsonlines.extract")
     assert spec == PipelineSpec(
         cli_command="jsonlines_extract",
-        module_path="cdm_data_loaders.pipelines.jsonlines.extract_pipeline",
+        module_path="cdm_data_loaders.pipelines.jsonlines.extract",
         settings_cls=JsonlExtractSettings,
         pipeline_fn=run_jsonlines_pipeline,
         cli_callable=jsonl_extract_cli,

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import botocore.client
 import pytest
 
-import cdm_data_loaders.ncbi_ftp.manifest as manifest_mod
+import cdm_data_loaders.datasets.ncbi_ftp.manifest as manifest_mod
 from tests.conftest import TEST_BUCKET as TEST_BUCKET_STR
 
 TEST_BUCKET: PurePosixPath = PurePosixPath(TEST_BUCKET_STR)

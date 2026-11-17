@@ -12,15 +12,15 @@ from pathlib import Path, PurePosixPath
 import pytest
 from types_boto3_s3 import S3Client
 
-from cdm_data_loaders.ncbi_ftp.manifest import (
-    compute_diff,
+from cdm_data_loaders.datasets.ncbi_ftp.constants import DEFAULT_DESTINATION_PREFIX
+from cdm_data_loaders.datasets.ncbi_ftp.download import download_batch
+from cdm_data_loaders.datasets.ncbi_ftp.manifest import (
     write_removed_manifest,
     write_transfer_manifest,
     write_updated_manifest,
 )
-from cdm_data_loaders.ncbi_ftp.promote import promote_from_s3
-from cdm_data_loaders.pipelines.ncbi_ftp_download import download_batch
-from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREFIX
+from cdm_data_loaders.datasets.ncbi_ftp.promote import promote_from_s3
+from cdm_data_loaders.datasets.ncbi_ftp.summary import compute_diff
 from tests.integration.conftest import (
     STABLE_PREFIX,
     clone_assemblies,

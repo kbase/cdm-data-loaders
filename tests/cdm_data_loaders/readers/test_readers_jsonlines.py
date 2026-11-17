@@ -1,4 +1,4 @@
-"""Tests for the JSONL line-reading helpers in readers.jsonlines."""
+"""Tests for the JSONL line-reading and routing helpers in readers.jsonl and pipelines.jsonlines.routing."""
 
 import gzip
 import json
@@ -13,11 +13,13 @@ from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 
 from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
-from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
-from cdm_data_loaders.readers.jsonlines import (
-    iter_file_jsonl_records,
+from cdm_data_loaders.pipelines.jsonlines.routing import (
     make_page_router,
     route_jsonl_lines,
+)
+from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
+from cdm_data_loaders.readers.jsonl import (
+    iter_file_jsonl_records,
     stream_jsonl_lines,
 )
 from tests.fs_backends import FsBackend

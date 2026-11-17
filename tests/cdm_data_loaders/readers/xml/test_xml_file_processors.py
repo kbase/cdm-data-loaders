@@ -16,6 +16,7 @@ from dlt.extract.items import DataItemWithMeta
 from lxml.etree import Element, XMLSyntaxError, tostring
 
 import cdm_data_loaders.coercion.xml as xml_coercion_module
+import cdm_data_loaders.pipelines.xml_common as xml_common_module
 import cdm_data_loaders.readers.xml as xml_module
 from cdm_data_loaders.coercion.xml import (
     make_xml_element_converter,
@@ -32,13 +33,11 @@ from cdm_data_loaders.core.fields import (
     LOG_INTERVAL,
 )
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
+from cdm_data_loaders.pipelines.xmltodict.processors import process_xml_file_to_dict
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
+from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
-from cdm_data_loaders.readers.xml import (
-    DEFAULT_XMLTODICT_ARGS,
-    process_xml_file_to_dict,
-    process_xml_file_to_pyarrow,
-)
+from cdm_data_loaders.readers.xml import DEFAULT_XMLTODICT_ARGS
 from tests.cdm_data_loaders.readers.xml.conftest import table_and_data, write_xml_file
 from tests.fs_backends import FsBackend
 
@@ -709,7 +708,7 @@ def test_process_xml_file_to_pyarrow_pass_uses_dict_buffer_with_table_schema_map
     file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
     settings = fake_xmltopyarrow_settings(table_name="people", xml_tag="person")
     captured_schema_maps: list[ArrowSchemaRegistry | None] = []
-    real_dict_buffer = xml_module.DictBuffer
+    real_dict_buffer = xml_common_module.DictBuffer
 
     def _recording_dict_buffer(
         max_items: int = DEFAULTS[BUFFER_SIZE],
@@ -720,7 +719,7 @@ def test_process_xml_file_to_pyarrow_pass_uses_dict_buffer_with_table_schema_map
         captured_schema_maps.append(schema_map)
         return real_dict_buffer(max_items=max_items, schema_map=schema_map, use_pyarrow=use_pyarrow)
 
-    monkeypatch.setattr(xml_module, "DictBuffer", _recording_dict_buffer)
+    monkeypatch.setattr(xml_common_module, "DictBuffer", _recording_dict_buffer)
 
     list(process_xml_file_to_pyarrow(file_path, settings))
 

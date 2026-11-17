@@ -15,7 +15,7 @@ import xmltodict
 from dlt.common.pipeline import LoadInfo
 
 from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
-from cdm_data_loaders.pipelines import core
+from cdm_data_loaders.pipelines import runner
 from cdm_data_loaders.readers.xml import DEFAULT_XMLTODICT_ARGS
 from cdm_data_loaders.utils.gz import GZIP_SUFFIX
 from tests.cdm_data_loaders.pipelines.framework import (
@@ -134,7 +134,7 @@ def reference_xml_data_dir() -> Path:
 def careful_slack_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Replace send_slack_message_carefully as called by run_pipeline."""
     mock = MagicMock()
-    monkeypatch.setattr(core, "send_slack_message_carefully", mock)
+    monkeypatch.setattr(runner, "send_slack_message_carefully", mock)
     return mock
 
 

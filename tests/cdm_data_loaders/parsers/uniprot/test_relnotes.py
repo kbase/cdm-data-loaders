@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from cdm_data_loaders.parsers.uniprot.relnotes import parse, parse_relnotes
+from cdm_data_loaders.parsers.uniprot_relnotes import parse, parse_relnotes
 
 
 def test_parse_relnotes(test_data_dir: Path) -> None:
@@ -15,7 +15,7 @@ def test_parse_relnotes(test_data_dir: Path) -> None:
     parsed = parse_relnotes(relnotes_path)
     assert parsed == {
         "version": "2025_03",
-        "date_published": datetime.datetime(2025, 6, 18, 0, 0, 0),  # noqa: DTZ001
+        "date_published": datetime.datetime(2025, 6, 18, 0, 0, 0, tzinfo=datetime.UTC),
         "UniProtKB/Swiss-Prot": "573,661",
         "UniProtKB/TrEMBL": "253,061,697",
         "UniProtKB": "253,635,358",

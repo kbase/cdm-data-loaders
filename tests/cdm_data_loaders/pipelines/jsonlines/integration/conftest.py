@@ -9,11 +9,11 @@ import pytest
 from dlt.common.pipeline import LoadInfo
 from pydantic import BaseModel
 
-from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
+from cdm_data_loaders.pipelines.jsonlines.extract import run_jsonlines_pipeline
+from cdm_data_loaders.pipelines.jsonlines.jsonschema import (
     run_jsonlines_pipeline as run_jsonschema_pipeline,
 )
-from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import run_jsonlines_pipeline
-from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
+from cdm_data_loaders.pipelines.jsonlines.pydantic import (
     run_jsonlines_with_validation_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import (

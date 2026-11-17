@@ -10,13 +10,13 @@ import pyarrow as pa
 import pytest
 import yaml
 
-import cdm_data_loaders.pipelines.jsonlines.extract_pipeline as extract_pipeline_module
+import cdm_data_loaders.pipelines.jsonlines.extract as extract_pipeline_module
 from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
-from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import cli, run_jsonlines_pipeline
+from cdm_data_loaders.pipelines.jsonlines.extract import cli, run_jsonlines_pipeline
+from cdm_data_loaders.pipelines.jsonlines.routing import route_jsonl_lines
 from cdm_data_loaders.pipelines.jsonlines.settings import EXTRACT_PIPELINE_NAME, JsonlExtractSettings
-from cdm_data_loaders.readers.jsonlines import route_jsonl_lines
 from tests.cdm_data_loaders.pipelines.conftest import DEFAULT_DLT_TABLES
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_binds_filesystem_reader,

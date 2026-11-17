@@ -6,16 +6,13 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from cdm_data_loaders.ncbi_ftp.constants import FTP_HOST
-from cdm_data_loaders.ncbi_ftp.manifest import (
+from cdm_data_loaders.datasets.ncbi_ftp.constants import DEFAULT_STAGING_KEY_PREFIX, FTP_HOST
+from cdm_data_loaders.datasets.ncbi_ftp.download import download_and_stage
+from cdm_data_loaders.datasets.ncbi_ftp.manifest import write_updated_manifest
+from cdm_data_loaders.datasets.ncbi_ftp.summary import (
     AssemblyRecord,
     compute_diff,
     download_assembly_summary,
-    write_updated_manifest,
-)
-from cdm_data_loaders.pipelines.ncbi_ftp_download import (
-    DEFAULT_STAGING_KEY_PREFIX,
-    download_and_stage,
 )
 from tests.conftest import BASE_DIR
 

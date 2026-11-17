@@ -14,14 +14,14 @@ from cdm_data_loaders.core.pipeline_catalog import (
     resolve_pipeline,
 )
 from cdm_data_loaders.core.settings import CtsSettings
-from cdm_data_loaders.pipelines import uniprot_kb_cdm
-from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import (
+from cdm_data_loaders.pipelines.jsonlines.extract import (
     cli as jsonl_extract_cli,
 )
-from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import (
+from cdm_data_loaders.pipelines.jsonlines.extract import (
     run_jsonlines_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings, JsonlJsonschemaIngestSettings
+from cdm_data_loaders.pipelines.presets import uniprot_cdm
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
 from tests.cdm_data_loaders.pipelines import framework
@@ -72,7 +72,7 @@ def test_resolve_pipeline_pass_all_registered_targets(target_key: str) -> None:
 
 PRE_RESOLVED_CLI_SPEC = PipelineSpec(
     cli_command="jsonlines_extract",
-    module_path="cdm_data_loaders.pipelines.jsonlines.extract_pipeline",
+    module_path="cdm_data_loaders.pipelines.jsonlines.extract",
     settings_cls=JsonlExtractSettings,
     pipeline_fn=run_jsonlines_pipeline,
     cli_callable=jsonl_extract_cli,
@@ -83,11 +83,11 @@ PRE_RESOLVED_CLI_SPEC = PipelineSpec(
     ("target", "expected_cli", "expected_settings_cls", "expected_pipeline_fn", "expected_cli_callable"),
     [
         pytest.param(
-            uniprot_kb_cdm,
+            uniprot_cdm,
             "uniprot_cdm",
-            uniprot_kb_cdm.UniProtSettings,
+            uniprot_cdm.UniProtSettings,
             run_xmltopyarrow_pipeline,
-            uniprot_kb_cdm.cli,
+            uniprot_cdm.uniprot_cdm_cli,
             id="module",
         ),
         pytest.param(
@@ -107,11 +107,11 @@ PRE_RESOLVED_CLI_SPEC = PipelineSpec(
             id="callable",
         ),
         pytest.param(
-            "cdm_data_loaders.pipelines.uniprot_kb_cdm",
+            "cdm_data_loaders.pipelines.presets.uniprot_cdm",
             "uniprot_cdm",
-            uniprot_kb_cdm.UniProtSettings,
+            uniprot_cdm.UniProtSettings,
             run_xmltopyarrow_pipeline,
-            uniprot_kb_cdm.cli,
+            uniprot_cdm.uniprot_cdm_cli,
             id="dotted-module-path",
         ),
         pytest.param(

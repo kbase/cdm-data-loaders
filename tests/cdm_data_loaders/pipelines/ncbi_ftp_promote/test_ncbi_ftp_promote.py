@@ -1,12 +1,13 @@
-"""Tests for pipelines.ncbi_ftp_promote — settings, pipeline orchestration, CLI."""
+"""Tests for cli.ncbi_ftp_promote — run_promote orchestration."""
 
+import logging
 from pathlib import Path, PurePosixPath
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 
-from cdm_data_loaders.pipelines.ncbi_ftp_promote import (
+from cdm_data_loaders.cli.ncbi_ftp_promote import (
     run_promote,
 )
 from tests.cdm_data_loaders.pipelines.ncbi_ftp_promote.test_ncbi_ftp_promote_settings import make_settings
@@ -41,14 +42,14 @@ def test_run_promote_calls_promote_from_s3_with_correct_args(tmp_path: Path) -> 
         destination_bucket=PurePosixPath("my-dest"),
         staging_path=staging_path,
         destination_path=dest_path,
-        removed_manifest=removed,
-        updated_manifest=updated,
-        transfer_manifest=transfer,
+        removed_manifest_path=removed,
+        updated_manifest_path=updated,
+        transfer_manifest_path=transfer,
         dry_run=True,
     )
 
     with patch(
-        "cdm_data_loaders.pipelines.ncbi_ftp_promote.promote_from_s3",
+        "cdm_data_loaders.cli.ncbi_ftp_promote.promote_from_s3",
         return_value=MOCK_REPORT_SUCCESS,
     ) as mock_promote:
         run_promote(config)
@@ -69,30 +70,31 @@ def test_run_promote_no_error_on_zero_failures() -> None:
     """run_promote does not raise when promote_from_s3 reports zero failures."""
     config = make_settings()
     with patch(
-        "cdm_data_loaders.pipelines.ncbi_ftp_promote.promote_from_s3",
+        "cdm_data_loaders.cli.ncbi_ftp_promote.promote_from_s3",
         return_value=MOCK_REPORT_SUCCESS,
     ):
         run_promote(config)  # should not raise
 
 
-def test_run_promote_raises_runtime_error_on_failures() -> None:
-    """run_promote raises RuntimeError when promote_from_s3 reports failures."""
+def test_run_promote_logs_error_on_failures(caplog: pytest.LogCaptureFixture) -> None:
+    """run_promote logs an error without raising when promote_from_s3 reports failures."""
     config = make_settings()
     with (
         patch(
-            "cdm_data_loaders.pipelines.ncbi_ftp_promote.promote_from_s3",
+            "cdm_data_loaders.cli.ncbi_ftp_promote.promote_from_s3",
             return_value=MOCK_REPORT_WITH_FAILURES,
         ),
-        pytest.raises(RuntimeError, match="2 failures"),
+        caplog.at_level(logging.ERROR),
     ):
         run_promote(config)
+    assert "Promote completed with 2 failures" in caplog.text
 
 
 def test_run_promote_dry_run_forwarded() -> None:
     """dry_run=True is forwarded to promote_from_s3."""
     config = make_settings(dry_run=True)
     with patch(
-        "cdm_data_loaders.pipelines.ncbi_ftp_promote.promote_from_s3",
+        "cdm_data_loaders.cli.ncbi_ftp_promote.promote_from_s3",
         return_value=MOCK_REPORT_SUCCESS,
     ) as mock_promote:
         run_promote(config)
@@ -103,9 +105,9 @@ def test_run_promote_dry_run_forwarded() -> None:
 
 def test_run_promote_transfer_manifest_none_forwarded() -> None:
     """transfer_manifest_path=None is forwarded to promote_from_s3 as manifest_s3_key=None."""
-    config = make_settings(transfer_manifest=None)
+    config = make_settings(transfer_manifest_path=None)
     with patch(
-        "cdm_data_loaders.pipelines.ncbi_ftp_promote.promote_from_s3",
+        "cdm_data_loaders.cli.ncbi_ftp_promote.promote_from_s3",
         return_value=MOCK_REPORT_SUCCESS,
     ) as mock_promote:
         run_promote(config)

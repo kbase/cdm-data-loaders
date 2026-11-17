@@ -11,7 +11,7 @@ from cdm_data_loaders.core.fields import (
     PREPROCESSORS_MODULE,
     LoaderFileFormatEnum,
 )
-from cdm_data_loaders.pipelines.uniprot_idmapping import (
+from cdm_data_loaders.pipelines.presets.uniprot_idmapping import (
     DEFAULT_IDMAPPING_FILE_GLOB,
     DEFAULT_PARTITION_BUCKETS,
     UniProtIdMappingSettings,

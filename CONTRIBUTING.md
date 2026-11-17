@@ -49,7 +49,7 @@ This repository requires Python >= 3.13 and is managed with [`uv`](https://docs.
    ```
 4. Verify committed PyArrow schemas and documentation if bundled XSDs, converter rules, CLI settings, specs, or docstrings change:
    ```bash
-   uv run python -m scripts.gen_pyarrow_schema --check
+   uv run xsd_to_pyarrow --bundled --check
    uv run pytest -m docs
    uv run python -m docs_macros
    uv run --group docs zensical build --clean --strict

@@ -36,8 +36,8 @@ from cdm_data_loaders.core.settings import (
     InputLocalOutputSettings,
 )
 from cdm_data_loaders.core.transforms.hints import OutputTableHints
-from cdm_data_loaders.pipelines.core import DEFAULT_SCHEMA_CONTRACT
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
+from cdm_data_loaders.pipelines.runner import DEFAULT_SCHEMA_CONTRACT
 from cdm_data_loaders.pipelines.xml_common import XmlIngestSettings
 from tests.dlt_config_isolation import isolated_dlt_config
 from tests.fs_backends import MOTO_ACCESS_KEY, MOTO_SECRET_KEY, S3_MOTO, FsBackend

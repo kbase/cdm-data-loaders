@@ -10,7 +10,7 @@ from lxml.etree import XMLParser, fromstring
 
 from cdm_data_loaders.coercion.xml import make_xml_element_converter
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-from cdm_data_loaders.parsers.uniprot.uniref import (
+from cdm_data_loaders.datasets.uniprot.uniref import (
     ENTRY_XML_TAG,
     UNIREF_URL,
     extract_cluster,
@@ -19,7 +19,7 @@ from cdm_data_loaders.parsers.uniprot.uniref import (
     make_uniref_cdm_transform,
     parse_uniref_entry,
 )
-from cdm_data_loaders.pipelines.xmltopyarrow.settings import UNIREF_XSD_FILE
+from cdm_data_loaders.pipelines.presets.uniprot_xml import UNIREF_XSD_FILE
 from cdm_data_loaders.readers.xml import stream_xml_file
 from cdm_data_loaders.validation.xsd.traversal import load_schema
 from tests.cdm_data_loaders.parsers.conftest import wrap_entry_xml
@@ -244,7 +244,7 @@ def test_extract_cross_refs_param(
     if expected:
         expected = {**expected, "is_representative": is_representative}
 
-    db_ref = extract_cross_refs(CONVERT_DBREF(fromstring(xml)), "cluster:id", is_representative)
+    db_ref = extract_cross_refs(CONVERT_DBREF(fromstring(xml)), "cluster:id", is_representative=is_representative)
     assert db_ref == expected
 
     if warning:

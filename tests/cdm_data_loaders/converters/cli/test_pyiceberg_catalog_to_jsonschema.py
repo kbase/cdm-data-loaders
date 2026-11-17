@@ -20,15 +20,15 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import BinaryType, NestedField
 
-from cdm_data_loaders.converters.cli.iceberg_base import IcebergCatalogDumpSettings
-from cdm_data_loaders.converters.cli.pyiceberg_to_jsonschema import (
+from cdm_data_loaders.cli.pyiceberg_dump import IcebergCatalogDumpSettings
+from cdm_data_loaders.cli.pyiceberg_to_jsonschema import (
     IcebergToJsonSchemaSettings,
     dump_catalog_schemas,
 )
-from cdm_data_loaders.converters.cli.pyiceberg_to_linkml import (
+from cdm_data_loaders.cli.pyiceberg_to_linkml import (
     IcebergToLinkMLSettings,
 )
-from cdm_data_loaders.converters.cli.pyiceberg_to_linkml import (
+from cdm_data_loaders.cli.pyiceberg_to_linkml import (
     dump_catalog_schemas as dump_linkml_catalog_schemas,
 )
 from tests.cdm_data_loaders.converters.conftest import (

@@ -24,13 +24,13 @@ from cdm_data_loaders.core.registry import (
     RegistryKey,
 )
 from cdm_data_loaders.core.transforms.routing import RecordCoercerFn
-from cdm_data_loaders.pipelines.core import (
+from cdm_data_loaders.pipelines.jsonlines.routing import make_page_router
+from cdm_data_loaders.pipelines.runner import (
     DEFAULT_SCHEMA_CONTRACT,
     run_pipeline,
 )
-from cdm_data_loaders.readers.jsonlines import (
+from cdm_data_loaders.readers.jsonl import (
     ParseErrorResolver,
-    make_page_router,
     stream_jsonl_lines,
 )
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema

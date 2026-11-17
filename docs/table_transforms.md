@@ -4,9 +4,9 @@ All six file-format ingestion pipelines support pluggable file pre-processing, r
 
 | Pipeline                                                                                                                                                                             | CLI Entry Point        | Default Output Format                            | Source of Input `table_name`                                                                    |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| [`extract_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py)                                         | `jsonlines_extract`    | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
-| [`extract_jsonschema_validate_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | `jsonlines_jsonschema` | `pyarrow.Table`                                  | Keys of `ENTITY_SCHEMAS` (or preset entrypoint `ncbi_datasets`)                                 |
-| [`extract_pydantic_validate_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py)     | `jsonlines_pydantic`   | `pyarrow.Table`                                  | Keys of `ENTITY_MODELS`                                                                         |
+| [`jsonlines/extract.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract.py)         | `jsonlines_extract`    | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
+| [`jsonlines/jsonschema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/jsonschema.py)   | `jsonlines_jsonschema` | `pyarrow.Table`                                  | Keys of `ENTITY_SCHEMAS` (or preset entrypoint `ncbi_datasets`)                                 |
+| [`jsonlines/pydantic.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/pydantic.py)       | `jsonlines_pydantic`   | `pyarrow.Table`                                  | Keys of `ENTITY_MODELS`                                                                         |
 | [`xsv/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xsv/pipeline.py)                                                           | `xsv`                  | `pyarrow.Table`                                  | `--table-name` (or preset entrypoint `uniprot_idmapping`)                                       |
 | [`xmltodict/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltodict/pipeline.py)                                               | `xmltodict`            | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
 | [`xmltopyarrow/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                         | `xmltopyarrow`         | `pyarrow.Table`                                  | `--table-name` (or preset entrypoints `pubmed`, `uniprot`, `uniref50`, `uniref90`, `uniref100`) |
@@ -457,7 +457,7 @@ Pass `preprocessors_module`, `transforms_module`, and `output_schemas_module` di
 ```python
 from pathlib import Path
 
-from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
+from cdm_data_loaders.pipelines.jsonlines.jsonschema import (
     run_jsonlines_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlJsonschemaIngestSettings
@@ -480,7 +480,7 @@ load_info = run_jsonlines_pipeline(settings)
 
 ## Vectorized PyArrow Table Transforms and Raw Table Emission (`emit_raw_table` and `TransformContext`)
 
-When ingesting large tabular files via `xsv` (or a preset XSV pipeline such as `uniprot_idmapping`), annotating a transform's first parameter as `pyarrow.Table` keeps the entire batch vectorized in Arrow without materializing per-row Python dicts. Composing `emit_raw_table` with a specialised Arrow transform in `TABLE_TRANSFORMS` emits both `raw_<table_name>` and the standardised destination table in a single pass (as implemented in [`parsers/uniprot/idmapping.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/parsers/uniprot/idmapping.py)):
+When ingesting large tabular files via `xsv` (or a preset XSV pipeline such as `uniprot_idmapping`), annotating a transform's first parameter as `pyarrow.Table` keeps the entire batch vectorized in Arrow without materializing per-row Python dicts. Composing `emit_raw_table` with a specialised Arrow transform in `TABLE_TRANSFORMS` emits both `raw_<table_name>` and the standardised destination table in a single pass (as implemented in [`datasets/uniprot/idmapping.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/uniprot/idmapping.py)):
 
 ```python
 import pyarrow as pa

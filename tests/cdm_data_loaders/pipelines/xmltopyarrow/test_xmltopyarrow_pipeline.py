@@ -16,27 +16,31 @@ from dlt.extract import DltResource
 import cdm_data_loaders.pipelines.xmltopyarrow.pipeline as xmltopyarrow_module
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import CtsSettings
-from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import (
-    cli,
-    pubmed_cli,
-    run_xmltopyarrow_pipeline,
+from cdm_data_loaders.pipelines.presets.pubmed import (
+    PUBMED_PIPELINE_NAME,
+    PubMedXmlToPyArrowSettings,
+)
+from cdm_data_loaders.pipelines.presets.pubmed import cli as pubmed_cli
+from cdm_data_loaders.pipelines.presets.uniprot_xml import (
+    UNIPROT_PIPELINE_NAME,
+    UNIREF_FIFTY,
+    UNIREF_HUNDRED,
+    UNIREF_NINETY,
+    UniProtXmlToPyArrowSettings,
+    UniRef50XmlToPyArrowSettings,
+    UniRef90XmlToPyArrowSettings,
+    UniRef100XmlToPyArrowSettings,
     uniprot_cli,
     uniref50_cli,
     uniref90_cli,
     uniref100_cli,
 )
+from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import (
+    cli,
+    run_xmltopyarrow_pipeline,
+)
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
-    PUBMED_PIPELINE_NAME,
-    UNIPROT_PIPELINE_NAME,
-    UNIREF_FIFTY,
-    UNIREF_HUNDRED,
-    UNIREF_NINETY,
-    PubMedXmlToPyArrowSettings,
-    UniProtXmlToPyArrowSettings,
-    UniRef50XmlToPyArrowSettings,
-    UniRef90XmlToPyArrowSettings,
-    UniRef100XmlToPyArrowSettings,
     XmlToPyArrowSettings,
 )
 from cdm_data_loaders.utils.checksums import new_hasher

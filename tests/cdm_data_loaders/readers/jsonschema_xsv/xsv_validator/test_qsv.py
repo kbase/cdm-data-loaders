@@ -13,8 +13,8 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
 
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator import qsv
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
+from cdm_data_loaders.readers.xsv import qsv
+from cdm_data_loaders.readers.xsv.models import (
     CLEANED_SUFFIX,
     HEADER_SUFFIX,
     NORM_SUFFIX,
@@ -24,7 +24,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     generate_qsv_validate_file_names,
     non_header_lines_present,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import (
+from cdm_data_loaders.readers.xsv.qsv import (
     clean_validate_file,
     qsv_check,
     run_qsv_input,

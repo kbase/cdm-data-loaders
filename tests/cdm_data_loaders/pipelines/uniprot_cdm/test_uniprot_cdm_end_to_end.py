@@ -11,11 +11,11 @@ import pytest
 from frozendict import frozendict
 
 from cdm_data_loaders.core.filesystem import build_per_file_filesystem_resource
-from cdm_data_loaders.pipelines.uniprot_kb_cdm import (
+from cdm_data_loaders.pipelines.presets.uniprot_cdm import (
     PIPELINE_NAME,
     UniProtSettings,
 )
-from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
+from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_destination_table_counts,

@@ -9,16 +9,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cdm_data_loaders.ncbi_ftp.manifest import (
-    AssemblyRecord,
-    DiffResult,
+from cdm_data_loaders.datasets.ncbi_ftp.constants import DEFAULT_DESTINATION_PREFIX
+from cdm_data_loaders.datasets.ncbi_ftp.manifest import (
     _extract_accession_dir_and_id_from_s3_key,
-    _ftp_dir_from_url,
-    accession_prefix,
-    compute_diff,
-    filter_by_prefix_range,
-    get_latest_assembly_paths,
-    parse_assembly_summary,
     scan_store_to_synthetic_summary,
     verify_transfer_candidates,
     write_diff_summary,
@@ -26,7 +19,16 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     write_transfer_manifest,
     write_updated_manifest,
 )
-from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREFIX
+from cdm_data_loaders.datasets.ncbi_ftp.summary import (
+    AssemblyRecord,
+    DiffResult,
+    accession_prefix,
+    compute_diff,
+    filter_by_prefix_range,
+    ftp_dir_from_url,
+    get_latest_assembly_paths,
+    parse_assembly_summary,
+)
 
 from .conftest import ACC_PATH_215, ACC_PATH_405, SAMPLE_SUMMARY
 
@@ -290,12 +292,12 @@ def test_write_diff_summary(tmp_path: Path) -> None:
     ],
 )
 def test_ftp_dir_from_url(url: str, expected: str | None, kwargs: dict) -> None:
-    """Wrapper for _ftp_dir_from_url."""
+    """Wrapper for ftp_dir_from_url."""
     if expected is None:
         with pytest.raises(ValueError, match="Could not parse FTP URL"):
-            _ftp_dir_from_url(url, **kwargs)
+            ftp_dir_from_url(url, **kwargs)
     else:
-        assert _ftp_dir_from_url(url, **kwargs) == expected
+        assert ftp_dir_from_url(url, **kwargs) == expected
 
 
 # verify_transfer_candidates
@@ -327,8 +329,8 @@ def _matching_object_info(s3_path: str) -> dict[str, Any] | None:
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_existing_object_info")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.get_existing_object_info")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_prunes_when_all_match(
     mock_connect: MagicMock,
     mock_head: MagicMock,
@@ -340,8 +342,8 @@ def test_verify_transfer_candidates_prunes_when_all_match(
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_existing_object_info")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.get_existing_object_info")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_keeps_when_md5_differs(
     mock_connect: MagicMock,
     mock_head: MagicMock,
@@ -355,8 +357,8 @@ def test_verify_transfer_candidates_keeps_when_md5_differs(
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_existing_object_info")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.get_existing_object_info")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_keeps_when_s3_object_missing(
     mock_connect: MagicMock,
     mock_head: MagicMock,
@@ -370,8 +372,8 @@ def test_verify_transfer_candidates_keeps_when_s3_object_missing(
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_existing_object_info")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.get_existing_object_info")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_keeps_when_no_md5_metadata(
     mock_connect: MagicMock,
     mock_head: MagicMock,
@@ -384,7 +386,7 @@ def test_verify_transfer_candidates_keeps_when_no_md5_metadata(
     ]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_keeps_when_ftp_fails(
     mock_connect: MagicMock, manifest_transfer_mocks: SimpleNamespace
 ) -> None:
@@ -398,12 +400,12 @@ def test_verify_transfer_candidates_keeps_when_ftp_fails(
 
 def test_verify_transfer_candidates_empty_input() -> None:
     """Empty accession list returns empty result without connecting."""
-    with patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp", return_value=MagicMock()):
+    with patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.connect_ftp", return_value=MagicMock()):
         assert verify_transfer_candidates([], {}, BUCKET, PurePosixPath("prefix")) == []
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects", return_value=["one key"])
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects", return_value=["one key"])
 def test_verify_transfer_candidates_unknown_accession_kept(
     mock_connect: MagicMock,
 ) -> None:
@@ -413,8 +415,8 @@ def test_verify_transfer_candidates_unknown_accession_kept(
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_existing_object_info")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.get_existing_object_info")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_short_circuits_on_first_mismatch(
     mock_connect: MagicMock,
     mock_head: MagicMock,
@@ -427,8 +429,8 @@ def test_verify_transfer_candidates_short_circuits_on_first_mismatch(
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.get_existing_object_info")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.get_existing_object_info")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_mixed(
     mock_connect: MagicMock,
     mock_head: MagicMock,
@@ -447,7 +449,7 @@ def test_verify_transfer_candidates_mixed(
 
 
 @pytest.mark.usefixtures("manifest_transfer_mocks")
-@patch("cdm_data_loaders.ncbi_ftp.manifest.connect_ftp")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.connect_ftp")
 def test_verify_transfer_candidates_skips_ftp_when_folder_missing(
     mock_connect: MagicMock,
     manifest_transfer_mocks: SimpleNamespace,
@@ -511,7 +513,7 @@ def _make_mock_list_object_return_value() -> list[dict[str, Any]]:
     ]
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects")
 def test_scan_store_builds_summary(mock_list_objects: MagicMock) -> None:
     """Synthetic summary is built correctly with provided release_date for all assemblies."""
     mock_list_objects.return_value = _make_mock_list_object_return_value()
@@ -533,7 +535,7 @@ def test_scan_store_builds_summary(mock_list_objects: MagicMock) -> None:
     }
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects")
 def test_scan_store_applies_release_date_to_all(mock_list_objects: MagicMock) -> None:
     """Provided release_date is used even when files have different LastModified dates."""
     mock_list_objects.return_value = [
@@ -554,7 +556,7 @@ def test_scan_store_applies_release_date_to_all(mock_list_objects: MagicMock) ->
     )
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects")
 def test_scan_store_raises_for_invalid_release_date(mock_list_objects: MagicMock) -> None:
     """Invalid release_date format is rejected."""
     mock_list_objects.return_value = _make_mock_list_object_return_value()
@@ -562,7 +564,7 @@ def test_scan_store_raises_for_invalid_release_date(mock_list_objects: MagicMock
         scan_store_to_synthetic_summary(PurePosixPath("test-bucket"), PurePosixPath("prefix"), "2024-03-31")
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects")
 def test_scan_store_invokes_progress_callback(mock_list_objects: MagicMock) -> None:
     """Progress callback is called once per unique assembly discovered."""
     mock_list_objects.return_value = _make_mock_list_object_return_value()
@@ -578,14 +580,14 @@ def test_scan_store_invokes_progress_callback(mock_list_objects: MagicMock) -> N
     assert calls[1][0] == 2  # noqa: PLR2004
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects")
 def test_scan_store_handles_empty_store(mock_list_objects: MagicMock) -> None:
     """Empty store returns empty dict."""
     mock_list_objects.return_value = []
     assert scan_store_to_synthetic_summary(PurePosixPath("test-bucket"), PurePosixPath("prefix"), "2024/01/31") == {}
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects")
 def test_scan_store_skips_objects_without_accession(mock_list_objects: MagicMock) -> None:
     """Objects without valid accessions in the key are skipped."""
     mock_list_objects.return_value = [
@@ -603,7 +605,7 @@ def test_scan_store_skips_objects_without_accession(mock_list_objects: MagicMock
     assert "GCF_000001215.4" in result
 
 
-@patch("cdm_data_loaders.ncbi_ftp.manifest.list_objects")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects")
 def test_scan_store_assembly_dir_survives_round_trip(mock_list_objects: MagicMock, tmp_path: Path) -> None:
     """assembly_dir is preserved after save-to-file / parse-back round-trip.
 

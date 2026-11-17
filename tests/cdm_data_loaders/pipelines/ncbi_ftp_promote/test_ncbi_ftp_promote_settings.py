@@ -1,17 +1,20 @@
-"""Tests for pipelines.ncbi_ftp_promote — settings, pipeline orchestration, CLI."""
+"""Tests for cli.ncbi_ftp_promote — settings and CLI shortcuts."""
 
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 import pytest
 from pydantic import ValidationError
+from pydantic_settings import CliApp
 
-from cdm_data_loaders.pipelines.ncbi_ftp_promote import (
+from cdm_data_loaders.cli.ncbi_ftp_promote import (
+    PromoteSettings,
+)
+from cdm_data_loaders.datasets.ncbi_ftp.constants import (
     DEFAULT_DESTINATION_BUCKET,
     DEFAULT_DESTINATION_PREFIX,
     DEFAULT_STAGING_BUCKET,
     DEFAULT_TRANSFER_MANIFEST_FILE,
-    PromoteSettings,
 )
 from tests.conftest import _generate_dlt_config
 
@@ -59,9 +62,9 @@ def test_promote_settings_all_params_resolve_expected_values(tmp_path: Path) -> 
     transfer = PurePosixPath("staging") / "run42" / "transfer_manifest.txt"
     kwargs = {
         **ALL_PARAMS_RESOLVED,
-        "removed_manifest": removed,
-        "updated_manifest": updated,
-        "transfer_manifest": transfer,
+        "removed_manifest_path": removed,
+        "updated_manifest_path": updated,
+        "transfer_manifest_path": transfer,
     }
 
     s = make_settings(**kwargs)
@@ -76,31 +79,68 @@ def test_promote_settings_all_params_resolve_expected_values(tmp_path: Path) -> 
         assert getattr(s, field) == expected_value
 
 
-# Settings aliases — (alias kwargs, expected resolved values)
-ALIAS_CASES = [
-    pytest.param(({"s": PurePosixPath("staging") / "runX"}, "staging_path"), id="staging_path_alias_s"),
+CLI_SHORTCUT_CASES = [
     pytest.param(
-        ({"destination_path": PurePosixPath("warehouse") / "custom"}, "destination_path"), id="destination_path_alias"
+        (["-s", "staging/runX"], "staging_path", PurePosixPath("staging") / "runX"),
+        id="staging_path_shortcut_s",
     ),
-    pytest.param(({"r": Path("removed.txt")}, "removed_manifest_path"), id="removed_manifest_alias_r"),
-    pytest.param(({"u": Path("updated.txt")}, "updated_manifest_path"), id="updated_manifest_alias_u"),
     pytest.param(
-        ({"t": PurePosixPath("staging") / "run1" / "manifest.txt"}, "transfer_manifest_path"),
-        id="transfer_manifest_alias_t",
+        (
+            ["-s", str(DEFAULT_STAGING_PATH), "--destination-path", "warehouse/custom"],
+            "destination_path",
+            PurePosixPath("warehouse") / "custom",
+        ),
+        id="destination_path_flag",
     ),
-    pytest.param(({"staging_bucket": PurePosixPath("alt-staging")}, "staging_bucket"), id="staging_bucket_alias"),
     pytest.param(
-        ({"destination_bucket": PurePosixPath("alt-dest")}, "destination_bucket"), id="destination_bucket_alias"
+        (
+            ["-s", str(DEFAULT_STAGING_PATH), "-r", "removed.txt"],
+            "removed_manifest_path",
+            Path("removed.txt"),
+        ),
+        id="removed_manifest_shortcut_r",
+    ),
+    pytest.param(
+        (
+            ["-s", str(DEFAULT_STAGING_PATH), "-u", "updated.txt"],
+            "updated_manifest_path",
+            Path("updated.txt"),
+        ),
+        id="updated_manifest_shortcut_u",
+    ),
+    pytest.param(
+        (
+            ["-s", str(DEFAULT_STAGING_PATH), "-t", "staging/run1/manifest.txt"],
+            "transfer_manifest_path",
+            PurePosixPath("staging") / "run1" / "manifest.txt",
+        ),
+        id="transfer_manifest_shortcut_t",
+    ),
+    pytest.param(
+        (
+            ["-s", str(DEFAULT_STAGING_PATH), "--staging-bucket", "alt-staging"],
+            "staging_bucket",
+            PurePosixPath("alt-staging"),
+        ),
+        id="staging_bucket_flag",
+    ),
+    pytest.param(
+        (
+            ["-s", str(DEFAULT_STAGING_PATH), "--destination-bucket", "alt-dest"],
+            "destination_bucket",
+            PurePosixPath("alt-dest"),
+        ),
+        id="destination_bucket_flag",
     ),
 ]
 
 
-@pytest.mark.parametrize("case", ALIAS_CASES)
+@pytest.mark.parametrize("case", CLI_SHORTCUT_CASES)
 def test_promote_settings_alias_resolves_to_expected_field(case: tuple) -> None:
-    """Each CLI alias resolves to the expected settings field."""
-    kwargs, field = case
-    s = make_settings(**kwargs)
-    assert getattr(s, field) == next(iter(kwargs.values()))
+    """Each CLI shortcut or flag resolves to the expected PromoteSettings field."""
+    cli_args, field, expected_value = case
+    s = CliApp.run(PromoteSettings, cli_args=cli_args)
+    assert getattr(s, field) == expected_value
 
 
 # Settings validation
@@ -113,5 +153,5 @@ def test_promote_settings_staging_path_required() -> None:
 
 def test_promote_settings_transfer_manifest_path_can_be_none() -> None:
     """transfer_manifest_path can be explicitly set to None."""
-    s = make_settings(transfer_manifest=None)
+    s = make_settings(transfer_manifest_path=None)
     assert s.transfer_manifest_path is None

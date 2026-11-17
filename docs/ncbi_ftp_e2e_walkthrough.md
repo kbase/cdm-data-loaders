@@ -1,6 +1,6 @@
 # NCBI FTP Pipeline — Local End-to-End Walkthrough
 
-Step-by-step instructions for running a full production transfer in the Lakehouse, or running a small (up to 10 assembly) local end-to-end sync of NCBI RefSeq records against a local CEPH container. The walkthrough uses a Jupyter notebook ([`notebooks/ncbi_ftp_manifest.ipynb`](https://github.com/kbase/cdm-data-loaders/blob/develop/notebooks/ncbi_ftp_manifest.ipynb)) for manifest generation, the [`ncbi_ftp_sync`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/ncbi_ftp_download.py) CLI for parallel FTP downloads, and the [`ncbi_ftp_promote`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/ncbi_ftp_promote.py) CLI for promoting staged records to an S3 store.
+Step-by-step instructions for running a full production transfer in the Lakehouse, or running a small (up to 10 assembly) local end-to-end sync of NCBI RefSeq records against a local CEPH container. The walkthrough uses a Jupyter notebook ([`notebooks/ncbi_ftp_manifest.ipynb`](https://github.com/kbase/cdm-data-loaders/blob/develop/notebooks/ncbi_ftp_manifest.ipynb)) for manifest generation, the [`ncbi_ftp_sync`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/ncbi_ftp_sync.py) CLI for parallel FTP downloads, and the [`ncbi_ftp_promote`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/ncbi_ftp_promote.py) CLI for promoting staged records to an S3 store.
 
 > [!NOTE]
 > Prerequisites: Docker or Podman, [uv](https://docs.astral.sh/uv/) (for running notebooks and CLIs locally), and network access to `ftp.ncbi.nlm.nih.gov`.
@@ -204,7 +204,7 @@ STAGING_URI = "s3://cts/staging/run1/"
 
 ## 3. Phase 2 — Download Assemblies (`ncbi_ftp_sync`)
 
-Phase 2 uses the [`ncbi_ftp_sync`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/ncbi_ftp_download.py) CLI ([CLI options](cli_reference.md#ncbi_ftp_sync)) to download assemblies in parallel from NCBI FTP and verify MD5 checksums.
+Phase 2 uses the [`ncbi_ftp_sync`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/ncbi_ftp_sync.py) CLI ([CLI options](cli_reference.md#ncbi_ftp_sync)) to download assemblies in parallel from NCBI FTP and verify MD5 checksums.
 
 > [!NOTE]
 > In production, Phase 2 runs as a CTS job: CTS stages input files from S3 into `/input_dir` and uploads `/output_dir` back to S3 without exposing S3 credentials inside the container.
@@ -277,15 +277,15 @@ aws s3 ls --recursive s3://cts/staging/run1/
 
 ## 4. Phase 3 — Promote and Archive (`ncbi_ftp_promote`)
 
-Phase 3 uses [`ncbi_ftp_promote`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/ncbi_ftp_promote.py) ([CLI options](cli_reference.md#ncbi_ftp_promote)) to promote staged assemblies from the S3 staging prefix to their final Lakehouse paths, archive replaced or suppressed assemblies, and trim the transfer manifest for resumability.
+Phase 3 uses [`ncbi_ftp_promote`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/ncbi_ftp_promote.py) ([CLI options](cli_reference.md#ncbi_ftp_promote)) to promote staged assemblies from the S3 staging prefix to their final Lakehouse paths, archive replaced or suppressed assemblies, and trim the transfer manifest for resumability.
 
 Run a dry run first to verify planned operations:
 
 ```sh
 uv run ncbi_ftp_promote \
   --staging-path staging/run1 \
-  --removed-manifest notebooks/output/removed_manifest.txt \
-  --updated-manifest notebooks/output/updated_manifest.txt \
+  --removed-manifest-path notebooks/output/removed_manifest.txt \
+  --updated-manifest-path notebooks/output/updated_manifest.txt \
   --dry-run
 ```
 
@@ -294,11 +294,11 @@ Then execute the promotion:
 ```sh
 uv run ncbi_ftp_promote \
   --staging-path staging/run1 \
-  --removed-manifest notebooks/output/removed_manifest.txt \
-  --updated-manifest notebooks/output/updated_manifest.txt
+  --removed-manifest-path notebooks/output/removed_manifest.txt \
+  --updated-manifest-path notebooks/output/updated_manifest.txt
 ```
 
-If `--removed-manifest` and `--updated-manifest` are omitted, only staged records are promoted and no archiving occurs. On completion, the CLI prints:
+If `--removed-manifest-path` and `--updated-manifest-path` are omitted, staged records are promoted without archiving. On completion, the CLI prints:
 
 ```
 PROMOTE SUMMARY: 10 promoted, 0 archived, 0 failed
@@ -355,7 +355,7 @@ To exercise incremental diff, update, and archive behavior against a prior snaps
 
 - **Phase 1 (Step 2)**: Set `PREVIOUS_SUMMARY_URI` to the S3 URI of the raw summary from the first run (or pass a local snapshot path to `parse_assembly_summary(Path("prev.txt"))`). The diff reports `updated`, `replaced`, and `suppressed` entries that changed since the baseline.
 - **Phase 2 (Step 3)**: Download the updated `transfer_manifest.txt` via `ncbi_ftp_sync`.
-- **Phase 3 (Step 4)**: Pass `--removed-manifest` and `--updated-manifest` from Phase 1 to `ncbi_ftp_promote`. Updated assemblies are archived before overwrite, and removed assemblies are archived and deleted from live `raw_data/`.
+- **Phase 3 (Step 4)**: Pass `--removed-manifest-path` and `--updated-manifest-path` from Phase 1 to `ncbi_ftp_promote`. Updated assemblies are archived before overwrite, and removed assemblies are archived and deleted from live `raw_data/`.
 
 ---
 
@@ -384,7 +384,7 @@ rm -rf staging/ output/
 
 ## Reference: Downloaded File Suffixes
 
-Phase 2 downloads files matching `FILE_FILTERS` in [`src/cdm_data_loaders/ncbi_ftp/assembly.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/ncbi_ftp/assembly.py) (plus `md5checksums.txt` for integrity verification):
+Phase 2 downloads files matching `FILE_FILTERS` in [`src/cdm_data_loaders/datasets/ncbi_ftp/assembly.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/ncbi_ftp/assembly.py) (plus `md5checksums.txt` for integrity verification):
 
 | Suffix | Content |
 | --- | --- |

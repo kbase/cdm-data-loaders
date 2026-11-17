@@ -24,12 +24,12 @@ from cdm_data_loaders.core.settings import (
     FILE_FORMAT_CLI_SHORTCUTS,
     default_settings_with_shortcuts,
 )
-from cdm_data_loaders.pipelines.core import (
+from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
+from cdm_data_loaders.pipelines.runner import (
     DEFAULT_SCHEMA_CONTRACT,
     run_pipeline,
 )
-from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
-from cdm_data_loaders.readers.jsonlines import stream_jsonl_lines
+from cdm_data_loaders.readers.jsonl import stream_jsonl_lines
 
 if TYPE_CHECKING:
     from dlt.extract.resource import DltResource

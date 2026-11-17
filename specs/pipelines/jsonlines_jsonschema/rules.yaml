@@ -1,5 +1,5 @@
 # Rule catalogue for the JSONLines (JSON Schema) ingestion pipeline
-# (cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline & JsonlJsonschemaIngestSettings).
+# (cdm_data_loaders.pipelines.jsonlines.jsonschema and JsonlJsonschemaIngestSettings).
 #
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/jsonlines_jsonschema_specification.md, rendered via docs_macros and docs/_templates/pages/pipeline_spec.md.j2.
@@ -8,11 +8,11 @@ title: JSONLines (JSON Schema) Pipeline Specification
 pipeline: jsonlines_jsonschema
 cli_command: jsonlines_jsonschema
 settings_class: cdm_data_loaders.pipelines.jsonlines.settings.JsonlJsonschemaIngestSettings
-pipeline_runner: cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline.run_jsonlines_pipeline
+pipeline_runner: cdm_data_loaders.pipelines.jsonlines.jsonschema.run_jsonlines_pipeline
 intro: |
   This document specifies how an **`ENTITY_SCHEMAS` registry** of JSON Schema documents and the
   **JSONLines JSON Schema validation pipeline**
-  (`cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline` and `JsonlJsonschemaIngestSettings`)
+  (`cdm_data_loaders.pipelines.jsonlines.jsonschema` and `JsonlJsonschemaIngestSettings`)
   determine:
 
   1. **Entity schema registration, JSON Schema dialect validation, and PyArrow schema generation** (`JsonlJsonschemaIngestSettings`, `SchemaRegistry`, `build_output_schema_registry`).

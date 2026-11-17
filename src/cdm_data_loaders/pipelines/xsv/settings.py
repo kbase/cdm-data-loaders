@@ -28,7 +28,7 @@ from cdm_data_loaders.pipelines.xsv.exceptions import (
     UnsupportedXsvDialectError,
     XsvSchemaError,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import resolve_xsv_parsing_config
+from cdm_data_loaders.readers.xsv.duckdb_reader import resolve_xsv_parsing_config
 from cdm_data_loaders.validation.jsonschema.dereference import DereferencingError
 from cdm_data_loaders.validation.jsonschema.models import (
     ValidatedXsvSchema,

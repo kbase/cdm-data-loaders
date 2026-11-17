@@ -27,8 +27,8 @@ from cdm_data_loaders.pipelines.xsv.pipeline import (
     run_xsv_pipeline,
 )
 from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import CleanerValidatorArgs
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import clean_validate_file
+from cdm_data_loaders.readers.xsv.models import CleanerValidatorArgs
+from cdm_data_loaders.readers.xsv.qsv import clean_validate_file
 from tests.cdm_data_loaders.pipelines.helpers import (
     fetch_all_duckdb,
     make_file_item,

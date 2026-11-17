@@ -10,8 +10,8 @@ from typing import Any
 import pytest
 from frozendict import frozendict
 
-from cdm_data_loaders.pipelines.uniref_cdm import UniRefCdmSettings
-from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
+from cdm_data_loaders.pipelines.presets.uniprot_cdm import UniRefCdmSettings
+from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_destination_table_counts,

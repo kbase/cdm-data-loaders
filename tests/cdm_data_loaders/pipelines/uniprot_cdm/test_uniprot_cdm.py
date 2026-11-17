@@ -4,10 +4,12 @@ from collections.abc import Callable
 from unittest.mock import MagicMock, patch
 
 from cdm_data_loaders.core.cli import CliRunner
-from cdm_data_loaders.pipelines.uniprot_kb_cdm import (
+from cdm_data_loaders.pipelines.presets.uniprot_cdm import (
     PIPELINE_NAME,
     UniProtSettings,
-    cli,
+)
+from cdm_data_loaders.pipelines.presets.uniprot_cdm import (
+    uniprot_cdm_cli as cli,
 )
 from cdm_data_loaders.pipelines.xmltopyarrow import pipeline as xmltopyarrow_pipeline_module
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline

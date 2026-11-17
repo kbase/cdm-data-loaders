@@ -560,4 +560,3 @@ def test_load_python_module_from_file_path(tmp_path: Path) -> None:
     mod_file.write_text(f"SAMPLE_VALUE = {EXPECTED_SAMPLE_VALUE}\n", encoding="utf-8")
     loaded = load_python_module(str(mod_file))
     assert loaded.SAMPLE_VALUE == EXPECTED_SAMPLE_VALUE
-

@@ -25,7 +25,7 @@ from sqlalchemy.exc import IntegrityError
 import cdm_data_loaders.pipelines as pipelines_pkg
 import cdm_data_loaders.utils.iceberg as iceberg_pkg
 from cdm_data_loaders.core.settings import CtsSettings
-from cdm_data_loaders.pipelines.core import run_pipeline
+from cdm_data_loaders.pipelines.runner import run_pipeline
 from cdm_data_loaders.utils.iceberg.cleanup import (
     DLT_LOAD_CATALOG_ATTR,
     install_iceberg_catalog_cleanup,
@@ -53,12 +53,12 @@ def test_iceberg_catalog_cleanup_pass_not_installed_at_import_time_and_idempoten
     before_import = [(target, attr, getattr(target, attr)) for target, attr in PATCH_TARGETS]
 
     monkeypatch.delitem(sys.modules, "cdm_data_loaders.utils.iceberg.cleanup", raising=False)
-    monkeypatch.delitem(sys.modules, "cdm_data_loaders.pipelines.core", raising=False)
+    monkeypatch.delitem(sys.modules, "cdm_data_loaders.pipelines.runner", raising=False)
     monkeypatch.delattr(iceberg_pkg, "cleanup", raising=False)
-    monkeypatch.delattr(pipelines_pkg, "core", raising=False)
+    monkeypatch.delattr(pipelines_pkg, "runner", raising=False)
 
     fresh_cleanup = importlib.import_module("cdm_data_loaders.utils.iceberg.cleanup")
-    importlib.import_module("cdm_data_loaders.pipelines.core")
+    importlib.import_module("cdm_data_loaders.pipelines.runner")
 
     assert fresh_cleanup.is_iceberg_catalog_cleanup_installed() is False
     for target, attr, orig_val in before_import:
@@ -84,12 +84,12 @@ def test_iceberg_catalog_cleanup_pass_installed_by_run_pipeline(
     for target, attr in PATCH_TARGETS:
         monkeypatch.setattr(target, attr, getattr(target, attr))
     monkeypatch.delitem(sys.modules, "cdm_data_loaders.utils.iceberg.cleanup", raising=False)
-    monkeypatch.delitem(sys.modules, "cdm_data_loaders.pipelines.core", raising=False)
+    monkeypatch.delitem(sys.modules, "cdm_data_loaders.pipelines.runner", raising=False)
     monkeypatch.delattr(iceberg_pkg, "cleanup", raising=False)
-    monkeypatch.delattr(pipelines_pkg, "core", raising=False)
+    monkeypatch.delattr(pipelines_pkg, "runner", raising=False)
 
     fresh_cleanup = importlib.import_module("cdm_data_loaders.utils.iceberg.cleanup")
-    fresh_core = importlib.import_module("cdm_data_loaders.pipelines.core")
+    fresh_core = importlib.import_module("cdm_data_loaders.pipelines.runner")
     assert fresh_cleanup.is_iceberg_catalog_cleanup_installed() is False
 
     load_info = fresh_core.run_pipeline(

@@ -12,7 +12,7 @@ import jsonschema.validators
 import pytest
 from pydantic import ValidationError
 
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import SEP_TO_EXT
+from cdm_data_loaders.readers.xsv.models import SEP_TO_EXT
 from cdm_data_loaders.validation.jsonschema.metaschema import (
     CUSTOM_META_SCHEMA_URI,
     get_xsv_meta_schema,

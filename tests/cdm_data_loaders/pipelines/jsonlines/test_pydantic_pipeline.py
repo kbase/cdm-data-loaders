@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
 from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.preprocessors import FilePreprocessError
-from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
+from cdm_data_loaders.pipelines.jsonlines.pydantic import (
     build_entity_resource,
     run_jsonlines_with_validation_pipeline,
 )

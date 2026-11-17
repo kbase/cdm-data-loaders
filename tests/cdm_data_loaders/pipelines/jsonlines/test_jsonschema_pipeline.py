@@ -13,6 +13,7 @@ import pytest
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     convert_schema_to_pyarrow,
 )
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.datasets.ncbi_datasets.hooks import (
     ANNOTATION_REPORT_TABLE,
@@ -22,19 +23,16 @@ from cdm_data_loaders.datasets.ncbi_datasets.hooks import (
 from cdm_data_loaders.datasets.ncbi_datasets.hooks import (
     ENTITY_SCHEMAS as NCBI_DATASETS_ENTITY_SCHEMAS,
 )
-from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
+from cdm_data_loaders.pipelines.jsonlines.jsonschema import (
     _make_resolve_error,
     build_entity_resource,
-    ncbi_datasets_cli,
     run_jsonlines_pipeline,
 )
-from cdm_data_loaders.pipelines.jsonlines.settings import (
-    JsonlJsonschemaIngestSettings,
-    NcbiDatasetsSettings,
-)
-from cdm_data_loaders.readers.jsonlines import make_page_router
+from cdm_data_loaders.pipelines.jsonlines.routing import make_page_router
+from cdm_data_loaders.pipelines.jsonlines.settings import JsonlJsonschemaIngestSettings
+from cdm_data_loaders.pipelines.presets.ncbi_datasets import NcbiDatasetsSettings
+from cdm_data_loaders.pipelines.presets.ncbi_datasets import cli as ncbi_datasets_cli
 from cdm_data_loaders.schemas.ncbi_datasets.schema import SCHEMAS as NCBI_DATASETS_SCHEMAS
-from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import assert_run_ok, read_pipeline_tables

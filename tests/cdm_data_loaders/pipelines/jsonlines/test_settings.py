@@ -48,15 +48,17 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JSONSCHEMA_PIPELINE_NAME,
     LOCAL_CLI_SHORTCUTS,
     MAX_RECURSION_DEPTH,
-    NCBI_DATASETS_PIPELINE_NAME,
-    NCBI_DATASETS_SCHEMA_MODULE,
     PYDANTIC_PIPELINE_NAME,
     JsonlExtractSettings,
     JsonlIngestSettings,
     JsonlJsonschemaIngestSettings,
     JsonlPydanticIngestSettings,
-    NcbiDatasetsSettings,
     build_output_schema_registry,
+)
+from cdm_data_loaders.pipelines.presets.ncbi_datasets import (
+    NCBI_DATASETS_PIPELINE_NAME,
+    NCBI_DATASETS_SCHEMA_MODULE,
+    NcbiDatasetsSettings,
 )
 from cdm_data_loaders.schemas.ncbi_datasets.schema import SCHEMAS as NCBI_DATASETS_SCHEMAS
 from cdm_data_loaders.validation.jsonschema.dereference import DereferencingError

@@ -9,8 +9,8 @@ import pyarrow as pa
 import pytest
 
 from cdm_data_loaders.converters.facades.xsd_to_pyarrow import generate_pyarrow_schema
+from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
-from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
 from cdm_data_loaders.validation.xsd.traversal import load_schema
 from tests.conftest import XSD_SPEC_DIR
 from tests.helpers import strip_none_values

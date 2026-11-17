@@ -16,7 +16,7 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import NestedField, StringType, StructType
 
-from cdm_data_loaders.converters.cli.pyiceberg_to_linkml import (
+from cdm_data_loaders.cli.pyiceberg_to_linkml import (
     IcebergToLinkMLSettings,
     dump_catalog_schemas,
 )

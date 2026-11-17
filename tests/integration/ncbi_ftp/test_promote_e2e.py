@@ -12,14 +12,14 @@ from pathlib import Path, PurePosixPath
 import pytest
 from types_boto3_s3 import S3Client
 
-from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
-from cdm_data_loaders.ncbi_ftp.metadata import (
+from cdm_data_loaders.datasets.ncbi_ftp.assembly import build_accession_path
+from cdm_data_loaders.datasets.ncbi_ftp.constants import DEFAULT_DESTINATION_PREFIX
+from cdm_data_loaders.datasets.ncbi_ftp.metadata import (
     build_archive_descriptor_key,
     build_descriptor_key,
     create_descriptor,
 )
-from cdm_data_loaders.ncbi_ftp.promote import _archive_assemblies, promote_from_s3
-from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREFIX
+from cdm_data_loaders.datasets.ncbi_ftp.promote import _archive_assemblies, promote_from_s3
 from tests.cdm_data_loaders.ncbi_ftp.conftest import md5_hex, stage_files_with_sidecars, write_manifest
 from tests.integration.conftest import get_object_metadata, list_all_keys, s3_backends, seed_lakehouse
 

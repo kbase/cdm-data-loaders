@@ -16,21 +16,24 @@ from frozendict import frozendict
 from pydantic import ValidationError
 from requests.exceptions import HTTPError
 
+import cdm_data_loaders.datasets.all_the_bacteria.osf as atb_osf
 from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
-from cdm_data_loaders.io.core import NonRetryableDownloadError
-from cdm_data_loaders.pipelines import all_the_bacteria
-from cdm_data_loaders.pipelines.all_the_bacteria import (
+from cdm_data_loaders.datasets.all_the_bacteria.osf import (
     ALL_ATB_FILE_NAME,
     DATASET_NAME,
-    AtbSettings,
+    load_patterns,
+)
+from cdm_data_loaders.io.core import NonRetryableDownloadError
+from cdm_data_loaders.pipelines.all_the_bacteria import pipeline as all_the_bacteria
+from cdm_data_loaders.pipelines.all_the_bacteria.pipeline import (
     cli,
     download_atb_index_tsv,
     get_file_download_links,
-    load_patterns,
     osf_file_downloader,
     run_atb_pipeline,
 )
+from cdm_data_loaders.pipelines.all_the_bacteria.settings import AtbSettings
 from tests.cdm_data_loaders.pipelines.conftest import VALID_DESTINATIONS
 from tests.conftest import S3
 
@@ -178,7 +181,7 @@ def test_download_atb_index_s3_error_boom(test_s3_settings: AtbSettings) -> None
     mock_download_client = MagicMock()
     mock_download_client.download.side_effect = ValueError("ZOMG!")
     with (
-        patch("cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader", return_value=mock_download_client),
+        patch("cdm_data_loaders.datasets.all_the_bacteria.osf.FileDownloader", return_value=mock_download_client),
         pytest.raises(ValueError, match="ZOMG!"),
     ):
         download_atb_index_tsv(test_s3_settings)
@@ -362,7 +365,7 @@ def test_osf_file_downloader_success(
 
     mock_download_client = MagicMock()
     with patch(
-        "cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader",
+        "cdm_data_loaders.datasets.all_the_bacteria.osf.FileDownloader",
         return_value=mock_download_client,
     ):
         # get the output from the generator
@@ -467,7 +470,7 @@ def test_osf_file_downloader_error_handling(
     mock_download_client.download.side_effect = file_downloader_boom
 
     with patch(
-        "cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader",
+        "cdm_data_loaders.datasets.all_the_bacteria.osf.FileDownloader",
         return_value=mock_download_client,
     ):
         list(osf_file_downloader(settings, atb_file_list))
@@ -652,7 +655,7 @@ def test_get_file_download_links_pass_concurrent_downloads_across_worker_threads
             in_flight -= 1
 
     mock_download_client.download.side_effect = record_concurrent_download
-    monkeypatch.setattr(all_the_bacteria, "FileDownloader", lambda: mock_download_client)
+    monkeypatch.setattr(atb_osf, "FileDownloader", lambda: mock_download_client)
 
     atb_file_list_copy.bind(test_settings)
     file_downloader_copy.bind(test_settings)
@@ -713,7 +716,7 @@ def test_file_downloader_pass_parallelized_transformer_runs_on_worker_threads(
         time.sleep(0.05)
 
     mock_download_client.download.side_effect = record_download_thread
-    monkeypatch.setattr(all_the_bacteria, "FileDownloader", lambda: mock_download_client)
+    monkeypatch.setattr(atb_osf, "FileDownloader", lambda: mock_download_client)
 
     atb_file_list_copy.bind(test_settings)
     file_downloader_copy.bind(test_settings)

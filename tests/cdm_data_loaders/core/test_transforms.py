@@ -46,10 +46,10 @@ from cdm_data_loaders.core.transforms.routing import (
     validate_routed_output,
 )
 from cdm_data_loaders.core.transforms.settings_mixin import validate_table_transforms
+from cdm_data_loaders.pipelines.jsonlines.routing import route_jsonl_lines
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
+from cdm_data_loaders.pipelines.xmltodict.processors import process_xml_file_to_dict
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
-from cdm_data_loaders.readers.jsonlines import route_jsonl_lines
-from cdm_data_loaders.readers.xml import process_xml_file_to_dict
 from tests.helpers import make_cts_settings, register_temp_module
 
 

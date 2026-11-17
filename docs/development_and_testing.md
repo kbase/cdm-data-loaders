@@ -4,7 +4,7 @@ This guide covers local development setup, linting and code generation checks, S
 
 - **Project dependencies, lint rules, and `pytest` markers**: [`pyproject.toml`](https://github.com/kbase/cdm-data-loaders/blob/develop/pyproject.toml)
 - **Container entrypoint (`test` and `ceph_integration_test` modes)**: [`scripts/entrypoint.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/entrypoint.sh)
-- **Spark container test runner**: [`scripts/run_tests.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/run_tests.sh)
+- **Spark container test runner**: [`scripts/dev/run_tests.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/dev/run_tests.sh)
 - **Ceph RGW integration Compose configuration**: [`docker-compose.yml`](https://github.com/kbase/cdm-data-loaders/blob/develop/docker-compose.yml)
 
 ---
@@ -20,7 +20,7 @@ uv sync --all-groups
 > [!NOTE]
 > Running XSV reader and pipeline tests directly on the host requires the [`qsv`](https://github.com/dathere/qsv) binary on `PATH` (for example, `brew install qsv` on macOS or downloading a release binary from `dathere/qsv`). The repository [`Dockerfile`](https://github.com/kbase/cdm-data-loaders/blob/develop/Dockerfile) installs `qsv` automatically for containerized test runs.
 
-Run formatting, linting, and committed PyArrow schema codegen checks ([`scripts/gen_pyarrow_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/gen_pyarrow_schema.py)) before opening a pull request:
+Run formatting, linting, and committed PyArrow schema codegen checks ([`src/cdm_data_loaders/cli/xsd_to_pyarrow.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/xsd_to_pyarrow.py)) before opening a pull request:
 
 ```sh
 # format code and check lint rules
@@ -28,16 +28,16 @@ uv run ruff format
 uv run ruff check
 
 # verify committed UniProt, UniRef, and PubMed PyArrow schema.py modules match their bundled XSDs
-uv run python -m scripts.gen_pyarrow_schema --check
+uv run xsd_to_pyarrow --bundled --check
 ```
 
-To regenerate the committed `schema.py` modules after updating a bundled XSD file, run `uv run python -m scripts.gen_pyarrow_schema` without `--check`.
+To regenerate the committed `schema.py` modules after updating a bundled XSD file, run `uv run xsd_to_pyarrow --bundled` without `--check`.
 
 ---
 
 ## Spark Development Container
 
-Code and tests marked with `@pytest.mark.requires_spark` require Apache Spark and Java dependencies provided by the KBase Lakehouse Spark notebook image (`ghcr.io/kbasedatalakehouse/spark_notebook:main`). [`scripts/run_tests.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/run_tests.sh) creates an isolated `uv` virtual environment inside the container pinned to the container's `pyspark` version and executes `pytest`:
+Code and tests marked with `@pytest.mark.requires_spark` require Apache Spark and Java dependencies provided by the KBase Lakehouse Spark notebook image (`ghcr.io/kbasedatalakehouse/spark_notebook:main`). [`scripts/dev/run_tests.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/dev/run_tests.sh) creates an isolated `uv` virtual environment inside the container pinned to the container's `pyspark` version and executes `pytest`:
 
 ```sh
 # pull the Spark notebook container image
@@ -47,7 +47,7 @@ docker pull ghcr.io/kbasedatalakehouse/spark_notebook:main
 docker run -it --rm \
   -v "$(pwd)":/cdm-data-loaders \
   ghcr.io/kbasedatalakehouse/spark_notebook:main \
-  /cdm-data-loaders/scripts/run_tests.sh
+  /cdm-data-loaders/scripts/dev/run_tests.sh
 ```
 
 To open an interactive shell or keep the container running so VS Code can attach via the [Dev Containers extension](https://code.visualstudio.com/docs/devcontainers/containers):
