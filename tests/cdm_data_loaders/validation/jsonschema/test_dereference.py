@@ -39,9 +39,6 @@ def _make_ctx(
     )
 
 
-"""dereference_schema"""
-
-
 def test_dereference_schema_pass_resolves_local_ref() -> None:
     """dereference_schema() inlines a local $ref pointing into '$defs'."""
     schema = {
@@ -98,8 +95,8 @@ def test_dereference_schema_pass_removes_definition_containers() -> None:
 @pytest.mark.parametrize(
     ("path", "expected"),
     [
-        (["properties", "a"], {"type": "string"}),
-        (["items"], {"type": "string"}),
+        pytest.param(["properties", "a"], {"type": "string"}, id="nested-in-properties"),
+        pytest.param(["items"], {"type": "string"}, id="nested-in-items"),
     ],
 )
 def test_dereference_schema_pass_resolves_refs_in_nested_positions(path: list[str], expected: dict[str, Any]) -> None:
@@ -207,7 +204,7 @@ def test_dereference_schema_pass_resolves_ref_within_each_single_schema_keyword(
     assert result[keyword] == {"type": "string"}
 
 
-@pytest.mark.parametrize("value", [True, False])
+@pytest.mark.parametrize("value", [True, False], ids=["true", "false"])
 def test_dereference_schema_pass_boolean_valued_single_schema_keyword_passthrough(value: bool) -> None:
     """dereference_schema() passes a boolean (true/false) value of a single-schema keyword through unchanged."""
     schema = {
@@ -504,21 +501,18 @@ def test_dereference_schema_pass_resolver_dgaf_about_additional_resource_specifi
     assert deref_schema == schema
 
 
-"""_should_apply_ref_siblings"""
-
-
 @pytest.mark.parametrize(
     ("mode", "has_siblings", "spec", "expected"),
     [
-        ("never", True, DRAFT202012, False),
-        ("never", False, DRAFT202012, False),
-        ("always", True, DRAFT7, True),
-        ("always", False, DRAFT7, False),
-        ("auto", True, DRAFT202012, True),
-        ("auto", True, DRAFT201909, True),
-        ("auto", True, DRAFT7, False),
-        ("auto", False, DRAFT202012, False),
-        ("auto", False, DRAFT7, False),
+        pytest.param("never", True, DRAFT202012, False, id="never-with-siblings-draft2020-12"),
+        pytest.param("never", False, DRAFT202012, False, id="never-without-siblings-draft2020-12"),
+        pytest.param("always", True, DRAFT7, True, id="always-with-siblings-draft7"),
+        pytest.param("always", False, DRAFT7, False, id="always-without-siblings-draft7"),
+        pytest.param("auto", True, DRAFT202012, True, id="auto-with-siblings-draft2020-12"),
+        pytest.param("auto", True, DRAFT201909, True, id="auto-with-siblings-draft2019-09"),
+        pytest.param("auto", True, DRAFT7, False, id="auto-with-siblings-draft7"),
+        pytest.param("auto", False, DRAFT202012, False, id="auto-without-siblings-draft2020-12"),
+        pytest.param("auto", False, DRAFT7, False, id="auto-without-siblings-draft7"),
     ],
 )
 def test_should_apply_ref_siblings_pass_mode_and_spec_combinations(
@@ -527,9 +521,6 @@ def test_should_apply_ref_siblings_pass_mode_and_spec_combinations(
     """_should_apply_ref_siblings() honours ref_sibling_mode and falls back to per-draft rules under 'auto'."""
     ctx = _make_ctx({}, spec=spec, ref_sibling_mode=mode)
     assert _should_apply_ref_siblings(ctx, has_siblings=has_siblings) is expected
-
-
-"""_resolve_ref_and_all_of"""
 
 
 def test_resolve_ref_and_all_of_pass_returns_schema_unchanged_when_no_ref_or_all_of() -> None:
@@ -553,9 +544,9 @@ def test_resolve_ref_and_all_of_fail_circular_ref_detected_directly() -> None:
 @pytest.mark.parametrize(
     ("identity_keyword", "value"),
     [
-        ("$schema", "https://json-schema.org/draft/2020-12/schema"),
-        ("$id", "https://example.com/foo"),
-        ("$anchor", "Foo"),
+        pytest.param("$schema", "https://json-schema.org/draft/2020-12/schema", id="schema-keyword"),
+        pytest.param("$id", "https://example.com/foo", id="id-keyword"),
+        pytest.param("$anchor", "Foo", id="anchor-keyword"),
     ],
 )
 def test_resolve_ref_and_all_of_pass_strips_various_identity_keywords_from_resolved_ref_target(
@@ -581,9 +572,6 @@ def test_resolve_ref_and_all_of_fail_ref_resolves_to_boolean_schema() -> None:
     ctx = _make_ctx(root)
     with pytest.raises(DereferencingError, match="boolean schema"):
         _resolve_ref_and_all_of({"$ref": "#/$defs/Anything"}, ctx)
-
-
-"""_merge_all_of"""
 
 
 def test_merge_all_of_pass_merges_properties_required_and_pattern_properties() -> None:
@@ -627,10 +615,7 @@ def test_merge_all_of_pass_sibling_properties_union_with_allof_branches() -> Non
     assert "^x-" in result["patternProperties"]
 
 
-"""_dereference"""
-
-
-@pytest.mark.parametrize("bool_schema", [True, False])
+@pytest.mark.parametrize("bool_schema", [True, False], ids=["true", "false"])
 def test_dereference_pass_boolean_schema_passthrough(bool_schema: bool) -> None:
     """_dereference() passes boolean schemas (true/false) through unchanged."""
     ctx = _make_ctx({})

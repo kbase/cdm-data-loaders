@@ -80,7 +80,7 @@ def make_router(
     *,
     buffer_size: int = 10,
     use_pyarrow: bool = True,
-) -> Callable[[list[dict[str, Any]]], Any]:
+) -> Callable[[list[dict[str, Any]] | dict[str, Any]], Any]:
     """Build a page router for ``widget`` backed by ``model.model_validate``.
 
     :param model: Pydantic model class validating each record.
@@ -90,7 +90,7 @@ def make_router(
     :param use_pyarrow: Whether ``make_page_router`` emits Arrow tables for ``_rejected``.
     :type use_pyarrow: bool
     :return: Configured page router callable.
-    :rtype: Callable[[list[dict[str, Any]]], Any]
+    :rtype: Callable[[list[dict[str, Any]] | dict[str, Any]], Any]
     """
 
     def _resolve_error(record: dict[str, Any]) -> str | None:
@@ -372,33 +372,57 @@ def test_make_page_router_pass_buffer_size_controls_batching(
     assert pages == [("widget", 2), ("widget", 2), ("widget", 1)]
 
 
+PREPROCESS_REJECTED_ROW: Final[dict[str, Any]] = {
+    "table_name": "widget",
+    "source_file": "widget/corrupt.jsonl",
+    "line_no": None,
+    "raw_record": None,
+    "error_detail": "corrupt header",
+}
+
+
+@pytest.mark.parametrize(
+    ("batch", "expected_pages"),
+    [
+        pytest.param(
+            [
+                make_item(
+                    record={"widget_id": "a", "count": 1}, raw_record='{"widget_id": "a", "count": 1}', line_no=1
+                ),
+                make_item(record=None, raw_record="{bad", parse_error="boom", line_no=EXPECTED_REJECTED_LINE_NO),
+            ],
+            {
+                "widget": [{"widget_id": "a", "count": 1}],
+                "_rejected": [
+                    {
+                        "table_name": "widget",
+                        "source_file": "file.jsonl",
+                        "line_no": EXPECTED_REJECTED_LINE_NO,
+                        "raw_record": "{bad",
+                        "error_detail": "boom",
+                    }
+                ],
+            },
+            id="line-items-batch",
+        ),
+        pytest.param(
+            PREPROCESS_REJECTED_ROW,
+            {"_rejected": [PREPROCESS_REJECTED_ROW]},
+            id="preprocessor-rejected-dict",
+        ),
+    ],
+)
 def test_make_page_router_pass_use_pyarrow_false_yields_lists_of_dicts(
     widget_model: type[BaseModel],
+    batch: list[dict[str, Any]] | dict[str, Any],
+    expected_pages: dict[str, list[dict[str, Any]]],
 ) -> None:
     """When use_pyarrow is False, make_page_router yields list[dict] for valid, rejected, and preprocessor-rejected items."""
     validator = make_router(widget_model, use_pyarrow=False)
-    items = [
-        make_item(record={"widget_id": "a", "count": 1}, raw_record='{"widget_id": "a", "count": 1}', line_no=1),
-        make_item(record=None, raw_record="{bad", parse_error="boom", line_no=EXPECTED_REJECTED_LINE_NO),
-    ]
 
-    results = list(validator(items))
+    results = list(validator(batch))
     by_table = {r.meta.table_name: r.data for r in results}
 
-    assert isinstance(by_table["widget"], list)
-    assert by_table["widget"] == [{"widget_id": "a", "count": 1}]
-    assert isinstance(by_table["_rejected"], list)
-    assert by_table["_rejected"][0]["line_no"] == EXPECTED_REJECTED_LINE_NO
-
-    preprocess_rejected = {
-        "table_name": "widget",
-        "source_file": "widget/corrupt.jsonl",
-        "line_no": None,
-        "raw_record": None,
-        "error_detail": "corrupt header",
-    }
-    pre_results = list(validator(preprocess_rejected))  # type: ignore[arg-type]
-    assert len(pre_results) == 1
-    assert pre_results[0].meta.table_name == "_rejected"
-    assert isinstance(pre_results[0].data, list)
-    assert pre_results[0].data == [preprocess_rejected]
+    assert len(results) == len(expected_pages)
+    assert all(isinstance(page_data, list) for page_data in by_table.values())
+    assert by_table == expected_pages

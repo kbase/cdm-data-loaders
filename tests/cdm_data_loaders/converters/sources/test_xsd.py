@@ -1,11 +1,14 @@
 """Unit tests for XSD source reader, IR emission, and bundled XSD root/level resolution."""
 
+import functools
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
 import pyarrow as pa
 import pytest
 import xmlschema
+from pyspark.sql.types import StructType
 
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.emitters.json_schema.emitter import JsonSchemaEmitter
@@ -166,8 +169,8 @@ def test_resolve_elements_at_level_fail_invalid_or_empty_level(
         resolve_elements_at_level(schema, level, error_type=XsdToPyArrowError, error_by_code=ERROR_BY_CODE)
 
 
-def test_resolve_root_elements_fail_or_cyclic_global_elements() -> None:
-    """resolve_root_elements raises XmlTagNotFoundError on empty schemas and falls back to all roots on cycles."""
+def test_resolve_root_elements_fail_empty_schema() -> None:
+    """resolve_root_elements raises XmlTagNotFoundError when an XSD schema declares no global elements."""
     empty_schema = xmlschema.XMLSchema(
         """<?xml version="1.0" encoding="UTF-8"?>
         <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
@@ -178,6 +181,9 @@ def test_resolve_root_elements_fail_or_cyclic_global_elements() -> None:
     with pytest.raises(XmlTagNotFoundError, match="No global elements found in XSD schema"):
         resolve_root_elements(empty_schema, error_type=XsdToPyArrowError, error_by_code=ERROR_BY_CODE)
 
+
+def test_resolve_root_elements_pass_cyclic_global_elements() -> None:
+    """resolve_root_elements falls back to all global elements when mutual references leave none unreferenced."""
     cyclic_schema = xmlschema.XMLSchema(
         """<?xml version="1.0" encoding="UTF-8"?>
         <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
@@ -193,52 +199,111 @@ def test_resolve_root_elements_fail_or_cyclic_global_elements() -> None:
     assert [local_name(e.name) for e in resolve_root_elements(cyclic_schema) if e.name] == ["alpha", "beta"]
 
 
-def test_xsd_reader_and_xsd_to_pyarrow_facade_pass_ir_and_emitters(tmp_path: Path) -> None:
-    """XsdReader builds SchemaDocument IR with source='xsd' provenance and emits to PyArrow, Python files, PySpark, dlt, and JSON Schema."""
+@pytest.mark.parametrize(
+    ("target", "emitter"),
+    [
+        ("pyarrow", PyArrowEmitter(max_nesting=100)),
+        ("pyspark", PySparkEmitter(max_nesting=100)),
+        ("dlt", DltEmitter(schema_name="uniref_entry")),
+        ("jsonschema", JsonSchemaEmitter()),
+    ],
+    ids=["pyarrow", "pyspark", "dlt", "jsonschema"],
+)
+def test_xsd_reader_pass_ir_and_emitters(
+    target: str,
+    emitter: PyArrowEmitter | PySparkEmitter | DltEmitter | JsonSchemaEmitter,
+) -> None:
+    """XsdReader builds SchemaDocument IR with source='xsd' provenance and emits to PyArrow, PySpark, dlt, and JSON Schema."""
     uniref_path = XSD_DATA_DIR / "examples" / "uniref" / "uniref.xsd"
-    reader = XsdReader(xml_tag="entry")
-    doc = reader.read(uniref_path)
+    doc = XsdReader(xml_tag="entry").read(uniref_path)
 
     assert doc.name == "entry"
     assert doc.provenance.source == "xsd"
     assert doc.root.type == "object"
     assert not doc.root.nullable
 
-    arrow_schema = PyArrowEmitter(max_nesting=100).emit(doc)
-    assert arrow_schema.equals(UNIREF_SCHEMAS["entry"], check_metadata=True)
+    emitted = emitter.emit(doc)
+    match target:
+        case "pyarrow":
+            assert isinstance(emitted, pa.Schema)
+            assert emitted.equals(UNIREF_SCHEMAS["entry"], check_metadata=True)
+        case "pyspark":
+            assert isinstance(emitted, StructType)
+            assert "_id" in {f.name for f in emitted.fields}
+        case "dlt":
+            assert isinstance(emitted, dict)
+            assert "_id" in emitted["tables"]["uniref_entry"]["columns"]
+        case "jsonschema":
+            assert isinstance(emitted, dict)
+            assert emitted["type"] == "object"
+            assert "_id" in emitted["properties"]
+        case _:
+            pytest.fail(f"Unhandled target: {target}")
 
+
+@pytest.mark.parametrize(
+    "output_mode",
+    ["schema", "empty-table", "python-module", "level-python-module"],
+    ids=["schema", "empty-table", "python-module", "level-python-module"],
+)
+def test_xsd_to_pyarrow_facade_pass_outputs(tmp_path: Path, output_mode: str) -> None:
+    """XsdToPyArrow converts XSD elements to PyArrow schemas, empty tables, and executable Python modules."""
+    uniref_path = XSD_DATA_DIR / "examples" / "uniref" / "uniref.xsd"
     facade = XsdToPyArrow(xml_tag="entry")
-    assert facade.convert(uniref_path).equals(UNIREF_SCHEMAS["entry"], check_metadata=True)
-    empty_table = facade.convert_to_table(uniref_path)
-    assert empty_table.num_rows == 0
-    assert empty_table.schema.equals(UNIREF_SCHEMAS["entry"], check_metadata=True)
+    match output_mode:
+        case "schema":
+            assert facade.convert(uniref_path).equals(UNIREF_SCHEMAS["entry"], check_metadata=True)
+        case "empty-table":
+            empty_table = facade.convert_to_table(uniref_path)
+            assert empty_table.num_rows == 0
+            assert empty_table.schema.equals(UNIREF_SCHEMAS["entry"], check_metadata=True)
+        case "python-module":
+            py_src = facade.convert_to_python(uniref_path)
+            out_file = tmp_path / "uniref_entry_schema.py"
+            assert facade.convert_to_python_file(uniref_path, out_file) == out_file
+            assert out_file.read_text(encoding="utf-8") == py_src
+            loaded_mod = load_module(out_file)
+            assert isinstance(loaded_mod.SCHEMA, pa.Schema)
+            assert loaded_mod.SCHEMA.equals(UNIREF_SCHEMAS["entry"], check_metadata=True)
+        case "level-python-module":
+            level_file = tmp_path / "uniref_level_schema.py"
+            assert facade.convert_level_to_python_file(uniref_path, level_file, 1) == level_file
+            assert level_file.read_text(encoding="utf-8") == facade.convert_level_to_python(uniref_path, 1)
+        case _:
+            pytest.fail(f"Unhandled output_mode: {output_mode}")
 
-    py_src = facade.convert_to_python(uniref_path)
-    out_file = tmp_path / "uniref_entry_schema.py"
-    assert facade.convert_to_python_file(uniref_path, out_file) == out_file
-    assert out_file.read_text(encoding="utf-8") == py_src
 
-    loaded_mod = load_module(out_file)
-    assert isinstance(loaded_mod.SCHEMA, pa.Schema)
-    assert loaded_mod.SCHEMA.equals(UNIREF_SCHEMAS["entry"], check_metadata=True)
-
-    level_file = tmp_path / "uniref_level_schema.py"
-    assert facade.convert_level_to_python_file(uniref_path, level_file, 1) == level_file
-    assert level_file.read_text(encoding="utf-8") == facade.convert_level_to_python(uniref_path, 1)
-
-    spark_schema = PySparkEmitter(max_nesting=100).emit(doc)
-    assert "_id" in {f.name for f in spark_schema.fields}
-
-    dlt_stored = DltEmitter(schema_name="uniref_entry").emit(doc)
-    assert "_id" in dlt_stored["tables"]["uniref_entry"]["columns"]
-
-    json_schema = JsonSchemaEmitter().emit(doc)
-    assert json_schema["type"] == "object"
-    assert "_id" in json_schema["properties"]
-
-    with pytest.raises(ValueError, match="max_recursion_depth"):
-        XsdReader(max_recursion_depth=0)
-    with pytest.raises(TypeError, match="max_recursion_depth"):
-        XsdReader(max_recursion_depth=True)  # type: ignore[arg-type]
-    with pytest.raises(XmlTagNotFoundError, match="xml_tag must be specified"):
-        XsdReader(error_type=XsdToPyArrowError, error_by_code=ERROR_BY_CODE).read(uniref_path)
+@pytest.mark.parametrize(
+    ("call", "error_type", "match"),
+    [
+        pytest.param(
+            functools.partial(XsdReader, max_recursion_depth=0),
+            ValueError,
+            "max_recursion_depth",
+            id="zero-max-recursion-depth",
+        ),
+        pytest.param(
+            functools.partial(XsdReader, max_recursion_depth=True),  # type: ignore[arg-type]
+            TypeError,
+            "max_recursion_depth",
+            id="bool-max-recursion-depth",
+        ),
+        pytest.param(
+            functools.partial(
+                XsdReader(error_type=XsdToPyArrowError, error_by_code=ERROR_BY_CODE).read,
+                XSD_DATA_DIR / "examples" / "uniref" / "uniref.xsd",
+            ),
+            XmlTagNotFoundError,
+            "xml_tag must be specified",
+            id="missing-xml-tag-with-multiple-roots",
+        ),
+    ],
+)
+def test_xsd_reader_fail_invalid_options(
+    call: Callable[[], object],
+    error_type: type[Exception],
+    match: str,
+) -> None:
+    """XsdReader validates max_recursion_depth and requires xml_tag when multiple roots exist."""
+    with pytest.raises(error_type, match=match):
+        call()

@@ -21,6 +21,7 @@ from cdm_data_loaders.cli.polaris_schema_definitions import (
 from cdm_data_loaders.cli.polaris_schema_definitions import (
     main as cli_main,
 )
+from cdm_data_loaders.schemas.uniprot.idmapping.schema import ID_MAPPING_SCHEMA
 from cdm_data_loaders.utils.iceberg.catalog import PolarisCatalogConfig, connect_polaris_catalog
 from cdm_data_loaders.utils.iceberg.cleanup import install_iceberg_catalog_cleanup
 from cdm_data_loaders.utils.iceberg.schema_sync import (
@@ -373,24 +374,45 @@ def test_apply_schema_definitions_recursive_and_idempotent_on_dlt_loaded_table(
     assert set(second_report.unchanged_fields) == set(expected_updated) | {"organism.lineage.kingdom"}
 
 
-def test_plan_and_strict_mode_handle_unmatched_fields_and_container_mismatches(
-    polaris_like_catalog: Catalog,
-) -> None:
-    """Unmatched root/nested fields, ambiguous root normalizations, and flattened container columns are reported or rejected in strict mode."""
+MISMATCHED_UNMATCHED_FIELDS: Final[tuple[str, ...]] = (
+    "fooBar",
+    "FooBar",
+    "payload_struct.inner_a",
+    "payload_list.item.inner_item.inner_b",
+    "payload_map.value.value.inner_c",
+    "extra_col",
+)
+CUSTOM_FILE_SCHEMA: Final[pa.Schema] = pa.schema(
+    [pa.field("id", pa.int64(), metadata={"comment": "File ID"})],
+    metadata={"comment": "File table"},
+)
+SAMPLE_JSON_ARROW_SCHEMA: Final[pa.Schema] = pa.schema(
+    [
+        pa.field(
+            "gene_id",
+            pa.string(),
+            nullable=False,
+            metadata={"comment": "Gene identifier", "jsonschema_type": "string"},
+        )
+    ],
+    metadata={"comment": "JSON Schema table description"},
+)
+
+
+def build_mismatched_schemas() -> tuple[Schema, pa.Schema]:
+    """Build paired Iceberg and PyArrow schemas with unmatched fields and flattened containers."""
     iceberg_schema = Schema(
         NestedField(1, "foo_bar", StringType(), required=False),
         NestedField(2, "payload_struct", StringType(), required=False),
         NestedField(3, "payload_list", StringType(), required=False),
         NestedField(4, "payload_map", StringType(), required=False),
     )
-    table = polaris_like_catalog.create_table((NAMESPACE, "mismatched"), schema=iceberg_schema)
-
     arrow_schema = pa.schema(
         [
-            # Two distinct Arrow columns that both snake_case-normalize to 'foo_bar' -> ambiguous, neither guessed
+            # two distinct Arrow columns that both snake_case-normalize to 'foo_bar' are ambiguous
             pa.field("fooBar", pa.string(), metadata={"comment": "Camel foo bar"}),
             pa.field("FooBar", pa.string(), metadata={"comment": "Pascal foo bar"}),
-            # Container columns flattened to StringType in Iceberg
+            # container columns flattened to StringType in Iceberg
             pa.field(
                 "payload_struct",
                 pa.struct([pa.field("inner_a", pa.int64(), metadata={"comment": "Inner A"})]),
@@ -444,7 +466,12 @@ def test_plan_and_strict_mode_handle_unmatched_fields_and_container_mismatches(
             pa.field("extra_col", pa.int64(), metadata={"comment": "Not in Iceberg"}),
         ]
     )
+    return iceberg_schema, arrow_schema
 
+
+def test_plan_schema_definitions_pass_unmatched_fields_and_container_mismatches() -> None:
+    """plan_schema_definitions reports unmatched fields, ambiguous roots, and non-struct map key slots."""
+    iceberg_schema, arrow_schema = build_mismatched_schemas()
     plan = plan_schema_definitions(
         arrow_schema,
         iceberg_schema,
@@ -457,18 +484,25 @@ def test_plan_and_strict_mode_handle_unmatched_fields_and_container_mismatches(
         "payload_map.key.k_attrs.key": "Nested key",
         "payload_map.key.k_attrs.value": "Nested val",
     }
-    assert plan.unmatched_arrow_fields == (
-        "fooBar",
-        "FooBar",
-        "payload_struct.inner_a",
-        "payload_list.item.inner_item.inner_b",
-        "payload_map.value.value.inner_c",
-        "extra_col",
-    )
+    assert plan.unmatched_arrow_fields == MISMATCHED_UNMATCHED_FIELDS
 
+
+def test_apply_schema_definitions_to_table_fail_strict_unmatched_fields(
+    polaris_like_catalog: Catalog,
+) -> None:
+    """apply_schema_definitions_to_table raises ValueError in strict mode when PyArrow fields are unmatched."""
+    iceberg_schema, arrow_schema = build_mismatched_schemas()
+    table = polaris_like_catalog.create_table((NAMESPACE, "mismatched"), schema=iceberg_schema)
     with pytest.raises(ValueError, match="Unmatched PyArrow field"):
         apply_schema_definitions_to_table(table, arrow_schema, DefinitionSyncOptions(strict=True))
 
+
+def test_apply_schema_definitions_to_table_pass_non_strict_unmatched_fields(
+    polaris_like_catalog: Catalog,
+) -> None:
+    """apply_schema_definitions_to_table applies matched container docs and reports unmatched fields in non-strict mode."""
+    iceberg_schema, arrow_schema = build_mismatched_schemas()
+    table = polaris_like_catalog.create_table((NAMESPACE, "mismatched"), schema=iceberg_schema)
     non_strict_report = apply_schema_definitions_to_table(
         table,
         arrow_schema,
@@ -480,7 +514,7 @@ def test_plan_and_strict_mode_handle_unmatched_fields_and_container_mismatches(
         "payload_list": "JSON serialized list",
         "payload_map": "JSON serialized map",
     }
-    assert non_strict_report.unmatched_arrow_fields == plan.unmatched_arrow_fields
+    assert non_strict_report.unmatched_arrow_fields == MISMATCHED_UNMATCHED_FIELDS
 
 
 def test_normalize_root_names_disabled_skips_snake_case_fallback() -> None:
@@ -493,20 +527,8 @@ def test_normalize_root_names_disabled_skips_snake_case_fallback() -> None:
     assert plan.unmatched_arrow_fields == ("recordId",)
 
 
-def test_load_pyarrow_schema_sources_and_errors(tmp_path: Path) -> None:
-    """load_pyarrow_schema loads dotted modules, .py files, registries, mappings, and JSON Schemas, and rejects invalid inputs."""
-    # 1. Dotted module + attribute
-    id_mapping_schema = load_pyarrow_schema("cdm_data_loaders.schemas.uniprot.idmapping.schema:ID_MAPPING_SCHEMA")
-    assert extract_metadata_definition(id_mapping_schema.metadata) == "Standardised mapping data from UniProt"
-
-    # 2. Dotted module + ArrowSchemaRegistry + schema_key
-    reg_schema = load_pyarrow_schema(
-        "cdm_data_loaders.datasets.uniprot.idmapping:UNIPROT_IDMAPPING_OUTPUT_SCHEMAS",
-        schema_key="id_mapping",
-    )
-    assert reg_schema.equals(id_mapping_schema, check_metadata=True)
-
-    # 3. Local .py file with default SCHEMA and SCHEMAS mapping
+def write_schema_source_fixtures(tmp_path: Path) -> dict[str, Path]:
+    """Write temporary Python and JSON schema source files for load_pyarrow_schema tests."""
     py_file = tmp_path / "custom_schemas.py"
     py_file.write_text(
         "import pyarrow as pa\n"
@@ -516,12 +538,6 @@ def test_load_pyarrow_schema_sources_and_errors(tmp_path: Path) -> None:
         "NOT_A_SCHEMA = 42\n",
         encoding="utf-8",
     )
-    loaded_default = load_pyarrow_schema(str(py_file))
-    assert extract_metadata_definition(loaded_default.metadata) == "File table"
-    loaded_keyed = load_pyarrow_schema(str(py_file), schema_key="alpha")
-    assert loaded_keyed.equals(loaded_default, check_metadata=True)
-
-    # 4. JSON Schema file with top-level description and property descriptions
     json_file = tmp_path / "sample.schema.json"
     json_file.write_text(
         json.dumps(
@@ -537,38 +553,132 @@ def test_load_pyarrow_schema_sources_and_errors(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    loaded_json = load_pyarrow_schema(str(json_file))
-    assert extract_metadata_definition(loaded_json.metadata) == "JSON Schema table description"
-    assert extract_metadata_definition(loaded_json.field("gene_id").metadata) == "Gene identifier"
-
-    # Error cases
     bad_json = tmp_path / "list_root.json"
     bad_json.write_text("[1, 2, 3]", encoding="utf-8")
     empty_mod = tmp_path / "empty_mod.py"
     empty_mod.write_text("X = 1\n", encoding="utf-8")
+    return {"py_file": py_file, "json_file": json_file, "bad_json": bad_json, "empty_mod": empty_mod}
 
-    with pytest.raises(ValueError, match="has no attribute"):
-        load_pyarrow_schema(f"{py_file}:MISSING_ATTR")
-    with pytest.raises(ValueError, match=r"already a single pyarrow\.Schema"):
-        load_pyarrow_schema(f"{py_file}:SCHEMA", schema_key="alpha")
-    with pytest.raises(TypeError, match=r"must be a pyarrow\.Schema"):
-        load_pyarrow_schema(f"{py_file}:NOT_A_SCHEMA")
-    with pytest.raises(ValueError, match="pass schema_key"):
-        load_pyarrow_schema(f"{py_file}:SCHEMAS")
-    with pytest.raises(ValueError, match="not found"):
-        load_pyarrow_schema(f"{py_file}:SCHEMAS", schema_key="missing")
-    with pytest.raises(TypeError, match=r"must be a pyarrow\.Schema"):
-        load_pyarrow_schema(f"{py_file}:BAD_MAP", schema_key="alpha")
-    with pytest.raises(ValueError, match="neither 'OUTPUT_SCHEMAS' nor 'SCHEMAS'"):
-        load_pyarrow_schema(str(empty_mod), schema_key="alpha")
-    with pytest.raises(ValueError, match="no default 'SCHEMA'"):
-        load_pyarrow_schema(str(empty_mod))
-    with pytest.raises(ValueError, match="not supported when loading JSON Schema"):
-        load_pyarrow_schema(str(json_file), schema_key="alpha")
-    with pytest.raises(TypeError, match="JSON object at root"):
-        load_pyarrow_schema(str(bad_json))
-    with pytest.raises(FileNotFoundError):
-        load_pyarrow_schema(r"C:\nonexistent\windows_schema.py")
+
+@pytest.mark.parametrize(
+    ("source_kind", "schema_key", "expected_schema"),
+    [
+        pytest.param("dotted_attr", None, ID_MAPPING_SCHEMA, id="dotted-module-attr"),
+        pytest.param("dotted_registry", "id_mapping", ID_MAPPING_SCHEMA, id="dotted-module-registry"),
+        pytest.param("py_file", None, CUSTOM_FILE_SCHEMA, id="py-file-default-schema"),
+        pytest.param("py_file", "alpha", CUSTOM_FILE_SCHEMA, id="py-file-keyed-mapping"),
+        pytest.param("json_file", None, SAMPLE_JSON_ARROW_SCHEMA, id="json-schema-file"),
+    ],
+)
+def test_load_pyarrow_schema_pass_sources(
+    tmp_path: Path,
+    source_kind: str,
+    schema_key: str | None,
+    expected_schema: pa.Schema,
+) -> None:
+    """load_pyarrow_schema loads dotted modules, registries, local .py files, and JSON Schemas."""
+    fixtures = write_schema_source_fixtures(tmp_path)
+    source_map = {
+        "dotted_attr": "cdm_data_loaders.schemas.uniprot.idmapping.schema:ID_MAPPING_SCHEMA",
+        "dotted_registry": "cdm_data_loaders.datasets.uniprot.idmapping:UNIPROT_IDMAPPING_OUTPUT_SCHEMAS",
+        "py_file": str(fixtures["py_file"]),
+        "json_file": str(fixtures["json_file"]),
+    }
+    loaded = load_pyarrow_schema(source_map[source_kind], schema_key=schema_key)
+    assert loaded.equals(expected_schema, check_metadata=True)
+
+
+@pytest.mark.parametrize(
+    ("source_kind", "field_name", "expected_definition"),
+    [
+        pytest.param("dotted_attr", None, "Standardised mapping data from UniProt", id="dotted-module-table"),
+        pytest.param("py_file", None, "File table", id="py-file-table"),
+        pytest.param("json_file", None, "JSON Schema table description", id="json-schema-table"),
+        pytest.param("json_file", "gene_id", "Gene identifier", id="json-schema-field"),
+    ],
+)
+def test_extract_metadata_definition_pass(
+    tmp_path: Path,
+    source_kind: str,
+    field_name: str | None,
+    expected_definition: str,
+) -> None:
+    """extract_metadata_definition extracts table and field definitions from loaded PyArrow schemas."""
+    fixtures = write_schema_source_fixtures(tmp_path)
+    source_map = {
+        "dotted_attr": "cdm_data_loaders.schemas.uniprot.idmapping.schema:ID_MAPPING_SCHEMA",
+        "py_file": str(fixtures["py_file"]),
+        "json_file": str(fixtures["json_file"]),
+    }
+    loaded = load_pyarrow_schema(source_map[source_kind])
+    target_metadata = loaded.field(field_name).metadata if field_name is not None else loaded.metadata
+    assert extract_metadata_definition(target_metadata) == expected_definition
+
+
+@pytest.mark.parametrize(
+    ("source_template", "schema_key", "error_type", "match"),
+    [
+        pytest.param("{py_file}:MISSING_ATTR", None, ValueError, "has no attribute", id="missing-module-attr"),
+        pytest.param(
+            "{py_file}:SCHEMA",
+            "alpha",
+            ValueError,
+            r"already a single pyarrow\.Schema",
+            id="schema-key-on-single-schema",
+        ),
+        pytest.param(
+            "{py_file}:NOT_A_SCHEMA",
+            None,
+            TypeError,
+            r"must be a pyarrow\.Schema",
+            id="non-schema-attribute",
+        ),
+        pytest.param("{py_file}:SCHEMAS", None, ValueError, "pass schema_key", id="mapping-missing-schema-key"),
+        pytest.param("{py_file}:SCHEMAS", "missing", ValueError, "not found", id="mapping-unknown-schema-key"),
+        pytest.param(
+            "{py_file}:BAD_MAP",
+            "alpha",
+            TypeError,
+            r"must be a pyarrow\.Schema",
+            id="mapping-non-schema-value",
+        ),
+        pytest.param(
+            "{empty_mod}",
+            "alpha",
+            ValueError,
+            "neither 'OUTPUT_SCHEMAS' nor 'SCHEMAS'",
+            id="module-missing-schema-mappings",
+        ),
+        pytest.param("{empty_mod}", None, ValueError, "no default 'SCHEMA'", id="module-missing-default-schema"),
+        pytest.param(
+            "{json_file}",
+            "alpha",
+            ValueError,
+            "not supported when loading JSON Schema",
+            id="json-schema-with-schema-key",
+        ),
+        pytest.param("{bad_json}", None, TypeError, "JSON object at root", id="json-schema-list-root"),
+        pytest.param(
+            r"C:\nonexistent\windows_schema.py",
+            None,
+            FileNotFoundError,
+            r"windows_schema\.py",
+            id="nonexistent-windows-path",
+        ),
+    ],
+)
+def test_load_pyarrow_schema_fail_invalid_sources(
+    tmp_path: Path,
+    source_template: str,
+    schema_key: str | None,
+    error_type: type[Exception],
+    match: str,
+) -> None:
+    """load_pyarrow_schema rejects missing attributes, invalid schema objects, and malformed files."""
+    fixtures = write_schema_source_fixtures(tmp_path)
+    schema_source = source_template.format(**fixtures)
+    with pytest.raises(error_type, match=match):
+        load_pyarrow_schema(schema_source, schema_key=schema_key)
 
 
 def test_cli_main_applies_definitions_and_prints_json_report(

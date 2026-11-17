@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Final
 
 import pytest
 from frozendict import frozendict
@@ -151,37 +151,48 @@ def test_convert_type_pass_combiner_precedence(
     assert ("cdm_data_loaders.converters.emitters.pyspark" in warning_modules) == spark_warns
 
 
-@pytest.mark.parametrize(
-    "schema",
-    [
-        {},
-        {"type": "unknown"},
-        {"type": ["integer", "string"]},
-        {"oneOf": []},
-        {"anyOf": []},
-        {"oneOf": [True]},
-        {"anyOf": [False]},
-        {"oneOf": [{"anyOf": [True]}]},
-    ],
-    ids=[
-        "empty",
-        "unknown",
-        "mixed-union",
-        "empty-one-of",
-        "empty-any-of",
-        "true-branch",
-        "false-branch",
-        "nested-boolean",
-    ],
+UNSUPPORTED_FALLBACK_FRAGMENTS: Final[tuple[dict[str, Any], ...]] = (
+    {},
+    {"type": "unknown"},
+    {"type": ["integer", "string"]},
+    {"oneOf": []},
+    {"anyOf": []},
+    {"oneOf": [True]},
+    {"anyOf": [False]},
+    {"oneOf": [{"anyOf": [True]}]},
 )
-def test_convert_type_fail_strict_pyspark_fallback(schema: dict[str, Any]) -> None:
-    """Keep dlt text fallback and PySpark's optional rejection of unsupported schemas."""
+UNSUPPORTED_FALLBACK_IDS: Final[tuple[str, ...]] = (
+    "empty",
+    "unknown",
+    "mixed-union",
+    "empty-one-of",
+    "empty-any-of",
+    "true-branch",
+    "false-branch",
+    "nested-boolean",
+)
+
+
+@pytest.mark.parametrize("schema", UNSUPPORTED_FALLBACK_FRAGMENTS, ids=UNSUPPORTED_FALLBACK_IDS)
+def test_convert_type_pass_dlt_text_fallback(schema: dict[str, Any]) -> None:
+    """Keep dlt text fallback for unsupported or untyped schema fragments."""
     document = property_schema(schema)
     stored = dlt_module.JSONSchemaToDlt(schema_name="test").convert(document)
     assert stored["tables"]["test"]["columns"]["value"] == {"name": "value", "data_type": "text", "nullable": True}
-    permissive = spark_module.JSONSchemaToPySpark()
+
+
+@pytest.mark.parametrize("schema", UNSUPPORTED_FALLBACK_FRAGMENTS, ids=UNSUPPORTED_FALLBACK_IDS)
+def test_convert_type_pass_permissive_pyspark_fallback(schema: dict[str, Any]) -> None:
+    """Keep PySpark StringType fallback when treat_unknown_as_string is enabled."""
+    document = property_schema(schema)
+    assert spark_module.JSONSchemaToPySpark().convert(document)["value"].dataType == StringType()
+
+
+@pytest.mark.parametrize("schema", UNSUPPORTED_FALLBACK_FRAGMENTS, ids=UNSUPPORTED_FALLBACK_IDS)
+def test_convert_type_fail_strict_pyspark_fallback(schema: dict[str, Any]) -> None:
+    """Reject unsupported schema fragments in PySpark when treat_unknown_as_string is False."""
+    document = property_schema(schema)
     strict = spark_module.JSONSchemaToPySpark(treat_unknown_as_string=False)
-    assert permissive.convert(document)["value"].dataType == StringType()
     with pytest.raises(JSONSchemaToPySparkError):
         strict.convert(document)
 
@@ -195,23 +206,38 @@ def test_convert_type_pass_one_of_before_any_of() -> None:
     assert converter.convert(schema)["value"].dataType == LongType()
 
 
-def test_build_error_by_code_pass_populates_and_empty_boundary() -> None:
+class SampleConverterError(ConversionError):
+    """Sample converter base error."""
+
+
+class FirstError(SampleConverterError):
+    """First numbered error."""
+
+    code: ClassVar[str] = "E1"
+    title: ClassVar[str] = "First condition"
+
+
+class SecondError(SampleConverterError):
+    """Second numbered error."""
+
+    code: ClassVar[str] = "E2"
+    title: ClassVar[str] = "Second condition"
+
+
+@pytest.mark.parametrize(
+    ("errors", "expected"),
+    [
+        pytest.param((), frozendict(), id="empty"),
+        pytest.param(
+            (FirstError, SecondError),
+            frozendict({"E1": FirstError, "E2": SecondError}),
+            id="populated",
+        ),
+    ],
+)
+def test_build_error_by_code_pass_populates_and_empty_boundary(
+    errors: tuple[type[SampleConverterError], ...],
+    expected: frozendict[str, type[SampleConverterError]],
+) -> None:
     """build_error_by_code returns an immutable code-to-class mapping for populated and empty error tuples."""
-
-    class SampleConverterError(ConversionError):
-        """Sample converter base error."""
-
-    class FirstError(SampleConverterError):
-        """First numbered error."""
-
-        code: ClassVar[str] = "E1"
-        title: ClassVar[str] = "First condition"
-
-    class SecondError(SampleConverterError):
-        """Second numbered error."""
-
-        code: ClassVar[str] = "E2"
-        title: ClassVar[str] = "Second condition"
-
-    assert build_error_by_code(()) == frozendict()
-    assert build_error_by_code((FirstError, SecondError)) == frozendict({"E1": FirstError, "E2": SecondError})
+    assert build_error_by_code(errors) == expected

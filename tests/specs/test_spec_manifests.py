@@ -21,7 +21,7 @@ from cdm_data_loaders.converters.exceptions.facades.pydantic_to_pyarrow import (
 )
 from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import XSD_TO_PYARROW_ERRORS
 from cdm_data_loaders.core.cli import SpecError
-from cdm_data_loaders.core.pipeline_catalog import resolve_pipeline
+from cdm_data_loaders.core.pipeline_catalog import PipelineSpec, resolve_pipeline
 from cdm_data_loaders.pipelines.jsonlines.exceptions import JSONLINES_JSONSCHEMA_ERRORS
 from cdm_data_loaders.pipelines.xmltopyarrow.exceptions import XMLTOPYARROW_CONFIG_ERRORS
 from cdm_data_loaders.pipelines.xsv.exceptions import XSV_SCHEMA_ERRORS
@@ -138,6 +138,11 @@ def _pipeline_presets_by_family() -> dict[str, tuple[str, ...]]:
 
 
 PIPELINE_PRESETS_BY_FAMILY: Final[dict[str, tuple[str, ...]]] = _pipeline_presets_by_family()
+PIPELINE_PRESET_PAIRS: Final[tuple[tuple[str, str], ...]] = tuple(
+    (family_name, preset_name)
+    for family_name in sorted(PIPELINE_FAMILY_DIRS)
+    for preset_name in PIPELINE_PRESETS_BY_FAMILY[family_name]
+)
 PIPELINE_CASES_BY_FAMILY: Final[dict[str, list[PipelineCase]]] = {
     name: load_pipeline_cases(path) for name, path in PIPELINE_FAMILY_DIRS.items()
 }
@@ -190,9 +195,21 @@ def test_schema_spec_manifests_rules_files_and_error_codes(target: SchemaSpecTar
     assert sorted(errors_by_code.keys() - manifest_codes) == []
 
 
+@pytest.fixture
+def base_pipeline_spec(family_name: str) -> PipelineSpec:
+    """Resolve the base ``PipelineSpec`` for ``family_name``.
+
+    :param family_name: Pipeline family command name.
+    :type family_name: str
+    :return: Resolved base ``PipelineSpec``.
+    :rtype: PipelineSpec
+    """
+    return resolve_pipeline(family_name)
+
+
 @pytest.mark.parametrize("family_name", sorted(PIPELINE_FAMILY_DIRS), ids=str)
-def test_pipeline_family_rules_and_preset_inheritance(family_name: str) -> None:
-    """Verify pipeline family rule coverage and preset subclass/runner inheritance."""
+def test_pipeline_family_rules_pass(family_name: str) -> None:
+    """Verify pipeline family rule coverage and base pipeline registration."""
     catalogue = load_rules(PIPELINE_FAMILY_DIRS[family_name] / "rules.yaml")
     cases = PIPELINE_CASES_BY_FAMILY[family_name]
     unknown = {f"{c.pipeline}/{c.name}": sorted(set(c.rules) - catalogue.rules.keys()) for c in cases}
@@ -205,12 +222,24 @@ def test_pipeline_family_rules_and_preset_inheritance(family_name: str) -> None:
     assert base_resolved.settings_cls is not None
     assert base_resolved.pipeline_fn is not None
 
-    for preset_name in PIPELINE_PRESETS_BY_FAMILY[family_name]:
-        preset_resolved = resolve_pipeline(preset_name)
-        assert preset_resolved.settings_cls is not None
-        assert issubclass(preset_resolved.settings_cls, base_resolved.settings_cls)
-        assert preset_resolved.settings_cls is not base_resolved.settings_cls
-        assert preset_resolved.pipeline_fn is base_resolved.pipeline_fn
+
+@pytest.mark.parametrize(
+    ("family_name", "preset_name"),
+    [pytest.param(fam, preset, id=f"{fam}-{preset}") for fam, preset in PIPELINE_PRESET_PAIRS],
+)
+def test_pipeline_preset_inheritance_pass(
+    family_name: str,
+    preset_name: str,
+    base_pipeline_spec: PipelineSpec,
+) -> None:
+    """Verify each preset pipeline subclasses its family settings class and shares its runner."""
+    assert base_pipeline_spec.cli_command == family_name
+    assert base_pipeline_spec.settings_cls is not None
+    preset_resolved = resolve_pipeline(preset_name)
+    assert preset_resolved.settings_cls is not None
+    assert issubclass(preset_resolved.settings_cls, base_pipeline_spec.settings_cls)
+    assert preset_resolved.settings_cls is not base_pipeline_spec.settings_cls
+    assert preset_resolved.pipeline_fn is base_pipeline_spec.pipeline_fn
 
 
 @pytest.mark.parametrize("case", ALL_PIPELINE_CASES, ids=[f"{c.pipeline}-{c.name}" for c in ALL_PIPELINE_CASES])

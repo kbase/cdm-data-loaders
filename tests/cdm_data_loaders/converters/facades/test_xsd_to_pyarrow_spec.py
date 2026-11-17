@@ -263,7 +263,7 @@ def test_make_xml_element_converter_fail_error_manifest(err: ErrorCase) -> None:
         pytest.param("xs:base64Binary", id="xs-base64Binary"),
     ],
 )
-@pytest.mark.parametrize("position", ["child", "attribute"])
+@pytest.mark.parametrize("position", ["child", "attribute"], ids=["child-element", "attribute"])
 def test_generate_pyarrow_schema_fail_non_json_serializable_type_under_recursion(
     forbidden_xsd_type: str,
     position: str,

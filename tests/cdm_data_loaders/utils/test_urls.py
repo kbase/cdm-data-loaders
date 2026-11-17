@@ -42,10 +42,26 @@ def test_is_local_url(url: str, expected: bool) -> None:
     assert is_local_url(url) is expected
 
 
-def test_join_url_remote_and_local() -> None:
+@pytest.mark.parametrize(
+    ("base", "parts", "expected"),
+    [
+        pytest.param(
+            "s3://my-bucket/prefix",
+            ("sub", "item.parquet"),
+            "s3://my-bucket/prefix/sub/item.parquet",
+            id="s3-remote-url",
+        ),
+        pytest.param(
+            "/var/data",
+            ("sub", "item.parquet"),
+            str(Path("/var/data", "sub", "item.parquet")),
+            id="local-path",
+        ),
+    ],
+)
+def test_join_url_remote_and_local(base: str, parts: tuple[str, ...], expected: str) -> None:
     """Join remote URLs with POSIX slashes and local paths with ``Path``."""
-    assert join_url("s3://my-bucket/prefix", "sub", "item.parquet") == "s3://my-bucket/prefix/sub/item.parquet"
-    assert join_url("/var/data", "sub", "item.parquet") == str(Path("/var/data", "sub", "item.parquet"))
+    assert join_url(base, *parts) == expected
 
 
 @pytest.mark.parametrize(

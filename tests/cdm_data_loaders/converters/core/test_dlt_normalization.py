@@ -2,6 +2,7 @@
 
 import json
 from collections import UserDict
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import FrozenInstanceError
 from pathlib import Path
@@ -110,6 +111,11 @@ def test_flatten_nodes_pass_mapping_input() -> None:
 
 
 @pytest.mark.parametrize(
+    "fn",
+    [unflatten_tables, tables_parents_first],
+    ids=["unflatten_tables", "tables_parents_first"],
+)
+@pytest.mark.parametrize(
     ("tables", "message"),
     [
         (None, "Tables must be a mapping"),
@@ -154,15 +160,17 @@ def test_flatten_nodes_pass_mapping_input() -> None:
         "child-key-collision",
     ],
 )
-def test_unflatten_tables_fail_invalid_graph(tables: Any, message: str) -> None:  # noqa: ANN401
+def test_unflatten_tables_fail_invalid_graph(
+    tables: object,
+    message: str,
+    fn: Callable[[Any], object],
+) -> None:
     """Reject structural errors and all cyclic components without mutating input."""
     original = deepcopy(tables)
     with pytest.raises(DltNormalizationError, match=message) as raised:
-        unflatten_tables(tables)
+        fn(tables)
     assert isinstance(raised.value, ConversionError)
     assert tables == original
-    with pytest.raises(DltNormalizationError, match=message):
-        tables_parents_first(tables)
 
 
 def test_unflatten_tables_pass_isolated_copies() -> None:

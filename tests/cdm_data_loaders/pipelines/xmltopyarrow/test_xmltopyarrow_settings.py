@@ -213,6 +213,7 @@ def test_subclass_xmltopyarrow_settings_pass_cli(
     assert cli_settings.schema_map == ArrowSchemaRegistry(registry={"entry": expected_schema})
 
 
+@pytest.mark.parametrize("via_cli", [False, True], ids=["python-kwargs", "cli-args"])
 @pytest.mark.parametrize(
     "settings_cls",
     [
@@ -236,14 +237,17 @@ def test_subclass_xmltopyarrow_settings_fail_locked_fields(
     settings_cls: type[XmlToPyArrowSettings],
     locked_field: str,
     flag: str,
+    via_cli: bool,
 ) -> None:
     """UniProt and UniRef settings subclasses reject overrides of locked preset fields in Python and CLI."""
     assert locked_field not in settings_cls.model_fields
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        settings_factory(settings_cls, **{locked_field: "custom"})
-    base_argv = settings_to_argv(settings_factory(CtsSettings))
-    with pytest.raises(SettingsError, match=f"unrecognized arguments: {flag}"):
-        CliApp.run(settings_cls, cli_args=[*base_argv, flag, "custom"])
+    if via_cli:
+        base_argv = settings_to_argv(settings_factory(CtsSettings))
+        with pytest.raises(SettingsError, match=f"unrecognized arguments: {flag}"):
+            CliApp.run(settings_cls, cli_args=[*base_argv, flag, "custom"])
+    else:
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            settings_factory(settings_cls, **{locked_field: "custom"})
 
 
 def test_preset_xmltopyarrow_settings_pass_base_defaults(
@@ -415,12 +419,19 @@ def test_xmltopyarrow_settings_fail_mutually_exclusive_or_invalid_level_args(
         settings_factory(xsd_file=xsd_file, **kwargs)
 
 
+@pytest.mark.parametrize("via_cli", [False, True], ids=["python-kwargs", "cli-args"])
 def test_pubmed_xmltopyarrow_settings_pass_defaults_and_cli(
     settings_factory: Callable[..., Any],
+    via_cli: bool,
 ) -> None:
     """PubMedXmlToPyArrowSettings defaults dataset_name, xml_level, root_tag, xsd_file, and precomputed SCHEMAS."""
+    base_argv = settings_to_argv(settings_factory(CtsSettings)) if via_cli else []
     with patch.object(xmltopyarrow_settings_module, "generate_pyarrow_schemas_at_level") as mock_gen_schemas:
-        settings = settings_factory(PubMedXmlToPyArrowSettings)
+        settings = (
+            CliApp.run(PubMedXmlToPyArrowSettings, cli_args=base_argv)
+            if via_cli
+            else settings_factory(PubMedXmlToPyArrowSettings)
+        )
 
     mock_gen_schemas.assert_not_called()
     assert settings.dataset_name == PUBMED_PIPELINE_NAME
@@ -434,20 +445,11 @@ def test_pubmed_xmltopyarrow_settings_pass_defaults_and_cli(
     assert isinstance(settings.xsd_schema, xmlschema.XMLSchema)
     assert settings.pyarrow_schema is None
     assert settings.pyarrow_schemas == dict(PUBMED_SCHEMAS)
-
-    base_settings = settings_factory(CtsSettings)
-    base_argv = settings_to_argv(base_settings)
-    cli_settings = CliApp.run(PubMedXmlToPyArrowSettings, cli_args=base_argv)
-    assert cli_settings.dataset_name == PUBMED_PIPELINE_NAME
-    assert cli_settings.file_glob == XML_GZ_FILE_GLOB
-    assert cli_settings.get_file_preprocessors() == (validate_md5_sidecar,)
-    assert cli_settings.xml_level == 1
-    assert cli_settings.root_tag is None
-    assert cli_settings.pyarrow_schemas == dict(PUBMED_SCHEMAS)
     assert UNIPROT_SCHEMAS["entry"] is UNIPROT_SCHEMA
     assert UNIREF_SCHEMAS["entry"] is UNIREF_SCHEMA
 
 
+@pytest.mark.parametrize("via_cli", [False, True], ids=["python-kwargs", "cli-args"])
 @pytest.mark.parametrize(
     ("locked_field", "flag"),
     [
@@ -461,14 +463,17 @@ def test_pubmed_xmltopyarrow_settings_fail_locked_fields(
     settings_factory: Callable[..., Any],
     locked_field: str,
     flag: str,
+    via_cli: bool,
 ) -> None:
     """PubMedXmlToPyArrowSettings rejects overrides of locked preset fields in Python and CLI."""
     assert locked_field not in PubMedXmlToPyArrowSettings.model_fields
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        settings_factory(PubMedXmlToPyArrowSettings, **{locked_field: "custom"})
-    base_argv = settings_to_argv(settings_factory(CtsSettings))
-    with pytest.raises(SettingsError, match=f"unrecognized arguments: {flag}"):
-        CliApp.run(PubMedXmlToPyArrowSettings, cli_args=[*base_argv, flag, "custom"])
+    if via_cli:
+        base_argv = settings_to_argv(settings_factory(CtsSettings))
+        with pytest.raises(SettingsError, match=f"unrecognized arguments: {flag}"):
+            CliApp.run(PubMedXmlToPyArrowSettings, cli_args=[*base_argv, flag, "custom"])
+    else:
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            settings_factory(PubMedXmlToPyArrowSettings, **{locked_field: "custom"})
 
 
 def test_level_preset_xmltopyarrow_settings_fail_missing_precomputed_schemas(

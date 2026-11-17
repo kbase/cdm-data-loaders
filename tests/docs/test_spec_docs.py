@@ -140,8 +140,8 @@ def test_pipeline_specification_document_pass_up_to_date(
         assert f"`{err_cls.__name__}`" in rendered
 
 
-def test_render_pipeline_spec_custom_config_and_unknown_name() -> None:
-    """render_pipeline_spec accepts a custom PipelineSpecConfig and raises KeyError on unknown names."""
+def test_render_pipeline_spec_pass_custom_config() -> None:
+    """render_pipeline_spec renders a custom PipelineSpecConfig instance."""
     xml_spec = discover_pipeline_specs()["xmltopyarrow"]
     custom_spec = PipelineSpecConfig(
         name="xmltopyarrow",
@@ -152,6 +152,9 @@ def test_render_pipeline_spec_custom_config_and_unknown_name() -> None:
     rendered = render_pipeline_spec(custom_spec)
     assert "# XML to PyArrow Pipeline Specification" in rendered
 
+
+def test_render_pipeline_spec_fail_unknown_name() -> None:
+    """render_pipeline_spec raises KeyError when given an unknown pipeline specification name."""
     with pytest.raises(KeyError, match="Unknown pipeline specification"):
         render_pipeline_spec("nonexistent_pipeline")
 
@@ -208,16 +211,36 @@ def test_render_reference_table_expected_rows(table_id: str, expected_fragments:
         assert fragment in rendered
 
 
-def test_render_pipeline_spec_preset_overrides_pass() -> None:
+@pytest.mark.parametrize(
+    ("pipeline_name", "expected_snippets"),
+    [
+        pytest.param(
+            "xmltopyarrow",
+            (
+                "`PRECOMPUTED_SCHEMAS`",
+                "`DEFAULT_FILE_PREPROCESSORS`",
+                "`(validate_md5_sidecar,)`",
+            ),
+            id="xmltopyarrow",
+        ),
+        pytest.param(
+            "xsv",
+            (
+                "### Preset Pipeline: `uniprot_idmapping` (`UniProtIdMappingSettings`)",
+                "| `partition_buckets` | Added preset field | — | `64` |",
+            ),
+            id="xsv",
+        ),
+    ],
+)
+def test_render_pipeline_spec_preset_overrides_pass(
+    pipeline_name: str,
+    expected_snippets: tuple[str, ...],
+) -> None:
     """Preset hierarchy tables render public preset bindings and added preset fields."""
-    xml_rendered = render_pipeline_spec("xmltopyarrow")
-    assert "`PRECOMPUTED_SCHEMAS`" in xml_rendered
-    assert "`DEFAULT_FILE_PREPROCESSORS`" in xml_rendered
-    assert "`(validate_md5_sidecar,)`" in xml_rendered
-
-    xsv_rendered = render_pipeline_spec("xsv")
-    assert "### Preset Pipeline: `uniprot_idmapping` (`UniProtIdMappingSettings`)" in xsv_rendered
-    assert "| `partition_buckets` | Added preset field | — | `64` |" in xsv_rendered
+    rendered = render_pipeline_spec(pipeline_name)
+    for snippet in expected_snippets:
+        assert snippet in rendered
 
 
 @pytest.mark.parametrize(

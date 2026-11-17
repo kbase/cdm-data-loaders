@@ -5,9 +5,10 @@ Cases and rules live under ``specs/pipelines/<pipeline>/`` (``rules.yaml``, ``*/
 render ``docs/<pipeline>_specification.md`` via ``docs_macros`` Jinja2 templates.
 """
 
+import functools
 import os
 import subprocess
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -329,12 +330,14 @@ def test_pipeline_smoke_spec_pass_end_to_end(
 # Environment config file and TOML loading tests
 
 
+@pytest.mark.parametrize("pipeline_name", ["pubmed", "ncbi_datasets"], ids=["pubmed", "ncbi_datasets"])
 @pytest.mark.parametrize("mode", [ExecutionMode.CORE, ExecutionMode.CLI], ids=str)
 def test_custom_dlt_config_dir_with_settings_toml_pass_end_to_end(
     tmp_path: Path,
     mode: ExecutionMode,
+    pipeline_name: str,
 ) -> None:
-    """A custom --dlt-config-dir with config.toml, secrets.toml, and settings.toml runs pubmed and ncbi_datasets."""
+    """A custom --dlt-config-dir with config.toml, secrets.toml, and settings.toml runs configured pipelines."""
     conf_dir = tmp_path / "env_conf"
     conf_dir.mkdir()
     bucket_root = tmp_path / "configured_bucket"
@@ -365,47 +368,89 @@ def test_custom_dlt_config_dir_with_settings_toml_pass_end_to_end(
     assert env.preserve_dlt_destination is True
     assert env.settings_file == (conf_dir / "settings.toml").resolve()
 
-    for pipeline_name in ("pubmed", "ncbi_datasets"):
-        case = CASES_BY_PIPELINE[pipeline_name][0]
-        run = case.runs[0]
-        execute_smoke_case_run(case, run, env, mode, tmp_path)
+    case = CASES_BY_PIPELINE[pipeline_name][0]
+    run = case.runs[0]
+    execute_smoke_case_run(case, run, env, mode, tmp_path)
 
 
-def test_load_settings_file_and_env_parsing_pass_formats_and_filtering(tmp_path: Path) -> None:
-    """load_settings_file supports TOML, YAML, and JSON, and settings_for_pipeline filters ClassVars and rejects unknown keys."""
-    toml_file = tmp_path / "settings.toml"
-    toml_file.write_text(
-        'use_destination = "s3"\ndataset_name = "ignored_on_preset"\n[pipelines.pubmed]\nbuffer_size = 10\n',
-        encoding="utf-8",
-    )
-    yaml_file = tmp_path / "settings.yaml"
-    yaml_file.write_text("loader_file_format: iceberg\npubmed:\n  buffer_size: 20\n", encoding="utf-8")
-    json_file = tmp_path / "settings.json"
-    json_file.write_text('{"loader_file_format": "jsonl"}', encoding="utf-8")
+@pytest.mark.parametrize(
+    ("filename", "content", "expected"),
+    [
+        pytest.param(
+            "settings.toml",
+            'use_destination = "s3"\ndataset_name = "ignored_on_preset"\n[pipelines.pubmed]\nbuffer_size = 10\n',
+            {
+                "use_destination": "s3",
+                "dataset_name": "ignored_on_preset",
+                "pipelines": {"pubmed": {"buffer_size": 10}},
+            },
+            id="toml",
+        ),
+        pytest.param(
+            "settings.yaml",
+            "loader_file_format: iceberg\npubmed:\n  buffer_size: 20\n",
+            {"loader_file_format": "iceberg", "pubmed": {"buffer_size": 20}},
+            id="yaml",
+        ),
+        pytest.param(
+            "settings.json",
+            '{"loader_file_format": "jsonl"}',
+            {"loader_file_format": "jsonl"},
+            id="json",
+        ),
+    ],
+)
+def test_load_settings_file_pass_supported_formats(
+    tmp_path: Path,
+    filename: str,
+    content: str,
+    expected: dict[str, Any],
+) -> None:
+    """load_settings_file parses TOML, YAML, and JSON settings override files."""
+    settings_path = tmp_path / filename
+    settings_path.write_text(content, encoding="utf-8")
+    assert load_settings_file(settings_path) == expected
 
-    assert load_settings_file(toml_file)["use_destination"] == "s3"
-    assert load_settings_file(yaml_file)["loader_file_format"] == "iceberg"
-    assert load_settings_file(json_file)["loader_file_format"] == "jsonl"
 
+def test_load_settings_file_fail_unsupported_extension(tmp_path: Path) -> None:
+    """load_settings_file raises ValueError for unsupported file extensions."""
     with pytest.raises(ValueError, match="Unsupported settings file extension"):
         load_settings_file(tmp_path / "bad.ini")
 
-    global_ov, pipe_ov = parse_env_settings_doc(load_settings_file(toml_file))
+
+def test_parse_env_settings_doc_pass_splits_global_and_pipeline_overrides() -> None:
+    """parse_env_settings_doc separates top-level scalar overrides from per-pipeline mappings."""
+    raw = {
+        "use_destination": "s3",
+        "dataset_name": "ignored_on_preset",
+        "pipelines": {"pubmed": {"buffer_size": 10}},
+    }
+    global_ov, pipe_ov = parse_env_settings_doc(raw)
     assert global_ov == {"use_destination": "s3", "dataset_name": "ignored_on_preset"}
     assert pipe_ov == {"pubmed": {"buffer_size": 10}}
 
+
+def test_settings_for_pipeline_pass_filters_classvars() -> None:
+    """PipelineEnvSpec.settings_for_pipeline merges overrides and filters out ClassVar attributes."""
     pubmed_spec = resolve_pipeline("pubmed")
     assert pubmed_spec.settings_cls is not None
     env = PipelineEnvSpec(
         name="test_env",
         use_destination="s3",
-        settings_overrides=global_ov,
-        pipeline_settings_overrides=pipe_ov,
+        settings_overrides={"use_destination": "s3", "dataset_name": "ignored_on_preset"},
+        pipeline_settings_overrides={"pubmed": {"buffer_size": 10}},
     )
-    resolved = env.settings_for_pipeline("pubmed", pubmed_spec.settings_cls)
     # dataset_name is a ClassVar on PubMedXmlToPyArrowSettings and is filtered out cleanly
-    assert resolved == {"use_destination": "s3", "buffer_size": 10}
+    assert env.settings_for_pipeline("pubmed", pubmed_spec.settings_cls) == {
+        "use_destination": "s3",
+        "buffer_size": 10,
+    }
 
+
+def test_settings_for_pipeline_fail_unknown_field() -> None:
+    """PipelineEnvSpec.settings_for_pipeline raises ValueError when an unknown field is configured."""
+    pubmed_spec = resolve_pipeline("pubmed")
+    assert pubmed_spec.settings_cls is not None
     bad_env = PipelineEnvSpec(
         name="bad_env",
         use_destination="s3",
@@ -415,13 +460,32 @@ def test_load_settings_file_and_env_parsing_pass_formats_and_filtering(tmp_path:
         bad_env.settings_for_pipeline("pubmed", pubmed_spec.settings_cls)
 
 
-def test_discover_env_settings_file_and_load_dlt_toml_files_fail_missing(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("loader_fn", "rel_missing_path", "expected_match"),
+    [
+        pytest.param(
+            load_dlt_toml_files,
+            "missing_dir",
+            "dlt config directory does not exist",
+            id="missing-dlt-config-dir",
+        ),
+        pytest.param(
+            functools.partial(discover_env_settings_file, None),
+            "missing_settings.toml",
+            "Settings config file does not exist",
+            id="missing-settings-file",
+        ),
+    ],
+)
+def test_discover_env_settings_file_and_load_dlt_toml_files_fail_missing(
+    tmp_path: Path,
+    loader_fn: Callable[[Path], object],
+    rel_missing_path: str,
+    expected_match: str,
+) -> None:
     """discover_env_settings_file and load_dlt_toml_files raise FileNotFoundError for missing paths."""
-    with pytest.raises(FileNotFoundError, match="dlt config directory does not exist"):
-        load_dlt_toml_files(tmp_path / "missing_dir")
-
-    with pytest.raises(FileNotFoundError, match="Settings config file does not exist"):
-        discover_env_settings_file(None, tmp_path / "missing_settings.toml")
+    with pytest.raises(FileNotFoundError, match=expected_match):
+        loader_fn(tmp_path / rel_missing_path)
 
 
 def test_ncbi_datasets_iceberg_with_home_pyiceberg_yaml_and_table_cleanup_pass(

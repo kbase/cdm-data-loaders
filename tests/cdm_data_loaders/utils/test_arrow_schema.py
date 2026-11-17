@@ -1,5 +1,8 @@
 """Unit tests for ``cdm_data_loaders.utils.arrow_schema``."""
 
+from collections.abc import Sequence
+from typing import Final
+
 import pyarrow as pa
 import pytest
 
@@ -12,18 +15,27 @@ from cdm_data_loaders.utils.arrow_schema import (
     is_non_json_arrow_type,
 )
 
+SAMPLE_FIELDS: Final[tuple[pa.Field, ...]] = (
+    pa.field("id", pa.string(), nullable=False),
+    pa.field("count", pa.int64(), nullable=True),
+)
+EXPECTED_ASSEMBLED_SCHEMA: Final[pa.Schema] = pa.schema(SAMPLE_FIELDS, metadata={"source": "unit"})
 
-def test_assemble_pyarrow_schema_from_struct_and_sequence() -> None:
-    """Assemble identical schemas from a ``pa.StructType`` or a sequence of ``pa.Field`` instances."""
-    fields = [
-        pa.field("id", pa.string(), nullable=False),
-        pa.field("count", pa.int64(), nullable=True),
-    ]
-    struct_type = pa.struct(fields)
-    from_struct = assemble_pyarrow_schema(struct_type, metadata={"source": "unit"})
-    from_fields = assemble_pyarrow_schema(fields, metadata={"source": "unit"})
-    assert from_struct.equals(from_fields, check_metadata=True)
-    assert from_struct.metadata == {b"source": b"unit"}
+
+@pytest.mark.parametrize(
+    "component",
+    [
+        pytest.param(pa.struct(SAMPLE_FIELDS), id="struct-type"),
+        pytest.param(list(SAMPLE_FIELDS), id="field-sequence"),
+    ],
+)
+def test_assemble_pyarrow_schema_pass_from_struct_and_sequence(
+    component: pa.StructType | Sequence[pa.Field],
+) -> None:
+    """Assemble the expected schema from a ``pa.StructType`` or a sequence of ``pa.Field`` instances."""
+    assembled = assemble_pyarrow_schema(component, metadata={"source": "unit"})
+    assert assembled.equals(EXPECTED_ASSEMBLED_SCHEMA, check_metadata=True)
+    assert assembled.metadata == {b"source": b"unit"}
 
 
 def test_assemble_pyarrow_schema_rejects_empty_component() -> None:

@@ -1,7 +1,10 @@
 """Unit tests for XSD model-group particle cardinality and validation helpers."""
 
+from typing import Final
+
 import pytest
 import xmlschema
+from xmlschema.validators import XsdGroup
 
 from cdm_data_loaders.validation.xsd.particles import (
     group_max_occurs_by_name,
@@ -14,50 +17,108 @@ from cdm_data_loaders.validation.xsd.particles import (
     validate_group_particles,
 )
 
+CHOICE_AND_SEQUENCE_XSD: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="root">
+    <xs:complexType>
+      <xs:choice minOccurs="2" maxOccurs="3">
+        <xs:element name="shared" type="xs:string" minOccurs="1" maxOccurs="2"/>
+        <xs:sequence>
+          <xs:element name="branchOnly" type="xs:string"/>
+          <xs:element name="shared" type="xs:string" minOccurs="1" maxOccurs="1"/>
+        </xs:sequence>
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+"""
+
 
 class CustomE4Error(ValueError):
     """Test-local E4 error subclass."""
 
 
-def test_raise_xsd_code_uses_mapped_or_fallback_exception() -> None:
-    """raise_xsd_code raises the mapped exception class when present and error_type otherwise."""
-    with pytest.raises(CustomE4Error, match="wildcard"):
-        raise_xsd_code("E4", "wildcard", error_type=RuntimeError, error_by_code={"E4": CustomE4Error})
-    with pytest.raises(RuntimeError, match="fallback"):
-        raise_xsd_code("E9", "fallback", error_type=RuntimeError, error_by_code={"E4": CustomE4Error})
+def _choice_and_sequence_group() -> XsdGroup:
+    """Compile ``CHOICE_AND_SEQUENCE_XSD`` and return the root ``XsdGroup``.
 
-
-def test_group_cardinality_and_resolve_child_cardinality_choice_and_sequence() -> None:
-    """group_min_occurs_by_name, group_max_occurs_by_name, and resolve_child_cardinality compute sequence and choice bounds."""
-    xsd_text = """<?xml version="1.0" encoding="UTF-8"?>
-    <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
-      <xs:element name="root">
-        <xs:complexType>
-          <xs:choice minOccurs="2" maxOccurs="3">
-            <xs:element name="shared" type="xs:string" minOccurs="1" maxOccurs="2"/>
-            <xs:sequence>
-              <xs:element name="branchOnly" type="xs:string"/>
-              <xs:element name="shared" type="xs:string" minOccurs="1" maxOccurs="1"/>
-            </xs:sequence>
-          </xs:choice>
-        </xs:complexType>
-      </xs:element>
-    </xs:schema>
+    :return: Root model group from ``CHOICE_AND_SEQUENCE_XSD``.
+    :rtype: XsdGroup
     """
-    schema = xmlschema.XMLSchema(xsd_text)
+    schema = xmlschema.XMLSchema(CHOICE_AND_SEQUENCE_XSD)
     group = schema.elements["root"].type.model_group  # type: ignore[union-attr]
-    assert group is not None
-    expected_min_shared = 2
-    expected_max_shared = 6
-    assert group_min_occurs_by_name(group, "shared") == expected_min_shared
-    assert group_max_occurs_by_name(group, "shared") == expected_max_shared
-    assert group_min_occurs_by_name(group, "branchOnly") == 0
-    assert group_max_occurs_by_name(group, "missing") == 0
+    assert isinstance(group, XsdGroup)
+    return group
+
+
+@pytest.mark.parametrize(
+    ("code", "expected_exc", "match"),
+    [
+        pytest.param("E4", CustomE4Error, "wildcard", id="mapped-code"),
+        pytest.param("E9", RuntimeError, "fallback", id="fallback-exception"),
+    ],
+)
+def test_raise_xsd_code_uses_mapped_or_fallback_exception(
+    code: str,
+    expected_exc: type[Exception],
+    match: str,
+) -> None:
+    """raise_xsd_code raises the mapped exception class when present and error_type otherwise."""
+    with pytest.raises(expected_exc, match=match):
+        raise_xsd_code(code, match, error_type=RuntimeError, error_by_code={"E4": CustomE4Error})
+
+
+@pytest.mark.parametrize(
+    ("local_name", "expected_min"),
+    [
+        pytest.param("shared", 2, id="shared-across-choice-branches"),
+        pytest.param("branchOnly", 0, id="single-choice-branch"),
+    ],
+)
+def test_group_min_occurs_by_name_pass_choice_and_sequence(
+    local_name: str,
+    expected_min: int,
+) -> None:
+    """group_min_occurs_by_name computes minimum occurrences across choice and sequence branches."""
+    group = _choice_and_sequence_group()
+    assert group_min_occurs_by_name(group, local_name) == expected_min
+
+
+@pytest.mark.parametrize(
+    ("local_name", "expected_max"),
+    [
+        pytest.param("shared", 6, id="shared-across-choice-branches"),
+        pytest.param("missing", 0, id="missing-element"),
+    ],
+)
+def test_group_max_occurs_by_name_pass_choice_and_sequence(
+    local_name: str,
+    expected_max: int,
+) -> None:
+    """group_max_occurs_by_name computes maximum occurrences across choice and sequence branches."""
+    group = _choice_and_sequence_group()
+    assert group_max_occurs_by_name(group, local_name) == expected_max
+
+
+def test_particle_max_occurs_by_name_pass_non_element_particle() -> None:
+    """particle_max_occurs_by_name returns 0 for non-group and non-element particles."""
     assert particle_max_occurs_by_name(object(), "shared") == 0
 
+
+@pytest.mark.parametrize(
+    ("parent_nillable", "expected"),
+    [
+        pytest.param(False, (True, False), id="non-nillable-parent"),
+        pytest.param(True, (True, True), id="nillable-parent"),
+    ],
+)
+def test_resolve_child_cardinality_pass_parent_nillable(
+    parent_nillable: bool,
+    expected: tuple[bool, bool],
+) -> None:
+    """resolve_child_cardinality computes list and nullability flags with and without a nillable parent."""
+    group = _choice_and_sequence_group()
     children = {el.local_name: el for el in group.iter_elements()}
-    assert resolve_child_cardinality(group, children["shared"]) == (True, False)
-    assert resolve_child_cardinality(group, children["shared"], parent_nillable=True) == (True, True)
+    assert resolve_child_cardinality(group, children["shared"], parent_nillable=parent_nillable) == expected
 
 
 @pytest.mark.parametrize(

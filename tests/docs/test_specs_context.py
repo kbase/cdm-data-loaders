@@ -18,62 +18,123 @@ from docs_macros.specs.pipelines import build_pipeline_spec_context
 pytestmark = pytest.mark.docs
 
 
-def test_discover_converter_and_pipeline_specs_auto_discover_and_validate(tmp_path: Path) -> None:
-    """Verify discover_converter_specs and discover_pipeline_specs infer config from rules.yaml and validate errors."""
-    assert set(discover_converter_specs()) == {
-        "xsd_to_pyarrow",
-        "jsonschema_to_pyarrow",
-        "pydantic_to_pyarrow",
-        "pyarrow_to_jsonschema",
-        "pyarrow_to_linkml",
-    }
-    assert set(discover_pipeline_specs()) == {
-        "xmltopyarrow",
-        "jsonlines_jsonschema",
-        "xsv",
-        "jsonlines_extract",
-        "jsonlines_pydantic",
-        "xmltodict",
-    }
-
+@pytest.mark.parametrize(
+    ("case_kind", "expected_keys"),
+    [
+        pytest.param(
+            "repo",
+            {
+                "xsd_to_pyarrow",
+                "jsonschema_to_pyarrow",
+                "pydantic_to_pyarrow",
+                "pyarrow_to_jsonschema",
+                "pyarrow_to_linkml",
+            },
+            id="repo-specs",
+        ),
+        pytest.param("empty", set(), id="empty-dir"),
+        pytest.param("synthetic", {"pydantic_to_pyarrow"}, id="synthetic-valid-spec"),
+    ],
+)
+def test_discover_converter_specs_pass(
+    tmp_path: Path,
+    case_kind: str,
+    expected_keys: set[str],
+) -> None:
+    """Verify discover_converter_specs discovers repo suites, empty roots, and synthetic rules.yaml defaults."""
     specs_root = tmp_path / "specs"
     docs_dir = tmp_path / "docs"
-    assert discover_converter_specs(specs_root=specs_root, docs_dir=docs_dir) == {}
-    assert discover_pipeline_specs(specs_root=specs_root, docs_dir=docs_dir) == {}
+    if case_kind == "repo":
+        discovered = discover_converter_specs()
+    else:
+        if case_kind == "synthetic":
+            conv_dir = specs_root / "pydantic_to_pyarrow"
+            (conv_dir / "spec").mkdir(parents=True)
+            (conv_dir / "rules.yaml").write_text(
+                "title: Synthetic\nsections:\n  - id: s1\n    title: S1\n    generated: scalar_table\n    rules: []\n",
+                encoding="utf-8",
+            )
+        discovered = discover_converter_specs(specs_root=specs_root, docs_dir=docs_dir)
 
-    conv_dir = specs_root / "pydantic_to_pyarrow"
-    (conv_dir / "spec").mkdir(parents=True)
-    (conv_dir / "rules.yaml").write_text(
-        "title: Synthetic\nsections:\n  - id: s1\n    title: S1\n    generated: scalar_table\n    rules: []\n",
-        encoding="utf-8",
-    )
-    discovered = discover_converter_specs(specs_root=specs_root, docs_dir=docs_dir)
-    cfg = discovered["pydantic_to_pyarrow"]
-    assert cfg.output == docs_dir / "pydantic_to_pyarrow_specification.md"
-    assert cfg.suites == ("spec",)
-    assert cfg.schema_lang == "python"
-    assert cfg.data_lang == "json"
-    assert cfg.generated_tables == {"scalar_table": "pydantic_scalar_table"}
+    assert set(discovered) == expected_keys
+    if case_kind == "synthetic":
+        cfg = discovered["pydantic_to_pyarrow"]
+        assert cfg.output == docs_dir / "pydantic_to_pyarrow_specification.md"
+        assert cfg.suites == ("spec",)
+        assert cfg.schema_lang == "python"
+        assert cfg.data_lang == "json"
+        assert cfg.generated_tables == {"scalar_table": "pydantic_scalar_table"}
 
-    unknown_src_dir = specs_root / "unknown_to_pyarrow"
-    unknown_src_dir.mkdir(parents=True)
-    (unknown_src_dir / "rules.yaml").write_text("title: Bad Source\nsections: []\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="Cannot infer schema_lang/data_lang"):
+
+@pytest.mark.parametrize(
+    ("spec_dir_name", "rules_yaml", "expected_match"),
+    [
+        pytest.param(
+            "unknown_to_pyarrow",
+            "title: Bad Source\nsections: []\n",
+            "Cannot infer schema_lang/data_lang",
+            id="missing-from-to",
+        ),
+        pytest.param(
+            "pydantic_to_unknown",
+            "title: Bad Target\nsections: []\n",
+            "Cannot infer target rendering defaults",
+            id="unknown-format-token",
+        ),
+        pytest.param(
+            "jsonschema_to_dlt",
+            "title: Missing Errors Tuple\nsections: []\n",
+            "JSONSCHEMA_TO_DLT_ERRORS",
+            id="missing-error-tuple",
+        ),
+    ],
+)
+def test_discover_converter_specs_fail_invalid_rules(
+    tmp_path: Path,
+    spec_dir_name: str,
+    rules_yaml: str,
+    expected_match: str,
+) -> None:
+    """Verify discover_converter_specs rejects uninferrable source/target formats and missing error tuples."""
+    specs_root = tmp_path / "specs"
+    docs_dir = tmp_path / "docs"
+    bad_dir = specs_root / spec_dir_name
+    bad_dir.mkdir(parents=True)
+    (bad_dir / "rules.yaml").write_text(rules_yaml, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=expected_match):
         discover_converter_specs(specs_root=specs_root, docs_dir=docs_dir)
-    (unknown_src_dir / "rules.yaml").unlink()
 
-    unknown_tgt_dir = specs_root / "pydantic_to_unknown"
-    unknown_tgt_dir.mkdir(parents=True)
-    (unknown_tgt_dir / "rules.yaml").write_text("title: Bad Target\nsections: []\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="Cannot infer target rendering defaults"):
-        discover_converter_specs(specs_root=specs_root, docs_dir=docs_dir)
-    (unknown_tgt_dir / "rules.yaml").unlink()
 
-    missing_errors_dir = specs_root / "jsonschema_to_dlt"
-    missing_errors_dir.mkdir(parents=True)
-    (missing_errors_dir / "rules.yaml").write_text("title: Missing Errors Tuple\nsections: []\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="JSONSCHEMA_TO_DLT_ERRORS"):
-        discover_converter_specs(specs_root=specs_root, docs_dir=docs_dir)
+@pytest.mark.parametrize(
+    ("use_repo_defaults", "expected_keys"),
+    [
+        pytest.param(
+            True,
+            {
+                "xmltopyarrow",
+                "jsonlines_jsonschema",
+                "xsv",
+                "jsonlines_extract",
+                "jsonlines_pydantic",
+                "xmltodict",
+            },
+            id="repo-specs",
+        ),
+        pytest.param(False, set(), id="empty-dir"),
+    ],
+)
+def test_discover_pipeline_specs_pass(
+    tmp_path: Path,
+    use_repo_defaults: bool,
+    expected_keys: set[str],
+) -> None:
+    """Verify discover_pipeline_specs discovers repo pipeline suites and returns an empty mapping when absent."""
+    if use_repo_defaults:
+        discovered = discover_pipeline_specs()
+    else:
+        discovered = discover_pipeline_specs(specs_root=tmp_path / "specs", docs_dir=tmp_path / "docs")
+    assert set(discovered) == expected_keys
 
 
 @pytest.mark.parametrize("spec_name", sorted(discover_converter_specs()), ids=str)

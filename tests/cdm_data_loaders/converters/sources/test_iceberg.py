@@ -1,5 +1,7 @@
 """Iceberg source types, scopes and loaded table envelopes."""
 
+import functools
+from collections.abc import Callable
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from uuid import UUID
@@ -133,13 +135,33 @@ def test_read_table_pass_envelope_without_io() -> None:
     }
 
 
-def test_read_fail_invalid_source_and_identifier() -> None:
-    """Invalid source objects and empty identifiers fail at the public boundary with ConversionError."""
-    with pytest.raises(ConversionError):
-        IcebergReader().read({})
-    with pytest.raises(ConversionError, match="identifier"):
-        IcebergReader().read_table(make_table(("ns", "table"), Schema()), ())
+def test_read_pass_empty_schema() -> None:
+    """Empty Iceberg schemas produce an object root with no properties."""
     assert IcebergReader().read(Schema()).root.properties == ()
+
+
+@pytest.mark.parametrize(
+    ("call", "match"),
+    [
+        pytest.param(
+            functools.partial(IcebergReader().read, {}),  # type: ignore[arg-type]
+            None,
+            id="invalid-source-mapping",
+        ),
+        pytest.param(
+            functools.partial(IcebergReader().read_table, make_table(("ns", "table"), Schema()), ()),
+            "identifier",
+            id="empty-table-identifier",
+        ),
+    ],
+)
+def test_read_fail_invalid_source_and_identifier(
+    call: Callable[[], object],
+    match: str | None,
+) -> None:
+    """Invalid source objects and empty identifiers fail at the public boundary with ConversionError."""
+    with pytest.raises(ConversionError, match=match):
+        call()
 
 
 @pytest.mark.parametrize(
@@ -160,9 +182,28 @@ def test_iceberg_value_pass_precise_serialization(value: object, expected: objec
     assert iceberg_value(value) == expected
 
 
-def test_read_fail_unsupported_type_and_metadata() -> None:
+@pytest.mark.parametrize(
+    ("call", "error_type", "match"),
+    [
+        pytest.param(
+            functools.partial(IcebergReader().read, Schema(NestedField(1, "unknown", UnknownType()))),
+            ConversionError,
+            "No IR mapping",
+            id="unmapped-unknown-type",
+        ),
+        pytest.param(
+            functools.partial(iceberg_value, object()),
+            TypeError,
+            "Unsupported",
+            id="unsupported-python-default",
+        ),
+    ],
+)
+def test_read_fail_unsupported_type_and_metadata(
+    call: Callable[[], object],
+    error_type: type[Exception],
+    match: str,
+) -> None:
     """Unmapped Iceberg types and arbitrary Python defaults are not guessed."""
-    with pytest.raises(ConversionError, match="No IR mapping"):
-        IcebergReader().read(Schema(NestedField(1, "unknown", UnknownType())))
-    with pytest.raises(TypeError, match="Unsupported"):
-        iceberg_value(object())
+    with pytest.raises(error_type, match=match):
+        call()

@@ -87,14 +87,31 @@ def _fs_backend_dlt_secrets(
     }
 
 
-def test_find_filesystem_resources_pass_deduplicates_shared_roots(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("scenario", "expected_paths"),
+    [
+        pytest.param("empty", [], id="empty"),
+        pytest.param("non_fs", [], id="non_fs"),
+        pytest.param("single_fs", [["x.xml"]], id="single_fs"),
+        pytest.param("mixed_shared_roots", [["x.xml"], ["y.txt"]], id="mixed_shared_roots"),
+    ],
+)
+def test_find_filesystem_resources_pass_deduplicates_shared_roots(
+    tmp_path: Path,
+    scenario: str,
+    expected_paths: list[list[str]],
+) -> None:
     """find_filesystem_resources ignores non-filesystem resources and deduplicates shared roots in order."""
-    assert find_filesystem_resources([]) == []
-    plain = dlt.resource([{"id": 1}], name="plain")
-    assert find_filesystem_resources(plain) == []
+    dir_a = tmp_path / "dir_a"
+    dir_b = tmp_path / "dir_b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    (dir_a / "x.xml").write_text("<x/>", encoding="utf-8")
+    (dir_b / "y.txt").write_text("y", encoding="utf-8")
 
-    fs_a = filesystem(bucket_url=str(tmp_path), file_glob="*.xml")
-    fs_b = filesystem(bucket_url=str(tmp_path), file_glob="*.txt")
+    plain = dlt.resource([{"id": 1}], name="plain")
+    fs_a = filesystem(bucket_url=str(dir_a), file_glob="*.xml")
+    fs_b = filesystem(bucket_url=str(dir_b), file_glob="*.txt")
 
     @dlt.transformer(name="trans_a1")
     def trans_a1(items: TDataItems) -> Iterator[TDataItems]:
@@ -104,15 +121,31 @@ def test_find_filesystem_resources_pass_deduplicates_shared_roots(tmp_path: Path
     def trans_a2(items: TDataItems) -> Iterator[TDataItems]:
         yield from items
 
-    assert find_filesystem_resources(fs_a) == [fs_a]
-    found = find_filesystem_resources([plain, fs_a | trans_a1, fs_a | trans_a2, fs_b])
-    assert [res._pipe.instance_id for res in found] == [  # noqa: SLF001
-        fs_a._pipe.instance_id,  # noqa: SLF001
-        fs_b._pipe.instance_id,  # noqa: SLF001
-    ]
+    if scenario == "empty":
+        found = find_filesystem_resources([])
+    elif scenario == "non_fs":
+        found = find_filesystem_resources(plain)
+    elif scenario == "single_fs":
+        found = find_filesystem_resources(fs_a)
+    else:
+        found = find_filesystem_resources([plain, fs_a | trans_a1, fs_a | trans_a2, fs_b])
+
+    assert [[item["relative_path"] for item in res] for res in found] == expected_paths
 
 
-def test_list_input_dir_files_pass_local_path_file_url_and_missing_dir(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("target_kind", "expected"),
+    [
+        pytest.param("local_path", ["nested/a.xml", "nested/deep/b.json", "z.txt"], id="local_path"),
+        pytest.param("file_url", ["nested/a.xml", "nested/deep/b.json", "z.txt"], id="file_url"),
+        pytest.param("missing_dir", [], id="missing_dir"),
+    ],
+)
+def test_list_input_dir_files_pass_local_path_file_url_and_missing_dir(
+    tmp_path: Path,
+    target_kind: str,
+    expected: list[str],
+) -> None:
     """list_input_dir_files handles local paths, file:// URLs, nested files, empty dirs, and missing dirs."""
     root = tmp_path / "root"
     (root / "nested" / "deep").mkdir(parents=True)
@@ -122,16 +155,29 @@ def test_list_input_dir_files_pass_local_path_file_url_and_missing_dir(tmp_path:
     (root / "nested" / "deep" / "b.json").write_text("{}", encoding="utf-8")
 
     fs_res = filesystem(bucket_url=str(root))
-    expected = ["nested/a.xml", "nested/deep/b.json", "z.txt"]
-    assert list_input_dir_files(fs_res, str(root)) == expected
-    assert list_input_dir_files(fs_res, root.as_uri()) == expected
-    assert list_input_dir_files(fs_res, str(tmp_path / "does_not_exist")) == []
+    if target_kind == "local_path":
+        input_dir = str(root)
+    elif target_kind == "file_url":
+        input_dir = root.as_uri()
+    else:
+        input_dir = str(tmp_path / "does_not_exist")
+
+    assert list_input_dir_files(fs_res, input_dir) == expected
 
 
+@pytest.mark.parametrize(
+    ("use_missing_prefix", "expected"),
+    [
+        pytest.param(False, ["sub/a.xml", "sub/deep/b.json", "z.txt"], id="populated_bucket"),
+        pytest.param(True, [], id="missing_prefix"),
+    ],
+)
 def test_list_input_dir_files_pass_across_fs_backends(
     fs_backend: FsBackend,
     request: pytest.FixtureRequest,
     monkeypatch: pytest.MonkeyPatch,
+    use_missing_prefix: bool,
+    expected: list[str],
 ) -> None:
     """list_input_dir_files returns sorted POSIX relative paths and empty lists for missing prefixes across backends."""
     fs_backend.put("z.txt", b"zeta")
@@ -141,12 +187,24 @@ def test_list_input_dir_files_pass_across_fs_backends(
 
     with isolated_dlt_config(secrets=dlt_secrets):
         fs_res = filesystem(bucket_url=fs_backend.bucket_url)
-        assert list_input_dir_files(fs_res, fs_backend.bucket_url) == ["sub/a.xml", "sub/deep/b.json", "z.txt"]
-        missing_url = f"{fs_backend.bucket_url.rstrip('/')}/missing_prefix"
-        assert list_input_dir_files(fs_res, missing_url) == []
+        target_url = (
+            f"{fs_backend.bucket_url.rstrip('/')}/missing_prefix" if use_missing_prefix else fs_backend.bucket_url
+        )
+        assert list_input_dir_files(fs_res, target_url) == expected
 
 
-def test_collect_file_listing_pass_and_skips_reader(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("mode", "expected_matched"),
+    [
+        pytest.param("single_resource", ["sub/a.xml.gz", "z.xml"], id="single_resource"),
+        pytest.param("piped_multi_root_list", ["sub/notes.txt", "z.xml"], id="piped_multi_root_list"),
+    ],
+)
+def test_collect_file_listing_pass_and_skips_reader(
+    tmp_path: Path,
+    mode: str,
+    expected_matched: list[str],
+) -> None:
     """collect_file_listing returns sorted input_dir_files and matched_files without running downstream transformers."""
     settings = make_cts_settings(
         XmlIngestSettings,
@@ -165,27 +223,24 @@ def test_collect_file_listing_pass_and_skips_reader(tmp_path: Path) -> None:
         msg = "downstream reader must not execute during collect_file_listing"
         raise AssertionError(msg)
 
-    xml_res = build_filesystem_resource(settings, fail_if_called, name="xml_listing_reader")
-    assert collect_file_listing(settings, xml_res) == (
-        ["sub/a.xml.gz", "sub/notes.txt", "z.xml"],
-        ["sub/a.xml.gz", "z.xml"],
-    )
+    if mode == "single_resource":
+        target_resource = build_filesystem_resource(settings, fail_if_called, name="xml_listing_reader")
+        result = collect_file_listing(settings, target_resource)
+    else:
+        shared_xml = filesystem(bucket_url=str(in_dir), file_glob="*.xml")
+        sub_txt = filesystem(bucket_url=str(in_dir), file_glob="sub/*.txt")
 
-    shared_xml = filesystem(bucket_url=str(in_dir), file_glob="*.xml")
-    sub_txt = filesystem(bucket_url=str(in_dir), file_glob="sub/*.txt")
+        @dlt.transformer(name="unused_one")
+        def unused_one(items: TDataItems) -> Iterator[TDataItems]:
+            yield from items
 
-    @dlt.transformer(name="unused_one")
-    def unused_one(items: TDataItems) -> Iterator[TDataItems]:
-        yield from items
+        @dlt.transformer(name="unused_two")
+        def unused_two(items: TDataItems) -> Iterator[TDataItems]:
+            yield from items
 
-    @dlt.transformer(name="unused_two")
-    def unused_two(items: TDataItems) -> Iterator[TDataItems]:
-        yield from items
+        result = collect_file_listing(settings, [shared_xml | unused_one, shared_xml | unused_two, sub_txt])
 
-    assert collect_file_listing(settings, [shared_xml | unused_one, shared_xml | unused_two, sub_txt]) == (
-        ["sub/a.xml.gz", "sub/notes.txt", "z.xml"],
-        ["sub/notes.txt", "z.xml"],
-    )
+    assert result == (["sub/a.xml.gz", "sub/notes.txt", "z.xml"], expected_matched)
 
 
 @pytest.mark.parametrize(
@@ -213,47 +268,57 @@ def test_collect_file_listing_fail_without_filesystem_resource(
         collect_file_listing(settings, invalid_resource)
 
 
-def test_attach_file_collector_pass_empty_non_fs_and_multiple_roots(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "scenario",
+    ["empty", "non_fs", "multiple_roots"],
+    ids=["empty", "non_fs", "multiple_roots"],
+)
+def test_attach_file_collector_pass_empty_non_fs_and_multiple_roots(
+    tmp_path: Path,
+    scenario: str,
+) -> None:
     """attach_file_collector ignores non-filesystem resources and deduplicates shared filesystem roots."""
-    assert attach_file_collector([]) == FilesystemTracker(ingested_files=[], preprocess_errors=[])
+    if scenario == "empty":
+        assert attach_file_collector([]) == FilesystemTracker(ingested_files=[], preprocess_errors=[])
+    elif scenario == "non_fs":
+        non_fs = dlt.resource([{"relative_path": "ignored.txt"}], name="custom_source")
+        collector = attach_file_collector(non_fs)
+        assert list(non_fs) == [{"relative_path": "ignored.txt"}]
+        assert collector.ingested_files == []
+        assert collector.preprocess_errors == []
+    else:
+        dir_a = tmp_path / "dir_a"
+        dir_b = tmp_path / "dir_b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        (dir_a / "a.txt").write_text("alpha", encoding="utf-8")
+        (dir_b / "b.txt").write_text("beta", encoding="utf-8")
 
-    non_fs = dlt.resource([{"relative_path": "ignored.txt"}], name="custom_source")
-    non_fs_collector = attach_file_collector(non_fs)
-    assert list(non_fs) == [{"relative_path": "ignored.txt"}]
-    assert non_fs_collector.ingested_files == []
+        shared_fs = filesystem(bucket_url=str(dir_a), file_glob="*.txt")
+        second_fs = filesystem(bucket_url=str(dir_b), file_glob="*.txt")
 
-    dir_a = tmp_path / "dir_a"
-    dir_b = tmp_path / "dir_b"
-    dir_a.mkdir()
-    dir_b.mkdir()
-    (dir_a / "a.txt").write_text("alpha", encoding="utf-8")
-    (dir_b / "b.txt").write_text("beta", encoding="utf-8")
+        @dlt.transformer(name="branch_one")
+        def branch_one(items: TDataItems) -> Iterator[dict[str, Any]]:
+            for item in items:
+                yield {"path": item["relative_path"], "branch": 1}
 
-    shared_fs = filesystem(bucket_url=str(dir_a), file_glob="*.txt")
-    second_fs = filesystem(bucket_url=str(dir_b), file_glob="*.txt")
+        @dlt.transformer(name="branch_two")
+        def branch_two(items: TDataItems) -> Iterator[dict[str, Any]]:
+            for item in items:
+                yield {"path": item["relative_path"], "branch": 2}
 
-    @dlt.transformer(name="branch_one")
-    def branch_one(items: TDataItems) -> Iterator[dict[str, Any]]:
-        for item in items:
-            yield {"path": item["relative_path"], "branch": 1}
+        @dlt.transformer(name="branch_three")
+        def branch_three(items: TDataItems) -> Iterator[dict[str, Any]]:
+            for item in items:
+                yield {"path": item["relative_path"], "branch": 3}
 
-    @dlt.transformer(name="branch_two")
-    def branch_two(items: TDataItems) -> Iterator[dict[str, Any]]:
-        for item in items:
-            yield {"path": item["relative_path"], "branch": 2}
+        resources = [shared_fs | branch_one, shared_fs | branch_two, second_fs | branch_three]
+        collector = attach_file_collector(resources)
+        pipeline = dlt.pipeline(pipeline_name="test_attach_collector", pipelines_dir=str(tmp_path / "pipes"))
+        pipeline.extract(resources)
 
-    @dlt.transformer(name="branch_three")
-    def branch_three(items: TDataItems) -> Iterator[dict[str, Any]]:
-        for item in items:
-            yield {"path": item["relative_path"], "branch": 3}
-
-    resources = [shared_fs | branch_one, shared_fs | branch_two, second_fs | branch_three]
-    collector = attach_file_collector(resources)
-    pipeline = dlt.pipeline(pipeline_name="test_attach_collector", pipelines_dir=str(tmp_path / "pipes"))
-    pipeline.extract(resources)
-
-    assert sorted(collector.ingested_files) == ["a.txt", "b.txt"]
-    assert collector.preprocess_errors == []
+        assert sorted(collector.ingested_files) == ["a.txt", "b.txt"]
+        assert collector.preprocess_errors == []
 
 
 def test_attach_file_collector_pass_rebinds_existing_tracker(input_dir: Path, output_dir: Path) -> None:
@@ -361,6 +426,17 @@ def test_build_filesystem_resource_pass_cts_wildcard_tokens_on_settings_file_glo
     assert names == ["alpha.ext.xml", "beta.ext.gz"]
 
 
+def _skip_or_fail_preprocess(file_item: FileItemDict) -> FileItemDict | None:
+    """Filter skip.jsonl, raise FilePreprocessError on bad.jsonl, and pass other files through."""
+    rel = file_item["relative_path"]
+    if rel == "skip.jsonl":
+        return None
+    if rel == "bad.jsonl":
+        msg = "corrupt header"
+        raise FilePreprocessError(msg)
+    return file_item
+
+
 @pytest.mark.parametrize(
     ("loader_file_format", "expect_arrow"),
     [
@@ -368,25 +444,26 @@ def test_build_filesystem_resource_pass_cts_wildcard_tokens_on_settings_file_glo
         pytest.param("jsonl", False, id="dict_rejected_page"),
     ],
 )
+@pytest.mark.parametrize(
+    ("include_valid_file", "table_override", "expected_valid"),
+    [
+        pytest.param(False, None, [], id="all_skipped_or_rejected"),
+        pytest.param(True, "custom_events", ["good.jsonl"], id="mixed_valid_and_rejected"),
+    ],
+)
 def test_build_filesystem_resource_pass_preprocessors_filter_reject_and_skip_empty_batch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    include_valid_file: bool,
+    table_override: str | None,
+    expected_valid: list[str],
     loader_file_format: str,
     *,
     expect_arrow: bool,
 ) -> None:
     """Pre-processors filter None items, emit _rejected rows on errors, and skip reader_fn when no valid files remain."""
     second_calls: list[str] = []
-
-    def first_preprocess(file_item: FileItemDict) -> FileItemDict | None:
-        rel = file_item["relative_path"]
-        if rel == "skip.jsonl":
-            return None
-        if rel == "bad.jsonl":
-            msg = "corrupt header"
-            raise FilePreprocessError(msg)
-        return file_item
 
     def second_preprocess(file_item: FileItemDict) -> FileItemDict:
         second_calls.append(file_item["relative_path"])
@@ -395,7 +472,7 @@ def test_build_filesystem_resource_pass_preprocessors_filter_reject_and_skip_emp
     pre_mod = register_temp_module(
         monkeypatch,
         "_test_fs_preprocessors",
-        FILE_PREPROCESSORS=[first_preprocess, second_preprocess],
+        FILE_PREPROCESSORS=[_skip_or_fail_preprocess, second_preprocess],
     )
     settings = make_cts_settings(
         JsonlExtractSettings,
@@ -408,6 +485,8 @@ def test_build_filesystem_resource_pass_preprocessors_filter_reject_and_skip_emp
     in_dir = Path(settings.input_dir)
     (in_dir / "skip.jsonl").write_text('{"id": 1}\n', encoding="utf-8")
     (in_dir / "bad.jsonl").write_text('{"id": 2}\n', encoding="utf-8")
+    if include_valid_file:
+        (in_dir / "good.jsonl").write_text('{"id": 3}\n', encoding="utf-8")
 
     reader_batches: list[list[str]] = []
 
@@ -416,56 +495,38 @@ def test_build_filesystem_resource_pass_preprocessors_filter_reject_and_skip_emp
         for item in items:
             yield {"file": item["relative_path"]}
 
-    # when all discovered files are skipped or rejected, reader_fn is not called
-    empty_res = build_filesystem_resource(settings, read_items, name="prep_reader", parallelized=False)
-    empty_collector = attach_file_collector(empty_res)
-    emitted = list(empty_res)
+    resource = build_filesystem_resource(
+        settings,
+        read_items,
+        name="prep_reader",
+        table_name=table_override,
+        parallelized=False,
+    )
+    collector = attach_file_collector(resource)
+    emitted = list(resource)
 
-    assert reader_batches == []
-    assert second_calls == []
-    assert empty_collector.ingested_files == []
-    assert empty_collector.preprocess_errors == ["File pre-processing failed for bad.jsonl: corrupt header"]
-    assert [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR] == [
-        "File pre-processing failed for bad.jsonl: corrupt header"
-    ]
-    assert len(emitted) == 1
+    expected_error_msg = "File pre-processing failed for bad.jsonl: corrupt header"
+    assert collector.preprocess_errors == [expected_error_msg]
+    assert [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR] == [expected_error_msg]
+    assert second_calls == expected_valid
+    assert reader_batches == ([expected_valid] if expected_valid else [])
+    assert collector.ingested_files == expected_valid
+
     expected_rejected_row = {
-        "table_name": "events",
+        "table_name": table_override or "events",
         "source_file": "bad.jsonl",
         "line_no": None,
         "raw_record": None,
         "error_detail": "corrupt header",
     }
+    expected_valid_rows = [{"file": name} for name in expected_valid]
     if expect_arrow:
-        assert isinstance(emitted[0], pa.Table)
-        assert emitted[0].schema == REJECTED_PYARROW_SCHEMA
-        assert emitted[0].to_pylist() == [expected_rejected_row]
+        assert [x for x in emitted if isinstance(x, dict)] == expected_valid_rows
+        (rejected_table,) = [x for x in emitted if isinstance(x, pa.Table)]
+        assert rejected_table.schema == REJECTED_PYARROW_SCHEMA
+        assert rejected_table.to_pylist() == [expected_rejected_row]
     else:
-        assert emitted == [expected_rejected_row]
-
-    # adding a valid file invokes second_preprocess and reader_fn only for that valid file
-    (in_dir / "good.jsonl").write_text('{"id": 3}\n', encoding="utf-8")
-    mixed_res = build_filesystem_resource(
-        settings,
-        read_items,
-        name="prep_reader_mixed",
-        table_name="custom_events",
-        parallelized=False,
-    )
-    mixed_collector = attach_file_collector(mixed_res)
-    mixed_items = list(mixed_res)
-
-    assert second_calls == ["good.jsonl"]
-    assert reader_batches == [["good.jsonl"]]
-    assert mixed_collector.ingested_files == ["good.jsonl"]
-    assert mixed_collector.preprocess_errors == ["File pre-processing failed for bad.jsonl: corrupt header"]
-    expected_custom_rejected = {**expected_rejected_row, "table_name": "custom_events"}
-    if expect_arrow:
-        assert [x for x in mixed_items if isinstance(x, dict)] == [{"file": "good.jsonl"}]
-        rejected_table = next(x for x in mixed_items if isinstance(x, pa.Table))
-        assert rejected_table.to_pylist() == [expected_custom_rejected]
-    else:
-        assert mixed_items == [expected_custom_rejected, {"file": "good.jsonl"}]
+        assert emitted == [expected_rejected_row, *expected_valid_rows]
 
 
 def test_build_filesystem_resource_pass_iceberg_and_output_table_hints(tmp_path: Path) -> None:
