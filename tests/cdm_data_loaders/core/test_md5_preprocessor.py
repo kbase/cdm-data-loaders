@@ -13,7 +13,7 @@ from cdm_data_loaders.core.md5_preprocessor import (
 )
 from cdm_data_loaders.core.preprocessors import FilePreprocessError
 from cdm_data_loaders.utils.checksums import new_hasher
-from tests.fs_backends import FsBackend
+from tests._support.fs_backends import FsBackend
 
 SAMPLE_DIGEST: Final[str] = "d41d8cd98f00b204e9800998ecf8427e"
 

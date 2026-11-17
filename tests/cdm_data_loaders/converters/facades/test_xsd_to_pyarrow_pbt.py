@@ -50,9 +50,9 @@ from cdm_data_loaders.validation.xsd.traversal import (
     require_complex_type,
     resolve_target_element,
 )
-from tests.conftest import BASE_DIR
-from tests.converter_spec import Case, Run, load_cases
-from tests.pyarrow_pbt_helpers import (
+from specs._loader.converter_spec import Case, Run, load_cases
+from tests._support.paths_and_constants import BASE_DIR
+from tests._support.pyarrow_pbt import (
     INT8_MAX,
     INT8_MIN,
     INT16_MAX,

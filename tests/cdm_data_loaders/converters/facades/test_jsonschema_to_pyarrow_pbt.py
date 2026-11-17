@@ -22,9 +22,9 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrow,
     generate_pyarrow_schema,
 )
-from tests.conftest import BASE_DIR
-from tests.converter_spec import Case, Run, load_cases
-from tests.pyarrow_pbt_helpers import (
+from specs._loader.converter_spec import Case, Run, load_cases
+from tests._support.paths_and_constants import BASE_DIR
+from tests._support.pyarrow_pbt import (
     INT32_MAX,
     INT32_MIN,
     INT64_MAX,
@@ -37,6 +37,7 @@ from tests.pyarrow_pbt_helpers import (
     iso_time_str_strategy,
     safe_text_strategy,
 )
+from tests._support.pyarrow_spec import load_json_object
 
 JSONSCHEMA_DATA_DIR: Final[Path] = (BASE_DIR / "specs" / "schema_converters" / "jsonschema_to_pyarrow").resolve()
 CASES: Final[tuple[Case, ...]] = tuple(
@@ -46,21 +47,6 @@ CASES: Final[tuple[Case, ...]] = tuple(
 CASE_RUN_PARAMS: Final[tuple[ParameterSet, ...]] = tuple(
     pytest.param(case, case.runs[0], id=f"{case.suite}-{case.name}") for case in CASES
 )
-
-
-def _load_json_object(path: Path) -> dict[str, Any]:
-    """Load a JSON object from disk.
-
-    :param path: Path to the JSON file.
-    :type path: Path
-    :return: Parsed JSON dictionary.
-    :rtype: dict[str, Any]
-    """
-    loaded = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(loaded, dict):
-        msg = f"Expected a JSON object in {path}, got {type(loaded)}"
-        raise TypeError(msg)
-    return loaded
 
 
 def _strip_crlf(text: str) -> str:
@@ -524,7 +510,7 @@ def json_records_for_schema(schema: Mapping[str, Any], *, max_depth: int = 3) ->
 @given(data=st.data())
 def test_coerce_json_record_for_pyarrow_pbt_spec_cases(case: Case, run: Run, data: st.DataObject) -> None:
     """Generated records for every spec/example JSON Schema validate, coerce, and round-trip through Parquet."""
-    raw_schema = _load_json_object(case.schema)
+    raw_schema = load_json_object(case.schema)
     depth = int(run.params.get("max_recursion_depth", 2))
     pa_schema = generate_pyarrow_schema(raw_schema, max_recursion_depth=depth)
     validator = Draft202012Validator(raw_schema)
@@ -550,7 +536,7 @@ def test_coerce_json_record_for_pyarrow_pbt_spec_cases(case: Case, run: Run, dat
 def test_recursion_cutoff_pbt_json_valid(depth: int, leaf_label: str, leaf_weight: int) -> None:
     """Recursive JSON Schema trees exceeding max_recursion_depth serialize truncated subtrees as valid JSON."""
     schema_path = JSONSCHEMA_DATA_DIR / "spec" / "06_recursion_depth" / "schema.json"
-    raw_schema = _load_json_object(schema_path)
+    raw_schema = load_json_object(schema_path)
     pa_schema = generate_pyarrow_schema(raw_schema, max_recursion_depth=depth)
 
     node: dict[str, Any] = {"label": leaf_label, "weight": leaf_weight}

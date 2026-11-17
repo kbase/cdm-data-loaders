@@ -34,12 +34,12 @@ from cdm_data_loaders.core.reporting import (
     write_pipeline_report,
 )
 from cdm_data_loaders.core.settings import CtsSettings
-from tests.cdm_data_loaders.conftest import (
+from tests._support.cli_assertions import (
     LOAD_INFO_SAVE_FAILED,
     LOAD_INFO_SAVE_FAILED_JOBS,
     SLACK_HOOK,
 )
-from tests.cdm_data_loaders.pipelines.helpers import check_pipeline_report
+from tests._support.table_readers import check_pipeline_report
 
 TEST_MESSAGE: Final[str] = "3... 2... 1... testing?"
 

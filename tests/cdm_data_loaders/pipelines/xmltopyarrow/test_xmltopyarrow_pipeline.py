@@ -44,8 +44,10 @@ from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     XmlToPyArrowSettings,
 )
 from cdm_data_loaders.utils.checksums import new_hasher
-from tests.cdm_data_loaders.pipelines.conftest import copy_test_files
-from tests.cdm_data_loaders.pipelines.helpers import (
+from tests._support.cli_assertions import register_temp_module, settings_to_argv
+from tests._support.fs_backends import FsBackend
+from tests._support.paths_and_constants import XSD_SPEC_DIR, copy_test_files
+from tests._support.table_readers import (
     assert_binds_filesystem_reader,
     assert_core_run_pipeline_args,
     check_pipeline_report,
@@ -53,10 +55,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     read_destination_rows,
     run_with_duckdb_pipeline,
 )
-from tests.conftest import XSD_SPEC_DIR
-from tests.fs_backends import FsBackend
-from tests.helpers import register_temp_module, settings_to_argv
-from tests.xml_samples import TWO_BOOK_LIBRARY_XML
+from tests._support.xml_samples import TWO_BOOK_LIBRARY_XML
 
 
 @pytest.mark.parametrize("loader_file_format", list(LoaderFileFormatEnum), ids=str)

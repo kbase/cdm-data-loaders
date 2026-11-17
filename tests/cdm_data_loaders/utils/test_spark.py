@@ -23,7 +23,7 @@ from cdm_data_loaders.utils.spark import (
     preview_or_skip,
     write_table,
 )
-from tests.helpers import assertDataFrameEqual
+from tests._support.cli_assertions import assert_spark_rows_equal
 
 original_set_up_ws_fn = spark_utils.set_up_workspace
 
@@ -202,7 +202,7 @@ def check_query_output(spark: SparkSession, catalog_db_table: str, expected: lis
     # run the query
     results = spark.sql(f"SELECT * FROM {catalog_db_table}").collect()
     expected_collected = spark.createDataFrame(expected).collect()
-    assertDataFrameEqual(results, expected_collected)
+    assert_spark_rows_equal(results, expected_collected)
 
 
 def check_logger_output_successful_write(

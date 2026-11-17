@@ -1,4 +1,4 @@
-"""Shared fixtures for xmltopyarrow pipeline tests."""
+"""Shared fixtures for ``tests/cdm_data_loaders/pipelines/xmltopyarrow``."""
 
 import shutil
 from collections.abc import Callable
@@ -9,17 +9,25 @@ import pytest
 
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
-from tests.helpers import make_cts_settings
+from tests._support.cli_assertions import make_cts_settings
 
 
 @pytest.fixture
 def settings_factory(tmp_path: Path, library_xsd: Path) -> Callable[..., Any]:
-    """Return a factory that builds a valid XmlToPyArrowSettings (or CtsSettings), with fields open to override."""
+    """Return a factory building ``XmlToPyArrowSettings`` (or ``CtsSettings``) with overridable fields.
+
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :param library_xsd: Minimal library XSD file fixture.
+    :type library_xsd: Path
+    :return: Settings factory callable.
+    :rtype: Callable[..., Any]
+    """
 
     def _factory(
         settings_cls: type[CtsSettings] = XmlToPyArrowSettings,
-        **overrides: Any,  # noqa: ANN401
-    ) -> Any:  # noqa: ANN401
+        **overrides: object,
+    ) -> CtsSettings:
         defaults: dict[str, Any] = {
             "dlt_dev_mode": True,
         }
@@ -45,7 +53,15 @@ def settings_factory(tmp_path: Path, library_xsd: Path) -> Callable[..., Any]:
 
 @pytest.fixture
 def copy_xsd_fixture(tmp_path: Path, test_data_dir: Path) -> Callable[[str], str]:
-    """Return a function that copies an XSD from tests/data/xsd into the input dir and returns its path."""
+    """Return a helper copying an XSD file from ``tests/data/xsd`` into ``tmp_path / 'input'``.
+
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :param test_data_dir: Root ``tests/data`` directory fixture.
+    :type test_data_dir: Path
+    :return: Copy callable returning the destination XSD path string.
+    :rtype: Callable[[str], str]
+    """
 
     def _copy(filename: str) -> str:
         input_dir = tmp_path / "input"

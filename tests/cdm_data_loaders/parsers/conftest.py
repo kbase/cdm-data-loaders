@@ -1,49 +1,17 @@
-"""Global configuration settings for tests."""
+"""Pytest fixtures for standalone file parser tests."""
 
 from typing import Any
 
 import pytest
 
-stats_output = {
-    "FW305-3-2-15-C-TSA1_scaffolds.fna": {
-        "scaffolds": 59,
-        "contigs": 61,
-        "gc_avg": 0.65985,
-        "gc_std": 0.02052,
-        "filename": "/home/runner/work/cdm-data-loaders/cdm-data-loaders/tests/data/FW305-3-2-15-C-TSA1/FW305-3-2-15-C-TSA1_scaffolds.fna",
-    },
-    "FW305-C-112.1_scaffolds.fna": {
-        "scaffolds": 28,
-        "contigs": 31,
-        "gc_avg": 0.69368,
-        "gc_std": 0.03501,
-        "filename": "/home/runner/work/cdm-data-loaders/cdm-data-loaders/tests/data/FW305-C-112.1/FW305-C-112.1_scaffolds.fna",
-    },
-}
-
-checkm2_output = {
-    "FW305-3-2-15-C-TSA1_scaffolds": {
-        "checkm2_completeness": 99.99,
-        "checkm2_contamination": 1.09,
-    },
-    "FW305-C-112.1_scaffolds": {"checkm2_completeness": None, "checkm2_contamination": 12.27},
-}
-
-RESULTS = {
-    "single": {
-        "stats": {"FW305-3-2-15-C-TSA1_scaffolds.fna": stats_output["FW305-3-2-15-C-TSA1_scaffolds.fna"]},
-        "checkm2": {"FW305-3-2-15-C-TSA1_scaffolds": checkm2_output["FW305-3-2-15-C-TSA1_scaffolds"]},
-    },
-    "multi": {"stats": stats_output, "checkm2": checkm2_output},
-}
+from tests.cdm_data_loaders.parsers._helpers import RESULTS
 
 
 @pytest.fixture(scope="session")
 def checkm2_stats_results() -> dict[str, Any]:
-    """Expected results from parsing checkm2 and bbmap stats files."""
+    """Return expected results from parsing CheckM2 and BBMap stats files.
+
+    :return: Expected parser results dictionary.
+    :rtype: dict[str, Any]
+    """
     return RESULTS
-
-
-def wrap_entry_xml(xml: str, namespace: str) -> str:
-    """Wrap XML text in an ``<entry xmlns='...'>`` element."""
-    return f"<entry xmlns='{namespace}'>{xml}</entry>"

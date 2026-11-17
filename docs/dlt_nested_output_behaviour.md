@@ -4,8 +4,9 @@ render_macros: true
 
 # `dlt` Nested Output Behaviour Across Formats and Placements
 
-This guide summarises how `dlt` normalizes and writes nested records across Python `dict` items and `pyarrow.Table` pages, five `max_table_nesting` placements, and three `filesystem` destination formats (`parquet`, `iceberg`, and `jsonl`). Every reference table on this page renders from the schemas and expectations in [`tests/dependencies/test_dlt_nested_output_behaviour.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/dependencies/test_dlt_nested_output_behaviour.py).
+This guide summarises how `dlt` normalizes and writes nested records across Python `dict` items and `pyarrow.Table` pages, five `max_table_nesting` placements, and three `filesystem` destination formats (`parquet`, `iceberg`, and `jsonl`). Every reference table on this page renders from the contract schemas and expectations in [`specs/_loader/dlt_contracts.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/_loader/dlt_contracts.py), verified against live `dlt` runs in [`tests/dependencies/test_dlt_nested_output_behaviour.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/dependencies/test_dlt_nested_output_behaviour.py).
 
+- **Contract schemas and expectations**: [`specs/_loader/dlt_contracts.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/_loader/dlt_contracts.py)
 - **Characterisation test suite**: [`tests/dependencies/test_dlt_nested_output_behaviour.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/dependencies/test_dlt_nested_output_behaviour.py)
 - **JSONL resource and transformer setup**: [`src/cdm_data_loaders/pipelines/jsonlines/base.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/base.py)
 - **Destination-level `max_table_nesting` example**: [`src/cdm_data_loaders/pipelines/all_the_bacteria/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/all_the_bacteria/pipeline.py)

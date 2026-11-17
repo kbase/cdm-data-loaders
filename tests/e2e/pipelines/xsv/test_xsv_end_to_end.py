@@ -1,0 +1,200 @@
+"""End-to-end tests for the xsv pipeline, using a real qsv binary and local_fs destination."""
+
+from collections.abc import Callable
+from pathlib import Path
+from uuid import uuid4
+
+import pandas as pd
+import pytest
+
+from cdm_data_loaders.core.fields import ICEBERG, PARQUET
+from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
+from tests._support.cli_assertions import settings_to_argv
+from tests._support.fixtures_xsv import (
+    ALL_RAGGED_ROWS,
+    COLUMNS,
+    DEFAULT_XSV_SCHEMA,
+    PARTIAL_RAGGED_ROWS,
+    VALID_ROWS,
+    rows_to_csv,
+)
+from tests._support.paths_and_constants import DEFAULT_DLT_TABLES
+from tests._support.table_readers import (
+    assert_iceberg_table_metadata,
+    assert_pipeline_report_written,
+    assert_run_ok,
+)
+from tests.e2e.framework import PipelineTestRunner
+
+pytestmark = pytest.mark.usefixtures("qsv_cmd")
+
+REJECTED_TABLE = "_rejected"
+
+
+def test_run_xsv_pipeline_pass_writes_expected_output(
+    settings_factory: Callable[..., XsvIngestSettings],
+    write_xsv_file: Callable[[XsvIngestSettings, str, str], Path],
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """A clean, valid file is loaded, with every row cast to its declared schema types."""
+    settings = settings_factory()
+    write_xsv_file(settings, "data.csv", rows_to_csv(VALID_ROWS))
+
+    load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=settings))
+
+    dataset = load_info.pipeline.dataset()
+    assert {"my_table", *DEFAULT_DLT_TABLES} == set(dataset.tables)
+
+    records = dataset.table("my_table").df()[COLUMNS].sort_values("number").to_dict("records")
+    assert records == [
+        {"number": 2, "date": "2023-01-15", "float": "3.14", "boolean": True, "string": "key:value1"},
+        {"number": 3, "date": "2023-02-20", "float": "1.11", "boolean": False, "string": "key:value2"},
+    ]
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files={"data.csv", "schema.json"})
+
+
+def test_run_xsv_pipeline_pass_multiple_files_loaded_together(
+    settings_factory: Callable[..., XsvIngestSettings],
+    write_xsv_file: Callable[[XsvIngestSettings, str, str], Path],
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """Every file matching file_glob is cleaned, validated, and loaded into the same table."""
+    settings = settings_factory()
+    write_xsv_file(settings, "part_1.csv", rows_to_csv([VALID_ROWS[0]]))
+    write_xsv_file(settings, "part_2.csv", rows_to_csv([VALID_ROWS[1]]))
+
+    load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=settings))
+
+    df = load_info.pipeline.dataset().table("my_table").df()
+    assert sorted(df["number"].tolist()) == [2, 3]
+
+
+def test_run_xsv_pipeline_pass_partial_ragged_file_recovers_valid_rows(
+    settings_factory: Callable[..., XsvIngestSettings],
+    write_xsv_file: Callable[[XsvIngestSettings, str, str], Path],
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """A file with one ragged row loads its surviving valid rows AND records the row loss.
+
+    qsv's first-pass validation splits ragged rows out with --split-ragged; the remaining valid
+    subset is promoted through cleaning/validation and loaded, while the ragged-row count is also
+    recorded as a rejected-table row for the file.
+    """
+    settings = settings_factory()
+    write_xsv_file(settings, "data.csv", rows_to_csv(PARTIAL_RAGGED_ROWS))
+
+    load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=settings))
+
+    dataset = load_info.pipeline.dataset()
+    assert {"my_table", REJECTED_TABLE, *DEFAULT_DLT_TABLES} == set(dataset.tables)
+
+    df = dataset.table("my_table").df()
+    assert sorted(df["number"].tolist()) == [2, 4]
+
+    rejected = dataset.table(REJECTED_TABLE).df()
+    assert len(rejected) == 1
+    assert rejected.iloc[0]["table_name"] == "my_table"
+    assert rejected.iloc[0]["source_file"] == "data.csv"
+    assert rejected.iloc[0]["error_detail"] == "1 out of 3 records invalid."
+
+
+def test_run_xsv_pipeline_pass_fully_ragged_file_is_entirely_rejected(
+    settings_factory: Callable[..., XsvIngestSettings],
+    write_xsv_file: Callable[[XsvIngestSettings, str, str], Path],
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """A file where every row is ragged yields no valid rows; the failure is recorded as rejected."""
+    settings = settings_factory()
+    write_xsv_file(settings, "bad.csv", rows_to_csv(ALL_RAGGED_ROWS))
+
+    load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=settings))
+
+    dataset = load_info.pipeline.dataset()
+    assert set(dataset.tables) == {REJECTED_TABLE, *DEFAULT_DLT_TABLES}
+
+    rejected = dataset.table(REJECTED_TABLE).df()
+    assert len(rejected) == 1
+    assert rejected.iloc[0]["table_name"] == "my_table"
+    assert rejected.iloc[0]["source_file"] == "bad.csv"
+    assert rejected.iloc[0]["error_detail"] == "2 out of 2 records invalid."
+
+
+def test_run_xsv_pipeline_pass_no_matching_files_yields_no_data_table(
+    settings_factory: Callable[..., XsvIngestSettings],
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """An input dir with no matching data files does not fail the run and creates no data table."""
+    settings = settings_factory()
+
+    load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=settings))
+
+    assert set(load_info.pipeline.dataset().tables) == DEFAULT_DLT_TABLES
+    assert_pipeline_report_written(Path(settings.output_dir), load_info)
+
+
+def test_run_xsv_pipeline_pass_configured_null_regex_replaces_placeholder(
+    settings_factory: Callable[..., XsvIngestSettings],
+    write_xsv_file: Callable[[XsvIngestSettings, str, str], Path],
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """A schema-configured null_regex placeholder is replaced with a null value before loading."""
+    schema = {
+        **DEFAULT_XSV_SCHEMA,
+        "x-xsv-config": {**DEFAULT_XSV_SCHEMA["x-xsv-config"], "x-null-regex": "^NA$"},
+    }
+    settings = settings_factory(schema=schema)
+    write_xsv_file(
+        settings,
+        "data.csv",
+        rows_to_csv(
+            [["2", "2023-01-15", "NA", "true", "key:value1"], ["3", "2023-02-20", "1.11", "false", "key:value2"]]
+        ),
+    )
+
+    load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=settings))
+
+    df = load_info.pipeline.dataset().table("my_table").df().sort_values("number")
+    floats = df["float"].tolist()
+    assert pd.isna(floats[0])
+    assert floats[1] == "1.11"
+
+
+@pytest.mark.parametrize("loader_file_format", [PARQUET, ICEBERG])
+def test_run_xsv_pipeline_pass_parquet_format_loads_expected_row_count(
+    settings_factory: Callable[..., XsvIngestSettings],
+    write_xsv_file: Callable[[XsvIngestSettings, str, str], Path],
+    pipeline_runner: PipelineTestRunner,
+    destination_bucket: Path,
+    loader_file_format: str,
+) -> None:
+    """The pipeline also loads successfully when loader_file_format is parquet or iceberg.
+
+    Only row count is checked here (not exact column values/types): dlt infers column types
+    during parquet normalization (e.g. ISO-looking date strings may become typed date columns),
+    which can differ from the jsonl path used by the other tests in this module.
+    """
+    settings = settings_factory(loader_file_format=loader_file_format)
+    write_xsv_file(settings, "data.csv", rows_to_csv(VALID_ROWS))
+
+    load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=settings))
+
+    df = load_info.pipeline.dataset().table("my_table").df()
+    assert len(df) == len(VALID_ROWS)
+    if loader_file_format == ICEBERG:
+        assert_iceberg_table_metadata(destination_bucket / load_info.dataset_name, "my_table")
+
+
+def test_cli_pass_runs_end_to_end_from_command_line_arguments(
+    settings_factory: Callable[..., XsvIngestSettings],
+    write_xsv_file: Callable[[XsvIngestSettings, str, str], Path],
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """cli() reads command-line arguments and runs the pipeline, producing the expected output."""
+    settings = settings_factory(dataset_name=f"cli_dataset_{uuid4().hex}", dlt_dev_mode=False)
+    write_xsv_file(settings, "data.csv", rows_to_csv(VALID_ROWS))
+
+    load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, cli_args=settings_to_argv(settings)))
+
+    df = load_info.pipeline.dataset().table("my_table").df()
+    assert sorted(df["number"].tolist()) == [2, 3]
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files={"data.csv", "schema.json"})

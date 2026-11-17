@@ -1,6 +1,5 @@
-"""CLI entry-point and Python package introspection builders for CLI reference documentation."""
+"""CLI entry-point and Pydantic settings introspection builders for CLI reference documentation."""
 
-import ast
 import importlib
 import types
 from collections.abc import Sequence
@@ -183,26 +182,6 @@ class CliReferencePageContext(FrozenDocModel):
     entrypoint_url: str = f"{GITHUB_BLOB_BASE}/scripts/entrypoint.sh"
 
 
-class ModuleDoc(FrozenDocModel):
-    """Documentation metadata for a Python module under ``src/cdm_data_loaders/``."""
-
-    rel_file: Path
-    doc_rel_path: Path
-    nav_parts: tuple[str, ...]
-    summary: str
-    is_package: bool
-
-    @computed_field
-    @property
-    def module_path(self) -> str:
-        """Dotted Python module path joined from ``nav_parts``.
-
-        :return: Dotted module path.
-        :rtype: str
-        """
-        return ".".join(self.nav_parts)
-
-
 def _format_default_value(field_info: FieldInfo, repo_root: Path = REPO_ROOT) -> tuple[str, bool]:
     """Return ``(default_label, required)`` for a Pydantic ``FieldInfo``.
 
@@ -380,67 +359,3 @@ def build_cli_reference_context(entries: Sequence[CliEntryDoc] | None = None) ->
     """
     resolved = tuple(entries) if entries is not None else tuple(load_cli_entries())
     return CliReferencePageContext(entries=resolved)
-
-
-def _read_ast_docstring(py_file: Path) -> str:
-    """Extract the module docstring from a Python source file using ``ast`` without importing it.
-
-    :param py_file: Path to the Python source module.
-    :type py_file: Path
-    :return: First line of the module docstring or ``"—"``.
-    :rtype: str
-    """
-    source = py_file.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(py_file))
-    return first_docstring_line(ast.get_docstring(tree), fallback="—")
-
-
-def discover_api_modules(src_root: Path = SRC_ROOT) -> list[ModuleDoc]:
-    """Discover all Python packages and modules under ``src/cdm_data_loaders/``.
-
-    :param src_root: Package source root directory.
-    :type src_root: Path
-    :return: Ordered list of ``ModuleDoc`` descriptors.
-    :rtype: list[ModuleDoc]
-    """
-    modules: list[ModuleDoc] = []
-    package_root_name = src_root.name
-
-    for py_file in sorted(src_root.rglob("*.py")):
-        rel_file = py_file.relative_to(src_root)
-        is_package = py_file.name == "__init__.py"
-        if is_package:
-            parts = (package_root_name, *rel_file.parent.parts) if rel_file.parent.parts else (package_root_name,)
-            doc_rel_path = Path(*rel_file.parent.parts, "index.md") if rel_file.parent.parts else Path("index.md")
-        else:
-            parts = (package_root_name, *rel_file.with_suffix("").parts)
-            doc_rel_path = rel_file.with_suffix(".md")
-
-        summary = _read_ast_docstring(py_file)
-        modules.append(
-            ModuleDoc(
-                rel_file=rel_file,
-                doc_rel_path=doc_rel_path,
-                nav_parts=parts,
-                summary=summary,
-                is_package=is_package,
-            )
-        )
-
-    modules.sort(key=_module_sort_key)
-    return modules
-
-
-def _module_sort_key(module: ModuleDoc) -> tuple[tuple[str, ...], bool, str]:
-    """Return a deterministic sort key grouping package modules before submodules.
-
-    :param module: Discovered ``ModuleDoc`` descriptor.
-    :type module: ModuleDoc
-    :return: Sort key tuple ``(package_parts, is_leaf_module, leaf_name)``.
-    :rtype: tuple[tuple[str, ...], bool, str]
-    """
-    return (
-        module.nav_parts if module.is_package else module.nav_parts[:-1],
-        not module.is_package,
-        module.nav_parts[-1],
-    )

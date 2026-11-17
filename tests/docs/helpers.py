@@ -4,20 +4,55 @@ import functools
 import re
 import tomllib
 from collections.abc import Sequence
+from functools import partial
 from pathlib import Path
 from typing import Final
 
 import jinja2
 import yaml
+from _pytest.mark.expression import Expression
 from zensical.extensions.macros import MacroEnv, _load_module
 
 from docs_macros.constants import DOCS_DIR, REPO_ROOT, TEMPLATES_DIR
-from docs_macros.env import build_generated_docs_plan
+from docs_macros.sync import build_generated_docs_plan
 
 ZENSICAL_PATH: Final[Path] = REPO_ROOT / "zensical.toml"
 INDEX_PATH: Final[Path] = DOCS_DIR / "index.md"
 README_PATH: Final[Path] = REPO_ROOT / "README.md"
 FRONT_MATTER_RE: Final[re.Pattern[str]] = re.compile(r"\A---\n(.*?)\n---\n?(.*)\Z", re.DOTALL)
+
+
+def _matches_docs_marker(name: str, **_kwargs: str | int | bool | None) -> bool:
+    """Evaluate a marker identifier as ``True`` iff it equals ``docs``.
+
+    :param name: Marker identifier passed by ``Expression.evaluate``.
+    :type name: str
+    :param _kwargs: Optional marker keyword arguments passed by ``Expression.evaluate``.
+    :type _kwargs: str | int | bool | None
+    :return: ``True`` when ``name == "docs"``.
+    :rtype: bool
+    """
+    return name == "docs"
+
+
+def should_ignore_docs_collect(markexpr: str) -> bool | None:
+    """Return ``True`` when ``markexpr`` excludes ``docs``-marked tests, else ``None``.
+
+    :param markexpr: Raw ``-m`` marker expression string from pytest config.
+    :type markexpr: str
+    :return: ``True`` to skip ``tests/docs`` collection, or ``None`` to collect.
+    :rtype: bool | None
+    """
+    stripped = markexpr.strip()
+    if not stripped:
+        return None
+    try:
+        compiled = Expression.compile(stripped)
+    except SyntaxError:
+        return None
+    if not compiled.evaluate(partial(_matches_docs_marker)):
+        return True
+    return None
 
 
 def excluded_doc_names(zensical_path: Path = ZENSICAL_PATH) -> set[str]:

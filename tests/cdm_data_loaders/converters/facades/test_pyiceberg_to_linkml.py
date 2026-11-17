@@ -32,7 +32,7 @@ from cdm_data_loaders.converters.facades.pyiceberg_to_linkml import (
     convert_type,
     table_to_linkml,
 )
-from tests.cdm_data_loaders.converters.conftest import make_table
+from tests._support.iceberg_catalog import make_iceberg_table as make_table
 
 
 @pytest.mark.parametrize(

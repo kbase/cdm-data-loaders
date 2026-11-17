@@ -1,4 +1,4 @@
-"""Unit and rendering tests for ``docs_macros.dlt_pyarrow_context`` and ``docs/dlt_pyarrow_definitions.md``."""
+"""Unit and rendering tests for ``docs_macros.tables.dlt_pyarrow`` and ``docs/dlt_pyarrow_definitions.md``."""
 
 import markdown
 import pyarrow as pa
@@ -17,18 +17,20 @@ from pyiceberg.types import (
 )
 
 from docs_macros.constants import DOCS_DIR
-from docs_macros.dlt_pyarrow_context import (
+from docs_macros.tables.dlt_pyarrow import (
     DltPyArrowIdentifierRow,
     DltPyArrowNestedPathRow,
     IdentifierSlotCursor,
     NestedSlotCursor,
-    SlotKind,
     build_dlt_pyarrow_flat_column_rows,
     build_dlt_pyarrow_identifier_rows,
     build_dlt_pyarrow_nested_dlt_column_rows,
     build_dlt_pyarrow_nested_path_rows,
     collect_identifier_slot_rows,
     collect_nested_slot_rows,
+)
+from docs_macros.tables.dlt_shared import (
+    SlotKind,
     format_arrow_field_summary,
     format_arrow_type_label,
     format_dlt_column_def,
@@ -36,8 +38,8 @@ from docs_macros.dlt_pyarrow_context import (
     format_iceberg_type_label,
     format_metadata_keys,
 )
-from docs_macros.tables_context import TABLE_TEMPLATE_REGISTRY
-from tests.dependencies.test_dlt_pyarrow_table_definitions import (
+from docs_macros.tables.registry import TABLE_TEMPLATE_REGISTRY
+from specs._loader.dlt_contracts import (
     DEEP_NESTED_ARROW_SCHEMA,
     FLAT_ARROW_SCHEMA,
     ShapeExpectation,

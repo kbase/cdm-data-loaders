@@ -1,5 +1,5 @@
 # Rule catalogue for the XML-to-PyArrow ingestion pipeline
-# (cdm_data_loaders.pipelines.xmltopyarrow & cdm_data_loaders.readers.xml).
+# (cdm_data_loaders.pipelines.xmltopyarrow and cdm_data_loaders.readers.xml).
 #
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/xmltopyarrow_specification.md, rendered via docs_macros and docs/_templates/pages/pipeline_spec.md.j2.
@@ -9,6 +9,11 @@ pipeline: xmltopyarrow
 cli_command: xmltopyarrow
 settings_class: cdm_data_loaders.pipelines.xmltopyarrow.settings.XmlToPyArrowSettings
 pipeline_runner: cdm_data_loaders.pipelines.xmltopyarrow.pipeline.run_xmltopyarrow_pipeline
+schema_lang: xml
+data_lang: xml
+target_label: xml_tag
+exceptions_module: cdm_data_loaders.pipelines.xmltopyarrow.exceptions
+errors_attr: XMLTOPYARROW_CONFIG_ERRORS
 intro: |
   This document specifies how an **XSD schema** and the **XML-to-PyArrow ingestion pipeline**
   (`cdm_data_loaders.pipelines.xmltopyarrow` and `cdm_data_loaders.readers.xml`) determine:

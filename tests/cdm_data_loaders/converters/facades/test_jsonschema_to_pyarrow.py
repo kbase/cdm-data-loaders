@@ -10,7 +10,7 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrow,
 )
 from cdm_data_loaders.validation.jsonschema.dereference import dereference_schema
-from tests.cdm_data_loaders.converters.conftest import base_object_schema
+from tests.cdm_data_loaders.converters._helpers import base_object_schema
 
 
 def test_convert_fail_root_resolves_to_map(jsonschema_to_pyarrow_converter: JSONSchemaToPyArrow) -> None:

@@ -43,7 +43,7 @@ from cdm_data_loaders.converters.facades.dlt_to_jsonschema import DltToJSONSchem
 from cdm_data_loaders.converters.sources.dlt import DltReader
 from cdm_data_loaders.converters.sources.iceberg import IcebergReader
 from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
-from tests.cdm_data_loaders.converters.conftest import make_table
+from tests._support.iceberg_catalog import make_iceberg_table as make_table
 
 GOLDEN_PATH: Final = Path(__file__).parents[3] / "data" / "converters" / "ir" / "legacy_outputs.json"
 CASES: Final[list[dict[str, Any]]] = [

@@ -24,7 +24,7 @@ from cdm_data_loaders.utils.logging import (
     init_logger,
     log_exception,
 )
-from tests.helpers import jsonlines_text_to_objects, write_json_or_yaml
+from tests._support.cli_assertions import jsonlines_text_to_objects, write_json_or_yaml
 
 NAMED_LOGGER = "cdm_test.named"
 TEN_SECONDS_NS = 10_000_000_000

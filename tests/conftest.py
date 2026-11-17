@@ -1,8 +1,8 @@
-"""Global configuration settings for tests."""
+"""Global pytest configuration, isolation fixtures, and shared root fixtures."""
 
 import gc
 import gzip
-import importlib.resources
+import importlib
 import logging
 import os
 import shutil
@@ -10,19 +10,16 @@ import sys
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import dataclass
-from functools import partial
+from functools import cache
 from importlib.util import find_spec
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Final, Self
+from typing import Any, Final
 from unittest.mock import patch
 
 import boto3
 import dlt
 import pytest
-from _pytest.logging import LogCaptureHandler
-from _pytest.mark.expression import Expression
 from dlt.common.configuration.container import Container
 from dlt.common.pipeline import PipelineContext
 from frozendict import frozendict
@@ -32,12 +29,25 @@ from pyspark.sql import SparkSession
 from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.io.s3.client as s3_client
-import cdm_data_loaders.utils.logging as cdm_logging
-from cdm_data_loaders.io.s3.client import _client_config, reset_s3_client
-from cdm_data_loaders.validation.jsonschema.metaschema import CUSTOM_META_SCHEMA_URI, get_xsv_meta_schema
-from tests.dlt_config_isolation import isolated_dlt_config
-from tests.state_audit import StateAuditPlugin
-from tests.xml_samples import LIBRARY_XSD
+from cdm_data_loaders.io.s3.client import get_s3_client, reset_s3_client
+from tests._support.cli_assertions import HOOK_ENV_VAR, HOOK_PART_ENV_VARS
+from tests._support.dlt_isolation import isolated_dlt_config
+from tests._support.paths_and_constants import (
+    BUCKETS,
+    CASSETTES_DIR,
+    LOCAL_FS,
+    NATIVE_SPECLESS_PREFIXES,
+    SPECS_ROOT,
+    TEST_DATA_DIR,
+    TRANSIENT_MODULE_NAMES,
+    TRANSIENT_MODULE_PREFIXES,
+    generate_dlt_config,
+    is_marker_explicitly_selected,
+    preserve_logging_state,
+    preserve_xsv_metaschema_state,
+)
+from tests._support.state_audit import StateAuditPlugin
+from tests._support.xml_samples import LIBRARY_XSD
 
 settings.register_profile(
     "default",
@@ -53,33 +63,14 @@ settings.register_profile(
 )
 settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
 
-pytest_plugins = ["tests.fs_backends", "tests.jsonlines_fixtures", "tests.jsonschema_fixtures", "tests.xsv_fixtures"]
-
-LOCAL_FS: Final[str] = "local_fs"
-S3: Final[str] = "s3"
+pytest_plugins = ["tests._support.fs_backends"]
 
 SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
-
-BASE_DIR: Final[Path] = Path("tests").parent
-TEST_DATA_DIR: Final[Path] = Path("tests") / "data"
-CASSETTES_DIR: Final[Path] = Path("tests") / "cassettes"
-SCHEMA_CONVERTER_SPECS_DIR: Final[Path] = BASE_DIR / "specs" / "schema_converters"
-XSD_SPEC_DIR: Final[Path] = SCHEMA_CONVERTER_SPECS_DIR / "xsd_to_pyarrow"
-PIPELINE_SPECS_DIR: Final[Path] = BASE_DIR / "specs" / "pipelines"
-SPECS_ROOT: Final[Path] = (BASE_DIR / "specs").resolve()
-TRANSIENT_MODULE_NAMES: Final[frozenset[str]] = frozenset({"schema", "expected_schema"})
-TRANSIENT_MODULE_PREFIXES: Final[tuple[str, ...]] = ("_fixture_", "_test_")
-NATIVE_SPECLESS_PREFIXES: Final[tuple[str, ...]] = ("_openssl", "cryptography.", "_cython_", "_duckdb.")
-
-REFERENCE_XML_NS: Final[str] = "http://uniprot.org/uniref"
-REFERENCE_XML_TAG: Final[str] = f"{{{REFERENCE_XML_NS}}}entry"
-REFERENCE_XML_FIXTURE_DIR: Final[Path] = TEST_DATA_DIR / "uniprot" / "uniref"
-N_REFERENCE_XML_ENTRIES: Final[int] = 100
 
 DEFAULT_VCR_CONFIG = frozendict(
     {
         "cassette_library_dir": str(CASSETTES_DIR),
-        "record_mode": "once",  # record on first run, replay thereafter
+        "record_mode": "once",
         "serializer": "yaml",
         "match_on": ["method", "scheme", "host", "path", "query"],
         "decode_compressed_response": True,
@@ -90,23 +81,34 @@ DEFAULT_VCR_CONFIG = frozendict(
 
 @pytest.fixture(scope="module")
 def vcr_config() -> dict[str, Any]:
-    """VCR configuration for recording/replaying HTTP cassettes."""
+    """Return VCR configuration for recording and replaying HTTP cassettes.
+
+    :return: VCR configuration dictionary.
+    :rtype: dict[str, Any]
+    """
     return {**DEFAULT_VCR_CONFIG}
 
 
 @pytest.fixture
 def library_xsd(tmp_path: Path) -> Path:
-    """Write the minimal library XSD to tmp_path."""
+    """Write the minimal library XSD fixture to ``tmp_path``.
+
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :return: Path to the written ``library.xsd`` file.
+    :rtype: Path
+    """
     xsd_path = tmp_path / "library.xsd"
     xsd_path.write_text(LIBRARY_XSD, encoding="utf-8")
     return xsd_path
 
 
-_notebook_utils_available: bool | None = None
-
-
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """Register custom command-line options for running Docker container pipeline tests."""
+    """Register custom command-line options for Docker, smoke, and state-audit test runs.
+
+    :param parser: Pytest CLI option parser.
+    :type parser: pytest.Parser
+    """
     parser.addoption(
         "--run-docker",
         action="store_true",
@@ -157,45 +159,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-def _matches_marker(target: str, name: str, **_kwargs: str | int | bool | None) -> bool:
-    """Return whether a marker expression identifier matches ``target``.
-
-    :param target: Marker name to match.
-    :type target: str
-    :param name: Candidate identifier passed by ``Expression.evaluate``.
-    :type name: str
-    :param _kwargs: Optional marker keyword arguments passed by ``Expression.evaluate``.
-    :type _kwargs: str | int | bool | None
-    :return: ``True`` when ``name == target``.
-    :rtype: bool
-    """
-    return name == target
-
-
-def is_marker_explicitly_selected(markexpr: str, marker: str) -> bool:
-    """Determine whether a ``-m`` marker expression explicitly selects ``marker``.
-
-    Returns ``False`` when ``markexpr`` is empty, omits ``marker`` (such as
-    ``not docs``), negates ``marker`` (such as ``not state_audit``), or fails
-    to parse.
-
-    :param markexpr: Raw ``-m`` marker expression string from ``config.option.markexpr``.
-    :type markexpr: str
-    :param marker: Marker identifier to check for explicit selection.
-    :type marker: str
-    :return: ``True`` if ``marker`` is referenced in ``markexpr`` and evaluates to selected.
-    :rtype: bool
-    """
-    stripped = markexpr.strip()
-    if not stripped:
-        return False
-    try:
-        compiled = Expression.compile(stripped)
-    except SyntaxError:
-        return False
-    return marker in compiled.idents() and compiled.evaluate(partial(_matches_marker, marker))
-
-
 def pytest_configure(config: pytest.Config) -> None:
     """Register the passive global state mutation audit plugin when ``--state-audit`` is enabled.
 
@@ -227,55 +190,37 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_state_audit)
 
 
+@cache
 def _find_notebook_utils() -> bool:
-    """Check whether the current environment has the KBase Lakehouse notebook_utils lib available.
+    """Return whether KBase Lakehouse ``berdl_notebook_utils`` is installed in the active environment.
 
-    :return: True if they are available
+    :return: ``True`` when both spark session and database helpers are importable.
     :rtype: bool
     """
-    global _notebook_utils_available  # noqa: PLW0603
-    if _notebook_utils_available is not None:
-        return _notebook_utils_available
-
-    # set to false by default
-    _notebook_utils_available = False
     try:
         sss = find_spec("berdl_notebook_utils.setup_spark_session")
         db = find_spec("berdl_notebook_utils.spark.database")
-        if sss is not None and db is not None:
-            _notebook_utils_available = True
     except Exception:
-        logging.getLogger(__name__).exception("Notebook utils not available: requires_notebook_utils tests will fail")
-
-    return _notebook_utils_available
+        logging.getLogger(__name__).exception("Notebook utils not available: requires_spark tests will fail")
+        return False
+    return sss is not None and db is not None
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
-    """Set up tests to skip anything where dependencies are missing.
+    """Skip or fail ``requires_spark`` tests when ``berdl_notebook_utils`` is unavailable.
 
-    :param item: test item
+    :param item: Active pytest test item.
     :type item: pytest.Item
     """
-    if "requires_spark" not in item.keywords:
+    if "requires_spark" not in item.keywords or _find_notebook_utils():
         return
 
-    # notebook utils are available: we're fine
-    if _find_notebook_utils():
-        return
-
-    # the raw string passed to -m
-    markexpr = item.config.option.markexpr
-    # tests matching any "not" markers will already have been filtered out
-    # markexpr will contain "requires_spark" when -m requires_spark is used
-    # N.b. this blatantly ignores more complex situations, like "not(marker or marker)"
-    if markexpr and "requires_spark" in markexpr and "not requires_spark" not in markexpr:
+    if is_marker_explicitly_selected(item.config.option.markexpr, "requires_spark"):
         pytest.fail(
             "Test is marked requires_spark, but Spark is not available in this environment.",
             pytrace=False,
         )
-    else:
-        # no markexpr or unrelated -m expression: skip silently
-        pytest.skip("Test is marked requires_spark, but Spark is not available in this environment.")
+    pytest.skip("Test is marked requires_spark, but Spark is not available in this environment.")
 
 
 def _is_transient_test_module(name: str, mod: ModuleType | None) -> bool:
@@ -294,7 +239,7 @@ def _is_transient_test_module(name: str, mod: ModuleType | None) -> bool:
         return True
     if getattr(mod, "__spec__", None) is None and getattr(mod, "__file__", None) is None:
         return not name.startswith(NATIVE_SPECLESS_PREFIXES)
-    if name.startswith("specs."):
+    if name == "specs" or name.startswith("specs."):
         return False
     mod_file = getattr(mod, "__file__", None)
     return mod_file is not None and Path(mod_file).resolve().is_relative_to(SPECS_ROOT)
@@ -332,7 +277,12 @@ def _isolated_cli_and_env() -> Generator[None]:
     :return: Generator yielding ``None``.
     :rtype: Generator[None]
     """
-    clean_env = {k: v for k, v in deepcopy(os.environ).items() if not k.lower().startswith("cdl_")}
+    clean_env = {
+        k: v
+        for k, v in deepcopy(os.environ).items()
+        if not k.lower().startswith("cdl_") and k not in (*HOOK_PART_ENV_VARS, HOOK_ENV_VAR)
+    }
+    clean_env["RUNTIME__DLTHUB_TELEMETRY"] = "false"
     reset_s3_client()
     try:
         with (
@@ -374,10 +324,15 @@ def isolated_xsv_metaschema_state(_isolated_cli_and_env: None) -> Generator[None
 
 @pytest.fixture(autouse=True)
 def logging_setup(_isolated_dlt_config: None, caplog: pytest.LogCaptureFixture) -> None:
-    """Configure test logger levels and propagation inside ``isolated_logging`` and after dlt runtime setup."""
+    """Configure test logger levels and propagation inside ``isolated_logging`` and after dlt runtime setup.
+
+    :param _isolated_dlt_config: Root dlt config isolation fixture.
+    :type _isolated_dlt_config: None
+    :param caplog: Active pytest log capture fixture.
+    :type caplog: pytest.LogCaptureFixture
+    """
     vcr_logger = logging.getLogger("vcr")
     vcr_logger.setLevel(logging.ERROR)
-    # turn on log propagation for the dlt logger
     dlt_logger = logging.getLogger("dlt")
     dlt_logger.propagate = True
     caplog.set_level(logging.INFO)
@@ -389,10 +344,17 @@ def isolate_dlt_pipelines_dir(
     _isolated_dlt_config: None,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> Generator[None, Any]:
-    """Set the DLT_DATA_DIR (where dlt stores pipeline metadata) to the test temporary directory.
+) -> Generator[None]:
+    """Set ``DLT_DATA_DIR`` to ``tmp_path`` and deactivate any active ``PipelineContext`` on teardown.
 
-    Prevents accumulation of dlt pipeline artefacts in the user ~/.dlt directory.
+    :param _isolated_dlt_config: Root dlt config isolation fixture.
+    :type _isolated_dlt_config: None
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :param monkeypatch: Active pytest monkeypatch fixture.
+    :type monkeypatch: pytest.MonkeyPatch
+    :return: Generator yielding ``None``.
+    :rtype: Generator[None]
     """
     monkeypatch.setenv("DLT_DATA_DIR", str(tmp_path))
     yield
@@ -402,11 +364,17 @@ def isolate_dlt_pipelines_dir(
 
 
 @pytest.fixture
-def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
-    """Generate a local spark session with spark.sql.warehouse.dir set to the pytest temporary directory."""
+def spark(tmp_path: Path) -> Generator[SparkSession]:
+    """Generate a local Spark session with ``spark.sql.warehouse.dir`` set to ``tmp_path``.
+
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :return: Generator yielding ``SparkSession``.
+    :rtype: Generator[SparkSession]
+    """
     logger = logging.getLogger(__name__)
     try:
-        from berdl_notebook_utils.setup_spark_session import get_spark_session  # pyright: ignore[reportMissingImports]  # noqa: PLC0415
+        spark_mod = importlib.import_module("berdl_notebook_utils.setup_spark_session")
     except ModuleNotFoundError:
         logger.exception("berdl_notebook_utils not available: cannot create a spark session")
         raise
@@ -414,40 +382,43 @@ def spark(tmp_path: Path) -> Generator[SparkSession, Any]:
     test_config = {
         "spark.sql.shuffle.partitions": 5,
         "spark.default.parallelism": 9,
-        # Disabling rdd and map output compression as data is already small for tests
         "spark.rdd.compress": False,
         "spark.shuffle.compress": False,
-        # Disable Spark UI for tests
         "spark.ui.enabled": False,
         "spark.ui.showConsoleProgress": False,
-        # Extra configs to optimize Delta internal operations on tests
         "spark.databricks.delta.snapshotPartitions": 2,
         "delta.log.cacheSize": 3,
         SAVE_DIR: str(tmp_path),
     }
-    # local=True builds the session without any BERDL environment (no get_settings(),
-    # no Spark Connect server); the override applies the test-tuning configs after.
     logger.info("starting spark session...")
-    spark = get_spark_session("test_app", local=True, override=test_config)
-    save_dir = spark.conf.get(SAVE_DIR).removeprefix("file:")  # pyright: ignore[reportOptionalMemberAccess]
+    session: SparkSession = spark_mod.get_spark_session("test_app", local=True, override=test_config)
+    save_dir = session.conf.get(SAVE_DIR).removeprefix("file:")  # pyright: ignore[reportOptionalMemberAccess]
     if save_dir != str(tmp_path):
         logger.error("spark dir: %s; save dir: %s", tmp_path, save_dir)
-    yield spark
-    spark.catalog.clearCache()
-    spark.stop()
+    yield session
+    session.catalog.clearCache()
+    session.stop()
     logger.info("stopping spark session...")
     shutil.rmtree(save_dir)
 
 
 @pytest.fixture(scope="session")
 def test_data_dir() -> Path:
-    """Test data directory."""
+    """Return the shared ``tests/data`` directory.
+
+    :return: Path to ``tests/data``.
+    :rtype: Path
+    """
     return TEST_DATA_DIR
 
 
 @pytest.fixture
 def write_gzip_file() -> Callable[[Path, str, str], Path]:
-    """Return a function that writes text content to a gzip-compressed file."""
+    """Return a helper that writes UTF-8 text content to a gzip-compressed file.
+
+    :return: Writer callable ``(directory, filename, content) -> Path``.
+    :rtype: Callable[[Path, str, str], Path]
+    """
 
     def _write(directory: Path, filename: str, content: str) -> Path:
         directory.mkdir(parents=True, exist_ok=True)
@@ -463,7 +434,13 @@ def write_gzip_file() -> Callable[[Path, str, str], Path]:
 def write_gzip_jsonl_file(
     write_gzip_file: Callable[[Path, str, str], Path],
 ) -> Callable[[Path, str, list[str]], Path]:
-    """Return a function that writes a list of JSON lines to a gzip-compressed file."""
+    """Return a helper that writes JSON Lines strings to a gzip-compressed file.
+
+    :param write_gzip_file: Gzip file writer fixture.
+    :type write_gzip_file: Callable[[Path, str, str], Path]
+    :return: Writer callable ``(directory, filename, lines) -> Path``.
+    :rtype: Callable[[Path, str, list[str]], Path]
+    """
 
     def _write(directory: Path, filename: str, lines: list[str]) -> Path:
         return write_gzip_file(directory, filename, "\n".join(lines) + "\n")
@@ -472,8 +449,12 @@ def write_gzip_jsonl_file(
 
 
 @pytest.fixture(scope="session")
-def json_test_strings() -> dict[str, Any]:
-    """A selection of JSON strings for testing."""
+def json_test_strings() -> dict[str, str]:
+    """Return a corpus of valid and malformed JSON test strings.
+
+    :return: Mapping from label to raw JSON text.
+    :rtype: dict[str, str]
+    """
     return {
         "null": "null",
         "empty": "",
@@ -496,40 +477,30 @@ def json_test_strings() -> dict[str, Any]:
     }
 
 
-CONFIG_BUCKET = frozendict({LOCAL_FS: "/output_dir", S3: "s3://some/s3/bucket"})
-
-
-def _generate_dlt_config() -> dict[str, Any]:
-    """Return a fresh DLT config dict."""
-    return {
-        "destination": {
-            LOCAL_FS: {"bucket_url": CONFIG_BUCKET[LOCAL_FS], "destination_type": "filesystem"},
-            S3: {"bucket_url": CONFIG_BUCKET[S3], "destination_type": "filesystem"},
-        },
-        "destination.local_fs.bucket_url": CONFIG_BUCKET[LOCAL_FS],
-        "destination.local_fs.destination_type": "filesystem",
-        "destination.s3.bucket_url": CONFIG_BUCKET[S3],
-        "destination.s3.destination_type": "filesystem",
-        "normalize.data_writer.disable_compression": False,
-    }
-
-
 @pytest.fixture(autouse=True)
 def _isolated_dlt_config(request: pytest.FixtureRequest) -> Generator[None]:
-    """Isolate every test's dlt config/secrets provider chain, seeded with the standard test config.
+    """Isolate every test's dlt config and secrets provider chain, seeded with standard test destinations.
 
-    Prevents mutation of the global dlt.config during tests. dlt.config can be set explicitly by
-    passing dlt_config=... to a Settings object or using `isolated_dlt_config(...)`.
+    :param request: Active pytest fixture request.
+    :type request: pytest.FixtureRequest
+    :return: Generator yielding ``None``.
+    :rtype: Generator[None]
     """
     request.getfixturevalue("isolated_logging")
     request.getfixturevalue("isolated_xsv_metaschema_state")
-    with isolated_dlt_config(_generate_dlt_config()):
+    with isolated_dlt_config(generate_dlt_config()):
         yield
 
 
 @pytest.fixture
 def dlt_destination_config(tmp_path: Path) -> Generator[str]:
-    """Set the 'local_fs' destination to tmp_path in dlt.config."""
+    """Point the ``local_fs`` dlt destination at a per-test directory under ``tmp_path``.
+
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :return: Generator yielding destination name ``"local_fs"``.
+    :rtype: Generator[str]
+    """
     bucket = tmp_path / "bucket"
     bucket.mkdir()
     with dlt.config.values(
@@ -541,23 +512,30 @@ def dlt_destination_config(tmp_path: Path) -> Generator[str]:
         yield LOCAL_FS
 
 
-"""S3 Client mocks"""
+@pytest.fixture
+def destination_bucket(tmp_path: Path, dlt_destination_config: str) -> Path:
+    """Return the ``bucket_url`` directory of the ``local_fs`` destination in ``dlt.config``.
 
-
-TEST_BUCKET: Final[str] = "test_bucket"
-ALT_BUCKET: Final[str] = "alt_bucket"
-BUCKETS = [TEST_BUCKET, ALT_BUCKET]
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :param dlt_destination_config: Active destination name fixture ensuring ``bucket`` exists.
+    :type dlt_destination_config: str
+    :return: Destination bucket directory path.
+    :rtype: Path
+    """
+    _ = dlt_destination_config
+    return tmp_path / "bucket"
 
 
 @pytest.fixture
 def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[S3Client]:
-    """Yield a mocked S3 client with two valid buckets created (TEST_BUCKET, ALT_BUCKET).
+    """Yield a Moto-backed ``S3Client`` pre-seeded with ``TEST_BUCKET`` and ``ALT_BUCKET``.
 
-    The function get_s3_client() is patched to ensure that all module functions use this client.
-
-    Resets the cached client before and after to prevent state leaking between tests.
+    :param monkeypatch: Active pytest monkeypatch fixture.
+    :type monkeypatch: pytest.MonkeyPatch
+    :return: Generator yielding ``S3Client``.
+    :rtype: Generator[S3Client]
     """
-    # Remove any real endpoint/credential env vars so moto intercepts all HTTP calls.
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
@@ -567,127 +545,12 @@ def mock_s3_client(monkeypatch: pytest.MonkeyPatch) -> Generator[S3Client]:
 
     with mock_aws():
         reset_s3_client()
-        client: S3Client = boto3.client(S3, config=_client_config())  # pyright: ignore[reportCallIssue]
-
+        client = get_s3_client()
         for bucket in BUCKETS:
             client.create_bucket(Bucket=bucket)
-
-        # delete any existing client
         reset_s3_client()
-        assert s3_client._s3_client is None  # noqa: SLF001
 
-        # patch in the client that we have just created
         with patch.object(s3_client, "get_s3_client", return_value=client):
             yield client
 
         reset_s3_client()
-        assert s3_client._s3_client is None  # noqa: SLF001
-
-
-@dataclass(frozen=True, slots=True)
-class LoggerState:
-    """Settings of a single logger that tests may change."""
-
-    level: int = logging.NOTSET
-    propagate: bool = True
-    disabled: bool = False
-    filters: tuple[Any, ...] = ()
-    handlers: tuple[logging.Handler, ...] = ()
-    formatters: tuple[logging.Formatter | None, ...] = ()
-
-    @classmethod
-    def capture(cls, lg: logging.Logger, exclude: logging.Handler | None = None) -> Self:
-        """Record the current state of ``lg``, omitting ``exclude`` and pytest's per-phase capture handlers."""
-        handlers = tuple(h for h in lg.handlers if h is not exclude and not isinstance(h, LogCaptureHandler))
-        return cls(
-            level=lg.level,
-            propagate=lg.propagate,
-            disabled=lg.disabled,
-            filters=tuple(lg.filters),
-            handlers=handlers,
-            formatters=tuple(h.formatter for h in handlers),
-        )
-
-    def restore(self, lg: logging.Logger, *extra_handlers: logging.Handler) -> None:
-        """Put ``lg`` back into the recorded state while keeping active pytest capture handlers."""
-        live_capture_handlers = [
-            h
-            for h in lg.handlers
-            if isinstance(h, LogCaptureHandler) and h not in self.handlers and h not in extra_handlers
-        ]
-        lg.setLevel(self.level)
-        lg.propagate = self.propagate
-        lg.disabled = self.disabled
-        lg.filters[:] = self.filters
-        lg.handlers[:] = [*self.handlers, *extra_handlers, *live_capture_handlers]
-        for handler, formatter in zip(self.handlers, self.formatters, strict=True):
-            handler.setFormatter(formatter)
-
-
-@contextmanager
-def preserve_logging_state(exclude_handler: logging.Handler | None = None) -> Generator[None]:
-    """Snapshot all logger states, ``cdm_logging.applied_key``, and ``sys.excepthook``, restoring them on exit.
-
-    :param exclude_handler: Optional handler managed externally per test phase.
-    :type exclude_handler: logging.Handler | None
-    :return: Context manager yielding ``None``.
-    :rtype: Generator[None]
-    """
-    root = logging.getLogger()
-    manager = logging.Logger.manager
-    saved_manager_disable = manager.disable
-    saved_excepthook = sys.excepthook
-    root_state = LoggerState.capture(root, exclude=exclude_handler)
-    saved = {
-        name: LoggerState.capture(lg, exclude=exclude_handler)
-        for name, lg in manager.loggerDict.items()
-        if isinstance(lg, logging.Logger)
-    }
-    saved_applied_key = cdm_logging.applied_key
-    cdm_logging.applied_key = None
-
-    try:
-        yield
-    finally:
-        loggers = {name: lg for name, lg in manager.loggerDict.items() if isinstance(lg, logging.Logger)}
-        extra_handlers = (exclude_handler,) if exclude_handler is not None else ()
-        known = {*root_state.handlers, *extra_handlers, *(h for state in saved.values() for h in state.handlers)}
-        for lg in [root, *loggers.values()]:
-            for handler in lg.handlers:
-                if handler not in known and not isinstance(handler, LogCaptureHandler):
-                    handler.close()
-        root_state.restore(root, *extra_handlers)
-        for name, lg in loggers.items():
-            saved.get(name, LoggerState()).restore(lg)
-        logging.disable(saved_manager_disable)
-        cdm_logging.applied_key = saved_applied_key
-        sys.excepthook = saved_excepthook
-
-
-@contextmanager
-def preserve_xsv_metaschema_state() -> Generator[None]:
-    """Reset the XSV metaschema cache around a block and restore prior validator state on exit.
-
-    Restores ``importlib.resources.files``, ``get_xsv_meta_schema`` cache state, and
-    ``jsonschema.validators`` registrations on exit even when a caller's ``monkeypatch``
-    fixture tears down afterwards.
-
-    :return: Context manager yielding ``None``.
-    :rtype: Generator[None]
-    """
-    original_resources_files = importlib.resources.files
-    was_cached = get_xsv_meta_schema.cache_info().currsize > 0
-    get_xsv_meta_schema.cache_clear()
-    try:
-        with (
-            patch.dict("jsonschema.validators._VALIDATORS") as validators_reg,
-            patch.dict("jsonschema.validators._META_SCHEMAS") as meta_schemas_reg,
-        ):
-            validators_reg.pop(CUSTOM_META_SCHEMA_URI, None)
-            meta_schemas_reg.pop(CUSTOM_META_SCHEMA_URI, None)
-            yield
-    finally:
-        importlib.resources.files = original_resources_files
-        get_xsv_meta_schema.cache_clear()
-        if was_cached:
-            get_xsv_meta_schema()

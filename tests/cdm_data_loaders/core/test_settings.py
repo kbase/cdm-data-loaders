@@ -26,19 +26,17 @@ from cdm_data_loaders.pipelines.xml_common import (
     SingleTableXmlIngestSettings,
     XmlIngestSettings,
 )
-from tests.cdm_data_loaders.conftest import (
+from tests._support.cli_assertions import (
     SETTINGS_SOURCES,
     SettingsFactory,
+    assert_cli_field_roundtrips,
+    assert_no_cli_clashes,
     check_settings,
     cts_expected,
     local_io_expected,
-)
-from tests.conftest import S3
-from tests.helpers import (
-    assert_cli_field_roundtrips,
-    assert_no_cli_clashes,
     settings_to_argv,
 )
+from tests._support.paths_and_constants import S3
 
 
 @pytest.mark.parametrize(

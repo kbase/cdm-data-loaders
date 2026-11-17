@@ -67,16 +67,17 @@ from cdm_data_loaders.validation.jsonschema.metaschema import (
     get_xsv_meta_schema,
 )
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
-from tests.cdm_data_loaders.conftest import check_settings, cts_expected
-from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas import (
-    ENTITY_SCHEMAS as DATASET_ENTITY_SCHEMAS,
-)
-from tests.helpers import (
+from tests._support.cli_assertions import (
     assert_cli_field_roundtrips,
     assert_no_cli_clashes,
     build_cli_arg_specs,
+    check_settings,
+    cts_expected,
     register_temp_module,
     settings_to_argv,
+)
+from tests.data.ncbi_datasets.dataset_report_schemas import (
+    ENTITY_SCHEMAS as DATASET_ENTITY_SCHEMAS,
 )
 
 

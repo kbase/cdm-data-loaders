@@ -220,8 +220,8 @@ ignore = [
 # PLR0913: too many arguments
 "tests/**/*.py" = ["D401", "S101", "T201", "FBT001", "FBT002", "ARG002", "PLR0913", "PLR0917"]
 "tests/data/ncbi_datasets/openapi_pydantic.py" = ["D100", "D101"]
-# specs directory
-"specs/**/*.py" = ["INP001", "D101", "D102"]
+# specs fixture directories (excluding specs/_loader package)
+"specs/{pipelines,schema_converters}/**/*.py" = ["INP001", "D101", "D102", "PYI061"]
 
 [tool.ruff.lint.mccabe]
 # Flag errors (`C901`) whenever the complexity level exceeds 15.

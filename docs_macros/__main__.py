@@ -7,13 +7,13 @@ from typing import Annotated, Self
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from docs_macros.env import (
+from docs_macros.formatting import rel_posix
+from docs_macros.sync import (
     DEFAULT_GENERATION_PATHS,
     DocsGenerationPaths,
     clean_generated_docs,
     sync_generated_docs,
 )
-from docs_macros.formatting import rel_posix
 
 
 class DocsMacrosCliSettings(BaseSettings):

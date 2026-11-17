@@ -6,7 +6,7 @@ This guide explains how to author, edit, and maintain pipeline smoke test rules,
 
 ## Architecture and Directory Layout
 
-Each pipeline family specification suite lives under [`specs/pipelines/<family>`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines) and is loaded by [`tests/pipeline_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/pipeline_spec.py):
+Each pipeline family specification suite lives under [`specs/pipelines/<family>`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines) and is loaded by [`specs/_loader/pipeline_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/_loader/pipeline_spec.py):
 
 ```text
 specs/pipelines/<family>/
@@ -34,7 +34,7 @@ specs/pipelines/<family>/
 
 The manifests in [`specs/pipelines`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines) drive both test execution and rendered documentation:
 
-- **End-to-end smoke, unit, and documentation specification tests**: [`tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py), [`tests/cdm_data_loaders/pipelines/xmltopyarrow/test_xmltopyarrow_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/xmltopyarrow/test_xmltopyarrow_spec.py), [`tests/cdm_data_loaders/pipelines/jsonlines/test_jsonlines_jsonschema_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/jsonlines/test_jsonlines_jsonschema_spec.py), [`tests/cdm_data_loaders/pipelines/xsv/test_xsv_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/xsv/test_xsv_spec.py), and [`tests/docs/test_spec_docs.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/docs/test_spec_docs.py)
+- **End-to-end smoke, manifest, unit, and documentation specification tests**: [`tests/e2e/test_pipeline_smoke_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/e2e/test_pipeline_smoke_spec.py), [`tests/specs/test_spec_manifests.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/specs/test_spec_manifests.py), [`tests/cdm_data_loaders/pipelines/xmltopyarrow/test_xmltopyarrow_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/xmltopyarrow/test_xmltopyarrow_spec.py), [`tests/cdm_data_loaders/pipelines/jsonlines/test_jsonlines_jsonschema_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/jsonlines/test_jsonlines_jsonschema_spec.py), [`tests/cdm_data_loaders/pipelines/xsv/test_xsv_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/xsv/test_xsv_spec.py), and [`tests/docs/test_spec_docs.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/docs/test_spec_docs.py)
 - **Rendered Markdown specification pages**:
   - [XML to PyArrow Pipeline Specification](xmltopyarrow_specification.md) (`xmltopyarrow` base pipeline and preset subclasses)
   - [XML to Dict Pipeline Specification](xmltodict_specification.md) (`xmltodict` pipeline)
@@ -80,11 +80,11 @@ sections:
 
 ### Bidirectional Rule Invariants
 
-[`tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py) enforces three manifest invariants:
+[`tests/specs/test_spec_manifests.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/specs/test_spec_manifests.py) enforces three manifest invariants:
 
-- **Every rule is exercised** (`test_manifests_pass_every_rule_is_exercised`): every rule ID in `rules.yaml` must appear in the `rules:` list of at least one `case.yaml` across `spec/` or `presets/` for that pipeline family.
-- **Every referenced rule exists** (`test_manifests_pass_every_case_rule_exists`): every rule ID listed in any `case.yaml` must exist in that family's `rules.yaml`.
-- **Preset subclasses inherit base Settings and runner** (`test_manifests_pass_preset_subclasses_inherit_base_settings_and_runner`): every preset pipeline in `presets/<preset>/` must use a `Settings` class that subclasses the family's base `Settings` class and delegates to the same `pipeline_fn` callable.
+- **Every rule is exercised** (`test_pipeline_manifests_pass_every_rule_is_exercised`): every rule ID in `rules.yaml` must appear in the `rules:` list of at least one `case.yaml` across `spec/` or `presets/` for that pipeline family.
+- **Every referenced rule exists** (`test_pipeline_manifests_pass_every_case_rule_exists`): every rule ID listed in any `case.yaml` must exist in that family's `rules.yaml`.
+- **Preset subclasses inherit base Settings and runner** (`test_pipeline_manifests_pass_preset_inheritance`): every preset pipeline in `presets/<preset>/` must use a `Settings` class that subclasses the family's base `Settings` class and delegates to the same `pipeline_fn` callable.
 
 ---
 
@@ -108,7 +108,7 @@ Failed files and failed records are routed to the `_rejected` table (`REJECTED_P
 
 ### `expected_report` in `case.yaml`
 
-Each run in `case.yaml` declares an `expected_report` block checked by `assert_smoke_run_output()` in [`tests/cdm_data_loaders/pipelines/helpers.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/helpers.py):
+Each run in `case.yaml` declares an `expected_report` block checked by `assert_smoke_run_output()` in [`tests/_support/table_readers.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/_support/table_readers.py):
 
 ```yaml
 runs:
@@ -141,7 +141,7 @@ runs:
 
 ## Common Developer Workflows
 
-Pipeline specification pages render dynamically at build and serve time from [`specs/pipelines`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines) via Zensical's `macros` plugin ([`docs_macros/spec_context.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/spec_context.py) and [`docs/_templates/pages/pipeline_spec.md.j2`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs/_templates/pages/pipeline_spec.md.j2)). Autogenerated stub entrypoints (`docs/*_specification.md`) are `.gitignore`d and materialized before `zensical build` or `zensical serve` by [`docs_macros/__main__.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/__main__.py) (`uv run python -m docs_macros`) and removed with `uv run python -m docs_macros --clean`.
+Pipeline specification pages render at build and serve time from [`specs/pipelines`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/pipelines) via Zensical's `macros` plugin ([`docs_macros/specs/discovery.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/specs/discovery.py), [`docs_macros/specs/pipelines.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/specs/pipelines.py), and [`docs/_templates/pages/pipeline_spec.md.j2`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs/_templates/pages/pipeline_spec.md.j2)). Autogenerated stub entrypoints (`docs/*_specification.md`) are `.gitignore`d and materialized before `zensical build` or `zensical serve` by [`docs_macros/__main__.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/__main__.py) (`uv run python -m docs_macros`) and removed with `uv run python -m docs_macros --clean`.
 
 ### Adding a New Rule and Smoke Test Case
 
@@ -155,7 +155,7 @@ Pipeline specification pages render dynamically at build and serve time from [`s
   - **`case.yaml`**: Reference the rule IDs in `rules:` and define one or more `runs:` with `expected_counts` and `expected_report`.
 - **Verify fixture invariants, end-to-end execution, and documentation templates**:
   ```sh
-  uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py
+  uv run pytest tests/specs/test_spec_manifests.py tests/e2e/test_pipeline_smoke_spec.py
   uv run pytest -m docs
   uv run python -m docs_macros
   uv run --group docs zensical build --clean --strict
@@ -165,10 +165,10 @@ Pipeline specification pages render dynamically at build and serve time from [`s
 ### Editing Existing Rules, Cases, or Error Expectations
 
 - **Updating a rule description**:
-  - Edit `specs/pipelines/<pipeline>/rules.yaml`; `docs/<pipeline>_specification.md` picks up the updated rule automatically at render time.
+  - Edit `specs/pipelines/<pipeline>/rules.yaml`; `docs/<pipeline>_specification.md` picks up the updated rule at render time.
 - **Updating input fixtures or expected outputs**:
   - Update `input/`, `expected_tables.py`, `expected.json`, and `case.yaml` (`expected_counts` and `expected_report`) together.
-  - `test_manifests_pass_expected_tables_validate` checks that every `pa.Table` in `expected_tables.py` passes `table.validate(full=True)`, matches `expected_counts`, and normalizes to `expected.json`.
+  - `test_pipeline_manifests_pass_expected_tables_validate` in [`tests/specs/test_spec_manifests.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/specs/test_spec_manifests.py) checks that every `pa.Table` in `expected_tables.py` passes `table.validate(full=True)`, matches `expected_counts`, and normalizes to `expected.json`.
   - Verify template rendering with `uv run pytest -m docs`, `uv run python -m docs_macros`, `uv run --group docs zensical build --clean --strict`, and `uv run python -m docs_macros --clean`.
 
 ### Onboarding a New Pipeline to `specs/pipelines/`
@@ -176,14 +176,13 @@ Pipeline specification pages render dynamically at build and serve time from [`s
 - **Register the CLI entry point in `[project.scripts]`**:
   - Register `<cli_command> = "<module_path>:cli"` in [`pyproject.toml`](https://github.com/kbase/cdm-data-loaders/blob/develop/pyproject.toml) so `discover_pipeline_targets()` in [`src/cdm_data_loaders/core/pipeline_catalog.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/pipeline_catalog.py) and `resolve_pipeline("<pipeline>")` resolve its CLI command, module path, `Settings` class, and runner function.
 - **Create `specs/pipelines/<pipeline>/`**:
-  - Add `rules.yaml` and at least one `spec/<case>/` directory with `case.yaml`, `settings.toml`, `input/`, `expected_tables.py`, and `expected.json`.
-- **Register the pipeline in [`docs_macros/spec_context.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/spec_context.py)**:
-  - Add a `PipelineSpecConfig` entry to `PIPELINE_SPECS` pointing to `specs/pipelines/<pipeline>` and `docs/<pipeline>_specification.md` (and register any new `generated:` table template in `TABLE_TEMPLATE_REGISTRY` inside [`docs_macros/tables_context.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/tables_context.py)).
+  - Add `rules.yaml` (including `pipeline`, `cli_command`, `settings_class`, `pipeline_runner`, and optional `presets` / `use_converter_base_cases` front-matter discovered by `discover_pipeline_specs()` in [`docs_macros/specs/discovery.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/specs/discovery.py)) and at least one `spec/<case>/` directory with `case.yaml`, `settings.toml`, `input/`, `expected_tables.py`, and `expected.json`.
+  - If the specification uses a new `generated:` table template, register it in `TABLE_TEMPLATE_REGISTRY` inside [`docs_macros/tables/registry.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/tables/registry.py).
 - **Index the specification page**:
   - Add `<pipeline>_specification.md` under `"Specifications"` in [`zensical.toml`](https://github.com/kbase/cdm-data-loaders/blob/develop/zensical.toml) (`[project].nav`) and link it under `## Specifications` in [`docs/index.md`](index.md) (`docs/<pipeline>_specification.md` itself is `.gitignore`d and generated on demand from [`docs/_templates/pages/macro_stub.md.j2`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs/_templates/pages/macro_stub.md.j2)).
 - **Run verification**:
   ```sh
-  uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py
+  uv run pytest tests/specs/test_spec_manifests.py tests/e2e/test_pipeline_smoke_spec.py
   uv run pytest -m docs
   uv run python -m docs_macros
   uv run --group docs zensical build --clean --strict

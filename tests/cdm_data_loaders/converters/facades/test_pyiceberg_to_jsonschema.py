@@ -33,11 +33,11 @@ from cdm_data_loaders.converters.facades.pyiceberg_to_jsonschema import (
     convert_type,
     table_to_json_schema,
 )
-from tests.cdm_data_loaders.converters.conftest import (
+from tests._support.iceberg_catalog import make_iceberg_table as make_table
+from tests.cdm_data_loaders.converters._helpers import (
     JSON_SCHEMA_KEYWORDS,
     iter_extension_keys,
     iter_schema_keywords,
-    make_table,
     to_snake_case,
 )
 

@@ -277,6 +277,15 @@ DEFAULT_EXTENSIONS: Final[ExtensionRegistry] = ExtensionRegistry(
 )
 
 
+def default_extension_registry() -> ExtensionRegistry:
+    """Return the immutable default ``ExtensionRegistry`` singleton.
+
+    :return: Default extension registry.
+    :rtype: ExtensionRegistry
+    """
+    return DEFAULT_EXTENSIONS
+
+
 @dataclass(frozen=True, slots=True)
 class Extensions(Mapping[str, Value]):
     """A validated immutable mapping that retains its validation contract."""

@@ -19,7 +19,7 @@ from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.sources.dlt import DltReader
 from cdm_data_loaders.converters.sources.iceberg import IcebergReader
 from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
-from tests.cdm_data_loaders.converters.conftest import base_object_schema
+from tests.cdm_data_loaders.converters._helpers import base_object_schema
 
 
 @pytest.mark.parametrize(

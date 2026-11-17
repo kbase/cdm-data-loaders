@@ -4,8 +4,9 @@ render_macros: true
 
 # `dlt` PyArrow Table and Column Definitions
 
-This guide summarises what table metadata, column descriptions, types, nullability, field names, and row values survive when PyArrow schemas pass through `dlt` pipelines. Every table on this page renders from the schema fixtures and expectations in [`tests/dependencies/test_dlt_pyarrow_table_definitions.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/dependencies/test_dlt_pyarrow_table_definitions.py).
+This guide summarises what table metadata, column descriptions, types, nullability, field names, and row values survive when PyArrow schemas pass through `dlt` pipelines. Every table on this page renders from the contract schemas and expectations in [`specs/_loader/dlt_contracts.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/_loader/dlt_contracts.py), verified against live `dlt` runs in [`tests/dependencies/test_dlt_pyarrow_table_definitions.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/dependencies/test_dlt_pyarrow_table_definitions.py).
 
+- **Contract schemas and expectations**: [`specs/_loader/dlt_contracts.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/specs/_loader/dlt_contracts.py)
 - **Characterisation test suite**: [`tests/dependencies/test_dlt_pyarrow_table_definitions.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/dependencies/test_dlt_pyarrow_table_definitions.py)
 - **Buffered Arrow page emitter (`DictBuffer`)**: [`src/cdm_data_loaders/core/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/buffer.py)
 - **Schema registry (`ArrowSchemaRegistry`)**: [`src/cdm_data_loaders/core/registry.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/registry.py)

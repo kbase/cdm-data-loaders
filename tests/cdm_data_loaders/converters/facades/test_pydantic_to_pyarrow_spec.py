@@ -6,7 +6,6 @@ Cases, rules and error fixtures are declared in manifests under ``specs/schema_c
 """
 
 import datetime as dt
-import json
 from collections import deque
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -38,17 +37,17 @@ from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import (
     generate_pyarrow_schema,
     resolve_scalar_type,
 )
-from tests.conftest import BASE_DIR
-from tests.converter_spec import Case, ErrorCase, RuleCatalogue, Run, load_cases, load_error_cases, load_rules
-from tests.pyarrow_spec_helpers import (
+from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
+from tests._support.paths_and_constants import BASE_DIR
+from tests._support.pyarrow_spec import (
     assert_expected_table_valid,
     assert_rows_and_table_match_expected,
     assert_schema_matches_expected,
     load_fixture_attr,
+    load_json_records,
 )
 
 PYDANTIC_DATA_DIR: Path = (BASE_DIR / "specs" / "schema_converters" / "pydantic_to_pyarrow").resolve()
-RULES: Final[RuleCatalogue] = load_rules(PYDANTIC_DATA_DIR / "rules.yaml")
 CASES: Final[tuple[Case, ...]] = tuple(
     load_cases(PYDANTIC_DATA_DIR / "spec") + load_cases(PYDANTIC_DATA_DIR / "examples")
 )
@@ -67,18 +66,18 @@ ERROR_PARAMS: Final[tuple[ParameterSet, ...]] = tuple(
 )
 
 
-def _load_model_class(path: Path) -> Any:  # noqa: ANN401
+def _load_model_class(path: Path) -> object:
     """Load the ``MODEL`` class attribute from a ``schema.py`` fixture."""
     return load_fixture_attr(path, "MODEL", object)
 
 
-def _load_json_records(path: Path) -> list[dict[str, Any]]:
-    """Load a list of JSON record objects from disk."""
-    loaded = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(loaded, list):
-        msg = f"Expected a list of JSON records in {path}, got {type(loaded)}"
+def _load_pydantic_model_class(path: Path) -> type[BaseModel]:
+    """Load a ``BaseModel`` subclass ``MODEL`` attribute from a ``schema.py`` fixture."""
+    model_cls = load_fixture_attr(path, "MODEL", type)
+    if not issubclass(model_cls, BaseModel):
+        msg = f"Expected MODEL in {path} to be a BaseModel subclass, got {model_cls!r}"
         raise TypeError(msg)
-    return loaded
+    return model_cls
 
 
 def _max_recursion_depth(run: Run) -> int:
@@ -91,35 +90,11 @@ def _by_alias(run: Run) -> bool:
     return bool(run.params.get("by_alias", False))
 
 
-def test_manifests_pass_consistency() -> None:
-    """Verify rule coverage, fixture file existence, and error code coverage."""
-    unknown = {f"{case.suite}/{case.name}": sorted(set(case.rules) - RULES.rules.keys()) for case in CASES}
-    assert {name: ids for name, ids in unknown.items() if ids} == {}
-
-    used_rules = {rule_id for case in CASES for rule_id in case.rules}
-    assert sorted(RULES.rules.keys() - used_rules) == []
-
-    paths = [p for case in CASES for p in (case.schema, case.expected_schema)]
-    paths += [p for case in CASES for run in case.runs for p in (run.data, run.expected_json, run.expected_table)]
-    paths += [err.file for err in ERROR_CASES]
-    assert [str(p) for p in paths if not p.is_file()] == []
-
-    listed_errors = {err.file for err in ERROR_CASES}
-    on_disk_errors = set((PYDANTIC_DATA_DIR / "spec" / "errors").glob("*.py"))
-    assert sorted(str(p) for p in on_disk_errors - listed_errors) == []
-
-    assert len(ERRORS_BY_CODE) == len(PYDANTIC_TO_PYARROW_ERRORS)
-    assert all(cls.code and cls.title and cls.__doc__ for cls in PYDANTIC_TO_PYARROW_ERRORS)
-    manifest_codes = {err.code for err in ERROR_CASES}
-    assert sorted(manifest_codes - ERRORS_BY_CODE.keys()) == []
-    assert sorted(ERRORS_BY_CODE.keys() - manifest_codes) == []
-
-
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
 def test_fixtures_pass_records_and_expected_table_validate(case: Case, run: Run) -> None:
     """Verify input records validate against the Pydantic model and expected table matches expected JSON and schema."""
-    model_cls = _load_model_class(case.schema)
-    records = _load_json_records(run.data)
+    model_cls = _load_pydantic_model_class(case.schema)
+    records = load_json_records(run.data)
     for record in records:
         model_cls.model_validate(record)
     assert_expected_table_valid(
@@ -160,7 +135,7 @@ def test_coerce_pydantic_record_for_pyarrow_pass_cases(case: Case, run: Run) -> 
     depth = _max_recursion_depth(run)
     by_alias = _by_alias(run)
     pa_schema = generate_pyarrow_schema(model_cls, max_recursion_depth=depth, by_alias=by_alias)
-    raw_records = _load_json_records(run.data)
+    raw_records = load_json_records(run.data)
 
     rows_from_dict = [
         coerce_pydantic_record_for_pyarrow(record, pa_schema, model=model_cls, by_alias=by_alias)

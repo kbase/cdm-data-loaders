@@ -11,7 +11,7 @@ from cdm_data_loaders.io.s3.client import (
     get_s3_client,
     reset_s3_client,
 )
-from tests.cdm_data_loaders.io.s3.conftest import prep_client_init
+from tests.cdm_data_loaders.io.s3._helpers import prep_client_init
 
 
 # Client creation / reset

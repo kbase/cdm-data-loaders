@@ -3,10 +3,10 @@
 from collections.abc import Mapping
 from typing import Any, ClassVar, Protocol
 
-from pydantic import BaseModel, ConfigDict, InstanceOf
+from pydantic import BaseModel, ConfigDict, Field, InstanceOf
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
+from cdm_data_loaders.converters.core.extensions import ExtensionRegistry, default_extension_registry
 from cdm_data_loaders.converters.core.guards import require_object_root, require_schema_keyword
 from cdm_data_loaders.converters.core.io import load_schema_file, load_schema_text
 from cdm_data_loaders.converters.core.ir import Emitter, SchemaDocument
@@ -40,7 +40,7 @@ class JsonSchemaConverterBase[OutputT](BaseModel):
     _root_target_label: ClassVar[str] = ""
     _dereference_function: ClassVar[str] = "cdm_data_loaders.validation.jsonschema.dereference.dereference_schema"
 
-    extension_registry: InstanceOf[ExtensionRegistry] = DEFAULT_EXTENSIONS
+    extension_registry: InstanceOf[ExtensionRegistry] = Field(default_factory=default_extension_registry)
 
     def _reader(self) -> JsonSchemaIRReader:
         """Configure reader diagnostics for this public facade.

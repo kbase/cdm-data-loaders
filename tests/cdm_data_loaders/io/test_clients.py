@@ -13,7 +13,7 @@ from cdm_data_loaders.io.core import (
     DownloadError,
     NonRetryableDownloadError,
 )
-from tests.cdm_data_loaders.io.conftest import DownloaderAdapter
+from tests.cdm_data_loaders.io._helpers import DownloaderAdapter
 
 DOWNLOAD_URL = "https://example.com/file.txt"
 

@@ -8,7 +8,7 @@ from pydantic_settings import CliApp
 
 from cdm_data_loaders.core.fields import DEFAULTS
 from cdm_data_loaders.pipelines.xmltodict.settings import PIPELINE_NAME, XmlToDictSettings
-from tests.helpers import register_temp_module, settings_to_argv
+from tests._support.cli_assertions import register_temp_module, settings_to_argv
 
 
 def test_xmltodict_settings_pass_defaults(settings_factory: Callable[..., XmlToDictSettings]) -> None:

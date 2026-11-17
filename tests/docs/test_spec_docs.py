@@ -35,20 +35,17 @@ from cdm_data_loaders.pipelines.xsv.exceptions import (
     XSV_SCHEMA_ERRORS,
     XsvSchemaError,
 )
-from docs_macros.env import (
-    build_generated_docs_plan,
+from docs_macros.formatting import pyarrow_to_python_type_label
+from docs_macros.render import (
     render_converter_spec,
     render_pipeline_spec,
     render_reference_table,
 )
-from docs_macros.formatting import pyarrow_to_python_type_label
-from docs_macros.spec_context import (
-    CONVERTER_SPECS,
-    PIPELINE_SPECS,
-    PipelineSpecConfig,
-)
-from tests.converter_spec import load_cases, load_rules
-from tests.pipeline_spec import load_pipeline_cases
+from docs_macros.specs.discovery import discover_converter_specs, discover_pipeline_specs
+from docs_macros.specs.models import PipelineSpecConfig
+from docs_macros.sync import build_generated_docs_plan
+from specs._loader.converter_spec import load_cases, load_rules
+from specs._loader.pipeline_spec import load_pipeline_cases
 
 pytestmark = pytest.mark.docs
 
@@ -78,8 +75,8 @@ PIPELINE_ERRORS_BY_FAMILY: Final[frozendict[str, tuple[SpecErrorClass, ...]]] = 
 
 def test_converter_and_pipeline_spec_error_registries_cover_all_specs() -> None:
     """Every converter and pipeline specification in docs_macros is covered by the spec doc test registries."""
-    assert set(CONVERTER_ERRORS_BY_SPEC) == set(CONVERTER_SPECS)
-    assert set(PIPELINE_ERRORS_BY_FAMILY) == set(PIPELINE_SPECS)
+    assert set(CONVERTER_ERRORS_BY_SPEC) == set(discover_converter_specs())
+    assert set(PIPELINE_ERRORS_BY_FAMILY) == set(discover_pipeline_specs())
 
 
 @pytest.mark.parametrize(
@@ -91,7 +88,7 @@ def test_converter_specification_document_pass_up_to_date(
     error_classes: tuple[type[ConversionError], ...],
 ) -> None:
     """Each converter specification stub invokes render_converter_spec and renders all rules, cases, and errors."""
-    spec_cfg = CONVERTER_SPECS[spec_name]
+    spec_cfg = discover_converter_specs()[spec_name]
     stub_text = build_generated_docs_plan()[Path(spec_cfg.output.name)]
     assert "render_macros: true" in stub_text
     assert f'render_converter_spec("{spec_name}")' in stub_text
@@ -120,7 +117,7 @@ def test_pipeline_specification_document_pass_up_to_date(
     error_classes: tuple[SpecErrorClass, ...],
 ) -> None:
     """Each pipeline specification stub invokes render_pipeline_spec and renders all rules, cases, and errors."""
-    spec = PIPELINE_SPECS[family_name]
+    spec = discover_pipeline_specs()[family_name]
     stub_text = build_generated_docs_plan()[Path(spec.output_path.name)]
     assert "render_macros: true" in stub_text
     assert f'render_pipeline_spec("{spec.name}")' in stub_text
@@ -145,11 +142,12 @@ def test_pipeline_specification_document_pass_up_to_date(
 
 def test_render_pipeline_spec_custom_config_and_unknown_name() -> None:
     """render_pipeline_spec accepts a custom PipelineSpecConfig and raises KeyError on unknown names."""
+    xml_spec = discover_pipeline_specs()["xmltopyarrow"]
     custom_spec = PipelineSpecConfig(
         name="xmltopyarrow",
-        data_dir=PIPELINE_SPECS["xmltopyarrow"].data_dir,
-        output_path=PIPELINE_SPECS["xmltopyarrow"].output_path,
-        presets=PIPELINE_SPECS["xmltopyarrow"].presets,
+        data_dir=xml_spec.data_dir,
+        output_path=xml_spec.output_path,
+        presets=xml_spec.presets,
     )
     rendered = render_pipeline_spec(custom_spec)
     assert "# XML to PyArrow Pipeline Specification" in rendered

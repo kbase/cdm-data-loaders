@@ -15,7 +15,7 @@ from cdm_data_loaders.core.registry import (
     load_file_preprocessors,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
-from tests.helpers import register_temp_module
+from tests._support.cli_assertions import register_temp_module
 
 
 def _noop_preprocessor(file_item: FileItemDict) -> FileItemDict:

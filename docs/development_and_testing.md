@@ -84,7 +84,7 @@ uv run pytest -m "not requires_spark and not requires_ceph and not docs" --cov=s
 
 # run targeted converter, JSONLines, or pipeline specification suites
 uv run pytest tests/cdm_data_loaders/converters/
-uv run pytest tests/cdm_data_loaders/readers/test_jsonlines.py tests/cdm_data_loaders/pipelines/jsonlines/
+uv run pytest tests/cdm_data_loaders/readers/test_jsonl.py tests/cdm_data_loaders/readers/test_jsonl_jsonschema.py tests/cdm_data_loaders/pipelines/jsonlines/
 
 # run Hypothesis property-based tests (use HYPOTHESIS_PROFILE=ci_thorough for 100 examples)
 uv run pytest -m pbt
@@ -98,17 +98,17 @@ For multi-environment pipeline smoke tests (`core`, `cli`, and `docker` modes ac
 
 ### Global State Mutation Audit
 
-Tests marked with `@pytest.mark.state_audit` ([`tests/test_global_state_audit.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/test_global_state_audit.py)) are skipped during normal `pytest` runs unless explicitly selected with `-m state_audit`. When selected, the suite runs clean `pytest` subprocesses with `--state-audit` ([`tests/state_audit.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/state_audit.py)) to verify that module collection and test execution leave zero unreverted mutations in environment variables, `sys.argv`, `sys.path`, `sys.modules`, logging state, `dlt` context, `boto3` sessions, S3 client singletons, `jsonschema` validator registries, module globals, caches, or scoped fixtures:
+Tests marked with `@pytest.mark.state_audit` ([`tests/harness/test_global_state_audit.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/harness/test_global_state_audit.py)) are skipped during normal `pytest` runs unless selected with `-m state_audit`. When selected, the suite runs clean `pytest` subprocesses with `--state-audit` ([`tests/_support/state_audit.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/_support/state_audit.py)) to verify that module collection and test execution leave zero unreverted mutations in environment variables, `sys.argv`, `sys.path`, `sys.modules`, logging state, `dlt` context, `boto3` sessions, S3 client singletons, `jsonschema` validator registries, module globals, caches, or scoped fixtures:
 
 ```sh
 # run the full global state mutation audit across all local test slices
 uv run pytest -m state_audit
 
-# run a single audit slice (core-and-converters, pipelines, or integration)
-uv run pytest -m state_audit -k integration
+# run a single audit slice (core-and-converters, pipelines, or e2e)
+uv run pytest -m state_audit -k e2e
 
-# audit a specific test file or directory directly during development
-uv run pytest --state-audit tests/cdm_data_loaders/schemas/test_jsonschema.py
+# audit a specific test file or directory during development
+uv run pytest --state-audit tests/cdm_data_loaders/validation/test_jsonschema.py
 ```
 
 ### Container `test` Mode
@@ -124,7 +124,7 @@ docker run --rm \
   test --cov-report=xml:/out/coverage.xml
 ```
 
-Any extra arguments after `test` (such as `tests/cdm_data_loaders/pipelines/` or `-k xmltopyarrow`) are forwarded directly to `pytest`.
+Any extra arguments after `test` (such as `tests/e2e/` or `-k xmltopyarrow`) are forwarded to `pytest`.
 
 ---
 

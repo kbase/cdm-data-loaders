@@ -8,9 +8,8 @@ import pytest
 from lxml.etree import XMLSyntaxError, tostring
 
 from cdm_data_loaders.readers.xml import stream_xml_file, stream_xml_file_at_level
-from tests.cdm_data_loaders.readers.xml.conftest import XML_OPEN_ERROR_CASES, prepare_xml_error_path
-from tests.fs_backends import FsBackend
-from tests.xml_samples import SIMPLE_LIBRARY_XML
+from tests._support.fs_backends import FsBackend
+from tests._support.xml_samples import SIMPLE_LIBRARY_XML, XML_OPEN_ERROR_CASES, prepare_xml_error_path
 
 MIXED_TAGS_XML = """<?xml version="1.0"?>
 <catalog>

@@ -17,8 +17,9 @@ from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.pipelines.jsonlines.extract import cli, run_jsonlines_pipeline
 from cdm_data_loaders.pipelines.jsonlines.routing import route_jsonl_lines
 from cdm_data_loaders.pipelines.jsonlines.settings import EXTRACT_PIPELINE_NAME, JsonlExtractSettings
-from tests.cdm_data_loaders.pipelines.conftest import DEFAULT_DLT_TABLES
-from tests.cdm_data_loaders.pipelines.helpers import (
+from tests._support.cli_assertions import register_temp_module, settings_to_argv
+from tests._support.paths_and_constants import DEFAULT_DLT_TABLES
+from tests._support.table_readers import (
     assert_binds_filesystem_reader,
     assert_core_run_pipeline_args,
     assert_pipeline_report_written,
@@ -26,7 +27,6 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     make_file_item,
     run_with_duckdb_pipeline,
 )
-from tests.helpers import register_temp_module, settings_to_argv
 
 SIMPLE_JSONL = """{"widget_id": "a", "count": 1}
 {"widget_id": "b", "count": 2}

@@ -18,19 +18,15 @@ from cdm_data_loaders.core.settings import CdmDataLoadersBase
 from cdm_data_loaders.pipelines.jsonlines.pydantic import (
     run_jsonlines_with_validation_pipeline,
 )
-from docs_macros.cli_context import (
-    CliEntryDoc,
-    discover_api_modules,
-    load_cli_entries,
-)
+from docs_macros.cli_context import CliEntryDoc, load_cli_entries
 from docs_macros.constants import (
     DOCS_DIR,
     GITHUB_BLOB_BASE,
     REPO_ROOT,
     SITE_URL_BASE,
+    SRC_ROOT,
 )
-from docs_macros.env import build_generated_docs_plan
-from tests.cdm_data_loaders.pipelines.reference.pipeline import ReferencePipelineSettings
+from docs_macros.sync import build_generated_docs_plan
 from tests.docs.helpers import (
     INDEX_PATH,
     README_PATH,
@@ -38,6 +34,7 @@ from tests.docs.helpers import (
     excluded_doc_names,
     resolve_markdown_sources,
 )
+from tests.e2e.reference.pipeline import ReferencePipelineSettings
 
 pytestmark = pytest.mark.docs
 
@@ -284,8 +281,15 @@ def _discover_settings_classes() -> dict[str, type[CdmDataLoadersBase]]:
     :return: Mapping of settings class names to their ``CdmDataLoadersBase`` subclasses.
     :rtype: dict[str, type[CdmDataLoadersBase]]
     """
-    for mod_doc in discover_api_modules():
-        importlib.import_module(mod_doc.module_path)
+    pkg_name = SRC_ROOT.name
+    for py_file in sorted(SRC_ROOT.rglob("*.py")):
+        rel_file = py_file.relative_to(SRC_ROOT)
+        parts = (
+            (pkg_name, *rel_file.parent.parts)
+            if py_file.name == "__init__.py"
+            else (pkg_name, *rel_file.with_suffix("").parts)
+        )
+        importlib.import_module(".".join(parts))
 
     found: dict[str, type[CdmDataLoadersBase]] = {}
     stack = list(CdmDataLoadersBase.__subclasses__())

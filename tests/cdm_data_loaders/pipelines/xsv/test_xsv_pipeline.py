@@ -29,14 +29,14 @@ from cdm_data_loaders.pipelines.xsv.pipeline import (
 from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
 from cdm_data_loaders.readers.xsv.models import CleanerValidatorArgs
 from cdm_data_loaders.readers.xsv.qsv import clean_validate_file
-from tests.cdm_data_loaders.pipelines.helpers import (
+from tests._support.cli_assertions import register_temp_module, settings_to_argv
+from tests._support.fixtures_xsv import VALID_SCHEMA_URI
+from tests._support.fs_backends import FsBackend
+from tests._support.table_readers import (
     fetch_all_duckdb,
     make_file_item,
     run_with_duckdb_pipeline,
 )
-from tests.cdm_data_loaders.pipelines.xsv.conftest import VALID_SCHEMA_URI
-from tests.fs_backends import FsBackend
-from tests.helpers import register_temp_module, settings_to_argv
 
 SIMPLE_SCHEMA: dict[str, Any] = {
     "$schema": VALID_SCHEMA_URI,

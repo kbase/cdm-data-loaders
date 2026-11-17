@@ -1,4 +1,4 @@
-"""Shared fixtures for xml pipeline tests."""
+"""Shared fixtures for ``tests/cdm_data_loaders/pipelines/xmltodict``."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -7,14 +7,20 @@ from typing import Any
 import pytest
 
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
-from tests.helpers import make_cts_settings
+from tests._support.cli_assertions import make_cts_settings
 
 
 @pytest.fixture
 def settings_factory(tmp_path: Path) -> Callable[..., XmlToDictSettings]:
-    """Return a factory that builds a valid XmlToDictSettings, with fields open to override."""
+    """Return a factory building ``XmlToDictSettings`` with overridable fields.
 
-    def _factory(**overrides: Any) -> XmlToDictSettings:  # noqa: ANN401
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :return: Settings factory callable.
+    :rtype: Callable[..., XmlToDictSettings]
+    """
+
+    def _factory(**overrides: object) -> XmlToDictSettings:
         defaults: dict[str, Any] = {
             "dlt_dev_mode": True,
             "dataset_name": "xml_test_dataset",

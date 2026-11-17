@@ -1,15 +1,10 @@
-"""Specification tests for the XSV schema converter, reader, and ingestion pipeline.
-
-Cases, rules, and error fixtures are declared in manifests under ``specs/pipelines/xsv`` (``rules.yaml``,
-``spec/*/case.yaml``, and ``spec/errors/manifest.yaml``). The same manifests render
-``docs/xsv_specification.md`` via ``docs_macros`` Jinja2 templates.
-"""
+"""Specification tests for the XSV schema converter, reader, and ingestion pipeline."""
 
 import datetime as dt
-import json
 import shutil
 from collections.abc import Callable
 from decimal import Decimal
+from operator import itemgetter
 from pathlib import Path
 from typing import Any
 
@@ -33,17 +28,22 @@ from cdm_data_loaders.pipelines.xsv.settings import (
     XsvIngestSettings,
 )
 from cdm_data_loaders.validation.jsonschema.models import validate_xsv_jsonschema
-from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_duckdb_pipeline
-from tests.conftest import PIPELINE_SPECS_DIR
-from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
-from tests.helpers import make_cts_settings
-from tests.pipeline_spec import load_pipeline_cases
-from tests.pyarrow_spec_helpers import assert_schema_matches_expected, load_expected_table
+from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
+from tests._support.cli_assertions import make_cts_settings
+from tests._support.paths_and_constants import PIPELINE_SPECS_DIR
+from tests._support.pyarrow_spec import (
+    assert_schema_matches_expected,
+    load_expected_table,
+    load_json_records,
+)
+from tests._support.table_readers import (
+    assert_duckdb_table_counts,
+    fetch_all_duckdb,
+    run_with_duckdb_pipeline,
+)
 
 XSV_DATA_DIR = (PIPELINE_SPECS_DIR / "xsv").resolve()
-RULES = load_rules(XSV_DATA_DIR / "rules.yaml")
 CASES: list[Case] = load_cases(XSV_DATA_DIR / "spec")
-PIPELINE_CASES = load_pipeline_cases(XSV_DATA_DIR)
 ERROR_CASES: list[ErrorCase] = load_error_cases(XSV_DATA_DIR / "spec" / "errors" / "manifest.yaml")
 ERRORS_BY_CODE: dict[str, type[XsvSchemaError]] = {cls.code: cls for cls in XSV_SCHEMA_ERRORS}
 
@@ -53,22 +53,13 @@ RUN_PARAMS: list[ParameterSet] = [
 ERROR_PARAMS: list[ParameterSet] = [pytest.param(err, id=f"{err.code}-{err.file.stem}") for err in ERROR_CASES]
 
 
-def _load_json_records(path: Path) -> list[dict[str, Any]]:
-    """Load a list of JSON record objects from disk."""
-    loaded = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(loaded, list):
-        msg = f"Expected a list of JSON records in {path}, got {type(loaded)}"
-        raise TypeError(msg)
-    return loaded
-
-
 def _normalize_pylist_for_json(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert Arrow Python values (date, datetime, Decimal) to their JSON representation."""
+    """Convert Arrow Python values (``date``, ``datetime``, ``Decimal``) to JSON representations."""
     normalized: list[dict[str, Any]] = []
     for row in rows:
         out_row: dict[str, Any] = {}
         for key, val in row.items():
-            if isinstance(val, (dt.date, dt.datetime)):
+            if isinstance(val, dt.date | dt.datetime):
                 out_row[key] = val.isoformat()
             elif isinstance(val, Decimal):
                 out_row[key] = str(val)
@@ -84,7 +75,7 @@ def _stage_run_settings(
     case: Case,
     run: Run,
 ) -> XsvIngestSettings:
-    """Copy a spec run's data file(s) into a clean ``input_dir`` and build ``XsvIngestSettings``."""
+    """Copy a spec run's data files into a clean ``input_dir`` and build ``XsvIngestSettings``."""
     input_dir = tmp_path / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
     if run.data.is_dir():
@@ -107,62 +98,12 @@ def _stage_run_settings(
     return make_cts_settings(XsvIngestSettings, tmp_path, **defaults)
 
 
-# Manifest consistency
-
-
-def test_manifests_pass_every_case_rule_exists() -> None:
-    """Every rule referenced by a case manifest is defined in rules.yaml."""
-    unknown = {f"{case.suite}/{case.name}": sorted(set(case.rules) - RULES.rules.keys()) for case in PIPELINE_CASES}
-    assert {name: ids for name, ids in unknown.items() if ids} == {}
-
-
-def test_manifests_pass_every_rule_is_exercised() -> None:
-    """Every rule in rules.yaml is exercised by at least one case."""
-    used = {rule_id for case in PIPELINE_CASES for rule_id in case.rules}
-    assert sorted(RULES.rules.keys() - used) == []
-
-
-def test_manifests_pass_every_case_file_exists() -> None:
-    """Every file or directory referenced by a case or error manifest exists."""
-    files = [p for case in CASES for p in (case.schema, case.expected_schema)]
-    files += [p for case in CASES for run in case.runs for p in (run.expected_json, run.expected_table)]
-    files += [run.expected_rejected for case in CASES for run in case.runs if run.expected_rejected is not None]
-    files += [extra_path for case in CASES for run in case.runs for extra_path in run.extra_expected_json.values()]
-    files += [err.file for err in ERROR_CASES]
-    assert [str(p) for p in files if not p.is_file()] == []
-
-    data_paths = [run.data for case in CASES for run in case.runs]
-    assert [str(p) for p in data_paths if not p.exists()] == []
-
-
-def test_manifests_pass_every_error_fixture_listed() -> None:
-    """Every JSON file in spec/errors is listed in the error manifest."""
-    listed = {err.file for err in ERROR_CASES}
-    on_disk = set((XSV_DATA_DIR / "spec" / "errors").glob("*.json"))
-    assert sorted(str(p) for p in on_disk - listed) == []
-
-
-def test_manifests_pass_error_codes_unique_and_covered() -> None:
-    """Error codes are unique, every manifest entry uses a known code, and every code has a fixture."""
-    assert len(ERRORS_BY_CODE) == len(XSV_SCHEMA_ERRORS)
-    assert all(cls.code and cls.title and cls.__doc__ for cls in XSV_SCHEMA_ERRORS)
-    manifest_codes = {err.code for err in ERROR_CASES}
-    assert sorted(manifest_codes - ERRORS_BY_CODE.keys()) == []
-    assert sorted(ERRORS_BY_CODE.keys() - manifest_codes) == []
-
-
-# Schema generation
-
-
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
 def test_convert_xsv_schema_to_pyarrow_pass_cases(case: Case, run: Run) -> None:
-    """convert_xsv_schema_to_pyarrow produces the exact expected PyArrow schema."""
+    """``convert_xsv_schema_to_pyarrow`` produces the expected PyArrow schema."""
     validated = validate_xsv_jsonschema(case.schema)
     pa_schema = convert_xsv_schema_to_pyarrow(validated)
     assert_schema_matches_expected(pa_schema, case.expected_schema, run.schema_attr)
-
-
-# Per-file cleaning, validation, reading, and PyArrow coercion
 
 
 @pytest.mark.usefixtures("qsv_cmd")
@@ -174,13 +115,13 @@ def test_process_xsv_file_pass_cases(
     dlt_destination_config: str,
     work_paths_factory: Callable[[XsvIngestSettings], XsvWorkPaths],
 ) -> None:
-    """_process_xsv_file cleans, validates, and yields PyArrow tables matching expected_table and expected.json."""
+    """``_process_xsv_file`` cleans, validates, and yields PyArrow tables matching ``expected_table`` and JSON."""
     settings = _stage_run_settings(tmp_path, dlt_destination_config, case, run)
     work_paths = work_paths_factory(settings)
 
     file_items = sorted(
         filesystem(bucket_url=str(settings.input_dir), file_glob=settings.file_glob),
-        key=lambda item: item["relative_path"],
+        key=itemgetter("relative_path"),
     )
     batches_by_table: dict[str, list[pa.Table]] = {}
     for item in file_items:
@@ -195,7 +136,7 @@ def test_process_xsv_file_pass_cases(
     )
     assert actual_table.schema.equals(expected_table.schema, check_metadata=True)
     assert actual_table.equals(expected_table, check_metadata=True)
-    assert _normalize_pylist_for_json(actual_table.to_pylist()) == _load_json_records(run.expected_json)
+    assert _normalize_pylist_for_json(actual_table.to_pylist()) == load_json_records(run.expected_json)
 
     sink = pa.BufferOutputStream()
     pq.write_table(actual_table, sink)
@@ -205,7 +146,7 @@ def test_process_xsv_file_pass_cases(
         extra_batches = batches_by_table.get(extra_table_name, [])
         assert extra_batches, f"Expected batches for extra table {extra_table_name!r}"
         extra_table = pa.concat_tables(extra_batches)
-        assert _normalize_pylist_for_json(extra_table.to_pylist()) == _load_json_records(extra_json_path)
+        assert _normalize_pylist_for_json(extra_table.to_pylist()) == load_json_records(extra_json_path)
 
     rejected_batches = batches_by_table.get(REJECTED_TABLE_NAME, [])
     if run.expected_rejected is None:
@@ -214,10 +155,7 @@ def test_process_xsv_file_pass_cases(
         assert rejected_batches
         rejected_table = pa.concat_tables(rejected_batches)
         assert rejected_table.schema.equals(REJECTED_PYARROW_SCHEMA)
-        assert rejected_table.to_pylist() == _load_json_records(run.expected_rejected)
-
-
-# End-to-end pipeline execution
+        assert rejected_table.to_pylist() == load_json_records(run.expected_rejected)
 
 
 @pytest.mark.usefixtures("qsv_cmd")
@@ -228,9 +166,9 @@ def test_run_xsv_pipeline_end_to_end_pass_cases(
     tmp_path: Path,
     dlt_destination_config: str,
 ) -> None:
-    """run_xsv_pipeline loads all expected target, extra, and _rejected rows into the destination."""
+    """``run_xsv_pipeline`` loads all expected target, extra, and ``_rejected`` rows into DuckDB."""
     settings = _stage_run_settings(tmp_path, dlt_destination_config, case, run)
-    expected_rows = _load_json_records(run.expected_json)
+    expected_rows = load_json_records(run.expected_json)
 
     load_info = run_with_duckdb_pipeline(
         tmp_path,
@@ -242,26 +180,18 @@ def test_run_xsv_pipeline_end_to_end_pass_cases(
     )
 
     if expected_rows:
-        ((loaded_count,),) = fetch_all_duckdb(
-            load_info.pipeline,
-            f"SELECT COUNT(*) FROM {settings.table_name}",  # noqa: S608
-        )
-        assert loaded_count == len(expected_rows)
+        assert_duckdb_table_counts(load_info.pipeline, {settings.table_name: len(expected_rows)})
     else:
         assert settings.table_name not in load_info.pipeline.default_schema.tables
 
     for extra_table_name, extra_json_path in run.extra_expected_json.items():
-        expected_extra = _load_json_records(extra_json_path)
-        ((extra_count,),) = fetch_all_duckdb(
-            load_info.pipeline,
-            f"SELECT COUNT(*) FROM {extra_table_name}",  # noqa: S608
-        )
-        assert extra_count == len(expected_extra)
+        expected_extra = load_json_records(extra_json_path)
+        assert_duckdb_table_counts(load_info.pipeline, {extra_table_name: len(expected_extra)})
 
     if run.expected_rejected is None:
         assert REJECTED_TABLE_NAME not in load_info.pipeline.default_schema.tables
     else:
-        expected_rejected = _load_json_records(run.expected_rejected)
+        expected_rejected = load_json_records(run.expected_rejected)
         rejected_rows = fetch_all_duckdb(
             load_info.pipeline,
             "SELECT table_name, source_file, line_no, raw_record, error_detail FROM _rejected ORDER BY source_file, error_detail",
@@ -282,16 +212,13 @@ def test_run_xsv_pipeline_end_to_end_pass_cases(
         )
 
 
-# Errors
-
-
 @pytest.mark.parametrize("err", ERROR_PARAMS)
 def test_xsv_schema_errors_fail_error_manifest(
     err: ErrorCase,
     tmp_path: Path,
     dlt_destination_config: str,
 ) -> None:
-    """Each error fixture raises the XsvSchemaError subclass for its code when initializing XsvIngestSettings."""
+    """Each error fixture raises the ``XsvSchemaError`` subclass for its code when initializing settings."""
     input_dir = tmp_path / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
     with pytest.raises(ERRORS_BY_CODE[err.code], match=err.match):

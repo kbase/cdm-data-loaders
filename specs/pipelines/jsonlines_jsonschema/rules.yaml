@@ -9,6 +9,10 @@ pipeline: jsonlines_jsonschema
 cli_command: jsonlines_jsonschema
 settings_class: cdm_data_loaders.pipelines.jsonlines.settings.JsonlJsonschemaIngestSettings
 pipeline_runner: cdm_data_loaders.pipelines.jsonlines.jsonschema.run_jsonlines_pipeline
+schema_lang: json
+data_lang: json
+exceptions_module: cdm_data_loaders.pipelines.jsonlines.exceptions
+errors_attr: JSONLINES_JSONSCHEMA_ERRORS
 intro: |
   This document specifies how an **`ENTITY_SCHEMAS` registry** of JSON Schema documents and the
   **JSONLines JSON Schema validation pipeline**

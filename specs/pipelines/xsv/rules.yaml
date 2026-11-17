@@ -4,11 +4,15 @@
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/xsv_specification.md, rendered via docs_macros and docs/_templates/pages/pipeline_spec.md.j2.
 # Every rule must be exercised by at least one case (enforced by test_xsv_spec.py).
-title: XSV (CSV/TSV) Schema & Pipeline Specification
+title: XSV (CSV/TSV) Schema and Pipeline Specification
 pipeline: xsv
 cli_command: xsv
 settings_class: cdm_data_loaders.pipelines.xsv.settings.XsvIngestSettings
 pipeline_runner: cdm_data_loaders.pipelines.xsv.pipeline.run_xsv_pipeline
+schema_lang: json
+data_lang: text
+exceptions_module: cdm_data_loaders.pipelines.xsv.exceptions
+errors_attr: XSV_SCHEMA_ERRORS
 intro: |
   This document specifies how an **XSV JSON Schema** (Draft 2020-12 or the KBase Draft 2020-12 XSV metaschema)
   and the **XSV ingestion pipeline** (`cdm_data_loaders.pipelines.xsv` and `cdm_data_loaders.readers.xsv`)

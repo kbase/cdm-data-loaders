@@ -31,17 +31,23 @@ from cdm_data_loaders.pipelines.jsonlines.pydantic import (
     build_entity_resource,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
-from tests.cdm_data_loaders.converters.facades.test_pydantic_to_pyarrow_pbt import (
-    pydantic_raw_inputs_for_model,
+from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
+from tests._support.cli_assertions import make_cts_settings, register_temp_module
+from tests._support.fixtures_jsonlines import (
+    PYDANTIC_SPEC_ENTITY_TABLE_NAME as ENTITY_TABLE_NAME,
+    pydantic_run_settings_overrides,
+    stage_pydantic_jsonl_run as stage_jsonl_run,
 )
-from tests.conftest import LOCAL_FS, SCHEMA_CONVERTER_SPECS_DIR
-from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
-from tests.helpers import make_cts_settings, register_temp_module
-from tests.pyarrow_pbt_helpers import assert_coerced_rows_roundtrip
-from tests.pyarrow_spec_helpers import (
+from tests._support.paths_and_constants import LOCAL_FS, SCHEMA_CONVERTER_SPECS_DIR
+from tests._support.pyarrow_pbt import assert_coerced_rows_roundtrip
+from tests._support.pyarrow_spec import (
     assert_schema_matches_expected,
     load_expected_table,
     load_fixture_attr,
+    load_json_records,
+)
+from tests.cdm_data_loaders.converters.facades.test_pydantic_to_pyarrow_pbt import (
+    pydantic_raw_inputs_for_model,
 )
 
 PYDANTIC_CONVERTER_SPEC_DIR: Final[Path] = (SCHEMA_CONVERTER_SPECS_DIR / "pydantic_to_pyarrow").resolve()
@@ -59,7 +65,6 @@ ERROR_PARAMS: Final[tuple[ParameterSet, ...]] = tuple(
     pytest.param(err, id=f"{err.code}-{err.file.stem}") for err in ERROR_CASES
 )
 
-ENTITY_TABLE_NAME: Final[str] = "items"
 TIMEDELTA_JSON_ADAPTER: Final[TypeAdapter[dt.timedelta]] = TypeAdapter(dt.timedelta)
 
 
@@ -72,86 +77,6 @@ def _load_model_class(path: Path) -> object:
     :rtype: object
     """
     return load_fixture_attr(path, "MODEL", object)
-
-
-def _load_json_records(path: Path) -> list[dict[str, Any]]:
-    """Load a JSON list of record dictionaries from ``path``.
-
-    :param path: Path to the JSON array file.
-    :type path: Path
-    :return: List of JSON-parsed record dictionaries.
-    :rtype: list[dict[str, Any]]
-    """
-    loaded = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(loaded, list):
-        msg = f"Expected a list of JSON records in {path}, got {type(loaded)}"
-        raise TypeError(msg)
-    return loaded
-
-
-def _run_settings_overrides(run: Run) -> dict[str, Any]:
-    """Extract ``JsonlPydanticIngestSettings`` keyword overrides from ``run.params``.
-
-    :param run: Converter specification run entry.
-    :type run: Run
-    :return: Dictionary of settings overrides for ``max_recursion_depth`` and ``by_alias``.
-    :rtype: dict[str, Any]
-    """
-    overrides: dict[str, Any] = {}
-    if "max_recursion_depth" in run.params:
-        overrides["max_recursion_depth"] = int(run.params["max_recursion_depth"])
-    if "by_alias" in run.params:
-        overrides["by_alias"] = bool(run.params["by_alias"])
-    return overrides
-
-
-def stage_jsonl_run(
-    tmp_path: Path,
-    dlt_destination_config: str,
-    monkeypatch: pytest.MonkeyPatch,
-    case: Case,
-    run: Run,
-) -> tuple[type[BaseModel], JsonlPydanticIngestSettings]:
-    """Write ``run.data`` as JSONL lines and construct ``JsonlPydanticIngestSettings`` for ``case`` and ``run``.
-
-    :param tmp_path: Temporary test directory.
-    :type tmp_path: Path
-    :param dlt_destination_config: Configured dlt destination name.
-    :type dlt_destination_config: str
-    :param monkeypatch: Pytest monkeypatch fixture.
-    :type monkeypatch: pytest.MonkeyPatch
-    :param case: Converter specification case.
-    :type case: Case
-    :param run: Converter specification run.
-    :type run: Run
-    :return: Tuple of ``(model_cls, settings)``.
-    :rtype: tuple[type[BaseModel], JsonlPydanticIngestSettings]
-    """
-    model_cls: type[BaseModel] = load_fixture_attr(case.schema, "MODEL", type)
-    input_dir = tmp_path / "input"
-    entity_dir = input_dir / ENTITY_TABLE_NAME
-    entity_dir.mkdir(parents=True, exist_ok=True)
-
-    records = _load_json_records(run.data)
-    jsonl_text = "".join(f"{json.dumps(rec)}\n" for rec in records)
-    (entity_dir / "data.jsonl").write_text(jsonl_text, encoding="utf-8")
-
-    mod_name = register_temp_module(
-        monkeypatch,
-        f"_pydantic_spec_models_{case.suite}_{case.name}_{run.id}".replace("-", "_"),
-        ENTITY_MODELS={ENTITY_TABLE_NAME: model_cls},
-    )
-    settings = make_cts_settings(
-        JsonlPydanticIngestSettings,
-        tmp_path,
-        dataset_name="jsonl_pydantic_spec_ds",
-        input_dir=str(input_dir),
-        entity_models=mod_name,
-        loader_file_format="parquet",
-        use_destination=dlt_destination_config,
-        **_run_settings_overrides(run),
-    )
-    return model_cls, settings
 
 
 def _to_jsonl_compatible(value: object) -> object:
@@ -243,7 +168,7 @@ def test_build_entity_resource_pass_converter_spec_cases(
     assert not any(page.schema.equals(REJECTED_PYARROW_SCHEMA) for page in pages)
 
     expected_table = load_expected_table(run.expected_table, run.table_attr)
-    expected_rows = _load_json_records(run.expected_json)
+    expected_rows = load_json_records(run.expected_json)
 
     actual_table = pa.concat_tables(pages)
     actual_table.validate(full=True)
@@ -412,7 +337,7 @@ def test_build_entity_resource_pass_pbt_converter_spec_cases(
                 entity_models=mod_name,
                 loader_file_format="parquet",
                 use_destination=LOCAL_FS,
-                **_run_settings_overrides(run),
+                **pydantic_run_settings_overrides(run),
             )
             assert settings.schema_map is not None
             pa_schema = settings.schema_map.registry[ENTITY_TABLE_NAME]

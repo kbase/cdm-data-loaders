@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from cdm_data_loaders.parsers.bbmap_stats import get_bbmap_stats
-from tests.cdm_data_loaders.parsers.conftest import RESULTS
+from tests.cdm_data_loaders.parsers._helpers import RESULTS
 
 
 def test_get_bbmap_stats_empty(tmp_path: Path) -> None:

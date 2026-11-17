@@ -19,7 +19,7 @@ from cdm_data_loaders.core.file_items import (
     source_url,
 )
 from cdm_data_loaders.utils.urls import join_url
-from tests.fs_backends import FsBackend
+from tests._support.fs_backends import FsBackend
 
 CONTENT: Final[bytes] = b"id\tname\n1\tcaf\xc3\xa9\n"
 GZ_CONTENT: Final[bytes] = gzip.compress(CONTENT)

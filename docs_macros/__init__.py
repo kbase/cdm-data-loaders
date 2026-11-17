@@ -45,12 +45,12 @@ def define_env(env: MacroPluginEnv) -> None:
     if repo_root_str not in sys.path:
         sys.path.insert(0, repo_root_str)
 
-    env_mod = importlib.import_module("docs_macros.env")
+    render_mod = importlib.import_module("docs_macros.render")
     fmt_mod = importlib.import_module("docs_macros.formatting")
-    env.macro(env_mod.render_cli_reference, "render_cli_reference")
-    env.macro(env_mod.render_bundled_schemas, "render_bundled_schemas")
-    env.macro(env_mod.render_converter_spec, "render_converter_spec")
-    env.macro(env_mod.render_pipeline_spec, "render_pipeline_spec")
-    env.macro(env_mod.render_reference_table, "render_reference_table")
+    env.macro(render_mod.render_cli_reference, "render_cli_reference")
+    env.macro(render_mod.render_bundled_schemas, "render_bundled_schemas")
+    env.macro(render_mod.render_converter_spec, "render_converter_spec")
+    env.macro(render_mod.render_pipeline_spec, "render_pipeline_spec")
+    env.macro(render_mod.render_reference_table, "render_reference_table")
     env.filter(fmt_mod.escape_table_cell, "escape_cell")
     env.filter(fmt_mod.code_fence_for_text, "code_fence")

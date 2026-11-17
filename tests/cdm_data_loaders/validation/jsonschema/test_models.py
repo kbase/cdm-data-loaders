@@ -25,7 +25,7 @@ from cdm_data_loaders.validation.jsonschema.models import (
     get_schema_parsing_metadata,
     validate_xsv_jsonschema,
 )
-from tests.xsv_fixtures import COLUMNS
+from tests._support.fixtures_xsv import COLUMNS
 
 SCHEMAS_DIR: Final[Path] = Path("tests") / "data" / "qsv" / "schemas"
 DELIMITERS: Final[list[str]] = list(SEP_TO_EXT)
