@@ -9,9 +9,10 @@ import pytest
 import yaml
 from jsonschema import Draft202012Validator
 
-from cdm_data_loaders.converters.emitters.json_schema import DLT_TYPES as TYPE_MAP
-from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT
-from cdm_data_loaders.converters.facades.dlt_to_jsonschema import DltToJSONSchema, DltToJSONSchemaError
+from cdm_data_loaders.converters.emitters.json_schema.common import JSON_SCHEMA_DIALECT
+from cdm_data_loaders.converters.emitters.json_schema.dlt_policy import DLT_TYPES as TYPE_MAP
+from cdm_data_loaders.converters.exceptions.facades.dlt_to_jsonschema import DltToJSONSchemaError
+from cdm_data_loaders.converters.facades.dlt_to_jsonschema import DltToJSONSchema
 from cdm_data_loaders.converters.facades.jsonschema_to_dlt import JSONSchemaToDlt
 from tests.cdm_data_loaders.converters.conftest import (
     base_stored_schema,

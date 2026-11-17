@@ -2,107 +2,32 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Final, cast
+from typing import Any, cast
 
 from jsonschema.validators import validator_for
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.core.guards import (
     reject_unresolved_references,
     require_schema_keyword,
 )
 from cdm_data_loaders.converters.core.inference import infer_implicit_type
 from cdm_data_loaders.converters.core.ir import Field, NodeType, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.sources.json_schema.common import (
+    ANNOTATIONS,
+    SCHEMA_KEYS,
+    SCHEMA_MAPS,
+    TYPES,
+    extract_constraints,
+    extract_extensions,
+)
 from cdm_data_loaders.validation.jsonschema.metaschema import CUSTOM_META_SCHEMA_URI, register_xsv_validator
-
-TYPES: Final[frozenset[str]] = frozenset({"object", "array", "string", "integer", "number", "boolean", "null"})
-ANNOTATIONS: Final[frozenset[str]] = frozenset(
-    {
-        "$schema",
-        "$id",
-        "$anchor",
-        "$dynamicAnchor",
-        "$comment",
-        "$vocabulary",
-        "title",
-        "description",
-        "default",
-        "examples",
-        "readOnly",
-        "writeOnly",
-        "deprecated",
-    }
-)
-SCHEMA_KEYS: Final[frozenset[str]] = frozenset(
-    {
-        "additionalItems",
-        "unevaluatedItems",
-        "contains",
-        "unevaluatedProperties",
-        "propertyNames",
-        "not",
-        "if",
-        "then",
-        "else",
-        "contentSchema",
-    }
-)
-SCHEMA_MAPS: Final[frozenset[str]] = frozenset({"$defs", "definitions", "dependentSchemas"})
-STRUCTURE: Final[frozenset[str]] = (
-    SCHEMA_KEYS
-    | SCHEMA_MAPS
-    | {
-        "$ref",
-        "allOf",
-        "type",
-        "properties",
-        "required",
-        "items",
-        "prefixItems",
-        "patternProperties",
-        "additionalProperties",
-        "anyOf",
-        "oneOf",
-        "dependencies",
-    }
-)
-
-
-def extract_extensions(schema: Mapping[str, Any], registry: ExtensionRegistry) -> Extensions:
-    """Extract and validate ``x-*`` vendor extensions from a JSON Schema mapping.
-
-    :param schema: JSON Schema node mapping.
-    :type schema: Mapping[str, Any]
-    :param registry: Extension registry used for validation.
-    :type registry: ExtensionRegistry
-    :return: Validated ``Extensions`` container.
-    :rtype: Extensions
-    """
-    return Extensions(
-        {key: value for key, value in schema.items() if key.startswith("x-")},
-        registry,
-    )
-
-
-def extract_constraints(schema: Mapping[str, Any]) -> dict[str, Any]:
-    """Extract non-structural, non-annotation, non-extension constraint keywords from ``schema``.
-
-    :param schema: JSON Schema node mapping.
-    :type schema: Mapping[str, Any]
-    :return: Dictionary of constraint keywords and values.
-    :rtype: dict[str, Any]
-    """
-    return {
-        key: value
-        for key, value in schema.items()
-        if key not in STRUCTURE and key not in ANNOTATIONS and not key.startswith("x-")
-    }
 
 
 @dataclass(frozen=True, slots=True)
 class JsonSchemaReader:
-    """Read validated object-compatible documents using an explicit extension registry."""
+    """Read validated object-compatible JSON Schema documents using an extension registry."""
 
     extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
     error_type: type[ConversionError] = ConversionError
@@ -144,18 +69,18 @@ class JsonSchemaReader:
             jsonschema_validator_cls=validator_for(schema),
         )
 
-    def read_node(self, source: Mapping[str, Any] | bool) -> TypedNode:  # noqa: FBT001
+    def read_node(self, source: object) -> TypedNode:
         """Read a schema fragment without document-level dialect or root guards.
 
         :param source: JSON Schema fragment mapping or boolean schema.
-        :type source: Mapping[str, Any] | bool
+        :type source: object
         :return: Parsed ``TypedNode``.
         :rtype: TypedNode
         """
         return self._node(source, ())
 
     def _node(self, schema: object, path: tuple[str | int, ...]) -> TypedNode:
-        """Traverse only schema-valued keywords, leaving literal data untouched.
+        """Traverse schema-valued keywords while leaving literal data untouched.
 
         :param schema: Schema node or boolean.
         :type schema: object
@@ -253,7 +178,7 @@ class JsonSchemaReader:
         :type keyword: str
         :param path: Parent JSON pointer path tuple.
         :type path: tuple[str | int, ...]
-        :return: Tuple of lowered branch ``TypedNode``s or ``None``.
+        :return: Tuple of lowered branch ``TypedNode`` objects or ``None``.
         :rtype: tuple[TypedNode, ...] | None
         """
         if keyword not in schema:

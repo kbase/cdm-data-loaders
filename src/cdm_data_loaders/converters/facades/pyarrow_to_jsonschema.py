@@ -9,13 +9,13 @@ from pydantic import BaseModel, ConfigDict, InstanceOf
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, ExtensionRegistry
-from cdm_data_loaders.converters.emitters.json_schema import JsonSchemaEmitter
+from cdm_data_loaders.converters.emitters.json_schema.emitter import JsonSchemaEmitter
 from cdm_data_loaders.converters.exceptions.facades.pyarrow_to_jsonschema import (
     ERROR_BY_CODE,
     InvalidPyArrowSchemaError,
     PyArrowToJSONSchemaError,
 )
-from cdm_data_loaders.converters.readers.pyarrow import PyArrowReader
+from cdm_data_loaders.converters.sources.pyarrow import PyArrowReader
 
 
 def _reader(

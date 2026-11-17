@@ -29,7 +29,7 @@ from dlt.extract import DltResource
 from pydantic import BaseModel, ConfigDict, InstanceOf, PrivateAttr, model_validator
 from pydantic_settings import BaseSettings
 
-from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
 from cdm_data_loaders.core.fields import (
     PYARROW_FILE_FORMATS,
     REJECTED_TABLE_NAME,
@@ -532,7 +532,7 @@ def _invoke_transform(
     if accepts_dict:
         return validate_routed_output(_call_transform(transform, data, ctx, takes_ctx=takes_ctx))
 
-    coerced = coerce_record_for_pyarrow(data, input_schema) if input_schema is not None else data
+    coerced = coerce_json_record_for_pyarrow(data, input_schema) if input_schema is not None else data
     one_row_table = pa.Table.from_pylist([coerced], schema=input_schema)
     return validate_routed_output(_call_transform(transform, one_row_table, ctx, takes_ctx=takes_ctx))
 
@@ -585,7 +585,7 @@ def make_record_router(
     *,
     transform: TableTransformFn | None = None,
     schema_map: ArrowSchemaRegistry | None = None,
-    record_coercer: RecordCoercerFn = coerce_record_for_pyarrow,
+    record_coercer: RecordCoercerFn = coerce_json_record_for_pyarrow,
 ) -> Callable[[BaseModel | dict[str, Any], str | None], dict[str, list[dict[str, Any]]]]:
     """Build a reusable per-record router and PyArrow coercer for ``default_table``.
 
@@ -714,7 +714,7 @@ def route_and_coerce_table(
         if isinstance(out_val, pa.Table):
             result[out_table] = align_and_cast_table(out_val, target_schema) if target_schema is not None else out_val
         elif target_schema is not None:
-            coerced_rows = [coerce_record_for_pyarrow(row, target_schema) for row in out_val]
+            coerced_rows = [coerce_json_record_for_pyarrow(row, target_schema) for row in out_val]
             result[out_table] = pa.Table.from_pylist(coerced_rows, schema=target_schema)
         else:
             result[out_table] = out_val

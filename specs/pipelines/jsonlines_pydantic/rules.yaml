@@ -15,10 +15,10 @@ intro: |
   (`cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline`,
   `cdm_data_loaders.pipelines.jsonlines.settings.JsonlPydanticIngestSettings`,
   `cdm_data_loaders.converters.facades.pydantic_to_pyarrow`, and
-  `cdm_data_loaders.coercion.pydantic`) determine:
+  `cdm_data_loaders.coercion.pydantic_to_arrow`) determine:
 
   1. **Entity model registration and upfront PyArrow schema generation** (`load_registry_dict`, `build_output_schema_registry`, `PydanticToPyArrow(max_recursion_depth=..., by_alias=...)`).
-  2. **Single-pass Pydantic validation, `coerce_record_for_pyarrow` coercion, and dead-letter (`_rejected`) routing** (`_make_validator_callbacks`, `coerce_record_for_pyarrow`, `make_page_router`, `REJECTED_PYARROW_SCHEMA`).
+  2. **Single-pass Pydantic validation, `coerce_pydantic_record_for_pyarrow` coercion, and dead-letter (`_rejected`) routing** (`_make_validator_callbacks`, `coerce_pydantic_record_for_pyarrow`, `make_page_router`, `REJECTED_PYARROW_SCHEMA`).
   3. **Multi-entity directory discovery, MD5 sidecar pre-processing, table transforms, and reporting** (`build_entity_resource`, `run_jsonlines_with_validation_pipeline`).
 
 sections:
@@ -52,10 +52,10 @@ sections:
         statement: |
           `_make_validator_callbacks` validates each non-blank JSON object at most once via
           `model.model_validate(record)`. For schematized PyArrow tables without a `TableTransformFn`, the validated
-          `BaseModel` instance is passed directly to `cdm_data_loaders.coercion.pydantic.coerce_record_for_pyarrow`
+          `BaseModel` instance is passed to `cdm_data_loaders.coercion.pydantic_to_arrow.coerce_pydantic_record_for_pyarrow`
           (`by_alias=settings.by_alias`) before buffering into `DictBuffer` (`schema_map=settings.schema_map`); when a
           `TableTransformFn` is configured or `use_pyarrow=False`, `model_dump(mode="python", by_alias=settings.by_alias)`
-          is cached instead and any `OUTPUT_SCHEMAS` destination tables are coerced via `coercion.pydantic.coerce_record_for_pyarrow`.
+          is cached instead and any `OUTPUT_SCHEMAS` destination tables are coerced via `coercion.pydantic_to_arrow.coerce_pydantic_record_for_pyarrow`.
       - id: R-JSONL-PYDANTIC-BLANK-AND-REJECT
         statement: |
           Blank or whitespace-only lines are skipped without error while preserving 1-based `line_no` offsets.
@@ -85,7 +85,7 @@ sections:
           validated `model_dump(mode="python", by_alias=settings.by_alias)` records are routed through
           `make_record_router`, allowing transforms to filter rows (`{}` or `None`), compute derived columns, or fan
           out records across multiple destination tables coerced to their `OUTPUT_SCHEMAS` via
-          `coercion.pydantic.coerce_record_for_pyarrow`.
+          `coercion.pydantic_to_arrow.coerce_pydantic_record_for_pyarrow`.
       - id: R-JSONL-PYDANTIC-REPORT
         statement: |
           All entity resources execute in a single `pipeline.run(resources)` call with `max_table_nesting=0` and

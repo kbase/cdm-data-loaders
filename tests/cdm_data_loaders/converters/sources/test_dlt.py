@@ -6,7 +6,7 @@ import pytest
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError
-from cdm_data_loaders.converters.readers.dlt import DltReader
+from cdm_data_loaders.converters.sources.dlt import DltReader
 
 
 def test_read_pass_forest_filtering_and_scalar_children() -> None:

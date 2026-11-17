@@ -21,7 +21,7 @@ from linkml_runtime.linkml_model.meta import SchemaDefinition, SlotDefinition
 from linkml_runtime.loaders import yaml_loader
 from linkml_runtime.utils.formatutils import camelcase
 
-from cdm_data_loaders.coercion.pyarrow import (
+from cdm_data_loaders.coercion.arrow_to_records import (
     serialize_record_for_linkml,
     serialize_table_for_linkml,
 )

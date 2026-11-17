@@ -9,11 +9,15 @@ from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.ir import SchemaDocument
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
+from cdm_data_loaders.converters.emitters.pyarrow_codegen.renderer import (
+    render_python_schema_module,
+    write_python_schema_file,
+)
 from cdm_data_loaders.converters.exceptions.facades.pydantic_to_pyarrow import (
     ERROR_BY_CODE,
     PydanticToPyArrowError,
 )
-from cdm_data_loaders.converters.readers.pydantic import PydanticReader
+from cdm_data_loaders.converters.sources.pydantic.reader import PydanticReader
 
 DEFAULT_EMITTER: Final[PyArrowEmitter] = PyArrowEmitter(max_nesting=100)
 
@@ -116,7 +120,7 @@ class PydanticToPyArrow(BaseModel):
         :return: formatted Python source code defining ``*_STRUCT``, ``*_SCHEMA``, ``SCHEMA``, and ``SCHEMAS``
         :rtype: str
         """
-        return DEFAULT_EMITTER.emit_python(self._read(model), docstring=docstring)
+        return render_python_schema_module(DEFAULT_EMITTER, self._read(model), docstring=docstring)
 
     def convert_to_python_file(
         self,
@@ -136,4 +140,4 @@ class PydanticToPyArrow(BaseModel):
         :return: resolved output ``Path``
         :rtype: Path
         """
-        return DEFAULT_EMITTER.emit_python_file(self._read(model), output, docstring=docstring)
+        return write_python_schema_file(DEFAULT_EMITTER, self._read(model), output, docstring=docstring)

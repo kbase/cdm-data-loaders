@@ -14,8 +14,8 @@ import pyarrow as pa
 from pydantic import BaseModel, BeforeValidator, ConfigDict, ValidationInfo, model_validator
 from pydantic_core import PydanticUndefined
 
-from cdm_data_loaders.coercion.pyarrow import pyarrow_to_python_type_label
-from cdm_data_loaders.converters.emitters.pyarrow_codegen import render_scalar_type_expr
+from cdm_data_loaders.converters.emitters.pyarrow_codegen.formatting import render_scalar_type_expr
+from cdm_data_loaders.utils.arrow_schema import is_any_binary_type, is_any_string_type
 from docs_macros.constants import (
     BACKTICK_RUN_RE,
     CODE_LANG_BY_SUFFIX,
@@ -305,6 +305,40 @@ def pa_ctor_expr(dtype: pa.DataType) -> str:
         return render_scalar_type_expr(dtype)
     except KeyError:
         return str(dtype)
+
+
+def pyarrow_to_python_type_label(data_type: pa.DataType) -> str:
+    """Return the Markdown-formatted Python runtime type label for a coerced PyArrow ``DataType``.
+
+    :param data_type: Target PyArrow data type.
+    :type data_type: pa.DataType
+    :return: Backtick-wrapped Python runtime type label (e.g. ``"`int`"``, ``"`datetime.datetime` (UTC)"``).
+    :rtype: str
+    """
+    if isinstance(data_type, pa.DictionaryType):
+        return pyarrow_to_python_type_label(data_type.value_type)
+    if isinstance(
+        data_type,
+        pa.ListType | pa.LargeListType | pa.ListViewType | pa.LargeListViewType | pa.FixedSizeListType,
+    ):
+        inner = pyarrow_to_python_type_label(data_type.value_field.type).strip("`")
+        return f"`list[{inner}]`"
+    if isinstance(data_type, pa.TimestampType):
+        tz_suffix = f"({data_type.tz})" if data_type.tz is not None else "(naive)"
+        return f"`datetime.datetime` {tz_suffix}"
+    for predicate, label in (
+        (pa.types.is_boolean, "`bool`"),
+        (pa.types.is_integer, "`int`"),
+        (pa.types.is_floating, "`float`"),
+        (pa.types.is_decimal, "`decimal.Decimal`"),
+        (pa.types.is_date, "`datetime.date`"),
+        (pa.types.is_time, "`datetime.time`"),
+        (is_any_binary_type, "`bytes`"),
+        (is_any_string_type, "`str`"),
+    ):
+        if predicate(data_type):
+            return label
+    return f"`{data_type}`"
 
 
 def _coerce_pa_or_str(value: object, formatter: Callable[[pa.DataType], str]) -> str:

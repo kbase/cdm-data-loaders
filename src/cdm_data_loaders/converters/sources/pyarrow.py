@@ -7,7 +7,8 @@ from typing import Any, Final, Never
 import pyarrow as pa
 from frozendict import frozendict
 
-from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.constants import DECIMAL128_BITS, DECIMAL256_BITS
+from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
 from cdm_data_loaders.converters.core.ir import (
     SPEC_BINARY,
@@ -34,13 +35,12 @@ from cdm_data_loaders.converters.core.ir import (
     Field as SchemaField,
 )
 from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
+from cdm_data_loaders.converters.exceptions.sources.pyarrow import PyArrowReaderError
 from cdm_data_loaders.utils.arrow_schema import decode_field_metadata
 
 SPEC_FLOAT16: Final[tuple[NodeType, NodeHints]] = ("number", NodeHints(logical_type="float16", bit_width=16))
 SPEC_FLOAT32: Final[tuple[NodeType, NodeHints]] = ("number", NodeHints(logical_type="float", bit_width=32))
 SPEC_FLOAT64_HINTED: Final[tuple[NodeType, NodeHints]] = ("number", NodeHints(logical_type="double", bit_width=64))
-DECIMAL128_BITS: Final[int] = 128
-DECIMAL256_BITS: Final[int] = 256
 
 PROVENANCE_METADATA_KEYS: Final[tuple[str, ...]] = ("pydantic_type", "xsd_type", "jsonschema_type")
 RESERVED_SCHEMA_METADATA_KEYS: Final[frozenset[str]] = frozenset({"comment", "title", "$id"})
@@ -98,10 +98,6 @@ def _format_path(path: tuple[str | int, ...]) -> str:
     return ".".join(str(part) for part in path) if path else "<root>"
 
 
-class PyArrowReaderError(ConversionError):
-    """Raised when a PyArrow schema, field, or data type cannot be converted into the converter IR."""
-
-
 @dataclass(frozen=True, slots=True)
 class PyArrowReader:
     """Read PyArrow ``pa.Schema``, ``pa.Field``, and ``pa.DataType`` objects into the converter IR."""
@@ -121,8 +117,12 @@ class PyArrowReader:
         :type msg: str
         :raises ConversionError: Always raises the mapped ``ConversionError`` subclass.
         """
-        exc_cls = self.error_by_code.get(code, self.error_type)
-        raise exc_cls(msg)
+        return raise_spec_error(
+            code,
+            msg,
+            error_type=self.error_type,
+            error_by_code=self.error_by_code,
+        )
 
     def _x_pyarrow(self, payload: Mapping[str, Any]) -> Mapping[str, Value]:
         """Build validated ``x-pyarrow`` extensions when metadata emission is enabled.
@@ -551,6 +551,7 @@ class PyArrowReader:
                 extensions=self._x_pyarrow(x_pa),
                 provenance=provenance,
             )
-        exc_cls = self.error_by_code.get(ERR_UNSUPPORTED_TYPE, self.error_type)
-        msg = f"Unsupported PyArrow scalar type in PyArrowReader at '{_format_path(path)}': {dtype}"
-        raise exc_cls(msg)
+        return self._raise_error(
+            ERR_UNSUPPORTED_TYPE,
+            f"Unsupported PyArrow scalar type in PyArrowReader at '{_format_path(path)}': {dtype}",
+        )

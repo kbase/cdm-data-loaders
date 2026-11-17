@@ -10,14 +10,19 @@ from pydantic import Field, PositiveInt, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
-from cdm_data_loaders.converters.core.io import ExtraMetadataKeywords, JsonSchemaConverterBase
+from cdm_data_loaders.converters.core.io import ExtraMetadataKeywords
 from cdm_data_loaders.converters.emitters.pyarrow import DEFAULT_FORMAT_MAP, PyArrowEmitter, merge_format_map
+from cdm_data_loaders.converters.emitters.pyarrow_codegen.renderer import (
+    render_python_schema_module,
+    write_python_schema_file,
+)
 from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
     ERROR_BY_CODE,
     JSONSchemaToPyArrowError,
     UnsupportedDialectError,
 )
-from cdm_data_loaders.converters.readers.json_schema_strict import StrictJsonSchemaReader
+from cdm_data_loaders.converters.facades._base import JsonSchemaConverterBase
+from cdm_data_loaders.converters.sources.json_schema.strict_reader import StrictJsonSchemaReader
 from cdm_data_loaders.validation.jsonschema.dereference import dereference_schema
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
 
@@ -106,7 +111,7 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
         :raises JSONSchemaToPyArrowError: if the root is not an object or a construct cannot be converted
         """
         doc = self._read(schema)
-        return self._emitter().emit_python(doc, docstring=docstring)
+        return render_python_schema_module(self._emitter(), doc, docstring=docstring)
 
     def convert_to_python_file(
         self,
@@ -129,7 +134,7 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
         :raises JSONSchemaToPyArrowError: if the root is not an object or a construct cannot be converted
         """
         doc = self._read(schema)
-        return self._emitter().emit_python_file(doc, output, docstring=docstring)
+        return write_python_schema_file(self._emitter(), doc, output, docstring=docstring)
 
 
 def resolve_scalar_type(node: Mapping[str, Any]) -> tuple[pa.DataType, str]:

@@ -14,8 +14,9 @@ import pytest
 from _pytest.mark.structures import ParameterSet
 from jsonschema import Draft202012Validator
 
-from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
+from cdm_data_loaders.converters.emitters.pyarrow_codegen.renderer import render_python_schema_module
 from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
     JSONSCHEMA_TO_PYARROW_ERRORS,
     JSONSchemaToPyArrowError,
@@ -208,15 +209,15 @@ def test_convert_to_python_file_and_shared_defs_pass(tmp_path: Path) -> None:
     assert ns["SCHEMA"].equals(converter.convert(schema), check_metadata=True)
 
     with pytest.raises(ValueError, match="empty SchemaDocument mapping"):
-        PyArrowEmitter().emit_python({})
+        render_python_schema_module(PyArrowEmitter(), {})
 
 
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
-def test_coerce_record_for_pyarrow_pass_cases(case: Case, run: Run) -> None:
+def test_coerce_json_record_for_pyarrow_pass_cases(case: Case, run: Run) -> None:
     """Records coerce to the expected rows, build the expected table and round-trip through Parquet."""
     depth = _max_recursion_depth(run)
     pa_schema = generate_pyarrow_schema(_load_json_object(case.schema), max_recursion_depth=depth)
-    rows = [coerce_record_for_pyarrow(record, pa_schema) for record in _load_json_records(run.data)]
+    rows = [coerce_json_record_for_pyarrow(record, pa_schema) for record in _load_json_records(run.data)]
     assert_rows_and_table_match_expected(
         rows, pa_schema, run.expected_json, run.expected_table, table_attr=run.table_attr
     )

@@ -11,7 +11,7 @@ from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 from pydantic import BaseModel
 
-from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry, TableTransformFn
 from cdm_data_loaders.core.transforms import RecordCoercerFn, make_record_router
@@ -122,7 +122,7 @@ def make_page_router(  # noqa: PLR0913
     table_transform: TableTransformFn | None = None,
     schema_map: ArrowSchemaRegistry | None = None,
     use_pyarrow: bool = True,
-    record_coercer: RecordCoercerFn = coerce_record_for_pyarrow,
+    record_coercer: RecordCoercerFn = coerce_json_record_for_pyarrow,
 ) -> Callable[[Iterable[dict[str, Any]]], Generator[Any, Any, Any]]:
     """Build a function that routes pages of line records to valid and rejected tables.
 

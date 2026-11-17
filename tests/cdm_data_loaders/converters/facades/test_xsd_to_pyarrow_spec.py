@@ -29,17 +29,19 @@ from cdm_data_loaders.converters.cli.xsd_to_pyarrow import (
     cli as xsd_to_pyarrow_cli,
 )
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
-from cdm_data_loaders.converters.emitters.json_schema import JsonSchemaEmitter
+from cdm_data_loaders.converters.emitters.json_schema.emitter import JsonSchemaEmitter
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
-from cdm_data_loaders.converters.emitters.pyarrow_codegen import (
-    _decode_metadata,
-    _fmt_str,
-    _format_field_indented,
-    _format_schema_exports,
-    _format_struct_assignment,
-    _IRComponentCollector,
-    _RenderedFieldSpec,
-    _to_upper_snake,
+from cdm_data_loaders.converters.emitters.pyarrow_codegen.collector import IRComponentCollector
+from cdm_data_loaders.converters.emitters.pyarrow_codegen.formatting import (
+    format_field_indented,
+    format_schema_exports,
+    format_struct_assignment,
+)
+from cdm_data_loaders.converters.emitters.pyarrow_codegen.naming import (
+    RenderedFieldSpec,
+    decode_sorted_metadata,
+    fmt_str,
+    to_upper_snake,
 )
 from cdm_data_loaders.converters.emitters.pyspark import PySparkEmitter
 from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
@@ -55,7 +57,7 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schemas_at_level,
     generate_pyarrow_struct,
 )
-from cdm_data_loaders.converters.readers.xsd import XsdReader
+from cdm_data_loaders.converters.sources.xsd import XsdReader
 from cdm_data_loaders.schemas.pubmed.schema import (
     DELETE_CITATION_STRUCT,
     MEDLINE_CITATION_STRUCT,
@@ -256,7 +258,7 @@ def test_render_schema_module_pass_cases(case: Case, run: Run) -> None:
     assert schemas_map[local_tag] is generated_schema
 
     if local_tag != "entry":
-        tag_schema_var = f"{_to_upper_snake(local_tag)}_SCHEMA"
+        tag_schema_var = f"{to_upper_snake(local_tag)}_SCHEMA"
         assert namespace[tag_schema_var] is generated_schema
 
     struct_vars = [val for name, val in namespace.items() if name.endswith("_STRUCT")]
@@ -646,42 +648,45 @@ def test_gen_pyarrow_schema_cli_pass_and_fail(
 
 def test_render_schema_module_pass_codegen_rules_and_formatting(tmp_path: Path) -> None:
     """render_schema_module and formatting helpers cover naming collisions, nillable variants, and line wrapping."""
-    assert _fmt_str(r"path\to\item") == r'"path\\to\\item"'
-    assert _fmt_str('quoted "value"') == "'quoted \"value\"'"
-    assert _to_upper_snake("Type", strip_type_suffix=True) == "TYPE"
-    assert _decode_metadata({b"xsd_type": b"xs:int", "comment": "doc"}) == {"comment": "doc", "xsd_type": "xs:int"}
+    assert fmt_str(r"path\to\item") == r'"path\\to\\item"'
+    assert fmt_str('quoted "value"') == "'quoted \"value\"'"
+    assert to_upper_snake("Type", strip_type_suffix=True) == "TYPE"
+    assert decode_sorted_metadata({b"xsd_type": b"xs:int", "comment": "doc"}) == {
+        "comment": "doc",
+        "xsd_type": "xs:int",
+    }
 
-    single_meta_spec = _RenderedFieldSpec(
+    single_meta_spec = RenderedFieldSpec(
         name="longCommentStruct",
         type_expr="SHARED_ITEM_STRUCT",
         nullable=True,
         metadata={"comment": "A" * 110},
     )
-    formatted_single_meta = _format_field_indented(single_meta_spec, indent=8, trailing_comma=True)
+    formatted_single_meta = format_field_indented(single_meta_spec, indent=8, trailing_comma=True)
     assert "metadata={\n" in formatted_single_meta
     assert f'"comment": "{"A" * 110}"\n' in formatted_single_meta
 
-    medium_field = _RenderedFieldSpec(
+    medium_field = RenderedFieldSpec(
         name="mediumField",
         type_expr="pa.string()",
         nullable=False,
         metadata={"xsd_type": "xs:string"},
     )
-    wrapped_one_line = _format_struct_assignment(
+    wrapped_one_line = format_struct_assignment(
         "VERY_LONG_COMPONENT_IDENTIFIER_FOR_SINGLE_FIELD_WRAP_TEST_STRUCT",
         [medium_field],
     )
     assert wrapped_one_line.startswith("VERY_LONG_COMPONENT_IDENTIFIER_FOR_SINGLE_FIELD_WRAP_TEST_STRUCT")
     assert "\n    [pa.field(" in wrapped_one_line
 
-    wrapped_multi_line = _format_struct_assignment(
+    wrapped_multi_line = format_struct_assignment(
         "SHORT_STRUCT",
         [single_meta_spec],
     )
     assert "pa.struct(\n    [\n        pa.field(" in wrapped_multi_line
 
-    short_scalar_exports = _format_schema_exports(
-        {"s": _RenderedFieldSpec(name="#text", type_expr="pa.string()", nullable=True, metadata=None)},
+    short_scalar_exports = format_schema_exports(
+        {"s": RenderedFieldSpec(name="#text", type_expr="pa.string()", nullable=True, metadata=None)},
         {},
     )
     assert (
@@ -877,7 +882,7 @@ def test_struct_field_specs_pass_defensive_fallbacks(
 
     doc = XsdReader(xml_tag="record", max_recursion_depth=2).read(schema, "record")
     pa_schema = PyArrowEmitter(max_nesting=100).emit(doc)
-    collector = _IRComponentCollector()
+    collector = IRComponentCollector()
     key = collector.collect_document("record", doc, pa_schema)
     assert isinstance(key, tuple)
     specs = collector.components[key].fields

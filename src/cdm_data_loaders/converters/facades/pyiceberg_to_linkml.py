@@ -6,7 +6,7 @@ from pyiceberg.types import IcebergType, NestedField, StructType
 
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.emitters.linkml import LinkMLEmitter
-from cdm_data_loaders.converters.readers.iceberg import IcebergReader
+from cdm_data_loaders.converters.sources.iceberg import IcebergReader
 
 
 def convert_type(

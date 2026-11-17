@@ -1,6 +1,7 @@
-"""Coerce Pydantic v2 BaseModel instances and record dictionaries to match a target PyArrow schema."""
+"""Coerce Pydantic v2 BaseModel instances and record mappings to match a target PyArrow schema."""
 
 import base64
+import functools
 import json
 from collections import deque
 from collections.abc import Iterable, Mapping
@@ -32,6 +33,13 @@ from pydantic import (
     TypeAdapter,
 )
 from pydantic_core import Url
+
+from cdm_data_loaders.coercion._arrow_core import (
+    coerce_map_entries,
+    coerce_struct_from_mapping_or_tuple,
+    comparable_sort_key,
+)
+from cdm_data_loaders.utils.arrow_schema import decode_field_metadata
 
 IP_CLASSES: Final[tuple[type, ...]] = (
     IPv4Address,
@@ -101,27 +109,6 @@ def _extract_dataclass_dict(instance: object) -> dict[str, Any]:
     return result
 
 
-def _comparable_sort_key(value: object) -> tuple[bool, int, int | float | bytes | str]:
-    """Return a deterministic sort key for set elements during record coercion.
-
-    :param value: Set element to sort.
-    :type value: object
-    :return: Sort key tuple ``(is_none, type_rank, comparable_value)``.
-    :rtype: tuple[bool, int, int | float | bytes | str]
-    """
-    if value is None:
-        return (True, 0, "")
-    if isinstance(value, bool):
-        return (False, 0, int(value))
-    if isinstance(value, int | float):
-        return (False, 1, value)
-    if isinstance(value, bytes):
-        return (False, 2, value)
-    if isinstance(value, str):
-        return (False, 3, value)
-    return (False, 4, str(value))
-
-
 def _to_jsonable_scalar(value: object) -> object:
     """Convert non-container Python scalar objects to JSON-serializable scalars.
 
@@ -141,8 +128,8 @@ def _to_jsonable_scalar(value: object) -> object:
     return value
 
 
-def _to_jsonable_recursive(value: object, *, by_alias: bool = False) -> object:
-    """Convert nested BaseModels and Python objects into JSON-serializable structures for recursion cutoffs.
+def to_jsonable_recursive(value: object, *, by_alias: bool = False) -> object:
+    """Convert nested ``BaseModel`` instances and Python objects into JSON-serializable structures.
 
     :param value: Input Python object or nested ``BaseModel``.
     :type value: object
@@ -165,14 +152,14 @@ def _to_jsonable_recursive(value: object, *, by_alias: bool = False) -> object:
             if isinstance(value, BaseModel)
             else _extract_dataclass_dict(value)
         )
-        return {k: _to_jsonable_recursive(v, by_alias=by_alias) for k, v in raw_dict.items()}
+        return {k: to_jsonable_recursive(v, by_alias=by_alias) for k, v in raw_dict.items()}
     if isinstance(value, Mapping):
-        return {str(k): _to_jsonable_recursive(v, by_alias=by_alias) for k, v in value.items()}
+        return {str(k): to_jsonable_recursive(v, by_alias=by_alias) for k, v in value.items()}
     if isinstance(value, set | frozenset):
-        items = [_to_jsonable_recursive(v, by_alias=by_alias) for v in value]
-        return sorted(items, key=_comparable_sort_key)
+        items = [to_jsonable_recursive(v, by_alias=by_alias) for v in value]
+        return sorted(items, key=comparable_sort_key)
     if isinstance(value, list | tuple | deque):
-        return [_to_jsonable_recursive(v, by_alias=by_alias) for v in value]
+        return [to_jsonable_recursive(v, by_alias=by_alias) for v in value]
     return _to_jsonable_scalar(value)
 
 
@@ -227,13 +214,13 @@ def _coerce_decimal(value: object, data_type: pa.Decimal128Type) -> Decimal:
     return dec.quantize(quantum)
 
 
-def _coerce_binary(value: object, metadata: dict[bytes, bytes] | None) -> bytes:
+def _coerce_binary(value: object, metadata: Mapping[bytes, bytes] | None) -> bytes:
     """Coerce ``bytes``, ``bytearray``, or ``str`` into ``bytes``.
 
     :param value: Input binary or string value.
     :type value: object
-    :param metadata: Optional PyArrow field metadata dictionary.
-    :type metadata: dict[bytes, bytes] | None
+    :param metadata: Optional PyArrow field metadata mapping.
+    :type metadata: Mapping[bytes, bytes] | None
     :return: Coerced raw ``bytes``.
     :rtype: bytes
     """
@@ -242,7 +229,8 @@ def _coerce_binary(value: object, metadata: dict[bytes, bytes] | None) -> bytes:
     if isinstance(value, bytearray | memoryview):
         return bytes(value)
     if isinstance(value, str):
-        if metadata and b"pydantic_type" in metadata and b"base64" in metadata[b"pydantic_type"]:
+        decoded_meta = decode_field_metadata(metadata)
+        if "base64" in decoded_meta.get("pydantic_type", ""):
             return base64.b64decode(value)
         return value.encode("utf-8")
     return bytes(value)  # type: ignore[arg-type]
@@ -301,7 +289,7 @@ def _coerce_string(value: object, *, by_alias: bool = False) -> str:
     if isinstance(value, BaseModel | Mapping | list | tuple | set | frozenset | deque | bool) or (
         is_dataclass(value) and not isinstance(value, type)
     ):
-        return json.dumps(_to_jsonable_recursive(value, by_alias=by_alias))
+        return json.dumps(to_jsonable_recursive(value, by_alias=by_alias))
     if isinstance(value, date | datetime | time):
         return value.isoformat()
     if isinstance(value, bytes | bytearray):
@@ -329,7 +317,7 @@ def _coerce_temporal(value: object, data_type: pa.DataType) -> object:
 def _coerce_scalar_for_pyarrow(
     value: object,
     data_type: pa.DataType,
-    metadata: dict[bytes, bytes] | None = None,
+    metadata: Mapping[bytes, bytes] | None = None,
     *,
     by_alias: bool = False,
 ) -> object:
@@ -339,8 +327,8 @@ def _coerce_scalar_for_pyarrow(
     :type value: object
     :param data_type: Target PyArrow scalar data type.
     :type data_type: pa.DataType
-    :param metadata: Optional PyArrow field metadata dictionary.
-    :type metadata: dict[bytes, bytes] | None
+    :param metadata: Optional PyArrow field metadata mapping.
+    :type metadata: Mapping[bytes, bytes] | None
     :param by_alias: Whether to serialize nested models using field aliases.
     :type by_alias: bool
     :return: Coerced scalar value matching ``data_type``.
@@ -370,9 +358,9 @@ def _coerce_struct_for_pyarrow(
     *,
     by_alias: bool = False,
 ) -> object:
-    """Coerce a ``BaseModel``, ``Mapping``, positional tuple, or scalar union value to match a ``pa.StructType``.
+    """Coerce a ``BaseModel``, dataclass, ``Mapping``, tuple, or scalar union value to ``pa.StructType``.
 
-    :param value: Input ``BaseModel``, mapping, sequence, or scalar value.
+    :param value: Input ``BaseModel``, dataclass, mapping, sequence, or scalar value.
     :type value: object
     :param data_type: Target PyArrow struct data type.
     :type data_type: pa.StructType
@@ -387,39 +375,8 @@ def _coerce_struct_for_pyarrow(
         value = _extract_model_dict(value, by_alias=by_alias)
     elif is_dataclass(value) and not isinstance(value, type):
         value = _extract_dataclass_dict(value)
-    if isinstance(value, Mapping):
-        return {
-            field.name: _coerce_value_for_pyarrow(
-                value[field.name],
-                field.type,
-                field.metadata,
-                by_alias=by_alias,
-            )
-            for field in data_type
-            if field.name in value
-        }
-    if isinstance(value, list | tuple) and len(data_type) > 0 and data_type[0].name == "item_0":
-        return {
-            field.name: _coerce_value_for_pyarrow(
-                value[idx],
-                field.type,
-                field.metadata,
-                by_alias=by_alias,
-            )
-            for idx, field in enumerate(data_type)
-            if idx < len(value) and value[idx] is not None
-        }
-    value_field = next((field for field in data_type if field.name == "_value"), None)
-    if value_field is not None:
-        return {
-            "_value": _coerce_value_for_pyarrow(
-                value,
-                value_field.type,
-                value_field.metadata,
-                by_alias=by_alias,
-            )
-        }
-    return value
+    child_coercer = functools.partial(_coerce_value_for_pyarrow, by_alias=by_alias)
+    return coerce_struct_from_mapping_or_tuple(value, data_type, child_coercer, allow_tuple=True)
 
 
 def _coerce_list_for_pyarrow(
@@ -444,25 +401,25 @@ def _coerce_list_for_pyarrow(
         _coerce_value_for_pyarrow(item, item_field.type, item_field.metadata, by_alias=by_alias) for item in value
     ]
     if isinstance(value, set | frozenset):
-        return sorted(coerced, key=_comparable_sort_key)
+        return sorted(coerced, key=comparable_sort_key)
     return coerced
 
 
 def _coerce_value_for_pyarrow(
     value: object,
     data_type: pa.DataType,
-    metadata: dict[bytes, bytes] | None = None,
+    metadata: Mapping[bytes, bytes] | None = None,
     *,
     by_alias: bool = False,
 ) -> object:
-    """Recursively coerce a Python or JSON-parsed value to match the target PyArrow DataType.
+    """Coerce a Python or JSON-parsed value across structs, lists, maps, and scalars.
 
     :param value: Input Python or JSON-parsed value.
     :type value: object
     :param data_type: Target PyArrow data type.
     :type data_type: pa.DataType
-    :param metadata: Optional PyArrow field metadata dictionary.
-    :type metadata: dict[bytes, bytes] | None
+    :param metadata: Optional PyArrow field metadata mapping.
+    :type metadata: Mapping[bytes, bytes] | None
     :param by_alias: Whether to extract nested model fields using aliases.
     :type by_alias: bool
     :return: Coerced value matching ``data_type``.
@@ -479,18 +436,12 @@ def _coerce_value_for_pyarrow(
     ):
         return _coerce_list_for_pyarrow(value, data_type, by_alias=by_alias)
     if pa.types.is_map(data_type) and isinstance(value, Mapping):
-        key_field = data_type.key_field
-        item_field = data_type.item_field
-        return {
-            _coerce_value_for_pyarrow(k, key_field.type, key_field.metadata, by_alias=by_alias): (
-                _coerce_value_for_pyarrow(v, item_field.type, item_field.metadata, by_alias=by_alias)
-            )
-            for k, v in value.items()
-        }
+        child_coercer = functools.partial(_coerce_value_for_pyarrow, by_alias=by_alias)
+        return coerce_map_entries(value, data_type, child_coercer)
     return _coerce_scalar_for_pyarrow(value, data_type, metadata, by_alias=by_alias)
 
 
-def coerce_record_for_pyarrow(
+def coerce_pydantic_record_for_pyarrow(
     record: BaseModel | Mapping[str, Any],
     schema: pa.Schema,
     *,
@@ -501,8 +452,8 @@ def coerce_record_for_pyarrow(
 
     When ``record`` is a ``BaseModel`` instance (or ``model`` is supplied to validate a mapping),
     non-null default values and ``@computed_field`` properties are populated on the output dictionary.
-    Only fields declared in ``schema`` are retained and coerced recursively so
-    ``pyarrow.Table.from_pylist`` can construct a table matching ``schema``.
+    Retains and coerces fields declared in ``schema`` so ``pyarrow.Table.from_pylist``
+    can construct a table matching ``schema``.
 
     :param record: Pydantic ``BaseModel`` instance or record dictionary.
     :type record: BaseModel | Mapping[str, Any]

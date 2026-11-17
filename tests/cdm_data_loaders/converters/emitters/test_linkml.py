@@ -11,7 +11,7 @@ from linkml_runtime.loaders import yaml_loader
 from cdm_data_loaders.converters.core.ir import Field, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.emitters.linkml import LinkMLEmitter
 from cdm_data_loaders.converters.exceptions.emitters.linkml import LinkMLEmitterError
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
+from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
 
 
 def test_emit_pass_nested_enum_array_constraints() -> None:

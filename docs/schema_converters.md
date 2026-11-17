@@ -206,9 +206,9 @@ from cdm_data_loaders.converters.core.extensions import (
     ExtensionRegistry,
     ExtensionSpec,
 )
-from cdm_data_loaders.converters.emitters.json_schema import JsonSchemaEmitter
+from cdm_data_loaders.converters.emitters.json_schema.emitter import JsonSchemaEmitter
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import JSONSchemaToPyArrow
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
+from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
 
 KBASE_EXTENSION_SPEC: Final[ExtensionSpec] = ExtensionSpec(
     "x-kbase",

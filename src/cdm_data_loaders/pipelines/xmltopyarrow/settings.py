@@ -31,7 +31,6 @@ from cdm_data_loaders.core.fields import (
     file_glob_description,
 )
 from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
-from cdm_data_loaders.validation.xsd.traversal import load_schema
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
     FilePreprocessFn,

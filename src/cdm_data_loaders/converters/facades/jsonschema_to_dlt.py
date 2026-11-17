@@ -6,19 +6,15 @@ from dlt.common.schema.typing import TStoredSchema
 from pydantic import Field, PositiveInt, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter, validate_non_empty_schema_name
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_dlt import (
+    InvalidJSONSchemaError,
+    JSONSchemaToDltError,
+)
+from cdm_data_loaders.converters.facades._base import JsonSchemaConverterBase
 
 if TYPE_CHECKING:
     from dlt.common.schema import Schema
-
-
-class JSONSchemaToDltError(ConversionError):
-    """Raised when a JSON Schema construct cannot be converted."""
-
-
-class InvalidJSONSchemaError(JSONSchemaToDltError):
-    """Raised when the input document is not a valid JSON Schema."""
 
 
 class JSONSchemaToDlt(JsonSchemaConverterBase[TStoredSchema]):
@@ -28,7 +24,6 @@ class JSONSchemaToDlt(JsonSchemaConverterBase[TStoredSchema]):
     _invalid_schema_error_cls: ClassVar[type[ConversionError]] = InvalidJSONSchemaError
     _converter_name: ClassVar[str] = "JSONSchemaToDlt"
     _root_target_label: ClassVar[str] = "a dlt table"
-    _dereference_function: ClassVar[str] = "jsonschema_to_dlt.dereferencing.dereference_schema"
 
     schema_name: str
     skip_nested_types: bool = False

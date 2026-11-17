@@ -12,7 +12,7 @@ import pytest
 from frozendict import frozendict
 
 import cdm_data_loaders.validation.jsonschema.metaschema as metaschema_module
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
+from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
 from cdm_data_loaders.validation.jsonschema.metaschema import (
     CUSTOM_META_SCHEMA_URI,
     XSV_CONFIG_SCHEMA_REL_PATH,

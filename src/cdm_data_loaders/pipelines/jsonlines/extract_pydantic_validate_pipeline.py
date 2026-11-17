@@ -41,9 +41,7 @@ from dlt.common.pipeline import LoadInfo
 from dlt.extract import DltResource
 from pydantic import BaseModel, ValidationError
 
-from cdm_data_loaders.coercion.pydantic import (
-    coerce_record_for_pyarrow as coerce_pydantic_record_for_pyarrow,
-)
+from cdm_data_loaders.coercion.pydantic_to_arrow import coerce_pydantic_record_for_pyarrow
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.jsonlines.base import (
     build_entity_resource as build_shared_entity_resource,

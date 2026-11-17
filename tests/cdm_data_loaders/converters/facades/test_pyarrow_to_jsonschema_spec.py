@@ -18,7 +18,7 @@ from frozendict import frozendict
 from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import ValidationError
 
-from cdm_data_loaders.coercion.pyarrow import (
+from cdm_data_loaders.coercion.arrow_to_records import (
     serialize_record_for_jsonschema,
     serialize_table_for_jsonschema,
 )

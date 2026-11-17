@@ -25,7 +25,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import BaseModel, Field, SecretStr, TypeAdapter, ValidationError
 
-from cdm_data_loaders.coercion.pydantic import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.pydantic_to_arrow import coerce_pydantic_record_for_pyarrow
 from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
     build_entity_resource,
 )
@@ -265,7 +265,7 @@ def test_build_entity_resource_pass_coerces_pydantic_types_after_table_transform
     dlt_destination_config: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """build_entity_resource coerces SecretStr, frozenset, Decimal, and aliased fields via coercion.pydantic after table_transforms."""
+    """build_entity_resource coerces SecretStr, frozenset, Decimal, and aliased fields via coercion.pydantic_to_arrow after table_transforms."""
 
     class SecretMetric(BaseModel):
         record_id: str = Field(serialization_alias="recordId")
@@ -380,7 +380,7 @@ def test_build_entity_resource_pass_pbt_converter_spec_cases(
     run: Run,
     data: st.DataObject,
 ) -> None:
-    """Hypothesis-generated JSONL inputs for every spec/example model coerce identically to coerce_record_for_pyarrow and round-trip Parquet."""
+    """Hypothesis-generated JSONL inputs for every spec/example model match coerce_pydantic_record_for_pyarrow and round-trip Parquet."""
     model_cls: type[BaseModel] = load_fixture_attr(case.schema, "MODEL", type)
     depth = int(run.params.get("max_recursion_depth", 2))
     by_alias = bool(run.params.get("by_alias", False))
@@ -423,7 +423,7 @@ def test_build_entity_resource_pass_pbt_converter_spec_cases(
     assert len(pages) == 1
     actual_table = pages[0]
     assert isinstance(actual_table, pa.Table)
-    expected_row = coerce_record_for_pyarrow(validated_instance, pa_schema, by_alias=by_alias)
+    expected_row = coerce_pydantic_record_for_pyarrow(validated_instance, pa_schema, by_alias=by_alias)
     expected_table = pa.Table.from_pylist([expected_row], schema=pa_schema)
     assert actual_table.equals(expected_table, check_metadata=True)
     assert_coerced_rows_roundtrip([expected_row], pa_schema)

@@ -1,6 +1,6 @@
 # Rule catalogue for the Pydantic v2 -> PyArrow converter
 # (cdm_data_loaders.converters.facades.pydantic_to_pyarrow: generate_pyarrow_schema;
-#  cdm_data_loaders.coercion.pydantic: coerce_record_for_pyarrow).
+#  cdm_data_loaders.coercion.pydantic_to_arrow: coerce_pydantic_record_for_pyarrow).
 #
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/pydantic_to_pyarrow_specification.md, rendered via docs_macros and docs/_templates/pages/converter_spec.md.j2.
@@ -10,7 +10,7 @@ intro: |
   This document specifies how a **Pydantic v2 `BaseModel`** class determines:
 
   1. The **PyArrow `pa.Schema`** produced by `generate_pyarrow_schema`.
-  2. The **Python row dictionaries** produced by `coerce_record_for_pyarrow` (and `coerce_model_for_pyarrow`)
+  2. The **Python row dictionaries** produced by `coerce_pydantic_record_for_pyarrow` (and `coerce_model_for_pyarrow`)
      from validated `BaseModel` instances or JSON-compatible dictionaries, ready for
      `pa.Table.from_pylist(rows, schema=pa_schema)` and Parquet serialization.
   3. The **errors** raised for constructs that cannot be represented as a static columnar schema.
@@ -202,7 +202,7 @@ sections:
     rules:
       - id: R-COERCE-INPUT
         statement: |
-          `coerce_record_for_pyarrow` accepts either a `BaseModel` instance or a JSON/Python `Mapping[str, Any]`
+          `coerce_pydantic_record_for_pyarrow` accepts either a `BaseModel` instance or a JSON/Python `Mapping[str, Any]`
           (optionally validated through `model.model_validate` when `model` is passed). Both pathways produce
           identical row dictionaries.
       - id: R-COERCE-SCALAR

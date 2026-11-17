@@ -18,7 +18,7 @@ from dlt.common.typing import TDataItems
 from dlt.extract.resource import DltResource
 from pydantic import BaseModel
 
-from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
 from cdm_data_loaders.core.filesystem import build_file_ingest_kwargs, build_filesystem_resource
 from cdm_data_loaders.core.registry import (
     RegistryKey,
@@ -49,7 +49,7 @@ def build_entity_resource(
     resolve_error: ParseErrorResolver,
     *,
     transform_valid: Callable[[Any], Any] | None = None,
-    record_coercer: RecordCoercerFn = coerce_record_for_pyarrow,
+    record_coercer: RecordCoercerFn = coerce_json_record_for_pyarrow,
 ) -> DltResource:
     """Read plain or gzip JSONL files for one entity and route validated pages.
 

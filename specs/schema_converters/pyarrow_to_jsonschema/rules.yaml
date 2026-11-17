@@ -1,6 +1,6 @@
 # Rule catalogue for the PyArrow -> JSON Schema converter
 # (cdm_data_loaders.converters.facades.pyarrow_to_jsonschema: generate_json_schema;
-#  cdm_data_loaders.coercion.pyarrow: serialize_table_for_jsonschema, serialize_record_for_jsonschema).
+#  cdm_data_loaders.coercion.arrow_to_records: serialize_table_for_jsonschema, serialize_record_for_jsonschema).
 #
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/pyarrow_to_jsonschema_specification.md, rendered via docs_macros and docs/_templates/pages/converter_spec.md.j2.

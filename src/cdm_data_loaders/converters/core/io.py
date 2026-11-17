@@ -1,22 +1,25 @@
-"""Schema input parsing and shared converter facade base class."""
+"""Schema input parsing, file writing, and extra metadata keyword coercion."""
 
 import json
 from logging import Logger
 from pathlib import Path
-from typing import Annotated, Any, ClassVar
+from typing import Annotated, Any
 
 import yaml
-from pydantic import BaseModel, BeforeValidator, ConfigDict, InstanceOf
-
-from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
-from cdm_data_loaders.converters.core.guards import require_object_root, require_schema_keyword
-from cdm_data_loaders.converters.core.ir import Emitter, SchemaDocument
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
+from pydantic import BeforeValidator
 
 
 def _require_mapping(document: object, source: str) -> dict[str, Any]:
-    """Reject a parsed document that is not a top-level object."""
+    """Reject a parsed document that is not a top-level object.
+
+    :param document: Parsed JSON or YAML value.
+    :type document: object
+    :param source: Diagnostic source label.
+    :type source: str
+    :return: Validated top-level mapping.
+    :rtype: dict[str, Any]
+    :raises TypeError: If ``document`` is not a ``dict``.
+    """
     if not isinstance(document, dict):
         msg = f"Parsed schema {source} must be a JSON/YAML object, got {type(document).__name__}"
         raise TypeError(msg)
@@ -24,7 +27,15 @@ def _require_mapping(document: object, source: str) -> dict[str, Any]:
 
 
 def load_schema_text(text: str | bytes, *, allow_yaml: bool = False) -> dict[str, Any]:
-    """Parse JSON text, falling back to YAML only when explicitly enabled."""
+    """Parse JSON text, falling back to YAML when ``allow_yaml`` is enabled.
+
+    :param text: Raw JSON or YAML string or bytes.
+    :type text: str | bytes
+    :param allow_yaml: Whether to fall back to ``yaml.safe_load`` on invalid JSON.
+    :type allow_yaml: bool
+    :return: Parsed top-level schema mapping.
+    :rtype: dict[str, Any]
+    """
     try:
         document = json.loads(text)
     except json.JSONDecodeError:
@@ -35,7 +46,7 @@ def load_schema_text(text: str | bytes, *, allow_yaml: bool = False) -> dict[str
 
 
 def load_schema_file(path: str | Path) -> dict[str, Any]:
-    """Load a JSON or YAML schema from a file, choosing by the `.json` extension.
+    """Load a JSON or YAML schema from a file, choosing by the ``.json`` extension.
 
     :param path: path to the schema file
     :type path: str | Path
@@ -75,62 +86,3 @@ def coerce_extra_metadata_keywords(value: object) -> object:
 
 
 ExtraMetadataKeywords = Annotated[frozenset[str], BeforeValidator(coerce_extra_metadata_keywords)]
-
-
-class JsonSchemaConverterBase[OutputT](BaseModel):
-    """Shared base class for schema converter facades supporting string and file input."""
-
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
-
-    _allow_yaml_in_string: ClassVar[bool] = False
-    _run_root_guards: ClassVar[bool] = True
-    _error_cls: ClassVar[type[ConversionError]] = ConversionError
-    _invalid_schema_error_cls: ClassVar[type[ConversionError]] = ConversionError
-    _converter_name: ClassVar[str] = ""
-    _root_target_label: ClassVar[str] = ""
-    _dereference_function: ClassVar[str] = "cdm_data_loaders.validation.jsonschema.dereference.dereference_schema"
-
-    extension_registry: InstanceOf[ExtensionRegistry] = DEFAULT_EXTENSIONS
-
-    def _reader(self) -> JsonSchemaReader:
-        """Configure reader diagnostics for this public facade."""
-        return JsonSchemaReader(
-            self.extension_registry,
-            error_type=self._error_cls,
-            converter_name=self._converter_name or type(self).__name__,
-            dereference_function=self._dereference_function,
-        )
-
-    def _emitter(self) -> Emitter[OutputT]:
-        """Return the configured emitter for this facade."""
-        raise NotImplementedError
-
-    def _read(self, schema: dict[str, Any]) -> SchemaDocument:
-        """Preserve facade guards and error identity around the reader."""
-        if self._run_root_guards:
-            converter_name = self._converter_name or type(self).__name__
-            require_schema_keyword(schema, self._invalid_schema_error_cls, converter_name=converter_name)
-            require_object_root(schema, self._error_cls, target=self._root_target_label)
-        try:
-            return self._reader().read(schema)
-        except ConversionError as error:
-            if isinstance(error, self._error_cls):
-                raise
-            raise self._error_cls(str(error)) from error
-
-    def convert(self, schema: dict[str, Any]) -> OutputT:
-        """Convert a parsed schema mapping to the target representation."""
-        try:
-            return self._emitter().emit(self._read(schema))
-        except ConversionError as error:
-            if isinstance(error, self._error_cls):
-                raise
-            raise self._error_cls(str(error)) from error
-
-    def convert_from_string(self, schema_str: str) -> OutputT:
-        """Convert a schema string according to the converter's text parsing policy."""
-        return self.convert(load_schema_text(schema_str, allow_yaml=self._allow_yaml_in_string))
-
-    def convert_from_file(self, path: str) -> OutputT:
-        """Convert a JSON or YAML schema file selected by its extension."""
-        return self.convert(load_schema_file(path))

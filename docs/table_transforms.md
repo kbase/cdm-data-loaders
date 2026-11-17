@@ -443,7 +443,7 @@ OUTPUT_SCHEMAS: Final[dict[str, pa.Schema]] = {
 
 When `OUTPUT_SCHEMAS` is provided:
 
-- Each row returned by `split_assembly_and_contigs` for a table present in `OUTPUT_SCHEMAS` is coerced to its target table's `pyarrow.Schema` via `coerce_record_for_pyarrow`.
+- Each row returned by `split_assembly_and_contigs` for a table present in `OUTPUT_SCHEMAS` is coerced to its target table's `pyarrow.Schema` via `coerce_json_record_for_pyarrow`.
 - `DictBuffer` accumulates rows per output table (`assemblies` and `assembly_contigs`) and flushes `pyarrow.Table` pages independently when a table reaches `--buffer-size`.
 - Any output table not present in the resolved schema map is left as uncoerced `dict` rows and emitted by `DictBuffer` as `list[dict]` pages.
 

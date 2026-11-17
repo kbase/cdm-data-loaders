@@ -1,6 +1,6 @@
 # Rule catalogue for the JSON Schema -> PyArrow converter
 # (cdm_data_loaders.converters.facades.jsonschema_to_pyarrow: generate_pyarrow_schema;
-#  cdm_data_loaders.coercion.pyarrow: coerce_record_for_pyarrow).
+#  cdm_data_loaders.coercion.json_to_arrow: coerce_json_record_for_pyarrow).
 #
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/jsonschema_to_pyarrow_specification.md, rendered via docs_macros and docs/_templates/pages/converter_spec.md.j2.
@@ -10,7 +10,7 @@ intro: |
   This document specifies how a **JSON Schema Draft 2020-12** document determines:
 
   1. The **PyArrow `pa.Schema`** produced by `generate_pyarrow_schema`.
-  2. The **Python row dictionaries** produced by `coerce_record_for_pyarrow` from schema-valid JSON records,
+  2. The **Python row dictionaries** produced by `coerce_json_record_for_pyarrow` from schema-valid JSON records,
      ready for `pa.Table.from_pylist(rows, schema=pa_schema)` and Parquet serialization.
   3. The **errors** raised for constructs that cannot be represented as a static columnar schema.
 

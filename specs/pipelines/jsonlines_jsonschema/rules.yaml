@@ -53,7 +53,7 @@ sections:
           `_make_resolve_error` builds a `jsonschema` validator for each entity's raw schema using
           `validator_for(raw_schema)(raw_schema, format_checker=FormatChecker())`, enforcing string `format`
           constraints (such as `date`, `date-time`, `email`, and `uuid`) during record validation while
-          `coerce_record_for_pyarrow` parses `format: "date"` strings into `pa.date32()` (`datetime.date`) and keeps
+          `coerce_json_record_for_pyarrow` parses `format: "date"` strings into `pa.date32()` (`datetime.date`) and keeps
           other formatted strings as `pa.string()`.
       - id: R-JSONL-BLANK-AND-REJECT
         statement: |

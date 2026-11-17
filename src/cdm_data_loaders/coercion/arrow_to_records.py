@@ -1,16 +1,18 @@
-"""Coerce JSON-parsed records and scalar values to match a target PyArrow schema."""
+"""Serialize PyArrow tables and row mappings into JSON Schema and LinkML dictionaries."""
 
 import base64
-import json
 import math
 from collections.abc import Mapping, Sequence
-from datetime import UTC, date, datetime, time
-from decimal import Decimal
-from enum import Enum
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import numpy as np
 import pyarrow as pa
+
+from cdm_data_loaders.utils.arrow_schema import is_any_binary_type, is_any_string_type
+
+if TYPE_CHECKING:
+    from datetime import date, time
+    from decimal import Decimal
 
 NANOS_PER_MICRO: Final[int] = 1_000
 NANOS_PER_SECOND: Final[int] = 1_000_000_000
@@ -19,250 +21,10 @@ SECONDS_PER_HOUR: Final[int] = 3_600
 PAIR_LENGTH: Final[int] = 2
 
 
-def _parse_iso_timestamp(value: str, data_type: pa.TimestampType) -> datetime:
-    """Parse an ISO-8601 timestamp string, attaching UTC when target type is tz-aware.
-
-    :param value: ISO-8601 timestamp string.
-    :type value: str
-    :param data_type: Target PyArrow timestamp type.
-    :type data_type: pa.TimestampType
-    :return: Parsed ``datetime`` instance.
-    :rtype: datetime
-    """
-    parsed_dt = datetime.fromisoformat(value)
-    if parsed_dt.tzinfo is None and data_type.tz is not None:
-        return parsed_dt.replace(tzinfo=UTC)
-    return parsed_dt
-
-
-def _decode_binary_scalar(value: str, metadata: dict[bytes, bytes] | None) -> bytes:
-    """Decode a Base64 or Base16 (hex) string into raw bytes based on field metadata.
-
-    :param value: Encoded binary string.
-    :type value: str
-    :param metadata: Optional PyArrow field metadata dictionary.
-    :type metadata: dict[bytes, bytes] | None
-    :return: Decoded raw bytes.
-    :rtype: bytes
-    """
-    if metadata and b"jsonschema_type" in metadata and b"base16" in metadata[b"jsonschema_type"]:
-        return bytes.fromhex(value)
-    return base64.b64decode(value)
-
-
-def _coerce_string_input_scalar(
-    value: str,
-    data_type: pa.DataType,
-    metadata: dict[bytes, bytes] | None,
-) -> bytes | date | datetime | time | Decimal | str:
-    """Coerce a string value when the target PyArrow type is binary, temporal, or decimal.
-
-    :param value: Input string scalar.
-    :type value: str
-    :param data_type: Target PyArrow scalar data type.
-    :type data_type: pa.DataType
-    :param metadata: Optional PyArrow field metadata dictionary.
-    :type metadata: dict[bytes, bytes] | None
-    :return: Coerced scalar value matching ``data_type``.
-    :rtype: bytes | date | datetime | time | Decimal | str
-    """
-    if pa.types.is_binary(data_type):
-        return _decode_binary_scalar(value, metadata)
-    if pa.types.is_date(data_type):
-        return date.fromisoformat(value)
-    if pa.types.is_timestamp(data_type):
-        return _parse_iso_timestamp(value, data_type)
-    if pa.types.is_time(data_type):
-        return time.fromisoformat(value)
-    if pa.types.is_decimal(data_type):
-        return Decimal(value)
-    return value
-
-
-def _coerce_scalar_for_pyarrow(
-    value: object,
-    data_type: pa.DataType,
-    metadata: dict[bytes, bytes] | None = None,
-) -> object:
-    """Coerce a JSON-parsed value to match a PyArrow scalar type.
-
-    :param value: Input JSON-parsed scalar value.
-    :type value: object
-    :param data_type: Target PyArrow scalar data type.
-    :type data_type: pa.DataType
-    :param metadata: Optional PyArrow field metadata dictionary.
-    :type metadata: dict[bytes, bytes] | None
-    :return: Coerced scalar value matching ``data_type``.
-    :rtype: object
-    """
-    if isinstance(value, Enum):
-        value = value.value
-    if isinstance(value, str):
-        return _coerce_string_input_scalar(value, data_type, metadata)
-    if pa.types.is_decimal(data_type) and isinstance(value, int | float) and not isinstance(value, bool):
-        return Decimal(str(value))
-    if pa.types.is_floating(data_type) and isinstance(value, int) and not isinstance(value, bool):
-        return float(value)
-    if pa.types.is_integer(data_type) and isinstance(value, float) and value.is_integer():
-        return int(value)
-    if pa.types.is_string(data_type) or pa.types.is_large_string(data_type):
-        return json.dumps(value) if isinstance(value, Mapping | list | bool) else str(value)
-    return value
-
-
-def _coerce_struct_for_pyarrow(value: object, data_type: pa.StructType) -> object:
-    """Coerce a mapping, closed tuple list, or scalar union value to match a PyArrow StructType.
-
-    :param value: Input mapping, tuple list, or scalar value.
-    :type value: object
-    :param data_type: Target PyArrow struct data type.
-    :type data_type: pa.StructType
-    :return: Coerced struct dictionary or pass-through value.
-    :rtype: object
-    """
-    if isinstance(value, Mapping):
-        return {
-            field.name: _coerce_value_for_pyarrow(value[field.name], field.type, field.metadata)
-            for field in data_type
-            if field.name in value
-        }
-    if isinstance(value, list) and len(data_type) > 0 and data_type[0].name == "item_0":
-        return {
-            field.name: _coerce_value_for_pyarrow(value[idx], field.type, field.metadata)
-            for idx, field in enumerate(data_type)
-            if idx < len(value) and value[idx] is not None
-        }
-    value_field = next((field for field in data_type if field.name == "_value"), None)
-    if value_field is not None:
-        return {"_value": _coerce_value_for_pyarrow(value, value_field.type, value_field.metadata)}
-    return value
-
-
-def _coerce_value_for_pyarrow(
-    value: object,
-    data_type: pa.DataType,
-    metadata: dict[bytes, bytes] | None = None,
-) -> object:
-    """Recursively coerce a JSON-parsed value to match the target PyArrow DataType.
-
-    :param value: Input JSON-parsed value.
-    :type value: object
-    :param data_type: Target PyArrow data type.
-    :type data_type: pa.DataType
-    :param metadata: Optional PyArrow field metadata dictionary.
-    :type metadata: dict[bytes, bytes] | None
-    :return: Coerced value matching ``data_type``.
-    :rtype: object
-    """
-    if value is None:
-        return None
-    if pa.types.is_struct(data_type):
-        return _coerce_struct_for_pyarrow(value, data_type)
-    if (pa.types.is_list(data_type) or pa.types.is_large_list(data_type)) and isinstance(value, list):
-        item_field = data_type.value_field
-        return [_coerce_value_for_pyarrow(item, item_field.type, item_field.metadata) for item in value]
-    if pa.types.is_map(data_type) and isinstance(value, Mapping):
-        key_field = data_type.key_field
-        item_field = data_type.item_field
-        return {
-            _coerce_value_for_pyarrow(k, key_field.type, key_field.metadata): _coerce_value_for_pyarrow(
-                v, item_field.type, item_field.metadata
-            )
-            for k, v in value.items()
-        }
-    return _coerce_scalar_for_pyarrow(value, data_type, metadata)
-
-
-def _is_any_binary_type(dtype: pa.DataType) -> bool:
-    """Return ``True`` when ``dtype`` is any raw or fixed-size PyArrow binary type.
-
-    :param dtype: PyArrow data type to inspect.
-    :type dtype: pa.DataType
-    :return: ``True`` for binary, large_binary, binary_view, or fixed_size_binary.
-    :rtype: bool
-    """
-    return (
-        pa.types.is_binary(dtype)
-        or pa.types.is_large_binary(dtype)
-        or pa.types.is_binary_view(dtype)
-        or pa.types.is_fixed_size_binary(dtype)
-    )
-
-
-def _is_any_string_type(dtype: pa.DataType) -> bool:
-    """Return ``True`` when ``dtype`` is any UTF-8 PyArrow string type.
-
-    :param dtype: PyArrow data type to inspect.
-    :type dtype: pa.DataType
-    :return: ``True`` for string, large_string, or string_view.
-    :rtype: bool
-    """
-    return pa.types.is_string(dtype) or pa.types.is_large_string(dtype) or pa.types.is_string_view(dtype)
-
-
-def pyarrow_to_python_type_label(data_type: pa.DataType) -> str:
-    """Return the Markdown-formatted Python runtime type label corresponding to a coerced PyArrow ``DataType``.
-
-    Mirrors the scalar and list coercion rules enforced by :func:`coerce_record_for_pyarrow`.
-
-    :param data_type: Target PyArrow data type.
-    :type data_type: pa.DataType
-    :return: Backtick-wrapped Python runtime type label (e.g. ``"`int`"``, ``"`datetime.datetime` (UTC)"``).
-    :rtype: str
-    """
-    if isinstance(data_type, pa.DictionaryType):
-        return pyarrow_to_python_type_label(data_type.value_type)
-    if isinstance(
-        data_type,
-        pa.ListType | pa.LargeListType | pa.ListViewType | pa.LargeListViewType | pa.FixedSizeListType,
-    ):
-        inner = pyarrow_to_python_type_label(data_type.value_field.type).strip("`")
-        return f"`list[{inner}]`"
-    if isinstance(data_type, pa.TimestampType):
-        tz_suffix = f"({data_type.tz})" if data_type.tz is not None else "(naive)"
-        return f"`datetime.datetime` {tz_suffix}"
-    for predicate, label in (
-        (pa.types.is_boolean, "`bool`"),
-        (pa.types.is_integer, "`int`"),
-        (pa.types.is_floating, "`float`"),
-        (pa.types.is_decimal, "`decimal.Decimal`"),
-        (pa.types.is_date, "`datetime.date`"),
-        (pa.types.is_time, "`datetime.time`"),
-        (_is_any_binary_type, "`bytes`"),
-        (_is_any_string_type, "`str`"),
-    ):
-        if predicate(data_type):
-            return label
-    return f"`{data_type}`"
-
-
-def coerce_record_for_pyarrow(
-    record: dict[str, Any],
-    schema: pa.Schema,
-) -> dict[str, Any]:
-    """Coerce a JSON-validated record dictionary to match a PyArrow schema.
-
-    Only fields declared in ``schema`` are retained and coerced recursively so
-    ``pyarrow.Table.from_pylist`` can construct a table matching ``schema``.
-
-    :param record: JSON-parsed and schema-validated record dictionary.
-    :type record: dict[str, Any]
-    :param schema: Target PyArrow schema for the record's table.
-    :type schema: pa.Schema
-    :return: Coerced record dictionary ready for ``DictBuffer`` or ``pa.Table.from_pylist``.
-    :rtype: dict[str, Any]
-    """
-    return {
-        field.name: _coerce_value_for_pyarrow(record[field.name], field.type, field.metadata)
-        for field in schema
-        if field.name in record
-    }
-
-
 def _format_time_scalar(scalar: pa.Scalar, dtype: pa.DataType) -> str:
     """Format a PyArrow ``Time32Scalar`` or ``Time64Scalar`` as an ISO-8601 time string.
 
-    Preserves full 9-digit nanosecond resolution when ``time64('ns')`` has sub-microsecond ticks.
+    Preserves 9-digit nanosecond resolution when ``time64('ns')`` has sub-microsecond ticks.
 
     :param scalar: Non-null PyArrow time scalar.
     :type scalar: pa.Scalar
@@ -297,9 +59,9 @@ def _serialize_list_scalar(
     :type dtype: pa.ListType | pa.LargeListType | pa.ListViewType | pa.LargeListViewType | pa.FixedSizeListType
     :param for_linkml: Whether to enforce LinkML non-null and flat-list constraints.
     :type for_linkml: bool
-    :return: List of serialized items, or ``None`` if the underlying array is null.
+    :return: List of serialized items, or ``None`` if the array is null.
     :rtype: list[Any] | None
-    :raises ValueError: On nested list/map items or null list elements when ``for_linkml`` is ``True``.
+    :raises ValueError: On nested list or map items or null list elements when ``for_linkml`` is ``True``.
     """
     item_type = dtype.value_field.type
     if for_linkml and isinstance(
@@ -363,9 +125,9 @@ def _serialize_temporal_or_text_scalar(scalar: pa.Scalar, dtype: pa.DataType) ->
     :rtype: str
     :raises TypeError: If ``dtype`` is not a supported string, binary, or temporal type.
     """
-    if _is_any_string_type(dtype):
+    if is_any_string_type(dtype):
         return str(scalar.as_py())
-    if _is_any_binary_type(dtype):
+    if is_any_binary_type(dtype):
         raw_bytes: bytes = scalar.as_py()
         return base64.b64encode(raw_bytes).decode("ascii")
     if pa.types.is_date(dtype):
@@ -455,13 +217,13 @@ def _serialize_arrow_scalar(
 def _normalize_map_for_arrow_table(value: object, dtype: pa.MapType) -> object:
     """Normalize a Python dict or sequence of map entries into ``(key, value)`` pairs for PyArrow.
 
-    :param value: Input map value (mapping or sequence of pairs/entry dicts).
+    :param value: Input map value (mapping or sequence of pairs or entry dicts).
     :type value: object
     :param dtype: Target PyArrow ``MapType``.
     :type dtype: pa.MapType
     :return: List of normalized ``(key, value)`` tuples, or ``value`` unchanged.
     :rtype: object
-    :raises ValueError: If a sequence entry is neither a 2-tuple/list nor a ``{"key", "value"}`` mapping.
+    :raises ValueError: If a sequence entry is neither a 2-tuple or 2-list nor a ``{"key", "value"}`` mapping.
     """
     k_type = dtype.key_field.type
     v_type = dtype.item_field.type
@@ -491,13 +253,13 @@ def _normalize_map_for_arrow_table(value: object, dtype: pa.MapType) -> object:
 
 
 def _normalize_python_for_arrow_table(value: object, dtype: pa.DataType) -> object:
-    """Normalize Python mappings/dicts for ``pa.Table.from_pylist`` construction.
+    """Normalize Python mappings and sequences for ``pa.Table.from_arrays`` construction.
 
     :param value: Input Python value for an Arrow field.
     :type value: object
     :param dtype: Target PyArrow ``DataType``.
     :type dtype: pa.DataType
-    :return: Value normalized for ``pa.Table.from_pylist``.
+    :return: Normalized Python value.
     :rtype: object
     """
     if value is None:
@@ -544,20 +306,6 @@ def _serialize_table(table: pa.Table, *, for_linkml: bool) -> list[dict[str, Any
     ]
 
 
-def serialize_table_for_jsonschema(table: pa.Table) -> list[dict[str, Any]]:
-    """Serialize a ``pa.Table`` into JSON-compatible row dictionaries matching ``generate_json_schema``.
-
-    Encodes ``Decimal`` values as plain fixed-point strings, binary columns as ASCII Base64 strings,
-    temporal columns as ISO-8601 strings, and ``pa.map_`` columns as ``[{"key": ..., "value": ...}]`` arrays.
-
-    :param table: Input PyArrow table.
-    :type table: pa.Table
-    :return: List of JSON-compatible row dictionaries ready for JSON Schema validation.
-    :rtype: list[dict[str, Any]]
-    """
-    return _serialize_table(table, for_linkml=False)
-
-
 def _build_single_row_table(record: Mapping[str, Any], schema: pa.Schema) -> pa.Table:
     """Construct a one-row ``pa.Table`` from a Python mapping matching ``schema``.
 
@@ -584,6 +332,20 @@ def _build_single_row_table(record: Mapping[str, Any], schema: pa.Schema) -> pa.
     return pa.Table.from_arrays(arrays, schema=schema)
 
 
+def serialize_table_for_jsonschema(table: pa.Table) -> list[dict[str, Any]]:
+    """Serialize a ``pa.Table`` into JSON-compatible row dictionaries matching ``generate_json_schema``.
+
+    Encodes ``Decimal`` values as fixed-point strings, binary columns as ASCII Base64 strings,
+    temporal columns as ISO-8601 strings, and ``pa.map_`` columns as ``[{"key": ..., "value": ...}]`` arrays.
+
+    :param table: Input PyArrow table.
+    :type table: pa.Table
+    :return: List of JSON-compatible row dictionaries ready for JSON Schema validation.
+    :rtype: list[dict[str, Any]]
+    """
+    return _serialize_table(table, for_linkml=False)
+
+
 def serialize_record_for_jsonschema(record: Mapping[str, Any], schema: pa.Schema) -> dict[str, Any]:
     """Serialize a single Python row mapping matching ``schema`` for JSON Schema validation.
 
@@ -600,9 +362,9 @@ def serialize_record_for_jsonschema(record: Mapping[str, Any], schema: pa.Schema
 def serialize_table_for_linkml(table: pa.Table) -> list[dict[str, Any]]:
     """Serialize a ``pa.Table`` into JSON-compatible row dictionaries matching ``generate_linkml_schema``.
 
-    Encodes ``Decimal`` values as plain fixed-point strings, binary columns as ASCII Base64 strings,
+    Encodes ``Decimal`` values as fixed-point strings, binary columns as ASCII Base64 strings,
     temporal columns as ISO-8601 strings, and ``pa.map_`` columns as ``[{"key": ..., "value": ...}]`` entry
-    lists while rejecting null list items and nested multivalued list/map items unsupported by LinkML.
+    lists while rejecting null list items and nested multivalued list or map items unsupported by LinkML.
 
     :param table: Input PyArrow table.
     :type table: pa.Table

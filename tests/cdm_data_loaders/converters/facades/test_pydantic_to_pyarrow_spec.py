@@ -20,7 +20,7 @@ from _pytest.mark.structures import ParameterSet
 from frozendict import frozendict
 from pydantic import AwareDatetime, BaseModel, Field, NaiveDatetime, RootModel, computed_field
 
-from cdm_data_loaders.coercion.pydantic import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.pydantic_to_arrow import coerce_pydantic_record_for_pyarrow
 from cdm_data_loaders.converters.exceptions.facades.pydantic_to_pyarrow import (
     PYDANTIC_TO_PYARROW_ERRORS,
     EmptyModelError,
@@ -154,8 +154,8 @@ def test_generate_pyarrow_schema_pass_cases(case: Case, run: Run) -> None:
 
 
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
-def test_coerce_record_for_pyarrow_pass_cases(case: Case, run: Run) -> None:
-    """Verify coerce_record_for_pyarrow produces identical expected tables from dicts and validated BaseModels."""
+def test_coerce_pydantic_record_for_pyarrow_pass_cases(case: Case, run: Run) -> None:
+    """Verify coerce_pydantic_record_for_pyarrow produces identical expected tables from dicts and validated BaseModels."""
     model_cls = _load_model_class(case.schema)
     depth = _max_recursion_depth(run)
     by_alias = _by_alias(run)
@@ -163,14 +163,15 @@ def test_coerce_record_for_pyarrow_pass_cases(case: Case, run: Run) -> None:
     raw_records = _load_json_records(run.data)
 
     rows_from_dict = [
-        coerce_record_for_pyarrow(record, pa_schema, model=model_cls, by_alias=by_alias) for record in raw_records
+        coerce_pydantic_record_for_pyarrow(record, pa_schema, model=model_cls, by_alias=by_alias)
+        for record in raw_records
     ]
     assert_rows_and_table_match_expected(
         rows_from_dict, pa_schema, run.expected_json, run.expected_table, table_attr=run.table_attr
     )
 
     rows_from_model = [
-        coerce_record_for_pyarrow(model_cls.model_validate(record), pa_schema, by_alias=by_alias)
+        coerce_pydantic_record_for_pyarrow(model_cls.model_validate(record), pa_schema, by_alias=by_alias)
         for record in raw_records
     ]
     assert_rows_and_table_match_expected(
@@ -415,8 +416,8 @@ def test_generate_pyarrow_schema_fail_additional_error_branches(
         generate_pyarrow_schema(model_cls)
 
 
-def test_coerce_record_for_pyarrow_pass_unvalidated_and_boundary_coercions() -> None:
-    """Verify coerce_record_for_pyarrow handles unvalidated dicts, RootModels, dataclasses, and temporal/binary inputs."""
+def test_coerce_pydantic_record_for_pyarrow_pass_unvalidated_and_boundary_coercions() -> None:
+    """Verify coerce_pydantic_record_for_pyarrow handles unvalidated dicts, RootModels, dataclasses, and temporal/binary inputs."""
 
     @dataclass
     class InnerDc:
@@ -461,7 +462,7 @@ def test_coerce_record_for_pyarrow_pass_unvalidated_and_boundary_coercions() -> 
 
     expected_count = 10
     expected_ratio = 2.5
-    coerced = coerce_record_for_pyarrow(raw_input, pa_schema)
+    coerced = coerce_pydantic_record_for_pyarrow(raw_input, pa_schema)
     assert "undeclared_extra" not in coerced
     assert coerced["count"] == expected_count
     assert coerced["ratio"] == expected_ratio

@@ -20,28 +20,34 @@ from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, ExtensionSpec
 from cdm_data_loaders.converters.core.ir import Field, TypedNode
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
-from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT, JsonSchemaEmitter
+from cdm_data_loaders.converters.emitters.json_schema.common import JSON_SCHEMA_DIALECT
+from cdm_data_loaders.converters.emitters.json_schema.emitter import JsonSchemaEmitter
 from cdm_data_loaders.converters.emitters.pyspark import PySparkEmitter
+from cdm_data_loaders.converters.exceptions.facades.dlt_to_jsonschema import DltToJSONSchemaError
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_dlt import (
+    InvalidJSONSchemaError as InvalidDltSchemaError,
+)
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_dlt import JSONSchemaToDltError
 from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
     InvalidJSONSchemaError as InvalidArrowSchemaError,
 )
 from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import JSONSchemaToPyArrowError
-from cdm_data_loaders.converters.facades.dlt_to_jsonschema import DltToJSONSchema, DltToJSONSchemaError
-from cdm_data_loaders.converters.facades.jsonschema_to_dlt import InvalidJSONSchemaError as InvalidDltSchemaError
-from cdm_data_loaders.converters.facades.jsonschema_to_dlt import JSONSchemaToDlt, JSONSchemaToDltError
-from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import JSONSchemaToPyArrow
-from cdm_data_loaders.converters.facades.jsonschema_to_pyspark import (
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyspark import (
     InvalidJSONSchemaError as InvalidSparkSchemaError,
 )
-from cdm_data_loaders.converters.facades.jsonschema_to_pyspark import JSONSchemaToPySpark, JSONSchemaToPySparkError
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyspark import JSONSchemaToPySparkError
+from cdm_data_loaders.converters.facades.dlt_to_jsonschema import DltToJSONSchema
+from cdm_data_loaders.converters.facades.jsonschema_to_dlt import JSONSchemaToDlt
+from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import JSONSchemaToPyArrow
+from cdm_data_loaders.converters.facades.jsonschema_to_pyspark import JSONSchemaToPySpark
 from cdm_data_loaders.converters.facades.pyiceberg_to_jsonschema import (
     convert_field,
     convert_type,
     table_to_json_schema,
 )
-from cdm_data_loaders.converters.readers.dlt import DltReader
-from cdm_data_loaders.converters.readers.iceberg import IcebergReader
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
+from cdm_data_loaders.converters.sources.dlt import DltReader
+from cdm_data_loaders.converters.sources.iceberg import IcebergReader
+from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
 from tests.cdm_data_loaders.converters.conftest import base_object_schema, make_table
 
 GOLDEN_PATH: Final = Path(__file__).parents[3] / "data/converters/ir/legacy_outputs.json"

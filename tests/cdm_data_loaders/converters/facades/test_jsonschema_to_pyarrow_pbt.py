@@ -14,7 +14,7 @@ from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
 from jsonschema import Draft202012Validator
 
-from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
 from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
     RecursiveNonJsonTypeError,
 )
@@ -522,7 +522,7 @@ def json_records_for_schema(schema: Mapping[str, Any], *, max_depth: int = 3) ->
 @pytest.mark.pbt
 @pytest.mark.parametrize(("case", "run"), CASE_RUN_PARAMS)
 @given(data=st.data())
-def test_coerce_record_for_pyarrow_pbt_spec_cases(case: Case, run: Run, data: st.DataObject) -> None:
+def test_coerce_json_record_for_pyarrow_pbt_spec_cases(case: Case, run: Run, data: st.DataObject) -> None:
     """Generated records for every spec/example JSON Schema validate, coerce, and round-trip through Parquet."""
     raw_schema = _load_json_object(case.schema)
     depth = int(run.params.get("max_recursion_depth", 2))
@@ -532,11 +532,11 @@ def test_coerce_record_for_pyarrow_pbt_spec_cases(case: Case, run: Run, data: st
     record = data.draw(json_records_for_schema(raw_schema, max_depth=depth + 1))
     validator.validate(record)
 
-    coerced = coerce_record_for_pyarrow(record, pa_schema)
+    coerced = coerce_json_record_for_pyarrow(record, pa_schema)
     assert_coerced_rows_roundtrip([coerced], pa_schema)
 
     record_with_extra = {**record, "__undeclared_extra_field__": "ignored"}
-    coerced_with_extra = coerce_record_for_pyarrow(record_with_extra, pa_schema)
+    coerced_with_extra = coerce_json_record_for_pyarrow(record_with_extra, pa_schema)
     assert "__undeclared_extra_field__" not in coerced_with_extra
     assert coerced_with_extra == coerced
 
@@ -560,7 +560,7 @@ def test_recursion_cutoff_pbt_json_valid(depth: int, leaf_label: str, leaf_weigh
     record = {"id": "rec-1", "tree": node}
     Draft202012Validator(raw_schema).validate(record)
 
-    coerced = coerce_record_for_pyarrow(record, pa_schema)
+    coerced = coerce_json_record_for_pyarrow(record, pa_schema)
     assert_coerced_rows_roundtrip([coerced], pa_schema)
 
     cursor: Any = coerced["tree"]

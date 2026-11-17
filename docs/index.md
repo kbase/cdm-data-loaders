@@ -38,7 +38,7 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Common Da
 - **[XML to Dict Pipeline Specification](xmltodict_specification.md)**: Auto-generated outermost `<xml_tag>` streaming, `xmltodict` parsing (`_` attribute prefix and `_xmlns` stripping), MD5 pre-processing, dead-letter routing, and table transform specification.
 - **[JSONLines Extract Pipeline Specification](jsonlines_extract_specification.md)**: Auto-generated plain JSONL file discovery, `.gz` decompression, MD5 pre-processing, dead-letter routing, and table transform specification.
 - **[JSONLines (JSON Schema) Pipeline Specification](jsonlines_jsonschema_specification.md)**: Auto-generated `ENTITY_SCHEMAS` registry, JSON Schema dialect validation, PyArrow schema conversion, per-line validation, dead-letter routing, and table transform specification.
-- **[JSONLines (Pydantic) Pipeline Specification](jsonlines_pydantic_specification.md)**: Auto-generated `ENTITY_MODELS` registry, `PydanticToPyArrow` schema conversion, single-pass `model_validate` and `coerce_record_for_pyarrow` coercion, dead-letter routing, and table transform specification.
+- **[JSONLines (Pydantic) Pipeline Specification](jsonlines_pydantic_specification.md)**: Auto-generated `ENTITY_MODELS` registry, `PydanticToPyArrow` schema conversion, single-pass `model_validate` and `coerce_pydantic_record_for_pyarrow` coercion, dead-letter routing, and table transform specification.
 
 ## Developer Guides
 

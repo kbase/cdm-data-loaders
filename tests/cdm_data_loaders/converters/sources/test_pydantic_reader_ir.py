@@ -9,12 +9,13 @@ import pytest
 from pydantic import BaseModel, Field
 
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
-from cdm_data_loaders.converters.emitters.json_schema import JsonSchemaEmitter
+from cdm_data_loaders.converters.emitters.json_schema.emitter import JsonSchemaEmitter
 from cdm_data_loaders.converters.emitters.linkml import LinkMLEmitter
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
 from cdm_data_loaders.converters.emitters.pyspark import PySparkEmitter
-from cdm_data_loaders.converters.readers.pyarrow import PyArrowReader, PyArrowReaderError
-from cdm_data_loaders.converters.readers.pydantic import PydanticReader
+from cdm_data_loaders.converters.exceptions.sources.pyarrow import PyArrowReaderError
+from cdm_data_loaders.converters.sources.pyarrow import PyArrowReader
+from cdm_data_loaders.converters.sources.pydantic.reader import PydanticReader
 
 EXPECTED_COVERAGE_PRECISION: Final[int] = 8
 EXPECTED_COVERAGE_SCALE: Final[int] = 2

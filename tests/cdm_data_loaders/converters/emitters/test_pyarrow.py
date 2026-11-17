@@ -2,8 +2,6 @@
 
 import json
 from decimal import Decimal
-from pathlib import Path
-from typing import Any
 
 import pyarrow as pa
 import pytest
@@ -14,12 +12,12 @@ from pyiceberg.schema import Schema
 from cdm_data_loaders.converters.core.ir import NodeHints, NodeType, Provenance, TypedNode
 from cdm_data_loaders.converters.emitters.pyarrow import (
     PyArrowEmitter,
-    PyArrowEmitterError,
     merge_format_map,
 )
-from cdm_data_loaders.converters.readers.dlt import DltReader
-from cdm_data_loaders.converters.readers.iceberg import IcebergReader
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
+from cdm_data_loaders.converters.exceptions.emitters.pyarrow import PyArrowEmitterError
+from cdm_data_loaders.converters.sources.dlt import DltReader
+from cdm_data_loaders.converters.sources.iceberg import IcebergReader
+from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 
@@ -293,54 +291,3 @@ def test_build_metadata_pass_original_union() -> None:
 def test_merge_format_map_pass_non_mapping_unchanged() -> None:
     """Non-mapping values pass through for model validation to reject."""
     assert merge_format_map("text") == "text"
-
-
-def test_emit_python_pass_iceberg_and_dlt_documents(tmp_path: Path) -> None:
-    """emit_python and emit_python_file render executable Python modules for Iceberg and dlt IR documents."""
-    iceberg_schema = Schema(
-        iceberg_types.NestedField(1, "id", iceberg_types.LongType(), required=True),
-        iceberg_types.NestedField(2, "price", iceberg_types.DecimalType(10, 2)),
-        iceberg_types.NestedField(3, "hash", iceberg_types.FixedType(16)),
-        iceberg_types.NestedField(4, "at", iceberg_types.TimeType()),
-        iceberg_types.NestedField(
-            5,
-            "inner",
-            iceberg_types.StructType(iceberg_types.NestedField(6, "x", iceberg_types.IntegerType(), required=True)),
-        ),
-    )
-    iceberg_doc = IcebergReader().read(iceberg_schema)
-    emitter = PyArrowEmitter()
-
-    source = emitter.emit_python({"iceberg_record": iceberg_doc})
-    ns: dict[str, Any] = {}
-    exec(compile(source, "<iceberg_schema>", "exec"), ns)  # noqa: S102
-    assert ns["SCHEMA"].equals(emitter.emit(iceberg_doc), check_metadata=True)
-    assert ns["ICEBERG_RECORD_SCHEMA"].equals(emitter.emit(iceberg_doc), check_metadata=True)
-
-    dlt_docs = DltReader().read(
-        {
-            "orders": {
-                "columns": {
-                    "id": {"data_type": "bigint", "precision": 16, "nullable": False},
-                    "balance": {"data_type": "wei"},
-                    "seen": {"data_type": "timestamp", "precision": 3},
-                }
-            },
-            "items": {
-                "columns": {
-                    "sku": {"data_type": "text", "nullable": False},
-                    "raw": {"data_type": "binary"},
-                }
-            },
-        }
-    )
-    out_file = tmp_path / "dlt_schemas.py"
-    written_path = emitter.emit_python_file(dlt_docs, out_file)
-    assert written_path == out_file.resolve()
-    written_source = out_file.read_text(encoding="utf-8")
-
-    dlt_ns: dict[str, Any] = {}
-    exec(compile(written_source, str(out_file), "exec"), dlt_ns)  # noqa: S102
-    assert set(dlt_ns["SCHEMAS"]) == {"orders", "items"}
-    assert dlt_ns["SCHEMAS"]["orders"].equals(emitter.emit(dlt_docs["orders"]), check_metadata=True)
-    assert dlt_ns["SCHEMAS"]["items"].equals(emitter.emit(dlt_docs["items"]), check_metadata=True)

@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 from pyiceberg.schema import Schema
 
-from cdm_data_loaders.converters.readers.dlt import DltReader
-from cdm_data_loaders.converters.readers.iceberg import IcebergReader
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
+from cdm_data_loaders.converters.sources.dlt import DltReader
+from cdm_data_loaders.converters.sources.iceberg import IcebergReader
+from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
 
 GOLDEN_PATH = Path(__file__).parents[3] / "data" / "converters" / "ir" / "legacy_outputs.json"
 CASES: list[dict[str, Any]] = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))

@@ -38,3 +38,30 @@ def decode_field_metadata(metadata: Mapping[bytes, bytes] | None) -> dict[str, s
     if not metadata:
         return {}
     return {k.decode("utf-8"): v.decode("utf-8") for k, v in metadata.items()}
+
+
+def is_any_binary_type(dtype: pa.DataType) -> bool:
+    """Return ``True`` when ``dtype`` is any raw or fixed-size PyArrow binary type.
+
+    :param dtype: PyArrow data type to inspect.
+    :type dtype: pa.DataType
+    :return: ``True`` for binary, large_binary, binary_view, or fixed_size_binary.
+    :rtype: bool
+    """
+    return (
+        pa.types.is_binary(dtype)
+        or pa.types.is_large_binary(dtype)
+        or pa.types.is_binary_view(dtype)
+        or pa.types.is_fixed_size_binary(dtype)
+    )
+
+
+def is_any_string_type(dtype: pa.DataType) -> bool:
+    """Return ``True`` when ``dtype`` is any UTF-8 PyArrow string type.
+
+    :param dtype: PyArrow data type to inspect.
+    :type dtype: pa.DataType
+    :return: ``True`` for string, large_string, or string_view.
+    :rtype: bool
+    """
+    return pa.types.is_string(dtype) or pa.types.is_large_string(dtype) or pa.types.is_string_view(dtype)

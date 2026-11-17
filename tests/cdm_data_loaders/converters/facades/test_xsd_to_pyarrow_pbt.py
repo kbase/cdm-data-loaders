@@ -26,11 +26,8 @@ from cdm_data_loaders.coercion.xml import (
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
-from cdm_data_loaders.converters.emitters.pyarrow_codegen import (
-    _fmt_str,
-    _IRComponentCollector,
-    _to_upper_snake,
-)
+from cdm_data_loaders.converters.emitters.pyarrow_codegen.collector import IRComponentCollector
+from cdm_data_loaders.converters.emitters.pyarrow_codegen.naming import fmt_str, to_upper_snake
 from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
     RecursiveNonJsonTypeError,
 )
@@ -487,11 +484,11 @@ def test_pyarrow_codegen_string_and_identifier_helpers_pbt(
     raw_ident: str,
     strip_suffix: bool,
 ) -> None:
-    """_fmt_str round-trips via ast.literal_eval and _to_upper_snake always emits a valid UPPER_SNAKE identifier."""
-    formatted_literal = _fmt_str(raw_str)
+    """fmt_str round-trips via ast.literal_eval and to_upper_snake emits a valid UPPER_SNAKE identifier."""
+    formatted_literal = fmt_str(raw_str)
     assert ast.literal_eval(formatted_literal) == raw_str
 
-    ident = _to_upper_snake(raw_ident, strip_type_suffix=strip_suffix)
+    ident = to_upper_snake(raw_ident, strip_type_suffix=strip_suffix)
     assert len(ident) >= 1
     assert ident.isidentifier()
     assert not ident[0].isdigit()
@@ -507,7 +504,7 @@ def test_pyarrow_codegen_string_and_identifier_helpers_pbt(
     )
 )
 def test_assign_component_names_pbt_collision_free(base_names: list[str]) -> None:
-    """_IRComponentCollector.assign_component_names assigns distinct valid *_STRUCT identifiers."""
+    """IRComponentCollector.assign_component_names assigns distinct valid *_STRUCT identifiers."""
     emitter = PyArrowEmitter()
     fields: list[SchemaField] = []
     for idx, name in enumerate(base_names):
@@ -531,7 +528,7 @@ def test_assign_component_names_pbt_collision_free(base_names: list[str]) -> Non
         )
     )
     pa_schema = emitter.emit(doc)
-    collector = _IRComponentCollector()
+    collector = IRComponentCollector()
     collector.register_document("root", doc)
     collector.collect_document("root", doc, pa_schema)
     assigned = collector.assign_component_names()

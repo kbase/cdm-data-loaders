@@ -12,7 +12,7 @@ from typing import Final
 import pytest
 from pydantic import AliasChoices
 
-from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
 from cdm_data_loaders.core.settings import CdmDataLoadersBase
 from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
     run_jsonlines_with_validation_pipeline,
@@ -873,10 +873,10 @@ def test_core_cts_execution_docs_pass_rejected_table_contract() -> None:
     ("text", "forbidden", "required"),
     [
         pytest.param(
-            coerce_record_for_pyarrow.__doc__,
+            coerce_json_record_for_pyarrow.__doc__,
             "ArrowListBuffer",
             None,
-            id="coerce_record_for_pyarrow_docstring",
+            id="coerce_json_record_for_pyarrow_docstring",
         ),
         pytest.param(
             run_jsonlines_with_validation_pipeline.__doc__,

@@ -3,38 +3,36 @@
 import json
 from collections.abc import Mapping
 from decimal import Decimal
-from pathlib import Path
 from typing import ClassVar, Final
 
 import pyarrow as pa
 from frozendict import frozendict
 from pydantic import Field, field_validator
 
+from cdm_data_loaders.converters.core.constants import (
+    DECIMAL128_MAX_PRECISION,
+    DECIMAL256_MAX_PRECISION,
+    INT8_WIDTH,
+    INT16_WIDTH,
+    INT32_WIDTH,
+    MAX_MICROS_DIGITS,
+    MAX_MILLIS_DIGITS,
+    WEI_PRECISION,
+)
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import NodeHints, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.metadata import ConversionContext
 from cdm_data_loaders.converters.emitters._tabular_base import (
-    DECIMAL128_MAX_PRECISION,
     DEFAULT_STRING_FORMATS,
-    INT32_WIDTH,
     _TabularEmitterBase,
     element_nullable,
     infer_enum_type,
     merge_format_map_with_defaults,
     resolve_logical_decimal,
 )
-from cdm_data_loaders.converters.emitters.pyarrow_codegen import (
-    render_python_schema_module,
-    write_python_schema_file,
-)
+from cdm_data_loaders.converters.exceptions.emitters.pyarrow import PyArrowEmitterError
 
-INT8_WIDTH: Final = 8
-INT16_WIDTH: Final = 16
-DECIMAL256_MAX_PRECISION: Final = 76
-WEI_PRECISION: Final = DECIMAL256_MAX_PRECISION
-MAX_MILLIS_DIGITS: Final = 3
-MAX_MICROS_DIGITS: Final = 6
 DEFAULT_FORMAT_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
     {
         "date": pa.date32(),
@@ -89,10 +87,6 @@ def merge_format_map(value: object) -> object:
     return merge_format_map_with_defaults(value, DEFAULT_FORMAT_MAP, pa.DataType, "PyArrow")
 
 
-class PyArrowEmitterError(ConversionError):
-    """A typed schema cannot be represented by the configured Arrow policy."""
-
-
 class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
     """Convert typed schema nodes into PyArrow schemas and empty tables."""
 
@@ -145,45 +139,6 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
         :raises PyArrowEmitterError: if the root does not resolve to a struct
         """
         return self.emit(document).empty_table()
-
-    def emit_python(
-        self,
-        document: SchemaDocument | Mapping[str, SchemaDocument],
-        *,
-        docstring: str | None = None,
-    ) -> str:
-        """Render a static Python module defining PyArrow struct components and schemas.
-
-        :param document: A single ``SchemaDocument`` or a mapping of table names to ``SchemaDocument``s.
-        :type document: SchemaDocument | Mapping[str, SchemaDocument]
-        :param docstring: Optional module docstring header.
-        :type docstring: str | None
-        :return: Formatted Python source code defining ``*_STRUCT``, ``*_SCHEMA``, ``SCHEMA``, and ``SCHEMAS``.
-        :rtype: str
-        :raises PyArrowEmitterError: If any document root does not resolve to a struct.
-        """
-        return render_python_schema_module(self, document, docstring=docstring)
-
-    def emit_python_file(
-        self,
-        document: SchemaDocument | Mapping[str, SchemaDocument],
-        output: str | Path,
-        *,
-        docstring: str | None = None,
-    ) -> Path:
-        """Render and write a static Python schema module to ``output``.
-
-        :param document: A single ``SchemaDocument`` or a mapping of table names to ``SchemaDocument``s.
-        :type document: SchemaDocument | Mapping[str, SchemaDocument]
-        :param output: Destination file path for the generated Python module.
-        :type output: str | Path
-        :param docstring: Optional module docstring header.
-        :type docstring: str | None
-        :return: Resolved output ``Path``.
-        :rtype: Path
-        :raises PyArrowEmitterError: If any document root does not resolve to a struct.
-        """
-        return write_python_schema_file(self, document, output, docstring=docstring)
 
     def build_metadata(
         self, node: TypedNode, ctx: ConversionContext, field: SchemaField | None = None

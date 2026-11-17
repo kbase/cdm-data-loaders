@@ -17,9 +17,7 @@ from dlt.destinations.impl.filesystem.iceberg_adapter import (
 from frozendict import frozendict
 from pydantic import BaseModel, SecretStr, ValidationError
 
-from cdm_data_loaders.coercion.pydantic import (
-    coerce_record_for_pyarrow as coerce_pydantic_record_for_pyarrow,
-)
+from cdm_data_loaders.coercion.pydantic_to_arrow import coerce_pydantic_record_for_pyarrow
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
     RecordTransformFn,

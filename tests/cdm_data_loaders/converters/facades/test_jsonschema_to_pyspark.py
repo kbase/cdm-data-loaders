@@ -19,10 +19,8 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
-from cdm_data_loaders.converters.facades.jsonschema_to_pyspark import (
-    JSONSchemaToPySpark,
-    JSONSchemaToPySparkError,
-)
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyspark import JSONSchemaToPySparkError
+from cdm_data_loaders.converters.facades.jsonschema_to_pyspark import JSONSchemaToPySpark
 from cdm_data_loaders.validation.jsonschema.dereference import dereference_schema
 from tests.cdm_data_loaders.converters.conftest import base_object_schema
 

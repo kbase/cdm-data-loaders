@@ -16,7 +16,7 @@ from jsonschema import (
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionSpec
 from cdm_data_loaders.converters.core.ir import Field, Provenance, TypedNode
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
+from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 

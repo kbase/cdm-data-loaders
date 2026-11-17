@@ -35,13 +35,11 @@ from cdm_data_loaders.converters.core.metadata import (
     get_known_jsonschema_keywords,
     metadata_keys_for,
 )
-from cdm_data_loaders.converters.emitters.pyspark import (
-    PySparkEmitter,
-    PySparkEmitterError,
-)
-from cdm_data_loaders.converters.readers.dlt import DltReader
-from cdm_data_loaders.converters.readers.iceberg import IcebergReader
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
+from cdm_data_loaders.converters.emitters.pyspark import PySparkEmitter
+from cdm_data_loaders.converters.exceptions.emitters.pyspark import PySparkEmitterError
+from cdm_data_loaders.converters.sources.dlt import DltReader
+from cdm_data_loaders.converters.sources.iceberg import IcebergReader
+from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 

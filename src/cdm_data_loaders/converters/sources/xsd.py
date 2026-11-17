@@ -13,7 +13,7 @@ from xmlschema.validators import (
     XsdType,
 )
 
-from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
 from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth
 from cdm_data_loaders.converters.core.ir import (
     SPEC_BINARY,
@@ -37,7 +37,7 @@ from cdm_data_loaders.converters.core.ir import (
 )
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.utils.xml_utils import local_name as _local_name
-from cdm_data_loaders.validation.xsd.particles import raise_xsd_code, resolve_child_cardinality
+from cdm_data_loaders.validation.xsd.particles import resolve_child_cardinality
 from cdm_data_loaders.validation.xsd.scalars import (
     BUILTIN_LIST_ITEM_TYPES,
     XSD_SCALAR_KINDS,
@@ -83,6 +83,31 @@ SCALAR_KIND_TO_IR_SPEC: Final[Mapping[XsdScalarKind, tuple[NodeType, NodeHints]]
 XSD_SCALAR_SPEC: Final[Mapping[str, tuple[NodeType, NodeHints]]] = frozendict(
     {xsd_name: SCALAR_KIND_TO_IR_SPEC[kind] for xsd_name, kind in XSD_SCALAR_KINDS.items()}
 )
+
+
+def _string_ir_node(
+    path: tuple[str | int, ...],
+    *,
+    nullable: bool,
+    metadata: Mapping[str, Any] | None = None,
+) -> TypedNode:
+    """Create a string IR ``TypedNode`` with ``source="xsd"`` provenance.
+
+    :param path: IR provenance path.
+    :type path: tuple[str | int, ...]
+    :param nullable: Whether the node is nullable.
+    :type nullable: bool
+    :param metadata: Optional provenance metadata mapping.
+    :type metadata: Mapping[str, Any] | None
+    :return: String IR ``TypedNode``.
+    :rtype: TypedNode
+    """
+    return TypedNode(
+        type="string",
+        nullable=nullable,
+        hints=NodeHints(logical_type="string"),
+        provenance=Provenance("xsd", path, metadata or {}),
+    )
 
 
 def _resolve_scalar_ir_spec(simple_type: XsdType) -> tuple[NodeType, NodeHints, str]:
@@ -173,25 +198,10 @@ def _resolve_non_struct_element_node(
     if kind == "simple":
         if simple_type is not None:
             return simple_type_to_ir_node(simple_type, path, nullable=nullable)
-        return TypedNode(
-            type="string",
-            nullable=nullable,
-            hints=NodeHints(logical_type="string"),
-            provenance=Provenance("xsd", path, {"xsd_type": "xs:string"}),
-        )
+        return _string_ir_node(path, nullable=nullable, metadata={"xsd_type": "xs:string"})
     if kind == "mixed":
-        return TypedNode(
-            type="string",
-            nullable=nullable,
-            hints=NodeHints(logical_type="string"),
-            provenance=Provenance("xsd", path, {"xsd_type": "xs:string"}),
-        )
-    return TypedNode(
-        type="string",
-        nullable=nullable,
-        hints=NodeHints(logical_type="string"),
-        provenance=Provenance("xsd", path),
-    )
+        return _string_ir_node(path, nullable=nullable, metadata={"xsd_type": "xs:string"})
+    return _string_ir_node(path, nullable=nullable)
 
 
 def _wrap_leaf_ir_field(
@@ -223,16 +233,8 @@ def _wrap_leaf_ir_field(
     annotations = {"description": comment} if comment else {}
     leaf_path = (*path, "item") if is_list else path
     leaf_nullable = True if is_list else nullable
-    leaf_node = _resolve_non_struct_element_node(
-        ctx,
-        elem_type,
-        leaf_path,
-        nullable=leaf_nullable,
-    ) or TypedNode(
-        type="string",
-        nullable=leaf_nullable,
-        hints=NodeHints(logical_type="string"),
-        provenance=Provenance("xsd", leaf_path),
+    leaf_node = _resolve_non_struct_element_node(ctx, elem_type, leaf_path, nullable=leaf_nullable) or _string_ir_node(
+        leaf_path, nullable=leaf_nullable
     )
 
     if is_list:
@@ -284,12 +286,7 @@ def _wrap_truncated_leaf_ir_field(
     leaf_nullable = True if is_list else nullable
     trunc_meta = {"truncated_component_id": id(elem_type)} if elem_type is not None else {}
 
-    leaf_node = TypedNode(
-        type="string",
-        nullable=leaf_nullable,
-        hints=NodeHints(logical_type="string"),
-        provenance=Provenance("xsd", leaf_path, trunc_meta),
-    )
+    leaf_node = _string_ir_node(leaf_path, nullable=leaf_nullable, metadata=trunc_meta)
     field_node = (
         TypedNode(
             type="array",
@@ -338,15 +335,11 @@ def _build_complex_struct_fields(
         attr_path = (*path, field_name)
         attr_type = attr.type
         nullable = parent_nillable or getattr(attr, "use", "optional") != "required"
-        if attr_type is not None:
-            node = simple_type_to_ir_node(attr_type, attr_path, nullable=nullable)
-        else:
-            node = TypedNode(
-                type="string",
-                nullable=nullable,
-                hints=NodeHints(logical_type="string"),
-                provenance=Provenance("xsd", attr_path, {"xsd_type": "xs:string"}),
-            )
+        node = (
+            simple_type_to_ir_node(attr_type, attr_path, nullable=nullable)
+            if attr_type is not None
+            else _string_ir_node(attr_path, nullable=nullable, metadata={"xsd_type": "xs:string"})
+        )
         comment = extract_doc_comment(attr, attr_type)
         annotations = {"description": comment} if comment else {}
         prov_meta = dict(node.provenance.metadata) if node.provenance is not None else {}
@@ -363,15 +356,11 @@ def _build_complex_struct_fields(
     if complex_type.has_simple_content() or complex_type.mixed:
         text_path = (*path, "#text")
         content_type = complex_type.content if complex_type.has_simple_content() else None
-        if isinstance(content_type, XsdType):
-            node = simple_type_to_ir_node(content_type, text_path, nullable=True)
-        else:
-            node = TypedNode(
-                type="string",
-                nullable=True,
-                hints=NodeHints(logical_type="string"),
-                provenance=Provenance("xsd", text_path, {"xsd_type": "xs:string"}),
-            )
+        node = (
+            simple_type_to_ir_node(content_type, text_path, nullable=True)
+            if isinstance(content_type, XsdType)
+            else _string_ir_node(text_path, nullable=True, metadata={"xsd_type": "xs:string"})
+        )
         prov_meta = dict(node.provenance.metadata) if node.provenance is not None else {}
         fields.append(
             SchemaField(
@@ -402,15 +391,7 @@ def _build_complex_struct_fields(
             ctx.raise_err("E8", msg)
 
         is_list, nullable = resolve_child_cardinality(model_group, child, parent_nillable=parent_nillable)
-        fields.append(
-            _build_element_ir_field(
-                ctx,
-                child,
-                (*path, child_name),
-                is_list=is_list,
-                nullable=nullable,
-            )
-        )
+        fields.append(_build_element_ir_field(ctx, child, (*path, child_name), is_list=is_list, nullable=nullable))
 
     return tuple(fields)
 
@@ -443,13 +424,7 @@ def _build_element_ir_field(
     comment = extract_doc_comment(element, elem_type)
 
     if classify_leaf_element_type(elem_type, error_type=ctx.error_type, error_by_code=ctx.error_by_code) is not None:
-        return _wrap_leaf_ir_field(
-            ctx,
-            element,
-            path,
-            is_list=is_list,
-            nullable=nullable,
-        )
+        return _wrap_leaf_ir_field(ctx, element, path, is_list=is_list, nullable=nullable)
 
     elem_type = require_complex_type(
         elem_type,
@@ -463,12 +438,7 @@ def _build_element_ir_field(
 
     next_count = ctx.type_counts.get(type_id, 0) + 1
     if ctx.max_recursion_depth is not None and next_count > ctx.max_recursion_depth:
-        return _wrap_truncated_leaf_ir_field(
-            element,
-            path,
-            is_list=is_list,
-            nullable=nullable,
-        )
+        return _wrap_truncated_leaf_ir_field(element, path, is_list=is_list, nullable=nullable)
 
     cache_key = (type_id, element.nillable)
     is_cacheable = not can_reach_any_type(elem_type, ctx.type_counts)
@@ -484,17 +454,9 @@ def _build_element_ir_field(
             error_type=ctx.error_type,
             error_by_code=ctx.error_by_code,
         )
-        struct_fields = _build_complex_struct_fields(
-            next_ctx,
-            elem_type,
-            path,
-            parent_nillable=element.nillable,
-        )
+        struct_fields = _build_complex_struct_fields(next_ctx, elem_type, path, parent_nillable=element.nillable)
         required_names = tuple(f.name for f in struct_fields if f.required)
-        struct_meta: dict[str, Any] = {
-            "component_id": type_id,
-            "nillable": bool(element.nillable),
-        }
+        struct_meta: dict[str, Any] = {"component_id": type_id, "nillable": bool(element.nillable)}
         if elem_type.local_name is not None:
             struct_meta["type_name"] = elem_type.local_name
         if not is_cacheable:
@@ -510,17 +472,16 @@ def _build_element_ir_field(
         if is_cacheable:
             ctx.struct_cache[cache_key] = struct_node
 
-    if is_list:
-        item_struct_node = replace(struct_node, nullable=True)
-        field_node = TypedNode(
+    field_node = (
+        TypedNode(
             type="array",
             nullable=nullable,
-            items=item_struct_node,
+            items=replace(struct_node, nullable=True),
             provenance=Provenance("xsd", path),
         )
-    else:
-        field_node = replace(struct_node, nullable=nullable)
-
+        if is_list
+        else replace(struct_node, nullable=nullable)
+    )
     annotations = {"description": comment} if comment else {}
     return SchemaField(
         name=field_name,
@@ -562,21 +523,13 @@ def _build_element_struct_node(
         msg = f"Top-level xml_tag {xml_tag!r} must have a complex type that resolves to a struct"
         ctx.raise_err("E3", msg)
 
-    fields = _build_complex_struct_fields(
-        ctx,
-        elem_type,
-        (),
-        parent_nillable=target_elem.nillable,
-    )
+    fields = _build_complex_struct_fields(ctx, elem_type, (), parent_nillable=target_elem.nillable)
     if not fields:
         msg = f"Top-level xml_tag {xml_tag!r} must have a complex type with at least one field"
         ctx.raise_err("E3", msg)
 
     required_names = tuple(f.name for f in fields if f.required)
-    struct_meta: dict[str, Any] = {
-        "component_id": id(elem_type),
-        "nillable": bool(target_elem.nillable),
-    }
+    struct_meta: dict[str, Any] = {"component_id": id(elem_type), "nillable": bool(target_elem.nillable)}
     if elem_type.local_name is not None:
         struct_meta["type_name"] = elem_type.local_name
     return TypedNode(
@@ -647,13 +600,7 @@ def _build_element_table_doc(
         )
         is not None
     ):
-        text_field = _wrap_leaf_ir_field(
-            base_ctx,
-            target_elem,
-            ("#text",),
-            is_list=False,
-            nullable=True,
-        )
+        text_field = _wrap_leaf_ir_field(base_ctx, target_elem, ("#text",), is_list=False, nullable=True)
         root_node = TypedNode(
             type="object",
             nullable=False,
@@ -707,7 +654,7 @@ class XsdReader:
         :type msg: str
         :raises ConversionError: Always raised with the resolved error class.
         """
-        raise_xsd_code(code, msg, error_type=self.error_type, error_by_code=self.error_by_code)
+        return raise_spec_error(code, msg, error_type=self.error_type, error_by_code=self.error_by_code)
 
     def read(
         self,

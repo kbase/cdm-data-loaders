@@ -6,6 +6,17 @@ from cdm_data_loaders.converters.core.errors import ConversionError
 
 DEFAULT_MAX_RECURSION_DEPTH: Final[int] = 2
 
+FORBIDDEN_RECURSIVE_LOGICAL_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        "date",
+        "timestamp-with-tz",
+        "timestamp-without-tz",
+        "time",
+        "decimal",
+        "binary",
+    }
+)
+
 
 def validate_max_recursion_depth(depth: int) -> None:
     """Validate that ``depth`` is a positive integer (excluding booleans).
@@ -45,13 +56,11 @@ def require_schema_keyword(
 
 
 def require_object_root(schema: dict[str, Any], error: type[ConversionError], target: str) -> None:
-    """Reject a schema whose declared root type isn't literally 'object' or absent.
+    """Reject a schema whose declared root type isn't 'object' or absent.
 
-    This is intentionally stricter than `readers.json_schema.JsonSchemaReader`,
-    which also accepts a list-form root type (e.g. `["object", "null"]`) when
-    used directly. Facade converters call this guard first, so a nullable
-    root type is only reachable through direct reader use, not through
-    `convert()`.
+    Facade converters call this guard before invoking
+    ``sources.json_schema.permissive.JsonSchemaReader``, which accepts a
+    list-form root type (such as ``["object", "null"]``) when used on its own.
 
     :param schema: the input JSON Schema document
     :type schema: dict[str, Any]
@@ -75,9 +84,8 @@ def reject_unresolved_references(
 ) -> None:
     """Guard against un-dereferenced schemas reaching the type-dispatch logic.
 
-    $ref (including references into external JSON Schema documents) and allOf
-    resolution are intentionally not performed here; run
-    `dereference_schema()` first.
+    ``$ref`` (including references into external JSON Schema documents) and
+    ``allOf`` resolution are performed beforehand via ``dereference_schema()``.
 
     :param schema: the schema fragment to check for unresolved '$ref'/'allOf'
     :type schema: dict[str, Any]
@@ -87,7 +95,7 @@ def reject_unresolved_references(
     :type converter_name: str
     :param dereference_function: qualified dereferencing function name
     :type dereference_function: str
-    :raises ConversionError: if the schema still contains '$ref' or 'allOf'
+    :raises ConversionError: if the schema contains '$ref' or 'allOf'
     """
     if "$ref" in schema:
         err_msg = (
