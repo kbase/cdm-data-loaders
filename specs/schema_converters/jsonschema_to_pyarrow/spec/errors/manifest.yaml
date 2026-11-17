@@ -63,6 +63,10 @@ errors:
     code: E9
     match: \$dynamicRef|dynamic|ref
     description: 'Property uses `$dynamicRef`.'
+  - file: circular_alias_ref.json
+    code: E9
+    match: "Circular \\$ref"
+    description: 'Direct `$ref` alias cycle (`#/$defs/A` -> `#/$defs/B` -> `#/$defs/A`).'
   - file: recursive_date_type.json
     code: E10
     match: recursive

@@ -2,12 +2,24 @@
 
 import pyarrow as pa
 import pytest
+from pydantic import ValidationError
 
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS
 from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
+    JSONSCHEMA_TO_PYARROW_ERRORS,
     JSONSchemaToPyArrowError,
+    UnsupportedRefError,
 )
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrow,
+)
+from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
+from cdm_data_loaders.converters.facades.xsd_to_pyarrow import XsdToPyArrow
+from cdm_data_loaders.converters.sources.json_schema.strict_combinators import classify_node_kind
+from cdm_data_loaders.converters.sources.json_schema.strict_reader import StrictJsonSchemaReader
+from cdm_data_loaders.converters.sources.json_schema.strict_refs import (
+    get_inherited_description,
+    has_null_possibility,
 )
 from cdm_data_loaders.validation.jsonschema.dereference import dereference_schema
 from tests.cdm_data_loaders.converters._helpers import base_object_schema
@@ -157,3 +169,57 @@ def test_jsonschema_to_pyarrow_pass_options_reach_emitter() -> None:
         b"original_union": b'["string", "integer"]',
     }
     assert result.field("nested").type == pa.string()
+
+
+@pytest.mark.parametrize(
+    ("bad_depth", "reader_exc"),
+    [
+        pytest.param(0, ValueError, id="zero"),
+        pytest.param(-1, ValueError, id="negative"),
+        pytest.param(True, TypeError, id="bool-true"),
+        pytest.param(False, TypeError, id="bool-false"),
+    ],
+)
+def test_converters_and_strict_reader_fail_invalid_max_recursion_depth(
+    bad_depth: int,
+    reader_exc: type[Exception],
+) -> None:
+    """Reject non-positive or boolean max_recursion_depth across StrictJsonSchemaReader and converter facades."""
+    with pytest.raises(reader_exc, match="max_recursion_depth"):
+        StrictJsonSchemaReader(max_recursion_depth=bad_depth)
+    with pytest.raises(ValidationError):
+        JSONSchemaToPyArrow(max_recursion_depth=bad_depth)
+    with pytest.raises(ValidationError):
+        PydanticToPyArrow(max_recursion_depth=bad_depth)
+    with pytest.raises(ValidationError):
+        XsdToPyArrow(max_recursion_depth=bad_depth, xml_tag="entry")
+
+
+def test_strict_ref_helpers_fail_direct_alias_cycle() -> None:
+    """Raise UnsupportedRefError (E9) when following a direct $ref alias cycle."""
+    err_by_code = {cls.code: cls for cls in JSONSCHEMA_TO_PYARROW_ERRORS}
+    defs = {"A": {"$ref": "#/$defs/B"}, "B": {"$ref": "#/$defs/A"}}
+    ref_node = {"$ref": "#/$defs/A"}
+
+    with pytest.raises(UnsupportedRefError, match="Circular \\$ref"):
+        classify_node_kind(
+            ref_node,
+            defs,
+            extension_registry=DEFAULT_EXTENSIONS,
+            error_type=JSONSchemaToPyArrowError,
+            error_by_code=err_by_code,
+        )
+    with pytest.raises(UnsupportedRefError, match="Circular \\$ref"):
+        has_null_possibility(
+            ref_node,
+            defs,
+            error_type=JSONSchemaToPyArrowError,
+            error_by_code=err_by_code,
+        )
+    with pytest.raises(UnsupportedRefError, match="Circular \\$ref"):
+        get_inherited_description(
+            ref_node,
+            defs,
+            error_type=JSONSchemaToPyArrowError,
+            error_by_code=err_by_code,
+        )

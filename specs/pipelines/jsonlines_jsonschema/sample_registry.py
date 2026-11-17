@@ -14,6 +14,7 @@ def _load_schema(rel_path: str) -> dict[str, Any]:
 ENTITY_SCHEMAS: dict[str, dict[str, Any]] = {
     "genomes": _load_schema("01_scalars_nested_types_and_extra_fields/schema.json"),
     "submissions": _load_schema("02_defs_ref_allof_and_draft_dialects/schema.json"),
+    "xsv_dialect_meta": _load_schema("02_defs_ref_allof_and_draft_dialects/xsv_dialect_schema.json"),
     "contacts": _load_schema("03_blank_lines_parse_errors_and_format_rejections/schema.json"),
     "projects": _load_schema("04_multi_entity_gzip_and_subdirs/schema.json"),
     "experiments": _load_schema("04_multi_entity_gzip_and_subdirs/experiment_schema.json"),

@@ -1,8 +1,19 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "SampleRecord",
   "type": "object",
-  "required": ["sample_id", "ph", "collected_at", "sample_time"],
+  "required": [
+    "sample_id",
+    "ph",
+    "collected_at",
+    "sample_time"
+  ],
+  "definitions": {
+    "IsoTimestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
   "properties": {
     "sample_id": {
       "type": "string"
@@ -11,8 +22,7 @@
       "type": "number"
     },
     "collected_at": {
-      "type": "string",
-      "format": "date-time"
+      "$ref": "#/definitions/IsoTimestamp"
     },
     "sample_time": {
       "type": "string"
@@ -31,8 +41,12 @@
     },
     "raw_payload": {
       "anyOf": [
-        {"type": "string"},
-        {"type": "integer"}
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
       ]
     }
   }

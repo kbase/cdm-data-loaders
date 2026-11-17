@@ -11,11 +11,11 @@ import xmlschema
 from lxml.etree import Element
 from xmlschema.validators import XsdComplexType, XsdElement, XsdType
 
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
     ERROR_BY_CODE,
     XsdToPyArrowError,
 )
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth
 from cdm_data_loaders.utils.xml_utils import local_name
 from cdm_data_loaders.validation.xsd.particles import resolve_child_cardinality
 from cdm_data_loaders.validation.xsd.scalars import (
@@ -28,12 +28,15 @@ from cdm_data_loaders.validation.xsd.scalars import (
 )
 from cdm_data_loaders.validation.xsd.traversal import (
     TraversalContext,
+    check_no_forbidden_types_under_recursion,
     classify_leaf_element_type,
     collect_attributes,
     collect_unique_children,
     prepare_target_traversal,
     require_complex_type,
     resolve_elements_at_level,
+    validate_complex_subtree,
+    validate_target_struct_element,
 )
 
 XSI_NAMESPACE: Final[str] = "{http://www.w3.org/2001/XMLSchema-instance}"
@@ -176,23 +179,31 @@ def _coerce_scalar_text(raw_text: str, simple_type: XsdType | None) -> object:
     return _coerce_resolved_scalar(raw_text.strip(), scalar_kind, xsd_name)
 
 
-def _extract_struct_attributes(element: Element, complex_type: XsdComplexType) -> dict[str, Any]:
+def _extract_struct_attributes(
+    ctx: TraversalContext,
+    element: Element,
+    complex_type: XsdComplexType,
+) -> tuple[dict[str, Any], set[str]]:
     """Extract and coerce declared XML attributes from ``element`` into ``_<name>`` dictionary entries.
 
+    :param ctx: Active XSD traversal context.
+    :type ctx: TraversalContext
     :param element: XML element to inspect.
     :type element: Element
     :param complex_type: XSD complex type declaring the element's attributes.
     :type complex_type: XsdComplexType
-    :return: Dictionary mapping ``_<attr_name>`` to coerced attribute values.
-    :rtype: dict[str, Any]
+    :return: Tuple of ``(coerced_attr_dict, declared_attr_field_names)``.
+    :rtype: tuple[dict[str, Any], set[str]]
     """
-    declared_attrs = {attr.local_name: attr for attr in collect_attributes(complex_type) if attr.local_name}
+    attrs = collect_attributes(complex_type, error_type=ctx.error_type, error_by_code=ctx.error_by_code)
+    declared_attrs = {attr.local_name: attr for attr in attrs if attr.local_name}
     raw_attrs = {local_name(k): v for k, v in element.attrib.items() if not _is_ignored_attr(k)}
-    return {
+    coerced = {
         f"_{attr_name}": _coerce_scalar_text(raw_attrs[attr_name], attr_decl.type)
         for attr_name, attr_decl in declared_attrs.items()
         if attr_name in raw_attrs
     }
+    return coerced, {f"_{attr_name}" for attr_name in declared_attrs}
 
 
 def _group_child_elements_by_name(element: Element) -> dict[str, list[Element]]:
@@ -226,7 +237,7 @@ def _convert_complex_struct(
     :return: Sparse dictionary of coerced fields, or ``None`` if empty.
     :rtype: dict[str, Any] | None
     """
-    result = _extract_struct_attributes(element, complex_type)
+    result, attr_field_names = _extract_struct_attributes(ctx, element, complex_type)
 
     if _is_xsi_nil(element):
         return result or None
@@ -250,8 +261,19 @@ def _convert_complex_struct(
 
     children_by_name = _group_child_elements_by_name(element)
 
-    for child_decl in collect_unique_children(ctx.schema, complex_type):
-        child_name = child_decl.local_name
+    for child_decl in collect_unique_children(
+        ctx.schema,
+        complex_type,
+        error_type=ctx.error_type,
+        error_by_code=ctx.error_by_code,
+    ):
+        child_name = child_decl.local_name or ""
+        if child_name in attr_field_names:
+            msg = (
+                f"Field name collision in {complex_type.local_name or 'complexType'!r}: "
+                f"attribute and child element both map to {child_name!r}"
+            )
+            ctx.raise_err("E8", msg)
         matching_elements = children_by_name.get(child_name)
         if not matching_elements:
             continue
@@ -319,7 +341,11 @@ def _convert_child_occurrence(
     :rtype: object
     """
     elem_type = xsd_element.type
-    leaf_info = classify_leaf_element_type(elem_type)
+    leaf_info = classify_leaf_element_type(
+        elem_type,
+        error_type=ctx.error_type,
+        error_by_code=ctx.error_by_code,
+    )
     if leaf_info is not None:
         kind, simple_type = leaf_info
         if kind == "empty_marker":
@@ -331,20 +357,21 @@ def _convert_child_occurrence(
             nullable=nullable,
         )
 
-    elem_type = require_complex_type(elem_type, xsd_element.local_name or "")
+    elem_type = require_complex_type(
+        elem_type,
+        xsd_element.local_name or "",
+        error_type=ctx.error_type,
+        error_by_code=ctx.error_by_code,
+    )
     type_id = id(elem_type)
+    if type_id in ctx.type_counts:
+        check_no_forbidden_types_under_recursion(elem_type, ctx)
     next_count = ctx.type_counts.get(type_id, 0) + 1
     if ctx.max_recursion_depth is not None and next_count > ctx.max_recursion_depth:
-        unbounded_ctx = TraversalContext(schema=ctx.schema, type_counts={}, max_recursion_depth=None)
-        nested = _convert_complex_struct(unbounded_ctx, element, elem_type)
+        nested = _convert_complex_struct(ctx.unbounded(), element, elem_type)
         return json.dumps(nested) if nested is not None else None
 
-    next_ctx = TraversalContext(
-        schema=ctx.schema,
-        type_counts={**ctx.type_counts, type_id: next_count},
-        max_recursion_depth=ctx.max_recursion_depth,
-    )
-    return _convert_complex_struct(next_ctx, element, elem_type)
+    return _convert_complex_struct(ctx.with_type(type_id), element, elem_type)
 
 
 def _convert_leaf_element_to_dict(
@@ -408,6 +435,7 @@ def _make_resolved_element_converter(
     :return: Function converting an lxml Element into a dictionary.
     :rtype: Callable[[Element], dict[str, Any]]
     """
+    validate_max_recursion_depth(max_recursion_depth)
     leaf_info = classify_leaf_element_type(
         target_elem.type,
         error_type=XsdToPyArrowError,
@@ -436,6 +464,7 @@ def _make_resolved_element_converter(
         error_type=XsdToPyArrowError,
         error_by_code=ERROR_BY_CODE,
     )
+    validate_complex_subtree(elem_type, ctx)
     return functools.partial(_convert_struct_element_to_dict, ctx=ctx, elem_type=elem_type)
 
 
@@ -463,6 +492,7 @@ def make_xml_element_converter(
         error_type=XsdToPyArrowError,
         error_by_code=ERROR_BY_CODE,
     )
+    validate_target_struct_element(elem_type, xml_tag, ctx)
     return functools.partial(_convert_struct_element_to_dict, ctx=ctx, elem_type=elem_type)
 
 
@@ -486,6 +516,7 @@ def make_xml_level_converters(
     :return: Mapping of element local tag name to its element-to-dict converter function.
     :rtype: dict[str, Callable[[Element], dict[str, Any]]]
     """
+    validate_max_recursion_depth(max_recursion_depth)
     elements_at_level = resolve_elements_at_level(
         schema,
         level,

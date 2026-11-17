@@ -1,17 +1,21 @@
-title: Local `$defs` / `$ref` Dereferencing, `allOf` Composition, and Format Validation
+title: Local `$defs` / `$ref` Dereferencing, `allOf` Deep Merge, and Custom Metaschema Dialect
 schema: schema.json
 xml_tag: submissions
 rules:
   - R-JSONL-SCHEMA-CONVERT
   - R-JSONL-DIALECT-FORMAT
 notes: |
-  - `schema.json` declares local `$defs` definitions (`#/$defs/base_id`, `#/$defs/contact_info`) and top-level `allOf` composition.
-  - `dereference_schema` merges the `allOf` branches and resolves `$ref` pointers before `JSONSchemaToPyArrow` builds `EXPECTED_SCHEMA`.
-  - `_make_resolve_error` validates `submitted_date` (`format: "date"`) and `contact.email` (`format: "email"`) with `FormatChecker()`, while `coerce_json_record_for_pyarrow` parses `submitted_date` into `pa.date32()` (`datetime.date`) and keeps `contact.email` as `pa.string()`.
+  - `schema.json` declares `$defs` (`#/$defs/base_id` and embedded `$id`/`$anchor` resource `https://example.org/schemas/contact-info.json`), overlapping `allOf` bounds on `priority` (`minimum: 1` and `maximum: 10`), and `$ref` sibling `properties`/`required` (`department`) on `contact`.
+  - `dereference_schema` deep-merges `allOf` and `$ref` sibling keywords and strips `$id` and `$anchor` from resolved targets before `JSONSchemaToPyArrow` builds `SUBMISSIONS_SCHEMA`.
+  - `xsv_dialect_schema.json` (`xsv_dialect_meta`) declares the KBase XSV metaschema URI, exercising custom metaschema registration in `ValidatedSchema`, `convert_schema_to_pyarrow`, and `resolve_jsonschema_validator` with `FormatChecker()` (`date` and `email`).
 runs:
   - id: default
-    data: data.jsonl
+    data: data
     expected_json: expected.json
     expected_table: expected_table.py
+    extra_expected_json:
+      xsv_dialect_meta: expected_xsv_meta.json
     params:
       entity_type: submissions
+      extra_entities:
+        xsv_dialect_meta: xsv_dialect_schema.json

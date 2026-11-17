@@ -369,6 +369,5 @@ class _TabularEmitterBase[DataTypeT](BaseModel):
     def _array_type(self, element_type: DataTypeT, *, element_nullable: bool) -> DataTypeT:
         raise NotImplementedError
 
-    @staticmethod
-    def _emit_logical(node: TypedNode) -> DataTypeT | None:
+    def _emit_logical(self, node: TypedNode) -> DataTypeT | None:
         raise NotImplementedError

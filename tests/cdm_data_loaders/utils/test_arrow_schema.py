@@ -9,6 +9,7 @@ from cdm_data_loaders.utils.arrow_schema import (
     is_any_binary_type,
     is_any_list_type,
     is_any_string_type,
+    is_non_json_arrow_type,
 )
 
 
@@ -77,3 +78,31 @@ def test_arrow_type_predicates_classify_binary_string_and_list_variants(
     assert is_any_binary_type(dtype) is expected_binary
     assert is_any_string_type(dtype) is expected_string
     assert is_any_list_type(dtype) is expected_list
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected"),
+    [
+        pytest.param(pa.date32(), True, id="date32"),
+        pytest.param(pa.date64(), True, id="date64"),
+        pytest.param(pa.timestamp("us", tz="UTC"), True, id="timestamp-utc"),
+        pytest.param(pa.time64("us"), True, id="time64"),
+        pytest.param(pa.duration("us"), True, id="duration"),
+        pytest.param(pa.decimal128(10, 2), True, id="decimal128"),
+        pytest.param(pa.decimal256(40, 4), True, id="decimal256"),
+        pytest.param(pa.binary(), True, id="binary"),
+        pytest.param(pa.large_binary(), True, id="large-binary"),
+        pytest.param(pa.binary_view(), True, id="binary-view"),
+        pytest.param(pa.binary(8), True, id="fixed-binary"),
+        pytest.param(pa.string(), False, id="string"),
+        pytest.param(pa.large_string(), False, id="large-string"),
+        pytest.param(pa.string_view(), False, id="string-view"),
+        pytest.param(pa.int64(), False, id="int64"),
+        pytest.param(pa.float64(), False, id="float64"),
+        pytest.param(pa.bool_(), False, id="bool"),
+        pytest.param(pa.list_(pa.string()), False, id="list-string"),
+    ],
+)
+def test_is_non_json_arrow_type(dtype: pa.DataType, expected: bool) -> None:
+    """Detect temporal, decimal, and binary Arrow types that cannot serialize with json.dumps."""
+    assert is_non_json_arrow_type(dtype) is expected

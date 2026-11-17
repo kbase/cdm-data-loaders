@@ -1,7 +1,7 @@
 """XSD schema loading, multi-level element resolution, and complex-type traversal helpers."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal, NoReturn
 
@@ -14,6 +14,7 @@ from xmlschema.validators import (
     XsdType,
 )
 
+from cdm_data_loaders.utils.recursion import validate_max_recursion_depth
 from cdm_data_loaders.utils.xml_utils import local_name as _local_name
 from cdm_data_loaders.validation.xsd.particles import (
     group_max_occurs_by_name,
@@ -61,6 +62,25 @@ class TraversalContext:
         :raises Exception: always raised using the resolved error class
         """
         raise_xsd_code(code, msg, error_type=self.error_type, error_by_code=self.error_by_code)
+
+    def with_type(self, type_id: int) -> "TraversalContext":
+        """Return a child context incrementing the recursion count for ``type_id`` while preserving error classes.
+
+        :param type_id: ``id(complex_type)`` of the ``XsdComplexType`` being entered.
+        :type type_id: int
+        :return: Updated ``TraversalContext``.
+        :rtype: TraversalContext
+        """
+        next_count = self.type_counts.get(type_id, 0) + 1
+        return replace(self, type_counts={**self.type_counts, type_id: next_count})
+
+    def unbounded(self) -> "TraversalContext":
+        """Return a context with recursion cutoff disabled for JSON-serialized tail subtrees.
+
+        :return: Unbounded ``TraversalContext`` preserving ``error_type`` and ``error_by_code``.
+        :rtype: TraversalContext
+        """
+        return replace(self, type_counts={}, max_recursion_depth=None)
 
 
 def _check_complex_type_forbidden_recursion(
@@ -430,6 +450,7 @@ def prepare_target_traversal(
     :return: tuple of ``(target_elem, elem_type, traversal_context)``
     :rtype: tuple[XsdElement, XsdComplexType, TraversalContext]
     """
+    validate_max_recursion_depth(max_recursion_depth)
     target_elem = resolve_target_element(schema, xml_tag, error_type=error_type, error_by_code=error_by_code)
     elem_type = require_complex_type(target_elem.type, xml_tag, error_type=error_type, error_by_code=error_by_code)
     ctx = TraversalContext(
@@ -440,6 +461,92 @@ def prepare_target_traversal(
         error_by_code=error_by_code,
     )
     return target_elem, elem_type, ctx
+
+
+def validate_complex_subtree(
+    complex_type: XsdComplexType,
+    ctx: TraversalContext,
+    visited: set[int] | None = None,
+) -> None:
+    """Validate attributes, particles, field-name collisions, and recursion rules across ``complex_type``.
+
+    :param complex_type: ``XsdComplexType`` subtree root to validate.
+    :type complex_type: XsdComplexType
+    :param ctx: Active traversal context carrying ``error_type`` and ``error_by_code``.
+    :type ctx: TraversalContext
+    :param visited: Optional set of validated non-recursive ``id(complex_type)`` values.
+    :type visited: set[int] | None
+    """
+    visited_set = visited if visited is not None else set()
+    attrs = collect_attributes(complex_type, error_type=ctx.error_type, error_by_code=ctx.error_by_code)
+    if complex_type.has_simple_content() or complex_type.mixed or complex_type.model_group is None:
+        return
+
+    attr_field_names = {f"_{attr.local_name}" for attr in attrs if attr.local_name}
+    for child in collect_unique_children(
+        ctx.schema,
+        complex_type,
+        error_type=ctx.error_type,
+        error_by_code=ctx.error_by_code,
+    ):
+        child_name = child.local_name or ""
+        if child_name in attr_field_names:
+            msg = (
+                f"Field name collision in {complex_type.local_name or 'complexType'!r}: "
+                f"attribute and child element both map to {child_name!r}"
+            )
+            ctx.raise_err("E8", msg)
+
+        if (
+            classify_leaf_element_type(child.type, error_type=ctx.error_type, error_by_code=ctx.error_by_code)
+            is not None
+        ):
+            continue
+
+        child_type = require_complex_type(
+            child.type,
+            child_name,
+            error_type=ctx.error_type,
+            error_by_code=ctx.error_by_code,
+        )
+        child_id = id(child_type)
+        if child_id in ctx.type_counts:
+            check_no_forbidden_types_under_recursion(child_type, ctx)
+            if ctx.max_recursion_depth is not None and ctx.type_counts[child_id] + 1 > ctx.max_recursion_depth:
+                continue
+
+        is_cacheable = not can_reach_any_type(child_type, ctx.type_counts)
+        if is_cacheable and child_id in visited_set:
+            continue
+        validate_complex_subtree(child_type, ctx.with_type(child_id), visited_set)
+        if is_cacheable:
+            visited_set.add(child_id)
+
+
+def validate_target_struct_element(
+    elem_type: XsdComplexType,
+    xml_tag: str,
+    ctx: TraversalContext,
+) -> None:
+    """Validate that ``elem_type`` is a non-empty struct complexType and validate its descendant subtree.
+
+    :param elem_type: Target ``XsdComplexType`` to validate.
+    :type elem_type: XsdComplexType
+    :param xml_tag: XML element tag name for error diagnostics.
+    :type xml_tag: str
+    :param ctx: Active traversal context carrying ``error_type`` and ``error_by_code``.
+    :type ctx: TraversalContext
+    """
+    if is_empty_marker_complex_type(elem_type):
+        msg = f"Top-level xml_tag {xml_tag!r} has an empty complex type with no attributes or child elements"
+        ctx.raise_err("E3", msg)
+
+    attrs = collect_attributes(elem_type, error_type=ctx.error_type, error_by_code=ctx.error_by_code)
+    if (elem_type.has_simple_content() or elem_type.mixed) and not attrs:
+        msg = f"Top-level xml_tag {xml_tag!r} must have a complex type that resolves to a struct"
+        ctx.raise_err("E3", msg)
+
+    validate_complex_subtree(elem_type, ctx)
 
 
 def _collect_referenced_global_element_names(schema: xmlschema.XMLSchema) -> set[str]:

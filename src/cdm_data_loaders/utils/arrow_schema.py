@@ -87,3 +87,21 @@ def is_any_list_type(dtype: pa.DataType) -> bool:
     :rtype: bool
     """
     return isinstance(dtype, ARROW_LIST_TYPES)
+
+
+def is_non_json_arrow_type(dtype: pa.DataType) -> bool:
+    """Return ``True`` when ``dtype`` cannot be round-tripped directly via ``json.dumps`` at recursion cutoff.
+
+    :param dtype: PyArrow data type to inspect.
+    :type dtype: pa.DataType
+    :return: ``True`` for date, timestamp, time, duration, decimal, or binary types.
+    :rtype: bool
+    """
+    return (
+        pa.types.is_date(dtype)
+        or pa.types.is_timestamp(dtype)
+        or pa.types.is_time(dtype)
+        or pa.types.is_duration(dtype)
+        or pa.types.is_decimal(dtype)
+        or is_any_binary_type(dtype)
+    )

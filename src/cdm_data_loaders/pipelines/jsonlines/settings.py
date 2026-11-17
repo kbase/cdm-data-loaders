@@ -12,7 +12,6 @@ from jsonschema.exceptions import SchemaError
 from pydantic import Field, PositiveInt, PrivateAttr
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrowError,
 )
@@ -58,6 +57,7 @@ from cdm_data_loaders.pipelines.jsonlines.exceptions import (
     UnsupportedJsonlArrowSchemaError,
     UnsupportedJsonlSchemaDialectError,
 )
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.validation.jsonschema.dereference import DereferencingError
 
 logger: Logger = getLogger(__name__)
@@ -146,7 +146,7 @@ def build_output_schema_registry(
         except PydanticToPyArrowError as error:
             logger.exception("Error converting Pydantic model to PyArrow for %s", table_name)
             errors[table_name] = str(error)
-        except (DereferencingError, RecursionError) as error:
+        except DereferencingError as error:
             logger.exception("Error converting JSON Schema to PyArrow for %s", table_name)
             errors[table_name] = str(error)
         except JSONSchemaToPyArrowError as error:

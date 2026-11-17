@@ -41,6 +41,13 @@ DEFAULT_FORMAT_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
         **dict.fromkeys(DEFAULT_STRING_FORMATS, pa.string()),
     }
 )
+STRICT_DEFAULT_FORMAT_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
+    {
+        "date": pa.date32(),
+        "date-time": pa.string(),
+        **dict.fromkeys(DEFAULT_STRING_FORMATS, pa.string()),
+    }
+)
 SCALAR_TYPE_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
     {
         "boolean": pa.bool_(),
@@ -86,6 +93,18 @@ def merge_format_map(value: object) -> object:
     :raises ValueError: if a key is not a string or a value is not a PyArrow ``DataType``
     """
     return merge_format_map_with_defaults(value, DEFAULT_FORMAT_MAP, pa.DataType, "PyArrow")
+
+
+def merge_strict_format_map(value: object) -> object:
+    """Validate format overrides and merge them into the strict specification format mapping.
+
+    :param value: a mapping from JSON Schema format names to PyArrow types
+    :type value: object
+    :return: the merged mapping, or ``value`` unchanged when it is not a mapping
+    :rtype: object
+    :raises ValueError: if a key is not a string or a value is not a PyArrow ``DataType``
+    """
+    return merge_format_map_with_defaults(value, STRICT_DEFAULT_FORMAT_MAP, pa.DataType, "PyArrow")
 
 
 class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
@@ -241,16 +260,10 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
             )
         )
 
-    @staticmethod
-    def _emit_logical(node: TypedNode) -> pa.DataType | None:
+    def _emit_logical(self, node: TypedNode) -> pa.DataType | None:
         """Preserve physical widths and logical source types without a JSON encoding."""
         if node.provenance is not None and node.provenance.source == "json-schema":
-            logical_key = node.hints.logical_type
-            return (
-                JSON_SCHEMA_LOGICAL_TYPE_MAP.get(logical_key)
-                if logical_key is not None and "jsonschema_type" in node.provenance.metadata
-                else None
-            )
+            return _emit_jsonschema_logical(node, self.format_map)
         hints = node.hints
         logical = hints.logical_type
         if logical in {"decimal", "wei"}:
@@ -265,6 +278,23 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
             return pa.float32()
         fixed = pa.binary(hints.length) if hints.length is not None else pa.binary()
         return {"date": pa.date32(), "time": pa.time64("us"), "binary": pa.binary(), "fixed": fixed}.get(logical)
+
+
+def _emit_jsonschema_logical(node: TypedNode, format_map: Mapping[str, pa.DataType]) -> pa.DataType | None:
+    """Resolve PyArrow scalar type for a strict ``json-schema`` node using ``format_map``."""
+    logical_key = node.hints.logical_type
+    jsonschema_label = node.provenance.metadata.get("jsonschema_type") if node.provenance is not None else None
+    if logical_key is None or not isinstance(jsonschema_label, str):
+        return None
+    if (
+        logical_key in {"string", "date"}
+        and jsonschema_label.startswith("string (")
+        and jsonschema_label.endswith(")")
+        and " | " not in jsonschema_label
+    ):
+        fmt = jsonschema_label[len("string (") : -1]
+        return format_map.get(fmt, pa.string())
+    return JSON_SCHEMA_LOGICAL_TYPE_MAP.get(logical_key)
 
 
 def _emit_logical_integer(hints: NodeHints) -> pa.DataType | None:

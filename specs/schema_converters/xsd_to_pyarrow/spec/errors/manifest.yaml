@@ -42,6 +42,11 @@ errors:
     code: E5
     match: xs:anyAttribute
     description: "`<xs:anyAttribute processContents=\"skip\"/>`"
+  - file: nested_wildcard_any_attribute.xsd
+    xml_tag: entry
+    code: E5
+    match: xs:anyAttribute
+    description: Nested child `complexType` declares `<xs:anyAttribute processContents="skip"/>`.
   - file: cdata_variety.xsd
     xml_tag: root
     code: E5

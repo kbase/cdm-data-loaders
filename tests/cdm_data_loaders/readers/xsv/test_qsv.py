@@ -1,6 +1,7 @@
 """Tests for the xsv_validator.qsv module."""
 
 import csv
+import json
 import re
 import shutil
 import subprocess
@@ -31,15 +32,11 @@ from cdm_data_loaders.readers.xsv.qsv import (
     run_qsv_null_replacement,
     run_qsv_validate,
 )
-from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
-from tests.helpers.fixtures_xsv import (
-    ALL_RAGGED_ROWS,
-    COLUMNS,
-    PARTIAL_RAGGED_ROWS,
-    VALID_ROWS,
-    WriteFile,
-    build_xsv_content,
+from cdm_data_loaders.validation.jsonschema.metaschema import (
+    CUSTOM_META_SCHEMA_URI,
+    DRAFT_2020_12_SCHEMA_URI,
 )
+from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
 from tests.cdm_data_loaders.readers.xsv._helpers import (
     DELIMITERS,
     FAKE_QSV_CMD,
@@ -55,6 +52,14 @@ from tests.cdm_data_loaders.readers.xsv._helpers import (
 )
 from tests.cdm_data_loaders.readers.xsv._helpers import (
     write_validator_input_file as _write_validator_input_file,
+)
+from tests.helpers.fixtures_xsv import (
+    ALL_RAGGED_ROWS,
+    COLUMNS,
+    PARTIAL_RAGGED_ROWS,
+    VALID_ROWS,
+    WriteFile,
+    build_xsv_content,
 )
 
 ROWS_INVALID_NUMBER: Final[list[list[str]]] = [
@@ -1911,3 +1916,53 @@ def test_clean_validate_file_fail_end_to_end_move_failure_returns_none(
     output = files.valid_output
 
     assert (args.tmp_dir_path / output.name).is_file()
+
+
+def test_clean_validate_file_pass_end_to_end_dereferences_ref_and_allof_integer_columns(
+    make_args: Callable[..., CleanerValidatorArgs],
+    write_source_file: WriteFile,
+) -> None:
+    """Dereference $defs/$ref and allOf integer columns before second-pass qsv validation."""
+    ref_schema = ValidatedXsvSchema(
+        jsonschema={
+            "$schema": CUSTOM_META_SCHEMA_URI,
+            "type": "object",
+            "required": ["gene_id", "reads"],
+            "$defs": {
+                "GeneId": {"type": "string", "pattern": "^G[0-9]{4}$"},
+                "Count": {"type": ["integer", "null"], "minimum": 0},
+            },
+            "properties": {
+                "gene_id": {"$ref": "#/$defs/GeneId"},
+                "reads": {"allOf": [{"$ref": "#/$defs/Count"}, {"maximum": 5000}]},
+            },
+        }
+    )
+    rows = [["G0001", "1500"], ["G0002", ""], ["G0003", "0"]]
+    source = write_source_file(build_xsv_content(rows, header=["gene_id", "reads"]), "genes.tsv")
+    args = make_args(
+        source,
+        first_pass_schema_override=ValidatedXsvSchema(
+            jsonschema={
+                "$schema": DRAFT_2020_12_SCHEMA_URI,
+                "type": "object",
+                "required": ["gene_id", "reads"],
+                "properties": {
+                    "gene_id": {"type": ["string", "null"]},
+                    "reads": {"type": ["string", "null"]},
+                },
+            }
+        ),
+        post_norm_schema_override=ref_schema,
+    )
+
+    result = clean_validate_file(args)
+
+    files = generate_qsv_validate_file_names(args, "ignored", first_pass=False)
+    assert result == files.valid_output.name
+    assert args.errors == []
+    written_qsv_schema = json.loads(files.schema.read_text(encoding="utf-8"))
+    assert written_qsv_schema["$schema"] == DRAFT_2020_12_SCHEMA_URI
+    assert "$defs" not in written_qsv_schema
+    assert written_qsv_schema["properties"]["reads"]["type"] == ["integer", "null"]
+    assert parse_xsv((args.validated_file_dir_path / result).read_text()) == [["gene_id", "reads"], *rows]

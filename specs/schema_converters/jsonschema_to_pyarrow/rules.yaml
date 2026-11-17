@@ -73,14 +73,16 @@ sections:
           combined with the union rules. Mixing fixed properties with a map schema raises **E6**.
       - id: R-SHAPE-REF
         statement: |
-          `"$ref": "#/$defs/<Name>"` is replaced by the definition; sibling keywords on the referencing node
-          are overlaid on the definition. Only local `#/$defs/` pointers are supported (**E9**).
+          `"$ref": "#/$defs/<Name>"` is replaced by the definition with target identity keywords (`$id`, `$anchor`,
+          `$dynamicAnchor`) stripped; sibling keywords on the referencing node are deep-merged onto the definition.
+          Non-local pointers and direct `$ref` alias cycles raise **E9**.
       - id: R-RECURSION
         statement: |
           Each `$defs` target may be expanded at most `max_recursion_depth` times (default `2`) along a path.
           A deeper reference becomes `pa.string()` (or `pa.list_(pa.string())` inside an array), carries no
           `jsonschema_type`, and its runtime value is serialized with `json.dumps`. Applies to self-recursion
-          and mutual recursion.
+          and mutual recursion. Non-JSON-serializable Arrow types inside a recursive `$defs` cycle raise **E10**;
+          literal annotation payloads (`default`, `examples`, `enum`, `const`, `x-*`) are ignored during cycle checks.
 
   - id: nullability
     title: Field Nullability
@@ -117,7 +119,8 @@ sections:
         statement: |
           Scalar `type`, `format` and `contentEncoding` map to Arrow types per the table below. Numeric
           validation keywords (`minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`) do
-          not change the type. Only `format: "date"` becomes a temporal type; other formats stay `pa.string()`.
+          not change the type. By default `format: "date"` maps to `pa.date32()` and other string formats stay
+          `pa.string()`, unless overridden via `JSONSchemaToPyArrow(format_map=...)`.
       - id: R-SCALAR-ENUM-CONST
         statement: |
           With an explicit `type`, `enum`/`const` use that type. Without one, each non-null literal's type is

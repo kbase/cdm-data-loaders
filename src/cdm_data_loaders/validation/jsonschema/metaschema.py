@@ -15,6 +15,21 @@ from jsonschema import validators
 
 XSV_CONFIG_SCHEMA_REL_PATH: Final[str] = "xsv_config/0.1.0/schema.json"
 CUSTOM_META_SCHEMA_URI: Final[str] = f"https://kbase.github.io/cdm-data-loaders/schemas/{XSV_CONFIG_SCHEMA_REL_PATH}"
+DRAFT_2020_12_SCHEMA_URI: Final[str] = "https://json-schema.org/draft/2020-12/schema"
+STRICT_SUPPORTED_SCHEMA_DIALECTS: Final[frozenset[str]] = frozenset(
+    {
+        DRAFT_2020_12_SCHEMA_URI,
+        CUSTOM_META_SCHEMA_URI,
+    }
+)
+SUPPORTED_JSONSCHEMA_DRAFT_URIS: Final[tuple[str, ...]] = (
+    DRAFT_2020_12_SCHEMA_URI,
+    "https://json-schema.org/draft/2019-09/schema",
+    "http://json-schema.org/draft-07/schema#",
+    "http://json-schema.org/draft-06/schema#",
+    "http://json-schema.org/draft-04/schema#",
+    CUSTOM_META_SCHEMA_URI,
+)
 X_XSV_CONFIG_KEY: Final[str] = "x-xsv-config"
 REMOTE_METASCHEMA_TIMEOUT_SECONDS: Final[float] = 30.0
 
@@ -62,6 +77,70 @@ def _read_raw_xsv_meta_schema(
         return response.json()
 
 
+def ensure_custom_metaschema_registered(schema: Mapping[str, Any]) -> None:
+    """Register the custom KBase XSV metaschema validator when ``schema`` declares ``CUSTOM_META_SCHEMA_URI``.
+
+    :param schema: Candidate JSON Schema mapping.
+    :type schema: Mapping[str, Any]
+    """
+    if schema.get("$schema") == CUSTOM_META_SCHEMA_URI:
+        register_xsv_validator()
+
+
+def resolve_jsonschema_validator(
+    schema: Mapping[str, Any],
+    *,
+    allow_custom_xsv: bool = True,
+) -> type:
+    """Resolve the ``jsonschema`` validator class for ``schema``'s declared ``$schema`` keyword.
+
+    :param schema: Candidate JSON Schema mapping.
+    :type schema: Mapping[str, Any]
+    :param allow_custom_xsv: Whether to register and allow ``CUSTOM_META_SCHEMA_URI``.
+    :type allow_custom_xsv: bool
+    :return: Resolved ``jsonschema`` validator class.
+    :rtype: type
+    :raises ValueError: If ``$schema`` is missing, not a string, or names an unsupported draft.
+    """
+    if "$schema" not in schema or not isinstance(schema["$schema"], str):
+        err_msg = "JSON Schema is missing the $schema keyword"
+        raise ValueError(err_msg)
+
+    declared = schema["$schema"]
+    if declared == CUSTOM_META_SCHEMA_URI:
+        if not allow_custom_xsv:
+            err_msg = f"Custom metaschema cannot declare itself as its own $schema: {declared}"
+            raise ValueError(err_msg)
+        register_xsv_validator()
+
+    validator = jsonschema.validators.validator_for(schema, default=None)  # type: ignore[arg-type]
+    if validator is None:
+        err_msg = f"Unsupported JSON Schema draft: {declared}"
+        raise ValueError(err_msg)
+    return validator
+
+
+def check_jsonschema_document(
+    schema: Mapping[str, Any],
+    *,
+    allow_custom_xsv: bool = True,
+) -> type:
+    """Resolve the validator for ``schema`` and validate ``schema`` against its metaschema.
+
+    :param schema: Candidate JSON Schema mapping.
+    :type schema: Mapping[str, Any]
+    :param allow_custom_xsv: Whether to register and allow ``CUSTOM_META_SCHEMA_URI``.
+    :type allow_custom_xsv: bool
+    :return: Resolved ``jsonschema`` validator class.
+    :rtype: type
+    :raises ValueError: If ``$schema`` is missing, not a string, or names an unsupported draft.
+    :raises jsonschema.exceptions.SchemaError: If ``schema`` fails metaschema validation.
+    """
+    validator = resolve_jsonschema_validator(schema, allow_custom_xsv=allow_custom_xsv)
+    validator.check_schema(dict(schema))
+    return validator
+
+
 def load_xsv_meta_schema(
     local_schema_path: Path | Traversable | None = None,
     remote_url: str = CUSTOM_META_SCHEMA_URI,
@@ -93,12 +172,7 @@ def load_xsv_meta_schema(
         err_msg = f"Custom metaschema cannot declare itself as its own $schema: {declared}"
         raise ValueError(err_msg)
 
-    meta_validator = jsonschema.validators.validator_for(raw_schema, default=None)  # type: ignore[arg-type]
-    if meta_validator is None:
-        err_msg = f"Unsupported JSON Schema draft: {declared}"
-        raise ValueError(err_msg)
-
-    meta_validator.check_schema(raw_schema)
+    check_jsonschema_document(raw_schema, allow_custom_xsv=False)
     return frozendict(raw_schema)
 
 

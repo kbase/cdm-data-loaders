@@ -16,7 +16,6 @@ from typing import Any
 from dlt.common.pipeline import LoadInfo
 from dlt.extract.resource import DltResource
 from jsonschema import FormatChecker
-from jsonschema.validators import validator_for
 
 from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.pipelines.jsonlines.base import (
@@ -28,6 +27,7 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlJsonschemaIngestSettings,
 )
 from cdm_data_loaders.readers.jsonl import ParseErrorResolver
+from cdm_data_loaders.validation.jsonschema.metaschema import resolve_jsonschema_validator
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
 
 
@@ -40,7 +40,7 @@ def _make_resolve_error(schema: ValidatedSchema) -> ParseErrorResolver:
     :rtype: ParseErrorResolver
     """
     raw_schema = schema.jsonschema
-    validator = validator_for(raw_schema)(raw_schema, format_checker=FormatChecker())
+    validator = resolve_jsonschema_validator(raw_schema)(raw_schema, format_checker=FormatChecker())
 
     def _validate(record: dict[str, Any]) -> str | None:
         errors = sorted(validator.iter_errors(record), key=str)

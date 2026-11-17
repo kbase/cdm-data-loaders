@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field, ValidationError
 from pydantic_settings import CliApp, SettingsError
 
 import cdm_data_loaders.pipelines.jsonlines.settings as jsonlines_settings_module
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrowError,
 )
@@ -55,18 +54,23 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlPydanticIngestSettings,
     build_output_schema_registry,
 )
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.pipelines.presets.ncbi_datasets import (
     NCBI_DATASETS_PIPELINE_NAME,
     NCBI_DATASETS_SCHEMA_MODULE,
     NcbiDatasetsSettings,
 )
 from cdm_data_loaders.schemas.ncbi_datasets.schema import SCHEMAS as NCBI_DATASETS_SCHEMAS
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.validation.jsonschema.dereference import DereferencingError
 from cdm_data_loaders.validation.jsonschema.metaschema import (
     CUSTOM_META_SCHEMA_URI,
     get_xsv_meta_schema,
 )
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
+from tests.data.ncbi_datasets.dataset_report_schemas import (
+    ENTITY_SCHEMAS as DATASET_ENTITY_SCHEMAS,
+)
 from tests.helpers.cli_assertions import (
     assert_cli_field_roundtrips,
     assert_no_cli_clashes,
@@ -75,9 +79,6 @@ from tests.helpers.cli_assertions import (
     cts_expected,
     register_temp_module,
     settings_to_argv,
-)
-from tests.data.ncbi_datasets.dataset_report_schemas import (
-    ENTITY_SCHEMAS as DATASET_ENTITY_SCHEMAS,
 )
 
 

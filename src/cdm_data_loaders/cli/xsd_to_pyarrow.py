@@ -10,12 +10,12 @@ from typing import Annotated, Final, Self
 from pydantic import BaseModel, ConfigDict, Field, FilePath, PositiveInt, model_validator
 from pydantic_settings import CliImplicitFlag, SettingsConfigDict
 
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.io import write_schema_text
 from cdm_data_loaders.converters.facades.xsd_to_pyarrow import XsdToPyArrow
 from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import NonEmptyStr
 from cdm_data_loaders.core.settings import LoggerSettings, default_settings_with_shortcuts
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
 
 logger: Logger = getLogger(__name__)
 

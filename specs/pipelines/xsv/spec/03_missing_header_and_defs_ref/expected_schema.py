@@ -8,7 +8,7 @@ EXPECTED_SCHEMA = pa.schema(
             "gene_id",
             pa.string(),
             nullable=False,
-            metadata={"comment": "Standard gene identifier.", "jsonschema_type": "string"},
+            metadata={"comment": "Locus gene identifier.", "jsonschema_type": "string"},
         ),
         pa.field(
             "reads",

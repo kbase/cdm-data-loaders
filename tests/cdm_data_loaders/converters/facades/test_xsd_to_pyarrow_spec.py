@@ -18,7 +18,7 @@ from frozendict import frozendict
 from lxml.etree import _Element, parse, tostring
 
 from cdm_data_loaders.cli.xsd_to_pyarrow import SchemaCodegenConfig, render_schema_module
-from cdm_data_loaders.coercion.xml import convert_xml_element
+from cdm_data_loaders.coercion.xml import convert_xml_element, make_xml_element_converter
 from cdm_data_loaders.converters.emitters.pyarrow_codegen.naming import to_upper_snake
 from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
     ERROR_BY_CODE,
@@ -243,6 +243,15 @@ def test_render_schema_module_fail_error_manifest(err: ErrorCase) -> None:
     )
     with pytest.raises(ERRORS_BY_CODE[err.code], match=err.match):
         render_schema_module(config)
+
+
+@pytest.mark.parametrize("err", ERROR_PARAMS)
+def test_make_xml_element_converter_fail_error_manifest(err: ErrorCase) -> None:
+    """Each error fixture raises the XsdToPyArrowError subclass for its code when building an XML converter."""
+    assert err.xml_tag is not None
+    schema = load_schema(err.file)
+    with pytest.raises(ERRORS_BY_CODE[err.code], match=err.match):
+        make_xml_element_converter(schema, err.xml_tag)
 
 
 @pytest.mark.parametrize(

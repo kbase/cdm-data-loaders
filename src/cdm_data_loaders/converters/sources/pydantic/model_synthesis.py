@@ -20,7 +20,7 @@ from pydantic import (
 from pydantic.fields import FieldInfo
 
 from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
 
 
 @dataclass(frozen=True, slots=True)

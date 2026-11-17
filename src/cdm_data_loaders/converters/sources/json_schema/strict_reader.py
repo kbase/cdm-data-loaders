@@ -1,18 +1,14 @@
 """Read strict Draft 2020-12 JSON Schema documents with ``$defs`` recursion into the IR."""
 
-import copy
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, NoReturn
 
 from frozendict import frozendict
-from jsonschema.validators import validator_for
-from pydantic import PositiveInt
 
 from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
 from cdm_data_loaders.converters.core.guards import (
-    DEFAULT_MAX_RECURSION_DEPTH,
     require_object_root,
     require_schema_keyword,
 )
@@ -30,9 +26,10 @@ from cdm_data_loaders.converters.sources.json_schema.strict_combinators import (
     classify_node_kind,
     extract_object_parts_with_refs,
     merge_property_definitions,
+    merge_ref_target_and_siblings,
 )
 from cdm_data_loaders.converters.sources.json_schema.strict_refs import (
-    SUPPORTED_SCHEMA_DIALECTS,
+    DEFAULT_FORBIDDEN_RECURSIVE_FORMATS,
     StrictBuildContext,
     StrictNodeMeta,
     check_no_forbidden_types_in_recursive_cycle,
@@ -43,7 +40,12 @@ from cdm_data_loaders.converters.sources.json_schema.strict_refs import (
     validate_node,
 )
 from cdm_data_loaders.converters.sources.json_schema.strict_scalars import resolve_scalar
-from cdm_data_loaders.validation.jsonschema.metaschema import CUSTOM_META_SCHEMA_URI, register_xsv_validator
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth
+from cdm_data_loaders.validation.jsonschema.keywords import strip_ref_target_identity
+from cdm_data_loaders.validation.jsonschema.metaschema import (
+    STRICT_SUPPORTED_SCHEMA_DIALECTS,
+    resolve_jsonschema_validator,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,8 +55,13 @@ class StrictJsonSchemaReader:
     extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
     error_type: type[ConversionError] = ConversionError
     converter_name: str = "StrictJsonSchemaReader"
-    max_recursion_depth: PositiveInt = DEFAULT_MAX_RECURSION_DEPTH
+    max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH
     error_by_code: Mapping[str, type[ConversionError]] = field(default_factory=frozendict)
+    forbidden_recursive_formats: frozenset[str] = DEFAULT_FORBIDDEN_RECURSIVE_FORMATS
+
+    def __post_init__(self) -> None:
+        """Validate reader recursion depth configuration."""
+        validate_max_recursion_depth(self.max_recursion_depth)
 
     def _raise_err(self, code: str, msg: str) -> NoReturn:
         """Raise the configured exception subclass for ``code`` or fall back to ``error_type``.
@@ -117,13 +124,12 @@ class StrictJsonSchemaReader:
             self.error_by_code.get("E1", self.error_type),
             converter_name=self.converter_name,
         )
-        if schema.get("$schema") not in SUPPORTED_SCHEMA_DIALECTS:
+        if schema.get("$schema") not in STRICT_SUPPORTED_SCHEMA_DIALECTS:
             msg = (
                 f"Missing or unsupported $schema dialect: {schema.get('$schema')!r}; expected JSON Schema Draft 2020-12"
             )
             self._raise_err("E1", msg)
-        if schema.get("$schema") == CUSTOM_META_SCHEMA_URI:
-            register_xsv_validator()
+        validator_cls = resolve_jsonschema_validator(schema)
         require_object_root(
             schema,
             self.error_by_code.get("E2", self.error_type),
@@ -136,14 +142,6 @@ class StrictJsonSchemaReader:
             raise self.error_type(msg)
 
         root_dict = self._validate(schema)
-        ref_counts: dict[str, int] = {}
-        if "$ref" in root_dict and "properties" not in root_dict:
-            ref_name, target = resolve_ref(
-                root_dict["$ref"], defs, error_type=self.error_type, error_by_code=self.error_by_code
-            )
-            ref_counts[ref_name] = 1
-            root_dict = self._validate(target)
-
         root_kind = self._classify(root_dict, defs)
         if root_kind == "map":
             msg = "Top-level root schema cannot be a dynamic map without fixed properties; root JSON Schema did not resolve to a struct"
@@ -154,11 +152,12 @@ class StrictJsonSchemaReader:
 
         ctx = StrictBuildContext(
             defs=defs,
-            ref_counts=ref_counts,
+            ref_counts={},
             max_recursion_depth=self.max_recursion_depth,
             extension_registry=self.extension_registry,
             error_type=self.error_type,
             error_by_code=self.error_by_code,
+            forbidden_recursive_formats=self.forbidden_recursive_formats,
         )
         root_meta = self._build_node_meta(root_dict, defs, (), nullable=False, facet_source=schema)
         node = self._build_merged_object(root_dict, ctx, root_meta)
@@ -169,7 +168,7 @@ class StrictJsonSchemaReader:
             annotations=node.annotations,
             extensions=node.extensions,
             provenance=Provenance("json-schema"),
-            jsonschema_validator_cls=validator_for(schema),
+            jsonschema_validator_cls=validator_cls,
         )
 
     def read_node(self, source: object) -> TypedNode:
@@ -187,6 +186,7 @@ class StrictJsonSchemaReader:
             extension_registry=self.extension_registry,
             error_type=self.error_type,
             error_by_code=self.error_by_code,
+            forbidden_recursive_formats=self.forbidden_recursive_formats,
         )
         return self._build_field_node(source, ctx, (), required_in_parent=True)
 
@@ -508,11 +508,10 @@ class StrictJsonSchemaReader:
         ref_name, target = resolve_ref(
             validated["$ref"], ctx.defs, error_type=self.error_type, error_by_code=self.error_by_code
         )
+        kind = self._classify(validated, ctx.defs)
         count = ctx.ref_counts.get(ref_name, 0)
         if count >= 1:
-            check_no_forbidden_types_in_recursive_cycle(
-                ref_name, target, ctx.defs, error_type=self.error_type, error_by_code=self.error_by_code
-            )
+            check_no_forbidden_types_in_recursive_cycle(ref_name, target, ctx)
         if count >= ctx.max_recursion_depth:
             return TypedNode(
                 type="string",
@@ -523,9 +522,10 @@ class StrictJsonSchemaReader:
                 constraints=meta.constraints,
                 provenance=Provenance("json-schema", meta.path),
             )
-        next_ctx = ctx.with_ref(ref_name)
-        if len(validated) == 1:
-            result = self._build_type(target, next_ctx, meta)
+        sibling_keys = {k: v for k, v in validated.items() if k not in {"$ref", "description"}}
+        if not sibling_keys:
+            next_ctx = ctx.with_ref(ref_name)
+            result = self._build_type(strip_ref_target_identity(target), next_ctx, meta)
             if result.type == "object":
                 prov_meta = dict(result.provenance.metadata) if result.provenance is not None else {}
                 prov_meta.setdefault("component_id", hash(("jsonschema_ref", ref_name)))
@@ -541,8 +541,16 @@ class StrictJsonSchemaReader:
                     ),
                 )
             return result
-        merged = {**copy.deepcopy(target), **{k: v for k, v in validated.items() if k not in {"$ref", "description"}}}
-        return self._build_type(merged, next_ctx, meta)
+        if kind == "object":
+            return self._build_merged_object(validated, ctx, meta)
+        next_ctx = ctx.with_ref(ref_name)
+        merged = merge_ref_target_and_siblings(
+            target,
+            validated,
+            exclude_keys=frozenset({"$ref", "description"}),
+        )
+        merged_meta = replace(meta, constraints=extract_constraints(merged))
+        return self._build_type(merged, next_ctx, merged_meta)
 
     def _build_type(
         self,

@@ -29,7 +29,7 @@ from cdm_data_loaders.pipelines.xsv.exceptions import (
     XsvSchemaError,
 )
 from cdm_data_loaders.readers.xsv.duckdb_reader import resolve_xsv_parsing_config
-from cdm_data_loaders.validation.jsonschema.dereference import DereferencingError
+from cdm_data_loaders.validation.jsonschema.dereference import DereferencingError, dereference_schema
 from cdm_data_loaders.validation.jsonschema.models import (
     ValidatedXsvSchema,
     generate_first_pass_schema,
@@ -99,6 +99,7 @@ class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
                 and self._unreconciled_output_schemas is not None
                 and self.table_name in self._unreconciled_output_schemas.registry
             ):
+                dereference_schema(self._validated_schema.jsonschema)
                 self._pyarrow_schema = self._unreconciled_output_schemas.registry[self.table_name]
             else:
                 self._pyarrow_schema = default_pyarrow_schema or convert_xsv_schema_to_pyarrow(self.validated_schema)

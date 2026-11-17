@@ -1,61 +1,10 @@
-"""Shared JSON Schema keyword sets and facet extractors."""
+"""Shared JSON Schema extension and constraint facet extractors."""
 
 from collections.abc import Mapping
-from typing import Any, Final
+from typing import Any
 
 from cdm_data_loaders.converters.core.extensions import ExtensionRegistry, Extensions
-
-TYPES: Final[frozenset[str]] = frozenset({"object", "array", "string", "integer", "number", "boolean", "null"})
-ANNOTATIONS: Final[frozenset[str]] = frozenset(
-    {
-        "$schema",
-        "$id",
-        "$anchor",
-        "$dynamicAnchor",
-        "$comment",
-        "$vocabulary",
-        "title",
-        "description",
-        "default",
-        "examples",
-        "readOnly",
-        "writeOnly",
-        "deprecated",
-    }
-)
-SCHEMA_KEYS: Final[frozenset[str]] = frozenset(
-    {
-        "additionalItems",
-        "unevaluatedItems",
-        "contains",
-        "unevaluatedProperties",
-        "propertyNames",
-        "not",
-        "if",
-        "then",
-        "else",
-        "contentSchema",
-    }
-)
-SCHEMA_MAPS: Final[frozenset[str]] = frozenset({"$defs", "definitions", "dependentSchemas"})
-STRUCTURE: Final[frozenset[str]] = (
-    SCHEMA_KEYS
-    | SCHEMA_MAPS
-    | {
-        "$ref",
-        "allOf",
-        "type",
-        "properties",
-        "required",
-        "items",
-        "prefixItems",
-        "patternProperties",
-        "additionalProperties",
-        "anyOf",
-        "oneOf",
-        "dependencies",
-    }
-)
+from cdm_data_loaders.validation.jsonschema.keywords import ANNOTATIONS, STRUCTURE
 
 
 def extract_extensions(schema: Mapping[str, Any], registry: ExtensionRegistry) -> Extensions:

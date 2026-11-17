@@ -663,3 +663,229 @@ def test_dereference_pass_dependencies_keyword_handles_mixed_schema_and_list_val
     result: dict[str, Any] = _dereference(schema, ctx)  # pyright: ignore[reportAssignmentType]
     assert result["dependencies"]["a"] == {"type": "string"}
     assert result["dependencies"]["b"] == ["c", "d"]
+
+
+@pytest.mark.parametrize(
+    ("schema", "resources"),
+    [
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"root": {"$ref": "#/$defs/Node"}},
+                "$defs": {
+                    "Node": {
+                        "type": "object",
+                        "properties": {"next": {"$ref": "#/$defs/Node"}},
+                    }
+                },
+            },
+            None,
+            id="cycle-through-properties",
+        ),
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"items_col": {"$ref": "#/$defs/ListNode"}},
+                "$defs": {
+                    "ListNode": {
+                        "type": "array",
+                        "items": {"$ref": "#/$defs/ListNode"},
+                    }
+                },
+            },
+            None,
+            id="cycle-through-items",
+        ),
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"choice": {"$ref": "#/$defs/ChoiceNode"}},
+                "$defs": {
+                    "ChoiceNode": {
+                        "anyOf": [{"type": "string"}, {"$ref": "#/$defs/ChoiceNode"}],
+                    }
+                },
+            },
+            None,
+            id="cycle-through-anyof",
+        ),
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"ext": {"$ref": "https://example.org/a.json"}},
+            },
+            {
+                "https://example.org/a.json": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {"b": {"$ref": "https://example.org/b.json"}},
+                },
+                "https://example.org/b.json": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {"a": {"$ref": "https://example.org/a.json"}},
+                },
+            },
+            id="cycle-across-external-resources",
+        ),
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"node": {"$ref": "#/$defs/Anchored"}},
+                "$defs": {
+                    "Anchored": {
+                        "$anchor": "anchored_node",
+                        "type": "object",
+                        "properties": {"again": {"$ref": "#anchored_node"}},
+                    }
+                },
+            },
+            None,
+            id="cycle-via-alternate-anchor-to-same-target",
+        ),
+    ],
+)
+def test_dereference_schema_fail_structural_ref_cycles(
+    schema: dict[str, Any],
+    resources: dict[str, dict[str, Any]] | None,
+) -> None:
+    """Detect circular $ref cycles across child properties, items, anyOf, external resources, and anchors."""
+    with pytest.raises(DereferencingError, match="Circular \\$ref"):
+        dereference_schema(schema, additional_resources=resources)
+
+
+def test_dereference_schema_pass_nested_local_ref_in_external_resource_and_caller_sibling_ref() -> None:
+    """Resolve local $defs inside external resources under the target resolver and caller siblings under the caller resolver."""
+    schema: dict[str, Any] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "$defs": {
+            "CallerExtra": {"type": "integer"},
+        },
+        "properties": {
+            "ext_obj": {
+                "$ref": "https://example.org/common.json#/$defs/Outer",
+                "properties": {
+                    "caller_field": {"$ref": "#/$defs/CallerExtra"},
+                },
+            },
+        },
+    }
+    resources: dict[str, dict[str, Any]] = {
+        "https://example.org/common.json": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {
+                "Inner": {"type": "string", "minLength": 2},
+                "Outer": {
+                    "type": "object",
+                    "required": ["inner_val"],
+                    "properties": {
+                        "inner_val": {"$ref": "#/$defs/Inner"},
+                    },
+                },
+            },
+        }
+    }
+    result = dereference_schema(schema, additional_resources=resources)
+    assert result["properties"]["ext_obj"] == {
+        "type": "object",
+        "required": ["inner_val"],
+        "properties": {
+            "inner_val": {"type": "string", "minLength": 2},
+            "caller_field": {"type": "integer"},
+        },
+    }
+
+
+def test_dereference_schema_pass_deep_merges_overlapping_allof_and_ref_siblings() -> None:
+    """Deep-merge overlapping properties, patternProperties, dependentSchemas, and required across allOf and $ref siblings."""
+    schema: dict[str, Any] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "$defs": {
+            "Base": {
+                "type": "object",
+                "required": ["score"],
+                "properties": {"score": {"type": "integer", "minimum": 0}},
+                "patternProperties": {"^m_": {"type": "number", "minimum": 0}},
+                "dependentSchemas": {"score": {"required": ["unit"]}},
+            }
+        },
+        "allOf": [
+            True,
+            {
+                "$ref": "#/$defs/Base",
+                "required": ["score", "unit"],
+                "properties": {
+                    "score": {"maximum": 100},
+                    "unit": {"type": "string"},
+                },
+                "patternProperties": {"^m_": {"maximum": 1}},
+                "dependentSchemas": {"score": {"properties": {"unit": {"minLength": 1}}}},
+            },
+        ],
+    }
+    result = dereference_schema(schema)
+    assert result["required"] == ["score", "unit"]
+    assert result["properties"]["score"] == {"type": "integer", "minimum": 0, "maximum": 100}
+    assert result["properties"]["unit"] == {"type": "string"}
+    assert result["patternProperties"]["^m_"] == {"type": "number", "minimum": 0, "maximum": 1}
+    assert result["dependentSchemas"]["score"] == {
+        "required": ["unit"],
+        "properties": {"unit": {"minLength": 1}},
+    }
+
+
+@pytest.mark.parametrize(
+    ("schema", "match"),
+    [
+        pytest.param(
+            {"$schema": "https://json-schema.org/draft/2020-12/schema", "allOf": [False]},
+            "boolean schema False",
+            id="allof-false-branch",
+        ),
+        pytest.param(
+            {"$schema": "https://json-schema.org/draft/2020-12/schema", "allOf": ["invalid"]},
+            "must be a schema object or boolean",
+            id="allof-non-dict-branch",
+        ),
+        pytest.param(
+            {"$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": 123},
+            "Invalid non-string \\$ref",
+            id="non-string-ref",
+        ),
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "properties": {"x": {"$ref": "#/$defs/BadTarget"}},
+                "$defs": {"BadTarget": ["not", "a", "mapping"]},
+            },
+            "non-object schema",
+            id="ref-to-non-mapping",
+        ),
+    ],
+)
+def test_dereference_schema_fail_invalid_allof_or_ref_targets(schema: dict[str, Any], match: str) -> None:
+    """Raise DereferencingError for false/non-object allOf branches and non-string or non-mapping $ref targets."""
+    with pytest.raises(DereferencingError, match=match):
+        dereference_schema(schema)
+
+
+@pytest.mark.parametrize(
+    ("bad_depth", "exc_cls"),
+    [
+        pytest.param(0, ValueError, id="zero"),
+        pytest.param(-2, ValueError, id="negative"),
+        pytest.param(True, TypeError, id="bool-true"),
+        pytest.param(False, TypeError, id="bool-false"),
+    ],
+)
+def test_dereference_schema_fail_invalid_max_ref_depth(bad_depth: int, exc_cls: type[Exception]) -> None:
+    """Reject non-positive or boolean max_ref_depth values."""
+    with pytest.raises(exc_cls, match="max_ref_depth"):
+        dereference_schema({"type": "object"}, max_ref_depth=bad_depth)

@@ -14,7 +14,6 @@ from xmlschema.validators import (
 )
 
 from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth
 from cdm_data_loaders.converters.core.ir import (
     SPEC_BINARY,
     SPEC_BOOL,
@@ -36,6 +35,7 @@ from cdm_data_loaders.converters.core.ir import (
     TypedNode,
 )
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth
 from cdm_data_loaders.utils.xml_utils import local_name as _local_name
 from cdm_data_loaders.validation.xsd.particles import resolve_child_cardinality
 from cdm_data_loaders.validation.xsd.scalars import (
@@ -446,14 +446,7 @@ def _build_element_ir_field(
     if isinstance(cached, TypedNode):
         struct_node = cached
     else:
-        next_ctx = TraversalContext(
-            schema=ctx.schema,
-            type_counts={**ctx.type_counts, type_id: next_count},
-            max_recursion_depth=ctx.max_recursion_depth,
-            struct_cache=ctx.struct_cache,
-            error_type=ctx.error_type,
-            error_by_code=ctx.error_by_code,
-        )
+        next_ctx = ctx.with_type(type_id)
         struct_fields = _build_complex_struct_fields(next_ctx, elem_type, path, parent_nillable=element.nillable)
         required_names = tuple(f.name for f in struct_fields if f.required)
         struct_meta: dict[str, Any] = {"component_id": type_id, "nillable": bool(element.nillable)}

@@ -4,16 +4,27 @@
   "$defs": {
     "base_id": {
       "type": "object",
-      "required": ["submission_id"],
+      "required": [
+        "submission_id",
+        "priority"
+      ],
       "properties": {
         "submission_id": {
           "type": "string"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
     "contact_info": {
+      "$id": "https://example.org/schemas/contact-info.json",
+      "$anchor": "contact_card",
       "type": "object",
-      "required": ["email"],
+      "required": [
+        "email"
+      ],
       "properties": {
         "email": {
           "type": "string",
@@ -31,14 +42,28 @@
     },
     {
       "type": "object",
-      "required": ["submitted_date", "contact"],
+      "required": [
+        "submitted_date",
+        "contact"
+      ],
       "properties": {
+        "priority": {
+          "maximum": 10
+        },
         "submitted_date": {
           "type": "string",
           "format": "date"
         },
         "contact": {
-          "$ref": "#/$defs/contact_info"
+          "$ref": "https://example.org/schemas/contact-info.json",
+          "required": [
+            "department"
+          ],
+          "properties": {
+            "department": {
+              "type": "string"
+            }
+          }
         }
       }
     }

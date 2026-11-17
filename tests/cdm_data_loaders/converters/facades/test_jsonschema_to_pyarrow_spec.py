@@ -14,6 +14,7 @@ from typing import Any
 import pyarrow as pa
 import pytest
 from _pytest.mark.structures import ParameterSet
+from frozendict import frozendict
 from jsonschema import Draft202012Validator
 
 from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
@@ -269,3 +270,88 @@ def test_generate_pyarrow_schema_fail_non_json_serializable_type_under_recursion
     }
     with pytest.raises(RecursiveNonJsonTypeError, match="recursive"):
         generate_pyarrow_schema(schema)
+
+
+def test_jsonschema_to_pyarrow_format_map_overrides_direct_and_ref_fields() -> None:
+    """Custom format_map overrides apply to both inline and $ref-referenced formatted string fields."""
+    schema: dict[str, Any] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": ["created_at", "updated_at", "recorded_on"],
+        "properties": {
+            "created_at": {"type": "string", "format": "date-time"},
+            "updated_at": {"$ref": "#/$defs/IsoTimestamp"},
+            "recorded_on": {"type": "string", "format": "date"},
+        },
+        "$defs": {
+            "IsoTimestamp": {"type": "string", "format": "date-time"},
+        },
+    }
+    ts_converter = JSONSchemaToPyArrow(format_map={"date-time": pa.timestamp("us", tz="UTC")})
+    ts_schema = ts_converter.convert(schema)
+    assert ts_schema.equals(
+        pa.schema(
+            [
+                pa.field(
+                    "created_at",
+                    pa.timestamp("us", tz="UTC"),
+                    nullable=False,
+                    metadata={"jsonschema_type": "string (date-time)"},
+                ),
+                pa.field(
+                    "updated_at",
+                    pa.timestamp("us", tz="UTC"),
+                    nullable=False,
+                    metadata={"jsonschema_type": "string (date-time)"},
+                ),
+                pa.field(
+                    "recorded_on",
+                    pa.date32(),
+                    nullable=False,
+                    metadata={"jsonschema_type": "string (date)"},
+                ),
+            ]
+        ),
+        check_metadata=True,
+    )
+
+    cleared_converter = JSONSchemaToPyArrow(format_map=frozendict())
+    assert cleared_converter.convert(schema).field("recorded_on").type == pa.string()
+
+
+def test_jsonschema_to_pyarrow_format_map_recursive_cycle_checks() -> None:
+    """Custom format_map updates E10 recursive non-JSON type checks."""
+    dt_recursive_schema: dict[str, Any] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {"root": {"$ref": "#/$defs/Node"}},
+        "$defs": {
+            "Node": {
+                "type": "object",
+                "properties": {
+                    "ts": {"type": "string", "format": "date-time"},
+                    "child": {"$ref": "#/$defs/Node"},
+                },
+            }
+        },
+    }
+    assert generate_pyarrow_schema(dt_recursive_schema).field("root").type is not None
+    with pytest.raises(RecursiveNonJsonTypeError, match="date-time"):
+        JSONSchemaToPyArrow(format_map={"date-time": pa.timestamp("us", tz="UTC")}).convert(dt_recursive_schema)
+
+    date_recursive_schema: dict[str, Any] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {"root": {"$ref": "#/$defs/DatedNode"}},
+        "$defs": {
+            "DatedNode": {
+                "type": "object",
+                "properties": {
+                    "day": {"type": "string", "format": "date"},
+                    "child": {"$ref": "#/$defs/DatedNode"},
+                },
+            }
+        },
+    }
+    string_date_schema = JSONSchemaToPyArrow(format_map={"date": pa.string()}).convert(date_recursive_schema)
+    assert string_date_schema.field("root").type.field("day").type == pa.string()

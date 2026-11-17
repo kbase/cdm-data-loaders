@@ -7,10 +7,9 @@ from typing import Any, Final
 import pyarrow as pa
 import xmlschema
 from frozendict import frozendict
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field
 from xmlschema.validators import XsdType
 
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
 from cdm_data_loaders.converters.emitters.pyarrow_codegen.renderer import (
@@ -27,6 +26,7 @@ from cdm_data_loaders.converters.sources.xsd import (
     XsdReader,
     simple_type_to_ir_node,
 )
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, StrictPositiveRecursionDepth
 
 DEFAULT_EMITTER: Final[PyArrowEmitter] = PyArrowEmitter(max_nesting=100)
 
@@ -153,7 +153,7 @@ class XsdToPyArrow(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     xml_tag: str | None = None
-    max_recursion_depth: PositiveInt = Field(default=DEFAULT_MAX_RECURSION_DEPTH)
+    max_recursion_depth: StrictPositiveRecursionDepth = Field(default=DEFAULT_MAX_RECURSION_DEPTH)
 
     def _read(self, schema: xmlschema.XMLSchema | str | Path, xml_tag: str | None = None) -> SchemaDocument:
         """Read an XSD schema element into a converter IR ``SchemaDocument``.

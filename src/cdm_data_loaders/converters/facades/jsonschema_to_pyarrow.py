@@ -2,16 +2,19 @@
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 import pyarrow as pa
 from frozendict import frozendict
 from pydantic import Field, PositiveInt, field_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.io import ExtraMetadataKeywords
-from cdm_data_loaders.converters.emitters.pyarrow import DEFAULT_FORMAT_MAP, PyArrowEmitter, merge_format_map
+from cdm_data_loaders.converters.emitters.pyarrow import (
+    STRICT_DEFAULT_FORMAT_MAP,
+    PyArrowEmitter,
+    merge_strict_format_map,
+)
 from cdm_data_loaders.converters.emitters.pyarrow_codegen.renderer import (
     render_python_schema_module,
     write_python_schema_file,
@@ -23,11 +26,15 @@ from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import
 )
 from cdm_data_loaders.converters.facades._base import JsonSchemaConverterBase
 from cdm_data_loaders.converters.sources.json_schema.strict_reader import StrictJsonSchemaReader
+from cdm_data_loaders.utils.arrow_schema import is_non_json_arrow_type
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, StrictPositiveRecursionDepth
 from cdm_data_loaders.validation.jsonschema.dereference import dereference_schema
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
 
 if TYPE_CHECKING:
     from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
+
+STRICT_DEFAULT_EMITTER: Final[PyArrowEmitter] = PyArrowEmitter(format_map=STRICT_DEFAULT_FORMAT_MAP)
 
 
 class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
@@ -39,8 +46,8 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
     _converter_name: ClassVar[str] = "JSONSchemaToPyArrow"
     _root_target_label: ClassVar[str] = "a struct schema"
 
-    max_recursion_depth: PositiveInt = DEFAULT_MAX_RECURSION_DEPTH
-    format_map: frozendict[str, pa.DataType] = Field(default_factory=lambda: DEFAULT_FORMAT_MAP)
+    max_recursion_depth: StrictPositiveRecursionDepth = DEFAULT_MAX_RECURSION_DEPTH
+    format_map: frozendict[str, pa.DataType] = Field(default=STRICT_DEFAULT_FORMAT_MAP)
     treat_unknown_as_string: bool = True
     emit_unions_as_json: bool = False
     extra_metadata_keywords: ExtraMetadataKeywords = Field(default_factory=frozenset)
@@ -49,14 +56,14 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
     @field_validator("format_map", mode="before")
     @classmethod
     def _merge_with_builtin_format_map(cls, value: object) -> object:
-        """Delegate nonempty format overrides to the emitter.
+        """Delegate nonempty format overrides to the strict emitter defaults.
 
         :param value: Input format map.
         :type value: object
         :return: Merged format map.
         :rtype: object
         """
-        return merge_format_map(value) if value else value
+        return merge_strict_format_map(value) if value else value
 
     def _reader(self) -> StrictJsonSchemaReader:
         """Configure strict Draft 2020-12 IR reader with specification error codes.
@@ -64,12 +71,17 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
         :return: Configured ``StrictJsonSchemaReader``.
         :rtype: StrictJsonSchemaReader
         """
+        forbidden_formats = frozenset(fmt for fmt, dtype in self.format_map.items() if is_non_json_arrow_type(dtype))
+        forbidden_formats = frozenset(
+            fmt for fmt, dtype in self.format_map.items() if is_non_json_arrow_type(dtype)
+        )
         return StrictJsonSchemaReader(
             self.extension_registry,
             error_type=self._error_cls,
             converter_name=self._converter_name,
             max_recursion_depth=self.max_recursion_depth,
             error_by_code=ERROR_BY_CODE,
+            forbidden_recursive_formats=forbidden_formats,
         )
 
     def _emitter(self) -> PyArrowEmitter:
@@ -156,7 +168,7 @@ def resolve_scalar_type(node: Mapping[str, Any]) -> tuple[pa.DataType, str]:
     if not isinstance(label, str):
         msg = f"Cannot resolve scalar type for schema node: {node!r}"
         raise JSONSchemaToPyArrowError(msg)
-    return PyArrowEmitter().emit_node(ir_node), label
+    return STRICT_DEFAULT_EMITTER.emit_node(ir_node), label
 
 
 def generate_pyarrow_schema(

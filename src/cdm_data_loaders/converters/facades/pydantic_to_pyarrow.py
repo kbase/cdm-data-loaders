@@ -4,9 +4,8 @@ from pathlib import Path
 from typing import Final
 
 import pyarrow as pa
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field
 
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.ir import SchemaDocument
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
 from cdm_data_loaders.converters.emitters.pyarrow_codegen.renderer import (
@@ -18,6 +17,7 @@ from cdm_data_loaders.converters.exceptions.facades.pydantic_to_pyarrow import (
     PydanticToPyArrowError,
 )
 from cdm_data_loaders.converters.sources.pydantic.reader import PydanticReader
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, StrictPositiveRecursionDepth
 
 DEFAULT_EMITTER: Final[PyArrowEmitter] = PyArrowEmitter(max_nesting=100)
 
@@ -72,7 +72,7 @@ class PydanticToPyArrow(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
-    max_recursion_depth: PositiveInt = Field(default=DEFAULT_MAX_RECURSION_DEPTH)
+    max_recursion_depth: StrictPositiveRecursionDepth = Field(default=DEFAULT_MAX_RECURSION_DEPTH)
     by_alias: bool = False
 
     def _read(self, model: type[BaseModel]) -> SchemaDocument:

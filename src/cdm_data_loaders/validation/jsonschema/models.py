@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import jsonschema.exceptions
-import jsonschema.validators
 from pydantic import (
     BaseModel,
     DirectoryPath,
@@ -19,7 +18,7 @@ from pydantic import (
 from cdm_data_loaders.validation.jsonschema.metaschema import (
     CUSTOM_META_SCHEMA_URI,
     X_XSV_CONFIG_KEY,
-    register_xsv_validator,
+    check_jsonschema_document,
 )
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -46,21 +45,8 @@ class ValidatedSchema(BaseModel):
         :raises jsonschema.exceptions.SchemaError: if the schema fails metaschema validation
         :raises jsonschema.exceptions.ValidationError: if validation raises a schema validation error
         """
-        if "$schema" not in schema or not isinstance(schema["$schema"], str):
-            err_msg = "JSON Schema is missing the $schema keyword"
-            raise ValueError(err_msg)
-
-        declared = schema["$schema"]
-        if declared == CUSTOM_META_SCHEMA_URI:
-            register_xsv_validator()
-
-        validator = jsonschema.validators.validator_for(schema, default=None)  # type: ignore[arg-type]
-        if validator is None:
-            err_msg = f"Unsupported JSON Schema draft: {declared}"
-            raise ValueError(err_msg)
-
         try:
-            validator.check_schema(schema)
+            check_jsonschema_document(schema)
         except (jsonschema.exceptions.SchemaError, jsonschema.exceptions.ValidationError):
             logger.exception("Error validating JSON Schema")
             raise
@@ -135,9 +121,6 @@ def generate_first_pass_schema(validated_schema: ValidatedXsvSchema) -> Validate
     }
     first_pass_schema["type"] = "object"
     first_pass_schema["properties"] = {req: {"type": ["string", "null"]} for req in validated_schema.required_cols}
-
-    validator = jsonschema.validators.validator_for(first_pass_schema)
-    validator.check_schema(first_pass_schema)
 
     return ValidatedXsvSchema(jsonschema=first_pass_schema)
 

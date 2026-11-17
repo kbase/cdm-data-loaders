@@ -15,7 +15,6 @@ from cdm_data_loaders.coercion.xml import (
     make_xml_element_converter,
     make_xml_level_converters,
 )
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
     XmlTagNotFoundError,
 )
@@ -48,6 +47,7 @@ from cdm_data_loaders.pipelines.xmltopyarrow.exceptions import (
     XmlTargetNotFoundError,
     XmlToPyArrowConfigError,
 )
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.validation.xsd.traversal import load_schema
 
 PIPELINE_NAME: Final[str] = "xmltopyarrow"

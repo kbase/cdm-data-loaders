@@ -20,6 +20,8 @@ from cdm_data_loaders.readers.xsv.models import (
     non_header_lines_present,
     prepend_header,
 )
+from cdm_data_loaders.validation.jsonschema.dereference import dereference_schema
+from cdm_data_loaders.validation.jsonschema.metaschema import DRAFT_2020_12_SCHEMA_URI
 from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
 
 
@@ -272,12 +274,12 @@ def run_qsv_validate(
 
     files = generate_qsv_validate_file_names(args, input_file_name, first_pass=first_pass)
 
-    # rewrite custom XSV metaschema URI to Draft 2020-12 so external qsv can compile it
+    # rewrite custom XSV metaschema URI to Draft 2020-12 and dereference second-pass $ref/allOf for qsv CSV typing
     qsv_schema = (
-        {**schema.jsonschema, "$schema": "https://json-schema.org/draft/2020-12/schema"}
-        if schema.has_xsv_metaschema
-        else schema.jsonschema
+        {**schema.jsonschema, "$schema": DRAFT_2020_12_SCHEMA_URI} if schema.has_xsv_metaschema else schema.jsonschema
     )
+    if not first_pass:
+        qsv_schema = dereference_schema(qsv_schema)
     files.schema.write_text(json.dumps(qsv_schema))
 
     cmd = [

@@ -9,7 +9,6 @@ from frozendict import frozendict
 from pydantic import BaseModel, RootModel
 
 from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth
 from cdm_data_loaders.converters.core.inference import unify_scalar_specs
 from cdm_data_loaders.converters.core.ir import Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.sources.pydantic.annotations import (
@@ -27,6 +26,7 @@ from cdm_data_loaders.converters.sources.pydantic.model_synthesis import (
 )
 from cdm_data_loaders.converters.sources.pydantic.scalars import resolve_parsed_scalar
 from cdm_data_loaders.converters.sources.pydantic.unions import build_merged_models_struct
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth
 
 
 @dataclass(frozen=True, slots=True)

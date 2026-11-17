@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "loop": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/loop"
+        }
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "type": "object",
+  "properties": {
+    "item": {
+      "$ref": "#/$defs/loop"
+    }
+  }
+}

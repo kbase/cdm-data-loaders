@@ -12,7 +12,6 @@ from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
 import cdm_data_loaders.pipelines.xmltopyarrow.settings as xmltopyarrow_settings_module
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schema,
     generate_pyarrow_schemas_at_level,
@@ -48,10 +47,12 @@ from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     XmlToPyArrowSettings,
 )
 from cdm_data_loaders.schemas.pubmed.schema import SCHEMAS as PUBMED_SCHEMAS
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMA as UNIPROT_SCHEMA
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMAS as UNIPROT_SCHEMAS
 from cdm_data_loaders.schemas.uniref.schema import SCHEMA as UNIREF_SCHEMA
 from cdm_data_loaders.schemas.uniref.schema import SCHEMAS as UNIREF_SCHEMAS
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.validation.xsd.traversal import load_schema
 from tests.helpers.cli_assertions import register_temp_module, settings_to_argv
 

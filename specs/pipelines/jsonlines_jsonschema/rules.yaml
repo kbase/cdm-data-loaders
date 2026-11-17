@@ -37,12 +37,14 @@ sections:
           cannot be imported, `ENTITY_SCHEMAS` is missing/empty/non-dict, or uses the reserved `_rejected` key).
       - id: R-JSONL-SCHEMA-CONVERT
         statement: |
-          Each entry in `ENTITY_SCHEMAS` is validated by `ValidatedSchema`, requiring an explicit `$schema` keyword
-          for a supported draft (**E2** `UnsupportedJsonlSchemaDialectError`) and passing `validator.check_schema`
-          (**E3** `InvalidJsonlEntitySchemaError`). For each entity not overridden by `TABLE_TRANSFORMS` or
-          `OUTPUT_SCHEMAS`, `convert_schema_to_pyarrow` dereferences local `$ref` pointers and `allOf` branches via
-          `dereference_schema` (**E4** `UnresolvableJsonlSchemaRefError`) and converts the dereferenced Draft 2020-12
-          `object` schema to a `pa.Schema` via `JSONSchemaToPyArrow` (**E5** `UnsupportedJsonlArrowSchemaError`).
+          Each entry in `ENTITY_SCHEMAS` is validated by `ValidatedSchema`, requiring a `$schema` keyword
+          for a supported draft (**E2** `UnsupportedJsonlSchemaDialectError`) and passing metaschema checks via
+          `check_jsonschema_document` (**E3** `InvalidJsonlEntitySchemaError`). For each entity not overridden by
+          `TABLE_TRANSFORMS` or `OUTPUT_SCHEMAS`, `convert_schema_to_pyarrow` resolves `$ref` pointers, strips `$ref`
+          target identity keywords (`$id`, `$anchor`), and deep-merges `allOf` branches and `$ref` sibling keywords via
+          `dereference_schema` (**E4** `UnresolvableJsonlSchemaRefError` on dangling or circular `$ref` chains), then
+          converts the dereferenced Draft 2020-12 (or KBase XSV metaschema) `object` schema to a `pa.Schema` via
+          `JSONSchemaToPyArrow` (**E5** `UnsupportedJsonlArrowSchemaError`).
       - id: R-JSONL-SCHEMA-SKIP
         statement: |
           When `transforms_module` defines a `RecordTransformFn` for an entity in `TABLE_TRANSFORMS` (or provides an
@@ -55,7 +57,8 @@ sections:
       - id: R-JSONL-DIALECT-FORMAT
         statement: |
           `_make_resolve_error` builds a `jsonschema` validator for each entity's raw schema using
-          `validator_for(raw_schema)(raw_schema, format_checker=FormatChecker())`, enforcing string `format`
+          `resolve_jsonschema_validator(raw_schema)(raw_schema, format_checker=FormatChecker())` (including schemas
+          declaring the KBase XSV metaschema or older drafts such as Draft-07), enforcing string `format`
           constraints (such as `date`, `date-time`, `email`, and `uuid`) during record validation while
           `coerce_json_record_for_pyarrow` parses `format: "date"` strings into `pa.date32()` (`datetime.date`) and keeps
           other formatted strings as `pa.string()`.

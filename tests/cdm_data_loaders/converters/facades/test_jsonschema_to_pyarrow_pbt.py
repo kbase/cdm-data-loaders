@@ -22,6 +22,9 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrow,
     generate_pyarrow_schema,
 )
+from cdm_data_loaders.converters.sources.json_schema.strict_combinators import (
+    merge_ref_target_and_siblings,
+)
 from specs._loader.converter_spec import Case, Run, load_cases
 from tests.helpers.paths_and_constants import BASE_DIR
 from tests.helpers.pyarrow_pbt import (
@@ -218,7 +221,11 @@ def _expand_all_of(node: Mapping[str, Any], defs: Mapping[str, Any]) -> dict[str
         return dict(node)
     merged = {k: v for k, v in node.items() if k != "allOf"}
     for branch in node["allOf"]:
-        resolved = _resolve_ref_target(branch["$ref"], defs)[1] if "$ref" in branch else branch
+        resolved = (
+            merge_ref_target_and_siblings(_resolve_ref_target(branch["$ref"], defs)[1], branch)
+            if "$ref" in branch
+            else branch
+        )
         merged = _merge_object_branches(merged, _expand_all_of(resolved, defs))
     return merged
 
@@ -461,7 +468,8 @@ def _node_strategy(
     if "$ref" in node:
         def_name, target = _resolve_ref_target(node["$ref"], defs)
         next_counts = {**ref_counts, def_name: ref_counts.get(def_name, 0) + 1}
-        return _node_strategy(target, defs, next_counts, max_depth)
+        merged_target = merge_ref_target_and_siblings(target, node, exclude_keys=frozenset({"$ref", "$defs"}))
+        return _node_strategy(merged_target, defs, next_counts, max_depth)
 
     if "const" in node or "enum" in node:
         return st.just(node["const"]) if "const" in node else st.sampled_from(node["enum"])

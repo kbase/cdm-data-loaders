@@ -4,8 +4,6 @@ import json
 from types import MappingProxyType
 from typing import Any, Final
 
-from jsonschema.validators import validator_for
-
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import convert_xsv_schema_to_pyarrow
 from cdm_data_loaders.converters.sources.json_schema.strict_scalars import NON_EXTENDABLE_SCALAR_HINTS
 from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
@@ -21,9 +19,9 @@ from cdm_data_loaders.readers.xsv.duckdb_reader import PARSING_CONFIG_KEYS, reso
 from cdm_data_loaders.readers.xsv.models import CleanerValidatorArgs
 from cdm_data_loaders.validation.jsonschema.dereference import dereference_schema
 from cdm_data_loaders.validation.jsonschema.metaschema import (
-    CUSTOM_META_SCHEMA_URI,
+    SUPPORTED_JSONSCHEMA_DRAFT_URIS,
     get_xsv_config_schema,
-    register_xsv_validator,
+    resolve_jsonschema_validator,
 )
 from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
 from docs_macros.constants import PIPELINE_SPECS_ROOT
@@ -43,15 +41,6 @@ XMLTOPYARROW_SETTINGS_CLASSES: Final[tuple[type[XmlToPyArrowSettings], ...]] = (
     UniRef90XmlToPyArrowSettings,
     UniRef100XmlToPyArrowSettings,
     PubMedXmlToPyArrowSettings,
-)
-
-JSONL_JSONSCHEMA_DRAFT_URIS: Final[tuple[str, ...]] = (
-    "https://json-schema.org/draft/2020-12/schema",
-    "https://json-schema.org/draft/2019-09/schema",
-    "http://json-schema.org/draft-07/schema#",
-    "http://json-schema.org/draft-06/schema#",
-    "http://json-schema.org/draft-04/schema#",
-    CUSTOM_META_SCHEMA_URI,
 )
 
 REJECTED_COLUMN_DESCRIPTIONS: Final[MappingProxyType[str, str]] = MappingProxyType(
@@ -232,18 +221,15 @@ def build_xmltopyarrow_preset_rows() -> tuple[XmlPresetRow, ...]:
 
 
 def build_jsonlines_jsonschema_draft_rows() -> tuple[SupportedDraftRow, ...]:
-    """Extract supported JSON Schema draft URI and validator class rows via ``validator_for``.
+    """Extract supported JSON Schema draft URI and validator class rows via ``resolve_jsonschema_validator``.
 
     :return: Tuple of ``SupportedDraftRow`` records.
     :rtype: tuple[SupportedDraftRow, ...]
     """
-    register_xsv_validator()
     rows: list[SupportedDraftRow] = []
-    for uri in JSONL_JSONSCHEMA_DRAFT_URIS:
-        probe_schema: Any = {"$schema": uri}
-        validator_cls = validator_for(probe_schema, default=False)
-        cls_name = validator_cls.__name__ if isinstance(validator_cls, type) else "None"
-        rows.append(SupportedDraftRow(schema_uri=uri, validator_class_name=cls_name))
+    for uri in SUPPORTED_JSONSCHEMA_DRAFT_URIS:
+        validator_cls = resolve_jsonschema_validator({"$schema": uri})
+        rows.append(SupportedDraftRow(schema_uri=uri, validator_class_name=validator_cls.__name__))
     return tuple(rows)
 
 

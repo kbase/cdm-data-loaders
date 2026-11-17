@@ -14,6 +14,10 @@ from cdm_data_loaders.converters.sources.json_schema.strict_refs import (
     resolve_ref,
     validate_node,
 )
+from cdm_data_loaders.validation.jsonschema.keywords import (
+    DICT_OF_SCHEMAS_KEYWORDS,
+    strip_ref_target_identity,
+)
 
 
 def merge_property_definitions(prop_defs: list[dict[str, Any]]) -> dict[str, Any]:
@@ -34,6 +38,46 @@ def merge_property_definitions(prop_defs: list[dict[str, Any]]) -> dict[str, Any
         if "description" in prop_schema:
             merged["description"] = prop_schema["description"]
             break
+    return merged
+
+
+def merge_ref_target_and_siblings(
+    target: Mapping[str, Any],
+    node: Mapping[str, Any],
+    *,
+    exclude_keys: frozenset[str] = frozenset({"$ref"}),
+) -> dict[str, Any]:
+    """Strip resource identity keywords from ``target`` and merge sibling keywords from ``node``.
+
+    :param target: Resolved ``$defs`` target schema mapping.
+    :type target: Mapping[str, Any]
+    :param node: Referencing JSON Schema node mapping.
+    :type node: Mapping[str, Any]
+    :param exclude_keys: Keys on ``node`` to omit when merging siblings.
+    :type exclude_keys: frozenset[str]
+    :return: Merged schema dictionary.
+    :rtype: dict[str, Any]
+    """
+    merged: dict[str, Any] = strip_ref_target_identity(copy.deepcopy(dict(target)))
+    for key, value in node.items():
+        if key in exclude_keys:
+            continue
+        if key in DICT_OF_SCHEMAS_KEYWORDS and isinstance(merged.get(key), Mapping) and isinstance(value, Mapping):
+            sub_map: dict[str, Any] = dict(merged[key])
+            for sub_key, sub_val in value.items():
+                existing = sub_map.get(sub_key)
+                if isinstance(existing, dict) and isinstance(sub_val, dict):
+                    sub_map[sub_key] = merge_property_definitions([existing, copy.deepcopy(sub_val)])
+                else:
+                    sub_map[sub_key] = copy.deepcopy(sub_val)
+            merged[key] = sub_map
+        elif key == "required" and isinstance(value, list):
+            prior_req = merged["required"] if isinstance(merged.get("required"), list) else []
+            merged["required"] = list(dict.fromkeys([*prior_req, *value]))
+        elif key == "allOf" and isinstance(merged.get("allOf"), list) and isinstance(value, list):
+            merged["allOf"] = [*merged["allOf"], *copy.deepcopy(value)]
+        else:
+            merged[key] = copy.deepcopy(value)
     return merged
 
 
@@ -87,6 +131,7 @@ def classify_node_kind(
     extension_registry: ExtensionRegistry,
     error_type: type[ConversionError],
     error_by_code: Mapping[str, type[ConversionError]],
+    _visited: frozenset[str] = frozenset(),
 ) -> str:
     """Validate ``node`` and return ``'null'``, ``'object'``, ``'array'``, ``'map'``, ``'scalar'``, or ``'union'``.
 
@@ -100,6 +145,8 @@ def classify_node_kind(
     :type error_type: type[ConversionError]
     :param error_by_code: Mapping from specification error code to exception class.
     :type error_by_code: Mapping[str, type[ConversionError]]
+    :param _visited: Visited ``$defs`` names along the active ``$ref`` alias chain.
+    :type _visited: frozenset[str]
     :return: Structural shape classification string.
     :rtype: str
     """
@@ -112,22 +159,18 @@ def classify_node_kind(
     if is_null_branch(validated):
         return "null"
     if "$ref" in validated:
-        _, target = resolve_ref(validated["$ref"], defs, error_type=error_type, error_by_code=error_by_code)
-        if len(validated) == 1:
-            return classify_node_kind(
-                target,
-                defs,
-                extension_registry=extension_registry,
-                error_type=error_type,
-                error_by_code=error_by_code,
-            )
-        merged = {**target, **{k: v for k, v in validated.items() if k != "$ref"}}
+        ref_name, target = resolve_ref(validated["$ref"], defs, error_type=error_type, error_by_code=error_by_code)
+        if ref_name in _visited:
+            msg = f"Circular $ref alias cycle detected at {validated['$ref']!r}"
+            return raise_spec_error("E9", msg, error_type=error_type, error_by_code=error_by_code)
+        merged = merge_ref_target_and_siblings(target, validated)
         return classify_node_kind(
             merged,
             defs,
             extension_registry=extension_registry,
             error_type=error_type,
             error_by_code=error_by_code,
+            _visited=_visited | {ref_name},
         )
     return classify_resolved_node_kind(validated, error_type=error_type, error_by_code=error_by_code)
 
@@ -185,6 +228,60 @@ def extract_choice_branches_into_object(
     return set()
 
 
+def _finalize_merged_object_props(
+    raw_props: Mapping[str, list[tuple[dict[str, Any], StrictBuildContext]]],
+) -> dict[str, tuple[dict[str, Any], StrictBuildContext]]:
+    """Collapse accumulated per-property schema definitions into single merged ``(schema, ctx)`` entries.
+
+    :param raw_props: Mapping from property name to ordered ``(schema, ctx)`` pairs.
+    :type raw_props: Mapping[str, list[tuple[dict[str, Any], StrictBuildContext]]]
+    :return: Mapping from property name to ``(merged_schema, first_ctx)``.
+    :rtype: dict[str, tuple[dict[str, Any], StrictBuildContext]]
+    """
+    return {
+        prop_name: (merge_property_definitions([item[0] for item in items]), items[0][1])
+        for prop_name, items in raw_props.items()
+    }
+
+
+def _extract_ref_object_parts(
+    validated: dict[str, Any],
+    ctx: StrictBuildContext,
+) -> tuple[dict[str, tuple[dict[str, Any], StrictBuildContext]], set[str], list[dict[str, Any]]]:
+    """Extract object properties, required set, and scalar union branches for a ``$ref`` object node.
+
+    :param validated: Validated object node containing ``$ref``.
+    :type validated: dict[str, Any]
+    :param ctx: Active strict build context.
+    :type ctx: StrictBuildContext
+    :return: Tuple of ``(merged_props, required_set, scalar_branches)``.
+    :rtype: tuple[dict[str, tuple[dict[str, Any], StrictBuildContext]], set[str], list[dict[str, Any]]]
+    """
+    ref_name, target = resolve_ref(
+        validated["$ref"], ctx.defs, error_type=ctx.error_type, error_by_code=ctx.error_by_code
+    )
+    if ctx.ref_counts.get(ref_name, 0) >= 1:
+        check_no_forbidden_types_in_recursive_cycle(ref_name, target, ctx)
+    next_ctx = ctx.with_ref(ref_name)
+    target_props, target_req, target_scalars = extract_object_parts_with_refs(
+        strip_ref_target_identity(copy.deepcopy(target)),
+        next_ctx,
+    )
+    sibling_keys = {k: v for k, v in validated.items() if k not in {"$ref", "description"}}
+    if not sibling_keys:
+        return target_props, target_req, target_scalars
+
+    sibling_node: dict[str, Any] = {"type": "object", **copy.deepcopy(sibling_keys)}
+    sib_props, sib_req, sib_scalars = extract_object_parts_with_refs(sibling_node, ctx)
+
+    raw_props: dict[str, list[tuple[dict[str, Any], StrictBuildContext]]] = {
+        prop_name: [item] for prop_name, item in target_props.items()
+    }
+    for prop_name, item in sib_props.items():
+        raw_props.setdefault(prop_name, []).append(item)
+    return _finalize_merged_object_props(raw_props), target_req | sib_req, [*target_scalars, *sib_scalars]
+
+
 def extract_object_parts_with_refs(
     node: dict[str, Any],
     ctx: StrictBuildContext,
@@ -205,20 +302,7 @@ def extract_object_parts_with_refs(
         error_by_code=ctx.error_by_code,
     )
     if "$ref" in validated:
-        ref_name, target = resolve_ref(
-            validated["$ref"], ctx.defs, error_type=ctx.error_type, error_by_code=ctx.error_by_code
-        )
-        if ctx.ref_counts.get(ref_name, 0) >= 1:
-            check_no_forbidden_types_in_recursive_cycle(
-                ref_name,
-                target,
-                ctx.defs,
-                error_type=ctx.error_type,
-                error_by_code=ctx.error_by_code,
-            )
-        next_ctx = ctx.with_ref(ref_name)
-        merged_node = {**copy.deepcopy(target), **{k: v for k, v in validated.items() if k != "$ref"}}
-        return extract_object_parts_with_refs(merged_node, next_ctx)
+        return _extract_ref_object_parts(validated, ctx)
 
     raw_props: dict[str, list[tuple[dict[str, Any], StrictBuildContext]]] = {}
     required: set[str] = set(validated.get("required", []))
@@ -269,8 +353,4 @@ def extract_object_parts_with_refs(
         for prop_name, item in c_props.items():
             raw_props.setdefault(prop_name, []).append(item)
 
-    merged_props: dict[str, tuple[dict[str, Any], StrictBuildContext]] = {
-        prop_name: (merge_property_definitions([item[0] for item in items]), items[0][1])
-        for prop_name, items in raw_props.items()
-    }
-    return merged_props, required, scalar_branches
+    return _finalize_merged_object_props(raw_props), required, scalar_branches

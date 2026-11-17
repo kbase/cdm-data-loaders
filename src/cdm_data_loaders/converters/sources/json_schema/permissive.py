@@ -15,14 +15,16 @@ from cdm_data_loaders.converters.core.guards import (
 from cdm_data_loaders.converters.core.inference import infer_implicit_type
 from cdm_data_loaders.converters.core.ir import Field, NodeType, Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.sources.json_schema.common import (
-    ANNOTATIONS,
-    SCHEMA_KEYS,
-    SCHEMA_MAPS,
-    TYPES,
     extract_constraints,
     extract_extensions,
 )
-from cdm_data_loaders.validation.jsonschema.metaschema import CUSTOM_META_SCHEMA_URI, register_xsv_validator
+from cdm_data_loaders.validation.jsonschema.keywords import (
+    ANNOTATIONS,
+    JSONSCHEMA_PRIMITIVE_TYPES,
+    SCHEMA_KEYS,
+    SCHEMA_MAPS,
+)
+from cdm_data_loaders.validation.jsonschema.metaschema import ensure_custom_metaschema_registered
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,8 +50,7 @@ class JsonSchemaReader:
             raise self.error_type(msg)
         schema = dict(source)
         require_schema_keyword(schema, self.error_type, converter_name=self.converter_name)
-        if schema.get("$schema") == CUSTOM_META_SCHEMA_URI:
-            register_xsv_validator()
+        ensure_custom_metaschema_registered(schema)
         declaration = schema.get("type")
         if (
             declaration is not None
@@ -106,7 +107,7 @@ class JsonSchemaReader:
             raise self.error_type(msg)
         declaration = schema.get("type")
         inferred = infer_implicit_type(dict(schema))
-        kind = declaration if isinstance(declaration, str) and declaration in TYPES else "unknown"
+        kind = declaration if isinstance(declaration, str) and declaration in JSONSCHEMA_PRIMITIVE_TYPES else "unknown"
         nullable = None
         if declaration is not None:
             nullable = "null" in declaration if isinstance(declaration, list) else declaration == "null"

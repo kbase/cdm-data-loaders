@@ -15,11 +15,17 @@ import cdm_data_loaders.validation.jsonschema.metaschema as metaschema_module
 from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
 from cdm_data_loaders.validation.jsonschema.metaschema import (
     CUSTOM_META_SCHEMA_URI,
+    DRAFT_2020_12_SCHEMA_URI,
+    STRICT_SUPPORTED_SCHEMA_DIALECTS,
+    SUPPORTED_JSONSCHEMA_DRAFT_URIS,
     XSV_CONFIG_SCHEMA_REL_PATH,
+    check_jsonschema_document,
+    ensure_custom_metaschema_registered,
     get_xsv_config_schema,
     get_xsv_meta_schema,
     load_xsv_meta_schema,
     register_xsv_validator,
+    resolve_jsonschema_validator,
 )
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
 from tests.helpers.paths_and_constants import preserve_xsv_metaschema_state
@@ -394,3 +400,61 @@ def test_validated_schema_pass_bundled_schemas(schema_path: Path) -> None:
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     validated = ValidatedSchema(jsonschema=schema)
     assert validated.jsonschema == schema
+
+
+@pytest.mark.parametrize(
+    "draft_uri",
+    [pytest.param(uri, id=uri) for uri in SUPPORTED_JSONSCHEMA_DRAFT_URIS],
+)
+def test_resolve_jsonschema_validator_and_check_document_pass_supported_drafts(draft_uri: str) -> None:
+    """Resolve validators and check valid documents across all supported JSON Schema draft URIs."""
+    assert frozenset({DRAFT_2020_12_SCHEMA_URI, CUSTOM_META_SCHEMA_URI}) == STRICT_SUPPORTED_SCHEMA_DIALECTS
+    doc: dict[str, Any] = {"$schema": draft_uri, "type": "object"}
+    if draft_uri == CUSTOM_META_SCHEMA_URI:
+        doc["required"] = ["id"]
+        doc["properties"] = {"id": {"type": "string"}}
+    validator_cls = resolve_jsonschema_validator(doc)
+    assert validator_cls is not None
+    check_jsonschema_document(doc)
+
+
+def test_ensure_custom_metaschema_registered_and_allow_custom_xsv_flag() -> None:
+    """Register the custom XSV validator on demand and reject self-referential custom URIs when disallowed."""
+    ensure_custom_metaschema_registered({"$schema": DRAFT_2020_12_SCHEMA_URI})
+    assert get_xsv_meta_schema.cache_info().currsize == 0
+
+    with pytest.raises(ValueError, match=r"Custom metaschema cannot declare itself"):
+        resolve_jsonschema_validator({"$schema": CUSTOM_META_SCHEMA_URI}, allow_custom_xsv=False)
+
+    ensure_custom_metaschema_registered({"$schema": CUSTOM_META_SCHEMA_URI})
+    assert get_xsv_meta_schema.cache_info().currsize == 1
+
+
+@pytest.mark.parametrize(
+    ("bad_schema", "exc_cls", "match"),
+    [
+        pytest.param({"type": "object"}, ValueError, r"missing the \$schema keyword", id="missing-schema"),
+        pytest.param({"$schema": 42}, ValueError, r"missing the \$schema keyword", id="non-string-schema"),
+        pytest.param({"$schema": ""}, ValueError, "Unsupported JSON Schema draft", id="empty-schema-uri"),
+        pytest.param(
+            {"$schema": "https://example.org/unknown"},
+            ValueError,
+            "Unsupported JSON Schema draft",
+            id="unknown-schema-uri",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "type": "not-a-type"},
+            jsonschema.exceptions.SchemaError,
+            "not-a-type",
+            id="invalid-metaschema-type",
+        ),
+    ],
+)
+def test_check_jsonschema_document_fail_invalid_schemas(
+    bad_schema: dict[str, Any],
+    exc_cls: type[Exception],
+    match: str,
+) -> None:
+    """Reject missing, non-string, unsupported, or metaschema-invalid JSON Schema documents."""
+    with pytest.raises(exc_cls, match=match):
+        check_jsonschema_document(bad_schema)

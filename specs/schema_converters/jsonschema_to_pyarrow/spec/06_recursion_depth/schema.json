@@ -20,6 +20,18 @@
   "$defs": {
     "TreeNode": {
       "type": "object",
+      "default": {
+        "label": "root",
+        "format": "date",
+        "$ref": "#/$defs/IgnoredLiteralRef"
+      },
+      "examples": [
+        {
+          "label": "leaf",
+          "contentEncoding": "base64",
+          "$ref": "#/$defs/IgnoredLiteralRef"
+        }
+      ],
       "properties": {
         "label": {
           "type": "string"
@@ -68,4 +80,3 @@
     }
   }
 }
-

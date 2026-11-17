@@ -171,8 +171,7 @@ class PySparkEmitter(_TabularEmitterBase[DataType]):
         del element_nullable
         return ArrayType(element_type, containsNull=True)
 
-    @staticmethod
-    def _emit_logical(node: TypedNode) -> DataType | None:
+    def _emit_logical(self, node: TypedNode) -> DataType | None:
         """Preserve physical widths and logical source types without a JSON encoding."""
         if node.provenance is not None and node.provenance.source == "json-schema":
             return None

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "node"
+  ],
+  "$defs": {
+    "Node": {
+      "type": "object",
+      "properties": {
+        "next": {
+          "$ref": "#/$defs/Node"
+        }
+      }
+    }
+  },
+  "properties": {
+    "node": {
+      "$ref": "#/$defs/Node"
+    }
+  }
+}

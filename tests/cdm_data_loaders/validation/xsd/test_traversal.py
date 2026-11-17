@@ -5,6 +5,11 @@ from pathlib import Path
 import pytest
 import xmlschema
 
+from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
+    ERROR_BY_CODE,
+    WildcardAttributeError,
+    XsdToPyArrowError,
+)
 from cdm_data_loaders.validation.xsd.traversal import (
     TraversalContext,
     can_reach_any_type,
@@ -19,6 +24,8 @@ from cdm_data_loaders.validation.xsd.traversal import (
     resolve_elements_at_level,
     resolve_root_elements,
     resolve_target_element,
+    validate_complex_subtree,
+    validate_target_struct_element,
 )
 
 HIERARCHY_XSD = """<?xml version="1.0" encoding="UTF-8"?>
@@ -126,3 +133,76 @@ def test_recursion_reachability_and_forbidden_types() -> None:
     ctx = TraversalContext(schema=schema, type_counts={id(node_type): 1}, max_recursion_depth=2)
     with pytest.raises(ValueError, match="xs:date"):
         check_no_forbidden_types_under_recursion(node_type, ctx)
+
+
+def test_traversal_context_methods_and_complex_subtree_validation() -> None:
+    """Validate TraversalContext transitions and nested complexType error propagation."""
+    nested_wildcard_xsd = """<?xml version="1.0" encoding="UTF-8"?>
+    <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+      <xs:complexType name="InnerBad">
+        <xs:sequence><xs:element name="k" type="xs:string"/></xs:sequence>
+        <xs:anyAttribute processContents="skip"/>
+      </xs:complexType>
+      <xs:element name="entry">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="inner" type="InnerBad" minOccurs="0"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:schema>
+    """
+    schema = xmlschema.XMLSchema(nested_wildcard_xsd)
+    ctx = TraversalContext(
+        schema=schema,
+        type_counts={},
+        max_recursion_depth=2,
+        error_type=XsdToPyArrowError,
+        error_by_code=ERROR_BY_CODE,
+    )
+    inner_type = schema.types["InnerBad"]
+    stepped = ctx.with_type(id(inner_type))
+    assert stepped.type_counts == {id(inner_type): 1}
+    assert stepped.unbounded().type_counts == {}
+
+    _, entry_type, entry_ctx = prepare_target_traversal(
+        schema,
+        "entry",
+        max_recursion_depth=2,
+        error_type=XsdToPyArrowError,
+        error_by_code=ERROR_BY_CODE,
+    )
+    with pytest.raises(WildcardAttributeError, match="xs:anyAttribute"):
+        validate_target_struct_element(entry_type, "entry", entry_ctx)
+
+    recursive_ok_xsd = """<?xml version="1.0" encoding="UTF-8"?>
+    <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+      <xs:complexType name="TreeNode">
+        <xs:sequence>
+          <xs:element name="label" type="xs:string"/>
+          <xs:element name="child" type="TreeNode" minOccurs="0"/>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:element name="root" type="TreeNode"/>
+    </xs:schema>
+    """
+    rec_schema = xmlschema.XMLSchema(recursive_ok_xsd)
+    _, rec_complex, rec_ctx = prepare_target_traversal(rec_schema, "root", max_recursion_depth=2)
+    validate_target_struct_element(rec_complex, "root", rec_ctx)
+    validate_complex_subtree(rec_complex, rec_ctx)
+
+
+@pytest.mark.parametrize(
+    ("bad_depth", "exc_cls"),
+    [
+        pytest.param(0, ValueError, id="zero"),
+        pytest.param(-1, ValueError, id="negative"),
+        pytest.param(True, TypeError, id="bool-true"),
+        pytest.param(False, TypeError, id="bool-false"),
+    ],
+)
+def test_prepare_target_traversal_fail_invalid_max_recursion_depth(bad_depth: int, exc_cls: type[Exception]) -> None:
+    """Reject non-positive or boolean max_recursion_depth in prepare_target_traversal."""
+    schema = xmlschema.XMLSchema(HIERARCHY_XSD)
+    with pytest.raises(exc_cls, match="max_recursion_depth"):
+        prepare_target_traversal(schema, "record", max_recursion_depth=bad_depth)
