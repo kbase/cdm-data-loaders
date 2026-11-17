@@ -7,7 +7,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry, TableTransformFn, TransformContext
-from cdm_data_loaders.core.transforms import emit_raw_table
+from cdm_data_loaders.core.transforms.routing import emit_raw_table
 from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     DB_REFERENCE_ID_COL,
     DB_REFERENCE_TYPE_COL,

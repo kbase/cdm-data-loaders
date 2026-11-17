@@ -22,7 +22,7 @@ from typing import Any, Final
 import pyarrow as pa
 import yaml
 
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from tests.converter_spec import CASE_MANIFEST
 from tests.pyarrow_spec_helpers import load_module
 

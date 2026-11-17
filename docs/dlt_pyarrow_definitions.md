@@ -7,9 +7,9 @@ render_macros: true
 This guide summarises what table metadata, column descriptions, types, nullability, field names, and row values survive when PyArrow schemas pass through `dlt` pipelines. Every table on this page renders from the schema fixtures and expectations in [`tests/dependencies/test_dlt_pyarrow_table_definitions.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/dependencies/test_dlt_pyarrow_table_definitions.py).
 
 - **Characterisation test suite**: [`tests/dependencies/test_dlt_pyarrow_table_definitions.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/dependencies/test_dlt_pyarrow_table_definitions.py)
-- **Buffered Arrow page emitter (`DictBuffer`)**: [`src/cdm_data_loaders/utils/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/buffer.py)
+- **Buffered Arrow page emitter (`DictBuffer`)**: [`src/cdm_data_loaders/core/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/buffer.py)
 - **Schema registry (`ArrowSchemaRegistry`)**: [`src/cdm_data_loaders/core/registry.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/registry.py)
-- **Resource hint registrar (`OutputTableHints`)**: [`src/cdm_data_loaders/core/transforms.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms.py)
+- **Resource hint registrar (`OutputTableHints`)**: [`src/cdm_data_loaders/core/transforms/hints.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms/hints.py)
 - **Polaris Iceberg definition sync CLI**: [`scripts/apply_polaris_schema_definitions.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/apply_polaris_schema_definitions.py)
 - **PyIceberg SQLite connection cleanup**: [`src/cdm_data_loaders/utils/iceberg/cleanup.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/iceberg/cleanup.py)
 - **Companion nested output and `max_table_nesting` guide**: [`dlt` Nested Output Behaviour](dlt_nested_output_behaviour.md)
@@ -99,15 +99,15 @@ Key takeaways for nested schemas:
 ## Implications for Pipeline and Catalog Authors
 
 - **Populate `metadata={"doc": ...}` for Iceberg field descriptions**: converters and `OUTPUT_SCHEMAS` registries (see [Table and Column Transformations](table_transforms.md)) should write field descriptions under the `"doc"` metadata key so PyIceberg populates `NestedField.doc` during table creation.
-- **Register table hints and Iceberg partitions via `OutputTableHints`**: `dlt` drops `pa.Schema.metadata` before creating Iceberg tables, and PyIceberg rewrites `data/*.parquet` without schema-level metadata. Pipeline settings subclasses can return `OutputTableHints` from `get_output_table_hints()` ([`src/cdm_data_loaders/core/transforms.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms.py)) to register table descriptions (`x-iceberg-table-properties={"comment": ...}`), top-level column descriptions, and `x-iceberg-partition` specs on `DltResource` variants at ingest time.
+- **Register table hints and Iceberg partitions via `OutputTableHints`**: `dlt` drops `pa.Schema.metadata` before creating Iceberg tables, and PyIceberg rewrites `data/*.parquet` without schema-level metadata. Pipeline settings subclasses can return `OutputTableHints` from `get_output_table_hints()` ([`src/cdm_data_loaders/core/transforms/hints.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms/hints.py)) to register table descriptions (`x-iceberg-table-properties={"comment": ...}`), top-level column descriptions, and `x-iceberg-partition` specs on `DltResource` variants at ingest time.
 - **Sync table comments and field definitions to Polaris Iceberg tables**: for existing tables in a Polaris REST catalog, run [`scripts/apply_polaris_schema_definitions.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/apply_polaris_schema_definitions.py) (`uv run python -m scripts.apply_polaris_schema_definitions --catalog polaris --table <ns.table> --schema-source <module:ATTR_or_jsonschema>`) to apply table `comment` properties and root or nested `StructType` `NestedField.doc` strings (`doc`, `comment`, and `description` metadata keys), normalizing root PyArrow column names with `dlt`'s `snake_case` convention while matching nested `StructType` field names as written.
 - **Expect `pa.int32()` when scanning `pa.int16()` columns from Iceberg**: downstream Arrow consumers reading Iceberg tables via `table.scan().to_arrow()` receive `pa.int32()` for columns ingested as `pa.int16()`.
 
 ```python
 import pyarrow as pa
 
+from cdm_data_loaders.core.buffer import DictBuffer
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
-from cdm_data_loaders.utils.buffer import DictBuffer
 
 ASSAY_SCHEMA = pa.schema(
     [

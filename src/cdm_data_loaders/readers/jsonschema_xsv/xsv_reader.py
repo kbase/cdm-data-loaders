@@ -15,10 +15,10 @@ import duckdb
 import pyarrow as pa
 from dlt.sources.filesystem import read_csv_duckdb
 
-from cdm_data_loaders.core.transforms import align_and_cast_table
+from cdm_data_loaders.core.buffer import DEFAULT_BUFFER_MAX_ITEMS
+from cdm_data_loaders.core.file_items import as_file_item
+from cdm_data_loaders.core.transforms.routing import align_and_cast_table
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import non_header_lines_present
-from cdm_data_loaders.utils.buffer import DEFAULT_BUFFER_MAX_ITEMS
-from cdm_data_loaders.utils.file_items import as_file_item
 from cdm_data_loaders.validation.jsonschema.models import (
     ValidatedXsvSchema,
     get_schema_parsing_metadata,

@@ -10,9 +10,9 @@ from pydantic_settings import SettingsConfigDict
 from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.io import write_schema_text
 from cdm_data_loaders.converters.facades.xsd_to_pyarrow import XsdToPyArrow
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import NonEmptyStr
 from cdm_data_loaders.core.settings import LoggerSettings, default_settings_with_shortcuts
-from cdm_data_loaders.pipelines.core import PipelineCli
 
 logger: Logger = getLogger(__name__)
 
@@ -130,7 +130,7 @@ def generate_python_schema(settings: XsdToPyArrowCliSettings) -> None:
     write_schema_text(text, settings.output, logger)
 
 
-cli = PipelineCli(XsdToPyArrowCliSettings, generate_python_schema)
+cli = CliRunner(XsdToPyArrowCliSettings, generate_python_schema)
 
 
 if __name__ == "__main__":

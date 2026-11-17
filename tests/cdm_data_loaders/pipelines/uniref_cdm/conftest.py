@@ -3,15 +3,16 @@
 from typing import Any, Final
 
 import pytest
+from dlt.common.pipeline import LoadInfo
 from frozendict import frozendict
 
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import (
     FILE_GLOB,
     LOADER_FILE_FORMAT,
     PREPROCESSORS_MODULE,
     LoaderFileFormatEnum,
 )
-from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.uniref_cdm import (
     UNIREF50_CDM,
     UNIREF90_CDM,
@@ -26,7 +27,9 @@ from cdm_data_loaders.pipelines.uniref_cdm import (
 )
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import UNIREF_XSD_FILE
 
-UNIREF_CDM_VARIANTS: Final[tuple[tuple[type[UniRefCdmSettings], PipelineCli, str, str], ...]] = (
+type UniRefCliRunner = CliRunner[UniRefCdmSettings, LoadInfo | None]
+
+UNIREF_CDM_VARIANTS: Final[tuple[tuple[type[UniRefCdmSettings], UniRefCliRunner, str, str], ...]] = (
     (UniRef50CdmSettings, uniref50_cdm_cli, UNIREF50_CDM, "UniRef 50"),
     (UniRef90CdmSettings, uniref90_cdm_cli, UNIREF90_CDM, "UniRef 90"),
     (UniRef100CdmSettings, uniref100_cdm_cli, UNIREF100_CDM, "UniRef 100"),
@@ -45,7 +48,7 @@ def test_uniref_cdm_settings(test_cts_settings: frozendict[str, Any]) -> frozend
             **test_cts_settings,
             LOADER_FILE_FORMAT: "parquet",
             FILE_GLOB: "*.xml*",
-            PREPROCESSORS_MODULE: "cdm_data_loaders.core.preprocessors",
+            PREPROCESSORS_MODULE: "cdm_data_loaders.core.md5_preprocessor",
             "xsd_file": str(UNIREF_XSD_FILE),
             "max_recursion_depth": 2,
         }
@@ -60,7 +63,7 @@ def test_uniref_cdm_settings_reconciled(test_cts_settings_reconciled: frozendict
             **test_cts_settings_reconciled,
             LOADER_FILE_FORMAT: LoaderFileFormatEnum.PARQUET,
             FILE_GLOB: "*.xml*",
-            PREPROCESSORS_MODULE: "cdm_data_loaders.core.preprocessors",
+            PREPROCESSORS_MODULE: "cdm_data_loaders.core.md5_preprocessor",
             "xsd_file": UNIREF_XSD_FILE,
             "max_recursion_depth": 2,
         }
@@ -70,14 +73,14 @@ def test_uniref_cdm_settings_reconciled(test_cts_settings_reconciled: frozendict
 @pytest.fixture(params=UNIREF_CDM_VARIANTS, ids=[name for _, _, name, _ in UNIREF_CDM_VARIANTS])
 def uniref_cdm_variant(
     request: pytest.FixtureRequest,
-) -> tuple[type[UniRefCdmSettings], PipelineCli, str, str]:
+) -> tuple[type[UniRefCdmSettings], UniRefCliRunner, str, str]:
     """Parametrized fixture over all UniRef CDM variant tuples."""
     return request.param
 
 
 @pytest.fixture
 def test_settings(
-    uniref_cdm_variant: tuple[type[UniRefCdmSettings], PipelineCli, str, str],
+    uniref_cdm_variant: tuple[type[UniRefCdmSettings], UniRefCliRunner, str, str],
     test_defaults: dict[str, Any],
 ) -> UniRefCdmSettings:
     """A valid UniRefCdmSettings object for each UniRef CDM variant."""

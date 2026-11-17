@@ -18,6 +18,8 @@ from frozendict import frozendict
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from cdm_data_loaders.coercion.pydantic_to_arrow import coerce_pydantic_record_for_pyarrow
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA, make_rejected_row
+from cdm_data_loaders.core.file_items import as_file_item
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
     RecordTransformFn,
@@ -25,27 +27,29 @@ from cdm_data_loaders.core.registry import (
     TransformContext,
     TransformRegistry,
 )
-from cdm_data_loaders.core.transforms import (
+from cdm_data_loaders.core.transforms.hints import (
     OutputTableHints,
+    extract_schema_descriptions,
+)
+from cdm_data_loaders.core.transforms.introspection import (
     accepts_pyarrow_table,
     accepts_record_dict,
+)
+from cdm_data_loaders.core.transforms.routing import (
     align_and_cast_table,
     compose_transforms,
     emit_raw_table,
-    extract_schema_descriptions,
     make_record_router,
     resolve_schema_map,
     route_and_coerce_record,
     route_and_coerce_table,
     validate_routed_output,
-    validate_table_transforms,
 )
+from cdm_data_loaders.core.transforms.settings_mixin import validate_table_transforms
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.readers.jsonlines import route_jsonl_lines
 from cdm_data_loaders.readers.xml import process_xml_file_to_dict
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA, make_rejected_row
-from cdm_data_loaders.utils.file_items import as_file_item
 from tests.helpers import make_cts_settings, register_temp_module
 
 

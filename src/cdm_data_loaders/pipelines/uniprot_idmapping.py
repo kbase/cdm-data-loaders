@@ -8,18 +8,19 @@ from frozendict import frozendict
 from pydantic import Field, FilePath, PositiveInt
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import FileGlob, file_glob_description
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry, TransformRegistry
 from cdm_data_loaders.core.settings import (
     default_settings_with_shortcuts,
     select_cli_shortcuts,
 )
-from cdm_data_loaders.core.transforms import OutputTableHints, emit_raw_table
+from cdm_data_loaders.core.transforms.hints import OutputTableHints
+from cdm_data_loaders.core.transforms.routing import emit_raw_table
 from cdm_data_loaders.parsers.uniprot.idmapping import (
     UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
     transform_uniprot_id_mapping,
 )
-from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.xsv.pipeline import run_xsv_pipeline
 from cdm_data_loaders.pipelines.xsv.settings import SHORTCUTS, XsvIngestSettings
 from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
@@ -131,7 +132,7 @@ class UniProtIdMappingSettings(XsvIngestSettings):
         )
 
 
-cli = PipelineCli(UniProtIdMappingSettings, run_xsv_pipeline)
+cli = CliRunner(UniProtIdMappingSettings, run_xsv_pipeline)
 
 
 if __name__ == "__main__":

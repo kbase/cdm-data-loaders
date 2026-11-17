@@ -1,6 +1,6 @@
 # Record Filtering, Transformation, and Multi-Table Splitting
 
-All six file-format ingestion pipelines support pluggable file pre-processing, record-level filtering, single-table row transformation, multi-table splitting, and `pyarrow.Schema` overrides through `--preprocessors-module` (`CDL_PREPROCESSORS_MODULE`), `--transforms-module` (`CDL_TRANSFORMS_MODULE`), and `--output-schemas-module` (`CDL_OUTPUT_SCHEMAS_MODULE`) defined in [`src/cdm_data_loaders/core/transforms.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms.py) and [`src/cdm_data_loaders/core/registry.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/registry.py):
+All six file-format ingestion pipelines support pluggable file pre-processing, record-level filtering, single-table row transformation, multi-table splitting, and `pyarrow.Schema` overrides through `--preprocessors-module` (`CDL_PREPROCESSORS_MODULE`), `--transforms-module` (`CDL_TRANSFORMS_MODULE`), and `--output-schemas-module` (`CDL_OUTPUT_SCHEMAS_MODULE`) defined in [`src/cdm_data_loaders/core/transforms/settings_mixin.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms/settings_mixin.py) and [`src/cdm_data_loaders/core/registry.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/registry.py):
 
 | Pipeline                                                                                                                                                                             | CLI Entry Point        | Default Output Format                            | Source of Input `table_name`                                                                    |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
@@ -15,7 +15,7 @@ All six file-format ingestion pipelines support pluggable file pre-processing, r
 
 ## Processing Lifecycle
 
-File pre-processors run **before** a file is opened and parsed. Record transforms run **after** a record is parsed and validated against its input schema or model, and **before** rows are buffered into pages by `DictBuffer` ([`src/cdm_data_loaders/utils/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/buffer.py)):
+File pre-processors run **before** a file is opened and parsed. Record transforms run **after** a record is parsed and validated against its input schema or model, and **before** rows are buffered into pages by `DictBuffer` ([`src/cdm_data_loaders/core/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/buffer.py)):
 
 **Pre-process File (`FilePreprocessFn`)**:
 
@@ -50,7 +50,7 @@ Create an importable Python module exporting `FILE_PREPROCESSORS`, `TABLE_TRANSF
 
   - Accepts either a pipeline-wide sequence `Sequence[FilePreprocessFn]` or a per-table mapping `dict[str, Sequence[FilePreprocessFn] | FilePreprocessFn]`.
   - Each `FilePreprocessFn` has signature `(file_item: FileItemDict) -> FileItemDict | None`.
-  - Built-in pre-processor: `validate_md5_sidecar` in [`src/cdm_data_loaders/core/preprocessors.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/preprocessors.py) (enabled by default on `pubmed`, and directly usable via `--preprocessors-module cdm_data_loaders.core.preprocessors`).
+  - Built-in pre-processor: `validate_md5_sidecar` in [`src/cdm_data_loaders/core/md5_preprocessor.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/md5_preprocessor.py) (enabled by default on `pubmed`, and usable via `--preprocessors-module cdm_data_loaders.core.md5_preprocessor`).
 
 **`TABLE_TRANSFORMS`** (`--transforms-module` / `CDL_TRANSFORMS_MODULE`): `dict[str, TableTransformFn | tuple[TableTransformFn, ...]]`
 
@@ -60,12 +60,12 @@ Create an importable Python module exporting `FILE_PREPROCESSORS`, `TABLE_TRANSF
     - `{"table": [row_1, row_2]}` unnests or fans out 1-to-N rows into the same table.
     - `{"parent_table": [parent_row], "child_table": [child_1, child_2]}` splits data across multiple destination tables.
     - `{"_rejected": [rejected_row]}` routes rows to the shared `_rejected` table.
-  - Supplying a tuple `(step_1, step_2)` composes two or more transforms in a single pass (such as `(emit_raw_table, transform_fn)` from [`src/cdm_data_loaders/core/transforms.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms.py)).
+  - Supplying a tuple `(step_1, step_2)` composes two or more transforms in a single pass (such as `(emit_raw_table, transform_fn)` from [`src/cdm_data_loaders/core/transforms/routing.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms/routing.py)).
   - When no transform is configured for a table, records are routed unchanged to `{table_name: [record]}` (or `{table_name: batch}`).
 
 **`OUTPUT_SCHEMAS`** (`--output-schemas-module` / `CDL_OUTPUT_SCHEMAS_MODULE`): `dict[str, pa.Schema]`
 
-  - Optional mapping of `{destination_table_name: pyarrow.Schema}` overriding or supplying `pyarrow.Schema` definitions for transformed or split destination tables. Preset settings subclasses can also return `OutputTableHints` from `get_output_table_hints()` ([`src/cdm_data_loaders/core/transforms.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms.py)) to register table/column descriptions and Iceberg partition specs on `DltResource` variants.
+  - Optional mapping of `{destination_table_name: pyarrow.Schema}` overriding or supplying `pyarrow.Schema` definitions for transformed or split destination tables. Preset settings subclasses can also return `OutputTableHints` from `get_output_table_hints()` ([`src/cdm_data_loaders/core/transforms/hints.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms/hints.py)) to register table/column descriptions and Iceberg partition specs on `DltResource` variants.
 
 ---
 
@@ -78,9 +78,10 @@ from typing import Final
 
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 
-from cdm_data_loaders.core.preprocessors import FilePreprocessError, validate_md5_sidecar
+from cdm_data_loaders.core.file_items import source_id
+from cdm_data_loaders.core.md5_preprocessor import validate_md5_sidecar
+from cdm_data_loaders.core.preprocessors import FilePreprocessError
 from cdm_data_loaders.core.registry import FilePreprocessFn
-from cdm_data_loaders.utils.file_items import source_id
 
 MAX_RAW_BYTES: Final[int] = 10 * 1024 * 1024 * 1024
 
@@ -486,7 +487,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from cdm_data_loaders.core.registry import TableTransformFn, TransformContext
-from cdm_data_loaders.core.transforms import emit_raw_table
+from cdm_data_loaders.core.transforms.routing import emit_raw_table
 
 RAW_ID_MAPPING_SCHEMA = pa.schema(
     [

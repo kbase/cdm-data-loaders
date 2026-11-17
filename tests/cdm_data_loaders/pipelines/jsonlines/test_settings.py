@@ -19,7 +19,6 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
 )
 from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
 from cdm_data_loaders.core.fields import (
-    DEFAULT_JSONL_FILE_GLOB,
     FILE_GLOB,
     TABLE_NAME,
     LoaderFileFormatEnum,
@@ -42,6 +41,7 @@ from cdm_data_loaders.datasets.ncbi_datasets.hooks import (
 from cdm_data_loaders.pipelines.jsonlines.exceptions import InvalidJsonlEntitySchemaError
 from cdm_data_loaders.pipelines.jsonlines.settings import (
     BY_ALIAS,
+    DEFAULT_JSONL_FILE_GLOB,
     ENTITY_MODELS_MODULE,
     ENTITY_SCHEMAS_MODULE,
     EXTRACT_PIPELINE_NAME,

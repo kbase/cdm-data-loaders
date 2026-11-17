@@ -3,8 +3,9 @@
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib import import_module
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, ModuleType
 from typing import Annotated, Any, Final, Literal, Self, overload
 
 import pyarrow as pa
@@ -61,15 +62,27 @@ type TableTransformFn = RecordTransformFn | ArrowTableTransformFn
 type FilePreprocessFn = Callable[[FileItemDict], FileItemDict | None]
 
 
-def _coerce_validated_schema(v: Any) -> Any:  # noqa: ANN401
-    """Wrap raw schema inputs so ValidatedSchema validates them."""
+def _coerce_validated_schema(v: object) -> object:
+    """Wrap raw schema inputs so ``ValidatedSchema`` validates them.
+
+    :param v: raw schema input or ``ValidatedSchema`` instance
+    :type v: object
+    :return: ``v`` unchanged if ``ValidatedSchema``, else ``{"jsonschema": v}``
+    :rtype: object
+    """
     if isinstance(v, ValidatedSchema):
         return v
     return {"jsonschema": v}
 
 
-def _coerce_preprocessor_seq(v: Any) -> Any:  # noqa: ANN401
-    """Coerce a single callable into a one-element tuple, or convert sequences to a tuple."""
+def _coerce_preprocessor_seq(v: object) -> object:
+    """Coerce a single callable into a one-element tuple, or convert sequences to a tuple.
+
+    :param v: callable or sequence of callables
+    :type v: object
+    :return: normalized tuple of callables or ``v`` unchanged
+    :rtype: object
+    """
     if callable(v):
         return (v,)
     if isinstance(v, Sequence) and not isinstance(v, (str, bytes)):
@@ -110,7 +123,12 @@ class RejectedFreezerMixin(BaseModel):
 
     @model_validator(mode="after")
     def _validate_and_freeze(self) -> Self:
-        """Forbid ``_rejected`` in registry keys."""
+        """Forbid ``_rejected`` in registry keys and freeze the registry mapping.
+
+        :return: validated registry instance
+        :rtype: Self
+        :raises ValueError: if ``_rejected`` is present in ``self.registry``
+        """
         if REJECTED_TABLE_NAME in self.registry:  # pyright: ignore[reportAttributeAccessIssue]
             err_msg = (
                 f"{self.__class__.__name__} cannot use reserved table name {REJECTED_TABLE_NAME!r}; "
@@ -184,7 +202,12 @@ class PreprocessorRegistry(RejectedFreezerMixin, BaseModel):
 
     @model_validator(mode="after")
     def _validate_mode(self) -> Self:
-        """Require either ``default`` or ``registry`` to be populated, not both."""
+        """Require either ``default`` or ``registry`` to be populated, not both.
+
+        :return: validated registry instance
+        :rtype: Self
+        :raises ValueError: if neither or both ``default`` and ``registry`` are populated
+        """
         if not self.default and not self.registry:
             err_msg = "PreprocessorRegistry must define at least one preprocessor in 'default' or 'registry'."
             raise ValueError(err_msg)
@@ -213,6 +236,46 @@ class PreprocessorRegistry(RejectedFreezerMixin, BaseModel):
         return tuple(seen)
 
 
+def split_module_attr_spec(spec: str) -> tuple[str, str | None]:
+    r"""Split ``spec`` into ``(module_or_path, optional_attribute_name)``.
+
+    Preserves Windows drive-letter prefixes such as ``C:\path\to\module.py``.
+
+    :param spec: dotted module path or Python file path with optional ``:ATTR`` suffix
+    :type spec: str
+    :return: tuple of ``(target_spec, attr_name_or_none)``
+    :rtype: tuple[str, str | None]
+    """
+    head, sep, tail = spec.rpartition(":")
+    if not sep or not head or not tail:
+        return spec, None
+    if (len(head) == 1 and head.isalpha()) or "/" in tail or "\\" in tail:
+        return spec, None
+    return head, tail
+
+
+def load_python_module(target: str) -> ModuleType:
+    """Import ``target`` from a ``.py`` file path or as a dotted Python module path.
+
+    :param target: Python file path or dotted module import path
+    :type target: str
+    :return: loaded Python module object
+    :rtype: ModuleType
+    :raises ValueError: if a file path cannot be loaded as a Python module
+    """
+    candidate_path = Path(target)
+    if candidate_path.suffix == ".py" or candidate_path.is_file():
+        resolved = candidate_path.resolve()
+        spec = spec_from_file_location(f"_dynamic_module_{resolved.stem}", resolved)
+        if spec is None or spec.loader is None:
+            msg = f"Cannot load Python module from path: {resolved}"
+            raise ValueError(msg)
+        module = module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    return import_module(target)
+
+
 @overload
 def load_registry_dict(module_path: str, attribute_name: Literal["ENTITY_MODELS"]) -> ModelRegistry: ...
 
@@ -235,21 +298,16 @@ def load_registry_dict(
 ) -> ModelRegistry | SchemaRegistry | TransformRegistry | ArrowSchemaRegistry:
     """Import ``module_path`` and return its validated registry for ``attribute_name``.
 
-    :param module_path: dotted import path of the registry module
+    :param module_path: dotted import path or ``.py`` file path of the registry module (optionally ``:ATTR``)
     :type module_path: str
-    :param attribute_name: name of the dictionary attribute on the module
+    :param attribute_name: default dictionary attribute name on the module
         (``ENTITY_MODELS``, ``ENTITY_SCHEMAS``, ``TABLE_TRANSFORMS``, or ``OUTPUT_SCHEMAS``)
     :type attribute_name: str
-    :return: the validated registry instance
+    :return: validated registry instance
     :rtype: ModelRegistry | SchemaRegistry | TransformRegistry | ArrowSchemaRegistry
-    :raises ValueError: if the attribute name is unsupported or uses the reserved ``_rejected`` table name
+    :raises ValueError: if ``attribute_name`` is unsupported or uses the reserved ``_rejected`` table name
+    :raises TypeError: if the resolved attribute is not a dictionary
     """
-    module = import_module(module_path)
-    raw_registry = getattr(module, attribute_name, None)
-    if not isinstance(raw_registry, dict):
-        err_msg = f"{module_path}.{attribute_name} must be a dictionary, not {type(raw_registry).__name__}"
-        raise TypeError(err_msg)
-
     cls_map = {
         "ENTITY_MODELS": ModelRegistry,
         "ENTITY_SCHEMAS": SchemaRegistry,
@@ -260,6 +318,14 @@ def load_registry_dict(
         err_msg = f"Unsupported registry attribute: {attribute_name}"
         raise ValueError(err_msg)
 
+    target, explicit_attr = split_module_attr_spec(module_path)
+    resolved_attr = explicit_attr or attribute_name
+    module = load_python_module(target)
+    raw_registry = getattr(module, resolved_attr, None)
+    if not isinstance(raw_registry, dict):
+        err_msg = f"{target}.{resolved_attr} must be a dictionary, not {type(raw_registry).__name__}"
+        raise TypeError(err_msg)
+
     return cls_map[attribute_name](registry=raw_registry)  # pyright: ignore[reportArgumentType]
 
 
@@ -269,23 +335,25 @@ def load_file_preprocessors(
 ) -> PreprocessorRegistry:
     """Import ``module_path`` and return its validated :class:`PreprocessorRegistry`.
 
-    :param module_path: dotted import path of the pre-processors module
+    :param module_path: dotted import path or ``.py`` file path of the pre-processors module
     :type module_path: str
     :param attribute_name: name of the attribute on the module (defaults to ``FILE_PREPROCESSORS``)
     :type attribute_name: str
-    :return: the validated file pre-processor registry
+    :return: validated file pre-processor registry
     :rtype: PreprocessorRegistry
     :raises TypeError: if the attribute is neither a dictionary nor a sequence of callables
     :raises ValueError: if the registry is empty or uses the reserved ``_rejected`` table name
     """
-    module = import_module(module_path)
-    raw_preprocessors = getattr(module, attribute_name, None)
+    target, explicit_attr = split_module_attr_spec(module_path)
+    resolved_attr = explicit_attr or attribute_name
+    module = load_python_module(target)
+    raw_preprocessors = getattr(module, resolved_attr, None)
     if isinstance(raw_preprocessors, dict):
         return PreprocessorRegistry(registry=raw_preprocessors)
     if isinstance(raw_preprocessors, Sequence) and not isinstance(raw_preprocessors, (str, bytes)):
         return PreprocessorRegistry(default=tuple(raw_preprocessors))
     err_msg = (
-        f"{module_path}.{attribute_name} must be a dictionary or a sequence of callables, "
+        f"{target}.{resolved_attr} must be a dictionary or a sequence of callables, "
         f"not {type(raw_preprocessors).__name__}"
     )
     raise TypeError(err_msg)
@@ -304,6 +372,8 @@ def validate_registry_table_names(
     :type valid_tables: Iterable[str]
     :param module_label: setting attribute label reported in the error message
     :type module_label: str
+    :return: ``None``
+    :rtype: None
     :raises ValueError: if ``registry_keys`` contains unknown table names
     """
     unknown_tables = sorted(set(registry_keys) - set(valid_tables))

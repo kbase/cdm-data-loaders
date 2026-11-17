@@ -11,6 +11,7 @@ import yaml
 from pydantic import BeforeValidator, computed_field, model_validator
 
 from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.core.pipeline_catalog import resolve_pipeline
 from cdm_data_loaders.pipelines.jsonlines.exceptions import (
     JSONLINES_JSONSCHEMA_ERRORS,
     JsonlJsonschemaError,
@@ -47,7 +48,6 @@ from docs_macros.tables_context import (
     TableRenderContext,
     build_table_context,
 )
-from tests.cdm_data_loaders.pipelines.framework import resolve_pipeline
 from tests.converter_spec import (
     Case,
     ErrorCase,

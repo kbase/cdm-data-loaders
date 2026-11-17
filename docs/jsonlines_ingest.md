@@ -84,7 +84,7 @@ Before any files are read, `jsonlines_jsonschema`:
 During ingestion:
 
 - Validation uses each schema's declared draft with `jsonschema.FormatChecker()` enabled.
-- Valid records are coerced to the target `pyarrow.Schema` and buffered into `pyarrow.Table` pages via `DictBuffer` ([`src/cdm_data_loaders/utils/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/buffer.py)). Nested objects and arrays are preserved as Arrow `struct` and `list` columns rather than flattened into child tables.
+- Valid records are coerced to the target `pyarrow.Schema` and buffered into `pyarrow.Table` pages via `DictBuffer` ([`src/cdm_data_loaders/core/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/buffer.py)). Nested objects and arrays are preserved as Arrow `struct` and `list` columns rather than flattened into child tables.
 
 ```sh
 DESTINATION__LOCAL_FS__DESTINATION_TYPE=filesystem \
@@ -163,7 +163,7 @@ uv run jsonlines_pydantic \
 
 ## Handling of Rows That Fail JSON Parsing or Validation
 
-All JSONL pipelines route failed records to a single destination table named `_rejected` (`REJECTED_TABLE_NAME = "_rejected"` in [`src/cdm_data_loaders/utils/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/buffer.py)). If every record in a run is valid, `_rejected` is not created.
+All JSONL pipelines route failed records to a single destination table named `_rejected` (`REJECTED_TABLE_NAME = "_rejected"` in [`src/cdm_data_loaders/core/fields.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/fields.py), with schema `REJECTED_PYARROW_SCHEMA` in [`src/cdm_data_loaders/core/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/buffer.py)). If every record in a run is valid, `_rejected` is not created.
 
 ### `_rejected` Table Schema
 

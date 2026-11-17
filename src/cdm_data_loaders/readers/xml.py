@@ -13,12 +13,12 @@ import xmltodict
 from dlt.extract.items import DataItemWithMeta
 from lxml.etree import Element, _Element, iterparse, tostring
 
+from cdm_data_loaders.core.buffer import DictBuffer, make_dict_buffer
+from cdm_data_loaders.core.file_items import FileSource, open_binary, source_id, source_url
 from cdm_data_loaders.core.registry import TableTransformFn, TransformContext
-from cdm_data_loaders.core.transforms import route_and_coerce_record
+from cdm_data_loaders.core.transforms.routing import route_and_coerce_record
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
-from cdm_data_loaders.utils.buffer import DictBuffer, make_dict_buffer
-from cdm_data_loaders.utils.file_items import FileSource, open_binary, source_id, source_url
 from cdm_data_loaders.utils.xml_utils import local_name
 
 logger: Logger = getLogger(__name__)

@@ -10,13 +10,13 @@ import pytest
 from pydantic import BaseModel
 
 from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.preprocessors import FilePreprocessError
 from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
     build_entity_resource,
     run_jsonlines_with_validation_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
 from tests.cdm_data_loaders.pipelines.helpers import assert_run_ok
 from tests.conftest import LOCAL_FS
 from tests.helpers import register_temp_module

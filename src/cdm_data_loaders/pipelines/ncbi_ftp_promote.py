@@ -10,9 +10,9 @@ from typing import Final
 from pydantic import AliasChoices, Field
 from pydantic_settings import CliImplicitFlag, SettingsConfigDict
 
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.settings import LoggerSettings, default_settings_with_shortcuts
 from cdm_data_loaders.ncbi_ftp.promote import promote_from_s3
-from cdm_data_loaders.pipelines.core import PipelineCli
 
 PIPELINE_NAME: Final[str] = "ncbi_ftp_promote"
 DEFAULT_STAGING_BUCKET: PurePosixPath = PurePosixPath("cts")
@@ -84,7 +84,7 @@ def run_promote(config: PromoteSettings) -> None:
         raise RuntimeError(msg)
 
 
-cli = PipelineCli(PromoteSettings, run_promote)
+cli = CliRunner(PromoteSettings, run_promote)
 
 
 if __name__ == "__main__":

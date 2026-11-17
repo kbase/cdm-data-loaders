@@ -1,7 +1,7 @@
 """Path-related fields and utils for pipeline settings."""
 
 from pathlib import Path
-from typing import Annotated, Any, Final
+from typing import Annotated, Final
 
 from fsspec import get_filesystem_class
 from fsspec.core import split_protocol
@@ -18,16 +18,16 @@ PATH_NOT_DIRECTORY: Final[str] = "Path does not point to a directory"
 DIR_NOT_CREATED: Final[str] = "Cannot create directory "
 
 
-def check_local_path(value: Any) -> Any:  # noqa: ANN401
+def check_local_path(value: object) -> object:
     """Strip whitespace and any local protocol from a string path.
 
     Values that are not strings are returned unchanged.
 
     :param value: path to check
-    :type value: Any
+    :type value: object
     :raises ValueError: if the path is empty or not on the local filesystem
     :return: the path without a protocol
-    :rtype: Any
+    :rtype: object
     """
     if not isinstance(value, str):
         # pydantic's Path validation handles these
@@ -71,7 +71,14 @@ def ensure_dir(path: Path) -> Path:
 
 
 def _resolve_existing_local_dir(path: Path) -> str:
-    """Validate that ``path`` is an existing directory and return its resolved absolute path string."""
+    """Validate that ``path`` is an existing directory and return its resolved absolute path string.
+
+    :param path: candidate local directory path
+    :type path: Path
+    :return: resolved absolute directory path string
+    :rtype: str
+    :raises PydanticCustomError: if ``path`` does not exist or is not a directory
+    """
     if not path.is_dir():
         raise PydanticCustomError(
             PATH_NOT_DIRECTORY_ERROR_TYPE,
@@ -81,7 +88,15 @@ def _resolve_existing_local_dir(path: Path) -> str:
 
 
 def _format_protocol_url(protocol: str | None, path: str) -> str:
-    """Format ``protocol`` and ``path`` with ``:`` for ``data`` URLs or ``://`` for other protocols."""
+    """Format ``protocol`` and ``path`` with ``:`` for ``data`` URLs or ``://`` for other protocols.
+
+    :param protocol: URL protocol name or ``None``
+    :type protocol: str | None
+    :param path: URL path component
+    :type path: str
+    :return: formatted URL or plain path
+    :rtype: str
+    """
     if not protocol:
         return path
     sep = ":" if protocol == "data" else "://"
@@ -112,7 +127,7 @@ def normalise_dir(full_path: str | None) -> str:
     return _format_protocol_url(protocol, stripped)
 
 
-def check_input_dir(value: Any) -> Any:  # noqa: ANN401
+def check_input_dir(value: object) -> object:
     """Validate and normalise a local directory path or fsspec directory URL.
 
     Values that are not strings or ``Path`` objects are returned unchanged.
@@ -122,11 +137,11 @@ def check_input_dir(value: Any) -> Any:  # noqa: ANN401
     ``fsspec``'s registered protocols, and returned with a lower-case protocol.
 
     :param value: path or URL to validate
-    :type value: Any
+    :type value: object
     :raises ValueError: if the path is empty, protocol-only, or uses an unknown or uninstalled fsspec protocol
     :raises PydanticCustomError: if a local path does not exist or is not a directory
     :return: resolved absolute local path string or normalised fsspec URL string
-    :rtype: Any
+    :rtype: object
     """
     if isinstance(value, Path):
         return _resolve_existing_local_dir(value)
@@ -134,7 +149,7 @@ def check_input_dir(value: Any) -> Any:  # noqa: ANN401
         return value
     value = value.strip()
     if is_local_url(value):
-        return _resolve_existing_local_dir(Path(check_local_path(value)))
+        return _resolve_existing_local_dir(Path(str(check_local_path(value))))
     normalised = normalise_dir(value)
     protocol = url_protocol(normalised)
     try:

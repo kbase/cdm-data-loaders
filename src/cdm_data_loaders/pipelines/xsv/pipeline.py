@@ -22,21 +22,22 @@ from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 from dlt.sources.filesystem import filesystem
 
+from cdm_data_loaders.core.buffer import DictBuffer
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME, LoaderFileFormatEnum
+from cdm_data_loaders.core.file_items import local_copy, source_id
 from cdm_data_loaders.core.filesystem import build_file_ingest_kwargs, build_per_file_filesystem_resource
 from cdm_data_loaders.core.registry import TransformContext
-from cdm_data_loaders.core.transforms import accepts_pyarrow_table, route_and_coerce_record, route_and_coerce_table
+from cdm_data_loaders.core.transforms.introspection import accepts_pyarrow_table
+from cdm_data_loaders.core.transforms.routing import route_and_coerce_record, route_and_coerce_table
 from cdm_data_loaders.pipelines.core import (
     DEFAULT_SCHEMA_CONTRACT,
-    PipelineCli,
     run_pipeline,
 )
 from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import read_validated_rows
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import CleanerValidatorArgs, ErrorRecord
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import clean_validate_file, qsv_check
-from cdm_data_loaders.utils.buffer import DictBuffer
-from cdm_data_loaders.utils.file_items import local_copy, source_id
 from cdm_data_loaders.validation.jsonschema.models import generate_header
 
 
@@ -274,7 +275,7 @@ def run_xsv_pipeline(settings: XsvIngestSettings) -> LoadInfo | None:
         )
 
 
-cli = PipelineCli(XsvIngestSettings, run_xsv_pipeline)
+cli = CliRunner(XsvIngestSettings, run_xsv_pipeline)
 
 
 if __name__ == "__main__":

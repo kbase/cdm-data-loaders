@@ -18,12 +18,12 @@ from cdm_data_loaders.converters.cli.iceberg_base import (
 from cdm_data_loaders.converters.core.io import write_schema_text
 from cdm_data_loaders.converters.emitters.linkml import LINKML_PREFIX
 from cdm_data_loaders.converters.facades.pyiceberg_to_linkml import table_to_linkml
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.settings import default_settings_with_shortcuts
-from cdm_data_loaders.pipelines.core import PipelineCli
 
 logger: Logger = getLogger(__name__)
 
-PIPELINE_NAME: Final[str] = "iceberg_catalog_linkml_converter"
+PIPELINE_NAME: Final[str] = "pyiceberg_to_linkml"
 
 
 class IcebergToLinkMLSettings(IcebergCatalogDumpSettings):
@@ -108,7 +108,7 @@ def dump_catalog_schemas(settings: IcebergToLinkMLSettings) -> None:
     dump_catalog(settings, LINKML_DUMP_DRIVER, logger)
 
 
-cli = PipelineCli(IcebergToLinkMLSettings, dump_catalog_schemas)
+cli = CliRunner(IcebergToLinkMLSettings, dump_catalog_schemas)
 
 
 if __name__ == "__main__":

@@ -2,11 +2,9 @@
 
 from dlt.common.pipeline import LoadInfo
 
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.filesystem import build_file_ingest_kwargs, build_per_file_filesystem_resource
-from cdm_data_loaders.pipelines.core import (
-    PipelineCli,
-    run_pipeline,
-)
+from cdm_data_loaders.pipelines.core import run_pipeline
 from cdm_data_loaders.pipelines.xmltodict.settings import PIPELINE_NAME, XmlToDictSettings
 from cdm_data_loaders.readers.xml import process_xml_file_to_dict
 
@@ -31,7 +29,7 @@ def run_xmltodict_pipeline(settings: XmlToDictSettings) -> LoadInfo | None:
     )
 
 
-cli = PipelineCli(XmlToDictSettings, run_xmltodict_pipeline)
+cli = CliRunner(XmlToDictSettings, run_xmltodict_pipeline)
 
 
 if __name__ == "__main__":

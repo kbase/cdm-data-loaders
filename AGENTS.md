@@ -6,10 +6,10 @@ See `.agents/skills/coding-style` and `.agents/skills/testing` for rules that ap
 
 Every code change that alters CLI flags, settings classes, public APIs, schemas, or converter behavior MUST update documentation in the same task before completion:
 
-1. **CLI & Settings Changes (`core/settings.py`, `core/fields.py`, `core/transforms.py`, `pipelines/**/settings.py`, `pyproject.toml`)**:
+1. **CLI & Settings Changes (`core/settings.py`, `core/fields.py`, `core/transforms/`, `pipelines/**/settings.py`, `pyproject.toml`)**:
    - `docs/cli_reference.md` and `docs/bundled_schemas.md` are `.gitignore`d macro stubs materialized by `uv run python -m docs_macros` and rendered dynamically at build/serve time via `docs_macros` (`docs/_templates/pages/cli_reference.md.j2` and `docs/_templates/pages/bundled_schemas.md.j2`).
    - Search `docs/` and `README.md` for any renamed/removed field names, CLI flags (`--*`), or env vars (`CDL_*`) and update all prose/examples.
-2. **Converter Rules, Scalar Maps, or Error Classes (`converters/`, `readers/xsd.py`, `specs/schema_converters/*/rules.yaml`)**:
+2. **Converter Rules, Scalar Maps, or Error Classes (`converters/`, `validation/xsd/`, `specs/schema_converters/*/rules.yaml`)**:
    - Converter specification pages render dynamically at build/serve time via `docs_macros` (`docs/_templates/pages/converter_spec.md.j2` and `docs/_templates/tables/*.md.j2`).
    - Converter suites under `specs/schema_converters/<xxx_to_yyy>/` are auto-discovered by `discover_converter_specs()` (`CONVERTER_SPECS` in `docs_macros/spec_context.py`), and `uv run python -m docs_macros` materializes their `.gitignore`d `docs/<xxx_to_yyy>_specification.md` stubs before `zensical build` / `zensical serve`. When adding or removing a converter specification, register/update it in `zensical.toml` (`nav`) and `docs/index.md`.
    - See `docs/schema_converter_specs_guide.md` for creating or editing rules, error codes (`E1..En`), and fixture manifests.

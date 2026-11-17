@@ -13,11 +13,11 @@ import pytest
 from pydantic import AliasChoices
 
 from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.settings import CdmDataLoadersBase
 from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline import (
     run_jsonlines_with_validation_pipeline,
 )
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
 from docs_macros.cli_context import (
     CliEntryDoc,
     discover_api_modules,

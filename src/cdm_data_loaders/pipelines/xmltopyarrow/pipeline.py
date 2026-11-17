@@ -2,11 +2,9 @@
 
 from dlt.common.pipeline import LoadInfo
 
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.filesystem import build_file_ingest_kwargs, build_per_file_filesystem_resource
-from cdm_data_loaders.pipelines.core import (
-    PipelineCli,
-    run_pipeline,
-)
+from cdm_data_loaders.pipelines.core import run_pipeline
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
     PubMedXmlToPyArrowSettings,
@@ -42,17 +40,17 @@ def run_xmltopyarrow_pipeline(settings: XmlToPyArrowSettings) -> LoadInfo | None
     )
 
 
-cli = PipelineCli(XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+cli = CliRunner(XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 
-pubmed_cli = PipelineCli(PubMedXmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+pubmed_cli = CliRunner(PubMedXmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 
-uniprot_cli = PipelineCli(UniProtXmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+uniprot_cli = CliRunner(UniProtXmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 
-uniref50_cli = PipelineCli(UniRef50XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+uniref50_cli = CliRunner(UniRef50XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 
-uniref90_cli = PipelineCli(UniRef90XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+uniref90_cli = CliRunner(UniRef90XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 
-uniref100_cli = PipelineCli(UniRef100XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
+uniref100_cli = CliRunner(UniRef100XmlToPyArrowSettings, run_xmltopyarrow_pipeline)
 
 if __name__ == "__main__":
     cli()

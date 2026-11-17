@@ -6,13 +6,11 @@ import pyarrow as pa
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import LogInterval
-from cdm_data_loaders.core.settings import (
-    XML_CLI_SHORTCUTS,
-    default_settings_with_shortcuts,
-)
+from cdm_data_loaders.core.settings import default_settings_with_shortcuts
 from cdm_data_loaders.parsers.uniprot.uniref import UNIREF_CDM_SCHEMA_MAP, make_uniref_cdm_transform
-from cdm_data_loaders.pipelines.core import PipelineCli
+from cdm_data_loaders.pipelines.xml_common import XML_CLI_SHORTCUTS
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import UniRefXmlToPyArrowSettings
 
@@ -91,8 +89,8 @@ class UniRef100CdmSettings(UniRefCdmSettings):
     dataset_name: ClassVar[str] = UNIREF100_CDM
 
 
-uniref50_cdm_cli = PipelineCli(UniRef50CdmSettings, run_xmltopyarrow_pipeline)
+uniref50_cdm_cli = CliRunner(UniRef50CdmSettings, run_xmltopyarrow_pipeline)
 
-uniref90_cdm_cli = PipelineCli(UniRef90CdmSettings, run_xmltopyarrow_pipeline)
+uniref90_cdm_cli = CliRunner(UniRef90CdmSettings, run_xmltopyarrow_pipeline)
 
-uniref100_cdm_cli = PipelineCli(UniRef100CdmSettings, run_xmltopyarrow_pipeline)
+uniref100_cdm_cli = CliRunner(UniRef100CdmSettings, run_xmltopyarrow_pipeline)

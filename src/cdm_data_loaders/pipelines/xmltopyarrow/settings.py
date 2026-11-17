@@ -24,13 +24,11 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schemas_at_level,
 )
 from cdm_data_loaders.core.fields import (
-    XML_GZ_FILE_GLOB,
     FileGlob,
     NonEmptyStr,
-    XsdFile,
     file_glob_description,
 )
-from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
+from cdm_data_loaders.core.md5_preprocessor import validate_md5_sidecar
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
     FilePreprocessFn,
@@ -38,11 +36,15 @@ from cdm_data_loaders.core.registry import (
     TransformRegistry,
 )
 from cdm_data_loaders.core.settings import (
-    XML_CLI_SHORTCUTS,
-    XmlIngestSettings,
     default_settings_with_shortcuts,
 )
-from cdm_data_loaders.core.transforms import TransformSettingsMixin
+from cdm_data_loaders.core.transforms.settings_mixin import TransformSettingsMixin
+from cdm_data_loaders.pipelines.xml_common import (
+    XML_CLI_SHORTCUTS,
+    XML_GZ_FILE_GLOB,
+    XmlIngestSettings,
+    XsdFile,
+)
 from cdm_data_loaders.pipelines.xmltopyarrow.exceptions import (
     InvalidXmlPipelineHookError,
     InvalidXmlTargetSelectionError,

@@ -52,7 +52,7 @@ Rules in `specs/pipelines/<pipeline>/rules.yaml` define the end-to-end behaviora
 - **File Discovery and Pre-processing** (for example, `P1-DISCOVERY`, `P1-MD5-SIDECAR`, `N1-ENTITY-DIRS`):
   - Which files `input_dir` and `file_glob` match.
   - How subdirectories map to entity tables.
-  - What file pre-processors (such as `validate_md5_sidecar` in [`src/cdm_data_loaders/core/preprocessors.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/preprocessors.py)) verify before reading a file.
+  - What file pre-processors (such as `validate_md5_sidecar` in [`src/cdm_data_loaders/core/md5_preprocessor.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/md5_preprocessor.py)) verify before reading a file.
 - **Parsing, Validation, Transforms, and Coercion** (for example, `P2-LEVEL-ROUTING`, `N2-JSONSCHEMA-VALIDATE`, `N3-FILTER-ANNOTATION`):
   - How records are parsed and validated against XSD, JSON Schema, Pydantic, or `qsv`.
   - How `TABLE_TRANSFORMS` filter, mutate, or split records across tables.
@@ -96,7 +96,7 @@ Pipeline error scenarios are modeled as `case.yaml` runs that verify both `_reje
 
 ### `_rejected` Table Rows
 
-Failed files and failed records are routed to the `_rejected` table (`REJECTED_PYARROW_SCHEMA` in [`src/cdm_data_loaders/utils/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/buffer.py)):
+Failed files and failed records are routed to the `_rejected` table (`REJECTED_PYARROW_SCHEMA` in [`src/cdm_data_loaders/core/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/buffer.py)):
 
 | Column | File Pre-processor Failure | Record Parse or Validation Failure |
 | :--- | :--- | :--- |
@@ -173,8 +173,8 @@ Pipeline specification pages render dynamically at build and serve time from [`s
 
 ### Onboarding a New Pipeline to `specs/pipelines/`
 
-- **Register the pipeline in `PIPELINE_TARGETS`**:
-  - Check `PIPELINE_TARGETS` in [`tests/cdm_data_loaders/pipelines/framework.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/cdm_data_loaders/pipelines/framework.py) so `resolve_pipeline("<pipeline>")` resolves its CLI command, module path, `Settings` class, and runner function.
+- **Register the CLI entry point in `[project.scripts]`**:
+  - Register `<cli_command> = "<module_path>:cli"` in [`pyproject.toml`](https://github.com/kbase/cdm-data-loaders/blob/develop/pyproject.toml) so `discover_pipeline_targets()` in [`src/cdm_data_loaders/core/pipeline_catalog.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/pipeline_catalog.py) and `resolve_pipeline("<pipeline>")` resolve its CLI command, module path, `Settings` class, and runner function.
 - **Create `specs/pipelines/<pipeline>/`**:
   - Add `rules.yaml` and at least one `spec/<case>/` directory with `case.yaml`, `settings.toml`, `input/`, `expected_tables.py`, and `expected.json`.
 - **Register the pipeline in [`docs_macros/spec_context.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/docs_macros/spec_context.py)**:

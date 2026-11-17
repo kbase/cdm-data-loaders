@@ -2,12 +2,11 @@
 
 from typing import ClassVar, Final
 
+from cdm_data_loaders.core.cli import SpecError
 
-class XmlToPyArrowConfigError(ValueError):
+
+class XmlToPyArrowConfigError(SpecError, ValueError):
     """Base error raised when XML-to-PyArrow target selection, XSD schema resolution, or hook validation fails."""
-
-    code: ClassVar[str] = ""
-    title: ClassVar[str] = ""
 
 
 class InvalidXmlTargetSelectionError(XmlToPyArrowConfigError):

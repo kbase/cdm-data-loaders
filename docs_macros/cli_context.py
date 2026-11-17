@@ -2,7 +2,6 @@
 
 import ast
 import importlib
-import tomllib
 import types
 from collections.abc import Sequence
 from enum import Enum
@@ -12,6 +11,7 @@ from typing import Annotated, Literal, get_args, get_origin
 from pydantic import AliasChoices, BeforeValidator, computed_field, model_validator
 from pydantic.fields import FieldInfo
 
+from cdm_data_loaders.core.pipeline_catalog import load_project_scripts
 from cdm_data_loaders.core.settings import CdmDataLoadersBase
 from docs_macros.constants import GITHUB_BLOB_BASE, PYPROJECT_PATH, REPO_ROOT, SRC_ROOT
 from docs_macros.formatting import FrozenDocModel, ModuleApiUrl, format_value_code
@@ -349,13 +349,10 @@ def load_cli_entries(pyproject_path: Path = PYPROJECT_PATH, repo_root: Path = RE
     :return: Sorted list of ``CliEntryDoc`` descriptors.
     :rtype: list[CliEntryDoc]
     """
-    with pyproject_path.open("rb") as fh:
-        pyproject_data = tomllib.load(fh)
-
-    scripts: dict[str, str] = pyproject_data.get("project", {}).get("scripts", {})
+    scripts = load_project_scripts(pyproject_path)
     entries: list[CliEntryDoc] = []
 
-    for cli_name, entry_point in sorted(scripts.items()):
+    for cli_name, entry_point in scripts.items():
         module_name, attr_name = entry_point.split(":", maxsplit=1)
         module = importlib.import_module(module_name)
         cli_obj = getattr(module, attr_name)

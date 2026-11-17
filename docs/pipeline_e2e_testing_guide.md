@@ -15,7 +15,7 @@ End-to-end (E2E) and smoke tests execute specification-driven pipeline cases acr
 
 | Execution Mode | Description                                                                                                                                                                        | Entry Point                                                                   |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `core`         | In-process execution calling `cdm_data_loaders.pipelines.core.run_cli`                                                                                                             | Direct Python call                                                            |
+| `core`         | In-process execution calling `cdm_data_loaders.core.cli.run_cli`                                                                                                                   | Direct Python call                                                            |
 | `cli`          | CLI entrypoint invocation with patched `sys.argv` and reconstructed `LoadInfo`                                                                                                     | Registered `[project.scripts]` CLI (for example, `pubmed` or `ncbi_datasets`) |
 | `docker`       | Container execution via [`scripts/entrypoint.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/entrypoint.sh) (`@pytest.mark.docker`, enabled by `--run-docker`) | `docker run --rm ... <image> pipeline <cli_command> ...`                      |
 

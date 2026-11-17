@@ -12,11 +12,11 @@ from dlt.common.typing import TDataItems
 from pydantic import BaseModel
 
 from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
+from cdm_data_loaders.core.buffer import DictBuffer, make_rejected_row
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry, TableTransformFn
-from cdm_data_loaders.core.transforms import RecordCoercerFn, make_record_router
+from cdm_data_loaders.core.transforms.routing import RecordCoercerFn, make_record_router
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
-from cdm_data_loaders.utils.buffer import DictBuffer, make_rejected_row
 
 LineRecord = dict[str, Any]
 ParseErrorResolver = Callable[[dict[str, Any]], str | None]

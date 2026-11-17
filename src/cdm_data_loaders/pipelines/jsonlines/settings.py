@@ -26,7 +26,6 @@ from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import (
     PydanticToPyArrow,
 )
 from cdm_data_loaders.core.fields import (
-    DEFAULT_JSONL_FILE_GLOB,
     FILE_GLOB,
     TABLE_NAME,
     FileGlob,
@@ -46,7 +45,7 @@ from cdm_data_loaders.core.settings import (
     default_settings_with_shortcuts,
     select_cli_shortcuts,
 )
-from cdm_data_loaders.core.transforms import (
+from cdm_data_loaders.core.transforms.settings_mixin import (
     TransformSettingsMixin,
     needs_default_pyarrow_schema,
     validate_table_transforms,
@@ -64,6 +63,7 @@ from cdm_data_loaders.validation.jsonschema.dereference import DereferencingErro
 logger: Logger = getLogger(__name__)
 
 
+DEFAULT_JSONL_FILE_GLOB: Final[str] = "*.jsonl*"
 EXTRACT_PIPELINE_NAME: Final[str] = "jsonlines_extract"
 PYDANTIC_PIPELINE_NAME: Final[str] = "jsonlines_pydantic"
 JSONSCHEMA_PIPELINE_NAME: Final[str] = "jsonlines_jsonschema"

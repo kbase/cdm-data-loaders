@@ -10,7 +10,8 @@ from frozendict import frozendict
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
-from cdm_data_loaders.core.transforms import accepts_pyarrow_table, emit_raw_table
+from cdm_data_loaders.core.transforms.introspection import accepts_pyarrow_table
+from cdm_data_loaders.core.transforms.routing import emit_raw_table
 from cdm_data_loaders.parsers.uniprot.idmapping import (
     UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
     transform_uniprot_id_mapping,

@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from unittest.mock import MagicMock, patch
 
-from cdm_data_loaders.pipelines.core import PipelineCli
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.pipelines.uniprot_kb_cdm import (
     PIPELINE_NAME,
     UniProtSettings,
@@ -14,8 +14,8 @@ from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pi
 
 
 def test_cli_passes_settings_class_to_run_cli() -> None:
-    """Ensure that cli is a PipelineCli wired to UniProtSettings and run_xmltopyarrow_pipeline."""
-    assert isinstance(cli, PipelineCli)
+    """Ensure that cli is a CliRunner wired to UniProtSettings and run_xmltopyarrow_pipeline."""
+    assert isinstance(cli, CliRunner)
     assert cli.settings_cls is UniProtSettings
     assert cli.pipeline_fn is run_xmltopyarrow_pipeline
     assert UniProtSettings.dataset_name == PIPELINE_NAME

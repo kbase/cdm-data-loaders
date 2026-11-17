@@ -10,11 +10,8 @@ Usage::
 
 import json
 from collections.abc import Mapping, Sequence
-from importlib import import_module
-from importlib.util import module_from_spec, spec_from_file_location
 from logging import Logger, getLogger
 from pathlib import Path
-from types import ModuleType
 from typing import Annotated, Any, Final
 
 import pyarrow as pa
@@ -23,7 +20,7 @@ from pydantic_settings import CliApp, SettingsConfigDict
 
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import JSONSchemaToPyArrow
 from cdm_data_loaders.core.fields import NonEmptyStr
-from cdm_data_loaders.core.registry import ArrowSchemaRegistry
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry, load_python_module, split_module_attr_spec
 from cdm_data_loaders.core.settings import LoggerSettings, default_settings_with_shortcuts
 from cdm_data_loaders.utils.iceberg.catalog import (
     DEFAULT_CATALOG_NAME,
@@ -140,45 +137,6 @@ class PolarisSchemaDefinitionsSettings(LoggerSettings):
     ]
 
 
-def _split_schema_source(schema_source: str) -> tuple[str, str | None]:
-    """Split ``schema_source`` into ``(module_or_path, optional_attribute_name)``.
-
-    :param schema_source: raw schema source string
-    :type schema_source: str
-    :return: tuple of ``(target_spec, attr_name_or_none)``
-    :rtype: tuple[str, str | None]
-    """
-    head, sep, tail = schema_source.rpartition(":")
-    if not sep or not head or not tail:
-        return schema_source, None
-    # preserve windows drive-letter prefixes such as 'c:\path\to\schema.py'
-    if (len(head) == 1 and head.isalpha()) or "/" in tail or "\\" in tail:
-        return schema_source, None
-    return head, tail
-
-
-def _load_python_module(target: str) -> ModuleType:
-    """Import ``target`` either from a ``.py`` file path or as a dotted Python module path.
-
-    :param target: Python file path or dotted module import path
-    :type target: str
-    :return: loaded Python module object
-    :rtype: ModuleType
-    :raises ValueError: if a file path cannot be loaded as a Python module
-    """
-    candidate_path = Path(target)
-    if candidate_path.suffix == ".py" or candidate_path.is_file():
-        resolved = candidate_path.resolve()
-        spec = spec_from_file_location(f"_dynamic_schema_{resolved.stem}", resolved)
-        if spec is None or spec.loader is None:
-            msg = f"Cannot load Python module from path: {resolved}"
-            raise ValueError(msg)
-        module = module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-    return import_module(target)
-
-
 def _select_schema_from_object(
     obj: object,
     source_label: str,
@@ -273,12 +231,12 @@ def load_pyarrow_schema(schema_source: str, *, schema_key: str | None = None) ->
     :rtype: pa.Schema
     :raises ValueError: if no matching schema attribute can be resolved
     """
-    target, attr_name = _split_schema_source(schema_source)
+    target, attr_name = split_module_attr_spec(schema_source)
     target_path = Path(target)
     if attr_name is None and target_path.suffix.lower() == ".json":
         return _load_json_schema_as_pyarrow(target_path, schema_key=schema_key)
 
-    module = _load_python_module(target)
+    module = load_python_module(target)
     if attr_name is not None:
         if not hasattr(module, attr_name):
             msg = f"Module {target!r} has no attribute {attr_name!r}"

@@ -43,6 +43,7 @@ from cdm_data_loaders.converters.sources.json_schema.strict_scalars import (
     STRING_CONTENT_ENCODING_SPECS,
     STRING_FORMAT_SPECS,
 )
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PubMedXmlToPyArrowSettings,
     UniProtXmlToPyArrowSettings,
@@ -56,7 +57,6 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import (
     resolve_duckdb_column_config,
 )
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import CleanerValidatorArgs
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.validation.jsonschema.dereference import dereference_schema
 from cdm_data_loaders.validation.jsonschema.metaschema import (
     CUSTOM_META_SCHEMA_URI,

@@ -44,9 +44,9 @@ from pyiceberg.types import (
     TimestamptzType,
 )
 
+from cdm_data_loaders.core.buffer import DictBuffer
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
-from cdm_data_loaders.utils.buffer import DictBuffer
 from cdm_data_loaders.utils.iceberg.cleanup import install_iceberg_catalog_cleanup
 from tests.cdm_data_loaders.pipelines.helpers import is_metadata_table
 

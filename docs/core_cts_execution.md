@@ -6,7 +6,7 @@ This guide explains how `cdm-data-loaders` pipelines are configured and executed
 
 ## Execution Modes
 
-Every pipeline under [`src/cdm_data_loaders/pipelines`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines) exposes a `PipelineCli` instance (`cli = PipelineCli(...)`) registered under `[project.scripts]` in [`pyproject.toml`](https://github.com/kbase/cdm-data-loaders/blob/develop/pyproject.toml). See the [CLI Reference](cli_reference.md) for the complete list of registered commands and options.
+Every pipeline under [`src/cdm_data_loaders/pipelines`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines) exposes a `CliRunner` instance (`cli = CliRunner(...)`, defined in [`src/cdm_data_loaders/core/cli.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/cli.py)) registered under `[project.scripts]` in [`pyproject.toml`](https://github.com/kbase/cdm-data-loaders/blob/develop/pyproject.toml). See the [CLI Reference](cli_reference.md) for the complete list of registered commands and options.
 
 ### Local CLI Execution (`uv run`)
 
@@ -53,7 +53,7 @@ docker run --rm \
 
 ### Programmatic Execution in Python
 
-In Python, instantiate the pipeline's settings class and pass it to the pipeline runner (or call `PipelineCli.run()` from [`src/cdm_data_loaders/pipelines/core.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/core.py)):
+In Python, instantiate the pipeline's settings class and pass it to the pipeline runner (or call `CliRunner.run()` from [`src/cdm_data_loaders/core/cli.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/cli.py)):
 
 ```python
 from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import (
@@ -80,12 +80,12 @@ Pipelines in production run on the **KBase CDM Task Service (CTS)**. CTS enforce
 
 > **CTS only uploads the contents of `/output_dir` (and pipeline artifacts written there) if the container exits with exit code `0`.** If a container exits with a non-zero exit code, CTS captures `STDOUT` and `STDERR` logs, **but discards everything written to `/output_dir`**.
 
-To preserve diagnostic artifacts, `PipelineCli` and `run_pipeline()` in [`src/cdm_data_loaders/pipelines/core.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/core.py) separate failures by phase:
+To preserve diagnostic artifacts, `CliRunner` ([`src/cdm_data_loaders/core/cli.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/cli.py)) and `run_pipeline()` ([`src/cdm_data_loaders/pipelines/core.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/core.py)) separate failures by phase:
 
 - **Pre-execution configuration, CLI, and destination validation errors (non-zero exit)**:
-  Errors raised during CLI settings parsing (missing required flags, invalid file paths, unknown options, or invalid transform/preprocessor modules) or invalid `use_destination` lookup occur before pipeline extraction starts. Because no output artifacts exist yet, these errors raise immediately and terminate the process with a non-zero exit code so CTS flags the task failure and records `STDERR`.
+  Errors raised during CLI settings parsing (missing required flags, invalid file paths, unknown options, or invalid transform/preprocessor modules) or invalid `use_destination` lookup occur before pipeline extraction starts. Because no output artifacts exist yet, these errors raise and terminate the process with a non-zero exit code so CTS flags the task failure and records `STDERR`.
 - **Runtime pipeline and `dlt` load errors (exit code `0`)**:
-  Once `pipeline.run()` begins inside `run_pipeline()`, runtime step failures (`PipelineStepFailed`) and failed jobs (`load_info.has_failed_jobs`) are caught and logged. [`save_pipeline_metadata()`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/reporting.py) writes the `LoadInfo` record to `_load_info` and writes `PipelineReport` YAML to `settings.report_path` (`report.txt`) with `status: error` or `status: completed with errors`, `pipeline_err_msg`, and `load_errors`. `PipelineCli.__call__()` returns so the container exits with code `0`, preserving `report.txt`, logs, `_load_info`, and `_rejected` tables in `/output_dir` for CTS to upload.
+  Once `pipeline.run()` begins inside `run_pipeline()`, runtime step failures (`PipelineStepFailed`) and failed jobs (`load_info.has_failed_jobs`) are caught and logged. [`save_pipeline_metadata()`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/reporting.py) writes the `LoadInfo` record to `_load_info` and writes `PipelineReport` YAML to `settings.report_path` (`report.txt`) with `status: error` or `status: completed with errors`, `pipeline_err_msg`, and `load_errors`. `CliRunner.__call__()` returns so the container exits with code `0`, preserving `report.txt`, logs, `_load_info`, and `_rejected` tables in `/output_dir` for CTS to upload.
 
 ---
 
@@ -216,7 +216,7 @@ When [`save_pipeline_metadata()`](https://github.com/kbase/cdm-data-loaders/blob
 
 ### Dead-Letter Rejection Table (`_rejected`)
 
-Pipelines that validate or parse individual files and records route failures to the unified `_rejected` table (`REJECTED_PYARROW_SCHEMA` in [`src/cdm_data_loaders/utils/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/buffer.py): `table_name`, `source_file`, `line_no`, `raw_record`, `error_detail`) rather than aborting the entire batch:
+Pipelines that validate or parse individual files and records route failures to the unified `_rejected` table (`REJECTED_PYARROW_SCHEMA` in [`src/cdm_data_loaders/core/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/buffer.py): `table_name`, `source_file`, `line_no`, `raw_record`, `error_detail`) rather than aborting the entire batch:
 
 - **File pre-processors (`FILE_PREPROCESSORS`)**: Raising `FilePreprocessError` (such as an MD5 sidecar mismatch) writes a diagnostic row to `_rejected` with `source_file` and `error_detail` and skips the file.
 - **JSONLines and XML pipelines (`jsonlines_extract`, `jsonlines_jsonschema`, `jsonlines_pydantic`, `xmltodict`, `xmltopyarrow`)**: Unparseable records or schema/model validation errors are routed to `_rejected` with `table_name`, `source_file`, `line_no`, `raw_record`, and `error_detail`.

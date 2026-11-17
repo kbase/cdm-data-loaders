@@ -2,12 +2,10 @@
 
 import gzip
 import logging
-import sys
-from collections.abc import Callable, Iterator
-from dataclasses import FrozenInstanceError
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final, cast
+from typing import Any, Final
 from unittest.mock import MagicMock, patch
 
 import dlt
@@ -15,14 +13,11 @@ import pyarrow as pa
 import pytest
 import yaml
 from dlt.common.destination.exceptions import DestinationTerminalException
-from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TTableSchema
 from dlt.common.typing import TDataItems
 from dlt.destinations.impl.filesystem.filesystem import FilesystemLoadJob
 from dlt.extract.resource import DltResource
 from dlt.sources.filesystem import filesystem
-from pydantic import ValidationError
-from pydantic_settings import SettingsError
 
 from cdm_data_loaders.core import reporting
 from cdm_data_loaders.core.fields import (
@@ -35,20 +30,17 @@ from cdm_data_loaders.core.filesystem import build_filesystem_resource
 from cdm_data_loaders.core.preprocessors import FilePreprocessError
 from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME, WEBHOOK_NOT_CONFIGURED
 from cdm_data_loaders.core.settings import (
-    CdmDataLoadersBase,
     CtsSettings,
     FileFormatIngestSettings,
     InputLocalOutputSettings,
     LoggerSettings,
 )
-from cdm_data_loaders.core.transforms import OutputTableHints
-from cdm_data_loaders.pipelines import core
-from cdm_data_loaders.pipelines.core import (
-    PipelineCli,
+from cdm_data_loaders.core.transforms.hints import (
+    OutputTableHints,
     propagate_run_hints_to_variants,
-    run_cli,
-    run_pipeline,
 )
+from cdm_data_loaders.pipelines import core
+from cdm_data_loaders.pipelines.core import run_pipeline
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from tests.cdm_data_loaders.conftest import (
     HOOK_ENV_VAR,
@@ -61,8 +53,8 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     read_destination_rows,
 )
 from tests.conftest import LOCAL_FS, S3
-from tests.dlt_config_isolation import dlt_config_unset, isolated_dlt_config
-from tests.helpers import make_cts_settings, register_temp_module, settings_to_argv
+from tests.dlt_config_isolation import isolated_dlt_config
+from tests.helpers import make_cts_settings, register_temp_module
 
 TINY_RESOURCE_DATA: Final[list[dict[str, Any]]] = [
     {"entity_id": "tiny:one", "value": 1},
@@ -73,9 +65,6 @@ TINY_TABLE_NAME: Final[str] = "tiny"
 EXPECTED_PIPELINE_RUNS: Final[int] = 2
 ALL_JOBS_COMPLETED: Final[str] = "All pipeline jobs completed successfully"
 FAILED_JOBS_WARNING: Final[str] = "Pipeline contains failed jobs"
-
-SETTINGS_CLASSES: Final[list[type[CdmDataLoadersBase]]] = [LoggerSettings, InputLocalOutputSettings, CtsSettings]
-SETTINGS_CLASS_IDS: Final[list[str]] = ["logger-settings", "local-io-settings", "cts-settings"]
 
 
 def tiny_resource() -> DltResource:
@@ -183,139 +172,6 @@ def test_run_pipeline_invalid_destination_config_fails_at_pipeline_run(
     err_msg = error_records[-1].getMessage()
     assert err_msg.startswith("Pipeline failed: ")
     assert "Missing 1 field(s) in configuration `FilesystemDestinationClientConfiguration`: `bucket_url`" in err_msg
-
-
-# tests for run_cli()
-def _settings_kwargs_for(settings_cls: type[CdmDataLoadersBase], tmp_path: Path) -> dict[str, Any]:
-    """Return minimal required kwargs for instantiating `settings_cls` in `run_cli` tests."""
-    if issubclass(settings_cls, CtsSettings):
-        return {"input_dir": tmp_path, "output_dir": tmp_path, "use_destination": LOCAL_FS}
-    if issubclass(settings_cls, InputLocalOutputSettings):
-        return {"input_dir": tmp_path, "output_dir": tmp_path}
-    return {}
-
-
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES, ids=SETTINGS_CLASS_IDS)
-def test_run_cli_calls_settings_cls_with_cli_args(settings_cls: type[CtsSettings], tmp_path: Path) -> None:
-    """Ensure run_cli instantiates the supplied settings class via CliApp.run."""
-    captured: list[CtsSettings] = []
-
-    class _CaptureCls(settings_cls):  # type: ignore[valid-type]
-        def __init__(self, **data: Any) -> None:  # noqa: ANN401
-            super().__init__(**data)
-            captured.append(self)
-
-    run_cli(_CaptureCls, MagicMock(), _settings_kwargs_for(settings_cls, tmp_path), cli_args=[])
-
-    assert len(captured) == 1
-    captured_config = captured[0]
-    assert isinstance(captured_config, settings_cls)
-    for attr in settings_cls.model_fields:
-        assert hasattr(captured_config, attr)
-
-
-@pytest.mark.parametrize("dlt_config_set", [True, False], ids=["dlt-config-set", "dlt-config-unset"])
-def test_run_cli_pass_does_not_read_dlt_config(tmp_path: Path, *, dlt_config_set: bool) -> None:
-    """run_cli passes the settings through unchanged: output_dir is not filled in from the dlt config."""
-    pipeline_fn_config: list[CtsSettings] = []
-
-    def pipeline_fn(settings: CtsSettings) -> LoadInfo | None:
-        pipeline_fn_config.append(settings)
-        return None
-
-    kwargs = _settings_kwargs_for(CtsSettings, tmp_path)
-    if dlt_config_set:
-        run_cli(CtsSettings, pipeline_fn, kwargs, cli_args=[])
-    else:
-        with dlt_config_unset():
-            run_cli(CtsSettings, pipeline_fn, kwargs, cli_args=[])
-
-    assert len(pipeline_fn_config) == 1
-    assert pipeline_fn_config[0].output_dir == tmp_path.resolve()
-    assert pipeline_fn_config[0].use_destination == LOCAL_FS
-
-
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES, ids=SETTINGS_CLASS_IDS)
-def test_run_cli_returns_pipeline_fn_result_verbatim(settings_cls: type[CtsSettings], tmp_path: Path) -> None:
-    """run_cli dispatches the instantiated settings to pipeline_fn and returns its result verbatim."""
-    sentinel = {"loads_ids": ["load-1"]}
-    received: list[CtsSettings] = []
-
-    def pipeline_fn(settings: CtsSettings) -> dict[str, Any]:
-        received.append(settings)
-        return sentinel
-
-    returned = run_cli(settings_cls, pipeline_fn, _settings_kwargs_for(settings_cls, tmp_path), cli_args=[])
-
-    assert returned is sentinel
-    assert len(received) == 1
-    assert isinstance(received[0], settings_cls)
-
-
-# error handling: SettingsError/ValidationError/ValueError
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES, ids=SETTINGS_CLASS_IDS)
-def test_run_cli_reraises_settings_error(
-    settings_cls: type[CtsSettings],
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """SettingsError is printed and re-raised."""
-    err = SettingsError("bad CLI arg")
-
-    with (
-        patch.object(settings_cls, "__init__", side_effect=err),
-        pytest.raises(SettingsError, match="bad CLI arg"),
-    ):
-        run_cli(settings_cls, MagicMock())
-
-    error_records = [record for record in caplog.records if record.levelno == logging.ERROR]
-    assert error_records
-    assert error_records[-1].getMessage() == "Error initialising config"
-
-
-# error handling: unexpected Exception
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES, ids=SETTINGS_CLASS_IDS)
-def test_run_cli_reraises_unexpected_exception(
-    settings_cls: type[CtsSettings], caplog: pytest.LogCaptureFixture
-) -> None:
-    """Ensure that other exceptions are caught and re-raised."""
-    boom = RuntimeError("disk on fire")
-    mock_pipeline_fn = MagicMock()
-    with (
-        patch.object(settings_cls, "__init__", side_effect=boom),
-        pytest.raises(RuntimeError, match="disk on fire"),
-    ):
-        run_cli(settings_cls, mock_pipeline_fn)
-
-    error_records = [record for record in caplog.records if record.levelno == logging.ERROR]
-    assert error_records
-    assert error_records[-1].getMessage() == "Unexpected error setting up config"
-
-    mock_pipeline_fn.assert_not_called()
-
-
-# pipeline_fn not called on error
-@pytest.mark.parametrize(
-    "exc",
-    [
-        SettingsError("bad"),
-        ValueError("bad value"),
-    ],
-    ids=["settings-error", "value-error"],
-)
-@pytest.mark.parametrize("settings_cls", SETTINGS_CLASSES, ids=SETTINGS_CLASS_IDS)
-def test_run_cli_pipeline_fn_not_called_on_settings_instantiation_error(
-    exc: Exception,
-    settings_cls: type[CtsSettings],
-) -> None:
-    """Ensure that further execution is stopped if settings instantiation fails."""
-    mock_pipeline_fn = MagicMock()
-    with (
-        patch.object(settings_cls, "__init__", side_effect=exc),
-        pytest.raises(type(exc)),
-    ):
-        run_cli(settings_cls, mock_pipeline_fn)
-
-    mock_pipeline_fn.assert_not_called()
 
 
 # run_pipeline bootstrap: destination and dev_mode derivation
@@ -741,68 +597,6 @@ def test_run_pipeline_load_info_save_run_mock_shape(
     assert first_call.args[0] is not None
     assert save_call.args[0] is not None
     assert save_call.kwargs == {"loader_file_format": "jsonl"}
-
-
-# PipelineCli
-
-RUN_RESULT: Final[LoadInfo] = cast("LoadInfo", object())
-
-
-def make_recorder() -> tuple[list[CtsSettings], Callable[[CtsSettings], LoadInfo | None]]:
-    """A pipeline function that records the settings it gets and returns RUN_RESULT."""
-    received: list[CtsSettings] = []
-
-    def pipeline_fn(settings: CtsSettings) -> LoadInfo | None:
-        received.append(settings)
-        return RUN_RESULT
-
-    return received, pipeline_fn
-
-
-def test_pipeline_cli_pass_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """run() builds settings from cli_args, env vars and kwargs, then returns the pipeline function's result."""
-    received, pipeline_fn = make_recorder()
-    monkeypatch.setenv("CDL_DLT_DEV_MODE", "true")
-    result = PipelineCli(CtsSettings, pipeline_fn).run(
-        cli_args=["-i", str(tmp_path), "-o", str(tmp_path / "out"), "-d", LOCAL_FS, "--buffer-size", "7"],
-        log_interval=3,
-    )
-    assert result is RUN_RESULT
-    assert [(s.input_dir, s.buffer_size, s.log_interval, s.dlt_dev_mode) for s in received] == [
-        (str(tmp_path.resolve()), 7, 3, True)
-    ]
-
-
-def test_pipeline_cli_pass_call_reads_argv(dlt_test_settings: CtsSettings, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Calling the CLI parses sys.argv, runs the pipeline and returns None so the process exits with 0."""
-    received, pipeline_fn = make_recorder()
-    monkeypatch.setattr(sys, "argv", ["prog", *settings_to_argv(dlt_test_settings)])
-    assert PipelineCli(CtsSettings, pipeline_fn)() is None
-    assert [s.input_dir for s in received] == [dlt_test_settings.input_dir]
-
-
-@pytest.mark.parametrize(
-    "cli_args",
-    [
-        pytest.param(["--buffer-size", "0"], id="invalid_value"),
-        pytest.param(["--no-such-flag", "x"], id="unknown_arg"),
-        pytest.param(["-p", "true"], id="metadata_without_output_dir"),
-    ],
-)
-def test_pipeline_cli_fail_invalid_settings(cli_args: list[str]) -> None:
-    """Invalid settings raise before the pipeline function is called."""
-    received, pipeline_fn = make_recorder()
-    with pytest.raises((SettingsError, ValidationError)):
-        PipelineCli(CtsSettings, pipeline_fn).run(cli_args=cli_args)
-    assert received == []
-
-
-def test_pipeline_cli_fail_frozen() -> None:
-    """PipelineCli instances cannot be changed after creation."""
-    _, pipeline_fn = make_recorder()
-    pipeline_cli = PipelineCli(CtsSettings, pipeline_fn)
-    with pytest.raises(FrozenInstanceError):
-        pipeline_cli.settings_cls = LoggerSettings  # pyright: ignore[reportAttributeAccessIssue]
 
 
 # run_pipeline with failed load jobs

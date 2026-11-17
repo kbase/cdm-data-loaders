@@ -58,13 +58,13 @@ def get_single_error(exc: ValidationError) -> ErrorDetails:
 
 
 URL_PROTOCOL_CASES = [
-    pytest.param("/tmp/data", "file", id="absolute_posix_path"),
+    pytest.param("/opt/data", "file", id="absolute_posix_path"),
     pytest.param("relative/dir", "file", id="relative_path"),
     pytest.param("", "file", id="empty_string"),
     pytest.param("C:\\data", "file", id="windows_drive_backslash"),
     pytest.param("C://data", "file", id="windows_drive_single_char_protocol"),
-    pytest.param("file:///tmp/data", "file", id="file_protocol"),
-    pytest.param("FILE:///tmp/data", "file", id="file_protocol_upper_case"),
+    pytest.param("file:///opt/data", "file", id="file_protocol"),
+    pytest.param("FILE:///opt/data", "file", id="file_protocol_upper_case"),
     pytest.param("file://", "file", id="file_protocol_only"),
     pytest.param("s3://bucket/key", "s3", id="s3"),
     pytest.param("S3://bucket/key", "s3", id="s3_upper_case"),
@@ -90,15 +90,15 @@ def test_is_local_url_pass(url: str, protocol: str) -> None:
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        pytest.param("/tmp/data", "/tmp/data", id="absolute_posix_path"),
+        pytest.param("/opt/data", "/opt/data", id="absolute_posix_path"),
         pytest.param("relative/dir", "relative/dir", id="relative_path"),
         pytest.param(".", ".", id="current_dir"),
         pytest.param("C:\\data", "C:\\data", id="windows_drive_path"),
-        pytest.param("  /tmp/data \n", "/tmp/data", id="surrounding_whitespace"),
-        pytest.param("file:///tmp/data", "/tmp/data", id="file_protocol_absolute"),
-        pytest.param("FILE:///tmp/data", "/tmp/data", id="file_protocol_upper_case"),
+        pytest.param("  /opt/data \n", "/opt/data", id="surrounding_whitespace"),
+        pytest.param("file:///opt/data", "/opt/data", id="file_protocol_absolute"),
+        pytest.param("FILE:///opt/data", "/opt/data", id="file_protocol_upper_case"),
         pytest.param("file://relative/dir", "relative/dir", id="file_protocol_relative"),
-        pytest.param("  file:///tmp/data  ", "/tmp/data", id="file_protocol_with_whitespace"),
+        pytest.param("  file:///opt/data  ", "/opt/data", id="file_protocol_with_whitespace"),
     ],
 )
 def test_check_local_path_pass_strings(value: str, expected: str) -> None:
@@ -109,10 +109,10 @@ def test_check_local_path_pass_strings(value: str, expected: str) -> None:
 @pytest.mark.parametrize(
     "value",
     [
-        pytest.param(Path("/tmp/data"), id="path_object"),
+        pytest.param(Path("/opt/data"), id="path_object"),
         pytest.param(None, id="none"),
         pytest.param(123, id="int"),
-        pytest.param(b"/tmp/data", id="bytes"),
+        pytest.param(b"/opt/data", id="bytes"),
     ],
 )
 def test_check_local_path_pass_non_string_unchanged(value: Any) -> None:  # noqa: ANN401
@@ -434,7 +434,7 @@ def test_local_dir_models_fail_empty(model_cls: type[BaseModel], value: str) -> 
     [
         pytest.param(None, id="none"),
         pytest.param(123, id="int"),
-        pytest.param(["/tmp"], id="list"),
+        pytest.param(["/opt"], id="list"),
     ],
 )
 def test_local_dir_models_fail_invalid_type(model_cls: type[BaseModel], value: Any) -> None:  # noqa: ANN401

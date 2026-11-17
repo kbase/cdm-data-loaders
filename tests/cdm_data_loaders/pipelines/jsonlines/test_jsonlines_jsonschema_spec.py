@@ -19,6 +19,7 @@ from _pytest.mark.structures import ParameterSet
 from dlt.sources.filesystem import filesystem
 
 import cdm_data_loaders.pipelines.jsonlines.base as jsonl_base_module
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.pipelines.jsonlines.exceptions import (
     JSONLINES_JSONSCHEMA_ERRORS,
@@ -33,7 +34,6 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlJsonschemaIngestSettings,
 )
 from cdm_data_loaders.readers.jsonlines import make_page_router, stream_jsonl_lines
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
 from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_duckdb_pipeline
 from tests.conftest import PIPELINE_SPECS_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules

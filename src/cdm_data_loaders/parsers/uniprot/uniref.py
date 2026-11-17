@@ -20,9 +20,9 @@ from typing import Any, Final
 
 import pyarrow as pa
 
+from cdm_data_loaders.core.buffer import make_rejected_table_result
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformFn
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import _format_date, _iter_mappings
-from cdm_data_loaders.utils.buffer import make_rejected_table_result
 
 UNIREF_URL = "http://uniprot.org/uniref"
 ENTRY_XML_TAG = f"{{{UNIREF_URL}}}entry"

@@ -30,7 +30,7 @@ from cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline imp
     build_entity_resource,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from tests.cdm_data_loaders.converters.facades.test_pydantic_to_pyarrow_pbt import (
     pydantic_raw_inputs_for_model,
 )

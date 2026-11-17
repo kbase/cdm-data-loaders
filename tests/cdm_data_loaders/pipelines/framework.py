@@ -4,13 +4,10 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from importlib import import_module
 from pathlib import Path
-from types import ModuleType
 from typing import Any, Final, Self
 from unittest.mock import patch
 from uuid import uuid4
@@ -21,11 +18,16 @@ import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.destinations import filesystem
 
+from cdm_data_loaders.core import cli as core_cli
 from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
+from cdm_data_loaders.core.pipeline_catalog import (
+    PipelineIdentifier,
+    PipelineSpec,
+    discover_pipeline_targets,
+    resolve_pipeline,
+)
 from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
-from cdm_data_loaders.pipelines import core
-from cdm_data_loaders.pipelines.core import PipelineCli
 from tests.cdm_data_loaders.pipelines.helpers import read_jsonl_file
 from tests.conftest import BASE_DIR, CONFIG_BUCKET, LOCAL_FS, preserve_logging_state
 from tests.helpers import settings_to_argv
@@ -59,44 +61,6 @@ INPUT_DIR_FLAGS: Final[frozenset[str]] = frozenset({"--input-dir", "-i"})
 OUTPUT_DIR_FLAGS: Final[frozenset[str]] = frozenset({"--output-dir", "-o"})
 DESTINATION_FLAGS: Final[frozenset[str]] = frozenset({"--use-destination", "-d"})
 
-# Registry mapping console-script / pipeline names to (cli_command, module_path)
-PIPELINE_TARGETS: Final[dict[str, tuple[str, str]]] = {
-    "all_the_bacteria": ("all_the_bacteria", "cdm_data_loaders.pipelines.all_the_bacteria"),
-    "jsonlines_extract": ("jsonlines_extract", "cdm_data_loaders.pipelines.jsonlines.extract_pipeline"),
-    "jsonlines_jsonschema": (
-        "jsonlines_jsonschema",
-        "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline",
-    ),
-    "jsonlines_pydantic": (
-        "jsonlines_pydantic",
-        "cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline",
-    ),
-    "ncbi_datasets": (
-        "ncbi_datasets",
-        "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline",
-    ),
-    "ncbi_ftp_promote": ("ncbi_ftp_promote", "cdm_data_loaders.pipelines.ncbi_ftp_promote"),
-    "ncbi_ftp_sync": ("ncbi_ftp_sync", "cdm_data_loaders.pipelines.ncbi_ftp_download"),
-    "pubmed": ("pubmed", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
-    "uniprot": ("uniprot", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
-    "uniprot_cdm": ("uniprot_cdm", "cdm_data_loaders.pipelines.uniprot_kb_cdm"),
-    "uniprot_idmapping": ("uniprot_idmapping", "cdm_data_loaders.pipelines.uniprot_idmapping"),
-    "uniref50": ("uniref50", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
-    "uniref50_cdm": ("uniref50_cdm", "cdm_data_loaders.pipelines.uniref_cdm"),
-    "uniref90": ("uniref90", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
-    "uniref90_cdm": ("uniref90_cdm", "cdm_data_loaders.pipelines.uniref_cdm"),
-    "uniref100": ("uniref100", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
-    "uniref100_cdm": ("uniref100_cdm", "cdm_data_loaders.pipelines.uniref_cdm"),
-    "xmltodict": ("xmltodict", "cdm_data_loaders.pipelines.xmltodict.pipeline"),
-    "xmltopyarrow": ("xmltopyarrow", "cdm_data_loaders.pipelines.xmltopyarrow.pipeline"),
-    "xsv": ("xsv", "cdm_data_loaders.pipelines.xsv.pipeline"),
-}
-
-MODULE_TO_CLI_COMMAND: Final[dict[str, str]] = {
-    **{module_path: cli_command for cli_command, module_path in PIPELINE_TARGETS.values()},
-    "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline": "jsonlines_jsonschema",
-}
-
 _built_docker_images: set[str] = set()
 
 
@@ -113,17 +77,6 @@ EXECUTION_MODES: Final[tuple[Any, ...]] = (
     pytest.param(ExecutionMode.CLI, id="cli"),
     pytest.param(ExecutionMode.DOCKER, id="docker", marks=pytest.mark.docker),
 )
-
-
-@dataclass(frozen=True, slots=True)
-class PipelineSpec:
-    """Resolved metadata for executing a pipeline across core, cli, and docker modes."""
-
-    cli_command: str
-    module_path: str
-    settings_cls: type[LoggerSettings] | None = None
-    pipeline_fn: Callable[[Any], LoadInfo | None] | None = None
-    cli_callable: Callable[[], Any] | None = None
 
 
 class _PreservedStrDatetime(datetime):
@@ -185,103 +138,6 @@ class ReconstructedLoadInfo:
             "pipeline": {"pipeline_name": self.pipeline.pipeline_name},
             "started_at": self.started_at,
         }
-
-
-type PipelineIdentifier = str | ModuleType | PipelineCli[Any] | PipelineSpec | Callable[..., LoadInfo | None]
-
-
-def _spec_from_module(cli_command: str, module: ModuleType) -> PipelineSpec:
-    """Build a PipelineSpec by inspecting a pipeline module."""
-    cli_attr = getattr(module, f"{cli_command}_cli", None) or getattr(module, "cli", None)
-    if isinstance(cli_attr, PipelineCli):
-        return PipelineSpec(
-            cli_command=cli_command,
-            module_path=module.__name__,
-            settings_cls=cli_attr.settings_cls,
-            pipeline_fn=cli_attr.pipeline_fn,
-            cli_callable=cli_attr,
-        )
-    return PipelineSpec(
-        cli_command=cli_command,
-        module_path=module.__name__,
-        settings_cls=getattr(module, "Settings", None),
-        pipeline_fn=getattr(module, "run_pipeline", None),
-        cli_callable=cli_attr if callable(cli_attr) else None,
-    )
-
-
-def resolve_pipeline(pipeline: PipelineIdentifier) -> PipelineSpec:
-    """Resolve a pipeline name, module, PipelineCli, or callable into a PipelineSpec.
-
-    :param pipeline: pipeline identifier (name, module, PipelineCli, PipelineSpec, or run function)
-    :type pipeline: PipelineIdentifier
-    :raises ValueError: if the pipeline cannot be resolved
-    :return: resolved pipeline specification
-    :rtype: PipelineSpec
-    """
-    if isinstance(pipeline, PipelineSpec):
-        return pipeline
-
-    if isinstance(pipeline, PipelineCli):
-        module_path = pipeline.pipeline_fn.__module__
-        prog_name = pipeline.settings_cls.model_config.get("cli_prog_name")
-        if prog_name and str(prog_name) in PIPELINE_TARGETS:
-            cli_command = str(prog_name)
-        else:
-            cli_command = MODULE_TO_CLI_COMMAND.get(
-                module_path,
-                str(prog_name) if prog_name else module_path.rsplit(".", maxsplit=1)[-1],
-            )
-        return PipelineSpec(
-            cli_command=cli_command,
-            module_path=module_path,
-            settings_cls=pipeline.settings_cls,
-            pipeline_fn=pipeline.pipeline_fn,
-            cli_callable=pipeline,
-        )
-
-    if isinstance(pipeline, ModuleType):
-        module_path = pipeline.__name__
-        short_key = module_path.removeprefix("cdm_data_loaders.pipelines.")
-        cli_attr = getattr(pipeline, "cli", None)
-        prog_name = (
-            cli_attr.settings_cls.model_config.get("cli_prog_name") if isinstance(cli_attr, PipelineCli) else None
-        )
-        cli_command = MODULE_TO_CLI_COMMAND.get(
-            module_path,
-            PIPELINE_TARGETS.get(
-                short_key,
-                (str(prog_name) if prog_name else short_key.rsplit(".", maxsplit=1)[-1], module_path),
-            )[0],
-        )
-        return _spec_from_module(cli_command, pipeline)
-
-    if callable(pipeline):
-        module_path = getattr(pipeline, "__module__", "")
-        module = (sys.modules.get(module_path) or import_module(module_path)) if module_path else None
-        if module is not None:
-            if module_path in MODULE_TO_CLI_COMMAND:
-                return _spec_from_module(MODULE_TO_CLI_COMMAND[module_path], module)
-            cli_attr = getattr(module, "cli", None)
-            if isinstance(cli_attr, PipelineCli) and cli_attr.pipeline_fn is pipeline:
-                return resolve_pipeline(cli_attr)
-        err_msg = f"Cannot resolve pipeline from callable {pipeline!r} (module {module_path!r})"
-        raise ValueError(err_msg)
-
-    if isinstance(pipeline, str):
-        normalized = pipeline.strip().removeprefix("cdm_data_loaders.pipelines.")
-        full_module_path = f"cdm_data_loaders.pipelines.{normalized}"
-        target = PIPELINE_TARGETS.get(normalized) or (
-            (MODULE_TO_CLI_COMMAND[full_module_path], full_module_path)
-            if full_module_path in MODULE_TO_CLI_COMMAND
-            else None
-        )
-        if target is not None:
-            cli_command, module_path = target
-            return _spec_from_module(cli_command, import_module(module_path))
-
-    err_msg = f"Unknown pipeline {pipeline!r}. Known pipelines: {', '.join(sorted(PIPELINE_TARGETS))}"
-    raise ValueError(err_msg)
 
 
 def _read_saved_load_info_row(dataset_dir: Path) -> dict[str, Any]:
@@ -553,7 +409,7 @@ class PipelineTestRunner:
     ) -> LoadInfo | None:
         """Execute ``pipeline`` in the configured mode and return its ``LoadInfo``.
 
-        :param pipeline: pipeline name, module, PipelineCli, PipelineSpec, or pipeline run function
+        :param pipeline: pipeline name, module, CliRunner, PipelineSpec, or pipeline run function
         :type pipeline: PipelineIdentifier
         :param settings: optional pre-built settings instance
         :type settings: CtsSettings | LoggerSettings | None
@@ -617,14 +473,14 @@ class PipelineTestRunner:
         output_dir: Path,
         use_destination: str,
     ) -> LoadInfo | None:
-        """Execute the pipeline in-process via ``cdm_data_loaders.pipelines.core.run_cli``."""
+        """Execute the pipeline in-process via ``cdm_data_loaders.core.cli.run_cli``."""
         if spec.settings_cls is None or spec.pipeline_fn is None:
-            err_msg = f"Pipeline {spec.cli_command!r} does not expose settings_cls and pipeline_fn for core.run_cli"
+            err_msg = f"Pipeline {spec.cli_command!r} does not expose settings_cls and pipeline_fn for run_cli"
             raise ValueError(err_msg)
 
         if self.preserve_dlt_destination:
             with preserve_logging_state():
-                return core.run_cli(spec.settings_cls, spec.pipeline_fn, cli_args=args)
+                return core_cli.run_cli(spec.settings_cls, spec.pipeline_fn, cli_args=args)
 
         bucket_dir = self._resolve_bucket_dir(output_dir, use_destination)
         with (
@@ -636,7 +492,7 @@ class PipelineTestRunner:
                 }
             ),
         ):
-            return core.run_cli(spec.settings_cls, spec.pipeline_fn, cli_args=args)
+            return core_cli.run_cli(spec.settings_cls, spec.pipeline_fn, cli_args=args)
 
     def _run_cli(
         self,
@@ -750,10 +606,9 @@ class PipelineTestRunner:
         else:
             docker_cmd.extend(["-e", "PYTHONPATH=/app/src:/app"])
 
+        registered_modules = {module_path for _, module_path in discover_pipeline_targets().values()}
         docker_target = (
-            spec.cli_command
-            if spec.module_path in MODULE_TO_CLI_COMMAND
-            else f"{spec.module_path.replace('.', '/')}.py"
+            spec.cli_command if spec.module_path in registered_modules else f"{spec.module_path.replace('.', '/')}.py"
         )
         docker_cmd.extend([image_tag, "pipeline", docker_target, *container_args])
 

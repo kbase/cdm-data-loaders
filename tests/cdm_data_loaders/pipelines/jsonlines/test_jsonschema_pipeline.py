@@ -34,7 +34,7 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
 )
 from cdm_data_loaders.readers.jsonlines import make_page_router
 from cdm_data_loaders.schemas.ncbi_datasets.schema import SCHEMAS as NCBI_DATASETS_SCHEMAS
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
 from tests.cdm_data_loaders.pipelines.framework import PipelineTestRunner
 from tests.cdm_data_loaders.pipelines.helpers import assert_run_ok, read_pipeline_tables

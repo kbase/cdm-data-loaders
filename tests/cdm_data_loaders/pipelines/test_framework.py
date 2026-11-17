@@ -8,6 +8,11 @@ import dlt
 import pytest
 from pydantic import BaseModel
 
+from cdm_data_loaders.core.pipeline_catalog import (
+    PipelineSpec,
+    discover_pipeline_targets,
+    resolve_pipeline,
+)
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines import uniprot_kb_cdm
 from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import (
@@ -26,13 +31,10 @@ from tests.cdm_data_loaders.pipelines.framework import (
     CONTAINER_INPUT_DIR,
     CONTAINER_OUTPUT_DIR,
     CONTAINER_PYMODULES_DIR,
-    PIPELINE_TARGETS,
     ExecutionMode,
-    PipelineSpec,
     PipelineTestRunner,
     ensure_docker_image,
     reconstruct_load_info,
-    resolve_pipeline,
 )
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_pipeline_report_written,
@@ -51,6 +53,9 @@ class _SampleEntityModel(BaseModel):
     """Sample Pydantic model for dynamic module materialization tests."""
 
     record_id: str
+
+
+PIPELINE_TARGETS = discover_pipeline_targets()
 
 
 @pytest.mark.parametrize("target_key", sorted(PIPELINE_TARGETS), ids=str)
@@ -142,7 +147,7 @@ def test_resolve_pipeline_pass_from_module_cli_spec_and_callable(
     expected_pipeline_fn: object,
     expected_cli_callable: object,
 ) -> None:
-    """resolve_pipeline accepts ModuleType, PipelineCli, PipelineSpec, and pipeline run functions."""
+    """resolve_pipeline accepts ModuleType, CliRunner, PipelineSpec, and pipeline run functions."""
     spec = resolve_pipeline(target)  # type: ignore[arg-type]
     assert spec.cli_command == expected_cli
     assert spec.settings_cls is expected_settings_cls
@@ -592,8 +597,8 @@ def test_pipeline_test_runner_fail_missing_required_arguments(
         runner.run(target, cli_args=cli_args)
 
 
-def test_resolve_pipeline_pass_legacy_module_without_pipeline_cli() -> None:
-    """resolve_pipeline handles modules whose cli attribute is a plain function rather than PipelineCli."""
+def test_resolve_pipeline_pass_legacy_module_without_cli_runner() -> None:
+    """resolve_pipeline handles modules whose cli attribute is a plain function rather than CliRunner."""
     legacy_mod = ModuleType("cdm_data_loaders.pipelines.custom_legacy")
     legacy_mod.Settings = JsonlExtractSettings  # type: ignore[attr-defined]
     legacy_mod.run_pipeline = run_jsonlines_pipeline  # type: ignore[attr-defined]

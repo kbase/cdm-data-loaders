@@ -18,7 +18,7 @@ from dlt.extract.resource import DltResource
 from jsonschema import FormatChecker
 from jsonschema.validators import validator_for
 
-from cdm_data_loaders.pipelines.core import PipelineCli
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.pipelines.jsonlines.base import (
     build_entity_resource as build_shared_entity_resource,
 )
@@ -94,8 +94,8 @@ def run_jsonlines_pipeline(settings: JsonlJsonschemaIngestSettings) -> LoadInfo 
     )
 
 
-cli = PipelineCli(JsonlJsonschemaIngestSettings, run_jsonlines_pipeline)
-ncbi_datasets_cli = PipelineCli(NcbiDatasetsSettings, run_jsonlines_pipeline)
+cli = CliRunner(JsonlJsonschemaIngestSettings, run_jsonlines_pipeline)
+ncbi_datasets_cli = CliRunner(NcbiDatasetsSettings, run_jsonlines_pipeline)
 
 
 if __name__ == "__main__":

@@ -17,8 +17,8 @@ from pydantic import (
     computed_field,
 )
 
+from cdm_data_loaders.core.buffer import make_rejected_row
 from cdm_data_loaders.core.fields import CharStr, NonEmptyStr
-from cdm_data_loaders.utils.buffer import make_rejected_row
 from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
 
 VALIDATION_ERRORS: Final[str] = ".validation-errors.tsv"

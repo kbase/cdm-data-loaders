@@ -10,11 +10,9 @@ name, source file, line number, raw text, and error detail.
 
 from dlt.common.pipeline import LoadInfo
 
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.filesystem import build_file_ingest_kwargs, build_filesystem_resource
-from cdm_data_loaders.pipelines.core import (
-    PipelineCli,
-    run_pipeline,
-)
+from cdm_data_loaders.pipelines.core import run_pipeline
 from cdm_data_loaders.pipelines.jsonlines.settings import (
     EXTRACT_PIPELINE_NAME,
     JsonlExtractSettings,
@@ -39,7 +37,7 @@ def run_jsonlines_pipeline(settings: JsonlExtractSettings) -> LoadInfo | None:
     )
 
 
-cli = PipelineCli(JsonlExtractSettings, run_jsonlines_pipeline)
+cli = CliRunner(JsonlExtractSettings, run_jsonlines_pipeline)
 
 
 if __name__ == "__main__":

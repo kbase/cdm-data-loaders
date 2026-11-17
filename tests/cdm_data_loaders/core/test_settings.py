@@ -13,16 +13,18 @@ from cdm_data_loaders.core.fields import FILE_LISTING_FILE_NAME, PIPELINE_DIR_NA
 from cdm_data_loaders.core.settings import (
     DEFAULT_SETTINGS_CONFIG_DICT,
     FILE_FORMAT_CLI_SHORTCUTS,
-    XML_CLI_SHORTCUTS,
     CdmDataLoadersBase,
     CtsSettings,
     FileFormatIngestSettings,
     InputLocalOutputSettings,
     LoggerSettings,
-    SingleTableXmlIngestSettings,
-    XmlIngestSettings,
     default_settings_with_shortcuts,
     select_cli_shortcuts,
+)
+from cdm_data_loaders.pipelines.xml_common import (
+    XML_CLI_SHORTCUTS,
+    SingleTableXmlIngestSettings,
+    XmlIngestSettings,
 )
 from tests.cdm_data_loaders.conftest import (
     SETTINGS_SOURCES,

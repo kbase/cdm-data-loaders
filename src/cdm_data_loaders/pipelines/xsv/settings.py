@@ -19,7 +19,7 @@ from cdm_data_loaders.core.settings import (
     FileFormatIngestSettings,
     default_settings_with_shortcuts,
 )
-from cdm_data_loaders.core.transforms import TransformSettingsMixin
+from cdm_data_loaders.core.transforms.settings_mixin import TransformSettingsMixin
 from cdm_data_loaders.pipelines.xsv.exceptions import (
     InvalidXsvSchemaDefinitionError,
     MissingRequiredColumnsError,

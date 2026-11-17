@@ -17,12 +17,12 @@ from cdm_data_loaders.converters.cli.iceberg_base import (
 from cdm_data_loaders.converters.core.io import write_schema_text
 from cdm_data_loaders.converters.emitters.json_schema.common import JSON_SCHEMA_DIALECT
 from cdm_data_loaders.converters.facades.pyiceberg_to_jsonschema import table_to_json_schema
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.settings import default_settings_with_shortcuts
-from cdm_data_loaders.pipelines.core import PipelineCli
 
 logger: Logger = getLogger(__name__)
 
-PIPELINE_NAME: Final[str] = "iceberg_catalog_converter"
+PIPELINE_NAME: Final[str] = "pyiceberg_to_jsonschema"
 
 
 class IcebergToJsonSchemaSettings(IcebergCatalogDumpSettings):
@@ -100,7 +100,7 @@ def dump_catalog_schemas(settings: IcebergToJsonSchemaSettings) -> None:
     dump_catalog(settings, JSON_SCHEMA_DUMP_DRIVER, logger)
 
 
-cli = PipelineCli(IcebergToJsonSchemaSettings, dump_catalog_schemas)
+cli = CliRunner(IcebergToJsonSchemaSettings, dump_catalog_schemas)
 
 
 if __name__ == "__main__":

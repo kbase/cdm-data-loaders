@@ -17,10 +17,11 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schema,
     generate_pyarrow_schemas_at_level,
 )
-from cdm_data_loaders.core.fields import DEFAULTS, XML_GZ_FILE_GLOB
-from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
+from cdm_data_loaders.core.fields import DEFAULTS
+from cdm_data_loaders.core.md5_preprocessor import validate_md5_sidecar
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.pipelines.xml_common import XML_GZ_FILE_GLOB
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     ENTRY_TABLE_NAME,
     ENTRY_XML_TAG,

@@ -12,6 +12,7 @@ from dlt.extract.items import DataItemWithMeta, TableNameMeta
 from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from cdm_data_loaders.readers.jsonlines import (
     iter_file_jsonl_records,
@@ -19,7 +20,6 @@ from cdm_data_loaders.readers.jsonlines import (
     route_jsonl_lines,
     stream_jsonl_lines,
 )
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
 from tests.fs_backends import FsBackend
 from tests.helpers import make_cts_settings, register_temp_module
 from tests.jsonlines_fixtures import make_item

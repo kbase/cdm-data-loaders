@@ -20,6 +20,7 @@ from dlt.sources.filesystem import filesystem
 from pydantic import ValidationError
 
 import cdm_data_loaders.pipelines.xmltopyarrow.pipeline as xml_pipeline_module
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.pipelines.xmltopyarrow.exceptions import (
     XMLTOPYARROW_CONFIG_ERRORS,
@@ -35,7 +36,6 @@ from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     XmlToPyArrowSettings,
 )
 from cdm_data_loaders.readers.xml import process_xml_file_to_pyarrow
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
 from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_duckdb_pipeline
 from tests.conftest import PIPELINE_SPECS_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules

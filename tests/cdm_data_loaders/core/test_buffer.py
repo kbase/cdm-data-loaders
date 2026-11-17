@@ -1,4 +1,4 @@
-"""Tests for the page buffer in cdm_data_loaders.utils.buffer."""
+"""Tests for the page buffer in cdm_data_loaders.core.buffer."""
 
 from collections.abc import Iterator
 from typing import Any, Final
@@ -8,14 +8,14 @@ import pyarrow as pa
 import pytest
 from pydantic import ValidationError
 
-import cdm_data_loaders.utils.buffer as buffer_module
-from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-from cdm_data_loaders.core.registry import ArrowSchemaRegistry
-from cdm_data_loaders.utils.buffer import (
+import cdm_data_loaders.core.buffer as buffer_module
+from cdm_data_loaders.core.buffer import (
     DEFAULT_BUFFER_MAX_ITEMS,
     REJECTED_PYARROW_SCHEMA,
     DictBuffer,
 )
+from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 
 PEOPLE = "people"
 EMAILS = "emails"
@@ -75,7 +75,7 @@ def _make_buffer(
 
 
 def test_buffer_module_pass_exposes_single_dict_buffer_api() -> None:
-    """cdm_data_loaders.utils.buffer exposes DictBuffer and removes separate Arrow* buffer classes/factories."""
+    """cdm_data_loaders.core.buffer exposes DictBuffer and removes separate Arrow* buffer classes/factories."""
     assert hasattr(buffer_module, "DictBuffer")
     assert not hasattr(buffer_module, "ArrowDictBuffer")
     assert not hasattr(buffer_module, "ArrowBufferCore")

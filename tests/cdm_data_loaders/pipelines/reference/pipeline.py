@@ -11,6 +11,8 @@ from dlt.sources.filesystem import filesystem
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.buffer import DictBuffer
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import (
     FILE_GLOB,
     TABLE_NAME,
@@ -24,12 +26,10 @@ from cdm_data_loaders.core.settings import (
 )
 from cdm_data_loaders.pipelines.core import (
     DEFAULT_SCHEMA_CONTRACT,
-    PipelineCli,
     run_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from cdm_data_loaders.readers.jsonlines import stream_jsonl_lines
-from cdm_data_loaders.utils.buffer import DictBuffer
 
 if TYPE_CHECKING:
     from dlt.extract.resource import DltResource
@@ -162,7 +162,7 @@ def run_reference_pipeline(settings: ReferencePipelineSettings) -> LoadInfo | No
     )
 
 
-cli = PipelineCli(ReferencePipelineSettings, run_reference_pipeline)
+cli = CliRunner(ReferencePipelineSettings, run_reference_pipeline)
 
 if __name__ == "__main__":
     cli()

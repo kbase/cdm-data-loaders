@@ -16,12 +16,12 @@ import boto3
 import pytest
 from _pytest.mark.structures import ParameterSet
 
+from cdm_data_loaders.core.pipeline_catalog import resolve_pipeline
 from cdm_data_loaders.io.s3.client import get_s3_client, reset_s3_client
 from tests.cdm_data_loaders.pipelines import framework
 from tests.cdm_data_loaders.pipelines.framework import (
     ExecutionMode,
     PipelineTestRunner,
-    resolve_pipeline,
 )
 from tests.cdm_data_loaders.pipelines.helpers import (
     assert_smoke_run_output,

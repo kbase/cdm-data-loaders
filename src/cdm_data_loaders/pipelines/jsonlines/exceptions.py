@@ -2,12 +2,11 @@
 
 from typing import ClassVar, Final
 
+from cdm_data_loaders.core.cli import SpecError
 
-class JsonlJsonschemaError(RuntimeError):
+
+class JsonlJsonschemaError(SpecError, RuntimeError):
     """Base error raised when an ``ENTITY_SCHEMAS`` registry or entity JSON Schema is invalid or cannot convert to PyArrow."""
-
-    code: ClassVar[str] = ""
-    title: ClassVar[str] = ""
 
 
 class InvalidEntitySchemasRegistryError(JsonlJsonschemaError):

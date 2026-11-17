@@ -42,7 +42,7 @@ from dlt.extract import DltResource
 from pydantic import BaseModel, ValidationError
 
 from cdm_data_loaders.coercion.pydantic_to_arrow import coerce_pydantic_record_for_pyarrow
-from cdm_data_loaders.pipelines.core import PipelineCli
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.pipelines.jsonlines.base import (
     build_entity_resource as build_shared_entity_resource,
 )
@@ -157,7 +157,7 @@ def run_jsonlines_with_validation_pipeline(settings: JsonlPydanticIngestSettings
     )
 
 
-cli = PipelineCli(JsonlPydanticIngestSettings, run_jsonlines_with_validation_pipeline)
+cli = CliRunner(JsonlPydanticIngestSettings, run_jsonlines_with_validation_pipeline)
 
 
 if __name__ == "__main__":

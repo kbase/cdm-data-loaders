@@ -31,7 +31,7 @@ from cdm_data_loaders.pipelines.xsv.settings import (
     PIPELINE_NAME,
     XsvIngestSettings,
 )
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.validation.jsonschema.models import validate_xsv_jsonschema
 from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_duckdb_pipeline
 from tests.conftest import PIPELINE_SPECS_DIR

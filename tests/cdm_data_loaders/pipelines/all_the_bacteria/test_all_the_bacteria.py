@@ -16,6 +16,7 @@ from frozendict import frozendict
 from pydantic import ValidationError
 from requests.exceptions import HTTPError
 
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
 from cdm_data_loaders.io.core import NonRetryableDownloadError
 from cdm_data_loaders.pipelines import all_the_bacteria
@@ -30,7 +31,6 @@ from cdm_data_loaders.pipelines.all_the_bacteria import (
     osf_file_downloader,
     run_atb_pipeline,
 )
-from cdm_data_loaders.pipelines.core import PipelineCli
 from tests.cdm_data_loaders.pipelines.conftest import VALID_DESTINATIONS
 from tests.conftest import S3
 
@@ -47,8 +47,8 @@ def pattern_file(tmp_path: Path) -> Path:
 
 
 def test_cli_passes_settings_class_to_run_cli() -> None:
-    """Ensure that cli is a PipelineCli wired to AtbSettings and run_atb_pipeline."""
-    assert isinstance(cli, PipelineCli)
+    """Ensure that cli is a CliRunner wired to AtbSettings and run_atb_pipeline."""
+    assert isinstance(cli, CliRunner)
     assert cli.settings_cls is AtbSettings
     assert cli.pipeline_fn is run_atb_pipeline
 

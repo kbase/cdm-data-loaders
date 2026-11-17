@@ -23,7 +23,7 @@ from cdm_data_loaders.core.filesystem import build_file_ingest_kwargs, build_fil
 from cdm_data_loaders.core.registry import (
     RegistryKey,
 )
-from cdm_data_loaders.core.transforms import RecordCoercerFn
+from cdm_data_loaders.core.transforms.routing import RecordCoercerFn
 from cdm_data_loaders.pipelines.core import (
     DEFAULT_SCHEMA_CONTRACT,
     run_pipeline,

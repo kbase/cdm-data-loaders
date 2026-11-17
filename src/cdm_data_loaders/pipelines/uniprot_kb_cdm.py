@@ -6,13 +6,11 @@ import pyarrow as pa
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import LogInterval
-from cdm_data_loaders.core.settings import (
-    XML_CLI_SHORTCUTS,
-    default_settings_with_shortcuts,
-)
+from cdm_data_loaders.core.settings import default_settings_with_shortcuts
 from cdm_data_loaders.parsers.uniprot.uniprot_kb import UNIPROT_CDM_SCHEMA_MAP, make_uniprot_cdm_transform
-from cdm_data_loaders.pipelines.core import PipelineCli
+from cdm_data_loaders.pipelines.xml_common import XML_CLI_SHORTCUTS
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import UniProtXmlToPyArrowSettings
 
@@ -48,7 +46,7 @@ class UniProtSettings(UniProtXmlToPyArrowSettings):
         )
 
 
-cli = PipelineCli(UniProtSettings, run_xmltopyarrow_pipeline)
+cli = CliRunner(UniProtSettings, run_xmltopyarrow_pipeline)
 
 
 if __name__ == "__main__":

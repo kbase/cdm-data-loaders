@@ -24,6 +24,7 @@ from dlt.sources.helpers.rest_client.client import RESTClient
 from pydantic import Field, FilePath, computed_field, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import DestinationFileFormat, NonEmptyStr
 from cdm_data_loaders.core.filesystem import build_file_ingest_kwargs
 from cdm_data_loaders.core.settings import (
@@ -32,10 +33,7 @@ from cdm_data_loaders.core.settings import (
     default_settings_with_shortcuts,
 )
 from cdm_data_loaders.io.sync_client import FileDownloader
-from cdm_data_loaders.pipelines.core import (
-    PipelineCli,
-    run_pipeline,
-)
+from cdm_data_loaders.pipelines.core import run_pipeline
 
 logger: Logger = getLogger(__name__)
 
@@ -280,7 +278,7 @@ def run_atb_pipeline(settings: AtbSettings) -> LoadInfo | None:
     )
 
 
-cli = PipelineCli(AtbSettings, run_atb_pipeline)
+cli = CliRunner(AtbSettings, run_atb_pipeline)
 
 if __name__ == "__main__":
     cli()

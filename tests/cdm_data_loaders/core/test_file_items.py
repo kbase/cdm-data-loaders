@@ -1,4 +1,4 @@
-"""Tests for the FileItemDict helpers in cdm_data_loaders.utils.file_items."""
+"""Tests for the FileItemDict helpers in cdm_data_loaders.core.file_items."""
 
 import gzip
 import io
@@ -10,7 +10,7 @@ import pytest
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.sources.filesystem import filesystem
 
-from cdm_data_loaders.utils.file_items import (
+from cdm_data_loaders.core.file_items import (
     as_file_item,
     is_local,
     local_copy,

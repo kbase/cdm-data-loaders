@@ -50,7 +50,7 @@ def test_uniprot_idmapping_settings(test_cts_settings: frozendict[str, Any]) -> 
             **test_cts_settings,
             FILE_GLOB: DEFAULT_IDMAPPING_FILE_GLOB,
             LOADER_FILE_FORMAT: "parquet",
-            PREPROCESSORS_MODULE: "cdm_data_loaders.core.preprocessors",
+            PREPROCESSORS_MODULE: "cdm_data_loaders.core.md5_preprocessor",
             "schema_file": str(IDMAPPING_SCHEMA_FILE),
             "partition_buckets": DEFAULT_PARTITION_BUCKETS,
         }
@@ -73,7 +73,7 @@ def test_uniprot_idmapping_settings_reconciled(
             **test_cts_settings_reconciled,
             FILE_GLOB: DEFAULT_IDMAPPING_FILE_GLOB,
             LOADER_FILE_FORMAT: LoaderFileFormatEnum.PARQUET,
-            PREPROCESSORS_MODULE: "cdm_data_loaders.core.preprocessors",
+            PREPROCESSORS_MODULE: "cdm_data_loaders.core.md5_preprocessor",
             "schema_file": IDMAPPING_SCHEMA_FILE,
             "partition_buckets": DEFAULT_PARTITION_BUCKETS,
         }

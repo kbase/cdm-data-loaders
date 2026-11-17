@@ -32,8 +32,8 @@ from cdm_data_loaders.ncbi_ftp.assembly import (
     download_assembly_to_local,
     parse_assembly_path,
 )
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.ncbi_ftp.constants import FTP_HOST
-from cdm_data_loaders.pipelines.core import PipelineCli
 
 logger: Logger = getLogger(__name__)
 
@@ -341,7 +341,7 @@ def download_and_stage(  # noqa: PLR0913
     }
 
 
-cli = PipelineCli(DownloadSettings, run_download)  # pyright: ignore[reportArgumentType]
+cli = CliRunner(DownloadSettings, run_download)
 
 
 if __name__ == "__main__":

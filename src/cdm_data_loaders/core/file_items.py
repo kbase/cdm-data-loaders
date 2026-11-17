@@ -16,7 +16,7 @@ import os
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
-from typing import IO, Any
+from typing import IO
 
 import fsspec
 from dlt.common.storages.fsspec_filesystem import FileItemDict, glob_files
@@ -114,7 +114,7 @@ def is_local(file_item: FileItemDict) -> bool:
     :return: whether the item's fsspec filesystem is the local filesystem
     :rtype: bool
     """
-    protocol: Any = file_item.fsspec.protocol
+    protocol: str | tuple[str, ...] | list[str] = file_item.fsspec.protocol
     protocols = (protocol,) if isinstance(protocol, str) else tuple(protocol)
     return FILE_PROTOCOL in protocols
 

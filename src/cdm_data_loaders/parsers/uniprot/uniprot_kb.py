@@ -11,8 +11,8 @@ from typing import Any, Final
 
 import pyarrow as pa
 
+from cdm_data_loaders.core.buffer import make_rejected_table_result
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformFn
-from cdm_data_loaders.utils.buffer import make_rejected_table_result
 
 DB: Final[str] = "db"
 DESCRIPTION: Final[str] = "description"

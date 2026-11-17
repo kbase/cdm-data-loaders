@@ -11,15 +11,15 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrow,
     convert_xsv_schema_to_pyarrow,
 )
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.registry import TransformContext
-from cdm_data_loaders.core.transforms import emit_raw_table
+from cdm_data_loaders.core.transforms.routing import emit_raw_table
 from cdm_data_loaders.parsers.uniprot.idmapping import (
     OUTPUT_SCHEMAS,
     TABLE_TRANSFORMS,
     UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
     transform_uniprot_id_mapping,
 )
-from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.uniprot_idmapping import (
     PIPELINE_NAME,
     UniProtIdMappingSettings,
@@ -97,8 +97,8 @@ def test_import_uniprot_idmapping_modules_does_not_mutate_jsonschema_registry(
 
 
 def test_cli_wires_settings_and_runner() -> None:
-    """Ensure cli is a PipelineCli wired to UniProtIdMappingSettings and run_xsv_pipeline."""
-    assert isinstance(cli, PipelineCli)
+    """Ensure cli is a CliRunner wired to UniProtIdMappingSettings and run_xsv_pipeline."""
+    assert isinstance(cli, CliRunner)
     assert cli.settings_cls is UniProtIdMappingSettings
     assert cli.pipeline_fn is run_xsv_pipeline
     assert UniProtIdMappingSettings.dataset_name == PIPELINE_NAME

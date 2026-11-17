@@ -1,11 +1,12 @@
 """Tests for the UniRef CDM DLT pipelines."""
 
 from collections.abc import Callable
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cdm_data_loaders.pipelines.core import PipelineCli
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.pipelines.uniref_cdm import UniRefCdmSettings
 from cdm_data_loaders.pipelines.xmltopyarrow import pipeline as xmltopyarrow_pipeline_module
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
@@ -18,12 +19,12 @@ from tests.cdm_data_loaders.pipelines.uniref_cdm.conftest import UNIREF_CDM_VARI
 )
 def test_cli_passes_settings_class_to_run_cli(
     settings_cls: type[UniRefCdmSettings],
-    cli_obj: PipelineCli,
+    cli_obj: CliRunner[Any, Any],
     cli_name: str,
     _protocol: str,
 ) -> None:
-    """Ensure each UniRef CDM CLI is a PipelineCli wired to its settings class and run_xmltopyarrow_pipeline."""
-    assert isinstance(cli_obj, PipelineCli)
+    """Ensure each UniRef CDM CLI is a CliRunner wired to its settings class and run_xmltopyarrow_pipeline."""
+    assert isinstance(cli_obj, CliRunner)
     assert cli_obj.settings_cls is settings_cls
     assert cli_obj.pipeline_fn is run_xmltopyarrow_pipeline
     assert settings_cls.dataset_name == cli_name

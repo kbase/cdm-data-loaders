@@ -4,10 +4,10 @@ from typing import Final
 
 from pydantic_settings import SettingsConfigDict
 
-from cdm_data_loaders.core.settings import (
+from cdm_data_loaders.core.settings import default_settings_with_shortcuts
+from cdm_data_loaders.pipelines.xml_common import (
     XML_CLI_SHORTCUTS,
     SingleTableXmlIngestSettings,
-    default_settings_with_shortcuts,
 )
 
 PIPELINE_NAME: Final[str] = "xmltodict"

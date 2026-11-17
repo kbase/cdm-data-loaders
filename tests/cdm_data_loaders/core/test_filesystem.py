@@ -18,6 +18,7 @@ from dlt.destinations.impl.filesystem.iceberg_adapter import (
 from dlt.sources.filesystem import filesystem
 from pydantic_settings import CliApp
 
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.filesystem import (
     FilesystemTracker,
     attach_file_collector,
@@ -33,12 +34,11 @@ from cdm_data_loaders.core.preprocessors import FilePreprocessError
 from cdm_data_loaders.core.settings import (
     FileFormatIngestSettings,
     InputLocalOutputSettings,
-    XmlIngestSettings,
 )
-from cdm_data_loaders.core.transforms import OutputTableHints
+from cdm_data_loaders.core.transforms.hints import OutputTableHints
 from cdm_data_loaders.pipelines.core import DEFAULT_SCHEMA_CONTRACT
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
+from cdm_data_loaders.pipelines.xml_common import XmlIngestSettings
 from tests.dlt_config_isolation import isolated_dlt_config
 from tests.fs_backends import MOTO_ACCESS_KEY, MOTO_SECRET_KEY, S3_MOTO, FsBackend
 from tests.helpers import make_cts_settings, register_temp_module
