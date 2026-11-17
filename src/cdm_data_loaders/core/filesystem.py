@@ -1,12 +1,11 @@
 """Pipeline filesystem input set up and processing."""
 
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import Callable, Generator, Iterable, Mapping
 from dataclasses import dataclass
 from logging import Logger, getLogger
 from typing import TYPE_CHECKING, Any
 
 import dlt
-import pyarrow as pa
 from dlt.common.schema.typing import TSchemaContractDict
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
@@ -14,8 +13,8 @@ from dlt.extract import DltResource
 from dlt.sources.filesystem import filesystem
 from dlt.sources.filesystem.helpers import fsspec_from_resource
 
-from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA, make_rejected_row
-from cdm_data_loaders.core.fields import ICEBERG, PARQUET, REJECTED_TABLE_NAME, LoaderFileFormatEnum
+from cdm_data_loaders.core.buffer import format_rejected_records, make_rejected_row
+from cdm_data_loaders.core.fields import ICEBERG, PARQUET, LoaderFileFormatEnum
 from cdm_data_loaders.core.file_items import source_id
 from cdm_data_loaders.core.settings import (
     FileFormatIngestSettings,
@@ -233,14 +232,9 @@ def build_filesystem_resource(  # noqa: PLR0913
                         str(exc),
                         source_file=src_id,
                     )
-                    rejected_page: TDataItems = (
-                        pa.Table.from_pylist([rejected_row], schema=REJECTED_PYARROW_SCHEMA)
-                        if getattr(settings, "use_pyarrow", True)
-                        else [rejected_row]
-                    )
-                    yield dlt.mark.with_table_name(
-                        rejected_page,
-                        REJECTED_TABLE_NAME,
+                    yield format_rejected_records(
+                        [rejected_row],
+                        use_pyarrow=getattr(settings, "use_pyarrow", True),
                     )
                     failed = True
                     break
@@ -326,6 +320,22 @@ def build_per_file_filesystem_resource(
     )
 
 
+def resolve_pipeline_name(settings: object, default_pipeline_name: str) -> str:
+    """Resolve the active pipeline name from ``settings.model_config['cli_prog_name']`` or ``default_pipeline_name``.
+
+    :param settings: pipeline settings instance
+    :type settings: object
+    :param default_pipeline_name: fallback pipeline name when ``cli_prog_name`` is unset or empty
+    :type default_pipeline_name: str
+    :return: resolved pipeline name
+    :rtype: str
+    """
+    model_config = getattr(settings, "model_config", None)
+    if isinstance(model_config, Mapping) and (prog_name := model_config.get("cli_prog_name")):
+        return str(prog_name)
+    return default_pipeline_name
+
+
 def build_file_ingest_kwargs(
     settings: FileFormatIngestSettings,
     pipeline_name: str,
@@ -336,14 +346,15 @@ def build_file_ingest_kwargs(
 
     :param settings: file-format ingest settings with ``dataset_name`` and ``loader_file_format``
     :type settings: FileFormatIngestSettings
-    :param pipeline_name: name of the dlt pipeline
+    :param pipeline_name: default dlt pipeline name when ``settings.model_config['cli_prog_name']`` is unset
     :type pipeline_name: str
-    :param fallback_dataset_name: whether to fall back to ``pipeline_name`` when ``settings.dataset_name`` is None
+    :param fallback_dataset_name: whether to fall back to the resolved pipeline name when ``settings.dataset_name`` is None
     :type fallback_dataset_name: bool
     :return: mapping with ``pipeline_kwargs`` and ``pipeline_run_kwargs`` suitable for ``run_pipeline``
     :rtype: dict[str, dict[str, Any]]
     """
-    dataset_name = (settings.dataset_name or pipeline_name) if fallback_dataset_name else settings.dataset_name
+    resolved_pipeline_name = resolve_pipeline_name(settings, pipeline_name)
+    dataset_name = (settings.dataset_name or resolved_pipeline_name) if fallback_dataset_name else settings.dataset_name
     run_kwargs: dict[str, Any] = (
         {"loader_file_format": str(PARQUET), "table_format": str(ICEBERG)}
         if settings.loader_file_format == LoaderFileFormatEnum.ICEBERG
@@ -351,7 +362,7 @@ def build_file_ingest_kwargs(
     )
     return {
         "pipeline_kwargs": {
-            "pipeline_name": pipeline_name,
+            "pipeline_name": resolved_pipeline_name,
             "dataset_name": dataset_name,
         },
         "pipeline_run_kwargs": run_kwargs,

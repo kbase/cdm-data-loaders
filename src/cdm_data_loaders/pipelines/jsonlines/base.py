@@ -112,7 +112,7 @@ def run_registry_ingest(
     :type  registry: dict[RegistryKey, type[BaseModel] | ValidatedSchema]
     :param build_resource: function building one entity's resource
     :type  build_resource: ResourceFactory
-    :param pipeline_name: registered pipeline name
+    :param pipeline_name: default pipeline name when ``settings.model_config['cli_prog_name']`` is unset
     :type  pipeline_name: str
     :param pipeline_run_kwargs: extra kwargs for pipeline.run
     :type  pipeline_run_kwargs: dict[str, Any] | None

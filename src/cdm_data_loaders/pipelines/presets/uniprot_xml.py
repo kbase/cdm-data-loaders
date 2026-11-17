@@ -5,11 +5,8 @@ from typing import Annotated, ClassVar, Final
 
 import pyarrow as pa
 from pydantic import Field, FilePath
-from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.cli import CliRunner
-from cdm_data_loaders.core.settings import default_settings_with_shortcuts
-from cdm_data_loaders.pipelines.xml_common import XML_CLI_SHORTCUTS
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     SCHEMAS_DIR,
@@ -28,16 +25,10 @@ UNIPROT_XSD_FILE: Final[Path] = SCHEMAS_DIR / "uniprot" / "uniprot.xsd"
 UNIREF_XSD_FILE: Final[Path] = SCHEMAS_DIR / "uniref" / "uniref.xsd"
 
 
-class UniProtXmlToPyArrowSettings(PresetXmlToPyArrowSettings):
+class UniProtXmlToPyArrowSettings(PresetXmlToPyArrowSettings, cli_prog_name=UNIPROT_PIPELINE_NAME):
     """Settings for the UniProt XML-to-PyArrow ingestion pipeline."""
 
     PRECOMPUTED_SCHEMA: ClassVar[pa.Schema] = UNIPROT_SCHEMA
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIPROT_PIPELINE_NAME,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
-
     dataset_name: ClassVar[str] = UNIPROT_PIPELINE_NAME
 
     xsd_file: Annotated[
@@ -49,15 +40,10 @@ class UniProtXmlToPyArrowSettings(PresetXmlToPyArrowSettings):
     ]
 
 
-class UniRefXmlToPyArrowSettings(PresetXmlToPyArrowSettings):
+class UniRefXmlToPyArrowSettings(PresetXmlToPyArrowSettings, cli_prog_name=UNIREF_PIPELINE_NAME):
     """Settings for the UniRef XML-to-PyArrow ingestion pipeline."""
 
     PRECOMPUTED_SCHEMA: ClassVar[pa.Schema] = UNIREF_SCHEMA
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIREF_PIPELINE_NAME,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
 
     xsd_file: Annotated[
         FilePath,
@@ -68,35 +54,20 @@ class UniRefXmlToPyArrowSettings(PresetXmlToPyArrowSettings):
     ]
 
 
-class UniRef50XmlToPyArrowSettings(UniRefXmlToPyArrowSettings):
+class UniRef50XmlToPyArrowSettings(UniRefXmlToPyArrowSettings, cli_prog_name=UNIREF_FIFTY):
     """UniRef 50 XML-to-PyArrow ingest settings."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIREF_FIFTY,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
 
     dataset_name: ClassVar[str] = UNIREF_FIFTY
 
 
-class UniRef90XmlToPyArrowSettings(UniRefXmlToPyArrowSettings):
+class UniRef90XmlToPyArrowSettings(UniRefXmlToPyArrowSettings, cli_prog_name=UNIREF_NINETY):
     """UniRef 90 XML-to-PyArrow ingest settings."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIREF_NINETY,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
 
     dataset_name: ClassVar[str] = UNIREF_NINETY
 
 
-class UniRef100XmlToPyArrowSettings(UniRefXmlToPyArrowSettings):
+class UniRef100XmlToPyArrowSettings(UniRefXmlToPyArrowSettings, cli_prog_name=UNIREF_HUNDRED):
     """UniRef 100 XML-to-PyArrow ingest settings."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIREF_HUNDRED,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
 
     dataset_name: ClassVar[str] = UNIREF_HUNDRED
 

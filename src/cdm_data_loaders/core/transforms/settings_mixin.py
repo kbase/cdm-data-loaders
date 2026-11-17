@@ -1,11 +1,10 @@
 """Settings mixin and table validation helpers for pluggable pre-processors, transforms, and schemas."""
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any, ClassVar, Self
 
 import pyarrow as pa
-from pydantic import PrivateAttr, model_validator
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel, PrivateAttr, model_validator
 
 from cdm_data_loaders.core.fields import (
     PYARROW_FILE_FORMATS,
@@ -27,6 +26,13 @@ from cdm_data_loaders.core.registry import (
 )
 from cdm_data_loaders.core.transforms.hints import OutputTableHints
 from cdm_data_loaders.core.transforms.routing import compose_transforms, resolve_schema_map
+
+
+class LockedTransformHooksMixin:
+    """Mixin locking ``transforms_module`` and ``output_schemas_module`` as ``None`` class variables."""
+
+    transforms_module: ClassVar[str | None] = None
+    output_schemas_module: ClassVar[str | None] = None
 
 
 def validate_table_transforms(
@@ -86,7 +92,47 @@ def needs_default_pyarrow_schema(
     return not (output_schemas is not None and table_name in output_schemas.registry)
 
 
-class TransformSettingsMixin(BaseSettings):
+def reconcile_multi_table_schema_map(
+    source_tables: Iterable[str],
+    build_default_schema: Callable[[str], pa.Schema | None],
+    *,
+    use_pyarrow: bool = True,
+    table_transforms: TransformRegistry | None = None,
+    output_schemas: ArrowSchemaRegistry | None = None,
+) -> ArrowSchemaRegistry | None:
+    """Reconcile explicit ``output_schemas`` with per-table default PyArrow schemas.
+
+    :param source_tables: input table names eligible for default PyArrow schema generation
+    :type source_tables: Iterable[str]
+    :param build_default_schema: callable returning the default ``pa.Schema`` (or ``None``) for a table name
+    :type build_default_schema: Callable[[str], pa.Schema | None]
+    :param use_pyarrow: whether PyArrow output is enabled
+    :type use_pyarrow: bool
+    :param table_transforms: optional configured table transforms registry
+    :type table_transforms: TransformRegistry | None
+    :param output_schemas: optional explicit output schemas registry
+    :type output_schemas: ArrowSchemaRegistry | None
+    :return: merged ``ArrowSchemaRegistry`` or ``None`` when unschematized or ``use_pyarrow`` is ``False``
+    :rtype: ArrowSchemaRegistry | None
+    """
+    if not use_pyarrow:
+        return None
+    resolved: dict[str, pa.Schema] = dict(output_schemas.registry) if output_schemas is not None else {}
+    for table_name in source_tables:
+        if not needs_default_pyarrow_schema(
+            table_name,
+            use_pyarrow=use_pyarrow,
+            table_transforms=table_transforms,
+            output_schemas=output_schemas,
+        ):
+            continue
+        default_schema = build_default_schema(table_name)
+        if default_schema is not None:
+            resolved[table_name] = default_schema
+    return ArrowSchemaRegistry(registry=resolved) if resolved else None
+
+
+class TransformSettingsMixin(BaseModel):
     """Mixin for pipelines that accept ``FILE_PREPROCESSORS``, ``TABLE_TRANSFORMS``, and ``OUTPUT_SCHEMAS`` modules."""
 
     DEFAULT_FILE_PREPROCESSORS: ClassVar[tuple[FilePreprocessFn, ...]] = ()
@@ -200,6 +246,22 @@ class TransformSettingsMixin(BaseSettings):
         if default_pyarrow_schema is not None or not self._needs_default_pyarrow_schema(table_name):
             return default_pyarrow_schema
         return build_default()
+
+    def _resolve_multi_table_schema_map(self, default_schemas: Mapping[str, pa.Schema]) -> None:
+        """Populate ``_schema_map`` from ``_unreconciled_output_schemas`` and ``default_schemas``.
+
+        :param default_schemas: mapping of input table names to default ``pa.Schema`` instances
+        :type default_schemas: Mapping[str, pa.Schema]
+        :return: ``None``
+        :rtype: None
+        """
+        self._schema_map = reconcile_multi_table_schema_map(
+            default_schemas,
+            default_schemas.get,
+            use_pyarrow=self.use_pyarrow,
+            table_transforms=self._table_transforms,
+            output_schemas=self._unreconciled_output_schemas,
+        )
 
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
         """Resolve ``_schema_map`` from ``_unreconciled_output_schemas``, ``_table_transforms``, and ``default_pyarrow_schema``.

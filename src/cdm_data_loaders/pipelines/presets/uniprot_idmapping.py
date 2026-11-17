@@ -17,6 +17,7 @@ from cdm_data_loaders.core.settings import (
 )
 from cdm_data_loaders.core.transforms.hints import OutputTableHints
 from cdm_data_loaders.core.transforms.routing import emit_raw_table
+from cdm_data_loaders.core.transforms.settings_mixin import LockedTransformHooksMixin
 from cdm_data_loaders.datasets.uniprot.idmapping import (
     UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
     transform_uniprot_id_mapping,
@@ -31,6 +32,7 @@ from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     RAW_ID_MAPPING_TABLE_NAME,
     UNIPROT_ID_COL,
 )
+from cdm_data_loaders.utils.arrow_schema import with_schema_description
 
 PIPELINE_NAME: Final[str] = "uniprot_idmapping"
 DEFAULT_IDMAPPING_FILE_GLOB: Final[str] = "**/*idmapping*.dat*"
@@ -45,7 +47,7 @@ UNIPROT_IDMAPPING_SHORTCUTS: Final[frozendict[str, str]] = frozendict(
 )
 
 
-class UniProtIdMappingSettings(XsvIngestSettings):
+class UniProtIdMappingSettings(LockedTransformHooksMixin, XsvIngestSettings):
     """Settings for the UniProt ID mapping XSV ingestion pipeline."""
 
     model_config: SettingsConfigDict = default_settings_with_shortcuts(
@@ -55,8 +57,6 @@ class UniProtIdMappingSettings(XsvIngestSettings):
 
     dataset_name: ClassVar[str] = PIPELINE_NAME
     table_name: ClassVar[str] = ID_MAPPING_TABLE_NAME
-    transforms_module: ClassVar[str | None] = None
-    output_schemas_module: ClassVar[str | None] = None
 
     file_glob: Annotated[
         FileGlob,
@@ -92,11 +92,7 @@ class UniProtIdMappingSettings(XsvIngestSettings):
             }
         )
         super()._resolve_settings_schema_map(default_pyarrow_schema=default_pyarrow_schema)
-        raw_metadata = {
-            **(self.pyarrow_schema.metadata or {}),
-            b"comment": RAW_ID_MAPPING_DESCRIPTION.encode("utf-8"),
-        }
-        self._pyarrow_schema = self.pyarrow_schema.with_metadata(raw_metadata)
+        self._pyarrow_schema = with_schema_description(self.pyarrow_schema, RAW_ID_MAPPING_DESCRIPTION)
         if self.use_pyarrow:
             self._schema_map = (
                 UNIPROT_IDMAPPING_OUTPUT_SCHEMAS

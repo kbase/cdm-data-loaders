@@ -4,18 +4,16 @@ from typing import Annotated, ClassVar, Final
 
 import pyarrow as pa
 from pydantic import Field
-from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import LogInterval
-from cdm_data_loaders.core.settings import default_settings_with_shortcuts
+from cdm_data_loaders.core.transforms.settings_mixin import LockedTransformHooksMixin
 from cdm_data_loaders.datasets.uniprot.kb import UNIPROT_CDM_SCHEMA_MAP, make_uniprot_cdm_transform
 from cdm_data_loaders.datasets.uniprot.uniref import UNIREF_CDM_SCHEMA_MAP, make_uniref_cdm_transform
 from cdm_data_loaders.pipelines.presets.uniprot_xml import (
     UniProtXmlToPyArrowSettings,
     UniRefXmlToPyArrowSettings,
 )
-from cdm_data_loaders.pipelines.xml_common import XML_CLI_SHORTCUTS
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
 
 PIPELINE_NAME: Final[str] = "uniprot_cdm"
@@ -27,20 +25,8 @@ UNIPROT_LOG_INTERVAL: Final[int] = 1000
 UNIREF_LOG_INTERVAL: Final[int] = 10000
 
 
-class _CdmXmlPresetMixin:
-    """Shared class-variable overrides disabling user-supplied transform and output-schema modules."""
-
-    transforms_module: ClassVar[str | None] = None
-    output_schemas_module: ClassVar[str | None] = None
-
-
-class UniProtSettings(_CdmXmlPresetMixin, UniProtXmlToPyArrowSettings):
+class UniProtSettings(LockedTransformHooksMixin, UniProtXmlToPyArrowSettings, cli_prog_name=PIPELINE_NAME):
     """Configuration for running the UniProtKB CDM XML-to-PyArrow import pipeline."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=PIPELINE_NAME,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
 
     dataset_name: ClassVar[str] = PIPELINE_NAME
 
@@ -62,15 +48,10 @@ class UniProtSettings(_CdmXmlPresetMixin, UniProtXmlToPyArrowSettings):
         )
 
 
-class UniRefCdmSettings(_CdmXmlPresetMixin, UniRefXmlToPyArrowSettings):
+class UniRefCdmSettings(LockedTransformHooksMixin, UniRefXmlToPyArrowSettings, cli_prog_name=UNIREF_CDM_PIPELINE_NAME):
     """Base settings for UniRef CDM XML-to-PyArrow ingestion pipelines."""
 
     PROTOCOL: ClassVar[str]
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIREF_CDM_PIPELINE_NAME,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
 
     log_interval: Annotated[
         LogInterval,
@@ -90,42 +71,24 @@ class UniRefCdmSettings(_CdmXmlPresetMixin, UniRefXmlToPyArrowSettings):
         )
 
 
-class UniRef50CdmSettings(UniRefCdmSettings):
+class UniRef50CdmSettings(UniRefCdmSettings, cli_prog_name=UNIREF50_CDM):
     """UniRef 50 CDM XML-to-PyArrow ingest settings."""
 
     PROTOCOL: ClassVar[str] = "UniRef 50"
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIREF50_CDM,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
-
     dataset_name: ClassVar[str] = UNIREF50_CDM
 
 
-class UniRef90CdmSettings(UniRefCdmSettings):
+class UniRef90CdmSettings(UniRefCdmSettings, cli_prog_name=UNIREF90_CDM):
     """UniRef 90 CDM XML-to-PyArrow ingest settings."""
 
     PROTOCOL: ClassVar[str] = "UniRef 90"
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIREF90_CDM,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
-
     dataset_name: ClassVar[str] = UNIREF90_CDM
 
 
-class UniRef100CdmSettings(UniRefCdmSettings):
+class UniRef100CdmSettings(UniRefCdmSettings, cli_prog_name=UNIREF100_CDM):
     """UniRef 100 CDM XML-to-PyArrow ingest settings."""
 
     PROTOCOL: ClassVar[str] = "UniRef 100"
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIREF100_CDM,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
-
     dataset_name: ClassVar[str] = UNIREF100_CDM
 
 

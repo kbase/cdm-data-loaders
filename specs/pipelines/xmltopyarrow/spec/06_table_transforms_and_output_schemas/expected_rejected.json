@@ -1,0 +1,9 @@
+[
+  {
+    "error_detail": "Invalid measurement status",
+    "line_no": null,
+    "raw_record": "{\"_id\": \"s4\", \"_status\": \"invalid\", \"value\": -1.0}",
+    "source_file": "data.xml",
+    "table_name": "measurements"
+  }
+]

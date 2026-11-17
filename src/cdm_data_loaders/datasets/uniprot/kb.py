@@ -1,38 +1,37 @@
 """UniProtKB XML entry transforms and CDM PyArrow output schemas."""
 
 import datetime as dt
-import functools
 from collections.abc import Mapping
 from logging import Logger, getLogger
 from typing import Any, Final
 
 import pyarrow as pa
 
-from cdm_data_loaders.core.buffer import make_rejected_table_result
-from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformFn
-from cdm_data_loaders.datasets.uniprot.common import ensembl_type, format_date, iter_mappings
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformFn, TransformContext
+from cdm_data_loaders.datasets.uniprot.common import (
+    NCBI_TAXON_PREFIX,
+    UNIPROT_CURIE_PREFIX,
+    ensembl_type,
+    format_curie,
+    format_date,
+    iter_mappings,
+    make_cdm_entry_transform,
+    reject_cdm_entry,
+    resolve_timestamp,
+    run_cdm_entry_parser,
+)
 
 DB: Final[str] = "db"
 DESCRIPTION: Final[str] = "description"
 ENTITY_ID: Final[str] = "entity_id"
 NAME: Final[str] = "name"
-NCBI_TAXON: Final[str] = "NCBITaxon"
+NCBI_TAXON: Final[str] = NCBI_TAXON_PREFIX
 XREF: Final[str] = "xref"
 
 # XML namespace mapping for UniProt entries
 HTTPS_NS: Final[str] = "https://uniprot.org/uniprot"
 NS: Final[dict[str, str]] = {"ns": HTTPS_NS, "": HTTPS_NS}
 ENTRY_XML_TAG: Final[str] = f"{{{HTTPS_NS}}}entry"
-
-# CURIE prefixes
-PREFIX_TRANSLATION: Final[dict[str, str]] = {
-    "UniProtKB": "UniProt",
-    "UniProtKB/Swiss-Prot": "UniProt",
-    "UniProtKB/TrEMBL": "UniProt",
-    "NCBI Taxonomy": NCBI_TAXON,
-    "GeneID": "NCBIGene",
-    "pubmed": "PMID",
-}
 
 REF_DB_PRIORITY_ORDER: Final[tuple[str, ...]] = ("doi", "pmcid", "pmid", "pubmed", "agricola")
 
@@ -413,7 +412,7 @@ def parse_references(entry: Mapping[str, Any]) -> list[dict[str, str]]:
         for ref_type in REF_DB_PRIORITY_ORDER:
             refs = [ref[XREF] for ref in citation_refs if ref[DB] == ref_type]
             if refs:
-                publications.add(f"{PREFIX_TRANSLATION.get(ref_type, ref_type.upper())}:{refs[0]}")
+                publications.add(format_curie(ref_type, refs[0], fallback_upper=True))
                 ref_found = True
                 break
 
@@ -426,6 +425,8 @@ def parse_references(entry: Mapping[str, Any]) -> list[dict[str, str]]:
 def parse_uniprot_entry(
     entry: Mapping[str, Any],
     timestamp: dt.datetime,
+    *,
+    ctx: TransformContext | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Parse an XSD-converted UniProt entry dictionary into CDM schema tables.
 
@@ -433,17 +434,20 @@ def parse_uniprot_entry(
     :type entry: Mapping[str, Any]
     :param timestamp: UTC timestamp assigned to ``entity.updated``
     :type timestamp: dt.datetime
+    :param ctx: optional transform context carrying table name and source file
+    :type ctx: TransformContext | None
     :return: dictionary of parsed table rows keyed by destination table name
     :rtype: dict[str, list[dict[str, Any]]]
     """
-    try:
+
+    def _parse() -> dict[str, list[dict[str, Any]]]:
         accessions = _extract_accessions(entry)
         if not accessions:
             logger.error("No accession found for entry")
-            return make_rejected_table_result("entry", entry, "No accession found")
+            return reject_cdm_entry(entry, "No accession found", ctx)
 
         first_acc = accessions[0]
-        uniprot_id = f"uniprot:{first_acc}"
+        uniprot_id = f"{UNIPROT_CURIE_PREFIX}{first_acc}"
         raw_version = entry.get("_version")
         entity = {
             ENTITY_ID: uniprot_id,
@@ -468,9 +472,14 @@ def parse_uniprot_entry(
             "protein": [{"protein_id": uniprot_id, **parse_protein_info(entry)}],
             "entity_x_publication": [{ENTITY_ID: uniprot_id, **e} for e in parse_references(entry)],
         }
-    except Exception as e:
-        logger.exception("Parse error while processing entry")
-        return make_rejected_table_result("entry", entry, str(e))
+
+    return run_cdm_entry_parser(
+        entry,
+        _parse,
+        ctx=ctx,
+        logger=logger,
+        error_message="Parse error while processing entry",
+    )
 
 
 def make_uniprot_cdm_transform(
@@ -483,5 +492,12 @@ def make_uniprot_cdm_transform(
     :return: ``RecordTransformFn`` transforming ``entry`` records into CDM table rows
     :rtype: RecordTransformFn
     """
-    resolved_ts = timestamp if timestamp is not None else dt.datetime.now(dt.UTC)
-    return functools.partial(parse_uniprot_entry, timestamp=resolved_ts)
+    resolved_ts = resolve_timestamp(timestamp)
+
+    def _parse_entry(
+        entry: Mapping[str, Any],
+        ctx: TransformContext | None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        return parse_uniprot_entry(entry, resolved_ts, ctx=ctx)
+
+    return make_cdm_entry_transform(_parse_entry)
